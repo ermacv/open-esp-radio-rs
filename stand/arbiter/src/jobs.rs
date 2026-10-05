@@ -3,7 +3,7 @@
 //! A job is a `cargo hil run …` (or an experiment) recorded in the arbiter
 //! directory's `jobs/<id>.json`: enqueued detached, or started in the
 //! foreground. Its process, and the runner it starts, carry the job's id in
-//! [`JOB_ENV`]; every stand request they make is a ticket of that job in the
+//! [`JOB_KEY`]; every stand request they make is a ticket of that job in the
 //! one queue ([`crate::Status`] names each holder's and waiter's job), so a
 //! job's phase is read from the queue rather than guessed from process ids.
 //! The job's process moves its record through its states (waiting for the
@@ -16,15 +16,17 @@ use serde::{Deserialize, Serialize};
 
 /// Names the job a `cargo hil` process, and the runner it starts, run as;
 /// the arbiter tags their requests with it.
-pub const JOB_ENV: &str = "OER_STAND_JOB";
+pub const JOB_KEY: &str = "stand.job";
 /// How long a job's record is kept.
 const RECORD_RETENTION: Duration = Duration::from_secs(7 * 24 * 3600);
 /// How often a waiting process reads the job it waits for.
 const POLL: Duration = Duration::from_secs(2);
 
-/// The job this process runs as, from [`JOB_ENV`].
-pub(crate) fn current() -> Option<String> {
-    std::env::var(JOB_ENV).ok().filter(|job| !job.is_empty())
+/// The job this process runs as, from [`JOB_KEY`].
+pub fn current() -> crate::Result<Option<String>> {
+    Ok(oer_process::Context::current()?
+        .get(JOB_KEY)
+        .map(str::to_owned))
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -20,7 +20,6 @@ use oer_vendor_pins::{Artifact, CACHE, Manifest, Source, SourceKind, cache_direc
 use std::path::{Path, PathBuf};
 
 pub mod project;
-use std::process::Command;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -142,7 +141,7 @@ fn download(url: &str, destination: &Path) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let partial = destination.with_extension("partial");
-    let status = Command::new("curl")
+    let status = oer_process::command("curl")
         .args([
             "--fail",
             "--silent",
@@ -201,7 +200,7 @@ fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
                     return Err(format!("{asset}: sha256 {actual}, pinned {expected}").into());
                 }
             }
-            let status = Command::new("tar")
+            let status = oer_process::command("tar")
                 .arg("-xzf")
                 .arg(&tarball)
                 .arg("-C")

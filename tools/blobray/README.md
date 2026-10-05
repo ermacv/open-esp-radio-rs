@@ -60,6 +60,11 @@ workspace, with its own `Cargo.lock` and `tools/blobray/target` directory, so
 Blobray dependencies never change the radio workspace. From the repository
 root, `cargo blobray` and `--manifest-path tools/blobray/Cargo.toml` select it.
 
+The Linux linker adapter uses the shared process foundation's `command`
+factory to clear unrelated operation context. Linker ownership and resource
+limits remain the adapter's policy; the analysis core does not depend on
+subprocess mechanisms. The crate boundary test enforces that split.
+
 ```console
 cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-cli --bin blobray
 cargo blobray --format json register-accesses --input vendor=/path/to/lib.a --range 0x60000000:0x100000

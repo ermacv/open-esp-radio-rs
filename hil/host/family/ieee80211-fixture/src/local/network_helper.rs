@@ -1,7 +1,6 @@
 //! One versioned contract for the root-owned laptop radio helper.
 
 use oer_process::CommandExt as _;
-use std::process::Command;
 
 use crate::Result;
 
@@ -27,7 +26,7 @@ pub fn require_for(
 }
 
 pub fn doctor() -> Result<()> {
-    let output = Command::new("sudo")
+    let output = oer_process::command("sudo")
         .args(["-n", PATH, "capabilities"])
         .supervised_output()?;
     if !output.status.success() {

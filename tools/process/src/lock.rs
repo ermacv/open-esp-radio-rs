@@ -20,6 +20,11 @@ use rustix::fs::FlockOperation;
 
 use crate::Result;
 
+#[cfg(target_os = "linux")]
+mod broker;
+#[cfg(target_os = "linux")]
+pub use broker::{BrokerOperation, LockBroker};
+
 /// How a lock shares its file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Mode {

@@ -44,6 +44,7 @@ fn written<'a>(store: &'a Store, access: &'a DeviceAccess, image: &str) -> Writt
         receipt,
         generation,
         pending: Start::Reset,
+        _operation: access.operation().unwrap(),
     }
 }
 
@@ -96,6 +97,7 @@ fn a_started_write_is_confirmed_once() {
     assert_eq!(a.started().unwrap(), receipt("a"));
     // A confirmation replays nothing: the state is no longer `Written`.
     let replay = Written {
+        _operation: access.operation().unwrap(),
         store: &store,
         access: &access,
         receipt: receipt("a"),

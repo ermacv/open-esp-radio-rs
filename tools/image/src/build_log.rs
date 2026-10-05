@@ -164,7 +164,8 @@ mod tests {
         let log = BuildLog::create(&directory.path().join("build.log")).unwrap();
         let error = log
             .run(
-                Command::new("sh").args(["-c", "echo noise >&2; echo 'error: broken' >&2; exit 3"]),
+                oer_process::command("sh")
+                    .args(["-c", "echo noise >&2; echo 'error: broken' >&2; exit 3"]),
                 "a step",
             )
             .unwrap_err();

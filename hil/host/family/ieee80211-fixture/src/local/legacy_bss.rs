@@ -8,7 +8,7 @@ use std::{
     fmt::Write as _,
     io::{Read as _, Write as _},
     path::Path,
-    process::{Command, Stdio},
+    process::Stdio,
     time::Duration,
 };
 
@@ -36,7 +36,7 @@ impl LegacyBss {
         let input = profile(config, channel)?;
         // Own cleanup before any helper mutation, including failed setup.
         let owner = Self { _owned: () };
-        let mut child = Command::new("sudo")
+        let mut child = oer_process::command("sudo")
             .args(["-n", crate::local::network_helper::PATH, "ap"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -81,7 +81,7 @@ impl Drop for LegacyBss {
             oer_hil_workload::fixture::cleanup::record(
                 "restore managed Wi-Fi after legacy BSS",
                 || {
-                    let status = Command::new("sudo")
+                    let status = oer_process::command("sudo")
                         .args(["-n", crate::local::network_helper::PATH, "managed"])
                         .supervised_status()?;
                     if !status.success() {

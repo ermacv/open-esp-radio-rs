@@ -169,21 +169,23 @@ and a write generation); "written" and "started" are distinct states, so an
 unchanged image is not reflashed and an interrupted write leaves no stale
 claim.
 
-Delegated device access currently relies on the ancestor process retaining
-its lock. The delegate checks the token before I/O, but ancestor death after
-that check can release exclusion during the operation. Delegation does not
-yet guarantee exclusion independently of the parent lifetime. A device
-broker must retain ownership for each admitted operation, reject new work
-after owner loss and release the board only when active I/O has stopped;
-a regression must kill the parent during I/O while a third process tries
-to acquire the same board.
+An independent lifetime broker owns the device lock's file description.
+`DeviceAccess::operation` admits I/O atomically and returns a guard retaining
+exclusion. Owner loss closes admission, then drains admitted operations; the
+board becomes available only after their ports and readers close. External
+hardware commands retain the same operation through a lifetime connection,
+so caller death does not release exclusion before OpenOCD or uhubctl exits.
+Delegates receive an admission capability, never the flock descriptor.
 
-**Process context.** Delegation and stand leases currently travel through
-inherited environment variables, including to descendants that do not need
-device access. An operation-scoped context should be passed explicitly to
-its intended child by the process foundation. Its tests must cover ordinary
-children, delegated children and owner loss without leaking a token to an
-unrelated subprocess.
+**Process context.** The process foundation supplies `Context` and `command`.
+Applications select the fields of each intended child's context explicitly;
+ordinary commands clear it. A single environment field transports the context
+across exec, including an explicitly delegated Cargo or shell wrapper. The
+next repository spawn clears it unless its caller attaches another context.
+Device capabilities, stand leases and job identities use this path; host and
+workload configuration remain ordinary environment settings. Process tests
+exercise ordinary children, selected descendants, malformed contexts and owner
+loss during real I/O, including an external writer surviving both callers.
 
 **Image compile cache.** Every firmware build of a host, whatever the
 checkout, application, chip, image class or example, and the vendor

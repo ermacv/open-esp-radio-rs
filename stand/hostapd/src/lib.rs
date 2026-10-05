@@ -18,7 +18,7 @@ fn verify_source(bytes: &[u8]) -> Result<()> {
 }
 
 fn command(root: &Path, program: impl AsRef<std::ffi::OsStr>) -> Command {
-    let mut command = Command::new(program);
+    let mut command = oer_process::command(program);
     command.current_dir(root);
     command
 }

@@ -430,7 +430,10 @@ impl Bisection<'_> {
             &Launch::new(self.checkout, &self.runner)
                 .args(arguments)
                 .env(oer_stand_owners::OWNER_ENV, self.owner)
-                .env(oer_stand_arbiter::jobs::JOB_ENV, job.id()),
+                .context(
+                    oer_process::Context::default()
+                        .with(oer_stand_arbiter::jobs::JOB_KEY, job.id()),
+                ),
         )?;
         job.finish_with(&self.store, &launched.runs)?;
         self.judge_run(&launched.run()?.to_string())
@@ -481,8 +484,7 @@ impl Bisection<'_> {
                 .args(arguments)
                 .env(oer_stand_file::paths::ARBITER_ENV, &self.arbiter)
                 .env(oer_stand_owners::OWNER_ENV, self.owner)
-                .env_remove(oer_stand_arbiter::LEASE_ENV)
-                .env_remove(oer_stand_arbiter::jobs::JOB_ENV),
+                .context(oer_process::Context::default()),
         )?;
         match launched.runs.last() {
             Some(run) => self.judge_run(run.as_str()),

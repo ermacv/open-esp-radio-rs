@@ -176,7 +176,7 @@ pub fn dumpcap(
     let path = output.to_str().ok_or("capture path is not UTF-8")?;
     let program = dumpcap_program(interface, filter, snapshot, path);
     let lifetime = duration.saturating_add(Duration::from_secs(120));
-    let mut command = Command::new("timeout");
+    let mut command = oer_process::command("timeout");
     command.args([
         "-s",
         "TERM",

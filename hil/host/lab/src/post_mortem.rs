@@ -48,12 +48,12 @@ pub const JTAG_POST_MORTEM_FILE: &str = "post-mortem/jtag.json";
 /// hold one.
 pub fn jtag_snapshot_through_stand_openocd(
     chip: &str,
-    mac: &str,
+    access: &oer_device_lock::DeviceAccess,
     output: &Path,
     elf: Option<&Path>,
 ) {
     match oer_device_openocd::Openocd::locate() {
-        Ok(openocd) => jtag_snapshot(&openocd, chip, mac, output, elf),
+        Ok(openocd) => jtag_snapshot(&openocd, chip, access, output, elf),
         Err(error) => eprintln!("hil: no JTAG post-mortem of the silent target: {error}"),
     }
 }
@@ -61,11 +61,24 @@ pub fn jtag_snapshot_through_stand_openocd(
 pub fn jtag_snapshot(
     openocd: &oer_device_openocd::Openocd,
     chip: &str,
-    mac: &str,
+    access: &oer_device_lock::DeviceAccess,
     output: &Path,
     elf: Option<&Path>,
 ) {
-    let registers = match openocd.registers(chip, mac, &JTAG_REGISTERS, Duration::from_secs(30)) {
+    let operation = match access.operation() {
+        Ok(operation) => operation,
+        Err(error) => {
+            eprintln!("hil: no JTAG post-mortem: {error}");
+            return;
+        }
+    };
+    let registers = match openocd.registers(
+        chip,
+        access.id(),
+        &JTAG_REGISTERS,
+        Duration::from_secs(30),
+        operation.lifetime(),
+    ) {
         Ok(registers) => registers,
         Err(error) => {
             eprintln!("hil: no JTAG post-mortem of the silent target: {error}");
@@ -107,16 +120,20 @@ pub fn jtag_snapshot(
 /// Attach to the target of board `mac` at `port` without resetting it,
 /// record the exchange under `output/post-mortem`, and classify what it
 /// reports; `None` when it does not answer.
-pub fn inspect(port: &Path, mac: &str, output: &Path, elf: Option<&Path>) -> Option<Finding> {
+pub fn inspect(
+    port: &Path,
+    access: &oer_device_lock::DeviceAccess,
+    output: &Path,
+    elf: Option<&Path>,
+) -> Option<Finding> {
+    let _operation = access.operation().ok()?;
+    let mac = access.id();
     // A reset can make the board's USB Serial/JTAG port re-enumerate under
     // another name; its MAC finds it again.
     let port = if port.exists() {
         port.to_owned()
     } else {
-        oer_device_discovery::wait_for(
-            &oer_device_discovery::DeviceId::parse(mac).ok()?,
-            ANSWER_WITHIN,
-        )?
+        oer_device_discovery::wait_for(mac, ANSWER_WITHIN)?
     };
     let capture =
         SerialCapture::attach(crate::attach_console(&port), &output.join("post-mortem")).ok()?;
@@ -455,8 +472,15 @@ mod tests {
             program: script,
             scripts: directory.path().to_owned(),
         };
+        let access = oer_device_lock::DeviceAccess::try_acquire_in(
+            directory.path(),
+            &oer_device_lock::DeviceId::parse("38:44:BE:AA:25:64").unwrap(),
+            "test",
+        )
+        .unwrap()
+        .unwrap();
         let output = directory.path().join("repetition");
-        jtag_snapshot(&openocd, "chip-b", "38:44:BE:AA:25:64", &output, None);
+        jtag_snapshot(&openocd, "chip-b", &access, &output, None);
         let snapshot: serde_json::Value =
             serde_json::from_slice(&std::fs::read(output.join(JTAG_POST_MORTEM_FILE)).unwrap())
                 .unwrap();
@@ -486,7 +510,7 @@ exit 1
                 scripts: directory.path().to_owned(),
             },
             "chip-b",
-            "38:44:BE:AA:25:64",
+            &access,
             &quiet,
             None,
         );

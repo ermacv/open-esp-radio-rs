@@ -102,9 +102,11 @@ pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> 
         launch = launch.env(name, value);
     }
     // The runner's stand requests are the job's tickets.
+    let mut context = oer_process::Context::current()?.clone();
     if let Some(job) = &job {
-        launch = launch.env(oer_stand_arbiter::jobs::JOB_ENV, job.id());
+        context.set(oer_stand_arbiter::jobs::JOB_KEY, job.id());
     }
+    launch = launch.context(context);
     let launched = oer_hil_experiment::launch::launch_run(&launch)?;
     if produces_runs(args) {
         // Name the runs in the receipt of whatever invoked this command.
@@ -375,7 +377,7 @@ fn command_tree(ctx: &Checkout) -> Result<std::process::ExitCode> {
         forwards: false,
     };
     let runner = oer_hil_observer::prepare::prepare(&ctx.root)?.runner;
-    let output = std::process::Command::new(&runner)
+    let output = oer_process::command(&runner)
         .arg("__command-tree")
         .output()?;
     let mut runner_nodes: Vec<CommandNode> = serde_json::from_slice(&output.stdout)?;

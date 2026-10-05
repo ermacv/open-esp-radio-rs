@@ -2,7 +2,7 @@
 
 use oer_durable::unix_millis;
 use oer_process::CommandExt as _;
-use std::{collections::BTreeMap, fs, net::Ipv4Addr, path::Path, process::Command};
+use std::{collections::BTreeMap, fs, net::Ipv4Addr, path::Path};
 
 use oer_hil_protocol::wifi::NetworkIpv4Configuration;
 
@@ -215,7 +215,7 @@ fn parse_host_ipv4_routes(output: &str) -> Result<Vec<HostIpv4Route>> {
 }
 
 fn capture_host_wireless_link(interface: &str) -> Result<HostWirelessLink> {
-    let info = Command::new("iw")
+    let info = oer_process::command("iw")
         .args(["dev", interface, "info"])
         .supervised_output()?;
     let interface_type = info
@@ -226,7 +226,7 @@ fn capture_host_wireless_link(interface: &str) -> Result<HostWirelessLink> {
             tagged_iw_value(&output, "type").map(str::to_owned)
         })
         .flatten();
-    let link = Command::new("iw")
+    let link = oer_process::command("iw")
         .args(["dev", interface, "link"])
         .supervised_output()?;
     if !link.status.success() {
@@ -408,7 +408,9 @@ fn command_stdout(program: &str, arguments: &[&str]) -> Result<String> {
 }
 
 fn command_output(program: &str, arguments: &[&str]) -> Result<String> {
-    let output = Command::new(program).args(arguments).supervised_output()?;
+    let output = oer_process::command(program)
+        .args(arguments)
+        .supervised_output()?;
     if !output.status.success() {
         return Err(format!("cannot capture host provenance with `{program}`").into());
     }

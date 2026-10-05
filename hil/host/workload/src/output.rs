@@ -56,7 +56,7 @@ mod tests {
             return;
         }
         super::reserve_machine_stdout().unwrap();
-        let status = std::process::Command::new("sh")
+        let status = oer_process::command("sh")
             .args([
                 "-c",
                 "printf 'child stdout diagnostic'; printf 'child stderr diagnostic' >&2",
@@ -70,7 +70,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn child_diagnostics_are_separate_from_machine_json() {
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
+        let output = oer_process::command(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "output::tests::machine_output_child_harness",

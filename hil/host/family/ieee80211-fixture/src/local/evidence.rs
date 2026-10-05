@@ -2,7 +2,7 @@
 
 use crate::capture_process::{self, Capture};
 use oer_process::CommandExt as _;
-use std::{net::Ipv4Addr, process::Command, time::Duration};
+use std::{net::Ipv4Addr, time::Duration};
 
 use crate::Result;
 use oer_hil_lab::config::LocalLinuxConfig;
@@ -222,7 +222,7 @@ fn dumpcap_dropped(summary: &str) -> Result<u64> {
 }
 
 fn snapshot(config: &LocalLinuxConfig, target: Ipv4Addr) -> Result<Snapshot> {
-    let neighbor = Command::new("ip")
+    let neighbor = oer_process::command("ip")
         .args([
             "neigh",
             "show",
@@ -241,7 +241,7 @@ fn snapshot(config: &LocalLinuxConfig, target: Ipv4Addr) -> Result<Snapshot> {
         .windows(2)
         .find_map(|pair| (pair[0] == "lladdr").then_some(pair[1]))
         .ok_or("local AP has no resolved station MAC")?;
-    let output = Command::new("iw")
+    let output = oer_process::command("iw")
         .args(["dev", &config.interface, "station", "get", mac])
         .supervised_output()?;
     if !output.status.success() {
@@ -252,7 +252,7 @@ fn snapshot(config: &LocalLinuxConfig, target: Ipv4Addr) -> Result<Snapshot> {
         .into());
     }
     let station = String::from_utf8(output.stdout)?;
-    let interface = Command::new("iw")
+    let interface = oer_process::command("iw")
         .args(["dev", &config.interface, "info"])
         .supervised_output()?;
     if !interface.status.success() {

@@ -76,7 +76,7 @@ mod tests {
         )
     }
 
-    const SPAWNING: &str = "fn f() {\n    // a comment may name .arg(\"hil\")\n    let _ = std::process::Command::new(\"cargo\").arg(\"hil\");\n}\n";
+    const SPAWNING: &str = "fn f() {\n    // a comment may name .arg(\"hil\")\n    let _ = oer_process::command(\"cargo\").arg(\"hil\");\n}\n";
 
     #[test]
     fn only_entry_crates_spawn_repository_command_lines() {

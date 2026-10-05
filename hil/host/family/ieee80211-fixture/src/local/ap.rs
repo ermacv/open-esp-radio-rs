@@ -13,7 +13,7 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     net::Ipv4Addr,
     path::Path,
-    process::{Command, Stdio},
+    process::Stdio,
     time::Duration,
 };
 use zeroize::Zeroizing;
@@ -102,7 +102,7 @@ impl AccessPoint {
         {
             return Err("hostapd did not apply WPA2-PSK".into());
         }
-        let info = Command::new("iw")
+        let info = oer_process::command("iw")
             .args(["dev", &self.config.interface, "info"])
             .supervised_output()?;
         if !info.status.success() {
@@ -120,7 +120,7 @@ impl AccessPoint {
             )
             .into()
         })?;
-        let addresses = Command::new("ip")
+        let addresses = oer_process::command("ip")
             .args(["-j", "-4", "address", "show", "dev", &self.config.interface])
             .supervised_output()?;
         if !addresses.status.success() {
@@ -174,14 +174,14 @@ pub fn check(
 
 fn probe(config: &LocalLinuxConfig, phy: PhyExpectation) -> Result<()> {
     crate::local::network_helper::doctor()?;
-    let identity = Command::new("sudo")
+    let identity = oer_process::command("sudo")
         .args(["-n", crate::local::network_helper::PATH, "identity"])
         .supervised_output()?;
     if !identity.status.success() {
         return Err("cannot discover local AP radio".into());
     }
     let name = std::str::from_utf8(&identity.stdout)?.trim();
-    let info = Command::new("iw")
+    let info = oer_process::command("iw")
         .args(["phy", name, "info"])
         .supervised_output()?;
     if !info.status.success() {
@@ -284,7 +284,7 @@ fn dhcp_range(address: Ipv4Addr, prefix: u8) -> Result<(Ipv4Addr, Ipv4Addr, Ipv4
 }
 
 fn helper(action: &str, input: Option<&str>) -> Result<Zeroizing<String>> {
-    let mut command = Command::new("sudo");
+    let mut command = oer_process::command("sudo");
     command
         .args(["-n", crate::local::network_helper::PATH, action])
         .stdin(Stdio::piped())

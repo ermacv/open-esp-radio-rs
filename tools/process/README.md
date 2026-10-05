@@ -28,6 +28,24 @@ budget is shared by nested cleanup scopes and limits subprocesses started there.
 Leaving the scope restores cancellation, including during unwinding. Arbitrary
 blocking code inside a closure is not forcibly interrupted.
 
+`command(program)` creates a command with inherited operation context cleared,
+including detached std spawns. Owned spawns apply the same default to a raw
+`std::process::Command`. Applications attach `Context` explicitly to the child
+that joins an operation, using `Context::apply`; they own the keys and choose
+which fields to forward. `Context::current` parses that process's context once
+and rejects malformed input. The environment is the exec transport, rather
+than an application API for globally mutating child authority.
+
+`lock::LockBroker` transfers an exclusive `FileLock` to an independent Linux
+broker. A live owner admits authenticated `BrokerOperation` connections. Owner
+EOF closes admission and drains admitted connections before releasing the lock.
+The child uses only async-signal-safe syscalls after fork and requires Linux
+`close_range`; setup errors fail closed. `IoLifetime::pin` explicitly retains
+an admitted operation through an external command and its descendants, without
+passing a lock descriptor or admission capability. Such children must retain
+the inherited descriptor until their I/O closes. An empty lifetime describes
+an operation without a device, such as discovery of an unidentified hub port.
+
 Four more jobs have their one owner here:
 
 - `git`: every repository tool runs Git as `git -C <directory> …` through

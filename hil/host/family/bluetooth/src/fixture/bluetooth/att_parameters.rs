@@ -10,7 +10,7 @@ use std::{
     io::Read,
     os::fd::AsFd,
     path::Path,
-    process::{Command, Stdio},
+    process::Stdio,
     time::{Duration, Instant},
 };
 
@@ -26,7 +26,7 @@ pub fn preflight(adapter: Adapter) -> Result<()> {
     super::att::preflight(adapter)?;
     super::preflight(adapter)?;
     let output = oer_process::output(
-        Command::new("sudo").args([
+        oer_process::command("sudo").args([
             "-n",
             "-l",
             "/usr/local/libexec/open-radio-bluetooth",
@@ -49,7 +49,7 @@ pub struct Lease {
 impl Lease {
     pub fn acquire(adapter: Adapter, output: &Path) -> Result<Self> {
         preflight(adapter)?;
-        let mut command = Command::new("sudo");
+        let mut command = oer_process::command("sudo");
         command
             .args([
                 "-n",

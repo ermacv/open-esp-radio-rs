@@ -16,12 +16,11 @@ use std::{
     io::Write,
     os::fd::OwnedFd,
     path::{Path, PathBuf},
-    process::Command,
     time::{Duration, Instant},
 };
 
 fn bus(adapter: Adapter, args: &[&str]) -> Result<String> {
-    let mut command = Command::new("busctl");
+    let mut command = oer_process::command("busctl");
     command
         .args([
             "--system",

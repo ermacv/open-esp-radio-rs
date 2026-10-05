@@ -74,14 +74,18 @@ pub(crate) fn execute_workload(
         .err()
         .is_some_and(|error| !oer_process::is_cancelled(&**error));
     let mut post_mortem = failed
-        .then(|| oer_hil_lab::post_mortem::inspect(&lab.dut.serial, mac, output, elf.as_deref()))
+        .then(|| {
+            device.and_then(|device| {
+                oer_hil_lab::post_mortem::inspect(&lab.dut.serial, device, output, elf.as_deref())
+            })
+        })
         .flatten();
     // A target that does not answer is read through its JTAG before any
     // reset erases where it stopped.
-    if failed && post_mortem.is_none() {
+    if let Some(device) = device.filter(|_| failed && post_mortem.is_none()) {
         oer_hil_lab::post_mortem::jtag_snapshot_through_stand_openocd(
             lab.chip(),
-            mac,
+            device,
             output,
             elf.as_deref(),
         );

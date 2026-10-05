@@ -15,7 +15,7 @@ fn capability_contract_rejects_stale_installations() {
 fn repository_helper_declares_the_current_contract() {
     let helper =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../linux-net/open-radio-net");
-    let output = Command::new("sh")
+    let output = oer_process::command("sh")
         .arg(helper)
         .arg("capabilities")
         .supervised_output()

@@ -406,11 +406,13 @@ pub(crate) fn lease(
         claims: lease_claims(&cli.boards, cli.air, cli.stand, &arbiter.stand()?)?,
     };
     let grant = arbiter.acquire(&request)?;
+    let mut command = ctx.command(program);
+    command
+        .args(arguments)
+        .env(oer_stand_owners::OWNER_ENV, &request.owner);
+    grant.context()?.apply(&mut command)?;
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
-        ctx.command(program)
-            .args(arguments)
-            .env(oer_stand_owners::OWNER_ENV, &request.owner)
-            .envs(grant.environment()),
+        &mut command,
         std::time::Duration::from_secs(300),
     )?;
     let (code, succeeded) = supervise(&grant, &mut child, oer_stand_arbiter::HARD_LIMIT)?;
@@ -829,7 +831,7 @@ mod tests {
             .unwrap();
         let started = std::time::Instant::now();
         let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
-            std::process::Command::new("sleep").arg("60"),
+            oer_process::command("sleep").arg("60"),
             std::time::Duration::from_secs(1),
         )
         .unwrap();

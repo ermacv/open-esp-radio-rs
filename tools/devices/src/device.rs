@@ -173,6 +173,7 @@ impl Opened {
         image: &str,
         profile: &Profile,
     ) -> crate::Result<image::Receipt> {
+        let _operation = self.access.operation()?;
         if bundle.chip != profile.id {
             return Err(format!(
                 "the bundle is an {} image; the profile is {}'s",
@@ -212,7 +213,7 @@ impl Opened {
     }
 
     fn reset_port(&self) -> crate::Result<Port> {
-        self.access.ensure_held()?;
+        let _operation = self.access.operation()?;
         let port = self.port()?;
         oer_device_port::retrying(PORT_ACCESS, || reset::reset_into_application(&port))
             .map_err(Into::into)
@@ -221,23 +222,32 @@ impl Opened {
     /// Reset the board into its flashed application; its console session,
     /// which keeps the device lock for as long as the port is open.
     pub fn reset(self) -> crate::Result<Console> {
+        let operation = self.access.operation()?;
         let port = self.reset_port()?;
-        Ok(Console { opened: self, port })
+        Ok(Console {
+            opened: self,
+            port,
+            operation,
+        })
     }
 
     /// The board's console session without a reset; it keeps the device
     /// lock for as long as the port is open.
     pub fn console(self) -> crate::Result<Console> {
-        self.access.ensure_held()?;
+        let _operation = self.access.operation()?;
         let port = self.port()?;
         let port = oer_device_port::retrying(PORT_ACCESS, || reset::open_without_reset(&port))?;
-        Ok(Console { opened: self, port })
+        Ok(Console {
+            opened: self,
+            port,
+            operation: _operation,
+        })
     }
 
     /// Connect to the board's ROM, record its chip among `chips` and reset it
     /// into its application.
     pub fn probe(&mut self, chips: &[Profile]) -> crate::Result<String> {
-        self.access.ensure_held()?;
+        let _operation = self.access.operation()?;
         let port = self.port()?;
         let name = flash::detect(&port)?;
         let profile = chips
@@ -267,6 +277,7 @@ pub struct Console {
     // Declared first: the port closes before the lock is released.
     port: Port,
     opened: Opened,
+    operation: oer_device_lock::DeviceOperation,
 }
 
 impl std::io::Read for Console {
@@ -299,12 +310,17 @@ impl Console {
         until: Option<&str>,
         log: &std::path::Path,
     ) -> crate::Result<bool> {
-        let Self { port, opened } = self;
+        let Self {
+            port,
+            opened,
+            operation,
+        } = self;
         let lines = oer_device_console::lines(port);
         let seen = oer_device_console::capture(&lines, duration, until, log)?;
         // The reader closes the port before the lock is released.
         drop(lines);
         drop(opened);
+        drop(operation);
         Ok(seen)
     }
 }

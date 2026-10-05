@@ -77,21 +77,21 @@ fn restore_one(
     power: &HubPower,
     origin: &str,
 ) -> crate::Result<()> {
-    access.ensure_held()?;
+    let _operation = access.operation()?;
     let mac = access.id();
     if oer_device_discovery::is_attached(mac) {
         return Ok(());
     }
-    let mut step = if power.is_on()? {
-        power.cycle()?;
+    let mut step = if power.is_on(_operation.lifetime())? {
+        power.cycle(_operation.lifetime())?;
         RecoveryStep::PowerCycle
     } else {
-        power.on()?;
+        power.on(_operation.lifetime())?;
         RecoveryStep::PowerOn
     };
     let mut back = wait_attached(mac);
     if !back && step == RecoveryStep::PowerOn {
-        power.cycle()?;
+        power.cycle(_operation.lifetime())?;
         step = RecoveryStep::PowerCycle;
         back = wait_attached(mac);
     }

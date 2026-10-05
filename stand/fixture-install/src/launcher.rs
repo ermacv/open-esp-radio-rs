@@ -56,7 +56,7 @@ impl LaunchTarget {
 
 #[cfg(all(test, target_os = "linux"))]
 pub(crate) mod test_support {
-    use std::{path::Path, process::Command};
+    use std::path::Path;
 
     use super::LaunchTarget;
 
@@ -67,7 +67,7 @@ pub(crate) mod test_support {
     ) -> crate::Result<std::process::ExitStatus> {
         let lease = crate::admission::test_support::admit(root, target.provider())?;
         let helper = lease.artifact(target.role())?;
-        Ok(Command::new(helper)
+        Ok(oer_process::command(helper)
             .args(arguments)
             .env(super::handoff::BOUND, target.marker())
             .env(super::handoff::DIRECTORY, lease.generation())
@@ -96,7 +96,7 @@ pub fn enter(target: LaunchTarget) -> crate::Result<std::fs::File> {
     use std::os::unix::process::CommandExt as _;
 
     if std::env::var(handoff::BOUND).as_deref() != Ok(target.marker()) {
-        let error = std::process::Command::new(target.launcher())
+        let error = oer_process::command(target.launcher())
             .args(std::env::args_os().skip(1))
             .exec();
         return Err(format!("{}: {error}", target.launcher()).into());
@@ -145,12 +145,12 @@ fn adopt_lease(target: LaunchTarget) -> crate::Result<std::fs::File> {
 
 #[cfg(target_os = "linux")]
 fn launch(target: LaunchTarget) -> crate::Result<std::convert::Infallible> {
-    use std::{os::unix::process::CommandExt as _, process::Command};
+    use std::os::unix::process::CommandExt as _;
 
     let lease = super::admit_system(target.provider())?;
     let helper = lease.artifact(target.role())?;
     handoff::pass(lease.file())?;
-    let error = Command::new(&helper)
+    let error = oer_process::command(&helper)
         .args(std::env::args_os().skip(1))
         .env(handoff::BOUND, target.marker())
         .env(handoff::DIRECTORY, lease.generation())

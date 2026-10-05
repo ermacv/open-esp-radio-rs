@@ -185,6 +185,7 @@ dependencies = [
  "oer-esp32s31-hal",
  "oer-espressif-ieee802154-engine",
  "oer-ieee802154",
+ "oer-process",
  "oer-vendor-artifacts",
  "oer-vendor-evidence",
  "oer-vendor-evidence-shard",
@@ -274,6 +275,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "rustix",
+ "serde_json",
  "signal-hook",
 ]
 
@@ -319,6 +321,7 @@ version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
  "oer-durable",
+ "oer-process",
  "oer-vendor-pins",
 ]
 

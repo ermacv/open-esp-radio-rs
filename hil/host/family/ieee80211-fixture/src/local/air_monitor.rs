@@ -9,7 +9,7 @@ use std::{
     fs,
     net::Ipv4Addr,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Stdio,
     time::Duration,
 };
 
@@ -128,7 +128,7 @@ impl LocalAirMonitorCapture {
             owns_monitor: restore_managed,
         };
         if let Some(geometry) = geometry {
-            let mut command = Command::new("sudo");
+            let mut command = oer_process::command("sudo");
             command
                 .args(["-n", crate::local::network_helper::PATH, "observer"])
                 .stdin(Stdio::piped())
@@ -149,7 +149,7 @@ impl LocalAirMonitorCapture {
                 ))
                 .into());
             }
-            let observed = Command::new("iw")
+            let observed = oer_process::command("iw")
                 .args(["dev", MONITOR_INTERFACE, "info"])
                 .supervised_output()?;
             if !observed.status.success()
@@ -256,7 +256,7 @@ impl Drop for LocalAirMonitorCapture {
 pub fn doctor() -> Result<()> {
     crate::local::network_helper::doctor()?;
     for tool in ["dumpcap", "tshark"] {
-        let status = Command::new(tool)
+        let status = oer_process::command(tool)
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -477,7 +477,7 @@ fn block_ack_bitmap_has_internal_hole(bitmap: [u8; 8]) -> bool {
 }
 
 fn helper_action(action: &str) -> Result<()> {
-    let status = Command::new("sudo")
+    let status = oer_process::command("sudo")
         .args(["-n", crate::local::network_helper::PATH, action])
         .supervised_status()?;
     if !status.success() {

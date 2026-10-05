@@ -5,7 +5,7 @@
 //! `None`; a present field that does not parse, a malformed record or an
 //! invalid timestamp fails the whole capture instead of being skipped.
 
-use std::{fmt, path::Path, process::Command, str::FromStr};
+use std::{fmt, path::Path, str::FromStr};
 
 use oer_process::CommandExt as _;
 
@@ -174,7 +174,7 @@ pub fn decode(path: &Path, filter: &str, payload: Payload) -> Result<Vec<AirFram
         Payload::Include => &FIELDS[..],
         Payload::Omit => &FIELDS[..FIELDS.len() - 1],
     };
-    let mut command = Command::new("tshark");
+    let mut command = oer_process::command("tshark");
     command.arg("-r").arg(path).args([
         "-Y",
         filter,
@@ -351,7 +351,7 @@ pub struct BssRates {
 /// capture. Rate elements repeat a field per rate, so this decode aggregates
 /// occurrences instead of taking the first.
 pub fn beacon_rates(path: &Path, bss: MacAddress) -> Result<BssRates> {
-    let output = Command::new("tshark")
+    let output = oer_process::command("tshark")
         .arg("-r")
         .arg(path)
         .args([

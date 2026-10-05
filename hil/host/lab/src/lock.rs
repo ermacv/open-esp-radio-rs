@@ -3,10 +3,7 @@
 //! lock files of the fixture resources it uses, then the fixture software
 //! lease.
 
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use oer_device_lock::{DeviceAccess, DeviceId};
 use oer_process::CommandExt as _;
@@ -19,6 +16,9 @@ pub use oer_stand_claims::spectrum::{BAND_2G4, Emits, Need, Spectrum};
 
 /// Holds exclusive fixture ownership until the hardware command returns.
 pub struct FixtureLock {
+    /// The lease itself is an admitted operation, including peer protocols
+    /// whose serial sessions are owned by the workload's concrete fixtures.
+    _operations: Vec<oer_device_lock::DeviceOperation>,
     /// The device under test, when the lease includes it.
     device: Option<DeviceId>,
     /// The peer board, when the run uses the peer.
@@ -127,6 +127,17 @@ impl FixtureLock {
         owner._software = Some(crate::software::SoftwareLease::acquire(
             crate::software::providers(lab, request.required),
         )?);
+        owner._operations = owner
+            .device
+            .iter()
+            .chain(owner.peer.iter())
+            .map(|id| {
+                grant
+                    .device(id)
+                    .ok_or_else(|| format!("lease has no access to {id}").into())
+                    .and_then(DeviceAccess::operation)
+            })
+            .collect::<Result<Vec<_>>>()?;
         owner.grant = Some(grant);
         owner.request = Some(request);
         Ok(owner)
@@ -144,11 +155,12 @@ impl FixtureLock {
         self.grant.as_ref()?.device(self.peer.as_ref()?)
     }
 
-    /// Environment that lets a child command join this lease.
-    pub fn environment(&self) -> Vec<(&'static str, String)> {
-        self.grant
-            .as_ref()
-            .map_or_else(Vec::new, oer_stand_arbiter::Grant::environment)
+    /// Explicit context for a child command that joins this lease.
+    pub fn context(&self) -> Result<oer_process::Context> {
+        self.grant.as_ref().map_or_else(
+            || Ok(oer_process::Context::default()),
+            oer_stand_arbiter::Grant::context,
+        )
     }
 
     /// Whether the stand asks this over-budget lease to yield to waiting
@@ -222,6 +234,7 @@ impl FixtureLock {
             .map(|key| ResourceLock::try_acquire(key))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
+            _operations: Vec::new(),
             device: None,
             peer: None,
             _resources: resources,
@@ -369,7 +382,7 @@ fn resource_keys(
 
 fn local_radio_key(interface: &Path) -> Result<String> {
     if interface == Path::new("/sys/class/net/wlan0") && !interface.exists() {
-        let output = Command::new("sudo")
+        let output = oer_process::command("sudo")
             .args(["-n", super::NETWORK_HELPER, "identity"])
             .supervised_output()?;
         if !output.status.success() {

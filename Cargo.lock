@@ -3165,6 +3165,7 @@ dependencies = [
  "oer-hil-run-bundle",
  "oer-hil-run-bundle-format",
  "oer-hil-schema",
+ "oer-process",
  "oer-stats",
  "roxmltree",
  "serde",
@@ -4084,6 +4085,7 @@ version = "0.1.0"
 dependencies = [
  "object 0.39.1",
  "oer-elf",
+ "oer-process",
  "tempfile",
 ]
 
@@ -4135,6 +4137,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "rustix",
+ "serde_json",
  "signal-hook",
  "tempfile",
 ]
@@ -4538,6 +4541,9 @@ dependencies = [
 [[package]]
 name = "oer-stand-ssh"
 version = "0.1.0"
+dependencies = [
+ "oer-process",
+]
 
 [[package]]
 name = "oer-stats"
@@ -4596,6 +4602,7 @@ version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
  "oer-durable",
+ "oer-process",
  "oer-vendor-pins",
  "tempfile",
 ]

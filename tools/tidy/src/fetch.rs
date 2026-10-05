@@ -6,10 +6,7 @@
 //! xtask itself may be what needs the new dependencies: this package
 //! depends only on a few crates that rarely change.
 
-use std::{
-    path::Path,
-    process::{Command, Stdio},
-};
+use std::{path::Path, process::Stdio};
 
 use oer_repo::{Model, Repo};
 
@@ -24,7 +21,7 @@ pub fn run(repo: &Repo, cargo: &Path) -> Result<Vec<String>> {
     for manifest in Model::load(repo)?.workspaces() {
         let path = repo.root().join(manifest);
         let fetch = |online: bool| {
-            let mut command = Command::new(cargo);
+            let mut command = oer_process::command(cargo);
             command
                 .current_dir(repo.root())
                 .args(["fetch", "--locked", "--quiet", "--manifest-path"])

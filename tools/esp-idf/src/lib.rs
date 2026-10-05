@@ -24,7 +24,6 @@ use oer_vendor_pins::GitPin;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// Record of one project build, next to its `build/` directory.
 const BUILD_RECORD: &str = "build.json";
@@ -183,7 +182,7 @@ fn prepare_tree(cache: &Path, pins: &[GitPin]) -> Result<(PathBuf, Vec<Override>
 
 fn bash(script: &str, env: &[(&str, &Path)], log: &Path) -> Result<()> {
     let file = std::fs::File::create(log)?;
-    let status = Command::new("bash")
+    let status = oer_process::command("bash")
         .args(["-ec", script])
         .envs(env.iter().map(|(k, v)| (*k, v.as_os_str())))
         .stdout(file.try_clone()?)

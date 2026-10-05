@@ -90,7 +90,7 @@ fn shard(index: &Path) -> Result<()> {
     let program = std::env::current_exe()?;
     let mut matched = Vec::new();
     for scenario in catalog::SCENARIOS {
-        let status = std::process::Command::new(&program)
+        let status = oer_process::command(&program)
             .args(["compare", scenario.name])
             .stdout(std::process::Stdio::null())
             .status()?;

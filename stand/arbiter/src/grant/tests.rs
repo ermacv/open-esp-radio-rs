@@ -107,7 +107,7 @@ fn a_free_stand_is_granted_and_released_into_history() {
         .acquire_within(&request("wifi", "run a"), None)
         .unwrap();
     assert!(!grant.is_nested());
-    let token = grant.environment()[0].1.clone();
+    let token = grant.context().unwrap().get(LEASE_KEY).unwrap().to_owned();
     assert_eq!(state(&arbiter).holders[0].token, token);
     assert_eq!(state(&arbiter).holders[0].ticket.claims, [Claim::stand()]);
     // The holding process and commands carrying its token join the lease.
@@ -144,7 +144,7 @@ fn a_nested_command_may_use_only_what_the_enclosing_lease_holds() {
     let grant = arbiter
         .acquire_within(&on_board("chip-a", request("phy", "series")), None)
         .unwrap();
-    let token = grant.environment()[0].1.clone();
+    let token = grant.context().unwrap().get(LEASE_KEY).unwrap().to_owned();
     let inside = on_board("chip-a", request("phy", "run a"));
     assert!(
         arbiter

@@ -30,13 +30,13 @@ impl HubPower {
     }
 
     /// Whether the port is powered.
-    pub fn is_on(&self) -> crate::Result<bool> {
-        let output = oer_process::output(
-            std::process::Command::new("uhubctl")
-                .args(["--location", &self.port.location, "--ports"])
-                .arg(self.port.port.to_string()),
-            Some(Duration::from_secs(30)),
-        )?;
+    pub fn is_on(&self, lifetime: &oer_process::IoLifetime) -> crate::Result<bool> {
+        let mut command = oer_process::command("uhubctl");
+        command
+            .args(["--location", &self.port.location, "--ports"])
+            .arg(self.port.port.to_string());
+        lifetime.pin(&mut command)?;
+        let output = oer_process::output(&mut command, Some(Duration::from_secs(30)))?;
         powered(
             &parse(&String::from_utf8_lossy(&output.stdout)),
             &self.port.location,
@@ -52,45 +52,58 @@ impl HubPower {
     }
 
     /// Power the port on.
-    pub fn on(&self) -> crate::Result<()> {
-        self.action("on", 2)
+    pub fn on(&self, lifetime: &oer_process::IoLifetime) -> crate::Result<()> {
+        self.action("on", 2, lifetime)
     }
 
     /// Power the port off and on again.
-    pub fn cycle(&self) -> crate::Result<()> {
-        self.action("cycle", 2)
+    pub fn cycle(&self, lifetime: &oer_process::IoLifetime) -> crate::Result<()> {
+        self.action("cycle", 2, lifetime)
     }
 
     /// Power the port off for `off`, then on again: long enough for a person
     /// to see which button's light goes out.
-    pub fn cycle_holding(&self, off: Duration) -> crate::Result<()> {
-        self.action("cycle", off.as_secs().max(1))
+    pub fn cycle_holding(
+        &self,
+        off: Duration,
+        lifetime: &oer_process::IoLifetime,
+    ) -> crate::Result<()> {
+        self.action("cycle", off.as_secs().max(1), lifetime)
     }
 
     /// Power the port off and on again while watching the board with `mac`
     /// on it. The board must leave once the port is off and come back once
     /// it is on; its own USB device leaving shows that the board, not only
     /// the hub, lost power.
-    pub fn cycle_observed(&self, mac: &oer_device_mac::DeviceId) -> crate::Result<PowerCycle> {
-        self.action("off", 2)?;
+    pub fn cycle_observed(
+        &self,
+        mac: &oer_device_mac::DeviceId,
+        lifetime: &oer_process::IoLifetime,
+    ) -> crate::Result<PowerCycle> {
+        self.action("off", 2, lifetime)?;
         let left = wait_until(POWER_LEAVE, &|| !oer_device_discovery::is_attached(mac));
         // From the moment the port is told to power on.
         let started = Instant::now();
-        self.action("on", 2)?;
+        self.action("on", 2, lifetime)?;
         let returned = wait_until(POWER_RETURN, &|| oer_device_discovery::is_attached(mac))
             .then(|| started.elapsed());
         Ok(PowerCycle { left, returned })
     }
 
-    fn action(&self, action: &str, delay_secs: u64) -> crate::Result<()> {
-        let output = oer_process::output(
-            std::process::Command::new("uhubctl")
-                .args(["--location", &self.port.location, "--ports"])
-                .arg(self.port.port.to_string())
-                .args(["--action", action, "--delay"])
-                .arg(delay_secs.to_string()),
-            Some(Duration::from_secs(30 + delay_secs)),
-        )?;
+    fn action(
+        &self,
+        action: &str,
+        delay_secs: u64,
+        lifetime: &oer_process::IoLifetime,
+    ) -> crate::Result<()> {
+        let mut command = oer_process::command("uhubctl");
+        command
+            .args(["--location", &self.port.location, "--ports"])
+            .arg(self.port.port.to_string())
+            .args(["--action", action, "--delay"])
+            .arg(delay_secs.to_string());
+        lifetime.pin(&mut command)?;
+        let output = oer_process::output(&mut command, Some(Duration::from_secs(30 + delay_secs)))?;
         if !output.status.success() {
             return Err(format!(
                 "uhubctl could not {action} {} port {}: {}",
@@ -163,7 +176,7 @@ pub struct PortStatus {
 /// `uhubctl`'s report of every hub it reaches.
 pub fn report() -> crate::Result<Vec<HubStatus>> {
     let output = oer_process::output(
-        &mut std::process::Command::new("uhubctl"),
+        &mut oer_process::command("uhubctl"),
         Some(Duration::from_secs(30)),
     )?;
     if !output.status.success() {

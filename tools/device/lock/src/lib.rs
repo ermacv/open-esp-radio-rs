@@ -8,33 +8,17 @@
 //! [`Holder`] record into the file, so a refused process names who holds
 //! the board. A lock is held for a whole operation: a flash with its reopen
 //! and start, a reset, a whole monitor, or a HIL lease with its power cycles.
-//! The kernel releases it when its holder exits, however it exits.
+//! The kernel releases it when its broker exits, after admitted I/O closes.
 //!
-//! Two kinds of access, with distinct promises:
+//! An independent lifetime broker owns the lock's file description. Owned
+//! guards keep its admission channel alive; delegates carry an explicit
+//! [`oer_process::Context`] capability for that board. [`DeviceAccess::operation`]
+//! atomically admits I/O and retains exclusion until its returned guard drops.
+//! After owner loss the broker rejects new operations and drains admitted ones.
+//! Ports and their reader threads must close before their operation guard.
 //!
-//! - [`DeviceGuard`], the owning guard: this process holds the `flock`, and
-//!   holds it until the last clone of the guard drops. Within one process
-//!   there is exactly one owning guard per board: a registry keyed by the
-//!   lock file hands a second acquisition a clone of the live guard (an
-//!   `Arc`), never a handle without the lock, so no holder can outlive the
-//!   exclusion it relies on.
-//! - [`DelegatedDevice`], a delegate: an ancestor process holds the `flock`
-//!   and handed the board to this process. Across processes the contract is
-//!   **the parent keeps the lease alive until its children exit**: the
-//!   holder records its delegation token, it exports the token in
-//!   [`DELEGATION_ENV`] ([`delegation`]) only to the commands it starts and
-//!   waits for (a stand lease's command, a HIL run's `--then`), and releases
-//!   its guard only after they ended. No descriptor is handed over, since a
-//!   duplicated `flock` descriptor would be unlocked by whichever copy drops
-//!   first. Because an ancestor can still die abnormally, a delegate checks
-//!   [`DelegatedDevice::ensure_held`] before each operation on the board: the
-//!   lock must still be held under its token. This check is not atomic with
-//!   the following I/O: parent death after the check can release exclusion
-//!   during that operation. Delegated access therefore requires the parent
-//!   lifetime; a broker retaining ownership through admitted I/O is needed
-//!   for exclusion independent of it.
-//!
-//! [`DeviceAccess`] is either; board I/O takes it.
+//! Every acquisition in one process shares its owning guard through a registry.
+//! Delegates never receive the flock descriptor and cannot unlock another I/O.
 #![forbid(unsafe_code)]
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -48,7 +32,10 @@ use std::{
 };
 
 pub use oer_device_mac::DeviceId;
-use oer_process::lock::{FileLock, Mode};
+use oer_process::{
+    Context,
+    lock::{BrokerOperation, FileLock, LockBroker, Mode},
+};
 use serde::{Deserialize, Serialize};
 
 /// Who holds a device lock.
@@ -59,52 +46,33 @@ pub struct Holder {
     pub command: String,
     /// When it took the lock, in Unix milliseconds.
     pub started_unix_millis: u64,
-    /// The token its delegates carry in [`DELEGATION_ENV`].
+    /// The capability explicitly attached to delegates of this board.
     pub token: String,
 }
 
-/// Carries the delegation token of the device locks a process's ancestor
-/// holds: such a process uses those boards as [`DelegatedDevice`]s.
-pub const DELEGATION_ENV: &str = "OER_DEVICE_DELEGATION";
-
-/// The token this process inherited in [`DELEGATION_ENV`], if any.
-fn inherited() -> Option<&'static str> {
-    static INHERITED: OnceLock<Option<String>> = OnceLock::new();
-    INHERITED
-        .get_or_init(|| {
-            std::env::var(DELEGATION_ENV)
-                .ok()
-                .filter(|token| !token.is_empty())
-        })
-        .as_deref()
+fn context_key(path: &Path) -> crate::Result<String> {
+    Ok(format!(
+        "device:{}",
+        path.to_str().ok_or("device lock path is not UTF-8")?
+    ))
 }
 
-/// This process's delegation token: the one it inherited in
-/// [`DELEGATION_ENV`], else its own.
-fn token() -> &'static str {
-    static TOKEN: OnceLock<String> = OnceLock::new();
-    TOKEN.get_or_init(|| {
-        inherited().map_or_else(
-            || {
-                oer_durable::sha256_bytes(
-                    format!(
-                        "{}:{}:{:?}",
-                        std::process::id(),
-                        oer_durable::unix_millis(),
-                        std::time::Instant::now()
-                    )
-                    .as_bytes(),
-                )
-            },
-            str::to_owned,
+fn inherited(path: &Path) -> crate::Result<Option<String>> {
+    Ok(Context::current()?
+        .get(&context_key(path)?)
+        .map(str::to_owned))
+}
+
+fn token() -> String {
+    oer_durable::sha256_bytes(
+        format!(
+            "{}:{}:{:?}",
+            std::process::id(),
+            oer_durable::unix_millis(),
+            std::time::Instant::now()
         )
-    })
-}
-
-/// The environment that hands every device lock this process holds to a
-/// command it starts. The caller keeps its guards until that command exits.
-pub fn delegation() -> (&'static str, String) {
-    (DELEGATION_ENV, token().to_owned())
+        .as_bytes(),
+    )
 }
 
 impl std::fmt::Display for Holder {
@@ -134,7 +102,7 @@ fn registry() -> &'static Mutex<HashMap<PathBuf, Weak<Owned>>> {
     REGISTRY.get_or_init(Default::default)
 }
 
-/// The held `flock` behind every clone of a [`DeviceGuard`].
+/// The broker owner behind every clone of a [`DeviceGuard`].
 #[derive(Debug)]
 struct Owned {
     id: DeviceId,
@@ -142,7 +110,8 @@ struct Owned {
     /// Taken in `drop` under the registry's mutex, so a concurrent
     /// acquisition in this process never sees the lock still held without
     /// its guard.
-    lock: Option<FileLock>,
+    broker: Option<LockBroker>,
+    token: String,
 }
 
 impl Drop for Owned {
@@ -156,13 +125,13 @@ impl Drop for Owned {
         {
             registry.remove(&self.path);
         }
-        drop(self.lock.take());
+        drop(self.broker.take());
     }
 }
 
-/// The owning guard of a board: this process holds its `flock` until the
-/// last clone drops. Every acquisition of the board in this process returns
-/// a clone of the same guard.
+/// The owning guard of a board: the broker admits operations until the last
+/// clone drops, then retains exclusion until admitted I/O ends. Every local
+/// acquisition returns a clone of this same guard.
 #[derive(Clone, Debug)]
 pub struct DeviceGuard {
     owned: Arc<Owned>,
@@ -179,43 +148,38 @@ impl DeviceGuard {
     }
 }
 
-/// A board an ancestor process holds and handed to this one through
-/// [`DELEGATION_ENV`]. It holds no lock itself: the exclusion lasts while
-/// the ancestor's guard does, which the ancestor keeps until this process
-/// exits; [`Self::ensure_held`] checks it before an operation.
+/// A board whose owner explicitly delegated a capability to this process.
+/// It admits each operation through the lifetime broker, never by a racy
+/// holder-record check. The operation survives owner loss; fresh work does not.
 #[derive(Clone, Debug)]
 pub struct DelegatedDevice {
     id: DeviceId,
     path: PathBuf,
+    token: String,
 }
 
 impl DelegatedDevice {
     pub fn id(&self) -> &DeviceId {
         &self.id
     }
-
-    /// The lock file.
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
 
-    /// Fail unless the board's lock is still held under this process's
-    /// inherited token: an ancestor that ended released the board, and a
-    /// delegate must not touch it then.
-    pub fn ensure_held(&self) -> crate::Result<()> {
-        match holder_at(&self.path)? {
-            Some(holder) if inherited() == Some(holder.token.as_str()) => Ok(()),
-            Some(holder) => Err(format!(
-                "board {} was delegated to this process, but {holder} holds it now",
-                self.id
-            )
-            .into()),
-            None => Err(format!(
-                "board {} was delegated to this process, but its delegating lease ended",
-                self.id
-            )
-            .into()),
-        }
+/// Exclusion for admitted I/O. Close all ports and child readers before this
+/// guard drops. It keeps the broker's operation connection, and for local I/O
+/// the owning guard too, without lending a flock descriptor to either caller.
+#[derive(Debug)]
+pub struct DeviceOperation {
+    _broker: BrokerOperation,
+    _owner: Option<DeviceGuard>,
+}
+
+impl DeviceOperation {
+    /// Retain this admitted operation through an external hardware process.
+    pub fn lifetime(&self) -> &oer_process::IoLifetime {
+        self._broker.lifetime()
     }
 }
 
@@ -272,28 +236,31 @@ impl DeviceAccess {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        if let Some(token) = inherited(&path)? {
+            let delegate = DelegatedDevice {
+                id: id.clone(),
+                path: path.clone(),
+                token,
+            };
+            let _operation =
+                LockBroker::operation(&path.with_extension("broker"), &delegate.token)?;
+            return Ok(Ok(Self::Delegated(delegate)));
+        }
         match FileLock::try_acquire(&path, Mode::Exclusive)? {
             Some(lock) => {
-                record(&lock, command)?;
+                let token = token();
+                record(&lock, command, &token)?;
+                let broker = LockBroker::start(lock, &token)?;
                 let owned = Arc::new(Owned {
                     id: id.clone(),
                     path: path.clone(),
-                    lock: Some(lock),
+                    broker: Some(broker),
+                    token,
                 });
                 registry.insert(path, Arc::downgrade(&owned));
                 Ok(Ok(Self::Owned(DeviceGuard { owned })))
             }
-            None => match holder_at(&path)? {
-                // Only an inherited token delegates: a lock under this
-                // process's own token without a live guard is not ours.
-                Some(holder) if inherited() == Some(holder.token.as_str()) => {
-                    Ok(Ok(Self::Delegated(DelegatedDevice {
-                        id: id.clone(),
-                        path,
-                    })))
-                }
-                holder => Ok(Err(Busy::Held(holder))),
-            },
+            None => Ok(Err(Busy::Held(holder_at(&path)?))),
         }
     }
 
@@ -343,14 +310,30 @@ impl DeviceAccess {
         matches!(self, Self::Delegated(_))
     }
 
-    /// Fail unless this access still excludes every other process: always
-    /// for an owning guard, while the delegating lease lives for a
-    /// delegate. Every board operation calls it first.
-    pub fn ensure_held(&self) -> crate::Result<()> {
-        match self {
-            Self::Owned(_) => Ok(()),
-            Self::Delegated(delegate) => delegate.ensure_held(),
-        }
+    /// Admit I/O while its owner lives and retain exclusion through that I/O.
+    /// The guard must outlive ports, resets, flashes and console readers.
+    pub fn operation(&self) -> crate::Result<DeviceOperation> {
+        let (token, owner) = match self {
+            Self::Owned(guard) => (&guard.owned.token, Some(guard.clone())),
+            Self::Delegated(delegate) => (&delegate.token, None),
+        };
+        let broker = LockBroker::operation(&self.path().with_extension("broker"), token)
+            .map_err(|error| format!("board {}: {error}", self.id()))?;
+        Ok(DeviceOperation {
+            _broker: broker,
+            _owner: owner,
+        })
+    }
+
+    /// Add only this board's capability to the intended child's context.
+    pub fn delegate(&self, context: &mut Context) -> crate::Result<()> {
+        let _operation = self.operation()?;
+        let token = match self {
+            Self::Owned(guard) => &guard.owned.token,
+            Self::Delegated(delegate) => &delegate.token,
+        };
+        context.set(context_key(self.path())?, token);
+        Ok(())
     }
 
     /// Fail unless this access is the board `id`'s.
@@ -364,12 +347,12 @@ impl DeviceAccess {
 }
 
 /// Write this process's [`Holder`] record for `command` into `lock`'s file.
-fn record(lock: &FileLock, command: &str) -> crate::Result<()> {
+fn record(lock: &FileLock, command: &str, token: &str) -> crate::Result<()> {
     let holder = Holder {
         pid: std::process::id(),
         command: command.to_owned(),
         started_unix_millis: oer_durable::unix_millis(),
-        token: token().to_owned(),
+        token: token.to_owned(),
     };
     let mut file = lock.file();
     file.set_len(0)?;
@@ -422,7 +405,12 @@ pub fn foreign_holder(id: &DeviceId) -> crate::Result<Option<Option<Holder>>> {
         return Ok(None);
     }
     Ok(match holder(id)? {
-        Some(holder) if inherited() == Some(holder.token.as_str()) => None,
+        Some(holder)
+            if inherited(&path)?.as_deref() == Some(holder.token.as_str())
+                && LockBroker::operation(&path.with_extension("broker"), &holder.token).is_ok() =>
+        {
+            None
+        }
         holder => Some(holder),
     })
 }
@@ -436,10 +424,6 @@ pub fn is_held(id: &DeviceId) -> crate::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Set in the child process of [`a_delegate_works_while_its_lease_lives`]:
-    /// the lock directory it uses.
-    const CHILD_DIRECTORY_ENV: &str = "OER_DEVICE_LOCK_TEST_DIRECTORY";
 
     fn id(text: &str) -> DeviceId {
         DeviceId::parse(text).unwrap()
@@ -503,7 +487,7 @@ mod tests {
             .unwrap();
         let busy = DeviceAccess::try_acquire_in(directory.path(), &board, "mine").unwrap();
         assert!(matches!(busy, Err(Busy::Held(None))));
-        record(&foreign, "theirs").unwrap();
+        record(&foreign, "theirs", &token()).unwrap();
         // The holder's token is this process's own, not an inherited one:
         // never a delegation.
         match DeviceAccess::try_acquire_in(directory.path(), &board, "mine").unwrap() {
@@ -523,60 +507,187 @@ mod tests {
     }
 
     #[test]
-    fn a_delegate_works_while_its_lease_lives() {
-        let Ok(directory) = std::env::var(CHILD_DIRECTORY_ENV) else {
-            // The parent: run this test again in a child that inherited a
-            // delegation token.
-            let directory = tempfile::tempdir().unwrap();
-            let status = std::process::Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    "tests::a_delegate_works_while_its_lease_lives",
-                    "--test-threads=1",
-                ])
-                .env(DELEGATION_ENV, "lease-token")
-                .env(CHILD_DIRECTORY_ENV, directory.path())
-                .status()
-                .unwrap();
-            assert!(status.success());
-            return;
+    fn owner_loss_drains_real_io_before_a_third_process_can_acquire() {
+        use std::{
+            process::{Command, Stdio},
+            time::Instant,
         };
-        let directory = Path::new(&directory);
-        assert_eq!(inherited(), Some("lease-token"));
-        let board = id("00:11:22:33:44:66");
-        // The ancestor's lock, recorded under the token it handed down.
-        let ancestor = FileLock::try_acquire(&path_in(directory, &board), Mode::Exclusive)
-            .unwrap()
-            .unwrap();
-        record(&ancestor, "ancestor lease").unwrap();
-        let access = DeviceAccess::try_acquire_in(directory, &board, "child")
-            .unwrap()
-            .unwrap();
-        assert!(access.is_delegated());
-        access.ensure_held().unwrap();
-        access.ensure_covers(&board).unwrap();
-        assert!(access.ensure_covers(&id("00:11:22:33:44:77")).is_err());
-        // The lease ended: the delegate must not touch the board.
-        drop(ancestor);
-        let error = access.ensure_held().unwrap_err().to_string();
-        assert!(error.contains("lease ended"), "{error}");
-        // Another holder took it.
-        let other = FileLock::try_acquire(&path_in(directory, &board), Mode::Exclusive)
-            .unwrap()
-            .unwrap();
-        other.file().set_len(0).unwrap();
-        let mut file = other.file();
-        file.write_all(
-            &serde_json::to_vec(&Holder {
-                pid: 1,
-                command: "someone else".into(),
-                started_unix_millis: 0,
-                token: "another-token".into(),
-            })
-            .unwrap(),
-        )
-        .unwrap();
-        let error = access.ensure_held().unwrap_err().to_string();
-        assert!(error.contains("someone else"), "{error}");
+        const ROLE: &str = "OER_BROKER_TEST_ROLE";
+        const DIRECTORY: &str = "OER_BROKER_TEST_DIRECTORY";
+        const TEST: &str = "tests::owner_loss_drains_real_io_before_a_third_process_can_acquire";
+        fn wait_for(path: &Path) {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !path.exists() {
+                assert!(
+                    Instant::now() < deadline,
+                    "fixture did not produce {}",
+                    path.display()
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        fn child(role: &str, directory: &Path) -> Command {
+            let mut command = oer_process::command(std::env::current_exe().unwrap());
+            command
+                .args(["--exact", TEST, "--test-threads=1"])
+                .env(ROLE, role)
+                .env(DIRECTORY, directory)
+                .stdout(Stdio::null())
+                .stderr(Stdio::inherit());
+            command
+        }
+        if let Ok(role) = std::env::var(ROLE) {
+            let directory = PathBuf::from(std::env::var_os(DIRECTORY).unwrap());
+            let board = id("00:11:22:33:44:66");
+            match role.as_str() {
+                "owner" => {
+                    let access = DeviceAccess::try_acquire_in(&directory, &board, "owner")
+                        .unwrap()
+                        .unwrap();
+                    let mut context = Context::default();
+                    access.delegate(&mut context).unwrap();
+                    let mut delegate = child("delegate", &directory);
+                    if std::env::var_os("OER_BROKER_TEST_PIN_IO").is_some() {
+                        delegate.env("OER_BROKER_TEST_PIN_IO", "1");
+                    }
+                    context.apply(&mut delegate).unwrap();
+                    let mut delegate = delegate.spawn().unwrap();
+                    std::fs::write(directory.join("delegate-pid"), delegate.id().to_string())
+                        .unwrap();
+                    // Reap while the owner lives, without joining: the fixture
+                    // deliberately exits before its admitted delegate finishes.
+                    std::thread::spawn(move || {
+                        let _ = delegate.wait();
+                    });
+                    wait_for(&directory.join("drop-owner"));
+                    drop(access);
+                }
+                "delegate" => {
+                    let access = DeviceAccess::try_acquire_in(&directory, &board, "delegate")
+                        .unwrap()
+                        .unwrap();
+                    assert!(access.is_delegated());
+                    let operation = access.operation().unwrap();
+                    if std::env::var_os("OER_BROKER_TEST_PIN_IO").is_some() {
+                        let mut writer = child("writer", &directory);
+                        operation.lifetime().pin(&mut writer).unwrap();
+                        let mut writer = writer.spawn().unwrap();
+                        assert!(writer.wait().unwrap().success());
+                        return;
+                    }
+                    // A real writer stays open across owner death, rather than
+                    // a test of the source spelling or of an instantaneous check.
+                    let mut io = std::fs::File::create(directory.join("io")).unwrap();
+                    std::fs::write(directory.join("admitted"), "ready").unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(15);
+                    while !directory.join("finish-io").exists() {
+                        assert!(Instant::now() < deadline, "I/O fixture was not released");
+                        io.write_all(b"still writing\n").unwrap();
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    assert!(access.operation().is_err(), "owner loss admitted fresh I/O");
+                    assert!(
+                        DeviceAccess::try_acquire_in(&directory, &board, "stale delegate").is_err()
+                    );
+                    drop(io);
+                    drop(operation);
+                    std::fs::write(directory.join("finished"), "closed").unwrap();
+                }
+                "writer" => {
+                    // This exec receives only a lifetime descriptor, never a
+                    // capability to start new work. It outlives both callers.
+                    assert_eq!(Context::current().unwrap(), &Context::default());
+                    let mut io = std::fs::File::create(directory.join("io")).unwrap();
+                    std::fs::write(directory.join("admitted"), "ready").unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(15);
+                    while !directory.join("finish-io").exists() {
+                        assert!(Instant::now() < deadline, "external I/O was not released");
+                        io.write_all(b"external I/O still running\n").unwrap();
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    drop(io);
+                    std::fs::write(directory.join("finished"), "closed").unwrap();
+                }
+                "contender-busy" => {
+                    assert!(matches!(
+                        DeviceAccess::try_acquire_in(&directory, &board, "third").unwrap(),
+                        Err(Busy::Held(_))
+                    ));
+                    assert_eq!(Context::current().unwrap(), &Context::default());
+                }
+                "contender-free" => {
+                    let access = DeviceAccess::try_acquire_in(&directory, &board, "third")
+                        .unwrap()
+                        .unwrap();
+                    assert!(!access.is_delegated());
+                    let _operation = access.operation().unwrap();
+                }
+                _ => panic!("unknown broker fixture role"),
+            }
+            return;
+        }
+        for (kill_owner, kill_delegate) in [(false, false), (true, false), (true, true)] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut owner = child("owner", directory.path());
+            if kill_delegate {
+                owner.env("OER_BROKER_TEST_PIN_IO", "1");
+            }
+            let mut owner = owner.spawn().unwrap();
+            wait_for(&directory.path().join("admitted"));
+            if kill_owner {
+                owner.kill().unwrap();
+            } else {
+                std::fs::write(directory.path().join("drop-owner"), "drop").unwrap();
+            }
+            let status = owner.wait().unwrap();
+            assert_eq!(status.success(), !kill_owner);
+            if kill_delegate {
+                let pid = std::fs::read_to_string(directory.path().join("delegate-pid")).unwrap();
+                oer_process::capture(oer_process::command("kill").args(["-KILL", pid.trim()]))
+                    .unwrap();
+            }
+            let endpoint = directory.path().join("001122334466.broker");
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while endpoint.exists() {
+                assert!(Instant::now() < deadline, "broker did not close admission");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(
+                child("contender-busy", directory.path())
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let size = std::fs::metadata(directory.path().join("io"))
+                .unwrap()
+                .len();
+            std::thread::sleep(Duration::from_millis(30));
+            assert!(
+                std::fs::metadata(directory.path().join("io"))
+                    .unwrap()
+                    .len()
+                    > size
+            );
+            std::fs::write(directory.path().join("finish-io"), "finish").unwrap();
+            wait_for(&directory.path().join("finished"));
+            let lock = directory.path().join("001122334466.lock");
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while FileLock::try_acquire(&lock, Mode::Exclusive)
+                .unwrap()
+                .is_none()
+            {
+                assert!(
+                    Instant::now() < deadline,
+                    "broker did not release finished I/O"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(
+                child("contender-free", directory.path())
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
     }
 }

@@ -12,7 +12,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 
 /// `ssh` running `script` on `target`.
 pub fn command(target: &str, script: &str) -> Command {
-    let mut command = Command::new("ssh");
+    let mut command = oer_process::command("ssh");
     command
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(target)

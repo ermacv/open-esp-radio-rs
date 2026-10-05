@@ -9,6 +9,7 @@ publish = false
 description = "Analysis of HIL run bundles: measurement samples, statistics and comparison, run queries, performance baselines and the sealed views"
 
 [dependencies]
+oer-process = { path = "../../../tools/process" }
 oer-hil-run-bundle-format = { path = "../run-bundle/format" }
 oer-elf = { path = "../../../tools/elf" }
 oer-hil-protocol = { path = "../../protocol", features = ["registry"] }

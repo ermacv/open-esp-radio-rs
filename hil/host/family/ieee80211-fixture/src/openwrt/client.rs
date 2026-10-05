@@ -4,7 +4,7 @@ use oer_process::CommandExt as _;
 use std::{
     io::Write as _,
     net::Ipv4Addr,
-    process::{Command, Stdio},
+    process::Stdio,
     thread,
     time::{Duration, Instant},
 };
@@ -110,7 +110,7 @@ pub struct OpenWrtClientLinkObservation {
 }
 
 pub fn doctor(_access_point: &AccessPointConfig, fixture: &OpenWrtConfig) -> Result<()> {
-    let status = Command::new("sh")
+    let status = oer_process::command("sh")
         .args(["-c", "command -v wpa_passphrase >/dev/null"])
         .supervised_status()?;
     if !status.success() {
@@ -651,7 +651,7 @@ fn tagged_ipv4(output: &str, key: &str) -> Result<Ipv4Addr> {
 }
 
 fn derive_psk(ssid: &str, passphrase: &str) -> Result<Zeroizing<String>> {
-    let mut child = Command::new("wpa_passphrase")
+    let mut child = oer_process::command("wpa_passphrase")
         .arg(ssid)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

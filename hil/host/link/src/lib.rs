@@ -259,6 +259,8 @@ fn decode_counter_delta(totals: DecodeCounters, baseline: DecodeCounters) -> Dec
 
 /// Concurrent UART transcript retained across traffic setup and measurement.
 pub struct SerialCapture {
+    // Released after Drop joins the serial worker and closes its descriptor.
+    io_lifetime: Option<oer_process::IoLifetime>,
     stop: Arc<AtomicBool>,
     bytes: Arc<Mutex<Vec<u8>>>,
     protocol: Arc<ProtocolEvents>,

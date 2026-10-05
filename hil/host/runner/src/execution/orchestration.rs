@@ -651,7 +651,7 @@ impl SuiteEffects for LiveSuite<'_> {
 
 impl LiveSuite<'_> {
     /// Run `command` with `sh -c` while the lease is held, with the lease's
-    /// environment so nested `cargo hil` commands join it, and the run's
+    /// context so nested `cargo hil` commands join it, and the run's
     /// directory in `OER_HIL_RUN_DIRECTORY`. Its exit status is reported and
     /// recorded as an event; it never changes the run's outcome.
     fn run_then(&self, command: Option<&str>, session: &mut RunSession) -> Result<()> {
@@ -661,8 +661,9 @@ impl LiveSuite<'_> {
         let lease = self.lease.as_ref().ok_or("the run holds no stand lease")?;
         session.record_event(RunEventKind::ThenStarted, None, None, None)?;
         eprintln!("hil: running `{command}` within the run's lease");
+        let mut child = then_command(self.root, command, &lease.context()?, session.directory())?;
         let status =
-            then_command(self.root, command, lease.environment(), session.directory()).status();
+            oer_process::owned::Child::spawn(&mut child).and_then(|mut child| child.wait());
         let kind = match &status {
             Ok(status) if status.success() => RunEventKind::ThenSucceeded,
             _ => RunEventKind::ThenFailed,
@@ -844,16 +845,16 @@ const PEER_WEDGE: &str = "a wedged USB console recovers as the IEEE 802.15.4 \
 fn then_command(
     root: &Path,
     command: &str,
-    environment: Vec<(&'static str, String)>,
+    context: &oer_process::Context,
     directory: &Path,
-) -> std::process::Command {
-    let mut child = std::process::Command::new("sh");
+) -> Result<std::process::Command> {
+    let mut child = oer_process::command("sh");
     child
         .args(["-c", command])
         .current_dir(root)
-        .envs(environment)
         .env("OER_HIL_RUN_DIRECTORY", directory);
-    child
+    context.apply(&mut child)?;
+    Ok(child)
 }
 
 fn execute_selected(

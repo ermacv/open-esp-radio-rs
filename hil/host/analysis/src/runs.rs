@@ -66,7 +66,7 @@ impl Filter {
 /// `millis` as a local date and time.
 pub(crate) fn date(millis: u64) -> String {
     let seconds = millis / 1000;
-    let output = std::process::Command::new("date")
+    let output = oer_process::command("date")
         .args(["-d", &format!("@{seconds}"), "+%Y-%m-%d %H:%M"])
         .output();
     output

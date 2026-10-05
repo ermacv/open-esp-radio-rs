@@ -248,7 +248,6 @@ impl Store {
         let _commit = COMMIT
             .lock()
             .map_err(|_| "the receipt commit lock is poisoned")?;
-        access.ensure_held()?;
         // A receipt this store cannot read (another schema, a damaged file)
         // was written by no write of this process, which writes only this
         // schema: the write that now invalidates it starts the generations.
@@ -286,7 +285,6 @@ impl Store {
         let _commit = COMMIT
             .lock()
             .map_err(|_| "the receipt commit lock is poisoned")?;
-        access.ensure_held()?;
         match self.file(access.id())? {
             Some(file) if file.generation == generation && current(&file.state) => {
                 self.replace(access, generation, state)
@@ -337,6 +335,7 @@ pub struct Written<'a> {
     receipt: Receipt,
     generation: u64,
     pending: Start,
+    _operation: oer_device_lock::DeviceOperation,
 }
 
 impl Written<'_> {
@@ -384,7 +383,7 @@ pub fn write<'a>(
     transport: Transport<'_>,
     by: &str,
 ) -> Result<Written<'a>> {
-    access.ensure_held()?;
+    let _operation = access.operation()?;
     // The bytes the receipt names are the bytes written: one read.
     let snapshot = bundle.snapshot()?;
     let receipt = Receipt::of(&snapshot, image, by);
@@ -404,7 +403,12 @@ pub fn write<'a>(
             // this write uses.
             let staging = tempfile::tempdir()?;
             let files = snapshot.materialize(staging.path())?;
-            oer_device_openocd::Openocd::locate()?.program(chip, access.id(), &files)?;
+            oer_device_openocd::Openocd::locate()?.program(
+                chip,
+                access.id(),
+                &files,
+                _operation.lifetime(),
+            )?;
             Start::Reset
         }
     };
@@ -422,6 +426,7 @@ pub fn write<'a>(
         receipt,
         generation,
         pending,
+        _operation,
     })
 }
 
@@ -433,7 +438,7 @@ pub fn carries(
     access: &DeviceAccess,
     bundle: &ImageBundle,
 ) -> Result<Option<Receipt>> {
-    access.ensure_held()?;
+    let _operation = access.operation()?;
     let wanted = Receipt::of(&bundle.snapshot()?, "", "");
     // A receipt of another schema (an older tool's) claims nothing this
     // store can compare: the board carries no known image, and the next

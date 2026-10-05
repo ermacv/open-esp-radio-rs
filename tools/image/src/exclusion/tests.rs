@@ -34,7 +34,7 @@ fn build_lock_copies_the_committed_catalog_and_owns_its_directory() {
     let _other = BuildLock::prepare(&workspace, &directory.path().join("other")).unwrap();
     // dup shares the open file description as inheritance across fork does;
     // releasing the owner must not depend on that descriptor closing.
-    let inherited = lock._lease.0.try_clone().unwrap();
+    let inherited = lock._lease.file().try_clone().unwrap();
     drop(lock);
     BuildLock::prepare(&workspace, &output).unwrap();
     drop(inherited);
@@ -81,14 +81,23 @@ fn validation_rejects_any_change_to_the_committed_pins() {
 }
 
 #[test]
-fn a_lease_excludes_every_other_owner_until_dropped() {
+fn an_output_directory_is_built_by_one_build_at_a_time() {
     let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("nested/build.lock");
-    let first = Lease::try_acquire(&path).unwrap().unwrap();
-    assert!(Lease::try_acquire(&path).unwrap().is_none());
+    let cache = directory.path().join("nested");
+    let first = output_directory(&cache).unwrap();
+    let path = cache.join("build.lock");
+    assert!(
+        FileLock::try_acquire(&path, Mode::Shared)
+            .unwrap()
+            .is_none()
+    );
     drop(first);
-    let _second = Lease::wait(&path, "waiting").unwrap();
-    assert!(Lease::try_acquire(&path).unwrap().is_none());
+    let _second = output_directory(&cache).unwrap();
+    assert!(
+        FileLock::try_acquire(&path, Mode::Exclusive)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -101,7 +110,11 @@ fn a_build_slot_is_one_of_the_host_s_slots() {
     // Every slot is taken: none is free without waiting.
     for index in 0..slots() {
         let path = directory.path().join(format!("{index}.lock"));
-        assert!(Lease::try_acquire(&path).unwrap().is_none());
+        assert!(
+            FileLock::try_acquire(&path, Mode::Exclusive)
+                .unwrap()
+                .is_none()
+        );
     }
     held.pop();
     let _freed = slot(directory.path()).unwrap();

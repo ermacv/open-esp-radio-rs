@@ -5,8 +5,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use fs2::FileExt as _;
-
 use crate::{
     history::{self, LeaseOutcome, LeaseRecord},
     state::{STATE_SCHEMA, State},
@@ -112,12 +110,10 @@ impl Arbiter {
 
     /// Run `action` under the exclusive lock of every arbiter file.
     pub(crate) fn locked<T>(&self, action: impl FnOnce() -> crate::Result<T>) -> crate::Result<T> {
-        let lock = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(self.directory.join("arbiter.lock"))?;
-        lock.lock_exclusive()?;
+        let lock = oer_process::lock::FileLock::acquire(
+            &self.directory.join("arbiter.lock"),
+            oer_process::lock::Mode::Exclusive,
+        )?;
         let result = action();
         drop(lock);
         result

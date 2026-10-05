@@ -202,15 +202,7 @@ fn absent_vendor_index_allows_status_and_hil_planning_without_qualifying_hardwar
                 "fixture",
             ],
         ] {
-            assert!(
-                std::process::Command::new("git")
-                    .arg("-C")
-                    .arg(&root.path)
-                    .args(args)
-                    .status()
-                    .unwrap()
-                    .success()
-            );
+            oer_process::git::output(&root.path, args).unwrap();
         }
         for command in ["status", "plan"] {
             let report = format!("output/{command}.json");

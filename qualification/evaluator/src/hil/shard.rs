@@ -58,7 +58,9 @@ struct Repetition {
 fn digest(root: &Path, path: &Path) -> Result<String> {
     let full = root.join(path);
     if full.is_file() {
-        sha256_file(&full)
+        Ok(crate::digests()
+            .sha256_file(&full)
+            .map_err(|error| error.to_string())?)
     } else {
         digest_directory(root, path).map_err(|e| e.to_string().into())
     }

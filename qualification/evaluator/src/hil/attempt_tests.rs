@@ -42,7 +42,8 @@ impl Fixture {
         manifest["firmware"][0]["application_path"] = json!("firmware/boot-smoke/application.bin");
         manifest["firmware"][0]["application_size_bytes"] =
             json!(fs::metadata(&application).unwrap().len());
-        manifest["firmware"][0]["application_sha256"] = json!(sha256_file(&application).unwrap());
+        manifest["firmware"][0]["application_sha256"] =
+            json!(crate::digests().sha256_file(&application).unwrap());
         manifest["firmware"][0]["build_provenance_path"] =
             json!("firmware/boot-smoke/build-provenance.json");
         write(&run.join("manifest.json"), &manifest);
@@ -187,7 +188,7 @@ fn later_image_preparation_does_not_rebind_a_preflight_blocked_attempt() {
     for file in seal["files"].as_array_mut().unwrap() {
         if file["path"] == "scenarios/boot-smoke/result.json" {
             file["size_bytes"] = json!(fs::metadata(&result).unwrap().len());
-            file["sha256"] = json!(sha256_file(&result).unwrap());
+            file["sha256"] = json!(crate::digests().sha256_file(&result).unwrap());
         }
     }
     write(&path, &seal);
@@ -271,7 +272,7 @@ fn sealed_failure_is_indexed_even_when_campaign_never_finishes() {
     for file in seal["files"].as_array_mut().unwrap() {
         if file["path"] == "scenarios/boot-smoke/result.json" {
             file["size_bytes"] = json!(fs::metadata(&result).unwrap().len());
-            file["sha256"] = json!(sha256_file(&result).unwrap());
+            file["sha256"] = json!(crate::digests().sha256_file(&result).unwrap());
         }
     }
     write(&path, &seal);

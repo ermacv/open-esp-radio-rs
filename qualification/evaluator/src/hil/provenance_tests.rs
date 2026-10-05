@@ -78,7 +78,11 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
         format!("version = 4\n{lock}\n[[package]]\nname = 'oer-hil-runner'\nversion = '0.1.0'\n");
     fs::write(root.join("Cargo.lock"), lock).unwrap();
     let mut pinned = canonical.clone();
-    pinned["files"][0]["sha256"] = json!(sha256_file(&root.join("Cargo.lock")).unwrap());
+    pinned["files"][0]["sha256"] = json!(
+        crate::digests()
+            .sha256_file(&root.join("Cargo.lock"))
+            .unwrap()
+    );
     for name in ["esp-hal", "embassy", "xarxa"] {
         let mut source = pinned["sources"][0].clone();
         source["name"] = json!(name);

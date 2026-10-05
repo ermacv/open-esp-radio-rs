@@ -11,17 +11,13 @@ mod linux {
     use crate::{ArtifactRole, InstallResult, InstallState, Provider, RECEIPT_SCHEMA, Result};
 
     pub struct OperationalLease {
-        _file: File,
+        /// The installation lease's shared lock, released when the lease
+        /// drops; the launcher hands its descriptor to the helper it executes.
+        lock: oer_process::lock::FileLock,
         expected_uid: u32,
         expected_gid: u32,
         generation: PathBuf,
         receipt: InstallResult,
-    }
-
-    impl Drop for OperationalLease {
-        fn drop(&mut self) {
-            let _ = fs2::FileExt::unlock(&self._file);
-        }
     }
 
     impl OperationalLease {
@@ -75,7 +71,7 @@ mod linux {
         }
 
         pub(crate) fn file(&self) -> &File {
-            &self._file
+            self.lock.file()
         }
 
         pub fn generation(&self) -> &Path {
@@ -120,11 +116,12 @@ mod linux {
             )
             .into());
         }
-        fs2::FileExt::try_lock_shared(&file).map_err(
-            |error| -> Box<dyn std::error::Error + Send + Sync> {
-                format!("fixture provider {provider} is being updated: {error}").into()
-            },
-        )?;
+        let lock = oer_process::lock::FileLock::try_lock(
+            file,
+            &lease_path,
+            oer_process::lock::Mode::Shared,
+        )?
+        .ok_or_else(|| format!("fixture provider {provider} is being updated"))?;
 
         let journal = state_root.join("transaction.json");
         match fs::symlink_metadata(&journal) {
@@ -176,7 +173,7 @@ mod linux {
         }
 
         Ok(OperationalLease {
-            _file: file,
+            lock,
             expected_uid,
             expected_gid,
             generation,

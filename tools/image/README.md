@@ -170,10 +170,12 @@ the dependency closure of `oer-image`, `oer-image-linker` and the caller's
 builder packages, as `oer-repo` resolves it, so an analyzer or linker crate
 is an input from the day it is linked.
 
-Build exclusion has one mechanism, `exclusion::Lease` (an `flock`ed file):
-one build per compile cache (`<cache>/build.lock`, waiting), one build per
-private lock copy (`BuildLock`, refusing), and the host's image build slots
-(`exclusion::slot` under `host_build_root()/tokens`: half the cores, at 2 GB
-each).
+Build exclusion has one mechanism, the foundation's file lock
+(`oer_process::lock::FileLock`, shared or exclusive): one build per compile
+cache (`exclusion::output_directory`, `<cache>/build.lock`, waiting), one
+build per private lock copy (`BuildLock`, refusing), the host's image build
+slots (`exclusion::slot` under `host_build_root()/tokens`: half the cores, at
+2 GB each), and the ESP-IDF cache (exclusive while its tree and tools change,
+then converted to shared for the builds).
 
 Run host regressions with `cargo test -p oer-image`.

@@ -1,4 +1,5 @@
-//! The arbiter's final exclusion layer: `flock` lock files, one per board
+//! The arbiter's final exclusion layer: `flock` lock files
+//! (`oer_process::lock::FileLock`), one per board
 //! and per fixture resource, in the stand model's lock directory
 //! (`open-esp-radio/leases` in the XDG cache directory).
 //!
@@ -10,12 +11,11 @@
 //! (`/dev/ttyACM*`, `/dev/serial/by-id/…`) shares one owner.
 
 use std::{
-    fs::{self, File, OpenOptions},
     io::{Read as _, Seek as _, SeekFrom, Write as _},
     path::{Path, PathBuf},
 };
 
-use fs2::FileExt;
+use oer_process::lock::{FileLock, Mode};
 
 /// Another process holds the lock.
 #[derive(Debug)]
@@ -29,26 +29,14 @@ impl std::fmt::Display for Busy {
 
 impl std::error::Error for Busy {}
 
-/// An exclusive lock file, released when dropped.
-struct LockFile {
-    file: File,
-}
+/// An exclusive lock file naming its holder, released when dropped.
+struct LockFile(FileLock);
 
 impl LockFile {
     fn try_acquire(path: &Path, what: &str) -> crate::Result<Self> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let mut file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(path)?;
-        if file.try_lock_exclusive().is_err() {
+        let Some(lock) = FileLock::try_acquire(path, Mode::Exclusive)? else {
             let mut owner = String::new();
-            file.seek(SeekFrom::Start(0))?;
-            file.read_to_string(&mut owner)?;
+            std::fs::File::open(path)?.read_to_string(&mut owner)?;
             let owner = owner.trim();
             return Err(Busy(format!(
                 "{what} is held by {} ({})",
@@ -60,30 +48,21 @@ impl LockFile {
                 path.display()
             ))
             .into());
-        }
+        };
         // The guard exists before the fallible owner record, so every path
         // after the acquisition releases it.
-        let mut lock = Self { file };
-        lock.file.set_len(0)?;
-        lock.file.seek(SeekFrom::Start(0))?;
+        let lock = Self(lock);
+        let mut file = lock.0.file();
+        file.set_len(0)?;
+        file.seek(SeekFrom::Start(0))?;
         writeln!(
-            lock.file,
+            file,
             "pid={} command={}",
             std::process::id(),
             std::env::args().collect::<Vec<_>>().join(" ")
         )?;
-        lock.file.flush()?;
+        file.flush()?;
         Ok(lock)
-    }
-}
-
-impl Drop for LockFile {
-    fn drop(&mut self) {
-        // A concurrent fork inherits this open file description until exec,
-        // even with close-on-exec set. Closing only our descriptor can leave
-        // flock held by that child after the owner returned: release at the
-        // logical owner boundary; the file still closes afterwards.
-        let _ = FileExt::unlock(&self.file);
     }
 }
 

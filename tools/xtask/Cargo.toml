@@ -26,7 +26,6 @@ oer-vendor-artifacts = { path = "../vendor-artifacts" }
 oer-vendor-provenance = { path = "../vendor-provenance" }
 oer-vendor-evidence = { path = "../../verification/evidence", features = ["producers"] }
 oer-register-tool = { path = "../registers" }
-fs2 = "0.4"
 oer-image = { path = "../image" }
 cargo_metadata = "=0.23.1"
 clap = { version = "=4.5.48", features = ["derive"] }

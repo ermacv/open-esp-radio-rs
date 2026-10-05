@@ -10,7 +10,6 @@ description = "The HIL stand arbiter: claims, the queue and its job tickets, bal
 
 [dependencies]
 oer-durable = { path = "../../../tools/durable" }
-fs2 = "0.4"
 oer-hil-board = { path = "../board" }
 oer-hil-stand-model = { path = "../../stand/model" }
 oer-process = { path = "../../../tools/process" }

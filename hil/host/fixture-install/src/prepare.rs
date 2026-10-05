@@ -1,12 +1,11 @@
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{Read, Write},
     os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
     process::Command,
 };
 
-use fs2::FileExt as _;
 use sha2::{Digest as _, Sha256};
 
 use super::{
@@ -72,13 +71,10 @@ pub fn prepare(
     let adapters = validate_adapters(provider, adapters)?;
     let output = root.join("target/hil/fixture-install");
     fs::create_dir_all(&output)?;
-    let lock = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(output.join("prepare.lock"))?;
-    lock.lock_exclusive()?;
+    let _lock = oer_process::lock::FileLock::acquire(
+        &output.join("prepare.lock"),
+        oer_process::lock::Mode::Exclusive,
+    )?;
 
     let source = source_identity(root)?;
     let temporary = tempfile::Builder::new()

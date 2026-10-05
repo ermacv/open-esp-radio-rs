@@ -223,6 +223,8 @@ pub(super) fn file(run: &Path, relative: &Path) -> Result<Option<FileIdentity>> 
     Ok(Some(FileIdentity {
         path: relative.to_owned(),
         size_bytes: fs::metadata(&path)?.len(),
-        sha256: sha256_file(&path)?,
+        sha256: crate::digests()
+            .sha256_file(&path)
+            .map_err(|error| error.to_string())?,
     }))
 }

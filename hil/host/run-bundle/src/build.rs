@@ -2,7 +2,7 @@
 
 use std::{
     env,
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     path::{Path, PathBuf},
 };
 
@@ -13,6 +13,7 @@ use crate::Result;
 use oer_durable::{atomic_write, sha256_file};
 use oer_hil_image_class::ImageClass;
 use oer_hil_source_snapshot::FrozenSources;
+use oer_process::lock::{FileLock, Mode};
 
 pub const BUILD_PROVENANCE_SCHEMA: u16 = 1;
 
@@ -222,7 +223,7 @@ pub fn archive_content_addressed(
     let size_bytes = source_metadata.len();
     let sha256 = sha256_file(source)?;
     // Collection deletes objects only while no archive uses the store.
-    let _store = ObjectStoreLock::shared(target_directory)?;
+    let _store = object_store_lock(target_directory, Mode::Shared)?;
     let object = target_directory
         .join("objects/sha256")
         .join(&sha256[..2])
@@ -252,36 +253,8 @@ pub fn archive_content_addressed(
 
 /// The lock that orders archiving into a checkout's object store before its
 /// collection: archives hold it shared, collection exclusively.
-struct ObjectStoreLock(File);
-
-impl ObjectStoreLock {
-    fn open(target_directory: &Path) -> Result<File> {
-        let objects = target_directory.join("objects");
-        fs::create_dir_all(&objects)?;
-        Ok(OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(objects.join("lock"))?)
-    }
-
-    fn shared(target_directory: &Path) -> Result<Self> {
-        let file = Self::open(target_directory)?;
-        fs2::FileExt::lock_shared(&file)?;
-        Ok(Self(file))
-    }
-
-    fn exclusive(target_directory: &Path) -> Result<Self> {
-        let file = Self::open(target_directory)?;
-        fs2::FileExt::lock_exclusive(&file)?;
-        Ok(Self(file))
-    }
-}
-
-impl Drop for ObjectStoreLock {
-    fn drop(&mut self) {
-        let _ = fs2::FileExt::unlock(&self.0);
-    }
+fn object_store_lock(target_directory: &Path, mode: Mode) -> Result<FileLock> {
+    FileLock::acquire(&target_directory.join("objects/lock"), mode)
 }
 
 /// What [`collect_objects`] deleted.
@@ -305,7 +278,7 @@ pub fn collect_objects(target_directory: &Path) -> Result<CollectedObjects> {
     if !root.is_dir() {
         return Ok(collected);
     }
-    let _store = ObjectStoreLock::exclusive(target_directory)?;
+    let _store = object_store_lock(target_directory, Mode::Exclusive)?;
     for prefix in fs::read_dir(&root)? {
         let prefix = prefix?;
         if !prefix.file_type()?.is_dir() {

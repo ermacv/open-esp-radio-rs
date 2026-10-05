@@ -3,6 +3,9 @@
 //!
 //! - [`files`]: the file inventory (`git ls-files` of a checkout, without
 //!   build output and private inputs);
+//! - [`index`]: the index view of a checkout (its commit, whether it is
+//!   dirty, every index path, deleted files and symlinks included, and its
+//!   untracked files, nothing skipped), which a source archive reproduces;
 //! - [`manifest`]: every Cargo manifest as text, without Cargo: packages,
 //!   targets, features, dependencies and workspace declarations;
 //! - [`workspaces`]: the workspaces Cargo finds and the one each package
@@ -21,6 +24,7 @@ pub mod chips;
 pub mod classification;
 pub mod closure;
 pub mod files;
+pub mod index;
 pub mod lock;
 pub mod manifest;
 pub mod policy;

@@ -52,7 +52,9 @@ through board I/O (`oer-hil-board`).
   preempted, which stops its charge in the next settlement, then signals its
   verified process `SIGTERM` and `SIGKILL` after the grace. The holder's
   release, or the reaping of a killed holder, records the preemption.
-- `lock` is the final exclusion layer: `BoardLock` (one lock file per
+- `lock` is the final exclusion layer, on the foundation's one file lock
+  (`oer_process::lock::FileLock`, as is the state's `arbiter.lock`):
+  `BoardLock` (one lock file per
   board, named by its MAC) and `ResourceLock` (one per fixture key) in the
   stand model's lock directory, `open-esp-radio/leases` of the XDG cache
   directory, which does not move with `OER_HIL_ARBITER_DIR`. A holder takes

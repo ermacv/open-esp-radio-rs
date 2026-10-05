@@ -859,8 +859,13 @@ fn active_session_lock_refuses_upgrade_and_providers_are_independent() {
     let lock_path = root
         .path()
         .join("var/lib/open-radio/fixture/linux-net/session.lock");
-    let lock = File::open(&lock_path).unwrap();
-    lock.lock_shared().unwrap();
+    let lock = oer_process::lock::FileLock::try_lock(
+        File::open(&lock_path).unwrap(),
+        &lock_path,
+        oer_process::lock::Mode::Shared,
+    )
+    .unwrap()
+    .unwrap();
     let (upgrade, _) = make_bundle(root.path(), Provider::LinuxNet, "upgrade");
     let layout = Layout::test(root.path(), Provider::LinuxNet).unwrap();
     let error = apply(
@@ -874,15 +879,20 @@ fn active_session_lock_refuses_upgrade_and_providers_are_independent() {
     .unwrap_err()
     .to_string();
     assert!(error.contains("active HIL session"));
-    fs2::FileExt::unlock(&lock).unwrap();
+    drop(lock);
 
     let install_lock_path = root.path().join("var/lib/open-radio/fixture/install.lock");
-    let install_lock = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(install_lock_path)
-        .unwrap();
-    fs2::FileExt::lock_exclusive(&install_lock).unwrap();
+    let install_lock = oer_process::lock::FileLock::try_lock(
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&install_lock_path)
+            .unwrap(),
+        &install_lock_path,
+        oer_process::lock::Mode::Exclusive,
+    )
+    .unwrap()
+    .unwrap();
     let error = apply(
         &layout,
         Provider::LinuxNet,
@@ -906,7 +916,7 @@ fn active_session_lock_refuses_upgrade_and_providers_are_independent() {
     .unwrap_err()
     .to_string();
     assert!(error.contains("another fixture installation"));
-    fs2::FileExt::unlock(&install_lock).unwrap();
+    drop(install_lock);
 }
 
 #[test]

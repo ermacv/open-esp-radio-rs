@@ -109,6 +109,7 @@ fn adopt_lease(target: LaunchTarget) -> crate::Result<std::fs::File> {
     use std::{
         fs::OpenOptions,
         os::unix::{fs::MetadataExt as _, fs::OpenOptionsExt as _},
+        path::Path,
     };
 
     let file = handoff::adopt(target.marker())?;
@@ -131,8 +132,15 @@ fn adopt_lease(target: LaunchTarget) -> crate::Result<std::fs::File> {
     if metadata.dev() != expected_metadata.dev() || metadata.ino() != expected_metadata.ino() {
         return Err("inherited descriptor is not the persistent provider lease".into());
     }
-    fs2::FileExt::try_lock_shared(&file)?;
-    Ok(file)
+    // The shared lock stays with the inherited descriptor.
+    let path = format!("/var/lib/open-radio/fixture/{provider}/session.lock");
+    Ok(oer_process::lock::FileLock::try_lock(
+        file,
+        Path::new(&path),
+        oer_process::lock::Mode::Shared,
+    )?
+    .ok_or("the provider lease is being updated")?
+    .into_file())
 }
 
 #[cfg(target_os = "linux")]

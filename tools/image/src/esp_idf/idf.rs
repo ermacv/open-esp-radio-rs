@@ -371,21 +371,17 @@ pub fn build(root: &Path, pins: &str, projects: &[Project]) -> Result<Vec<Build>
     let pins = oer_vendor_artifacts::git_pins(root, pins)?;
     let cache = cache_directory()?;
     std::fs::create_dir_all(&cache)?;
-    let lock = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(cache.join(".lock"))?;
+    use oer_process::lock::{FileLock, Mode};
     // Exclusive while the tree and tools may change, then shared for the
-    // builds; flock converts the lock in place.
-    fs2::FileExt::lock_exclusive(&lock)?;
+    // builds; the lock converts in place.
+    let mut lock = FileLock::acquire(&cache.join(".lock"), Mode::Exclusive)?;
     let (tree, overrides) = prepare_tree(&cache, &pins)?;
     let revision = oer_process::git::text(&tree, ["rev-parse", "HEAD"])?;
     let mut tools = PathBuf::new();
     for project in projects {
         tools = install_tools(&cache, &tree, &project.chip, &revision)?;
     }
-    fs2::FileExt::lock_shared(&lock)?;
+    lock.convert(Mode::Shared)?;
     remove_checkout_copies(root);
     let mut builds = Vec::with_capacity(projects.len());
     for project in projects {

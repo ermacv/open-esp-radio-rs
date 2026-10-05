@@ -135,7 +135,12 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
             return Ok(Binding::Unavailable);
         };
         let lock_path = root.join("Cargo.lock");
-        if lock.path != Path::new("Cargo.lock") || lock.sha256 != sha256_file(&lock_path)? {
+        if lock.path != Path::new("Cargo.lock")
+            || lock.sha256
+                != crate::digests()
+                    .sha256_file(&lock_path)
+                    .map_err(|error| error.to_string())?
+        {
             return Ok(Binding::Unavailable);
         }
         if provenance.sources.len() > 1 {

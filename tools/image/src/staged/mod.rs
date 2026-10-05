@@ -20,7 +20,7 @@ use crate::{
     build_log::BuildLog,
     bundle::{Lock, Staged, files},
     encode::{self, Encoding},
-    exclusion::{BuildLock, Lease},
+    exclusion::BuildLock,
     source_inputs,
     stack::{self, StackPolicy},
 };
@@ -61,10 +61,7 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
     let mut bundle = ImageBundle::new(&spec.output, profile, flash);
     bundle.layout_seed = spec.layout_seed;
     let log = BuildLog::create(&spec.output.join(files::BUILD_LOG))?;
-    let _cache = Lease::wait(
-        &spec.cache.join("build.lock"),
-        &format!("waiting for another build in {}", spec.cache.display()),
-    )?;
+    let _cache = crate::exclusion::output_directory(&spec.cache)?;
     let policy = StackPolicy::load(&root.join(&spec.stack_policy))?;
     policy.stacks()?;
     // Private copies of both committed catalogs: patched networks and local

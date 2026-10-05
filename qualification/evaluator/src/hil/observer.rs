@@ -267,7 +267,9 @@ fn inputs(root: &Path, prefixes: &[PathBuf]) -> Result<BTreeMap<String, String>>
                     }
                     files.insert(
                         relative.to_string_lossy().into_owned(),
-                        sha256_file(&root.join(relative))?,
+                        crate::digests()
+                            .sha256_file(&root.join(relative))
+                            .map_err(|error| error.to_string())?,
                     );
                 }
             }

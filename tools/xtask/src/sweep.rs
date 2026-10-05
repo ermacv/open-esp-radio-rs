@@ -71,8 +71,10 @@ fn build_running(directory: &Path) -> bool {
     fn visit(directory: &Path, depth: usize) -> bool {
         let lock = directory.join(".cargo-lock");
         if lock.is_file()
-            && let Ok(file) = fs::File::open(&lock)
-            && fs2::FileExt::try_lock_shared(&file).is_err()
+            && !matches!(
+                oer_process::lock::FileLock::try_acquire(&lock, oer_process::lock::Mode::Shared),
+                Ok(Some(_))
+            )
         {
             return true;
         }
@@ -302,10 +304,13 @@ mod tests {
         let old = profile.join("incremental/crate-old");
         fs::create_dir_all(&old).unwrap();
         aged(&old, 10);
-        let lock = fs::File::create(profile.join(".cargo-lock")).unwrap();
-        fs2::FileExt::lock_exclusive(&lock).unwrap();
+        let lock = oer_process::lock::FileLock::acquire(
+            &profile.join(".cargo-lock"),
+            oer_process::lock::Mode::Exclusive,
+        )
+        .unwrap();
         assert!(candidates(root.path(), &[], Policy::default(), SystemTime::now()).is_empty());
-        fs2::FileExt::unlock(&lock).unwrap();
+        drop(lock);
         assert_eq!(
             candidates(root.path(), &[], Policy::default(), SystemTime::now()).len(),
             1

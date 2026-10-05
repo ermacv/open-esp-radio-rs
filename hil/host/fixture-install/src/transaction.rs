@@ -313,23 +313,29 @@ mod linux {
             layout.expected_uid,
             layout.expected_gid,
         )?;
-        fs2::FileExt::try_lock_exclusive(&install_lock).map_err(|error| {
+        let _install_lock = oer_process::lock::FileLock::try_lock(
+            install_lock,
+            &layout.install_lock,
+            oer_process::lock::Mode::Exclusive,
+        )?
+        .ok_or_else(|| {
             format!(
-                "another fixture installation owns {}: {error}",
+                "another fixture installation owns {}",
                 layout.state_root.display()
             )
         })?;
-        let _install_lock = ExclusiveLock(install_lock);
         let session_lock = open_lock(
             &layout.session_lock(),
             0o644,
             layout.expected_uid,
             layout.expected_gid,
         )?;
-        fs2::FileExt::try_lock_exclusive(&session_lock).map_err(|error| {
-            format!("provider {provider} is in use by an active HIL session: {error}")
-        })?;
-        let _session_lock = ExclusiveLock(session_lock);
+        let _session_lock = oer_process::lock::FileLock::try_lock(
+            session_lock,
+            &layout.session_lock(),
+            oer_process::lock::Mode::Exclusive,
+        )?
+        .ok_or_else(|| format!("provider {provider} is in use by an active HIL session"))?;
         effects.require_provider_idle(provider)?;
 
         recover_if_needed(layout, provider, effects)?;
@@ -632,14 +638,6 @@ mod linux {
             .into());
         }
         Ok(file)
-    }
-
-    struct ExclusiveLock(File);
-
-    impl Drop for ExclusiveLock {
-        fn drop(&mut self) {
-            let _ = fs2::FileExt::unlock(&self.0);
-        }
     }
 
     fn load_bundle(

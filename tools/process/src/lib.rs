@@ -1,9 +1,12 @@
 //! Direct subprocess arguments and owned command lifetimes, without a shell;
-//! the repository checkout a tool acts on, Git, and live-process facts.
+//! the repository checkout a tool acts on, Git, live-process facts and the
+//! one advisory file lock ([`lock::FileLock`]).
 
 pub mod git;
 #[cfg(unix)]
 mod guardian;
+#[cfg(unix)]
+pub mod lock;
 pub mod owned;
 #[cfg(unix)]
 pub mod proc;

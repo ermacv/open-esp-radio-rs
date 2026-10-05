@@ -13,7 +13,6 @@ description = "The one image pipeline: build(ImageSpec) -> ImageBundle, with eve
 # are encoded with it at build time; no image is encoded by the CLI.
 espflash = { version = "=4.5.0", default-features = false }
 esp-idf-part = "=0.6.0"
-fs2 = "0.4"
 oer-chip-profile = { path = "../chip-profile" }
 oer-durable = { path = "../durable" }
 oer-elf = { path = "../elf" }

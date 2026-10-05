@@ -640,7 +640,9 @@ impl HilEvidenceIndex {
                 let mut seen = BTreeSet::new();
                 for scenario in suite.scenarios {
                     let completion_seal = Some(CompletionSeal {
-                        sha256: sha256_file(&run_directory.join(&seal))?,
+                        sha256: crate::digests()
+                            .sha256_file(&run_directory.join(&seal))
+                            .map_err(|error| error.to_string())?,
                         path: seal.clone(),
                     });
                     let subject = Some(subject::ObservationSubject::load(
@@ -740,10 +742,6 @@ impl HilEvidenceIndex {
 
 // The run vocabulary is the runner's own, from the shared schema.
 use oer_hil_schema::run::{Outcome, RunState};
-
-fn sha256_file(path: &Path) -> Result<String> {
-    crate::hash_cache::sha256_file(path)
-}
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
     oer_hil_run_bundle::run::validation::read_json(path).map_err(|error| error.to_string().into())

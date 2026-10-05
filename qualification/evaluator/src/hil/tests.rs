@@ -617,8 +617,8 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
     .unwrap();
     let resolved = prepare_observer(root);
     let build = json!({"schema":2,"inputs":{
-        "observer.rs":sha256_file(&root.join("observer.rs")).unwrap(),
-        "hil/host/runner/src/main.rs":sha256_file(&root.join("hil/host/runner/src/main.rs")).unwrap(),
+        "observer.rs":crate::digests().sha256_file(&root.join("observer.rs")).unwrap(),
+        "hil/host/runner/src/main.rs":crate::digests().sha256_file(&root.join("hil/host/runner/src/main.rs")).unwrap(),
     },"compiler":configuration["compiler"],"environment":configuration["environment"],"resolved":resolved});
     // The run's observer build is stored beside the directory of runs.
     let embedded = json!({"schema":1,"executable_sha256":"aa".repeat(32),"build_sha256":format!("{:x}",Sha256::digest(serde_json::to_vec(&build).unwrap())),"build":build});
@@ -670,7 +670,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
             "path": "Cargo.lock",
             "archive_path": null,
             "size_bytes": fs::metadata(&lock).unwrap().len(),
-            "sha256": sha256_file(&lock).unwrap(),
+            "sha256": crate::digests().sha256_file(&lock).unwrap(),
         }],
         "environment": {
             "tools": [], "inherited_rustflags": null, "inherited_encoded_rustflags": null,

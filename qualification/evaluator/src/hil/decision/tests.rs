@@ -141,7 +141,11 @@ fn subject_and_failure_identity_survive_a_different_evaluator_checkout() {
     artifact["application_path"] = json!("application.bin");
     artifact["application_size_bytes"] =
         json!(fs::metadata(run.join("application.bin")).unwrap().len());
-    artifact["application_sha256"] = json!(sha256_file(&run.join("application.bin")).unwrap());
+    artifact["application_sha256"] = json!(
+        crate::digests()
+            .sha256_file(&run.join("application.bin"))
+            .unwrap()
+    );
     write(&run.join("manifest.json"), &manifest);
     fs::create_dir_all(run.join("scenarios/ble-att")).unwrap();
     write(

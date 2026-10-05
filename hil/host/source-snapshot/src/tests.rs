@@ -1,5 +1,9 @@
 use super::*;
 
+fn git(root: &Path, args: &[&str]) -> oer_process::Result<Vec<u8>> {
+    oer_process::git::output(root, args)
+}
+
 pub fn test_snapshot(inputs: &Path) -> (tempfile::TempDir, Snapshot) {
     let root = repository();
     fs::write(root.path().join(".gitignore"), "snapshots/\n").unwrap();
@@ -245,8 +249,14 @@ fn a_build_workspace_is_stable_exclusive_and_replaced_on_reuse() {
     let unchanged = workspace.join("repository/.gitignore");
     let unchanged_time = fs::metadata(&unchanged).unwrap().modified().unwrap();
     // A second build waits for the lock; the holder releases it on drop.
-    let lock = fs::File::open(workspace.with_extension("lock")).unwrap();
-    assert!(fs2::FileExt::try_lock_exclusive(&lock).is_err());
+    assert!(
+        oer_process::lock::FileLock::try_acquire(
+            &workspace.with_extension("lock"),
+            oer_process::lock::Mode::Exclusive
+        )
+        .unwrap()
+        .is_none()
+    );
     drop(opened);
     let reopened = FrozenSources::open_in_workspace(&second.directory, &workspace).unwrap();
     assert_eq!(reopened.repository(), workspace.join("repository"));

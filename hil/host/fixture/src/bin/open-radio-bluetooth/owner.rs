@@ -82,7 +82,7 @@ struct Owner {
     powered: bool,
     identity: Vec<u8>,
     restore_needed: bool,
-    _lock: File,
+    _lock: oer_process::lock::FileLock,
 }
 
 impl Owner {
@@ -108,6 +108,7 @@ impl Owner {
         }
         // The lock directory is created by this helper, never under a
         // caller-writable directory. O_NOFOLLOW rejects a substituted leaf.
+        let path = format!("/run/open-radio-bluetooth/{adapter}.lock");
         let lock = OpenOptions::new()
             .read(true)
             .write(true)
@@ -115,8 +116,13 @@ impl Owner {
             .truncate(false)
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-            .open(format!("/run/open-radio-bluetooth/{adapter}.lock"))?;
-        fs2::FileExt::try_lock_exclusive(&lock)?;
+            .open(&path)?;
+        let lock = oer_process::lock::FileLock::try_lock(
+            lock,
+            std::path::Path::new(&path),
+            oer_process::lock::Mode::Exclusive,
+        )?
+        .ok_or_else(|| format!("another helper owns adapter {adapter}"))?;
         if !recovery && connection_parameters::journal_path(adapter).try_exists()? {
             return Err("Bluetooth connection parameters require explicit helper recovery".into());
         }

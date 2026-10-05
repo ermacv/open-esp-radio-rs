@@ -28,7 +28,7 @@ budget is shared by nested cleanup scopes and limits subprocesses started there.
 Leaving the scope restores cancellation, including during unwinding. Arbitrary
 blocking code inside a closure is not forcibly interrupted.
 
-Three more jobs have their one owner here:
+Four more jobs have their one owner here:
 
 - `git`: every repository tool runs Git as `git -C <directory> …` through
   `git::output`, `git::text`, `git::lines`, `git::run` or, for extra
@@ -40,6 +40,12 @@ Three more jobs have their one owner here:
   `Checkout::discover(tool)` refuses to run inside another checkout
   (`--root` selects one explicitly). Cargo is started through
   `oer-toolchain`.
+- `lock`: `FileLock`, the one advisory file lock (`flock`), `Shared` or
+  `Exclusive`, taken at once (`try_acquire`), blocking (`acquire`), polling
+  cancellably (`wait`, `wait_any`) or converted in place (`convert`), and
+  released explicitly on drop. Image build exclusion (`oer-image`), the
+  ESP-IDF cache, the arbiter's state and lock files, the run store and the
+  source snapshots lock through it.
 - `proc`: a live process's start time (`start_ticks`, `started_unix_millis`)
   from Linux `/proc`, which tells a recycled PID from the process that held
   it.

@@ -289,12 +289,10 @@ pub mod pending {
     fn update(checkout: &Path, change: impl FnOnce(&mut Vec<Pending>)) -> Result<()> {
         let path = checkout.join(PENDING);
         std::fs::create_dir_all(path.parent().ok_or("pending list has no parent")?)?;
-        let lock = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(path.with_extension("lock"))?;
-        fs2::FileExt::lock_exclusive(&lock)?;
+        let _lock = oer_process::lock::FileLock::acquire(
+            &path.with_extension("lock"),
+            oer_process::lock::Mode::Exclusive,
+        )?;
         let mut pending = load(checkout)?;
         change(&mut pending);
         oer_durable::atomic_json(&path, &pending)

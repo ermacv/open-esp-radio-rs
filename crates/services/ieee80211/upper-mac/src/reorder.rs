@@ -266,15 +266,15 @@ impl<const AGREEMENTS: usize> RxReorder<AGREEMENTS> {
     }
 
     /// Release the buffered run of one window whose gap time passed at
-    /// `now`, if any.
-    pub fn expire_due_gap(&mut self, now: Instant) -> Option<ReorderRelease> {
+    /// `now`, if any, with the window's peer.
+    pub fn expire_due_gap(&mut self, now: Instant) -> Option<([u8; 6], ReorderRelease)> {
         let session = self
             .sessions
             .iter_mut()
             .flatten()
             .find(|session| session.gap.is_some_and(|due| due <= now))?;
         session.gap = None;
-        Some(session.window.expire_gap())
+        Some((session.peer, session.window.expire_gap()))
     }
 
     /// Time the gap of every window that keeps an MPDU from the first one

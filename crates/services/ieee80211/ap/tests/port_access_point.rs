@@ -263,6 +263,7 @@ fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
         management_rate: RATE,
         data_rate: DATA_RATE,
         ccmp_step: CcmpPacketNumberStep::new(1).unwrap(),
+        rx_reorder_gap: oer_time::Duration::from_millis(300),
         coex: CoexPriority::Normal,
     }
 }
@@ -1375,4 +1376,85 @@ fn group_frames_wait_for_the_dtim_while_a_peer_dozes() {
     let (offset, count, _) = dtim(beacon).unwrap();
     assert_eq!((beacon[0], count, beacon[offset + 4] & 1), (0x80, 0, 1));
     assert_eq!(access_point.counters().released, 1);
+}
+
+/// An ADDBA Request of the station for `tid`.
+fn addba_request(tid: u8, window: u16, start: u16) -> Vec<u8> {
+    let parameters: u16 = 0x0002 | (u16::from(tid) << 2) | (window << 6);
+    let mut body = vec![3, 0, 7];
+    body.extend_from_slice(&parameters.to_le_bytes());
+    body.extend_from_slice(&0_u16.to_le_bytes());
+    body.extend_from_slice(&(start << 4).to_le_bytes());
+    management(13, false, &body)
+}
+
+/// A QoS data MPDU of the station for `tid`, `sequence`.
+fn qos_uplink(tid: u8, sequence: u16, payload: &[u8]) -> Vec<u8> {
+    let mut mpdu = vec![0x88, 0x01, 0, 0];
+    mpdu.extend_from_slice(&ADDRESS);
+    mpdu.extend_from_slice(&STATION);
+    mpdu.extend_from_slice(&[0x02, 0, 0, 0, 0, 0x99]);
+    mpdu.extend_from_slice(&(sequence << 4).to_le_bytes());
+    mpdu.extend_from_slice(&[tid, 0]);
+    mpdu.extend_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
+    mpdu.extend_from_slice(payload);
+    mpdu
+}
+
+#[test]
+fn a_peer_s_block_ack_agreement_reorders_its_data_until_it_ends() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::new();
+    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let now = timer.now.get();
+    let delivered = serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[
+            (now + 1_000, addba_request(0, 16, 100)),
+            // 101 and 102 wait for 100.
+            (now + 2_000, qos_uplink(0, 101, b"b")),
+            (now + 3_000, qos_uplink(0, 102, b"c")),
+            (now + 4_000, qos_uplink(0, 100, b"a")),
+        ],
+        now + 5_000,
+    );
+    // The ADDBA Response succeeded and the port holds the agreement.
+    let response = model
+        .submitted()
+        .into_iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .rfind(|frame| frame[0] == 0xd0 && frame[4..10] == STATION)
+        .unwrap();
+    assert_eq!(
+        (
+            &response[24..27],
+            u16::from_le_bytes([response[27], response[28]])
+        ),
+        (&[3_u8, 1, 7][..], 0)
+    );
+    assert_eq!(model.rx_block_acks().len(), 1);
+    let payloads: Vec<&[u8]> = delivered.iter().map(|frame| &frame[14..]).collect();
+    assert_eq!(payloads, [b"a", b"b", b"c"]);
+
+    // The station ends it: the port drops the agreement.
+    let now = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(
+            now + 1_000,
+            management(13, false, &[3, 2, 0x00, 0x08, 1, 0]),
+        )],
+        now + 2_000,
+    );
+    assert!(model.rx_block_acks().is_empty());
+    assert_eq!(access_point.counters().rx_agreements, 1);
 }

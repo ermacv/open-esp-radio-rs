@@ -80,7 +80,7 @@ fn config() -> LocalLinuxConfig {
 
 fn render(input: &str) -> std::process::Output {
     let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../linux-net/open-radio-net");
-    let mut child = Command::new("bash")
+    let mut child = oer_process::command("bash")
         .args([
             "-c",
             "source \"$1\" capabilities >/dev/null; read_ap_profile; write_ap_profile",
@@ -207,7 +207,7 @@ fn helper_owns_private_transient_profile_and_removes_it_on_stop() {
     let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../linux-net/open-radio-net");
     let lab = oer_hil_lab::config::LabConfig::for_test();
     let input = profile(&config(), &lab.station, PhyExpectation::He20).unwrap();
-    let mut child = Command::new("bash")
+    let mut child = oer_process::command("bash")
         .args(["-c", include_str!("tests/start-stop.sh"), "helper-test"])
         .arg(helper)
         .arg(directory.path())

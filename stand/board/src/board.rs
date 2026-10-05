@@ -104,7 +104,7 @@ impl Board {
     /// for as long as it, or a console it opened, lives.
     pub fn lease(self, access: &DeviceAccess) -> crate::Result<LeasedBoard> {
         access.ensure_covers(self.mac())?;
-        access.ensure_held()?;
+        let _operation = access.operation()?;
         Ok(LeasedBoard {
             board: self,
             access: access.clone(),
@@ -130,7 +130,7 @@ pub struct LeasedBoard {
 pub struct BoardConsole {
     // Declared first: the port closes before the access is released.
     port: Port,
-    access: DeviceAccess,
+    operation: oer_device_lock::DeviceOperation,
 }
 
 impl std::io::Read for BoardConsole {
@@ -155,7 +155,7 @@ impl BoardConsole {
     pub fn lines(self) -> BoardLines {
         BoardLines {
             lines: console::lines(self.port),
-            _access: self.access,
+            _operation: self.operation,
         }
     }
 }
@@ -164,7 +164,7 @@ impl BoardConsole {
 pub struct BoardLines {
     // Declared first: the reader closes the port before the access goes.
     lines: console::Lines,
-    _access: DeviceAccess,
+    _operation: oer_device_lock::DeviceOperation,
 }
 
 impl std::ops::Deref for BoardLines {
@@ -237,6 +237,7 @@ impl LeasedBoard {
         via: Via,
         by: &str,
     ) -> crate::Result<Receipt> {
+        let _operation = self.access.operation()?;
         let reference = &self.board.reference;
         if bundle.chip != reference.chip {
             return Err(format!(
@@ -281,7 +282,7 @@ impl LeasedBoard {
             (Start::Reset, _) => Ok(()),
             (Start::PowerOn, Some(_)) => self.power_on(),
             (Start::PowerOn, None) => {
-                self.access.ensure_held()?;
+                let _operation = self.access.operation()?;
                 let port = self
                     .current_port(REATTACH)
                     .ok_or("the board's port is gone")?;
@@ -359,9 +360,9 @@ impl LeasedBoard {
     /// The board's console read for `watch` without resetting it, once its
     /// port is back; nothing when the access no longer holds.
     pub fn console(&self, watch: Duration) -> String {
-        if self.access.ensure_held().is_err() {
+        let Ok(_operation) = self.access.operation() else {
             return String::new();
-        }
+        };
         self.current_port(REATTACH)
             .and_then(|port| reset::open_without_reset(&port).ok())
             .map(|serial| console::read_for(serial, watch))
@@ -372,19 +373,18 @@ impl LeasedBoard {
     /// still held by the reader of a previous reset or returning after one.
     /// The console keeps the board's access while it is open.
     pub fn open_console(&self) -> crate::Result<BoardConsole> {
-        self.access.ensure_held()?;
+        let _operation = self.access.operation()?;
         let port = self
             .current_port(REATTACH)
             .ok_or("the board's port is gone")?;
         let port = retrying(PORT_ACCESS, || reset::open_without_reset(&port))?;
         Ok(BoardConsole {
             port,
-            access: self.access.clone(),
+            operation: _operation,
         })
     }
 
     fn require_power(&self) -> crate::Result<&HubPower> {
-        self.access.ensure_held()?;
         self.board.power.as_ref().ok_or_else(|| {
             "the board does not reset by power; add `power` to its `reset` in the stand file".into()
         })
@@ -392,12 +392,15 @@ impl LeasedBoard {
 
     /// Power the board off and on, watching it leave USB and return.
     pub fn power_cycle_observed(&self) -> crate::Result<PowerCycle> {
-        self.require_power()?.cycle_observed(self.mac())
+        let _operation = self.access.operation()?;
+        self.require_power()?
+            .cycle_observed(self.mac(), _operation.lifetime())
     }
 
     /// Power the board off and on and wait until its port is back and open
     /// to the stand's user: a power-on reset into the image in its flash.
     pub fn power_on(&self) -> crate::Result<()> {
+        let _operation = self.access.operation()?;
         self.power_cycle_observed()?.verdict()?;
         let port = self
             .current_port(REATTACH)
@@ -413,6 +416,7 @@ impl LeasedBoard {
     /// into its ROM's download mode through the USB Serial/JTAG; the console
     /// the ROM printed. Only a board that resets by power has it.
     pub fn download_entry(&self) -> crate::Result<String> {
+        let _operation = self.access.operation()?;
         self.power_cycle_observed()?.verdict()?;
         let port = self
             .current_port(REATTACH)
@@ -440,7 +444,7 @@ impl Rung for Rts<'_> {
     }
 
     fn reset(&self) -> crate::Result<Option<String>> {
-        self.0.access.ensure_held()?;
+        let _operation = self.0.access.operation()?;
         let port = self
             .0
             .current_port(Duration::from_secs(5))
@@ -460,13 +464,13 @@ impl Rung for Jtag<'_> {
     /// The console is opened first, without touching the reset lines, so
     /// the read starts before the reset's banner.
     fn reset(&self) -> crate::Result<Option<String>> {
-        self.0.access.ensure_held()?;
+        let _operation = self.0.access.operation()?;
         let openocd = Openocd::locate()?;
         let serial = self
             .0
             .current_port(Duration::ZERO)
             .and_then(|port| reset::open_without_reset(&port).ok());
-        openocd.reset(self.0.chip(), self.0.mac())?;
+        openocd.reset(self.0.chip(), self.0.mac(), _operation.lifetime())?;
         Ok(serial.map(|serial| console::read_for(serial, BANNER)))
     }
 }
@@ -479,7 +483,8 @@ impl Rung for Power<'_> {
     }
 
     fn reset(&self) -> crate::Result<Option<String>> {
-        self.0.require_power()?.cycle()?;
+        let _operation = self.0.access.operation()?;
+        self.0.require_power()?.cycle(_operation.lifetime())?;
         Ok(None)
     }
 }

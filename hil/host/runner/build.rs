@@ -4,7 +4,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 fn file(root: &Path, path: &Path, inputs: &mut BTreeMap<String, String>) {
@@ -104,7 +103,7 @@ fn main() {
     if root.join(".cargo").is_dir() {
         tree(&root, &root.join(".cargo"), &mut inputs);
     }
-    let compiler = Command::new(env::var_os("RUSTC").unwrap())
+    let compiler = oer_process::command(env::var_os("RUSTC").unwrap())
         .arg("-vV")
         .output()
         .unwrap();

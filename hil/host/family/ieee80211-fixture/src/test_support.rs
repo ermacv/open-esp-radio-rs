@@ -1,7 +1,7 @@
 //! Execute the real fixture owners and remote shell programs with local command
 //! substitutes. Environment changes are confined to isolated test processes.
 
-use std::{fs, path::PathBuf, process::Command, time::Duration};
+use std::{fs, path::PathBuf, time::Duration};
 
 const HARNESS: &str = "test_support::fixture_lifecycle_harness";
 
@@ -45,7 +45,7 @@ fn preparation_and_monitor_recover_from_partial_setup() {
         let inherited_path = std::env::var_os("PATH").unwrap();
         let paths = std::iter::once(root.join("bin")).chain(std::env::split_paths(&inherited_path));
         let output = oer_process::output(
-            Command::new(std::env::current_exe().unwrap())
+            oer_process::command(std::env::current_exe().unwrap())
                 .args(["--exact", HARNESS, "--nocapture"])
                 .env("PATH", std::env::join_paths(paths).unwrap())
                 .env("OER_TEST_STATE", &root)

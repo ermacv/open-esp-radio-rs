@@ -13,7 +13,6 @@
 use std::{
     error::Error,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use serde::Serialize;
@@ -308,7 +307,7 @@ pub fn packages(
 ) -> Result<std::collections::BTreeSet<String>> {
     let profile = oer_chip_profile::Profile::load(root, chip)?;
     let features = oer_hil_image_class::build_features_on(class, chip);
-    let mut command = Command::new(oer_toolchain::cargo_program());
+    let mut command = oer_process::command(oer_toolchain::cargo_program());
     command
         .current_dir(root)
         .args(["tree", "--manifest-path"])

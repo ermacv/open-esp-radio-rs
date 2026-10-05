@@ -42,6 +42,7 @@ name = "oer-esp32s31-ieee802154-vendor-host"
 path = "src/main.rs"
 
 [dependencies]
+oer-process = { path = "../../../../tools/process" }
 oer-esp32s31-hal = { path = "../../../../crates/hardware/esp32s31/hal" }
 oer-espressif-ieee802154-engine = { path = "../../../../crates/hardware/espressif/ieee802154/engine" }
 oer-ieee802154 = { path = "../../../../crates/protocols/ieee802154" }

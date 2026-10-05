@@ -501,17 +501,17 @@ impl PreparedArm {
                 oer_hil_run_bundle_format::experiment::EXPERIMENT_ENV,
                 serde_json::to_string(&experiment)?,
             )
-            .env(oer_stand_arbiter::jobs::JOB_ENV, job.id())
             .log(session.directory.join(format!(
                 "run-{}-{}.log",
                 self.arm,
                 oer_durable::unix_millis()
             )));
-        if let Some(grant) = grant {
-            for (name, value) in grant.environment() {
-                launch = launch.env(name, value);
-            }
-        }
+        let mut context = match grant {
+            Some(grant) => grant.context()?,
+            None => oer_process::Context::default(),
+        };
+        context.set(oer_stand_arbiter::jobs::JOB_KEY, job.id());
+        launch = launch.context(context);
         let launched = launch_run(&launch)?;
         job.finish_with(&session.store, &launched.runs)?;
         launched.run()

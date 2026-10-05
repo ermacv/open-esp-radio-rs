@@ -1,11 +1,7 @@
 //! Scoped ownership of the laptop Wi-Fi interface as one AP test client.
 
 use oer_process::CommandExt as _;
-use std::{
-    io::Write as _,
-    path::Path,
-    process::{Command, Stdio},
-};
+use std::{io::Write as _, path::Path, process::Stdio};
 
 use zeroize::Zeroizing;
 
@@ -89,7 +85,7 @@ impl ControlledClient {
         let log = std::fs::File::create(output.join("helper.log"))?;
         let input = network.helper_input();
         let owner = Self { restored: false };
-        let mut child = Command::new("sudo")
+        let mut child = oer_process::command("sudo")
             .args(["-n", crate::local::network_helper::PATH, "client"])
             .stdout(Stdio::from(log.try_clone()?))
             .stderr(Stdio::from(log))
@@ -136,7 +132,7 @@ impl ControlledClient {
     /// Return the BSSID owned by the AP under test without changing the
     /// controlled client's managed-mode lifetime.
     pub fn bssid(&self) -> Result<String> {
-        let output = Command::new("iw")
+        let output = oer_process::command("iw")
             .args(["dev", "wlan0", "link"])
             .supervised_output()?;
         if !output.status.success() {
@@ -247,7 +243,7 @@ struct LaptopLinkSnapshot {
 
 impl LaptopLinkSnapshot {
     fn take() -> Result<Self> {
-        let output = Command::new("iw")
+        let output = oer_process::command("iw")
             .args(["dev", "wlan0", "station", "dump"])
             .supervised_output()?;
         if !output.status.success() {
@@ -257,7 +253,7 @@ impl LaptopLinkSnapshot {
             ))
             .into());
         }
-        let aqm = Command::new("sudo")
+        let aqm = oer_process::command("sudo")
             .args(["-n", crate::local::network_helper::PATH, "client-aqm"])
             .supervised_output()?;
         if !aqm.status.success() {
@@ -366,7 +362,7 @@ impl Drop for ControlledClient {
 }
 
 fn restore_managed() -> Result<()> {
-    let status = Command::new("sudo")
+    let status = oer_process::command("sudo")
         .args(["-n", crate::local::network_helper::PATH, "managed"])
         .supervised_status()?;
     if !status.success() {

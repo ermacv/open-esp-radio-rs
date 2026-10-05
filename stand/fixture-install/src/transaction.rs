@@ -21,7 +21,6 @@ mod linux {
             unix::{fs::MetadataExt as _, fs::OpenOptionsExt as _},
         },
         path::{Component, Path, PathBuf},
-        process::Command,
     };
 
     use rustix::fs::{Mode, OFlags};
@@ -120,7 +119,7 @@ mod linux {
 
         fn verify_capabilities(&mut self, helper: &Path, expected: &str) -> Result<()> {
             let output = oer_process::output(
-                Command::new(helper).arg("capabilities"),
+                oer_process::command(helper).arg("capabilities"),
                 Some(std::time::Duration::from_secs(5)),
             )?;
             if !output.status.success() || String::from_utf8(output.stdout)?.trim() != expected {
@@ -169,7 +168,7 @@ mod linux {
     }
 
     fn run_visudo(layout: &Layout, args: &[&str], file: Option<&Path>) -> Result<()> {
-        let mut command = Command::new(&layout.visudo);
+        let mut command = oer_process::command(&layout.visudo);
         command.args(args);
         if let Some(file) = file {
             command.arg(file);
@@ -1519,7 +1518,7 @@ mod linux {
         if sudo_uid == 0 {
             return Err("SUDO_UID must identify a non-root operator".into());
         }
-        let output = Command::new("/usr/bin/id")
+        let output = oer_process::command("/usr/bin/id")
             .args(["-u", operator])
             .output()?;
         if !output.status.success()

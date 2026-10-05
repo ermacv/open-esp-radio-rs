@@ -29,6 +29,7 @@ impl Child {
         shutdown_grace: Duration,
     ) -> Result<Self> {
         super::check_cancelled()?;
+        super::context::prepare(command);
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;

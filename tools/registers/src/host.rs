@@ -3,7 +3,7 @@ use std::{
     fs,
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Stdio,
     time::Duration,
 };
 
@@ -24,7 +24,7 @@ pub(crate) fn format(source: &str, edition: &str) -> Result<String> {
     input.seek(SeekFrom::Start(0))?;
     let mut output = tempfile::tempfile()?;
     let mut errors = tempfile::tempfile()?;
-    let mut command = Command::new("rustfmt");
+    let mut command = oer_process::command("rustfmt");
     command
         .args(["--edition", edition, "--style-edition", edition])
         .stdin(Stdio::from(input))

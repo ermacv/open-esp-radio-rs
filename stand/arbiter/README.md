@@ -120,3 +120,9 @@ scenarios. Claims are cooperative: a
 command that claims one board and uses another is not detected. Commands that bypass `cargo hil`,
 such as a manual `espflash`, are not ordered unless run
 as `cargo stand lease --board NAME -- COMMAND`.
+
+A grant supplies `Grant::context()` for a child joining its lease. It selects
+that lease, its owner and job identity, and only the granted board capabilities.
+Ordinary subprocesses receive no lease context. Each board I/O operation is
+admitted by the device lifetime broker and retains exclusion through its ports,
+readers and external hardware commands after owner loss.

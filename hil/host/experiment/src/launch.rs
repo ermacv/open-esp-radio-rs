@@ -56,6 +56,7 @@ pub struct Launch<'a> {
     pub removed: Vec<OsString>,
     /// Where the runner's output goes instead of this process's.
     pub log: Option<PathBuf>,
+    pub context: oer_process::Context,
 }
 
 impl<'a> Launch<'a> {
@@ -67,6 +68,7 @@ impl<'a> Launch<'a> {
             environment: Vec::new(),
             removed: Vec::new(),
             log: None,
+            context: oer_process::Context::default(),
         }
     }
 
@@ -89,6 +91,11 @@ impl<'a> Launch<'a> {
         self
     }
 
+    pub fn context(mut self, context: oer_process::Context) -> Self {
+        self.context = context;
+        self
+    }
+
     pub fn log(mut self, path: PathBuf) -> Self {
         self.log = Some(path);
         self
@@ -96,7 +103,7 @@ impl<'a> Launch<'a> {
 
     /// The command the launch runs, with `receipt` as its run receipt.
     fn command(&self, receipt: &Path) -> Result<Command> {
-        let mut command = Command::new(&self.runner.executable);
+        let mut command = oer_process::command(&self.runner.executable);
         command.current_dir(self.checkout).args(&self.arguments);
         match &self.runner.receipt {
             Some(observer) => {
@@ -111,6 +118,7 @@ impl<'a> Launch<'a> {
             command.env_remove(name);
         }
         command.env(oer_hil_run_bundle::receipt::ENV, receipt);
+        self.context.apply(&mut command)?;
         if let Some(path) = &self.log {
             let log = File::create(path)?;
             command.stdout(log.try_clone()?).stderr(log);

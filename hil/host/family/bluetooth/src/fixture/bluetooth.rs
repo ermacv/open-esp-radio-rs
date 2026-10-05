@@ -12,7 +12,7 @@ use oer_hil_run_bundle_format::run::fixtures::{self, Helper};
 use std::{
     fs,
     path::Path,
-    process::{Command, Stdio},
+    process::Stdio,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -68,7 +68,7 @@ fn run_profile_in(
     profile: DtmProfile,
 ) -> crate::Result<Check> {
     fs::create_dir_all(output)?;
-    let mut command = Command::new("sudo");
+    let mut command = oer_process::command("sudo");
     command
         .args([
             "-n",
@@ -144,14 +144,14 @@ pub fn preflight(adapter: Adapter) -> crate::Result<()> {
             "install the Bluetooth helper with cargo stand fixture install --provider linux-bluetooth".into(),
         );
     }
-    let mut capabilities = Command::new(HELPER);
+    let mut capabilities = oer_process::command(HELPER);
     capabilities.arg("capabilities");
     let capabilities = oer_process::output(&mut capabilities, Some(Duration::from_secs(5)))?;
     require_helper_capabilities(capabilities.status.success(), &capabilities.stdout)?;
 
     // The policy must grant every DTM profile exactly as the runner invokes it.
     for profile in DtmProfile::ALL {
-        let mut command = Command::new("sudo");
+        let mut command = oer_process::command("sudo");
         command.args([
             "-n",
             "-l",
@@ -196,7 +196,7 @@ pub fn preflight_security_failure(adapter: Adapter) -> crate::Result<()> {
         ("active-data-mic", false),
         ("missing-key", true),
     ] {
-        let mut command = Command::new("sudo");
+        let mut command = oer_process::command("sudo");
         command.args([
             "-n",
             "/usr/local/libexec/open-radio-bluetooth",
@@ -244,7 +244,7 @@ pub fn connect_profile_in(
     if hold_ms > 5_000 {
         return Err("connection hold must be at most 5000 ms".into());
     }
-    let mut command = Command::new("sudo");
+    let mut command = oer_process::command("sudo");
     command
         .args([
             "-n",
@@ -316,7 +316,7 @@ pub fn security_failure_in(
 ) -> crate::Result<model::security_failure::Report> {
     use oer_hil_protocol::bluetooth::BluetoothSecurityFailure as Failure;
     fs::create_dir_all(output)?;
-    let mut command = Command::new("sudo");
+    let mut command = oer_process::command("sudo");
     command
         .args([
             "-n",

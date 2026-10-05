@@ -98,7 +98,7 @@ fn uhubctl_reaches(stand: &StandFile) -> Result<()> {
 
 fn wlan0_unmanaged() -> Result<()> {
     let output = oer_process::output(
-        std::process::Command::new("nmcli").args(["-t", "-f", "DEVICE,STATE", "device"]),
+        oer_process::command("nmcli").args(["-t", "-f", "DEVICE,STATE", "device"]),
         Some(Duration::from_secs(10)),
     )?;
     wlan0_state(&String::from_utf8_lossy(&output.stdout))

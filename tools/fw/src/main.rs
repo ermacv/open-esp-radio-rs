@@ -326,20 +326,19 @@ fn compare(_: &Path, _: &Path, _: Vec<String>, _: Vec<String>, _: Vec<String>) -
 /// Run this command again as `oer-fw` built with the `checks` feature: the
 /// image checks (and their analyzers) are only compiled into that build.
 fn with_checks(root: &Path) -> Result<ExitCode> {
-    let status =
-        std::process::Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-            .current_dir(root)
-            .args([
-                "run",
-                "--quiet",
-                "-p",
-                "oer-fw",
-                "--features",
-                "checks",
-                "--",
-            ])
-            .args(std::env::args_os().skip(1))
-            .status()?;
+    let status = oer_process::command(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .current_dir(root)
+        .args([
+            "run",
+            "--quiet",
+            "-p",
+            "oer-fw",
+            "--features",
+            "checks",
+            "--",
+        ])
+        .args(std::env::args_os().skip(1))
+        .status()?;
     Ok(match status.code() {
         Some(0) => ExitCode::SUCCESS,
         Some(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),

@@ -2,7 +2,13 @@
 //! the repository checkout a tool acts on, Git, live-process facts and the
 //! one advisory file lock ([`lock::FileLock`]).
 
+pub mod context;
 pub mod git;
+pub use context::{Context, command};
+#[cfg(unix)]
+mod io_lifetime;
+#[cfg(unix)]
+pub use io_lifetime::IoLifetime;
 #[cfg(unix)]
 mod guardian;
 #[cfg(unix)]

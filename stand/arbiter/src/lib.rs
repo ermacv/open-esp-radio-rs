@@ -38,7 +38,7 @@ mod unknown;
 
 pub use balance::HARD_LIMIT;
 pub use estimate::{DEFAULT_ESTIMATE, EstimateSource, format_duration, parse_duration};
-pub use grant::{Grant, LEASE_ENV, Request};
+pub use grant::{Grant, LEASE_KEY, Request};
 pub use history::{GrantReason, LeaseOutcome, LeaseRecord, OwnerBalance};
 pub use maintenance::{Maintenance, QuarantineTrigger, SERVICE_POLL, STAND_SERVICE, ServiceKind};
 pub use state::Priority;

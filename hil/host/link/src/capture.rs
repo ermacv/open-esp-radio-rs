@@ -9,6 +9,11 @@ use std::{
 };
 
 impl SerialCapture {
+    /// Retain an admitted operation until this capture's serial worker closes.
+    pub fn with_io_lifetime(mut self, lifetime: oer_process::IoLifetime) -> Self {
+        self.io_lifetime = Some(lifetime);
+        self
+    }
     /// Report the decoded messages to `observer` when the capture persists.
     pub fn observed_by(mut self, observer: Box<dyn CaptureObserver>) -> Self {
         self.observer = Some(observer);
@@ -99,6 +104,7 @@ impl SerialCapture {
             worker_protocol.close(failure);
         });
         Ok(Self {
+            io_lifetime: None,
             stop,
             bytes,
             protocol,

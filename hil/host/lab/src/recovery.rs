@@ -118,7 +118,7 @@ pub fn recover(
             .map(|entry| entry as &dyn Fn() -> oer_device_reset::Result<String>),
         &|| board.console(BANNER_WATCH),
         &mut || {
-            let found = post_mortem::inspect(port, &mac, output, elf);
+            let found = post_mortem::inspect(port, board.access(), output, elf);
             let answered = found.is_some();
             *finding.borrow_mut() = found;
             answered

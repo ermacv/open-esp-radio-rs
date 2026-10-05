@@ -9,6 +9,7 @@ publish = false
 description = "Linux adapters of Blobray's in-process linking: external ELF linkers"
 
 [dependencies]
+oer-process = { path = "../../../process" }
 blobray-application = { path = "../application" }
 blobray-domain = { path = "../domain" }
 oer-riscv-model = { path = "../../../riscv/model" }

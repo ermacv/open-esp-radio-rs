@@ -271,7 +271,7 @@ mod tests {
         let target = tempfile::tempdir().unwrap();
         for (tree, marker) in [(&first, "first"), (&second, "second")] {
             let linker = build_linker(tree.path(), &target.path().join(marker)).unwrap();
-            let output = Command::new(&linker).output().unwrap();
+            let output = oer_process::command(&linker).output().unwrap();
             assert_eq!(String::from_utf8(output.stdout).unwrap(), marker);
         }
     }

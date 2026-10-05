@@ -60,7 +60,7 @@ pub fn add(ctx: &Checkout, path: &Path, branch: &str, from: &str) -> Result<()> 
     let destination = path.join("target");
     if is_subvolume(&source)? {
         process::capture(
-            std::process::Command::new("btrfs")
+            oer_process::command("btrfs")
                 .args(["subvolume", "snapshot"])
                 .arg(&source)
                 .arg(&destination),
@@ -95,7 +95,7 @@ fn is_subvolume(path: &Path) -> Result<bool> {
 fn fs_type(path: &Path) -> Result<String> {
     Ok(String::from_utf8(
         process::capture(
-            std::process::Command::new("findmnt")
+            oer_process::command("findmnt")
                 .args(["-no", "FSTYPE", "-T"])
                 .arg(path),
         )?
@@ -140,7 +140,7 @@ pub fn prepare(ctx: &Checkout) -> Result<()> {
         .into());
     }
     process::capture(
-        std::process::Command::new("btrfs")
+        oer_process::command("btrfs")
             .args(["subvolume", "create"])
             .arg(&staging),
     )?;
@@ -149,7 +149,7 @@ pub fn prepare(ctx: &Checkout) -> Result<()> {
             "worktree: moving {} into a subvolume by reflink copy (minutes, once)",
             target.display()
         );
-        let mut copy = std::process::Command::new("cp");
+        let mut copy = oer_process::command("cp");
         copy.args(["-a", "--reflink=always", "-T"])
             .arg(&target)
             .arg(&staging);
@@ -226,7 +226,7 @@ fn clone_units(source: &Path, destination: &Path) -> Result<()> {
     for units in UNITS {
         if source.join(units).is_dir() {
             process::capture(
-                std::process::Command::new("cp")
+                oer_process::command("cp")
                     .args(["-a", "--reflink=always"])
                     .arg(source.join(units))
                     .arg(destination.join(units)),

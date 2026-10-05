@@ -44,7 +44,15 @@ fn core_obeys_crate_boundaries() {
         ),
         (
             "blobray-linker",
-            ["blobray-domain", "blobray-application", MODEL].as_slice(),
+            // The Linux adapter uses the host process foundation; the analysis
+            // core remains independent of subprocess mechanisms.
+            [
+                "blobray-domain",
+                "blobray-application",
+                "oer-process",
+                MODEL,
+            ]
+            .as_slice(),
         ),
         (
             "blobray-cli",

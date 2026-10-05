@@ -8,7 +8,7 @@
 //! these in the background and serves the last result.
 #![forbid(unsafe_code)]
 
-use std::{path::Path, process::Command, time::Duration};
+use std::{path::Path, time::Duration};
 
 use serde::Serialize;
 
@@ -259,7 +259,7 @@ fn local_radios() -> Vec<Fixture> {
                 .collect::<Vec<_>>()
                 .join("; ");
             let probed = oer_process::output(
-                Command::new("sh").args(["-c", &script]),
+                oer_process::command("sh").args(["-c", &script]),
                 Some(Duration::from_secs(5)),
             )
             .ok()

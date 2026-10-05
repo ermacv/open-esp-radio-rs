@@ -2,7 +2,7 @@
 //! preparation of a Linux fixture software bundle, then the foreground sudo
 //! handoff to the privileged installer under a stand-maintenance lease.
 
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use oer_stand_fixture_install::{INSTALLER_BINARY, Provider, build_plan, prepare};
 
@@ -36,7 +36,7 @@ pub(crate) fn run(
             ],
             Provider::LinuxBluetooth => &["open-radio-bluetooth-launcher", "open-radio-bluetooth"],
         };
-        let mut build = Command::new(oer_toolchain::cargo_program());
+        let mut build = oer_process::command(oer_toolchain::cargo_program());
         build.current_dir(root).args([
             "build",
             "--locked",
@@ -68,7 +68,7 @@ pub(crate) fn run(
         // sudo runs in this foreground process group with the terminal's
         // standard streams, so it owns password echo, input and job control,
         // and its exit status is the command's.
-        let status = Command::new("sudo")
+        let status = oer_process::command("sudo")
             .arg(root.join("target/debug").join(INSTALLER_BINARY))
             .args(["--provider", provider.as_str(), "--bundle"])
             .arg(bundle)
@@ -110,7 +110,7 @@ fn install_grant(provider: Provider) -> Result<oer_stand_arbiter::Grant> {
 
 #[cfg(target_os = "linux")]
 fn current_operator() -> Result<String> {
-    let output = Command::new("/usr/bin/id").arg("-un").output()?;
+    let output = oer_process::command("/usr/bin/id").arg("-un").output()?;
     if !output.status.success() {
         return Err("cannot resolve the non-root fixture operator".into());
     }

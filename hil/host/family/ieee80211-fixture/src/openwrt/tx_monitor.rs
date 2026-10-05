@@ -8,7 +8,7 @@ use std::{
     fs,
     net::Ipv4Addr,
     path::Path,
-    process::{Command, Stdio},
+    process::Stdio,
     time::Duration,
 };
 
@@ -144,7 +144,7 @@ pub fn doctor(config: &OpenWrtConfig) -> Result<()> {
         ))
         .into());
     }
-    let status = Command::new("tshark")
+    let status = oer_process::command("tshark")
         .arg("--version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())

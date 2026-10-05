@@ -140,7 +140,14 @@ impl<'a> Context<'a> {
         let recorder = self.measurements.capture(relative)?;
         let capture = match &self.opener {
             Some(open) => open(output)?,
-            None => SerialCapture::start_with_reset(dut, output)?,
+            None => {
+                let operation = self
+                    .device
+                    .ok_or("this run holds no device lease")?
+                    .operation()?;
+                SerialCapture::start_with_reset(dut, output)?
+                    .with_io_lifetime(operation.lifetime().clone())
+            }
         }
         .observed_by(Box::new(recorder));
         Ok(match self.profile {

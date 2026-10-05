@@ -19,7 +19,6 @@ use std::{
     ffi::{OsStr, OsString},
     fmt, fs,
     path::PathBuf,
-    process::Command,
 };
 
 /// An input section bound for a zeroed region that carries an initializer.
@@ -84,7 +83,7 @@ pub fn run(arguments: Vec<OsString>, zeroed: &[String]) -> i32 {
 /// `rust-lld -flavor gnu` with the arguments, from the `PATH` rustc gives
 /// its linker (the sysroot's tool directory).
 fn run_linker(arguments: &[OsString]) -> i32 {
-    let mut command = Command::new("rust-lld");
+    let mut command = oer_process::command("rust-lld");
     if arguments.first().map(OsString::as_os_str) != Some(OsStr::new("-flavor")) {
         command.args(["-flavor", "gnu"]);
     }

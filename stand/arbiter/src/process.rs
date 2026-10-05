@@ -41,7 +41,7 @@ mod tests {
             ..current
         };
         assert!(!recycled.alive());
-        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let mut child = oer_process::command("true").spawn().unwrap();
         let identity = ProcessIdentity::of(child.id());
         child.wait().unwrap();
         assert!(identity.is_none_or(|identity| !identity.alive()));

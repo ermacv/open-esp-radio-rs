@@ -57,7 +57,7 @@ impl Checkout {
 
     /// `program` started in the checkout's top directory.
     pub fn command(&self, program: impl AsRef<OsStr>) -> Command {
-        let mut command = Command::new(program);
+        let mut command = crate::command(program);
         command.current_dir(&self.root);
         command
     }

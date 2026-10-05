@@ -487,16 +487,17 @@ fn the_then_command_joins_the_lease_and_names_the_run() {
     let run = directory.path().join("runs/1-a");
     let output = then_command(
         directory.path(),
-        "printf '%s %s' \"$OER_STAND_LEASE\" \"$OER_HIL_RUN_DIRECTORY\"; exit 3",
-        vec![("OER_STAND_LEASE", String::from("token"))],
+        "printf '%s\n%s' \"$OER_OPERATION_CONTEXT\" \"$OER_HIL_RUN_DIRECTORY\"; exit 3",
+        &oer_process::Context::default().with("stand.lease", "token"),
         &run,
     )
+    .unwrap()
     .output()
     .unwrap();
     assert_eq!(output.status.code(), Some(3));
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        format!("token {}", run.display())
+        format!("{{\"stand.lease\":\"token\"}}\n{}", run.display())
     );
 }
 

@@ -208,7 +208,7 @@ pub fn validate_registry(resolved: &Value, registry: &Value) -> Result<()> {
 /// current compiler and the registry's build profile and flags. A producer's
 /// embedded configuration must equal it for its evidence to be current.
 pub fn required_configuration(root: &Path, registry: &Value) -> Result<Value> {
-    let output = std::process::Command::new("rustc")
+    let output = oer_process::command("rustc")
         .current_dir(root)
         .arg("-vV")
         .output()?;

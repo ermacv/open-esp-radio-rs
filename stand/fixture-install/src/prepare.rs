@@ -3,7 +3,6 @@ use std::{
     io::{Read, Write},
     os::unix::fs::PermissionsExt as _,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use sha2::{Digest as _, Sha256};
@@ -176,7 +175,10 @@ fn require_capabilities_with_timeout(
     expected: &str,
     timeout: std::time::Duration,
 ) -> Result<()> {
-    let output = oer_process::output(Command::new(helper).arg("capabilities"), Some(timeout))?;
+    let output = oer_process::output(
+        oer_process::command(helper).arg("capabilities"),
+        Some(timeout),
+    )?;
     if !output.status.success() || String::from_utf8(output.stdout)?.trim() != expected {
         return Err(format!(
             "prepared helper has an incompatible runtime contract: {}",

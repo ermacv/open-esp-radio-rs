@@ -13,7 +13,6 @@ use std::{
 use oer_device_lock::{DeviceAccess, DeviceId};
 use oer_stand_claims::{Claim, conflict, covers, normalize};
 use oer_stand_journal::{device_label, latest};
-use oer_stand_owners::OWNER_ENV;
 
 use crate::{
     Arbiter,
@@ -27,7 +26,7 @@ use crate::{
 };
 
 /// Token of the lease a command runs inside; such commands join the lease.
-pub const LEASE_ENV: &str = "OER_STAND_LEASE";
+pub const LEASE_KEY: &str = "stand.lease";
 
 /// Time a terminated holder has to clean up before it is killed.
 pub(crate) const SHUTDOWN_GRACE: Duration = Duration::from_secs(300);
@@ -76,7 +75,7 @@ pub struct Grant {
     /// (or, inside an enclosing lease, the enclosing lease's delegation) for
     /// the whole lease, its hub power restorations included; released after
     /// the lease. The commands a lease starts get the boards as delegates
-    /// ([`Grant::environment`]); the lease keeps its guards until they exit.
+    /// ([`Grant::context`]); the lease keeps its guards until they exit.
     devices: Vec<DeviceAccess>,
 }
 
@@ -132,12 +131,12 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(300);
 impl Arbiter {
     /// Wait in the queue until the stand is granted to `request`.
     ///
-    /// A process inside a lease (its token in [`LEASE_ENV`]) or already
+    /// A process inside a lease (its token in [`LEASE_KEY`]) or already
     /// holding one joins it without waiting. Cancellation leaves the queue.
     pub fn acquire(&self, request: &Request) -> crate::Result<Grant> {
-        let enclosing = std::env::var(LEASE_ENV)
-            .ok()
-            .filter(|token| !token.is_empty());
+        let enclosing = oer_process::Context::current()?
+            .get(LEASE_KEY)
+            .map(str::to_owned);
         self.acquire_within(request, enclosing)
     }
 
@@ -146,9 +145,9 @@ impl Arbiter {
     /// holder whose claims conflict with it is preempted for `reason`, with
     /// the ordinary cancellation, cleanup and notification.
     pub fn acquire_maintenance(&self, request: &Request, reason: &str) -> crate::Result<Grant> {
-        let enclosing = std::env::var(LEASE_ENV)
-            .ok()
-            .filter(|token| !token.is_empty());
+        let enclosing = oer_process::Context::current()?
+            .get(LEASE_KEY)
+            .map(str::to_owned);
         self.acquire_as(request, enclosing, Some(reason))
     }
 
@@ -208,7 +207,7 @@ impl Arbiter {
                 enqueued_unix: oer_durable::unix_seconds(),
                 claims: claims.clone(),
                 priority,
-                job: crate::jobs::current(),
+                job: crate::jobs::current()?,
                 unknown: Default::default(),
             });
             Ok(id)
@@ -380,7 +379,7 @@ impl Arbiter {
             )
             .into()),
             (None, Some(_)) => Err(format!(
-                "{LEASE_ENV} names a lease that is no longer held; the enclosing lease ended"
+                "{LEASE_KEY} names a lease that is no longer held; the enclosing lease ended"
             )
             .into()),
             (None, None) => Ok(None),
@@ -597,16 +596,27 @@ impl Grant {
         self.held.is_none()
     }
 
-    /// Variables that make commands started inside the lease join it and
-    /// use its boards as delegates of its device locks.
-    pub fn environment(&self) -> Vec<(&'static str, String)> {
-        self.held.as_ref().map_or_else(Vec::new, |held| {
-            vec![
-                (LEASE_ENV, held.token.clone()),
-                (OWNER_ENV, held.owner.clone()),
-                oer_device_lock::delegation(),
-            ]
-        })
+    /// Explicit context for a command admitted to this lease: only its
+    /// selected boards, owner, lease and job. Ordinary children receive none.
+    pub fn context(&self) -> crate::Result<oer_process::Context> {
+        let mut context = oer_process::Context::default();
+        if let Some(held) = &self.held {
+            context.set(LEASE_KEY, &held.token);
+            context.set(oer_stand_owners::OWNER_KEY, &held.owner);
+        } else {
+            for key in [LEASE_KEY, oer_stand_owners::OWNER_KEY] {
+                if let Some(value) = oer_process::Context::current()?.get(key) {
+                    context.set(key, value);
+                }
+            }
+        }
+        if let Some(job) = crate::jobs::current()? {
+            context.set(crate::jobs::JOB_KEY, job);
+        }
+        for access in &self.devices {
+            access.delegate(&mut context)?;
+        }
+        Ok(context)
     }
 
     /// The device access of the leased board `id`.

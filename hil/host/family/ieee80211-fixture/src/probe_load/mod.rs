@@ -19,7 +19,7 @@ pub struct Source {
 }
 impl Source {
     pub fn prepare(config: &model::Config, output: &Path) -> Result<Self> {
-        let mut command = Command::new("sudo");
+        let mut command = oer_process::command("sudo");
         command.args(["-n", "/usr/local/libexec/open-radio-probe"]);
         Self::prepare_command(&mut command, config, output)
     }

@@ -20,6 +20,8 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 
 /// Names the owner of this command's requests, over the checkout's.
 pub const OWNER_ENV: &str = "OER_STAND_OWNER";
+/// Owner of the explicitly admitted child operation.
+pub const OWNER_KEY: &str = "stand.owner";
 
 /// An agent that uses the stand: a name of lower-case letters, digits,
 /// `-`, `_` and `.`, starting with a letter or digit.
@@ -181,11 +183,16 @@ impl Owners {
 /// registered for the checkout, else that of the main checkout of a
 /// worktree that registered none. Nothing is derived from directory names.
 pub fn resolve(explicit: Option<&str>, root: &Path) -> Result<Owner> {
-    if let Some(owner) = explicit.map(str::to_owned).or_else(|| {
-        std::env::var(OWNER_ENV)
-            .ok()
-            .filter(|owner| !owner.trim().is_empty())
-    }) {
+    let context = oer_process::Context::current()?;
+    if let Some(owner) = explicit
+        .map(str::to_owned)
+        .or_else(|| context.get(OWNER_KEY).map(str::to_owned))
+        .or_else(|| {
+            std::env::var(OWNER_ENV)
+                .ok()
+                .filter(|owner| !owner.trim().is_empty())
+        })
+    {
         return Ok(Owner::new(owner.trim())?);
     }
     let owners = Owners::open()?;
@@ -227,6 +234,9 @@ pub fn of_current_checkout() -> Result<Owner> {
 
 /// The owner [`OWNER_ENV`] names, else the checkout's registered one.
 pub fn from_environment() -> Result<Owner> {
+    if let Some(owner) = oer_process::Context::current()?.get(OWNER_KEY) {
+        return Ok(Owner::new(owner)?);
+    }
     match std::env::var(OWNER_ENV)
         .ok()
         .filter(|owner| !owner.trim().is_empty())

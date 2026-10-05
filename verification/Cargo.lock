@@ -144,6 +144,7 @@ dependencies = [
  "blobray-application",
  "blobray-domain",
  "libc",
+ "oer-process",
  "oer-riscv-model",
  "sha2",
 ]
@@ -515,6 +516,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "rustix",
+ "serde_json",
  "signal-hook",
 ]
 
@@ -617,6 +619,7 @@ version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
  "oer-durable",
+ "oer-process",
  "oer-vendor-pins",
 ]
 

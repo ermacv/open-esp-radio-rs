@@ -8,7 +8,7 @@ use crate::Result;
 /// `git -C directory`, for a caller that adds its arguments, environment or
 /// standard input itself and runs it through this crate.
 pub fn command(directory: &Path) -> Command {
-    let mut command = Command::new("git");
+    let mut command = crate::command("git");
     command.arg("-C").arg(directory);
     command
 }

@@ -44,7 +44,7 @@ pub struct Running {
 }
 
 impl Running {
-    /// The job of this process: the one [`oer_stand_arbiter::jobs::JOB_ENV`]
+    /// The job of this process: the one [`oer_stand_arbiter::jobs::JOB_KEY`]
     /// names (a detached job already has its record) or a new one for
     /// `args`; waits for `after` (a job id from `--after`) and marks the job
     /// started.
@@ -55,9 +55,9 @@ impl Running {
         after: Option<&After>,
     ) -> Result<Self> {
         let jobs = oer_stand_arbiter::Arbiter::open()?.jobs();
-        let id = match std::env::var(oer_stand_arbiter::jobs::JOB_ENV) {
-            Ok(id) => id,
-            Err(_) => record(&jobs, checkout, owner, args, after)?,
+        let id = match oer_stand_arbiter::jobs::current()? {
+            Some(id) => id,
+            None => record(&jobs, checkout, owner, args, after)?,
         };
         Self::start(jobs, id, after)
     }
@@ -99,7 +99,7 @@ impl Running {
     }
 
     /// The job's id, which the runner a launch starts carries in
-    /// [`oer_stand_arbiter::jobs::JOB_ENV`], so its requests are the job's
+    /// [`oer_stand_arbiter::jobs::JOB_KEY`], so its requests are the job's
     /// tickets.
     pub fn id(&self) -> &str {
         &self.id

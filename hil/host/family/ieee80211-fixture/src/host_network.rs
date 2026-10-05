@@ -4,7 +4,6 @@ use oer_process::CommandExt as _;
 use std::{
     net::Ipv4Addr,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use serde::{Deserialize, Serialize};
@@ -58,7 +57,7 @@ impl BenchmarkIpv4Route {
     /// `expected_medium` (any, for `None`).
     pub fn discover_over(device: Ipv4Addr, expected_medium: Option<RouteMedium>) -> Result<Self> {
         reject_overlapping_ipv4_links(device)?;
-        let output = Command::new("ip")
+        let output = oer_process::command("ip")
             .args(["-4", "route", "get", &device.to_string()])
             .supervised_output()
             .map_err(|error| format!("cannot inspect the host route to {device}: {error}"))?;
@@ -179,7 +178,7 @@ fn parse_ipv4_route(output: &str, device: Ipv4Addr) -> Result<BenchmarkIpv4Route
 /// of the DUT-to-fixture link. A qualification cell must expose one
 /// unambiguous L2 identity instead of silently measuring that topology.
 pub fn reject_overlapping_ipv4_links(device: Ipv4Addr) -> Result<()> {
-    let output = match Command::new("ip")
+    let output = match oer_process::command("ip")
         .args(["-o", "-4", "addr", "show", "up", "scope", "global"])
         .supervised_output()
     {

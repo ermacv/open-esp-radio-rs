@@ -10,7 +10,6 @@ use rustix::{
 use std::{
     io::Write,
     os::fd::{AsFd, OwnedFd},
-    process::Command,
     time::Instant,
 };
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -18,7 +17,7 @@ const MONITOR: &str = "oerprobe0";
 
 fn iw(args: &[&str]) -> Result<String> {
     let output = oer_process::output(
-        Command::new("/usr/bin/iw").args(args),
+        oer_process::command("/usr/bin/iw").args(args),
         Some(std::time::Duration::from_secs(5)),
     )?;
     if !output.status.success() {
@@ -178,7 +177,7 @@ pub fn run() -> Result<()> {
         "monitor",
     ])?;
     let status = oer_process::output(
-        Command::new("/usr/bin/ip").args(["link", "set", MONITOR, "up"]),
+        oer_process::command("/usr/bin/ip").args(["link", "set", MONITOR, "up"]),
         Some(std::time::Duration::from_secs(5)),
     )?
     .status;

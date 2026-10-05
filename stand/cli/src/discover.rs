@@ -111,17 +111,32 @@ fn blink<'a>(
     }) {
         claims.push(oer_stand_claims::Claim::board(&board.mac()?));
     }
-    let _grant = arbiter.acquire(&oer_stand_arbiter::Request {
+    let grant = arbiter.acquire(&oer_stand_arbiter::Request {
         owner,
         work: format!("stand discover --blink {}:{port}", hub.id),
         scenarios: Vec::new(),
         claims,
     })?;
+    let operation = stand
+        .board
+        .iter()
+        .find_map(|board| {
+            let mac = board.mac().ok()?;
+            grant
+                .device(&mac)
+                .map(oer_device_lock::DeviceAccess::operation)
+        })
+        .transpose()?;
+    // A newly discovered port may have no board identity yet.
+    let no_device = oer_process::IoLifetime::default();
+    let lifetime = operation
+        .as_ref()
+        .map_or(&no_device, oer_device_lock::DeviceOperation::lifetime);
     oer_stand_power::HubPower::new(oer_stand_file::HubPort {
         location: hub.usb2.clone(),
         port,
     })
-    .cycle_holding(discover::BLINK)?;
+    .cycle_holding(discover::BLINK, lifetime)?;
     Ok((hub, port))
 }
 

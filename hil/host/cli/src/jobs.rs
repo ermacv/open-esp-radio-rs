@@ -206,7 +206,6 @@ pub fn enqueue(
                 after.job.as_str(),
             ]
         }))
-        .env(oer_stand_arbiter::jobs::JOB_ENV, &id)
         .env(oer_stand_owners::OWNER_ENV, owner)
         .stdin(std::process::Stdio::null())
         .stdout(output.try_clone()?)
@@ -218,6 +217,9 @@ pub fn enqueue(
         // terminal's signals.
         command.process_group(0);
     }
+    oer_process::Context::default()
+        .with(oer_stand_arbiter::jobs::JOB_KEY, &id)
+        .apply(&mut command)?;
     let child = command.spawn()?;
     job.run_by(child.id());
     jobs.write(&job)?;

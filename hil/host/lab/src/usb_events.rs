@@ -5,7 +5,7 @@
 //! host saw the device disconnect and enumerate again; a repetition records
 //! those events next to its other artifacts as `usb-events.json`.
 
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use oer_process::CommandExt as _;
 
@@ -90,7 +90,7 @@ fn device_of_sysfs_path(path: &Path) -> Option<String> {
 }
 
 fn read_kernel_log(since_micros: u64) -> Result<Vec<UsbEvent>> {
-    let output = Command::new("journalctl")
+    let output = oer_process::command("journalctl")
         .args(["--dmesg", "--output=json", "--no-pager", "--quiet"])
         .arg(format!(
             "--since=@{}.{:06}",

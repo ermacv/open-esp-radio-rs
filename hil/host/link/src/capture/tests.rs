@@ -100,6 +100,8 @@ fn measurements_survive_link_failure_and_unwinding_capture() {
                 tx_bytes: 0,
                 rx_units: 2,
                 tx_units: 0,
+                rx_late_bytes: 0,
+                rx_late_units: 0,
                 elapsed_micros: 1_000,
                 transport_errors: 0,
             })),
@@ -1057,6 +1059,8 @@ fn result_events(rx_frames: u32) -> Vec<AnyMessage> {
         tx_bytes: 0,
         rx_units: 2,
         tx_units: 0,
+        rx_late_bytes: 0,
+        rx_late_units: 0,
         elapsed_micros: 100,
         transport_errors: 0,
     };

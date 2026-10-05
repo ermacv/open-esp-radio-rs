@@ -77,6 +77,8 @@ fn failed_per_peer_rate_gate_preserves_complete_raw_evidence() {
             rx_units: 0,
             tx_bytes: 1472,
             tx_units: 1,
+            rx_late_bytes: 0,
+            rx_late_units: 0,
             elapsed_micros: 12_000_000,
             transport_errors: 0,
         })

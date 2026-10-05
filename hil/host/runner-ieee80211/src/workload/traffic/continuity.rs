@@ -51,6 +51,8 @@ mod tests {
             tx_bytes: 78_000_000,
             rx_units: 48_333,
             tx_units: 65_000,
+            rx_late_bytes: 0,
+            rx_late_units: 0,
             elapsed_micros: 12_000_000,
             transport_errors: 0,
         };
@@ -72,6 +74,8 @@ mod tests {
             tx_bytes: 0,
             rx_units: 0,
             tx_units: 0,
+            rx_late_bytes: 0,
+            rx_late_units: 0,
             elapsed_micros: 100_000,
             transport_errors: 0,
         };

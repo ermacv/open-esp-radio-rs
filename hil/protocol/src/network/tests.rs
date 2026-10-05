@@ -136,6 +136,8 @@ fn silence_keeps_single_rx_flow_scope_through_transport_projection() {
         tx_bytes: 0,
         rx_units: 1,
         tx_units: 0,
+        rx_late_bytes: 0,
+        rx_late_units: 0,
         elapsed_micros: 12_000_000,
         transport_errors: 0,
     };
@@ -163,6 +165,8 @@ fn missing_second_flow_observation_cannot_qualify_whole_session_continuity() {
         tx_bytes: 0,
         rx_units: 1,
         tx_units: 0,
+        rx_late_bytes: 0,
+        rx_late_units: 0,
         elapsed_micros: 12_000_000,
         transport_errors: 0,
     };

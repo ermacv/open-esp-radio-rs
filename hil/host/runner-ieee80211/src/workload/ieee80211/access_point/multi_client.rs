@@ -470,13 +470,19 @@ fn validate_multi_client_udp_flow(
     let (rx_bytes, rx_units) = match host_tx {
         Some(host)
             if (exact_delivery
-                && (host.bytes != evidence.rx_bytes || host.datagrams != evidence.rx_units))
+                && (host.bytes != evidence.rx_delivered_bytes()
+                    || host.datagrams != evidence.rx_delivered_units()))
                 || (!exact_delivery
-                    && (evidence.rx_bytes > host.bytes || evidence.rx_units > host.datagrams)) =>
+                    && (evidence.rx_delivered_bytes() > host.bytes
+                        || evidence.rx_delivered_units() > host.datagrams)) =>
         {
             return Err(format!(
                 "AP UDP flow {} RX mismatch: host={}/{} target={}/{}",
-                evidence.flow_id, host.bytes, host.datagrams, evidence.rx_bytes, evidence.rx_units,
+                evidence.flow_id,
+                host.bytes,
+                host.datagrams,
+                evidence.rx_delivered_bytes(),
+                evidence.rx_delivered_units(),
             )
             .into());
         }

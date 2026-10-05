@@ -333,6 +333,8 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             tx_bytes: tx.bytes,
             rx_units: rx.units,
             tx_units: tx.units,
+            rx_late_bytes: 0,
+            rx_late_units: 0,
             elapsed_micros: elapsed_us,
             transport_errors,
         };

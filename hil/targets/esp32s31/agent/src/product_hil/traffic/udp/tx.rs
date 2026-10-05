@@ -422,6 +422,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 tx_bytes: bytes,
                 rx_units: 0,
                 tx_units: datagrams,
+                rx_late_bytes: 0,
+                rx_late_units: 0,
                 elapsed_micros,
                 transport_errors: send_errors,
             };

@@ -54,8 +54,8 @@ pub fn orphans(context: &Context<'_>) -> Vec<String> {
 /// A `// CAPABILITY:` anchor or a vendor `SOURCE` citation marker on a
 /// comment line, by the recognisers of their owners.
 fn marker(line: &str) -> Option<&'static str> {
-    use oer_vendor_provenance::citation::{Syntax, is_marker_line};
-    if crate::anchors::capability(line).is_some() {
+    use oer_markers::source::{Syntax, is_marker_line};
+    if oer_markers::capability::capability(line).is_some() {
         Some("CAPABILITY anchor")
     } else if is_marker_line(line, Syntax::Rust) {
         Some("vendor SOURCE citation")
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn markers_fail_only_outside_reachable_files() {
-        let marked = "// CAPABILITY: wpa2\nfn f() {}\n// SOURCE(esp32s31): `libpp.a[x.o]::f`\n";
+        let marked = "// CAPABILITY: wpa2\nfn f() {}\n// SOURCE(chip-a): `libpp.a[x.o]::f`\n";
         let found = problems(
             &[
                 PACKAGE,

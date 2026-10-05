@@ -1,5 +1,4 @@
 [package]
-workspace = "../../../tools/blobray"
 name = "oer-esp32c5-vendor-scenarios"
 version.workspace = true
 edition.workspace = true

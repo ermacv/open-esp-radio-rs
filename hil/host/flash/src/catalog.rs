@@ -4,9 +4,10 @@
 
 use std::path::Path;
 
-use oer_hil_arbiter::{Arbiter, lock::BoardLock};
-use oer_hil_board::Via;
-use oer_image::esp_idf::catalog::{self, Kind};
+use oer_device_image::Store;
+use oer_image::esp_idf::catalog;
+use oer_stand_board::Via;
+use oer_stand_journal::Journal;
 
 use crate::{Flashed, Image, Revision, Target};
 
@@ -16,7 +17,7 @@ pub struct Request<'a> {
     pub image: &'a str,
     /// The chip of the board it goes to.
     pub chip: &'a str,
-    /// Leave a board alone whose journal says it carries the current build.
+    /// Leave a board alone whose receipt says it runs the current build.
     pub if_changed: bool,
     pub via: Via,
     /// The run or command that flashes, for the journal.
@@ -24,12 +25,12 @@ pub struct Request<'a> {
 }
 
 /// Build the catalog image of the repository at `root` and flash it into
-/// `target` under `lock`, journaled for `owner`.
+/// the leased `target`, receipted in `store` and journaled for `owner`.
 pub fn flash(
     root: &Path,
-    journal: &Arbiter,
+    journal: &Journal,
+    store: &Store,
     owner: &str,
-    lock: &BoardLock,
     target: &dyn Target,
     request: &Request<'_>,
 ) -> crate::Result<Flashed> {
@@ -49,7 +50,7 @@ pub fn flash(
         &build,
         &root
             .join("target/hil/flash")
-            .join(target.mac().replace(':', ""))
+            .join(target.mac().compact())
             .join(&entry.image),
     )?;
     let image = Image {
@@ -63,21 +64,18 @@ pub fn flash(
         ),
     };
     if request.if_changed {
-        crate::flash_if_changed(journal, owner, lock, target, &image, request.via)
+        crate::flash_if_changed(journal, store, owner, target, &image, request.via)
     } else {
-        crate::flash(journal, owner, lock, target, &image, request.via).map(|()| Flashed::Written)
+        crate::flash(journal, store, owner, target, &image, request.via).map(Flashed::Written)
     }
 }
 
-/// The catalog entry `image`, unless it is a bootloader or held.
+/// The catalog entry `image`, unless it is held.
 fn refuse_unflashable<'a>(
     entries: &'a [catalog::Entry],
     image: &str,
 ) -> crate::Result<&'a catalog::Entry> {
     let entry = catalog::entry(entries, image)?;
-    if entry.kind == Kind::Bootloader {
-        return Err(format!("`{image}` is a bootloader; every flash writes it").into());
-    }
     if let Some(reason) = &entry.hold {
         return Err(format!(
             "`{image}` is held and not flashed: {reason} ({}/firmware.toml)",
@@ -100,17 +98,12 @@ mod tests {
     }
 
     #[test]
-    fn a_held_image_or_a_bootloader_is_refused_before_any_build() {
+    fn a_held_image_is_refused_before_any_build() {
         let root = tempfile::tempdir().unwrap();
         project(
             root.path(),
             "hil/peers/held",
-            "image = \"held-peer\"\nchip = \"esp32c5\"\npins = \"esp32s31\"\nhold = \"wedges USB\"\n",
-        );
-        project(
-            root.path(),
-            "hil/bootloaders/esp32c5",
-            "image = \"esp32c5-bootloader\"\nchip = \"esp32c5\"\npins = \"esp32c5\"\nkind = \"bootloader\"\n",
+            "image = \"held-peer\"\nchip = \"chip-b\"\npins = \"chip-a\"\nhold = \"wedges USB\"\n",
         );
         let entries = catalog::entries(root.path()).unwrap();
         let held = refuse_unflashable(&entries, "held-peer")
@@ -121,10 +114,5 @@ mod tests {
             held.contains("held") && held.contains("wedges USB"),
             "{held}"
         );
-        let bootloader = refuse_unflashable(&entries, "esp32c5-bootloader")
-            .err()
-            .unwrap()
-            .to_string();
-        assert!(bootloader.contains("is a bootloader"), "{bootloader}");
     }
 }

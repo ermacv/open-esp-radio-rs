@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 
 use crate::Result;
 use crate::build;
-use crate::run::{FirmwareArtifact, FirmwareReplayOrigin, RunSession};
-use oer_hil_image_class::ImageClass;
+use crate::run::RunSession;
+use oer_hil_run_bundle_format::run::FirmwareArtifact;
+use oer_hil_run_bundle_format::run::FirmwareReplayOrigin;
+use oer_hil_schema::image::ImageClass;
 
 /// Where a run's firmware is archived: the bundle, the object store and the
 /// sources and materials its build provenance cites.
@@ -14,8 +16,8 @@ pub struct FirmwareArchive<'a> {
     pub directory: &'a Path,
     pub target_directory: &'a Path,
     pub source_root: PathBuf,
-    pub source_materials: &'a [build::SourceMaterial],
-    pub snapshot_materials: &'a [build::BuildFileMaterial],
+    pub source_materials: &'a [oer_hil_run_bundle_format::build::SourceMaterial],
+    pub snapshot_materials: &'a [oer_hil_run_bundle_format::build::BuildFileMaterial],
 }
 
 impl RunSession {
@@ -184,7 +186,7 @@ fn import_optional_firmware_subject(
     source_directory: &Path,
     destination_directory: &Path,
     target_directory: &Path,
-    subject: super::model::SubjectRecord<'_>,
+    subject: oer_hil_run_bundle_format::run::SubjectRecord<'_>,
 ) -> Result<()> {
     match (subject.path, subject.size_bytes, subject.sha256) {
         (None, None, None) => Ok(()),

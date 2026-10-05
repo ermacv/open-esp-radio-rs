@@ -12,7 +12,7 @@ const REQUIRED_CAPABILITIES: &str = "schema=15 station_ap=ht20,ht40,he20 legacy_
 /// reset the DUT. System-only and remote-only workloads do not need this helper.
 pub fn require_for(
     lab: &oer_hil_lab::config::LabConfig,
-    required: oer_hil_scenario::requirements::Requirements,
+    required: oer_hil_scenario_catalog::requirements::Requirements,
 ) -> Result<()> {
     if required.local_radio()
         || (required.station_network

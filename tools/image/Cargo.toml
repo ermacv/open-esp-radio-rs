@@ -6,36 +6,23 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "The one image pipeline: build(ImageSpec) -> ImageBundle, with every gate and the flash contents encoded at build time"
+description = "The one image pipeline: build(ImageSpec) -> ImageBundle, with the flash contents encoded at build time and the checks a caller requests"
 
 [dependencies]
-# The library of espflash: the application, bootloader and partition table
-# are encoded with it at build time; no image is encoded by the CLI.
-espflash = { version = "=4.5.0", default-features = false }
-esp-idf-part = "=0.6.0"
-fs2 = "0.4"
+oer-esp-idf = { path = "../esp-idf" }
+oer-image-encode = { path = "../image-encode" }
+oer-image-policy = { path = "../image-policy" }
 oer-chip-profile = { path = "../chip-profile" }
 oer-durable = { path = "../durable" }
-oer-elf = { path = "../elf" }
-# The layout seed a runtime image build is linked with.
-oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout", features = ["build"] }
+oer-image-bundle = { path = "../image-bundle" }
 oer-process = { path = "../process" }
-oer-repo = { path = "../repo" }
-oer-riscv-decode = { path = "../riscv/decode" }
-oer-riscv-lift = { path = "../riscv/lift" }
-oer-riscv-model = { path = "../riscv/model" }
-oer-riscv-stack = { path = "../riscv/stack" }
 oer-toolchain = { path = "../toolchain" }
-oer-vendor-artifacts = { path = "../vendor-artifacts" }
-rustc-demangle = "=0.1.28"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
 tempfile = "=3.27.0"
 toml = "1.1"
 
 [dev-dependencies]
-object = { version = "=0.39.1", default-features = false, features = ["elf", "std", "write"] }
 
 [lints]
 workspace = true

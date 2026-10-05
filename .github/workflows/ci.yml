@@ -76,8 +76,9 @@ jobs:
       - run: cargo xtask --verbose check tier full --job architecture
 
   # Code built for a chip: the final HIL images' runtimes type-checked
-  # exactly as the image builder compiles them, the ESP32-S31 examples with
-  # their image flags, the ESP32-C5 workspaces, PAC and HAL, and the
+  # exactly as the image builder compiles them, every chip's examples with
+  # their image flags, the firmware workspaces, PACs and HALs the chip
+  # profiles name, and the
   # compiled PHY library.
   firmware:
     runs-on: ubuntu-24.04
@@ -92,8 +93,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-            hil/targets/esp32c5/target
-            verification/esp32c5/hardware/register-probe/target
+            hil/targets/*/target
+            verification/*/hardware/*/target
           key: firmware-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
           restore-keys: firmware-${{ runner.os }}-
       - name: Fetch every workspace

@@ -18,7 +18,7 @@ The application builds against the ESP-IDF revision and ESP32-C5 archives pinned
 without the OpenThread CLI, the ESP-IDF console or the lwIP glue:
 
 ```console
-cargo hil firmware flash openthread-peer --board esp32c5
+cargo fw flash openthread-peer --device <MAC|PORT>
 ```
 
 Like the IEEE 802.15.4 peer, it keeps the ROM's I2C master clock map so a

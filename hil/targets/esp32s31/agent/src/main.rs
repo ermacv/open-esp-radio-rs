@@ -86,14 +86,14 @@ use embassy_time::{Duration, Timer};
 #[cfg(feature = "open-radio-hil")]
 use esp_hal::system::{CpuControl, Stack};
 use esp_hal::timer::{OneShotTimer, timg::TimerGroup};
-use oer_esp32s31_executor_embassy::Executor;
+use oer_espressif_executor_embassy::Executor;
 use static_cell::StaticCell;
 
-oer_esp32s31_platform_runtime::interrupt_table! {
+oer_espressif_staged_runtime::interrupt_table! {
     /// Wakes the core-0 Embassy executor.
-    wake: ExecutorWake = FROM_CPU_INTR0 => oer_esp32s31_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
+    wake: ExecutorWake = FROM_CPU_INTR0 => oer_espressif_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
     /// The Embassy time driver's alarm (TIMG0 timer 0).
-    alarm: TimeAlarm = TG0_T0_LEVEL => oer_esp32s31_executor_embassy::timer_interrupt, Priority1, ProCpu;
+    alarm: TimeAlarm = TG0_T0_LEVEL => oer_espressif_executor_embassy::timer_interrupt, Priority1, ProCpu;
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     /// The Wi-Fi MAC's interrupt.
     wifi_mac: WifiMac = MODEM_WIFI_MAC => oer_esp32s31_ieee80211_system::mac_interrupt, Priority1, ProCpu;
@@ -135,7 +135,7 @@ oer_esp32s31_platform_runtime::interrupt_table! {
     profile_core1: ProfileCore1Sample = FROM_CPU_INTR3 => pc_profile::sample_core1, Priority8, AppCpu;
     #[cfg(feature = "open-radio-hil")]
     /// Wakes the core-1 Embassy executor.
-    app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_esp32s31_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
+    app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_espressif_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
     #[cfg(any(
         feature = "system-watchdog",
         feature = "system-panic-reset",
@@ -208,10 +208,12 @@ compile_error!(
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod phy_calibration_artifact;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+mod phy_calibration_projection;
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod phy_tracking;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod product_hil;
-use oer_esp32s31_platform_runtime::stacks as psram_task_stack;
+use oer_espressif_staged_runtime::stacks as psram_task_stack;
 
 const DATA_SENTINEL: u32 = 0x5353_31d2;
 const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
@@ -304,7 +306,7 @@ struct AppCoreStack(Stack<APP_CORE_BOOTSTRAP_STACK_BYTES>);
 
 #[cfg(feature = "open-radio-hil")]
 #[allow(unsafe_code, reason = "esp-hal's stack is uninitialized memory")]
-// REVIEWED-LAYOUT: esp-hal 8930609f
+// REVIEWED-LAYOUT: esp-hal 46a45a81
 // SAFETY: at the pinned esp-hal revision `Stack<SIZE>` is
 // `repr(C, align(16))` with one field, `mem: MaybeUninit<[u8; SIZE]>`, valid
 // for any bytes; `Stack::new` leaves it uninitialized.
@@ -354,7 +356,7 @@ unsafe extern "C" {
     static _stack_start: u8;
 }
 
-use oer_esp32s31_platform_runtime as _;
+use oer_espressif_staged_runtime as _;
 
 /// The image's record of a panic, which the platform's panic entry calls
 /// after its own record and before it resets the chip (feature `panic-hook`):
@@ -421,7 +423,7 @@ extern "C" fn runtime_main() -> ! {
     // across that ELF boundary, so stage two explicitly adopts the live
     // hardware mapping without reinitializing the PSRAM device or MMU.
     let _psram =
-        unsafe { oer_esp32s31_platform_runtime::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
+        unsafe { oer_esp32s31_platform_board::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
     exception::install_stack_guard(ptr::addr_of!(_stack_end) as usize);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let l1_cache = L1_CACHE_PERFORMANCE.init(
@@ -448,7 +450,7 @@ extern "C" fn runtime_main() -> ! {
         "the image installs its IEEE 802.15.4 route once"
     );
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    oer_esp32s31_executor_embassy::init(OneShotTimer::new(timer_group.timer0), interrupts.alarm);
+    oer_espressif_executor_embassy::init(OneShotTimer::new(timer_group.timer0), interrupts.alarm);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     {
         let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
@@ -508,7 +510,7 @@ extern "C" fn runtime_main() -> ! {
 
     // SAFETY: bootstrap intentionally hands MIE over clear, and timer and
     // software wake interrupt ownership is complete at this point.
-    unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
+    unsafe { oer_espressif_staged_runtime::enable_interrupts_after_handoff() };
 
     #[cfg(feature = "bluetooth-radio")]
     bluetooth::start(
@@ -671,7 +673,7 @@ fn run_app_core(
     // SAFETY: Core 1 enters directly from ROM rather than through
     // `_runtime_start` with MIE clear; its per-hart vector state and stack
     // ownership are complete, so hand interrupt enable to its executor.
-    unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
+    unsafe { oer_espressif_staged_runtime::enable_interrupts_after_handoff() };
     APP_EXECUTOR
         .init(Executor::<1>::new(app_interrupt))
         .run(interrupts.wake, |spawner| {
@@ -756,12 +758,12 @@ fn validate_runtime_layout() {
         let cpu1_top = symbol(ptr::addr_of!(__runtime_cpu1_irq_stack_top));
         range_in_internal_sram(cpu0_bottom, cpu0_top)
             && range_in_internal_sram(cpu1_bottom, cpu1_top)
-            && cpu0_top - cpu0_bottom == psram_task_stack::IRQ_STACK_BYTES as u32
-            && cpu1_top - cpu1_bottom == psram_task_stack::IRQ_STACK_BYTES as u32
+            && cpu0_top - cpu0_bottom == oer_esp32s31_platform_layout::LAYOUT.irq_stack_bytes
+            && cpu1_top - cpu1_bottom == oer_esp32s31_platform_layout::LAYOUT.irq_stack_bytes
     };
     let task_stack_valid = stack_bottom >= PROFILE_DATA_START
         && stack_top <= PROFILE_DATA_END
-        && stack_top - stack_bottom == psram_task_stack::CPU0_TASK_STACK_BYTES as u32;
+        && stack_top - stack_bottom == oer_esp32s31_platform_layout::LAYOUT.cpu0_task_stack_bytes;
 
     let initialized_data = unsafe { ptr::addr_of!(INITIALIZED_DATA).read_volatile() };
     let bss_probe = unsafe { ptr::addr_of!(BSS_PROBE).read_volatile() };

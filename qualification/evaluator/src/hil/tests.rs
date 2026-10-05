@@ -87,7 +87,7 @@ pub(super) fn complete(run: &Path) {
             }
         }
     }
-    let schema = json!(oer_hil_run_bundle::run::RUN_SCHEMA);
+    let schema = json!(oer_hil_run_bundle_format::run::RUN_SCHEMA);
     let empty = oer_durable::sha256_bytes(b"");
     let manifest_path = run.join("manifest.json");
     if let Ok(bytes) = fs::read(&manifest_path)
@@ -190,8 +190,11 @@ pub(super) fn complete(run: &Path) {
 pub(super) fn seal(run: &Path) {
     complete(run);
     let manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
-    oer_hil_run_bundle::run::write_integrity_index(run, manifest["run_id"].as_str().unwrap())
-        .unwrap();
+    oer_hil_run_bundle_format::run::write_integrity_index(
+        run,
+        manifest["run_id"].as_str().unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -225,7 +228,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         serde_json::to_vec_pretty(&json!({
             "schema": 2,
             "run_id": "run-1",
-            "target": "esp32s31",
+            "target": "chip-a",
             "state": "completed",
             "started_unix_millis": 100,
             "finished_unix_millis": 200,
@@ -242,7 +245,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     let mut suite = json!({
         "schema": 2,
         "run_id": "run-1",
-        "target": "esp32s31",
+        "target": "chip-a",
         "outcome": "passed",
         "started_unix_millis": 100,
         "finished_unix_millis": 200,
@@ -284,7 +287,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         &root,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &repository,
     )
     .unwrap();
@@ -309,7 +312,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         &root,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &stale_repository,
     )
     .unwrap();
@@ -344,7 +347,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         &root,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &repository,
     )
     .unwrap();
@@ -373,7 +376,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         &root,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &repository,
     )
     .unwrap();
@@ -389,7 +392,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
             &root,
             Path::new("runs"),
             Path::new("evidence"),
-            "esp32s31",
+            "chip-a",
             &repository,
         ))
         .is_some()
@@ -407,7 +410,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
             &root,
             Path::new("runs"),
             Path::new("evidence"),
-            "esp32s31",
+            "chip-a",
             &repository,
         ))
         .is_some()
@@ -431,7 +434,7 @@ fn unsealed_running_run_is_mutable_state_not_evidence() {
         serde_json::to_vec_pretty(&json!({
             "schema": 2,
             "run_id": "run-1",
-            "target": "esp32s31",
+            "target": "chip-a",
             "state": "running",
             "started_unix_millis": 100,
             "finished_unix_millis": null,
@@ -454,7 +457,7 @@ fn unsealed_running_run_is_mutable_state_not_evidence() {
         &root,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &repository,
     )
     .unwrap();
@@ -487,7 +490,7 @@ fn manifestless_generated_run_is_incomplete_not_an_error() {
         &root,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &repository,
     )
     .unwrap();
@@ -520,7 +523,7 @@ fn malformed_existing_manifest_still_fails_closed() {
         &root,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &repository,
     ))
     .unwrap();
@@ -544,7 +547,7 @@ fn unsealed_completed_run_still_fails_closed() {
         serde_json::to_vec_pretty(&json!({
             "schema": 2,
             "run_id": "run-1",
-            "target": "esp32s31",
+            "target": "chip-a",
             "state": "completed",
             "started_unix_millis": 100,
             "finished_unix_millis": 200,
@@ -568,7 +571,7 @@ fn unsealed_completed_run_still_fails_closed() {
         &root,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &repository,
     ))
     .unwrap();
@@ -617,8 +620,8 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
     .unwrap();
     let resolved = prepare_observer(root);
     let build = json!({"schema":2,"inputs":{
-        "observer.rs":sha256_file(&root.join("observer.rs")).unwrap(),
-        "hil/host/runner/src/main.rs":sha256_file(&root.join("hil/host/runner/src/main.rs")).unwrap(),
+        "observer.rs":crate::digests().sha256_file(&root.join("observer.rs")).unwrap(),
+        "hil/host/runner/src/main.rs":crate::digests().sha256_file(&root.join("hil/host/runner/src/main.rs")).unwrap(),
     },"compiler":configuration["compiler"],"environment":configuration["environment"],"resolved":resolved});
     // The run's observer build is stored beside the directory of runs.
     let embedded = json!({"schema":1,"executable_sha256":"aa".repeat(32),"build_sha256":format!("{:x}",Sha256::digest(serde_json::to_vec(&build).unwrap())),"build":build});
@@ -629,8 +632,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
         .parent()
         .unwrap()
         .to_owned();
-    manifest["runner"] =
-        json!({"observer": oer_hil_observer::store::detach(&embedded, &store).unwrap()});
+    manifest["runner"] = json!({"observer": oer_hil_run_bundle_format::observer::store::detach(&embedded, &store).unwrap()});
 
     manifest["firmware"] = json!([{
         "build_id": "ab".repeat(32),
@@ -670,7 +672,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
             "path": "Cargo.lock",
             "archive_path": null,
             "size_bytes": fs::metadata(&lock).unwrap().len(),
-            "sha256": sha256_file(&lock).unwrap(),
+            "sha256": crate::digests().sha256_file(&lock).unwrap(),
         }],
         "environment": {
             "tools": [], "inherited_rustflags": null, "inherited_encoded_rustflags": null,
@@ -720,7 +722,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
     fs::write(
         run.join("manifest.json"),
         serde_json::to_vec_pretty(&json!({
-            "schema": 2, "run_id": "run-1", "target": "esp32s31", "state": "completed",
+            "schema": 2, "run_id": "run-1", "target": "chip-a", "state": "completed",
             "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
             "repository": {"commit": "abc123", "dirty": false, "workspace_sha256": "00".repeat(32)}
         }))
@@ -730,7 +732,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
     fs::write(
         run.join("suite.json"),
         serde_json::to_vec_pretty(&json!({
-            "schema": 2, "run_id": "run-1", "target": "esp32s31", "outcome": "passed",
+            "schema": 2, "run_id": "run-1", "target": "chip-a", "outcome": "passed",
             "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
             "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0,
                 "blocked": 0, "interrupted": 0},
@@ -739,7 +741,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
                 "required_repetitions": 2,
                 "repetitions": [
                     {"schema": 2, "repetition": 1, "outcome": "passed", "failure": null,
-                        "measurements": [{"name": "received", "value": 40, "unit": "count",
+                        "measurements": [{"name": "received", "value": 40, "unit": "count", "semantics": 1, "better": null,
                             "threshold": null, "verdict": null}]},
                     {"schema": 2, "repetition": 2, "outcome": "passed", "failure": null}
                 ],
@@ -763,12 +765,12 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let index = HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &repository).unwrap();
+    let index = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &repository).unwrap();
     let recorded = shard::distill(
         &root,
         &index,
         evidence,
-        "esp32s31",
+        "chip-a",
         &[PathBuf::from("firmware")],
         None,
     )
@@ -779,7 +781,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
         read_json(&root.join("evidence/station-reconnect.json")).unwrap();
     let observer = &shard["subject"]["observer"];
     assert!(observer.get("build").is_none());
-    let build = oer_hil_observer::store::path(
+    let build = oer_hil_run_bundle_format::observer::store::path(
         &root.join(evidence),
         observer["build_sha256"].as_str().unwrap(),
     )
@@ -793,7 +795,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
         commit: "later-commit".to_owned(),
         dirty: false,
     };
-    let index = HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).unwrap();
+    let index = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later).unwrap();
     assert_eq!(index.summary().shards, 1);
     assert_eq!(index.summary().current_shards, 1);
     assert!(
@@ -804,14 +806,14 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
     assert_eq!(
         index.scenarios["station-reconnect"][0].measurements[0],
         [
-            json!({"name": "received", "value": 40, "unit": "count", "threshold": null,
+            json!({"name": "received", "value": 40, "unit": "count", "semantics": 1, "better": null, "threshold": null,
             "verdict": null})
         ]
     );
 
     // A changed firmware source makes it stale.
     fs::write(root.join("firmware/src/lib.rs"), "two").unwrap();
-    let index = HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).unwrap();
+    let index = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later).unwrap();
     assert_eq!(index.summary().current_shards, 0);
     assert!(
         index
@@ -823,14 +825,14 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
     fs::write(root.join("firmware/src/lib.rs"), "one").unwrap();
     let stored = fs::read(&build).unwrap();
     fs::remove_file(&build).unwrap();
-    assert!(HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).is_err());
+    assert!(HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later).is_err());
     fs::write(&build, stored).unwrap();
-    assert!(HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).is_ok());
+    assert!(HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later).is_ok());
 
     // A shard binding a source that no longer exists fails closed instead
     // of reading as stale.
     fs::rename(root.join("firmware"), root.join("moved")).unwrap();
-    let error = HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later)
+    let error = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later)
         .expect_err("a missing bound source")
         .to_string();
     assert!(error.contains("does not exist"), "{error}");
@@ -838,7 +840,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
 
     // A shard names its own scenario, and only shards live in the directory.
     fs::write(root.join("evidence/notes.txt"), "").unwrap();
-    assert!(HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).is_err());
+    assert!(HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &later).is_err());
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -847,7 +849,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
 /// fails closed.
 #[test]
 fn a_referenced_observer_build_is_the_only_stored_form() {
-    use oer_hil_observer::store as observer_store;
+    use oer_hil_run_bundle_format::observer::store as observer_store;
     let root = std::env::temp_dir().join(format!(
         "open-radio-qualification-hil-observer-{}",
         std::process::id()
@@ -860,7 +862,7 @@ fn a_referenced_observer_build_is_the_only_stored_form() {
     fs::write(
         run.join("manifest.json"),
         serde_json::to_vec_pretty(&json!({
-            "schema": 2, "run_id": "run-1", "target": "esp32s31", "state": "completed",
+            "schema": 2, "run_id": "run-1", "target": "chip-a", "state": "completed",
             "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
             "repository": {"commit": "abc123", "dirty": false, "workspace_sha256": "00".repeat(32)}
         }))
@@ -870,7 +872,7 @@ fn a_referenced_observer_build_is_the_only_stored_form() {
     fs::write(
         run.join("suite.json"),
         serde_json::to_vec_pretty(&json!({
-            "schema": 2, "run_id": "run-1", "target": "esp32s31", "outcome": "passed",
+            "schema": 2, "run_id": "run-1", "target": "chip-a", "outcome": "passed",
             "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
             "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0,
                 "blocked": 0, "interrupted": 0},
@@ -900,7 +902,7 @@ fn a_referenced_observer_build_is_the_only_stored_form() {
             &root,
             Path::new("runs"),
             Path::new("evidence"),
-            "esp32s31",
+            "chip-a",
             &repository,
         )
         .map(|index| {
@@ -962,7 +964,7 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
         fs::write(
             run.join("manifest.json"),
             serde_json::to_vec_pretty(&json!({
-                "schema": 2, "run_id": id, "target": "esp32s31", "state": "completed",
+                "schema": 2, "run_id": id, "target": "chip-a", "state": "completed",
                 "started_unix_millis": started, "finished_unix_millis": started + 100,
                 "duration_millis": 100,
                 "repository": {"commit": "abc123", "dirty": false, "workspace_sha256": "00".repeat(32)}
@@ -973,7 +975,7 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
         fs::write(
             run.join("suite.json"),
             serde_json::to_vec_pretty(&json!({
-                "schema": 2, "run_id": id, "target": "esp32s31", "outcome": "passed",
+                "schema": 2, "run_id": id, "target": "chip-a", "outcome": "passed",
                 "started_unix_millis": started, "finished_unix_millis": started + 100,
                 "duration_millis": 100,
                 "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0,
@@ -1024,7 +1026,7 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
             &root,
             runs,
             evidence,
-            "esp32s31",
+            "chip-a",
             &repository,
             Some(&only),
         )
@@ -1033,7 +1035,7 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
             &root,
             &index,
             evidence,
-            "esp32s31",
+            "chip-a",
             &[PathBuf::from("firmware")],
             Some(&only),
         )
@@ -1081,14 +1083,14 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
             &root,
             runs,
             evidence,
-            "esp32s31",
+            "chip-a",
             &repository,
             Some(&only),
         )
         .unwrap();
         let sources = [PathBuf::from("firmware")];
         let recorded =
-            shard::distill(&root, &index, evidence, "esp32s31", &sources, Some(&only)).unwrap();
+            shard::distill(&root, &index, evidence, "chip-a", &sources, Some(&only)).unwrap();
         shard::explain(&root, &index, &only, &recorded, evidence, &sources).unwrap()
     };
     assert_eq!(
@@ -1116,8 +1118,8 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
 }
 
 fn no_views(
-    _: &oer_hil_run_bundle::run::SuiteResult,
-    _: &oer_hil_run_bundle::run::RunManifest,
+    _: &oer_hil_run_bundle_format::run::SuiteResult,
+    _: &oer_hil_run_bundle_format::run::RunManifest,
 ) -> oer_hil_run_bundle::run::Views {
     oer_hil_run_bundle::run::Views::default()
 }
@@ -1126,16 +1128,18 @@ fn no_views(
 /// run bundle's one reader, and still refuses it once a sealed file changes.
 #[test]
 fn a_bundle_the_writer_seals_is_admitted_through_the_shared_reader() {
-    use oer_hil_run_bundle::run::{RepetitionResult, ScenarioResult, test_support::session};
+    use oer_hil_run_bundle::run::test_support::session;
+    use oer_hil_run_bundle_format::run::RepetitionResult;
+    use oer_hil_run_bundle_format::run::ScenarioResult;
     let root = tempfile::tempdir().unwrap();
     let run = root.path().join("runs/1700000000000-00000abc");
     fs::create_dir_all(run.join("scenarios/boot-smoke/repetition-001")).unwrap();
     let scenario = ScenarioResult::from_repetitions(
         String::from("boot-smoke"),
-        oer_hil_image_class::ImageClass::BootSmoke,
+        oer_hil_schema::image::ImageClass::BootSmoke,
         1,
         vec![RepetitionResult {
-            schema: oer_hil_run_bundle::run::RUN_SCHEMA,
+            schema: oer_hil_run_bundle_format::run::RUN_SCHEMA,
             repetition: 1,
             outcome: Outcome::Passed,
             started_unix_millis: 1,
@@ -1152,7 +1156,7 @@ fn a_bundle_the_writer_seals_is_admitted_through_the_shared_reader() {
             root.path(),
             Path::new("runs"),
             Path::new("evidence"),
-            "esp32s31",
+            "chip-a",
             &RepositoryState {
                 commit: String::new(),
                 dirty: false,

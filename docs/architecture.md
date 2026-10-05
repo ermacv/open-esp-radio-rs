@@ -91,19 +91,66 @@ packages of its own host layer and the layers below it
 
 | Host layer | Holds | Examples |
 | --- | --- | --- |
-| `entry` | Command lines: argument parsing and calls | `oer-xtask`, `oer-hil-cli`, `oer-hil-runner`, `oer-qualification`, `oer-tidy`, `oer-register-tool`, `blobray-cli`, `oer-vendor-scenario-cli` |
+| `entry` | Command lines: argument parsing and calls | `oer-xtask`, `oer-tidy`, `oer-fw`, `oer-stand`, `oer-hil-cli`, `oer-hil-runner`, `oer-qualification`, `oer-register-tool`, `oer-verification-cli`, `blobray-cli` |
 | `orchestration` | Experiments, run analysis, HIL image builds | `oer-hil-experiment`, `oer-hil-analysis`, `oer-hil-image` |
 | `execution` | HIL execution: protocol, agent, DUT link, scenarios, workloads, families, run bundles, observer identity, the HIL lab | `oer-hil-link`, `oer-hil-workload`, `oer-hil-family-*`, `oer-hil-run-bundle` |
 | `verification` | Vendor evidence and provenance, the register model, vendor scenarios and stands | `oer-vendor-evidence`, `oer-vendor-provenance`, `oer-register-model` |
-| `stand` | Boards, flashing, the arbiter, stand hosts | `oer-hil-board`, `oer-hil-flash`, `oer-hil-arbiter`, `oer-hil-stand-host` |
+| `stand` | The stand file, boards, the arbiter, owners, journal, hubs and power, stand hosts | `oer-stand-file`, `oer-stand-board`, `oer-stand-arbiter`, `oer-hil-flash` |
 | `build` | Images and binary analysis | `oer-image`, `oer-elf`, `oer-riscv-*`, Blobray's libraries |
-| `foundation` | Processes, files, host tools, chip profiles, the repository model, vendor pins | `oer-process`, `oer-durable`, `oer-toolchain`, `oer-repo`, `oer-vendor-artifacts` |
+| `foundation` | Processes, files, host tools, chip profiles, the repository model, vendor pins, the devices layer and the data formats | `oer-process`, `oer-durable`, `oer-toolchain`, `oer-repo`, `oer-vendor-artifacts`, `oer-device-*`, `oer-devices`, `oer-image-bundle`, `oer-hil-run-bundle-format` |
 
 So the stand and the build layer never reach HIL execution, verification
 never reaches HIL, and the foundation depends on nothing above it. Only
 entry crates run a repository command line: `cargo tidy check` rejects a
 non-entry package whose code spawns `cargo hil` or `cargo xtask`
 (`oer_tidy::spawns`); a library calls the owning library instead.
+
+### Host applications
+
+The host side is independent applications. They share only libraries and
+data formats, never each other's code; one application uses another by
+running it as a process or by reading what it wrote.
+
+| Application | Command | Owns | Uses |
+| --- | --- | --- | --- |
+| Dev kit | `cargo fw` ([`oer-fw`](../tools/fw/src/main.rs)) | Build an example's image, flash it or any bundle, monitor a board, list boards | Images, devices, chip profiles, foundation; nothing of the stand or HIL |
+| Stand | `cargo stand` ([`oer-stand`](../stand/cli/src/main.rs)) | Stand file, boards and hubs, the arbiter's queue and leases, owners (free-form names), journal, host setup, fixture installation | Devices, the stand file format, foundation |
+| HIL | `cargo hil` ([`oer-hil-cli`](../hil/host/cli/README.md)) | Runs, plans, run history, A/B experiments, HIL images | Stand libraries, images with HIL policy checks, devices, the run bundle format |
+| Vendor verification | `cargo verification` (its own workspace, [verification](../verification/README.md)) | Vendor pins and fetch, provenance, typed scenarios, evidence shards, probes | Blobray's engine, binary analysis, vendor pins, the shard format |
+| Blobray | `cargo blobray` (its own workspace, [Blobray](../tools/blobray/README.md)) | Binary analysis | Binary analysis libraries, foundation |
+| Registers | `cargo registers` ([register tool](../tools/registers/README.md)) | Register model, review, SVD/PAC/bindings publication | Foundation, chip profiles, the bindings format |
+| Qualification | `cargo qualification` ([evaluator](../qualification/README.md)) | Catalogs, programs, assessment | The run bundle, scenario catalog and shard formats, the repository model, foundation; never the runner, lab, HIL images or stand operation |
+| Gate | `cargo xtask`, `cargo tidy` ([xtask](../tools/xtask/README.md), [tidy](../tools/tidy/README.md)) | Check registry, push, CI state, worktrees, sweeps, text policy | The repository model and foundation; every other application runs as a process |
+
+`cargo tidy check` holds the dependency rules: the [host layers](#host-layers),
+qualification's ban on HIL orchestration and stand operation
+(`oer_repo::policy::qualification_edge_allowed`), and one release profile for
+every firmware workspace (`oer_tidy::workspaces::release_profiles`).
+
+**Device foundation.** Every application that touches a board goes through
+the devices layer (`tools/device/*`, assembled by `oer-devices`). A board is
+its [`DeviceId`](../tools/device/mac/src/lib.rs), the MAC its USB
+Serial/JTAG port reports. The [device lock](../tools/device/lock/src/lib.rs)
+lets one process own a board at a time for a whole operation (flash with
+reopen and start, reset, monitor, a HIL lease with its power cycles); a
+refused process names the holder, and the arbiter treats a board locked by
+a foreign process as busy. The one flash write,
+[`oer-device-image`](../tools/device/image/src/lib.rs), reads a bundle's
+segments once into a verified snapshot, invalidates the board's known image
+before writing, writes that snapshot and records a receipt (segment digests
+and a write generation); "written" and "started" are distinct states, so an
+unchanged image is not reflashed and an interrupted write leaves no stale
+claim.
+
+**Image compile cache.** Every firmware build of a host, whatever the
+checkout, application, chip, image class or example, and the vendor
+comparison probes, compiles in one shared Cargo target directory below the
+host build root (`oer_toolchain::image::compile_cache`,
+`$XDG_CACHE_HOME/open-esp-radio/build/cargo`, overridden by
+`OER_BUILD_ROOT`). Compiler flags are identical per chip, so units are
+reused across builds; a build holds the cache lock from its Cargo run until
+its outputs are copied out, and publishes its bundle by rename only after
+full success.
 
 ### Sans-IO protocols, executors and time
 
@@ -457,7 +504,7 @@ on a chip project; the scenarios depend on Blobray.
 A board's runtime linker script places some input sections, by name, in
 `NOLOAD` regions the boot clears (`.critical.bss`, `.dma.bss`, `.psram.bss`,
 `.rtc_fast.bss` and the plain `.bss` family); the platform layout lists them
-in one place (`platform/esp32s31/layout/src/zeroed.rs`). No byte of such a
+in one place (`platform/espressif/staged-layout/src/zeroed.rs`). No byte of such a
 section reaches the image, so a static placed there starts as zeros whatever
 its initializer says. A static in a zeroed region is declared only through
 `oer_memory::zeroed_static!`: its type implements `bytemuck::Zeroable`, the marker esp-hal's
@@ -484,10 +531,10 @@ firmware and evidence. Orchestration packages drive runs and may use the
 stand: the runner, the workload contract (`oer-hil-workload`), the
 `oer-hil-family-*` crates with the Wi-Fi fixtures and evidence, image
 builds (`oer-hil-image`), arbitration and its spectrum claims
-(`oer-hil-arbiter`) and the stand library (`oer-hil-lab`); their code
+(`oer-stand-arbiter`) and the stand library (`oer-hil-lab`); their code
 shapes what a run observes. Operation packages only operate the stand —
-boards and flashing (`oer-hil-board`), the stand file, the `cargo hil`
-command line — and never shape a passed observation, so the evaluator leaves
+boards and flashing (`oer-stand-board`, `oer-hil-flash`), the stand file,
+the `cargo hil` and `cargo stand` command lines — and never shape a passed observation, so the evaluator leaves
 them out of every evidence closure by this role alone. `cargo tidy check`
 rejects an observation package that depends on an orchestration or
 operation package, so neither can change what a run observes through it; an

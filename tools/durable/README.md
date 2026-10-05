@@ -4,7 +4,11 @@
 
 - `atomic_write` and `atomic_json` replace a file atomically (a temporary
   file in the same directory, synced, renamed, then the directory synced);
-- `sha256_file` and `sha256_bytes`, lowercase hex;
+- `sha256_file` and `sha256_bytes`, lowercase hex; `digests::DigestCache`
+  remembers a file's digest by its identity and times (device, inode, size,
+  modification and status-change time) in a cache file, so an immutable
+  file is hashed once across processes (the qualification evaluator's
+  sealed run bundles);
 - `unix_millis` and `unix_seconds`, wall-clock time;
 - `xdg`: the user's state directories. Every cache, store, lock directory and
   configuration a tool keeps outside a checkout lies below

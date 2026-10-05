@@ -7,7 +7,7 @@ use crate::{
     openwrt::evidence::OpenWrtRxCapture, openwrt::evidence::OpenWrtRxEvidence,
 };
 use oer_hil_lab::config::StationFixtureConfig;
-use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
+use oer_hil_scenario_catalog::link::{HtGuardIntervalExpectation, PhyExpectation};
 
 pub enum RxCapture {
     LocalLinux(Box<LocalLinuxRxCapture>),

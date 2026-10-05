@@ -33,7 +33,7 @@ impl Fixture {
         write(
             &run.join("manifest.json"),
             &json!({
-                "schema":2,"run_id":id,"target":"esp32s31","state":"completed",
+                "schema":2,"run_id":id,"target":"chip-a","state":"completed",
                 "started_unix_millis":100,"finished_unix_millis":200,"duration_millis":100,
                 "repository":{"commit":"current","dirty":false,"workspace_sha256":"00".repeat(32)}
             }),
@@ -41,7 +41,7 @@ impl Fixture {
         write(
             &run.join("suite.json"),
             &json!({
-                "schema":2,"run_id":id,"target":"esp32s31","outcome":if passed {"passed"} else {"failed"},
+                "schema":2,"run_id":id,"target":"chip-a","outcome":if passed {"passed"} else {"failed"},
                 "started_unix_millis":100,"finished_unix_millis":200,"duration_millis":100,
                 "counts":counts,"scenarios":scenarios
             }),
@@ -56,7 +56,7 @@ impl Fixture {
             &self.0,
             Path::new("runs"),
             Path::new("evidence"),
-            "esp32s31",
+            "chip-a",
             &RepositoryState {
                 commit: "current".into(),
                 dirty: false,
@@ -80,7 +80,7 @@ pub(in crate::hil) fn scenario(id: &str, outcomes: &[&str]) -> Value {
         .iter()
         .map(|s| serde_json::from_value(json!(s)).unwrap())
         .collect();
-    let outcome = oer_hil_run_bundle::run::aggregate_outcome(parsed);
+    let outcome = oer_hil_run_bundle_format::run::aggregate_outcome(parsed);
     json!({
         "schema":2,"scenario":id,"outcome":outcome,"required_repetitions":outcomes.len(),
         "failure":null,
@@ -141,7 +141,11 @@ fn subject_and_failure_identity_survive_a_different_evaluator_checkout() {
     artifact["application_path"] = json!("application.bin");
     artifact["application_size_bytes"] =
         json!(fs::metadata(run.join("application.bin")).unwrap().len());
-    artifact["application_sha256"] = json!(sha256_file(&run.join("application.bin")).unwrap());
+    artifact["application_sha256"] = json!(
+        crate::digests()
+            .sha256_file(&run.join("application.bin"))
+            .unwrap()
+    );
     write(&run.join("manifest.json"), &manifest);
     fs::create_dir_all(run.join("scenarios/ble-att")).unwrap();
     write(
@@ -184,7 +188,7 @@ fn subject_and_failure_identity_survive_a_different_evaluator_checkout() {
         &fixture.0,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &RepositoryState {
             commit: "changed".into(),
             dirty: true,
@@ -280,7 +284,7 @@ fn engineering_work_distinguishes_unseen_incomplete_historical_and_failed_runs()
         &fixture.0,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &RepositoryState {
             commit: "other".into(),
             dirty: false,
@@ -538,7 +542,7 @@ fn other_scenario_and_wrong_units_cannot_supply_a_requested_obligation() {
     );
     let mut index = HilEvidenceIndex::synthetic(&[(id, 1)]);
     index.scenarios.get_mut(id).unwrap()[0].measurements = vec![vec![json!({
-        "name":"udp.rx.target-rate", "value":100_000, "unit":"bytes"
+        "name":"udp.rx.target-rate", "value":100_000, "unit":"bytes", "semantics": 1, "better": null
     })]];
     let selected = HilRequirement {
         checks: vec!["udp.rx.target-rate".into()],
@@ -557,7 +561,7 @@ fn forged_pass_fails_even_when_no_named_checks_are_requested() {
     let fixture = Fixture::new();
     let mut claimed = scenario("ble-lifecycle", &["passed"]);
     claimed["repetitions"][0]["measurements"] = json!([{
-        "name":"ble.credits","value":0,"unit":"count",
+        "name":"ble.credits","value":0,"unit":"count", "semantics": 1, "better": null,
         "threshold":{"comparison":"exactly","value":4},"verdict":"failed"
     }]);
     fixture.write_run("run-1", vec![claimed]);
@@ -573,8 +577,10 @@ fn check_inside_failed_lifecycle_is_not_promoted_to_independent_evidence() {
     let mut index = HilEvidenceIndex::synthetic(&[("ble-lifecycle", 1)]);
     let observation = &mut index.scenarios.get_mut("ble-lifecycle").unwrap()[0];
     observation.outcome = Outcome::Failed;
-    observation.measurements = vec![vec![json!({"name":"ble.att","value":1,"unit":"count",
-        "threshold":{"comparison":"exactly","value":1},"verdict":"passed"})]];
+    observation.measurements = vec![vec![
+        json!({"name":"ble.att","value":1,"unit":"count", "semantics": 1, "better": null,
+        "threshold":{"comparison":"exactly","value":1},"verdict":"passed"}),
+    ]];
     let decision = index.decision_for(
         &requirement("ble-lifecycle", 1),
         &ScenarioCatalog::default(),
@@ -599,7 +605,7 @@ fn completed_numeric_observation_is_reassessed_but_absence_is_not_a_failure() {
         index.decision_for(&requested, &catalog).status,
         EvidenceStatus::Missing
     );
-    let measurement = json!({"name":"udp.rx.target-rate","value":90_000,"unit":"bits-per-second",
+    let measurement = json!({"name":"udp.rx.target-rate","value":90_000,"unit":"bits-per-second", "semantics": 1, "better": "higher",
         "threshold":{"comparison":"at-least","value":80_000},"verdict":"passed"});
     index.scenarios.get_mut(id).unwrap()[0].measurements = vec![vec![measurement.clone()]];
     assert_eq!(

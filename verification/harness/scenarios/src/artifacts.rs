@@ -2,9 +2,9 @@
 //! read through `oer-vendor-artifacts`, the one reader of the pins.
 //!
 //! Every scenario input is authenticated against this manifest, and each
-//! fetchable artifact has one cache location that `cargo xtask vendor-fetch`
+//! fetchable artifact has one cache location that `cargo verification fetch`
 //! fills. The manifest is the only place a pin changes.
-use oer_vendor_artifacts::{Artifact, Manifest};
+use oer_vendor_pins::{Artifact, Manifest};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 

@@ -11,7 +11,7 @@ use esp_hal::{
 
 use oer::wifi::{MonitorRequest, WifiChannel, WifiMonitorConfig};
 
-use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
+use oer_espressif_executor_embassy::{self as platform_executor, Executor};
 
 use oer::systems::esp32s31::embassy::{
     radio::{self as shared_radio, ConcurrentPartitions, RadioStart},
@@ -23,12 +23,12 @@ use oer::systems::esp32s31::embassy::{
 
 use static_cell::StaticCell;
 
-// The image's peripheral interrupt sources (`oer_esp32s31_platform_runtime::interrupts`).
-oer_esp32s31_platform_runtime::interrupt_table! {
+// The image's peripheral interrupt sources (`oer_espressif_staged_runtime::interrupts`).
+oer_espressif_staged_runtime::interrupt_table! {
     /// Wakes the core-0 Embassy executor.
-    wake: ExecutorWake = FROM_CPU_INTR0 => oer_esp32s31_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
+    wake: ExecutorWake = FROM_CPU_INTR0 => oer_espressif_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
     /// The Embassy time driver's alarm (TIMG0 timer 0).
-    alarm: TimeAlarm = TG0_T0_LEVEL => oer_esp32s31_executor_embassy::timer_interrupt, Priority1, ProCpu;
+    alarm: TimeAlarm = TG0_T0_LEVEL => oer_espressif_executor_embassy::timer_interrupt, Priority1, ProCpu;
     /// The Wi-Fi MAC's interrupt.
     wifi_mac: WifiMac = MODEM_WIFI_MAC => oer::systems::esp32s31::embassy::wifi::mac_interrupt, Priority1, ProCpu;
     /// The Wi-Fi power interrupt.
@@ -44,14 +44,14 @@ static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 #[unsafe(no_mangle)]
 extern "C" fn runtime_main() -> ! {
     esp_println::logger::init_logger_from_env();
-    if let Some(panic) = oer_esp32s31_platform_runtime::panic::take_previous() {
+    if let Some(panic) = oer_espressif_staged_runtime::panic::take_previous() {
         esp_println::println!("open-radio: the previous boot panicked at {panic}");
     }
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     // SAFETY: the common stage-two entry runs after the board bootstrap,
     // with global interrupts disabled and the PSRAM mapping intact.
     let _psram =
-        unsafe { oer_esp32s31_platform_runtime::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
+        unsafe { oer_esp32s31_platform_board::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
 
     static WATCHDOG: StaticCell<DeadlineWatchdog> = StaticCell::new();
     let watchdog = WATCHDOG.init(DeadlineWatchdog::new(peripherals.TIMG1));
@@ -77,7 +77,7 @@ extern "C" fn runtime_main() -> ! {
     )));
     // SAFETY: timer and executor handlers are now bound on CPU0, and the staged
     // handoff has kept MIE clear since `adopt_psram`.
-    unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
+    unsafe { oer_espressif_staged_runtime::enable_interrupts_after_handoff() };
     executor.run(interrupts.wake, |spawner| {
         spawner.spawn(
             monitor_task(spawner, radio_platform, wifi_platform, trng, watchdog)

@@ -874,9 +874,22 @@ fn a_summary_the_image_does_not_reach_is_unused() {
 
 #[test]
 fn the_platform_rom_summaries_parse() {
-    let text = include_str!("../../../../platform/esp32s31/linker/rom/functions.toml");
-    let summaries = parse_summaries(text).unwrap();
-    assert!(summaries.iter().any(|s| s.name == "memset"));
+    let platforms = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../platform");
+    let mut parsed = 0;
+    for platform in std::fs::read_dir(platforms).unwrap() {
+        let path = platform.unwrap().path().join("linker/rom/functions.toml");
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let summaries = parse_summaries(&text).unwrap();
+        assert!(
+            summaries.iter().any(|s| s.name == "memset"),
+            "{}",
+            path.display()
+        );
+        parsed += 1;
+    }
+    assert!(parsed > 0, "no platform reviews ROM summaries");
 }
 
 #[test]
@@ -897,7 +910,7 @@ fn only_data_neither_writable_nor_executable_reads_as_constant() {
 }
 
 /// The platform's interrupt entry up to its handler call
-/// (`platform/esp32s31/runtime/src/stacks.rs`, `PSRAM_TRAP_ENTER`).
+/// (the staged runtime's `PSRAM_TRAP_ENTER`).
 const PLATFORM_ENTRY: [u32; 35] = [
     0x3401_1173,
     0x3402_92f3,
@@ -1024,7 +1037,7 @@ fn binding(source: u16, level: u8, core: u32) -> [u32; 2] {
 }
 
 /// An image whose `__OER_INTERRUPT_TABLE` lists `entries` (source, level,
-/// core, handler symbol index or none) in the ESP32-S31 binding layout.
+/// core, handler symbol index or none) in the staged runtime's binding layout.
 fn table_image(entries: &[(u16, u8, u32, Option<u32>)], relocate_handlers: bool) -> Vec<u8> {
     let handler = Symbol {
         name: "handler",

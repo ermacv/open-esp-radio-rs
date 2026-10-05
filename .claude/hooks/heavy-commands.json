@@ -17,31 +17,92 @@
   "xtask": [
     "check",
     "push",
-    "build",
-    "doc",
-    "compare",
-    "evidence",
-    "vendor-scenario",
-    "register-inventory"
+    "doc"
   ],
   "xtask_listing": [
     "--list"
   ],
-  "hil": [
-    "run",
-    "run-all",
-    "wait",
-    "lease",
-    "flash"
-  ],
-  "hil_pairs": [
-    [
-      "image",
-      "build"
-    ]
-  ],
-  "hil_deferred": [
-    "--enqueue",
-    "--validate-only"
+  "tools": [
+    {
+      "name": "hil",
+      "heavy": [
+        "run",
+        "run-all",
+        "wait",
+        "bisect",
+        "ab"
+      ],
+      "pairs": [
+        [
+          "image",
+          "build"
+        ],
+        [
+          "images",
+          "check"
+        ],
+        [
+          "images",
+          "compare"
+        ],
+        [
+          "firmware",
+          "build"
+        ]
+      ],
+      "deferred": [
+        "--enqueue",
+        "--validate-only"
+      ]
+    },
+    {
+      "name": "fw",
+      "heavy": [
+        "build",
+        "flash",
+        "monitor",
+        "compare"
+      ],
+      "pairs": [],
+      "deferred": []
+    },
+    {
+      "name": "stand",
+      "heavy": [
+        "wait",
+        "lease",
+        "install",
+        "fixture"
+      ],
+      "pairs": [
+        [
+          "board",
+          "soak"
+        ]
+      ],
+      "deferred": []
+    },
+    {
+      "name": "verification",
+      "heavy": [
+        "fetch",
+        "diff",
+        "provenance",
+        "scenario",
+        "evidence",
+        "probes",
+        "check"
+      ],
+      "pairs": [],
+      "deferred": []
+    },
+    {
+      "name": "registers",
+      "heavy": [
+        "inventory"
+      ],
+      "pairs": [],
+      "deferred": []
+    }
   ]
 }

@@ -1,4 +1,4 @@
-//! The inventory run behind `cargo xtask register-inventory`: Blobray's
+//! The inventory run behind `cargo registers inventory`: Blobray's
 //! `register-accesses` over every pinned vendor binary inside the
 //! publication's owned MMIO ranges, compared with the register model
 //! ([`super`]), with the provenance registry's cited functions ranked first.
@@ -95,7 +95,7 @@ pub fn run(ctx: &Checkout, chip: &str, output: Option<PathBuf>) -> Result<()> {
     fs::create_dir_all(&directory)?;
     let inputs = inputs(ctx, chip)?;
     let (registers, regions) = inventory::model(&ctx.root, chip)?;
-    let host = oer_toolchain::blobray::host(&ctx.root)?;
+    let host = oer_toolchain::workspace::blobray_host(&ctx.root)?;
     let accesses = accesses(ctx, &directory, &host, &inputs, &regions)?;
     let ids: Vec<String> = inputs.iter().map(|input| input.id.clone()).collect();
     let observations = inventory::observations(&fs::read_to_string(&accesses)?, &ids)?;

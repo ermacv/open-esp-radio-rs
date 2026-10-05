@@ -1,10 +1,10 @@
 //! The radio-free SoC image's HIL console: the target core's console over
 //! this chip's USB Serial/JTAG endpoint, serving the SoC deadline watchdog.
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
-use esp_hal::{timer::timg::TimerGroup, usb::usb_serial_jtag::UsbSerialJtag};
+use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
 use oer_esp32c5_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineWatchdog};
 use oer_hil_agent::base::{Intake, Platform, WatchdogRequest};
-use oer_hil_agent::console::Console;
+use oer_hil_agent::console::Console as HilConsole;
 use oer_hil_image_keys::{ImageKeys, image_keys};
 use oer_hil_protocol::RequestIdentity;
 use oer_hil_protocol::base::{
@@ -25,7 +25,7 @@ fn rom_line(line: &core::ffi::CStr) {
     }
 }
 
-pub(crate) static CONSOLE: Console<256, 8, 8> = Console::new(rom_line);
+pub(crate) static CONSOLE: HilConsole<256, 8, 8> = HilConsole::new(rom_line);
 
 /// Watchdog tests the console handed over, one at a time.
 static TESTS: Channel<CriticalSectionRawMutex, (RequestIdentity, WatchdogTestMode), 1> =
@@ -43,16 +43,40 @@ impl Platform for Chip {
     }
 }
 
-/// Serve the host until the chip resets.
-pub(crate) async fn run(peripherals: esp_hal::peripherals::Peripherals) -> ! {
-    let usb = UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
-    static SERVICE: StaticCell<DeadlineWatchdog> = StaticCell::new();
-    let service: &'static DeadlineWatchdog = SERVICE.init(DeadlineWatchdog::new(peripherals.TIMG1));
+/// What the console task serves with: the USB Serial/JTAG peripheral with
+/// the token of its table entry, whose handler is esp-hal's async driver's,
+/// and the SoC deadline watchdog.
+pub(crate) struct Console {
+    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    route: crate::ConsoleUsb,
+    service: &'static DeadlineWatchdog,
+}
+
+impl Console {
+    pub(crate) fn new(
+        usb: esp_hal::peripherals::USB_DEVICE<'static>,
+        route: crate::ConsoleUsb,
+        watchdog: esp_hal::peripherals::TIMG1<'static>,
+    ) -> Self {
+        static SERVICE: StaticCell<DeadlineWatchdog> = StaticCell::new();
+        Self {
+            usb,
+            route,
+            service: SERVICE.init(DeadlineWatchdog::new(watchdog)),
+        }
+    }
+}
+
+/// Serve the host until the chip resets. It routes the console's source
+/// before the driver turns async, which requires the route.
+#[embassy_executor::task]
+pub(crate) async fn run(console: Console) {
+    oer_espressif_interrupt_table_esp_hal::enable(&console.route)
+        .unwrap_or_else(|error| panic!("the console's USB route: {error:?}"));
+    let usb = UsbSerialJtag::new(console.usb).into_async();
     // The boot identity only has to differ between boots.
     let rng = esp_hal::rng::Rng::new();
     let boot = ((u64::from(rng.random()) << 32) | u64::from(rng.random())).max(1);
-    let timers = TimerGroup::new(peripherals.TIMG0);
-    esp_rtos::start(timers.timer0);
     CONSOLE.start(boot);
 
     // This image's keys: the same function of its Cargo features the host
@@ -61,7 +85,7 @@ pub(crate) async fn run(peripherals: esp_hal::peripherals::Peripherals) -> ! {
     let keys = KEYS.init(image_keys(&|feature| feature == "system-watchdog"));
     let intake = Intake::new(boot, ImageKeySet::new(keys), 0);
     let (rx, tx) = usb.split();
-    let console = CONSOLE.run(
+    let serving = CONSOLE.run(
         rx,
         tx,
         intake,
@@ -76,9 +100,7 @@ pub(crate) async fn run(peripherals: esp_hal::peripherals::Peripherals) -> ! {
             }
         },
     );
-    embassy_futures::join::join(console, test_watchdog(service))
-        .await
-        .0
+    embassy_futures::join::join(serving, test_watchdog(console.service)).await;
 }
 
 /// Arms the SoC deadline watchdog for each test and misbehaves as asked.

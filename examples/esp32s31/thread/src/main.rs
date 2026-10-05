@@ -32,18 +32,18 @@ use oer::systems::esp32s31::embassy::ieee802154::{
     start,
 };
 use oer::systems::esp32s31::embassy::radio::{self as shared_radio, RadioStart, SharedRadio};
-use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
+use oer_espressif_executor_embassy::{self as platform_executor, Executor};
 use openthread::{OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket};
 use static_cell::{ConstStaticCell, StaticCell};
 
 use tinyrlibc as _;
 
-// The image's peripheral interrupt sources (`oer_esp32s31_platform_runtime::interrupts`).
-oer_esp32s31_platform_runtime::interrupt_table! {
+// The image's peripheral interrupt sources (`oer_espressif_staged_runtime::interrupts`).
+oer_espressif_staged_runtime::interrupt_table! {
     /// Wakes the core-0 Embassy executor.
-    wake: ExecutorWake = FROM_CPU_INTR0 => oer_esp32s31_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
+    wake: ExecutorWake = FROM_CPU_INTR0 => oer_espressif_executor_embassy::wake_handler::<0>, Priority1, ProCpu;
     /// The Embassy time driver's alarm (TIMG0 timer 0).
-    alarm: TimeAlarm = TG0_T0_LEVEL => oer_esp32s31_executor_embassy::timer_interrupt, Priority1, ProCpu;
+    alarm: TimeAlarm = TG0_T0_LEVEL => oer_espressif_executor_embassy::timer_interrupt, Priority1, ProCpu;
     /// The IEEE 802.15.4 MAC's interrupt.
     ieee802154: Ieee802154Mac = MODEM_ZB_MAC => oer::systems::esp32s31::embassy::ieee802154::ieee802154_interrupt, Priority1, ProCpu;
 }
@@ -102,14 +102,14 @@ fn ieee_eui64() -> [u8; 8] {
 #[unsafe(no_mangle)]
 extern "C" fn runtime_main() -> ! {
     esp_println::logger::init_logger_from_env();
-    if let Some(panic) = oer_esp32s31_platform_runtime::panic::take_previous() {
+    if let Some(panic) = oer_espressif_staged_runtime::panic::take_previous() {
         esp_println::println!("open-radio: the previous boot panicked at {panic}");
     }
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     // SAFETY: the common stage-two entry runs after the board bootstrap,
     // with global interrupts disabled and the PSRAM mapping intact.
     let _psram =
-        unsafe { oer_esp32s31_platform_runtime::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
+        unsafe { oer_esp32s31_platform_board::adopt_psram(peripherals.PSRAM, INTERRUPT_TABLE) };
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     let interrupts = Interrupts::take().expect("the image takes its interrupt tokens once");
@@ -138,7 +138,7 @@ extern "C" fn runtime_main() -> ! {
     )));
     // SAFETY: timer and executor handlers are now bound on CPU0, and the staged
     // handoff has kept MIE clear since `adopt_psram`.
-    unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
+    unsafe { oer_espressif_staged_runtime::enable_interrupts_after_handoff() };
     executor.run(interrupts.wake, |spawner| {
         spawner.spawn(
             thread_task(spawner, platform, trng)

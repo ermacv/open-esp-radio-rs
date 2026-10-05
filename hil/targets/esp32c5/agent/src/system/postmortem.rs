@@ -1,7 +1,7 @@
 //! The ESP32-C5 placement of the post-mortem record.
 //!
-//! The record lives in `.rtc_fast.persistent`, RTC fast memory that no reset
-//! entry initializes, so what one boot writes is there for the next unless
+//! The record lives in `.rtc_fast.persistent`, LP RAM that no reset entry
+//! initializes (the staged runtime's retained region), so what one boot writes is there for the next unless
 //! the chip lost power. [`begin`] runs once, early in every boot: it takes
 //! what the previous boot left and starts this boot's ring. The record is
 //! written only inside the critical section, except by the panic handler.
@@ -57,17 +57,17 @@ pub(crate) fn checkpoint(name: &str, arg: u32) {
     with_record(|record| record.checkpoint(name, arg, now, 0));
 }
 
-/// Record the panic being handled. It is written without the critical
-/// section, which the panicking code may hold; the halted boot never reads
-/// the record again.
+/// Record the panic being handled, from the platform's panic entry. It is
+/// written without the critical section, which the panicking code may hold;
+/// the chip resets next and never reads the record again in this boot.
+/// Formatting would put `core::fmt` on every context's panic path: a message
+/// with arguments is recorded empty.
 pub(crate) fn record_panic(info: &core::panic::PanicInfo<'_>) {
-    use core::fmt::Write as _;
-    let mut message = heapless::String::<96>::new();
-    let _ = write!(message, "{}", info.message());
+    let message = info.message().as_str().unwrap_or("");
     let (file, line) = info
         .location()
         .map_or(("", 0), |location| (location.file(), location.line()));
     // SAFETY: see above.
     let record = unsafe { &mut *RECORD.0.get() };
-    record.record_panic(file, line, &message);
+    record.record_panic(file, line, message);
 }

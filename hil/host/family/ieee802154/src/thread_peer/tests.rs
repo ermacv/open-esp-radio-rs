@@ -32,17 +32,17 @@ impl PeerLink for ScriptedLink {
 fn only_the_openthread_peer_is_ready() {
     // The IEEE 802.15.4 peer's ready line is another image.
     assert!(
-        ThreadPeer::synchronize(ScriptedLink::new(&["@READY protocol=1 target=esp32c5"])).is_err()
+        ThreadPeer::synchronize(ScriptedLink::new(&["@READY protocol=1 target=chip-b"])).is_err()
     );
     assert!(
         ThreadPeer::synchronize(ScriptedLink::new(&[
-            "@READY protocol=2 target=esp32c5 stack=openthread"
+            "@READY protocol=2 target=chip-b stack=openthread"
         ]))
         .is_err()
     );
     ThreadPeer::synchronize(ScriptedLink::new(&[
         "boot noise",
-        "@READY protocol=1 target=esp32c5 stack=openthread",
+        "@READY protocol=1 target=chip-b stack=openthread",
     ]))
     .unwrap();
 }
@@ -50,7 +50,7 @@ fn only_the_openthread_peer_is_ready() {
 #[test]
 fn commands_render_and_return_their_reports() {
     let link = ScriptedLink::new(&[
-        "@READY protocol=1 target=esp32c5 stack=openthread",
+        "@READY protocol=1 target=chip-b stack=openthread",
         "@OK FORM",
         "@DATASET 0e080000000000010000",
         "@OK DATASET",
@@ -104,7 +104,7 @@ fn commands_render_and_return_their_reports() {
 #[test]
 fn a_rejected_or_incomplete_answer_fails() {
     let link = ScriptedLink::new(&[
-        "@READY protocol=1 target=esp32c5 stack=openthread",
+        "@READY protocol=1 target=chip-b stack=openthread",
         "@ERR FORM InvalidArgs",
         "@OK DATASET",
     ]);

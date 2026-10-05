@@ -22,10 +22,10 @@
       "Bash(cargo tidy workspaces --json)",
       "Bash(cargo tidy chips)",
       "Bash(cargo tidy chips --json)",
-      "Bash(cargo hil queue)",
-      "Bash(cargo hil queue --json)",
+      "Bash(cargo stand queue)",
+      "Bash(cargo stand queue --json)",
       "Bash(cargo hil scenario list)",
-      "Bash(cargo xtask check firmware --list)"
+      "Bash(cargo hil images check --list)"
     ]
   },
   "hooks": {

@@ -9,6 +9,7 @@ build = "build.rs"
 
 [dependencies]
 oer-esp32s31-platform-layout.workspace = true
+oer-espressif-staged-bootstrap = { path = "../../espressif/staged-bootstrap", features = ["esp32s31"] }
 esp-bootloader-esp-idf = { workspace = true, features = ["embedded-storage", "esp32s31"] }
 esp-hal = { workspace = true, features = ["esp32s31", "static-interrupts", "rt", "unstable"] }
 oer-esp32s31-platform-board = { path = "../board" }

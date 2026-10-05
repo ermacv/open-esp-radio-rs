@@ -1,4 +1,4 @@
-//! Analysis of HIL run bundles, read through [`oer_hil_run_bundle::RunBundle`].
+//! Analysis of HIL run bundles, read through [`oer_hil_run_bundle_format::RunBundle`].
 //!
 //! - [`run`]: one run as the analyses read it, its bundle and suite.
 //! - [`samples`]: the one aggregation of a run's typed measurements

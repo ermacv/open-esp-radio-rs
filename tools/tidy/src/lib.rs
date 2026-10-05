@@ -4,13 +4,13 @@
 //! whole tier runs in seconds:
 //!
 //! - [`sources`]: every Rust file is reachable from a crate root, and
-//!   capability anchors ([`anchors`], the one recogniser of their grammar)
-//!   and vendor `SOURCE` citations (`oer_vendor_provenance::citation`) sit
-//!   only in reachable files;
+//!   capability anchors and vendor `SOURCE` citations (`oer_markers`, the
+//!   one recogniser of each grammar) sit only in reachable files;
 //! - [`records`]: every repository path a qualification or evidence record
 //!   names exists;
 //! - [`workspaces`]: every package belongs to a discovered workspace, and
-//!   every workspace has its lock file;
+//!   every workspace has its lock file, and every firmware workspace has
+//!   the same release profile;
 //! - [`dependencies`]: every declared dependency is named by its package;
 //! - [`classification`]: every package's `[package.metadata.open-radio]`
 //!   classifies it, names an existing chip or family and input files, and
@@ -26,7 +26,6 @@
 //! Each check returns its problems; an empty report is a pass.
 
 pub mod allowlist;
-pub mod anchors;
 pub mod classification;
 pub mod dependencies;
 pub mod fetch;
@@ -110,6 +109,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "workspaces",
             problems: workspaces::check(&context),
+        },
+        Outcome {
+            check: "firmware release profiles",
+            problems: workspaces::release_profiles(&context),
         },
         Outcome {
             check: "unused dependencies",

@@ -2,10 +2,12 @@
 
 use std::path::Path;
 
-use oer_hil_run_bundle::{
-    RunBundle, RunStore,
-    run::{Outcome, RunState, ScenarioResult, SuiteResult},
-};
+use oer_hil_run_bundle::RunStore;
+use oer_hil_run_bundle_format::RunBundle;
+use oer_hil_run_bundle_format::run::Outcome;
+use oer_hil_run_bundle_format::run::RunState;
+use oer_hil_run_bundle_format::run::ScenarioResult;
+use oer_hil_run_bundle_format::run::SuiteResult;
 
 use crate::Result;
 

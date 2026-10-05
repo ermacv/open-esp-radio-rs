@@ -9,19 +9,25 @@ publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
+oer-image-check-interrupts = { path = "../../../tools/image-check/interrupts" }
+oer-device-reset = { path = "../../../tools/device/reset" }
+oer-hil-run-bundle-format = { path = "../run-bundle/format" }
+oer-hil-schema = { path = "../../schema" }
+oer-hil-scenario-catalog = { path = "../scenario/catalog" }
+oer-image-bundle = { path = "../../../tools/image-bundle" }
 oer-toolchain = { path = "../../../tools/toolchain" }
 oer-hil-lab = { path = "../lab" }
 oer-hil-link = { path = "../link" }
 oer-hil-image = { path = "../image" }
 oer-image = { path = "../../../tools/image" }
+oer-chip-profile = { path = "../../../tools/chip-profile" }
 oer-hil-run-bundle = { path = "../run-bundle" }
 oer-hil-analysis = { path = "../analysis" }
 oer-hil-scenario = { path = "../scenario" }
 oer-hil-source-snapshot = { path = "../source-snapshot" }
 oer-durable = { path = "../../../tools/durable" }
 oer-hil-image-class = { path = "../image-class" }
-oer-hil-arbiter = { path = "../arbiter" }
-oer-hil-board = { path = "../board" }
+oer-stand-board = { path = "../../../stand/board" }
 oer-hil-flash = { path = "../flash" }
 oer-hil-workload = { path = "../workload" }
 oer-hil-family-bluetooth = { path = "../family/bluetooth" }
@@ -29,12 +35,11 @@ oer-hil-family-coexistence = { path = "../family/coexistence" }
 oer-hil-family-ieee80211 = { path = "../family/ieee80211" }
 oer-hil-family-ieee80211-fixture = { path = "../family/ieee80211-fixture" }
 oer-hil-family-ieee802154 = { path = "../family/ieee802154" }
-oer-hil-family-phy = { path = "../family/phy" }
+oer-hil-family-phy-esp32s31 = { path = "../family/phy-esp32s31" }
 oer-hil-family-system = { path = "../family/system" }
 oer-command-tree = { path = "../../../tools/command-tree", features = ["clap"] }
-rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }
 oer-process = { path = "../../../tools/process" }
-oer-hil-fixture-install = { path = "../fixture-install" }
+oer-stand-fixture-install = { path = "../../../stand/fixture-install" }
 clap = { version = "4.5", features = ["derive"] }
 sha2 = "0.10"
 tempfile = "3"
@@ -42,11 +47,13 @@ oer-hil-protocol = { path = "../../protocol" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+oer-device-image = { path = "../../../tools/device/image" }
+oer-device-lock = { path = "../../../tools/device/lock" }
+oer-stand-journal = { path = "../../../stand/journal" }
+oer-stand-owners = { path = "../../../stand/owners" }
 [dev-dependencies]
-oer-chip-profile = { path = "../../../tools/chip-profile" }
 oer-hil-run-bundle = { path = "../run-bundle", features = ["test-support"] }
 oer-hil-source-snapshot = { path = "../source-snapshot", features = ["test-support"] }
-libc = "0.2"
 toml = "1.1"
 oer-hil-workload = { path = "../workload", features = ["test-support"] }
 
@@ -62,7 +69,8 @@ inputs = ["qualification/evaluator"]
 hil = "orchestration"
 
 [build-dependencies]
-oer-hil-observer = { path = "../../observer", features = ["producer"] }
+oer-hil-observer = { path = "../../observer" }
+oer-hil-run-bundle-format = { path = "../run-bundle/format" }
 serde_json = "1.0"
 sha2 = "0.10"
 toml_edit = { version = "=0.25.13", features = ["serde"] }

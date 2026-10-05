@@ -1,6 +1,6 @@
 //! Driver of the IEEE 802.15.4 reference peer.
 //!
-//! The peer is an ESP32-C5 running `hil/peers/esp32c5-ieee802154`: the vendor
+//! The peer runs the IEEE 802.15.4 peer project of `hil/peers`: the vendor
 //! driver behind a line protocol on its console (see that README). Commands
 //! are answered by `@OK`/`@ERR`; driver reports arrive as events at any time
 //! and are queued while a command waits for its answer. The grammar, `SYNC`
@@ -11,13 +11,14 @@
 use std::{path::Path, time::Duration};
 
 use crate::Result;
+use oer_device_peer_line::{Report, hex, to_hex};
 use oer_hil_link::peer::{
-    Expected, PeerConsole, PeerLink, PeerTranscript, RecordingLink, Report, SerialLink, hex, to_hex,
+    Expected, PeerConsole, PeerLink, PeerTranscript, RecordingLink, SerialLink,
 };
 
 /// Protocol version the driver speaks.
 pub const PEER_PROTOCOL: u32 = 1;
-/// Board-journal image name of `hil/peers/esp32c5-ieee802154`.
+/// Board-journal image name of the IEEE 802.15.4 peer project of `hil/peers`.
 pub const PEER_IMAGE: &str = "ieee802154-peer";
 /// How to restore the peer firmware when another consumer replaced it.
 pub const PEER_REFLASH: &str =
@@ -142,7 +143,7 @@ pub struct Peer<L> {
 impl Peer<SerialLink> {
     /// Take over the peer on `path` and wait until it reports ready.
     pub fn open(path: &Path) -> Result<Self> {
-        Self::synchronize(SerialLink::open(path)?)
+        Self::synchronize(oer_hil_lab::peer_console(path)?)
     }
 }
 
@@ -151,7 +152,12 @@ impl Peer<RecordingLink<SerialLink>> {
     /// recording every line of the session into `transcript`.
     pub fn open_recorded(path: &Path, transcript: &PeerTranscript) -> Result<Self> {
         Ok(Self {
-            console: PeerConsole::open_recorded(path, transcript, EXPECTED, READY_TIMEOUT)?,
+            console: PeerConsole::open_recorded(
+                oer_hil_lab::peer_console(path)?,
+                transcript,
+                EXPECTED,
+                READY_TIMEOUT,
+            )?,
         })
     }
 }

@@ -64,7 +64,8 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `espressif-ieee802154-engine` | `hardware/espressif/ieee802154/engine/` |
 | `esp32s31-ieee80211-dma` | `hardware/esp32s31/driver/ieee80211/dma/` |
 | `esp32s31-radio-esp-hal` | `adapters/esp-hal/esp32s31/radio/` |
-| `esp32s31-executor-embassy` | `adapters/embassy/esp32s31/executor/` |
+| `espressif-executor-embassy` | `adapters/embassy/espressif/executor/` |
+| `espressif-interrupt-table-esp-hal` | `adapters/esp-hal/espressif/interrupt-table/` |
 | `esp32s31-bluetooth-system` | `composition/esp32s31/embassy/bluetooth/` |
 | `esp32s31-ieee80211-system` | `composition/esp32s31/embassy/ieee80211/` |
 | `esp32s31-ieee802154-system` | `composition/esp32s31/embassy/ieee802154/` |

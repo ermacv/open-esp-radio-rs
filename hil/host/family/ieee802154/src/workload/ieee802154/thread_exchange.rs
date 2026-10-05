@@ -1,7 +1,7 @@
 //! A Thread exchange between the device's OpenThread radio and ESP-IDF's
 //! OpenThread stack.
 //!
-//! The Thread reference peer (`hil/peers/esp32c5-openthread`) forms a new
+//! The Thread reference peer (the OpenThread peer project of `hil/peers`) forms a new
 //! network as its leader. One Thread session on the device under test covers
 //! these cells:
 //!

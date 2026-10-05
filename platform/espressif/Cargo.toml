@@ -1,0 +1,37 @@
+# The chip-neutral staged boot of the Espressif chips: the layout contract
+# and its linker binding, the bootstrap library and the stage-two runtime.
+# Each chip's platform workspace (`platform/<chip>`) consumes them by path
+# with its own address map, ROM script and board.
+[workspace]
+resolver = "3"
+members = ["staged-bootstrap", "staged-layout", "staged-runtime"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ermacv/open-esp-radio-rs"
+publish = false
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+# A mutable call inside `debug_assert!` disappears from optimized firmware.
+debug_assert_with_mut_call = "deny"
+# The repository `clippy.toml` lists methods radio code must not call.
+disallowed_methods = "deny"
+
+[workspace.dependencies]
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921", default-features = false }
+oer-espressif-staged-layout = { path = "staged-layout" }
+oer-espressif-interrupt-table-esp-hal = { path = "../../crates/adapters/esp-hal/espressif/interrupt-table" }
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = 3
+debug = true
+panic = "abort"
+strip = false

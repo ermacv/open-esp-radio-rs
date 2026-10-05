@@ -8,6 +8,7 @@ pub mod secure_gatt;
 
 use model::{Adapter, Check, DtmProfile, DtmVersion};
 use oer_hil_protocol::bluetooth::BluetoothPeripheralTermination;
+use oer_hil_run_bundle_format::run::fixtures::{self, Helper};
 use std::{
     fs,
     path::Path,
@@ -34,6 +35,28 @@ pub fn check(root: &Path, adapter: Adapter, dtm_version: DtmVersion) -> crate::R
     result.map(|_| ())
 }
 
+/// What the privileged helper printed, kept as process output; its typed
+/// report becomes the repetition's helper fixture record.
+const HELPER_STDOUT: &str = "helper.stdout";
+
+/// The helper's report in `output`: when it printed a valid one, recorded as
+/// the typed [`Helper`] fixture record and returned; otherwise `absent()`,
+/// and no record is written.
+fn helper_record<R>(output: &Path, absent: impl FnOnce() -> R) -> crate::Result<R>
+where
+    R: serde::Serialize + serde::de::DeserializeOwned,
+{
+    let Some(report) = fs::read(output.join(HELPER_STDOUT))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<R>(&bytes).ok())
+    else {
+        return Ok(absent());
+    };
+    let record = Helper(report);
+    fixtures::write(output, &record)?;
+    Ok(record.0)
+}
+
 pub fn run_in(output: &Path, adapter: Adapter, profile: DtmProfile) -> crate::Result<Check> {
     run_profile_in(output, adapter, DtmVersion::V2, profile)
 }
@@ -55,7 +78,7 @@ fn run_profile_in(
             &adapter.to_string(),
         ])
         .stdin(Stdio::null())
-        .stdout(Stdio::from(fs::File::create(output.join("helper.json"))?))
+        .stdout(Stdio::from(fs::File::create(output.join(HELPER_STDOUT))?))
         .stderr(Stdio::from(fs::File::create(output.join("helper.stderr"))?));
     if dtm_version == DtmVersion::V1 {
         command.args(["--dtm-version", "v1"]);
@@ -74,14 +97,11 @@ fn run_profile_in(
             adapter,
             dtm_version,
             profile,
-            &fs::read(output.join("helper.json"))?,
+            &fs::read(output.join(HELPER_STDOUT))?,
         )
         .map_err(|error| format!("{error}; evidence: {}", output.display()).into())
     })();
-    let report = fs::read(output.join("helper.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Check>(&bytes).ok())
-        .unwrap_or_else(|| Check::new(adapter, dtm_version, profile));
+    let report = helper_record(output, || Check::new(adapter, dtm_version, profile))?;
     let summary = serde_json::json!({
         "schema": 2, "adapter": adapter.to_string(), "output": output,
         "dtm_version": dtm_version,
@@ -102,7 +122,7 @@ fn checked_report(
     bytes: &[u8],
 ) -> crate::Result<Check> {
     let report: Check = serde_json::from_slice(bytes).map_err(|error| {
-        format!("Bluetooth helper returned no valid report ({error}); inspect helper.stderr. Install with cargo hil fixture install --provider linux-bluetooth")
+        format!("Bluetooth helper returned no valid report ({error}); inspect helper.stderr. Install with cargo stand fixture install --provider linux-bluetooth")
     })?;
     if !success || !report.passed(adapter, dtm_version, profile) {
         return Err(format!(
@@ -121,7 +141,7 @@ pub fn preflight(adapter: Adapter) -> crate::Result<()> {
     const HELPER: &str = "/usr/local/libexec/open-radio-bluetooth";
     if !Path::new(HELPER).is_file() {
         return Err(
-            "install the Bluetooth helper with cargo hil fixture install --provider linux-bluetooth".into(),
+            "install the Bluetooth helper with cargo stand fixture install --provider linux-bluetooth".into(),
         );
     }
     let mut capabilities = Command::new(HELPER);
@@ -145,7 +165,7 @@ pub fn preflight(adapter: Adapter) -> crate::Result<()> {
         let output = oer_process::output(&mut command, Some(Duration::from_secs(5)))?;
         if !output.status.success() {
             return Err(
-                "install the Bluetooth helper with cargo hil fixture install --provider linux-bluetooth".into(),
+                "install the Bluetooth helper with cargo stand fixture install --provider linux-bluetooth".into(),
             );
         }
     }
@@ -162,7 +182,7 @@ fn require_helper_capabilities(success: bool, stdout: &[u8]) -> crate::Result<()
     if success && stdout == format!("{}\n", model::HELPER_CAPABILITIES).as_bytes() {
         return Ok(());
     }
-    Err("installed Bluetooth helper is incompatible; rerun cargo hil fixture install --provider linux-bluetooth".into())
+    Err("installed Bluetooth helper is incompatible; rerun cargo stand fixture install --provider linux-bluetooth".into())
 }
 
 /// Prove password-free admission without acquiring an adapter: Clap rejects the invalid peer
@@ -204,7 +224,7 @@ fn require_security_failure_admission(code: Option<i32>, stderr: &[u8]) -> crate
     {
         Ok(())
     } else {
-        Err("security-failure helper is not admitted without a password; rerun cargo hil fixture install --provider linux-bluetooth with the selected --adapter".into())
+        Err("security-failure helper is not admitted without a password; rerun cargo stand fixture install --provider linux-bluetooth with the selected --adapter".into())
     }
 }
 
@@ -245,7 +265,7 @@ pub fn connect_profile_in(
             },
         ])
         .stdin(Stdio::null())
-        .stdout(Stdio::from(fs::File::create(output.join("helper.json"))?))
+        .stdout(Stdio::from(fs::File::create(output.join(HELPER_STDOUT))?))
         .stderr(Stdio::from(fs::File::create(output.join("helper.stderr"))?));
     if key_refresh {
         command.arg("--key-refresh");
@@ -259,8 +279,8 @@ pub fn connect_profile_in(
             Duration::from_secs(20),
         )?;
         let status = child.wait_timeout(Some(Duration::from_secs(45)))?;
-        let report: model::ConnectionReset = serde_json::from_slice(&fs::read(output.join("helper.json"))?)
-            .map_err(|error| format!("invalid connect-reset report ({error}); rerun cargo hil fixture install --provider linux-bluetooth"))?;
+        let report: model::ConnectionReset = serde_json::from_slice(&fs::read(output.join(HELPER_STDOUT))?)
+            .map_err(|error| format!("invalid connect-reset report ({error}); rerun cargo stand fixture install --provider linux-bluetooth"))?;
         if !status.success()
             || !report.passed_profile(adapter, peer, hold_ms, termination, encrypted, key_refresh)
         {
@@ -272,10 +292,9 @@ pub fn connect_profile_in(
         }
         Ok(report)
     })();
-    let report = fs::read(output.join("helper.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<model::ConnectionReset>(&bytes).ok())
-        .unwrap_or_else(|| model::ConnectionReset::new(adapter, peer, hold_ms, termination));
+    let report = helper_record(output, || {
+        model::ConnectionReset::new(adapter, peer, hold_ms, termination)
+    })?;
     let summary = serde_json::json!({
         "schema": 1, "operation": "connect-reset", "adapter": adapter.to_string(),
         "termination": termination,
@@ -316,7 +335,7 @@ pub fn security_failure_in(
             },
         ])
         .stdin(Stdio::null())
-        .stdout(Stdio::from(fs::File::create(output.join("helper.json"))?))
+        .stdout(Stdio::from(fs::File::create(output.join(HELPER_STDOUT))?))
         .stderr(Stdio::from(fs::File::create(output.join("helper.stderr"))?));
     if read_version_before_disconnect {
         command.arg("--read-version-before-disconnect");
@@ -328,7 +347,7 @@ pub fn security_failure_in(
         )?;
         let status = child.wait_timeout(Some(Duration::from_secs(35)))?;
         let report: model::security_failure::Report =
-            serde_json::from_slice(&fs::read(output.join("helper.json"))?).map_err(|error|
+            serde_json::from_slice(&fs::read(output.join(HELPER_STDOUT))?).map_err(|error|
                 format!("security-failure helper returned no valid report ({error}); exit {status}; inspect {}", output.join("helper.stderr").display()))?;
         if !status.success()
             || !report.passed(adapter, peer, failure)
@@ -340,10 +359,9 @@ pub fn security_failure_in(
         }
         Ok(report)
     })();
-    let observed = fs::read(output.join("helper.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<model::security_failure::Report>(&bytes).ok())
-        .unwrap_or_else(|| model::security_failure::Report::new(adapter, peer, failure));
+    let observed = helper_record(output, || {
+        model::security_failure::Report::new(adapter, peer, failure)
+    })?;
     oer_durable::atomic_json(
         &output.join("result.json"),
         &serde_json::json!({

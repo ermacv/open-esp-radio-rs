@@ -20,7 +20,7 @@ use oer_hil_family_ieee80211_fixture::{
 };
 use oer_hil_link::SerialCapture;
 use oer_hil_net_traffic::probe_udp_rx_ready_via;
-use oer_hil_scenario::link::PhyExpectation;
+use oer_hil_scenario_catalog::link::PhyExpectation;
 
 const TARGET_RX_PORT: u16 = 4_323;
 const BEACON_LOSS_TIMEOUT: Duration = Duration::from_secs(15);

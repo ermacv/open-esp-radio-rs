@@ -3,7 +3,8 @@
 //! composition: [`Families`] lists the families and fixture providers, and
 //! the core reaches every family only through it.
 
-use oer_hil_scenario::{ScenarioFamily as _, requirements::Requirements};
+use oer_hil_scenario::ScenarioFamily as _;
+use oer_hil_scenario_catalog::requirements::Requirements;
 use oer_hil_workload::family::{AnyFamily, FixtureProvider, Kind, Registry};
 
 /// The radio families and fixture providers of this runner.
@@ -16,7 +17,9 @@ impl Registry for Families {
         oer_hil_family_system::FAMILY,
         oer_hil_family_ieee802154::FAMILY,
         oer_hil_family_coexistence::FAMILY,
-        oer_hil_family_phy::FAMILY,
+        // The PHY family is a chip's composition: its comparison port
+        // implemented by the chip's vendor calibration comparison.
+        oer_hil_family_phy_esp32s31::FAMILY,
     ];
     const FIXTURES: &'static [&'static dyn FixtureProvider] =
         &[&oer_hil_family_ieee80211_fixture::provider::PROVIDER];

@@ -4,17 +4,12 @@ use oer_process::Checkout;
 use oer_repo::Layer;
 
 use super::common::*;
-use oer_image::staged::CHIP;
 
 mod facade;
 mod interrupts;
 mod sans_io;
 mod unsafe_policy;
 mod zeroed;
-
-const INTEGRATION: &str = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
-const INTEGRATION_PACKAGE: &str = "oer-esp32s31-ieee80211-system";
-const HIL_RUNTIME: &str = "hil/targets/esp32s31/agent/Cargo.toml";
 
 /// Layers whose packages stay free of the platform runtime: whatever they
 /// reach for the chip target names no HAL and no Embassy crate but the
@@ -37,18 +32,23 @@ pub fn run(ctx: &Checkout) -> Result<()> {
     // role rules of every dependency are `oer-tidy`'s (`cargo tidy check`).
     let repo = oer_repo::Repo::from_git(&ctx.root)?;
     let model = oer_repo::Model::load(&repo)?;
-    let hardware: Vec<String> = repo.below("crates/hardware").map(str::to_owned).collect();
-    oer_register_tool::checks::pac_transactions::check(&ctx.root, &hardware)?;
+    let chips = oer_repo::chips::Chips::at(&ctx.root)?;
+    registers(ctx, &["check", "pac-transactions", "crates/hardware"])?;
     zeroed::check(&repo)?;
-    interrupts::check(&model)?;
-    let shared = shared_words(ctx)?;
-    eprintln!("shared MMIO words of esp32s31: {shared} reviewed");
+    interrupts::check(&model, &chips)?;
+    for profile in chips
+        .profiles()
+        .iter()
+        .filter(|profile| profile.gate.shared_words)
+    {
+        shared_words(ctx, profile)?;
+    }
     let packages = production_packages(&ctx.root, &model)?;
-    unsafe_policy::check(&ctx.root, &packages)?;
+    let policy = unsafe_policy::Policy::load(&ctx.root)?;
+    unsafe_policy::check(&ctx.root, &policy, &packages)?;
     // Protocol logic is sans-IO; drivers that wait live in services.
     sans_io::check(&packages)?;
-    let target = oer_chip_profile::rust_target(&ctx.root, oer_image::staged::CHIP)?;
-    let configurations = architecture_configurations(&ctx.root, &packages, &target)?;
+    let configurations = architecture_configurations(&ctx.root, &packages)?;
     // Clippy compiles each isolated profile and applies every crate's own
     // lint policy from its manifest `[lints]` and crate attributes.
     for configuration in &configurations {
@@ -64,42 +64,55 @@ pub fn run(ctx: &Checkout) -> Result<()> {
     // `cargo test` compiles validation probes only under cfg(test), which can
     // conceal invalid validation-only imports in the ordinary host library.
     // The target build is part of the `--all-features` profile above.
-    process::run(oer_toolchain::cargo_in(&ctx.root).args([
-        "clippy",
-        "--quiet",
-        "--locked",
-        "-p",
-        "oer-esp32s31-bluetooth",
-        "--features",
-        "validation-probes",
-    ]))?;
-    facade::check(ctx)?;
-    let graph = cargo::metadata(ctx, &ctx.root.join("Cargo.toml"), &[], Some(&target), true)?;
-    for item in &packages {
-        let layer = item.class.layer;
-        if !PLATFORM_FREE.contains(&layer) {
-            continue;
-        }
-        let name = item.package.name.as_str();
-        for package in closure(&graph, &id_for_name(&graph, name)?)? {
-            if platform_runtime(package.name.as_str()) {
-                return Err(format!(
-                    "{layer} package {name} depends on platform runtime {}",
-                    package.name
-                )
-                .into());
+    for package in chips
+        .profiles()
+        .iter()
+        .flat_map(|profile| &profile.gate.validation_probes)
+    {
+        process::run(oer_toolchain::cargo_in(&ctx.root).args([
+            "clippy",
+            "--quiet",
+            "--locked",
+            "-p",
+            package,
+            "--features",
+            "validation-probes",
+        ]))?;
+    }
+    facade::check(ctx, &chips, &policy)?;
+    for target in chip_targets(&chips) {
+        let graph = cargo::metadata(ctx, &ctx.root.join("Cargo.toml"), &[], Some(&target), true)?;
+        for item in &packages {
+            let layer = item.class.layer;
+            if !PLATFORM_FREE.contains(&layer) {
+                continue;
+            }
+            let name = item.package.name.as_str();
+            for package in closure(&graph, &id_for_name(&graph, name)?)? {
+                if platform_runtime(package.name.as_str()) {
+                    return Err(format!(
+                        "{layer} package {name} depends on platform runtime {}",
+                        package.name
+                    )
+                    .into());
+                }
             }
         }
     }
-    check_esp32s31_composition(ctx)?;
-    // The test job runs the workspace tests with default features; the
-    // composition's tests also hold without its default network.
-    process::run(
-        oer_toolchain::cargo_in(&ctx.root)
-            .args(["test", "--quiet", "--locked", "--manifest-path"])
-            .arg(ctx.root.join(INTEGRATION))
-            .arg("--no-default-features"),
-    )?;
+    for profile in chips.profiles() {
+        let Some(integration) = &profile.gate.integration else {
+            continue;
+        };
+        check_composition(ctx, profile, integration)?;
+        // The test job runs the workspace tests with default features; the
+        // composition's tests also hold without its default network.
+        process::run(
+            oer_toolchain::cargo_in(&ctx.root)
+                .args(["test", "--quiet", "--locked", "--manifest-path"])
+                .arg(ctx.root.join(&integration.manifest))
+                .arg("--no-default-features"),
+        )?;
+    }
     eprintln!(
         "driver architecture audit passed ({} production packages)",
         packages.len()
@@ -107,9 +120,16 @@ pub fn run(ctx: &Checkout) -> Result<()> {
     Ok(())
 }
 
-fn check_esp32s31_composition(ctx: &Checkout) -> Result<()> {
-    let manifest = ctx.root.join(INTEGRATION);
-    let target = oer_chip_profile::rust_target(&ctx.root, oer_image::staged::CHIP)?;
+/// Hold a chip's Wi-Fi composition and its HIL runtime to their diagnostics
+/// selection: no telemetry without its overlay, diagnostics (and the PHY's
+/// registration diagnostics) exactly under driver observation.
+fn check_composition(
+    ctx: &Checkout,
+    profile: &oer_repo::chips::profile::Profile,
+    integration: &oer_repo::chips::profile::Integration,
+) -> Result<()> {
+    let manifest = ctx.root.join(&integration.manifest);
+    let target = &profile.rust_target;
     for features in [
         vec!["--no-default-features".into()],
         vec![
@@ -118,11 +138,12 @@ fn check_esp32s31_composition(ctx: &Checkout) -> Result<()> {
             "diagnostics".into(),
         ],
     ] {
-        let graph = cargo::metadata(ctx, &manifest, &features, Some(&target), true)?;
+        let graph = cargo::metadata(ctx, &manifest, &features, Some(target), true)?;
         forbid_features(&graph, &["cooperative-scheduler-telemetry"])?;
     }
+    let runtime = profile.hil_agent_manifest(&ctx.root);
     for (overlay, expected) in [(None, false), (Some("driver-observation"), true)] {
-        let graph = hil_wifi_graph(ctx, overlay)?;
+        let graph = hil_wifi_graph(ctx, profile, overlay)?;
         forbid_features(
             &graph,
             &[
@@ -132,19 +153,19 @@ fn check_esp32s31_composition(ctx: &Checkout) -> Result<()> {
                 "mac-irq-diagnostics",
             ],
         )?;
-        if package_feature(&graph, INTEGRATION_PACKAGE, "diagnostics")? != expected {
+        if package_feature(&graph, &integration.package, "diagnostics")? != expected {
             return Err(format!(
                 "incorrect integration diagnostics selection for HIL overlay {overlay:?}"
             )
             .into());
         }
-        if package_feature(&graph, "oer-esp32s31-phy", "registration-diagnostics")? != expected {
+        if package_feature(&graph, &integration.phy, "registration-diagnostics")? != expected {
             return Err(format!(
                 "incorrect PHY registration diagnostics selection for HIL overlay {overlay:?}"
             )
             .into());
         }
-        package_for_manifest(&graph.metadata, &ctx.root.join(HIL_RUNTIME))?;
+        package_for_manifest(&graph.metadata, &runtime)?;
     }
     for (overlay, feature, expected) in [
         ("task-residence-telemetry", "task-poll-telemetry", false),
@@ -152,8 +173,8 @@ fn check_esp32s31_composition(ctx: &Checkout) -> Result<()> {
         ("mac-irq-telemetry", "mac-irq-diagnostics", true),
     ] {
         if package_feature(
-            &hil_wifi_graph(ctx, Some(overlay))?,
-            INTEGRATION_PACKAGE,
+            &hil_wifi_graph(ctx, profile, Some(overlay))?,
+            &integration.package,
             feature,
         )? != expected
         {
@@ -163,11 +184,19 @@ fn check_esp32s31_composition(ctx: &Checkout) -> Result<()> {
     Ok(())
 }
 
-fn hil_wifi_graph(ctx: &Checkout, overlay: Option<&str>) -> Result<crate::graph::Graph> {
-    let manifest = ctx.root.join(HIL_RUNTIME);
+fn hil_wifi_graph(
+    ctx: &Checkout,
+    profile: &oer_repo::chips::profile::Profile,
+    overlay: Option<&str>,
+) -> Result<crate::graph::Graph> {
+    let manifest = profile.hil_agent_manifest(&ctx.root);
+    let relative = manifest
+        .strip_prefix(&ctx.root)?
+        .to_string_lossy()
+        .into_owned();
     let model = model(ctx)?;
     let package = model
-        .owner(HIL_RUNTIME)
+        .owner(&relative)
         .ok_or("the HIL runtime manifest has no package")?;
     let profiles = &model.classification(package)?.supported_feature_profiles;
     let base = hil_wifi_profile(profiles)?;
@@ -180,10 +209,7 @@ fn hil_wifi_graph(ctx: &Checkout, overlay: Option<&str>) -> Result<crate::graph:
             "--features".into(),
             features,
         ],
-        Some(&oer_chip_profile::rust_target(
-            &ctx.root,
-            oer_image::staged::CHIP,
-        )?),
+        Some(&profile.rust_target),
         true,
     )
 }
@@ -209,13 +235,17 @@ fn hil_wifi_profile(profiles: &[String]) -> Result<&str> {
 /// its Wi-Fi MAC registers into every image that uses it, including the
 /// shared Wi-Fi MAC register crates, whose `ieee80211` token names their
 /// registers.
-pub fn reject_wifi_in_bluetooth(graph: &Graph, manifest: &std::path::Path) -> Result<()> {
+pub fn reject_wifi_in_bluetooth(
+    graph: &Graph,
+    manifest: &std::path::Path,
+    closed_pacs: &[String],
+) -> Result<()> {
     let root = graph.root(manifest)?;
     for id in graph.reachable(&root).keys() {
         let name = graph.package(id).name.as_str();
         // The package naming rule gives every Wi-Fi package the `ieee80211`
         // domain token.
-        let wifi = !unsafe_policy::CLOSED_PACS.contains(&name)
+        let wifi = !closed_pacs.iter().any(|pac| pac == name)
             && name
                 .strip_prefix("oer-")
                 .is_some_and(|tokens| tokens.split('-').any(|token| token == "ieee80211"));
@@ -226,12 +256,22 @@ pub fn reject_wifi_in_bluetooth(graph: &Graph, manifest: &std::path::Path) -> Re
     Ok(())
 }
 
-/// Runs [`shared_words::check`] against the esp-hal and platform PAC
-/// sources the HIL target workspace resolves.
-fn shared_words(ctx: &Checkout) -> Result<usize> {
+/// Run the register tool, `cargo registers ARGS`, in the checkout.
+fn registers(ctx: &Checkout, args: &[&str]) -> Result<()> {
+    process::run(
+        oer_toolchain::cargo_in(&ctx.root)
+            .arg("registers")
+            .args(args),
+    )
+}
+
+/// Runs the register tool's shared-word check of `profile`'s chip against
+/// the esp-hal and PAC sources its HIL agent workspace resolves.
+fn shared_words(ctx: &Checkout, profile: &oer_repo::chips::profile::Profile) -> Result<()> {
+    let chip = &profile.id;
     let graph = cargo::metadata(
         ctx,
-        &ctx.root.join("hil/targets/esp32s31/Cargo.toml"),
+        &profile.hil_agent_workspace(&ctx.root).join("Cargo.toml"),
         &[],
         None,
         true,
@@ -246,11 +286,20 @@ fn shared_words(ctx: &Checkout) -> Result<usize> {
             .map(|directory| directory.as_std_path().join("src"))
             .ok_or_else(|| format!("the HIL target workspace resolves no {name} package").into())
     };
-    oer_register_tool::checks::shared_words::check(
-        &ctx.root,
-        CHIP,
-        &directory("esp-hal")?,
-        &directory(CHIP)?,
+    let (esp_hal, pac) = (directory("esp-hal")?, directory(chip)?);
+    process::run(
+        oer_toolchain::cargo_in(&ctx.root)
+            .args([
+                "registers",
+                "check",
+                "shared-words",
+                "--chip",
+                chip,
+                "--esp-hal-src",
+            ])
+            .arg(esp_hal)
+            .arg("--pac-src")
+            .arg(pac),
     )
 }
 
@@ -294,9 +343,10 @@ mod tests {
     #[test]
     fn bluetooth_graphs_admit_closed_register_pacs_but_not_wifi_software() {
         let (_repository, manifest, graph) = bluetooth_graph("oer-ieee80211-pac");
-        super::reject_wifi_in_bluetooth(&graph, &manifest).unwrap();
+        let closed = ["oer-ieee80211-pac".to_owned()];
+        super::reject_wifi_in_bluetooth(&graph, &manifest, &closed).unwrap();
         let (_repository, manifest, graph) = bluetooth_graph("oer-ieee80211-sta");
-        let error = super::reject_wifi_in_bluetooth(&graph, &manifest).unwrap_err();
+        let error = super::reject_wifi_in_bluetooth(&graph, &manifest, &closed).unwrap_err();
         assert!(error.to_string().contains("oer-ieee80211-sta"), "{error}");
     }
 

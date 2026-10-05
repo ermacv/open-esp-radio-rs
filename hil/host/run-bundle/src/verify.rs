@@ -9,17 +9,23 @@ use std::{
 use serde::Serialize;
 
 use crate::Result;
-use crate::lab::LabProvenance;
-use crate::{
-    build::{
-        BUILD_PROVENANCE_SCHEMA, BuildProvenance, BuildReproducibility, BuildSubject,
-        BuildSubjectRole, SourceMaterial, SourceRebuildStatus, build_id,
-    },
-    run::{
-        RUN_SCHEMA, RunManifest, RunState, SuiteResult, sha256_file,
-        validation::{read_json, validate_manifest, validate_suite},
-    },
-};
+use crate::build::build_id;
+use crate::run::sha256_file;
+use oer_hil_run_bundle_format::build::BUILD_PROVENANCE_SCHEMA;
+use oer_hil_run_bundle_format::build::BuildProvenance;
+use oer_hil_run_bundle_format::build::BuildReproducibility;
+use oer_hil_run_bundle_format::build::BuildSubject;
+use oer_hil_run_bundle_format::build::BuildSubjectRole;
+use oer_hil_run_bundle_format::build::SourceMaterial;
+use oer_hil_run_bundle_format::build::SourceRebuildStatus;
+use oer_hil_run_bundle_format::lab::LabProvenance;
+use oer_hil_run_bundle_format::run::RUN_SCHEMA;
+use oer_hil_run_bundle_format::run::RunManifest;
+use oer_hil_run_bundle_format::run::RunState;
+use oer_hil_run_bundle_format::run::SuiteResult;
+use oer_hil_run_bundle_format::run::validation::read_json;
+use oer_hil_run_bundle_format::run::validation::validate_manifest;
+use oer_hil_run_bundle_format::run::validation::validate_suite;
 
 #[derive(Debug, Serialize)]
 pub struct VerificationCompletion {
@@ -45,7 +51,7 @@ pub trait FirmwareRecipe {
     /// links no network integration.
     fn runtime_features(
         &self,
-        image: oer_hil_image_class::ImageClass,
+        image: oer_hil_schema::image::ImageClass,
         network: Option<&str>,
     ) -> Result<String>;
 }
@@ -55,14 +61,14 @@ pub struct ArchivedFirmware {
     pub run_id: String,
     /// The chip the source run's image was built for.
     pub target: String,
-    pub image: oer_hil_image_class::ImageClass,
+    pub image: oer_hil_schema::image::ImageClass,
     pub application_path: PathBuf,
     pub application_sha256: String,
     pub build_id: Option<String>,
     pub(super) source_directory: PathBuf,
     pub(super) integrity_sha256: String,
-    pub(super) repository: super::run::RepositoryProvenance,
-    pub(super) artifact: super::run::FirmwareArtifact,
+    pub(super) repository: oer_hil_run_bundle_format::run::RepositoryProvenance,
+    pub(super) artifact: oer_hil_run_bundle_format::run::FirmwareArtifact,
     pub(super) build_provenance: Option<BuildProvenance>,
 }
 
@@ -96,7 +102,7 @@ pub fn archived_firmware(
     root: &Path,
     target: &str,
     run_id: &str,
-    image: oer_hil_image_class::ImageClass,
+    image: oer_hil_schema::image::ImageClass,
     recipe: &dyn FirmwareRecipe,
 ) -> Result<ArchivedFirmware> {
     verify(root, Some(target), Some(run_id), recipe)?;
@@ -202,18 +208,20 @@ fn validate_observer(runs_directory: &Path, manifest: &RunManifest) -> Result<()
         return Ok(());
     };
     let store = crate::store::RunStore::of_runs(runs_directory)?;
-    oer_hil_observer::store::attach(record, store.observers()).map_err(|error| {
-        format!(
-            "HIL run `{}` has an invalid observer record: {error}",
-            manifest.run_id
-        )
-    })?;
+    oer_hil_run_bundle_format::observer::store::attach(record, store.observers()).map_err(
+        |error| {
+            format!(
+                "HIL run `{}` has an invalid observer record: {error}",
+                manifest.run_id
+            )
+        },
+    )?;
     Ok(())
 }
 
 /// Every stored observer build is named by the digest of its bytes.
 fn validate_observer_store(runs_directory: &Path) -> Result<()> {
-    use oer_hil_observer::store as observer_store;
+    use oer_hil_run_bundle_format::observer::store as observer_store;
     let directory = crate::store::RunStore::of_runs(runs_directory)?
         .observers()
         .join(observer_store::DIRECTORY);
@@ -257,12 +265,15 @@ fn validate_lab_provenance(run_directory: &Path, manifest: &RunManifest) -> Resu
     }
     require_regular_file_below(run_directory, path)?;
     let provenance: LabProvenance = read_json(&run_directory.join(path))?;
-    if provenance.scope == crate::lab::ObservationScope::System {
-        let plan: crate::run::RunPlan = read_json(&run_directory.join("plan.json"))?;
+    if provenance.scope == oer_hil_run_bundle_format::lab::ObservationScope::System {
+        let plan: oer_hil_run_bundle_format::run::RunPlan =
+            read_json(&run_directory.join("plan.json"))?;
         let selected: Vec<_> = plan
             .entries
             .iter()
-            .filter(|entry| entry.disposition == crate::run::PlanDisposition::Selected)
+            .filter(|entry| {
+                entry.disposition == oer_hil_run_bundle_format::run::PlanDisposition::Selected
+            })
             .collect();
         if plan.run_id != manifest.run_id
             || plan.schema != RUN_SCHEMA
@@ -282,8 +293,9 @@ fn validate_lab_provenance(run_directory: &Path, manifest: &RunManifest) -> Resu
                 .join("scenario.json");
             validate_relative_path(&snapshot, "scenario snapshot")?;
             require_regular_file_below(run_directory, &snapshot)?;
-            let scenario =
-                oer_hil_scenario::Header::from_snapshot(&fs::read(run_directory.join(snapshot))?)?;
+            let scenario = oer_hil_scenario_catalog::Header::from_snapshot(&fs::read(
+                run_directory.join(snapshot),
+            )?)?;
             if scenario.id != entry.scenario || scenario.repetitions != entry.repetitions {
                 return Err(
                     "system-only lab provenance disagrees with the selected scenario snapshot"
@@ -301,7 +313,7 @@ fn validate_lab_provenance(run_directory: &Path, manifest: &RunManifest) -> Resu
 }
 
 fn validate_integrity_index(run_directory: &Path, manifest: &RunManifest) -> Result<()> {
-    crate::run::integrity::verify(run_directory, &manifest.run_id).map(drop)
+    oer_hil_run_bundle_format::run::integrity::verify(run_directory, &manifest.run_id).map(drop)
 }
 
 fn select_run_directories(runs_directory: &Path, run_id: Option<&str>) -> Result<Vec<PathBuf>> {
@@ -356,18 +368,16 @@ fn validate_firmware(
         }
         let required = artifact.required_subjects();
         for subject in artifact.subjects() {
-            // The boot flow decides which subjects the image has: a staged
-            // image's digests are recorded even for an older bundle that did
-            // not archive the files, an ESP-IDF application never has them.
+            // A staged image's digests are recorded even for an older bundle
+            // that did not archive the files.
             let wanted = subject.file == "runtime.elf" || required.contains(&subject.file);
             match (wanted, subject.sha256) {
                 (true, Some(sha256)) => validate_sha256(sha256, subject.kind, &manifest.run_id)?,
                 (false, None) => {}
                 (true, None) | (false, Some(_)) => {
                     return Err(format!(
-                        "HIL run `{}` records the wrong subjects for its {:?} image `{}`: {}",
+                        "HIL run `{}` records the wrong subjects for its image `{}`: {}",
                         manifest.run_id,
-                        artifact.boot,
                         artifact.image.id(),
                         subject.kind
                     )
@@ -454,7 +464,7 @@ fn validate_optional_firmware_file(
 fn validate_build_provenance(
     run_directory: &Path,
     manifest: &RunManifest,
-    artifact: &super::run::FirmwareArtifact,
+    artifact: &oer_hil_run_bundle_format::run::FirmwareArtifact,
     expected_build_id: &str,
     path: &Path,
     recipe: &dyn FirmwareRecipe,
@@ -518,19 +528,8 @@ fn validate_build_provenance(
         size_bytes: artifact.application_size_bytes,
         sha256: artifact.application_sha256.clone(),
     }];
-    match artifact.boot {
-        super::run::Boot::Staged => {
-            expected_subjects.push(subject(BuildSubjectRole::BootstrapElf, "bootstrap.elf")?);
-            expected_subjects.push(subject(BuildSubjectRole::RuntimeBin, "runtime.bin")?);
-        }
-        super::run::Boot::EspIdfBootloader => {
-            expected_subjects.push(subject(BuildSubjectRole::Bootloader, "bootloader.bin")?);
-            expected_subjects.push(subject(
-                BuildSubjectRole::PartitionTable,
-                "partition-table.bin",
-            )?);
-        }
-    }
+    expected_subjects.push(subject(BuildSubjectRole::BootstrapElf, "bootstrap.elf")?);
+    expected_subjects.push(subject(BuildSubjectRole::RuntimeBin, "runtime.bin")?);
     expected_subjects.push(subject(BuildSubjectRole::RuntimeElf, "runtime.elf")?);
     if provenance.subjects != expected_subjects || provenance.sources.is_empty() {
         return Err(format!(
@@ -648,7 +647,7 @@ fn validate_build_provenance(
 
 fn validate_replay_origin(
     manifest: &RunManifest,
-    artifact: &super::run::FirmwareArtifact,
+    artifact: &oer_hil_run_bundle_format::run::FirmwareArtifact,
 ) -> Result<()> {
     let Some(origin) = &artifact.replayed_from else {
         return Ok(());

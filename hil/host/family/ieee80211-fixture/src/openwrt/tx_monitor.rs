@@ -127,7 +127,7 @@ pub fn doctor(config: &OpenWrtConfig) -> Result<()> {
             crate::Error::new("scenario requires an OpenWrt monitor_interface name").into(),
         );
     };
-    let output = oer_hil_stand_host::ssh::command(
+    let output = oer_stand_ssh::command(
         &config.ssh_target,
         &format!(
             "set -eu; ! iw dev {monitor} info >/dev/null 2>&1; \

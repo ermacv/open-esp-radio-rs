@@ -68,7 +68,7 @@ ready for a scenario.
 
 ## Hardware route
 
-Copy `hil/stand/stand.example.toml` to the mode-0600 stand file
+Copy `stand/stand.example.toml` to the mode-0600 stand file
 `~/.config/open-esp-radio/stand.toml`, shared by every checkout, describe
 the stand's hubs and boards and the required fixture values, install only the
 helpers required by the selected scenario, then run `cargo hil doctor` and
@@ -81,7 +81,7 @@ effects. “Without a DUT” does not mean “without host or peer-adapter chang
 
 The runner resolves the catalog plan and builds the current-source images into
 the new run directory. It then waits for the stand's lease from the
-[arbiter](host/arbiter/README.md) on the boards, fixtures and air it claims,
+[arbiter](../stand/arbiter/README.md) on the boards, fixtures and air it claims,
 acquires cooperative serial/fixture leases and captures secret-free lab provenance while the fixture lock is held.
 It imports replayed firmware and flashes the archived `application.bin`, not an
 unrecorded build output. Each repetition

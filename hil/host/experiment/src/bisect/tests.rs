@@ -79,11 +79,12 @@ fn this_tree_names_its_wire_and_an_older_tree_none() {
 /// image: one repetition that ended `outcome` with `failure`, or, for a
 /// blocked scenario, no repetition and the failure that blocked it.
 fn run_with(outcome: Outcome, failure: Option<(FailureKind, &str)>, runs: &Path) -> Run {
-    use oer_hil_image_class::ImageClass;
-    use oer_hil_run_bundle::run::{
-        Failure, RunState, ScenarioResult,
-        test_support::{repetition, write_run},
-    };
+    use oer_hil_run_bundle::run::test_support::repetition;
+    use oer_hil_run_bundle::run::test_support::write_run;
+    use oer_hil_run_bundle_format::run::Failure;
+    use oer_hil_run_bundle_format::run::RunState;
+    use oer_hil_run_bundle_format::run::ScenarioResult;
+    use oer_hil_schema::image::ImageClass;
     let directory = runs.join("7");
     let failure = failure.map(|(kind, message)| Failure::new(kind, message));
     let scenario = match (outcome, failure) {

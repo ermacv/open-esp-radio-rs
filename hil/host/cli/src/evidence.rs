@@ -2,14 +2,15 @@
 //!
 //! `cargo hil run` never writes tracked files: a clean run's passed
 //! scenarios are noted in this checkout's pending list
-//! ([`oer_hil_run_bundle::store::pending`]), and the qualification
+//! ([`oer_hil_run_bundle_format::pending`]), and the qualification
 //! evaluator records them as tracked shards with
 //! `cargo qualification hil-evidence --hil-target CHIP --pending`, which
 //! reads the runs itself; the stand never runs the evaluator.
 
 use std::ffi::OsString;
 
-use oer_hil_run_bundle::{RunStore, store::pending};
+use oer_hil_run_bundle::RunStore;
+use oer_hil_run_bundle_format::pending;
 
 use crate::Result;
 use oer_process::Checkout;

@@ -95,7 +95,7 @@ pub(crate) enum CliCommand {
         /// image class's own, comma-separated. Only an A/B experiment builds
         /// such an image; it never qualifies.
         #[arg(long, value_name = "+F,-G", conflicts_with = "firmware_from")]
-        features: Option<oer_hil_image_class::FeatureDelta>,
+        features: Option<oer_hil_schema::image::FeatureDelta>,
         /// Run each selected scenario this many times instead of its own
         /// repetitions, for a quicker look while debugging. The run records
         /// the reduced count and is never noted as qualification evidence.
@@ -233,7 +233,7 @@ pub(crate) enum ImageCommand {
         /// Image classes, built one after the other; with a source snapshot
         /// they share one materialization of it.
         #[arg(required = true, num_args = 1..)]
-        classes: Vec<oer_hil_image_class::ImageClass>,
+        classes: Vec<oer_hil_schema::image::ImageClass>,
         /// Build only from a verified source snapshot directory, not the live checkout.
         #[arg(long)]
         source_snapshot: Option<PathBuf>,
@@ -242,6 +242,10 @@ pub(crate) enum ImageCommand {
         /// natural order.
         #[arg(long, value_name = "SEED")]
         layout_seed: Option<std::num::NonZeroU32>,
+        /// The chip to build for; without it, the one chip whose HIL agent
+        /// builds every class.
+        #[arg(long)]
+        chip: Option<String>,
     },
 }
 
@@ -268,20 +272,6 @@ pub(crate) enum FixtureCommand {
         /// v1 is an explicit diagnostic; production RF scenarios always use v2.
         #[arg(long, value_enum, default_value = "v2")]
         dtm_version: oer_hil_family_bluetooth::fixture::bluetooth::model::DtmVersion,
-    },
-    /// Build the pinned hostapd with explicit HIL coexistence policy support.
-    BuildHostapd,
-    /// Prepare and install one versioned Linux fixture software bundle.
-    Install {
-        /// Finite Linux fixture provider to provision.
-        #[arg(long, value_enum)]
-        provider: oer_hil_fixture_install::Provider,
-        /// Print the offline plan without executing any installer step.
-        #[arg(long)]
-        dry_run: bool,
-        /// Bluetooth adapter admitted by the installed policy; defaults to hci0.
-        #[arg(long, value_name = "hciN")]
-        adapter: Vec<String>,
     },
     /// Validate prerequisites and exercise AP preparation/restoration without firmware or serial.
     Check {

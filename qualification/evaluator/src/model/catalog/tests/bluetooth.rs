@@ -10,12 +10,15 @@ fn secure_gatt_requires_repeated_numeric_comparison_hil_but_retains_retirement_g
         .join("../..")
         .canonicalize()
         .unwrap();
-    let program = ManifestDocument::load_and_validate(
-        &root.join("qualification/targets/esp32s31/bluetooth-secure-gatt.toml"),
-        &root,
-    )
-    .unwrap()
-    .document;
+    // The chip program that selects the secure product.
+    let program = std::fs::read_dir(root.join("qualification/targets"))
+        .unwrap()
+        .map(|chip| chip.unwrap().path().join("bluetooth-secure-gatt.toml"))
+        .find(|program| program.is_file())
+        .unwrap();
+    let program = ManifestDocument::load_and_validate(&program, &root)
+        .unwrap()
+        .document;
     let product = program
         .capabilities
         .iter()

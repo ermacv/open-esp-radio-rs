@@ -23,6 +23,53 @@ use std::{
 
 use crate::{Result, Tool};
 
+/// The input section patterns (`name` or `name.*`, comma separated) the
+/// image linker refuses initialized bytes in: the regions the boot zeroes.
+/// Unset or empty, it checks none.
+pub const ZEROED_INPUTS_ENV: &str = "OER_IMAGE_ZEROED_INPUTS";
+
+/// Names the host build root instead of the user's cache directory.
+pub const BUILD_ROOT_ENV: &str = "OER_BUILD_ROOT";
+
+/// The directory every checkout of this host builds images in: the shared
+/// compile cache, the image linker, the build slots and, for HIL, the
+/// source snapshots and their build workspaces. One per host, so each
+/// agent's build of the same sources reuses the same compiled units.
+pub fn host_build_root() -> Result<PathBuf> {
+    oer_durable::xdg::overridable(BUILD_ROOT_ENV, oer_durable::xdg::Base::Cache, "build")
+        .map_err(|error| error.to_string().into())
+}
+
+/// The one compile cache (`CARGO_TARGET_DIR`) below `build_root` of every
+/// firmware build of the host: every image class, example and chip, and
+/// the vendor comparison probes, from every checkout and source snapshot.
+/// Cargo keeps the units apart by target, package path, features and flags,
+/// and the flags are the same for every build of a chip. Builds uplift
+/// their binaries to the same `<target>/release/<name>`, so each holds
+/// [`lock_compile_cache`] from its Cargo run until its outputs are copied
+/// out.
+pub fn compile_cache(build_root: &Path) -> PathBuf {
+    build_root.join("cargo")
+}
+
+/// The target directory below `build_root` of the image linker, built once
+/// for every firmware build of the host: its path is part of every image's
+/// and probe's Rust flags, so it must not differ between builds.
+pub fn linker_target(build_root: &Path) -> PathBuf {
+    build_root.join("image-linker")
+}
+
+/// The lock of the shared compile cache `cache`: one build at a time, the
+/// next waiting for it.
+pub fn lock_compile_cache(cache: &Path) -> Result<oer_process::lock::FileLock> {
+    oer_process::lock::FileLock::wait(
+        &cache.join("build.lock"),
+        oer_process::lock::Mode::Exclusive,
+        &format!("waiting for another build in {}", cache.display()),
+    )
+    .map_err(|error| error.to_string().into())
+}
+
 /// What an image's compiler setup depends on.
 #[derive(Clone, Debug)]
 pub struct ImageCompiler<'a> {

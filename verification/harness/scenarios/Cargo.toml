@@ -1,5 +1,4 @@
 [package]
-workspace = "../../../tools/blobray"
 name = "oer-vendor-scenario-engine"
 version.workspace = true
 edition.workspace = true
@@ -13,10 +12,11 @@ description = "Chip-neutral engine of the typed vendor-comparison scenarios: Blo
 oer-elf = { path = "../../../tools/elf" }
 oer-process = { path = "../../../tools/process" }
 oer-vendor-evidence = { path = "../../../verification/evidence" }
+oer-vendor-evidence-shard = { path = "../../evidence/shard" }
 oer-register-contracts = { path = "../../../tools/registers/contracts" }
 oer-durable = { path = "../../../tools/durable" }
 oer-repo = { path = "../../../tools/repo" }
-oer-vendor-artifacts = { path = "../../../tools/vendor-artifacts" }
+oer-vendor-pins = { path = "../../../tools/vendor-pins" }
 oer-riscv-model = { path = "../../../tools/riscv/model" }
 oer-riscv-lift = { path = "../../../tools/riscv/lift" }
 blobray-application = { path = "../../../tools/blobray/crates/application" }

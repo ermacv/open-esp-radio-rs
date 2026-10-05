@@ -3,9 +3,9 @@
 //! The stand's ESP-IDF peers (`hil/peers/*`) speak one text protocol on their
 //! USB Serial/JTAG console: `@READY protocol=N key=value...` at boot and after
 //! `SYNC`, `@OK <command>` or `@ERR <command> <reason>` for every command,
-//! and `@<REPORT> fields...` reports at any time. This module owns that
-//! grammar ([`parse`]) and [`PeerConsole`], the one session every peer driver
-//! and the stand's `cargo hil peer` speak: opening the console without
+//! and `@<REPORT> fields...` reports at any time. The grammar is
+//! `oer-device-peer-line`; this module owns [`PeerConsole`], the one session
+//! every peer driver and `cargo hil peer` speak: opening the console without
 //! resetting the board, synchronizing with `SYNC`, commands and their
 //! answers, queued reports, and the transcript a run keeps. A driver only
 //! renders its commands and types its reports.
@@ -16,107 +16,12 @@ use std::{
     io::{ErrorKind, Read, Write},
     path::Path,
     sync::{Arc, Mutex},
-    thread,
     time::{Duration, Instant},
 };
 
+use oer_device_peer_line::{Line, Report, parse};
+
 use crate::Result;
-
-/// One line of the peer protocol.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Line {
-    /// `@READY protocol=N ...`: the peer is ready, speaking protocol `N`;
-    /// its other `key=value` fields describe the image.
-    Ready { protocol: u32, report: Report },
-    /// `@OK <command>`.
-    Ok { command: String },
-    /// `@ERR <command> <reason...>`.
-    Err { command: String, reason: String },
-    /// Any other `@<NAME> fields...` line.
-    Report(Report),
-}
-
-/// A report line: its name and its space-separated fields.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Report {
-    pub name: String,
-    pub fields: Vec<String>,
-}
-
-impl Report {
-    /// The `index`th field.
-    pub fn positional(&self, index: usize) -> Option<&str> {
-        self.fields.get(index).map(String::as_str)
-    }
-
-    /// The value of the first `key=value` field.
-    pub fn field(&self, key: &str) -> Option<&str> {
-        self.fields
-            .iter()
-            .find_map(|field| field.strip_prefix(key)?.strip_prefix('='))
-    }
-
-    /// The value of `key=value`, parsed.
-    pub fn parsed<T: std::str::FromStr>(&self, key: &str) -> Option<T> {
-        self.field(key)?.parse().ok()
-    }
-
-    /// The `0`/`1` flag `key=value`.
-    pub fn flag(&self, key: &str) -> Option<bool> {
-        match self.field(key)? {
-            "0" => Some(false),
-            "1" => Some(true),
-            _ => None,
-        }
-    }
-}
-
-/// Parse one console line; a line without the `@` prefix is no protocol
-/// line, and neither is a known answer missing its command.
-pub fn parse(line: &str) -> Option<Line> {
-    let line = line.trim_end_matches(['\r', '\n']).strip_prefix('@')?;
-    let mut words = line.split(' ');
-    let name = words.next().filter(|name| !name.is_empty())?;
-    let fields: Vec<String> = words.map(str::to_owned).collect();
-    match name {
-        "OK" => Some(Line::Ok {
-            command: fields.first()?.clone(),
-        }),
-        "ERR" => Some(Line::Err {
-            command: fields.first()?.clone(),
-            reason: fields.get(1..)?.join(" "),
-        }),
-        _ => {
-            let report = Report {
-                name: name.to_owned(),
-                fields,
-            };
-            match name {
-                "READY" => Some(Line::Ready {
-                    protocol: report.parsed("protocol")?,
-                    report,
-                }),
-                _ => Some(Line::Report(report)),
-            }
-        }
-    }
-}
-
-/// Bytes from lowercase or uppercase hex digits, two per byte.
-pub fn hex(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) {
-        return None;
-    }
-    (0..text.len())
-        .step_by(2)
-        .map(|index| u8::from_str_radix(text.get(index..index + 2)?, 16).ok())
-        .collect()
-}
-
-/// Lowercase hex digits of `bytes`, as the peers read them.
-pub fn to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
 
 /// The refusal of a command: the peer answered `@ERR <command> <reason>`.
 #[derive(Debug)]
@@ -165,16 +70,16 @@ pub struct PeerConsole<L> {
 }
 
 impl PeerConsole<RecordingLink<SerialLink>> {
-    /// Open the console on `path` without resetting the peer, record every
-    /// line into `transcript`, and take the running peer over with `SYNC`.
+    /// Record every line of the console `link` into `transcript` and take
+    /// the running peer over with `SYNC`.
     pub fn open_recorded(
-        path: &Path,
+        link: SerialLink,
         transcript: &PeerTranscript,
         expected: Expected,
         timeout: Duration,
     ) -> Result<Self> {
         Self::synchronize(
-            RecordingLink::new(SerialLink::open(path)?, transcript.clone()),
+            RecordingLink::new(link, transcript.clone()),
             expected,
             timeout,
         )
@@ -317,10 +222,16 @@ pub trait PeerLink {
     fn receive(&mut self, deadline: Instant) -> Result<Option<String>>;
 }
 
+/// A peer console's serial line, as the stand opened it: reads time out
+/// (`ErrorKind::TimedOut`) instead of blocking.
+pub trait PeerLine: Read + Write + Send {}
+
+impl<T: Read + Write + Send> PeerLine for T {}
+
 /// The peer's serial console.
 pub struct SerialLink {
     path: String,
-    port: Box<dyn serialport::SerialPort>,
+    port: Box<dyn PeerLine>,
     buffered: Vec<u8>,
 }
 
@@ -336,7 +247,8 @@ pub struct PeerConsoleError {
 }
 
 impl PeerConsoleError {
-    fn new(
+    /// `operation` on the console at `path` failed with `source`.
+    pub fn new(
         path: &str,
         operation: impl Into<String>,
         source: impl std::error::Error + Send + Sync + 'static,
@@ -366,32 +278,17 @@ impl std::error::Error for PeerConsoleError {
 }
 
 impl SerialLink {
-    /// Open the console without resetting the peer. RTS is released before
-    /// DTR, so the lines never pass through the reset state (RTS asserted,
-    /// DTR released); output the running image printed before is dropped.
-    /// A USB Serial/JTAG reset of an ESP32-C5 whose IEEE 802.15.4 radio runs
-    /// can leave it in ROM download, so the peer is never reset from here.
-    pub fn open(path: &Path) -> Result<Self> {
-        let path = path.to_string_lossy().into_owned();
-        let failed = |operation: &str, error: serialport::Error| {
-            PeerConsoleError::new(&path, operation, error)
-        };
-        let mut port = serialport::new(&path, 115_200)
-            .timeout(Duration::from_millis(50))
-            .open()
-            .map_err(|error| failed("open", error))?;
-        port.write_request_to_send(false)
-            .map_err(|error| failed("release RTS", error))?;
-        port.write_data_terminal_ready(false)
-            .map_err(|error| failed("release DTR", error))?;
-        thread::sleep(Duration::from_millis(50));
-        port.clear(serialport::ClearBuffer::Input)
-            .map_err(|error| failed("clear input", error))?;
-        Ok(Self {
-            path,
+    /// The console `port` the stand opened at `path`. The stand opens a
+    /// peer's console without resetting it and drops what the running image
+    /// printed before (`oer_hil_lab::peer_console`): a USB Serial/JTAG reset
+    /// of a peer whose IEEE 802.15.4 radio runs can leave it in ROM
+    /// download, so the peer is never reset from here.
+    pub fn new(path: &Path, port: Box<dyn PeerLine>) -> Self {
+        Self {
+            path: path.to_string_lossy().into_owned(),
             port,
             buffered: Vec::new(),
-        })
+        }
     }
 }
 
@@ -527,6 +424,8 @@ mod console_error_tests {
 #[cfg(test)]
 mod sync_tests {
     use super::*;
+    use oer_device_peer_line::{hex, to_hex};
+
     use std::collections::VecDeque;
 
     struct Scripted(VecDeque<String>, Vec<String>);
@@ -551,21 +450,21 @@ mod sync_tests {
     #[test]
     fn the_grammar_types_ready_answers_and_reports() {
         assert_eq!(
-            parse("@READY protocol=1 target=esp32c5 stack=openthread\r\n"),
+            parse("@READY protocol=1 target=chip-b stack=openthread\r\n"),
             Some(Line::Ready {
                 protocol: 1,
                 report: Report {
                     name: "READY".into(),
                     fields: vec![
                         "protocol=1".into(),
-                        "target=esp32c5".into(),
+                        "target=chip-b".into(),
                         "stack=openthread".into()
                     ],
                 },
             })
         );
         assert_eq!(
-            parse("@READY target=esp32c5"),
+            parse("@READY target=chip-b"),
             None,
             "a ready line needs its protocol"
         );
@@ -668,7 +567,7 @@ mod sync_tests {
     fn any_ready_line_is_a_live_console() {
         let mut link = scripted(&[
             "boot noise",
-            "@READY protocol=1 target=esp32c5 stack=openthread",
+            "@READY protocol=1 target=chip-b stack=openthread",
         ]);
         assert!(answers_sync(&mut link, Duration::from_millis(1)).unwrap());
         assert!(link.1.contains(&"SYNC".to_owned()));

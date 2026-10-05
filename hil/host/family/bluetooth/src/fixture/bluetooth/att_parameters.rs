@@ -37,7 +37,7 @@ pub fn preflight(adapter: Adapter) -> Result<()> {
         Some(Duration::from_secs(5)),
     )?;
     if !output.status.success() {
-        return Err("install the ATT parameter helper: cargo hil fixture install --provider linux-bluetooth".into());
+        return Err("install the ATT parameter helper: cargo stand fixture install --provider linux-bluetooth".into());
     }
     Ok(())
 }

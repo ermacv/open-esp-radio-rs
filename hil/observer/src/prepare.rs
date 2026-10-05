@@ -1,6 +1,7 @@
 //! Build the HIL observer (the runner) with a receipt from Cargo's actual
 //! artifacts.
-use crate::{artifacts, compile::compile, receipt};
+use crate::compile::compile;
+use oer_hil_run_bundle_format::observer::{artifacts, receipt};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -12,7 +13,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 /// Where a checkout keeps the private copies of the runners it built and
 /// their receipts, relative to its root: one directory per executable
 /// digest. (The observer *builds* runs refer to live in the run store's
-/// [`crate::store::DIRECTORY`].)
+/// [`oer_hil_run_bundle_format::observer::store::DIRECTORY`].)
 pub const RUNNERS: &str = "target/hil/runners";
 
 /// A prepared runner: its private copy and this invocation's receipt.

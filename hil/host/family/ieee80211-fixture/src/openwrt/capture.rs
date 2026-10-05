@@ -156,7 +156,7 @@ impl RemoteCapture {
             child: None,
         };
         owner.child = Some(capture_process::Capture::start(
-            &mut oer_hil_stand_host::ssh::command(&config.ssh_target, &script),
+            &mut oer_stand_ssh::command(&config.ssh_target, &script),
             format!("tcpdump: listening on {},", owner.remote.interface),
             duration.saturating_add(Duration::from_secs(120)),
         )?);
@@ -182,11 +182,11 @@ impl RemoteCapture {
             child: None,
         };
         owner.child = Some(capture_process::Capture::start(
-            &mut oer_hil_stand_host::ssh::command(&owner.ssh_target, &script),
+            &mut oer_stand_ssh::command(&owner.ssh_target, &script),
             format!("tcpdump: listening on {},", owner.remote.interface),
             duration.saturating_add(Duration::from_secs(120)),
         )?);
-        let observed = oer_hil_stand_host::ssh::command(
+        let observed = oer_stand_ssh::command(
             &owner.ssh_target,
             &format!("iw dev {} info", owner.remote.interface),
         )
@@ -216,7 +216,7 @@ impl RemoteCapture {
             child: None,
         };
         owner.child = Some(capture_process::Capture::start(
-            &mut oer_hil_stand_host::ssh::command(&config.ssh_target, &script),
+            &mut oer_stand_ssh::command(&config.ssh_target, &script),
             format!("tcpdump: listening on {},", interface),
             duration.saturating_add(Duration::from_secs(120)),
         )?);
@@ -264,7 +264,7 @@ impl Drop for RemoteCapture {
             let cleanup = self.remote.cleanup_script();
             oer_hil_workload::fixture::cleanup::command(
                 "clean up OpenWrt capture",
-                &mut oer_hil_stand_host::ssh::command(&self.ssh_target, &cleanup),
+                &mut oer_stand_ssh::command(&self.ssh_target, &cleanup),
             );
         });
     }
@@ -272,7 +272,7 @@ impl Drop for RemoteCapture {
 
 fn copy_remote(target: &str, remote: &str, local: &Path) -> Result<()> {
     let file = File::create(local)?;
-    let status = oer_hil_stand_host::ssh::command(target, &format!("cat {remote}"))
+    let status = oer_stand_ssh::command(target, &format!("cat {remote}"))
         .stdout(Stdio::from(file))
         .supervised_status()?;
     if !status.success() {

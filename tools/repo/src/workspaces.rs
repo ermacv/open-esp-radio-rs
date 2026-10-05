@@ -24,14 +24,18 @@ pub enum Membership<'a> {
 }
 
 /// Whether the workspace at `workspace` excludes `directory`: below an
-/// `exclude` entry and not below an explicit member, as Cargo decides.
+/// `exclude` entry and not itself an explicit member, as Cargo decides (a
+/// package below a member's directory is not that member).
 fn excludes(manifests: &Manifests, workspace: &str, directory: &str) -> bool {
     let below = |root: &String| within(directory, root);
     manifests
         .workspaces
         .iter()
         .filter(|declared| declared.directory == workspace)
-        .any(|declared| declared.exclude.iter().any(below) && !declared.members.iter().any(below))
+        .any(|declared| {
+            declared.exclude.iter().any(below)
+                && !declared.members.iter().any(|member| member == directory)
+        })
 }
 
 /// The directory of the nearest workspace declaration above `directory`
@@ -174,7 +178,7 @@ mod tests {
     pub(crate) const FILES: &[(&str, &str)] = &[
         (
             "Cargo.toml",
-            "[workspace]\nmembers = [\"crates/*\", \"firmware/shared\"]\nexclude = [\"island\", \"firmware\"]\n",
+            "[workspace]\nmembers = [\"crates/*\", \"firmware/shared\", \"firmware/app/nested\"]\nexclude = [\"island\", \"firmware\"]\n",
         ),
         ("Cargo.lock", ""),
         (
@@ -186,7 +190,7 @@ mod tests {
         ("island/Cargo.lock", ""),
         (
             "firmware/Cargo.toml",
-            "[workspace]\nmembers = [\"app\"]\nexclude = [\"shared\"]\n",
+            "[workspace]\nmembers = [\"app\"]\nexclude = [\"shared\", \"app/nested\"]\n",
         ),
         (
             "firmware/shared/Cargo.toml",
@@ -194,6 +198,11 @@ mod tests {
         ),
         ("firmware/Cargo.lock", ""),
         ("firmware/app/Cargo.toml", "[package]\nname = \"app\"\n"),
+        // Below a member's directory but excluded: the root's, as for Cargo.
+        (
+            "firmware/app/nested/Cargo.toml",
+            "[package]\nname = \"nested\"\n",
+        ),
     ];
 
     #[test]
@@ -211,6 +220,7 @@ mod tests {
         assert_eq!(owners["firmware/app/Cargo.toml"], "firmware/Cargo.toml");
         assert_eq!(owners["island/Cargo.toml"], "island/Cargo.toml");
         assert_eq!(owners["firmware/shared/Cargo.toml"], "Cargo.toml");
+        assert_eq!(owners["firmware/app/nested/Cargo.toml"], "Cargo.toml");
         assert_eq!(lock_of("firmware/Cargo.toml"), "firmware/Cargo.lock");
         assert_eq!(lock_of("Cargo.toml"), "Cargo.lock");
     }

@@ -78,7 +78,7 @@ pub struct Package {
     pub features: BTreeMap<String, Vec<String>>,
     /// Dependency keys that `[features]` forward features to (`key/feature`).
     pub feature_forwarded: Vec<String>,
-    /// Every entry of every `[features]` list, such as `esp-hal?/esp32s31`.
+    /// Every entry of every `[features]` list, such as `esp-hal?/<chip>`.
     pub feature_entries: Vec<String>,
     /// The README Cargo packages with it: `package.readme`, else a
     /// `README.md`, `README.txt` or `README` beside the manifest.

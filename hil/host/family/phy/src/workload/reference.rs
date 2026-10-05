@@ -1,14 +1,14 @@
-//! The vendor IEEE 802.15.4 reference firmware
-//! (`verification/esp32s31/hil-vendor/ieee802154-reference`) on the board
-//! under test, driven through its line protocol
-//! (`hil/peers/esp32c5-ieee802154/README.md`): the radio configured and
+//! The vendor IEEE 802.15.4 reference firmware (`ieee802154-reference` of
+//! the chip's vendor calibration projects) on the board under test, driven
+//! through the IEEE 802.15.4 reference peer's line protocol (its README in
+//! `hil/peers`): the radio configured and
 //! receiving, optionally after one driver disable and enable, then its
 //! register state read with `PEEK` and `ANALOG`. Replies are rewritten in
 //! the calibration firmware's line formats, so the comparison reads both
 //! vendor firmwares alike.
 use crate::Result;
-use oer_esp32s31_phy_vendor_calibration::registers::{self, Register, Space, analog_parts};
-use std::io::Read;
+use oer_phy_calibration_capture::space::{self, Register, Space, analog_parts};
+use std::io::{Read, Write as _};
 use std::time::{Duration, Instant};
 
 /// The line that opens every boot of the reference firmware.
@@ -56,7 +56,7 @@ fn configuration() -> String {
 
 /// One console session with the reference firmware.
 pub(crate) struct Peer {
-    serial: Box<dyn serialport::SerialPort>,
+    serial: oer_device_port::Port,
     /// Everything the firmware printed.
     pub(crate) console: String,
     /// Whether the radio is taken through one disable and enable before
@@ -66,7 +66,7 @@ pub(crate) struct Peer {
 
 impl Peer {
     /// The firmware of a board just reset through `serial`, once ready.
-    pub(crate) fn boot(serial: Box<dyn serialport::SerialPort>, restart: bool) -> Result<Self> {
+    pub(crate) fn boot(serial: oer_device_port::Port, restart: bool) -> Result<Self> {
         let mut peer = Self {
             serial,
             console: String::new(),
@@ -181,24 +181,20 @@ impl Peer {
                     break;
                 }
                 if ready_lines(&self.console) > boots {
-                    lines.push_str(
-                        &oer_esp32s31_phy_vendor_calibration::vendor::unreadable_line(
-                            register.address,
-                        ),
-                    );
+                    lines.push_str(&oer_phy_calibration_capture::vendor::unreadable_line(
+                        register.address,
+                    ));
                     self.prepare()?;
                     break;
                 }
                 if started.elapsed() > REPLY_TIMEOUT {
                     // A read that stalls the bus hangs the chip instead of
                     // resetting it: reset the board and treat it alike.
-                    oer_hil_board::reset::reset_usb_serial_jtag(&mut *self.serial)?;
+                    oer_device_reset::reset_usb_serial_jtag(&mut self.serial)?;
                     self.wait(|console| ready_lines(console) > boots, "the ready line")?;
-                    lines.push_str(
-                        &oer_esp32s31_phy_vendor_calibration::vendor::unreadable_line(
-                            register.address,
-                        ),
-                    );
+                    lines.push_str(&oer_phy_calibration_capture::vendor::unreadable_line(
+                        register.address,
+                    ));
                     self.prepare()?;
                     break;
                 }
@@ -243,7 +239,7 @@ fn replies(console: &str, space: Space) -> Vec<(u32, u32)> {
                     u32::from_str_radix(value, 16).ok()?,
                 )),
                 (Space::Analog, ["@ANALOG", block, reg, value]) => Some((
-                    registers::analog_address(
+                    space::analog_address(
                         u8::from_str_radix(block, 16).ok()?,
                         u8::from_str_radix(reg, 16).ok()?,
                     ),
@@ -261,7 +257,7 @@ mod tests {
 
     #[test]
     fn replies_are_read_in_order_and_boots_counted() {
-        let console = "@READY protocol=1 target=esp32s31\n@OK CFG\n@PEEK 20100434 0000abcd\n\
+        let console = "@READY protocol=1 target=chip-a\n@OK CFG\n@PEEK 20100434 0000abcd\n\
                        @ANALOG 61 09 0e\n@PEEK 20100438 00000001\n@PEEK 2010";
         assert_eq!(
             replies(console, Space::Mmio),
@@ -269,7 +265,7 @@ mod tests {
         );
         assert_eq!(
             replies(console, Space::Analog),
-            [(registers::analog_address(0x61, 0x09), 0x0e)]
+            [(space::analog_address(0x61, 0x09), 0x0e)]
         );
         assert_eq!(ready_lines(console), 1);
         assert_eq!(ok_lines(console, "CFG"), 1);

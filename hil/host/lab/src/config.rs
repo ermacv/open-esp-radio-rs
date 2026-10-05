@@ -14,7 +14,7 @@ use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::Result;
-use oer_hil_scenario::link::{PhyExpectation, WifiLabUse};
+use oer_hil_scenario_catalog::link::{PhyExpectation, WifiLabUse};
 
 /// The stand file's view a run uses: the pool and the fixture sections, with
 /// the run's device under test taken from the pool.
@@ -26,7 +26,7 @@ pub struct LabConfig {
     chip: String,
     /// The stand file's pool, from which [`Self::peer`] takes a
     /// peer board.
-    stand: oer_hil_stand_model::StandFile,
+    stand: oer_stand_file::StandFile,
     /// The boards the run named.
     choice: BoardChoice,
     /// The chip of the run's peer images ([`Self::with_peer_images`]); none
@@ -265,8 +265,8 @@ pub struct ExternalConfig {
 
 /// The serial port of `board`, its `/dev/serial/by-id` link among the
 /// attached ports.
-fn attached_port(board: &oer_hil_stand_model::Board) -> Result<PathBuf> {
-    oer_hil_board::ports::port_of(&board.mac()?)
+fn attached_port(board: &oer_stand_file::Board) -> Result<PathBuf> {
+    oer_device_discovery::port_of(&board.mac()?)
         .map_err(|error| format!("board `{}`: {error}", board.id).into())
 }
 
@@ -294,7 +294,7 @@ pub fn peer_image_chip(root: &Path, image: &str) -> Result<String> {
 impl LabConfig {
     /// The host's stand file, which every checkout reads.
     pub fn default_path() -> Result<PathBuf> {
-        Ok(oer_hil_stand_model::paths::stand_file()?)
+        Ok(oer_stand_file::paths::stand_file()?)
     }
 
     /// The stand file at `path` with `chip`'s device under test, the one
@@ -308,9 +308,9 @@ impl LabConfig {
         path: &Path,
         chip: &str,
         choice: &BoardChoice,
-        resolve: &dyn Fn(&oer_hil_stand_model::Board) -> Result<PathBuf>,
+        resolve: &dyn Fn(&oer_stand_file::Board) -> Result<PathBuf>,
     ) -> Result<Self> {
-        let mut stand = oer_hil_stand_model::StandFile::load(path)?;
+        let mut stand = oer_stand_file::StandFile::load(path)?;
         let root = oer_process::built_root();
         let chips = oer_chip_profile::Profile::all(&root)?;
         // The credentials stay in the zeroized fixture types alone.
@@ -335,7 +335,7 @@ impl LabConfig {
         let board = stand
             .select_board(
                 chip,
-                oer_hil_stand_model::BoardRole::Dut,
+                oer_stand_file::BoardRole::Dut,
                 choice.dut.as_deref(),
                 None,
             )
@@ -344,7 +344,7 @@ impl LabConfig {
             .validate_chip(&chips)
             .map_err(|error| format!("{}: {error}", path.display()))?;
         let device_serial = resolve(board)?;
-        let device_mac = board.mac()?;
+        let device_mac = board.mac()?.to_string();
         let device_id = board.id.clone();
         let device_startup_artifact = board.startup_artifact.clone();
         if raw.station.ssid.is_empty() || raw.station.ssid.len() > 32 {
@@ -682,7 +682,7 @@ impl LabConfig {
 
     pub(crate) fn peer_resolving(
         &self,
-        resolve: &dyn Fn(&oer_hil_stand_model::Board) -> Result<PathBuf>,
+        resolve: &dyn Fn(&oer_stand_file::Board) -> Result<PathBuf>,
     ) -> Result<PeerBoardConfig> {
         let chip = self
             .peer_chip
@@ -692,14 +692,14 @@ impl LabConfig {
             .stand
             .select_board(
                 chip,
-                oer_hil_stand_model::BoardRole::Peer,
+                oer_stand_file::BoardRole::Peer,
                 self.choice.peer.as_deref(),
                 Some(&self.dut.id),
             )
             .map_err(|error| format!("{error} (--peer-board)"))?;
         Ok(PeerBoardConfig {
             id: board.id.clone(),
-            mac: board.mac()?,
+            mac: board.mac()?.to_string(),
             chip: board.chip.clone(),
             port: resolve(board).map_err(|error| error.to_string()),
         })
@@ -710,17 +710,18 @@ impl LabConfig {
     }
 
     /// The stand file the configuration was read from.
-    pub fn stand(&self) -> &oer_hil_stand_model::StandFile {
+    pub fn stand(&self) -> &oer_stand_file::StandFile {
         &self.stand
     }
 
-    /// The device under test as board I/O reaches it.
-    pub fn dut_board(&self) -> Result<oer_hil_board::Board> {
+    /// The device under test as the stand describes it; its I/O needs the
+    /// run's access to it (`Board::lease`).
+    pub fn dut_board(&self) -> Result<oer_stand_board::Board> {
         let board = self
             .stand
             .board(&self.dut.id)
             .ok_or_else(|| format!("board `{}` is not in the stand file", self.dut.id))?;
-        oer_hil_board::Board::new(
+        oer_stand_board::Board::new(
             &oer_process::built_root(),
             &self.stand,
             board,
@@ -728,14 +729,15 @@ impl LabConfig {
         )
     }
 
-    /// The run's peer board as board I/O reaches it.
-    pub fn peer_board(&self) -> Result<oer_hil_board::Board> {
+    /// The run's peer board as the stand describes it; its I/O needs the
+    /// run's access to it (`Board::lease`).
+    pub fn peer_board(&self) -> Result<oer_stand_board::Board> {
         let peer = self.peer()?;
         let board = self
             .stand
             .board(&peer.id)
             .ok_or_else(|| format!("board `{}` is not in the stand file", peer.id))?;
-        oer_hil_board::Board::new(
+        oer_stand_board::Board::new(
             &oer_process::built_root(),
             &self.stand,
             board,
@@ -755,8 +757,14 @@ impl LabConfig {
             legacy_bss: None,
             cell_id: String::from("test-cell"),
             bluetooth_adapter: None,
-            chip: String::from("esp32s31"),
-            stand: oer_hil_stand_model::StandFile::parse(
+            // A chip of the tree this build came from.
+            chip: oer_chip_profile::Profile::all(&oer_process::built_root())
+                .expect("the chip profiles load")
+                .into_iter()
+                .next()
+                .expect("the tree has a chip")
+                .id,
+            stand: oer_stand_file::StandFile::parse(
                 "schema = 1\n[stand]\nid = \"test-cell\"\nair = \"exclusive\"\n",
             )
             .expect("the test stand file parses"),

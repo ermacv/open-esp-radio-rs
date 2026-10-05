@@ -45,7 +45,7 @@ station workspaces before using offline checks. From the repository root:
 cargo fetch --locked
 cargo fetch --locked --manifest-path platform/esp32s31/Cargo.toml
 cargo fetch --locked --manifest-path examples/esp32s31/station/Cargo.toml
-cargo xtask build firmware station
+cargo fw build station
 ```
 
 The [station example](../examples/esp32s31/station/README.md) owns credentials,

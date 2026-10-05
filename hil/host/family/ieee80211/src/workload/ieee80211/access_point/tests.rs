@@ -57,17 +57,17 @@ fn cleanup_annotation_preserves_fixture_cancellation_and_scenario_causes() {
             Box::new(oer_hil_family_ieee80211_fixture::Error::new(
                 "SSH transport failed",
             )) as Box<dyn std::error::Error + Send + Sync>,
-            oer_hil_run_bundle::run::FailureKind::Infrastructure,
+            oer_hil_run_bundle_format::run::FailureKind::Infrastructure,
             false,
         ),
         (
             oer_hil_family_ieee80211_fixture::Error::context(Box::new(oer_process::Cancelled)),
-            oer_hil_run_bundle::run::FailureKind::Infrastructure,
+            oer_hil_run_bundle_format::run::FailureKind::Infrastructure,
             true,
         ),
         (
             "secondary AP client lost traffic".into(),
-            oer_hil_run_bundle::run::FailureKind::Scenario,
+            oer_hil_run_bundle_format::run::FailureKind::Scenario,
             false,
         ),
     ] {
@@ -509,7 +509,7 @@ fn ap_ht40_mcs7_gate_is_directional_and_fails_closed() {
     let link = Some(LinkExpectation {
         phy: PhyExpectation::Ht40,
         minimum_mcs: Some(7),
-        guard_interval: oer_hil_scenario::link::HtGuardIntervalExpectation::Any,
+        guard_interval: oer_hil_scenario_catalog::link::HtGuardIntervalExpectation::Any,
         management_frame_protection: Default::default(),
         access_point_security: Default::default(),
     });

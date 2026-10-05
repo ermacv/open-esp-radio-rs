@@ -5,12 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "The vendor-versus-production ESP32-S31 PHY calibration comparison: register images, vendor console protocol, production projection and the reviewed relation; the HIL phy family captures it"
+description = "The vendor-versus-production ESP32-S31 PHY calibration comparison on data: register images, vendor console protocol and the reviewed relation over the projection the firmware reports; the HIL phy family captures it"
 
 [dependencies]
-oer-esp32s31-hil-calibration-artifact = { path = "../../../../hil/targets/esp32s31/calibration-artifact" }
-oer-esp32s31-phy = { path = "../../../../crates/hardware/esp32s31/phy", features = ["validation-probes"] }
-oer-esp32s31-phy-relation = { path = "../../phy-relation", features = ["projection"] }
+oer-phy-calibration-capture = { path = "../../../phy-calibration-capture" }
+oer-esp32s31-phy-relation = { path = "../../phy-relation" }
 oer-register-model = { path = "../../../../tools/registers/model" }
 serde = { version = "1.0", features = ["derive"] }
 toml = "1.1"

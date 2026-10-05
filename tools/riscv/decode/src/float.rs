@@ -1,7 +1,7 @@
 //! RV32F single-precision encodings, which the pinned rv-asm 0.2.1 does not
 //! decode.
 //!
-//! The ESP32-S31 builds for `rv32imafc`, so compiled Rust and vendor code
+//! A chip that builds for `rv32imafc` runs compiled Rust and vendor code
 //! contain FP loads, stores, arithmetic and moves between the register
 //! files. Only their structure and integer-register effects are modeled: the
 //! FP register file is not. Encodings:

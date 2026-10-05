@@ -26,7 +26,7 @@ use core::cell::{Cell, RefCell};
 
 use critical_section::Mutex;
 use esp_hal::{interrupt::Priority, peripherals::Interrupt, rng::Rng, system::Cpu, time::Instant};
-use oer_esp32s31_soc_esp_hal::interrupt_table::{self, Route};
+use oer_espressif_interrupt_table_esp_hal::{self as interrupt_table, Route};
 use oer_interrupt_table::Entry;
 
 const SOURCE: Interrupt = Interrupt::MODEM_ZB_MAC;

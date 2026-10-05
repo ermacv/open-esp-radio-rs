@@ -1,5 +1,5 @@
 //! The register checks the gate calls (`cargo xtask check architecture`,
-//! `cargo xtask register-inventory`): rules about handwritten PAC code and
+//! `cargo registers inventory`): rules about handwritten PAC code and
 //! about the published registers, owned by the register publication.
 //!
 //! - [`pac_transactions`]: a handwritten PAC operation is one transaction;

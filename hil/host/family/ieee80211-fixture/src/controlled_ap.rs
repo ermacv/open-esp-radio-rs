@@ -2,7 +2,7 @@
 
 use crate::Result;
 use oer_hil_lab::config::{StationConfig, StationFixtureConfig};
-use oer_hil_scenario::link::{
+use oer_hil_scenario_catalog::link::{
     AccessPointBeacon, AccessPointSecurity, ManagementFrameProtection, PhyExpectation,
 };
 

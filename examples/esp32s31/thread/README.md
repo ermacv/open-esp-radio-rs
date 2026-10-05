@@ -42,8 +42,8 @@ TLV hex, for example the output of `dataset active -x` on the network's
 leader. Without it the device starts OpenThread but does not join.
 
 ```console
-THREAD_DATASET=0e08... cargo xtask build firmware thread
-cargo hil flash --board <board> --monitor 30s target/firmware/esp32s31-thread/build-<id>
+THREAD_DATASET=0e08... cargo fw build thread
+cargo fw flash --device <MAC|PORT> --monitor target/firmware/esp32s31-thread/build-<id>
 ```
 
 `openthread-sys` has no prebuilt library for this chip's single-float ABI,

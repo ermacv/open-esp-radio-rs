@@ -1,136 +1,125 @@
-//! The staged pipeline: the ROM loads the platform bootstrap, which embeds
-//! the packed stage-two runtime and stages it into PSRAM (ESP32-S31).
+//! The staged pipeline: the ESP-IDF bootloader loads the platform bootstrap,
+//! which embeds the packed stage-two runtime and stages it into PSRAM.
 //!
-//! The runtime is compiled, its stacks gated and its placement audited; it
-//! is flattened and packed with its checksum, embedded in the bootstrap, whose
-//! own stack is gated; the bootstrap ELF is then encoded as the QIO
-//! application of the chip's partition table, and the ROM-readable DIO
-//! bootloader, the partition tables and the OTA selection of the first slot
-//! are encoded beside it.
-
-pub mod payload;
-pub mod placement;
+//! The runtime is compiled and checked as the caller requests; it is
+//! flattened and packed with its checksum, embedded in the bootstrap, whose
+//! own stack is checked with the runtime's; the bootstrap ELF is then encoded
+//! as the application of the chip's partition table with the flash map's
+//! application settings, and the bootloader in the mode the ROM reads it in,
+//! the partition tables and the OTA selection of the first slot are encoded
+//! beside it.
 
 use std::path::Path;
 
-use espflash::flasher::{FlashFrequency, FlashMode, FlashSize};
+use oer_image_bundle::{ImageBundle, Lock, Staged, files};
+use oer_image_encode as encode;
+use oer_image_encode::Encoding;
+use oer_image_policy::StackPolicy;
 
 use crate::{
-    ImageBundle, ImageSpec, Result,
+    ImageSpec, Result,
     build_log::BuildLog,
-    bundle::{Lock, Staged, files},
-    encode::{self, Encoding},
-    exclusion::{BuildLock, Lease},
+    exclusion::{BuildLock, Staging},
     source_inputs,
-    stack::{self, StackPolicy},
 };
 
-pub use payload::pack_runtime;
+use oer_image_encode::stage_two::pack_runtime;
 
-/// The chip whose images boot staged.
-pub const CHIP: &str = "esp32s31";
-
-/// The application's flash settings; ESP-IDF enables QIO for it.
-const APPLICATION: Encoding = Encoding {
-    mode: Some(FlashMode::Qio),
-    frequency: Some(FlashFrequency::_80Mhz),
-    size: Some(FlashSize::_16Mb),
-    mmu_page_size: Some(0x1_0000),
-};
-/// The ROM reads the bootloader in DIO.
-const ROM: Encoding = Encoding {
-    mode: Some(FlashMode::Dio),
-    ..APPLICATION
-};
-
-/// The ROM summaries and pin the stack gate reads, besides the policy.
-const STACK_INPUTS: [&str; 2] = [
-    "verification/esp32s31/artifacts.toml",
-    crate::interrupt_stack::ROM_SUMMARIES,
-];
+/// The staged images' MMU page: the bootstrap keeps its text on 64-KiB
+/// pages and stage two starts on one.
+const MMU_PAGE_SIZE: u32 = 0x1_0000;
 
 pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Result<ImageBundle> {
     let root = spec.root.as_path();
     let target = profile.rust_target.as_str();
-    let bootstrap_package = profile
-        .bootstrap_package()
-        .ok_or("a staged chip names its bootstrap")?;
+    let bootstrap_package = profile.bootstrap_package();
     let platform = profile.platform_workspace(root);
     let flash = profile.flash.clone().ok_or("no flash map")?;
-    std::fs::create_dir_all(&spec.output)?;
-    let mut bundle = ImageBundle::new(&spec.output, profile, flash);
+    // Every file goes into the staging directory; the bundle is published
+    // only once the whole build succeeded.
+    let staging = Staging::begin(&spec.output)?;
+    let output = staging.directory().to_owned();
+    let mut bundle = ImageBundle::new(&output, profile, flash);
     bundle.layout_seed = spec.layout_seed;
-    let log = BuildLog::create(&spec.output.join(files::BUILD_LOG))?;
-    let _cache = Lease::wait(
-        &spec.cache.join("build.lock"),
-        &format!("waiting for another build in {}", spec.cache.display()),
-    )?;
+    let log = BuildLog::create(&output.join(files::BUILD_LOG))?;
+    let cache = crate::compile_cache()?;
     let policy = StackPolicy::load(&root.join(&spec.stack_policy))?;
-    policy.stacks()?;
     // Private copies of both committed catalogs: patched networks and local
     // overrides resolve into them, never into the source tree.
     let workspace = root.join(&spec.application.workspace);
-    let runtime_lock = BuildLock::prepare(&workspace, &spec.output.join("locks/runtime"))?;
-    let bootstrap_lock = BuildLock::prepare(&platform, &spec.output.join("locks/bootstrap"))?;
+    let runtime_lock = BuildLock::prepare(&workspace, &output.join("locks/runtime"))?;
+    let bootstrap_lock = BuildLock::prepare(&platform, &output.join("locks/bootstrap"))?;
 
-    let runtime_target = spec.cache.join("runtime");
-    let mut runtime = crate::runtime_command(spec, profile, "build", &policy)?;
-    runtime.env("CARGO_TARGET_DIR", &runtime_target);
-    runtime_lock.configure(&mut runtime);
-    if spec.overrides.is_empty() {
-        crate::cargo::ensure_fetched(root, &workspace.join("Cargo.toml"), |command| {
-            runtime_lock.configure(command)
-        })?;
-    }
-    {
-        let _slot = crate::exclusion::slot(&crate::host_build_root()?.join("tokens"))?;
-        log.run(&mut runtime, "build the stage-two runtime")?;
-    }
-    let release = runtime_target.join(target).join("release");
-    let runtime_elf = crate::snapshot(
-        &release.join(&spec.application.binary),
-        &spec.output,
-        files::RUNTIME_ELF,
-    )?;
+    // Every image uplifts into the same `<target>/release` of the shared
+    // cache: each build holds it until its ELF and dependency information
+    // are copied out.
+    let release = cache.join(target).join("release");
+    let (runtime_elf, mut compiled) = {
+        let _cache = oer_toolchain::image::lock_compile_cache(&cache)?;
+        let mut runtime = crate::runtime_command(spec, profile, "build", &policy)?;
+        runtime.env("CARGO_TARGET_DIR", &cache);
+        runtime_lock.configure(&mut runtime);
+        if spec.overrides.is_empty() {
+            crate::cargo::ensure_fetched(root, &workspace.join("Cargo.toml"), |command| {
+                runtime_lock.configure(command)
+            })?;
+        }
+        {
+            let _slot = crate::exclusion::slot(&crate::host_build_root()?.join("tokens"))?;
+            log.run(&mut runtime, "build the stage-two runtime")?;
+        }
+        let elf = crate::snapshot(
+            &release.join(&spec.application.binary),
+            &output,
+            files::RUNTIME_ELF,
+        )?;
+        let compiled =
+            source_inputs::collect(root, &[(&release, spec.application.binary.as_str())])?;
+        (elf, compiled)
+    };
     // Local overrides deliberately resolve path packages.
     if spec.overrides.is_empty() {
         runtime_lock.validate()?;
     }
 
-    let stacks =
-        stack::audit_runtime_stacks(root, &runtime_elf, &policy, spec.interrupts, &spec.output)
-            .map_err(|error| log.failed("runtime stack gate", error))?;
-    bundle
-        .reports
-        .extend([stack::INTERRUPT_REPORT, stack::RUNTIME_REPORT].map(str::to_owned));
-    bundle.rom_summaries = stacks.summaries;
-    bundle.warnings.extend(stacks.warnings);
-
-    let runtime_bin = spec.output.join(files::RUNTIME_BIN);
+    let runtime_bin = output.join(files::RUNTIME_BIN);
     let mut objcopy = oer_toolchain::command(oer_toolchain::Tool::LlvmObjcopy)?;
     objcopy
         .args(["-O", "binary"])
         .arg(&runtime_elf)
         .arg(&runtime_bin);
     log.run(&mut objcopy, "flatten the stage-two runtime")?;
-    let crc = pack_runtime(&runtime_bin).map_err(|error| log.failed("runtime packing", error))?;
-    let placement = placement::audit_runtime(&runtime_elf, &runtime_bin)
-        .and_then(|report| {
-            if let Some(audit) = &spec.audit {
-                audit(&oer_elf::Elf::parse(&std::fs::read(&runtime_elf)?)?)?;
-            }
-            Ok(report)
-        })
-        .map_err(|error| log.failed("runtime placement audit", error))?;
+    let staged = profile
+        .staged
+        .as_ref()
+        .ok_or("a staged chip's profile names its [staged] contract")?;
+    let crc = pack_runtime(&staged.stage_two, &runtime_bin)
+        .map_err(|error| log.failed("runtime packing", error))?;
     eprintln!("runtime_crc32={crc:08x}");
-    std::fs::write(spec.output.join(files::PLACEMENT_REPORT), placement)?;
-    bundle.reports.push(files::PLACEMENT_REPORT.to_owned());
+    if let Some(checks) = &spec.checks {
+        let outcome = checks
+            .runtime(&crate::CheckInput {
+                root,
+                profile,
+                policy: &policy,
+                elf: &runtime_elf,
+                flat: Some(&runtime_bin),
+                output: &output,
+            })
+            .map_err(|error| log.failed("runtime checks", error))?;
+        crate::apply_outcome(
+            checks.as_ref(),
+            crate::CheckedElf::Runtime,
+            outcome,
+            &mut bundle,
+        )?;
+    }
 
     // The bootstrap embeds the runtime with `include_bytes!`; a stable path
     // that keeps its timestamp while its bytes are unchanged leaves the
     // bootstrap fresh.
-    let bootstrap_target = spec.cache.join("bootstrap");
-    let embedded = std::path::absolute(bootstrap_target.join("stage-two-runtime.bin"))?;
+    let bootstrap_cache = oer_toolchain::image::lock_compile_cache(&cache)?;
+    let embedded = std::path::absolute(cache.join("stage-two-runtime.bin"))?;
     crate::replace_if_changed(&runtime_bin, &embedded)?;
     let mut bootstrap = crate::cargo::command();
     bootstrap
@@ -138,7 +127,7 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
         .args(["build", "--manifest-path"])
         .arg(platform.join("Cargo.toml"))
         .args(["-p", &bootstrap_package, "--release", "--target", target])
-        .env("CARGO_TARGET_DIR", &bootstrap_target)
+        .env("CARGO_TARGET_DIR", &cache)
         .env("CARGO_INCREMENTAL", "0")
         .env("PSRAM_RUNTIME_BIN", &embedded);
     if spec.overrides.esp_hal.is_none() {
@@ -146,9 +135,10 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
     }
     bootstrap_lock.configure(&mut bootstrap);
     spec.overrides.apply_esp_hal(&mut bootstrap);
+    crate::zeroed_inputs(&mut bootstrap, profile);
     oer_toolchain::image::configure(
         &mut bootstrap,
-        &policy.image_compiler(root, &spec.cache.join("image-linker"), target),
+        &policy.image_compiler(root, &crate::linker_cache()?, target),
     )?;
     if spec.overrides.esp_hal.is_none() {
         crate::cargo::ensure_fetched(root, &platform.join("Cargo.toml"), |command| {
@@ -156,16 +146,34 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
         })?;
     }
     log.run(&mut bootstrap, "build the Flash/SRAM bootstrap")?;
-    let bootstrap_release = bootstrap_target.join(target).join("release");
     let bootstrap_elf = crate::snapshot(
-        &bootstrap_release.join(&bootstrap_package),
-        &spec.output,
+        &release.join(&bootstrap_package),
+        &output,
         files::BOOTSTRAP_ELF,
     )?;
-    let warnings = stack::audit_bootstrap_stack(root, &bootstrap_elf, &policy, &spec.output)
-        .map_err(|error| log.failed("bootstrap stack gate", error))?;
-    bundle.reports.push(stack::BOOTSTRAP_REPORT.to_owned());
-    bundle.warnings.extend(warnings);
+    compiled.extend(source_inputs::collect(
+        root,
+        &[(&release, bootstrap_package.as_str())],
+    )?);
+    drop(bootstrap_cache);
+    if let Some(checks) = &spec.checks {
+        let outcome = checks
+            .bootstrap(&crate::CheckInput {
+                root,
+                profile,
+                policy: &policy,
+                elf: &bootstrap_elf,
+                flat: None,
+                output: &output,
+            })
+            .map_err(|error| log.failed("bootstrap checks", error))?;
+        crate::apply_outcome(
+            checks.as_ref(),
+            crate::CheckedElf::Bootstrap,
+            outcome,
+            &mut bundle,
+        )?;
+    }
 
     let elf = std::fs::read(&bootstrap_elf)?;
     let application = encode_application(root, profile, &elf, &bundle)
@@ -189,31 +197,29 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
             files::BOOTSTRAP_LOCK,
         ),
     ] {
-        std::fs::copy(lock.path(), spec.output.join(file))?;
+        std::fs::copy(lock.path(), output.join(file))?;
         bundle.locks.push(Lock {
             committed: committed.join("Cargo.lock"),
             file: file.to_owned(),
         });
     }
 
-    let compiled = source_inputs::collect(
-        root,
-        &[
-            (&release, spec.application.binary.as_str()),
-            (&bootstrap_release, bootstrap_package.as_str()),
-        ],
-    )?;
     let map = bundle.flash.clone();
     let mut reads = vec![
         spec.stack_policy.clone(),
         Path::new("platform").join(&profile.id).join("chip.toml"),
         Path::new("platform").join(&profile.id).join("stack.toml"),
-        Path::new("platform")
-            .join(&profile.id)
-            .join("stack-coverage.toml"),
     ];
-    reads.extend(STACK_INPUTS.iter().map(std::path::PathBuf::from));
-    reads.extend(map.partitions.iter().cloned());
+    if let Some(coverage) = &policy.coverage_policy {
+        reads.push(lexical(coverage.strip_prefix(root)?));
+    }
+    reads.push(
+        Path::new("verification")
+            .join(&profile.id)
+            .join("artifacts.toml"),
+    );
+    reads.extend(profile.rom.iter().filter_map(|rom| rom.summaries.clone()));
+    reads.push(map.partitions.clone());
     reads.extend(spec.reads.iter().cloned());
     let platform_relative = platform.strip_prefix(root)?.to_owned();
     let mut inputs = source_inputs::configuration(
@@ -226,22 +232,11 @@ pub(crate) fn build(spec: &ImageSpec, profile: &oer_chip_profile::Profile) -> Re
             .collect::<Vec<_>>(),
     )?;
     inputs.extend(compiled);
-    inputs.extend(builder_inputs(spec)?);
-    source_inputs::write(&spec.output, &inputs)?;
-    bundle.write()?;
-    Ok(bundle)
-}
-
-/// The builder sources of `spec`: the pipeline's and its caller's closure.
-pub(crate) fn builder_inputs(
-    spec: &ImageSpec,
-) -> Result<std::collections::BTreeSet<std::path::PathBuf>> {
-    let roots: Vec<&str> = crate::PIPELINE
-        .iter()
-        .copied()
-        .chain(spec.builders.iter().map(String::as_str))
-        .collect();
-    source_inputs::builder(&spec.root, &roots)
+    inputs.extend(spec.builder_inputs.iter().cloned());
+    source_inputs::write(&output, &inputs)?;
+    // The private lock copies end with the build.
+    drop((runtime_lock, bootstrap_lock));
+    staging.publish(bundle)
 }
 
 /// The QIO application image of the bootstrap ELF `elf` for the partition
@@ -265,18 +260,18 @@ fn encode_application(
     let encoded = encode::encode(
         elf,
         encode::chip(&profile.espflash_chip)?,
-        APPLICATION,
-        Some(&root.join(table_path(&bundle.flash)?)),
+        Encoding::application(&bundle.flash, MMU_PAGE_SIZE)?,
+        Some(&root.join(&bundle.flash.partitions)),
         bundle.flash.partition_table,
         Some(&partition.name),
     )?;
-    placement::audit_application_image(&encoded.application, partition.size)?;
+    audit_application_image(&encoded.application, partition.size)?;
     Ok(encoded.application)
 }
 
-/// Encode the staged boot's bootloader (in the ROM's DIO, from any ELF of
-/// the application), the partition tables and the OTA selection of the
-/// first slot into `bundle`.
+/// Encode the staged boot's bootloader (in the mode the ROM reads it in,
+/// from any ELF of the application), the partition tables and the OTA
+/// selection of the first slot into `bundle`.
 pub(crate) fn encode_boot_files(
     root: &Path,
     profile: &oer_chip_profile::Profile,
@@ -289,18 +284,18 @@ pub(crate) fn encode_boot_files(
         .iter()
         .find(|partition| partition.otadata)
         .ok_or("the partition table has no OTA data partition")?;
-    if flash.otadata != Some(otadata.offset) {
+    if flash.otadata != otadata.offset {
         return Err(format!(
-            "the flash map puts the OTA data at {:?}, the partition table at {:#x}",
+            "the flash map puts the OTA data at {:#x}, the partition table at {:#x}",
             flash.otadata, otadata.offset
         )
         .into());
     }
-    let csv = root.join(table_path(&flash)?);
+    let csv = root.join(&flash.partitions);
     let rom = encode::encode(
         elf,
         encode::chip(&profile.espflash_chip)?,
-        ROM,
+        Encoding::bootloader(&flash, MMU_PAGE_SIZE)?,
         Some(&csv),
         flash.partition_table,
         None,
@@ -315,16 +310,52 @@ pub(crate) fn encode_boot_files(
     Ok(())
 }
 
-fn table_path(flash: &crate::FlashMap) -> Result<&Path> {
-    Ok(flash
-        .partitions
-        .as_deref()
-        .ok_or("a staged chip's flash map names its partition table")?)
+/// `path` with its `..` components resolved against the components before
+/// them, as a repository-relative input path names the file.
+fn lexical(path: &Path) -> std::path::PathBuf {
+    let mut resolved = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                resolved.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => resolved.push(other),
+        }
+    }
+    resolved
 }
 
 /// The partitions of the flash map's partition table at `root`.
 pub fn partitions(root: &Path, flash: &crate::FlashMap) -> Result<Vec<encode::Partition>> {
-    encode::partitions(&root.join(table_path(flash)?))
+    encode::partitions(&root.join(&flash.partitions))
+}
+
+/// Audit an encoded application image: its ESP-IDF app descriptor and the
+/// 64-KiB MMU page size, warning when it nearly fills `capacity`, the bytes
+/// of its partition.
+pub fn audit_application_image(bytes: &[u8], capacity: u32) -> Result<()> {
+    const APP_DESC_OFFSET: usize = 0x20;
+    const APP_DESC_MMU_PAGE_LOG2_OFFSET: usize = 180;
+    let end = APP_DESC_OFFSET + APP_DESC_MMU_PAGE_LOG2_OFFSET + 1;
+    if bytes.len() < end
+        || bytes[APP_DESC_OFFSET..APP_DESC_OFFSET + 4] != 0xabcd_5432_u32.to_le_bytes()
+        || bytes[APP_DESC_OFFSET + APP_DESC_MMU_PAGE_LOG2_OFFSET] != 16
+    {
+        return Err("ESP application image has an invalid app descriptor or MMU page size".into());
+    }
+    if bytes.len() > capacity as usize {
+        return Err(format!(
+            "the application image ({} bytes) exceeds its partition ({capacity} bytes)",
+            bytes.len()
+        )
+        .into());
+    }
+    if let Some(warning) = encode::partition_budget_warning(bytes.len() as u64, u64::from(capacity))
+    {
+        eprintln!("warning: {warning}");
+    }
+    Ok(())
 }
 
 #[cfg(test)]

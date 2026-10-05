@@ -1,18 +1,24 @@
 use super::*;
 use crate::run::test_support::TestRecipe;
-use crate::{
-    lab::{
-        AccessPointDefinition, FixtureObservation, HostInterfaceObservation, HostObservation,
-        LabDefinition, LabProvenance, SensitiveValueDisposition, StationFixtureDefinition,
-        StationIpv4Definition,
-    },
-    run::{
-        Attachment, Measurement, MeasurementUnit, Outcome, RepetitionResult, ScenarioResult,
-        SuiteCounts, write_integrity_index,
-    },
-};
 use oer_durable::atomic_json;
-use oer_hil_image_class::ImageClass;
+use oer_hil_run_bundle_format::lab::AccessPointDefinition;
+use oer_hil_run_bundle_format::lab::FixtureObservation;
+use oer_hil_run_bundle_format::lab::HostInterfaceObservation;
+use oer_hil_run_bundle_format::lab::HostObservation;
+use oer_hil_run_bundle_format::lab::LabDefinition;
+use oer_hil_run_bundle_format::lab::LabProvenance;
+use oer_hil_run_bundle_format::lab::SensitiveValueDisposition;
+use oer_hil_run_bundle_format::lab::StationFixtureDefinition;
+use oer_hil_run_bundle_format::lab::StationIpv4Definition;
+use oer_hil_run_bundle_format::run::Attachment;
+use oer_hil_run_bundle_format::run::Measurement;
+use oer_hil_run_bundle_format::run::MeasurementUnit;
+use oer_hil_run_bundle_format::run::Outcome;
+use oer_hil_run_bundle_format::run::RepetitionResult;
+use oer_hil_run_bundle_format::run::ScenarioResult;
+use oer_hil_run_bundle_format::run::SuiteCounts;
+use oer_hil_run_bundle_format::run::write_integrity_index;
+use oer_hil_schema::image::ImageClass;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -37,7 +43,7 @@ fn fixture() -> (PathBuf, PathBuf) {
         &serde_json::json!({
             "schema": RUN_SCHEMA,
             "run_id": "run-1",
-            "target": "esp32s31",
+            "target": "chip-a",
             "state": "completed",
             "started_unix_millis": 100,
             "finished_unix_millis": 200,
@@ -104,7 +110,7 @@ fn fixture() -> (PathBuf, PathBuf) {
         &SuiteResult {
             schema: RUN_SCHEMA,
             run_id: String::from("run-1"),
-            target: String::from("esp32s31"),
+            target: String::from("chip-a"),
             outcome: Outcome::Passed,
             started_unix_millis: 100,
             finished_unix_millis: 200,
@@ -177,14 +183,14 @@ fn add_build_provenance(run: &Path) {
             schema: BUILD_PROVENANCE_SCHEMA,
             build_id,
             build_type: String::from("open-esp-radio-hil-firmware/v1"),
-            parameters: crate::build::BuildParameters {
+            parameters: oer_hil_run_bundle_format::build::BuildParameters {
                 network: None,
                 image: ImageClass::Correctness,
                 runtime_profile: ImageClass::Correctness.runtime_profile().to_owned(),
                 target: String::from("riscv32imafc-unknown-none-elf"),
                 runtime_features: ImageClass::Correctness.runtime_features().to_owned(),
                 layout_seed: None,
-                features: oer_hil_image_class::FeatureDelta::default(),
+                features: oer_hil_schema::image::FeatureDelta::default(),
             },
             sources: vec![SourceMaterial {
                 name: String::from("repository"),
@@ -200,14 +206,14 @@ fn add_build_provenance(run: &Path) {
                 untracked_files: Vec::new(),
                 limitations: Vec::new(),
             }],
-            files: vec![crate::build::BuildFileMaterial {
+            files: vec![oer_hil_run_bundle_format::build::BuildFileMaterial {
                 name: String::from("embedded-lock"),
-                path: PathBuf::from("hil/targets/esp32s31/Cargo.lock"),
+                path: PathBuf::from("hil/targets/chip-a/Cargo.lock"),
                 archive_path: Some(effective_lock_path.clone()),
                 size_bytes: 14,
                 sha256: sha256_file(&run.join(&effective_lock_path)).unwrap(),
             }],
-            environment: crate::build::BuildEnvironment {
+            environment: oer_hil_run_bundle_format::build::BuildEnvironment {
                 tools: Vec::new(),
                 inherited_rustflags: None,
                 inherited_encoded_rustflags: None,
@@ -216,7 +222,7 @@ fn add_build_provenance(run: &Path) {
             },
             subjects,
             source_reconstructable: true,
-            reproducibility: crate::build::BuildReproducibility::Unverified,
+            reproducibility: oer_hil_run_bundle_format::build::BuildReproducibility::Unverified,
         },
     )
     .unwrap();
@@ -231,8 +237,8 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
     atomic_json(
         &run.join(path),
         &LabProvenance {
-            scope: crate::lab::ObservationScope::Network,
-            schema: crate::lab::LAB_PROVENANCE_SCHEMA,
+            scope: oer_hil_run_bundle_format::lab::ObservationScope::Network,
+            schema: oer_hil_run_bundle_format::lab::LAB_PROVENANCE_SCHEMA,
             captured_unix_millis: 150,
             definition: LabDefinition {
                 bluetooth_adapter: None,
@@ -242,14 +248,14 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
                 station_ipv4: StationIpv4Definition::Dhcp,
                 access_point: AccessPointDefinition {
                     channel: 6,
-                    channel_width: crate::lab::ChannelWidth::Mhz40Above,
+                    channel_width: oer_hil_run_bundle_format::lab::ChannelWidth::Mhz40Above,
                     client_limit: 4,
                     target_address: "10.43.0.1".parse().unwrap(),
                     client_address: "10.43.0.2".parse().unwrap(),
                     secondary_client_address: None,
                 },
                 station_fixture: StationFixtureDefinition::External {
-                    phys: vec![crate::lab::Phy::Ht40],
+                    phys: vec![oer_hil_run_bundle_format::lab::Phy::Ht40],
                 },
                 sensitive_network_values: SensitiveValueDisposition::Omitted,
             },
@@ -279,7 +285,7 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
 #[test]
 fn verifies_firmware_and_attachment_content() {
     let (root, _) = fixture();
-    let completion = verify(&root, Some("esp32s31"), None, &TestRecipe).unwrap();
+    let completion = verify(&root, Some("chip-a"), None, &TestRecipe).unwrap();
     assert_eq!(completion.status, "verified");
     assert_eq!(completion.runs, 1);
     assert_eq!(completion.attachments, 1);
@@ -310,10 +316,10 @@ fn lab_provenance_without_a_scope_or_with_the_old_peer_key_is_rejected() {
 fn verifies_typed_lab_provenance_and_rejects_wrong_device_binding() {
     let (root, run) = fixture();
     add_lab_provenance(&run, "dut-1");
-    verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap();
+    verify(&root, Some("chip-a"), Some("run-1"), &TestRecipe).unwrap();
 
     add_lab_provenance(&run, "another-dut");
-    let error = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe)
+    let error = verify(&root, Some("chip-a"), Some("run-1"), &TestRecipe)
         .expect_err("reject lab snapshot for another device");
     assert!(error.to_string().contains("not bound"));
     fs::remove_dir_all(root).unwrap();
@@ -324,7 +330,7 @@ fn system_provenance_requires_a_matching_scenario_snapshot() {
     let (root, run) = fixture();
     add_lab_provenance(&run, "dut-1");
     let mut provenance: LabProvenance = read_json(&run.join("lab-provenance.json")).unwrap();
-    provenance.scope = crate::lab::ObservationScope::System;
+    provenance.scope = oer_hil_run_bundle_format::lab::ObservationScope::System;
     provenance.fixture = FixtureObservation::NotUsed;
     atomic_json(&run.join("lab-provenance.json"), &provenance).unwrap();
     let mut scenario = oer_hil_scenario::test_family::scenario(include_str!(
@@ -336,16 +342,16 @@ fn system_provenance_requires_a_matching_scenario_snapshot() {
         .join("scenario.json");
     fs::create_dir_all(snapshot.parent().unwrap()).unwrap();
     atomic_json(&snapshot, &scenario).unwrap();
-    let plan = crate::run::RunPlan {
+    let plan = oer_hil_run_bundle_format::run::RunPlan {
         schema: RUN_SCHEMA,
         run_id: "run-1".into(),
         selection: "boot-smoke".into(),
         firmware: None,
-        entries: vec![crate::run::PlanEntry {
+        entries: vec![oer_hil_run_bundle_format::run::PlanEntry {
             scenario: scenario.id().to_owned(),
             image: scenario.image(),
             repetitions: scenario.repetitions(),
-            disposition: crate::run::PlanDisposition::Selected,
+            disposition: oer_hil_run_bundle_format::run::PlanDisposition::Selected,
             reason: None,
             requirements: Some(scenario.requirements()),
         }],
@@ -371,7 +377,7 @@ fn bluetooth_plan_accepts_system_provenance_with_an_adapter_requirement() {
     let (root, run) = fixture();
     add_lab_provenance(&run, "dut-1");
     let mut provenance: LabProvenance = read_json(&run.join("lab-provenance.json")).unwrap();
-    provenance.scope = crate::lab::ObservationScope::System;
+    provenance.scope = oer_hil_run_bundle_format::lab::ObservationScope::System;
     provenance.fixture = FixtureObservation::NotUsed;
     provenance.definition.bluetooth_adapter = Some("hci0".into());
     atomic_json(&run.join("lab-provenance.json"), &provenance).unwrap();
@@ -381,18 +387,18 @@ fn bluetooth_plan_accepts_system_provenance_with_an_adapter_requirement() {
     let directory = run.join("scenarios").join(scenario.id());
     fs::create_dir_all(&directory).unwrap();
     atomic_json(&directory.join("scenario.json"), &scenario).unwrap();
-    let plan = crate::run::RunPlan {
+    let plan = oer_hil_run_bundle_format::run::RunPlan {
         schema: RUN_SCHEMA,
         run_id: "run-1".into(),
         selection: scenario.id().to_owned(),
         firmware: None,
-        entries: vec![crate::run::PlanEntry {
+        entries: vec![oer_hil_run_bundle_format::run::PlanEntry {
             scenario: scenario.id().to_owned(),
             image: scenario.image(),
             repetitions: scenario.repetitions(),
-            disposition: crate::run::PlanDisposition::Selected,
+            disposition: oer_hil_run_bundle_format::run::PlanDisposition::Selected,
             reason: None,
-            requirements: Some(oer_hil_scenario::requirements::Requirements {
+            requirements: Some(oer_hil_scenario_catalog::requirements::Requirements {
                 bluetooth_adapter: true,
                 ..Default::default()
             }),
@@ -409,7 +415,7 @@ fn selects_only_verified_archived_firmware_for_replay() {
     let (root, run) = fixture();
     let firmware = archived_firmware(
         &root,
-        "esp32s31",
+        "chip-a",
         "run-1",
         ImageClass::Correctness,
         &TestRecipe,
@@ -422,7 +428,7 @@ fn selects_only_verified_archived_firmware_for_replay() {
     assert_eq!(firmware.application_sha256.len(), 64);
     let error = archived_firmware(
         &root,
-        "esp32s31",
+        "chip-a",
         "run-1",
         ImageClass::Performance,
         &TestRecipe,
@@ -440,7 +446,7 @@ fn selects_only_verified_archived_firmware_for_replay() {
 fn verifies_complete_build_provenance_and_all_firmware_subjects() {
     let (root, run) = fixture();
     add_build_provenance(&run);
-    let completion = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap();
+    let completion = verify(&root, Some("chip-a"), Some("run-1"), &TestRecipe).unwrap();
     assert_eq!(completion.firmware_artifacts, 1);
     fs::remove_dir_all(root).unwrap();
 }
@@ -453,7 +459,7 @@ fn a_manifest_seed_must_be_the_build_records_seed() {
     manifest.firmware[0].layout_seed = std::num::NonZeroU32::new(7);
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
-    let error = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("chip-a"), Some("run-1"), &TestRecipe).unwrap_err();
     assert!(
         error.to_string().contains("build provenance inconsistent"),
         "{error}"
@@ -470,7 +476,7 @@ fn rejects_tampered_archived_runtime_elf() {
     let (root, run) = fixture();
     add_build_provenance(&run);
     fs::write(run.join("firmware/correctness/runtime.elf"), b"runtime elF").unwrap();
-    let error = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("chip-a"), Some("run-1"), &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("SHA-256"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -481,15 +487,16 @@ fn rejects_replay_origin_not_bound_to_the_firmware_build() {
     add_build_provenance(&run);
     let mut manifest: RunManifest = read_json(&run.join("manifest.json")).unwrap();
     let repository = manifest.repository.clone();
-    manifest.firmware[0].replayed_from = Some(super::super::run::FirmwareReplayOrigin {
-        source_run_id: String::from("source-run"),
-        source_integrity_sha256: "33".repeat(32),
-        firmware_repository: repository,
-        source_build_id: Some(String::from("wrong-build-id")),
-    });
+    manifest.firmware[0].replayed_from =
+        Some(oer_hil_run_bundle_format::run::FirmwareReplayOrigin {
+            source_run_id: String::from("source-run"),
+            source_integrity_sha256: "33".repeat(32),
+            firmware_repository: repository,
+            source_build_id: Some(String::from("wrong-build-id")),
+        });
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
-    let error = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("chip-a"), Some("run-1"), &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("inconsistent replay origin"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -502,7 +509,7 @@ fn rejects_tampered_attachment() {
         b"serial evidencE",
     )
     .unwrap();
-    let error = verify(&root, Some("esp32s31"), Some("run-1"), &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("chip-a"), Some("run-1"), &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("SHA-256"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -513,7 +520,7 @@ fn rejects_paths_escaping_the_run_bundle() {
     let mut suite: SuiteResult = read_json(&run.join("suite.json")).unwrap();
     suite.scenarios[0].repetitions[0].attachments[0].path = PathBuf::from("../outside");
     atomic_json(&run.join("suite.json"), &suite).unwrap();
-    let error = verify(&root, Some("esp32s31"), None, &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("chip-a"), None, &TestRecipe).unwrap_err();
     assert!(
         error
             .to_string()
@@ -526,7 +533,7 @@ fn rejects_paths_escaping_the_run_bundle() {
 fn rejects_unindexed_files() {
     let (root, run) = fixture();
     fs::write(run.join("injected.log"), b"not sealed").unwrap();
-    let error = verify(&root, Some("esp32s31"), None, &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("chip-a"), None, &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("sealed file inventory"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -535,7 +542,7 @@ fn rejects_unindexed_files() {
 fn rejects_tampered_derived_report() {
     let (root, run) = fixture();
     fs::write(run.join("report.html"), b"tampered report").unwrap();
-    let error = verify(&root, Some("esp32s31"), None, &TestRecipe).unwrap_err();
+    let error = verify(&root, Some("chip-a"), None, &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("sealed file inventory"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -562,7 +569,7 @@ fn the_runs_link_to_the_shared_store_is_followed() {
 
 #[test]
 fn a_referenced_observer_build_must_be_stored_under_its_digest() {
-    use oer_hil_observer::store as observer_store;
+    use oer_hil_run_bundle_format::observer::store as observer_store;
     let (root, run) = fixture();
     let store = root.join("target/hil");
     let build = serde_json::json!({"schema": 2, "resolved": {"nodes": []}});
@@ -579,20 +586,20 @@ fn a_referenced_observer_build_must_be_stored_under_its_digest() {
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
     assert!(
-        verify(&root, Some("esp32s31"), None, &TestRecipe).is_err(),
+        verify(&root, Some("chip-a"), None, &TestRecipe).is_err(),
         "a manifest embedding its observer build"
     );
     manifest["runner"]["observer"] = reference.clone();
     atomic_json(&run.join("manifest.json"), &manifest).unwrap();
     write_integrity_index(&run, "run-1").unwrap();
-    verify(&root, Some("esp32s31"), None, &TestRecipe).unwrap();
+    verify(&root, Some("chip-a"), None, &TestRecipe).unwrap();
 
     let file =
         observer_store::path(&store, observer_store::build_digest(&reference).unwrap()).unwrap();
     let stored = fs::read(&file).unwrap();
     fs::remove_file(&file).unwrap();
     assert!(
-        verify(&root, Some("esp32s31"), None, &TestRecipe).is_err(),
+        verify(&root, Some("chip-a"), None, &TestRecipe).is_err(),
         "a missing build"
     );
     fs::write(&file, stored).unwrap();
@@ -604,7 +611,7 @@ fn a_referenced_observer_build_must_be_stored_under_its_digest() {
     )
     .unwrap();
     assert!(
-        verify(&root, Some("esp32s31"), None, &TestRecipe).is_err(),
+        verify(&root, Some("chip-a"), None, &TestRecipe).is_err(),
         "a build that does not hash to its name"
     );
     fs::remove_dir_all(root).unwrap();

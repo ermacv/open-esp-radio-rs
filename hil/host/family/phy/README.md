@@ -1,9 +1,16 @@
 # oer-hil-family-phy
 
 The `[phy]` HIL scenario family. Its one workload, `vendor-calibration`,
-captures the vendor-versus-production PHY calibration cross-check of the
-ESP32-S31 on the board under test; what it compares and how is
-[`oer-esp32s31-phy-vendor-calibration`](../../../../verification/esp32s31/hardware/calibration/README.md).
+captures the vendor-versus-production PHY calibration cross-check on the
+board under test. The family names no chip: it records the chip-neutral
+captures of [`oer-phy-calibration-capture`](../../../../verification/phy-calibration-capture)
+and reaches what a chip compares, and which register images both sides
+read, through its comparison port (`comparison::Comparison`). A
+chip-specific composition implements the port and registers
+`oer_hil_family_phy::family::<C>()`: for the ESP32-S31,
+[`oer-hil-family-phy-esp32s31`](../phy-esp32s31/README.md) with
+[`oer-esp32s31-phy-vendor-calibration`](../../../../verification/esp32s31/hardware/calibration/README.md),
+which the runner's family registry lists.
 
 ```toml
 [phy]
@@ -26,7 +33,7 @@ runner flashes the next scenario's image again. Each boot is a typed
 observation of the repetition and the comparison its result; a verdict other
 than MATCH fails it. The vendor console protocols (the calibration firmware
 and the IEEE 802.15.4 reference firmware) are read here; the comparison is a
-library call.
+call through the port.
 
 ```console
 cargo test -p oer-hil-family-phy

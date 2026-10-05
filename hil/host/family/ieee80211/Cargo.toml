@@ -9,14 +9,15 @@ publish = false
 description = "Wi-Fi HIL family: the [wifi] scenario table and its role, traffic and monitor workloads"
 
 [dependencies]
+oer-hil-run-bundle-format = { path = "../../run-bundle/format" }
+oer-hil-schema = { path = "../../../schema" }
 oer-hil-family-ieee80211-evidence = { path = "../ieee80211-evidence" }
 oer-hil-family-ieee80211-fixture = { path = "../ieee80211-fixture" }
 oer-hil-net-traffic = { path = "../../net-traffic" }
 oer-hil-lab = { path = "../../lab" }
 oer-hil-link = { path = "../../link" }
-oer-hil-run-bundle = { path = "../../run-bundle" }
 oer-hil-scenario = { path = "../../scenario" }
-oer-hil-image-class = { path = "../../image-class" }
+oer-hil-scenario-catalog = { path = "../../scenario/catalog" }
 oer-hil-workload = { path = "../../workload" }
 rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }
 mio = { version = "=1.2.2", features = ["os-poll", "os-ext"] }

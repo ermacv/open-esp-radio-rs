@@ -1,7 +1,7 @@
 //! Code anchors bind catalog entries to the code that owns them.
 //!
-//! The anchor line's grammar has one recogniser, `oer_tidy::anchors`,
-//! which also keeps anchors out of uncompiled files.
+//! The anchor line's grammar has one recogniser, `oer_markers::capability`;
+//! tidy keeps anchors out of uncompiled files with it.
 //!
 //! A `// CAPABILITY: <id>[, <id>...]` line comment placed directly above a
 //! Rust item (after its doc comments and attributes) names the catalog
@@ -360,7 +360,7 @@ fn markers(
     let lines = text.lines().collect::<Vec<_>>();
     let mut found = Vec::new();
     for (index, line) in lines.iter().enumerate() {
-        let Some(ids) = oer_tidy::anchors::capability(line) else {
+        let Some(ids) = oer_markers::capability::capability(line) else {
             continue;
         };
         let location = Location {

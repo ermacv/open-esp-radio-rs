@@ -429,8 +429,8 @@ impl Bisection<'_> {
         let launched = launch_run(
             &Launch::new(self.checkout, &self.runner)
                 .args(arguments)
-                .env(oer_hil_arbiter::OWNER_ENV, self.owner)
-                .env(oer_hil_arbiter::jobs::JOB_ENV, job.id()),
+                .env(oer_stand_owners::OWNER_ENV, self.owner)
+                .env(oer_stand_arbiter::jobs::JOB_ENV, job.id()),
         )?;
         job.finish_with(&self.store, &launched.runs)?;
         self.judge_run(&launched.run()?.to_string())
@@ -439,7 +439,7 @@ impl Bisection<'_> {
     /// The revision's own runner, inside a whole-stand lease of the shared
     /// arbiter, with a private arbiter holding a copy of the stand file.
     fn with_revision_runner(&self) -> Result<Verdict> {
-        let arbiter = oer_hil_arbiter::Arbiter::open()?;
+        let arbiter = oer_stand_arbiter::Arbiter::open()?;
         fs::create_dir_all(&self.arbiter)?;
         // A revision's runner reads the user's stand file; a revision before
         // the stand model read it beside its arbiter's state, and one before
@@ -450,11 +450,11 @@ impl Bisection<'_> {
         if devices.exists() {
             fs::copy(&devices, self.arbiter.join("devices.json"))?;
         }
-        let _grant = arbiter.acquire(&oer_hil_arbiter::Request {
+        let _grant = arbiter.acquire(&oer_stand_arbiter::Request {
             owner: self.owner.to_owned(),
             work: format!("bisect {} with the revision's runner", self.spec.scenario),
             scenarios: vec![self.spec.scenario.clone()],
-            claims: vec![oer_hil_arbiter::Claim::stand()],
+            claims: vec![oer_stand_claims::Claim::stand()],
         })?;
         // The revision's runner records its runs in the shared store, and
         // runs without an observer receipt: its receipt format is the
@@ -479,10 +479,10 @@ impl Bisection<'_> {
         let launched = launch_run(
             &Launch::new(&self.worktree, &runner)
                 .args(arguments)
-                .env(oer_hil_stand_model::paths::ARBITER_ENV, &self.arbiter)
-                .env(oer_hil_arbiter::OWNER_ENV, self.owner)
-                .env_remove(oer_hil_arbiter::LEASE_ENV)
-                .env_remove(oer_hil_arbiter::jobs::JOB_ENV),
+                .env(oer_stand_file::paths::ARBITER_ENV, &self.arbiter)
+                .env(oer_stand_owners::OWNER_ENV, self.owner)
+                .env_remove(oer_stand_arbiter::LEASE_ENV)
+                .env_remove(oer_stand_arbiter::jobs::JOB_ENV),
         )?;
         match launched.runs.last() {
             Some(run) => self.judge_run(run.as_str()),

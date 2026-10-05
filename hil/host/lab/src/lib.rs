@@ -12,6 +12,7 @@
 
 pub mod config;
 mod dut;
+pub use dut::{attach_console, peer_console};
 mod error;
 pub use error::Error;
 pub mod lock;
@@ -22,7 +23,7 @@ pub mod software;
 pub mod usb_events;
 
 /// The root-owned laptop radio helper installed by
-/// `cargo hil fixture install --provider linux-net`.
+/// `cargo stand fixture install --provider linux-net`.
 pub const NETWORK_HELPER: &str = "/usr/local/sbin/open-radio-net";
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

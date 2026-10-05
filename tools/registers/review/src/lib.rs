@@ -723,7 +723,7 @@ mod tests {
 
     const BASE: &str = r#"
 schema = 2
-id = "esp32s31-radio"
+id = "chip-a-radio"
 
 [classification]
 provenance = "reviewed"
@@ -731,12 +731,12 @@ accuracy = "exact"
 completeness = "partial"
 
 [applies-to]
-chips = ["esp32s31"]
+chips = ["chip-a"]
 chip-revisions = ["rev0"]
 
 [[assertions]]
 id = "ieee802154.event-status.identity"
-subject = "register:esp32s31/cpu/0x20103128/32"
+subject = "register:chip-a/cpu/0x20103128/32"
 kind = "register-identity"
 value = "IEEE802154_MAC.EVENT_STATUS"
 
@@ -746,7 +746,7 @@ locator = "ieee802154_ll_get_events"
 
 [[assertions]]
 id = "ieee802154.event-status.access"
-subject = "register:esp32s31/cpu/0x20103128/32"
+subject = "register:chip-a/cpu/0x20103128/32"
 kind = "hardware-write-semantics"
 value = "unknown"
 note = "Masked self-write observed; W1C is not proven."
@@ -758,7 +758,7 @@ locator = "ieee802154_ll_clear_events"
 [[vendor-bugs]]
 id = "vendor.ieee802154.event-clear-rmw"
 function = "function:esp-idf/ieee802154-ll-clear-events"
-register = "register:esp32s31/cpu/0x20103128/32"
+register = "register:chip-a/cpu/0x20103128/32"
 kind = "suspect-rmw-on-status"
 status = "suspected"
 observed = "The accessor performs a masked self-write."
@@ -809,7 +809,7 @@ chips = ["chip-alpha"]
                 .metadata
                 .applies_to
                 .chips,
-            ["esp32s31"]
+            ["chip-a"]
         );
         assert_eq!(
             effective.assertions()["ieee802154.event-status.identity"]
@@ -825,7 +825,7 @@ chips = ["chip-alpha"]
         let pack = ReviewPack::from_toml(
             r#"
 schema = 2
-id = "esp32s31-register-identity"
+id = "chip-a-register-identity"
 
 [classification]
 provenance = "reviewed"
@@ -833,11 +833,11 @@ accuracy = "exact"
 completeness = "partial"
 
 [applies-to]
-chips = ["esp32s31"]
+chips = ["chip-a"]
 
 [[assertions]]
 id = "ieee802154.new-status.identity"
-subject = "register:esp32s31/cpu/0x2010312c/32"
+subject = "register:chip-a/cpu/0x2010312c/32"
 kind = "register-identity"
 value = "IEEE802154_MAC.NEW_STATUS"
 [assertions.applies-to]
@@ -856,7 +856,7 @@ locator = "status register offset"
             identity.value,
             AssertionValue::String("IEEE802154_MAC.NEW_STATUS".to_owned())
         );
-        assert_eq!(identity.metadata.applies_to.chips, ["esp32s31"]);
+        assert_eq!(identity.metadata.applies_to.chips, ["chip-a"]);
         assert_eq!(identity.metadata.applies_to.chip_revisions, ["rev0"]);
         assert_eq!(
             identity.metadata.classification.provenance,
@@ -873,10 +873,7 @@ locator = "status register offset"
         let first = ReviewPack::from_toml(BASE).unwrap();
         let second = ReviewPack::from_toml(
             &BASE
-                .replace(
-                    "id = \"esp32s31-radio\"",
-                    "id = \"esp32s31-radio-conflict\"",
-                )
+                .replace("id = \"chip-a-radio\"", "id = \"chip-a-radio-conflict\"")
                 .replace(
                     "id = \"ieee802154.event-status.identity\"",
                     "id = \"ieee802154.event-status.identity-conflict\"",
@@ -910,7 +907,7 @@ completeness = "partial"
 chip-revisions = ["{revision}"]
 [[assertions]]
 id = "{id}.fact"
-subject = "register:esp32s31/cpu/0x1000/32"
+subject = "register:chip-a/cpu/0x1000/32"
 kind = "register-identity"
 value = "{value}"
 [[assertions.evidence]]
@@ -983,8 +980,8 @@ locator = "review"
         );
 
         let invalid_hash = BASE.replace(
-            "chips = [\"esp32s31\"]",
-            "chips = [\"esp32s31\"]\nartifacts = [{ source = \"blob\", sha256 = \"bad\" }]",
+            "chips = [\"chip-a\"]",
+            "chips = [\"chip-a\"]\nartifacts = [{ source = \"blob\", sha256 = \"bad\" }]",
         );
         assert!(
             ReviewPack::from_toml(&invalid_hash)
@@ -1005,7 +1002,7 @@ locator = "review"
         );
 
         let legacy_subject = BASE.replace(
-            "register:esp32s31/cpu/0x20103128/32",
+            "register:chip-a/cpu/0x20103128/32",
             "mmio:cpu:0x20103128/32",
         );
         assert!(ReviewPack::from_toml(&legacy_subject).is_err());
@@ -1182,8 +1179,8 @@ occurrence = "{occurrence}"
         );
 
         let wrong_register = BASE.replace(
-            "register = \"register:esp32s31/cpu/0x20103128/32\"",
-            "register = \"register-field:esp32s31/cpu/0x20103128/32/0/1\"",
+            "register = \"register:chip-a/cpu/0x20103128/32\"",
+            "register = \"register-field:chip-a/cpu/0x20103128/32/0/1\"",
         );
         assert!(
             ReviewPack::from_toml(&wrong_register)

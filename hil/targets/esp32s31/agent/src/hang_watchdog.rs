@@ -136,7 +136,7 @@ pub(crate) fn heartbeat(executor: Executor) {
 /// table entry names [`check`] on this core.
 pub(super) fn start(alarm: Alarm<'static>, token: crate::HangWatchdogCheck) {
     let mut periodic = PeriodicTimer::new(alarm);
-    if let Err(error) = oer_esp32s31_soc_esp_hal::interrupt_table::enable(&token) {
+    if let Err(error) = oer_espressif_interrupt_table_esp_hal::enable(&token) {
         panic!("hang watchdog alarm: {error:?}");
     }
     periodic
@@ -150,7 +150,7 @@ pub(super) fn start(alarm: Alarm<'static>, token: crate::HangWatchdogCheck) {
 /// executor enables interrupts. `token` is its source's, whose table entry
 /// names [`sample_core1`] on core 1.
 pub(super) fn enable_core1_sampler(token: crate::HangWatchdogSample) {
-    if let Err(error) = oer_esp32s31_soc_esp_hal::interrupt_table::enable(&token) {
+    if let Err(error) = oer_espressif_interrupt_table_esp_hal::enable(&token) {
         panic!("hang watchdog core 1 sampler: {error:?}");
     }
 }
@@ -170,7 +170,7 @@ fn interrupted() -> [u32; 5] {
         core::arch::asm!("csrr {0}, mstatus", out(reg) mstatus);
     }
     let context = esp_hal::interrupt::interrupted_context().unwrap_or_default();
-    let sp = oer_esp32s31_platform_runtime::stacks::interrupted_stack_pointer().unwrap_or(0);
+    let sp = oer_espressif_staged_runtime::stacks::interrupted_stack_pointer().unwrap_or(0);
     [
         mepc as u32,
         context.ra as u32,

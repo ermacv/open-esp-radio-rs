@@ -13,7 +13,7 @@
 //! This module is the comparison: the publication's owned regions and
 //! declared words ([`model`]), Blobray's access records ([`observations`]),
 //! [`classify`], [`rank`] and the report; [`run()`] runs Blobray over the
-//! pinned binaries (`cargo xtask register-inventory`) and writes the report under
+//! pinned binaries (`cargo registers inventory`) and writes the report under
 //! `target/register-inventory/<chip>/`; nothing is tracked. Addresses
 //! computed at run time (queue strides, pointer tables) are not constants
 //! and stay outside the inventory.

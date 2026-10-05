@@ -7,113 +7,154 @@ use oer_process::Checkout;
 use super::super::common::*;
 
 const MANIFEST: &str = "crates/oer/Cargo.toml";
+/// The portable packages of each group; every chip adds its own from its
+/// profile's `[packages]`.
 const WIFI: &[&str] = &[
     "oer-ieee80211-sta",
     "oer-ieee80211-sta-service",
     "oer-ieee80211-rsn-service",
     "oer-ieee80211-ap",
     "oer-ieee80211-softmac",
-    "oer-esp32s31-ieee80211-mac",
-    "oer-esp32s31-ieee80211-sta",
-    "oer-esp32s31-ieee80211-ap",
-    "oer-esp32s31-ieee80211-runtime",
-    "oer-esp32s31-ieee80211-system",
     "embassy-net",
     "xarxa",
-];
-const BACKENDS: &[&str] = &[
-    "oer-esp32s31-hal",
-    "oer-esp32s31-bluetooth",
-    "oer-esp32s31-ieee80211-mac",
-    "oer-esp32s31-ieee80211-sta",
-    "oer-esp32s31-ieee80211-ap",
 ];
 const BLUETOOTH: &[&str] = &[
     "oer-bluetooth-hci",
     "oer-bluetooth-hci-transport",
     "oer-bluetooth-ll",
-    "oer-esp32s31-bluetooth",
 ];
 const IEEE802154: &[&str] = &["oer-ieee802154"];
 
+/// One facade consumer profile, resolved for one target.
 struct Profile {
     /// None selects defaults; an empty string selects no features.
-    features: Option<&'static str>,
-    required: &'static [&'static str],
-    forbidden: &'static [&'static [&'static str]],
+    features: Option<String>,
+    required: Vec<String>,
+    /// Groups the profile must not reach.
+    forbidden: Vec<String>,
+    /// A Bluetooth consumer, which must reach no Wi-Fi package.
+    bluetooth_only: bool,
+    target: String,
 }
 
-pub(super) fn check(ctx: &Checkout) -> Result<()> {
+/// The package groups profiles forbid: the portable ones with every chip's.
+struct Groups(std::collections::BTreeMap<&'static str, Vec<String>>);
+
+impl Groups {
+    fn of(chips: &oer_repo::chips::Chips) -> Self {
+        let owned = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect::<Vec<_>>()
+        };
+        let mut groups = std::collections::BTreeMap::from([
+            ("wifi", owned(WIFI)),
+            ("bluetooth", owned(BLUETOOTH)),
+            ("ieee802154", owned(IEEE802154)),
+            ("backends", Vec::new()),
+        ]);
+        for profile in chips.profiles() {
+            let packages = &profile.packages;
+            for (group, names) in [
+                ("wifi", &packages.wifi),
+                ("bluetooth", &packages.bluetooth),
+                ("backends", &packages.backends),
+            ] {
+                groups
+                    .get_mut(group)
+                    .expect("every group is declared")
+                    .extend(names.iter().cloned());
+            }
+        }
+        Self(groups)
+    }
+
+    fn members(&self, group: &str) -> Result<&[String]> {
+        self.0
+            .get(group)
+            .map(Vec::as_slice)
+            .ok_or_else(|| format!("facade profile forbids unknown group `{group}`").into())
+    }
+}
+
+/// The portable profiles, resolved for each chip target, and each chip's own
+/// profiles for its target.
+fn profiles(chips: &oer_repo::chips::Chips) -> Vec<Profile> {
+    let owned = |names: &[&str]| {
+        names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>()
+    };
+    let mut profiles = Vec::new();
+    for target in chip_targets(chips) {
+        for (features, required, forbidden, bluetooth_only) in [
+            (
+                Some(""),
+                &["oer-memory", "oer-network-interface", "oer-radio"][..],
+                &["wifi", "bluetooth", "ieee802154"][..],
+                false,
+            ),
+            (
+                None,
+                &["oer-ieee80211-sta", "oer-ieee80211-ap"],
+                &["backends", "bluetooth", "ieee802154"],
+                false,
+            ),
+            (
+                Some("wifi"),
+                &["oer-ieee80211-sta", "oer-ieee80211-ap"],
+                &["backends", "bluetooth", "ieee802154"],
+                false,
+            ),
+            (
+                Some("bluetooth"),
+                &["oer-bluetooth-hci", "oer-bluetooth-ll"],
+                &["wifi", "backends", "ieee802154"],
+                true,
+            ),
+            (
+                Some("ieee802154"),
+                &["oer-ieee802154"],
+                &["wifi", "bluetooth", "backends"],
+                false,
+            ),
+        ] {
+            profiles.push(Profile {
+                features: features.map(str::to_owned),
+                required: owned(required),
+                forbidden: owned(forbidden),
+                bluetooth_only,
+                target: target.clone(),
+            });
+        }
+    }
+    for chip in chips.profiles() {
+        for profile in &chip.gate.facade {
+            profiles.push(Profile {
+                features: Some(profile.features.clone()),
+                required: profile.required.clone(),
+                forbidden: profile.forbidden.clone(),
+                bluetooth_only: profile.bluetooth_only,
+                target: chip.rust_target.clone(),
+            });
+        }
+    }
+    profiles
+}
+
+pub(super) fn check(
+    ctx: &Checkout,
+    chips: &oer_repo::chips::Chips,
+    policy: &super::unsafe_policy::Policy,
+) -> Result<()> {
     let model = model(ctx)?;
     let manifest = ctx.root.join(MANIFEST);
-    let target = oer_chip_profile::rust_target(&ctx.root, oer_image::staged::CHIP)?;
-    for profile in [
-        Profile {
-            features: Some(""),
-            required: &["oer-memory", "oer-network-interface", "oer-radio"],
-            forbidden: &[WIFI, BLUETOOTH, IEEE802154],
-        },
-        Profile {
-            features: None,
-            required: &["oer-ieee80211-sta", "oer-ieee80211-ap"],
-            forbidden: &[BACKENDS, BLUETOOTH, IEEE802154],
-        },
-        Profile {
-            features: Some("wifi"),
-            required: &["oer-ieee80211-sta", "oer-ieee80211-ap"],
-            forbidden: &[BACKENDS, BLUETOOTH, IEEE802154],
-        },
-        Profile {
-            features: Some("bluetooth"),
-            required: &["oer-bluetooth-hci", "oer-bluetooth-ll"],
-            forbidden: &[WIFI, BACKENDS, IEEE802154],
-        },
-        Profile {
-            features: Some("ieee802154"),
-            required: &["oer-ieee802154"],
-            forbidden: &[WIFI, BLUETOOTH, BACKENDS],
-        },
-        Profile {
-            features: Some("esp32s31"),
-            required: &["oer-esp32s31-hal"],
-            forbidden: &[WIFI, BLUETOOTH],
-        },
-        Profile {
-            features: Some("esp32s31-wifi"),
-            required: &["oer-esp32s31-ieee80211-sta", "oer-esp32s31-ieee80211-ap"],
-            forbidden: &[BLUETOOTH],
-        },
-        Profile {
-            features: Some("esp32s31-bluetooth"),
-            required: &[
-                "oer-esp32s31-bluetooth",
-                "oer-bluetooth-hci",
-                "oer-bluetooth-ll",
-            ],
-            forbidden: &[WIFI],
-        },
-        Profile {
-            features: Some("ieee802154,esp32s31"),
-            required: &["oer-ieee802154", "oer-esp32s31-hal"],
-            forbidden: &[WIFI, BLUETOOTH],
-        },
-        Profile {
-            features: Some("esp32s31-ieee802154"),
-            required: &["oer-espressif-ieee802154-engine", "oer-ieee802154"],
-            forbidden: &[WIFI, BLUETOOTH],
-        },
-        // The composition joins the shared radio through the esp-hal radio
-        // platform, which carries the Bluetooth hardware engine's resources.
-        Profile {
-            features: Some("openthread"),
-            required: &[
-                "oer-esp32s31-ieee802154-system",
-                "oer-ieee802154-openthread",
-            ],
-            forbidden: &[WIFI],
-        },
-    ] {
-        let flags = match profile.features {
+    let groups = Groups::of(chips);
+    let profiles = profiles(chips);
+    for profile in &profiles {
+        let flags = match profile.features.as_deref() {
             None => vec![],
             Some("") => vec!["--no-default-features".into()],
             Some(features) => vec![
@@ -122,21 +163,24 @@ pub(super) fn check(ctx: &Checkout) -> Result<()> {
                 features.into(),
             ],
         };
-        let graph = cargo::isolated_graph(ctx, &manifest, &flags, Some(&target))?;
-        if matches!(profile.features, Some("bluetooth" | "esp32s31-bluetooth")) {
-            super::reject_wifi_in_bluetooth(&graph, &manifest)?;
+        let graph = cargo::isolated_graph(ctx, &manifest, &flags, Some(&profile.target))?;
+        if profile.bluetooth_only {
+            super::reject_wifi_in_bluetooth(&graph, &manifest, &policy.closed_pacs)?;
         }
         let packages = closure(&graph, &graph.root(&manifest)?)?;
         let contains = |name| packages.iter().any(|package| package.name.as_str() == name);
-        for name in profile.required {
-            if !contains(*name) {
+        for name in &profile.required {
+            if !contains(name.as_str()) {
                 return Err(
                     format!("facade profile {:?} is missing {name}", profile.features).into(),
                 );
             }
         }
-        for name in profile.forbidden.iter().flat_map(|group| group.iter()) {
-            if contains(*name) {
+        for group in &profile.forbidden {
+            for name in groups.members(group)? {
+                if !contains(name.as_str()) {
+                    continue;
+                }
                 return Err(format!(
                     "facade profile {:?} unexpectedly includes {name}",
                     profile.features
@@ -146,7 +190,7 @@ pub(super) fn check(ctx: &Checkout) -> Result<()> {
         }
         // Pure protocol profiles must not pull hardware through an indirect edge.
         if matches!(
-            profile.features,
+            profile.features.as_deref(),
             None | Some("" | "wifi" | "bluetooth" | "ieee802154")
         ) {
             for package in packages.iter().filter(|package| package.source.is_none()) {
@@ -185,6 +229,9 @@ pub(super) fn check(ctx: &Checkout) -> Result<()> {
                 .args(&flags),
         )?;
     }
-    eprintln!("facade isolation and API checks passed (12 consumer profiles)");
+    eprintln!(
+        "facade isolation and API checks passed ({} consumer profiles)",
+        profiles.len()
+    );
     Ok(())
 }

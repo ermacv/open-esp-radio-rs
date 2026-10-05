@@ -56,10 +56,10 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
 
 - `cargo xtask lock` after a dependency or pin change; `cargo tidy fetch`
   after a pull that changed a lock file.
-- Examples: `cargo xtask build firmware <example> --type-check`.
-- Image classes: `cargo xtask check firmware --list`, then
-  `cargo xtask check firmware --class <class> --type-check`; without
+- Examples: `cargo fw build <example> --type-check`.
+- Image classes: `cargo hil images check --list`, then
+  `cargo hil images check --class <class> --type-check`; without
   `--type-check` the class's image bundle is built with every gate, and
   `performance`/`correctness` also pass Blobray's final radio target audit.
 - Blobray: `--manifest-path tools/blobray/Cargo.toml`.
-- `cargo xtask sweep` lists rebuildable caches when the disk runs low.
+- `cargo hil sweep` lists rebuildable caches when the disk runs low.

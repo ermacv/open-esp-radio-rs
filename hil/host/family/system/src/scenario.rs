@@ -2,8 +2,9 @@
 
 use std::path::Path;
 
-use oer_hil_image_class::ImageClass;
-use oer_hil_scenario::{AirUse, Plan, ScenarioFamily, bounded};
+use oer_hil_scenario::{AirUse, Plan, ScenarioFamily};
+use oer_hil_scenario_catalog::bounded;
+use oer_hil_schema::image::ImageClass;
 use oer_hil_workload::context::Context;
 use oer_hil_workload::{family::Workload, fixture::Fixtures};
 use serde::{Deserialize, Serialize};

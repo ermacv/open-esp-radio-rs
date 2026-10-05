@@ -3,6 +3,9 @@
 //!
 //! - [`files`]: the file inventory (`git ls-files` of a checkout, without
 //!   build output and private inputs);
+//! - [`index`]: the index view of a checkout (its commit, whether it is
+//!   dirty, every index path, deleted files and symlinks included, and its
+//!   untracked files, nothing skipped), which a source archive reproduces;
 //! - [`manifest`]: every Cargo manifest as text, without Cargo: packages,
 //!   targets, features, dependencies and workspace declarations;
 //! - [`workspaces`]: the workspaces Cargo finds and the one each package
@@ -21,6 +24,7 @@ pub mod chips;
 pub mod classification;
 pub mod closure;
 pub mod files;
+pub mod index;
 pub mod lock;
 pub mod manifest;
 pub mod policy;
@@ -225,17 +229,24 @@ mod tests {
     fn this_checkout_has_one_owner_for_every_path() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let model = Model::load(&Repo::load(&root).unwrap()).unwrap();
-        for (path, owner) in [
-            ("tools/repo/src/lib.rs", "oer-repo"),
-            ("tools/blobray/cli/src/main.rs", "blobray-cli"),
+        let mut owners = vec![
+            ("tools/repo/src/lib.rs".to_owned(), "oer-repo".to_owned()),
             (
-                "hil/targets/esp32s31/agent/src/main.rs",
-                "oer-esp32s31-hil-agent",
+                "tools/blobray/cli/src/main.rs".to_owned(),
+                "blobray-cli".to_owned(),
             ),
-        ] {
+        ];
+        // Every chip's HIL agent, in its own workspace.
+        for chip in model.chips.profiles() {
+            owners.push((
+                format!("hil/targets/{}/agent/src/main.rs", chip.id),
+                chip.hil_agent_package(),
+            ));
+        }
+        for (path, owner) in &owners {
             assert_eq!(
                 model.owner(path).map(|p| p.name.as_str()),
-                Some(owner),
+                Some(owner.as_str()),
                 "{path}"
             );
         }

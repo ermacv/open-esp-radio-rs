@@ -1,6 +1,7 @@
 //! Concurrent-client UDP execution and per-flow fairness assessment.
 
 use oer_hil_net_traffic::NetworkSession as _;
+use oer_hil_run_bundle_format::run::fixtures::Burst;
 use oer_hil_workload::context::Context;
 use std::{
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
@@ -23,9 +24,7 @@ use crate::workload::ieee80211::access_point::{
     udp::UdpWorkload,
     validate_rate_criteria,
 };
-use crate::{
-    Result, workload::traffic::tx_traffic::Burst, workload::traffic::tx_traffic::Receiver,
-};
+use crate::{Result, workload::traffic::tx_traffic::Receiver};
 use oer_hil_link::SerialCapture;
 use oer_hil_net_traffic::{
     paced_udp::Config as UdpConfig, paced_udp::HostTransmission as UdpTransmission,
@@ -586,7 +585,9 @@ pub(super) fn validate_multi_client_fairness(
     criteria: &MultiClientCriteria,
     measurements: &oer_hil_workload::measurements::Recorder,
 ) -> Result<()> {
-    use oer_hil_run_bundle::run::{Comparison, Measurement, MeasurementUnit};
+    use oer_hil_run_bundle_format::run::Comparison;
+    use oer_hil_run_bundle_format::run::Measurement;
+    use oer_hil_run_bundle_format::run::MeasurementUnit;
     let validate = |label: &str, rates: [u64; SESSION_FLOW_CAPACITY]| -> Result<()> {
         let minimum = criteria.minimum_bps_per_flow;
         let name = |metric: &str| format!("ap.{}.{metric}", label.to_ascii_lowercase());

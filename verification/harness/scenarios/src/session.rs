@@ -10,7 +10,7 @@ use blobray_domain::{
 };
 use blobray_linker::ElfLinker;
 use oer_riscv_model::{ArtifactId, CallAbi, ErrorCode, ObjectId, SymbolId, SymbolTableKind};
-use oer_vendor_evidence::LocationKind;
+use oer_vendor_evidence_shard::LocationKind;
 use std::{
     collections::BTreeMap,
     fs,
@@ -46,8 +46,8 @@ struct Claimed<'a> {
 /// Evidence entries of one scenario and its untriaged uncovered locations.
 #[derive(Default)]
 pub struct Claims {
-    pub entries: Vec<oer_vendor_evidence::Entry>,
-    pub untriaged: std::collections::BTreeSet<oer_vendor_evidence::Location>,
+    pub entries: Vec<oer_vendor_evidence_shard::Entry>,
+    pub untriaged: std::collections::BTreeSet<oer_vendor_evidence_shard::Location>,
     /// Closure and uncovered locations of every claim.
     pub closures: Vec<crate::coverage::Closure>,
     /// Production PHY lines the claims' executions executed and observed.
@@ -618,7 +618,7 @@ impl Session {
         decisions: &[crate::coverage::Decision],
         observed: &mut crate::coverage::Observed,
         lines: &mut ClaimLines,
-    ) -> Result<oer_vendor_evidence::Entry> {
+    ) -> Result<oer_vendor_evidence_shard::Entry> {
         let Claimed {
             source,
             symbol,
@@ -805,7 +805,7 @@ impl Session {
                 .filter(|l| !consequential.contains(l))
                 .collect(),
         );
-        let count = |c: &blobray_domain::CoverageCount| oer_vendor_evidence::Count {
+        let count = |c: &blobray_domain::CoverageCount| oer_vendor_evidence_shard::Count {
             reached: c.reached,
             total: c.total,
         };
@@ -813,7 +813,7 @@ impl Session {
             .iter()
             .filter(|l| matches!(l.kind, LocationKind::Followed | LocationKind::Unresolved))
             .count() as u64;
-        let coverage = oer_vendor_evidence::Coverage {
+        let coverage = oer_vendor_evidence_shard::Coverage {
             blocks: count(&root.blocks),
             directions: count(&root.directions),
             open,
@@ -883,7 +883,7 @@ impl Session {
         let compared = written.len() - unprojected.len();
         let (reviewed_state, untriaged_state) =
             crate::state::classify(crate::chip().state, (symbol, entry), &unprojected);
-        let state = oer_vendor_evidence::State {
+        let state = oer_vendor_evidence_shard::State {
             written: written.len() as u64,
             compared: compared as u64,
             reviewed: reviewed_state.len() as u64,
@@ -900,19 +900,19 @@ impl Session {
             crate::chip().observation,
             &claim_lines.unobserved(),
         )?;
-        let observation = oer_vendor_evidence::Observation {
+        let observation = oer_vendor_evidence_shard::Observation {
             executed: claim_lines.executed.len() as u64,
             observed: claim_lines.observed.len() as u64,
             reviewed: reviewed.len() as u64,
             untriaged: untriaged.len() as u64,
         };
         lines.lines.extend(&claim_lines);
-        Ok(oer_vendor_evidence::Entry {
+        Ok(oer_vendor_evidence_shard::Entry {
             suite: suite.into(),
             source: source.into(),
             symbol: symbol.into(),
             production: entry.into(),
-            verdict: oer_vendor_evidence::MATCH.into(),
+            verdict: oer_vendor_evidence_shard::MATCH.into(),
             cases,
             reviews: reviews.into_iter().collect(),
             coverage: Some(coverage),

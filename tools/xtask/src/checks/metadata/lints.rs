@@ -10,12 +10,9 @@ use std::path::{Path, PathBuf};
 /// Blobray is extracted and built standalone and owns its own lint policy.
 const INDEPENDENT_POLICY: &str = "tools/blobray/Cargo.toml";
 
-/// Generated register bindings cannot satisfy `unsafe_op_in_unsafe_fn`.
-const OWN_POLICY_PACKAGES: &[&str] = &[
-    "oer-esp32s31-pac-raw",
-    "oer-esp32c5-pac-raw",
-    "oer-ieee80211-pac-raw",
-];
+/// Generated register bindings cannot satisfy `unsafe_op_in_unsafe_fn`:
+/// the shared ones, and each chip's (`[packages] generated` of its profile).
+const OWN_POLICY_PACKAGES: &[&str] = &["oer-ieee80211-pac-raw"];
 
 /// One Cargo workspace and the manifests of its members.
 pub(super) struct Island {
@@ -41,8 +38,9 @@ fn opts_in(contents: &str) -> Result<bool> {
 }
 
 /// Rejects islands whose policy differs from the root and packages that do
-/// not inherit their workspace policy.
-pub(super) fn check(root: &Path, islands: &[Island]) -> Result<()> {
+/// not inherit their workspace policy; `generated` names each chip's
+/// generated bindings, which keep their own.
+pub(super) fn check(root: &Path, islands: &[Island], generated: &[String]) -> Result<()> {
     let root_island = islands
         .iter()
         .find(|island| island.manifest == root)
@@ -61,7 +59,8 @@ pub(super) fn check(root: &Path, islands: &[Island]) -> Result<()> {
             ));
         }
         for (name, manifest, contents) in &island.members {
-            if !OWN_POLICY_PACKAGES.contains(&name.as_str()) && !opts_in(contents)? {
+            let own = OWN_POLICY_PACKAGES.contains(&name.as_str()) || generated.contains(name);
+            if !own && !opts_in(contents)? {
                 errors.push(format!(
                     "{}: package {name} must declare `[lints] workspace = true`",
                     manifest.display()

@@ -63,13 +63,13 @@ mod probe {
         Timer::after_millis(5).await;
         let before_enable = FIRED.load(Ordering::Relaxed);
         // Still pending: enabling the source delivers it.
-        if oer_esp32s31_soc_esp_hal::interrupt_table::enable(token).is_err() {
+        if oer_espressif_interrupt_table_esp_hal::enable(token).is_err() {
             quiet();
             return None;
         }
         Timer::after_millis(5).await;
         let enabled = FIRED.load(Ordering::Relaxed) - before_enable;
-        oer_esp32s31_soc_esp_hal::interrupt_table::disable(token);
+        oer_espressif_interrupt_table_esp_hal::disable(token);
         fire();
         Timer::after_millis(5).await;
         let after_disable = FIRED.load(Ordering::Relaxed) - before_enable - enabled;

@@ -165,7 +165,7 @@ pub struct RunEvent {
     pub outcome: Option<Outcome>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MeasurementUnit {
     Count,
@@ -187,6 +187,23 @@ impl MeasurementUnit {
     }
 }
 
+/// Which way a measured quantity improves, as its producer declares it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Better {
+    Higher,
+    Lower,
+}
+
+impl Better {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Higher => "higher",
+            Self::Lower => "lower",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Comparison {
@@ -196,6 +213,16 @@ pub enum Comparison {
 }
 
 impl Comparison {
+    /// The direction a threshold of this comparison prefers: `None` for
+    /// `exactly`, a correctness check rather than a figure of merit.
+    pub const fn better(self) -> Option<Better> {
+        match self {
+            Self::AtLeast => Some(Better::Higher),
+            Self::AtMost => Some(Better::Lower),
+            Self::Exactly => None,
+        }
+    }
+
     pub const fn symbol(self) -> &'static str {
         match self {
             Self::AtLeast => "&gt;=",
@@ -228,7 +255,7 @@ macro_rules! display_by_id {
     };
 }
 
-display_by_id!(RunState, Outcome, FailureKind, MeasurementUnit);
+display_by_id!(RunState, Outcome, FailureKind, MeasurementUnit, Better);
 
 impl MeasurementVerdict {
     pub const fn is_passed(self) -> bool {

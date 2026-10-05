@@ -23,29 +23,71 @@ pub const CARGO: &[&str] = &[
 
 /// `cargo xtask` subcommands that build, check or run long work; a
 /// subcommand matches when it starts with one of them.
-pub const XTASK: &[&str] = &[
-    "check",
-    "push",
-    "build",
-    "doc",
-    "compare",
-    "evidence",
-    "vendor-scenario",
-    "register-inventory",
-];
+pub const XTASK: &[&str] = &["check", "push", "doc"];
 
 /// Flags with which a heavy xtask subcommand only lists.
 pub const XTASK_LISTING: &[&str] = &["--list"];
 
-/// `cargo hil` subcommands that build images, flash or run on the stand.
-pub const HIL: &[&str] = &["run", "run-all", "wait", "lease", "flash"];
+/// The heavy commands of one cargo alias tool (`cargo <name> ...`).
+#[derive(Serialize)]
+pub struct Tool {
+    /// The alias, as `cargo <name>`.
+    pub name: &'static str,
+    /// Subcommands that build, flash, analyze or wait on the stand.
+    pub heavy: &'static [&'static str],
+    /// Subcommand pairs that do so (`cargo <name> <a> <b>`).
+    pub pairs: &'static [[&'static str; 2]],
+    /// Flags with which a heavy subcommand (other than `wait`) only queues
+    /// or validates.
+    pub deferred: &'static [&'static str],
+}
 
-/// `cargo hil` subcommand pairs that build.
-pub const HIL_PAIRS: &[[&str; 2]] = &[["image", "build"]];
-
-/// Flags with which a heavy `cargo hil` subcommand (other than `wait`) only
-/// queues or validates.
-pub const HIL_DEFERRED: &[&str] = &["--enqueue", "--validate-only"];
+/// The cargo alias tools other than xtask whose commands run long.
+pub const TOOLS: &[Tool] = &[
+    Tool {
+        name: "hil",
+        heavy: &["run", "run-all", "wait", "bisect", "ab"],
+        pairs: &[
+            ["image", "build"],
+            ["images", "check"],
+            ["images", "compare"],
+            ["firmware", "build"],
+        ],
+        deferred: &["--enqueue", "--validate-only"],
+    },
+    Tool {
+        name: "fw",
+        heavy: &["build", "flash", "monitor", "compare"],
+        pairs: &[],
+        deferred: &[],
+    },
+    Tool {
+        name: "stand",
+        heavy: &["wait", "lease", "install", "fixture"],
+        pairs: &[["board", "soak"]],
+        deferred: &[],
+    },
+    Tool {
+        name: "verification",
+        heavy: &[
+            "fetch",
+            "diff",
+            "provenance",
+            "scenario",
+            "evidence",
+            "probes",
+            "check",
+        ],
+        pairs: &[],
+        deferred: &[],
+    },
+    Tool {
+        name: "registers",
+        heavy: &["inventory"],
+        pairs: &[],
+        deferred: &[],
+    },
+];
 
 #[derive(Serialize)]
 struct Document {
@@ -54,9 +96,7 @@ struct Document {
     cargo: &'static [&'static str],
     xtask: &'static [&'static str],
     xtask_listing: &'static [&'static str],
-    hil: &'static [&'static str],
-    hil_pairs: &'static [[&'static str; 2]],
-    hil_deferred: &'static [&'static str],
+    tools: &'static [Tool],
 }
 
 /// The generated file's text.
@@ -66,9 +106,7 @@ pub fn document() -> String {
         cargo: CARGO,
         xtask: XTASK,
         xtask_listing: XTASK_LISTING,
-        hil: HIL,
-        hil_pairs: HIL_PAIRS,
-        hil_deferred: HIL_DEFERRED,
+        tools: TOOLS,
     };
     serde_json::to_string_pretty(&document).expect("the document serializes") + "\n"
 }

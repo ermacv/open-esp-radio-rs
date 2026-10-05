@@ -71,7 +71,16 @@ jobs:
           cp -r target/book "$site"
           mkdir -p "$site/api"
           cp -r target/doc "$site/api/host"
-          cp -r target/riscv32imafc-unknown-none-elf/doc "$site/api/esp32s31"
+          # Each chip's API documentation, from its profile's Rust target.
+          cargo tidy chips --json | python3 -c '
+          import json, sys
+          for chip in json.load(sys.stdin):
+              print(chip["id"], chip["rust-target"])
+          ' | while read -r chip target; do
+            if [ -d "target/$target/doc" ]; then
+              cp -r "target/$target/doc" "$site/api/$chip"
+            fi
+          done
       - name: Package site
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:

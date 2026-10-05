@@ -1,0 +1,24 @@
+[package]
+name = "oer-stand-power"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "A stand board's hub port power through uhubctl, and uhubctl's report parser"
+
+[dependencies]
+oer-device-discovery = { path = "../../tools/device/discovery" }
+oer-device-mac = { path = "../../tools/device/mac" }
+oer-process = { path = "../../tools/process" }
+oer-stand-file = { path = "../file" }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+layer = "hil"
+platform = "host"
+host-layer = "stand"
+hil = "operation"

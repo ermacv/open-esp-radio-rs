@@ -1,7 +1,7 @@
 //! The live RSSI read (`esp_ieee802154_get_recent_rssi`) against frames of
 //! the reference peer at two transmit powers.
 //!
-//! The reference peer (`hil/peers/esp32c5-ieee802154`) sends data frames to
+//! The reference peer (the IEEE 802.15.4 peer project of `hil/peers`) sends data frames to
 //! the device, first at a high and then at a low transmit power, which stands
 //! in for two distances. One session on the device under test covers these
 //! cells:

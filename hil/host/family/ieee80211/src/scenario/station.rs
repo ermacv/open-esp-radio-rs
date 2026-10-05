@@ -1,10 +1,8 @@
 //! Station workloads: the target joins the laboratory AP.
 
-use oer_hil_image_class::ImageClass;
-use oer_hil_scenario::{
-    bounded,
-    link::{HtGuardIntervalExpectation, PhyExpectation},
-};
+use oer_hil_scenario_catalog::bounded;
+use oer_hil_scenario_catalog::link::{HtGuardIntervalExpectation, PhyExpectation};
+use oer_hil_schema::image::ImageClass;
 use serde::{Deserialize, Serialize};
 
 use super::{CORE0_RX_CYCLE_MAX_DURATION_SECONDS, Direction, LinkExpectation, Offer, RateFloors};
@@ -296,7 +294,7 @@ impl StationIcmp {
 pub struct StationSleep {
     pub link: LinkExpectation,
     pub power_save: oer_hil_protocol::wifi::WifiStationPowerSave,
-    pub access_point_beacon: oer_hil_scenario::link::AccessPointBeacon,
+    pub access_point_beacon: oer_hil_scenario_catalog::link::AccessPointBeacon,
     pub count: u16,
     pub interval_ms: u16,
     pub timeout_ms: u16,

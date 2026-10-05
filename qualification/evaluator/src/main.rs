@@ -1,17 +1,43 @@
 mod anchors;
 mod engineering;
-mod hash_cache;
 mod hil;
 mod inventory;
 mod model;
 mod planning;
 mod report;
 
-use std::{env, error::Error, path::PathBuf, process::ExitCode};
+use std::{env, error::Error, path::PathBuf, process::ExitCode, sync::OnceLock};
+
+use oer_durable::digests::DigestCache;
 
 use model::{CatalogView, QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+/// The SHA-256 digests of evidence files, remembered across evaluations.
+///
+/// Sealed HIL bundles are immutable, yet every evaluation hashed all of their
+/// files again; `oer_durable::digests` keeps each file's digest by its
+/// identity and times in the user's cache directory. Set
+/// `OER_QUALIFICATION_HASH_CACHE=0` to hash every file.
+fn digests() -> &'static DigestCache {
+    static DIGESTS: OnceLock<DigestCache> = OnceLock::new();
+    DIGESTS.get_or_init(|| {
+        let disabled =
+            cfg!(test) || env::var("OER_QUALIFICATION_HASH_CACHE").is_ok_and(|value| value == "0");
+        DigestCache::open(
+            (!disabled)
+                .then(|| {
+                    oer_durable::xdg::path(
+                        oer_durable::xdg::Base::Cache,
+                        "qualification/sha256.json",
+                    )
+                    .ok()
+                })
+                .flatten(),
+        )
+    })
+}
 
 const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--run RUN_ID ... | --pending] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n       cargo qualification catalog anchors --catalog PATH [--catalog PATH ...] [--changed FILE ...] [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nhil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, or of the checkout's pending runs (--pending, which then leaves the pending list), as tracked shards bound to their firmware and observer sources.\ncatalog anchors checks the `// CAPABILITY: <id>` comments in code against every selected catalog entry (pass all catalogs: an anchor naming an unselected entry is unknown) and lists the entries anchored in --changed files.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
 
@@ -454,7 +480,7 @@ fn record_hil_evidence(
     runs: &[String],
     pending: bool,
 ) -> Result<()> {
-    use oer_hil_run_bundle::store::pending as pending_list;
+    use oer_hil_run_bundle_format::pending as pending_list;
     let runs = if pending {
         let listed = pending_list::load(root)
             .map_err(|error| error.to_string())?
@@ -516,12 +542,13 @@ fn main() -> ExitCode {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
     }
-    // Recorded shards enter the repository; hash every file they bind.
+    // Recorded shards enter the repository; hash every file they bind: the
+    // unauthenticated cache must not vouch for them.
     if raw_arguments
         .first()
         .is_some_and(|command| command == "hil-evidence")
     {
-        hash_cache::disable();
+        digests().disable();
     }
     let arguments = match parse_arguments(raw_arguments) {
         Ok(arguments) => arguments,
@@ -531,7 +558,7 @@ fn main() -> ExitCode {
         }
     };
     let result = execute(arguments);
-    hash_cache::save();
+    digests().save();
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

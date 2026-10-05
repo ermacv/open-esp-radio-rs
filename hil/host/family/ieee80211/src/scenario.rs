@@ -8,20 +8,18 @@
 
 use std::path::Path;
 
-use oer_hil_image_class::ImageClass;
 use oer_hil_protocol::wifi::TargetSettings;
 use oer_hil_protocol::{
     wifi::WifiApScheduler, wifi::WifiDataPlanePlacement, wifi::WifiRxChecksumPolicy,
     wifi::WifiRxContinuationPolicy, wifi::WifiTxBufferPolicy, wifi::WifiTxUdpChecksumPolicy,
 };
-use oer_hil_scenario::{
-    AirUse, Plan, ScenarioFamily, bounded,
-    link::{
-        AccessPointSecurity, HtGuardIntervalExpectation, ManagementFrameProtection, PhyExpectation,
-        WifiLabUse,
-    },
-    requirements::Requirements,
+use oer_hil_scenario::{AirUse, Plan, ScenarioFamily};
+use oer_hil_scenario_catalog::link::{
+    AccessPointSecurity, HtGuardIntervalExpectation, ManagementFrameProtection, PhyExpectation,
+    WifiLabUse,
 };
+use oer_hil_scenario_catalog::{bounded, requirements::Requirements};
+use oer_hil_schema::image::ImageClass;
 use oer_hil_workload::{context::Context, family::Workload, fixture::Fixtures};
 use serde::{Deserialize, Serialize};
 

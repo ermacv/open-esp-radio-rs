@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, time::Instant};
 
-use oer_hil_link::peer::{Line, parse};
+use oer_device_peer_line::{Line, parse};
 
 use super::*;
 
@@ -40,7 +40,7 @@ impl PeerLink for ScriptedLink {
 
 #[test]
 fn reports_type_as_events_and_other_output_is_ignored() {
-    assert_eq!(parse_event("ESP-ROM:esp32c5\n"), None);
+    assert_eq!(parse_event("ESP-ROM:chip-b\n"), None);
     assert_eq!(
         parse_event("@RX 41880045 rssi=-47 lqi=255 pending=1 ch=15"),
         Some(PeerEvent::Received(PeerFrame {
@@ -97,7 +97,7 @@ fn the_configuration_renders_the_documented_command() {
 fn commands_wait_for_their_answer_and_keep_interleaved_events() {
     let link = ScriptedLink::new(&[
         "boot noise",
-        "@READY protocol=1 target=esp32c5",
+        "@READY protocol=1 target=chip-b",
         "@RX 4188 rssi=-50 lqi=100 pending=0 ch=15",
         "@OK TX",
         "@TXDONE ack=-",

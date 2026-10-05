@@ -1,14 +1,14 @@
 //! Statics in zeroed regions are declared only through
 //! `oer_memory::zeroed_static!`.
 //!
-//! A `link_section` naming an input section the runtime linker script places
-//! in a region the boot zeroes ([`oer_esp32s31_platform_layout::zeroed`]) is
-//! refused anywhere in Rust source: the macro is the one place that writes
+//! A `link_section` naming an input section a staged runtime's linker script
+//! places in a region the boot zeroes (the `[staged] zeroed-inputs` of each
+//! chip profile, read through the repository model) is refused anywhere in
+//! Rust source: the macro is the one place that writes
 //! such an attribute, with the section as a macro argument rather than a
 //! literal. The image linker stays the backstop for code this scan does not
 //! read, vendor archives included.
 
-use oer_esp32s31_platform_layout::zeroed::is_zeroed_input;
 use oer_repo::Repo;
 
 use crate::Result;
@@ -16,6 +16,13 @@ use crate::Result;
 /// Every literal `link_section` of the repository's Rust files that names a
 /// zeroed input section.
 pub fn check(repo: &Repo) -> Result<()> {
+    let zeroed: Vec<String> = oer_repo::chips::Chips::load(repo)?
+        .profiles()
+        .iter()
+        .filter_map(|profile| profile.staged.as_ref())
+        .flat_map(|staged| staged.zeroed_inputs.iter().cloned())
+        .collect();
+    let is_zeroed_input = |name: &str| zeroed.iter().any(|pattern| matches_pattern(pattern, name));
     let mut problems = vec![];
     for file in repo.files().filter(|file| file.ends_with(".rs")) {
         let text = repo.read(file)?;
@@ -36,6 +43,17 @@ pub fn check(repo: &Repo) -> Result<()> {
     }
 }
 
+/// A linker-script input pattern: `name` exactly, or `name.*` for any
+/// dotted suffix.
+fn matches_pattern(pattern: &str, name: &str) -> bool {
+    match pattern.strip_suffix(".*") {
+        Some(prefix) => name
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest.len() > 1 && rest.starts_with('.')),
+        None => name == pattern,
+    }
+}
+
 /// The string literal of a `link_section = "..."` attribute on `line`.
 fn link_section(line: &str) -> Option<&str> {
     let code = line.split("//").next()?;
@@ -49,10 +67,21 @@ fn link_section(line: &str) -> Option<&str> {
 mod tests {
     use super::*;
 
+    const FAKE_CHIP: &str = "schema = 1\nid = \"chip-a\"\nfamily = \"f\"\n\
+        rust-target = \"riscv32imac-unknown-none-elf\"\nboot = \"staged\"\n\
+        espflash-chip = \"esp32c6\"\nrevisions = []\n\
+        [properties]\nwifi-bands = []\nbluetooth = []\nieee802154 = false\ncores = 1\n\
+        [staged]\nzeroed-inputs = [\".dma.bss\", \".dma.bss.*\", \".psram.bss.*\"]\n\
+        [staged.stage-two]\nmagic = 1\nabi-version = 1\nheader-bytes = 16\nmagic-offset = 0\n\
+        abi-version-offset = 4\nheader-size-offset = 8\ncrc-offset = 12\n";
+
     fn found(source: &str) -> Vec<String> {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("p/src")).unwrap();
         std::fs::write(dir.path().join("p/src/lib.rs"), source).unwrap();
+        // A fake staged chip: the zeroed inputs are its data, no chip's name.
+        std::fs::create_dir_all(dir.path().join("platform/chip-a")).unwrap();
+        std::fs::write(dir.path().join("platform/chip-a/chip.toml"), FAKE_CHIP).unwrap();
         match check(&Repo::from_dir(dir.path()).unwrap()) {
             Ok(()) => vec![],
             Err(error) => error.to_string().lines().map(str::to_owned).collect(),

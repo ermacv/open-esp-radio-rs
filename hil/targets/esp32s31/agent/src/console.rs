@@ -17,14 +17,15 @@ use embassy_sync::{
     channel::Channel,
 };
 use embassy_time::{Instant, Timer};
-use esp_hal::peripherals::USB_DEVICE;
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use oer_hil_protocol::ieee802154::Ieee802154EdEventProbeRequest;
 #[cfg(feature = "ieee802154-event-status-probe")]
 use oer_hil_protocol::ieee802154::Ieee802154EventStatusProbeRequest;
 use oer_hil_protocol::phy::{ControlFault, UploadStartupArtifact};
 #[cfg(not(feature = "memory-benchmark"))]
-use oer_hil_protocol::phy::{ControlTracking, ReadAnalogImage, ReadRegisterImage};
+use oer_hil_protocol::phy::{
+    ControlTracking, ReadAnalogImage, ReadCalibrationProjection, ReadRegisterImage,
+};
 #[cfg(not(feature = "memory-benchmark"))]
 use oer_hil_protocol::system::HangTarget;
 use oer_hil_protocol::system::{
@@ -98,6 +99,8 @@ oer_hil_agent::requests! {
         ReadRegisterImage(ReadRegisterImage),
         #[cfg(not(feature = "memory-benchmark"))]
         ReadAnalogImage(ReadAnalogImage),
+        #[cfg(not(feature = "memory-benchmark"))]
+        ReadCalibrationProjection(ReadCalibrationProjection),
         ControlFault(ControlFault),
         UploadStartupArtifact(UploadStartupArtifact),
         #[cfg(feature = "pc-profile")]
@@ -622,6 +625,7 @@ fn discard_session_result(session_id: u64) -> bool {
     })
 }
 
+#[cfg(feature = "ieee802154-radio")]
 unsafe extern "C" {
     fn ets_printf(format: *const u8, ...) -> i32;
 }
@@ -849,6 +853,15 @@ pub async fn protocol_task() {
                             Err(RejectReason::InvalidState)
                         } else {
                             crate::product_hil::phy_register_image::read_analog(request).await
+                        };
+                        respond(session_id, request_id, reply).await;
+                    }
+                    #[cfg(not(feature = "memory-benchmark"))]
+                    Request::ReadCalibrationProjection(ReadCalibrationProjection(request)) => {
+                        let reply = if session_id != 0 {
+                            Err(RejectReason::InvalidState)
+                        } else {
+                            crate::phy_calibration_projection::read(request)
                         };
                         respond(session_id, request_id, reply).await;
                     }

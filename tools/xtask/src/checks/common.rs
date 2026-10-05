@@ -11,6 +11,25 @@ use std::process::Command;
 
 pub use oer_repo::{Classification, Layer, Platform, Scope};
 
+/// Every distinct Rust target of the chips, sorted.
+pub fn chip_targets(chips: &oer_repo::chips::Chips) -> Vec<String> {
+    chips
+        .profiles()
+        .iter()
+        .map(|profile| profile.rust_target.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+/// The Rust target of the chip `id`, from its profile.
+pub fn rust_target(root: &Path, id: &str) -> Result<String> {
+    oer_repo::chips::Chips::at(root)?
+        .profile(id)
+        .map(|profile| profile.rust_target.clone())
+        .ok_or_else(|| format!("no chip profile `{id}`").into())
+}
+
 /// One classified package of the repository model.
 #[derive(Clone, Debug)]
 pub struct Classified {
@@ -129,45 +148,97 @@ pub fn maximal_profiles(class: &Classification) -> Vec<Vec<String>> {
     }
 }
 
+/// The chips of `ids` a profile selects: a chip id among the features its
+/// `--features` enable, followed through the package's own feature table
+/// (`embassy-x = ["esp32s31-x"]`, `esp32s31-x = ["esp32s31"]`).
+fn selected_chips<'a>(
+    package: &oer_repo::Package,
+    profile: &[String],
+    ids: &[&'a str],
+) -> Vec<&'a str> {
+    let mut enabled = BTreeSet::new();
+    let mut pending = profile
+        .windows(2)
+        .filter(|pair| pair[0] == "--features")
+        .flat_map(|pair| pair[1].split(','))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    while let Some(feature) = pending.pop() {
+        if !enabled.insert(feature.clone()) {
+            continue;
+        }
+        if let Some(implied) = package.features.get(&feature) {
+            pending.extend(
+                implied
+                    .iter()
+                    .filter(|entry| !entry.contains(':') && !entry.contains('/'))
+                    .cloned(),
+            );
+        }
+    }
+    ids.iter()
+        .copied()
+        .filter(|id| enabled.contains(*id))
+        .collect()
+}
+
 /// Every package's compilation profiles, each for its own chip's Rust target:
 /// a chip package builds for the target its chip profile names, and a
 /// portable or host package for `target`.
 pub fn architecture_configurations(
     root: &Path,
     packages: &[Classified],
-    target: &str,
 ) -> Result<Vec<CargoConfiguration>> {
+    let chips = oer_repo::chips::Chips::at(root)?;
     let mut configurations = Vec::new();
     for item in packages {
         let target = match &item.class.platform {
-            Platform::Chip(chip) => oer_chip_profile::Profile::load(root, chip)?.rust_target,
-            // Built for the target of every chip of its family.
-            Platform::Family(family) => {
-                let targets = oer_chip_profile::Profile::all(root)?
-                    .into_iter()
-                    .filter(|chip| chip.family == **family)
-                    .map(|chip| chip.rust_target)
-                    .collect::<BTreeSet<_>>();
-                if targets.is_empty() {
+            Platform::Chip(chip) => rust_target(root, chip)?,
+            // Built for the target of every chip (portable) or of every chip
+            // of its family; a profile that selects chips by feature (an
+            // image selects exactly one chip of esp-hal) only for those
+            // chips' targets.
+            Platform::Portable | Platform::Family(_) => {
+                let members = chips
+                    .profiles()
+                    .iter()
+                    .filter(|chip| match &item.class.platform {
+                        Platform::Family(family) => chip.family == **family,
+                        _ => true,
+                    })
+                    .collect::<Vec<_>>();
+                if let (Platform::Family(family), true) = (&item.class.platform, members.is_empty())
+                {
                     return Err(format!(
                         "family package {} names family `{family}`, which no chip declares",
                         item.package.name
                     )
                     .into());
                 }
-                for target in targets {
-                    for features in compilation_profiles(&item.class) {
+                let ids = members
+                    .iter()
+                    .map(|chip| chip.id.as_str())
+                    .collect::<Vec<_>>();
+                let mut seen = BTreeSet::new();
+                for features in compilation_profiles(&item.class) {
+                    let selected = selected_chips(&item.package, &features, &ids);
+                    for chip in &members {
+                        if !selected.is_empty() && !selected.contains(&chip.id.as_str()) {
+                            continue;
+                        }
+                        if !seen.insert((chip.rust_target.clone(), features.clone())) {
+                            continue;
+                        }
                         configurations.push(CargoConfiguration {
                             manifest: item.manifest.clone(),
                             package: item.package.name.to_string(),
-                            target: target.clone(),
-                            features,
+                            target: chip.rust_target.clone(),
+                            features: features.clone(),
                         });
                     }
                 }
                 continue;
             }
-            Platform::Portable => target.to_owned(),
             // Host packages run on the build machine: the workspace's own
             // host build covers them.
             Platform::Host => continue,

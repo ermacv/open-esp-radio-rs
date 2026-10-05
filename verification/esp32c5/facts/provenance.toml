@@ -1,8 +1,8 @@
 # Code fingerprints of the vendor functions production `SOURCE:` blocks
 # and the register model cite, and those the verification decisions
 # exclude code of, as reviewed. Maintained by
-# `cargo xtask vendor-provenance`; checked by `cargo xtask check
-# provenance`.
+# `cargo verification provenance`; checked by `cargo verification
+# check provenance`.
 schema = 1
 
 [[function]]
@@ -1046,6 +1046,12 @@ code = "ba042cc03fb42a5947bfc9149bfdc54501f6e63088612dcf02ea75241de3a47d"
 [[function]]
 artifact = "rom-rev0"
 member = ""
+symbol = "memset"
+code = "568f1d35e758ab82126426a68435e6740e2f192dcf667e24fcbe281a33fd9388"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
 symbol = "phy_adc_rate_set"
 code = "b6216c61ba4fbae23ef063ceb364e90b84ff8ac534cfc6781137b02552ead7b2"
 
@@ -1450,6 +1456,12 @@ artifact = "rom-rev100"
 member = ""
 symbol = "mac_tx_set_pti"
 code = "ba042cc03fb42a5947bfc9149bfdc54501f6e63088612dcf02ea75241de3a47d"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "memset"
+code = "568f1d35e758ab82126426a68435e6740e2f192dcf667e24fcbe281a33fd9388"
 
 [[function]]
 artifact = "rom-rev100"

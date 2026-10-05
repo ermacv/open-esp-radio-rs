@@ -5,11 +5,11 @@ use std::{path::Path, time::Duration};
 use oer_hil_scenario::ScenarioFamily as _;
 
 use crate::{Result, fixture, scenario::Scenario};
-use oer_hil_image_class::ImageClass;
 use oer_hil_lab::config::LabConfig;
 use oer_hil_link::SerialCapture;
 use oer_hil_protocol::DeviceImageKeys;
-use oer_hil_run_bundle::run::Failure;
+use oer_hil_run_bundle_format::run::Failure;
+use oer_hil_schema::image::ImageClass;
 
 pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
     fixture::preflight::scenario_precondition(lab, selected).or_else(|| {
@@ -23,6 +23,7 @@ pub(crate) fn validate_flashed_image(
     lab: &LabConfig,
     selected: &Scenario,
     output: &Path,
+    device: Option<&oer_device_lock::DeviceAccess>,
 ) -> Result<()> {
     if selected.image() == ImageClass::BootSmoke {
         return Ok(());
@@ -47,18 +48,16 @@ pub(crate) fn validate_flashed_image(
     let origin = oer_hil_run_bundle::store::run_of(output).unwrap_or_default();
     let mut attempt = 0;
     let mut answered = None;
-    let escalation = oer_hil_lab::recovery::escalate_boot_loop(
-        &lab.dut_board()?,
-        found,
-        output,
-        &origin,
-        || {
+    let board = lab
+        .dut_board()?
+        .lease(device.ok_or("the run holds no lease of its device under test")?)?;
+    let escalation =
+        oer_hil_lab::recovery::escalate_boot_loop(&board, found, output, &origin, || {
             attempt += 1;
             let directory = output.join(format!("image-preflight-retry-{attempt}"));
             answered = image_keys_of(lab, &directory).ok();
             answered.is_some()
-        },
-    );
+        });
     match answered {
         Some(image_keys) => {
             eprintln!(
@@ -78,7 +77,7 @@ pub(crate) fn validate_flashed_image(
                 .collect::<Vec<_>>()
                 .join(", "),
             match escalation.ladder.end {
-                oer_hil_board::reset::LadderEnd::Loadable { .. } => {
+                oer_device_reset::LadderEnd::Loadable { .. } => {
                     "its ROM answers, so firmware can be loaded again"
                 }
                 _ => "the board is quarantined for a person",

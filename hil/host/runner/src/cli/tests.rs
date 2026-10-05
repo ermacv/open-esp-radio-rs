@@ -179,50 +179,6 @@ fn bluetooth_dtm_v1_requires_explicit_selection() {
 }
 
 #[test]
-fn fixture_install_requires_a_finite_provider_and_preserves_the_net_alias() {
-    use oer_hil_fixture_install::Provider;
-
-    for (name, expected) in [
-        ("linux-net", Provider::LinuxNet),
-        ("linux-bluetooth", Provider::LinuxBluetooth),
-    ] {
-        let cli = Cli::try_parse_from([
-            "cargo-hil",
-            "fixture",
-            "install",
-            "--provider",
-            name,
-            "--dry-run",
-        ])
-        .unwrap();
-        assert!(matches!(
-            cli.command,
-            CliCommand::Fixture {
-                command: FixtureCommand::Install {
-                    provider,
-                    dry_run: true,
-                    ..
-                }
-            } if provider == expected
-        ));
-    }
-    assert!(Cli::try_parse_from(["cargo-hil", "fixture", "install", "--dry-run"]).is_err());
-    assert!(
-        Cli::try_parse_from(["cargo-hil", "fixture", "install", "--provider", "auto"]).is_err()
-    );
-    assert!(
-        Cli::try_parse_from([
-            "cargo-hil",
-            "fixture",
-            "install-host",
-            "--provider",
-            "linux-bluetooth"
-        ])
-        .is_err()
-    );
-}
-
-#[test]
 fn run_all_runs_the_whole_catalog_only_when_asked() {
     assert!(Cli::try_parse_from(["cargo-hil", "run-all"]).is_err());
     assert!(Cli::try_parse_from(["cargo-hil", "run-all", "--tag", "wifi"]).is_ok());

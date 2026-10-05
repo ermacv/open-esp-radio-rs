@@ -11,11 +11,12 @@ use std::{
     path::Path,
 };
 
-use oer_hil_run_bundle::{
-    RunStore,
-    run::{FailureKind, Observations, Outcome, RunState},
-    store::Notes,
-};
+use oer_hil_run_bundle::RunStore;
+use oer_hil_run_bundle::store::Notes;
+use oer_hil_run_bundle_format::run::FailureKind;
+use oer_hil_run_bundle_format::run::Observations;
+use oer_hil_run_bundle_format::run::Outcome;
+use oer_hil_run_bundle_format::run::RunState;
 use oer_hil_schema::run::RunEventKind;
 
 use crate::{
@@ -359,22 +360,27 @@ pub fn show(run: &Run) -> String {
     text
 }
 
-/// The samples of `scenario` in `run`, by measurement name.
-fn samples_of(run: &Run, scenario: &str) -> BTreeMap<String, Sample> {
-    run.suite
+/// The samples of `scenario` in `run`, by measurement name; an error when
+/// the run reports incompatible metrics ([`samples::samples`]).
+fn samples_of(run: &Run, scenario: &str) -> Result<BTreeMap<String, Sample>> {
+    Ok(run
+        .suite
         .as_ref()
         .map(samples::samples)
+        .transpose()
+        .map_err(|error| format!("run {}: {error}", run.id()))?
         .unwrap_or_default()
         .into_iter()
-        .filter(|sample| sample.scenario == scenario)
-        .map(|sample| (sample.measurement.clone(), sample))
-        .collect()
+        .filter(|sample| sample.metric.scenario == scenario)
+        .map(|sample| (sample.metric.name.clone(), sample))
+        .collect())
 }
 
 /// The measurements of two runs side by side, for their common scenarios:
 /// each side's repetitions compared with the one noise-aware
-/// [`samples::compare`].
-pub fn compare(a: &Run, b: &Run, filter: Option<&str>) -> String {
+/// [`samples::compare`]. A measurement the two runs report as different
+/// metrics (unit, semantics or direction) is shown but never judged.
+pub fn compare(a: &Run, b: &Run, filter: Option<&str>) -> Result<String> {
     let mut text = format!(
         "A {} {} {}\nB {} {} {}\n",
         a.id(),
@@ -403,7 +409,7 @@ pub fn compare(a: &Run, b: &Run, filter: Option<&str>) -> String {
             "{scenario}: A {outcome_a} ({repetitions_a} repetitions), B {outcome_b} \
              ({repetitions_b} repetitions)\n"
         ));
-        let (left, right) = (samples_of(a, &scenario), samples_of(b, &scenario));
+        let (left, right) = (samples_of(a, &scenario)?, samples_of(b, &scenario)?);
         for name in left.keys().chain(right.keys()).collect::<BTreeSet<_>>() {
             if filter.is_some_and(|filter| !name.contains(filter)) {
                 continue;
@@ -411,27 +417,29 @@ pub fn compare(a: &Run, b: &Run, filter: Option<&str>) -> String {
             let (x, y) = (left.get(name), right.get(name));
             let unit = x
                 .or(y)
-                .map_or(String::new(), |sample| sample.unit.to_string());
+                .map_or(String::new(), |sample| sample.metric.unit.to_string());
             let mean = |sample: Option<&Sample>| {
                 sample
                     .and_then(Sample::spread)
                     .map_or_else(|| String::from("—"), |spread| format!("{:.3}", spread.mean))
             };
             let judged = match (x, y) {
+                (Some(x), Some(y)) if x.metric.incompatibility(&y.metric).is_some() => x
+                    .metric
+                    .incompatibility(&y.metric)
+                    .map(|reason| format!("not comparable: {reason}")),
                 (Some(x), Some(y)) => {
-                    samples::compare(x.better().or(y.better()), &x.values, &y.values).map(
-                        |compared| {
-                            let relative = if compared.a.mean != 0.0 {
-                                format!(
-                                    "{:+.1}%",
-                                    compared.difference / compared.a.mean.abs() * 100.0
-                                )
-                            } else {
-                                format!("{:+}", compared.difference)
-                            };
-                            format!("{relative} {}", compared.verdict)
-                        },
-                    )
+                    samples::compare(x.better(), &x.values, &y.values).map(|compared| {
+                        let relative = if compared.a.mean != 0.0 {
+                            format!(
+                                "{:+.1}%",
+                                compared.difference / compared.a.mean.abs() * 100.0
+                            )
+                        } else {
+                            format!("{:+}", compared.difference)
+                        };
+                        format!("{relative} {}", compared.verdict)
+                    })
                 }
                 _ => None,
             }
@@ -443,28 +451,43 @@ pub fn compare(a: &Run, b: &Run, filter: Option<&str>) -> String {
             ));
         }
     }
-    text
+    Ok(text)
 }
 
-/// Outcome and measurement means of `scenario` across runs, oldest first.
-pub fn history(runs: &[Run], scenario: &str, filter: Option<&str>) -> String {
+/// Outcome and measurement means of `scenario` across runs, oldest first:
+/// every measurement, or with `filter` those whose name contains it. Each
+/// metric identity is its own column: a name whose unit, semantics or
+/// direction changed between runs never continues one column.
+pub fn history(runs: &[Run], scenario: &str, filter: Option<&str>) -> Result<String> {
     let mut text = String::new();
     let mut names = BTreeSet::new();
-    let rows = runs
-        .iter()
-        .filter_map(|run| {
-            let result = run.scenario(scenario)?;
-            let values = samples_of(run, scenario)
-                .into_iter()
-                .filter(|(name, _)| filter.is_some_and(|filter| name.contains(filter)))
-                .filter_map(|(name, sample)| Some((name, sample.spread()?.mean)))
-                .collect::<BTreeMap<_, _>>();
-            names.extend(values.keys().cloned());
-            Some((run, result, values))
-        })
-        .collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    for run in runs {
+        let Some(result) = run.scenario(scenario) else {
+            continue;
+        };
+        let values = samples_of(run, scenario)?
+            .into_iter()
+            .filter(|(name, _)| filter.is_none_or(|filter| name.contains(filter)))
+            .filter_map(|(_, sample)| {
+                let label = format!(
+                    "{} [{}, semantics {}, better {}]",
+                    sample.metric.name,
+                    sample.metric.unit,
+                    sample.metric.semantics,
+                    sample
+                        .metric
+                        .better
+                        .map_or("undeclared", samples::Better::id)
+                );
+                Some((label, sample.spread()?.mean))
+            })
+            .collect::<BTreeMap<_, _>>();
+        names.extend(values.keys().cloned());
+        rows.push((run, result, values));
+    }
     if rows.is_empty() {
-        return format!("no run contains {scenario}\n");
+        return Ok(format!("no run contains {scenario}\n"));
     }
     for name in &names {
         text.push_str(&format!("  column {name}\n"));
@@ -494,7 +517,7 @@ pub fn history(runs: &[Run], scenario: &str, filter: Option<&str>) -> String {
             result.outcome,
         ));
     }
-    text
+    Ok(text)
 }
 
 /// How stable `scenario` is over `runs`: its pass rate and how many of its
@@ -630,13 +653,24 @@ pub fn collect_observers(store: &RunStore) -> Result<usize> {
     let named = store
         .bundles()?
         .iter()
-        .filter_map(|bundle| bundle.observer_build().map(str::to_owned))
+        .filter_map(|bundle| {
+            bundle
+                .manifest()
+                .observer()
+                .filter(|record| {
+                    record["schema"] == oer_hil_run_bundle_format::observer::store::REFERENCED
+                })
+                .and_then(oer_hil_run_bundle_format::observer::store::build_digest)
+                .map(str::to_owned)
+        })
         .collect();
-    Ok(
-        oer_hil_observer::store::collect_garbage(store.observers(), &named, OBSERVER_GRACE)
-            .map_err(|error| error.to_string())?
-            .len(),
+    Ok(oer_hil_run_bundle_format::observer::store::collect_garbage(
+        store.observers(),
+        &named,
+        OBSERVER_GRACE,
     )
+    .map_err(|error| error.to_string())?
+    .len())
 }
 
 /// Follow the run in `directory`, handing `report` each step its events

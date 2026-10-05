@@ -2,8 +2,8 @@
 
 use std::{path::Path, sync::Mutex};
 
-use oer_hil_image_class::ImageClass;
 use oer_hil_scenario::{AirUse, Plan, Scenario, ScenarioFamily};
+use oer_hil_schema::image::ImageClass;
 use serde::{Deserialize, Serialize};
 
 use super::*;
@@ -18,7 +18,7 @@ struct Quiet {
 
 impl ScenarioFamily for Quiet {
     fn validate(&self) -> crate::Result<()> {
-        oer_hil_scenario::bounded(self.boots, 1, 3, "boots")
+        oer_hil_scenario_catalog::bounded(self.boots, 1, 3, "boots")
     }
     fn plan(&self) -> Plan {
         Plan::target_only(ImageClass::Correctness)

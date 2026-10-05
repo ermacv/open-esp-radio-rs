@@ -14,7 +14,7 @@ observes the checkout.
 | `receipt` | The receipt of a prepared runner, `OER_OBSERVER_RECEIPT` and the checkout's current descriptor `target/hil/current-observer.json` |
 | `compile`, `resolve`, `prepare` (feature `producer`) | Building the runner from Cargo's artifact messages, resolving its graph (the runner's build script), and its private copy under `target/hil/runners/<sha256>/` with the invocation's receipt |
 
-`cargo hil` and `cargo xtask hil-observer` prepare the observer; the
+`cargo hil` and `cargo hil observer` prepare the observer; the
 evaluator reads prepared descriptors and never runs Cargo for it.
 
 ```console

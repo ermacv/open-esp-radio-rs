@@ -31,7 +31,7 @@ const PAGE: &str = include_str!("dashboard.html");
 const FIXTURE_REFRESH: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The host fixtures as last probed, refreshed by a background thread.
-static FIXTURES: std::sync::Mutex<Vec<oer_hil_stand_host::fixtures::Fixture>> =
+static FIXTURES: std::sync::Mutex<Vec<oer_stand_fixtures::Fixture>> =
     std::sync::Mutex::new(Vec::new());
 
 /// Probe the host fixtures now and every [`FIXTURE_REFRESH`] after.
@@ -41,7 +41,7 @@ fn watch_fixtures() {
     };
     std::thread::spawn(move || {
         loop {
-            let fixtures = oer_hil_stand_host::fixtures::probe(&lab);
+            let fixtures = oer_stand_fixtures::probe(&lab);
             *FIXTURES
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = fixtures;
@@ -59,7 +59,7 @@ pub fn serve(store: &RunStore, args: &[std::ffi::OsString]) -> Result<std::proce
             .ok_or("--port takes a port number")?,
         _ => return Err("usage: cargo hil dashboard [--port PORT]".into()),
     };
-    let arbiter = oer_hil_arbiter::Arbiter::open()?;
+    let arbiter = oer_stand_arbiter::Arbiter::open()?;
     let record = arbiter.directory().join("dashboard.json");
     let me = Instance::current(port)?;
     if let Some(running) = Instance::read(&record).filter(Instance::alive) {
@@ -265,7 +265,7 @@ fn job_log(rest: &str) -> Option<String> {
     if !plain_id(id) {
         return None;
     }
-    let log = oer_hil_arbiter::Arbiter::open()
+    let log = oer_stand_arbiter::Arbiter::open()
         .ok()?
         .jobs()
         .read(id)
@@ -278,7 +278,7 @@ fn job_log(rest: &str) -> Option<String> {
 
 /// The stand and its newest runs.
 fn snapshot(store: &RunStore) -> Result<Value> {
-    let arbiter = oer_hil_arbiter::Arbiter::open()?;
+    let arbiter = oer_stand_arbiter::Arbiter::open()?;
     let status = arbiter.status()?;
     let jobs = arbiter.jobs().unfinished();
     let mut history = arbiter.history()?;
@@ -294,7 +294,7 @@ fn snapshot(store: &RunStore) -> Result<Value> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner),
         "maintenance": status.maintenance,
-        "jobs": oer_hil_arbiter::jobs::views(&jobs, &status),
+        "jobs": oer_stand_arbiter::jobs::views(&jobs, &status),
         "leases": history,
         "runs": oer_hil_analysis::dashboard::newest_runs(store, RECENT_RUNS),
     }))
@@ -308,7 +308,7 @@ mod tests {
         oer_hil_run_bundle::run::test_support::write_run(
             &store.run(id),
             1,
-            oer_hil_run_bundle::run::RunState::Completed,
+            oer_hil_run_bundle_format::run::RunState::Completed,
             Vec::new(),
             |_| {},
         );

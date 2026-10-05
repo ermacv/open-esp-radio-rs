@@ -3,9 +3,16 @@
 # the tool's output, and a compile error still prints.
 registers = "run --quiet --profile blobray -p oer-register-tool --"
 xtask = "run --quiet -p oer-xtask --"
+# The dev kit: build, flash and monitor the examples on attached boards.
+fw = "run --quiet -p oer-fw --"
+# The shared stand: queue, leases, boards, owners, host setup, fixtures.
+stand = "run --quiet -p oer-stand --"
 hil = "run --quiet -p oer-hil-cli --"
 qualification = "run --quiet --profile qualification -p oer-qualification --"
 blobray = "run --quiet --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-cli --bin blobray --"
+# Vendor verification, its own workspace: pins, provenance, the typed
+# scenarios (`cargo verification scenario`), evidence shards and probes.
+verification = "run --quiet --manifest-path verification/Cargo.toml --profile verification -p oer-verification-cli --bin verification --"
 # The repository model of oer-tidy: `cargo tidy check`, `workspaces`,
 # `chips` and `fetch`. Its few dependencies rarely change, so it still
 # builds after a pull that changed what xtask needs.
@@ -25,7 +32,7 @@ offline = true
 
 [env]
 # Cargo reads this file for every workspace below the repository root.
-# ESP32-S31 images keep esp-hal's PMP region setup off: its single
+# Staged images keep esp-hal's PMP region setup off: its single
 # "read/write, no execute" TOR region from `_data_start` to `_noinit_end`
 # would span stage two's PSRAM code between SRAM data and PSRAM noinit.
 ESP_HAL_CONFIG_ENABLE_PMP = "false"

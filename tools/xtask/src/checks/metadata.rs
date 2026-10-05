@@ -139,7 +139,12 @@ pub fn run(context: &Checkout) -> Result<usize> {
         "Git pins and root patches agree across {} lock catalog(s)",
         locks.len()
     );
-    lints::check(std::path::Path::new("Cargo.toml"), &islands)?;
+    let generated: Vec<String> = oer_repo::chips::Chips::at(&context.root)?
+        .profiles()
+        .iter()
+        .flat_map(|profile| profile.packages.generated.iter().cloned())
+        .collect();
+    lints::check(std::path::Path::new("Cargo.toml"), &islands, &generated)?;
     println!(
         "the root lint policy applies in {} workspace(s)",
         islands.len()

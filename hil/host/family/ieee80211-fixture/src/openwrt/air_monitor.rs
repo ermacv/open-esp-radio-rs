@@ -30,8 +30,8 @@ impl Capture {
             return Err("independent OpenWrt observer requires a managed AP".into());
         };
         let boot = |target: &str| -> Result<String> {
-            let result = oer_hil_stand_host::ssh::command(target, oer_hil_stand_host::ssh::BOOT_ID)
-                .supervised_output()?;
+            let result =
+                oer_stand_ssh::command(target, oer_stand_ssh::BOOT_ID).supervised_output()?;
             if !result.status.success() {
                 return Err("cannot identify independent observer hardware".into());
             }
@@ -112,7 +112,7 @@ impl Capture {
 
 /// The BSSID of the station fixture AP.
 pub fn fixture_bssid(ap: &oer_hil_lab::config::OpenWrtConfig) -> Result<MacAddress> {
-    let output = oer_hil_stand_host::ssh::command(
+    let output = oer_stand_ssh::command(
         &ap.ssh_target,
         &format!("cat /sys/class/net/{}/address", ap.wireless_interface),
     )

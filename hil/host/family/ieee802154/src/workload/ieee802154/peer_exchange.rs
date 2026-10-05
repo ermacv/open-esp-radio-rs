@@ -1,7 +1,7 @@
 //! IEEE 802.15.4 exchange between the device under test and the reference
 //! peer.
 //!
-//! The ESP32-C5 peer runs the vendor driver (`hil/peers/esp32c5-ieee802154`).
+//! The peer runs the vendor driver (the IEEE 802.15.4 peer project of `hil/peers`).
 //! One session on the device under test covers these cells on one channel
 //! and PAN:
 //!

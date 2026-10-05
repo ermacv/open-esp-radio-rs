@@ -1,0 +1,43 @@
+# ESP32-C5 staged application boot
+
+This platform composes ESP-HAL for the ESP32-C5 devkit with the
+ESP32-C5-WROOM-1-N16R8 module (16-MiB quad flash, 8-MiB quad PSRAM). It
+boots like the [ESP32-S31](../esp32s31/README.md), on the shared crates of
+[`platform/espressif`](../espressif/staged-layout/README.md): ROM → ESP-IDF
+bootloader (espflash's, DIO) → Flash bootstrap (QIO, 80 MHz) → stage two in
+PSRAM.
+
+| Component | Responsibility |
+| --- | --- |
+| `layout` | The board's `LAYOUT`: SRAM below the second-stage loader at `0x4084e5a0`, the flash half of the shared cache window, PSRAM fixed at `0x43000000`, the panic record in LP RAM at `0x50000000`, one hart |
+| `board` | Quad PSRAM at 80 MHz mapped at the fixed origin; stage two's adoption of the mapping (`stage-two`) |
+| `bootstrap` | The shared bootstrap steps; no Flash tuning |
+| `linker/rom` | The ECO2 ROM symbols (revision v1.0) and the reviewed ROM function summaries |
+| `partitions` | Application partition layout |
+| `stack.toml` | Stack policy; the coverage review is shared (`../espressif/stack-coverage.toml`) |
+
+The chip has one MMU whose 32-MiB window serves flash and PSRAM; esp-hal
+maps PSRAM after the last flash page unless asked otherwise, so the board
+maps it at a fixed page (`PsramOrigin::Fixed`) at which stage two is linked.
+The runtime enables no FPU (`riscv32imac`). The bootstrap enables no modem
+clock: see the ESP32-C5 entry of the [hardware errata](../../docs/hardware-errata.md).
+
+## Build
+
+esp-hal comes from the owner's fork, branch `oer/c5-staged` (revision
+`46a45a81`): fixed-origin PSRAM mapping (`PsramOrigin::Fixed`), code
+preparation in PSRAM and re-initialized interrupt vectoring after the
+handoff on the ESP32-C5. Images are built by the
+[image pipeline](../../tools/image/README.md) from `chip.toml` (boot
+`staged`, the `[flash]` map: application QIO at 80 MHz on 16 MiB, DIO
+bootloader). The HIL agent (`hil/targets/esp32c5/agent`) runs on the staged
+runtime; its image classes are `boot-smoke` and `system-watchdog`:
+
+```console
+cargo hil images check --chip esp32c5 --all --type-check
+cargo hil image build boot-smoke --chip esp32c5
+```
+
+Flash and PSRAM stay at 80 MHz; 120 MHz needs esp-hal's MSPI timing tuning
+for this chip. The staged boot is type-checked on the host; it is
+not yet validated on the stand.

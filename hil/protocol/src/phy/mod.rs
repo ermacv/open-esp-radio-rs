@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 mod artifact;
 pub use artifact::*;
+mod calibration_projection;
+pub use calibration_projection::*;
 mod fault;
 pub use fault::*;
 mod register_image;
@@ -31,6 +33,8 @@ crate::messages! {
     topic RegisterImageWords = "phy/register-image/words";
     endpoint ReadAnalogImage = "phy/analog-image/read" => crate::phy::AnalogImageBytes;
     topic AnalogImageBytes = "phy/analog-image/bytes";
+    endpoint ReadCalibrationProjection = "phy/calibration-projection/read" => crate::phy::CalibrationProjectionWords;
+    topic CalibrationProjectionWords = "phy/calibration-projection/words";
     endpoint UploadStartupArtifact = "phy/startup-artifact/upload" => crate::base::Accepted;
     topic StartupArtifactReady = "phy/startup-artifact/ready";
     topic StartupArtifactPart = "phy/startup-artifact/part";
@@ -67,6 +71,15 @@ pub struct ReadAnalogImage(pub crate::phy::PhyRegisterImageRequest);
 /// Correlated response to its request.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct AnalogImageBytes(pub crate::phy::PhyAnalogImageBytes);
+
+/// Read a window of the projection of the calibration the image published
+/// as its startup artifact.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct ReadCalibrationProjection(pub crate::phy::PhyCalibrationProjectionRequest);
+
+/// Correlated response to its request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct CalibrationProjectionWords(pub crate::phy::PhyCalibrationProjectionWords);
 
 /// `phy/startup-artifact/upload`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]

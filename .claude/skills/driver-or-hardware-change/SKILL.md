@@ -43,8 +43,8 @@ cargo test -p <package>
 cargo registers validate --manifest registers/esp32s31/publication/registers.toml
 cargo registers generate --manifest registers/esp32s31/publication/registers.toml
 cargo xtask check architecture
-cargo xtask check firmware --class performance --type-check
-cargo xtask check provenance --chip esp32s31   # after SOURCE citations change
+cargo hil images check --class performance --type-check
+cargo verification check provenance --chip esp32s31   # after SOURCE citations change
 cargo xtask check changed
 ```
 

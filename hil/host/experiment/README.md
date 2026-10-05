@@ -10,7 +10,7 @@
 | `bisect` | The first commit at which a scenario stops passing, a step's runner chosen by the revision's HIL wire; a step is judged by its scenario's outcome, a build failure making it broken |
 
 Revisions are checked out with `oer_process::git::Worktree`, the one
-worktree helper, which `cargo xtask compare images` shares. Nothing here runs
+worktree helper, which `cargo hil images compare` shares. Nothing here runs
 `cargo hil`: a revision's own runner is built with `oer-hil-observer` and
 launched directly.
 

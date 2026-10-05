@@ -3,7 +3,7 @@
 Each image's static table of its peripheral interrupt sources: for every
 source its handler, its level and its core, declared once per image with
 `interrupt_table!` (a chip's platform wraps it with its types, such as
-`oer_esp32s31_platform_runtime::interrupt_table!`).
+`oer_espressif_staged_runtime::interrupt_table!`).
 
 The table says where a source may be routed; the source's owner decides when.
 For each entry the macro defines:

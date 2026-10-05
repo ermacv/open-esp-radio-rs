@@ -1,13 +1,20 @@
 use std::path::Path;
 
-use oer_hil_image_class::ImageClass;
-use oer_hil_run_bundle::run::{
-    Measurement, MeasurementUnit, Outcome, ScenarioResult,
-    test_support::{repetition, write_run},
-};
+use oer_hil_run_bundle::run::test_support::repetition;
+use oer_hil_run_bundle::run::test_support::write_run;
+use oer_hil_run_bundle_format::run::Measurement;
+use oer_hil_run_bundle_format::run::MeasurementUnit;
+use oer_hil_run_bundle_format::run::Outcome;
+use oer_hil_run_bundle_format::run::ScenarioResult;
+use oer_hil_schema::image::ImageClass;
 
 use super::*;
 use crate::samples::tests::rate;
+
+/// The summary of a run whose metrics are compatible.
+fn summary(run: &Run) -> RunSummary {
+    super::summary(run).unwrap()
+}
 
 /// A completed run `id` below `store` of one `udp-tx` scenario whose
 /// repetitions measured `values`, at `commit`.
@@ -126,7 +133,7 @@ fn the_layout_seed_comes_from_each_flashed_image() {
     let store = tempfile::tempdir().unwrap();
     let directory = store.path().join("1-s");
     write_run(&directory, 1, RunState::Completed, Vec::new(), |manifest| {
-        let mut firmware: oer_hil_run_bundle::run::FirmwareArtifact =
+        let mut firmware: oer_hil_run_bundle_format::run::FirmwareArtifact =
             serde_json::from_value(serde_json::json!({
                 "image": "performance",
                 "application_path": "firmware/performance/application.bin",

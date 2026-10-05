@@ -1,15 +1,20 @@
 use super::*;
 
+fn git(root: &Path, args: &[&str]) -> oer_process::Result<Vec<u8>> {
+    oer_process::git::output(root, args)
+}
+
 pub fn test_snapshot(inputs: &Path) -> (tempfile::TempDir, Snapshot) {
     let root = repository();
     fs::write(root.path().join(".gitignore"), "snapshots/\n").unwrap();
     for relative in [
         "Cargo.lock",
-        "hil/targets/esp32s31/Cargo.lock",
-        "hil/targets/esp32s31/Cargo.toml",
-        "hil/targets/esp32s31/stack.toml",
-        "platform/esp32s31/stack.toml",
-        "platform/esp32s31/partitions/applications.csv",
+        "hil/targets/chip-a/Cargo.lock",
+        "hil/targets/chip-a/Cargo.toml",
+        "hil/targets/chip-a/stack.toml",
+        "platform/chip-a/stack.toml",
+        "platform/chip-a/partitions/applications.csv",
+        "platform/chip-a/chip.toml",
     ] {
         let target = root.path().join(relative);
         fs::create_dir_all(target.parent().unwrap()).unwrap();
@@ -48,8 +53,8 @@ fn untracked_evidence_shards_neither_block_nor_enter_a_snapshot() {
     let root = repository();
     let output = tempfile::tempdir().unwrap();
     let target = output.path().join("snapshots");
-    fs::create_dir_all(root.path().join("hil/evidence/esp32s31")).unwrap();
-    fs::write(root.path().join("hil/evidence/esp32s31/station.json"), "{}").unwrap();
+    fs::create_dir_all(root.path().join("hil/evidence/chip-a")).unwrap();
+    fs::write(root.path().join("hil/evidence/chip-a/station.json"), "{}").unwrap();
     fs::write(root.path().join("new.rs"), "pub fn new() {}\n").unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
     let error = capture_roots(&roots, &[], &[], &target)
@@ -245,8 +250,14 @@ fn a_build_workspace_is_stable_exclusive_and_replaced_on_reuse() {
     let unchanged = workspace.join("repository/.gitignore");
     let unchanged_time = fs::metadata(&unchanged).unwrap().modified().unwrap();
     // A second build waits for the lock; the holder releases it on drop.
-    let lock = fs::File::open(workspace.with_extension("lock")).unwrap();
-    assert!(fs2::FileExt::try_lock_exclusive(&lock).is_err());
+    assert!(
+        oer_process::lock::FileLock::try_acquire(
+            &workspace.with_extension("lock"),
+            oer_process::lock::Mode::Exclusive
+        )
+        .unwrap()
+        .is_none()
+    );
     drop(opened);
     let reopened = FrozenSources::open_in_workspace(&second.directory, &workspace).unwrap();
     assert_eq!(reopened.repository(), workspace.join("repository"));

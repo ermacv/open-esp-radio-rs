@@ -10,11 +10,6 @@ members = [
     "crates/riscv",
     "crates/verification",
     "cli",
-    "../../verification/esp32c5/scenarios",
-    "../../verification/esp32s31/scenarios",
-    "../../verification/harness/cli",
-    "../../verification/harness/report",
-    "../../verification/harness/scenarios",
 ]
 resolver = "3"
 

@@ -22,7 +22,7 @@ fn generated_frames_are_accepted_by_the_production_probe_parser() {
         let frame = super::super::frame::encode(&config, bssid, r);
         assert_eq!(
             oer_ieee80211_mac::ap::parse_ap_management_request(
-                &oer_esp32s31_ieee80211_ap::profile::ADVERTISEMENT,
+                &ap_role::profile::ADVERTISEMENT,
                 &frame[9..],
                 bssid
             ),

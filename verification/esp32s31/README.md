@@ -8,7 +8,7 @@ upstream repository, revision, path and SHA-256 of each. Fetch the pinned
 artifacts into `target/vendor/<source>/<revision>/` with
 
 ```console
-cargo xtask vendor-fetch esp32s31
+cargo verification fetch esp32s31
 ```
 
 which verifies every file and reports missing local builds. Every scenario
@@ -36,7 +36,7 @@ those shards as stale. See
 [vendor verification](../../docs/verification-and-qualification.md#vendor-verification-path).
 
 ```console
-cargo xtask vendor-scenario --chip esp32s31 all \
+cargo verification scenario --chip esp32s31 all \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --bluetooth-production target/verification/esp32s31-bluetooth-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-bluetooth-elf \
   --linker /usr/bin/ld.lld --output target/blobray-research/all \
@@ -55,8 +55,8 @@ executes the [transport scenarios](scenarios/src/phy/i2c_transport.rs) below wit
 packed-command responses; neither model claims physical timing or RF behavior.
 
 ```console
-cargo xtask build vendor-probes --chip esp32s31
-cargo xtask vendor-scenario --chip esp32s31 i2c \
+cargo verification probes --chip esp32s31
+cargo verification scenario --chip esp32s31 i2c \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --linker /usr/bin/ld.lld --output target/blobray-phy-i2c
 ```
@@ -65,7 +65,7 @@ Besides the command-memory, transport and call-boundary comparisons, the SDK
 bootloader firmware (`--sdk`) enables the calibration leaves and the
 PBus/DCODE prefix, and the PHY SDK firmware (`--phy-sdk`) adds RFPLL. Both
 default to their pins in [`artifacts.toml`](artifacts.toml), which are local
-builds: `cargo xtask vendor-fetch esp32s31` reports them when missing.
+builds: `cargo verification fetch esp32s31` reports them when missing.
 
 The scenario owns construction and independent expected-value assertions;
 Blobray operations own capture and linking, and Blobray's in-process
@@ -247,17 +247,17 @@ observations do not establish hardware/RF or grant qualification.
 The `gain` scenario of the [typed scenario package](scenarios/src/phy/gain.rs)
 executes captured archive callbacks and ROM children against the compiled
 production arithmetic and publishers. Build and validate the probe catalog
-with `cargo xtask build vendor-probes --chip esp32s31`. Then run from the
+with `cargo verification probes --chip esp32s31`. Then run from the
 repository root; `xtask` builds the scenarios:
 
 ```console
-cargo xtask vendor-scenario --chip esp32s31 gain \
+cargo verification scenario --chip esp32s31 gain \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --linker /usr/bin/ld.lld \
   --output target/blobray-research/gain
 ```
 
-Requests and evidence are Blobray's own serde types. `cargo test --manifest-path tools/blobray/Cargo.toml -p oer-esp32s31-vendor-scenarios`
+Requests and evidence are Blobray's own serde types. `cargo test --manifest-path verification/Cargo.toml -p oer-esp32s31-vendor-scenarios`
 checks the harness, the evidence interpretation and the oracles. Those tests
 need no private inputs.
 
@@ -402,7 +402,7 @@ static entries are entered at their linked addresses, where their claims
 name them too.
 
 ```console
-cargo xtask vendor-scenario --chip esp32s31 coex \
+cargo verification scenario --chip esp32s31 coex \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --linker /usr/bin/ld.lld --output target/blobray-research/coex
 ```
@@ -530,10 +530,10 @@ the ROM and the reference firmware images present in the checkout, each
 authenticated against its pinned SHA-256) without running a scenario:
 
 ```console
-cargo xtask vendor-scenario --chip esp32s31 xref 0x2010d830 [END]
-cargo xtask vendor-scenario --chip esp32s31 show pm_on_isr_twt_wake
-cargo xtask vendor-scenario --chip esp32s31 fields 0x34 0
-cargo xtask vendor-scenario --chip esp32s31 prints 0x20101000 0x20101500
+cargo verification scenario --chip esp32s31 xref 0x2010d830 [END]
+cargo verification scenario --chip esp32s31 show pm_on_isr_twt_wake
+cargo verification scenario --chip esp32s31 fields 0x34 0
+cargo verification scenario --chip esp32s31 prints 0x20101000 0x20101500
 ```
 
 `xref` lists every load and store whose address a forward pass over the
@@ -566,7 +566,7 @@ Necessary recovered hardware tables belong in production source with provenance
 and consuming-code verification, as defined by the
 [source policy](../../docs/source-policy.md).
 
-Build the Rust probe images with `cargo xtask build vendor-probes --chip esp32s31`;
+Build the Rust probe images with `cargo verification probes --chip esp32s31`;
 `--list-roles` lists them without building. The scenarios consume the
 `rust-artifact` production probe ELF. Normal builds use Cargo's parallelism; set
 `OPEN_RADIO_ANALYSIS_BUILD_JOBS` only to impose an explicit local resource limit.
@@ -597,11 +597,13 @@ record them as a scenario source.
 
 Domain modules keep their crate-root paths (`crate::gain`, `crate::ble`) as
 re-exports. The library's `run.rs` holds the scenario command line and the
-dispatch that decides verdicts and writes shards. The binary is every chip's
-one report package, [`vendor-scenarios`](../harness/cli) (`vendor-scenarios
-esp32s31 <command>`): it adds the reviewer commands of the
-[report crate](../harness/README.md) and passes its reviewer to `run`, so
-neither changes a shard's sources.
+dispatch that decides verdicts and writes shards. The library is the verdict
+package and never depends on a report package. The binary is the entry
+package `oer-esp32s31-vendor-scenarios-cli` ([`scenarios/cli`](scenarios/cli)),
+which depends on the library and on every chip's one report package,
+[`vendor-scenarios`](../harness/cli) (`vendor-scenarios esp32s31 <command>`):
+it adds the reviewer commands of the [report crate](../harness/README.md) and
+passes its reviewer to `run`, so neither changes a shard's sources.
 
 ## Coverage decisions
 
@@ -622,14 +624,14 @@ Each decision has a `reason` and one or more places: a vendor `function`,
 optionally with offsets `start` up to `end` or `diagnostic = true`. A shard
 records the SHA-256 of the decisions with a place in one of its closure
 functions, so editing, adding or removing a decision stales only the shards
-whose closures it names; `cargo xtask evidence --check --changed-since` reruns
+whose closures it names; `cargo verification evidence --check --changed-since` reruns
 only those shards.
 
 A shard lists what its own scenario leaves untriaged, so a vendor function
 several scenarios reach can appear in one shard while another scenario
-covers the location. `cargo xtask evidence --chip esp32s31 --untriaged`
+covers the location. `cargo verification evidence --chip esp32s31 --untriaged`
 prints the chip-wide set: the locations no scenario whose closures contain
-their function covers or reviews. `cargo xtask evidence` prints its
+their function covers or reviews. `cargo verification evidence` prints its
 per-function counts after regenerating shards. An untriaged location has neither a case that
 covers it nor a reviewed decision. A whole-function decision whose function
 only produces diagnostic output sets `diagnostic = true` on its place.
@@ -688,8 +690,8 @@ index. A passing run reports, per mutant, whether any comparison executed
 it: a mutant that survives unexecuted says nothing about the comparisons.
 
 ```console
-cargo xtask vendor-scenario --chip esp32s31 all ... --patch 1001c6bc:a30aed00:13000000
-cargo xtask vendor-scenario --chip esp32s31 bluetooth ... \
+cargo verification scenario --chip esp32s31 all ... --patch 1001c6bc:a30aed00:13000000
+cargo verification scenario --chip esp32s31 bluetooth ... \
     --bluetooth-patch open_bluetooth_trace_deselect_low_power_clock:ret
 ```
 
@@ -781,5 +783,5 @@ negative PHY comparisons.
 Run preparation-only regressions without private inputs:
 
 ```console
-cargo test --manifest-path tools/blobray/Cargo.toml -p oer-esp32s31-vendor-scenarios
+cargo test --manifest-path verification/Cargo.toml -p oer-esp32s31-vendor-scenarios
 ```

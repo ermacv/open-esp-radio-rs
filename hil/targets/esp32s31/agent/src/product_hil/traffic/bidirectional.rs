@@ -36,6 +36,10 @@ pub(in crate::product_hil) struct OpenRadioBidirectionalResult {
 }
 
 impl OpenRadioBidirectionalResult {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one argument per recorded evidence field of the result"
+    )]
     pub(in crate::product_hil) const fn new(
         session_id: u64,
         direction: OpenRadioBidirectionalDirection,

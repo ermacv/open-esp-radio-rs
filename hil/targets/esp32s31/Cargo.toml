@@ -33,9 +33,9 @@ embassy-time = "0.5.1"
 embassy-time-driver = { version = "0.2", features = ["tick-hz-1_000_000"] }
 embassy-time-queue-utils = "0.3"
 embedded-io-async = "0.7.0"
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "8930609f2af67e2e296a4d8f900ea3636a0acc6b", default-features = false }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "8930609f2af67e2e296a4d8f900ea3636a0acc6b", default-features = false }
-esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "8930609f2af67e2e296a4d8f900ea3636a0acc6b" }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921", default-features = false }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921", default-features = false }
+esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921" }
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_info"] }
 heapless = "0.9.3"
 oer = { package = "open-esp-radio", path = "../../../crates/oer", default-features = false, features = ["wifi"] }
@@ -54,7 +54,8 @@ openthread = { git = "https://github.com/ermacv/openthread", rev = "5173f96654a2
 tinyrlibc = { version = "0.5", default-features = false, features = ["utoa", "strtoul"] }
 oer-esp32s31-radio-runtime = { path = "../../../crates/runtime/esp32s31/radio" }
 oer-ieee802154 = { path = "../../../crates/protocols/ieee802154" }
-oer-esp32s31-executor-embassy = { path = "../../../crates/adapters/embassy/esp32s31/executor", features = ["esp32s31"] }
+oer-espressif-executor-embassy = { path = "../../../crates/adapters/embassy/espressif/executor", features = ["esp32s31"] }
+oer-espressif-interrupt-table-esp-hal = { path = "../../../crates/adapters/esp-hal/espressif/interrupt-table", features = ["esp32s31"] }
 oer-esp32s31-ieee80211-system = { path = "../../../crates/composition/esp32s31/embassy/ieee80211", default-features = false }
 oer-esp32s31-radio-system = { path = "../../../crates/composition/esp32s31/embassy/radio" }
 oer-esp32s31-pac = { path = "../../../crates/hardware/esp32s31/pac", features = ["validation-probes"] }

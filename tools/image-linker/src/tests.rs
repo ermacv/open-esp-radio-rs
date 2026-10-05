@@ -116,7 +116,7 @@ fn an_initializer_in_a_zeroed_region_fails_with_its_file_and_symbols() {
     let directory = temporary.path();
     let object = directory.join("bad.o");
     fs::write(&object, object_with_initialized_zeroed_sections()).unwrap();
-    let violations = check_inputs(&[OsString::from(&object)]).unwrap();
+    let violations = check_inputs(&[OsString::from(&object)], &zeroed()).unwrap();
     assert_eq!(violations.len(), 2, "{violations:?}");
     assert_eq!(violations[0].section, ".psram.bss.data_in_zeroed");
     assert_eq!(violations[0].nonzero_bytes, 4);
@@ -134,7 +134,10 @@ fn zero_initializers_and_sections_outside_zeroed_regions_pass() {
     let directory = temporary.path();
     let object = directory.join("good.o");
     fs::write(&object, object_without_initialized_zeroed_sections()).unwrap();
-    assert_eq!(check_inputs(&[OsString::from(&object)]).unwrap(), []);
+    assert_eq!(
+        check_inputs(&[OsString::from(&object)], &zeroed()).unwrap(),
+        []
+    );
 }
 
 #[test]
@@ -155,7 +158,7 @@ fn archive_members_found_on_the_library_path_are_checked() {
         OsString::from("-o"),
         OsString::from(directory.join("image.elf")),
     ];
-    let violations = check_inputs(&arguments).unwrap();
+    let violations = check_inputs(&arguments, &zeroed()).unwrap();
     // Both of the bad member's sections, none of the good member's.
     assert_eq!(violations.len(), 2, "{violations:?}");
     assert!(
@@ -203,11 +206,27 @@ fn an_initialized_bss_section_fails_the_link_before_the_real_linker_runs() {
     fs::write(&object, object_with_initialized_bss()).unwrap();
     let output = directory.join("image.elf");
     // `rust-lld` would write the output; a refused link never reaches it.
-    let status = crate::run(vec![
-        OsString::from(&object),
-        OsString::from("-o"),
-        OsString::from(&output),
-    ]);
+    let status = crate::run(
+        vec![
+            OsString::from(&object),
+            OsString::from("-o"),
+            OsString::from(&output),
+        ],
+        &zeroed(),
+    );
     assert_eq!(status, 1);
     assert!(!output.exists());
+}
+
+fn zeroed() -> Vec<String> {
+    [
+        ".psram.bss",
+        ".psram.bss.*",
+        ".bss",
+        ".bss.*",
+        ".dma.bss",
+        ".dma.bss.*",
+    ]
+    .map(String::from)
+    .to_vec()
 }

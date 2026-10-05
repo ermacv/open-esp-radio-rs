@@ -1,6 +1,6 @@
-//! Direct Test Mode between the ESP32-S31 and the ESP32-C5 reference peer.
+//! Direct Test Mode between the board under test and the reference peer.
 //!
-//! The ESP32-S31 runs LE Receiver/Transmitter Test v2 over the image's raw
+//! The board under test runs LE Receiver/Transmitter Test v2 over the image's raw
 //! HCI exchange; the peer runs the vendor Controller's tests through its line
 //! protocol. Each leg starts the receiver first, lets the transmitter run for
 //! one window and ends the transmitter before the receiver. Two silence
@@ -27,7 +27,7 @@ const PAYLOAD_BYTES: u8 = 37;
 const PRBS9: u8 = 0;
 const WINDOW: Duration = Duration::from_millis(500);
 
-/// A PHY of the ESP32-S31 receiver and the peer's matching transmission.
+/// A PHY of the board's receiver and the peer's matching transmission.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum ReceiveLeg {
@@ -61,7 +61,7 @@ impl ReceiveLeg {
     }
 }
 
-/// A PHY of the ESP32-S31 transmitter and the peer's receiver.
+/// A PHY of the board's transmitter and the peer's receiver.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum TransmitLeg {
@@ -150,11 +150,11 @@ fn exercise<L: PeerLink>(
     peer: &mut DtmPeer<L>,
     report: &mut Report,
 ) -> Result<()> {
-    // The ESP32-S31 receiver while the peer stays idle.
+    // The board's receiver while the peer stays idle.
     esp_receive(capture, 1)?;
     thread::sleep(WINDOW);
     report.esp_silence = Some(esp_end(capture)?);
-    // The peer's receiver while the ESP32-S31 stays idle.
+    // The peer's receiver while the board stays idle.
     peer.receive(DtmVersion::V2, CHANNEL, DtmRxPhy::Le1M)?;
     thread::sleep(WINDOW);
     report.peer_silence = Some(peer.end()?);
@@ -208,14 +208,14 @@ fn esp_end(capture: &SerialCapture) -> Result<u16> {
 fn validate(report: &Report, minimum: u16) -> Result<()> {
     if report.esp_silence != Some(0) {
         return Err(format!(
-            "the ESP32-S31 receiver counted {:?} packets while the peer was idle",
+            "the board's receiver counted {:?} packets while the peer was idle",
             report.esp_silence
         )
         .into());
     }
     if report.peer_silence != Some(0) {
         return Err(format!(
-            "the peer receiver counted {:?} packets while the ESP32-S31 was idle",
+            "the peer receiver counted {:?} packets while the board was idle",
             report.peer_silence
         )
         .into());
@@ -228,7 +228,7 @@ fn validate(report: &Report, minimum: u16) -> Result<()> {
     for leg in &report.esp_receives {
         if leg.esp_received < minimum {
             return Err(format!(
-                "the ESP32-S31 received {} of the peer's {} {:?} packets, below {minimum}",
+                "the board received {} of the peer's {} {:?} packets, below {minimum}",
                 leg.esp_received, leg.peer_sent, leg.phy
             )
             .into());
@@ -237,7 +237,7 @@ fn validate(report: &Report, minimum: u16) -> Result<()> {
     for leg in &report.esp_transmits {
         if leg.peer_received < u32::from(minimum) {
             return Err(format!(
-                "the peer received {} {:?} packets from the ESP32-S31, below {minimum}",
+                "the peer received {} {:?} packets from the board, below {minimum}",
                 leg.peer_received, leg.phy
             )
             .into());

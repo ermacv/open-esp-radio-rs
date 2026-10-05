@@ -50,9 +50,9 @@ Every vendor function a `SOURCE:` block, ROM function summary
 register or field description names is registered with the
 relocation-normalized code fingerprint of the revision its facts were reviewed
 against (`verification/<chip>/facts/provenance.toml`). A pin update
-that changes or removes such a function fails `cargo xtask check provenance --chip <chip>`;
-`cargo xtask vendor-diff --chip <chip>` shows what changed, and after the facts follow the
-pinned code, `cargo xtask vendor-provenance --chip <chip> --accept` records its fingerprint.
+that changes or removes such a function fails `cargo verification check provenance --chip <chip>`;
+`cargo verification diff --chip <chip>` shows what changed, and after the facts follow the
+pinned code, `cargo verification provenance --chip <chip> --accept` records its fingerprint.
 
 A `SOURCE` block names the chips whose pinned artifacts its facts describe in
 parentheses directly after the marker, before any bracketed evidence tag:

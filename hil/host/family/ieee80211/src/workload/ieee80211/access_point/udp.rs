@@ -1,5 +1,6 @@
 //! Single-client UDP workload execution and delivery assessment.
 
+use oer_hil_run_bundle_format::run::fixtures::Burst;
 use std::{
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
     time::Duration,
@@ -15,9 +16,7 @@ use crate::workload::ieee80211::access_point::{
     Config, ConnectedClients, UDP_HOST_PORT, UDP_RX_PORT, UDP_TX_SOURCE_PORT, protocol_direction,
     report::TrafficReport, session_report, validate_rate_criteria,
 };
-use crate::{
-    Result, workload::traffic::tx_traffic::Burst, workload::traffic::tx_traffic::Receiver,
-};
+use crate::{Result, workload::traffic::tx_traffic::Receiver};
 use oer_hil_family_ieee80211_evidence as evidence;
 use oer_hil_family_ieee80211_fixture::host_network::{BenchmarkIpv4Route, RouteMedium};
 use oer_hil_link::SerialCapture;

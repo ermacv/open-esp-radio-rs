@@ -11,17 +11,28 @@ use crate::{
     config::{LabConfig, OpenWrtConfig, StationFixtureConfig},
 };
 use oer_hil_protocol::wifi::WifiChannelWidth;
-use oer_hil_run_bundle::lab::{
-    AccessPointDefinition, ChannelWidth, FixtureObservation, HostInterfaceObservation,
-    HostIpv4Route, HostObservation, HostWirelessLink, LAB_PROVENANCE_SCHEMA, LabDefinition,
-    LabProvenance, ObservationScope, OpenWrtInterface, OpenWrtObservation, Phy,
-    SensitiveValueDisposition, StationFixtureDefinition, StationIpv4Definition,
-};
+use oer_hil_run_bundle_format::lab::AccessPointDefinition;
+use oer_hil_run_bundle_format::lab::ChannelWidth;
+use oer_hil_run_bundle_format::lab::FixtureObservation;
+use oer_hil_run_bundle_format::lab::HostInterfaceObservation;
+use oer_hil_run_bundle_format::lab::HostIpv4Route;
+use oer_hil_run_bundle_format::lab::HostObservation;
+use oer_hil_run_bundle_format::lab::HostWirelessLink;
+use oer_hil_run_bundle_format::lab::LAB_PROVENANCE_SCHEMA;
+use oer_hil_run_bundle_format::lab::LabDefinition;
+use oer_hil_run_bundle_format::lab::LabProvenance;
+use oer_hil_run_bundle_format::lab::ObservationScope;
+use oer_hil_run_bundle_format::lab::OpenWrtInterface;
+use oer_hil_run_bundle_format::lab::OpenWrtObservation;
+use oer_hil_run_bundle_format::lab::Phy;
+use oer_hil_run_bundle_format::lab::SensitiveValueDisposition;
+use oer_hil_run_bundle_format::lab::StationFixtureDefinition;
+use oer_hil_run_bundle_format::lab::StationIpv4Definition;
 
 /// Observe the cell of `lab` before a run that needs `required`.
 pub fn capture(
     lab: &LabConfig,
-    required: oer_hil_scenario::requirements::Requirements,
+    required: oer_hil_scenario_catalog::requirements::Requirements,
 ) -> Result<LabProvenance> {
     {
         let definition = definition(lab);
@@ -237,7 +248,7 @@ fn capture_host_wireless_link(interface: &str) -> Result<HostWirelessLink> {
 }
 
 fn capture_openwrt_before(config: &OpenWrtConfig) -> Result<FixtureObservation> {
-    let output = oer_hil_stand_host::ssh::command(
+    let output = oer_stand_ssh::command(
         &config.ssh_target,
         &format!(
             "if test -d /sys/class/net/{interface}; then iw dev {interface} info; else exit 42; fi",
@@ -293,8 +304,7 @@ fn capture_openwrt(config: &OpenWrtConfig) -> Result<OpenWrtObservation> {
         wireless = config.wireless_interface,
         ingress = config.ingress_interface,
     );
-    let output =
-        oer_hil_stand_host::ssh::command(&config.ssh_target, &script).supervised_output()?;
+    let output = oer_stand_ssh::command(&config.ssh_target, &script).supervised_output()?;
     if !output.status.success() {
         return Err(format!(
             "cannot capture secret-free OpenWrt lab provenance: {}",
@@ -425,8 +435,8 @@ fn os_release() -> Option<String> {
 mod tests;
 
 /// The run bundle's spelling of the PHYs a fixture offers.
-fn recorded_phys(phys: &[oer_hil_scenario::link::PhyExpectation]) -> Vec<Phy> {
-    use oer_hil_scenario::link::PhyExpectation;
+fn recorded_phys(phys: &[oer_hil_scenario_catalog::link::PhyExpectation]) -> Vec<Phy> {
+    use oer_hil_scenario_catalog::link::PhyExpectation;
     phys.iter()
         .map(|phy| match phy {
             PhyExpectation::Legacy => Phy::Legacy,

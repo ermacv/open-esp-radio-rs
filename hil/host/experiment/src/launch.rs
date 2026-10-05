@@ -15,7 +15,8 @@ use std::{
     time::Duration,
 };
 
-use oer_hil_run_bundle::{RunId, receipt::Receipt};
+use oer_hil_run_bundle::RunId;
+use oer_hil_run_bundle::receipt::Receipt;
 
 use crate::Result;
 
@@ -98,8 +99,10 @@ impl<'a> Launch<'a> {
         let mut command = Command::new(&self.runner.executable);
         command.current_dir(self.checkout).args(&self.arguments);
         match &self.runner.receipt {
-            Some(observer) => command.env(oer_hil_observer::receipt::ENV, observer),
-            None => command.env_remove(oer_hil_observer::receipt::ENV),
+            Some(observer) => {
+                command.env(oer_hil_run_bundle_format::observer::receipt::ENV, observer)
+            }
+            None => command.env_remove(oer_hil_run_bundle_format::observer::receipt::ENV),
         };
         for (name, value) in &self.environment {
             command.env(name, value);

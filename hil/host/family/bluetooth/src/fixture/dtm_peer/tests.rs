@@ -37,7 +37,7 @@ impl PeerLink for Scripted {
 }
 
 fn peer(replies: Vec<Vec<&'static str>>) -> DtmPeer<Scripted> {
-    let mut script = vec![vec!["boot noise", "@READY protocol=1 target=esp32c5"]];
+    let mut script = vec![vec!["boot noise", "@READY protocol=1 target=chip-b"]];
     script.extend(replies);
     DtmPeer::synchronize(Scripted::new(script)).unwrap()
 }
@@ -79,7 +79,7 @@ fn arguments_outside_the_protocol_are_refused_before_sending() {
 
 #[test]
 fn a_peer_of_another_protocol_is_refused() {
-    let link = Scripted::new(vec![vec!["@READY protocol=2 target=esp32c5"]]);
+    let link = Scripted::new(vec![vec!["@READY protocol=2 target=chip-b"]]);
     assert!(DtmPeer::synchronize(link).is_err());
 }
 

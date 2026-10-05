@@ -1,6 +1,11 @@
 #![no_main]
 #![no_std]
 
+//! The ESP32-S31 bootstrap: the staged boot's chip-neutral steps
+//! (`oer-espressif-staged-bootstrap`) around this board's PSRAM and its
+//! 120-MHz Flash tuning, which needs the stage-two copy made first and a
+//! cold XIP span.
+
 esp_bootloader_esp_idf::esp_app_desc!(
     "0.1.0",
     "oer-esp32s31-platform-bootstrap",
@@ -13,18 +18,16 @@ esp_bootloader_esp_idf::esp_app_desc!(
     0
 );
 
-use core::{arch::asm, ffi::CStr, mem::size_of, ptr};
+use core::mem::size_of;
 
 use oer_esp32s31_platform_board as board;
-use oer_esp32s31_platform_layout::{
-    self as layout,
-    stage_two::{Header as RuntimeHeader, PayloadCrc},
-};
-use oer_esp32s31_soc_esp_hal::{FLASH_XIP_END, FLASH_XIP_START, FlashMmu};
+use oer_esp32s31_platform_layout::LAYOUT;
+use oer_esp32s31_soc_esp_hal::FlashMmu;
+use oer_espressif_staged_bootstrap::{self as staged, fail, print};
 use static_cell::ConstStaticCell;
 
-const RUNTIME_PSRAM_ADDRESS: usize = layout::memory::RUNTIME_PSRAM.origin as usize;
-const FLASH_TUNING_REFERENCE_WORDS: usize = 64 * 1024 / size_of::<u32>();
+const FLASH_TUNING_REFERENCE_WORDS: usize =
+    LAYOUT.flash_tuning_reference_bytes as usize / size_of::<u32>();
 
 // This is the load image, not its runtime placement. The bootstrap copies and
 // verifies it at the bootloader's qualified 80 MHz setting before changing
@@ -51,22 +54,9 @@ static FLASH_TUNING_REFERENCE: [u32; FLASH_TUNING_REFERENCE_WORDS] = flash_tunin
 static FLASH_TUNING_SCRATCH: ConstStaticCell<[u32; esp_hal::flash::FLASH_TUNING_SCRATCH_WORDS]> =
     ConstStaticCell::new([0; esp_hal::flash::FLASH_TUNING_SCRATCH_WORDS]);
 
-unsafe extern "C" {
-    fn ets_install_usb_printf();
-    fn ets_printf(format: *const core::ffi::c_char, ...);
-    static __stack_chk_guard: u32;
-}
-
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
-    print(c"OER_BOOT bootstrap=PANIC\r\n");
-    halt()
-}
-
 #[esp_hal::main]
 fn main() -> ! {
-    unsafe { ets_install_usb_printf() };
-    print(c"OER_BOOT bootstrap=START\r\n");
+    staged::start();
 
     let peripherals = esp_hal::init(esp_hal::Config::default());
     print(c"OER_BOOT bootstrap=INIT\r\n");
@@ -79,51 +69,18 @@ fn main() -> ! {
 
     let psram = board::initialize_psram(peripherals.PSRAM);
     let (psram_base, psram_size) = psram.raw_parts();
-    if psram_base as usize != board::PSRAM_BASE_ADDRESS
-        || !board::has_expected_psram_capacity(&psram)
-    {
-        fail(c"OER_BOOT bootstrap=FAIL reason=psram-init\r\n");
-    }
-    verify_psram_probe(psram_base);
-    print(c"OER_BOOT bootstrap=PSRAM\r\n");
-
-    let source = RUNTIME_PAYLOAD.as_ptr();
-    let source_address = source as usize;
-    let source_end = source_address
-        .checked_add(RUNTIME_PAYLOAD.len())
-        .unwrap_or_else(|| fail(c"OER_BOOT bootstrap=FAIL reason=source-overflow\r\n"));
-    if !(FLASH_XIP_START..FLASH_XIP_END).contains(&source_address) || source_end > FLASH_XIP_END {
-        fail(c"OER_BOOT bootstrap=FAIL reason=source-not-xip\r\n");
-    }
-
-    let layout = validate_header(read_header(source), psram_base as usize, psram_size);
-    if layout.payload_len != RUNTIME_PAYLOAD.len() {
-        fail(c"OER_BOOT bootstrap=FAIL reason=payload-length\r\n");
-    }
-    let source_crc = payload_crc32(source, layout.payload_len);
-    if source_crc != layout.expected_crc32 {
-        print_crc_failure(c"source-crc-80mhz", layout.expected_crc32, source_crc);
-    }
-    print(c"OER_BOOT bootstrap=SOURCE_CRC\r\n");
-
-    unsafe { ptr::copy_nonoverlapping(source, layout.load_address as *mut u8, layout.payload_len) };
-    unsafe {
-        ptr::write_bytes(
-            layout.bss_start as *mut u8,
-            0,
-            layout.bss_end - layout.bss_start,
-        )
-    };
-    if payload_crc32(layout.load_address as *const u8, layout.payload_len) != layout.expected_crc32
-    {
-        fail(c"OER_BOOT bootstrap=FAIL reason=destination-crc\r\n");
-    }
-    print(c"OER_BOOT bootstrap=DESTINATION_CRC\r\n");
+    // SAFETY: `initialize_psram` mapped and initialized the board's PSRAM
+    // at `psram_base..psram_base + psram_size` (word aligned) for reads and
+    // writes; `psram` stays alive and mapped until `hand_off` and the boot
+    // uses that region nowhere else, so `stage` owns it exclusively.
+    let staged = unsafe { staged::stage(&LAYOUT, &RUNTIME_PAYLOAD, psram_base, psram_size) };
 
     let tuning_address = FLASH_TUNING_REFERENCE.as_ptr() as usize;
     let tuning_physical_start = flash_mmu
         .physical_address(tuning_address)
         .unwrap_or_else(|| fail(c"OER_BOOT bootstrap=FAIL reason=tuning-physical\r\n"));
+    // SAFETY: the reference span is this bootstrap's own cold Flash rodata,
+    // read by nothing else; stage two was copied from a disjoint range first.
     if unsafe {
         flash.tune_120mhz(
             esp_hal::flash::FlashXipRegion {
@@ -143,88 +100,7 @@ fn main() -> ! {
     // a distinct page, and rejected timings can leave corrupted cache lines
     // behind until a future S31 cache-invalidate primitive is available. The
     // region is disposable; stage two was copied from a disjoint range first.
-    if unsafe { esp_hal::psram::prepare_code(layout.load_address as *const u8, layout.payload_len) }
-        .is_err()
-    {
-        fail(c"OER_BOOT bootstrap=FAIL reason=psram-code\r\n");
-    }
-
-    print(c"OER_BOOT bootstrap=PASS handoff=stage2\r\n");
-    unsafe { release_bootstrap_stack_watchpoint() };
-    unsafe { jump_to_runtime(layout.entry) }
-}
-
-#[derive(Clone, Copy)]
-struct ValidatedLayout {
-    load_address: usize,
-    entry: usize,
-    payload_len: usize,
-    bss_start: usize,
-    bss_end: usize,
-    expected_crc32: u32,
-}
-
-fn read_header(source: *const u8) -> RuntimeHeader {
-    if RUNTIME_PAYLOAD.len() < size_of::<RuntimeHeader>() {
-        fail(c"OER_BOOT bootstrap=FAIL reason=short-header\r\n");
-    }
-    unsafe { source.cast::<RuntimeHeader>().read_unaligned() }
-}
-
-fn validate_header(header: RuntimeHeader, psram_base: usize, psram_size: usize) -> ValidatedLayout {
-    let load_address = header.load_address as usize;
-    let entry = header.entry as usize;
-    let payload_end = header.payload_end as usize;
-    let bss_start = header.bss_start as usize;
-    let bss_end = header.bss_end as usize;
-    let text_start = header.text_start as usize;
-    let text_end = header.text_end as usize;
-    let psram_end = psram_base
-        .checked_add(psram_size)
-        .unwrap_or_else(|| fail(c"OER_BOOT bootstrap=FAIL reason=psram-range\r\n"));
-    if !header.is_compatible()
-        || load_address != RUNTIME_PSRAM_ADDRESS
-        || payload_end <= load_address
-        || text_start < load_address + size_of::<RuntimeHeader>()
-        || text_end <= text_start
-        || text_end > payload_end
-        || entry < text_start
-        || entry >= text_end
-        || !entry.is_multiple_of(2)
-        || bss_start < payload_end
-        || bss_end < bss_start
-        || payload_end > psram_end
-        || bss_end > psram_end
-    {
-        fail(c"OER_BOOT bootstrap=FAIL reason=header\r\n");
-    }
-
-    ValidatedLayout {
-        load_address,
-        entry,
-        payload_len: payload_end - load_address,
-        bss_start,
-        bss_end,
-        expected_crc32: header.payload_crc32,
-    }
-}
-
-fn verify_psram_probe(base: *mut u8) {
-    let probe = unsafe { base.add(0x100).cast::<u32>() };
-    for (index, expected) in [0x31a5_c33c, 0xc35a_3cc3].into_iter().enumerate() {
-        unsafe { probe.add(index).write_volatile(expected) };
-        if unsafe { probe.add(index).read_volatile() } != expected {
-            fail(c"OER_BOOT bootstrap=FAIL reason=psram-probe\r\n");
-        }
-    }
-}
-
-fn payload_crc32(address: *const u8, len: usize) -> u32 {
-    let mut crc = PayloadCrc::new();
-    for index in 0..len {
-        crc.push(unsafe { address.add(index).read_volatile() });
-    }
-    crc.finish()
+    staged::hand_off(staged)
 }
 
 const fn flash_tuning_reference() -> [u32; FLASH_TUNING_REFERENCE_WORDS] {
@@ -237,67 +113,4 @@ const fn flash_tuning_reference() -> [u32; FLASH_TUNING_REFERENCE_WORDS] {
         index += 1;
     }
     words
-}
-
-unsafe fn release_bootstrap_stack_watchpoint() {
-    let expected_tdata2 = core::ptr::addr_of!(__stack_chk_guard) as usize | 1;
-    let observed_tdata2: usize;
-    unsafe {
-        asm!(
-            "csrw 0x7a0, zero",
-            "csrr {observed}, 0x7a2",
-            observed = out(reg) observed_tdata2,
-            options(nostack),
-        )
-    };
-    if observed_tdata2 == expected_tdata2 {
-        unsafe {
-            asm!(
-                "csrw 0x7a1, zero",
-                "csrw 0x7a2, zero",
-                "fence rw, rw",
-                options(nostack),
-            )
-        };
-    }
-}
-
-unsafe fn jump_to_runtime(entry: usize) -> ! {
-    unsafe {
-        asm!(
-            "csrci mstatus, 8",
-            "fence rw, rw",
-            "fence.i",
-            "jalr zero, 0({entry})",
-            entry = in(reg) entry,
-            options(noreturn),
-        )
-    }
-}
-
-fn print(message: &'static CStr) {
-    unsafe { ets_printf(message.as_ptr()) };
-}
-
-fn print_crc_failure(reason: &'static CStr, expected: u32, observed: u32) -> ! {
-    unsafe {
-        ets_printf(
-            c"OER_BOOT bootstrap=FAIL reason=%s expected=%08x observed=%08x\r\n".as_ptr(),
-            reason.as_ptr(),
-            expected,
-            observed,
-        )
-    };
-    halt()
-}
-
-fn fail(message: &'static CStr) -> ! {
-    print(message);
-    halt()
-}
-
-fn halt() -> ! {
-    loop {
-        unsafe { asm!("wfi", options(nomem, nostack)) };
-    }
 }

@@ -35,17 +35,17 @@ fn only_comment_blocks_opened_by_the_marker_are_cited() {
          // rcUpdateRate after the block\n",
     )
     .unwrap();
-    let chip_dir = directory.path().join("esp32s31");
+    let chip_dir = directory.path().join("chip-a");
     std::fs::create_dir(&chip_dir).unwrap();
     std::fs::rename(directory.path().join("a.rs"), chip_dir.join("a.rs")).unwrap();
-    let words = scan(directory.path(), "esp32s31").0;
+    let words = scan(directory.path(), "chip-a").0;
     assert!(words.contains("hal_mac_tx_set_ppdu"));
     assert!(!words.contains("rcGetRate"));
     assert!(!words.contains("rcUpdateRate"));
 }
 
 fn supported() -> Vec<String> {
-    vec!["esp32c5".into(), "esp32s31".into()]
+    vec!["chip-b".into(), "chip-a".into()]
 }
 
 /// Another chip's facts cite its own pins, so they are not this chip's
@@ -54,8 +54,8 @@ fn supported() -> Vec<String> {
 fn another_chips_directory_is_not_scanned() {
     let directory = tempfile::tempdir().unwrap();
     for (chip, symbol) in [
-        ("esp32s31", "bt_bb_v2_init_cmplx"),
-        ("esp32c5", "ieee802154_txon_delay_set"),
+        ("chip-a", "bt_bb_v2_init_cmplx"),
+        ("chip-b", "ieee802154_txon_delay_set"),
     ] {
         let crate_dir = directory.path().join("hardware").join(chip);
         std::fs::create_dir_all(&crate_dir).unwrap();
@@ -65,7 +65,7 @@ fn another_chips_directory_is_not_scanned() {
         )
         .unwrap();
     }
-    let (words, problems) = scan(directory.path(), "esp32s31");
+    let (words, problems) = scan(directory.path(), "chip-a");
     assert!(words.contains("bt_bb_v2_init_cmplx"));
     assert!(!words.contains("ieee802154_txon_delay_set"));
     assert!(problems.is_empty(), "{problems:?}");
@@ -99,18 +99,18 @@ fn neutral_blocks_cite_the_chips_they_name() {
     let directory = tempfile::tempdir().unwrap();
     std::fs::write(
         directory.path().join("a.rs"),
-        "// SOURCE(esp32s31): `bt_bb_v2_init_cmplx`\nfn x() {}\n\
-         // SOURCE(esp32s31,esp32c5)[TAG]: `phy_get_data_sat`\nfn y() {}\n\
+        "// SOURCE(chip-a): `bt_bb_v2_init_cmplx`\nfn x() {}\n\
+         // SOURCE(chip-a,chip-b)[TAG]: `phy_get_data_sat`\nfn y() {}\n\
          // SOURCE: `phy_i2c_init1`\nfn z() {}\n",
     )
     .unwrap();
-    let (s31, s31_problems) = scan(directory.path(), "esp32s31");
-    let (c5, c5_problems) = scan(directory.path(), "esp32c5");
-    assert!(s31.contains("bt_bb_v2_init_cmplx") && s31.contains("phy_get_data_sat"));
-    assert!(!c5.contains("bt_bb_v2_init_cmplx") && c5.contains("phy_get_data_sat"));
-    assert!(!s31.contains("phy_i2c_init1") && !c5.contains("phy_i2c_init1"));
+    let (dut, s31_problems) = scan(directory.path(), "chip-a");
+    let (peer, c5_problems) = scan(directory.path(), "chip-b");
+    assert!(dut.contains("bt_bb_v2_init_cmplx") && dut.contains("phy_get_data_sat"));
+    assert!(!peer.contains("bt_bb_v2_init_cmplx") && peer.contains("phy_get_data_sat"));
+    assert!(!dut.contains("phy_i2c_init1") && !peer.contains("phy_i2c_init1"));
     assert!(
-        !s31.contains("esp32c5"),
+        !dut.contains("chip-b"),
         "chip names are not function candidates"
     );
     for problems in [s31_problems, c5_problems] {
@@ -146,7 +146,7 @@ fn an_untagged_neutral_block_fails_only_the_chips_it_cites() {
     let mut found = Found::default();
     production_words(
         &Scan {
-            chip: "esp32c5",
+            chip: "chip-b",
             supported: &supported,
             citable: &supported,
         },
@@ -156,12 +156,12 @@ fn an_untagged_neutral_block_fails_only_the_chips_it_cites() {
     )
     .unwrap();
     assert_eq!(found.uncharted.len(), 2);
-    let c5: BTreeSet<&str> = ["phy_i2c_init1"].into();
-    let s31: BTreeSet<&str> = ["bt_bb_v2_init_cmplx"].into();
-    let c5_problems = uncharted_citations(&found.uncharted, &c5);
+    let peer: BTreeSet<&str> = ["phy_i2c_init1"].into();
+    let dut: BTreeSet<&str> = ["bt_bb_v2_init_cmplx"].into();
+    let c5_problems = uncharted_citations(&found.uncharted, &peer);
     assert_eq!(c5_problems.len(), 1, "{c5_problems:?}");
     assert!(c5_problems[0].starts_with("a.rs:1") && c5_problems[0].contains("phy_i2c_init1"));
-    assert!(uncharted_citations(&found.uncharted, &s31).is_empty());
+    assert!(uncharted_citations(&found.uncharted, &dut).is_empty());
 }
 
 #[test]

@@ -11,7 +11,9 @@ use std::{net::Ipv4Addr, path::Path, time::Duration};
 use crate::Result;
 use crate::link::WifiCapture as _;
 use oer_hil_link::SerialCapture;
-use oer_hil_run_bundle::run::{Comparison, Measurement, MeasurementUnit};
+use oer_hil_run_bundle_format::run::Comparison;
+use oer_hil_run_bundle_format::run::Measurement;
+use oer_hil_run_bundle_format::run::MeasurementUnit;
 
 const DEFAULT_COUNT: u16 = 100;
 const DEFAULT_INTERVAL: Duration = Duration::from_millis(20);

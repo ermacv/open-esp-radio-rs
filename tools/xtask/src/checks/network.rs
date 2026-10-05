@@ -61,8 +61,14 @@ fn pinned_git(p: &Package) -> bool {
     };
     revision == commit && commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
-fn physical(p: &Package, root: &Path) -> bool {
-    p.name.starts_with("oer-esp32s31")
+/// Whether `name` is a package of one of `chips` (`oer-<chip>-…`).
+fn of_chip(name: &str, chips: &[String]) -> bool {
+    chips
+        .iter()
+        .any(|chip| name.starts_with(&format!("oer-{chip}-")))
+}
+fn physical(p: &Package, root: &Path, chips: &[String]) -> bool {
+    of_chip(p.name.as_str(), chips)
         || p.manifest_path
             .as_std_path()
             .starts_with(root.join("crates/hardware"))
@@ -76,7 +82,15 @@ fn stack(name: &str) -> bool {
     name.starts_with("embassy-") || name.starts_with("oer-embassy") || xarxa_api(name)
 }
 
-pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Path) -> Result<()> {
+/// Audit `manifest`'s graph against `boundary`; `chips` are the chip ids
+/// whose packages are physical radio owners.
+pub fn audit(
+    graph: &Graph,
+    manifest: &Path,
+    boundary: Boundary,
+    repository: &Path,
+    chips: &[String],
+) -> Result<()> {
     let root = graph.root(manifest)?;
     for dependency in &graph.package(&root).dependencies {
         if dependency.kind == DependencyKind::Development {
@@ -93,7 +107,7 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             // handoff contract, whose detached DMA slots it adopts for
             // zero-copy RX, but never a chip or hardware owner.
             Boundary::Owned => {
-                name.starts_with("oer-esp32s31")
+                of_chip(name, chips)
                     || (name == DRIVER && released)
                     || dependency.path.as_ref().is_some_and(|path| {
                         path.as_std_path()
@@ -161,7 +175,7 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             )?;
             // Reachability also covers a chip owner behind `oer-memory`.
             reject(
-                &|p| physical(p, repository),
+                &|p| physical(p, repository, chips),
                 "owned adapter acquired physical radio ownership",
             )?;
         }
@@ -171,7 +185,7 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
                 "portable contract acquired an executor or network stack",
             )?;
             reject(
-                &|p| physical(p, repository),
+                &|p| physical(p, repository, chips),
                 "radio-native datapath acquired a chip dependency",
             )?;
         }
@@ -227,78 +241,88 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
 
 pub struct Profile {
     pub boundary: Boundary,
-    pub manifest: &'static str,
-    pub features: &'static [&'static str],
+    pub manifest: std::path::PathBuf,
+    pub features: Vec<String>,
 }
-pub fn profiles() -> [Profile; 8] {
+
+impl Boundary {
+    /// The boundary a chip profile names.
+    fn parse(name: &str) -> Result<Self> {
+        use Boundary::*;
+        [Neutral, Owned, Datapath, RadioCore, OwnedProduct]
+            .into_iter()
+            .find(|boundary| boundary.name() == name)
+            .ok_or_else(|| format!("unknown network boundary `{name}`").into())
+    }
+}
+
+/// The portable boundary profiles and every chip's (`[gate] network` of its
+/// profile).
+pub fn profiles(chips: &oer_repo::chips::Chips) -> Result<Vec<Profile>> {
     use Boundary::*;
-    let product = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
-    [
-        Profile {
-            boundary: OwnedProduct,
-            manifest: "examples/esp32s31/access-point/Cargo.toml",
-            features: &["--no-default-features", "--features", "owned-network"],
-        },
-        Profile {
-            boundary: OwnedProduct,
-            manifest: "hil/targets/esp32s31/agent/Cargo.toml",
-            features: &[
-                "--no-default-features",
-                "--features",
-                "open-radio-hil,owned-network",
-            ],
-        },
+    let mut profiles = vec![
         Profile {
             boundary: Neutral,
-            manifest: "crates/network/interface/Cargo.toml",
-            features: &[],
+            manifest: "crates/network/interface/Cargo.toml".into(),
+            features: Vec::new(),
         },
         Profile {
             boundary: Owned,
-            manifest: "crates/adapters/embassy-net/owned/Cargo.toml",
-            features: &[],
+            manifest: "crates/adapters/embassy-net/owned/Cargo.toml".into(),
+            features: Vec::new(),
         },
         Profile {
             boundary: Datapath,
-            manifest: "crates/protocols/ieee80211/datapath/Cargo.toml",
-            features: &[],
+            manifest: "crates/protocols/ieee80211/datapath/Cargo.toml".into(),
+            features: Vec::new(),
         },
-        Profile {
-            boundary: RadioCore,
-            manifest: "crates/runtime/esp32s31/ieee80211/Cargo.toml",
-            features: &["--no-default-features"],
-        },
-        Profile {
-            boundary: OwnedProduct,
-            manifest: product,
-            features: &[],
-        },
-        Profile {
-            boundary: OwnedProduct,
-            manifest: "examples/esp32s31/station/Cargo.toml",
-            features: &["--no-default-features", "--features", "owned-network"],
-        },
-    ]
+    ];
+    for chip in chips.profiles() {
+        for profile in &chip.gate.network {
+            profiles.push(Profile {
+                boundary: Boundary::parse(&profile.boundary)?,
+                manifest: profile.manifest.clone(),
+                features: profile.features.clone(),
+            });
+        }
+    }
+    Ok(profiles)
 }
 
 pub fn run(context: &Checkout) -> Result<()> {
-    let chip_target = oer_chip_profile::rust_target(&context.root, oer_image::staged::CHIP)?;
-    for profile in profiles() {
-        let manifest = context.root.join(profile.manifest);
-        let flags = profile
-            .features
-            .iter()
-            .map(|v| (*v).to_owned())
-            .collect::<Vec<_>>();
-        let target = profile.boundary.product().then_some(chip_target.as_str());
+    let chips = oer_repo::chips::Chips::at(&context.root)?;
+    let ids: Vec<String> = chips.ids().map(str::to_owned).collect();
+    for profile in profiles(&chips)? {
+        let manifest = context.root.join(&profile.manifest);
+        // A product resolves for the chip whose directory holds it.
+        let chip = chips.profiles().iter().find(|chip| {
+            profile
+                .manifest
+                .components()
+                .any(|part| part.as_os_str() == chip.id.as_str())
+        });
+        let chip_target = chip.map(|chip| chip.rust_target.as_str());
+        let target = if profile.boundary.product() {
+            Some(chip_target.ok_or_else(|| {
+                format!(
+                    "product {} lies in no chip's directory",
+                    profile.manifest.display()
+                )
+            })?)
+        } else {
+            None
+        };
+        let flags = profile.features.clone();
         let graph = if profile.manifest.starts_with("hil/") {
             cargo::metadata(context, &manifest, &flags, target, true)?
         } else if profile.manifest.starts_with("examples/") {
             // Binary examples cannot become a scratch consumer's dependency;
-            // they resolve in the examples workspace. Its feature unification
-            // can only add to the example's graph, never hide a forbidden
-            // dependency, and the audit walks from the example's own package.
-            let examples = context.root.join("examples/esp32s31/Cargo.toml");
+            // they resolve in their chip's examples workspace. Its feature
+            // unification can only add to the example's graph, never hide a
+            // forbidden dependency, and the audit walks from the example's
+            // own package.
+            let chip = chip.ok_or("an example lies in its chip's directory")?;
+            let examples = chip.directory(&context.root, "examples").join("Cargo.toml");
             if cargo::workspace_manifest(context, &manifest)? != examples.canonicalize()? {
                 return Err(format!(
                     "example must belong to the examples workspace: {}",
@@ -310,11 +334,11 @@ pub fn run(context: &Checkout) -> Result<()> {
         } else {
             cargo::isolated_graph(context, &manifest, &flags, target)?
         };
-        audit(&graph, &manifest, profile.boundary, &context.root)?;
+        audit(&graph, &manifest, profile.boundary, &context.root, &ids)?;
         println!(
             "network boundary passed: {} ({}, {:?})",
             profile.boundary.name(),
-            profile.manifest,
+            profile.manifest.display(),
             profile.features
         );
     }

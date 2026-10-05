@@ -12,11 +12,11 @@
 //! to it, and a new checkout or worktree finds everything another one fetched.
 //! A checkout's former `target/vendor` directory is merged into the store.
 //!
-//! `cargo xtask vendor-fetch` and the vendor checks read the pins here, and
+//! `cargo verification fetch` and the vendor checks read the pins here, and
 //! so does the HIL stand's pinned ESP-IDF build (`oer-hil-cli`).
 //! [`project::Project`] names the fixed files of a chip's verification
 //! project (its shards, provenance registry and scenarios).
-use serde::Deserialize;
+use oer_vendor_pins::{Artifact, CACHE, Manifest, Source, SourceKind, cache_directory};
 use std::path::{Path, PathBuf};
 
 pub mod project;
@@ -24,12 +24,6 @@ use std::process::Command;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// Directory of every chip's verification project, relative to the root.
-const VERIFICATION: &str = "verification";
-
-/// Cache of fetched artifacts, relative to the repository root; a link to
-/// the host-wide store.
-pub const CACHE: &str = "target/vendor";
 /// Overrides the host-wide store of fetched artifacts.
 pub const STORE_ENV: &str = "OER_VENDOR_CACHE";
 
@@ -82,138 +76,8 @@ fn merge_into(from: &Path, into: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The pin of `chip`'s vendor artifacts, relative to the repository root,
-/// whether or not the chip has one.
-pub fn manifest(chip: &str) -> String {
-    format!("{VERIFICATION}/{chip}/artifacts.toml")
-}
-
-/// Tracked manifest of `chip`, relative to the repository root: an error
-/// that lists the supported chips for an unsupported one, or names the
-/// missing manifest of a chip without a vendor verification project.
-pub fn manifest_path(root: &Path, chip: &str) -> Result<String> {
-    let profile = oer_chip_profile::Profile::load(root, chip)?;
-    let manifest = manifest(&profile.id);
-    if !root.join(&manifest).is_file() {
-        return Err(format!("chip {chip} has no vendor verification project ({manifest})").into());
-    }
-    Ok(manifest)
-}
-
-/// The kind of a pinned source.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum SourceKind {
-    /// A file at `path` of a git revision.
-    Git,
-    /// A member `path` of a release asset tarball.
-    Release,
-    /// A local build output at `path` below the repository root.
-    Local,
-}
-
-/// One pinned source of `artifacts.toml`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Source {
-    pub id: String,
-    pub kind: SourceKind,
-    pub repository: Option<String>,
-    pub revision: Option<String>,
-    pub asset: Option<String>,
-    pub sha256: Option<String>,
-}
-
-/// One pinned artifact of `artifacts.toml`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Artifact {
-    pub id: String,
-    /// The id of its source.
-    pub source: String,
-    /// Its path in the source: in the git tree, the release tarball or,
-    /// for a local build, below the repository root.
-    pub path: String,
-    pub sha256: String,
-}
-
-/// A chip's `artifacts.toml`: the one reader of the pins.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Manifest {
-    pub schema: u32,
-    pub source: Vec<Source>,
-    pub artifact: Vec<Artifact>,
-}
-
-impl Manifest {
-    /// Parses a manifest and checks that every artifact names a declared
-    /// source.
-    pub fn parse(text: &str) -> Result<Self> {
-        let manifest: Self = toml::from_str(text)?;
-        if manifest.schema != 1 {
-            return Err(format!("unsupported artifact schema {}", manifest.schema).into());
-        }
-        for artifact in &manifest.artifact {
-            if !manifest.source.iter().any(|s| s.id == artifact.source) {
-                return Err(format!("{}: unknown source {}", artifact.id, artifact.source).into());
-            }
-        }
-        Ok(manifest)
-    }
-
-    /// The tracked manifest of `chip` in the repository at `root`.
-    pub fn load(root: &Path, chip: &str) -> Result<Self> {
-        let manifest = manifest_path(root, chip)?;
-        Self::parse(&std::fs::read_to_string(root.join(&manifest))?)
-            .map_err(|error| format!("{manifest}: {error}").into())
-    }
-
-    /// The artifact `id`.
-    pub fn artifact(&self, id: &str) -> Result<&Artifact> {
-        self.artifact
-            .iter()
-            .find(|artifact| artifact.id == id)
-            .ok_or_else(|| format!("artifacts.toml pins no `{id}` artifact").into())
-    }
-
-    /// The source `id`.
-    pub fn source(&self, id: &str) -> Result<&Source> {
-        self.source
-            .iter()
-            .find(|source| source.id == id)
-            .ok_or_else(|| format!("artifacts.toml pins no `{id}` source").into())
-    }
-
-    /// Where the fetched `source` lies for the checkout at `root`:
-    /// `<root>/target/vendor/<source>/<revision>`.
-    pub fn source_directory(&self, root: &Path, source: &Source) -> Result<PathBuf> {
-        cache_directory(&root.join(CACHE), source)
-    }
-
-    /// The source `artifact` names; [`Manifest::parse`] checked it exists.
-    pub fn source_of(&self, artifact: &Artifact) -> &Source {
-        self.source
-            .iter()
-            .find(|source| source.id == artifact.source)
-            .expect("parsed manifests name declared sources")
-    }
-
-    /// Where `artifact` lies for the checkout at `root`: its build output
-    /// for a local source, else `<root>/target/vendor/<source>/<revision>/<path>`.
-    pub fn location(&self, root: &Path, artifact: &Artifact) -> Result<PathBuf> {
-        let source = self.source_of(artifact);
-        Ok(match source.kind {
-            SourceKind::Local => root.join(&artifact.path),
-            SourceKind::Git | SourceKind::Release => {
-                self.source_directory(root, source)?.join(&artifact.path)
-            }
-        })
-    }
-}
-
 /// The verified file of the fetched artifact `id` of `chip` in the
-/// host-wide [`store`]: an error naming `cargo xtask vendor-fetch` when it is
+/// host-wide [`store`]: an error naming `cargo verification fetch` when it is
 /// missing, and naming the pin when it differs.
 pub fn fetched(root: &Path, chip: &str, id: &str) -> Result<PathBuf> {
     let manifest = Manifest::load(root, chip)?;
@@ -225,7 +89,7 @@ pub fn fetched(root: &Path, chip: &str, id: &str) -> Result<PathBuf> {
     let path = cache_directory(&store()?, source)?.join(&artifact.path);
     if !path.is_file() {
         return Err(format!(
-            "the pinned `{id}` artifact {} is missing: run `cargo xtask vendor-fetch {chip} --artifact {id}`",
+            "the pinned `{id}` artifact {} is missing: run `cargo verification fetch {chip} --artifact {id}`",
             path.display()
         )
         .into());
@@ -295,16 +159,6 @@ fn download(url: &str, destination: &Path) -> Result<()> {
     }
     std::fs::rename(&partial, destination)?;
     Ok(())
-}
-
-/// `<base>/<source>/<revision>`, where `base` is a store or a checkout's
-/// `target/vendor`.
-fn cache_directory(base: &Path, source: &Source) -> Result<PathBuf> {
-    let revision = source
-        .revision
-        .as_deref()
-        .ok_or_else(|| format!("{} lacks `revision`", source.id))?;
-    Ok(base.join(&source.id).join(revision))
 }
 
 fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
@@ -383,14 +237,14 @@ pub struct Pinned {
 }
 
 /// Every pinned artifact of `chip` at its verified path; fails when one is
-/// missing or differs, naming `cargo xtask vendor-fetch` for fetched ones.
+/// missing or differs, naming `cargo verification fetch` for fetched ones.
 /// Local builds are skipped when absent: they are not vendor sources.
 pub fn pinned(root: &Path, chip: &str) -> Result<Vec<Pinned>> {
     let resolved = resolve(root, chip)?;
     match resolved.unfetched.first() {
         None => Ok(resolved.pinned),
         Some(id) => Err(format!(
-            "{id} is not fetched as pinned; run `cargo xtask vendor-fetch {chip}`"
+            "{id} is not fetched as pinned; run `cargo verification fetch {chip}`"
         )
         .into()),
     }
@@ -420,6 +274,19 @@ pub fn fetch_vendor_sources(root: &Path, chip: &str) -> Result<()> {
         )
         .into())
     }
+}
+
+/// The pinned fetched artifact `id` of `chip`, downloaded into the store
+/// first when it is missing or differs from its pin.
+pub fn ensure(root: &Path, chip: &str, id: &str) -> Result<PathBuf> {
+    link_store(root, &store()?)?;
+    let manifest = Manifest::load(root, chip)?;
+    let artifact = manifest.artifact(id)?;
+    let source = manifest.source_of(artifact);
+    if source.kind == SourceKind::Local {
+        return Err(format!("`{id}` is a local build, not a fetched artifact").into());
+    }
+    fetch(root, source, artifact)
 }
 
 /// The fetched vendor artifacts of `chip` that are missing or differ from
@@ -459,44 +326,6 @@ fn resolve_manifest(root: &Path, manifest: &Manifest) -> Result<Resolved> {
         });
     }
     Ok(resolved)
-}
-
-/// A pinned git source of `chip` with its artifacts' paths and SHA-256.
-#[derive(Debug)]
-pub struct GitPin {
-    pub id: String,
-    pub repository: String,
-    pub revision: String,
-    /// `(path, sha256)` of each artifact, relative to the checkout.
-    pub artifacts: Vec<(String, String)>,
-}
-
-/// Every pinned git source of `chip`.
-pub fn git_pins(root: &Path, chip: &str) -> Result<Vec<GitPin>> {
-    let Manifest {
-        source, artifact, ..
-    } = Manifest::load(root, chip)?;
-    let artifacts = artifact;
-    source
-        .into_iter()
-        .filter(|s| s.kind == SourceKind::Git)
-        .map(|source| {
-            Ok(GitPin {
-                artifacts: artifacts
-                    .iter()
-                    .filter(|a| a.source == source.id)
-                    .map(|a| (a.path.clone(), a.sha256.clone()))
-                    .collect(),
-                repository: source
-                    .repository
-                    .ok_or_else(|| format!("{} lacks `repository`", source.id))?,
-                revision: source
-                    .revision
-                    .ok_or_else(|| format!("{} lacks `revision`", source.id))?,
-                id: source.id,
-            })
-        })
-        .collect()
 }
 
 /// Fetch and verify every artifact of `chip`; report local builds that are
@@ -595,8 +424,10 @@ mod tests {
     #[test]
     fn tracked_manifests_parse_with_complete_sources() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for chip in ["esp32s31", "esp32c5"] {
-            let manifest = Manifest::load(&root, chip).unwrap();
+        for chip in oer_chip_profile::supported(&root).unwrap() {
+            let Ok(manifest) = Manifest::load(&root, &chip) else {
+                continue;
+            };
             assert!(manifest.artifact("libphy").is_ok(), "{chip}");
             for source in &manifest.source {
                 if source.kind != SourceKind::Local {
@@ -610,17 +441,26 @@ mod tests {
     #[test]
     fn the_rom_pin_resolves_into_the_vendor_store() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        match fetched(&root, "esp32s31", "rom") {
-            Ok(path) => assert!(path.ends_with("esp32s31_rev0_rom.elf")),
-            // A host without the vendor store names the fetch command.
-            Err(error) => assert!(
-                error
-                    .to_string()
-                    .contains("vendor-fetch esp32s31 --artifact rom"),
-                "{error}"
-            ),
+        // Every chip's ROM ELF as its profile's `[rom]` names it.
+        for profile in oer_chip_profile::Profile::all(&root).unwrap() {
+            let Some(rom) = profile.rom else {
+                continue;
+            };
+            let manifest = Manifest::load(&root, &profile.id).unwrap();
+            let pinned = &manifest.artifact(&rom.elf).unwrap().path;
+            match fetched(&root, &profile.id, &rom.elf) {
+                Ok(path) => assert!(path.ends_with(pinned)),
+                // A host without the vendor store names the fetch command.
+                Err(error) => assert!(
+                    error
+                        .to_string()
+                        .contains(&format!("{} --artifact {}", profile.id, rom.elf)),
+                    "{error}"
+                ),
+            }
         }
-        let error = fetched(&root, "esp32s31", "absent").unwrap_err();
+        let chip = oer_chip_profile::supported(&root).unwrap().remove(0);
+        let error = fetched(&root, &chip, "absent").unwrap_err();
         assert!(error.to_string().contains("pins no `absent` artifact"));
     }
 

@@ -77,7 +77,7 @@ fault.
   field with this constraint and the observation as its evidence.
 - Any other ESP-IDF image on an ESP32-C5 rev 1.0, such as a vendor comparison
   image without the workaround, is reset or flashed through JTAG
-  (`cargo hil flash --via jtag`, `cargo hil firmware flash --jtag`), not over
+  (the HIL flash operation's JTAG write), not over
   USB Serial/JTAG.
 
 **Limits.** Observed on one board of revision v1.0. Other revisions and

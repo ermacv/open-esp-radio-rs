@@ -1,5 +1,6 @@
-//! Link the binary with esp-hal's linker script, wherever Cargo runs from.
+//! Link the stage-two runtime with the shared staged-boot scripts and this
+//! board's layout.
 
 fn main() {
-    println!("cargo:rustc-link-arg-bins=-Tlinkall.x");
+    oer_esp32c5_platform_layout::build::configure_runtime("oer-esp32c5-hil-agent");
 }

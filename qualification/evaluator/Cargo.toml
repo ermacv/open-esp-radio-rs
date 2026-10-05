@@ -9,16 +9,13 @@ publish = false
 description = "Fail-closed qualification evaluator for the open radio driver"
 
 [dependencies]
-oer-chip-profile = { path = "../../tools/chip-profile" }
+oer-hil-run-bundle-format = { path = "../../hil/host/run-bundle/format" }
+oer-hil-scenario-catalog = { path = "../../hil/host/scenario/catalog" }
 oer-command-tree = { path = "../../tools/command-tree" }
-oer-hil-image-class = { path = "../../hil/host/image-class" }
 oer-hil-schema = { path = "../../hil/schema" }
-oer-hil-observer = { path = "../../hil/observer" }
-oer-hil-run-bundle = { path = "../../hil/host/run-bundle" }
-oer-hil-scenario = { path = "../../hil/host/scenario" }
+oer-markers = { path = "../../tools/markers" }
 oer-repo = { path = "../../tools/repo" }
-oer-tidy = { path = "../../tools/tidy" }
-oer-vendor-evidence = { path = "../../verification/evidence" }
+oer-vendor-evidence-shard = { path = "../../verification/evidence/shard" }
 serde = { version = "=1.0.229", features = ["derive", "rc"] }
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"
@@ -30,7 +27,7 @@ tar = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 oer-hil-run-bundle = { path = "../../hil/host/run-bundle", features = ["test-support"] }
-oer-hil-observer = { path = "../../hil/observer", features = ["producer"] }
+oer-hil-observer = { path = "../../hil/observer" }
 tempfile = "=3.27.0"
 
 [lints]

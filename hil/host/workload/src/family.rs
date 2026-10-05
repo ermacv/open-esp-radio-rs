@@ -11,7 +11,8 @@ use std::{fmt, marker::PhantomData, path::Path, sync::Arc};
 
 use oer_hil_lab::config::LabConfig;
 use oer_hil_protocol::DeviceImageKeys;
-use oer_hil_scenario::{AirUse, PeerImage, Plan, ScenarioFamily, requirements::Requirements};
+use oer_hil_scenario::{AirUse, PeerImage, Plan, ScenarioFamily};
+use oer_hil_scenario_catalog::requirements::Requirements;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{Result, context::Context, fixture::Fixtures};

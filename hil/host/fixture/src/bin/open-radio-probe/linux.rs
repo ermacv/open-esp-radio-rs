@@ -124,7 +124,12 @@ pub fn run() -> Result<()> {
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open("/run/open-radio-probe.lock")?;
-    fs2::FileExt::try_lock_exclusive(&lock)?;
+    let _lock = oer_process::lock::FileLock::try_lock(
+        lock,
+        std::path::Path::new("/run/open-radio-probe.lock"),
+        oer_process::lock::Mode::Exclusive,
+    )?
+    .ok_or("another probe holds /run/open-radio-probe.lock")?;
     let config: Config =
         serde_json::from_str(&control.line(Instant::now() + std::time::Duration::from_secs(10))?)?;
     config.validate()?;

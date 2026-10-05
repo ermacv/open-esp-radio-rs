@@ -1,5 +1,5 @@
 //! Build the runner and capture Cargo's compilation-unit record, which
-//! [`crate::artifacts::apply`] binds to the executable's build identity.
+//! [`oer_hil_run_bundle_format::observer::artifacts::apply`] binds to the executable's build identity.
 use serde_json::Value;
 use std::{
     path::{Path, PathBuf},
@@ -14,15 +14,19 @@ pub struct Compilation {
     _lock: std::fs::File,
 }
 
+/// Build the runner as a plain build of the root workspace does: into its
+/// `target/`, with the registry's profile and the caller's environment, so
+/// the observer reuses `target/debug` instead of compiling the runner's
+/// closure a second time. The receipt lock stays under `target/hil`.
 pub fn compile(root: &Path) -> Result<Compilation> {
-    let directory = root.join("target/hil/observer-build");
-    std::fs::create_dir_all(&directory)?;
+    let receipts = root.join("target/hil");
+    std::fs::create_dir_all(&receipts)?;
     let lock = std::fs::OpenOptions::new()
         .create(true)
         .truncate(false)
         .read(true)
         .write(true)
-        .open(directory.join("receipt.lock"))?;
+        .open(receipts.join("observer-receipt.lock"))?;
     loop {
         oer_process::check_cancelled()?;
         match lock.try_lock() {
@@ -43,7 +47,7 @@ pub fn compile(root: &Path) -> Result<Compilation> {
     let mut command = Command::new(oer_toolchain::cargo_program());
     command
         .current_dir(root)
-        .env("CARGO_TARGET_DIR", &directory)
+        .env("CARGO_TARGET_DIR", root.join("target"))
         .args([
             "build",
             "--profile",

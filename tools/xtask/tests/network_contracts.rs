@@ -18,6 +18,7 @@ fn audit(fixture: &Fixture, metadata: Value, boundary: Boundary) -> oer_xtask::R
         &fixture.manifest,
         boundary,
         fixture.root(),
+        &[],
     )
 }
 
@@ -162,6 +163,7 @@ worker = ["helper/executor"]
             &fixture.manifest,
             Boundary::Datapath,
             fixture.root(),
+            &[],
         );
         assert_eq!(result.is_ok(), accepted);
         if !accepted {

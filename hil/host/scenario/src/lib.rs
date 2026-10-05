@@ -11,176 +11,33 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{link::WifiLabUse, requirements::Requirements};
-use oer_hil_image_class::ImageClass;
+use oer_hil_scenario_catalog::link::WifiLabUse;
+use oer_hil_scenario_catalog::{
+    HEADER_FIELDS, Header, ProfileHarts, ProfileRequest, Role, requirements::Requirements,
+};
+use oer_hil_schema::image::ImageClass;
 
 pub mod campaign;
 pub mod catalog;
 pub mod identity;
-pub mod link;
-pub mod requirements;
 
 pub use catalog::Catalog;
 
+/// The protocol's arming command of a scenario's profile request.
+pub fn profile_control(request: ProfileRequest) -> oer_hil_protocol::telemetry::ProfileControl {
+    oer_hil_protocol::telemetry::ProfileControl::Arm {
+        harts: match request.harts {
+            ProfileHarts::Both => oer_hil_protocol::telemetry::ProfileHarts::Both,
+            ProfileHarts::Core0 => oer_hil_protocol::telemetry::ProfileHarts::Core0,
+            ProfileHarts::Core1 => oer_hil_protocol::telemetry::ProfileHarts::Core1,
+        },
+        period_us: request.period_us,
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-pub const SCENARIO_SCHEMA: u16 = 5;
-
-/// What a scenario is for. A scenario is a qualification scenario because a
-/// qualification program references it; the evaluator checks the declared
-/// role against the programs, so the role is derived, never chosen.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Role {
-    /// Referenced by a qualification program; it runs on a product image.
-    Qualification,
-    /// Referenced by no program: diagnostics, measurements and experiments.
-    Investigation,
-}
-
-/// Identity and role shared by every scenario family.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Header {
-    pub schema: u16,
-    pub id: String,
-    pub description: String,
-    pub role: Role,
-    #[serde(default = "one_repetition")]
-    pub repetitions: u8,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    /// Why the scenario cannot run on the current firmware. The runner
-    /// refuses to select it, before any image build, with this reason.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unsupported: Option<String>,
-    /// Sample the program counter of the image's harts during the
-    /// workload's measured window. It is part of the procedure: a profiled
-    /// scenario is a diagnostic, never a throughput or timing measurement.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile: Option<ProfileRequest>,
-}
-
-/// A scenario's request for a program-counter profile.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct ProfileRequest {
-    pub harts: ProfileHarts,
-    pub period_us: u32,
-}
-
-/// The harts a profile samples.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ProfileHarts {
-    Both,
-    Core0,
-    Core1,
-}
-
-impl ProfileRequest {
-    /// Periods the sampler supports: short enough to resolve a window,
-    /// long enough that sampling stays a small part of each hart's time.
-    pub const PERIOD_US: std::ops::RangeInclusive<u32> = 100..=100_000;
-
-    /// The protocol's arming command.
-    pub fn control(self) -> oer_hil_protocol::telemetry::ProfileControl {
-        oer_hil_protocol::telemetry::ProfileControl::Arm {
-            harts: match self.harts {
-                ProfileHarts::Both => oer_hil_protocol::telemetry::ProfileHarts::Both,
-                ProfileHarts::Core0 => oer_hil_protocol::telemetry::ProfileHarts::Core0,
-                ProfileHarts::Core1 => oer_hil_protocol::telemetry::ProfileHarts::Core1,
-            },
-            period_us: self.period_us,
-        }
-    }
-}
-
-const fn one_repetition() -> u8 {
-    1
-}
-
-const HEADER_FIELDS: [&str; 8] = [
-    "schema",
-    "id",
-    "description",
-    "role",
-    "repetitions",
-    "tags",
-    "unsupported",
-    "profile",
-];
-
-impl Header {
-    /// Read the family-independent identity of a recorded scenario snapshot.
-    ///
-    /// Recorded runs keep the schema they executed under; only the identity
-    /// fields shared by every schema are interpreted here.
-    pub fn from_snapshot(bytes: &[u8]) -> Result<Self> {
-        let serde_json::Value::Object(mut document) = serde_json::from_slice(bytes)? else {
-            return Err("scenario snapshot is not a table".into());
-        };
-        document.retain(|key, _| HEADER_FIELDS.contains(&key.as_str()));
-        let header: Self = serde_json::from_value(serde_json::Value::Object(document))?;
-        if !valid_id(&header.id) {
-            return Err(format!("invalid recorded scenario id `{}`", header.id).into());
-        }
-        Ok(header)
-    }
-
-    pub(crate) fn validate(&self) -> Result<()> {
-        if self.schema != SCENARIO_SCHEMA {
-            return Err(format!(
-                "scenario schema {} is unsupported (expected {SCENARIO_SCHEMA})",
-                self.schema
-            )
-            .into());
-        }
-        if !valid_id(&self.id) {
-            return Err(format!("invalid scenario id `{}`", self.id).into());
-        }
-        if self.description.trim().is_empty() {
-            return Err("scenario description is empty".into());
-        }
-        if self
-            .unsupported
-            .as_ref()
-            .is_some_and(|reason| reason.trim().is_empty())
-        {
-            return Err(format!("scenario `{}` gives an empty unsupported reason", self.id).into());
-        }
-        if let Some(profile) = self.profile {
-            let range = ProfileRequest::PERIOD_US;
-            bounded(
-                profile.period_us,
-                *range.start(),
-                *range.end(),
-                "profile.period-us",
-            )?;
-            // Sampling perturbs timing, so a profile never shapes a
-            // performance or qualification figure.
-            if self.role == Role::Qualification || self.tags.iter().any(|tag| tag == "performance")
-            {
-                return Err(format!(
-                    "scenario `{}` profiles a performance or qualification scenario; profile a \
-                     diagnostic copy of it instead",
-                    self.id
-                )
-                .into());
-            }
-        }
-        bounded(self.repetitions, 1, 20, "repetitions")
-    }
-}
-
-fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-}
 
 /// What family-independent execution, planning and evidence need to know.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -388,17 +245,6 @@ impl<F: ScenarioFamily> Serialize for Scenario<F> {
         document.extend(family);
         document.serialize(serializer)
     }
-}
-
-/// Reject a value outside `minimum..=maximum`, naming its field.
-pub fn bounded<T>(value: T, minimum: T, maximum: T, field: &str) -> Result<()>
-where
-    T: PartialOrd + std::fmt::Display,
-{
-    if value < minimum || value > maximum {
-        return Err(format!("{field}={value} is outside {minimum}..={maximum}").into());
-    }
-    Ok(())
 }
 
 // A minimal family for the tests of this crate and of the runner core.

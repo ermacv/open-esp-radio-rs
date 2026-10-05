@@ -4,7 +4,8 @@
 use std::path::Path;
 
 use oer_hil_lab::config::{LabConfig, StationFixtureConfig};
-use oer_hil_scenario::{Plan, requirements::Requirements};
+use oer_hil_scenario::Plan;
+use oer_hil_scenario_catalog::requirements::Requirements;
 use oer_hil_workload::{
     family::FixtureProvider,
     fixture::{Fixtures, cleanup},
@@ -60,7 +61,7 @@ impl FixtureProvider for WifiFixtures {
         if required.probe_load {
             if !Path::new("/usr/local/libexec/open-radio-probe").is_file() {
                 return Err(Error::new(
-                    "probe load requires cargo hil fixture install --provider linux-net",
+                    "probe load requires cargo stand fixture install --provider linux-net",
                 )
                 .into());
             }

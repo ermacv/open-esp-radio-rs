@@ -14,7 +14,7 @@ pinned in
 installed below `target/` apart from any user installation:
 
 ```console
-cargo hil firmware flash ieee802154-peer --board esp32c5
+cargo fw flash ieee802154-peer --device <MAC|PORT>
 ```
 
 This builds the image, flashes it under a lease of that board only and records
@@ -28,7 +28,7 @@ other consumers. Before a
 run's first IEEE 802.15.4 peer scenario, `cargo hil run` brings the board up
 to the current catalog build of the scenario's peer image within the run's
 lease, which holds and locks the peer board: the flash operation's catalog
-flash, as `cargo hil firmware flash IMAGE --if-changed` runs it, builds the
+flash builds the
 image (from the shared ESP-IDF cache, quickly once built) and flashes and
 journals it unless the board's newest recorded flash is that image with the
 same digest, so a fixed peer reaches the board without a manual flash. `doctor` and `fixture check` do not flash: they report
@@ -55,7 +55,7 @@ nor a JTAG reset nor `espflash` reaches it. Before every peer scenario
 the run's preflight sends `SYNC` under the run's lease, so such a console
 fails the scenario's precondition, pointing here, instead of breaking it
 midway. Firmware is not the cause, so reflashing does not help; power-cycling only the peer's own hub
-port does: `cargo hil board reset esp32c5 --via power`, for a board whose reset ladder has
+port does: `cargo stand board reset esp32c5 --via power`, for a board whose reset ladder has
 `power` on a switchable hub port of the stand file. A lease runs no `uhubctl` itself.
 `cargo hil peer send esp32c5 SYNC` answers `@OK SYNC` once it is back.
 

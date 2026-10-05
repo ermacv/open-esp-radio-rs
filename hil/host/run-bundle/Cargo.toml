@@ -13,17 +13,15 @@ description = "The HIL run bundle: format, writer and seal, the one typed reader
 test-support = []
 
 [dependencies]
+oer-hil-scenario-catalog = { path = "../scenario/catalog" }
 oer-toolchain = { path = "../../../tools/toolchain" }
-oer-chip-profile = { path = "../../../tools/chip-profile" }
 oer-durable = { path = "../../../tools/durable" }
-oer-hil-image-class = { path = "../image-class" }
 oer-hil-protocol = { path = "../../protocol", features = ["registry"] }
+oer-hil-run-bundle-format = { path = "format" }
 oer-hil-scenario = { path = "../scenario" }
 oer-hil-schema = { path = "../../schema" }
-oer-hil-observer = { path = "../../observer" }
 oer-hil-source-snapshot = { path = "../source-snapshot" }
 oer-process = { path = "../../../tools/process" }
-fs2 = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"

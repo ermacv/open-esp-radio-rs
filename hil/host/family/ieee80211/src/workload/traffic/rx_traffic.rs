@@ -28,7 +28,7 @@ use oer_hil_net_traffic::{
     SessionEvidence, paced_udp::Config as PacedUdpConfig, paced_udp::HostTransmission,
     paced_udp::send as send_paced_udp,
 };
-use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
+use oer_hil_scenario_catalog::link::{HtGuardIntervalExpectation, PhyExpectation};
 use serde::Serialize;
 
 const DEFAULT_PORT: u16 = 4_323;

@@ -47,10 +47,12 @@ pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Resu
     let required = requirements(scenarios);
     let mut checks = Checks::default();
     checks.run("firmware-workspace", || {
-        root.join("hil/targets/esp32s31/Cargo.toml")
+        let profile = oer_chip_profile::Profile::load(root, lab.chip())?;
+        let workspace = profile.hil_agent_workspace(root).join("Cargo.toml");
+        workspace
             .is_file()
             .then_some(())
-            .ok_or_else(|| "missing embedded HIL workspace".into())
+            .ok_or_else(|| format!("missing HIL agent workspace {}", workspace.display()).into())
     })?;
     checks.run("serial-device", || fs_device_exists(&lab.dut.serial))?;
     for tool in oer_toolchain::Tool::ALL {

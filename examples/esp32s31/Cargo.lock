@@ -947,7 +947,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 [[package]]
 name = "esp-config"
 version = "0.8.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -959,7 +959,7 @@ dependencies = [
 [[package]]
 name = "esp-hal"
 version = "1.2.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 dependencies = [
  "bitfield",
  "bytemuck",
@@ -1020,7 +1020,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-procmacros"
 version = "0.23.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 dependencies = [
  "document-features",
  "proc-macro-crate",
@@ -1033,12 +1033,12 @@ dependencies = [
 [[package]]
 name = "esp-metadata-generated"
 version = "0.6.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 
 [[package]]
 name = "esp-println"
 version = "0.18.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -1050,7 +1050,7 @@ dependencies = [
 [[package]]
 name = "esp-riscv-rt"
 version = "0.15.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 dependencies = [
  "document-features",
  "riscv",
@@ -1060,7 +1060,7 @@ dependencies = [
 [[package]]
 name = "esp-rom-sys"
 version = "0.1.5"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -1070,7 +1070,7 @@ dependencies = [
 [[package]]
 name = "esp-sync"
 version = "0.3.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 dependencies = [
  "document-features",
  "embassy-sync 0.6.2",
@@ -1677,9 +1677,10 @@ dependencies = [
  "embassy-time",
  "esp-hal",
  "esp-println",
- "oer-esp32s31-executor-embassy",
+ "oer-esp32s31-platform-board",
  "oer-esp32s31-platform-layout",
- "oer-esp32s31-platform-runtime",
+ "oer-espressif-executor-embassy",
+ "oer-espressif-staged-runtime",
  "open-esp-radio",
  "static_cell",
 ]
@@ -1691,9 +1692,10 @@ dependencies = [
  "embassy-executor",
  "esp-hal",
  "esp-println",
- "oer-esp32s31-executor-embassy",
+ "oer-esp32s31-platform-board",
  "oer-esp32s31-platform-layout",
- "oer-esp32s31-platform-runtime",
+ "oer-espressif-executor-embassy",
+ "oer-espressif-staged-runtime",
  "open-esp-radio",
  "static_cell",
 ]
@@ -1707,9 +1709,10 @@ dependencies = [
  "embassy-net",
  "esp-hal",
  "esp-println",
- "oer-esp32s31-executor-embassy",
+ "oer-esp32s31-platform-board",
  "oer-esp32s31-platform-layout",
- "oer-esp32s31-platform-runtime",
+ "oer-espressif-executor-embassy",
+ "oer-espressif-staged-runtime",
  "open-esp-radio",
  "static_cell",
 ]
@@ -1722,30 +1725,14 @@ dependencies = [
  "esp-hal",
  "esp-println",
  "log",
- "oer-esp32s31-executor-embassy",
+ "oer-esp32s31-platform-board",
  "oer-esp32s31-platform-layout",
- "oer-esp32s31-platform-runtime",
+ "oer-espressif-executor-embassy",
+ "oer-espressif-staged-runtime",
  "open-esp-radio",
  "openthread",
  "static_cell",
  "tinyrlibc",
-]
-
-[[package]]
-name = "oer-esp32s31-executor-embassy"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "embassy-executor",
- "embassy-time-driver",
- "embassy-time-queue-utils",
- "esp-hal",
- "esp-sync",
- "oer-esp32s31-soc-esp-hal",
- "oer-interrupt-table",
- "oer-memory",
- "portable-atomic",
- "riscv",
 ]
 
 [[package]]
@@ -1815,7 +1802,7 @@ dependencies = [
  "oer-esp32s31-ieee80211",
  "oer-esp32s31-ieee80211-mac",
  "oer-esp32s31-phy",
- "oer-esp32s31-soc-esp-hal",
+ "oer-espressif-interrupt-table-esp-hal",
  "oer-interrupt-table",
 ]
 
@@ -1943,7 +1930,7 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "esp-hal",
- "oer-esp32s31-soc-esp-hal",
+ "oer-espressif-interrupt-table-esp-hal",
  "oer-interrupt-table",
 ]
 
@@ -2004,23 +1991,14 @@ version = "0.1.0"
 dependencies = [
  "esp-hal",
  "oer-esp32s31-platform-layout",
+ "oer-espressif-staged-runtime",
 ]
 
 [[package]]
 name = "oer-esp32s31-platform-layout"
 version = "0.1.0"
-
-[[package]]
-name = "oer-esp32s31-platform-runtime"
-version = "0.1.0"
 dependencies = [
- "bytemuck",
- "esp-hal",
- "oer-esp32s31-platform-board",
- "oer-esp32s31-platform-layout",
- "oer-esp32s31-soc-esp-hal",
- "oer-interrupt-table",
- "oer-memory",
+ "oer-espressif-staged-layout",
 ]
 
 [[package]]
@@ -2033,7 +2011,7 @@ dependencies = [
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
- "oer-esp32s31-soc-esp-hal",
+ "oer-espressif-interrupt-table-esp-hal",
  "oer-interrupt-table",
 ]
 
@@ -2068,6 +2046,7 @@ dependencies = [
  "bytemuck",
  "critical-section",
  "esp-hal",
+ "oer-espressif-interrupt-table-esp-hal",
  "oer-interrupt-table",
  "oer-memory",
  "oer-soc-deadline",
@@ -2078,6 +2057,23 @@ name = "oer-espressif-coex"
 version = "0.1.0"
 dependencies = [
  "oer-radio-coex",
+]
+
+[[package]]
+name = "oer-espressif-executor-embassy"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "embassy-executor",
+ "embassy-time-driver",
+ "embassy-time-queue-utils",
+ "esp-hal",
+ "esp-sync",
+ "oer-espressif-interrupt-table-esp-hal",
+ "oer-interrupt-table",
+ "oer-memory",
+ "portable-atomic",
+ "riscv",
 ]
 
 [[package]]
@@ -2123,6 +2119,28 @@ dependencies = [
  "oer-ieee802154-trace",
  "oer-time",
  "oer-trace",
+]
+
+[[package]]
+name = "oer-espressif-interrupt-table-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "esp-hal",
+ "oer-interrupt-table",
+]
+
+[[package]]
+name = "oer-espressif-staged-layout"
+version = "0.1.0"
+
+[[package]]
+name = "oer-espressif-staged-runtime"
+version = "0.1.0"
+dependencies = [
+ "esp-hal",
+ "oer-espressif-interrupt-table-esp-hal",
+ "oer-espressif-staged-layout",
+ "oer-interrupt-table",
 ]
 
 [[package]]
@@ -3209,7 +3227,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx"
 version = "0.13.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 dependencies = [
  "critical-section",
 ]
@@ -3217,7 +3235,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt"
 version = "0.23.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 dependencies = [
  "document-features",
  "xtensa-lx",
@@ -3227,7 +3245,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt-proc-macros"
 version = "0.5.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=8930609f2af67e2e296a4d8f900ea3636a0acc6b#8930609f2af67e2e296a4d8f900ea3636a0acc6b"
+source = "git+https://github.com/ermacv/esp-hal?rev=46a45a813177122cc7485723c07d54751b3ef921#46a45a813177122cc7485723c07d54751b3ef921"
 dependencies = [
  "proc-macro2",
  "quote",

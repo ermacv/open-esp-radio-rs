@@ -3,16 +3,18 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oer_hil_image_class::ImageClass;
-use oer_hil_run_bundle::run::{
-    collect_integrity_files,
-    test_support::{session, session_for, temporary_directory, write_test_build_materials},
-};
+use oer_hil_run_bundle::run::test_support::TEST_CHIP;
+use oer_hil_run_bundle::run::test_support::session;
+use oer_hil_run_bundle::run::test_support::session_for;
+use oer_hil_run_bundle::run::test_support::temporary_directory;
+use oer_hil_run_bundle::run::test_support::write_test_build_materials;
+use oer_hil_run_bundle_format::run::collect_integrity_files;
+use oer_hil_schema::image::ImageClass;
 
-use super::{Recipe, firmware};
+use super::firmware;
 use crate::Artifacts;
 use oer_hil_image_class::{NETWORK, NETWORK_FEATURE};
-use oer_image::bundle::{Lock, Staged, files};
+use oer_image_bundle::{Lock, Staged, files};
 
 /// The Rust target of the fixture images.
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
@@ -29,10 +31,10 @@ fn test_artifacts(
 ) -> Artifacts {
     let directory = application.parent().unwrap().join("bundle");
     fs::create_dir_all(&directory).unwrap();
-    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let profile = oer_chip_profile::Profile::load(&repository, "esp32s31").unwrap();
+    let profile: oer_chip_profile::Profile =
+        toml::from_str(oer_hil_run_bundle::run::test_support::TEST_CHIP_PROFILE).unwrap();
     let mut bundle =
-        oer_image::ImageBundle::new(&directory, &profile, profile.flash.clone().unwrap());
+        oer_image_bundle::ImageBundle::new(&directory, &profile, profile.flash.clone().unwrap());
     for (source, name) in [
         (application, files::APPLICATION),
         (runtime_elf, files::RUNTIME_ELF),
@@ -51,23 +53,23 @@ fn test_artifacts(
     )
     .unwrap();
     bundle.staged = Some(Staged {
-        bootstrap_package: "oer-esp32s31-platform-bootstrap".into(),
+        bootstrap_package: "oer-chip-a-platform-bootstrap".into(),
     });
     bundle.locks = vec![
         Lock {
-            committed: "hil/targets/esp32s31/Cargo.lock".into(),
+            committed: "hil/targets/chip-a/Cargo.lock".into(),
             file: files::RUNTIME_LOCK.into(),
         },
         Lock {
-            committed: "platform/esp32s31/Cargo.lock".into(),
+            committed: "platform/chip-a/Cargo.lock".into(),
             file: files::BOOTSTRAP_LOCK.into(),
         },
     ];
     assert_eq!(bundle.rust_target, TARGET);
     Artifacts {
         bundle,
-        features: oer_hil_image_class::FeatureDelta::default(),
-        environment: oer_hil_run_bundle::build::BuildEnvironment::synthetic(),
+        features: oer_hil_schema::image::FeatureDelta::default(),
+        environment: oer_hil_run_bundle::build::synthetic_environment(),
     }
 }
 
@@ -81,7 +83,7 @@ fn firmware_record_archives_the_exact_application() {
     let runtime_elf = root.join("runtime.elf");
     let runtime_bin = root.join("runtime.bin");
     let bootstrap_elf = root.join("bootstrap.elf");
-    let effective_embedded_lock = root.join("hil/targets/esp32s31/Cargo.lock");
+    let effective_embedded_lock = root.join("hil/targets/chip-a/Cargo.lock");
     fs::write(&application, b"application bytes").unwrap();
     fs::write(&runtime_elf, b"runtime elf").unwrap();
     fs::write(&runtime_bin, b"runtime bin").unwrap();
@@ -157,17 +159,19 @@ fn firmware_record_archives_the_exact_application() {
         .build_provenance_path
         .as_ref()
         .expect("build provenance path");
-    let provenance: oer_hil_run_bundle::build::BuildProvenance =
+    let provenance: oer_hil_run_bundle_format::build::BuildProvenance =
         serde_json::from_slice(&fs::read(run_directory.join(provenance_path)).unwrap()).unwrap();
     assert_eq!(provenance.build_id, artifact.build_id.clone().unwrap());
     assert_eq!(provenance.subjects.len(), 4);
+    // The fixture chip has no HIL agent: its record follows the class's
+    // own recipe on it, which links no network.
     assert_eq!(
         provenance.parameters.network.as_deref(),
-        Some("owned-xarxa")
+        oer_hil_image_class::network_on(ImageClass::Correctness, TEST_CHIP)
     );
     assert_eq!(
         provenance.parameters.runtime_features,
-        ImageClass::Correctness.build_features(NETWORK_FEATURE)
+        oer_hil_image_class::build_features_on(ImageClass::Correctness, TEST_CHIP)
     );
     for name in ["embedded-lock", "bootstrap-lock"] {
         assert!(provenance.files.iter().any(|file| file.name == name));
@@ -227,7 +231,7 @@ fn firmware_record_archives_the_exact_application() {
 #[test]
 fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     let root = temporary_directory("firmware-replay");
-    let target_directory = root.join("target/hil/esp32s31");
+    let target_directory = root.join("target/hil/chip-a");
     let runs_directory = root.join(oer_hil_run_bundle::store::CHECKOUT_RUNS);
     let repository_root = target_directory.clone();
     fs::create_dir_all(&runs_directory).unwrap();
@@ -237,7 +241,7 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     let runtime_elf = repository_root.join("runtime.elf");
     let runtime_bin = repository_root.join("runtime.bin");
     let bootstrap_elf = repository_root.join("bootstrap.elf");
-    let effective_embedded_lock = repository_root.join("hil/targets/esp32s31/Cargo.lock");
+    let effective_embedded_lock = repository_root.join("hil/targets/chip-a/Cargo.lock");
     fs::write(&application, b"application bytes").unwrap();
     fs::write(&runtime_elf, b"runtime elf").unwrap();
     fs::write(&runtime_bin, b"runtime bin").unwrap();
@@ -269,10 +273,10 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
 
     let archived = oer_hil_run_bundle::verify::archived_firmware(
         &root,
-        "esp32s31",
+        "chip-a",
         "source-run",
         ImageClass::Correctness,
-        &Recipe,
+        &oer_hil_run_bundle::run::test_support::TestRecipe,
     )
     .unwrap();
     let replay_directory = runs_directory.join("replay-run");
@@ -297,9 +301,13 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
         .unwrap();
 
     fs::remove_dir_all(source_directory).unwrap();
-    let verified =
-        oer_hil_run_bundle::verify::verify(&root, Some("esp32s31"), Some("replay-run"), &Recipe)
-            .unwrap();
+    let verified = oer_hil_run_bundle::verify::verify(
+        &root,
+        Some("chip-a"),
+        Some("replay-run"),
+        &oer_hil_run_bundle::run::test_support::TestRecipe,
+    )
+    .unwrap();
     assert_eq!(verified.verified_run_ids, ["replay-run"]);
     fs::remove_dir_all(root).unwrap();
 }
@@ -307,20 +315,21 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
 #[test]
 fn provenance_records_the_network_implementation_and_its_feature() {
     let root = temporary_directory("build-selection");
-    write_test_build_materials(&root);
+    let chip = network_chip();
+    write_build_materials_of(&root, chip);
     let provenance = firmware::create_provenance(
         &root,
         (
             ImageClass::Correctness,
             None,
-            &oer_hil_image_class::FeatureDelta::default(),
-            ("esp32s31", TARGET, oer_chip_profile::Boot::Staged),
+            &oer_hil_schema::image::FeatureDelta::default(),
+            (chip, TARGET),
         ),
         "00".repeat(32),
         vec![],
         vec![],
         vec![],
-        oer_hil_run_bundle::build::BuildEnvironment::synthetic(),
+        oer_hil_run_bundle::build::synthetic_environment(),
     )
     .unwrap();
     assert_eq!(provenance.parameters.network.as_deref(), Some(NETWORK));
@@ -332,4 +341,39 @@ fn provenance_records_the_network_implementation_and_its_feature() {
             .any(|feature| feature == NETWORK_FEATURE)
     );
     fs::remove_dir_all(root).unwrap();
+}
+
+/// A chip whose HIL agent links the network integration.
+fn network_chip() -> &'static str {
+    oer_hil_image_class::agent_chips()
+        .find(|chip| oer_hil_image_class::declares(chip, NETWORK_FEATURE))
+        .expect("a chip's HIL agent declares the network integration")
+}
+
+/// The fixture chip's build materials below `root`, as `chip`'s.
+fn write_build_materials_of(root: &Path, chip: &str) {
+    let fixture = temporary_directory("fixture-materials");
+    write_test_build_materials(&fixture);
+    for directory in ["hil/targets", "platform"] {
+        let from = fixture.join(directory).join(TEST_CHIP);
+        let to = root.join(directory).join(chip);
+        fs::create_dir_all(&to).unwrap();
+        copy_tree(&from, &to, chip);
+    }
+    fs::copy(fixture.join("Cargo.lock"), root.join("Cargo.lock")).unwrap();
+    fs::remove_dir_all(fixture).unwrap();
+}
+
+fn copy_tree(from: &Path, to: &Path, chip: &str) {
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            fs::create_dir_all(&target).unwrap();
+            copy_tree(&entry.path(), &target, chip);
+        } else {
+            let text = fs::read_to_string(entry.path()).unwrap();
+            fs::write(target, text.replace(TEST_CHIP, chip)).unwrap();
+        }
+    }
 }

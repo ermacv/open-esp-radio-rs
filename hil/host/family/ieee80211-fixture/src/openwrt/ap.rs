@@ -1,31 +1,18 @@
 //! One scoped OpenWrt AP profile, restored after the complete scenario.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::{io::Write as _, process::Stdio, time::Duration};
 use zeroize::Zeroizing;
 
 use crate::Result;
 use oer_hil_lab::config::{OpenWrtConfig, StationConfig};
-use oer_hil_scenario::link::{
+use oer_hil_run_bundle_format::run::fixtures::{
+    OpenWrtApplied, OpenWrtBefore, OpenWrtProfile, OpenWrtRadio,
+};
+use oer_hil_scenario_catalog::link::{
     AccessPointBeacon, AccessPointSecurity, ManagementFrameProtection, PhyExpectation,
 };
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct Observation {
-    pub enabled: bool,
-    pub channel: u8,
-    pub geometry: String,
-    pub htmode: String,
-    pub ht: bool,
-    pub he: bool,
-    /// The beacon interval and DTIM period hostapd runs, from its generated
-    /// configuration; `None` when it states none.
-    #[serde(default)]
-    pub beacon_interval_tu: Option<u16>,
-    #[serde(default)]
-    pub dtim_period: Option<u8>,
-}
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct Profile {
@@ -90,7 +77,7 @@ impl Profile {
         }
     }
 
-    pub fn verify(self, observed: &Observation) -> Result<()> {
+    pub fn verify(self, observed: &OpenWrtRadio) -> Result<()> {
         let width = if self.phy == PhyExpectation::Ht40 {
             40
         } else {
@@ -165,7 +152,7 @@ pub trait Backend {
         up: bool,
         ap_enabled: Option<bool>,
     ) -> Result<Zeroizing<String>>;
-    fn observe(&self) -> Result<Observation>;
+    fn observe(&self) -> Result<OpenWrtRadio>;
 }
 
 pub struct Remote(OpenWrtConfig);
@@ -182,7 +169,7 @@ impl Backend for Remote {
         }
         invoke(&self.0, operation, options, up, ap_enabled)
     }
-    fn observe(&self) -> Result<Observation> {
+    fn observe(&self) -> Result<OpenWrtRadio> {
         observe(&self.0)
     }
 }
@@ -193,7 +180,7 @@ pub struct AccessPoint<B: Backend = Remote> {
     before: Zeroizing<String>,
     restored: bool,
     read_only: bool,
-    pub applied: Observation,
+    pub applied: OpenWrtRadio,
 }
 
 impl AccessPoint {
@@ -235,15 +222,32 @@ impl AccessPoint {
 }
 
 impl AccessPoint {
-    pub fn report(&self) -> Result<Value> {
+    /// The fixture record of what the router ran: the requested profile,
+    /// its settings before the scenario and the applied radio.
+    pub fn report(&self) -> Result<OpenWrtApplied> {
         let before: Value = serde_json::from_str(&self.before)?;
         let radio = &before["options"][&self.backend.0.radio];
-        Ok(json!({"schema": 1, "requested": self.profile,
-            "read_only": self.read_only,
-            "before": {"up": before["up"], "channel": radio["channel"], "htmode": radio["htmode"],
-                "beacon_int": radio["beacon_int"],
-                "dtim_period": before["options"][&self.backend.0.ap_section]["dtim_period"]},
-            "applied": self.applied}))
+        let profile = self.profile;
+        Ok(OpenWrtApplied {
+            schema: 1,
+            requested: OpenWrtProfile {
+                ht40_above: profile.ht40_above,
+                phy: profile.phy,
+                channel: profile.channel,
+                management_frame_protection: profile.management_frame_protection,
+                access_point_security: profile.access_point_security,
+                beacon: profile.beacon,
+            },
+            read_only: self.read_only,
+            before: OpenWrtBefore {
+                up: before["up"].clone(),
+                channel: radio["channel"].clone(),
+                htmode: radio["htmode"].clone(),
+                beacon_int: radio["beacon_int"].clone(),
+                dtim_period: before["options"][&self.backend.0.ap_section]["dtim_period"].clone(),
+            },
+            applied: self.applied.clone(),
+        })
     }
 }
 
@@ -272,7 +276,7 @@ impl<B: Backend> AccessPoint<B> {
             before,
             restored: false,
             read_only: false,
-            applied: Observation {
+            applied: OpenWrtRadio {
                 enabled: false,
                 channel: 0,
                 geometry: String::new(),
@@ -373,7 +377,7 @@ fn refuse_uncommitted_changes(snapshot: &Value) -> Result<()> {
     .into())
 }
 
-pub fn observe(config: &OpenWrtConfig) -> Result<Observation> {
+pub fn observe(config: &OpenWrtConfig) -> Result<OpenWrtRadio> {
     let data = invoke(config, "observe", &json!({}), true, None)?;
     serde_json::from_str(&data).map_err(Into::into)
 }
@@ -386,7 +390,7 @@ pub fn probe(config: &OpenWrtConfig, profile: Profile) -> Result<()> {
          test -n \"$phy\"; iw phy \"$phy\" info",
         config.radio
     );
-    let output = oer_hil_stand_host::ssh::command(&config.ssh_target, &script)
+    let output = oer_stand_ssh::command(&config.ssh_target, &script)
         .supervised_output()
         .and_then(crate::Error::ssh_output)?;
     if !output.status.success() {
@@ -419,7 +423,7 @@ fn invoke(
         request,
         include_str!("ap/remote.uc")
     ));
-    let mut command = oer_hil_stand_host::ssh::command(&config.ssh_target, "ucode -");
+    let mut command = oer_stand_ssh::command(&config.ssh_target, "ucode -");
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

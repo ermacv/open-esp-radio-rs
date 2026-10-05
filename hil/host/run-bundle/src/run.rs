@@ -1,4 +1,5 @@
-//! Canonical, immutable records for one host HIL invocation.
+//! The writer of a run bundle: canonical, immutable records for one host
+//! HIL invocation.
 
 use std::{
     ffi::OsString,
@@ -9,48 +10,25 @@ use std::{
 };
 
 use crate::Result;
-use crate::build::{self, SourceMaterial};
-use oer_hil_image_class::ImageClass;
+use crate::build;
+use oer_hil_run_bundle_format::build::SourceMaterial;
+use oer_hil_schema::image::ImageClass;
 
 mod archive;
 pub use archive::FirmwareArchive;
 mod attempt;
-pub(crate) use attempt::completed as completed_attempts;
-pub use attempt::{ATTEMPTS, Attempt};
-pub mod integrity;
-mod model;
-mod records;
 mod snapshot;
-pub mod validation;
 
-pub use integrity::collect_attachments;
-pub use integrity::{INTEGRITY, collect_integrity_files, write_integrity_index};
-pub use model::RunManifest;
-pub use model::RunnerProvenance;
-pub use model::{
-    Attachment, Comparison, CompletionReport, Failure, FailureKind, Measurement, MeasurementUnit,
-    MeasurementVerdict, Outcome, PlanDisposition, PlanEntry, PlannedFirmware, RUN_SCHEMA,
-    RepetitionResult, RunEventKind, RunPlan, RunState, ScenarioResult, SuiteCounts, SuiteResult,
-    Threshold,
-};
-pub use model::{Boot, SubjectRecord};
-pub use model::{
-    CellProvenance, FirmwareArtifact, FirmwareReplayOrigin, IntegrityFile, IntegrityIndex,
-    RepositoryProvenance, aggregate_outcome,
-};
-use model::{EventRecord, ToolVersion};
+// The documents this writer writes are the format's.
 pub(crate) use oer_durable::{atomic_json, atomic_write, sha256_file, unix_millis};
-pub use records::{
-    CLEANUP_FILE, Claim, CleanupRecord, OBSERVATIONS_FILE, OBSERVATIONS_SCHEMA, Observation,
-    Observations, USB_EVENTS_FILE, UsbEvent, UsbEventKind,
-};
+use oer_hil_run_bundle_format::run::*;
 
 pub struct RunSession {
     target_directory: PathBuf,
     directory: PathBuf,
     source_materials: Vec<SourceMaterial>,
     frozen_sources: Option<oer_hil_source_snapshot::FrozenSources>,
-    snapshot_materials: Vec<build::BuildFileMaterial>,
+    snapshot_materials: Vec<oer_hil_run_bundle_format::build::BuildFileMaterial>,
     manifest: RunManifest,
     started: Instant,
     events: File,
@@ -147,7 +125,7 @@ impl RunSession {
         // is when it links to the shared store, and the manifest names it by
         // digest.
         if let Some(observer) = &runner.observer {
-            runner.observer = Some(oer_hil_observer::store::detach(
+            runner.observer = Some(oer_hil_run_bundle_format::observer::store::detach(
                 observer,
                 crate::store::RunStore::of_runs(&runs)?.observers(),
             )?);
@@ -177,7 +155,7 @@ impl RunSession {
             },
             lab_provenance_path: None,
             firmware: Vec::new(),
-            experiment: crate::experiment::Experiment::from_environment()?,
+            experiment: oer_hil_run_bundle_format::experiment::Experiment::from_environment()?,
             messages_used: Vec::new(),
         };
         atomic_json(&directory.join("manifest.json"), &manifest)?;
@@ -216,7 +194,10 @@ impl RunSession {
         atomic_json(&self.directory.join("plan.json"), plan)
     }
 
-    pub fn record_lab_provenance(&mut self, provenance: &crate::lab::LabProvenance) -> Result<()> {
+    pub fn record_lab_provenance(
+        &mut self,
+        provenance: &oer_hil_run_bundle_format::lab::LabProvenance,
+    ) -> Result<()> {
         let path = PathBuf::from("lab-provenance.json");
         atomic_json(&self.directory.join(&path), provenance)?;
         self.manifest.lab_provenance_path = Some(path);
@@ -448,7 +429,7 @@ pub fn runner_provenance() -> Result<RunnerProvenance> {
     let executable_sha256: Option<String> = None;
     let runner = runner_build()?;
     let mut build: serde_json::Value = serde_json::from_str(runner.record)?;
-    oer_hil_observer::receipt::bind(&mut build, executable_sha256.as_deref())?;
+    oer_hil_run_bundle_format::observer::receipt::bind(&mut build, executable_sha256.as_deref())?;
     let build_sha256 = oer_durable::sha256_bytes(&serde_json::to_vec(&build)?);
     Ok(RunnerProvenance {
         observer: Some(

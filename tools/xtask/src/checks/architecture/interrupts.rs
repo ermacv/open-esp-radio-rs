@@ -1,28 +1,38 @@
-//! Every ESP32-S31 build of esp-hal leaves interrupt routes to the image's
-//! table: a package that enables esp-hal's `esp32s31` feature also enables
-//! its `static-interrupts`, under which no esp-hal API binds a handler or
-//! routes a source at run time
+//! Every build of esp-hal for a chip whose profile sets `[gate]
+//! static-interrupts` leaves interrupt routes to the image's table: a
+//! package that enables esp-hal's feature of that chip also enables its
+//! `static-interrupts`, under which no esp-hal API binds a handler or routes
+//! a source at run time
 //! ([interrupt table](../../../../../crates/runtime/interrupt-table/README.md)).
 
 use oer_repo::{Model, Package};
 
 use crate::Result;
 
-/// Fails naming every package that builds esp-hal for the ESP32-S31
-/// without `static-interrupts`.
-pub fn check(model: &Model) -> Result<()> {
-    let problems: Vec<String> = model
-        .packages()
+/// Fails naming every package that builds esp-hal for such a chip without
+/// `static-interrupts`.
+pub fn check(model: &Model, chips: &oer_repo::chips::Chips) -> Result<()> {
+    let mut problems = Vec::new();
+    for chip in chips
+        .profiles()
         .iter()
-        .filter(|package| enables(package, "esp32s31") && !enables(package, "static-interrupts"))
-        .map(|package| {
-            format!(
-                "{}: esp-hal is built for esp32s31 without `static-interrupts`; enable it where \
-                 `esp32s31` is enabled",
-                package.manifest
-            )
-        })
-        .collect();
+        .filter(|profile| profile.gate.static_interrupts)
+    {
+        let chip = chip.id.as_str();
+        problems.extend(
+            model
+                .packages()
+                .iter()
+                .filter(|package| enables(package, chip) && !enables(package, "static-interrupts"))
+                .map(|package| {
+                    format!(
+                        "{}: esp-hal is built for {chip} without `static-interrupts`; enable it \
+                         where `{chip}` is enabled",
+                        package.manifest
+                    )
+                }),
+        );
+    }
     if problems.is_empty() {
         Ok(())
     } else {
@@ -52,42 +62,63 @@ fn enables(package: &Package, feature: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn model(manifest: &str) -> (tempfile::TempDir, Model) {
+    /// A repository with one package `manifest` and two chips, `chip-a`
+    /// with static interrupts and `chip-b` without.
+    fn model(manifest: &str) -> (tempfile::TempDir, Model, oer_repo::chips::Chips) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("a")).unwrap();
         std::fs::write(dir.path().join("a/Cargo.toml"), manifest).unwrap();
-        let model = Model::load(&oer_repo::Repo::from_dir(dir.path()).unwrap()).unwrap();
-        (dir, model)
+        for (chip, gate) in [
+            ("chip-a", "[gate]\nstatic-interrupts = true\n"),
+            ("chip-b", ""),
+        ] {
+            let platform = dir.path().join("platform").join(chip);
+            std::fs::create_dir_all(&platform).unwrap();
+            std::fs::write(
+                platform.join("chip.toml"),
+                format!(
+                    "schema = 1\nid = \"{chip}\"\nfamily = \"f\"\nrust-target = \"t\"\n\
+                     boot = \"staged\"\nespflash-chip = \"{chip}\"\nrevisions = []\n\
+                     [properties]\nwifi-bands = []\nbluetooth = []\nieee802154 = false\n\
+                     cores = 1\n{gate}"
+                ),
+            )
+            .unwrap();
+        }
+        let repo = oer_repo::Repo::from_dir(dir.path()).unwrap();
+        let model = Model::load(&repo).unwrap();
+        let chips = oer_repo::chips::Chips::at(dir.path()).unwrap();
+        (dir, model, chips)
     }
 
     #[test]
-    fn an_s31_esp_hal_build_needs_static_interrupts() {
+    fn a_static_interrupt_chip_s_esp_hal_build_needs_static_interrupts() {
         for (manifest, passes) in [
             (
-                "esp-hal = { version = \"1\", features = [\"esp32s31\"] }",
+                "esp-hal = { version = \"1\", features = [\"chip-a\"] }",
                 false,
             ),
             (
-                "esp-hal = { version = \"1\", optional = true }\n[features]\nx = [\"esp-hal?/esp32s31\"]",
+                "esp-hal = { version = \"1\", optional = true }\n[features]\nx = [\"esp-hal?/chip-a\"]",
                 false,
             ),
             (
-                "esp-hal = { version = \"1\", features = [\"esp32s31\", \"static-interrupts\"] }",
+                "esp-hal = { version = \"1\", features = [\"chip-a\", \"static-interrupts\"] }",
                 true,
             ),
             (
-                "esp-hal = { version = \"1\", features = [\"esp32s31\"] }\n[features]\ns = [\"esp-hal/static-interrupts\"]",
+                "esp-hal = { version = \"1\", features = [\"chip-a\"] }\n[features]\ns = [\"esp-hal/static-interrupts\"]",
                 true,
             ),
             (
-                "esp-hal = { version = \"1\", features = [\"esp32c5\"] }",
+                "esp-hal = { version = \"1\", features = [\"chip-b\"] }",
                 true,
             ),
         ] {
-            let (_dir, model) = model(&format!(
+            let (_dir, model, chips) = model(&format!(
                 "[package]\nname = \"a\"\n[dependencies]\n{manifest}\n"
             ));
-            assert_eq!(check(&model).is_ok(), passes, "{manifest}");
+            assert_eq!(check(&model, &chips).is_ok(), passes, "{manifest}");
         }
     }
 }

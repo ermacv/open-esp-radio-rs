@@ -8,7 +8,7 @@ The harness holds the chip-neutral parts of vendor verification:
 | `oer-probe-macros` | `macros/` | Procedural-macro frontend of the declarations |
 | `oer-vendor-scenario-engine` | `scenarios/` | Scenario engine: authenticated artifacts, Blobray sessions, the comparison harness, coverage, point mutants and evidence shards |
 | `oer-vendor-scenario-report` | `report/` | Reviewer reports: untriaged locations, function view, closure gateways, unclaimed compared pairs and the `xref`, `show`, `fields` and `prints` inspection of pinned vendor code |
-| `oer-vendor-scenario-cli` | `cli/` | The one scenario binary, `vendor-scenarios <chip> <command>`: the chip installs its scenario library, the command is one of its scenarios or a reviewer command; `cargo xtask vendor-scenario <chip>` builds and runs it |
+| `oer-vendor-scenario-cli` | `cli/` | The one scenario command line, `vendor-scenarios <chip> <command>`, which each chip's entry package `oer-<chip>-vendor-scenarios-cli` (`verification/<chip>/scenarios/cli`) runs: the chip installs its verdict library (never a dependent of this report package), the command is one of its scenarios or a reviewer command; `cargo verification scenario <chip>` builds and runs it |
 
 The probe compiler is a host build tool; it owns no production behavior and
 does not depend on Blobray's executor. The
@@ -69,7 +69,7 @@ boundary types and expression/body adapter kind. Rust type spelling describes
 the boundary; it does not establish the layout of a private production type.
 Addresses are resolved from the final ELF, not predicted during compilation.
 
-`cargo xtask build vendor-probes --chip esp32s31` builds all three release images
+`cargo verification probes --chip esp32s31` builds all three release images
 and validates every catalog against defined executable symbols. Missing,
 ambiguous, non-code, malformed or wrong-image entries fail the build command.
 Link-time code folding may give different entry names the same address.

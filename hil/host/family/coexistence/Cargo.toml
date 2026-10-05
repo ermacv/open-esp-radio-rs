@@ -9,14 +9,15 @@ publish = false
 description = "Wi-Fi and Bluetooth LE coexistence HIL family: station UDP and an ATT echo load at once on the joint image's shared radio"
 
 [dependencies]
+oer-hil-run-bundle-format = { path = "../../run-bundle/format" }
+oer-hil-schema = { path = "../../../schema" }
 oer-hil-family-bluetooth = { path = "../bluetooth" }
 oer-hil-family-ieee80211-fixture = { path = "../ieee80211-fixture" }
-oer-hil-image-class = { path = "../../image-class" }
 oer-hil-lab = { path = "../../lab" }
 oer-hil-net-traffic = { path = "../../net-traffic" }
 oer-hil-protocol = { path = "../../../protocol" }
-oer-hil-run-bundle = { path = "../../run-bundle" }
 oer-hil-scenario = { path = "../../scenario" }
+oer-hil-scenario-catalog = { path = "../../scenario/catalog" }
 oer-hil-workload = { path = "../../workload" }
 serde = { version = "1.0", features = ["derive"] }
 

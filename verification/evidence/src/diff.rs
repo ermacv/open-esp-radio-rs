@@ -5,7 +5,7 @@
 //! locations change only when the comparison did. The summary reports the
 //! second kind line by line and counts the first, so a reviewer sees whether
 //! a regeneration changed evidence or only recorded that sources moved.
-use crate::{Entry, Index, Location, SourceLine};
+use oer_vendor_evidence_shard::{Entry, Index, Location, SourceLine};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// One difference between the old and new shard.
@@ -258,14 +258,14 @@ pub fn render(scenario: &str, differences: &[Difference]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Dependence, LocationKind, SourceDigest};
+    use oer_vendor_evidence_shard::{Dependence, LocationKind, SourceDigest};
     use std::path::PathBuf;
 
     fn shard() -> Index {
         Index {
             schema: 9,
             command: "x".into(),
-            target: "esp32s31".into(),
+            target: "chip-a".into(),
             scenario: "i2c".into(),
             inputs: Default::default(),
             sources: vec![SourceDigest {

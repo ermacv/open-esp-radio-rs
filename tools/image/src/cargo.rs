@@ -11,7 +11,7 @@ use std::{
 use crate::Result;
 
 /// The build environment's layout seed variable.
-pub const LAYOUT_SEED_ENV: &str = oer_esp32s31_platform_layout::build::LAYOUT_SEED_ENV;
+pub const LAYOUT_SEED_ENV: &str = "OER_LAYOUT_SEED";
 
 /// A Cargo command for an image: inherited variables that would change the
 /// image without appearing in the checkout are removed, and so is any

@@ -7,6 +7,7 @@
 
 use crate::link::WifiCapture as _;
 use oer_hil_net_traffic::NetworkSession as _;
+use oer_hil_run_bundle_format::run::fixtures::Burst;
 use oer_hil_workload::context::Context;
 use std::{
     collections::BTreeMap,
@@ -24,8 +25,7 @@ use oer_hil_protocol::{
 };
 
 use crate::{
-    Result, workload::traffic::tx_traffic::Burst, workload::traffic::tx_traffic::Receiver,
-    workload::traffic::tx_traffic::describe_bursts,
+    Result, workload::traffic::tx_traffic::Receiver, workload::traffic::tx_traffic::describe_bursts,
 };
 use oer_hil_family_ieee80211_evidence as evidence;
 use oer_hil_family_ieee80211_fixture::{
@@ -44,7 +44,7 @@ use oer_hil_net_traffic::{
     paced_udp::Config as PacedUdpConfig, paced_udp::HostTransmission,
     paced_udp::send as send_paced_udp,
 };
-use oer_hil_scenario::link::HtGuardIntervalExpectation;
+use oer_hil_scenario_catalog::link::HtGuardIntervalExpectation;
 use serde::Serialize;
 
 const DEFAULT_PORT: u16 = 4_323;
@@ -189,8 +189,8 @@ pub fn run(options: Config, output: &Path, context: &Context<'_>, policy: RunPol
         output,
         options.duration,
         match options.phy {
-            Phy::Ht40 => oer_hil_scenario::link::PhyExpectation::Ht40,
-            Phy::He20 => oer_hil_scenario::link::PhyExpectation::He20,
+            Phy::Ht40 => oer_hil_scenario_catalog::link::PhyExpectation::Ht40,
+            Phy::He20 => oer_hil_scenario_catalog::link::PhyExpectation::He20,
         },
         fixture_guard_interval,
         None,
@@ -203,8 +203,8 @@ pub fn run(options: Config, output: &Path, context: &Context<'_>, policy: RunPol
             options.tx_port,
             options.duration,
             match options.phy {
-                Phy::Ht40 => oer_hil_scenario::link::PhyExpectation::Ht40,
-                Phy::He20 => oer_hil_scenario::link::PhyExpectation::He20,
+                Phy::Ht40 => oer_hil_scenario_catalog::link::PhyExpectation::Ht40,
+                Phy::He20 => oer_hil_scenario_catalog::link::PhyExpectation::He20,
             },
         )?),
         StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External(_) => None,

@@ -2,18 +2,19 @@
 //! builds.
 //!
 //! Every ESP-IDF project with a `firmware.toml` beside its `CMakeLists.txt`
-//! is an entry: peers in `hil/peers/<project>/`, vendor references in
-//! `verification/<chip>/hil-vendor/<project>/` and each chip's second-stage
-//! bootloader in `hil/bootloaders/<chip>/`, which every image of that chip
-//! is bundled with. The manifest names the image (its name in the board
-//! journal), the target chip and the chip whose `artifacts.toml` pins the
-//! ESP-IDF; every entry builds against that one pin through [`super::idf`].
+//! is an entry: peers in `hil/peers/<project>/` and vendor references in
+//! `verification/<chip>/hil-vendor/<project>/`. Each is an application that
+//! its own ESP-IDF bootloader loads (`Boot::EspIdfBootloader`), the only
+//! images that do not boot staged. The manifest names the image (its name in
+//! the board journal), the target chip and the chip whose `artifacts.toml`
+//! pins the ESP-IDF; every entry builds against that one pin through
+//! `oer_esp_idf`.
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::idf;
 use crate::Result;
+use oer_esp_idf as idf;
 
 /// Manifest file of a catalog entry.
 const MANIFEST: &str = "firmware.toml";
@@ -27,22 +28,9 @@ struct Manifest {
     chip: String,
     /// Chip whose `artifacts.toml` pins the ESP-IDF and vendor archives.
     pins: String,
-    #[serde(default)]
-    kind: Kind,
     /// Why the image must not be flashed now; flashing it is refused.
     #[serde(default)]
     hold: Option<String>,
-}
-
-/// What an entry provides.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum Kind {
-    /// An application image flashed as a whole.
-    #[default]
-    Image,
-    /// The chip's second-stage bootloader, written with other images.
-    Bootloader,
 }
 
 #[derive(Debug, PartialEq)]
@@ -50,7 +38,6 @@ pub struct Entry {
     pub image: String,
     pub chip: String,
     pub pins: String,
-    pub kind: Kind,
     /// Why the image must not be flashed now.
     pub hold: Option<String>,
     /// Project directory, relative to the repository root.
@@ -75,7 +62,6 @@ impl Entry {
 /// Every catalog entry below `root`, by image name.
 pub fn entries(root: &Path) -> Result<Vec<Entry>> {
     let mut directories = subdirectories(&root.join("hil/peers"))?;
-    directories.extend(subdirectories(&root.join("hil/bootloaders"))?);
     for chip in subdirectories(&root.join("verification"))? {
         directories.extend(subdirectories(&chip.join("hil-vendor"))?);
     }
@@ -97,7 +83,6 @@ pub fn entries(root: &Path) -> Result<Vec<Entry>> {
             image: manifest.image,
             chip: manifest.chip,
             pins: manifest.pins,
-            kind: manifest.kind,
             hold: manifest.hold,
             directory: directory.strip_prefix(root)?.to_owned(),
         });
@@ -144,53 +129,12 @@ pub fn build(root: &Path, image: &str) -> Result<idf::Build> {
         .ok_or_else(|| "the build produced no image".into())
 }
 
-/// The file a built `entry` provides and its SHA-256: the application of an
-/// image, the bootloader of a bootloader entry.
-pub fn product(root: &Path, entry: &Entry, build: &idf::Build) -> Result<(PathBuf, String)> {
-    Ok(match entry.kind {
-        Kind::Image => (
-            PathBuf::from(&build.application),
-            build.application_sha256.clone(),
-        ),
-        Kind::Bootloader => {
-            let path = bootloader_path(root, entry);
-            let sha256 = oer_durable::sha256_file(&path)?;
-            (path, sha256)
-        }
-    })
-}
-
-/// Where a bootloader entry's build leaves its bootloader.
-pub fn bootloader_path(root: &Path, entry: &Entry) -> PathBuf {
-    idf::output(root, &entry.project(root)).join("build/bootloader/bootloader.bin")
-}
-
-/// The project second-stage bootloader of `chip`, built against the pinned
-/// ESP-IDF, and its SHA-256.
-pub fn bootloader(root: &Path, chip: &str) -> Result<(PathBuf, String)> {
-    let entries = entries(root)?;
-    let entry = entries
-        .iter()
-        .find(|entry| entry.kind == Kind::Bootloader && entry.chip == chip)
-        .ok_or_else(|| {
-            format!("no project bootloader for {chip}; add hil/bootloaders/{chip} to the catalog")
-        })?;
-    build(root, &entry.image)?;
-    let path = bootloader_path(root, entry);
-    let sha256 = oer_durable::sha256_file(&path)?;
-    Ok((path, sha256))
-}
-
-/// The ESP-IDF build directory of `chip`'s project bootloader, built first:
-/// its `flasher_args.json` names the bootloader, the partition table and the
-/// application's offset.
-pub fn bootloader_build(root: &Path, chip: &str) -> Result<PathBuf> {
-    let (bootloader, _) = bootloader(root, chip)?;
-    Ok(bootloader
-        .parent()
-        .and_then(Path::parent)
-        .ok_or("the bootloader lies outside an ESP-IDF build directory")?
-        .to_owned())
+/// The application a built entry provides and its SHA-256.
+pub fn product(build: &idf::Build) -> (PathBuf, String) {
+    (
+        PathBuf::from(&build.application),
+        build.application_sha256.clone(),
+    )
 }
 
 /// The image bundle of the built catalog image `entry` in `output`: its
@@ -203,10 +147,7 @@ pub fn bundle(
     entry: &Entry,
     build: &idf::Build,
     output: &Path,
-) -> Result<crate::ImageBundle> {
-    if entry.kind != Kind::Image {
-        return Err(format!("`{}` is a bootloader, not an image", entry.image).into());
-    }
+) -> Result<oer_image_bundle::ImageBundle> {
     let directory = idf::output(root, &entry.project(root)).join("build");
     only_boot_files(&directory)?;
     let flash = crate::profile(root, &entry.chip)?
@@ -222,52 +163,6 @@ pub fn bundle(
             partition_table: &partition_table,
         },
         output,
-    )
-}
-
-/// The bundle in `output` of the ELF `elf` of an ESP-IDF-bootloader chip's
-/// application built outside the image pipeline (a chip's first no_std
-/// image): encoded for its chip's flash map with espflash's default
-/// partition table and bundled with the chip's catalog bootloader.
-pub fn bundle_elf(
-    root: &Path,
-    chip: &str,
-    elf: &Path,
-    output: &Path,
-) -> Result<crate::ImageBundle> {
-    let profile = crate::profile(root, chip)?;
-    if profile.boot != crate::Boot::EspIdfBootloader {
-        return Err(format!(
-            "an {chip} image is flashed as the bundle its build made (`cargo xtask build \
-             firmware`, `cargo hil image build`), not as an ELF"
-        )
-        .into());
-    }
-    let flash = profile.flash.clone().ok_or("the chip names no flash map")?;
-    let (bootloader, _) = bootloader(root, chip)?;
-    let encoded = crate::encode::encode(
-        &std::fs::read(elf)?,
-        crate::encode::chip(&profile.espflash_chip)?,
-        crate::encode::Encoding::DEFAULT,
-        None,
-        flash.partition_table,
-        None,
-    )?;
-    let encoded_files = output.join("encoded");
-    std::fs::create_dir_all(&encoded_files)?;
-    let application = encoded_files.join("application.bin");
-    let partition_table = encoded_files.join("partition-table.bin");
-    std::fs::write(&application, &encoded.application)?;
-    std::fs::write(&partition_table, &encoded.partition_table)?;
-    crate::bundle::around(
-        root,
-        chip,
-        &application,
-        crate::bundle::BootFiles::Given {
-            bootloader: &bootloader,
-            partition_table: &partition_table,
-        },
-        &output.join("bundle"),
     )
 }
 
@@ -311,13 +206,13 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         project(
             root.path(),
-            "hil/peers/esp32c5-ieee802154",
-            "image = \"ieee802154-peer\"\nchip = \"esp32c5\"\npins = \"esp32s31\"\n",
+            "hil/peers/chip-b-ieee802154",
+            "image = \"ieee802154-peer\"\nchip = \"chip-b\"\npins = \"chip-a\"\n",
         );
         project(
             root.path(),
-            "verification/esp32s31/hil-vendor/calibration",
-            "image = \"vendor-calibration\"\nchip = \"esp32s31\"\npins = \"esp32s31\"\n",
+            "verification/chip-a/hil-vendor/calibration",
+            "image = \"vendor-calibration\"\nchip = \"chip-a\"\npins = \"chip-a\"\n",
         );
         std::fs::create_dir_all(root.path().join("hil/peers/untracked")).unwrap();
         let entries = entries(root.path()).unwrap();
@@ -326,28 +221,26 @@ mod tests {
             [
                 Entry {
                     image: "ieee802154-peer".into(),
-                    chip: "esp32c5".into(),
-                    pins: "esp32s31".into(),
-                    kind: Kind::Image,
+                    chip: "chip-b".into(),
+                    pins: "chip-a".into(),
                     hold: None,
-                    directory: "hil/peers/esp32c5-ieee802154".into(),
+                    directory: "hil/peers/chip-b-ieee802154".into(),
                 },
                 Entry {
                     image: "vendor-calibration".into(),
-                    chip: "esp32s31".into(),
-                    pins: "esp32s31".into(),
-                    kind: Kind::Image,
+                    chip: "chip-a".into(),
+                    pins: "chip-a".into(),
                     hold: None,
-                    directory: "verification/esp32s31/hil-vendor/calibration".into(),
+                    directory: "verification/chip-a/hil-vendor/calibration".into(),
                 },
             ]
         );
-        assert_eq!(entries[0].project(root.path()).name, "esp32c5-ieee802154");
+        assert_eq!(entries[0].project(root.path()).name, "chip-b-ieee802154");
         assert!(entry(&entries, "missing").is_err());
         project(
             root.path(),
             "hil/peers/copy",
-            "image = \"ieee802154-peer\"\nchip = \"esp32c5\"\npins = \"esp32s31\"\n",
+            "image = \"ieee802154-peer\"\nchip = \"chip-b\"\npins = \"chip-a\"\n",
         );
         assert!(
             super::entries(root.path()).is_err(),
@@ -362,12 +255,6 @@ mod tests {
         for image in ["ieee802154-peer", "vendor-calibration"] {
             assert!(entries.iter().any(|entry| entry.image == image), "{image}");
         }
-        assert!(
-            entries
-                .iter()
-                .any(|entry| entry.kind == Kind::Bootloader && entry.chip == "esp32c5"),
-            "esp32c5 has a project bootloader"
-        );
     }
 
     #[test]

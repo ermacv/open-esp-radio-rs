@@ -37,7 +37,7 @@ fn session(root: &Path) -> RunSession {
     crate::tests::register();
     RunSession::create(
         root,
-        "esp32s31",
+        "chip-a",
         "test-cell",
         "test-dut",
         Path::new("/test/no-device"),
@@ -341,7 +341,7 @@ fn run_all_selection_has_one_ordered_image_plan_and_requirement_union() {
     assert!(
         selected
             .iter()
-            .all(|scenario| scenario.header.role == oer_hil_scenario::Role::Qualification)
+            .all(|scenario| scenario.header.role == oer_hil_scenario_catalog::Role::Qualification)
     );
     let groups = group_selected_scenarios(&selected);
     let flattened = groups
@@ -487,8 +487,8 @@ fn the_then_command_joins_the_lease_and_names_the_run() {
     let run = directory.path().join("runs/1-a");
     let output = then_command(
         directory.path(),
-        "printf '%s %s' \"$OER_HIL_LEASE\" \"$OER_HIL_RUN_DIRECTORY\"; exit 3",
-        vec![("OER_HIL_LEASE", String::from("token"))],
+        "printf '%s %s' \"$OER_STAND_LEASE\" \"$OER_HIL_RUN_DIRECTORY\"; exit 3",
+        vec![("OER_STAND_LEASE", String::from("token"))],
         &run,
     )
     .output()
@@ -506,25 +506,32 @@ fn a_run_takes_the_named_chip_or_the_only_one_that_builds_its_images() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let icmp = catalog.get("icmp-latency").unwrap();
     let watchdog = catalog.get("system-watchdog").unwrap();
-    // Only the esp32s31's agent builds the correctness image.
-    assert_eq!(select_chip(&root, &[icmp], None).unwrap(), "esp32s31");
-    assert!(select_chip(&root, &[icmp], Some("esp32c5")).is_err());
-    // Both chips build the watchdog image: the run names one.
+    let building = |classes: &[ImageClass]| oer_hil_image::chips_building(&root, classes).unwrap();
+    // Exactly one chip's agent builds the correctness image.
+    let [full] = building(&[ImageClass::Correctness]).try_into().unwrap();
+    assert_eq!(select_chip(&root, &[icmp], None).unwrap(), full);
+    let others: Vec<String> = oer_chip_profile::supported(&root)
+        .unwrap()
+        .into_iter()
+        .filter(|chip| *chip != full)
+        .collect();
+    for other in &others {
+        assert!(select_chip(&root, &[icmp], Some(other)).is_err());
+    }
+    // Several chips build the watchdog image: the run names one.
+    let watchdogs = building(&[ImageClass::SystemWatchdog]);
+    assert!(watchdogs.len() > 1);
     let error = select_chip(&root, &[watchdog], None)
         .unwrap_err()
         .to_string();
     assert!(
-        error.contains("esp32c5, esp32s31") && error.contains("--chip"),
+        error.contains(&watchdogs.join(", ")) && error.contains("--chip"),
         "{error}"
     );
-    assert_eq!(
-        select_chip(&root, &[watchdog], Some("esp32c5")).unwrap(),
-        "esp32c5"
-    );
-    assert_eq!(
-        select_chip(&root, &[icmp, watchdog], None).unwrap(),
-        "esp32s31"
-    );
+    for chip in &watchdogs {
+        assert_eq!(select_chip(&root, &[watchdog], Some(chip)).unwrap(), *chip);
+    }
+    assert_eq!(select_chip(&root, &[icmp, watchdog], None).unwrap(), full);
 }
 
 #[test]

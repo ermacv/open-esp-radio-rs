@@ -2,7 +2,7 @@
 use super::*;
 
 /// A source a build record cites: the run bundle's own record.
-pub(super) use oer_hil_run_bundle::build::SourceMaterial as Source;
+pub(super) use oer_hil_run_bundle_format::build::SourceMaterial as Source;
 
 // The producer writes the manifest with the same types, so its fields and
 // their order, which a source's identity digests, are one contract.
@@ -22,7 +22,10 @@ pub(super) fn verified(directory: &Path, sources: &[Source]) -> Result<Option<Ma
     if manifest.schema != MANIFEST_SCHEMA
         || snapshot.schema != 1
         || oer_durable::sha256_bytes(&serde_json::to_vec(&manifest)?) != snapshot.snapshot_id
-        || sha256_file(&directory.join("sources.tar"))? != snapshot.archive_sha256
+        || crate::digests()
+            .sha256_file(&directory.join("sources.tar"))
+            .map_err(|error| error.to_string())?
+            != snapshot.archive_sha256
         || sources.len() != manifest.sources.len()
     {
         return Ok(None);
@@ -240,21 +243,15 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let root = root.path();
         let git = |arguments: &[&str]| {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(root)
-                .args([
-                    "-c",
-                    "user.name=t",
-                    "-c",
-                    "user.email=t@t",
-                    "-c",
-                    "commit.gpgsign=false",
-                ])
-                .args(arguments)
-                .status()
-                .unwrap();
-            assert!(status.success());
+            let configured = [
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+            ];
+            oer_process::git::output(root, configured.iter().chain(arguments)).unwrap();
         };
         let write = |path: &str, text: &str| {
             let path = root.join(path);
@@ -268,17 +265,8 @@ mod tests {
         write("hil/scenarios/system/other.toml", "d");
         git(&["add", "."]);
         git(&["commit", "-q", "-m", "run"]);
-        let commit = String::from_utf8(
-            std::process::Command::new("git")
-                .arg("-C")
-                .arg(root)
-                .args(["rev-parse", "HEAD"])
-                .output()
-                .unwrap()
-                .stdout,
-        )
-        .unwrap();
-        let commit = commit.trim();
+        let commit = oer_process::git::text(root, ["rev-parse", "HEAD"]).unwrap();
+        let commit = commit.as_str();
         let run = tempfile::tempdir().unwrap();
         let image = run.path().join("firmware/boot-smoke");
         std::fs::create_dir_all(&image).unwrap();

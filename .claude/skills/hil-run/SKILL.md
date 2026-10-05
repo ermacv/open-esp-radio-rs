@@ -26,9 +26,8 @@ host: [hardware route](../../../hil/README.md#hardware-route).
 3. **Debug quickly.** `--repetitions N` (1–20) for a look; such runs are
    never pending evidence. Images build before the run queues, as image
    bundles of the one pipeline (`oer-image`); `cargo hil image build <class>`
-   builds one without the stand, and `cargo hil flash --board B <bundle>`
-   writes a bundle by hand through the one flash operation (lease, write,
-   journal, start).
+   builds one without the stand, and `cargo fw flash --device MAC|PORT <bundle>`
+   writes a bundle by hand (device lock, receipted write, start).
 4. **Untracked sources** must be named with `--source-include PATH` or
    `--include-untracked`; the runner refuses to guess.
 5. **Investigate.** `cargo hil runs why <run-id>` and `cargo hil runs show
@@ -36,9 +35,9 @@ host: [hardware route](../../../hil/README.md#hardware-route).
    observer JSON or the whole bundle. A repetition's typed results are its
    `observations.json`
    ([find and compare runs](../../../hil/host/runs.md#find-and-compare-runs)).
-6. **Stand state.** `cargo hil queue` shows holders, jobs and boards; wait
-   for a board in service with `cargo hil wait --service`. A flash made
-   outside `cargo hil` is journaled with `cargo hil lease --board B --flashed
+6. **Stand state.** `cargo stand queue` shows holders, jobs and boards; wait
+   for a board in service with `cargo stand wait --service`. A flash made
+   outside `cargo hil` is journaled with `cargo stand lease --board B --flashed
    IMAGE --application FILE --device B -- COMMAND`.
 7. **Evidence (optional).** From a clean tree, `cargo qualification
    hil-evidence --hil-target <chip> --pending` writes shards to

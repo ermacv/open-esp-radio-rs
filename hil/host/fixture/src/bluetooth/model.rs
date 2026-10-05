@@ -5,7 +5,7 @@ pub mod security_failure;
 use oer_hil_protocol::bluetooth::BluetoothPeripheralTermination;
 use serde::{Deserialize, Serialize};
 
-pub use oer_hil_fixture_install::bluetooth_contract::{
+pub use oer_stand_fixture_install::bluetooth_contract::{
     CONNECTION_RESET_SCHEMA, HELPER_CAPABILITIES,
 };
 

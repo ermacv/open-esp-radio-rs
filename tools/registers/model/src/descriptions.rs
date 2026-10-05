@@ -1,6 +1,6 @@
 //! The prose of a chip's register model: every `description` its model and
 //! evidence files carry, at any depth. Provenance cites the vendor functions
-//! these texts name (`cargo xtask check provenance`), so the register model
+//! these texts name (`cargo verification check provenance`), so the register model
 //! owns which files they come from.
 
 use std::path::{Path, PathBuf};

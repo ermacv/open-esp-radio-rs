@@ -7,7 +7,7 @@ use oer_hil_cli::Result;
 use oer_process::Checkout;
 
 /// A leading `--root PATH` (or `--root=PATH`) names the checkout to act on,
-/// as the installed `oer-stand` and a job's detached process pass it; every
+/// as a job's detached process passes it; every
 /// other argument is the `cargo hil` command.
 fn split_root(mut args: Vec<OsString>) -> Result<(Option<PathBuf>, Vec<OsString>)> {
     let Some(first) = args.first().and_then(|first| first.to_str()) else {

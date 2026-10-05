@@ -26,10 +26,12 @@ pub fn run(ctx: &Checkout, chip: &str, args: &[OsString]) -> Result<std::process
     {
         return Err(format!("no vendor scenarios for chip {}", chip.name()).into());
     }
+    // The verdict library decides the verdicts; the entry package's binary
+    // of the same name runs the scenario.
     let (library, package, binary) = (
         scenarios.library.as_str(),
-        scenarios.command.as_str(),
-        scenarios.binary.as_str(),
+        scenarios.entry.as_str(),
+        scenarios.entry.as_str(),
     );
     let Some((scenario, rest)) = args.split_first() else {
         return Err("select a scenario, for example `gain`".into());
@@ -37,10 +39,11 @@ pub fn run(ctx: &Checkout, chip: &str, args: &[OsString]) -> Result<std::process
     // Cargo keeps a `.d` only beside a root unit's output, so the verdict
     // libraries are built as roots first; the binary links the same units.
     let verdict = super::phase::timed("build vendor scenarios", || -> Result<Vec<PathBuf>> {
-        let libraries = oer_toolchain::blobray::cargo(&ctx.root, "build")
+        let libraries = oer_toolchain::workspace::VERIFICATION
+            .cargo(&ctx.root, "build")
             .args([
                 "--profile",
-                "blobray",
+                oer_toolchain::workspace::VERIFICATION.profile,
                 "-p",
                 ENGINE_PACKAGE,
                 "-p",
@@ -54,18 +57,22 @@ pub fn run(ctx: &Checkout, chip: &str, args: &[OsString]) -> Result<std::process
             return Err(format!("building {ENGINE_PACKAGE} and {library} failed").into());
         }
         let verdict = verdict_dep_info(&libraries.stdout, &[ENGINE_PACKAGE, library])?;
-        process::run(oer_toolchain::blobray::cargo(&ctx.root, "build").args([
-            "--profile",
-            "blobray",
-            "-p",
-            package,
-            "--bin",
-            binary,
-        ]))?;
+        process::run(
+            oer_toolchain::workspace::VERIFICATION
+                .cargo(&ctx.root, "build")
+                .args([
+                    "--profile",
+                    oer_toolchain::workspace::VERIFICATION.profile,
+                    "-p",
+                    package,
+                    "--bin",
+                    binary,
+                ]),
+        )?;
         Ok(verdict)
     })?;
-    let mut command = ctx.command(oer_toolchain::blobray::binary(&ctx.root, binary));
-    command.arg(chip.name()).arg(scenario).args(rest);
+    let mut command = ctx.command(oer_toolchain::workspace::VERIFICATION.binary(&ctx.root, binary));
+    command.arg(scenario).args(rest);
     for file in verdict {
         command.arg(VERDICT_DEP_INFO).arg(file);
     }

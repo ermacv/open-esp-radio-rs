@@ -6,10 +6,10 @@
 //! identifier in those texts that names a function of a pinned vendor
 //! artifact is a reference. The chip's registry records, for each referenced
 //! function, the code fingerprint of the revision its facts were reviewed
-//! against. `cargo xtask check provenance` fails when a referenced function
+//! against. `cargo verification check provenance` fails when a referenced function
 //! changed, disappeared or is not registered, so a pin update cannot leave a
 //! recovered fact silently describing older code. After reviewing a changed
-//! function, `cargo xtask vendor-provenance --accept NAME` records its pinned
+//! function, `cargo verification provenance --accept NAME` records its pinned
 //! fingerprint; the registry diff is the review record. `NAME` is a symbol,
 //! or the `artifact[member]::symbol` form the check prints, which narrows it
 //! to that member; a name neither registered nor pinned is an error.
@@ -102,8 +102,8 @@ fn render_registry(entries: &[Entry]) -> String {
         "# Code fingerprints of the vendor functions production `SOURCE:` blocks\n\
          # and the register model cite, and those the verification decisions\n\
          # exclude code of, as reviewed. Maintained by\n\
-         # `cargo xtask vendor-provenance`; checked by `cargo xtask check\n\
-         # provenance`.\n\
+         # `cargo verification provenance`; checked by `cargo verification\n\
+         # check provenance`.\n\
          schema = 1\n",
     );
     for entry in entries {
@@ -257,7 +257,7 @@ fn citable_chips(root: &Path, supported: &[String]) -> Vec<String> {
 /// Identifiers of every `SOURCE:` comment block under `directory` that cites
 /// `chip`, a violation for every block that is malformed or names its chips
 /// wrongly, and the location and identifiers of every chip-neutral block
-/// that names no chip (see [`crate::citation`]). Paths are reported
+/// that names no chip (see `oer_markers::source`). Paths are reported
 /// and placed relative to `base`.
 /// A violation for every chip-neutral block without a chip list that cites
 /// one of the scanned chip's `known` functions. A block that cites no vendor
@@ -311,7 +311,7 @@ fn production_words(
     directory: &str,
     found: &mut Found,
 ) -> Result<()> {
-    use crate::citation::{Attribution, Syntax, attribute, blocks_in, place};
+    use oer_markers::source::{Attribution, Syntax, attribute, blocks_in, place};
     let files: Box<dyn Iterator<Item = &str>> = if directory.is_empty() {
         Box::new(repo.files())
     } else {
@@ -519,7 +519,9 @@ fn survey(root: &Path, chip: &str) -> Result<Survey> {
         }
     }
     words.extend(decisions.keys().cloned());
-    words.extend(summary_names(&root.join(scanned.rom_summaries()))?);
+    if let Some(summaries) = scanned.rom_summaries(root)? {
+        words.extend(summary_names(&root.join(summaries))?);
+    }
     let known: BTreeSet<&str> = current
         .keys()
         .map(|(_, _, name)| name.as_str())
@@ -628,14 +630,14 @@ fn problems_of(survey: &Survey) -> Vec<String> {
         );
         if !survey.cites(&entry.artifact, &entry.member, &entry.symbol) {
             problems.push(format!(
-                "{}[{}]::{} is registered but no longer cited; `cargo xtask vendor-provenance --accept {}[{}]::{}` removes it",
+                "{}[{}]::{} is registered but no longer cited; `cargo verification provenance --accept {}[{}]::{}` removes it",
                 entry.artifact, entry.member, entry.symbol, entry.artifact, entry.member, entry.symbol
             ));
         }
         match survey.current.get(&key) {
             None => problems.push(format!(
                 "{}[{}]::{} is cited but absent from the pinned artifact; it was renamed or \
-                 removed (see `cargo xtask vendor-diff`)",
+                 removed (see `cargo verification diff`)",
                 entry.artifact, entry.member, entry.symbol
             )),
             Some(code) if *code != entry.code => problems.push(format!(
@@ -657,7 +659,7 @@ fn problems_of(survey: &Survey) -> Vec<String> {
         if citing != entry.decisions {
             problems.push(format!(
                 "{}::{} is registered for decisions {:?} but cited by {:?}; review them and run \
-                 `cargo xtask vendor-provenance --accept {}`",
+                 `cargo verification provenance --accept {}`",
                 entry.artifact, entry.symbol, entry.decisions, citing, entry.symbol
             ));
         }

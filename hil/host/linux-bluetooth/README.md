@@ -4,8 +4,8 @@ Use the canonical [Linux fixture software installation](../fixtures.md#linux-fix
 route from the repository root:
 
 ```console
-cargo hil fixture install --provider linux-bluetooth --dry-run
-cargo hil fixture install --provider linux-bluetooth
+cargo stand fixture install --provider linux-bluetooth --dry-run
+cargo stand fixture install --provider linux-bluetooth
 cargo hil fixture bluetooth-check --adapter hci0
 ```
 
@@ -59,7 +59,7 @@ windows, 37-byte PRBS9 TX packets and the same two-second command deadline.
 The selected profile must advertise its RX, TX and Test End commands. A missing
 command, rejection or timeout fails the check; the helper never retries or
 switches versions. Reset, exclusive adapter ownership and verified restoration
-are unchanged. Reinstall with `cargo hil fixture install --provider linux-bluetooth`
+are unchanged. Reinstall with `cargo stand fixture install --provider linux-bluetooth`
 after updating its interface; installation adds only exact check grants for
 each admitted adapter, command version and DTM profile, not arbitrary command
 or timeout access.

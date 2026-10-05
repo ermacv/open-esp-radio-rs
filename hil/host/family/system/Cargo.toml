@@ -9,15 +9,17 @@ publish = false
 description = "System HIL workloads: boot, timebase, watchdog and memory benchmarks"
 
 [dependencies]
+oer-device-console = { path = "../../../../tools/device/console" }
+oer-device-reset = { path = "../../../../tools/device/reset" }
+oer-hil-schema = { path = "../../../schema" }
+oer-hil-scenario-catalog = { path = "../../scenario/catalog" }
 oer-hil-link = { path = "../../link" }
 oer-hil-scenario = { path = "../../scenario" }
-oer-hil-image-class = { path = "../../image-class" }
 oer-hil-workload = { path = "../../workload" }
-oer-hil-board = { path = "../../board" }
 oer-process = { path = "../../../../tools/process" }
 oer-hil-protocol = { path = "../../../protocol" }
 oer-hil-trace = { path = "../../../trace" }
-oer-esp32s31-platform-layout = { path = "../../../../platform/esp32s31/layout" }
+oer-chip-profile = { path = "../../../../tools/chip-profile" }
 oer-trace = { path = "../../../../crates/trace" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -110,8 +110,8 @@ caller keeps its own copy:
   resolves the esp-hal and platform PAC sources and runs it.
 - `inventory`: the publication's owned MMIO regions and declared words
   (`model`), Blobray's `register-accesses` records (`observations`), their
-  classification and the report; `inventory::run` (behind `cargo xtask
-  register-inventory`) runs Blobray over the pinned binaries, ranks the
+  classification and the report; `inventory::run` (behind `cargo registers
+  inventory`) runs Blobray over the pinned binaries, ranks the
   provenance registry's cited functions first and writes the report.
 
 `ChipSources` resolves the files a chip's publication manifest names

@@ -22,12 +22,17 @@ pub(crate) struct AbCli {
     b: String,
     #[arg(long = "scenario", required = true)]
     scenarios: Vec<String>,
-    /// Runs of each arm per layout seed.
+    /// Measured rounds (pairs) per layout seed, after its preparation
+    /// round that builds both arms' images and is never paired.
     #[arg(long, default_value_t = 3)]
     repetitions: u32,
     /// Layout seeds 1..=K, each built and run for both arms.
     #[arg(long, default_value_t = 1)]
     layout_seeds: u32,
+    /// Seed of the balanced AB/BA order of the rounds; defaults to the
+    /// experiment id. Recorded in the report and every run's manifest.
+    #[arg(long, value_name = "SEED")]
+    order_seed: Option<u64>,
     #[command(flatten)]
     boards: crate::jobs::BoardChoiceArgs,
 }
@@ -55,6 +60,7 @@ pub(crate) fn ab(
             repetitions: cli.repetitions,
             layout_seeds: cli.layout_seeds,
             boards: cli.boards.arguments(),
+            order_seed: cli.order_seed,
         },
     )?;
     print!("{}", ab::summary(&finished.report));

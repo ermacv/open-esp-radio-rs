@@ -1,8 +1,8 @@
 //! A repetition's observed interrupt-stack use against the image's static
 //! bound.
 //!
-//! Every ESP32-S31 image build proves a bound on each hart's interrupt stack
-//! (`interrupt-stack gate`); a device watermark above it means the analysis
+//! Every image build of a chip with an interrupt contract proves a bound on
+//! each hart's interrupt stack (`interrupt-stack gate`); a device watermark above it means the analysis
 //! missed a path, so the repetition fails. The bound is recomputed from the
 //! run's archived runtime ELF by the current analyzer, so a replayed image
 //! is checked too.
@@ -11,7 +11,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use oer_hil_run_bundle::run::{Comparison, Measurement, MeasurementUnit};
+use oer_hil_run_bundle_format::run::Comparison;
+use oer_hil_run_bundle_format::run::Measurement;
+use oer_hil_run_bundle_format::run::MeasurementUnit;
 
 /// Each hart's bound in bytes, by hart; `None` for a hart the analysis left
 /// `partial + ?` (a diagnostic image), which no observation can be held to.
@@ -82,9 +84,9 @@ pub(crate) fn evaluate(
         .collect()
 }
 
-/// Each hart's static interrupt-stack bound of the runtime ELF at `elf`,
-/// computed once per ELF.
-pub(crate) fn bounds(elf: &Path) -> Result<Bounds, String> {
+/// Each hart's static interrupt-stack bound of `chip`'s runtime ELF at
+/// `elf`, computed once per ELF.
+pub(crate) fn bounds(chip: &str, elf: &Path) -> Result<Bounds, String> {
     static BOUNDS: Mutex<BTreeMap<PathBuf, Result<Bounds, String>>> = Mutex::new(BTreeMap::new());
     let mut cache = BOUNDS
         .lock()
@@ -92,11 +94,12 @@ pub(crate) fn bounds(elf: &Path) -> Result<Bounds, String> {
     cache
         .entry(elf.to_owned())
         .or_insert_with(|| {
-            let stacks =
-                oer_image::interrupt_stack::interrupt_stacks(&oer_process::built_root(), elf)
-                    .map_err(|error| {
-                        format!("interrupt-stack bound of {}: {error}", elf.display())
-                    })?;
+            let root = oer_process::built_root();
+            let stacks = oer_chip_profile::Profile::load(&root, chip)
+                .and_then(|profile| {
+                    oer_image_check_interrupts::interrupt_stacks(&root, &profile, elf)
+                })
+                .map_err(|error| format!("interrupt-stack bound of {}: {error}", elf.display()))?;
             stacks
                 .harts
                 .iter()
@@ -109,7 +112,7 @@ pub(crate) fn bounds(elf: &Path) -> Result<Bounds, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_hil_run_bundle::run::MeasurementVerdict;
+    use oer_hil_run_bundle_format::run::MeasurementVerdict;
 
     fn bytes(name: &str, value: u64) -> Measurement {
         Measurement::observed(name, value, MeasurementUnit::Bytes)

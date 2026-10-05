@@ -9,7 +9,7 @@ publish = false
 [target.'cfg(unix)'.dependencies]
 signal-hook = "=0.3.18"
 libc = "=0.2.189"
-rustix = { version = "=1.1.4", features = ["param"] }
+rustix = { version = "=1.1.4", features = ["fs", "param"] }
 
 [dev-dependencies]
 tempfile = "=3.27.0"

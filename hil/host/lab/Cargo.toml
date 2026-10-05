@@ -13,19 +13,24 @@ description = "HIL run-level stand operation: the laboratory configuration, the 
 test-support = []
 
 [dependencies]
+oer-device-console = { path = "../../../tools/device/console" }
+oer-device-discovery = { path = "../../../tools/device/discovery" }
+oer-device-openocd = { path = "../../../tools/device/openocd" }
+oer-device-port = { path = "../../../tools/device/port" }
+oer-device-reset = { path = "../../../tools/device/reset" }
+oer-hil-run-bundle-format = { path = "../run-bundle/format" }
+oer-hil-scenario-catalog = { path = "../scenario/catalog" }
 oer-elf = { path = "../../../tools/elf" }
 oer-chip-profile = { path = "../../../tools/chip-profile" }
-oer-hil-arbiter = { path = "../arbiter" }
-oer-hil-stand-model = { path = "../../stand/model" }
-oer-hil-board = { path = "../board" }
-oer-hil-stand-host = { path = "../stand-host" }
+oer-stand-arbiter = { path = "../../../stand/arbiter" }
+oer-stand-file = { path = "../../../stand/file" }
+oer-stand-board = { path = "../../../stand/board" }
+oer-stand-ssh = { path = "../../../stand/ssh" }
 oer-durable = { path = "../../../tools/durable" }
-oer-hil-run-bundle = { path = "../run-bundle" }
 oer-hil-fixture = { path = "../fixture" }
-oer-hil-fixture-install = { path = "../fixture-install" }
+oer-stand-fixture-install = { path = "../../../stand/fixture-install" }
 oer-hil-link = { path = "../link" }
 oer-hil-protocol = { path = "../../protocol", features = ["registry"] }
-oer-hil-scenario = { path = "../scenario" }
 oer-hil-trace = { path = "../../trace", features = ["describe"] }
 oer-process = { path = "../../../tools/process" }
 oer-trace = { path = "../../../crates/trace" }
@@ -35,6 +40,10 @@ tempfile = "3"
 toml = "1.1"
 zeroize = "1.8.1"
 
+oer-device-lock = { path = "../../../tools/device/lock" }
+oer-stand-claims = { path = "../../../stand/claims" }
+oer-stand-journal = { path = "../../../stand/journal" }
+oer-stand-resource-lock = { path = "../../../stand/resource-lock" }
 [dev-dependencies]
 oer-ieee80211-trace = { path = "../../../crates/protocols/ieee80211/trace" }
 oer-phy-trace = { path = "../../../crates/hardware/radio/trace" }

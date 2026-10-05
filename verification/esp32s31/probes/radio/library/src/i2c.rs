@@ -73,7 +73,7 @@ oer_probe_macros::probe! {
                     }
                     PhyColdI2cAction::AwaitReadCompletionEdge { .. }
                     | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                        if transaction.observe_target_edge(&mut crate::shared_phy(registers)).is_err() {
+                        if transaction.observe_target_edge(&crate::shared_phy(registers)).is_err() {
                             return 0x10002;
                         }
                     }

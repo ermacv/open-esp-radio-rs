@@ -45,8 +45,13 @@ pub fn add(ctx: &Checkout, path: &Path, branch: &str, from: &str) -> Result<()> 
             .arg(from),
     )?;
     // Fetched vendor artifacts live in the host-wide store; link it first so
-    // vendor scenarios and captures find them in the new worktree.
-    oer_vendor_artifacts::link_store(path, &oer_vendor_artifacts::store()?)?;
+    // vendor scenarios and captures find them in the new worktree. Vendor
+    // verification owns the store: `cargo verification link-store`.
+    process::run(
+        oer_toolchain::cargo_in(&ctx.root)
+            .args(["verification", "link-store"])
+            .arg(path),
+    )?;
     let source = ctx.root.join("target");
     if !source.is_dir() {
         println!("worktree: this checkout has no target/ to seed from");
@@ -306,7 +311,7 @@ mod tests {
         let source = dir.path().join("source");
         fs::create_dir_all(source.join("debug/deps")).unwrap();
         fs::create_dir_all(source.join("debug/incremental/crate")).unwrap();
-        fs::create_dir_all(source.join("hil/esp32s31")).unwrap();
+        fs::create_dir_all(source.join("hil/chip-a")).unwrap();
         fs::write(source.join("debug/deps/libx.rlib"), b"rlib").unwrap();
         let destination = dir.path().join("destination");
         match seed(&source, &destination) {

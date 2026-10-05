@@ -11,7 +11,7 @@ table of [`oer-elf`](../../elf/README.md) (`rv32::kind`), never a local list.
 it decodes each instruction and replaces every address the code forms
 (branch and jump targets, `lui`/`auipc` pairs and what completes them through
 registers, address words in code) by the location the caller's `Placement`
-names. `cargo xtask compare elf` compares these listings instead of
+names. `cargo fw compare` compares these listings instead of
 disassembler text.
 
 Decoding belongs to [`oer-riscv-decode`](../decode/README.md),

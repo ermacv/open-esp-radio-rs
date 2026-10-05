@@ -1,56 +1,73 @@
-//! The flash operation, the only way the host writes a board's flash:
+//! The HIL flash operation, how a run writes a board's flash:
 //!
-//! 1. **lease**: the caller holds the board's lock ([`BoardLock`]), which it
-//!    takes only under the arbiter's grant; the operation refuses a lock of
-//!    another board;
-//! 2. **write**: board I/O writes the image bundle's segments, the OTA
-//!    selection last, retrying a failed link and skipping unchanged
-//!    segments;
-//! 3. **journal**: the board journal records the image the board now
-//!    carries ([`oer_hil_arbiter::Arbiter::record_flash`]), with the digest
-//!    of the bundle's application, computed here;
-//! 4. **start**: the image starts as the chip profile's `[flash] start`
-//!    says, unless the write's own reset started it.
+//! 1. **lease**: the target is a leased board ([`oer_stand_board::LeasedBoard`]),
+//!    which holds the board's device access: the arbiter's grant takes it
+//!    for every leased board;
+//! 2. **write**: the devices layer's one write operation
+//!    (`oer-device-image`) invalidates the board's receipt, writes the image
+//!    bundle's segments, publishes the receipt of the whole bundle, starts
+//!    the image as the chip profile's `[flash] start` says and confirms the
+//!    start;
+//! 3. **journal**: the board journal records the flash as history
+//!    ([`Journal::record_flash`]); it never decides whether a board carries
+//!    an image.
 //!
-//! `cargo hil flash`, `cargo hil firmware flash`, the runner's flash of the
-//! device under test and of the reference peers, and the calibration
-//! capture call [`flash`] or [`flash_if_changed`]; [`catalog`] flashes an
-//! ESP-IDF catalog image.
+//! [`flash_if_changed`] skips a board whose receipt says it runs the whole
+//! bundle. The runner's flash of the device under test and of the reference
+//! peers, and the calibration capture call [`flash`] or
+//! [`flash_if_changed`]; [`catalog`] flashes an ESP-IDF catalog image.
 #![forbid(unsafe_code)]
 
 use std::path::Path;
 
-use oer_chip_profile::Start;
-use oer_hil_arbiter::{Arbiter, ImageIdentity, lock::BoardLock};
-use oer_hil_board::Via;
-use oer_image::ImageBundle;
+use oer_device_image::{Receipt, Store};
+use oer_device_lock::DeviceId;
+use oer_image_bundle::ImageBundle;
+use oer_stand_board::Via;
+use oer_stand_journal::{ImageIdentity, Journal};
 
 pub mod catalog;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// A board the operation writes: board I/O's [`oer_hil_board::Board`], or a
+/// A board the operation writes: a [`oer_stand_board::LeasedBoard`], or a
 /// test's fake.
 pub trait Target {
-    /// The board's MAC.
-    fn mac(&self) -> &str;
-    /// Write `bundle` through `via`; the start the image still needs.
-    fn write(&self, bundle: &ImageBundle, via: Via) -> Result<Start>;
-    /// Start an image a write left for `start`.
-    fn start(&self, start: Start) -> Result<()>;
+    /// The board.
+    fn mac(&self) -> &DeviceId;
+    /// Write, start and confirm `bundle` as `image` through `via` for `by`;
+    /// the receipt the write published into `store`.
+    fn flash(
+        &self,
+        store: &Store,
+        bundle: &ImageBundle,
+        image: &str,
+        via: Via,
+        by: &str,
+    ) -> Result<Receipt>;
+    /// The receipt of `bundle` when the board runs it, by the receipts in
+    /// `store`, read once.
+    fn carries(&self, store: &Store, bundle: &ImageBundle) -> Result<Option<Receipt>>;
 }
 
-impl Target for oer_hil_board::Board {
-    fn mac(&self) -> &str {
-        oer_hil_board::Board::mac(self)
+impl Target for oer_stand_board::LeasedBoard {
+    fn mac(&self) -> &DeviceId {
+        oer_stand_board::LeasedBoard::mac(self)
     }
 
-    fn write(&self, bundle: &ImageBundle, via: Via) -> Result<Start> {
-        oer_hil_board::Board::write(self, bundle, via)
+    fn flash(
+        &self,
+        store: &Store,
+        bundle: &ImageBundle,
+        image: &str,
+        via: Via,
+        by: &str,
+    ) -> Result<Receipt> {
+        oer_stand_board::LeasedBoard::flash(self, store, bundle, image, via, by)
     }
 
-    fn start(&self, start: Start) -> Result<()> {
-        oer_hil_board::Board::start(self, start)
+    fn carries(&self, store: &Store, bundle: &ImageBundle) -> Result<Option<Receipt>> {
+        oer_stand_board::LeasedBoard::carries(self, store, bundle)
     }
 }
 
@@ -78,74 +95,72 @@ impl Revision {
 /// What the operation writes and journals.
 pub struct Image<'a> {
     pub bundle: &'a ImageBundle,
-    /// The name the journal knows the image by.
+    /// The name the receipt and the journal know the image by.
     pub name: &'a str,
     pub revision: Revision,
     /// The run or command that writes it.
     pub origin: String,
 }
 
-impl Image<'_> {
-    fn identity(&self) -> Result<ImageIdentity> {
-        Ok(ImageIdentity {
-            name: self.name.to_owned(),
-            sha256: oer_durable::sha256_file(&self.bundle.application())?,
-            commit: self.revision.commit.clone(),
-            dirty: self.revision.dirty,
-            origin: self.origin.clone(),
-        })
+/// What [`flash_if_changed`] did, with the receipt of what the board runs.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Flashed {
+    Written(Receipt),
+    /// The board's receipt says it already runs the whole bundle; nothing
+    /// was written.
+    Carried(Receipt),
+}
+
+impl Flashed {
+    pub fn receipt(&self) -> &Receipt {
+        match self {
+            Self::Written(receipt) | Self::Carried(receipt) => receipt,
+        }
     }
 }
 
-/// What [`flash_if_changed`] did.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Flashed {
-    Written,
-    /// The journal says the board already carries the image; nothing was
-    /// written.
-    Carried,
-}
-
-/// Write `image` into `target` under `lock`, journal it for `owner` in
-/// `journal`, then start it.
+/// Write `image` into `target`, receipted in `store`, journal it for
+/// `owner` in `journal`; the receipt.
 pub fn flash(
-    journal: &Arbiter,
+    journal: &Journal,
+    store: &Store,
     owner: &str,
-    lock: &BoardLock,
     target: &dyn Target,
     image: &Image<'_>,
     via: Via,
-) -> Result<()> {
-    if lock.mac() != target.mac() {
-        return Err(format!(
-            "the lock of board {} does not cover board {}",
-            lock.mac(),
-            target.mac()
-        )
-        .into());
-    }
-    let identity = image.identity()?;
-    let start = target.write(image.bundle, via)?;
-    journal.record_flash(owner.to_owned(), target.mac(), &identity)?;
-    target.start(start)
+) -> Result<Receipt> {
+    let receipt = target.flash(store, image.bundle, image.name, via, &image.origin)?;
+    let application = receipt
+        .segment("application")
+        .ok_or("the receipt names no application segment")?;
+    journal.record_flash(
+        owner.to_owned(),
+        target.mac(),
+        &ImageIdentity {
+            name: image.name.to_owned(),
+            sha256: application.sha256.clone(),
+            commit: image.revision.commit.clone(),
+            dirty: image.revision.dirty,
+            origin: image.origin.clone(),
+        },
+    )?;
+    Ok(receipt)
 }
 
-/// [`flash`], unless the journal says the board already carries the image
-/// with this digest.
+/// [`flash`], unless the board's receipt says it already runs the whole
+/// bundle.
 pub fn flash_if_changed(
-    journal: &Arbiter,
+    journal: &Journal,
+    store: &Store,
     owner: &str,
-    lock: &BoardLock,
     target: &dyn Target,
     image: &Image<'_>,
     via: Via,
 ) -> Result<Flashed> {
-    let sha256 = oer_durable::sha256_file(&image.bundle.application())?;
-    if journal.carries(target.mac(), image.name, &sha256)? {
-        return Ok(Flashed::Carried);
+    if let Some(receipt) = target.carries(store, image.bundle)? {
+        return Ok(Flashed::Carried(receipt));
     }
-    flash(journal, owner, lock, target, image, via)?;
-    Ok(Flashed::Written)
+    flash(journal, store, owner, target, image, via).map(Flashed::Written)
 }
 
 #[cfg(test)]

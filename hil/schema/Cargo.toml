@@ -9,6 +9,7 @@ publish = false
 description = "The HIL evidence contract with qualification: run vocabulary, canonical scenarios and source-snapshot manifests"
 
 [dependencies]
+oer-durable = { path = "../../tools/durable" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
@@ -18,5 +19,7 @@ workspace = true
 [package.metadata.open-radio]
 layer = "hil"
 platform = "host"
-host-layer = "execution"
+host-layer = "foundation"
 hil = "observation"
+# A contract and format leaf: the DTOs evidence and qualification share; no
+# execution code.

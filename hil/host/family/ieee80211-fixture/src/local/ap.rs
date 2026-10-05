@@ -5,8 +5,9 @@ use crate::{
     channel::Geometry,
     local::wpa_control::{Control, field},
 };
-use oer_hil_lab::config::{LocalLinuxConfig, StationConfig};
-use oer_hil_scenario::link::PhyExpectation;
+use oer_hil_lab::config::{Coexistence, LocalLinuxConfig, StationConfig};
+use oer_hil_run_bundle_format::run::fixtures::LocalApplied;
+use oer_hil_scenario_catalog::link::PhyExpectation;
 use oer_process::CommandExt as _;
 use std::{
     io::{Read, Seek, SeekFrom, Write},
@@ -48,13 +49,26 @@ impl AccessPoint {
         helper("stop", None).map(drop)
     }
 
-    pub fn report(&self) -> serde_json::Value {
+    /// The fixture record of the verified local access point.
+    pub fn report(&self) -> LocalApplied {
         let observed = geometry(&self.config, self.phy);
-        serde_json::json!({"schema": 1, "backend": "local-linux", "verified": true,
-            "phy": self.phy, "channel": self.config.channel, "country": self.config.country,
-            "frequency_mhz": observed.frequency, "width_mhz": observed.width, "center1_mhz": observed.center,
-            "address": self.config.address, "prefix_length": self.config.prefix_length,
-            "coexistence": self.config.coexistence})
+        LocalApplied {
+            schema: 1,
+            backend: String::from("local-linux"),
+            verified: true,
+            phy: self.phy,
+            channel: self.config.channel,
+            country: self.config.country.clone(),
+            frequency_mhz: observed.frequency,
+            width_mhz: observed.width,
+            center1_mhz: observed.center,
+            address: self.config.address,
+            prefix_length: self.config.prefix_length,
+            coexistence: String::from(match self.config.coexistence {
+                Coexistence::Respect => "respect",
+                Coexistence::ForceHt40 => "force-ht40",
+            }),
+        }
     }
 
     pub fn restart(&self) -> Result<()> {

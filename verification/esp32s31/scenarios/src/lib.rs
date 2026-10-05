@@ -62,7 +62,7 @@ pub const PROBES_TARGET: &str = "riscv32imafc-unknown-none-elf";
 #[cfg(test)]
 mod tests {
     use crate::artifacts::{manifest, path, sha256};
-    use oer_vendor_artifacts::SourceKind;
+    use oer_vendor_pins::SourceKind;
     use std::path::Path;
 
     #[test]
@@ -98,10 +98,15 @@ mod tests {
     fn fetched_artifacts_live_under_their_source_revision() {
         super::install();
         let root = Path::new("/repo");
-        assert_eq!(
-            path(root, "libphy"),
-            root.join("target/vendor/esp-phy-lib/20f1db053a0e6cb9f1c09d255c43bf42483041d0/esp32s31/libphy.a")
-        );
+        let pins = oer_vendor_pins::Manifest::parse(
+            &std::fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../artifacts.toml"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let libphy = pins.artifact("libphy").unwrap();
+        assert_eq!(path(root, "libphy"), pins.location(root, libphy).unwrap());
         assert!(path(root, "sdk").starts_with(root.join("target/architecture-research")));
     }
 }

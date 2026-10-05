@@ -7,26 +7,26 @@
 //! [`BoardImages`], that is the flash operation under the run's lock, which
 //! journals it. Each production boot receives a fresh startup artifact path,
 //! so it calibrates fully and publishes its retained calibration. Every boot
-//! is a typed observation of the repetition; the comparison's
-//! [`Summary`](oer_esp32s31_phy_vendor_calibration::compare::Summary) is its
-//! result, and anything but MATCH fails the repetition.
-use std::io::Read;
+//! is a typed observation of the repetition; the chip's comparison
+//! ([`Comparison`]) is its result, and anything but MATCH fails the
+//! repetition.
+use std::io::{Read, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use oer_esp32s31_phy_vendor_calibration::boots::{
+use oer_hil_link::{SerialCapture, Target};
+use oer_hil_schema::image::ImageClass;
+use oer_hil_workload::context::Context;
+use oer_phy_calibration_capture::boots::{
     Images, Lifecycle, ProductionBoot, Readings, Transmitted, VendorBoot,
 };
-use oer_esp32s31_phy_vendor_calibration::compare::{self, ReviewFile, VENDOR_OBJECT, Verdict};
-use oer_esp32s31_phy_vendor_calibration::registers::{self, Register, Space};
-use oer_esp32s31_phy_vendor_calibration::{production, vendor};
-use oer_hil_image_class::ImageClass;
-use oer_hil_link::{SerialCapture, Target};
-use oer_hil_workload::context::Context;
+use oer_phy_calibration_capture::space::{Register, Space};
+use oer_phy_calibration_capture::vendor;
 
 use super::reference::{self, Peer};
 use crate::Result;
-use crate::scenario::{CHIP, Window};
+use crate::comparison::Comparison;
+use crate::scenario::{Window, vendor_projects};
 
 /// Longest wait for one vendor boot's closed report.
 const VENDOR_BOOT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -40,8 +40,6 @@ const REGISTER_IMAGE_TIMEOUT: Duration = Duration::from_secs(2);
 const SESSION_TIMEOUT: Duration = Duration::from_secs(10);
 /// Console characters an unanswered register read reports.
 const CONSOLE_TAIL_CHARS: usize = 2000;
-/// The vendor firmware projects, relative to the repository root.
-const VENDOR_PROJECTS: &str = "verification/esp32s31/hil-vendor";
 
 /// What one repetition compares.
 pub(crate) struct Calibration<'a> {
@@ -54,26 +52,32 @@ pub(crate) struct Calibration<'a> {
     pub vendor_only: bool,
 }
 
-pub(crate) fn run(spec: &Calibration<'_>, output: &Path, context: &Context<'_>) -> Result<()> {
+pub(crate) fn run<C: Comparison>(
+    spec: &Calibration<'_>,
+    output: &Path,
+    context: &Context<'_>,
+) -> Result<()> {
     let root = oer_process::built_root();
+    let chip = context.lab.chip();
+    let projects = vendor_projects(chip)?;
     let images = context.images()?;
     // The pinned ESP-IDF build of the vendor firmware is incremental; the
     // pipeline encodes the HIL bootloader, partition table and OTA selection
     // around its application.
-    let build = oer_image::esp_idf::idf::build(
+    let build = oer_esp_idf::build(
         &root,
-        CHIP,
-        &[oer_image::esp_idf::idf::Project {
+        chip,
+        &[oer_esp_idf::Project {
             name: spec.vendor_project.to_owned(),
-            source: root.join(VENDOR_PROJECTS).join(spec.vendor_project),
-            chip: CHIP.to_owned(),
+            source: root.join(&projects).join(spec.vendor_project),
+            chip: chip.to_owned(),
         }],
     )?
     .pop()
     .ok_or("the vendor firmware build produced no image")?;
     let vendor_bundle = oer_image::bundle::around(
         &root,
-        CHIP,
+        chip,
         Path::new(&build.application),
         oer_image::bundle::BootFiles::Encode {
             elf: Path::new(&build.elf),
@@ -91,8 +95,8 @@ pub(crate) fn run(spec: &Calibration<'_>, output: &Path, context: &Context<'_>) 
         )?,
     };
     context.results.observe("images", &identity);
-    let registers = registers::partition(&root, registers::PARTITION)?;
-    let analog = registers::analog(&root, registers::ANALOG_DOMAIN)?;
+    let images_read = C::images(&root)?;
+    let (registers, analog) = (&images_read.registers, &images_read.analog);
     let windows = window_registers(spec.windows);
     let journal_name = format!("vendor-{}", spec.vendor_project);
     let (mut vendor, mut production) = (Vec::new(), Vec::new());
@@ -100,9 +104,16 @@ pub(crate) fn run(spec: &Calibration<'_>, output: &Path, context: &Context<'_>) 
         images.flash(&vendor_bundle, &journal_name)?;
         let stem = output.join(format!("vendor-{boot:02}"));
         let vendor_boot = if spec.lifecycle.ieee802154() {
-            reference_boot(context, spec, &registers, &analog, &windows, &stem)?
+            reference_boot(context, spec, registers, analog, &windows, &stem)?
         } else {
-            calibration_boot(context, spec.lifecycle, &registers, &analog, &stem)?
+            calibration_boot(
+                context,
+                spec.lifecycle,
+                C::VENDOR_OBJECT,
+                registers,
+                analog,
+                &stem,
+            )?
         };
         context
             .results
@@ -122,9 +133,9 @@ pub(crate) fn run(spec: &Calibration<'_>, output: &Path, context: &Context<'_>) 
             context,
             spec.lifecycle,
             &output.join(format!("production-{boot:02}")),
-            &registers,
+            registers,
             &readable,
-            &analog,
+            analog,
         )?;
         context
             .results
@@ -140,40 +151,32 @@ pub(crate) fn run(spec: &Calibration<'_>, output: &Path, context: &Context<'_>) 
         );
         return Ok(());
     }
-    let summary = compare::compare(
+    let compared = C::compare(
         spec.lifecycle,
         &identity,
         &vendor,
         &production,
-        ReviewFile::reviewed()?,
-        (&registers, &analog),
+        &images_read,
     )?;
-    context.results.observe("comparison", &summary);
+    context.results.observe("comparison", &compared.summary);
     context.results.claim(
         "production PHY calibration and register state within the vendor's boot-to-boot spread",
         &["modem-sleep", "phy-param-bytes-outside-the-relation"],
     );
-    match summary.verdict {
-        Verdict::Match => Ok(()),
-        verdict => Err(format!(
-            "calibration cross-check {verdict:?}: {} of {} registers and {} of {} analog registers matched",
-            summary.registers.matched,
-            summary.registers.compared,
-            summary.analog.matched,
-            summary.analog.compared,
-        )
-        .into()),
+    match compared.mismatch {
+        None => Ok(()),
+        Some(mismatch) => Err(format!("calibration cross-check {mismatch}").into()),
     }
 }
 
 /// The console port of the board under test, just reset. The port is
 /// opened through the stand's opener, which never resets the chip on its
 /// own.
-fn reset_console(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
-    use oer_hil_board::reset::{open_without_reset, reset_usb_serial_jtag};
+fn reset_console(port: &Path) -> Result<oer_device_port::Port> {
+    use oer_device_reset::{open_without_reset, reset_usb_serial_jtag};
     let mut serial = open_without_reset(port)?;
     serial.set_timeout(READ_TIMEOUT)?;
-    reset_usb_serial_jtag(&mut *serial)?;
+    reset_usb_serial_jtag(&mut serial)?;
     Ok(serial)
 }
 
@@ -183,6 +186,7 @@ fn reset_console(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
 fn calibration_boot(
     context: &Context<'_>,
     lifecycle: Lifecycle,
+    vendor_object: &str,
     registers: &[Register],
     analog: &[Register],
     stem: &Path,
@@ -191,22 +195,16 @@ fn calibration_boot(
     std::fs::write(stem.with_extension("log"), &console)?;
     let mut objects = vendor::parse(&console)?;
     let calibration = objects
-        .remove(VENDOR_OBJECT)
-        .ok_or_else(|| format!("the vendor boot reported no {VENDOR_OBJECT}"))?;
+        .remove(vendor_object)
+        .ok_or_else(|| format!("the vendor boot reported no {vendor_object}"))?;
     let mut replies = String::new();
     if lifecycle == Lifecycle::Restart {
-        vendor_restart(&mut *serial, &mut replies)?;
+        vendor_restart(&mut serial, &mut replies)?;
     }
-    vendor_registers(
-        &mut *serial,
-        Space::Mmio,
-        registers,
-        lifecycle,
-        &mut replies,
-    )?;
+    vendor_registers(&mut serial, Space::Mmio, registers, lifecycle, &mut replies)?;
     let mut analog_replies = String::new();
     vendor_registers(
-        &mut *serial,
+        &mut serial,
         Space::Analog,
         analog,
         lifecycle,
@@ -262,7 +260,7 @@ fn reference_boot(
 
 /// The console of one reset vendor boot, up to its closed report, and the
 /// open port the firmware keeps answering on.
-fn vendor_boot(port: &Path) -> Result<(String, Box<dyn serialport::SerialPort>)> {
+fn vendor_boot(port: &Path) -> Result<(String, oer_device_port::Port)> {
     let mut serial = reset_console(port)?;
     let started = Instant::now();
     let mut console = Vec::new();
@@ -288,7 +286,7 @@ fn vendor_boot(port: &Path) -> Result<(String, Box<dyn serialport::SerialPort>)>
 /// Restart the vendor Wi-Fi radio and require that stopping the client
 /// released every PHY modem, which closes RF. `replies` accumulates the
 /// console.
-fn vendor_restart(serial: &mut dyn serialport::SerialPort, replies: &mut String) -> Result<()> {
+fn vendor_restart(serial: &mut oer_device_port::Port, replies: &mut String) -> Result<()> {
     let done = vendor::restarts(replies)?.len();
     serial.write_all(vendor::RESTART_REQUEST.as_bytes())?;
     let started = Instant::now();
@@ -322,7 +320,7 @@ fn vendor_restart(serial: &mut dyn serialport::SerialPort, replies: &mut String)
 /// [`Lifecycle::Restart`] point. `replies` holds the console so far, and
 /// its restarts.
 fn vendor_registers(
-    serial: &mut dyn serialport::SerialPort,
+    serial: &mut oer_device_port::Port,
     space: Space,
     registers: &[Register],
     lifecycle: Lifecycle,
@@ -469,9 +467,16 @@ fn production_boot(
                     .insert(register.address, u32::from(*value));
             }
         }
-        Ok((status, values, analog_values))
+        // The firmware projects the calibration it published; the host
+        // compares the words without replaying the calibration itself.
+        let projection = if status.is_some() {
+            Some(calibration_projection(&capture)?)
+        } else {
+            None
+        };
+        Ok((status, values, analog_values, projection))
     })();
-    let (status, registers, analog) = capture.finish_with(result)?;
+    let (status, registers, analog, projection) = capture.finish_with(result)?;
     let calibration = if lifecycle.ieee802154() {
         None
     } else {
@@ -483,7 +488,7 @@ fn production_boot(
             )
             .into());
         }
-        Some(production::output(&std::fs::read(&artifact)?)?)
+        Some(projection.ok_or("the production image projected no calibration")?)
     };
     Ok(ProductionBoot {
         calibration,
@@ -526,6 +531,41 @@ fn ieee802154_session(capture: &SerialCapture) -> Result<()> {
 }
 
 /// Requests covering the ascending `indices` in runs of at most one reply.
+/// The production output bytes of the parent root's calibration projection,
+/// parent words and committed state words, as the image projected the
+/// retained calibration it published (`phy/calibration-projection/read`):
+/// each word little-endian, in the relation's order.
+fn calibration_projection(capture: &SerialCapture) -> Result<Vec<u8>> {
+    let mut words = Vec::new();
+    let mut length = None;
+    while length.is_none_or(|length| words.len() < length) {
+        let window = capture
+            .request(
+                0,
+                oer_hil_protocol::phy::ReadCalibrationProjection(
+                    oer_hil_protocol::phy::PhyCalibrationProjectionRequest {
+                        first: words.len() as u16,
+                        count: length.map_or(
+                            oer_hil_protocol::phy::PHY_CALIBRATION_PROJECTION_WORDS,
+                            |length: usize| {
+                                (length - words.len())
+                                    .min(oer_hil_protocol::phy::PHY_CALIBRATION_PROJECTION_WORDS)
+                            },
+                        ) as u8,
+                    },
+                ),
+                REGISTER_IMAGE_TIMEOUT,
+            )?
+            .0;
+        if usize::from(window.first) != words.len() || window.values.is_empty() {
+            return Err("the calibration projection window does not continue the words".into());
+        }
+        length = Some(usize::from(window.length));
+        words.extend(window.values.iter().copied());
+    }
+    Ok(words.iter().flat_map(|word| word.to_le_bytes()).collect())
+}
+
 fn windows(indices: &[usize]) -> Vec<oer_hil_protocol::phy::PhyRegisterImageRequest> {
     let mut windows: Vec<oer_hil_protocol::phy::PhyRegisterImageRequest> = vec![];
     for &index in indices {

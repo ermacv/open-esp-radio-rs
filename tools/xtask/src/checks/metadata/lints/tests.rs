@@ -32,6 +32,7 @@ fn islands_repeating_the_root_policy_pass() {
             root(),
             island("platform/Cargo.toml", POLICY, &[("oer-board", INHERITS)]),
         ],
+        &[],
     )
     .unwrap();
 }
@@ -43,6 +44,7 @@ fn island_with_a_different_or_missing_policy_is_rejected() {
         let error = check(
             Path::new("Cargo.toml"),
             &[root(), island("examples/a/Cargo.toml", contents, &[])],
+            &[],
         )
         .unwrap_err()
         .to_string();
@@ -59,6 +61,7 @@ fn package_with_local_lints_is_rejected() {
             root(),
             island("platform/Cargo.toml", POLICY, &[("oer-local", local)]),
         ],
+        &[],
     )
     .unwrap_err()
     .to_string();
@@ -71,9 +74,10 @@ fn blobray_and_generated_bindings_keep_their_own_policy() {
     check(
         Path::new("Cargo.toml"),
         &[
-            island("Cargo.toml", POLICY, &[("oer-esp32s31-pac-raw", own)]),
+            island("Cargo.toml", POLICY, &[("oer-chip-a-pac-raw", own)]),
             island(INDEPENDENT_POLICY, "", &[("blobray-core", own)]),
         ],
+        &["oer-chip-a-pac-raw".to_owned()],
     )
     .unwrap();
 }

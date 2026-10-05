@@ -14,7 +14,7 @@ use oer_hil_protocol::{wifi::StationDisconnectReason, wifi::StationLifecycleEven
 use crate::Result;
 use oer_hil_family_ieee80211_fixture::controlled_ap::ControlledAp;
 use oer_hil_link::SerialCapture;
-use oer_hil_scenario::link::PhyExpectation;
+use oer_hil_scenario_catalog::link::PhyExpectation;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 

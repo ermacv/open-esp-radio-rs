@@ -9,6 +9,7 @@ publish = false
 description = "The host tools repository builds run: their lookup, recorded versions and the image compiler setup"
 
 [dependencies]
+oer-durable = { path = "../durable" }
 oer-process = { path = "../process" }
 
 [dev-dependencies]

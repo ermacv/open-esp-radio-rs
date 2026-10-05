@@ -1,6 +1,7 @@
 //! Simultaneous same-channel STA+AP data-plane and beacon qualification.
 
 use oer_hil_net_traffic::NetworkSession as _;
+use oer_hil_run_bundle_format::run::fixtures::Burst;
 use oer_hil_workload::context::Context;
 use std::{
     fs,
@@ -22,7 +23,7 @@ use serde::Serialize;
 use crate::{
     Result, workload::ieee80211::control::report_stack,
     workload::ieee80211::control::require_transition, workload::ieee80211::control::stop_station,
-    workload::traffic::tx_traffic::Burst, workload::traffic::tx_traffic::Receiver,
+    workload::traffic::tx_traffic::Receiver,
 };
 use oer_hil_family_ieee80211_fixture::{
     local::air_monitor::LocalAirMonitorCapture,

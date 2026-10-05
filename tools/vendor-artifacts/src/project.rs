@@ -16,17 +16,16 @@ pub fn supported(root: &Path) -> Result<Vec<String>> {
     oer_chip_profile::supported(root)
 }
 
-/// The package of the vendor scenarios' command line, and its binary.
-const SCENARIO_COMMAND: &str = "oer-vendor-scenario-cli";
-const SCENARIO_BINARY: &str = "vendor-scenarios";
-
-/// A chip's typed vendor scenarios: the library that decides their
-/// verdicts, and the command package whose binary runs them.
+/// A chip's typed vendor scenarios: the verdict library that decides their
+/// verdicts, and the entry package whose binary, of the same name, runs
+/// them through the shared scenario command line (a report package the
+/// verdict library never depends on).
 #[derive(Debug, Eq, PartialEq)]
 pub struct Scenarios {
+    /// `verification/<chip>/scenarios`.
     pub library: String,
-    pub command: String,
-    pub binary: String,
+    /// `verification/<chip>/scenarios/cli`.
+    pub entry: String,
 }
 
 /// The vendor verification project of one supported chip.
@@ -38,7 +37,7 @@ impl Project {
     /// otherwise an error that lists the supported chips or names the
     /// missing project.
     pub fn new(root: &Path, name: &str) -> Result<Self> {
-        crate::manifest_path(root, name)?;
+        oer_vendor_pins::manifest_path(root, name)?;
         Ok(Self(oer_chip_profile::Profile::load(root, name)?.id))
     }
 
@@ -53,7 +52,7 @@ impl Project {
 
     /// The single pin of the chip's vendor artifacts.
     pub fn artifacts(&self) -> String {
-        crate::manifest(&self.0)
+        oer_vendor_pins::manifest(&self.0)
     }
 
     /// Directory of the chip's scenario evidence shards.
@@ -61,10 +60,13 @@ impl Project {
         self.verification("evidence/scenarios")
     }
 
-    /// The platform's reviewed summaries of the ROM functions its images
-    /// call, relative to the root.
-    pub fn rom_summaries(&self) -> String {
-        format!("platform/{}/linker/rom/functions.toml", self.0)
+    /// The chip's reviewed summaries of the ROM functions its images call,
+    /// relative to the root, as its profile's `[rom]` names them; `None`
+    /// for a chip that reviews none.
+    pub fn rom_summaries(&self, root: &Path) -> Result<Option<std::path::PathBuf>> {
+        Ok(oer_chip_profile::Profile::load(root, &self.0)?
+            .rom
+            .and_then(|rom| rom.summaries))
     }
 
     /// The chip's registry of reviewed vendor-function fingerprints.
@@ -72,14 +74,11 @@ impl Project {
         self.verification("facts/provenance.toml")
     }
 
-    /// Packages and binary of the chip's typed vendor scenarios: its own
-    /// library, and the one command line of every chip's scenarios, which
-    /// takes the chip as its first argument.
+    /// The package of the chip's typed vendor scenarios.
     pub fn scenarios(&self) -> Scenarios {
         Scenarios {
             library: format!("oer-{}-vendor-scenarios", self.0),
-            command: SCENARIO_COMMAND.to_owned(),
-            binary: SCENARIO_BINARY.to_owned(),
+            entry: format!("oer-{}-vendor-scenarios-cli", self.0),
         }
     }
 }
@@ -95,28 +94,33 @@ mod tests {
     #[test]
     fn tracked_chips_are_supported_and_others_are_rejected_with_the_list() {
         let supported = supported(&root()).unwrap();
-        assert!(supported.contains(&"esp32s31".to_owned()));
-        assert!(supported.contains(&"esp32c5".to_owned()));
-        let error = Project::new(&root(), "esp32").unwrap_err().to_string();
-        assert!(error.contains("unsupported chip `esp32`"), "{error}");
-        assert!(error.contains("esp32c5, esp32s31"), "{error}");
+        assert_eq!(supported, oer_chip_profile::supported(&root()).unwrap());
+        let error = Project::new(&root(), "chip-x").unwrap_err().to_string();
+        assert!(error.contains("unsupported chip `chip-x`"), "{error}");
+        assert!(error.contains(&supported.join(", ")), "{error}");
     }
 
     #[test]
     fn paths_follow_the_chip_directory() {
-        let chip = Project::new(&root(), "esp32c5").unwrap();
-        assert_eq!(chip.artifacts(), "verification/esp32c5/artifacts.toml");
-        assert_eq!(
-            chip.evidence_shards(),
-            "verification/esp32c5/evidence/scenarios"
-        );
-        assert_eq!(
-            chip.scenarios(),
-            Scenarios {
-                library: "oer-esp32c5-vendor-scenarios".to_owned(),
-                command: "oer-vendor-scenario-cli".to_owned(),
-                binary: "vendor-scenarios".to_owned(),
-            }
-        );
+        for name in supported(&root()).unwrap() {
+            let Ok(chip) = Project::new(&root(), &name) else {
+                continue;
+            };
+            assert_eq!(
+                chip.artifacts(),
+                format!("verification/{name}/artifacts.toml")
+            );
+            assert_eq!(
+                chip.evidence_shards(),
+                format!("verification/{name}/evidence/scenarios")
+            );
+            assert_eq!(
+                chip.scenarios(),
+                Scenarios {
+                    library: format!("oer-{name}-vendor-scenarios"),
+                    entry: format!("oer-{name}-vendor-scenarios-cli"),
+                }
+            );
+        }
     }
 }

@@ -15,7 +15,7 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
         dirty: false,
     };
     let manifest = json!({
-        "schema": 2, "run_id": "run-1", "target": "esp32s31", "state": "completed",
+        "schema": 2, "run_id": "run-1", "target": "chip-a", "state": "completed",
         "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
         "repository": {"commit": repository.commit, "dirty": false, "workspace_sha256": "00".repeat(32)},
     });
@@ -23,7 +23,7 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
     write(
         &run.join("suite.json"),
         &json!({
-            "schema": 2, "run_id": "run-1", "target": "esp32s31", "outcome": "passed",
+            "schema": 2, "run_id": "run-1", "target": "chip-a", "outcome": "passed",
             "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
             "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0, "blocked": 0, "interrupted": 0},
             "scenarios": [{"schema": 2, "scenario": "station-reconnect", "outcome": "passed",
@@ -38,7 +38,7 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
             &root,
             Path::new("runs"),
             Path::new("evidence"),
-            "esp32s31",
+            "chip-a",
             &repository,
         )
         .unwrap();
@@ -78,7 +78,11 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
         format!("version = 4\n{lock}\n[[package]]\nname = 'oer-hil-runner'\nversion = '0.1.0'\n");
     fs::write(root.join("Cargo.lock"), lock).unwrap();
     let mut pinned = canonical.clone();
-    pinned["files"][0]["sha256"] = json!(sha256_file(&root.join("Cargo.lock")).unwrap());
+    pinned["files"][0]["sha256"] = json!(
+        crate::digests()
+            .sha256_file(&root.join("Cargo.lock"))
+            .unwrap()
+    );
     for name in ["esp-hal", "embassy", "xarxa"] {
         let mut source = pinned["sources"][0].clone();
         source["name"] = json!(name);
@@ -146,7 +150,7 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
         &root,
         Path::new("runs"),
         Path::new("evidence"),
-        "esp32s31",
+        "chip-a",
         &repository,
     )
     .unwrap_err();

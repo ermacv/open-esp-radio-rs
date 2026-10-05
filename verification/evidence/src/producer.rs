@@ -2,18 +2,18 @@
 //!
 //! A [`Producer`] compares pinned vendor code with compiled production code
 //! scenario by scenario and writes one shard per scenario that compared
-//! MATCH, through [`crate::store::write`]; a scenario that is not MATCH
+//! MATCH, through [`oer_vendor_evidence_shard::store::write`]; a scenario that is not MATCH
 //! fails without a shard. The Blobray scenario engine and the host stands
-//! are the producers; `cargo xtask evidence` decides which of them run for
+//! are the producers; `cargo verification evidence` decides which of them run for
 //! which stale or named shards. Each shard names its producer in `command`
-//! ([`crate::BLOBRAY`] or [`crate::HOST_STAND`]).
+//! ([`oer_vendor_evidence_shard::BLOBRAY`] or [`oer_vendor_evidence_shard::HOST_STAND`]).
 use crate::{Result, policy};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// One producer of a chip's shards.
 pub trait Producer {
-    /// The `command` its shards record, one of [`crate::COMMANDS`].
+    /// The `command` its shards record, one of [`oer_vendor_evidence_shard::COMMANDS`].
     fn command(&self) -> &'static str;
     /// Whether `scenario` names one of its shards.
     fn owns(&self, scenario: &str) -> bool;
@@ -87,7 +87,7 @@ pub mod host_stand {
         stand: &Stand<'_>,
         matched: &[String],
         inputs: BTreeMap<String, String>,
-    ) -> Result<crate::Index> {
+    ) -> Result<oer_vendor_evidence_shard::Index> {
         let root = oer_process::checkout_of(stand.directory)
             .ok_or_else(|| format!("{} is outside a checkout", stand.directory.display()))?;
         let directory = stand
@@ -109,20 +109,20 @@ pub mod host_stand {
         let sources = directories
             .into_iter()
             .map(|path| {
-                Ok(crate::SourceDigest {
-                    sha256: crate::digest_directory(&root, &path)?,
+                Ok(oer_vendor_evidence_shard::SourceDigest {
+                    sha256: oer_vendor_evidence_shard::digest_directory(&root, &path)?,
                     path,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
         let entries = matched
             .iter()
-            .map(|symbol| crate::Entry {
+            .map(|symbol| oer_vendor_evidence_shard::Entry {
                 suite: scenario.clone(),
                 source: stand.source.into(),
                 symbol: symbol.clone(),
                 production: stand.production.into(),
-                verdict: crate::MATCH.into(),
+                verdict: oer_vendor_evidence_shard::MATCH.into(),
                 cases: 1,
                 reviews: vec![],
                 coverage: None,
@@ -130,14 +130,14 @@ pub mod host_stand {
                 state: None,
             })
             .collect();
-        let shard = crate::Index {
-            schema: crate::SCHEMA,
-            command: crate::HOST_STAND.into(),
+        let shard = oer_vendor_evidence_shard::Index {
+            schema: oer_vendor_evidence_shard::SCHEMA,
+            command: oer_vendor_evidence_shard::HOST_STAND.into(),
             target: stand.chip.into(),
             scenario,
             inputs,
             sources,
-            dependence: crate::Dependence::whole_closure(WHOLE_CLOSURE),
+            dependence: oer_vendor_evidence_shard::Dependence::whole_closure(WHOLE_CLOSURE),
             entries,
             untriaged: vec![],
             functions: vec![],
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn a_stand_is_named_after_its_directory() {
         assert_eq!(
-            host_stand::scenario(Path::new("verification/esp32s31/host/ieee802154")).unwrap(),
+            host_stand::scenario(Path::new("verification/chip-a/host/ieee802154")).unwrap(),
             "ieee802154-host"
         );
     }
@@ -167,11 +167,17 @@ mod tests {
     fn this_checkout_registers_its_host_stands_by_directory() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let model = oer_repo::Model::load(&oer_repo::Repo::load(&root).unwrap()).unwrap();
-        let stands = host_stand::stands(&model, "esp32s31").unwrap();
-        assert_eq!(
-            stands.get("ieee802154-host").map(String::as_str),
-            Some("verification/esp32s31/host/ieee802154/Cargo.toml")
-        );
-        assert!(host_stand::stands(&model, "esp32c5").unwrap().is_empty());
+        // A chip's stands are the packages below `verification/<chip>/host`.
+        for chip in model.chips.ids() {
+            let stands = host_stand::stands(&model, chip).unwrap();
+            let directory = root.join("verification").join(chip).join("host");
+            for (scenario, manifest) in &stands {
+                assert!(
+                    manifest.starts_with(&format!("verification/{chip}/host/")),
+                    "{scenario}: {manifest}"
+                );
+            }
+            assert_eq!(stands.is_empty(), !directory.is_dir(), "{chip}");
+        }
     }
 }

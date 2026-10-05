@@ -1,10 +1,11 @@
-//! The ESP32-S31 image linker.
+//! The image linker.
 //!
 //! rustc runs this program in place of `rust-lld` for every image. It reads
 //! its own inputs (arguments, `@file` response files, `-l` libraries found on
 //! the `-L` paths, and every member of an archive) and refuses a link in
 //! which an input section the runtime linker script places in a region the
-//! boot zeroes ([`oer_esp32s31_platform_layout::zeroed`]) carries an
+//! boot zeroes (the chip profile's `[staged] zeroed-inputs`, handed over in
+//! `OER_IMAGE_ZEROED_INPUTS`) carries an
 //! initializer: bytes other than zero, or a relocation. Those regions are
 //! `NOLOAD`, so such an initializer would be dropped without a trace in the
 //! image. LLVM emits a named section such as `.psram.bss.x` as `PROGBITS`
@@ -52,7 +53,7 @@ impl fmt::Display for InitializedZeroSection {
 
 /// Run the link: check its inputs, then the real linker. Returns the exit
 /// code.
-pub fn run(arguments: Vec<OsString>) -> i32 {
+pub fn run(arguments: Vec<OsString>, zeroed: &[String]) -> i32 {
     let arguments = match expand_response_files(arguments) {
         Ok(arguments) => arguments,
         Err(error) => {
@@ -60,7 +61,7 @@ pub fn run(arguments: Vec<OsString>) -> i32 {
             return 1;
         }
     };
-    let violations = match check_inputs(&arguments) {
+    let violations = match check_inputs(&arguments, zeroed) {
         Ok(violations) => violations,
         Err(error) => {
             eprintln!("oer-image-linker: {error}");
@@ -226,28 +227,69 @@ pub fn inputs(arguments: &[OsString]) -> Vec<PathBuf> {
 /// The initialized zero sections of every ELF object among the inputs and
 /// their archive members; other inputs (linker scripts, metadata, bitcode)
 /// are not objects and carry no sections.
-pub fn check_inputs(arguments: &[OsString]) -> Result<Vec<InitializedZeroSection>, String> {
+/// The zeroed input patterns the image pipeline handed over.
+pub fn zeroed_inputs() -> Vec<String> {
+    std::env::var("OER_IMAGE_ZEROED_INPUTS")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|pattern| !pattern.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Whether an input section named `name` matches one of the `zeroed`
+/// patterns: `name` exactly, or `name.*` for any dotted suffix.
+pub fn is_zeroed_input(zeroed: &[String], name: &str) -> bool {
+    zeroed
+        .iter()
+        .any(|pattern| match pattern.strip_suffix(".*") {
+            Some(prefix) => name
+                .strip_prefix(prefix)
+                .is_some_and(|rest| rest.len() > 1 && rest.starts_with('.')),
+            None => name == pattern,
+        })
+}
+
+pub fn check_inputs(
+    arguments: &[OsString],
+    zeroed: &[String],
+) -> Result<Vec<InitializedZeroSection>, String> {
     let mut violations = Vec::new();
     for input in inputs(arguments) {
         let data = fs::read(&input)
             .map_err(|error| format!("cannot read {}: {error}", input.display()))?;
-        check_file(&input.display().to_string(), &data, &mut violations);
+        check_file(&input.display().to_string(), &data, zeroed, &mut violations);
     }
     Ok(violations)
 }
 
-fn check_file(name: &str, data: &[u8], violations: &mut Vec<InitializedZeroSection>) {
+fn check_file(
+    name: &str,
+    data: &[u8],
+    zeroed: &[String],
+    violations: &mut Vec<InitializedZeroSection>,
+) {
     if data.starts_with(b"!<arch>\n") {
         // A thin archive holds no members of its own to check.
         for (member, member_data) in oer_elf::members(data).unwrap_or_default() {
-            check_object(&format!("{name}({member})"), member_data, violations);
+            check_object(
+                &format!("{name}({member})"),
+                member_data,
+                zeroed,
+                violations,
+            );
         }
         return;
     }
-    check_object(name, data, violations);
+    check_object(name, data, zeroed, violations);
 }
 
-fn check_object(name: &str, data: &[u8], violations: &mut Vec<InitializedZeroSection>) {
+fn check_object(
+    name: &str,
+    data: &[u8],
+    zeroed: &[String],
+    violations: &mut Vec<InitializedZeroSection>,
+) {
     if !data.starts_with(b"\x7fELF") {
         return;
     }
@@ -255,7 +297,7 @@ fn check_object(name: &str, data: &[u8], violations: &mut Vec<InitializedZeroSec
         return;
     };
     for section in file.sections() {
-        if !oer_esp32s31_platform_layout::zeroed::is_zeroed_input(section.name) || section.nobits {
+        if !is_zeroed_input(zeroed, section.name) || section.nobits {
             continue;
         }
         let nonzero_bytes = section.data.iter().filter(|&&byte| byte != 0).count() as u64;

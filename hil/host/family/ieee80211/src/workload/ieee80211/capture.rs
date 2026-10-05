@@ -19,7 +19,7 @@ use crate::{
     workload::ieee80211::control::stop_station,
 };
 use oer_hil_link::SerialCapture;
-use oer_hil_scenario::link::PhyExpectation;
+use oer_hil_scenario_catalog::link::PhyExpectation;
 
 pub struct Config {
     pub output: PathBuf,

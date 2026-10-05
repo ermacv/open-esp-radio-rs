@@ -11,9 +11,9 @@
 //! manifests and locks, the Cargo configuration and toolchain files, the
 //! workspace manifest each compiled package inherits from, the stack policy
 //! and partition table, and the code that builds, packs and audits the image:
-//! every source of the builder packages' dependency closure, as `oer-repo`
-//! resolves it ([`builder`]), so a new analyzer or linker crate is an input
-//! the day it is linked. The record lists those too, so whoever asks what an
+//! every source of the builder packages' dependency closure, which the
+//! caller resolves (`ImageSpec::builder_inputs`), so a new analyzer or
+//! linker crate is an input the day it is linked. The record lists those too, so whoever asks what an
 //! image depends on (the evidence closure, `check changed`) reads it here
 //! instead of keeping its own list.
 
@@ -143,45 +143,6 @@ pub fn configuration(
             .map(|path| path.to_path_buf())
             .filter(|path| is_file(path)),
     );
-    Ok(files)
-}
-
-/// The sources of the code that builds, packs and audits an image: every
-/// repository package the `roots` (the builder packages) reach through
-/// their normal and build dependencies, with every optional dependency,
-/// as [`oer_repo::Model::closure`] resolves them; of each its manifest,
-/// build script and `src/`, without tests and prose.
-pub fn builder(repository: &Path, roots: &[&str]) -> Result<BTreeSet<PathBuf>> {
-    let repo = oer_repo::Repo::load(repository)?;
-    let model = oer_repo::Model::load(&repo)?;
-    let roots = roots
-        .iter()
-        .map(|name| model.package(name))
-        .collect::<oer_repo::Result<Vec<_>>>()?;
-    let closure = model.closure(
-        &roots,
-        oer_repo::closure::Edges::Build,
-        None,
-        &oer_repo::closure::Features::All,
-    )?;
-    let mut files = BTreeSet::new();
-    for package in closure {
-        let directory = package.directory.as_str();
-        for file in repo.files() {
-            if !oer_repo::files::within(file, directory) {
-                continue;
-            }
-            let relative = file[directory.len()..].trim_start_matches('/');
-            let builds = relative == "Cargo.toml" || relative == "build.rs";
-            let compiled = relative.starts_with("src/")
-                && !relative.split('/').any(|part| part == "tests")
-                && !relative.ends_with("/tests.rs")
-                && !relative.ends_with(".md");
-            if builds || compiled {
-                files.insert(PathBuf::from(file));
-            }
-        }
-    }
     Ok(files)
 }
 
@@ -315,38 +276,6 @@ mod tests {
             files,
             expected.iter().map(PathBuf::from).collect::<BTreeSet<_>>()
         );
-    }
-
-    #[test]
-    fn the_builder_is_the_dependency_closure_of_the_image_pipeline_and_its_linker() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let files = builder(&root, &["oer-image", "oer-image-linker"]).unwrap();
-        for file in [
-            "tools/image/Cargo.toml",
-            "tools/image/src/lib.rs",
-            "tools/image-linker/src/main.rs",
-            "tools/elf/src/lib.rs",
-            "tools/riscv/stack/src/lib.rs",
-            "tools/riscv/decode/src/lib.rs",
-            "tools/chip-profile/src/lib.rs",
-            "tools/process/src/lib.rs",
-            "tools/toolchain/src/lib.rs",
-            "tools/repo/src/lib.rs",
-            "tools/vendor-artifacts/src/lib.rs",
-            "platform/esp32s31/layout/src/lib.rs",
-        ] {
-            assert!(files.contains(Path::new(file)), "{file}");
-        }
-        for file in &files {
-            let path = file.to_string_lossy();
-            assert!(
-                !path.ends_with("/tests.rs") && !path.ends_with(".md") && !path.contains("/tests/"),
-                "{path}"
-            );
-        }
-        // Packages the pipeline does not link are no inputs.
-        assert!(!files.iter().any(|file| file.starts_with("hil/")));
-        assert!(!files.iter().any(|file| file.starts_with("tools/xtask")));
     }
 
     fn write_file(path: &Path, content: &str) {

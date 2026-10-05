@@ -1,6 +1,6 @@
 //! Driver of the Thread reference peer.
 //!
-//! The peer is the ESP32-C5 running `hil/peers/esp32c5-openthread`: ESP-IDF's
+//! The peer runs the OpenThread peer project of `hil/peers`: ESP-IDF's
 //! OpenThread stack behind a line protocol on its console (see that README).
 //! It shares the board and the peer console ([`oer_hil_link::peer`]) with
 //! the IEEE 802.15.4 peer. Commands are answered by `@OK`/`@ERR`; received
@@ -9,15 +9,16 @@
 
 use std::{net::Ipv6Addr, path::Path, time::Duration};
 
+use oer_device_peer_line::{Report, hex, to_hex};
 use oer_hil_link::peer::{
-    Expected, PeerConsole, PeerLink, PeerTranscript, RecordingLink, Report, SerialLink, hex, to_hex,
+    Expected, PeerConsole, PeerLink, PeerTranscript, RecordingLink, SerialLink,
 };
 
 use crate::Result;
 
 /// Protocol version the driver speaks.
 pub const THREAD_PEER_PROTOCOL: u32 = 1;
-/// Board-journal image name of `hil/peers/esp32c5-openthread`.
+/// Board-journal image name of the OpenThread peer project of `hil/peers`.
 pub const THREAD_PEER_IMAGE: &str = "openthread-peer";
 /// How to restore the peer firmware when another consumer replaced it.
 pub const THREAD_PEER_REFLASH: &str =
@@ -82,7 +83,12 @@ impl ThreadPeer<RecordingLink<SerialLink>> {
     /// recording every line of the session into `transcript`.
     pub fn open_recorded(path: &Path, transcript: &PeerTranscript) -> Result<Self> {
         Ok(Self {
-            console: PeerConsole::open_recorded(path, transcript, EXPECTED, READY_TIMEOUT)?,
+            console: PeerConsole::open_recorded(
+                oer_hil_lab::peer_console(path)?,
+                transcript,
+                EXPECTED,
+                READY_TIMEOUT,
+            )?,
         })
     }
 }

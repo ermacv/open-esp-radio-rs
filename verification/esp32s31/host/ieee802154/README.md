@@ -34,7 +34,7 @@ abort reasons and received frames are explicit scenario steps.
 ## Obtaining the sources
 
 ```console
-cargo xtask vendor-fetch esp32s31
+cargo verification fetch esp32s31
 ```
 
 downloads every pinned ESP-IDF file of source `esp-idf` into
@@ -56,7 +56,7 @@ cargo run --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml -- sh
 `shard` compares every catalog scenario, each in its own process, and writes
 the stand's evidence shard `ieee802154-host` through `oer-vendor-evidence`
 when all of them compare MATCH; `compare` exits 0 for MATCH, 1 for DIFF and 2
-for INCOMPLETE. `cargo xtask evidence --chip esp32s31 ieee802154-host` runs
+for INCOMPLETE. `cargo verification evidence --chip esp32s31 ieee802154-host` runs
 it as the stand's producer.
 
 The compiled driver keeps its state in C globals, so each process runs one
@@ -91,7 +91,7 @@ register-layer access in any state either. The value is not compared; a test
 pins it to the signed low byte of one `bt_bb_get_cur_rx_info` call, the
 geometry the register model publishes for the PAC read.
 
-`cargo xtask evidence --chip esp32s31 ieee802154-host` runs `compare` for every catalog
+`cargo verification evidence --chip esp32s31 ieee802154-host` runs `compare` for every catalog
 scenario and, only when all of them MATCH, writes the stand's evidence shard `ieee802154-host.json` into the
 chip's evidence index `evidence/scenarios`: one entry per
 scenario (source `esp-idf`, production `oer_espressif_ieee802154_engine::engine`), the

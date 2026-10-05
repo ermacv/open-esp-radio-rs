@@ -1,0 +1,70 @@
+#!/bin/sh
+# Prepare a fresh clone: the pinned Rust toolchain, every workspace's locked
+# dependencies (Cargo is offline in this repository, see .cargo/config.toml)
+# and access to the boards' serial ports. Run it again after a pull that
+# changed a lock file; it only downloads what is missing.
+set -eu
+
+root=$(cd "$(dirname "$0")" && pwd)
+cd "$root"
+status=0
+
+step() {
+    printf '\n== %s\n' "$1"
+}
+
+step "Rust toolchain (rust-toolchain.toml)"
+if ! command -v rustup >/dev/null 2>&1; then
+    echo "rustup is missing: install it from https://rustup.rs, then run ./bootstrap again" >&2
+    exit 1
+fi
+# Installs the pinned channel with its components and chip targets.
+rustup toolchain install
+rustup show active-toolchain
+
+step "Dependencies of every workspace"
+# The root workspace first: `cargo tidy` itself builds from it.
+CARGO_NET_OFFLINE=false cargo fetch --locked --manifest-path Cargo.toml
+# Then every workspace the repository model knows (Blobray, verification,
+# the firmware workspaces), online only where something is missing.
+CARGO_NET_OFFLINE=false cargo tidy fetch
+
+step "Serial access to the boards"
+case "$(uname -s)" in
+Linux)
+    groups=$(id -nG)
+    serial=""
+    for group in dialout uucp plugdev; do
+        if getent group "$group" >/dev/null 2>&1; then
+            case " $groups " in
+            *" $group "*) serial="$group" ;;
+            esac
+        fi
+    done
+    if [ -n "$serial" ]; then
+        echo "serial ports: $(id -un) is in $serial"
+    else
+        for group in dialout uucp; do
+            if getent group "$group" >/dev/null 2>&1; then
+                echo "serial ports: $(id -un) is in no serial group; run" >&2
+                echo "  sudo usermod -aG $group $(id -un)" >&2
+                echo "and log in again" >&2
+                status=1
+                break
+            fi
+        done
+    fi
+    ;;
+*)
+    echo "serial ports: check that this user may open the boards' USB serial ports"
+    ;;
+esac
+
+step "Next steps"
+cat <<'NEXT'
+  cargo fw devices                  the attached boards: port, MAC, chip
+  cargo fw build station            build an example into an image bundle
+  cargo fw flash station --monitor  write it to the attached board and watch its console
+  cargo stand init                  a stand file from the attached boards, for HIL runs
+NEXT
+exit "$status"

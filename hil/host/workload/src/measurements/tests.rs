@@ -21,7 +21,8 @@ fn event<M: oer_hil_protocol::Message>(
 use oer_hil_protocol::{
     network::EvidenceRecord, network::FlowTransportEvidence, network::TransportEvidence,
 };
-use oer_hil_run_bundle::run::{Comparison, MeasurementUnit};
+use oer_hil_run_bundle_format::run::Comparison;
+use oer_hil_run_bundle_format::run::MeasurementUnit;
 
 #[test]
 fn memory_counter_scopes_preserve_full_values_without_cpu_percentages() {
@@ -231,7 +232,7 @@ fn semantic_checks_record_only_explicit_observations() {
     assert_eq!(values[0].value, 0);
     assert_eq!(
         values[0].verdict,
-        Some(oer_hil_run_bundle::run::MeasurementVerdict::Failed)
+        Some(oer_hil_run_bundle_format::run::MeasurementVerdict::Failed)
     );
     assert_eq!(values[0].threshold.unwrap().value, 1);
     recorder.check("wifi.maintenance.same-link", true);
@@ -239,9 +240,8 @@ fn semantic_checks_record_only_explicit_observations() {
         recorder
             .snapshot()
             .iter()
-            .filter(
-                |value| value.verdict == Some(oer_hil_run_bundle::run::MeasurementVerdict::Passed)
-            )
+            .filter(|value| value.verdict
+                == Some(oer_hil_run_bundle_format::run::MeasurementVerdict::Passed))
             .count(),
         1
     );

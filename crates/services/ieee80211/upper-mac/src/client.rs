@@ -35,7 +35,7 @@ use oer_ieee80211_upper_mac::{
 };
 use oer_time::{Instant, Timer};
 
-use crate::{AmpduFrames, EventRouter, UpperMacTx, UpperMacTxError};
+use crate::{AmpduFrames, EventRouter, UpperMacTx, UpperMacTxError, aggregate::PortAggregation};
 
 const FCS_LEN: u32 = 4;
 const CCMP_MIC_LEN: u32 = 8;
@@ -52,6 +52,11 @@ pub trait PortClientEnv {
     type Ladder: RateLadder;
     /// The random source of the EDCA backoff draw.
     type Entropy: BackoffEntropy;
+    /// How the port sends A-MPDUs:
+    /// [`PortAmpduAggregation`](crate::aggregate::PortAmpduAggregation) over
+    /// a port with [`LowerMacAmpdu`],
+    /// [`NoAggregation`](crate::aggregate::NoAggregation) over one without.
+    type Aggregation: PortAggregation<Self>;
 }
 
 /// The port error type of an environment.
@@ -183,6 +188,9 @@ pub enum PortClientError<E> {
     Poisoned,
     /// A frame to send is shorter than its first address.
     FrameTooShort,
+    /// An A-MPDU went to a port that sends none
+    /// ([`NoAggregation`](crate::aggregate::NoAggregation)).
+    AggregationUnsupported,
 }
 
 /// One interface's client of the port: see the [module](self).

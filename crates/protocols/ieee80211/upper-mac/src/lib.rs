@@ -9,6 +9,7 @@
 //!
 //! - [`retry`]: the retry counters, limits and Retry bit of one MPDU, and the
 //!   [`RateLadder`] its attempts walk;
+//! - [`aggregate`]: how many queued frames one A-MPDU carries;
 //! - [`ampdu`]: which subframes of an A-MPDU the next attempt resends after
 //!   a BlockAck, with their Retry bit, and when the aggregate ends;
 //! - [`protection`]: RTS/CTS or CTS-to-self before each PPDU;
@@ -24,6 +25,7 @@
 //! duration estimates are parameters a profile supplies, such as
 //! `oer-espressif-ieee80211-policy`.
 
+pub mod aggregate;
 pub mod ampdu;
 pub mod protection;
 pub mod retry;

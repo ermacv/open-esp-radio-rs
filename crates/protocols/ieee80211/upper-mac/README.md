@@ -10,6 +10,7 @@ plans and reports leave as values, and nothing waits.
 | Module | Decides | Inputs |
 | --- | --- | --- |
 | `retry` | Whether an MPDU is sent again, whether that attempt sets the Retry bit, how the contention window changes, and the rate of each attempt | `TxStatus`, `RetryLimits`, a `RateLadder` |
+| `aggregate` | How many queued frames one A-MPDU carries: the agreement's window, the port's capabilities, the recipient's Maximum A-MPDU Length and the TXOP limit with its BlockAck | `AmpduLimits` |
 | `ampdu` | Which subframes of an A-MPDU the next attempt resends after its BlockAck, republication after a failed protection exchange, the BlockAckReq after repeated failures, individual retries, aging and the end of the exchange | `BlockAckReport`, `AmpduRetryPolicy` |
 | `protection` | RTS/CTS or CTS-to-self and the control-frame rate for each PPDU | `BssProtection`, dot11RTSThreshold, an `HeTxopRtsBudget` |
 | `tx` | `TxPlanner`: the next `TxAttemptPlan` (rate, protection, backoff, power, coexistence, content and Retry bits) of an MPDU or A-MPDU exchange, and its `TxReport` | `TxRequest`, `TxCompletion`, `RadioInstant`, entropy |

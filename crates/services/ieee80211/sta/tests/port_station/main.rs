@@ -218,12 +218,12 @@ impl PortClientEnv for Env<'_> {
     type Budget = ProtectEveryHeTxop;
     type Ladder = FixedRate;
     type Entropy = Seeded;
+    type Aggregation = oer_ieee80211_upper_mac_service::aggregate::PortAmpduAggregation;
 }
 
 impl<'a> PortStationEnv for Env<'a> {
     type Timer = &'a VirtualTimer;
     type KeyUnwrap = RsnSoftwareAes;
-    type Aggregation = oer_ieee80211_sta_service::port::PortAmpduAggregation;
     type Coex = &'a ScriptedCoex;
     type RateControl = ScriptedRate<'a>;
 }

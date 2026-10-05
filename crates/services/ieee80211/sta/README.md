@@ -123,9 +123,9 @@ recipient ends the agreement.
 eight-frame queue full) and `run_until` sends the queue while the station is
 awake, a dozing station keeping it. A run of one user priority goes as one
 A-MPDU when that TID's agreement is operational, the keys are installed and
-the port aggregates at the rate control's A-MPDU rate (`PortStationEnv::Aggregation`:
+the port aggregates at the rate control's A-MPDU rate (`PortClientEnv::Aggregation`:
 `PortAmpduAggregation` over a port with `LowerMacAmpdu`, `NoAggregation`
-otherwise); the run is bounded by the agreement's window, the port's
+otherwise); the run (`AmpduLimits`) is bounded by the agreement's window, the port's
 subframes and length, the peer's Maximum A-MPDU Length and the TXOP limit
 of the access category in the association's EDCA set (the aggregate's
 `max_ppdu_duration_micros` and its BlockAck at 6 Mb/s after a SIFS), and the

@@ -8,6 +8,10 @@ use oer_ieee80211_mac::qos::WmmUserPriority;
 /// Ethernet frame.
 pub const PORT_FRAME_CAPACITY: usize = 2_352;
 
+/// Octets of one MPDU a service encodes from a queued frame: the frame,
+/// its MAC, QoS and CCMP headers and LLC/SNAP.
+pub const PORT_MPDU_CAPACITY: usize = PORT_FRAME_CAPACITY + 64;
+
 /// Frames the queue holds; also the most subframes of one A-MPDU.
 pub const PORT_TX_QUEUE: usize = 8;
 

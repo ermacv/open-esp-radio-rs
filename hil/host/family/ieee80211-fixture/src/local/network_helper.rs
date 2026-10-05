@@ -6,7 +6,7 @@ use std::process::Command;
 use crate::Result;
 
 pub use oer_hil_lab::NETWORK_HELPER as PATH;
-const REQUIRED_CAPABILITIES: &str = "schema=14 station_ap=ht20,ht40,he20 legacy_ap=dsss client=ht,non-ht observer=20,40 managed=1 rfkill=restore";
+const REQUIRED_CAPABILITIES: &str = "schema=15 station_ap=ht20,ht40,he20 legacy_ap=dsss client=ht,non-ht client_aqm=1 observer=20,40 managed=1 rfkill=restore";
 
 /// Validate the installed command protocol before a selected run can flash or
 /// reset the DUT. System-only and remote-only workloads do not need this helper.

@@ -164,14 +164,24 @@ impl ControlledClient {
     }
 }
 
-/// What the laptop's driver counted on its link to the AP under test during
-/// one workload, from `iw dev wlan0 station dump`: the frames it gave up on
-/// (`tx_failed`) tell a loss on the air from one at the AP.
+/// What the laptop counted on its link to the AP under test during one
+/// workload. Its driver's station counters (`iw dev wlan0 station dump`)
+/// tell the frames it gave up on in the air (`tx_failed`); the interface's
+/// drops and mac80211's AQM drops of TID 0 tell the packets it dropped
+/// before they became frames, which leave no gap in the AP's sequence. The
+/// root queueing discipline is `noqueue` on a mac80211 TXQ driver, so the
+/// AQM counters are where such a drop shows.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct LaptopClientLinkEvidence {
     pub tx_packets: u64,
     pub tx_retries: u64,
     pub tx_failed: u64,
+    /// Packets `wlan0` dropped on transmit (its `tx_dropped` statistic).
+    pub interface_tx_dropped: u64,
+    /// Packets mac80211's AQM dropped from the AP's TID 0 queue, and
+    /// those it refused over its limit.
+    pub tid0_aqm_drops: u64,
+    pub tid0_aqm_overlimit: u64,
     pub rx_packets: u64,
     /// Frames from the AP that mac80211 dropped after reception.
     pub rx_drop_misc: u64,
@@ -200,6 +210,21 @@ impl LaptopClientLinkObservation {
             tx_packets: delta("tx packets", self.before.tx_packets, after.tx_packets)?,
             tx_retries: delta("tx retries", self.before.tx_retries, after.tx_retries)?,
             tx_failed: delta("tx failed", self.before.tx_failed, after.tx_failed)?,
+            interface_tx_dropped: delta(
+                "interface tx dropped",
+                self.before.interface_tx_dropped,
+                after.interface_tx_dropped,
+            )?,
+            tid0_aqm_drops: delta(
+                "TID 0 AQM drops",
+                self.before.tid0_aqm_drops,
+                after.tid0_aqm_drops,
+            )?,
+            tid0_aqm_overlimit: delta(
+                "TID 0 AQM overlimit",
+                self.before.tid0_aqm_overlimit,
+                after.tid0_aqm_overlimit,
+            )?,
             rx_packets: delta("rx packets", self.before.rx_packets, after.rx_packets)?,
             rx_drop_misc: delta("rx drop misc", self.before.rx_drop_misc, after.rx_drop_misc)?,
             tx_bitrate: after.tx_bitrate,
@@ -212,6 +237,9 @@ struct LaptopLinkSnapshot {
     tx_packets: u64,
     tx_retries: u64,
     tx_failed: u64,
+    interface_tx_dropped: u64,
+    tid0_aqm_drops: u64,
+    tid0_aqm_overlimit: u64,
     rx_packets: u64,
     rx_drop_misc: u64,
     tx_bitrate: String,
@@ -229,11 +257,30 @@ impl LaptopLinkSnapshot {
             ))
             .into());
         }
-        Self::parse(&String::from_utf8(output.stdout)?)
+        let aqm = Command::new("sudo")
+            .args(["-n", crate::local::network_helper::PATH, "client-aqm"])
+            .supervised_output()?;
+        if !aqm.status.success() {
+            return Err(crate::Error::new(format!(
+                "cannot read the laptop client's AQM counters: {}",
+                String::from_utf8_lossy(&aqm.stderr).trim()
+            ))
+            .into());
+        }
+        let interface_tx_dropped =
+            std::fs::read_to_string("/sys/class/net/wlan0/statistics/tx_dropped")?
+                .trim()
+                .parse()?;
+        Self::parse(
+            &String::from_utf8(output.stdout)?,
+            &String::from_utf8(aqm.stdout)?,
+            interface_tx_dropped,
+        )
     }
 
-    /// The one station a managed client lists: its AP.
-    fn parse(dump: &str) -> Result<Self> {
+    /// The one station a managed client lists, its AP, and the helper's
+    /// `client-aqm` counters in `aqm`.
+    fn parse(dump: &str, aqm: &str, interface_tx_dropped: u64) -> Result<Self> {
         if dump.matches("Station ").count() != 1 {
             return Err(crate::Error::new(
                 "the laptop client lists other than exactly one station",
@@ -245,6 +292,9 @@ impl LaptopLinkSnapshot {
             tx_packets: tagged_u64(dump, "tx packets:")?,
             tx_retries: tagged_u64(dump, "tx retries:")?,
             tx_failed: tagged_u64(dump, "tx failed:")?,
+            interface_tx_dropped,
+            tid0_aqm_drops: helper_value(aqm, "tid0_aqm_drops")?,
+            tid0_aqm_overlimit: helper_value(aqm, "tid0_aqm_overlimit")?,
             rx_packets: tagged_u64(dump, "rx packets:")?,
             rx_drop_misc: tagged_u64(dump, "rx drop misc:")?,
             tx_bitrate: tagged_text(dump, "tx bitrate:")?,
@@ -339,4 +389,15 @@ fn connection_stage(state: Option<&str>) -> &'static str {
         Some("COMPLETED") => "connected",
         _ => "unknown",
     }
+}
+
+/// The value of `key=` in the helper's output.
+fn helper_value(output: &str, key: &str) -> Result<u64> {
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
+        .ok_or_else(|| format!("the laptop client's AQM counters omit `{key}`"))?
+        .trim()
+        .parse()
+        .map_err(|error| format!("invalid laptop client AQM counter `{key}`: {error}").into())
 }

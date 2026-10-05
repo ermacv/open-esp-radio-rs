@@ -10,7 +10,7 @@ use oer_hil_family_ieee80211_fixture::{
     openwrt::client::OpenWrtClientLinkEvidence, openwrt::client::SecondaryClientProbeEvidence,
 };
 
-pub(super) const ACCESS_POINT_REPORT_SCHEMA: u8 = 6;
+pub(super) const ACCESS_POINT_REPORT_SCHEMA: u8 = 7;
 
 #[derive(Serialize)]
 pub(super) struct AccessPointReport {
@@ -31,7 +31,7 @@ pub(super) struct CycleReport {
     pub(super) cycle: u8,
     pub(super) traffic: TrafficReport,
     pub(super) secondary_client: Option<SecondaryClientProbeEvidence>,
-    pub(super) primary_client_link: Option<OpenWrtClientLinkEvidence>,
+    pub(super) primary_client_link: Option<super::clients::ClientLinkEvidence>,
     pub(super) secondary_client_link: Option<OpenWrtClientLinkEvidence>,
     pub(super) independent_air: Option<LocalAirMonitorEvidence>,
     /// Intrusive driver-internal evidence is absent from observer-free

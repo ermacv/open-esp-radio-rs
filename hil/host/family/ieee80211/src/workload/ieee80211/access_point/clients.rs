@@ -9,10 +9,69 @@ use crate::Result;
 use crate::scenario::AccessPointClients;
 use crate::workload::ieee80211::access_point::with_cleanup_errors;
 use oer_hil_family_ieee80211_fixture::{
-    local::client::{ClientNetwork, ClientPhy, ControlledClient},
+    local::client::{
+        ClientNetwork, ClientPhy, ControlledClient, LaptopClientLinkEvidence,
+        LaptopClientLinkObservation,
+    },
     openwrt::client::ControlledOpenWrtClient,
-    openwrt::client::OpenWrtClientLinkObservation,
+    openwrt::client::{OpenWrtClientLinkEvidence, OpenWrtClientLinkObservation},
 };
+
+/// The primary client's link counters over one workload, from its own
+/// driver: what it sent, retried and gave up on.
+pub(super) enum PrimaryLinkObservation {
+    OpenWrt(Box<OpenWrtClientLinkObservation>),
+    Laptop(LaptopClientLinkObservation),
+}
+
+impl PrimaryLinkObservation {
+    pub(super) fn finish(self) -> Result<ClientLinkEvidence> {
+        Ok(match self {
+            Self::OpenWrt(observation) => ClientLinkEvidence::OpenWrt(observation.finish()?),
+            Self::Laptop(observation) => ClientLinkEvidence::Laptop(observation.finish()?),
+        })
+    }
+}
+
+/// What the primary client's driver counted on its link to the AP.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "client", rename_all = "kebab-case")]
+pub(super) enum ClientLinkEvidence {
+    OpenWrt(OpenWrtClientLinkEvidence),
+    Laptop(LaptopClientLinkEvidence),
+}
+
+impl core::fmt::Display for ClientLinkEvidence {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::OpenWrt(evidence) => write!(
+                f,
+                "OpenWrt AP-client link: rx_packets={} rx_bytes={} rx_duration_us={:?} rx_bitrate={:?} tx_packets={} tx_bytes={} tx_bitrate={:?} retries={} failed={} tx_duration_us={} tid0_aqm_drops={}",
+                evidence.rx_packets,
+                evidence.rx_bytes,
+                evidence.rx_duration_micros,
+                evidence.rx_bitrate,
+                evidence.tx_packets,
+                evidence.tx_bytes,
+                evidence.tx_bitrate,
+                evidence.tx_retries,
+                evidence.tx_failed,
+                evidence.tx_duration_micros,
+                evidence.tid0_aqm_drops,
+            ),
+            Self::Laptop(evidence) => write!(
+                f,
+                "laptop AP-client link: tx_packets={} retries={} failed={} rx_packets={} rx_drop_misc={} tx_bitrate={:?}",
+                evidence.tx_packets,
+                evidence.tx_retries,
+                evidence.tx_failed,
+                evidence.rx_packets,
+                evidence.rx_drop_misc,
+                evidence.tx_bitrate,
+            ),
+        }
+    }
+}
 use oer_hil_lab::config::StationFixtureConfig;
 use oer_hil_scenario::link::HtGuardIntervalExpectation;
 
@@ -53,12 +112,15 @@ impl ConnectedClients {
         }
     }
 
-    pub(super) fn begin_primary_link_observation(
-        &self,
-    ) -> Result<Option<OpenWrtClientLinkObservation>> {
-        self.openwrt_primary()
-            .map(ControlledOpenWrtClient::begin_link_observation)
-            .transpose()
+    pub(super) fn begin_primary_link_observation(&self) -> Result<PrimaryLinkObservation> {
+        Ok(match self {
+            Self::OpenWrt { primary } => {
+                PrimaryLinkObservation::OpenWrt(Box::new(primary.begin_link_observation()?))
+            }
+            Self::Laptop { primary, .. } => {
+                PrimaryLinkObservation::Laptop(primary.begin_link_observation()?)
+            }
+        })
     }
 
     pub(super) fn begin_secondary_link_observation(

@@ -375,9 +375,14 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
 
     /// Move a client's receive window to a BlockAckReq's starting sequence.
     ///
+    /// The client sends one when it gives up on MPDUs it never got
+    /// acknowledged: `missing` counts the sequence numbers it gave up on, as
+    /// this access point never received them.
+    ///
     /// Frames released by the move join the ordered pending-release queue,
     /// which [`Self::dispatch_pending`] drains before any newer MPDU. Returns
-    /// how many frames were released, or `None` when the peer has no
+    /// how many frames were released and how many sequence numbers the
+    /// window moved past without an MPDU, or `None` when the peer has no
     /// agreement for the TID or the sequence is at or behind the window
     /// start. The hardware window is not touched, as the vendor's
     /// `ieee80211_process_bar_info` moves only the software window.
@@ -385,7 +390,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
         &mut self,
         request: RxBlockAckRequestKey,
         now: oer_time::Instant,
-    ) -> Option<u8> {
+    ) -> Option<WindowMove> {
         let bank = self
             .banks
             .find(MacInterface::AccessPoint, request.peer, request.tid)?;
@@ -407,7 +412,10 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
             self.push_pending_release(PendingReleasedFrame { frame, identity });
             released = released.saturating_add(1);
         }
-        Some(released)
+        Some(WindowMove {
+            released,
+            missing: release.missing,
+        })
     }
 
     /// Publish at most one frame already released from sequence ownership.
@@ -609,6 +617,15 @@ impl<const CAPACITY: usize> Default for AccessPointRxReorder<'_, CAPACITY> {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// What one BlockAckReq's window move did.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct WindowMove {
+    /// Retained MPDUs it released.
+    pub(super) released: u8,
+    /// Sequence numbers it moved past without an MPDU.
+    pub(super) missing: u16,
 }
 
 #[cfg(test)]

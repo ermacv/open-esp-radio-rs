@@ -573,6 +573,13 @@ pub struct WifiAccessPointEvidence {
     pub rx_reorder_dispatched_mpdus: u32,
     pub rx_reorder_hardware_window_resets: u32,
     pub rx_reorder_gap_timeouts: u32,
+    /// Client BlockAckReq frames addressed to the AP.
+    pub rx_block_ack_requests: u32,
+    /// Retained MPDUs released by those requests' window moves.
+    pub rx_reorder_bar_released_mpdus: u32,
+    /// Sequence numbers those moves passed without an MPDU: frames the
+    /// client gave up on and the AP never received.
+    pub rx_reorder_bar_missing_sequences: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
     #[serde(default)]

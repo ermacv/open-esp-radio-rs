@@ -18,7 +18,7 @@ use oer_ieee80211_ap_service::port::{
     PortApRouter, PortApSend, PortApStorage,
 };
 use oer_ieee80211_lower_mac::{
-    CoexPriority, Ieee80211LowerMacPort, KeyScope, KeySelector, LifecycleCommand,
+    CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyScope, KeySelector, LifecycleCommand,
     LowerMacBeaconTiming, MacAddress, PhyRate, ReceiveFilter, RxCryptoStatus, RxEvidence, RxMeta,
     TxPower, VifId, VifRole,
     model::{LowerMacModel, ModelOutcome},
@@ -26,10 +26,11 @@ use oer_ieee80211_lower_mac::{
 use oer_ieee80211_mac::{
     ap::profile::{Advertisement, LegacyRates, WmmParameters},
     beacon::dtim,
+    block_ack::{ADDBA_ACTION_BODY_LEN, write_successful_addba_response},
     channel::{Channel, WifiChannel},
     extensions::wmm::WmmAcParameters,
     ht::HtLocalCapabilities,
-    phy::LegacyRate,
+    phy::{HtMcs, HtRate, LegacyRate, PpduBandwidth},
     qos::WmmAccessCategory,
     ssid::WifiSsid,
 };
@@ -1501,4 +1502,255 @@ fn the_composition_sizes_the_frames_held_for_dozing_peers() {
         ),
         (1, 1)
     );
+}
+
+/// HT MCS 7 at 20 MHz: a rate the port aggregates at.
+const HT_DATA_RATE: PhyRate = PhyRate::Ht(
+    match HtRate::new(
+        match HtMcs::new(7) {
+            Some(mcs) => mcs,
+            None => panic!("MCS 7"),
+        },
+        PpduBandwidth::Mhz20,
+        false,
+    ) {
+        Some(rate) => rate,
+        None => panic!("an HT rate"),
+    },
+);
+
+/// An Association Request of a WPA2-Personal HT station: a Maximum A-MPDU
+/// Length of 65 535 octets and a Minimum MPDU Start Spacing of 4 µs (5).
+fn ht_rsn_association() -> Vec<u8> {
+    let mut frame = rsn_association();
+    let mut ht = vec![45, 26, 0x0c, 0x00, 0x03 | (5 << 2), 0xff];
+    ht.resize(28, 0);
+    frame.extend_from_slice(&ht);
+    frame
+}
+
+/// A Block Ack action of the station.
+fn block_ack_action(body: &[u8]) -> Vec<u8> {
+    management(13, false, body)
+}
+
+/// Run a WPA2 BSS whose HT station authenticates, associates and completes
+/// its handshake, then `test` it from the time after the handshake.
+fn with_ht_peer(
+    test: impl FnOnce(
+        &LowerMacModel,
+        &oer_ieee80211_upper_mac_service::EventRouter<'_, LowerMacModel, 2, 4>,
+        &VirtualTimer,
+        &mut PortAccessPoint<'_, Env<'_>>,
+        u64,
+    ),
+) {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::<8>::new();
+    let wpa2 = AccessPointService::new(
+        ADDRESS,
+        Pmk::derive(PASSPHRASE, SSID).unwrap(),
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        AccessPointClientLimit::new(4).unwrap(),
+        AccessPointInactiveTimeout::new(10).unwrap(),
+        Box::leak(Box::new(AccessPointPeerStorage::new())),
+    );
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        client(&router),
+        &timer,
+        FixedMaterial,
+        NoSae,
+        PortApProfile {
+            data_rate: HT_DATA_RATE,
+            ..profile(&ssid)
+        },
+        wpa2,
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    let ptk = ptk();
+    let rsn_ie = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
+    let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, &[]).unwrap();
+    let message2 = RsnTxFrame::<512>::message2_with_security_ies(
+        Akm::Psk,
+        ADDRESS,
+        REPLAY_COUNTER,
+        SNONCE,
+        &security_ies,
+    )
+    .unwrap()
+    .authenticate(&ptk);
+    let message4 = RsnTxFrame::<512>::message4(Akm::Psk, ADDRESS, REPLAY_COUNTER + 1)
+        .unwrap()
+        .authenticate(&ptk);
+    let start = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[
+            (start + 1_000, authentication(false)),
+            (start + 2_000, ht_rsn_association()),
+            (start + 3_000, eapol(message2.as_bytes())),
+            (start + 4_000, eapol(message4.as_bytes())),
+        ],
+        start + 5_000,
+    );
+    assert_eq!(access_point.counters().handshakes, 1);
+    test(&model, &router, &timer, &mut access_point, start + 5_000);
+}
+
+/// The ADDBA Requests the access point sent the station: each Dialog Token
+/// and Starting Sequence Number.
+fn addba_requests(model: &LowerMacModel) -> Vec<(u8, u16)> {
+    model
+        .submitted()
+        .into_iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .filter(|frame| frame[0] == 0xd0 && frame[4..10] == STATION && frame[24..26] == [3, 0])
+        .map(|frame| (frame[26], u16::from_le_bytes([frame[31], frame[32]]) >> 4))
+        .collect()
+}
+
+/// The protected data attempts to the station: each one's subframes, as
+/// their sequence numbers, and whether it was an A-MPDU.
+fn data_attempts(model: &LowerMacModel) -> Vec<(Vec<u16>, bool)> {
+    model
+        .submitted()
+        .into_iter()
+        .filter(|attempt| {
+            attempt.frames[0][0] == 0x88
+                && attempt.frames[0][4..10] == STATION
+                && attempt.frames[0][1] & 0x40 != 0
+        })
+        .map(|attempt| {
+            (
+                attempt
+                    .frames
+                    .iter()
+                    .map(|frame| u16::from_le_bytes([frame[22], frame[23]]) >> 4)
+                    .collect(),
+                attempt.ampdu,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_peer_that_accepts_the_tx_block_ack_agreement_gets_aggregates_until_it_ends_it() {
+    with_ht_peer(|model, router, timer, access_point, at| {
+        // The access point offers its agreement once the peer is authorized.
+        let requests = addba_requests(model);
+        assert_eq!(requests.len(), 1);
+        let (token, start) = requests[0];
+        assert_eq!(access_point.counters().tx_agreements_offered, 1);
+        let mut response = [0_u8; ADDBA_ACTION_BODY_LEN];
+        write_successful_addba_response(&mut response, token, 0, 16).unwrap();
+        serve(
+            model,
+            router,
+            timer,
+            access_point,
+            &[(at + 1_000, block_ack_action(&response))],
+            at + 2_000,
+        );
+        assert_eq!(access_point.counters().tx_agreements, 1);
+
+        // Three frames for the peer go as one A-MPDU of consecutive
+        // sequence numbers from the agreement's start, under its key, at
+        // the data rate.
+        let best_effort = WmmUserPriority::new(0).unwrap();
+        for payload in [&b"one"[..], b"two", b"three"] {
+            access_point.send(
+                &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload),
+                best_effort,
+            );
+        }
+        serve(model, router, timer, access_point, &[], at + 3_000);
+        assert_eq!(
+            data_attempts(model),
+            [(vec![start, start + 1, start + 2], true)]
+        );
+        let aggregate = model.submitted().into_iter().last().unwrap();
+        assert_eq!(
+            (aggregate.key, aggregate.rate),
+            (KeySelector::Key(KeyHandle(1)), HT_DATA_RATE)
+        );
+        let counters = access_point.counters();
+        assert_eq!(
+            (
+                counters.aggregates,
+                counters.aggregated_acknowledged,
+                counters.data_sent
+            ),
+            (1, 3, 3)
+        );
+
+        // The peer, as recipient, ends the agreement: frames go alone again.
+        let delba = [3, 2, 0, 0, 37, 0];
+        serve(
+            model,
+            router,
+            timer,
+            access_point,
+            &[(at + 4_000, block_ack_action(&delba))],
+            at + 5_000,
+        );
+        for payload in [&b"four"[..], b"five"] {
+            access_point.send(
+                &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload),
+                best_effort,
+            );
+        }
+        serve(model, router, timer, access_point, &[], at + 6_000);
+        assert_eq!(
+            data_attempts(model)[1..],
+            [(vec![start + 3], false), (vec![start + 4], false)]
+        );
+    });
+}
+
+#[test]
+fn an_offer_the_peer_leaves_unanswered_times_out_and_frames_go_alone() {
+    with_ht_peer(|model, router, timer, access_point, at| {
+        assert_eq!(addba_requests(model).len(), 1);
+        // Past the negotiation timeout, the offer has failed.
+        serve(model, router, timer, access_point, &[], at + 200_000);
+        let counters = access_point.counters();
+        assert_eq!(
+            (counters.tx_agreements, counters.tx_agreements_failed),
+            (0, 1)
+        );
+        assert!(
+            access_point
+                .service()
+                .peer_status(STATION)
+                .unwrap()
+                .tx_block_ack
+                .is_none()
+        );
+        let best_effort = WmmUserPriority::new(0).unwrap();
+        for payload in [&b"one"[..], b"two"] {
+            access_point.send(
+                &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload),
+                best_effort,
+            );
+        }
+        serve(model, router, timer, access_point, &[], at + 201_000);
+        let attempts = data_attempts(model);
+        assert_eq!(attempts.len(), 2);
+        assert!(
+            attempts
+                .iter()
+                .all(|(subframes, ampdu)| subframes.len() == 1 && !ampdu)
+        );
+        assert_eq!(access_point.counters().aggregates, 0);
+        // No second offer.
+        assert_eq!(addba_requests(model).len(), 1);
+    });
 }

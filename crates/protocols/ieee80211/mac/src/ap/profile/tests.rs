@@ -54,7 +54,7 @@ pub(crate) const TEST_ADVERTISEMENT: crate::ap::profile::Advertisement = {
 
 #[test]
 fn wmm_parameters_round_trip_each_access_category_and_admission_bit() {
-    use crate::{extensions::wmm::parse_wmm_parameter_element, qos::WmmAccessCategory};
+    use crate::extensions::wmm::parse_wmm_parameter_element;
     let categories = [
         WmmAcParameters {
             admission_control_mandatory: true,
@@ -85,7 +85,8 @@ fn wmm_parameters_round_trip_each_access_category_and_admission_bit() {
             txop_limit_units_32_us: 41,
         },
     ];
-    let element = WmmParameters::new(11, true, categories).element();
+    let parameters = WmmParameters::new(11, true, categories);
+    let element = parameters.element();
     let decoded = parse_wmm_parameter_element(&element).unwrap();
     assert_eq!(decoded.parameter_set_count, 11);
     assert!(decoded.uapsd);
@@ -99,6 +100,7 @@ fn wmm_parameters_round_trip_each_access_category_and_admission_bit() {
     .zip(categories)
     {
         assert_eq!(decoded.access_category(category), expected);
+        assert_eq!(parameters.access_category(category), expected);
     }
 }
 

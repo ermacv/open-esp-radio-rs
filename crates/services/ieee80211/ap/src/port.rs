@@ -44,8 +44,9 @@ use core::{
 };
 
 use oer_ieee80211_ap::{
-    AP_MAX_CLIENTS, AccessPointService, ApAssociationCapabilities, ApMlmeAction, ApPeerClose,
-    ApPeerCloseKind, ApPeerPhase, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    AP_MAX_CLIENTS, AP_TX_BLOCK_ACK_TID, AccessPointService, ApAssociationCapabilities,
+    ApMlmeAction, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApServiceError, ApWpa2Error,
+    ApWpa2Progress, ApWpa2RetryProgress,
     beacon::ApBeacon,
     sae::{ApSaeFrame, ApSaeOutput, ApSaeRandom, ApSaeResponder, ApSaeResult},
 };
@@ -83,14 +84,15 @@ use oer_ieee80211_mac::{
 use oer_ieee80211_rsn::{
     OwnedEapolFrame, Pmk, RsnInterface, frames::RsnTxFrame, runner::RSN_HANDSHAKE_EAPOL_CAPACITY,
 };
-use oer_ieee80211_upper_mac::TxReport;
+use oer_ieee80211_upper_mac::{TxBody, TxReceiver, TxReport, TxRequest, aggregate::AmpduLimits};
 use oer_ieee80211_upper_mac_service::{
     EventRouter,
+    aggregate::{AmpduSubframes, PortAggregation},
     client::{
         PortClient, PortClientEnv, PortClientError, PortError, PortFrame, PortInput, PortMsdu,
         PortRxBuffer,
     },
-    queue::TxQueue,
+    queue::{PORT_MPDU_CAPACITY, PORT_TX_QUEUE, TxQueue},
 };
 use oer_time::{Clock, Duration, Instant, Timer};
 
@@ -104,8 +106,8 @@ use oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY;
 use oer_ieee80211_lower_mac::{RxBlockAckAgreement, VifId};
 use oer_ieee80211_mac::ap::ApActionFrame;
 use oer_ieee80211_mac::block_ack::{
-    ADDBA_ACTION_BODY_LEN, BlockAckAction, write_declined_addba_response,
-    write_successful_addba_response,
+    ADDBA_ACTION_BODY_LEN, BlockAckAction, TxBlockAckAlarm, TxBlockAckResponse,
+    write_declined_addba_response, write_successful_addba_response,
 };
 use oer_ieee80211_upper_mac_service::reorder::{
     CURRENT_SLOT, Offer, PORT_REORDER_WINDOW, ReorderRelease, RxReorder,
@@ -263,6 +265,7 @@ pub struct PortApProfile<'a> {
 pub struct PortApStorage<const HELD: usize> {
     beacon: [u8; AP_BEACON_CAPACITY],
     queue: TxQueue,
+    subframes: AmpduSubframes,
     held: [Option<HeldFrame>; HELD],
     /// The peers' receive Block Ack agreements, one per peer at most on
     /// average, and their kept MPDUs.
@@ -274,6 +277,7 @@ impl<const HELD: usize> PortApStorage<HELD> {
         Self {
             beacon: [0; AP_BEACON_CAPACITY],
             queue: TxQueue::new(),
+            subframes: AmpduSubframes::new(),
             held: [const { None }; HELD],
             reorder: RxReorder::new(),
         }
@@ -381,13 +385,15 @@ pub enum PortApSend {
 }
 
 /// A peer's link: its pairwise key, the CCMP packet numbers sent to it and
-/// received from it, and its duplicate filter.
+/// received from it, its duplicate filter and the deadline of the access
+/// point's TX Block Ack negotiation with it.
 struct PeerLink {
     peer: [u8; 6],
     key: Option<KeyHandle>,
     transmit: CcmpTxPacketNumber,
     replay: CcmpRxReplayState,
     duplicates: RxDuplicateFilter,
+    tx_block_ack_alarm: Option<TxBlockAckAlarm>,
 }
 
 /// What the access point sent, admitted and ignored.
@@ -407,7 +413,7 @@ pub struct PortApCounters {
     /// Peers the access point closed.
     pub peers_closed: u32,
     /// Management requests the access point does not serve: SAE outside a
-    /// WPA3 BSS, Block Ack actions.
+    /// WPA3 BSS, Block Ack actions of a peer not authorized.
     pub unserved: u32,
     /// EAPOL-Key frames sent, retransmissions included.
     pub eapol_sent: u32,
@@ -417,8 +423,18 @@ pub struct PortApCounters {
     pub sae_dropped: u32,
     /// Stations SAE authenticated.
     pub sae_accepted: u32,
-    /// Data MPDUs sent to a peer or the group.
+    /// Data MPDUs sent to a peer or the group, alone or in an A-MPDU.
     pub data_sent: u32,
+    /// TX Block Ack agreements the access point offered its peers.
+    pub tx_agreements_offered: u32,
+    /// TX Block Ack agreements its peers accepted.
+    pub tx_agreements: u32,
+    /// Offers a peer declined or left unanswered.
+    pub tx_agreements_failed: u32,
+    /// A-MPDUs sent.
+    pub aggregates: u32,
+    /// Subframes of those A-MPDUs the peers' BlockAcks acknowledged.
+    pub aggregated_acknowledged: u32,
     /// Queued frames for no authorized destination, dropped.
     pub data_dropped: u32,
     /// MSDUs handed to the application.
@@ -536,6 +552,8 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     /// The packet numbers of group data.
     group_transmit: CcmpTxPacketNumber,
     queue: &'p mut TxQueue,
+    /// The subframes of the A-MPDU being sent.
+    subframes: &'p mut AmpduSubframes,
     buffered: PowerSaveBuffer<'p>,
     reorder: &'p mut RxReorder<AP_MAX_CLIENTS>,
     /// The protection the beacon template carries.
@@ -560,6 +578,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let PortApStorage {
             beacon,
             queue,
+            subframes,
             held,
             reorder,
         } = storage;
@@ -591,6 +610,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             links: [const { None }; AP_MAX_CLIENTS],
             group_transmit: CcmpTxPacketNumber::new(profile.ccmp_step),
             queue,
+            subframes,
             buffered,
             reorder,
             advertised: ApBssProtection::default(),
@@ -679,6 +699,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             transmit: CcmpTxPacketNumber::new(self.profile.ccmp_step),
             replay: CcmpRxReplayState::default(),
             duplicates: RxDuplicateFilter::new(),
+            tx_block_ack_alarm: None,
         });
         Ok(())
     }
@@ -765,6 +786,9 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 ApWpa2RetryProgress::None => {}
             }
             self.expire_reorder_gaps(now, deliver);
+            if self.expire_tx_block_ack(now)? {
+                continue;
+            }
             if let Some(frame) = self.queue.pop() {
                 self.dispatch(frame.ethernet()).await?;
                 continue;
@@ -777,6 +801,12 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 self.service.next_peer_deadline(),
                 self.service.next_wpa2_retry_deadline(),
                 self.reorder.next_gap_deadline(),
+                self.links
+                    .iter()
+                    .flatten()
+                    .filter_map(|link| link.tx_block_ack_alarm)
+                    .map(|alarm| alarm.deadline)
+                    .min(),
             ]
             .into_iter()
             .flatten()
@@ -970,7 +1000,16 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             }
         };
         let Some(identity) = hold else {
-            return self.transmit_data(ethernet, false).await;
+            let run = if destination[0] & 1 == 0 {
+                self.aggregate_run(destination, ethernet.len())
+            } else {
+                1
+            };
+            return if run >= 2 {
+                self.transmit_aggregate(destination, ethernet, run).await
+            } else {
+                self.transmit_data(ethernet, false).await
+            };
         };
         if !self.buffered.hold(ethernet) {
             self.counters.held_dropped = self.counters.held_dropped.saturating_add(1);
@@ -1419,55 +1458,13 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     .service
                     .peer_status(destination)
                     .is_some_and(|status| status.qos_supported);
-            let sequence_number = if peer_qos {
-                self.service
-                    .current_qos_sequence(destination, oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID)
-                    .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?
+            let (length, key, _) =
+                self.encode_protected(destination, peer_qos, more_data, ethernet, &mut mpdu)?;
+            let rate = if group {
+                self.profile.management_rate
             } else {
-                self.service.current_data_sequence()
+                self.profile.data_rate
             };
-            // The frame encodes before a packet number is spent.
-            let length = ApProtectedDataFrame {
-                access_point,
-                peer: destination,
-                sequence_number,
-                user_priority: 0,
-                peer_qos,
-                more_data,
-                ccmp_header: [0; CCMP_HEADER_LEN],
-                ethernet,
-            }
-            .encode(&mut mpdu)?;
-            let (header, key, rate) = if group {
-                let key_id = self.service.gtk()?.key_id();
-                let key = self.group_key.ok_or(PortApError::KeysFull)?;
-                let header = self
-                    .group_transmit
-                    .next_header(CcmpKeyId::new(key_id).ok_or(PortApError::KeysFull)?)
-                    .map_err(|_| PortApError::PacketNumbers)?;
-                (header, key, self.profile.management_rate)
-            } else {
-                let data_rate = self.profile.data_rate;
-                let link = self.link_mut(destination).ok_or(PortApError::KeysFull)?;
-                let key = link.key.ok_or(PortApError::KeysFull)?;
-                let header = link
-                    .transmit
-                    .next_header(CcmpKeyId::new(0).ok_or(PortApError::KeysFull)?)
-                    .map_err(|_| PortApError::PacketNumbers)?;
-                (header, key, data_rate)
-            };
-            let offset = if peer_qos {
-                IEEE80211_QOS_DATA_HEADER_LEN
-            } else {
-                IEEE80211_LEGACY_DATA_HEADER_LEN
-            };
-            mpdu[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&header);
-            if peer_qos {
-                self.service
-                    .next_qos_sequence(destination, oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID);
-            } else {
-                self.service.next_data_sequence();
-            }
             (length, KeySelector::Key(key), rate)
         };
         self.client
@@ -1480,6 +1477,180 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             )
             .await?;
         self.counters.data_sent = self.counters.data_sent.saturating_add(1);
+        Ok(())
+    }
+
+    /// Encode `ethernet` for `destination`, a peer or the group, under its
+    /// key with its next packet number and sequence number, as QoS data of
+    /// TID 0 to a QoS peer: its length, key and sequence number.
+    fn encode_protected(
+        &mut self,
+        destination: [u8; 6],
+        peer_qos: bool,
+        more_data: bool,
+        ethernet: &[u8],
+        mpdu: &mut [u8],
+    ) -> Result<(usize, KeyHandle, SequenceNumber), PortApError<PortError<X>>> {
+        let sequence_number = if peer_qos {
+            self.service
+                .current_qos_sequence(destination, AP_TX_BLOCK_ACK_TID)
+                .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?
+        } else {
+            self.service.current_data_sequence()
+        };
+        // The frame encodes before a packet number is spent.
+        let length = ApProtectedDataFrame {
+            access_point: self.service.address(),
+            peer: destination,
+            sequence_number,
+            user_priority: 0,
+            peer_qos,
+            more_data,
+            ccmp_header: [0; CCMP_HEADER_LEN],
+            ethernet,
+        }
+        .encode(mpdu)?;
+        let (header, key) = if destination[0] & 1 != 0 {
+            let key_id = self.service.gtk()?.key_id();
+            let key = self.group_key.ok_or(PortApError::KeysFull)?;
+            let header = self
+                .group_transmit
+                .next_header(CcmpKeyId::new(key_id).ok_or(PortApError::KeysFull)?)
+                .map_err(|_| PortApError::PacketNumbers)?;
+            (header, key)
+        } else {
+            let link = self.link_mut(destination).ok_or(PortApError::KeysFull)?;
+            let key = link.key.ok_or(PortApError::KeysFull)?;
+            let header = link
+                .transmit
+                .next_header(CcmpKeyId::new(0).ok_or(PortApError::KeysFull)?)
+                .map_err(|_| PortApError::PacketNumbers)?;
+            (header, key)
+        };
+        let offset = if peer_qos {
+            IEEE80211_QOS_DATA_HEADER_LEN
+        } else {
+            IEEE80211_LEGACY_DATA_HEADER_LEN
+        };
+        mpdu[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&header);
+        if peer_qos {
+            self.service
+                .next_qos_sequence(destination, AP_TX_BLOCK_ACK_TID);
+        } else {
+            self.service.next_data_sequence();
+        }
+        Ok((length, key, sequence_number))
+    }
+
+    /// How many frames for `destination` one A-MPDU carries: the head of
+    /// `head_len` octets and the queued frames for it that follow, as the
+    /// peer's operational TX Block Ack agreement, the port, the peer's HT
+    /// A-MPDU Parameters and the Best Effort TXOP limit the BSS advertises
+    /// admit at the data rate; one where no A-MPDU applies.
+    fn aggregate_run(&self, destination: [u8; 6], head_len: usize) -> usize {
+        let Some(status) = self.service.peer_status(destination) else {
+            return 1;
+        };
+        let (Some(agreement), Some(ht), Some(port), true) = (
+            status.tx_block_ack,
+            status.ht,
+            <X::Aggregation as PortAggregation<X>>::capabilities(self.client.port()),
+            status.qos_supported && self.service.link_protection() == LinkProtection::Ccmp,
+        ) else {
+            return 1;
+        };
+        let txop = self
+            .profile
+            .advertisement
+            .wmm
+            .access_category(WmmAccessCategory::BestEffort)
+            .txop_limit_units_32_us;
+        let limits = AmpduLimits {
+            window: agreement.window,
+            port,
+            peer_ampdu_parameters: ht.ampdu_parameters(),
+            txop_limit_micros: (txop != 0).then_some(u32::from(txop) * 32),
+            rate: self.profile.data_rate,
+        };
+        let queue = &*self.queue;
+        let following = (0..PORT_TX_QUEUE)
+            .map_while(|index| queue.get(index))
+            .take_while(|frame| frame.ethernet().get(..6) == Some(destination.as_slice()))
+            .map(|frame| frame.ethernet().len());
+        limits
+            .run(core::iter::once(head_len).chain(following))
+            .max(1)
+    }
+
+    /// Send `head` and the `run - 1` queued frames for `destination` that
+    /// follow it as one A-MPDU of TID 0 under the peer's pairwise key, at
+    /// the data rate.
+    async fn transmit_aggregate(
+        &mut self,
+        destination: [u8; 6],
+        head: &[u8],
+        run: usize,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let spacing = self
+            .service
+            .peer_status(destination)
+            .and_then(|status| status.ht)
+            .map_or(0, |ht| (ht.ampdu_parameters() >> 2) & 0x07);
+        self.subframes.clear();
+        let mut first_sequence = None;
+        let mut mpdu = [0_u8; PORT_MPDU_CAPACITY];
+        for index in 0..run {
+            let queued;
+            let ethernet = if index == 0 {
+                head
+            } else {
+                queued = self
+                    .queue
+                    .pop()
+                    .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?;
+                queued.ethernet()
+            };
+            let (length, key, sequence) =
+                self.encode_protected(destination, true, false, ethernet, &mut mpdu)?;
+            first_sequence.get_or_insert(sequence);
+            self.subframes.push(|buffer| {
+                buffer[..length].copy_from_slice(&mpdu[..length]);
+                Ok::<_, PortApError<PortError<X>>>((length, KeySelector::Key(key)))
+            })?;
+        }
+        let first_sequence =
+            first_sequence.ok_or(PortApError::Service(ApServiceError::UnknownPeer))?;
+        let committed_at = self
+            .client
+            .port()
+            .now()
+            .map_err(|error| PortApError::Client(PortClientError::Port(error)))?;
+        let ampdu = self
+            .subframes
+            .request(AP_TX_BLOCK_ACK_TID, first_sequence, committed_at)
+            .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?;
+        let config = *self.client.config();
+        let request = TxRequest {
+            access_category: WmmAccessCategory::BestEffort,
+            initial_rate: self.profile.data_rate,
+            receiver: TxReceiver::Individual,
+            power: config.power,
+            coex: self.profile.coex,
+            mpdu_retry_limit: config.retry_limit,
+            body: TxBody::Ampdu(ampdu),
+        };
+        let mut slices = [&[][..]; PORT_TX_QUEUE];
+        let frames = self.subframes.frames(&mut slices, spacing);
+        let report =
+            <X::Aggregation as PortAggregation<X>>::send(&mut self.client, frames, request).await?;
+        self.counters.aggregates = self.counters.aggregates.saturating_add(1);
+        self.counters.data_sent = self.counters.data_sent.saturating_add(run as u32);
+        if let TxReport::Ampdu(status) = report {
+            self.counters.aggregated_acknowledged = self
+                .counters
+                .aggregated_acknowledged
+                .saturating_add(u32::from(status.block_acknowledged_subframes));
+        }
         Ok(())
     }
 
@@ -1733,9 +1904,9 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     }
 
     /// Answer a peer's Block Ack action: accept an ADDBA Request whose
-    /// window the port and the storage can hold (or decline it), and end an
-    /// agreement the peer ends. The access point's own TX agreements are
-    /// not served yet.
+    /// window the port and the storage can hold (or decline it), end a
+    /// receive agreement the peer ends, and apply the peer's ADDBA Response
+    /// to, or DELBA of, the access point's own TX agreement.
     async fn block_ack_action(
         &mut self,
         peer: [u8; 6],
@@ -1781,27 +1952,93 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     write_declined_addba_response(&mut body, dialog_token, tid & 0x0f, window)
                 }
                 .map_err(|_| PortApError::Service(ApServiceError::WrongPeerPhase))?;
-                let sequence_number = self.service.next_management_sequence();
-                let mut frame = [0_u8; 64];
-                let length = ApActionFrame {
-                    access_point: self.service.address(),
-                    peer,
-                    sequence_number,
-                    body: &body,
-                }
-                .encode(&mut frame)?;
-                self.send_management(&frame[..length]).await
+                self.send_action(peer, &body).await
             }
             BlockAckAction::Delba {
                 tid,
                 initiator: true,
                 ..
             } => self.stop_rx_agreement(peer, tid),
-            _ => {
-                self.counters.unserved = self.counters.unserved.saturating_add(1);
+            action @ (BlockAckAction::AddbaResponse { .. }
+            | BlockAckAction::Delba {
+                initiator: false, ..
+            }) => {
+                let response = self.service.on_tx_block_ack_action(peer, action)?;
+                if response.is_some()
+                    && let Some(link) = self.link_mut(peer)
+                {
+                    link.tx_block_ack_alarm = None;
+                }
+                match response {
+                    Some(TxBlockAckResponse::Operational(_)) => {
+                        self.counters.tx_agreements = self.counters.tx_agreements.saturating_add(1);
+                    }
+                    Some(TxBlockAckResponse::Rejected(_)) => {
+                        self.counters.tx_agreements_failed =
+                            self.counters.tx_agreements_failed.saturating_add(1);
+                    }
+                    None => {}
+                }
                 Ok(())
             }
         }
+    }
+
+    /// Send one Block Ack action `body` to `peer`.
+    async fn send_action(
+        &mut self,
+        peer: [u8; 6],
+        body: &[u8],
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let sequence_number = self.service.next_management_sequence();
+        let mut frame = [0_u8; 64];
+        let length = ApActionFrame {
+            access_point: self.service.address(),
+            peer,
+            sequence_number,
+            body,
+        }
+        .encode(&mut frame)?;
+        self.send_management(&frame[..length]).await
+    }
+
+    /// Offer a newly authorized `peer` the access point's TX Block Ack
+    /// agreement, once: an ADDBA Request where the BSS is protected and the
+    /// peer an HT QoS station. The peer's response or the negotiation's
+    /// timeout ends it.
+    async fn offer_tx_block_ack(
+        &mut self,
+        peer: [u8; 6],
+        now: Instant,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let Some(request) = self.service.begin_tx_block_ack(peer, now)? else {
+            return Ok(());
+        };
+        if let Some(link) = self.link_mut(peer) {
+            link.tx_block_ack_alarm = Some(request.alarm);
+        }
+        self.counters.tx_agreements_offered = self.counters.tx_agreements_offered.saturating_add(1);
+        self.send_action(peer, &request.body).await
+    }
+
+    /// End at most one TX Block Ack negotiation whose response is overdue at
+    /// `now`; `true` when one was due.
+    fn expire_tx_block_ack(&mut self, now: Instant) -> Result<bool, PortApError<PortError<X>>> {
+        let Some((peer, alarm)) = self.links.iter_mut().flatten().find_map(|link| {
+            link.tx_block_ack_alarm
+                .filter(|alarm| now >= alarm.deadline)
+                .map(|alarm| {
+                    link.tx_block_ack_alarm = None;
+                    (link.peer, alarm)
+                })
+        }) else {
+            return Ok(false);
+        };
+        if self.service.on_tx_block_ack_alarm(peer, alarm)? {
+            self.counters.tx_agreements_failed =
+                self.counters.tx_agreements_failed.saturating_add(1);
+        }
+        Ok(true)
     }
 
     /// End `peer`'s receive agreement of `tid` here and in the port.
@@ -1899,7 +2136,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         match self.service.on_eapol(peer, frame)? {
             ApWpa2Progress::None => Ok(()),
             ApWpa2Progress::Transmit(frame) => self.send_eapol(peer, &frame, false).await,
-            ApWpa2Progress::AuthorizePeer => self.authorize(peer, now),
+            ApWpa2Progress::AuthorizePeer => {
+                self.authorize(peer, now)?;
+                self.offer_tx_block_ack(peer, now).await
+            }
             ApWpa2Progress::DeauthenticatePeer => {
                 let close = self.service.begin_wpa2_failure_close(peer)?;
                 self.close_peer(close).await

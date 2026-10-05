@@ -3,7 +3,10 @@
 //! Fixed record capacities preserve the implemented beacon/association format.
 //! The chip profile chooses values; these types validate and encode them.
 
-use crate::{extensions::wmm::WmmAcParameters, ht::HtLocalCapabilities, security::LinkProtection};
+use crate::{
+    extensions::wmm::WmmAcParameters, ht::HtLocalCapabilities, qos::WmmAccessCategory,
+    security::LinkProtection,
+};
 
 /// The Supported Rates and Extended Supported Rates records of this AP.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,6 +66,12 @@ impl WmmParameters {
             uapsd,
             access_categories,
         }
+    }
+
+    /// The advertised parameters of `category`, which the access point's
+    /// own transmissions also follow.
+    pub const fn access_category(self, category: WmmAccessCategory) -> WmmAcParameters {
+        self.access_categories[category as usize]
     }
 
     /// Encode a complete vendor-specific WMM Parameter Element.

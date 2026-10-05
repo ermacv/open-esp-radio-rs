@@ -13,7 +13,7 @@ peers, security and power save); frame codecs belong to `oer-ieee80211-mac`.
 | `PortApEnv` | The port and transmit policy (`PortClientEnv`), the image's monotonic `Timer` the `PortApAuthenticator` that gives each handshake an unpredictable authenticator nonce and its initial replay counter, and the `PortApSae` executor of a WPA3 BSS's SAE responder (`NoSae` for another BSS) |
 | `PortApSae`, `InlineSae` | The access point submits one SAE frame at a time and polls for its output beside the port's input, so a Commit's elliptic-curve work runs where the composition places the executor while the BSS goes on; `InlineSae` runs the responder inline; a frame submitted while the last output is not taken is dropped (`sae_dropped`) |
 | `PortApProfile` | The BSS: SSID, channel, beacon interval, DTIM period, the claimed `Advertisement`, the management rate (beacons, management, group data), the data rate to a peer, the coexistence priority, the CCMP packet-number step and the receive reorder gap time; its security is the `AccessPointService`'s |
-| `PortApStorage` | The memory the composition places: the beacon template, the transmit queue (`oer-ieee80211-upper-mac-service::queue::TxQueue`), the `HELD` frames held for power save (its const parameter, which the composition sizes for its peers' traffic and memory), shared by every dozing peer and the group, and the peers' receive Block Ack reordering (`oer-ieee80211-upper-mac-service::reorder::RxReorder`, `AP_MAX_CLIENTS` agreements) |
+| `PortApStorage` | The memory the composition places: the beacon template, the transmit queue (`oer-ieee80211-upper-mac-service::queue::TxQueue`), the subframes of one A-MPDU (`aggregate::AmpduSubframes`), the `HELD` frames held for power save (its const parameter, which the composition sizes for its peers' traffic and memory), shared by every dozing peer and the group, and the peers' receive Block Ack reordering (`oer-ieee80211-upper-mac-service::reorder::RxReorder`, `AP_MAX_CLIENTS` agreements) |
 | `PortAccessPoint::send` | Queues one Ethernet-II frame at its user priority (`PortApSend::Queued`, or `Full`); `run_until` sends the queue |
 | `PortAccessPoint::new` | Takes the client, the timer, the authenticator, the SAE executor, the profile, the BSS's `AccessPointService` (peers, security, the management sequence beacons and responses share) and the storage; refuses a service of another address |
 | `PortAccessPoint::start` | Tunes the port to the BSS's channel, configures the access-point interface with `BSS_MEMBER` and `PROBE_REQUESTS`, restarts its TSF and, in a WPA2 BSS, installs the group key |
@@ -57,9 +57,20 @@ from the port's buffer and a kept one from the storage; its BlockAckReq
 moves the window, a kept run goes past its gap after the profile's gap time,
 and its DELBA or its removal ends the agreement in the port too
 (`rx_agreements`, `behind_window`, `unbuffered`, `reorder_gap_timeouts`).
-Not served yet: the access point's own TX Block Ack agreements and
-aggregation (their actions are counted in `unserved`), rate
-control and fragments (`malformed`).
+TX Block Ack: in a protected BSS the access point offers each newly
+authorized HT QoS peer its TID-0 agreement once, by an ADDBA Request
+(`tx_agreements_offered`); the peer's response makes it operational
+(`tx_agreements`) or declines it, and an unanswered offer times out
+(`tx_agreements_failed`); the peer's DELBA as recipient, or its removal,
+ends it. While it is operational, a frame for the awake peer and the queued
+frames for it that follow go as one A-MPDU of TID 0 under its pairwise key
+at the data rate (`aggregates`, `aggregated_acknowledged`), as many as the
+agreement's window, the port (`PortClientEnv::Aggregation`), the peer's HT
+A-MPDU Parameters and the Best Effort TXOP limit the BSS advertises admit
+(`AmpduLimits`), keeping the peer's minimum MPDU start spacing; the
+subframes are encoded into `PortApStorage`'s `AmpduSubframes`. An Open BSS
+offers no agreement.
+Not served yet: rate control and fragments (`malformed`).
 
 Tests: `tests/port_access_point.rs` runs the access point over the
 `LowerMacModel` on virtual time.

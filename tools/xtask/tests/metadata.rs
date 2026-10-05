@@ -1,5 +1,6 @@
 mod support;
-use oer_xtask::{Context, checks, paths};
+use oer_process::Checkout;
+use oer_xtask::checks;
 use std::fs;
 use support::Fixture;
 
@@ -27,7 +28,7 @@ fn fixture() -> Fixture {
     f.git(&["init", "--quiet"]);
     f.git(&["add", "."]);
     for manifest in ["Cargo.toml", "crates/old/Cargo.toml"] {
-        oer_process::capture(f.context.cargo().args([
+        oer_process::capture(oer_toolchain::cargo_in(&f.context.root).args([
             "generate-lockfile",
             "--offline",
             "--manifest-path",
@@ -47,8 +48,9 @@ fn unstaged_move_is_checked_without_private_or_build_inputs() {
         "crates/moved/target/local/Cargo.toml",
         "invalid build manifest",
     );
-    let manifests = paths::source_manifests(&f.context).unwrap();
-    assert_eq!(manifests.len(), 2);
+    let repo = oer_repo::Repo::from_git(&f.context.root).unwrap();
+    let manifests = repo.files().filter(|file| file.ends_with("Cargo.toml"));
+    assert_eq!(manifests.count(), 2);
     assert_eq!(checks::metadata(&f.context).unwrap(), 2);
 }
 #[test]
@@ -88,12 +90,8 @@ fn git_worktree_discovery_uses_its_own_source_root() {
             .arg(&path),
     )
     .unwrap();
-    let context = Context::new(&path).unwrap();
+    let context = Checkout::new(&path).unwrap();
     assert_eq!(checks::metadata(&context).unwrap(), 2);
-    assert!(
-        paths::source_files(&context)
-            .unwrap()
-            .iter()
-            .all(|p| p.starts_with(&context.root))
-    );
+    let repo = oer_repo::Repo::from_git(&context.root).unwrap();
+    assert!(repo.files().all(|file| context.root.join(file).is_file()));
 }

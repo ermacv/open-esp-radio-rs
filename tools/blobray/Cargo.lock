@@ -9,6 +9,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e567177890eb1617b1f774005b66b26b2377afd138a2ca37aae7d8f0c81429d4"
 dependencies = [
  "gimli",
+ "rustc-demangle",
 ]
 
 [[package]]
@@ -418,22 +419,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-chip-profile"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "oer-durable"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "oer-elf"
+version = "0.1.0"
+dependencies = [
+ "addr2line",
+ "gimli",
+ "object",
+]
+
+[[package]]
 name = "oer-esp32c5-vendor-scenarios"
 version = "0.1.0"
 dependencies = [
  "blobray-domain",
  "clap",
+ "oer-process",
  "oer-vendor-scenario-engine",
 ]
 
 [[package]]
-name = "oer-esp32c5-vendor-scenarios-cli"
+name = "oer-esp32s31-phy-relation"
 version = "0.1.0"
-dependencies = [
- "clap",
- "oer-esp32c5-vendor-scenarios",
- "oer-vendor-scenario-report",
-]
 
 [[package]]
 name = "oer-esp32s31-vendor-scenarios"
@@ -442,32 +465,55 @@ dependencies = [
  "blobray-application",
  "blobray-domain",
  "clap",
- "object",
+ "oer-durable",
+ "oer-elf",
+ "oer-esp32s31-phy-relation",
+ "oer-process",
  "oer-riscv-model",
+ "oer-vendor-artifacts",
+ "oer-vendor-evidence",
  "oer-vendor-scenario-engine",
  "serde",
  "toml",
 ]
 
 [[package]]
-name = "oer-esp32s31-vendor-scenarios-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "oer-esp32s31-vendor-scenarios",
- "oer-vendor-scenario-report",
-]
-
-[[package]]
 name = "oer-probe-codegen"
 version = "0.1.0"
 dependencies = [
- "object",
+ "oer-elf",
  "proc-macro2",
  "quote",
  "serde",
  "serde_json",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "oer-process"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rustix",
+ "signal-hook",
+]
+
+[[package]]
+name = "oer-register-contracts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sha2",
+ "toml",
+]
+
+[[package]]
+name = "oer-repo"
+version = "0.1.0"
+dependencies = [
+ "oer-chip-profile",
+ "oer-process",
+ "toml",
 ]
 
 [[package]]
@@ -488,7 +534,7 @@ dependencies = [
 name = "oer-riscv-lift"
 version = "0.1.0"
 dependencies = [
- "object",
+ "oer-elf",
  "oer-riscv-decode",
  "oer-riscv-model",
 ]
@@ -507,25 +553,62 @@ name = "oer-riscv-program"
 version = "0.1.0"
 dependencies = [
  "object",
+ "oer-elf",
  "oer-riscv-model",
+]
+
+[[package]]
+name = "oer-vendor-artifacts"
+version = "0.1.0"
+dependencies = [
+ "oer-chip-profile",
+ "oer-durable",
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "oer-vendor-evidence"
+version = "0.1.0"
+dependencies = [
+ "oer-process",
+ "oer-repo",
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml",
+]
+
+[[package]]
+name = "oer-vendor-scenario-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "oer-esp32c5-vendor-scenarios",
+ "oer-esp32s31-vendor-scenarios",
+ "oer-vendor-scenario-report",
 ]
 
 [[package]]
 name = "oer-vendor-scenario-engine"
 version = "0.1.0"
 dependencies = [
- "addr2line",
  "blobray-application",
  "blobray-backend-riscv",
  "blobray-domain",
  "blobray-linker",
  "blobray-verification",
  "clap",
- "gimli",
- "object",
+ "oer-durable",
+ "oer-elf",
  "oer-probe-codegen",
+ "oer-process",
+ "oer-register-contracts",
+ "oer-repo",
  "oer-riscv-lift",
  "oer-riscv-model",
+ "oer-vendor-artifacts",
+ "oer-vendor-evidence",
  "serde",
  "serde_json",
  "sha2",
@@ -538,9 +621,11 @@ name = "oer-vendor-scenario-report"
 version = "0.1.0"
 dependencies = [
  "clap",
- "object",
+ "oer-elf",
+ "oer-process",
  "oer-riscv-lift",
  "oer-riscv-model",
+ "oer-vendor-evidence",
  "oer-vendor-scenario-engine",
  "sha2",
 ]
@@ -580,6 +665,12 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "rustc-demangle"
+version = "0.1.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b74b56ffa8bb2830709a538c2cbcae9aa062db0d2a42563bfb09bdaae44020eb"
 
 [[package]]
 name = "rustix"
@@ -671,6 +762,26 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "signal-hook"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
 ]
 
 [[package]]

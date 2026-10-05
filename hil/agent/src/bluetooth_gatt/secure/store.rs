@@ -2,7 +2,7 @@
 //! The retained RAM backend is never changed by an injected load failure.
 use super::state::State;
 use core::convert::Infallible;
-use gatt_application::security::bonds::{BondStore, RamBondStore, StoreError};
+use oer_bluetooth_gatt_trouble::security::bonds::{BondStore, RamBondStore, StoreError};
 use trouble_host::{BondInformation, Identity};
 
 #[derive(Debug, Eq, PartialEq)]

@@ -1,63 +1,64 @@
 //! The `cargo hil` command: stand commands handled here, every other command
 //! forwarded to the runner this crate builds.
-use crate::{Context, Result};
-use sha2::Sha256;
+use crate::Result;
+use oer_process::Checkout;
 use std::{
     ffi::OsString,
     fs,
     path::{Path, PathBuf},
-    process::Command,
 };
 
-pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
+pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> {
     use_shared_store(ctx)?;
     let (options, args) = LeaseOptions::split(args)?;
     let args = args.as_slice();
-    match args.first().and_then(|argument| argument.to_str()) {
+    let first = args.first().and_then(|argument| argument.to_str());
+    match first {
         None | Some("help" | "--help" | "-h") => println!("{STAND_HELP}"),
-        Some("queue") => return queue(&args[1..]),
-        Some("dashboard") => {
-            return crate::dashboard::serve(&crate::store::shared_runs()?, &args[1..]);
-        }
-        Some("lease") => return lease(ctx, options, &args[1..]),
-        Some("board") => return board(ctx, &options, &args[1..]),
-        Some("peer") => return crate::board::peer(options.owner(ctx)?, &args[1..]),
-        Some("preempt") => return preempt(&options.owner(ctx)?, &args[1..]),
-        Some("owner") => return owner(ctx, &args[1..]),
         Some("__command-tree") => return command_tree(ctx),
-        Some("devices") => return devices(ctx, &options, &args[1..]),
-        Some("stand") => {
+        _ => {}
+    }
+    match first.and_then(StandCommand::named) {
+        Some(StandCommand::Queue) => return queue(&args[1..]),
+        Some(StandCommand::Dashboard) => {
+            return crate::dashboard::serve(&oer_hil_run_bundle::RunStore::shared()?, &args[1..]);
+        }
+        Some(StandCommand::Lease) => return lease(ctx, options, &args[1..]),
+        Some(StandCommand::Board) => return board(ctx, &options, &args[1..]),
+        Some(StandCommand::Peer) => {
+            return crate::board::peer(ctx, options.owner(ctx)?, &args[1..]);
+        }
+        Some(StandCommand::Preempt) => return preempt(&options.owner(ctx)?, &args[1..]),
+        Some(StandCommand::Owner) => return owner(ctx, &args[1..]),
+        Some(StandCommand::Devices) => return devices(ctx, &options, &args[1..]),
+        Some(StandCommand::Stand) => {
             return crate::stand::stand(ctx, || options.owner(ctx), &args[1..]);
         }
-        Some("fixtures") => {
-            let lab = oer_hil_stand::config::LabConfig::default_path()?;
+        Some(StandCommand::Fixtures) => {
+            let lab = oer_hil_lab::config::LabConfig::default_path()?;
             print!(
                 "{}",
-                crate::fixtures::describe(&crate::fixtures::probe(&lab))
+                oer_hil_stand_host::fixtures::describe(&oer_hil_stand_host::fixtures::probe(&lab))
             );
             return Ok(std::process::ExitCode::SUCCESS);
         }
-        Some("firmware") => return firmware(ctx, &options, &args[1..]),
-        Some("flash") => {
-            let request = oer_hil_arbiter::Request {
-                owner: options.owner(ctx)?,
-                work: String::new(),
-                scenarios: Vec::new(),
-                claims: Vec::new(),
-            };
-            return crate::flash::run(ctx, request, &args[1..]);
+        Some(StandCommand::Firmware) => return firmware(ctx, &options, &args[1..]),
+        Some(StandCommand::Flash) => {
+            return crate::flash::run(ctx, options.owner(ctx)?, &args[1..]);
         }
-        Some("runs") => return runs(ctx, &options, &args[1..]),
-        Some("evidence") => return crate::evidence::command(ctx, &args[1..]),
-        Some("perf") => return perf(ctx, &options, &args[1..]),
-        Some("profile") => return profile(ctx, &args[1..]),
-        Some("wait") if args.get(1).is_some_and(|arg| arg == "--service") => {
+        Some(StandCommand::Runs) => return runs(ctx, &options, &args[1..]),
+        Some(StandCommand::Evidence) => return crate::evidence::command(ctx, &args[1..]),
+        Some(StandCommand::Perf) => return perf(ctx, &options, &args[1..]),
+        Some(StandCommand::Profile) => return profile(ctx, &args[1..]),
+        Some(StandCommand::Wait) if args.get(1).is_some_and(|arg| arg == "--service") => {
             return wait_for_service(&args[2..]);
         }
-        Some("wait") => return wait(&args[1..]),
-        Some("ab") => return ab(ctx, &options.owner(ctx)?, args),
-        Some("bisect") => return crate::bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
-        _ => {}
+        Some(StandCommand::Wait) => return wait(&args[1..]),
+        Some(StandCommand::Ab) => return ab(ctx, &options.owner(ctx)?, args),
+        Some(StandCommand::Bisect) => {
+            return crate::experiments::bisect(ctx, &options.owner(ctx)?, &args[1..]);
+        }
+        None => {}
     }
     // The runner has no lease options: take them from after the command
     // too, before the runner is built.
@@ -78,8 +79,8 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         .unwrap_or_else(|_| String::from("unregistered"));
     // Only a command that produces runs is a job; a read-only one is not.
     let mut job = if produces_runs(&args) {
-        Some(crate::jobs::Running::begin(
-            ctx,
+        Some(oer_hil_experiment::job::Running::begin(
+            &ctx.root,
             &owner,
             &args,
             after.as_ref(),
@@ -91,9 +92,12 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     // An enqueued job runs the runner and sources fixed when it was
     // enqueued; the evidence decision below still reads its own arguments.
     let frozen = crate::jobs::Frozen::inherited()?;
-    let (runner, receipt_path) = match &frozen {
-        Some(frozen) => (frozen.runner.clone(), frozen.receipt.clone()),
-        None => crate::observer::prepare(ctx)?,
+    let runner = match &frozen {
+        Some(frozen) => oer_hil_experiment::launch::Runner {
+            executable: frozen.runner.clone(),
+            receipt: Some(frozen.receipt.clone()),
+        },
+        None => oer_hil_experiment::launch::Runner::prepare(&ctx.root)?,
     };
     let mut runner_args = match frozen
         .as_ref()
@@ -111,59 +115,33 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt as _;
-            let error = ctx
-                .command(&runner)
-                .args(&runner_args)
-                .envs(options.environment(ctx)?)
-                .env("OER_OBSERVER_RECEIPT", &receipt_path)
-                .exec();
+            let mut command = ctx.command(&runner.executable);
+            command.args(&runner_args).envs(options.environment(ctx)?);
+            if let Some(receipt) = &runner.receipt {
+                command.env(oer_hil_observer::receipt::ENV, receipt);
+            }
+            let error = command.exec();
             return Err(format!("cannot hand the terminal to the HIL runner: {error}").into());
         }
     }
-    // Cleanup scopes in the runner have 30-second budgets and may unwind
-    // multiple owned fixtures. This is a shutdown allowance, never a run timeout.
-    // The runner names every run it creates here, so exactly this
-    // invocation's runs are recorded.
-    let run_receipt = tempfile::NamedTempFile::new()?;
-    let mut command = ctx.command(&runner);
-    command
-        .args(&runner_args)
-        .envs(options.environment(ctx)?)
-        .env("OER_OBSERVER_RECEIPT", &receipt_path)
-        .env(RUN_RECEIPT_ENV, run_receipt.path());
-    // The runner escalates a bootloader loop to a JTAG reset, through the
-    // OpenOCD of the ESP-IDF tools only this wrapper can locate.
-    if let Ok((program, scripts)) = crate::jtag::openocd() {
-        command
-            .env(oer_hil_arbiter::control::OPENOCD_ENV, program)
-            .env(oer_hil_arbiter::control::OPENOCD_SCRIPTS_ENV, scripts);
+    let mut launch = oer_hil_experiment::launch::Launch::new(&ctx.root, &runner).args(runner_args);
+    for (name, value) in options.environment(ctx)? {
+        launch = launch.env(name, value);
     }
-    // An ESP-IDF application is flashed with its chip's catalog bootloader,
-    // which only this wrapper builds; the runner asks it back.
-    command.env(oer_hil_image::CLI_ENV, std::env::current_exe()?);
-    let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
-        &mut command,
-        std::time::Duration::from_secs(300),
-    )?;
-    let status = child.wait_forwarding_cancellation()?;
+    // The runner's stand requests are the job's tickets.
+    if let Some(job) = &job {
+        launch = launch.env(oer_hil_arbiter::jobs::JOB_ENV, job.id());
+    }
+    let launched = oer_hil_experiment::launch::launch_run(&launch)?;
     if produces_runs(args) {
-        let run_ids = std::fs::read_to_string(run_receipt.path())?
-            .lines()
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        forward_run_receipt(&run_ids)?;
-        let store = crate::store::shared_runs()?;
+        // Name the runs in the receipt of whatever invoked this command.
+        oer_hil_run_bundle::receipt::record(&launched.runs)?;
+        let store = oer_hil_run_bundle::RunStore::shared()?;
         if let Some(job) = job.as_mut() {
-            job.finish(
-                &run_ids,
-                &run_ids
-                    .iter()
-                    .map(|id| crate::runs::load(&store.join(id)).and_then(|run| run.outcome))
-                    .collect::<Vec<_>>(),
-            )?;
+            job.finish_with(&store, &launched.runs)?;
         }
-        let created = runs_dirty(&store, &run_ids);
-        if std::env::var_os(oer_hil_evidence::experiment::EXPERIMENT_ENV).is_some() {
+        let created = runs_dirty(&store, &launched.runs);
+        if std::env::var_os(oer_hil_run_bundle::experiment::EXPERIMENT_ENV).is_some() {
             eprintln!("hil: an A/B experiment run is diagnostic: no evidence recorded");
         } else {
             let flag = |name: &str| {
@@ -181,24 +159,100 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
                 },
                 &created,
             ) {
-                None => remember_pending(ctx, options.owner(ctx)?, &run_ids)?,
+                None => remember_pending(ctx, &store, options.owner(ctx)?, &launched.runs)?,
                 // A runner that created no run has said why itself.
                 Some(_) if created.is_empty() => {}
                 Some(reason) => eprintln!(
                     "hil: HIL evidence not noted as pending: {reason}; \
-                     `cargo hil evidence record --run ID` records it"
+                     `cargo qualification hil-evidence --hil-target CHIP --run ID` records it"
                 ),
             }
         }
-        if let Err(error) = prune_automatically(ctx) {
+        if let Err(error) = prune_automatically(ctx, &store) {
             eprintln!("hil: automatic pruning of the run store failed: {error}");
         }
     }
-    Ok(oer_process::exit_code(status))
+    Ok(oer_process::exit_code(launched.status))
 }
 
 /// Stand commands handled here, printed before the runner's own help.
-const STAND_HELP: &str = "\
+/// The stand's own commands; every other command goes to the runner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StandCommand {
+    Queue,
+    Dashboard,
+    Lease,
+    Board,
+    Peer,
+    Devices,
+    Stand,
+    Fixtures,
+    Firmware,
+    Flash,
+    Runs,
+    Perf,
+    Evidence,
+    Owner,
+    Preempt,
+    Profile,
+    Bisect,
+    Ab,
+    Wait,
+}
+
+impl StandCommand {
+    const ALL: [Self; 19] = [
+        Self::Queue,
+        Self::Dashboard,
+        Self::Lease,
+        Self::Board,
+        Self::Peer,
+        Self::Devices,
+        Self::Stand,
+        Self::Fixtures,
+        Self::Firmware,
+        Self::Flash,
+        Self::Runs,
+        Self::Perf,
+        Self::Evidence,
+        Self::Owner,
+        Self::Preempt,
+        Self::Profile,
+        Self::Bisect,
+        Self::Ab,
+        Self::Wait,
+    ];
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Queue => "queue",
+            Self::Dashboard => "dashboard",
+            Self::Lease => "lease",
+            Self::Board => "board",
+            Self::Peer => "peer",
+            Self::Devices => "devices",
+            Self::Stand => "stand",
+            Self::Fixtures => "fixtures",
+            Self::Firmware => "firmware",
+            Self::Flash => "flash",
+            Self::Runs => "runs",
+            Self::Perf => "perf",
+            Self::Evidence => "evidence",
+            Self::Owner => "owner",
+            Self::Preempt => "preempt",
+            Self::Profile => "profile",
+            Self::Bisect => "bisect",
+            Self::Ab => "ab",
+            Self::Wait => "wait",
+        }
+    }
+
+    fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|command| command.name() == name)
+    }
+}
+
+pub(crate) const STAND_HELP: &str = "\
 Stand commands (shared by every checkout of this user):
   cargo hil perf report|baseline|check   gated measurements per commit, baselines, regressions
   cargo hil profile RUN [--scenario S] [--repetition N] [--top N]   symbolized program-counter profiles
@@ -210,7 +264,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil wait --service [BOARD...] block until the boards (all when none) and the stand are in service
   cargo hil wait JOB|RUN              block until the job or run ends; exit 0 passed, 1 failed, 2 interrupted, 3 blocked, 4 broken, 5 no run, 6 abandoned
   cargo hil queue [--json]            holders, balances, queue with expected starts, boards, recent leases
-  cargo hil board reset BOARD [--via rts|jtag|en] [--download]   reset under a lease; prints the ROM reset line
+  cargo hil board reset BOARD [--via rts|jtag|download|power]   reset under a lease; prints the ROM reset line
   cargo hil board check BOARD         attached, firmware, maintenance, reset paths, whether it answers; no reset
   cargo hil board console BOARD [--for 10s] [--until TEXT]       the console without a reset, under a lease
   cargo hil board soak BOARD --cycles N|--for 8h [--via rts,jtag,power]   reset again and again; journal the result
@@ -223,9 +277,8 @@ Stand commands (shared by every checkout of this user):
       --board NAME|MAC                boards CMD uses (repeatable)
       --stand                         claim the whole stand instead; blocks every other owner
       --air shared|exclusive|none     radio environment; exclusive for RF measurements, none without radio
-      --flashed IMAGE (--application FILE | --sha256 HASH) (--port PORT | --device MAC)
+      --flashed IMAGE (--application FILE | --sha256 HASH) --device NAME|MAC
       [--commit REV]                  journal CMD's flash when it succeeds
-  cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
   cargo hil fixtures                  host Wi-Fi radios, Bluetooth adapter and OpenWrt hosts: key, interfaces, channel, CCA busy
   cargo hil devices [--json]          the stand file's boards: name, chip, port, health, last firmware
   cargo hil stand discover [--blink HUB:PORT | --verify-power BOARD]   attached boards against the stand file
@@ -234,20 +287,18 @@ Stand commands (shared by every checkout of this user):
   cargo hil devices release BOARD [--confirm reset|power-cycle|rom-answers]
   cargo hil runs list [--scenario S] [--outcome O] [--image I] [--since 3d]
   cargo hil runs why RUN              why a run did not pass: failure, missed criteria, log tail
-  cargo hil runs compare A B [--measurement TEXT]   measurement means side by side
+  cargo hil runs compare A B [--measurement TEXT]   measurements side by side, judged against their noise
   cargo hil runs history SCENARIO [--measurement TEXT]
   cargo hil runs pin RUN --reason TEXT | unpin RUN
   cargo hil runs prune [--days 30] [--keep-failed 5] [--apply]
-  cargo hil evidence record [--run ID ...]   write runs' qualifying observations as tracked shards;
-                                      default: this checkout's pending clean runs
   cargo hil evidence pending          clean runs whose evidence is not recorded yet
   cargo hil evidence dismiss --run ID ...   drop runs whose evidence will not be recorded
   cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
   cargo hil firmware build IMAGE      build against the one pinned ESP-IDF
-  cargo hil firmware flash IMAGE --board NAME|MAC [--jtag] [--if-changed]   flash under a lease of that board, journaled
-  cargo hil flash --board NAME|MAC [--image NAME] [--monitor 30s [--until TEXT]] [--air shared|exclusive|none] [--via usb|jtag] ELF
-                                      flash an ELF for the board's chip under a lease of that board,
-                                      journal it, capture the console for a bounded time
+  cargo hil firmware flash IMAGE --board NAME|MAC [--jtag] [--if-changed]   build, then the flash operation
+  cargo hil flash --board NAME|MAC [--image NAME] [--monitor 30s [--until TEXT]] [--air shared|exclusive|none] [--via usb|jtag] BUNDLE|ELF
+                                      the flash operation (lease, write, journal, start) on one board,
+                                      then capture the console for a bounded time
 
 Lease options, before any HIL command, after `lease`, or among a runner command's arguments:
   --owner NAME     default: enclosing lease owner, else the checkout directory name
@@ -264,8 +315,9 @@ exit status 124). `cargo hil queue` shows every balance and who goes next.
 Scenarios tagged `air-exclusive` claim the air exclusively.
 
 Runs never write tracked files: a clean run's passed scenarios become this
-checkout's pending evidence, recorded by `cargo hil evidence record`; record
-any other run, such as one from a dirty tree, with `--run ID`.
+checkout's pending evidence, recorded by `cargo qualification hil-evidence
+--hil-target CHIP --pending`; record any other run, such as one from a dirty
+tree, with `--run ID` instead of `--pending`.
 
 Runner commands (`cargo hil run A B C` runs several scenarios under one lease):";
 
@@ -360,7 +412,7 @@ impl LeaseOptions {
     /// Explicit options win; otherwise an enclosing lease's owner, otherwise
     /// the owner registered for this checkout. Nothing is derived from the
     /// checkout's directory name.
-    fn owner(&self, ctx: &Context) -> Result<String> {
+    fn owner(&self, ctx: &Checkout) -> Result<String> {
         if let Some(owner) = self.owner.clone().or_else(|| {
             std::env::var(oer_hil_arbiter::OWNER_ENV)
                 .ok()
@@ -386,7 +438,7 @@ impl LeaseOptions {
     /// The owner for the runner, when one is known; a runner that leases
     /// without one is refused by the arbiter, one that does not lease needs
     /// none.
-    fn environment(&self, ctx: &Context) -> Result<Vec<(&'static str, String)>> {
+    fn environment(&self, ctx: &Checkout) -> Result<Vec<(&'static str, String)>> {
         Ok(self
             .owner(ctx)
             .ok()
@@ -400,7 +452,7 @@ impl LeaseOptions {
 /// subcommands and long flags, as JSON, for checking documentation against
 /// the real command line. The stand's own commands and the runner's are
 /// merged under `hil`.
-fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
+fn command_tree(ctx: &Checkout) -> Result<std::process::ExitCode> {
     use clap::CommandFactory as _;
     use oer_command_tree::{CommandNode, command_tree as walk};
     let path = |words: &[&str]| {
@@ -415,7 +467,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         flags: flags.iter().map(|word| word.to_string()).collect(),
         forwards: false,
     };
-    let (runner, _) = crate::observer::prepare(ctx)?;
+    let runner = oer_hil_observer::prepare::prepare(&ctx.root)?.runner;
     let output = std::process::Command::new(&runner)
         .arg("__command-tree")
         .output()?;
@@ -432,37 +484,15 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         }
         node.path.insert(0, String::from("hil"));
     }
-    let stand = [
-        "queue",
-        "status",
-        "dashboard",
-        "lease",
-        "board",
-        "peer",
-        "devices",
-        "stand",
-        "fixtures",
-        "firmware",
-        "flash",
-        "runs",
-        "perf",
-        "evidence",
-        "owner",
-        "preempt",
-        "profile",
-        "bisect",
-        "ab",
-        "wait",
-    ];
+    let stand = StandCommand::ALL.map(StandCommand::name);
     let mut root = node(&["hil"], &stand, &["--owner"]);
     root.subcommands.extend(runner_top);
     let mut nodes = vec![
         root,
         node(&["hil", "queue"], &[], &["--json"]),
         node(&["hil", "dashboard"], &[], &["--port"]),
-        node(&["hil", "evidence"], &["record", "pending", "dismiss"], &[]),
+        node(&["hil", "evidence"], &["pending", "dismiss"], &[]),
         node(&["hil", "evidence", "dismiss"], &[], &["--run"]),
-        node(&["hil", "evidence", "record"], &[], &["--run"]),
         node(&["hil", "evidence", "pending"], &[], &[]),
         node(&["hil", "owner"], &["set", "merge", "forget"], &[]),
         node(&["hil", "owner", "set"], &[], &[]),
@@ -482,8 +512,8 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         ("peer", crate::board::PeerCli::command()),
         ("flash", crate::flash::FlashCli::command()),
         ("profile", ProfileCli::command()),
-        ("bisect", crate::bisect::BisectCli::command()),
-        ("ab", crate::ab::AbCli::command()),
+        ("bisect", crate::experiments::BisectCli::command()),
+        ("ab", crate::experiments::AbCli::command()),
     ] {
         nodes.extend(walk(&command, &path(&["hil", name])));
     }
@@ -501,7 +531,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
 }
 
 /// `cargo hil owner [set NAME | merge OLD NEW | forget NAME]`.
-fn owner(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
+fn owner(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> {
     const USAGE: &str = "usage: cargo hil owner                 this checkout's owner
        cargo hil owner set NAME        register this checkout's owner
        cargo hil owner merge OLD NEW   charge OLD's balance and history to NEW
@@ -586,26 +616,27 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
         }
         _ => return Err("usage: cargo hil queue [--json]".into()),
     };
-    let status = oer_hil_arbiter::Arbiter::open()?.status()?;
-    let store = crate::jobs::Jobs::open()?;
+    let arbiter = oer_hil_arbiter::Arbiter::open()?;
+    let status = arbiter.status()?;
+    let store = arbiter.jobs();
     let jobs = store.unfinished();
     let ended = store.recently_ended_unjudged(std::time::Duration::from_secs(3600), 5);
     if json {
         let mut value = serde_json::to_value(&status)?;
-        value["jobs"] = serde_json::to_value(crate::jobs::views(&jobs, &status))?;
+        value["jobs"] = serde_json::to_value(oer_hil_arbiter::jobs::views(&jobs, &status))?;
         value["ended_jobs"] = serde_json::to_value(&ended)?;
         println!("{}", serde_json::to_string_pretty(&value)?);
     } else {
         println!("{status}");
-        print!("{}", crate::jobs::describe(&jobs, &status));
-        print!("{}", crate::jobs::describe_ended(&ended));
+        print!("{}", oer_hil_arbiter::jobs::describe(&jobs, &status));
+        print!("{}", oer_hil_arbiter::jobs::describe_ended(&ended));
     }
     Ok(std::process::ExitCode::SUCCESS)
 }
 
 /// `cargo hil ab ...`, a job like a run: `--enqueue` starts it detached and
 /// prints its id for `cargo hil wait`, and `--after JOB` orders it.
-fn ab(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
+fn ab(ctx: &Checkout, owner: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
     let (enqueue, after, args) = crate::jobs::take(args.to_vec())?;
     if enqueue {
         let frozen = crate::jobs::Frozen::capture(ctx)?;
@@ -614,14 +645,18 @@ fn ab(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::process::Exi
         println!("{id}");
         return Ok(std::process::ExitCode::SUCCESS);
     }
-    let mut job = crate::jobs::Running::begin(ctx, owner, &args, after.as_ref())?;
-    // Every round runs the `cargo hil` binary and runner of the experiment's start: a pull
-    // into the checkout meanwhile must not change the arms' protocol.
+    let mut job = oer_hil_experiment::job::Running::begin(&ctx.root, owner, &args, after.as_ref())?;
+    // Every round runs the runner of the experiment's start: a pull into the
+    // checkout meanwhile must not change the arms' protocol.
     let frozen = match crate::jobs::Frozen::inherited()? {
         Some(frozen) => frozen,
         None => crate::jobs::Frozen::capture(ctx)?,
     };
-    let runs = crate::ab::run(ctx, owner, &frozen, &args[1..])?;
+    let runner = oer_hil_experiment::launch::Runner {
+        executable: frozen.runner,
+        receipt: Some(frozen.receipt),
+    };
+    let runs = crate::experiments::ab(ctx, owner, &runner, &args[1..])?;
     let (ids, outcomes): (Vec<_>, Vec<_>) = runs.into_iter().unzip();
     job.finish(&ids, &outcomes)?;
     Ok(std::process::ExitCode::SUCCESS)
@@ -635,13 +670,14 @@ fn wait(args: &[OsString]) -> Result<std::process::ExitCode> {
         return Err("usage: cargo hil wait JOB|RUN, or cargo hil wait --service [BOARD...]".into());
     };
     let text = id.to_str().ok_or("an id is text")?;
-    if crate::jobs::Jobs::open()?.read(text).is_ok() {
+    if oer_hil_arbiter::Arbiter::open()?.jobs().read(text).is_ok() {
         return crate::jobs::wait_command(args);
     }
-    let run = crate::runs::load(&crate::store::shared_runs()?.join(text))
-        .ok_or_else(|| format!("{text} is neither a job nor a run"))?;
-    Ok(std::process::ExitCode::from(crate::runs::wait(
-        &run.directory,
+    let run = oer_hil_analysis::Run::open(&oer_hil_run_bundle::RunStore::shared()?, text)
+        .map_err(|_| format!("{text} is neither a job nor a run"))?;
+    Ok(std::process::ExitCode::from(oer_hil_analysis::runs::wait(
+        run.directory(),
+        |line| println!("{line}"),
     )?))
 }
 
@@ -649,12 +685,12 @@ fn wait(args: &[OsString]) -> Result<std::process::ExitCode> {
 /// board when none is named) and the stand are back in service.
 fn wait_for_service(args: &[OsString]) -> Result<std::process::ExitCode> {
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
-    let devices = arbiter.devices()?;
+    let stand = arbiter.stand()?;
     let macs = args
         .iter()
         .map(|board| {
             let board = board.to_str().ok_or("a board name is text")?;
-            oer_hil_arbiter::board_mac(&devices, board)
+            Ok(stand.resolve(board)?.mac()?)
         })
         .collect::<Result<Vec<_>>>()?;
     arbiter.wait_for_service(&macs, |out| {
@@ -701,7 +737,7 @@ fn lease_claims(
     boards: &[String],
     air: Option<AirArg>,
     stand: bool,
-    devices: &[oer_hil_arbiter::Device],
+    file: &oer_hil_stand_model::StandFile,
 ) -> Result<Vec<oer_hil_arbiter::Claim>> {
     match (stand, boards.is_empty() && air.is_none()) {
         (true, true) => return Ok(vec![oer_hil_arbiter::Claim::stand()]),
@@ -719,11 +755,7 @@ fn lease_claims(
     }
     let mut claims = boards
         .iter()
-        .map(|board| {
-            Ok(oer_hil_arbiter::Claim::board(&oer_hil_arbiter::board_mac(
-                devices, board,
-            )?))
-        })
+        .map(|board| Ok(oer_hil_arbiter::Claim::board(&file.resolve(board)?.mac()?)))
         .collect::<Result<Vec<_>>>()?;
     // Boards use the air shared unless told otherwise.
     if let Some(mode) = air.map_or(Some(oer_hil_arbiter::Mode::Shared), |AirArg(mode)| mode) {
@@ -812,11 +844,12 @@ struct LeaseCli {
     command: Vec<OsString>,
 }
 
-/// A flash performed outside the HIL runner, recorded in the board journal.
+/// A flash a leased command performed outside the flash operation,
+/// recorded in the board journal when the command succeeds.
 #[derive(Clone, Debug, Default, clap::Args)]
 struct FlashedArgs {
     /// Name of the flashed image, e.g. `ieee802154-peer`.
-    #[arg(long = "flashed", visible_alias = "image")]
+    #[arg(long = "flashed")]
     image: Option<String>,
     /// The flashed application binary, whose SHA-256 is recorded.
     #[arg(long, requires = "image", conflicts_with = "sha256")]
@@ -824,11 +857,8 @@ struct FlashedArgs {
     /// SHA-256 of the flashed application instead of `--application`.
     #[arg(long, requires = "image")]
     sha256: Option<String>,
-    /// Serial port of the flashed board; its USB serial number is its MAC.
-    #[arg(long, requires = "image", conflicts_with = "device")]
-    port: Option<std::path::PathBuf>,
-    /// MAC of the flashed board.
-    #[arg(long, requires = "image")]
+    /// The flashed board: its stand-file id, its chip or its MAC.
+    #[arg(long, value_name = "NAME|MAC", requires = "image")]
     device: Option<String>,
     /// Source commit of the image.
     #[arg(long, requires = "image")]
@@ -845,41 +875,28 @@ impl FlashedArgs {
         let Some(image) = &self.image else {
             return Ok(());
         };
-        let application_sha256 = match (&self.application, &self.sha256) {
-            (Some(application), None) => {
-                use sha2::Digest as _;
-                format!("{:x}", Sha256::digest(fs::read(application)?))
-            }
-            (None, Some(hash))
-                if hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
-            {
-                hash.to_ascii_lowercase()
-            }
-            (None, Some(hash)) => return Err(format!("`{hash}` is not a SHA-256").into()),
+        let sha256 = match (&self.application, &self.sha256) {
+            (Some(application), None) => oer_durable::sha256_file(application)?,
+            (None, Some(hash)) => hash.clone(),
             _ => return Err("a recorded flash needs --application or --sha256".into()),
         };
-        let device = match (&self.device, &self.port) {
-            (Some(device), None) => oer_hil_arbiter::normalize_mac(device)?,
-            (None, Some(port)) => oer_hil_arbiter::port_mac(port).ok_or_else(|| {
-                format!(
-                    "{} reports no USB serial number; name the board with --device MAC",
-                    port.display()
-                )
-            })?,
-            _ => return Err("a recorded flash needs --port or --device".into()),
-        };
-        arbiter.record_board_by(
+        let device = self
+            .device
+            .as_deref()
+            .ok_or("a recorded flash needs --device NAME|MAC")?;
+        let mac = arbiter.stand()?.resolve(device)?.mac()?;
+        arbiter.record_flash(
             owner,
-            Some(device.clone()),
-            oer_hil_arbiter::BoardEventKind::Flashed {
-                image: image.clone(),
-                application_sha256,
+            &mac,
+            &oer_hil_arbiter::ImageIdentity {
+                name: image.clone(),
+                sha256,
                 commit: self.commit.clone(),
                 dirty: None,
                 origin,
             },
         )?;
-        eprintln!("hil-arbiter: recorded {image} on {device}");
+        eprintln!("hil-arbiter: recorded {image} on {mac}");
         Ok(())
     }
 }
@@ -930,7 +947,7 @@ fn switches_hub_power(command: &[OsString]) -> Option<String> {
 
 /// Run one command, typically a series of HIL commands, under one lease.
 /// Nested `cargo hil` commands join the lease instead of queueing.
-fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::process::ExitCode> {
+fn lease(ctx: &Checkout, outer: LeaseOptions, args: &[OsString]) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     let cli = LeaseCli::try_parse_from(args)?;
     let options = LeaseOptions {
@@ -958,7 +975,7 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
         owner: options.owner(ctx)?,
         work,
         scenarios: Vec::new(),
-        claims: lease_claims(&cli.boards, cli.air, cli.stand, &arbiter.devices()?)?,
+        claims: lease_claims(&cli.boards, cli.air, cli.stand, &arbiter.stand()?)?,
     };
     let grant = arbiter.acquire(&request)?;
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
@@ -1014,65 +1031,40 @@ fn supervise(
     }
 }
 
-/// `cargo hil board flashed ...`: journal a flash made outside the runner.
+/// `cargo hil board reset|check|console|soak`.
 fn board(
-    ctx: &Context,
+    ctx: &Checkout,
     options: &LeaseOptions,
     args: &[OsString],
 ) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
-    let flashed = match BoardCli::try_parse_from(args)? {
-        BoardCli::Flashed(flashed) => flashed,
-        BoardCli::Access(command) => {
-            return crate::board::board(ctx, options.owner(ctx)?, command);
-        }
-    };
-    if flashed.image.is_none() {
-        return Err("cargo hil board flashed needs --image NAME".into());
-    }
-    flashed.record(
-        &oer_hil_arbiter::Arbiter::open()?,
-        options.owner(ctx)?,
-        String::from("cargo hil board flashed"),
-    )?;
-    Ok(std::process::ExitCode::SUCCESS)
+    let BoardCli { command } = BoardCli::try_parse_from(args)?;
+    crate::board::board(ctx, options.owner(ctx)?, command)
 }
 
 /// `cargo hil runs list|why|compare|history|pin|unpin|prune` over the shared
 /// run store.
 /// `cargo hil perf`: gated measurements across commits and their baselines.
 fn perf(
-    ctx: &Context,
+    ctx: &Checkout,
     options: &LeaseOptions,
     args: &[OsString],
 ) -> Result<std::process::ExitCode> {
-    use crate::perf;
     use clap::Parser as _;
-    let store = crate::store::shared_runs()?
-        .parent()
-        .ok_or("the run store has no parent")?
-        .to_owned();
-    let directory = crate::store::shared_runs()?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_millis() as u64;
+    use oer_hil_analysis::perf;
+    let store = oer_hil_run_bundle::RunStore::shared()?;
+    let now = oer_durable::unix_millis();
     let find = |id: &str| -> Result<perf::RunSummary> {
-        crate::runs::load(&directory.join(id))
-            .map(|run| perf::summary(&run))
-            .ok_or_else(|| format!("no run {id} in {}", directory.display()).into())
+        Ok(perf::summary(&oer_hil_analysis::Run::open(&store, id)?))
     };
-    let baselines = perf::load_baselines(&store)?;
+    let baselines = perf::baselines(&store)?;
     match PerfCli::try_parse_from(args)? {
         PerfCli::Report {
             scenarios,
             measurement,
             since,
         } => {
-            let runs = perf::summaries_since(
-                &directory,
-                &store.join("perf-cache"),
-                now.saturating_sub(since.as_millis() as u64),
-            )?;
+            let runs = perf::summaries_since(&store, now.saturating_sub(since.as_millis() as u64))?;
             print!(
                 "{}",
                 perf::report(&runs, &scenarios, measurement.as_deref(), &baselines)
@@ -1108,34 +1100,29 @@ fn perf(
     Ok(std::process::ExitCode::SUCCESS)
 }
 
+/// `cargo hil runs list|show|why|compare|history|pin|unpin|flaky|quarantine|release|prune`
+/// over the shared run store.
 fn runs(
-    ctx: &Context,
+    ctx: &Checkout,
     options: &LeaseOptions,
     args: &[OsString],
 ) -> Result<std::process::ExitCode> {
-    use crate::runs;
     use clap::Parser as _;
-    // This checkout's runs directory stands for the store every checkout
-    // shares.
-    let local = ctx.root.join(oer_hil_evidence::run::RUNS);
-    let directory = if local.exists() {
-        local
-    } else {
-        crate::store::shared_runs()?
-    };
-    let store = crate::store::shared_runs()?
-        .parent()
-        .ok_or("the run store has no parent")?
-        .to_owned();
+    use oer_hil_analysis::{Run, retention, runs};
+    use oer_hil_run_bundle::store::{Note, Notes, Sidecar};
+    let store = oer_hil_run_bundle::RunStore::shared()?;
     let parsed = RunsCli::try_parse_from(args)?;
     // Reading every run takes long; commands about one run read only it.
-    let all = || runs::all(&directory);
-    let find = |id: &str| {
-        runs::load(&directory.join(id)).ok_or_else(|| format!("no run {id} in the run store"))
+    let all = || Run::all(&store);
+    let find = |id: &str| Run::open(&store, id);
+    let now = oer_durable::unix_millis();
+    let note = |reason: String| -> Result<Note> {
+        Ok(Note {
+            by: options.owner(ctx)?,
+            reason,
+            unix_millis: now,
+        })
     };
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_millis() as u64;
     match parsed {
         RunsCli::List {
             scenario,
@@ -1170,11 +1157,9 @@ fn runs(
             measurement,
             limit,
         } => {
-            let all = all()?;
-            let containing = all
-                .iter()
-                .filter(|run| run.scenarios.iter().any(|s| s.id == scenario))
-                .cloned()
+            let containing = all()?
+                .into_iter()
+                .filter(|run| run.scenario(&scenario).is_some())
                 .collect::<Vec<_>>();
             let start = containing.len().saturating_sub(limit);
             print!(
@@ -1184,74 +1169,57 @@ fn runs(
             );
         }
         RunsCli::Pin { run, reason } => {
-            runs::load(&directory.join(&run))
-                .ok_or_else(|| format!("no run {run} in {}", directory.display()))?;
-            runs::set_pin(
-                &store,
-                &run,
-                Some(
-                    serde_json::json!({"by": options.owner(ctx)?, "reason": reason, "unix_millis": now}),
-                ),
-            )?;
+            find(&run)?;
+            store.note(Sidecar::Pins, &run, Some(note(reason)?))?;
         }
-        RunsCli::Unpin { run } => runs::set_pin(&store, &run, None)?,
+        RunsCli::Unpin { run } => store.note(Sidecar::Pins, &run, None)?,
         RunsCli::Flaky { since, minimum } => {
             let recent = now.saturating_sub(since.as_millis() as u64);
             let runs = all()?
                 .into_iter()
-                .filter(|run| run.started_millis >= recent)
+                .filter(|run| run.started_millis() >= recent)
                 .collect::<Vec<_>>();
             print!(
                 "{}",
                 runs::flaky_report(
                     &runs::stabilities(&runs),
                     minimum,
-                    &runs::quarantined(&store)
+                    &store.read::<Notes>(Sidecar::Quarantine)?
                 )
             );
         }
-        RunsCli::Quarantine { scenario, reason } => runs::set_quarantine(
-            &store,
-            &scenario,
-            Some(
-                serde_json::json!({"by": options.owner(ctx)?, "reason": reason, "unix_millis": now}),
-            ),
-        )?,
-        RunsCli::Release { scenario } => runs::set_quarantine(&store, &scenario, None)?,
+        RunsCli::Quarantine { scenario, reason } => {
+            store.note(Sidecar::Quarantine, &scenario, Some(note(reason)?))?;
+        }
+        RunsCli::Release { scenario } => store.note(Sidecar::Quarantine, &scenario, None)?,
         RunsCli::Prune {
             days,
             keep_failed,
             apply,
         } => {
-            let all = runs::all(&directory)?;
-            let pinned = runs::pins(&store).into_keys().collect();
-            let keep = runs::retained(
-                &all,
-                &runs::Retention {
+            let pruned = retention::prune(
+                &store,
+                &ctx.root,
+                &retention::Retention {
                     keep_days: days,
                     keep_failed,
                 },
-                now,
-                &pinned,
-                &runs::cited_by_shards(&ctx.root),
-            );
-            let mut freed = 0;
-            let mut removed = 0;
-            for run in all.iter().filter(|run| !keep.contains_key(&run.id)) {
-                let bytes = runs::exclusive_bytes(&run.directory);
-                freed += bytes;
-                removed += 1;
+                None,
+                apply,
+            )?;
+            for (run, bytes) in &pruned.removed {
                 if apply {
-                    std::fs::remove_dir_all(&run.directory)?;
-                    println!("deleted {} ({} MiB)", run.id, bytes >> 20);
+                    println!("deleted {} ({} MiB)", run.id(), bytes >> 20);
                 } else {
                     println!("would delete {}", runs::list_line(run));
                 }
             }
             if apply {
-                let observers = runs::collect_observers(&directory)?;
-                if observers > 0 {
-                    println!("deleted {observers} observer builds no kept run names");
+                if pruned.observers > 0 {
+                    println!(
+                        "deleted {} observer builds no kept run names",
+                        pruned.observers
+                    );
                 }
                 let objects = collect_objects(ctx);
                 if objects.objects > 0 {
@@ -1263,11 +1231,12 @@ fn runs(
                 }
             }
             println!(
-                "{} {removed} of {} runs, {} MiB held only by them; {} kept{}",
+                "{} {} of {} runs, {} MiB held only by them; {} kept{}",
                 if apply { "deleted" } else { "would delete" },
-                all.len(),
-                freed >> 20,
-                keep.len(),
+                pruned.removed.len(),
+                pruned.total,
+                pruned.freed() >> 20,
+                pruned.kept,
                 if apply { "" } else { "; add --apply to delete" }
             );
         }
@@ -1277,7 +1246,7 @@ fn runs(
 
 /// `cargo hil firmware list | build IMAGE | flash IMAGE --board BOARD`.
 fn firmware(
-    ctx: &Context,
+    ctx: &Checkout,
     options: &LeaseOptions,
     args: &[OsString],
 ) -> Result<std::process::ExitCode> {
@@ -1287,25 +1256,25 @@ fn firmware(
         FirmwareCli::Build { image } => {
             crate::firmware_catalog::build(ctx, &image)?;
         }
-        FirmwareCli::Bootloader { chip } => {
-            println!(
-                "{}",
-                crate::firmware_catalog::bootloader_build(ctx, &chip)?.display()
-            );
-        }
         FirmwareCli::Flash {
             image,
             board,
             jtag,
             if_changed,
         } => {
-            let request = oer_hil_arbiter::Request {
-                owner: options.owner(ctx)?,
-                work: format!("firmware flash {image} --board {board}"),
-                scenarios: Vec::new(),
-                claims: Vec::new(),
+            let via = if jtag {
+                oer_hil_board::Via::Jtag
+            } else {
+                oer_hil_board::Via::Usb
             };
-            crate::firmware_catalog::flash(ctx, &image, &board, jtag, if_changed, request)?;
+            crate::firmware_catalog::flash(
+                ctx,
+                &image,
+                &board,
+                via,
+                if_changed,
+                options.owner(ctx)?,
+            )?;
         }
     }
     Ok(std::process::ExitCode::SUCCESS)
@@ -1322,7 +1291,7 @@ enum ConfirmArg {
 
 /// `cargo hil devices [--json]` and its board commands.
 fn devices(
-    ctx: &Context,
+    ctx: &Checkout,
     options: &LeaseOptions,
     args: &[OsString],
 ) -> Result<std::process::ExitCode> {
@@ -1341,7 +1310,7 @@ fn devices(
                     String::from(oer_hil_arbiter::STAND_SERVICE),
                 ),
                 (Some(board), false) => {
-                    let mac = oer_hil_arbiter::board_mac(&arbiter.devices()?, &board)?;
+                    let mac = arbiter.stand()?.resolve(&board)?.mac()?;
                     (board, mac)
                 }
                 (None, false) => unreachable!("clap requires a board or --stand"),
@@ -1351,9 +1320,7 @@ fn devices(
                 mac: mac.clone(),
                 owner: owner.clone(),
                 reason,
-                since_unix: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)?
-                    .as_secs(),
+                since_unix: oer_durable::unix_seconds(),
                 kind: oer_hil_arbiter::ServiceKind::Maintenance,
                 trigger: None,
                 evidence: None,
@@ -1387,7 +1354,7 @@ fn devices(
         }
         Some(DevicesCommand::Release { board, confirm, .. }) => {
             let board = board.ok_or("name a board or pass --stand")?;
-            let mac = oer_hil_arbiter::board_mac(&arbiter.devices()?, &board)?;
+            let mac = arbiter.stand()?.resolve(&board)?.mac()?;
             if arbiter.is_quarantined(&mac)? {
                 let confirmation = match confirm.ok_or(
                     "the board is quarantined: reset or power-cycle it, then pass \
@@ -1400,7 +1367,7 @@ fn devices(
                 };
                 let answer =
                     arbiter.release_quarantine(&mac, &options.owner(ctx)?, confirmation, || {
-                        crate::board::boots(&board)
+                        crate::board::boots(ctx, &board)
                     })?;
                 println!("{board} ({mac}) is back in service; it booted: {answer}");
                 return Ok(std::process::ExitCode::SUCCESS);
@@ -1441,7 +1408,7 @@ fn devices(
 /// Delete the firmware objects no run links to from this checkout's object
 /// store and those of the other registered checkouts; a checkout that
 /// cannot be collected is reported and skipped.
-fn collect_objects(ctx: &Context) -> oer_hil_evidence::build::CollectedObjects {
+fn collect_objects(ctx: &Checkout) -> oer_hil_run_bundle::build::CollectedObjects {
     let mut checkouts = vec![ctx.root.clone()];
     if let Ok(arbiter) = oer_hil_arbiter::Arbiter::open()
         && let Ok(registered) = arbiter.registered_checkouts()
@@ -1450,7 +1417,7 @@ fn collect_objects(ctx: &Context) -> oer_hil_evidence::build::CollectedObjects {
     }
     checkouts.sort();
     checkouts.dedup();
-    let mut total = oer_hil_evidence::build::CollectedObjects::default();
+    let mut total = oer_hil_run_bundle::build::CollectedObjects::default();
     for checkout in checkouts {
         // Build objects stay per chip.
         let chips = oer_chip_profile::supported(&checkout).unwrap_or_default();
@@ -1458,7 +1425,7 @@ fn collect_objects(ctx: &Context) -> oer_hil_evidence::build::CollectedObjects {
             .iter()
             .map(|chip| checkout.join("target/hil").join(chip))
         {
-            match oer_hil_evidence::build::collect_objects(&target) {
+            match oer_hil_run_bundle::build::collect_objects(&target) {
                 Ok(collected) => {
                     total.objects += collected.objects;
                     total.bytes += collected.bytes;
@@ -1496,11 +1463,8 @@ fn run_store_budget() -> Result<u64> {
 const RUN_STORE_BUDGET_ENV: &str = "OER_HIL_RUN_STORE_BUDGET_GIB";
 const RUN_STORE_BUDGET_GIB: u64 = 40;
 
-fn prune_automatically(ctx: &Context) -> Result<()> {
-    use crate::runs;
-    let runs = crate::store::shared_runs()?;
-    let store = runs.parent().ok_or("the run store has no parent")?;
-    let marker = store.join("last-prune");
+fn prune_automatically(ctx: &Checkout, store: &oer_hil_run_bundle::RunStore) -> Result<()> {
+    let marker = store.root().join("last-prune");
     if std::fs::metadata(&marker)
         .and_then(|metadata| metadata.modified())
         .ok()
@@ -1510,53 +1474,16 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
         return Ok(());
     }
     std::fs::write(&marker, b"")?;
-    let all = runs::all(&runs)?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_millis() as u64;
-    let keep = runs::retained(
-        &all,
-        &runs::Retention {
+    let pruned = oer_hil_analysis::retention::prune(
+        store,
+        &ctx.root,
+        &oer_hil_analysis::retention::Retention {
             keep_days: PRUNE_DAYS,
             keep_failed: PRUNE_KEEP_FAILED,
         },
-        now,
-        &runs::pins(store).into_keys().collect(),
-        &runs::cited_by_shards(&ctx.root),
-    );
-    let (mut removed, mut freed) = (0, 0);
-    for run in all.iter().filter(|run| !keep.contains_key(&run.id)) {
-        freed += runs::exclusive_bytes(&run.directory);
-        std::fs::remove_dir_all(&run.directory)?;
-        removed += 1;
-    }
-    // Over its size budget the store also loses its oldest runs that only
-    // their age kept; every other rule still holds.
-    let remaining = all
-        .iter()
-        .filter(|run| keep.contains_key(&run.id))
-        .cloned()
-        .collect::<Vec<_>>();
-    let sizes = remaining
-        .iter()
-        .map(|run| (run.id.clone(), runs::exclusive_bytes(&run.directory)))
-        .collect();
-    let kept = runs::retained(
-        &remaining,
-        &runs::Retention {
-            keep_days: 0,
-            keep_failed: PRUNE_KEEP_FAILED,
-        },
-        now,
-        &runs::pins(store).into_keys().collect(),
-        &runs::cited_by_shards(&ctx.root),
-    );
-    let budget = run_store_budget()?;
-    for run in runs::over_budget(&remaining, &kept, &sizes, budget) {
-        freed += sizes[&run.id];
-        std::fs::remove_dir_all(&run.directory)?;
-        removed += 1;
-    }
+        Some(run_store_budget()?),
+        true,
+    )?;
     let objects = collect_objects(ctx);
     if objects.objects > 0 {
         eprintln!(
@@ -1565,22 +1492,19 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
             objects.bytes >> 20
         );
     }
-    if removed > 0 {
-        runs::collect_observers(&runs)?;
+    if !pruned.removed.is_empty() {
         eprintln!(
-            "hil: pruned {removed} runs ({} MiB) no rule keeps; see `cargo hil runs prune`",
-            freed >> 20
+            "hil: pruned {} runs ({} MiB) no rule keeps; see `cargo hil runs prune`",
+            pruned.removed.len(),
+            pruned.freed() >> 20
         );
     }
     Ok(())
 }
 
 /// Make this checkout's run directory a link to the shared store.
-fn use_shared_store(ctx: &Context) -> Result<()> {
-    crate::store::link_runs(
-        &ctx.root.join(oer_hil_evidence::run::RUNS),
-        &crate::store::shared_runs()?,
-    )?;
+fn use_shared_store(ctx: &Checkout) -> Result<()> {
+    oer_hil_run_bundle::RunStore::shared()?.link(&ctx.root)?;
     Ok(())
 }
 
@@ -1590,7 +1514,7 @@ fn use_shared_store(ctx: &Context) -> Result<()> {
 /// Check an enqueued command and fix what it runs with: this binary, the
 /// runner and, for a `run` that builds, a source snapshot of the checkout
 /// taken now with the run's own source options.
-fn freeze_enqueued(ctx: &Context, args: &[OsString]) -> Result<crate::jobs::Frozen> {
+fn freeze_enqueued(ctx: &Checkout, args: &[OsString]) -> Result<crate::jobs::Frozen> {
     let mut frozen = crate::jobs::Frozen::capture(ctx)?;
     if args.first().and_then(|arg| arg.to_str()) != Some("run") {
         return Ok(frozen);
@@ -1645,7 +1569,7 @@ fn freeze_enqueued(ctx: &Context, args: &[OsString]) -> Result<crate::jobs::Froz
 /// waits: a build or audit that fails does so now, in the terminal, not
 /// after the queue.
 fn build_before_queue(
-    ctx: &Context,
+    ctx: &Checkout,
     frozen: &crate::jobs::Frozen,
     run_args: &[OsString],
 ) -> Result<()> {
@@ -1664,14 +1588,12 @@ fn build_before_queue(
 /// The main checkout of the worktree at `root`: the directory holding the
 /// repository's common `.git`.
 fn main_checkout(root: &Path) -> Option<PathBuf> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        .output()
-        .ok()?;
-    output.status.success().then_some(())?;
-    checkout_of_common_dir(Path::new(String::from_utf8(output.stdout).ok()?.trim()))
+    let common = oer_process::git::text(
+        root,
+        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )
+    .ok()?;
+    checkout_of_common_dir(Path::new(&common))
 }
 
 /// The checkout whose `.git` directory is `common`.
@@ -1682,11 +1604,8 @@ fn checkout_of_common_dir(common: &Path) -> Option<PathBuf> {
 /// Leave quarantined scenarios out of a `run-all`, and warn of a `run` that
 /// names one.
 fn apply_quarantine(args: &mut Vec<OsString>) -> Result<()> {
-    let store = crate::store::shared_runs()?
-        .parent()
-        .ok_or("the run store has no parent")?
-        .to_owned();
-    let quarantined = crate::runs::quarantined(&store);
+    let quarantined: oer_hil_run_bundle::store::Notes = oer_hil_run_bundle::RunStore::shared()?
+        .read(oer_hil_run_bundle::store::Sidecar::Quarantine)?;
     match args.first().and_then(|arg| arg.to_str()) {
         Some("run-all") => {
             for scenario in quarantined.keys() {
@@ -1699,7 +1618,7 @@ fn apply_quarantine(args: &mut Vec<OsString>) -> Result<()> {
                 if args.iter().any(|arg| arg.to_str() == Some(scenario)) {
                     eprintln!(
                         "hil: `{scenario}` is quarantined ({}); running it as asked",
-                        entry["reason"].as_str().unwrap_or("no reason")
+                        entry.reason
                     );
                 }
             }
@@ -1763,37 +1682,17 @@ fn with_source_snapshot(args: &[OsString], snapshot: &Path) -> Vec<OsString> {
     arguments
 }
 
-/// The runner's run receipt variable; see oer-hil-evidence.
-const RUN_RECEIPT_ENV: &str = "OER_HIL_RUN_RECEIPT";
-
-/// Name `run_ids` in the receipt of whatever invoked this command (a
-/// bisection's step), when it asked for one.
-fn forward_run_receipt(run_ids: &[String]) -> Result<()> {
-    let Some(path) = std::env::var_os(RUN_RECEIPT_ENV) else {
-        return Ok(());
-    };
-    use std::io::Write as _;
-    let mut receipt = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
-    for id in run_ids {
-        writeln!(receipt, "{id}")?;
-    }
-    Ok(())
-}
-
-/// Whether each of `run_ids` in `store` was built from a dirty tree; one
-/// whose manifest the store does not hold counts as dirty.
-fn runs_dirty(store: &Path, run_ids: &[String]) -> Vec<bool> {
-    run_ids
-        .iter()
-        .map(|id| {
-            std::fs::read(store.join(id).join("manifest.json"))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-                .and_then(|manifest| manifest["repository"]["dirty"].as_bool())
-                .unwrap_or(true)
+/// Whether each of `runs` in `store` was built from a dirty tree; one whose
+/// manifest the store does not hold counts as dirty.
+fn runs_dirty(
+    store: &oer_hil_run_bundle::RunStore,
+    runs: &[oer_hil_run_bundle::RunId],
+) -> Vec<bool> {
+    runs.iter()
+        .map(|run| {
+            store
+                .open(run.as_str())
+                .map_or(true, |bundle| bundle.manifest().repository.dirty)
         })
         .collect()
 }
@@ -1801,7 +1700,7 @@ fn runs_dirty(store: &Path, run_ids: &[String]) -> Vec<bool> {
 /// Why a finished invocation records no evidence: it created no run, a run
 /// came from a dirty tree, or untracked sources were added with
 /// `--source-include` or `--include-untracked`. Such runs are experiments;
-/// `cargo hil evidence record --run ID` records them anyway.
+/// `cargo qualification hil-evidence --run ID` records them anyway.
 /// What a run was given beyond the tracked checkout and the catalog.
 #[derive(Clone, Copy, Default)]
 struct RunInputs {
@@ -1826,48 +1725,41 @@ fn evidence_skip_reason(inputs: RunInputs, created_dirty: &[bool]) -> Option<&'s
 
 /// Note clean runs as pending evidence of this checkout: a run never writes
 /// tracked files.
-fn remember_pending(ctx: &Context, owner: String, run_ids: &[String]) -> Result<()> {
-    let store = crate::store::shared_runs()?;
-    let pending = run_ids
+fn remember_pending(
+    ctx: &Checkout,
+    store: &oer_hil_run_bundle::RunStore,
+    owner: String,
+    runs: &[oer_hil_run_bundle::RunId],
+) -> Result<()> {
+    use oer_hil_run_bundle::store::pending;
+    let pending = runs
         .iter()
-        .map(|run| crate::evidence::Pending {
-            run: run.clone(),
-            scenarios: crate::evidence::passed_scenarios(&store.join(run)),
+        .map(|run| pending::Pending {
+            run: run.to_string(),
+            scenarios: store
+                .open(run.as_str())
+                .ok()
+                .and_then(|bundle| bundle.suite().ok().flatten())
+                .map(|suite| {
+                    suite
+                        .scenarios
+                        .into_iter()
+                        .filter(|scenario| scenario.outcome.is_passed())
+                        .map(|scenario| scenario.scenario)
+                        .collect()
+                })
+                .unwrap_or_default(),
             owner: owner.clone(),
         })
         .collect::<Vec<_>>();
-    crate::evidence::remember(&ctx.root, &pending)?;
-    let passed = pending
-        .iter()
-        .filter(|run| !run.scenarios.is_empty())
-        .map(|run| format!(" --run {}", run.run))
-        .collect::<String>();
-    if !passed.is_empty() {
+    pending::remember(&ctx.root, &pending)?;
+    if pending.iter().any(|run| !run.scenarios.is_empty()) {
         eprintln!(
             "hil: evidence not recorded in hil/evidence; record it with the change it qualifies: \
-             cargo hil evidence record{passed}"
+             cargo qualification hil-evidence --hil-target CHIP --pending"
         );
     }
     Ok(())
-}
-
-/// `run_ids` grouped by the chip their manifest in `store` names; a run
-/// without a readable manifest has no evidence to record.
-fn runs_by_chip(
-    store: &Path,
-    run_ids: &[String],
-) -> std::collections::BTreeMap<String, Vec<String>> {
-    let mut grouped = std::collections::BTreeMap::<String, Vec<String>>::new();
-    for id in run_ids {
-        let chip = std::fs::read(store.join(id).join("manifest.json"))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .and_then(|manifest| manifest["target"].as_str().map(str::to_owned));
-        if let Some(chip) = chip {
-            grouped.entry(chip).or_default().push(id.clone());
-        }
-    }
-    grouped
 }
 
 /// Commands that execute scenarios and write run bundles.
@@ -1876,88 +1768,6 @@ fn produces_runs(args: &[OsString]) -> bool {
         args.first().and_then(|a| a.to_str()),
         Some("run" | "run-all")
     )
-}
-
-/// Record the observations that qualify on this checkout as tracked HIL
-/// evidence shards, with the observer receipt the runs were produced under.
-/// Failed scenarios record nothing, so this also runs after a failing suite.
-pub(crate) fn record_evidence(
-    ctx: &Context,
-    receipt: &std::path::Path,
-    run_ids: &[String],
-) -> Result<()> {
-    // Every checkout's runs share one store, so recording evidence reads all
-    // of them. One recording at a time on the host, each in a memory-capped
-    // scope, keeps simultaneous runs of several agents from exhausting it.
-    let lock_path = evidence_lock_path()?;
-    std::fs::create_dir_all(lock_path.parent().ok_or("lock path has no parent")?)?;
-    let lock = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(&lock_path)?;
-    if fs2::FileExt::try_lock_exclusive(&lock).is_err() {
-        eprintln!("hil: waiting for another checkout's evidence recording");
-        fs2::FileExt::lock_exclusive(&lock)?;
-    }
-    let mut command = if std::process::Command::new("systemd-run")
-        .args(["--user", "--scope", "-q", "--", "true"])
-        .status()
-        .is_ok_and(|status| status.success())
-    {
-        let mut capped = ctx.command("systemd-run");
-        capped.args([
-            "--user",
-            "--scope",
-            "-q",
-            "-p",
-            EVIDENCE_MEMORY_MAX,
-            "-p",
-            "MemorySwapMax=0",
-            "--",
-            "cargo",
-        ]);
-        capped
-    } else {
-        ctx.command("cargo")
-    };
-    // The evaluator records one chip's evidence at a time: each run's
-    // manifest names its chip.
-    let store = crate::store::shared_runs()?;
-    for (chip, runs) in runs_by_chip(&store, run_ids) {
-        let status = command
-            .args([
-                "qualification",
-                "hil-evidence",
-                "--hil-target",
-                chip.as_str(),
-            ])
-            .args(runs.iter().flat_map(|id| ["--run", id.as_str()]))
-            .env("OER_OBSERVER_RECEIPT", receipt)
-            .status()?;
-        if !status.success() {
-            return Err(format!(
-                "recording the HIL evidence shards of {chip} failed (it runs under \
-                 {EVIDENCE_MEMORY_MAX})"
-            )
-            .into());
-        }
-    }
-    Ok(())
-}
-
-/// Memory limit of one evidence recording.
-const EVIDENCE_MEMORY_MAX: &str = "MemoryMax=6G";
-
-fn evidence_lock_path() -> Result<std::path::PathBuf> {
-    let base = std::env::var_os("XDG_CACHE_HOME")
-        .filter(|value| !value.is_empty())
-        .map(std::path::PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".cache"))
-        })
-        .ok_or("HOME is required to locate the evidence lock")?;
-    Ok(base.join("open-esp-radio/qualification/hil-evidence.lock"))
 }
 
 /// Commands that need the terminal's foreground process group.
@@ -1969,11 +1779,9 @@ fn hands_off_terminal(args: &[OsString]) -> bool {
 // The clap parsers of the stand commands, walked by `__command-tree`.
 #[derive(clap::Parser)]
 #[command(name = "cargo hil board", no_binary_name = true)]
-enum BoardCli {
-    /// Record a flash performed outside the HIL runner.
-    Flashed(FlashedArgs),
-    #[command(flatten)]
-    Access(crate::board::BoardCommand),
+struct BoardCli {
+    #[command(subcommand)]
+    command: crate::board::BoardCommand,
 }
 
 #[derive(clap::Parser)]
@@ -2036,13 +1844,13 @@ fn profile_report_path(root: &Path, run: &str, scenario: &str, relative: &Path) 
 /// Report every `profile.json` a run's repetitions left, symbolized against
 /// the run's own image, and keep each report under this checkout's
 /// `target/hil/profiles/`.
-fn profile(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
+fn profile(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     let cli = ProfileCli::try_parse_from(args)?;
-    let run = crate::store::shared_runs()?.join(&cli.run);
-    if !run.is_dir() {
-        return Err(format!("no run {} in the store", cli.run).into());
-    }
+    let run = oer_hil_run_bundle::RunStore::shared()?
+        .open(&cli.run)?
+        .directory()
+        .to_owned();
     let mut found = 0;
     let mut scenarios = fs::read_dir(run.join("scenarios"))?
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
@@ -2087,7 +1895,7 @@ fn profile(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             {
                 continue;
             }
-            let report = oer_hil_execution::profile::report(&path, elf.as_deref(), cli.top)?;
+            let report = oer_hil_analysis::profile::report(&path, elf.as_deref(), cli.top)?;
             let relative = path
                 .parent()
                 .unwrap_or(&path)
@@ -2099,7 +1907,7 @@ fn profile(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             // would fail its integrity inventory.
             let destination = profile_report_path(&ctx.root, &cli.run, &id, relative);
             fs::create_dir_all(destination.parent().ok_or("profile report has no parent")?)?;
-            fs::write(&destination, &report)?;
+            oer_durable::atomic_write(&destination, report.as_bytes())?;
             eprintln!("hil: report {}", destination.display());
             found += 1;
         }
@@ -2224,9 +2032,6 @@ enum FirmwareCli {
     List,
     /// Build an image against the pinned ESP-IDF.
     Build { image: String },
-    /// Build a chip's project bootloader and print its ESP-IDF build
-    /// directory; the runner asks for it to flash an ESP-IDF application.
-    Bootloader { chip: String },
     /// Build an image, then flash it to a board under a lease of that
     /// board and journal it.
     Flash {
@@ -2286,6 +2091,15 @@ enum DevicesCommand {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn every_advertised_stand_command_is_dispatched_by_its_name() {
+        for command in super::StandCommand::ALL {
+            assert_eq!(super::StandCommand::named(command.name()), Some(command));
+        }
+        // `status` was advertised in the command tree without a handler.
+        assert_eq!(super::StandCommand::named("status"), None);
+    }
+
+    #[test]
     fn a_lease_runs_no_hub_power_switch() {
         let command = |words: &[&str]| words.iter().map(OsString::from).collect::<Vec<_>>();
         for refused in [
@@ -2322,18 +2136,19 @@ mod tests {
 
     #[test]
     fn a_run_is_clean_only_when_its_manifest_says_so() {
-        let store = tempfile::tempdir().unwrap();
-        for (id, dirty) in [("a", true), ("b", false)] {
-            let run = store.path().join(id);
-            std::fs::create_dir(&run).unwrap();
-            std::fs::write(
-                run.join("manifest.json"),
-                format!(r#"{{"repository":{{"dirty":{dirty}}}}}"#),
-            )
-            .unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let store = oer_hil_run_bundle::RunStore::at(directory.path());
+        for (id, dirty) in [("1-a", true), ("2-b", false)] {
+            oer_hil_run_bundle::run::test_support::write_run(
+                &store.run(id),
+                1,
+                oer_hil_run_bundle::run::RunState::Completed,
+                Vec::new(),
+                |manifest| manifest.repository.dirty = dirty,
+            );
         }
-        let ids = ["a", "b", "missing"].map(String::from);
-        assert_eq!(runs_dirty(store.path(), &ids), [true, false, true]);
+        let ids = ["1-a", "2-b", "3-missing"].map(oer_hil_run_bundle::RunId::new);
+        assert_eq!(runs_dirty(&store, &ids), [true, false, true]);
     }
 
     #[test]
@@ -2513,7 +2328,7 @@ mod tests {
             .unwrap();
         let started = std::time::Instant::now();
         let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
-            Command::new("sleep").arg("60"),
+            std::process::Command::new("sleep").arg("60"),
             std::time::Duration::from_secs(1),
         )
         .unwrap();
@@ -2529,15 +2344,15 @@ mod tests {
         );
     }
 
+    const TEST_STAND: &str = "schema = 1\n[stand]\nid = \"t\"\nair = \"exclusive\"\n\
+             [[hub]]\nid = \"h\"\nusb2 = \"1-1\"\n\
+             [[board]]\nid = \"c5-a\"\nusb-serial = \"38:44:BE:AA:25:64\"\nchip = \"esp32c5\"\n\
+             radios = [\"ble\"]\nroles = [\"peer\"]\nport = { hub = \"h\", port = 1 }\nreset = [\"jtag\"]\n";
+
     #[test]
     fn a_lease_claims_its_boards_and_the_air_or_explicitly_the_whole_stand() {
         use oer_hil_arbiter::{AIR, Claim, Mode};
-        let devices = [oer_hil_arbiter::Device {
-            mac: "38:44:BE:AA:25:64".into(),
-            name: "esp32c5".into(),
-            chip: "esp32c5".into(),
-            power: None,
-        }];
+        let devices = oer_hil_stand_model::StandFile::parse(TEST_STAND).unwrap();
         assert_eq!(
             lease_claims(&[], None, true, &devices).unwrap(),
             [Claim::stand()]
@@ -2589,6 +2404,13 @@ mod tests {
         );
         let directory = tempfile::tempdir().unwrap();
         let arbiter = oer_hil_arbiter::Arbiter::at(directory.path()).unwrap();
+        std::fs::write(arbiter.stand_file(), TEST_STAND).unwrap();
+        #[cfg(unix)]
+        std::fs::set_permissions(
+            arbiter.stand_file(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        )
+        .unwrap();
         cli.flashed
             .record(&arbiter, "802154".into(), "test".into())
             .unwrap();

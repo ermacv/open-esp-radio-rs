@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Plan, ScenarioFamily};
+use super::{AirUse, Plan, ScenarioFamily};
 use crate::Result;
 use oer_hil_image_class::ImageClass;
 
@@ -41,6 +41,13 @@ pub enum TestWorkload {
 impl ScenarioFamily for TestFamily {
     fn validate(&self) -> Result<()> {
         Ok(())
+    }
+
+    fn air_use(&self) -> Vec<AirUse> {
+        match self {
+            Self::System(TestWorkload::BootSmoke) => Vec::new(),
+            Self::System(TestWorkload::Network { .. }) | Self::Wifi(_) => vec![AirUse::WifiLink],
+        }
     }
 
     fn plan(&self) -> Plan {

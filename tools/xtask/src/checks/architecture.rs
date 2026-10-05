@@ -1,13 +1,16 @@
-use crate::{Context, Result, cargo, graph::Graph};
+use crate::{Result, cargo, graph::Graph};
 use oer_process as process;
+use oer_process::Checkout;
+use oer_repo::Layer;
 
-use super::{CHIP, common::*};
+use super::common::*;
+use oer_image::staged::CHIP;
 
 mod facade;
-mod pac_transactions;
+mod interrupts;
 mod sans_io;
-mod shared_words;
 mod unsafe_policy;
+mod zeroed;
 
 const INTEGRATION: &str = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
 const INTEGRATION_PACKAGE: &str = "oer-esp32s31-ieee80211-system";
@@ -17,35 +20,39 @@ const HIL_RUNTIME: &str = "hil/targets/esp32s31/agent/Cargo.toml";
 /// reach for the chip target names no HAL and no Embassy crate but the
 /// executor-independent `embassy-sync`. Runtimes, adapters and compositions
 /// bind the platform.
-const PLATFORM_FREE: &[&str] = &["contract", "protocol", "hardware", "role", "service"];
+const PLATFORM_FREE: &[Layer] = &[
+    Layer::Contract,
+    Layer::Protocol,
+    Layer::Hardware,
+    Layer::Role,
+    Layer::Service,
+];
 
 fn platform_runtime(name: &str) -> bool {
     name == "esp-hal" || (name.starts_with("embassy-") && name != "embassy-sync")
 }
 
-pub fn run(ctx: &Context) -> Result<()> {
-    // Classification, the package name rule and the evidence and HIL role
-    // edges are text rules of `oer-tidy` (`cargo xtask check tidy`).
-    let tracked = String::from_utf8(
-        process::capture(ctx.command("git").args(["ls-files", "crates/hardware"]))?.stdout,
-    )?;
-    pac_transactions::check(
-        &ctx.root,
-        &tracked.lines().map(str::to_owned).collect::<Vec<_>>(),
-    )?;
+pub fn run(ctx: &Checkout) -> Result<()> {
+    // Classification, the package name rule and the layer, platform and
+    // role rules of every dependency are `oer-tidy`'s (`cargo tidy check`).
+    let repo = oer_repo::Repo::from_git(&ctx.root)?;
+    let model = oer_repo::Model::load(&repo)?;
+    let hardware: Vec<String> = repo.below("crates/hardware").map(str::to_owned).collect();
+    oer_register_tool::checks::pac_transactions::check(&ctx.root, &hardware)?;
+    zeroed::check(&repo)?;
+    interrupts::check(&model)?;
     let shared = shared_words(ctx)?;
     eprintln!("shared MMIO words of esp32s31: {shared} reviewed");
-    let packages = production_packages(ctx)?;
-    validate_production_edges(&packages, &oer_chip_profile::families(&ctx.root)?)?;
-    unsafe_policy::check(&packages)?;
+    let packages = production_packages(&ctx.root, &model)?;
+    unsafe_policy::check(&ctx.root, &packages)?;
     // Protocol logic is sans-IO; drivers that wait live in services.
     sans_io::check(&packages)?;
-    let target = super::target(&ctx.root)?;
+    let target = oer_chip_profile::rust_target(&ctx.root, oer_image::staged::CHIP)?;
     let configurations = architecture_configurations(&ctx.root, &packages, &target)?;
     // Clippy compiles each isolated profile and applies every crate's own
     // lint policy from its manifest `[lints]` and crate attributes.
     for configuration in &configurations {
-        let mut command = ctx.cargo();
+        let mut command = oer_toolchain::cargo_in(&ctx.root);
         command.args(["clippy", "--quiet"]);
         configuration.apply(&mut command);
         process::run(&mut command)?;
@@ -57,7 +64,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     // `cargo test` compiles validation probes only under cfg(test), which can
     // conceal invalid validation-only imports in the ordinary host library.
     // The target build is part of the `--all-features` profile above.
-    process::run(ctx.cargo().args([
+    process::run(oer_toolchain::cargo_in(&ctx.root).args([
         "clippy",
         "--quiet",
         "--locked",
@@ -69,8 +76,8 @@ pub fn run(ctx: &Context) -> Result<()> {
     facade::check(ctx)?;
     let graph = cargo::metadata(ctx, &ctx.root.join("Cargo.toml"), &[], Some(&target), true)?;
     for item in &packages {
-        let layer = classification(&item.package)?.layer;
-        if !PLATFORM_FREE.contains(&layer.as_str()) {
+        let layer = item.class.layer;
+        if !PLATFORM_FREE.contains(&layer) {
             continue;
         }
         let name = item.package.name.as_str();
@@ -88,7 +95,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     // The test job runs the workspace tests with default features; the
     // composition's tests also hold without its default network.
     process::run(
-        ctx.cargo()
+        oer_toolchain::cargo_in(&ctx.root)
             .args(["test", "--quiet", "--locked", "--manifest-path"])
             .arg(ctx.root.join(INTEGRATION))
             .arg("--no-default-features"),
@@ -100,9 +107,9 @@ pub fn run(ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-fn check_esp32s31_composition(ctx: &Context) -> Result<()> {
+fn check_esp32s31_composition(ctx: &Checkout) -> Result<()> {
     let manifest = ctx.root.join(INTEGRATION);
-    let target = super::target(&ctx.root)?;
+    let target = oer_chip_profile::rust_target(&ctx.root, oer_image::staged::CHIP)?;
     for features in [
         vec!["--no-default-features".into()],
         vec![
@@ -156,12 +163,14 @@ fn check_esp32s31_composition(ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-fn hil_wifi_graph(ctx: &Context, overlay: Option<&str>) -> Result<crate::graph::Graph> {
+fn hil_wifi_graph(ctx: &Checkout, overlay: Option<&str>) -> Result<crate::graph::Graph> {
     let manifest = ctx.root.join(HIL_RUNTIME);
-    let direct = cargo::metadata_no_deps(ctx, &manifest)?;
-    let package = package_for_manifest(&direct, &manifest)?;
-    let profiles = declared_profiles(package)?;
-    let base = hil_wifi_profile(&profiles)?;
+    let model = model(ctx)?;
+    let package = model
+        .owner(HIL_RUNTIME)
+        .ok_or("the HIL runtime manifest has no package")?;
+    let profiles = &model.classification(package)?.supported_feature_profiles;
+    let base = hil_wifi_profile(profiles)?;
     let features = overlay.map_or_else(|| base.to_owned(), |overlay| format!("{base},{overlay}"));
     cargo::metadata(
         ctx,
@@ -171,7 +180,10 @@ fn hil_wifi_graph(ctx: &Context, overlay: Option<&str>) -> Result<crate::graph::
             "--features".into(),
             features,
         ],
-        Some(&super::target(&ctx.root)?),
+        Some(&oer_chip_profile::rust_target(
+            &ctx.root,
+            oer_image::staged::CHIP,
+        )?),
         true,
     )
 }
@@ -216,7 +228,7 @@ pub fn reject_wifi_in_bluetooth(graph: &Graph, manifest: &std::path::Path) -> Re
 
 /// Runs [`shared_words::check`] against the esp-hal and platform PAC
 /// sources the HIL target workspace resolves.
-fn shared_words(ctx: &Context) -> Result<usize> {
+fn shared_words(ctx: &Checkout) -> Result<usize> {
     let graph = cargo::metadata(
         ctx,
         &ctx.root.join("hil/targets/esp32s31/Cargo.toml"),
@@ -234,7 +246,12 @@ fn shared_words(ctx: &Context) -> Result<usize> {
             .map(|directory| directory.as_std_path().join("src"))
             .ok_or_else(|| format!("the HIL target workspace resolves no {name} package").into())
     };
-    shared_words::check(&ctx.root, CHIP, &directory("esp-hal")?, &directory(CHIP)?)
+    oer_register_tool::checks::shared_words::check(
+        &ctx.root,
+        CHIP,
+        &directory("esp-hal")?,
+        &directory(CHIP)?,
+    )
 }
 
 #[cfg(test)]
@@ -268,7 +285,7 @@ mod tests {
             .unwrap();
             std::fs::write(path.join("src/lib.rs"), "").unwrap();
         }
-        let context = crate::Context::new(repository.path()).unwrap();
+        let context = oer_process::Checkout::new(repository.path()).unwrap();
         let manifest = repository.path().join("app/Cargo.toml");
         let graph = crate::cargo::metadata(&context, &manifest, &[], None, false).unwrap();
         (repository, manifest, graph)

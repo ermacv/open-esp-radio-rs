@@ -6,12 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "The pinned vendor artifacts of a chip: artifacts.toml, the host-wide store and fetching into it"
+description = "The pinned vendor artifacts of a chip: the one reader of artifacts.toml, the host-wide store and fetching into it"
 
 [dependencies]
+oer-durable = { path = "../durable" }
 oer-chip-profile = { path = "../chip-profile" }
-oer-esp32s31-firmware = { path = "../firmware", default-features = false, features = ["image"] }
-sha2 = "0.10"
+serde = { version = "=1.0.229", features = ["derive"] }
 toml = "=1.1.4"
 
 [dev-dependencies]
@@ -23,5 +23,6 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
+host-layer = "foundation"
 # The tests parse the tracked pins with the chip profiles.
 inputs = ["verification/*/artifacts.toml", "platform/*/chip.toml"]

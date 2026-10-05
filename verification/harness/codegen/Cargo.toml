@@ -14,10 +14,11 @@ quote = "=1.0.47"
 syn = { version = "=2.0.119", features = ["full", "parsing"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
-object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
+oer-elf = { path = "../../../tools/elf" }
 
 [dev-dependencies]
-object = { version = "=0.39.1", default-features = false, features = ["write"] }
+oer-toolchain = { path = "../../../tools/toolchain" }
+object = { version = "=0.39.1", default-features = false, features = ["elf", "read_core", "std", "write"] }
 tempfile = "=3.27.0"
 
 [lints]
@@ -26,3 +27,4 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
+host-layer = "verification"

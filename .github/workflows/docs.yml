@@ -49,12 +49,10 @@ jobs:
       - name: Fetch locked dependencies
         run: |
           cargo fetch --locked
-      - name: API documentation and doctests
-        run: cargo xtask --verbose doc
-      - name: Markdown links and qualification catalogs
-        run: cargo xtask --verbose check docs
-      - name: Capability anchors in code
-        run: cargo xtask --verbose check capabilities
+      # API documentation and doctests, Markdown links and documented
+      # commands, qualification catalogs and capability anchors: the
+      # registry's `docs` job.
+      - run: cargo xtask --verbose check tier full --job docs
       - name: Install mdBook
         run: |
           mdbook --version | grep -q "v$MDBOOK_VERSION" || cargo install --locked mdbook --version "$MDBOOK_VERSION"

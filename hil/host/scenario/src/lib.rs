@@ -17,14 +17,12 @@ use crate::{link::WifiLabUse, requirements::Requirements};
 use oer_hil_image_class::ImageClass;
 
 pub mod campaign;
-mod catalog;
+pub mod catalog;
 pub mod identity;
 pub mod link;
 pub mod requirements;
-mod settings;
 
 pub use catalog::Catalog;
-pub use settings::Settings;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -132,7 +130,7 @@ impl Header {
         Ok(header)
     }
 
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         if self.schema != SCENARIO_SCHEMA {
             return Err(format!(
                 "scenario schema {} is unsupported (expected {SCENARIO_SCHEMA})",
@@ -189,7 +187,7 @@ fn valid_id(id: &str) -> bool {
 pub struct Plan {
     pub image: ImageClass,
     pub requirements: Requirements,
-    pub settings: Settings,
+    pub settings: oer_hil_protocol::wifi::TargetSettings,
     /// Named observations the workload publishes. Their acceptance limits
     /// remain in the family's criteria; listing a check is not a verdict.
     pub checks: Vec<&'static str>,
@@ -203,29 +201,72 @@ impl Plan {
         Self {
             image,
             requirements: Requirements::default(),
-            settings: Settings::default(),
+            settings: oer_hil_protocol::wifi::TargetSettings::default(),
             checks: Vec::new(),
             wifi: WifiLabUse::default(),
         }
     }
 }
 
-/// The typed family table of a scenario document.
+/// A catalog image the reference peer board must carry for a scenario.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PeerImage {
+    /// The board-journal and catalog image name.
+    pub name: &'static str,
+    /// How to restore it when another consumer replaced it.
+    pub reflash: &'static str,
+}
+
+/// A frequency range a scenario's radio work occupies, as the family states
+/// it; the runner turns it into the claims of its stand lease.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AirUse {
+    /// The 2.4 GHz band: links that hop across it (Bluetooth LE) and radio
+    /// work without one fixed channel.
+    Band2G4,
+    /// One IEEE 802.15.4 channel.
+    Ieee802154Channel(u8),
+    /// The channel of the scenario's Wi-Fi link, as the laboratory sets it
+    /// up for the scenario's [`WifiLabUse`].
+    WifiLink,
+}
+
+/// The typed family content of a scenario document: what every
+/// family-independent consumer (planning, selection, the stand lease, the
+/// runner core and evidence) reads.
 ///
-/// Implementations deserialize from a map with exactly one family key, so a
-/// document naming no family or several families is rejected.
+/// [`Scenario`] deserializes it from the document without its header: the
+/// single family key and its table. A radio family implements it for its
+/// table's type; the runner's family registry (`oer-hil-workload`) wraps the
+/// families it composes into one document-level type, so the runner core
+/// never names a family.
 pub trait ScenarioFamily: Clone + Debug + Eq + Serialize + DeserializeOwned {
     /// Validate value ranges and relations inside the family table.
     fn validate(&self) -> Result<()>;
 
     fn plan(&self) -> Plan;
 
+    /// The laboratory services the scenario needs.
+    fn requirements(&self) -> Requirements {
+        self.plan().requirements
+    }
+
     /// Whether an image of the planned class that reports `capabilities` can
     /// run this scenario. The class alone suffices unless the family names
     /// a role the class's image may omit.
-    fn served_by(&self, _capabilities: &oer_hil_image_class::DeviceImageKeys) -> bool {
+    fn served_by(&self, _capabilities: &oer_hil_protocol::DeviceImageKeys) -> bool {
         true
     }
+
+    /// The catalog image the reference peer board must carry, when the
+    /// scenario uses the peer.
+    fn peer_image(&self) -> Option<PeerImage> {
+        None
+    }
+
+    /// The frequency ranges the scenario's radio work occupies; none for
+    /// work that never enables a radio.
+    fn air_use(&self) -> Vec<AirUse>;
 }
 
 /// One validated scenario document.
@@ -233,7 +274,7 @@ pub trait ScenarioFamily: Clone + Debug + Eq + Serialize + DeserializeOwned {
 pub struct Scenario<F> {
     pub header: Header,
     pub family: F,
-    source: PathBuf,
+    pub(crate) source: PathBuf,
 }
 
 impl<F: ScenarioFamily> Scenario<F> {
@@ -258,7 +299,7 @@ impl<F: ScenarioFamily> Scenario<F> {
         Ok(scenario)
     }
 
-    fn from_value(value: serde_json::Value) -> Result<Self> {
+    pub(crate) fn from_value(value: serde_json::Value) -> Result<Self> {
         let serde_json::Value::Object(mut document) = value else {
             return Err("scenario document is not a table".into());
         };
@@ -322,7 +363,7 @@ impl<F: ScenarioFamily> Scenario<F> {
     }
 
     pub fn requirements(&self) -> Requirements {
-        self.family.plan().requirements
+        self.family.requirements()
     }
 
     pub fn source(&self) -> &Path {

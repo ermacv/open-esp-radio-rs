@@ -14,7 +14,7 @@ reading route through these boundaries.
 | [Radio libraries](../crates/README.md) | Portable protocols, typed hardware access, adapters, execution and final composition | Internal libraries depend on specific contracts; only applications depend on the public facade |
 | [Registers](../registers/README.md) | Reviewed hardware model, API/ownership policy, provenance and publication inputs | Defines what may enter the production PAC |
 | [Blobray](../tools/blobray/README.md) | Binary analysis, reviewed research and bounded comparisons | Generic engine; target facts are selected through providers and projects |
-| [Memory tools](../tools/memory-report/README.md) | ELF memory and linked-code analysis | The consumer chooses the image budget and acceptance policy |
+| [ELF view](../tools/elf/README.md) and [vendor provenance](../tools/vendor-provenance/README.md) | The one ELF/archive reader with the RV32 relocation table; the one vendor function fingerprint | Read by every tool; image placement is audited by the image pipeline |
 | [Repository tooling](../tools/xtask/README.md) | Cargo graphs, source checks and build orchestration | Calls domain tools; does not duplicate their validators |
 | [Verification](../verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects | Private artifacts are caller inputs, never production dependencies |
 | [HIL](../hil/README.md) | Typed protocol, lab fixtures, scenarios, target images and sealed observations | Produces hardware evidence; does not decide product readiness |
@@ -32,8 +32,9 @@ Every Cargo package declares `package.metadata.open-radio.layer` and
 `platform`. Layer describes responsibility and implies the scope: the
 `contract`, `protocol`, `hardware`, `role`, `service`, `adapter`, `runtime`,
 `composition` and `facade` layers are production, `experiment` is
-experimental, and every other layer is development. `oer-tidy` reads the
-table, rejects unknown keys and checks every package in seconds; platform is `portable`, `host`,
+experimental, and every other layer is development. The repository model
+(`oer-repo`) is the one reader of the table: it types every key and rejects
+unknown ones, and `oer-tidy` checks every package in seconds; platform is `portable`, `host`,
 `chip` or `family`. Chip applicability requires a separate `chip` identifier, such as
 `esp32s31`, and family applicability a separate `family` identifier, such as
 `espressif`; no other classification carries either.
@@ -61,10 +62,12 @@ their declared profiles; an empty feature set need not form a usable system.
 
 ### Layer dependencies
 
-The architecture check discovers source manifests and workspace members before
-reading classification. Missing or inconsistent classification is an error.
-Production path dependencies, including optional and build dependencies, must
-resolve to classified production packages. Test dependencies may compose an
+The repository model discovers every manifest and workspace member before
+reading classification, and its dependency policy (`oer_repo::policy`, run
+by `cargo tidy check`) is the one statement of these rules. Missing or
+inconsistent classification is an error. Production path dependencies,
+including optional and build dependencies, must resolve to classified
+production packages. Test dependencies may compose an
 experimental engine with production owners. Protocol/contract packages cannot
 depend on hardware, adapters or execution. Internal packages cannot depend on
 the public facade. These rules are independent of directory names and chip IDs.
@@ -77,6 +80,30 @@ the public facade. These rules are independent of directory names and chip IDs.
 | service | contract, protocol, service |
 | adapter, runtime | contract, protocol, hardware, role, adapter, runtime, service |
 | composition, facade | all production layers except facade |
+
+### Host layers
+
+Every development package that runs on the host (`platform = "host"`)
+declares `package.metadata.open-radio.host-layer`; a portable development
+package may. A host package depends, through any dependency kind, only on
+packages of its own host layer and the layers below it
+(`oer_repo::policy::host_edge_allowed`, run by `cargo tidy check`):
+
+| Host layer | Holds | Examples |
+| --- | --- | --- |
+| `entry` | Command lines: argument parsing and calls | `oer-xtask`, `oer-hil-cli`, `oer-hil-runner`, `oer-qualification`, `oer-tidy`, `oer-register-tool`, `blobray-cli`, `oer-vendor-scenario-cli` |
+| `orchestration` | Experiments, run analysis, HIL image builds | `oer-hil-experiment`, `oer-hil-analysis`, `oer-hil-image` |
+| `execution` | HIL execution: protocol, agent, DUT link, scenarios, workloads, families, run bundles, observer identity, the HIL lab | `oer-hil-link`, `oer-hil-workload`, `oer-hil-family-*`, `oer-hil-run-bundle` |
+| `verification` | Vendor evidence and provenance, the register model, vendor scenarios and stands | `oer-vendor-evidence`, `oer-vendor-provenance`, `oer-register-model` |
+| `stand` | Boards, flashing, the arbiter, stand hosts | `oer-hil-board`, `oer-hil-flash`, `oer-hil-arbiter`, `oer-hil-stand-host` |
+| `build` | Images and binary analysis | `oer-image`, `oer-elf`, `oer-riscv-*`, Blobray's libraries |
+| `foundation` | Processes, files, host tools, chip profiles, the repository model, vendor pins | `oer-process`, `oer-durable`, `oer-toolchain`, `oer-repo`, `oer-vendor-artifacts` |
+
+So the stand and the build layer never reach HIL execution, verification
+never reaches HIL, and the foundation depends on nothing above it. Only
+entry crates run a repository command line: `cargo tidy check` rejects a
+non-entry package whose code spawns `cargo hil` or `cargo xtask`
+(`oer_tidy::spawns`); a library calls the owning library instead.
 
 ### Sans-IO protocols, executors and time
 
@@ -172,7 +199,7 @@ an adapter add structure without renaming. Wi-Fi is `ieee80211` in package and
 directory names alike; the facade module `oer::wifi` and `Wifi*` types keep the
 user-facing name. Compositions end in `-system`. The public facade
 `open-esp-radio` (library `oer`) is the only branded name.
-`oer-tidy` (`cargo xtask check tidy`) enforces the prefix. The Blobray
+`oer-tidy` (`cargo tidy check`) enforces the prefix. The Blobray
 workspace names its own packages.
 
 ## Radio ports
@@ -438,25 +465,34 @@ its initializer says. A static in a zeroed region is declared only through
 initial state, derived with `#[derive(bytemuck::Zeroable)]` from fields
 that are), and its initializer is `zeroed()`. A value with no zero representation is a
 `ZeroedStatic<MaybeUninit<T>>` written when its owner claims it, or a
-`ZeroedOnce<T>` written once and then shared (an interrupt's waker). Tidy
-refuses a `link_section` literal naming a zeroed region anywhere in Rust
-source, so the macro is the only way to place one. The image linker
-(`tools/image-linker`) is the backstop for what tidy does not read, vendor
+`ZeroedOnce<T>` written once and then shared (an interrupt's waker). `cargo
+xtask check architecture` refuses a `link_section` literal naming a zeroed
+region anywhere in Rust source, so the macro is the only way to place one.
+The image linker (`tools/image-linker`) is the backstop for what that scan
+does not read, vendor
 archives included: an input section bound for a zeroed region that holds a
 non-zero byte or a relocation fails the link.
 
 ## HIL and operating-system boundaries
 
 Every HIL package declares `package.metadata.open-radio.hil` as
-`observation` or `operation`. Observation packages decide what a run observes:
-the protocol, scenarios, the live link to the device under test
-(`oer-hil-link`), fixtures, target firmware and evidence. Operation packages run
-the stand: arbitration, boards, image builds (`oer-hil-image`), stand
-configuration and recovery (`oer-hil-stand`), and every package that still
-reaches one of them. The architecture check rejects an observation package
-that depends on an operation package, so stand code cannot change what a run
-observes; an image build reaches a run's evidence only through the build
-inputs the run records.
+`observation`, `orchestration` or `operation`. Observation packages decide
+what a run observes and reach no stand code: the protocol, scenarios, the
+live link to the device under test (`oer-hil-link`), host network traffic
+(`oer-hil-net-traffic`), fixtures, target
+firmware and evidence. Orchestration packages drive runs and may use the
+stand: the runner, the workload contract (`oer-hil-workload`), the
+`oer-hil-family-*` crates with the Wi-Fi fixtures and evidence, image
+builds (`oer-hil-image`), arbitration and its spectrum claims
+(`oer-hil-arbiter`) and the stand library (`oer-hil-lab`); their code
+shapes what a run observes. Operation packages only operate the stand —
+boards and flashing (`oer-hil-board`), the stand file, the `cargo hil`
+command line — and never shape a passed observation, so the evaluator leaves
+them out of every evidence closure by this role alone. `cargo tidy check`
+rejects an observation package that depends on an orchestration or
+operation package, so neither can change what a run observes through it; an
+image build reaches a run's evidence through the build inputs the run
+records.
 
 Scenario IDs are stable logical identities within a recursive protocol/role
 catalog. Producer and evaluator independently validate the format and reject
@@ -466,9 +502,11 @@ updated together when that contract changes.
 The [ESP32-S31 platform](../platform/esp32s31/README.md) owns the board profile,
 Flash bootstrap, stage-two relocation, the staged-boot address map and image
 header, linker scripts and per-core SRAM IRQ stacks. HIL and standalone examples use that same boot contract. The host
-`oer-esp32s31-firmware` library owns payload packing and structural image audits;
-`cargo xtask` builds applications and HIL adds its image classes, observers
-and evidence. Neither the platform nor standalone examples depend on HIL.
+[`oer-image`](../tools/image/README.md) pipeline builds every image: payload
+packing, the stack and placement gates and the flash contents, encoded at build
+time into an image bundle that a flash only writes; `cargo xtask` builds
+applications through it and HIL adds its image classes, observers and
+evidence. Neither the platform nor standalone examples depend on HIL.
 
 Linux network helpers and remote OpenWrt operations belong to HIL. Repository
 checks do not install fixtures, flash devices or change network state.

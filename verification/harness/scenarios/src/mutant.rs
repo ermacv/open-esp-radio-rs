@@ -9,11 +9,9 @@
 //! survives unexecuted says nothing about the comparisons.
 use crate::harness::{Result, invalid};
 use blobray_application::in_process::ImagePatch;
-use object::{Object, ObjectSegment, ObjectSymbol, SegmentFlags};
 use std::collections::BTreeSet;
 
 /// ELF program header flag of an executable segment.
-const PF_X: u32 = 1;
 /// Bytes of a compressed and of a full RV32 instruction.
 const COMPRESSED: usize = 2;
 const FULL: usize = 4;
@@ -130,7 +128,7 @@ pub fn resolve(elf: &[u8], specs: &[Spec]) -> Result<Vec<ImagePatch>> {
     if specs.is_empty() {
         return Ok(vec![]);
     }
-    let file = object::File::parse(elf)?;
+    let file = oer_elf::Elf::parse(elf)?;
     specs
         .iter()
         .map(|spec| {
@@ -139,31 +137,31 @@ pub fn resolve(elf: &[u8], specs: &[Spec]) -> Result<Vec<ImagePatch>> {
                 Target::Symbol { name, offset } => {
                     let symbol = file
                         .symbols()
-                        .find(|s| s.name() == Ok(name.as_str()) && s.size() > 0)
+                        .find(|s| s.name == name.as_str() && s.size > 0)
                         .ok_or_else(|| {
                             invalid(format!("mutant symbol {name} is not in the probe"))
                         })?;
-                    if u64::from(*offset) >= symbol.size() {
+                    if u64::from(*offset) >= symbol.size {
                         return Err(invalid(format!(
                             "mutant offset {offset:#x} lies outside {name}"
                         )));
                     }
-                    u32::try_from(symbol.address())? + offset
+                    u32::try_from(symbol.address)? + offset
                 }
             };
             let segment = file
                 .segments()
                 .find(|segment| {
-                    matches!(segment.flags(), SegmentFlags::Elf { p_flags } if p_flags & PF_X != 0)
-                        && segment.address() <= u64::from(address)
-                        && u64::from(address) < segment.address() + segment.size()
+                    segment.executable
+                        && segment.address <= u64::from(address)
+                        && u64::from(address) < segment.address + segment.size
                 })
                 .ok_or_else(|| {
                     invalid(format!("mutant at {address:#x} is outside executable code"))
                 })?;
             let at = |length: usize| -> Result<Vec<u8>> {
                 segment
-                    .data_range(u64::from(address), length as u64)?
+                    .bytes(u64::from(address), length)
                     .map(<[u8]>::to_vec)
                     .ok_or_else(|| invalid(format!("mutant at {address:#x} runs past its segment")))
             };

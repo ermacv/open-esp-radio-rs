@@ -8,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub mod checks;
 mod drafts;
 mod host;
 mod library;
@@ -54,6 +55,53 @@ struct Outputs {
 struct Ownership {
     schema: u32,
     owned_ranges: Vec<String>,
+}
+
+/// The source files a chip's publication manifest names, resolved against
+/// its directory, without loading or validating them: what the register
+/// checks read.
+pub struct ChipSources {
+    /// The register model manifest (`model/device.toml`).
+    pub model: PathBuf,
+    /// The PAC API policy (`policy/api.toml`).
+    pub api: PathBuf,
+    /// The published SVD.
+    pub svd: PathBuf,
+    memory: PathBuf,
+    ownership: PathBuf,
+}
+
+impl ChipSources {
+    /// Read the publication manifest at `path`.
+    pub fn load(path: &Path) -> Result<Self> {
+        let base = path.parent().ok_or("manifest has no parent")?;
+        let m: Manifest = toml_edit::de::from_str(&fs::read_to_string(path)?)?;
+        Ok(Self {
+            model: base.join(m.model),
+            api: base.join(m.api),
+            svd: base.join(m.outputs.svd),
+            memory: base.join(m.memory),
+            ownership: base.join(m.ownership),
+        })
+    }
+
+    /// The owned MMIO ranges of the memory map, by name, as `start..end`.
+    pub fn owned_mmio(&self) -> Result<Vec<(String, u64, u64)>> {
+        let memory = memory::Memory::load(&self.memory)?;
+        let ownership: Ownership = toml_edit::de::from_str(&fs::read_to_string(&self.ownership)?)?;
+        ownership
+            .owned_ranges
+            .iter()
+            .map(|name| {
+                memory
+                    .mmio(name)
+                    .map(|(start, end)| (name.clone(), start, end))
+                    .ok_or_else(|| {
+                        format!("owned range {name} is not an MMIO region of the memory map").into()
+                    })
+            })
+            .collect()
+    }
 }
 
 /// One validated publication: a chip's register project, or a register

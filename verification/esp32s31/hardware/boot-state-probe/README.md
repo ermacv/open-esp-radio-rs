@@ -27,6 +27,6 @@ repository root, with the board's port from `cargo hil board check esp32s31`:
 (cd verification/esp32s31/hardware/boot-state-probe && cargo build --release)
 elf=verification/esp32s31/hardware/boot-state-probe/target/riscv32imafc-unknown-none-elf/release/oer-esp32s31-boot-state-probe
 cargo hil lease --board esp32s31 --air none --flashed esp32s31-boot-state-probe \
-  --port PORT --application "$elf" -- sh -c \
+  --device esp32s31 --application "$elf" -- sh -c \
   "espflash flash --chip esp32s31 --port PORT $elf && timeout 25 espflash monitor --chip esp32s31 --port PORT --non-interactive --elf $elf"
 ```

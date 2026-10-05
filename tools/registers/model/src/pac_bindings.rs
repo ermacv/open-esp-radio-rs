@@ -2,7 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
+use oer_register_contracts::bindings::{
+    BindingIndex, FieldBinding, RegisterBinding, SCHEMA, ScopeBinding,
+};
 use svd_rs::{Access, MaybeArray, RegisterCluster, RegisterProperties};
 
 use crate::{Error, Result};
@@ -37,48 +39,6 @@ struct ExpandedField {
     access: Option<Access>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-struct BindingDocument {
-    schema: u32,
-    crate_name: String,
-    registers: Vec<RegisterBinding>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-struct RegisterBinding {
-    address: u32,
-    width: u32,
-    access: &'static str,
-    identity: String,
-    peripheral: String,
-    peripheral_type: String,
-    peripheral_module: String,
-    scope: Vec<ScopeBinding>,
-    register_method: String,
-    register_index: Option<u32>,
-    alternate_register: Option<String>,
-    fields: Vec<FieldBinding>,
-}
-
-#[derive(Serialize)]
-struct ScopeBinding {
-    method: String,
-    index: Option<u32>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-struct FieldBinding {
-    svd_name: String,
-    method: String,
-    index: Option<u32>,
-    bit_offset: u32,
-    bit_width: u32,
-    access: &'static str,
-}
-
 /// Generate the stable TOML index used to bind observed MMIO addresses to PAC paths.
 ///
 /// `crate_name` is the Rust crate identifier, not the Cargo package name.
@@ -98,7 +58,7 @@ pub fn generate_pac_binding_index(svd: &str, crate_name: &str) -> Result<String>
             bindings.push(RegisterBinding {
                 address,
                 width: register.size_bits,
-                access: access_label(register.access),
+                access: access_label(register.access).to_owned(),
                 identity: register.identity,
                 peripheral: register.peripheral,
                 peripheral_type,
@@ -123,14 +83,14 @@ pub fn generate_pac_binding_index(svd: &str, crate_name: &str) -> Result<String>
                         index: field.array_index,
                         bit_offset: field.bit_offset,
                         bit_width: field.bit_width,
-                        access: access_label(field.access),
+                        access: access_label(field.access).to_owned(),
                     })
                     .collect(),
             });
         }
     }
-    let document = toml_edit::ser::to_string_pretty(&BindingDocument {
-        schema: 2,
+    let document = toml_edit::ser::to_string_pretty(&BindingIndex {
+        schema: SCHEMA,
         crate_name: crate_name.to_owned(),
         registers: bindings,
     })?;

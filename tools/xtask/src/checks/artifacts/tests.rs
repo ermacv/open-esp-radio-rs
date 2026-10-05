@@ -1,7 +1,7 @@
 use super::*;
 
-fn context() -> Context {
-    Context::new(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
+fn context() -> Checkout {
+    Checkout::new(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
 }
 
 fn compile_rlib(source: &str, bitcode: bool) -> (tempfile::TempDir, PathBuf) {
@@ -10,8 +10,7 @@ fn compile_rlib(source: &str, bitcode: bool) -> (tempfile::TempDir, PathBuf) {
     let output = temporary.path().join("fixture.rlib");
     std::fs::write(&input, source).unwrap();
     let ctx = context();
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let mut command = ctx.command(rustc);
+    let mut command = ctx.command(oer_toolchain::program(oer_toolchain::Tool::Rustc).unwrap());
     command
         .args([
             "--edition=2024",
@@ -44,13 +43,14 @@ pub unsafe extern "C" fn public_model(destination: *mut u8, size: usize) {
 fn native_elf_archive_accepts_compiled_source_only_support() {
     let (_temporary, path) = compile_rlib(SOURCE_ONLY, false);
     let bytes = std::fs::read(&path).unwrap();
-    let archive = object::read::archive::ArchiveFile::parse(&*bytes).unwrap();
-    assert!(archive.members().any(|member| {
-        let member = member.unwrap();
-        member.name() != b"lib.rmeta"
-            && member.name() != b"lib.rmeta-link"
-            && member.data(&*bytes).unwrap().starts_with(b"\x7fELF")
-    }));
+    assert!(
+        oer_elf::members(&bytes)
+            .unwrap()
+            .iter()
+            .any(|(name, data)| {
+                name != "lib.rmeta" && name != "lib.rmeta-link" && data.starts_with(b"\x7fELF")
+            })
+    );
     audit_phy(&context(), &path).unwrap();
 }
 
@@ -58,11 +58,11 @@ fn native_elf_archive_accepts_compiled_source_only_support() {
 fn llvm_bitcode_archive_uses_the_matching_toolchain() {
     let (_temporary, path) = compile_rlib(SOURCE_ONLY, true);
     let bytes = std::fs::read(&path).unwrap();
-    let archive = object::read::archive::ArchiveFile::parse(&*bytes).unwrap();
     assert!(
-        archive
-            .members()
-            .any(|member| is_bitcode(member.unwrap().data(&*bytes).unwrap()))
+        oer_elf::members(&bytes)
+            .unwrap()
+            .iter()
+            .any(|(_, data)| is_bitcode(data))
     );
     audit_phy(&context(), &path).unwrap();
 }

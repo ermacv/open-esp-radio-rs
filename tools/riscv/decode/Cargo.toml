@@ -11,9 +11,13 @@ description = "RV32 instruction decoding over rv-asm with the F, Zicsr, Zba, Zbb
 [dependencies]
 rv-asm = "=0.2.1"
 
+[dev-dependencies]
+oer-toolchain = { path = "../../toolchain" }
+
 [lints]
 workspace = true
 
 [package.metadata.open-radio]
 layer = "tool"
 platform = "portable"
+host-layer = "build"

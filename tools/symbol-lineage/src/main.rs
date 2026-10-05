@@ -5,7 +5,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, ExitCode},
+    process::ExitCode,
 };
 
 use clap::Parser;
@@ -119,9 +119,9 @@ fn run(arguments: Arguments) -> Result<(), Error> {
 
 fn from_git(repo: &Path, library: &str, selected: &[String]) -> Result<Vec<Revision>, Error> {
     let revisions = if selected.is_empty() {
-        let log = git(
+        let log = oer_process::git::output(
             repo,
-            &[
+            [
                 "log",
                 "--first-parent",
                 "--reverse",
@@ -139,12 +139,12 @@ fn from_git(repo: &Path, library: &str, selected: &[String]) -> Result<Vec<Revis
     };
     let mut archives: Vec<Revision> = Vec::new();
     for revision in revisions {
-        let commit = git(
+        let commit = oer_process::git::output(
             repo,
-            &["rev-parse", "--verify", &format!("{revision}^{{commit}}")],
+            ["rev-parse", "--verify", &format!("{revision}^{{commit}}")],
         )?;
         let revision = String::from_utf8(commit)?.trim().to_owned();
-        let bytes = git(repo, &["show", &format!("{revision}:{library}")])?;
+        let bytes = oer_process::git::output(repo, ["show", &format!("{revision}:{library}")])?;
         let archive = read_archive(&revision, &bytes)?;
         // A commit that does not change the bytes adds no evidence.
         if archives
@@ -156,23 +156,6 @@ fn from_git(repo: &Path, library: &str, selected: &[String]) -> Result<Vec<Revis
         archives.push(archive);
     }
     Ok(archives)
-}
-
-fn git(repo: &Path, arguments: &[&str]) -> Result<Vec<u8>, Error> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(arguments)
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "git {}: {}",
-            arguments.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )
-        .into());
-    }
-    Ok(output.stdout)
 }
 
 fn redefine_syms(lineage: &Lineage) -> String {

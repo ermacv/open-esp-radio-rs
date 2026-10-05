@@ -40,7 +40,8 @@ pub struct Candidate {
 
 /// The files that queued or running HIL jobs were fixed with.
 fn held_by_jobs() -> Result<Vec<PathBuf>> {
-    Ok(oer_hil_cli::jobs::Jobs::open()?
+    Ok(oer_hil_arbiter::Arbiter::open()?
+        .jobs()
         .unfinished()
         .into_iter()
         .flat_map(|job| job.fixed)
@@ -127,41 +128,58 @@ fn incremental(target: &Path, policy: Policy, now: SystemTime, found: &mut Vec<C
     visit(target, 4, policy, now, found);
 }
 
-/// Per-image HIL build caches unused for the policy's age and not building.
-fn image_caches(target: &Path, policy: Policy, now: SystemTime, found: &mut Vec<Candidate>) {
-    let chip = target.join("hil/esp32s31");
-    let groups = [
-        chip.clone(),
-        chip.join("build-cache"),
-        chip.join("snapshot-builds"),
-    ];
-    for group in groups {
-        for entry in fs::read_dir(&group).into_iter().flatten().flatten() {
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if !path.is_dir() || build_running(&path) {
-                continue;
-            }
-            let image_cache = name.starts_with("psram-") || group != chip;
-            if !image_cache {
-                continue;
-            }
-            if age(&path, now).is_some_and(|age| age > policy.image_caches) {
-                found.push(Candidate {
-                    path,
-                    reason: "image cache unused".into(),
-                });
+/// Whether `name`, a directory of `target/hil/<chip>`, is an image class's
+/// build output: named after a class's runtime profile.
+fn class_output(name: &str) -> bool {
+    oer_hil_image_class::ImageClass::ALL
+        .iter()
+        .any(|class| name.starts_with(&format!("{}-", class.runtime_profile())))
+}
+
+/// Per-image HIL build caches of every chip in `chips`, unused for the
+/// policy's age and not building: the class outputs of `target/hil/<chip>`
+/// and the compile caches of its `build-cache`.
+fn image_caches(
+    target: &Path,
+    chips: &[String],
+    policy: Policy,
+    now: SystemTime,
+    found: &mut Vec<Candidate>,
+) {
+    for chip in chips {
+        let directory = target.join("hil").join(chip);
+        for (group, every) in [
+            (directory.clone(), false),
+            (directory.join("build-cache"), true),
+        ] {
+            for entry in fs::read_dir(&group).into_iter().flatten().flatten() {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if !path.is_dir() || build_running(&path) || !(every || class_output(&name)) {
+                    continue;
+                }
+                if age(&path, now).is_some_and(|age| age > policy.image_caches) {
+                    found.push(Candidate {
+                        path,
+                        reason: "image cache unused".into(),
+                    });
+                }
             }
         }
     }
 }
 
-/// Every removable cache of the checkout at `root`.
-pub fn candidates(root: &Path, policy: Policy, now: SystemTime) -> Vec<Candidate> {
+/// Every removable cache of the checkout at `root` whose chips are `chips`.
+pub fn candidates(
+    root: &Path,
+    chips: &[String],
+    policy: Policy,
+    now: SystemTime,
+) -> Vec<Candidate> {
     let target = root.join("target");
     let mut found = Vec::new();
     incremental(&target, policy, now, &mut found);
-    image_caches(&target, policy, now, &mut found);
+    image_caches(&target, chips, policy, now, &mut found);
     found.sort_by(|a, b| a.path.cmp(&b.path));
     found
 }
@@ -185,8 +203,12 @@ fn size(path: &Path) -> u64 {
 /// List, or with `apply` remove, the caches of the checkout at `root`;
 /// returns the bytes that were (or would be) freed.
 pub fn run(root: &Path, policy: Policy, apply: bool) -> Result<u64> {
+    let chips: Vec<String> = oer_repo::Chips::load(&oer_repo::Repo::from_git(root)?)?
+        .ids()
+        .map(str::to_owned)
+        .collect();
     let found = unheld(
-        candidates(root, policy, SystemTime::now()),
+        candidates(root, &chips, policy, SystemTime::now()),
         &held_by_jobs()?,
     );
     let mut bytes = 0;
@@ -225,18 +247,28 @@ mod tests {
         let target = root.path().join("target");
         let old = target.join("debug/incremental/crate-old");
         let fresh = target.join("debug/incremental/crate-fresh");
-        let stale = target.join("hil/esp32s31/psram-code-correctness-owned-xarxa");
-        let live = target.join("hil/esp32s31/psram-code-performance-owned-xarxa");
+        let stale =
+            target.join("hil/esp32s31/psram-code-psram-data-psram-stack-correctness-owned-xarxa");
+        let live =
+            target.join("hil/esp32s31/psram-code-psram-data-psram-stack-performance-owned-xarxa");
         let runs = target.join("hil/esp32s31/runs.before-shared-store");
-        for directory in [&old, &fresh, &stale, &live, &runs] {
+        let c5 = target
+            .join("hil/esp32c5/build-cache/psram-code-psram-data-psram-stack-system-watchdog");
+        let replay = target.join("hil/esp32c5/replay");
+        let runners = target.join("hil/runners");
+        for directory in [&old, &fresh, &stale, &live, &runs, &c5, &replay, &runners] {
             fs::create_dir_all(directory).unwrap();
         }
-        aged(&old, 10);
-        aged(&stale, 10);
-        aged(&runs, 30);
-        let found = candidates(root.path(), Policy::default(), SystemTime::now());
+        for directory in [&old, &stale, &c5] {
+            aged(directory, 10);
+        }
+        for directory in [&runs, &replay, &runners] {
+            aged(directory, 30);
+        }
+        let chips = ["esp32c5", "esp32s31"].map(String::from);
+        let found = candidates(root.path(), &chips, Policy::default(), SystemTime::now());
         let paths = found.iter().map(|c| c.path.clone()).collect::<Vec<_>>();
-        assert_eq!(paths, [old, stale]);
+        assert_eq!(paths, [old, c5, stale]);
     }
 
     #[test]
@@ -272,10 +304,10 @@ mod tests {
         aged(&old, 10);
         let lock = fs::File::create(profile.join(".cargo-lock")).unwrap();
         fs2::FileExt::lock_exclusive(&lock).unwrap();
-        assert!(candidates(root.path(), Policy::default(), SystemTime::now()).is_empty());
+        assert!(candidates(root.path(), &[], Policy::default(), SystemTime::now()).is_empty());
         fs2::FileExt::unlock(&lock).unwrap();
         assert_eq!(
-            candidates(root.path(), Policy::default(), SystemTime::now()).len(),
+            candidates(root.path(), &[], Policy::default(), SystemTime::now()).len(),
             1
         );
     }

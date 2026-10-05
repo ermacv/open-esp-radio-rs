@@ -183,6 +183,10 @@ pub(crate) struct Ticket {
     /// Maintenance goes before every ordinary request.
     #[serde(default, skip_serializing_if = "Priority::is_ordinary")]
     pub(crate) priority: Priority,
+    /// The `cargo hil` job whose process, or its runner, made the request
+    /// ([`crate::jobs::JOB_ENV`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) job: Option<String>,
     /// Fields a newer build wrote, kept when this build rewrites the record.
     #[serde(flatten)]
     pub(crate) unknown: crate::Unknown,

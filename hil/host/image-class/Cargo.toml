@@ -9,10 +9,11 @@ publish = false
 description = "HIL image classes: build feature recipes and the keys each class reports"
 
 [dependencies]
+oer-chip-profile = { path = "../../../tools/chip-profile" }
+oer-durable = { path = "../../../tools/durable" }
 oer-hil-image-keys = { path = "../../image-keys" }
 oer-hil-protocol = { path = "../../protocol", features = ["registry"] }
 serde = { version = "1.0", features = ["derive"] }
-sha2 = "0.10"
 toml = "1.1"
 
 [lints]
@@ -21,4 +22,7 @@ workspace = true
 [package.metadata.open-radio]
 layer = "hil"
 platform = "host"
+host-layer = "execution"
 hil = "observation"
+# The agent tests read every chip profile and HIL target workspace.
+inputs = ["platform/*/chip.toml", "platform/*/Cargo.toml", "hil/targets/**/Cargo.toml"]

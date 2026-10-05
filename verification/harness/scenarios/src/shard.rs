@@ -1,9 +1,9 @@
 //! Evidence shards: one scenario's claims with the digests of every source
 //! its verdicts depend on, written to the scenario package's evidence index.
 use crate::harness::Result;
-use crate::session::{self, evidence_index};
+use crate::session;
 use crate::{coverage, observation, state};
-use evidence_index::Index;
+use oer_vendor_evidence::{Index, policy};
 use std::path::{Path, PathBuf};
 
 /// The compiled production images a chip's scenarios run, and where their
@@ -20,14 +20,12 @@ pub struct ProbeImages {
 /// Blobray workspace, which also resolves the scenario packages and the
 /// engine behind every verdict.
 const TOOL_MANIFEST: &str = "tools/blobray/Cargo.toml";
-/// Shared schema sources the scenarios include by path.
-const SCHEMA_SOURCES: &str = "verification/schema";
 /// Production crates, which shards track by executed file.
 const PRODUCTION_CRATES: &str = "crates";
 /// The pinned toolchain, and the lock file and package manifest names.
 const TOOLCHAIN: &str = "rust-toolchain.toml";
 /// The directory name Cargo writes build outputs below; like
-/// [`evidence_index::digest_directory`], a shard never records it.
+/// [`oer_vendor_evidence::digest_directory`], a shard never records it.
 const BUILD_OUTPUT: &str = "target";
 const LOCK_FILE: &str = "Cargo.lock";
 const PACKAGE_MANIFEST: &str = "Cargo.toml";
@@ -87,103 +85,23 @@ pub fn dep_info_file(root: &Path, path: &Path) -> Result<Vec<PathBuf>> {
     Ok(files.into_iter().collect())
 }
 
-/// The `package.metadata.open-radio.evidence` role of a package whose code
-/// only renders reports; its sources never enter a shard.
-const REPORT_ROLE: &str = "report";
-
-/// Path packages in the resolved dependency closure of a package: those
-/// whose sources a shard may record, and the report packages it reaches.
-struct PathClosure {
-    directories: Vec<PathBuf>,
-    report: Vec<PathBuf>,
-}
-
-/// Path packages in the resolved dependency closure of `package`.
+/// The path closure of `package` of the workspace `manifest` for the
+/// target `platform` ([`policy::closure`]).
 fn path_closure(
-    root: &Path,
+    model: &oer_repo::Model,
     manifest: &str,
     package: &str,
     platform: Option<&str>,
-) -> Result<PathClosure> {
-    let mut command = std::process::Command::new("cargo");
-    command
-        .current_dir(root)
-        .args(["metadata", "--format-version", "1", "--offline", "--locked"])
-        .args(["--manifest-path", manifest]);
-    if let Some(platform) = platform {
-        command.args(["--filter-platform", platform]);
-    }
-    let output = command.output()?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
-    }
-    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    let packages = metadata["packages"]
-        .as_array()
-        .ok_or("cargo metadata packages")?;
-    let id_of = |name: &str| {
-        packages
-            .iter()
-            .find(|p| p["name"] == name)
-            .and_then(|p| p["id"].as_str())
-            .map(str::to_owned)
-    };
-    let nodes = metadata["resolve"]["nodes"]
-        .as_array()
-        .ok_or("cargo metadata resolve")?;
-    let mut pending = vec![id_of(package).ok_or_else(|| format!("package {package} missing"))?];
-    let mut seen = std::collections::BTreeSet::new();
-    while let Some(id) = pending.pop() {
-        if !seen.insert(id.clone()) {
-            continue;
-        }
-        let node = nodes
-            .iter()
-            .find(|n| n["id"] == id.as_str())
-            .ok_or("unresolved package")?;
-        for dependency in node["dependencies"].as_array().into_iter().flatten() {
-            pending.push(dependency.as_str().ok_or("dependency id")?.to_owned());
-        }
-    }
-    let mut directories = std::collections::BTreeSet::new();
-    let mut report = std::collections::BTreeSet::new();
-    for package in packages {
-        let local = package["source"].is_null();
-        if local && seen.contains(package["id"].as_str().unwrap_or_default()) {
-            let manifest = Path::new(package["manifest_path"].as_str().ok_or("manifest path")?);
-            let directory = manifest.parent().ok_or("manifest directory")?;
-            let directory = directory.canonicalize()?.strip_prefix(root)?.to_path_buf();
-            if package["metadata"]["open-radio"]["evidence"] == REPORT_ROLE {
-                report.insert(directory);
-            } else {
-                directories.insert(directory);
-            }
-        }
-    }
-    Ok(PathClosure {
-        directories: directories.into_iter().collect(),
-        report: report.into_iter().collect(),
-    })
+) -> Result<policy::PathClosure> {
+    let package = model
+        .members(manifest)
+        .find(|member| member.name == package)
+        .ok_or_else(|| format!("package {package} missing from {manifest}"))?;
+    policy::closure(model, package, platform)
 }
 
 /// Why a shard cannot be written without the verdict libraries' dep-info.
 const VERDICT_DEP_INFO_REQUIRED: &str = "shards are written only through cargo xtask vendor-scenario, which passes the verdict libraries' dep-info";
-
-/// Fail when a shard would record a file of a report package: report code
-/// decides no verdict, so it must not stale the evidence.
-pub fn check_verdict_sources(paths: &[PathBuf], report: &[PathBuf]) -> Result<()> {
-    for path in paths {
-        if let Some(package) = report.iter().find(|package| path.starts_with(package)) {
-            return Err(format!(
-                "shard source {} belongs to the report package {}",
-                path.display(),
-                package.display()
-            )
-            .into());
-        }
-    }
-    Ok(())
-}
 
 /// What Cargo compiled for one shard: the probe image's dep-info, the
 /// dep-info of the libraries that decide the verdicts, and the manifests of
@@ -198,7 +116,8 @@ pub struct Closures {
 /// libraries by the files the executions ran (all of them on a fallback),
 /// and globally what Cargo compiled into the verdict libraries, the probe
 /// images' placement and entry code, every package manifest, the lock
-/// files, the schema, the probe compiler and the toolchain.
+/// files, the probe compiler and the toolchain. The shard format itself is a
+/// verdict library, so its files come with the verdict libraries' dep-info.
 pub fn source_paths(
     closures: &Closures,
     probe_manifest: &Path,
@@ -221,7 +140,6 @@ pub fn source_paths(
     global.extend(closures.tool.iter().cloned());
     global.extend(closures.manifests.iter().cloned());
     global.extend(PROBE_COMPILER.map(PathBuf::from));
-    global.push(PathBuf::from(SCHEMA_SOURCES));
     global.push(PathBuf::from(TOOLCHAIN));
     global.push(PathBuf::from(TOOL_MANIFEST).with_file_name(LOCK_FILE));
     global.push(probe_manifest.to_path_buf());
@@ -243,9 +161,9 @@ pub fn source_paths(
 
 /// The shard of `scenario`'s claims against the probe image at
 /// `production`: the sources are the image package's path closure, the
-/// verdict libraries named by their dep-info files `verdict`, and the
-/// shared schema. Report packages the scenario package reaches are left
-/// out, and a source inside one is an error.
+/// verdict libraries named by their dep-info files `verdict`. Report
+/// packages the scenario package reaches are left out, and a source inside
+/// one is an error ([`policy::check_verdict_sources`]).
 pub fn shard(
     scenario: &str,
     production: &Path,
@@ -257,7 +175,7 @@ pub fn shard(
     if verdict.is_empty() {
         return Err(VERDICT_DEP_INFO_REQUIRED.into());
     }
-    let root = observation::root()?;
+    let root = oer_process::built_root();
     let target = crate::chip().name;
     let package = production
         .file_name()
@@ -269,8 +187,9 @@ pub fn shard(
                 production.display()
             )
         })?;
-    let probe_closure = path_closure(&root, probes.manifest, package, Some(probes.target))?;
-    let tool_closure = path_closure(&root, TOOL_MANIFEST, tool_package, None)?;
+    let model = oer_repo::Model::load(&oer_repo::Repo::load(&root)?)?;
+    let probe_closure = path_closure(&model, probes.manifest, package, Some(probes.target))?;
+    let tool_closure = path_closure(&model, TOOL_MANIFEST, tool_package, None)?;
     let manifests = probe_closure
         .directories
         .iter()
@@ -298,17 +217,17 @@ pub fn shard(
         .into_iter()
         .chain(tool_closure.report)
         .collect();
-    check_verdict_sources(&paths, &report)?;
+    policy::check_verdict_sources(&paths, &report)?;
     let sources = paths
         .into_iter()
         .map(|path| {
-            Ok(evidence_index::SourceDigest {
-                sha256: evidence_index::digest_source(&root, &path)?,
+            Ok(oer_vendor_evidence::SourceDigest {
+                sha256: oer_vendor_evidence::digest_source(&root, &path)?,
                 path,
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let line = |(path, line): (PathBuf, u32)| evidence_index::SourceLine { path, line };
+    let line = |(path, line): (PathBuf, u32)| oer_vendor_evidence::SourceLine { path, line };
     let mut observation = observation::Sources::default();
     let (_, unobserved) =
         observation.classify(&root, crate::chip().observation, &claims.lines.unobserved())?;
@@ -330,17 +249,17 @@ pub fn shard(
         .collect();
     let decisions = PathBuf::from(crate::chip().coverage);
     let index = Index {
-        schema: evidence_index::SCHEMA,
-        command: evidence_index::COMMAND.into(),
+        schema: oer_vendor_evidence::SCHEMA,
+        command: oer_vendor_evidence::BLOBRAY.into(),
         target: target.into(),
         scenario: scenario.into(),
         inputs: claims.inputs.clone(),
         sources,
-        dependence: evidence_index::Dependence {
+        dependence: oer_vendor_evidence::Dependence {
             read_data: dependencies.read_data.clone(),
             fallback: dependencies.fallback.clone(),
-            coverage_decisions: Some(evidence_index::DecisionDigest {
-                sha256: evidence_index::CoverageDecisions::read(&root, &decisions)?
+            coverage_decisions: Some(oer_vendor_evidence::DecisionDigest {
+                sha256: oer_vendor_evidence::CoverageDecisions::read(&root, &decisions)?
                     .applicable_digest(&functions),
                 path: decisions,
             }),
@@ -354,7 +273,7 @@ pub fn shard(
         observed: claims.lines.observed.iter().cloned().map(line).collect(),
         unprojected: state::ranges(&unprojected)
             .into_iter()
-            .map(|(symbol, offset, length)| evidence_index::StateRange {
+            .map(|(symbol, offset, length)| oer_vendor_evidence::StateRange {
                 symbol,
                 offset,
                 length,
@@ -365,17 +284,10 @@ pub fn shard(
     Ok(index)
 }
 
-/// Write `index` as its scenario's shard of the index at `directory`.
-pub fn write(directory: &Path, index: &Index) -> Result<()> {
-    std::fs::create_dir_all(directory)?;
-    let path = directory.join(format!(
-        "{}.{}",
-        index.scenario,
-        evidence_index::SHARD_EXTENSION
-    ));
-    let mut bytes = serde_json::to_vec_pretty(index)?;
-    bytes.push(b'\n');
-    std::fs::write(&path, bytes)?;
+/// Write `index` into the index at `directory` through the one shard
+/// writer, and name the file.
+pub fn record(directory: &Path, index: &Index) -> Result<()> {
+    let path = oer_vendor_evidence::store::write(directory, index)?;
     println!("evidence shard {}", path.display());
     Ok(())
 }
@@ -467,16 +379,6 @@ mod source_tests {
         assert!(shard.contains(Path::new(
             "verification/chip/probes/radio/library/src/i2c.rs"
         )));
-    }
-
-    #[test]
-    fn a_report_package_file_cannot_be_a_shard_source() {
-        let report = [PathBuf::from("verification/harness/report")];
-        let verdict = [PathBuf::from("verification/harness/scenarios/src/shard.rs")];
-        assert!(check_verdict_sources(&verdict, &report).is_ok());
-        let leaked = [PathBuf::from("verification/harness/report/src/triage.rs")];
-        let error = check_verdict_sources(&leaked, &report).unwrap_err();
-        assert!(error.to_string().contains("report package"));
     }
 
     #[test]

@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use oer_hil_evidence::run::{Comparison, Measurement, MeasurementUnit};
+use oer_hil_run_bundle::run::{Comparison, Measurement, MeasurementUnit};
 
 /// Each hart's bound in bytes, by hart; `None` for a hart the analysis left
 /// `partial + ?` (a diagnostic image), which no observation can be held to.
@@ -92,9 +92,11 @@ pub(crate) fn bounds(elf: &Path) -> Result<Bounds, String> {
     cache
         .entry(elf.to_owned())
         .or_insert_with(|| {
-            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-            let stacks = oer_hil_image::stack::interrupt_stacks(&root, elf)
-                .map_err(|error| format!("interrupt-stack bound of {}: {error}", elf.display()))?;
+            let stacks =
+                oer_image::interrupt_stack::interrupt_stacks(&oer_process::built_root(), elf)
+                    .map_err(|error| {
+                        format!("interrupt-stack bound of {}: {error}", elf.display())
+                    })?;
             stacks
                 .harts
                 .iter()
@@ -107,7 +109,7 @@ pub(crate) fn bounds(elf: &Path) -> Result<Bounds, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_hil_evidence::run::MeasurementVerdict;
+    use oer_hil_run_bundle::run::MeasurementVerdict;
 
     fn bytes(name: &str, value: u64) -> Measurement {
         Measurement::observed(name, value, MeasurementUnit::Bytes)

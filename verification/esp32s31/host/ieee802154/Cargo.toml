@@ -45,6 +45,9 @@ path = "src/main.rs"
 oer-esp32s31-hal = { path = "../../../../crates/hardware/esp32s31/hal" }
 oer-espressif-ieee802154-engine = { path = "../../../../crates/hardware/espressif/ieee802154/engine" }
 oer-ieee802154 = { path = "../../../../crates/protocols/ieee802154" }
+oer-durable = { path = "../../../../tools/durable" }
+oer-vendor-artifacts = { path = "../../../../tools/vendor-artifacts" }
+oer-vendor-evidence = { path = "../../../evidence" }
 
 [features]
 # Build the vendor driver and the port with multi-PAN and two interfaces.
@@ -55,8 +58,7 @@ sw-coex = []
 
 [build-dependencies]
 cc = "=1.4.3"
-sha2 = "=0.10.9"
-toml = "=1.1.4"
+oer-vendor-artifacts = { path = "../../../../tools/vendor-artifacts" }
 
 [lints]
 workspace = true
@@ -65,3 +67,4 @@ workspace = true
 layer = "verification"
 evidence = "verdict"
 platform = "host"
+host-layer = "verification"

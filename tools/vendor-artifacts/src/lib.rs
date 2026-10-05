@@ -8,15 +8,18 @@
 //! outputs are only verified. Downloads use `curl` and release members `tar`.
 //!
 //! Pinned artifacts are immutable and verified, so every checkout of the host
-//! shares one store (`$OER_VENDOR_CACHE`, default
-//! `~/.cache/open-esp-radio/vendor`): each checkout's `target/vendor` is a link
+//! shares one store ([`store`]): each checkout's `target/vendor` is a link
 //! to it, and a new checkout or worktree finds everything another one fetched.
 //! A checkout's former `target/vendor` directory is merged into the store.
 //!
 //! `cargo xtask vendor-fetch` and the vendor checks read the pins here, and
 //! so does the HIL stand's pinned ESP-IDF build (`oer-hil-cli`).
-use sha2::{Digest, Sha256};
+//! [`project::Project`] names the fixed files of a chip's verification
+//! project (its shards, provenance registry and scenarios).
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
+
+pub mod project;
 use std::process::Command;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -28,11 +31,13 @@ const VERIFICATION: &str = "verification";
 /// the host-wide store.
 pub const CACHE: &str = "target/vendor";
 /// Overrides the host-wide store of fetched artifacts.
-pub const STORE_ENV: &str = oer_esp32s31_firmware::interrupt_stack::VENDOR_STORE_ENV;
+pub const STORE_ENV: &str = "OER_VENDOR_CACHE";
 
-/// The host-wide store of fetched artifacts, as the image builders resolve it.
+/// The host-wide store of fetched artifacts, which every checkout, source
+/// snapshot and image build shares: `$OER_VENDOR_CACHE`, else
+/// `open-esp-radio/vendor` in the user's cache directory.
 pub fn store() -> Result<PathBuf> {
-    oer_esp32s31_firmware::interrupt_stack::vendor_store()
+    oer_durable::xdg::overridable(STORE_ENV, oer_durable::xdg::Base::Cache, "vendor")
 }
 
 /// Makes `root`'s `target/vendor` a link to `store`, merging a former
@@ -95,103 +100,150 @@ pub fn manifest_path(root: &Path, chip: &str) -> Result<String> {
     Ok(manifest)
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum Kind {
+/// The kind of a pinned source.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SourceKind {
+    /// A file at `path` of a git revision.
     Git,
+    /// A member `path` of a release asset tarball.
     Release,
+    /// A local build output at `path` below the repository root.
     Local,
 }
 
-#[derive(Debug)]
-struct Source {
-    id: String,
-    kind: Kind,
-    repository: Option<String>,
-    revision: Option<String>,
-    asset: Option<String>,
-    sha256: Option<String>,
+/// One pinned source of `artifacts.toml`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Source {
+    pub id: String,
+    pub kind: SourceKind,
+    pub repository: Option<String>,
+    pub revision: Option<String>,
+    pub asset: Option<String>,
+    pub sha256: Option<String>,
 }
 
-#[derive(Debug)]
-struct Artifact {
-    id: String,
-    source: String,
-    path: String,
-    sha256: String,
+/// One pinned artifact of `artifacts.toml`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Artifact {
+    pub id: String,
+    /// The id of its source.
+    pub source: String,
+    /// Its path in the source: in the git tree, the release tarball or,
+    /// for a local build, below the repository root.
+    pub path: String,
+    pub sha256: String,
 }
 
-fn string(table: &toml::Table, key: &str) -> Option<String> {
-    table.get(key).and_then(|v| v.as_str()).map(str::to_owned)
+/// A chip's `artifacts.toml`: the one reader of the pins.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Manifest {
+    pub schema: u32,
+    pub source: Vec<Source>,
+    pub artifact: Vec<Artifact>,
 }
 
-fn required(table: &toml::Table, key: &str, what: &str) -> Result<String> {
-    string(table, key).ok_or_else(|| format!("{what} lacks `{key}`").into())
-}
-
-fn parse(text: &str) -> Result<(Vec<Source>, Vec<Artifact>)> {
-    let table: toml::Table = toml::from_str(text)?;
-    if table.get("schema").and_then(|v| v.as_integer()) != Some(1) {
-        return Err("unsupported artifact manifest schema".into());
-    }
-    let entries = |key: &str| -> Result<Vec<toml::Table>> {
-        table
-            .get(key)
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| format!("manifest lacks `{key}`"))?
-            .iter()
-            .map(|v| {
-                v.as_table()
-                    .cloned()
-                    .ok_or_else(|| format!("`{key}` entry is not a table").into())
-            })
-            .collect()
-    };
-    let mut sources = vec![];
-    for entry in entries("source")? {
-        let id = required(&entry, "id", "source")?;
-        let kind = match required(&entry, "kind", &id)?.as_str() {
-            "git" => Kind::Git,
-            "release" => Kind::Release,
-            "local" => Kind::Local,
-            other => return Err(format!("{id}: unknown source kind {other}").into()),
-        };
-        sources.push(Source {
-            repository: string(&entry, "repository"),
-            revision: string(&entry, "revision"),
-            asset: string(&entry, "asset"),
-            sha256: string(&entry, "sha256"),
-            id,
-            kind,
-        });
-    }
-    let mut artifacts = vec![];
-    for entry in entries("artifact")? {
-        let id = required(&entry, "id", "artifact")?;
-        let artifact = Artifact {
-            source: required(&entry, "source", &id)?,
-            path: required(&entry, "path", &id)?,
-            sha256: required(&entry, "sha256", &id)?,
-            id,
-        };
-        if !sources.iter().any(|s| s.id == artifact.source) {
-            return Err(format!("{}: unknown source {}", artifact.id, artifact.source).into());
+impl Manifest {
+    /// Parses a manifest and checks that every artifact names a declared
+    /// source.
+    pub fn parse(text: &str) -> Result<Self> {
+        let manifest: Self = toml::from_str(text)?;
+        if manifest.schema != 1 {
+            return Err(format!("unsupported artifact schema {}", manifest.schema).into());
         }
-        artifacts.push(artifact);
+        for artifact in &manifest.artifact {
+            if !manifest.source.iter().any(|s| s.id == artifact.source) {
+                return Err(format!("{}: unknown source {}", artifact.id, artifact.source).into());
+            }
+        }
+        Ok(manifest)
     }
-    Ok((sources, artifacts))
+
+    /// The tracked manifest of `chip` in the repository at `root`.
+    pub fn load(root: &Path, chip: &str) -> Result<Self> {
+        let manifest = manifest_path(root, chip)?;
+        Self::parse(&std::fs::read_to_string(root.join(&manifest))?)
+            .map_err(|error| format!("{manifest}: {error}").into())
+    }
+
+    /// The artifact `id`.
+    pub fn artifact(&self, id: &str) -> Result<&Artifact> {
+        self.artifact
+            .iter()
+            .find(|artifact| artifact.id == id)
+            .ok_or_else(|| format!("artifacts.toml pins no `{id}` artifact").into())
+    }
+
+    /// The source `id`.
+    pub fn source(&self, id: &str) -> Result<&Source> {
+        self.source
+            .iter()
+            .find(|source| source.id == id)
+            .ok_or_else(|| format!("artifacts.toml pins no `{id}` source").into())
+    }
+
+    /// Where the fetched `source` lies for the checkout at `root`:
+    /// `<root>/target/vendor/<source>/<revision>`.
+    pub fn source_directory(&self, root: &Path, source: &Source) -> Result<PathBuf> {
+        cache_directory(&root.join(CACHE), source)
+    }
+
+    /// The source `artifact` names; [`Manifest::parse`] checked it exists.
+    pub fn source_of(&self, artifact: &Artifact) -> &Source {
+        self.source
+            .iter()
+            .find(|source| source.id == artifact.source)
+            .expect("parsed manifests name declared sources")
+    }
+
+    /// Where `artifact` lies for the checkout at `root`: its build output
+    /// for a local source, else `<root>/target/vendor/<source>/<revision>/<path>`.
+    pub fn location(&self, root: &Path, artifact: &Artifact) -> Result<PathBuf> {
+        let source = self.source_of(artifact);
+        Ok(match source.kind {
+            SourceKind::Local => root.join(&artifact.path),
+            SourceKind::Git | SourceKind::Release => {
+                self.source_directory(root, source)?.join(&artifact.path)
+            }
+        })
+    }
 }
 
-/// The SHA-256 of the file at `path`, as lowercase hex.
-pub fn sha256(path: &Path) -> Result<String> {
-    let bytes = std::fs::read(path)?;
-    Ok(Sha256::digest(&bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect())
+/// The verified file of the fetched artifact `id` of `chip` in the
+/// host-wide [`store`]: an error naming `cargo xtask vendor-fetch` when it is
+/// missing, and naming the pin when it differs.
+pub fn fetched(root: &Path, chip: &str, id: &str) -> Result<PathBuf> {
+    let manifest = Manifest::load(root, chip)?;
+    let artifact = manifest.artifact(id)?;
+    let source = manifest.source_of(artifact);
+    if source.kind == SourceKind::Local {
+        return Err(format!("`{id}` is a local build, not a fetched artifact").into());
+    }
+    let path = cache_directory(&store()?, source)?.join(&artifact.path);
+    if !path.is_file() {
+        return Err(format!(
+            "the pinned `{id}` artifact {} is missing: run `cargo xtask vendor-fetch {chip} --artifact {id}`",
+            path.display()
+        )
+        .into());
+    }
+    if !verified(&path, &artifact.sha256)? {
+        return Err(format!(
+            "{} differs from its pin {}",
+            path.display(),
+            artifact.sha256
+        )
+        .into());
+    }
+    Ok(path)
 }
 
-fn verified(path: &Path, expected: &str) -> Result<bool> {
-    Ok(path.is_file() && sha256(path)? == expected)
+/// Whether `path` is a file whose SHA-256 is `expected`.
+pub fn verified(path: &Path, expected: &str) -> Result<bool> {
+    Ok(path.is_file() && oer_durable::sha256_file(path)? == expected)
 }
 
 /// A local build's state against its pin.
@@ -245,16 +297,18 @@ fn download(url: &str, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cache_directory(root: &Path, source: &Source) -> Result<PathBuf> {
+/// `<base>/<source>/<revision>`, where `base` is a store or a checkout's
+/// `target/vendor`.
+fn cache_directory(base: &Path, source: &Source) -> Result<PathBuf> {
     let revision = source
         .revision
         .as_deref()
         .ok_or_else(|| format!("{} lacks `revision`", source.id))?;
-    Ok(root.join(CACHE).join(&source.id).join(revision))
+    Ok(base.join(&source.id).join(revision))
 }
 
 fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
-    let directory = cache_directory(root, source)?;
+    let directory = cache_directory(&root.join(CACHE), source)?;
     let destination = directory.join(&artifact.path);
     if verified(&destination, &artifact.sha256)? {
         return Ok(destination);
@@ -265,7 +319,7 @@ fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
         .ok_or_else(|| format!("{} lacks `repository`", source.id))?;
     let revision = source.revision.as_deref().unwrap_or_default();
     match source.kind {
-        Kind::Git => download(
+        SourceKind::Git => download(
             &format!(
                 "https://raw.githubusercontent.com/{}/{revision}/{}",
                 github(repository)?,
@@ -273,7 +327,7 @@ fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
             ),
             &destination,
         )?,
-        Kind::Release => {
+        SourceKind::Release => {
             let asset = source
                 .asset
                 .as_deref()
@@ -288,7 +342,7 @@ fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
                     &format!("{repository}/releases/download/{revision}/{asset}"),
                     &tarball,
                 )?;
-                let actual = sha256(&tarball)?;
+                let actual = oer_durable::sha256_file(&tarball)?;
                 if actual != expected {
                     return Err(format!("{asset}: sha256 {actual}, pinned {expected}").into());
                 }
@@ -304,9 +358,9 @@ fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
                 return Err(format!("{asset} lacks member {}", artifact.path).into());
             }
         }
-        Kind::Local => unreachable!("local artifacts are not fetched"),
+        SourceKind::Local => unreachable!("local artifacts are not fetched"),
     }
-    let actual = sha256(&destination)?;
+    let actual = oer_durable::sha256_file(&destination)?;
     if actual != artifact.sha256 {
         return Err(format!(
             "{}: fetched sha256 {actual}, pinned {}",
@@ -346,15 +400,11 @@ pub fn pinned(root: &Path, chip: &str) -> Result<Vec<Pinned>> {
 /// leaving local builds alone; fails when one cannot be fetched as pinned.
 pub fn fetch_vendor_sources(root: &Path, chip: &str) -> Result<()> {
     link_store(root, &store()?)?;
-    let manifest = manifest_path(root, chip)?;
-    let (sources, artifacts) = parse(&std::fs::read_to_string(root.join(manifest))?)?;
+    let manifest = Manifest::load(root, chip)?;
     let mut failures = vec![];
-    for artifact in &artifacts {
-        let source = sources
-            .iter()
-            .find(|s| s.id == artifact.source)
-            .expect("parsed sources");
-        if source.kind == Kind::Local {
+    for artifact in &manifest.artifact {
+        let source = manifest.source_of(artifact);
+        if source.kind == SourceKind::Local {
             continue;
         }
         if let Err(error) = fetch(root, source, artifact) {
@@ -384,27 +434,17 @@ struct Resolved {
 }
 
 fn resolve(root: &Path, chip: &str) -> Result<Resolved> {
-    let manifest = manifest_path(root, chip)?;
-    resolve_manifest(root, &std::fs::read_to_string(root.join(manifest))?)
+    resolve_manifest(root, &Manifest::load(root, chip)?)
 }
 
-fn resolve_manifest(root: &Path, manifest: &str) -> Result<Resolved> {
-    let (sources, artifacts) = parse(manifest)?;
+fn resolve_manifest(root: &Path, manifest: &Manifest) -> Result<Resolved> {
     let mut resolved = Resolved {
         pinned: vec![],
         unfetched: vec![],
     };
-    for artifact in artifacts {
-        let source = sources
-            .iter()
-            .find(|s| s.id == artifact.source)
-            .expect("parsed sources");
-        let local = source.kind == Kind::Local;
-        let path = if local {
-            root.join(&artifact.path)
-        } else {
-            cache_directory(root, source)?.join(&artifact.path)
-        };
+    for artifact in manifest.artifact.iter().cloned() {
+        let local = manifest.source_of(&artifact).kind == SourceKind::Local;
+        let path = manifest.location(root, &artifact)?;
         if !verified(&path, &artifact.sha256)? {
             if !local {
                 resolved.unfetched.push(artifact.id);
@@ -433,11 +473,13 @@ pub struct GitPin {
 
 /// Every pinned git source of `chip`.
 pub fn git_pins(root: &Path, chip: &str) -> Result<Vec<GitPin>> {
-    let manifest = manifest_path(root, chip)?;
-    let (sources, artifacts) = parse(&std::fs::read_to_string(root.join(manifest))?)?;
-    sources
+    let Manifest {
+        source, artifact, ..
+    } = Manifest::load(root, chip)?;
+    let artifacts = artifact;
+    source
         .into_iter()
-        .filter(|s| s.kind == Kind::Git)
+        .filter(|s| s.kind == SourceKind::Git)
         .map(|source| {
             Ok(GitPin {
                 artifacts: artifacts
@@ -461,16 +503,12 @@ pub fn git_pins(root: &Path, chip: &str) -> Result<Vec<GitPin>> {
 /// missing or differ. Fails when any artifact is not available as pinned.
 pub fn run(root: &Path, chip: &str, only: &[String]) -> Result<()> {
     link_store(root, &store()?)?;
-    let manifest = manifest_path(root, chip)?;
-    let (sources, artifacts) = parse(&std::fs::read_to_string(root.join(manifest))?)?;
-    let artifacts = selected(artifacts, only)?;
+    let manifest = Manifest::load(root, chip)?;
+    let artifacts = selected(manifest.artifact.clone(), only)?;
     let mut failures = vec![];
     for artifact in &artifacts {
-        let source = sources
-            .iter()
-            .find(|s| s.id == artifact.source)
-            .expect("parsed sources");
-        let result = if source.kind == Kind::Local {
+        let source = manifest.source_of(artifact);
+        let result = if source.kind == SourceKind::Local {
             let path = root.join(&artifact.path);
             match local_build(&path, &artifact.sha256)? {
                 LocalBuild::Pinned => Ok(path),
@@ -532,7 +570,7 @@ mod tests {
         assert_eq!(local_build(&path, &pin).unwrap(), LocalBuild::Absent);
         std::fs::write(&path, b"built").unwrap();
         assert_eq!(local_build(&path, &pin).unwrap(), LocalBuild::Differs);
-        let actual = sha256(&path).unwrap();
+        let actual = oer_durable::sha256_file(&path).unwrap();
         assert_eq!(local_build(&path, &actual).unwrap(), LocalBuild::Pinned);
     }
 
@@ -558,12 +596,10 @@ mod tests {
     fn tracked_manifests_parse_with_complete_sources() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         for chip in ["esp32s31", "esp32c5"] {
-            let text =
-                std::fs::read_to_string(root.join(manifest_path(&root, chip).unwrap())).unwrap();
-            let (sources, artifacts) = parse(&text).unwrap();
-            assert!(artifacts.iter().any(|a| a.id == "libphy"), "{chip}");
-            for source in &sources {
-                if source.kind != Kind::Local {
+            let manifest = Manifest::load(&root, chip).unwrap();
+            assert!(manifest.artifact("libphy").is_ok(), "{chip}");
+            for source in &manifest.source {
+                if source.kind != SourceKind::Local {
                     github(source.repository.as_deref().unwrap()).unwrap();
                     assert!(source.revision.is_some());
                 }
@@ -572,12 +608,31 @@ mod tests {
     }
 
     #[test]
+    fn the_rom_pin_resolves_into_the_vendor_store() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        match fetched(&root, "esp32s31", "rom") {
+            Ok(path) => assert!(path.ends_with("esp32s31_rev0_rom.elf")),
+            // A host without the vendor store names the fetch command.
+            Err(error) => assert!(
+                error
+                    .to_string()
+                    .contains("vendor-fetch esp32s31 --artifact rom"),
+                "{error}"
+            ),
+        }
+        let error = fetched(&root, "esp32s31", "absent").unwrap_err();
+        assert!(error.to_string().contains("pins no `absent` artifact"));
+    }
+
+    #[test]
     fn artifacts_must_name_declared_sources() {
-        let error = parse(
+        let error = Manifest::parse(
             "schema = 1\nsource = []\n[[artifact]]\nid = \"a\"\nsource = \"b\"\npath = \"c\"\nsha256 = \"d\"\n",
         )
         .unwrap_err();
         assert!(error.to_string().contains("unknown source"));
+        assert!(Manifest::parse("schema = 2\nsource = []\nartifact = []\n").is_err());
+        assert!(Manifest::parse("schema = 1\nsource = []\nartifact = []\nextra = 1\n").is_err());
     }
 
     #[test]
@@ -594,7 +649,13 @@ mod tests {
              [[artifact]]\nid = \"fetched\"\nsource = \"vendor\"\npath = \"lib.a\"\nsha256 = \"{}\"\n\
              [[artifact]]\nid = \"missing\"\nsource = \"vendor\"\npath = \"other.a\"\nsha256 = \"00\"\n\
              [[artifact]]\nid = \"unbuilt\"\nsource = \"build\"\npath = \"out.elf\"\nsha256 = \"00\"\n",
-            sha256(&cached).unwrap()
+            oer_durable::sha256_file(&cached).unwrap()
+        );
+        let manifest = Manifest::parse(&manifest).unwrap();
+        let unbuilt = manifest.artifact("unbuilt").unwrap();
+        assert_eq!(
+            manifest.location(root.path(), unbuilt).unwrap(),
+            root.path().join("out.elf")
         );
         let resolved = resolve_manifest(root.path(), &manifest).unwrap();
         assert_eq!(resolved.unfetched, ["missing"]);

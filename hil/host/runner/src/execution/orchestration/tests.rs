@@ -277,18 +277,18 @@ fn single_scenario_preserves_its_original_preflight_prepare_event_order() {
 
 #[test]
 fn cleanup_is_written_before_attachment_indexing_and_preserves_partial_output() {
-    oer_hil_execution::fixture::cleanup::reset_for_test();
+    oer_hil_workload::fixture::cleanup::reset_for_test();
     let output = tempfile::tempdir().unwrap();
     fs::write(output.path().join("partial.json"), b"{\"seen\":true}\n").unwrap();
-    let cleanup = oer_hil_execution::fixture::cleanup::Scope::new(output.path());
-    oer_hil_execution::fixture::cleanup::record("restore fixture", || {
+    let cleanup = oer_hil_workload::fixture::cleanup::Scope::new(output.path());
+    oer_hil_workload::fixture::cleanup::record("restore fixture", || {
         Err("injected cleanup error".into())
     });
     let started = std::time::Instant::now();
     let result = finalize_repetition(
         1,
         Path::new("scenarios/test/repetition-001"),
-        &oer_hil_stand::usb_events::UsbWatch::start([], 1),
+        &oer_hil_lab::usb_events::UsbWatch::start([], 1),
         output.path(),
         1,
         started,
@@ -311,8 +311,8 @@ fn cleanup_is_written_before_attachment_indexing_and_preserves_partial_output() 
         .collect::<BTreeSet<_>>();
     assert!(names.contains("cleanup.json"));
     assert!(names.contains("partial.json"));
-    assert!(oer_hil_execution::fixture::cleanup::require_healthy().is_err());
-    oer_hil_execution::fixture::cleanup::reset_for_test();
+    assert!(oer_hil_workload::fixture::cleanup::require_healthy().is_err());
+    oer_hil_workload::fixture::cleanup::reset_for_test();
 }
 
 #[test]
@@ -432,7 +432,7 @@ fn a_failed_reflash_after_yielding_blocks_only_the_next_scenario() {
 
 #[test]
 fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
-    use oer_hil_stand::lock::{BAND_2G4, Emits, Need, Spectrum};
+    use oer_hil_lab::lock::{BAND_2G4, Emits, Need, Spectrum};
     let catalog = catalog();
     let lab = LabConfig::for_test();
     let lease_request = |selected: &[&Scenario]| lease_request(&lab, selected);
@@ -444,50 +444,41 @@ fn a_series_yields_and_an_air_measurement_claims_its_ranges_strictly() {
     let mut measured = first.clone();
     measured.header.tags.push(AIR_EXCLUSIVE_TAG.to_owned());
     let air = lease_request(&[&measured, second]).air;
-    for (low, high) in first.family.air_ranges(&lab, first.plan().wifi) {
-        assert!(air.contains(&Spectrum::new((low, high), Need::Strict, Emits::Noisy)));
+    for range in air_use(&lab, first) {
+        assert!(air.contains(&Spectrum::new(
+            (range.low_khz, range.high_khz),
+            Need::Strict,
+            Emits::Noisy
+        )));
     }
-    // Scenario ranges follow the family: 802.15.4 its channel, a radio-free
-    // image none, Wi-Fi the 2.4 GHz band.
-    let find = |predicate: &dyn Fn(&Scenario) -> bool| {
+    // Scenario ranges follow the family through the registry: 802.15.4 its
+    // channel, a radio-free image none, Wi-Fi its link's channel.
+    let find = |key: &str, predicate: &dyn Fn(&serde_json::Value) -> bool| {
         catalog
             .all()
             .iter()
-            .find(|scenario| predicate(scenario))
+            .find(|scenario| scenario.family.key() == key && predicate(&scenario.family.table()))
             .expect("the catalog has such a scenario")
     };
-    let peer = find(&|scenario| {
-        matches!(
-            &scenario.family,
-            crate::scenario::Family::Ieee802154(
-                hil_ieee802154::scenario::Ieee802154Scenario::PeerExchange(_)
-            )
-        )
-    });
-    let crate::scenario::Family::Ieee802154(
-        hil_ieee802154::scenario::Ieee802154Scenario::PeerExchange(exchange),
-    ) = &peer.family
-    else {
-        unreachable!()
-    };
-    let channel = Spectrum::ieee802154(exchange.channel, Need::None, Emits::None);
-    assert_eq!(
-        peer.family.air_ranges(&lab, peer.plan().wifi),
-        [(channel.low_khz, channel.high_khz)]
-    );
-    let watchdog = find(&|scenario| {
-        matches!(
-            scenario.family,
-            crate::scenario::Family::System(hil_system::scenario::SystemScenario::Watchdog {})
-        )
-    });
+    let peer = find("ieee802154", &|table| table["kind"] == "peer-exchange");
+    let channel = u8::try_from(peer.family.table()["channel"].as_u64().unwrap()).unwrap();
+    let expected = Spectrum::ieee802154(channel, Need::Tolerant, Emits::Normal);
+    assert_eq!(air_use(&lab, peer), [expected]);
+    let watchdog = find("system", &|table| table["kind"] == "watchdog");
     assert!(lease_request(&[watchdog]).air.is_empty());
-    let wifi = find(&|scenario| matches!(scenario.family, crate::scenario::Family::Wifi(_)));
-    let [(low, high)] = wifi.family.air_ranges(&lab, wifi.plan().wifi)[..] else {
+    let wifi = find("wifi", &|_| true);
+    let [range] = air_use(&lab, wifi)[..] else {
         panic!("a Wi-Fi scenario occupies one range");
     };
+    let (low, high) = (range.low_khz, range.high_khz);
     assert_eq!((low, high), lab.wifi_range_khz(wifi.plan().wifi));
     assert!(BAND_2G4.0 <= low && high <= BAND_2G4.1 + 1_000 && high - low <= 42_000);
+    let bluetooth = find("bluetooth", &|_| true);
+    // Need and emission follow the scenario's air tags; the range is the band.
+    let [range] = air_use(&lab, bluetooth)[..] else {
+        panic!("a Bluetooth scenario occupies one range");
+    };
+    assert_eq!((range.low_khz, range.high_khz), BAND_2G4);
 }
 
 #[test]

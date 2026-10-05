@@ -3,6 +3,16 @@
 version = 4
 
 [[package]]
+name = "addr2line"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e567177890eb1617b1f774005b66b26b2377afd138a2ca37aae7d8f0c81429d4"
+dependencies = [
+ "gimli",
+ "rustc-demangle",
+]
+
+[[package]]
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -811,6 +821,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gimli"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1033caf0b349c518623b5396bfb2cf0bddf44f0306d543a250e5743297aafd10"
+dependencies = [
+ "stable_deref_trait",
+]
+
+[[package]]
 name = "group"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -998,6 +1017,15 @@ name = "oer-bluetooth-hci"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
+]
+
+[[package]]
+name = "oer-elf"
+version = "0.1.0"
+dependencies = [
+ "addr2line",
+ "gimli",
+ "object",
 ]
 
 [[package]]
@@ -1203,6 +1231,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-phy-relation"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-phy",
+]
+
+[[package]]
 name = "oer-esp32s31-probe-bluetooth"
 version = "0.1.0"
 dependencies = [
@@ -1236,6 +1271,7 @@ dependencies = [
  "oer-esp32s31-ieee80211-runtime",
  "oer-esp32s31-pac",
  "oer-esp32s31-phy",
+ "oer-esp32s31-phy-relation",
  "oer-esp32s31-radio-esp-hal",
  "oer-ieee80211-mac",
  "oer-ieee80211-softmac",
@@ -1529,7 +1565,7 @@ dependencies = [
 name = "oer-probe-codegen"
 version = "0.1.0"
 dependencies = [
- "object",
+ "oer-elf",
  "proc-macro2",
  "quote",
  "serde",
@@ -1746,6 +1782,12 @@ name = "riscv-target-parser"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1376b15f3ff160e9b1e8ea564ce427f2f6fcf77528cc0a8bf405cb476f9cea7"
+
+[[package]]
+name = "rustc-demangle"
+version = "0.1.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b74b56ffa8bb2830709a538c2cbcae9aa062db0d2a42563bfb09bdaae44020eb"
 
 [[package]]
 name = "rustversion"

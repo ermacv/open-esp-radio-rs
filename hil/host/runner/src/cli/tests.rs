@@ -135,8 +135,8 @@ fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
         cli.command,
         CliCommand::Fixture {
             command: FixtureCommand::BluetoothCheck {
-                adapter: hil_bluetooth::fixture::bluetooth::model::Adapter(2),
-                dtm_version: hil_bluetooth::fixture::bluetooth::model::DtmVersion::V2,
+                adapter: oer_hil_family_bluetooth::fixture::bluetooth::model::Adapter(2),
+                dtm_version: oer_hil_family_bluetooth::fixture::bluetooth::model::DtmVersion::V2,
             }
         }
     ));
@@ -157,7 +157,7 @@ fn bluetooth_dtm_v1_requires_explicit_selection() {
         Cli::try_parse_from(args).unwrap().command,
         CliCommand::Fixture {
             command: FixtureCommand::BluetoothCheck {
-                dtm_version: hil_bluetooth::fixture::bluetooth::model::DtmVersion::V2,
+                dtm_version: oer_hil_family_bluetooth::fixture::bluetooth::model::DtmVersion::V2,
                 ..
             }
         }
@@ -168,7 +168,7 @@ fn bluetooth_dtm_v1_requires_explicit_selection() {
             .command,
         CliCommand::Fixture {
             command: FixtureCommand::BluetoothCheck {
-                dtm_version: hil_bluetooth::fixture::bluetooth::model::DtmVersion::V1,
+                dtm_version: oer_hil_family_bluetooth::fixture::bluetooth::model::DtmVersion::V1,
                 ..
             }
         }
@@ -289,4 +289,15 @@ fn run_all_selects_by_role() {
     };
     assert_eq!(role.as_deref(), Some("qualification"));
     assert!(Cli::try_parse_from(["cargo-hil", "run-all", "--role", "triage"]).is_err());
+}
+
+#[test]
+fn the_image_command_offers_only_what_it_has() {
+    use clap::CommandFactory as _;
+    let command = Cli::command();
+    let image = command.find_subcommand("image").unwrap();
+    let names: Vec<_> = image.get_subcommands().map(|sub| sub.get_name()).collect();
+    assert!(!names.contains(&"flash"));
+    let about = image.get_about().unwrap().to_string();
+    assert!(!about.contains("flash"), "{about}");
 }

@@ -1,9 +1,9 @@
 //! PHY archive policy over compiled symbols. ELF is read natively; LLVM
 //! bitcode members use the llvm-nm shipped with the active Rust toolchain.
 
-use crate::{Context, Result};
-use object::{Object, ObjectSymbol, SymbolKind};
+use crate::Result;
 use oer_process as process;
+use oer_process::Checkout;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +16,7 @@ struct Symbols {
     undefined: BTreeSet<String>,
 }
 
-pub(super) fn audit_phy(ctx: &Context, path: &Path) -> Result<()> {
+pub(super) fn audit_phy(ctx: &Checkout, path: &Path) -> Result<()> {
     let bytes = std::fs::read(path)
         .map_err(|error| format!("cannot read PHY archive {}: {error}", path.display()))?;
     let symbols = archive_symbols(ctx, &bytes)?;
@@ -25,21 +25,15 @@ pub(super) fn audit_phy(ctx: &Context, path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn archive_symbols(ctx: &Context, bytes: &[u8]) -> Result<Symbols> {
-    let archive = object::read::archive::ArchiveFile::parse(bytes)?;
-    if archive.is_thin() {
-        return Err(
-            "PHY archive must contain its own members; thin archives are unsupported".into(),
-        );
-    }
+fn archive_symbols(ctx: &Checkout, bytes: &[u8]) -> Result<Symbols> {
+    let members = oer_elf::members(bytes)
+        .map_err(|error| format!("PHY archive must contain its own members: {error}"))?;
     let mut symbols = Symbols::default();
     let mut code_members = 0;
     let mut llvm_nm = None;
     let temporary = tempfile::tempdir()?;
-    for (index, member) in archive.members().enumerate() {
-        let member = member?;
-        let name = std::str::from_utf8(member.name())?;
-        let data = member.data(bytes)?;
+    for (index, (name, data)) in members.iter().enumerate() {
+        let (name, data) = (name.as_str(), *data);
         let metadata = matches!(name, "lib.rmeta" | "lib.rmeta-link");
         if data.starts_with(b"\x7fELF") {
             elf_symbols(data, &mut symbols, !metadata)
@@ -47,7 +41,7 @@ fn archive_symbols(ctx: &Context, bytes: &[u8]) -> Result<Symbols> {
         } else if is_bitcode(data) {
             let tool = match &llvm_nm {
                 Some(tool) => tool,
-                None => llvm_nm.insert(matched_llvm_nm(ctx)?),
+                None => llvm_nm.insert(matched_llvm_nm()?),
             };
             // Never interpret archive names as extraction paths.
             let input = temporary.path().join(format!("member-{index}.bc"));
@@ -71,27 +65,27 @@ fn archive_symbols(ctx: &Context, bytes: &[u8]) -> Result<Symbols> {
 }
 
 fn elf_symbols(bytes: &[u8], symbols: &mut Symbols, require_table: bool) -> Result<()> {
-    let file = object::File::parse(bytes)?;
-    if file.kind() != object::ObjectKind::Relocatable {
+    let file = oer_elf::Elf::parse(bytes)?;
+    if !file.is_relocatable() {
         return Err("expected a relocatable ELF archive member".into());
     }
-    if require_table && file.symbol_table().is_none() {
+    if require_table && !file.has_symbol_table() {
         return Err(
             "compiled ELF member has no symbol table; external references cannot be audited".into(),
         );
     }
     for symbol in file.symbols() {
-        if matches!(symbol.kind(), SymbolKind::File | SymbolKind::Section) {
+        if matches!(
+            symbol.kind,
+            oer_elf::SymbolKind::File | oer_elf::SymbolKind::Section
+        ) || symbol.name.is_empty()
+        {
             continue;
         }
-        let name = symbol.name()?;
-        if name.is_empty() {
-            continue;
-        }
-        if symbol.is_undefined() {
-            symbols.undefined.insert(name.to_owned());
+        if symbol.defined {
+            symbols.defined.insert(symbol.name.to_owned());
         } else {
-            symbols.defined.insert(name.to_owned());
+            symbols.undefined.insert(symbol.name.to_owned());
         }
     }
     Ok(())
@@ -102,39 +96,13 @@ fn is_bitcode(bytes: &[u8]) -> bool {
     bytes.starts_with(b"BC\xc0\xde") || bytes.starts_with(&[0xde, 0xc0, 0x17, 0x0b])
 }
 
-fn matched_llvm_nm(ctx: &Context) -> Result<PathBuf> {
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let sysroot = process::capture(ctx.command(&rustc).args(["--print", "sysroot"]))?;
-    let sysroot = String::from_utf8(sysroot.stdout)?;
-    let version = process::capture(ctx.command(&rustc).arg("-vV"))?;
-    let version = String::from_utf8(version.stdout)?;
-    let host = required_field(&version, "host: ")?;
-    let tool = Path::new(sysroot.trim())
-        .join("lib/rustlib")
-        .join(host)
-        .join("bin")
-        .join(format!("llvm-nm{}", std::env::consts::EXE_SUFFIX));
-    if !tool.is_file() {
-        return Err(format!(
-            "active Rust toolchain lacks {}; install its llvm-tools-preview component to inspect LLVM bitcode (PATH llvm-nm is not a compatible substitute)",
-            tool.display()
-        ).into());
-    }
-    Ok(tool)
+/// The `llvm-nm` of the active Rust toolchain: an LLVM on `PATH` need not
+/// read the compiler's bitcode.
+fn matched_llvm_nm() -> Result<PathBuf> {
+    Ok(oer_toolchain::program(oer_toolchain::Tool::LlvmNm)?.into())
 }
 
-fn required_field<'a>(text: &'a str, prefix: &str) -> Result<&'a str> {
-    let values: Vec<_> = text
-        .lines()
-        .filter_map(|line| line.strip_prefix(prefix))
-        .collect();
-    match values.as_slice() {
-        [value] if !value.is_empty() => Ok(value),
-        _ => Err(format!("rustc -vV must identify exactly one {prefix}field").into()),
-    }
-}
-
-fn bitcode_symbols(ctx: &Context, tool: &Path, input: &Path, symbols: &mut Symbols) -> Result<()> {
+fn bitcode_symbols(ctx: &Checkout, tool: &Path, input: &Path, symbols: &mut Symbols) -> Result<()> {
     for (mode, destination) in [
         ("--defined-only", &mut symbols.defined),
         ("--undefined-only", &mut symbols.undefined),
@@ -180,7 +148,7 @@ fn check_symbols(symbols: &Symbols) -> Result<()> {
         }
     }
     for raw in symbols.undefined.difference(&symbols.defined) {
-        let demangled = format!("{:#}", rustc_demangle::demangle(raw));
+        let demangled = oer_elf::demangle(raw);
         if !allowed_external(&demangled) {
             return Err(format!(
                 "unexpected external symbol in source-only radio rlib: {demangled}"

@@ -24,30 +24,24 @@ the record to record more of its own state the same way; it returns. Every
 image then resets, and its next boot reads and clears the record with
 `panic::take_previous` and prints it.
 
-Every image of this platform, standalone or HIL, is compiled with the flags
-of one owner, [`oer-esp32s31-firmware`'s `compiler`
-module](../../tools/firmware/README.md); no `.cargo/config.toml` adds Rust
+Every image of this platform, standalone or HIL, is built by the one image
+pipeline, [`oer-image`](../../tools/image/README.md), with the compiler flags
+of `oer-toolchain`'s `image` module; no `.cargo/config.toml` adds Rust
 flags.
 
 The boot sequence is ROM → ESP-IDF bootloader → Flash bootstrap → application.
 The ROM image uses DIO at 80 MHz; ESP-IDF enables QIO for the application.
-`xtask` extracts and checks the ROM image from the installed `espflash` image
-resources, then writes it, the partition table, the audited QIO application
-and the ota_0 selector as raw flash segments through one connection, skipping
-segments whose flash contents already match; the selector goes last. It
-preserves NVS and other application partitions. Passing QIO to a single
-`espflash flash` invocation would also change the ROM image header and
-prevents this board from booting.
-`partitions/calibration-slots.csv` is a second layout with two application
-slots, `ota_0` and `ota_1` of 8 MiB each, for captures that alternate two
-firmwares by the OTA selection alone:
-`oer_esp32s31_hil_board::Staged::flash_slot` writes a firmware into a slot once,
-`select_slot` selects the slot and optionally erases `phy_init` and `nvs`,
-leaving the chip for the caller's own reset, `booted_slot` reads which slot a
-boot's console shows the bootloader loading, and `boot_slot` does both around
-its own reset. The bootstrap finds its
-payload through the flash MMU, so an application boots from either slot. A HIL
-run writes `applications.csv` again.
+The image pipeline encodes the flash contents at build time with the
+`espflash` library: the ROM-readable DIO bootloader from `espflash`'s
+bootloader resources (checked), the partition table, the audited QIO
+application and the `ota_0` selection, at the offsets of `chip.toml`'s
+`[flash]` map. A flash writes them as raw segments through one connection,
+skipping segments whose flash contents already match; the selection goes
+last. It preserves NVS and other application partitions. Encoding the
+bootloader in QIO with the application would change the ROM image header and
+prevent this board from booting.
+The bootstrap finds its payload through the flash MMU, so an application
+boots from any OTA slot.
 The runtime is linked separately. Its header supplies the entry, payload and
 initialization ranges; the host packs the checksum before embedding it in the
 bootstrap. Bootstrap copies and verifies PSRAM code before transferring control.
@@ -151,7 +145,7 @@ for the bounded SRAM scan and restores their prior enable state. It rejects
 sampling from the IRQ stack or before initialization. Measurements describe
 observed writes, not the maximum possible depth or unwritten stack reservations.
 The maximum is the image build's interrupt-stack gate: a static bound per hart
-from the image's interrupt table ([firmware tooling](../../tools/firmware/README.md)),
+from the image's interrupt table ([image pipeline](../../tools/image/README.md)),
 under the contract `layout`'s `interrupts` module states. Each HIL repetition
 holds the two to each other: its peak watermark use per hart is recorded as
 `stack.cpuN-irq.used`, evaluated at most the bound the current analyzer
@@ -165,23 +159,24 @@ From the repository root:
 ```console
 cargo xtask build firmware monitor
 cargo xtask build firmware station
-cargo xtask build firmware access-point --flash --monitor --port /dev/ttyACM0
+cargo hil flash --board <board> --monitor 30s target/firmware/esp32s31-access-point/build-<id>
 ```
 
 Select `station`, `access-point`, `monitor` or `thread`. Application
 credentials remain environment configuration of the example; HIL credentials
-remain stand file. Each successful invocation retains a separate bundle
-under `target/firmware/esp32s31-<example>/<network-or-none>/build-<id>/`:
-`application.bin`, ROM `bootloader.bin`, partition/OTA images, packed runtime,
-`runtime.elf`, `bootstrap.elf`, both resolved lockfiles and
-placement/stack reports. The build rejects invalid placement and a stack whose
+remain stand file. Each successful invocation retains a separate image bundle
+under `target/firmware/esp32s31-<example>/build-<id>/`:
+`application.bin`, ROM `bootloader.bin`, `partitions.bin`, `otadata.bin`,
+the slot partition table, packed runtime, `runtime.elf`, `bootstrap.elf`,
+both resolved lockfiles, `source-inputs.json` and placement/stack reports;
+`cargo hil flash` writes it to a stand board. The build rejects invalid placement and a stack whose
 root's call-chain bound does not fit its storage less its reserve before flash.
 A task stack's bound may be partial (the executor's task polls are indirect
 calls the analysis does not resolve); its report names every unresolved site,
 and runtime stack painting and boundary watchpoints check the exercised
 chains.
 
-The host [firmware library](../../tools/firmware/README.md) supplies packing and
-structural checks to `xtask` and HIL. HIL retains its image classification,
+The [image pipeline](../../tools/image/README.md) supplies packing,
+structural checks and encoding to `xtask` and HIL. HIL retains its image classification,
 observer placement requirements, stack budgets and sealed evidence. Source or
 image checks alone do not establish RF qualification.

@@ -1,7 +1,8 @@
 //! Network policies consume package identities, resolved features and declared edges.
 
-use crate::{Context, Result, cargo, graph::Graph};
+use crate::{Result, cargo, graph::Graph};
 use cargo_metadata::{DependencyKind, Package};
+use oer_process::Checkout;
 use std::{collections::BTreeSet, path::Path};
 
 const OWNED: &str = "oer-embassy-net-owned";
@@ -280,8 +281,8 @@ pub fn profiles() -> [Profile; 8] {
     ]
 }
 
-pub fn run(context: &Context) -> Result<()> {
-    let chip_target = super::target(&context.root)?;
+pub fn run(context: &Checkout) -> Result<()> {
+    let chip_target = oer_chip_profile::rust_target(&context.root, oer_image::staged::CHIP)?;
     for profile in profiles() {
         let manifest = context.root.join(profile.manifest);
         let flags = profile

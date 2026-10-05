@@ -7,7 +7,7 @@
 //! leaves the evidence shards current.
 use crate::coverage::Decision;
 use crate::harness::Result;
-use crate::session::evidence_index::Location;
+use oer_vendor_evidence::Location;
 use std::collections::BTreeSet;
 use std::path::Path;
 

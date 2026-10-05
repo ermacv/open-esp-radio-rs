@@ -5,12 +5,13 @@ use object::{
     SymbolScope,
     write::{Object, Relocation, Symbol, SymbolSection},
 };
+use oer_elf::{Code, Reference, Site};
 use oer_symbol_lineage::{
-    archive::{Function, Revision, read_archive},
-    body::{Body, Reference, RelocationSite},
+    archive::{Revision, read_archive},
     correspond::{Evidence, Policy, correlate},
     lineage::{NameClass, trace},
 };
+use oer_vendor_provenance::fingerprint::Function;
 
 const R_RISCV_CALL: u32 = 18;
 const RET: [u8; 2] = [0x82, 0x80];
@@ -27,17 +28,18 @@ fn function(name: &str, bytes: &[u8], callees: &[&str]) -> Function {
     let sites = callees
         .iter()
         .enumerate()
-        .map(|(index, callee)| RelocationSite {
+        .map(|(index, callee)| Site {
             offset: index * 8,
             r_type: R_RISCV_CALL,
             reference: Reference::Symbol((*callee).to_owned()),
         })
         .collect();
-    Function {
+    Function::of(&Code {
         member: "0.o".to_owned(),
-        name: name.to_owned(),
-        body: Body::new(bytes, sites),
-    }
+        name,
+        bytes,
+        sites,
+    })
 }
 
 fn revision(label: &str, functions: Vec<Function>) -> Revision {
@@ -249,8 +251,8 @@ fn archive_reader_extracts_functions_and_their_calls() {
         (function.member.as_str(), function.name.as_str()),
         ("0.o", "r_caller")
     );
-    assert_eq!(function.body.calls, ["r_callee"]);
-    assert_eq!(function.body.size, bytes.len());
+    assert_eq!(function.calls, ["r_callee"]);
+    assert_eq!(function.size, bytes.len());
 }
 
 /// A caller body with `calls` call sites, each followed by distinct filler.
@@ -302,12 +304,13 @@ fn call_lists_of_different_length_vote_inside_equal_gaps_between_anchors() {
     assert!(pairs.iter().all(|pair| pair.right != 3));
 }
 
-/// `leaf` with one byte replaced every `stride` bytes; an even stride of
-/// `2 * n` changes every `n`-th parcel.
+/// `leaf` with one byte changed every `stride` bytes. The change keeps the
+/// low two bits, so instruction lengths and boundaries stay and each edit
+/// changes one instruction token.
 fn edited(seed: u8, length: usize, stride: usize) -> Vec<u8> {
     let mut bytes = leaf(seed, length);
     for index in (0..length).step_by(stride) {
-        bytes[index] ^= 0x5a;
+        bytes[index] ^= 0x50;
     }
     bytes
 }
@@ -315,7 +318,7 @@ fn edited(seed: u8, length: usize, stride: usize) -> Vec<u8> {
 #[test]
 fn a_dominant_mutual_best_pairs_below_the_similarity_minimum() {
     let old = leaf(0x21, 64);
-    let new = edited(0x21, 64, 6);
+    let new = edited(0x21, 64, 12);
     let left = revision("left", vec![function("r_rewritten", &old, &[])]);
     let right = revision(
         "right",
@@ -343,8 +346,16 @@ fn a_close_runner_up_blocks_dominance() {
     let right = revision(
         "right",
         vec![
-            function(&tokens("Rewritten0Token0Aa1Bb2"), &edited(0x21, 64, 6), &[]),
-            function(&tokens("Rewritten1Token0Cc3Dd4"), &edited(0x21, 64, 8), &[]),
+            function(
+                &tokens("Rewritten0Token0Aa1Bb2"),
+                &edited(0x21, 64, 12),
+                &[],
+            ),
+            function(
+                &tokens("Rewritten1Token0Cc3Dd4"),
+                &edited(0x21, 64, 10),
+                &[],
+            ),
         ],
     );
     assert!(correlate(&left, &right, Policy::default()).is_empty());

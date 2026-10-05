@@ -1,26 +1,35 @@
 //! Shared firmware publication for observations and build-only records.
 use super::Recipe;
-use crate::{Artifacts, BootArtifacts, LayoutSeed, Result};
-use oer_esp32s31_firmware::network::NETWORK;
-use oer_hil_durable::atomic_json;
-use oer_hil_evidence::{
+use crate::{Artifacts, LayoutSeed, Result};
+use oer_durable::atomic_json;
+use oer_hil_image_class::ImageClass;
+use oer_hil_image_class::NETWORK;
+use oer_hil_run_bundle::{
     build::{self, BuildSubject, BuildSubjectRole},
     run::{FirmwareArchive, FirmwareArtifact, RunSession},
     verify::FirmwareRecipe as _,
 };
-use oer_hil_image_class::ImageClass;
 use std::path::{Path, PathBuf};
 
 /// Archive `artifacts` as the `image` firmware of `session` and bind it to
-/// the run. Returns the archived application, the bytes to flash.
+/// the run. Returns the bundle to flash: the build's flash files with the
+/// archived application, below the run's target directory, so the run
+/// writes exactly the bytes it archived.
 pub fn record(
     session: &mut RunSession,
     image: ImageClass,
     artifacts: &Artifacts,
-) -> Result<PathBuf> {
-    let (artifact, application) = archive(&session.firmware_archive(image)?, image, artifacts)?;
+) -> Result<oer_image::ImageBundle> {
+    let context = session.firmware_archive(image)?;
+    let flash = context
+        .target_directory
+        .join("flash")
+        .join(session.id())
+        .join(image.id());
+    let (artifact, application) = archive(&context, image, artifacts)?;
+    let bundle = artifacts.bundle.with_application(&application, &flash)?;
     session.bind_firmware(artifact)?;
-    Ok(application)
+    Ok(bundle)
 }
 
 pub(super) fn archive(
@@ -28,17 +37,15 @@ pub(super) fn archive(
     image: ImageClass,
     artifacts: &Artifacts,
 ) -> Result<(FirmwareArtifact, PathBuf)> {
+    let bundle = &artifacts.bundle;
     let selection = (
         image,
-        artifacts.layout_seed,
+        bundle.layout_seed,
         &artifacts.features,
         (
-            artifacts.chip.as_str(),
-            artifacts.rust_target.as_str(),
-            match artifacts.boot {
-                BootArtifacts::Staged { .. } => oer_chip_profile::Boot::Staged,
-                BootArtifacts::EspIdf(_) => oer_chip_profile::Boot::EspIdfBootloader,
-            },
+            bundle.chip.as_str(),
+            bundle.rust_target.as_str(),
+            bundle.boot,
         ),
     );
     let firmware_directory = PathBuf::from("firmware").join(image.id());
@@ -51,9 +58,15 @@ pub(super) fn archive(
         )?;
         Ok((path, archived))
     };
-    let (application_path, application) = archive(&artifacts.application_image, "application.bin")?;
+    let (application_path, application) = archive(&bundle.application(), "application.bin")?;
     let archived_application = context.directory.join(&application_path);
-    let (runtime_elf_path, runtime_elf) = archive(&artifacts.runtime_elf, "runtime.elf")?;
+    let (runtime_elf_path, runtime_elf) = archive(&bundle.runtime_elf(), "runtime.elf")?;
+    let embedded_lock = std::path::Path::new("hil/targets")
+        .join(&bundle.chip)
+        .join("Cargo.lock");
+    let effective_embedded_lock = bundle
+        .lock(&embedded_lock)
+        .ok_or("the bundle has no effective lock of its agent workspace")?;
     let subject = |role, (path, archived): &(PathBuf, build::ArchivedFile)| BuildSubject {
         role,
         path: path.clone(),
@@ -89,7 +102,7 @@ pub(super) fn archive(
         runtime_elf_path: Some(runtime_elf_path.clone()),
         runtime_elf_size_bytes: Some(runtime_elf.size_bytes),
         runtime_elf_sha256: runtime_elf.sha256.clone(),
-        boot: oer_hil_evidence::run::Boot::Staged,
+        boot: oer_hil_run_bundle::run::Boot::Staged,
         runtime_bin_path: None,
         runtime_bin_size_bytes: None,
         runtime_bin_sha256: None,
@@ -102,27 +115,38 @@ pub(super) fn archive(
         partition_table_path: None,
         partition_table_size_bytes: None,
         partition_table_sha256: None,
-        layout_seed: artifacts.layout_seed,
+        layout_seed: bundle.layout_seed,
     };
-    match &artifacts.boot {
-        BootArtifacts::Staged {
-            runtime_bin,
-            bootstrap_elf,
-            effective_bootstrap_lock,
-        } => {
-            let runtime_bin = archive(runtime_bin, "runtime.bin")?;
-            let bootstrap_elf = archive(bootstrap_elf, "bootstrap.elf")?;
-            lock(
-                "embedded-lock",
-                String::from("hil/targets/esp32s31/Cargo.lock"),
-                "effective-Cargo.lock",
-                &artifacts.effective_embedded_lock,
+    match bundle.boot {
+        oer_chip_profile::Boot::Staged => {
+            let runtime_bin = archive(
+                &bundle
+                    .runtime_bin()
+                    .ok_or("a staged bundle has its runtime")?,
+                "runtime.bin",
+            )?;
+            let bootstrap_elf = archive(
+                &bundle
+                    .bootstrap_elf()
+                    .ok_or("a staged bundle has its bootstrap")?,
+                "bootstrap.elf",
             )?;
             lock(
+                "embedded-lock",
+                embedded_lock.display().to_string(),
+                "effective-Cargo.lock",
+                &effective_embedded_lock,
+            )?;
+            let bootstrap_lock = std::path::Path::new("platform")
+                .join(&bundle.chip)
+                .join("Cargo.lock");
+            lock(
                 "bootstrap-lock",
-                String::from("platform/esp32s31/Cargo.lock"),
+                bootstrap_lock.display().to_string(),
                 "bootstrap-Cargo.lock",
-                effective_bootstrap_lock,
+                &bundle
+                    .lock(&bootstrap_lock)
+                    .ok_or("the bundle has no effective lock of its bootstrap")?,
             )?;
             subjects.push(subject(BuildSubjectRole::BootstrapElf, &bootstrap_elf));
             subjects.push(subject(BuildSubjectRole::RuntimeBin, &runtime_bin));
@@ -133,18 +157,18 @@ pub(super) fn archive(
             artifact.bootstrap_elf_size_bytes = Some(bootstrap_elf.1.size_bytes);
             artifact.bootstrap_elf_sha256 = Some(bootstrap_elf.1.sha256);
         }
-        BootArtifacts::EspIdf(boot) => {
-            let bootloader = archive(&boot.bootloader, "bootloader.bin")?;
-            let partition_table = archive(&boot.partition_table, "partition-table.bin")?;
+        oer_chip_profile::Boot::EspIdfBootloader => {
+            let bootloader = archive(&bundle.bootloader(), "bootloader.bin")?;
+            let partition_table = archive(&bundle.partitions(), "partition-table.bin")?;
             lock(
                 "embedded-lock",
-                format!("hil/targets/{}/Cargo.lock", artifacts.chip),
+                embedded_lock.display().to_string(),
                 "effective-Cargo.lock",
-                &artifacts.effective_embedded_lock,
+                &effective_embedded_lock,
             )?;
             subjects.push(subject(BuildSubjectRole::Bootloader, &bootloader));
             subjects.push(subject(BuildSubjectRole::PartitionTable, &partition_table));
-            artifact.boot = oer_hil_evidence::run::Boot::EspIdfBootloader;
+            artifact.boot = oer_hil_run_bundle::run::Boot::EspIdfBootloader;
             artifact.bootloader_path = Some(bootloader.0);
             artifact.bootloader_size_bytes = Some(bootloader.1.size_bytes);
             artifact.bootloader_sha256 = Some(bootloader.1.sha256);
@@ -157,9 +181,7 @@ pub(super) fn archive(
         BuildSubjectRole::RuntimeElf,
         &(runtime_elf_path, runtime_elf),
     ));
-    if let Some(inputs) = &artifacts.source_inputs {
-        archive(inputs, "source-inputs.json")?;
-    }
+    archive(&bundle.source_inputs(), "source-inputs.json")?;
     let build_id = build::build_id(&subjects);
     let build_provenance_path = firmware_directory.join("build-provenance.json");
     locks.extend(context.snapshot_materials.to_vec());

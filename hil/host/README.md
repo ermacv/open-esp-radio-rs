@@ -10,23 +10,28 @@ bundle.
 hil/
 ├── protocol/          host/target command and telemetry wire protocol
 ├── schema/            evidence contract shared with qualification
+├── observer/          the observer's build identity, content store and receipts
 ├── scenarios/         versioned, non-secret host workloads and criteria
 ├── evidence/          recorded evidence shards per chip
 ├── host/
 │   ├── cli/           stand CLI: stand commands, jobs, run store, runner launch
-│   ├── runner/        runner CLI, run orchestration and workload dispatch
-│   ├── execution/     repetition context, failure classification, cleanup evidence
-│   ├── stand/         laboratory config and locks, recovery, post-mortem
-│   ├── link/          UART session, protocol, transports, measurements, peer console
-│   ├── evidence/      run writer, seal, verification and reports
-│   ├── image/         image builder, audits and firmware records
+│   ├── runner/        runner CLI, the run core and the family registry
+│   ├── workload/      repetition context, typed results, boots, fixtures, the family contract
+│   ├── lab/           a run's laboratory config and lock, recovery, post-mortem
+│   ├── stand-host/    stand discovery, host doctor, fixture probes, the SSH helper
+│   ├── flash/         the flash operation: lease, write, journal, start
+│   ├── link/          the DUT session, generic exchange, reboots, the peer console
+│   ├── net-traffic/   network sessions, paced UDP/TCP and ICMP host traffic
+│   ├── run-bundle/    the run bundle: format, writer and seal, the one reader, run store, build provenance, verification
+│   ├── analysis/      run queries, the one measurement aggregation and comparison, performance, views
+│   ├── experiment/    the one run launch, A/B comparisons and bisection
+│   ├── image/         image class specs for the image pipeline, firmware records, compare_images
 │   ├── scenario/      scenario envelope, catalog, campaign plan and requirements
 │   ├── image-class/   image classes and the keys each serves
 │   ├── source-snapshot/ source snapshots builds and runs are made from
-│   ├── durable/       atomic host files and digests
-│   ├── board/         board support: flash, reset and boot flows per chip
-│   ├── runner-*/      one radio family's workloads and fixtures each
-│   ├── arbiter/       leases, claims, balances and the board journal
+│   ├── board/         board I/O: ports, the flash writer, starts, resets, OpenOCD, power, consoles
+│   ├── family/        one radio family's scenarios and workload each; Wi-Fi fixtures and evidence
+│   ├── arbiter/       leases, claims, balances, lock files, job tickets, the board journal
 │   ├── fixture/       finite Linux helpers and their contract
 │   ├── fixture-install/ root-executed fixture installation
 │   ├── linux-net/     privileged Linux AP/monitor fixture
@@ -101,8 +106,8 @@ cargo hil doctor
 
 The stand file is `~/.config/open-esp-radio/stand.toml` (or under
 `$XDG_CONFIG_HOME`), shared by every checkout of this user; `--stand-file`
-names another file. Its schema and rules belong to
-[`oer-hil-stand-schema`](../stand/schema/README.md). It is the only source for
+names another file. Its schema and rules, the one resolver of a board name and the paths of the
+stand's state belong to [`oer-hil-stand-model`](../stand/model/README.md). It is the only source for
 the stand's identity, its hubs and pool of boards, STA/AP credentials and
 addresses and the fixtures; it lives outside the repository, and scenarios
 contain no lab secrets or machine-specific paths. The stand id and the
@@ -132,16 +137,18 @@ peer images target (`hil/peers/*/firmware.toml`), other than the device under
 test; boards of other chips never compete for it, and `--peer-board ID` names
 it when several of that chip qualify. A run's peer images share one chip.
 A run of a peer scenario claims the peer board beside the device under test
-and the air in its one lease. Before the first scenario that
-needs an image, the runner brings the board to that image's current catalog
-build with `cargo hil firmware flash IMAGE --if-changed`, and writes the
-image, application digest and commit the board journal recorded for it into
-the scenario's `peer-image.json`, which the scenario's seal covers. Each
+and the air in its one lease, and locks both boards. Before the first
+scenario that needs an image, the runner brings the board to that image's
+current catalog build through the flash operation's catalog flash
+(`oer_hil_flash::catalog`, unless the board journal says the board carries
+it), and writes the image, application digest and commit the board journal
+recorded for it into the scenario's `peer-image.json`, which the scenario's
+seal covers. Each
 workload takes the running peer over with its `SYNC` command instead of a
 reset: a USB Serial/JTAG reset of an ESP32-C5 whose radio runs can leave it in
-ROM download. The peer drivers share one console transport,
-`oer_hil_link::peer_line`, which also records the transcript of every
-exchange.
+ROM download. The peer drivers share one console, `oer_hil_link::peer::PeerConsole`:
+it owns the whole `@` line grammar (`@READY`, `@OK`, `@ERR` and typed
+reports), and records the transcript of every exchange.
 
 ## Build and run
 
@@ -169,12 +176,16 @@ nor invalidates sealed observations.
 scenario with the owned Xarxa/Embassy network stack, the only network
 implementation; see the [implementation guide](../../docs/network-implementations.md).
 `cargo hil image build performance` and `cargo hil image build correctness`
-perform the same final stack/move, placement, source-graph and packed-image
-checks without flashing or loading private stand file. Each successful
-build emits one JSON report on stdout with class, target, profile, network,
-class-owned artifact paths and build-audit verdicts; diagnostics stay on stderr.
-An ELF or `application.bin` left beside a failed build is not a successful
-image report.
+build the class's image bundle through the one image pipeline
+([`oer-image`](../../tools/image/README.md)) with the same stack/move,
+placement and packed-image gates, encoding the bootloader, partition table
+and OTA selection at build time, without flashing or loading private stand
+file. Each successful build emits one JSON report on stdout with class, chip,
+target, profile, network, the bundle directory, its runtime ELF, application
+image and digest, its gate reports and their warnings; diagnostics stay on
+stderr. An ELF or `application.bin` left beside a failed build is not a
+successful image report. `cargo hil flash --board BOARD <bundle>` writes a
+bundle to a stand board through the flash operation ([stand](stand.md#the-flash-operation)).
 
 For an explicit source snapshot, use:
 
@@ -198,8 +209,8 @@ packages an image build reads, or inside the HIL host packages and scenarios
 unresolved files block capture with their names and the `--source-include`
 arguments that add them all, ready to paste, before content is archived. The manifest lists every archived untracked
 file with `by: source-include`, `by: image-package` or `by: hil-host`, and a run with any
-option is not noted as pending evidence; `cargo hil evidence record --run ID`
-records it. Directory selections and ignored files are not accepted.
+option is not noted as pending evidence; `cargo qualification hil-evidence
+--hil-target <chip> --run ID` records it. Directory selections and ignored files are not accepted.
 For the configured local overrides, qualify each new file with `esp-hal:`,
 `embassy:` or `xarxa:`. No symlink or submodule content is silently followed;
 such inputs require review and are rejected by this capture interface.
@@ -210,7 +221,9 @@ source and configured overrides. Subsequent capture does not overwrite an
 existing identity, and corrupt stored material is rejected. Builds with
 `--source-snapshot` validate and materialize these inputs in one of the host's
 build slots, `~/.cache/open-esp-radio/build/<chip>/source-build-<n>/`
-(`OER_BUILD_ROOT` replaces `~/.cache/open-esp-radio/build`). Every checkout
+(`OER_BUILD_ROOT` replaces `~/.cache/open-esp-radio/build`; a set
+`$XDG_CACHE_HOME` replaces `~/.cache` here and for every other stand state
+directory). Every checkout
 of the host shares the slots: a build takes a free one under an exclusive lock
 and waits while all are busy. A slot keeps each unchanged file's bytes and
 modification time, so Cargo rebuilds only the packages whose sources differ

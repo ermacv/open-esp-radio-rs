@@ -46,7 +46,7 @@ pub(crate) enum CliCommand {
         #[command(subcommand)]
         command: ScenarioCommand,
     },
-    /// Build or flash one reproducible firmware class.
+    /// Snapshot the sources of, or build, reproducible firmware classes.
     Image {
         #[command(subcommand)]
         command: ImageCommand,
@@ -264,10 +264,10 @@ pub(crate) enum FixtureCommand {
     /// Execute a bounded DTM command check and restore the Linux adapter.
     BluetoothCheck {
         #[arg(long, default_value = "hci0")]
-        adapter: hil_bluetooth::fixture::bluetooth::model::Adapter,
+        adapter: oer_hil_family_bluetooth::fixture::bluetooth::model::Adapter,
         /// v1 is an explicit diagnostic; production RF scenarios always use v2.
         #[arg(long, value_enum, default_value = "v2")]
-        dtm_version: hil_bluetooth::fixture::bluetooth::model::DtmVersion,
+        dtm_version: oer_hil_family_bluetooth::fixture::bluetooth::model::DtmVersion,
     },
     /// Build the pinned hostapd with explicit HIL coexistence policy support.
     BuildHostapd,

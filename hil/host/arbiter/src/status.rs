@@ -6,9 +6,9 @@ use serde::Serialize;
 
 use crate::{
     Arbiter, BoardEvent, LeaseRecord, balance,
-    board::{device_label, latest},
     estimate::format_duration,
     grant::signed_duration,
+    journal::{device_label, latest},
     queue,
 };
 
@@ -55,6 +55,8 @@ pub struct HolderStatus {
     pub estimate_secs: u64,
     pub balance_ms: i64,
     pub claims: String,
+    /// The `cargo hil` job the lease belongs to.
+    pub job: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -79,6 +81,8 @@ pub struct QueuedStatus {
     pub ahead: usize,
     pub expected_start_secs: u64,
     pub claims: String,
+    /// The `cargo hil` job the request belongs to.
+    pub job: Option<String>,
 }
 
 impl Arbiter {
@@ -102,7 +106,7 @@ impl Arbiter {
     }
 
     pub fn status(&self) -> crate::Result<Status> {
-        let now = crate::unix_now();
+        let now = oer_durable::unix_seconds();
         let state = self.transaction(|state| Ok(state.clone()))?;
         let mut starts = queue::expected_starts(&state, now, crate::grant::SHUTDOWN_GRACE);
         let order = |id: u64| state.queue.iter().find(|ticket| ticket.id == id);
@@ -125,16 +129,18 @@ impl Arbiter {
                     ahead: *ahead,
                     expected_start_secs: *start,
                     claims: crate::grant::describe_claims(&ticket.claims),
+                    job: ticket.job.clone(),
                 })
             })
             .collect();
         let events = self.board_events()?;
         let (flashes, startup_artifacts) = latest(&events);
-        let registered = self.devices()?;
-        let attached = crate::attached_ports();
-        let mut macs: Vec<Option<String>> = registered
+        let stand = self.stand()?;
+        let attached = oer_hil_board::ports::attached();
+        let mut macs: Vec<Option<String>> = stand
+            .board
             .iter()
-            .map(|device| Some(device.mac.clone()))
+            .filter_map(|board| board.mac().ok().map(Some))
             .chain(
                 attached
                     .iter()
@@ -157,7 +163,7 @@ impl Arbiter {
                     .find(|port| port.mac.is_some() && port.mac == mac)
                     .map(|port| port.port.clone());
                 DeviceStatus {
-                    label: device_label(mac.as_deref(), &registered),
+                    label: device_label(mac.as_deref(), Some(&stand)),
                     health: mac.as_deref().map(|mac| {
                         crate::health::of(mac, port.is_some(), &maintenance, &events, now)
                     }),
@@ -198,6 +204,7 @@ impl Arbiter {
                     balance_ms: balance::of(&state.balances, &holder.ticket.owner),
                     owner: holder.ticket.owner,
                     claims: crate::grant::describe_claims(&holder.ticket.claims),
+                    job: holder.ticket.job,
                 })
                 .collect(),
             queue,

@@ -8,7 +8,7 @@ use crate::evidence::{events, output, stop};
 use crate::gain_state::Unmet;
 use crate::harness::{
     Budget, Buffer, Input, Result, case, data_request, direct, filled, invalid, invocation,
-    named_object, named_section, selection, sha256, symbol,
+    named_object, named_section, selection, symbol,
 };
 use crate::layout::*;
 use crate::phy::image_layout;
@@ -222,7 +222,8 @@ impl I2c {
         );
         let exported = session.data("table", &request)?;
         let table = exported.bytes;
-        if exported.payload.as_str() != OBJECT_SHA || sha256(&table) != TABLE_SHA {
+        if exported.payload.as_str() != OBJECT_SHA || oer_durable::sha256_bytes(&table) != TABLE_SHA
+        {
             return Err(invalid("I2C object or table identity mismatch"));
         }
         let leaves = options.sdk.is_some();

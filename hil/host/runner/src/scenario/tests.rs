@@ -3,7 +3,7 @@ use oer_hil_image_class::ImageClass;
 use oer_hil_scenario::identity::normalize;
 
 fn catalog() -> Catalog {
-    Catalog::load(&crate::repository_root().unwrap().join("hil/scenarios")).unwrap()
+    Catalog::load(&oer_process::built_root().join("hil/scenarios")).unwrap()
 }
 
 /// Top-level fields that are not part of a scenario's procedure.
@@ -174,9 +174,7 @@ fn generated_defaults(catalog: &Catalog) -> serde_json::Value {
 #[test]
 fn the_scenario_defaults_document_is_generated_from_the_typed_families() {
     let catalog = catalog();
-    let path = crate::repository_root()
-        .unwrap()
-        .join("hil/schema/scenario-v5-defaults.json");
+    let path = oer_process::built_root().join("hil/schema/scenario-v5-defaults.json");
     let mut generated = serde_json::to_string_pretty(&generated_defaults(&catalog)).unwrap();
     generated.push('\n');
     if std::env::var_os(BLESS_DEFAULTS).is_some() {
@@ -266,7 +264,7 @@ fn selection_requirements_union_every_family() {
 
 #[test]
 fn a_scenario_is_marked_unsupported_exactly_when_no_current_image_serves_it() {
-    let root = crate::repository_root().unwrap();
+    let root = oer_process::built_root();
     let manifest: toml::Table = toml::from_str(
         &std::fs::read_to_string(root.join("hil/targets/esp32s31/agent/Cargo.toml")).unwrap(),
     )

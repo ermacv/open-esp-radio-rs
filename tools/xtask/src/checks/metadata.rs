@@ -1,18 +1,18 @@
-use crate::{Context, Result, cargo};
+use crate::{Result, cargo};
+use oer_process::Checkout;
 use std::{collections::BTreeSet, fs};
 
 mod lints;
 mod pins;
 
-/// Every Cargo workspace of the repository, by its root manifest, as
-/// `oer-tidy` discovers them from the manifests as text.
-pub fn workspaces(context: &Context) -> Result<BTreeSet<std::path::PathBuf>> {
-    let repo = oer_tidy::repo::Repo::from_git(&context.root)?;
-    let workspaces: BTreeSet<_> =
-        oer_tidy::workspaces::discover(&oer_tidy::manifest::Manifests::load(&repo)?)
-            .into_iter()
-            .map(|manifest| context.root.join(manifest))
-            .collect();
+/// Every Cargo workspace of the repository, by its root manifest, as the
+/// repository model (`oer-repo`) discovers them from the manifests as text.
+pub fn workspaces(context: &Checkout) -> Result<BTreeSet<std::path::PathBuf>> {
+    let workspaces: BTreeSet<_> = super::common::model(context)?
+        .workspaces()
+        .iter()
+        .map(|manifest| context.root.join(manifest))
+        .collect();
     if workspaces.is_empty() {
         return Err("no Cargo workspace found".into());
     }
@@ -21,13 +21,12 @@ pub fn workspaces(context: &Context) -> Result<BTreeSet<std::path::PathBuf>> {
 
 /// Brings every workspace lock in line with its manifests (`cargo xtask
 /// lock`), so a dependency or pin change updates all locks in one step.
-pub fn update_locks(context: &Context) -> Result<()> {
+pub fn update_locks(context: &Checkout) -> Result<()> {
     for manifest in workspaces(context)? {
         let lock = manifest.with_file_name("Cargo.lock");
         let before = fs::read_to_string(&lock).ok();
         oer_process::capture(
-            context
-                .cargo()
+            oer_toolchain::cargo_in(&context.root)
                 .args(["metadata", "--format-version", "1"])
                 // The one Cargo call of the repository that may go online.
                 .args(["--config", "net.offline=false"])
@@ -48,12 +47,11 @@ pub fn update_locks(context: &Context) -> Result<()> {
 /// manifests (`cargo xtask lock --check`). Offline: a dependency missing
 /// from the local cache is reported as such, and `cargo tidy fetch`
 /// downloads it.
-pub fn check_locks(context: &Context, manifests: &[std::path::PathBuf]) -> Result<()> {
+pub fn check_locks(context: &Checkout, manifests: &[std::path::PathBuf]) -> Result<()> {
     let mut stale = Vec::new();
     for manifest in manifests {
         let result = oer_process::capture(
-            context
-                .cargo()
+            oer_toolchain::cargo_in(&context.root)
                 .args(["metadata", "--format-version", "1", "--locked"])
                 .arg("--manifest-path")
                 .arg(manifest),
@@ -83,7 +81,7 @@ pub fn check_locks(context: &Context, manifests: &[std::path::PathBuf]) -> Resul
     .into())
 }
 
-pub fn run(context: &Context) -> Result<usize> {
+pub fn run(context: &Checkout) -> Result<usize> {
     let workspaces = workspaces(context)?;
     let mut islands = Vec::with_capacity(workspaces.len());
     let mut stale = Vec::new();

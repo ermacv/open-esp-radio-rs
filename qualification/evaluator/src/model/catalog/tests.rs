@@ -93,12 +93,12 @@ impl TestRoot {
         fs::write(path.join("Cargo.toml"), "[workspace]\n").unwrap();
         fs::write(
             path.join("scenarios/wifi-channel.toml"),
-            "schema = 5\nid = \"wifi-channel\"\nrole = \"qualification\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
+            "schema = 5\nid = \"wifi-channel\"\ndescription = \"wifi-channel\"\nrole = \"qualification\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
         )
         .unwrap();
         fs::write(
             path.join("scenarios/base-phy.toml"),
-            "schema = 5\nid = \"base-phy\"\nrole = \"investigation\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
+            "schema = 5\nid = \"base-phy\"\ndescription = \"base-phy\"\nrole = \"investigation\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
         )
         .unwrap();
         Self { path }

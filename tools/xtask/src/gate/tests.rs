@@ -11,46 +11,66 @@ fn package(name: &str, directory: &str, workspace: &str, host: bool, inputs: &[&
     }
 }
 
-fn tree() -> Tree {
-    Tree {
-        packages: vec![
-            package("hal", "crates/hal", "Cargo.toml", true, &[]),
-            package("hal-nested", "crates/hal/nested", "Cargo.toml", true, &[]),
-            package(
+/// A fixture checkout: root-workspace packages (one nested in another, one
+/// of a chip), a chip workspace and Blobray's, as manifests on disk.
+fn fixture() -> (tempfile::TempDir, Tree) {
+    let host = "platform = \"host\"\nhost-layer = \"build\"";
+    let files = [
+        (
+            "Cargo.toml",
+            "[workspace]\nmembers = [\"crates/hal\", \"crates/hal/nested\", \"qualification/evaluator\", \"tools/xtask\", \"crates/driver\"]\nexclude = [\"hil/targets\", \"tools/blobray\"]\n".to_owned(),
+        ),
+        ("crates/hal/Cargo.toml", manifest("hal", host, "", "")),
+        ("crates/hal/nested/Cargo.toml", manifest("hal-nested", host, "", "")),
+        (
+            "crates/driver/Cargo.toml",
+            manifest("driver", host, "", "hal-nested = { path = \"../hal/nested\" }"),
+        ),
+        (
+            "qualification/evaluator/Cargo.toml",
+            manifest(
                 "evaluator",
-                "qualification/evaluator",
-                "Cargo.toml",
-                true,
-                &["qualification", "hil/targets/**/Cargo.toml"],
+                host,
+                "inputs = [\"qualification\", \"hil/targets/**/Cargo.toml\"]",
+                "",
             ),
-            package(
-                "xtask",
-                "tools/xtask",
-                "Cargo.toml",
-                true,
-                &[".github/workflows"],
-            ),
-            package(
-                "agent",
-                "hil/targets/chip/agent",
-                "hil/targets/chip/Cargo.toml",
-                false,
-                &[],
-            ),
-            package(
-                "blobray",
-                "tools/blobray/cli",
-                "tools/blobray/Cargo.toml",
-                true,
-                &[],
-            ),
-        ],
-        workspaces: vec![
-            "Cargo.toml".into(),
-            "hil/targets/chip/Cargo.toml".into(),
-            "tools/blobray/Cargo.toml".into(),
-        ],
+        ),
+        (
+            "tools/xtask/Cargo.toml",
+            manifest("xtask", host, "inputs = [\".github/workflows\"]", ""),
+        ),
+        (
+            "hil/targets/chip/Cargo.toml",
+            "[workspace]\nmembers = [\"agent\"]\n".to_owned(),
+        ),
+        (
+            "hil/targets/chip/agent/Cargo.toml",
+            manifest("agent", "platform = \"chip\"\nchip = \"chip\"", "", ""),
+        ),
+        (
+            "tools/blobray/Cargo.toml",
+            "[workspace]\nmembers = [\"cli\"]\n".to_owned(),
+        ),
+        ("tools/blobray/cli/Cargo.toml", manifest("blobray", host, "", "")),
+    ];
+    let dir = tempfile::tempdir().unwrap();
+    for (path, text) in &files {
+        let path = dir.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
     }
+    let model = Model::load(&oer_repo::Repo::from_dir(dir.path()).unwrap()).unwrap();
+    (dir, Tree::of(model))
+}
+
+fn manifest(name: &str, platform: &str, extra: &str, dependencies: &str) -> String {
+    format!(
+        "[package]\nname = \"{name}\"\n[dependencies]\n{dependencies}\n[package.metadata.open-radio]\nlayer = \"tool\"\n{platform}\n{extra}\n"
+    )
+}
+
+fn tree() -> Tree {
+    fixture().1
 }
 
 fn run(changed: &[&str]) -> Selection {
@@ -87,11 +107,11 @@ fn the_fast_gate_tests_only_what_changed() {
     let selection = run(&["crates/hal/nested/src/lib.rs"]);
     let affected = BTreeSet::from([key("Cargo.toml", "hal-nested"), key("Cargo.toml", "driver")]);
     assert_eq!(
-        tested(Depth::Fast, &selection, &affected),
+        tested(Tier::Fast, &selection, &affected),
         BTreeSet::from([&key("Cargo.toml", "hal-nested")])
     );
     assert_eq!(
-        tested(Depth::Full, &selection, &affected),
+        tested(Tier::Full, &selection, &affected),
         affected.iter().collect()
     );
 }
@@ -161,12 +181,12 @@ fn shared_build_inputs_select_every_package_of_their_workspaces() {
             .iter()
             .filter(|(w, _)| w == "Cargo.toml")
             .count(),
-        4
+        5
     );
     assert!(selection.packages.iter().all(|(w, _)| w == "Cargo.toml"));
     assert!(selection.locks.contains("Cargo.toml"));
     let selection = run(&["rust-toolchain.toml"]);
-    assert_eq!(selection.packages.len(), 6);
+    assert_eq!(selection.packages.len(), 7);
     assert_eq!(selection.format.len(), 3);
 }
 
@@ -196,20 +216,12 @@ fn a_lock_change_checks_the_lock_and_prose_checks_only_documents() {
 }
 
 #[test]
-fn dependents_follow_every_edge_transitively() {
-    let edges = Edges::from([
-        ("a".into(), BTreeSet::new()),
-        ("b".into(), BTreeSet::from(["a".into()])),
-        ("c".into(), BTreeSet::from(["b".into()])),
-        ("d".into(), BTreeSet::new()),
-    ]);
+fn dependents_of_a_selection_stay_in_its_workspace() {
+    let (_dir, tree) = fixture();
+    let selection = run(&["crates/hal/nested/src/lib.rs"]);
     assert_eq!(
-        dependents(&edges, &BTreeSet::from(["a".into()])),
-        BTreeSet::from(["a".into(), "b".into(), "c".into()])
-    );
-    assert_eq!(
-        dependents(&edges, &BTreeSet::from(["d".into()])),
-        BTreeSet::from(["d".into()])
+        affected(&tree, &selection),
+        BTreeSet::from([key("Cargo.toml", "driver"), key("Cargo.toml", "hal-nested")])
     );
 }
 

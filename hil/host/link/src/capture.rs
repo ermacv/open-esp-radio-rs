@@ -9,10 +9,12 @@ use std::{
 };
 
 impl SerialCapture {
-    pub fn record_into(mut self, recorder: crate::measurements::CaptureRecorder) -> Self {
-        self.measurements = Some(recorder);
+    /// Report the decoded messages to `observer` when the capture persists.
+    pub fn observed_by(mut self, observer: Box<dyn CaptureObserver>) -> Self {
+        self.observer = Some(observer);
         self
     }
+
     /// Observe an already-running target. Do not clear input, toggle reset
     /// lines, upload artifacts or initialize the runtime.
     pub fn attach(port: &Path, output: &Path) -> Result<Self> {
@@ -111,7 +113,7 @@ impl SerialCapture {
             worker: Some(worker),
             output: output.to_owned(),
             persisted: false,
-            measurements: None,
+            observer: None,
             profile: None,
         })
     }
@@ -197,7 +199,7 @@ impl SerialCapture {
         } else {
             None
         };
-        if let Some(profile) = self.profile {
+        if let Some(profile) = self.profile.take() {
             // A profile is diagnostic: a drain that fails is recorded, not a
             // failure of the workload it observed.
             let drained = if active && self.check_link().is_ok() {
@@ -206,12 +208,12 @@ impl SerialCapture {
                 Err("the link ended before the profile was drained".into())
             };
             let record = match drained {
-                Ok(profile_record) => serde_json::json!({"schema": 1, "request": profile,
+                Ok(profile_record) => serde_json::json!({"schema": 1, "request": profile.request,
                     "status": profile_record.0, "samples": profile_record.1}),
-                Err(error) => serde_json::json!({"schema": 1, "request": profile,
+                Err(error) => serde_json::json!({"schema": 1, "request": profile.request,
                     "error": error.to_string()}),
             };
-            oer_hil_durable::atomic_json(&self.output.join("profile.json"), &record)?;
+            oer_durable::atomic_json(&self.output.join("profile.json"), &record)?;
         }
         self.stop_and_join();
         let uart = self.persist(target_health.as_ref(), true)?;
@@ -263,13 +265,13 @@ impl SerialCapture {
         // Return decoded observations to the repetition before fallible disk
         // writes. Even a capture storage failure must retain available values.
         let observations = self
-            .measurements
+            .observer
             .as_ref()
-            .map(|recorder| recorder.record(&state.messages, bytes.len() as u64));
+            .map(|observer| observer.observe(&state.messages, bytes.len() as u64));
         // Rewrite from memory as well: a failed raw-file write still gets a
         // final attempt to preserve every byte accepted by the serial reader.
-        oer_hil_durable::atomic_write(&self.output.join("uart.bin"), &bytes)?;
-        oer_hil_durable::atomic_write(&self.output.join("uart.log"), uart.as_bytes())?;
+        oer_durable::atomic_write(&self.output.join("uart.bin"), &bytes)?;
+        oer_durable::atomic_write(&self.output.join("uart.log"), uart.as_bytes())?;
         let mut log = Vec::new();
         for sent in &state.sent {
             serde_json::to_writer(
@@ -298,9 +300,9 @@ impl SerialCapture {
             serde_json::to_writer(&mut log, &record)?;
             log.push(b'\n');
         }
-        oer_hil_durable::atomic_write(&self.output.join("protocol.jsonl"), &log)?;
+        oer_durable::atomic_write(&self.output.join("protocol.jsonl"), &log)?;
         if let Some(observations) = observations {
-            oer_hil_durable::atomic_json(
+            oer_durable::atomic_json(
                 &self.output.join("measurements.json"),
                 &serde_json::json!({
                     "schema": 1, "finalized": finalized, "failure": state.failure,

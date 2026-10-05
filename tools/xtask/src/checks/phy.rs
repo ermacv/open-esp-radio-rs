@@ -16,8 +16,9 @@ use std::{
 use cargo_metadata::{Message, TargetKind, camino::Utf8PathBuf};
 
 use super::artifacts;
-use crate::{Context, Result, cargo};
+use crate::{Result, cargo};
 use oer_process as process;
+use oer_process::Checkout;
 
 const PHY: &str = "crates/hardware/esp32s31/phy/Cargo.toml";
 const PHY_PACKAGE: &str = "oer-esp32s31-phy";
@@ -164,9 +165,9 @@ fn phy_artifact(messages: &[u8]) -> Result<PathBuf> {
         .into_std_path_buf())
 }
 
-fn phy(ctx: &Context) -> Result<PathBuf> {
-    let target = super::target(&ctx.root)?;
-    let output = process::capture(ctx.cargo().args([
+fn phy(ctx: &Checkout) -> Result<PathBuf> {
+    let target = oer_chip_profile::rust_target(&ctx.root, oer_image::staged::CHIP)?;
+    let output = process::capture(oer_toolchain::cargo_in(&ctx.root).args([
         "build",
         "--locked",
         "-p",
@@ -194,7 +195,7 @@ fn phy(ctx: &Context) -> Result<PathBuf> {
 /// Build the PHY library for the chip target and audit its artifact and graph.
 /// Only ESP32-S31 has a production PHY library; any other chip is an error
 /// rather than a silent audit of the ESP32-S31 library.
-pub fn run(ctx: &Context, chip: &str) -> Result<()> {
+pub fn run(ctx: &Checkout, chip: &str) -> Result<()> {
     if chip != "esp32s31" {
         return Err(
             format!("chip {chip} has no production PHY library; supported: esp32s31").into(),

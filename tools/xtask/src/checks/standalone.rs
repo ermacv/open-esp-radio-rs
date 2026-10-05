@@ -1,4 +1,4 @@
-//! Extract and compile Blobray, with the RV32 crates it takes by path, without
+//! Extract and compile Blobray, with the RV32 crates, `oer-elf` and the host tool lookup it takes by path, without
 //! access to any other repository path dependency.
 
 use std::{
@@ -8,8 +8,9 @@ use std::{
     process::Command,
 };
 
-use crate::{Context, Result, paths};
+use crate::Result;
 use oer_process as process;
+use oer_process::Checkout;
 
 const WORKSPACE: &str = r#"
 
@@ -35,7 +36,7 @@ inherits = "dev"
 opt-level = 3
 "#;
 
-pub fn run(context: &Context) -> Result<()> {
+pub fn run(context: &Checkout) -> Result<()> {
     let toolchain = selected_toolchain(context, std::env::var_os("RUSTUP_TOOLCHAIN"))?;
     let scratch = tempfile::Builder::new()
         .prefix("blobray-standalone-")
@@ -52,13 +53,18 @@ pub fn run(context: &Context) -> Result<()> {
         "tools/blobray/crates/analysis",
         "tools/blobray/crates/verification",
         "tools/blobray/crates/riscv",
+        "tools/elf",
         "tools/riscv/analysis",
         "tools/riscv/decode",
         "tools/riscv/lift",
         "tools/riscv/model",
         "tools/riscv/program",
+        // `oer-riscv-decode`'s LLVM conformance test finds `llvm-objdump`
+        // through the one host tool lookup.
+        "tools/process",
+        "tools/toolchain",
     ];
-    let files = paths::source_files(context)?;
+    let files = source_files(context)?;
     for member in members {
         extract(
             &context.root.join(member),
@@ -96,7 +102,7 @@ pub fn run(context: &Context) -> Result<()> {
     Ok(())
 }
 
-fn selected_toolchain(context: &Context, caller: Option<OsString>) -> Result<OsString> {
+fn selected_toolchain(context: &Checkout, caller: Option<OsString>) -> Result<OsString> {
     if let Some(caller) = caller {
         return Ok(caller);
     }
@@ -112,8 +118,8 @@ fn selected_toolchain(context: &Context, caller: Option<OsString>) -> Result<OsS
     Ok(channel.into())
 }
 
-fn command(context: &Context, root: &Path, toolchain: &OsStr) -> Command {
-    let mut command = context.cargo();
+fn command(context: &Checkout, root: &Path, toolchain: &OsStr) -> Command {
+    let mut command = oer_toolchain::cargo_in(&context.root);
     // Discover Cargo config from the extraction, not the parent repository;
     // neither an inherited target directory nor its artifacts prove autonomy.
     command
@@ -161,6 +167,14 @@ fn require_contained_dependencies<'a>(
         }
     }
     Ok(())
+}
+
+/// The checkout's files (`oer-repo`'s inventory), as absolute paths.
+fn source_files(context: &Checkout) -> Result<Vec<std::path::PathBuf>> {
+    Ok(oer_repo::Repo::from_git(&context.root)?
+        .files()
+        .map(|file| context.root.join(file))
+        .collect())
 }
 
 #[cfg(test)]

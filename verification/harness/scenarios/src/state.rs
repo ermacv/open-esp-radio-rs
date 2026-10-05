@@ -9,7 +9,6 @@
 //! unprojected byte fails the run.
 use crate::harness::{Result, invalid};
 use blobray_domain::{ExecutionCase, ExecutionEvidence, LayoutProjection, WrittenRange};
-use object::{Object, ObjectSymbol, SymbolKind};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A reviewed decision on vendor state the scenarios write without comparing
@@ -100,21 +99,20 @@ impl Symbols {
     pub fn of(executables: &[&[u8]]) -> Result<Self> {
         let (mut ranges, mut anchors) = (BTreeMap::new(), BTreeSet::new());
         for bytes in executables {
-            let file = object::File::parse(*bytes)?;
+            let file = oer_elf::Elf::parse(bytes)?;
             for symbol in file.symbols() {
-                if !symbol.is_undefined()
-                    && let Ok(address) = u32::try_from(symbol.address())
+                if symbol.defined
+                    && let Ok(address) = u32::try_from(symbol.address)
                 {
                     anchors.insert(address);
                 }
-                if symbol.kind() != SymbolKind::Data || symbol.size() == 0 || symbol.is_undefined()
-                {
+                if symbol.kind != oer_elf::SymbolKind::Data || symbol.size == 0 || !symbol.defined {
                     continue;
                 }
-                let (Ok(address), Ok(size), Ok(name)) = (
-                    u32::try_from(symbol.address()),
-                    u32::try_from(symbol.size()),
-                    symbol.name(),
+                let (Ok(address), Ok(size), name) = (
+                    u32::try_from(symbol.address),
+                    u32::try_from(symbol.size),
+                    symbol.name,
                 ) else {
                     continue;
                 };

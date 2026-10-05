@@ -1,7 +1,8 @@
 # Versioned scenario catalog
 
 Folders identify the workload domain: system, IEEE 802.15.4, Bluetooth,
-IEEE 802.11 station/access-point/roles/monitor and radio coexistence.
+IEEE 802.11 station/access-point/roles/monitor, radio coexistence and PHY
+(the vendor-versus-production calibration cross-check).
 Scenario IDs are stable across folder moves. Tags select overlapping
 diagnostic and characterization uses; they do not assign ownership or make a
 hardware-readiness claim.
@@ -34,7 +35,7 @@ repetitions = 3                 # default 1
 tags = ["he20"]
 unsupported = "..."             # optional; see Unsupported scenarios
 
-[wifi]                          # or [bluetooth], [system], [ieee802154], [coexistence]
+[wifi]                          # or [bluetooth], [system], [ieee802154], [coexistence], [phy]
 image = "correctness"
 
 [wifi.workload]
@@ -52,6 +53,11 @@ The family owns every executable value:
 
 - `[system]`, `[ieee802154]` and `[bluetooth]` are tagged workloads whose kind
   implies the firmware image.
+- `[phy]` runs `vendor-calibration`: the pinned vendor firmware and the
+  production image alternate on the board under test at one `lifecycle`
+  point, and the comparison of `oer-esp32s31-phy-vendor-calibration` is the
+  repetition's typed result. The point implies the production image
+  (`correctness`, or `diagnostic-ieee802154-radio` at an IEEE 802.15.4 point).
 - `[coexistence]` runs the joint Wi-Fi/Bluetooth LE image: the Linux adapter
   connects to the GATT application, then the host offers station UDP while an
   ATT echo load runs over the Bluetooth connection for the same interval. It
@@ -124,10 +130,12 @@ Both the runner and the independent qualification evaluator discover regular
 TOML files recursively. The filename stem must equal the document ID. IDs are
 unique throughout the catalog. README.md is the only ignored documentation
 filename. Symlinks (including a symlink catalog root), special files, other
-file extensions and an empty catalog are rejected. The readers never follow
-directory links outside the catalog. Each independently checks its required
-schema, repetition bounds and the single family table; only the runner
-interprets executable workload and acceptance fields.
+file extensions and an empty catalog are rejected. One discovery,
+`oer_hil_scenario::catalog::documents`, never follows directory links outside
+the catalog and checks every header (schema, id, repetition bounds) and the
+single family table for both readers; only the runner interprets executable
+workload and acceptance fields, and the qualification evaluator keeps each
+document as a value.
 
 The runner sorts by scenario ID.
 `run-all` first traverses `ImageClass::ALL`, then the selected
@@ -136,7 +144,7 @@ physical execution order. Each TOML document owns its image features,
 workload criteria and repetition count.
 
 Synthetic serialized compatibility inputs live in `hil/tests/fixtures/catalog`.
-They are used by both independent readers and are not part of this catalog.
+Both readers' tests use them; they are not part of this catalog.
 
 ### BSS protection
 

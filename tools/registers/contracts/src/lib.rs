@@ -1,5 +1,6 @@
 //! Reviewed identities, applicability and evidence classification; no execution authority.
 #![forbid(unsafe_code)]
+pub mod bindings;
 mod fact;
 mod identity;
 pub use fact::{

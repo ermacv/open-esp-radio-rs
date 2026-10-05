@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::scenario::Scenario;
-use oer_hil_evidence::run::{Failure, FailureKind, Outcome};
+use oer_hil_run_bundle::run::{Failure, FailureKind, Outcome};
 
 pub(crate) mod doctor;
 pub(crate) mod firmware;
@@ -13,11 +13,11 @@ pub(crate) mod orchestration;
 pub(crate) mod preflight;
 #[cfg(test)]
 mod tests;
-pub(crate) use oer_hil_execution::failure::classify;
+pub(crate) use oer_hil_workload::failure::classify;
 
 #[derive(Default)]
 pub(crate) struct ExecutionEvidence {
-    pub(crate) measurements: Vec<oer_hil_evidence::run::Measurement>,
+    pub(crate) measurements: Vec<oer_hil_run_bundle::run::Measurement>,
     pub(crate) failure: Option<Failure>,
     pub(crate) interrupted: bool,
     /// The stand quarantined the board after this repetition.
@@ -41,16 +41,27 @@ impl ExecutionEvidence {
 }
 
 pub(crate) fn execute_workload(
-    lab: &oer_hil_stand::config::LabConfig,
+    lab: &oer_hil_lab::config::LabConfig,
     selected: &Scenario,
     output: &Path,
-    fixture: &hil_wifi::fixture::prepared::Prepared,
+    fixtures: &oer_hil_workload::fixture::Fixtures,
+    images: Option<&dyn oer_hil_workload::context::BoardImages>,
 ) -> ExecutionEvidence {
     // The board's MAC outlives its port name, which a reset can change.
-    let mac = oer_hil_stand::post_mortem::board_mac(&lab.dut.serial);
-    let context = oer_hil_execution::context::Context::new(lab, selected.plan().settings, output)
-        .with_profile(selected.header.profile);
-    let result = selected.family.run(output, &context, fixture);
+    let mac = lab.dut.mac.as_str();
+    let context = oer_hil_workload::context::Context::new(lab, selected.plan().settings, output)
+        .with_profile(selected.header.profile)
+        .with_images(images);
+    let result = selected.family.run(output, &context, fixtures);
+    // The workload's typed observations, whatever its outcome.
+    let result = match (result, context.finish()) {
+        (Ok(()), written) => written,
+        (Err(error), Ok(())) => Err(error),
+        (Err(error), Err(written)) => {
+            eprintln!("hil: cannot write the repetition's observations: {written}");
+            Err(error)
+        }
+    };
     let elf = runtime_elf(output, selected.image().id());
     // A failure may be the target ending: ask it how, without resetting it;
     // a target that does not answer climbs the recovery ladder.
@@ -59,51 +70,42 @@ pub(crate) fn execute_workload(
         .err()
         .is_some_and(|error| !oer_process::is_cancelled(&**error));
     let mut post_mortem = failed
-        .then(|| {
-            oer_hil_stand::post_mortem::inspect(
-                &lab.dut.serial,
-                mac.as_deref(),
-                output,
-                elf.as_deref(),
-            )
-        })
+        .then(|| oer_hil_lab::post_mortem::inspect(&lab.dut.serial, mac, output, elf.as_deref()))
         .flatten();
     // A target that does not answer is read through its JTAG before any
     // reset erases where it stopped.
     if failed && post_mortem.is_none() {
-        oer_hil_stand::post_mortem::jtag_snapshot_through_stand_openocd(
+        oer_hil_lab::post_mortem::jtag_snapshot_through_stand_openocd(
             lab.chip(),
-            mac.as_deref(),
+            mac,
             output,
             elf.as_deref(),
         );
     }
     let recovery = (failed && post_mortem.is_none())
         .then(|| {
-            let origin = output
-                .ancestors()
-                .find(|directory| directory.join("manifest.json").is_file())
-                .and_then(|run| run.file_name())
-                .map_or_else(String::new, |run| run.to_string_lossy().into_owned());
-            oer_hil_stand::recovery::recover(
-                &lab.dut.serial,
-                mac.as_deref(),
-                output,
-                elf.as_deref(),
-                &origin,
-            )
+            let origin = oer_hil_run_bundle::store::run_of(output).unwrap_or_default();
+            match lab.dut_board() {
+                Ok(board) => {
+                    oer_hil_lab::recovery::recover(&board, output, elf.as_deref(), &origin)
+                }
+                Err(error) => {
+                    eprintln!("hil: the board {mac} cannot be recovered: {error}");
+                    None
+                }
+            }
         })
         .flatten();
-    if let Some(oer_hil_stand::recovery::Recovery::Recovered { finding, .. }) = &recovery {
+    if let Some(oer_hil_lab::recovery::Recovery::Recovered { finding, .. }) = &recovery {
         post_mortem = Some((**finding).clone());
     }
-    if let Some(oer_hil_stand::recovery::Recovery::BootedSilent { .. }) = &recovery {
-        oer_hil_stand::recovery::mark_image_silent(selected.image().id());
+    if let Some(oer_hil_lab::recovery::Recovery::BootedSilent { .. }) = &recovery {
+        oer_hil_lab::recovery::mark_image_silent(selected.image().id());
     }
     let mut evidence = ExecutionEvidence {
         quarantined: recovery
             .as_ref()
-            .is_some_and(oer_hil_stand::recovery::Recovery::quarantined),
+            .is_some_and(oer_hil_lab::recovery::Recovery::quarantined),
         measurements: context.measurements.snapshot(),
         interrupted: result
             .as_ref()
@@ -113,7 +115,7 @@ pub(crate) fn execute_workload(
     };
     check_interrupt_stacks(lab.chip(), elf.as_deref(), &mut evidence);
     if let Some(finding) = post_mortem {
-        let _ = oer_hil_durable::atomic_json(
+        let _ = oer_durable::atomic_json(
             &output.join("post-mortem/post-mortem.json"),
             &serde_json::json!({
                 "schema": 1,
@@ -163,7 +165,7 @@ fn check_interrupt_stacks(chip: &str, elf: Option<&Path>, evidence: &mut Executi
             let exceeded: Vec<String> = measurements
                 .iter()
                 .filter(|measurement| {
-                    measurement.verdict == Some(oer_hil_evidence::run::MeasurementVerdict::Failed)
+                    measurement.verdict == Some(oer_hil_run_bundle::run::MeasurementVerdict::Failed)
                 })
                 .map(|measurement| {
                     format!(

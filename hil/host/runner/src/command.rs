@@ -8,15 +8,16 @@ use crate::scenario::{Catalog, requirements};
 use crate::{
     Result, cli::Cli, cli::CliCommand, cli::ImageCommand, cli::ReportCommand, cli::ScenarioCommand,
     emit_json, execution::firmware::RunFirmware, execution::orchestration, fixture,
-    repository_root,
 };
-use oer_hil_execution::output;
 use oer_hil_image as image;
+use oer_hil_lab as lab;
 use oer_hil_scenario::SCENARIO_SCHEMA;
-use oer_hil_stand as lab;
+use oer_hil_scenario::ScenarioFamily as _;
+use oer_hil_workload::family::Registry as _;
+use oer_hil_workload::output;
 
 pub(crate) fn run() -> Result<()> {
-    let root = repository_root()?;
+    let root = oer_process::built_root();
     let invocation = env::args_os().collect::<Vec<_>>();
     let cli = Cli::parse();
     output::reserve_machine_stdout()?;
@@ -32,7 +33,7 @@ pub(crate) fn run() -> Result<()> {
         } => return fixture::install::run(&root, provider, dry_run, &adapter),
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::BuildHostapd,
-        } => return fixture::hostapd::build(&root),
+        } => return oer_hil_family_ieee80211_fixture::hostapd::build(&root),
         command => command,
     };
     let lab_path = cli
@@ -56,10 +57,10 @@ pub(crate) fn run() -> Result<()> {
                     dtm_version,
                 },
         } => {
-            let _software = oer_hil_stand::software::SoftwareLease::acquire_one(
+            let _software = oer_hil_lab::software::SoftwareLease::acquire_one(
                 oer_hil_fixture_install::Provider::LinuxBluetooth,
             )?;
-            hil_bluetooth::fixture::bluetooth::check(&root, adapter, dtm_version)
+            oer_hil_family_bluetooth::fixture::bluetooth::check(&root, adapter, dtm_version)
         }
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::Check { scenario: id, chip },
@@ -79,7 +80,7 @@ pub(crate) fn run() -> Result<()> {
             let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?
                 .with_peer_images(&peer_images(selected.iter().copied()))?;
             let required = requirements(&selected);
-            let _software = oer_hil_stand::software::SoftwareLease::acquire_for(&lab, required)?;
+            let _software = oer_hil_lab::software::SoftwareLease::acquire_for(&lab, required)?;
             crate::execution::doctor::run(&root, &lab, &selected)
         }
         CliCommand::Plan { selection, proofs } => {
@@ -88,7 +89,7 @@ pub(crate) fn run() -> Result<()> {
             let plan = oer_hil_scenario::campaign::Plan::create_for_checks(
                 &catalog,
                 &selected,
-                image::NETWORK,
+                oer_hil_image_class::NETWORK,
                 &proofs,
             )?;
             emit_json(&plan, true)
@@ -166,7 +167,7 @@ pub(crate) fn run() -> Result<()> {
                             &oer_hil_image_class::FeatureDelta::default(),
                         )?,
                     };
-                    emit_json(&image::artifact_report(class, &artifacts, false)?, true)?;
+                    emit_json(&image::artifact_report(class, &artifacts)?, true)?;
                 }
                 Ok(())
             }
@@ -175,7 +176,7 @@ pub(crate) fn run() -> Result<()> {
             command: ReportCommand::Verify { run_id, chip },
         } => {
             emit_json(
-                &oer_hil_evidence::verify::verify(
+                &oer_hil_run_bundle::verify::verify(
                     &root,
                     chip.as_deref(),
                     run_id.as_deref(),
@@ -214,7 +215,7 @@ pub(crate) fn run() -> Result<()> {
             // An image with other features is not its class's image: only an
             // experiment, whose runs never qualify, may build one.
             if features.as_ref().is_some_and(|delta| !delta.is_empty())
-                && oer_hil_evidence::experiment::Experiment::from_environment()?.is_none()
+                && oer_hil_run_bundle::experiment::Experiment::from_environment()?.is_none()
             {
                 return Err(
                     "--features builds an experiment's image; use `cargo hil ab` with a \
@@ -262,14 +263,14 @@ pub(crate) fn run() -> Result<()> {
                         layout_seed,
                         &features.clone().unwrap_or_default(),
                     )?;
-                    emit_json(&image::artifact_report(class, &artifacts, false)?, true)?;
+                    emit_json(&image::artifact_report(class, &artifacts)?, true)?;
                 }
                 return Ok(());
             }
             let firmware = match firmware_from {
                 Some(run_id) => {
                     let class = orchestration::single_image_class(&selected)?;
-                    RunFirmware::Replay(Box::new(oer_hil_evidence::verify::archived_firmware(
+                    RunFirmware::Replay(Box::new(oer_hil_run_bundle::verify::archived_firmware(
                         &root,
                         &chip,
                         &run_id,
@@ -286,7 +287,9 @@ pub(crate) fn run() -> Result<()> {
             let lab = lab::config::LabConfig::load(&lab_path, &chip, &choice)?
                 .with_peer_images(&peer_images(selected.iter().copied()))?;
             let required = requirements(&selected);
-            hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
+            for provider in crate::scenario::Families::FIXTURES {
+                provider.admit(&lab, required)?;
+            }
             let invocation = orchestration::Invocation {
                 arguments: invocation,
                 snapshot,
@@ -332,7 +335,9 @@ pub(crate) fn run() -> Result<()> {
                 &image::source_snapshot_store()?,
             )?;
             let required = requirements(&selected);
-            hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
+            for provider in crate::scenario::Families::FIXTURES {
+                provider.admit(&lab, required)?;
+            }
             // Orchestration builds the images, then leases the stand and
             // the fixture software.
             orchestration::run_all(

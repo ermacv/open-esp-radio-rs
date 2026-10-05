@@ -9,9 +9,8 @@ use blobray_domain::{
     ExecutionTarget, ImageManifest, LayoutProjection, LinkRequest, ReviewedCallBoundary,
 };
 use blobray_linker::ElfLinker;
-use evidence_index::LocationKind;
-use object::{Object, ObjectSection, ObjectSymbol};
 use oer_riscv_model::{ArtifactId, CallAbi, ErrorCode, ObjectId, SymbolId, SymbolTableKind};
+use oer_vendor_evidence::LocationKind;
 use std::{
     collections::BTreeMap,
     fs,
@@ -47,8 +46,8 @@ struct Claimed<'a> {
 /// Evidence entries of one scenario and its untriaged uncovered locations.
 #[derive(Default)]
 pub struct Claims {
-    pub entries: Vec<evidence_index::Entry>,
-    pub untriaged: std::collections::BTreeSet<evidence_index::Location>,
+    pub entries: Vec<oer_vendor_evidence::Entry>,
+    pub untriaged: std::collections::BTreeSet<oer_vendor_evidence::Location>,
     /// Closure and uncovered locations of every claim.
     pub closures: Vec<crate::coverage::Closure>,
     /// Production PHY lines the claims' executions executed and observed.
@@ -81,9 +80,6 @@ pub struct ComparedCase {
     pub production: u32,
     pub verdict: Option<blobray_domain::ComparisonVerdict>,
 }
-
-#[path = "../../../schema/scenario-evidence.rs"]
-pub mod evidence_index;
 
 /// Authenticated inputs, their inventory and the probe catalog.
 pub struct Session {
@@ -266,7 +262,7 @@ impl Session {
                     "applicability": contract.applicability,
                     "reason": contract.reason,
                 });
-                return Ok(crate::harness::sha256(&serde_json::to_vec(&reviewed)?));
+                return Ok(oer_durable::sha256_bytes(&serde_json::to_vec(&reviewed)?));
             }
         }
         Err(invalid(format!(
@@ -288,7 +284,7 @@ impl Session {
                     "applicability": projection.applicability,
                     "reason": projection.reason,
                 });
-                return Ok(crate::harness::sha256(&serde_json::to_vec(&reviewed)?));
+                return Ok(oer_durable::sha256_bytes(&serde_json::to_vec(&reviewed)?));
             }
         }
         Err(invalid(format!(
@@ -622,7 +618,7 @@ impl Session {
         decisions: &[crate::coverage::Decision],
         observed: &mut crate::coverage::Observed,
         lines: &mut ClaimLines,
-    ) -> Result<evidence_index::Entry> {
+    ) -> Result<oer_vendor_evidence::Entry> {
         let Claimed {
             source,
             symbol,
@@ -809,7 +805,7 @@ impl Session {
                 .filter(|l| !consequential.contains(l))
                 .collect(),
         );
-        let count = |c: &blobray_domain::CoverageCount| evidence_index::Count {
+        let count = |c: &blobray_domain::CoverageCount| oer_vendor_evidence::Count {
             reached: c.reached,
             total: c.total,
         };
@@ -817,7 +813,7 @@ impl Session {
             .iter()
             .filter(|l| matches!(l.kind, LocationKind::Followed | LocationKind::Unresolved))
             .count() as u64;
-        let coverage = evidence_index::Coverage {
+        let coverage = oer_vendor_evidence::Coverage {
             blocks: count(&root.blocks),
             directions: count(&root.directions),
             open,
@@ -887,7 +883,7 @@ impl Session {
         let compared = written.len() - unprojected.len();
         let (reviewed_state, untriaged_state) =
             crate::state::classify(crate::chip().state, (symbol, entry), &unprojected);
-        let state = evidence_index::State {
+        let state = oer_vendor_evidence::State {
             written: written.len() as u64,
             compared: compared as u64,
             reviewed: reviewed_state.len() as u64,
@@ -904,19 +900,19 @@ impl Session {
             crate::chip().observation,
             &claim_lines.unobserved(),
         )?;
-        let observation = evidence_index::Observation {
+        let observation = oer_vendor_evidence::Observation {
             executed: claim_lines.executed.len() as u64,
             observed: claim_lines.observed.len() as u64,
             reviewed: reviewed.len() as u64,
             untriaged: untriaged.len() as u64,
         };
         lines.lines.extend(&claim_lines);
-        Ok(evidence_index::Entry {
+        Ok(oer_vendor_evidence::Entry {
             suite: suite.into(),
             source: source.into(),
             symbol: symbol.into(),
             production: entry.into(),
-            verdict: evidence_index::MATCH.into(),
+            verdict: oer_vendor_evidence::MATCH.into(),
             cases,
             reviews: reviews.into_iter().collect(),
             coverage: Some(coverage),
@@ -934,17 +930,14 @@ impl Session {
     /// name: several for a name that static functions share.
     fn image_functions(&self) -> Result<BTreeMap<String, Vec<u32>>> {
         let elf = fs::read(self.run.join("image").join(IMAGE_ELF))?;
-        let file = object::File::parse(&*elf)?;
+        let file = oer_elf::Elf::parse(&elf)?;
         let mut functions = BTreeMap::<String, Vec<u32>>::new();
         for symbol in file.symbols() {
-            if symbol.kind() == object::SymbolKind::Text
-                && symbol.size() > 0
-                && let Ok(name) = symbol.name()
-            {
+            if symbol.kind == oer_elf::SymbolKind::Text && symbol.size > 0 && symbol.defined {
                 functions
-                    .entry(name.to_owned())
+                    .entry(symbol.name.to_owned())
                     .or_default()
-                    .push(u32::try_from(symbol.address())?);
+                    .push(u32::try_from(symbol.address)?);
             }
         }
         Ok(functions)
@@ -972,7 +965,7 @@ impl Session {
         for line in crate::mutant::report(&self.patches, &executed) {
             println!("{suite} {line}");
         }
-        let root = crate::observation::root()?;
+        let root = oer_process::built_root();
         let dependencies =
             crate::dependencies::of(self.inputs[PROBE_INPUT].bytes(), &executed, &reads, &root)?;
         let mut lines = ClaimLines {
@@ -1134,7 +1127,7 @@ impl Session {
             .map(Executable::bytes)
             .collect();
         let registers = crate::registers::Registers::load(
-            &crate::observation::root()?.join(crate::chip().registers),
+            &oer_process::built_root().join(crate::chip().registers),
         )?;
         let symbols = crate::discovery::Symbols::of(&elfs, registers);
         Ok(crate::discovery::discover(
@@ -1201,23 +1194,20 @@ pub fn start_run(output: &Path) -> Result<PathBuf> {
 /// the complete defined-symbol listing next to the evidence.
 pub fn image_symbol(elf: &Path, listing: &Path, name: &str) -> Result<(u32, u64)> {
     let bytes = fs::read(elf)?;
-    let file = object::File::parse(&*bytes)?;
+    let file = oer_elf::Elf::parse(&bytes)?;
     let mut lines = String::new();
     let mut matches = vec![];
-    for symbol in file.symbols().filter(|s| !s.is_undefined()) {
-        let Ok(symbol_name) = symbol.name() else {
-            continue;
-        };
+    for symbol in file.symbols().filter(|s| s.defined) {
+        let symbol_name = symbol.name;
         if symbol_name.is_empty() {
             continue;
         }
         lines.push_str(&format!(
             "{symbol_name} {:x} {:x}\n",
-            symbol.address(),
-            symbol.size()
+            symbol.address, symbol.size
         ));
         if symbol_name == name {
-            matches.push((u32::try_from(symbol.address())?, symbol.size()));
+            matches.push((u32::try_from(symbol.address)?, symbol.size));
         }
     }
     fs::write(listing, lines)?;
@@ -1234,21 +1224,20 @@ pub fn image_symbol(elf: &Path, listing: &Path, name: &str) -> Result<(u32, u64)
 /// ELF whose payload is `object`.
 pub fn image_symbol_id(elf: &Path, object: &ObjectId, name: &str) -> Result<SymbolId> {
     let bytes = fs::read(elf)?;
-    let file = object::File::parse(&*bytes)?;
+    let file = oer_elf::Elf::parse(&bytes)?;
     let table = file
-        .sections()
-        .find(|s| s.name() == Ok(".symtab"))
+        .section_by_name(".symtab")
         .ok_or_else(|| invalid("image has no static symbol table"))?;
     let matches: Vec<_> = file
         .symbols()
-        .filter(|s| !s.is_undefined() && s.name() == Ok(name))
+        .filter(|s| s.defined && s.name == name)
         .collect();
     match matches[..] {
         [ref one] => Ok(SymbolId {
             object: object.clone(),
             table: SymbolTableKind::Static,
-            table_section: u32::try_from(table.index().0)?,
-            index: one.index().0 as u64,
+            table_section: u32::try_from(table.index)?,
+            index: one.index as u64,
         }),
         _ => Err(invalid(format!(
             "{name}: {} image definitions",

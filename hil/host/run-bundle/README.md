@@ -1,0 +1,23 @@
+# HIL run bundle
+
+`oer-hil-run-bundle` owns the format of a HIL run bundle, its one writer and
+its one reader; every producer and consumer of a run, the qualification
+evaluator included, goes through it.
+
+| Module | Owns |
+| --- | --- |
+| `run` | The typed documents (manifest, plan, suite, scenario and repetition results with their measurements, the cleanup and USB records of a repetition, the integrity index and the scenario seals), the writer `RunSession` (create, bind sources and firmware, seal a scenario, finish, mark interrupted), `integrity` (the seal and its one verification, every file hashed again) and `validation` (the structural rules writer and readers share) |
+| `read` | `RunBundle::open`, the typed reader: manifest, plan, suite, events, scenario documents and results, cleanup and USB records, lab and build provenance, the verified integrity seal and scenario seals, the runner's checkout, liveness |
+| `store` | `RunStore`: the store every checkout shares (`$OER_HIL_STORE`, else `<XDG data>/open-esp-radio/hil`) with `runs/`, the observer builds, the sidecars (pins, quarantine, performance baselines, caches) and a checkout's link `target/hil/runs`; `store::pending`, the checkout's pending evidence |
+| `receipt` | `OER_HIL_RUN_RECEIPT`, the receipt a runner names the runs it creates in, and `RunId` |
+| `build` | The build provenance of a run's images and the content-addressed object store: the one definition of a build's identity, which the image builder fills |
+| `verify` | Offline verification of whole bundles (`cargo hil report verify`) and of a replay source against the image builder's recipe |
+| `experiment`, `lab` | The A/B experiment and the laboratory cell a run records |
+
+The JUnit and HTML views a run seals are rendered by `oer-hil-analysis`,
+which the runner hands `RunSession::finish`. The bundle depends on no
+stand, board or image builder code.
+
+```console
+cargo test -p oer-hil-run-bundle
+```

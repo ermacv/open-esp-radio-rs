@@ -1,16 +1,19 @@
-//! The host/target link of a HIL run: one UART capture of the board under
-//! test and its protocol exchange, readiness, reboots and validation, the
-//! host-side traffic transports, and the projection of decoded messages into
-//! measurements.
+//! The host/target link of a HIL run: one session with the board under test
+//! (its UART capture, the generic protocol exchange [`SerialCapture::call`] /
+//! [`SerialCapture::request`], readiness and reboots) and the line console
+//! of a reference peer board ([`peer`]).
 //!
 //! The link reaches the board only through the [`Dut`] and [`StationNetwork`]
-//! ports the stand implements; it depends on no stand, board or image builder
-//! code.
+//! ports the laboratory implements; it depends on no laboratory, board,
+//! scenario, run-bundle or image code. Families build their operations on
+//! the generic exchange, a repetition's measurements observe a capture
+//! through [`CaptureObserver`], and network traffic sessions live in
+//! `oer-hil-net-traffic`.
 
 use std::{
     fs,
     io::{Read, Write},
-    net::{Ipv4Addr, SocketAddrV4, UdpSocket},
+    net::Ipv4Addr,
     path::{Path, PathBuf},
     sync::{
         Arc, Condvar, Mutex,
@@ -23,34 +26,11 @@ use std::{
 
 use oer_hil_protocol::{
     DecodeCounters, Envelope, FrameDecoder, FrameEncoder, base::LinkHealth,
-    ieee802154::Ieee802154AirCheckEvidence, ieee802154::Ieee802154AirCheckRequest,
-    ieee802154::Ieee802154EdEventProbeEvidence, ieee802154::Ieee802154EdEventProbeRequest,
-    ieee802154::Ieee802154EventStatusProbeEvidence, ieee802154::Ieee802154EventStatusProbeRequest,
-    ieee802154::Ieee802154RouteProbeEvidence, ieee802154::Ieee802154RouteProbeRequest,
-    ieee802154::Ieee802154SessionAssessRequest, ieee802154::Ieee802154SessionAssessment,
-    ieee802154::Ieee802154SessionConfig, ieee802154::Ieee802154SessionPendingRequest,
-    ieee802154::Ieee802154SessionPhyMaintenance, ieee802154::Ieee802154SessionReceiveEvidence,
-    ieee802154::Ieee802154SessionRecentRssi, ieee802154::Ieee802154SessionRestartEvidence,
-    ieee802154::Ieee802154SessionResult, ieee802154::Ieee802154SessionStopEvidence,
-    ieee802154::Ieee802154SessionTransmitEvidence, ieee802154::Ieee802154SessionTransmitRequest,
-    ieee802154::Ieee802154ThreadReceiveEvidence, ieee802154::Ieee802154ThreadSendRequest,
-    ieee802154::Ieee802154ThreadStartRequest, ieee802154::Ieee802154ThreadState,
-    network::Direction, network::EvidenceRecord, network::Finished, network::FlowTransportEvidence,
-    network::NetworkSchedulerEvidence, network::OperationStatus, network::RadioEvidence,
-    network::RxDeliveryEvidence, network::RxRadioEvidence, network::RxZeroCopyEvidence,
-    network::SESSION_FLOW_CAPACITY, network::SessionConfig, network::SessionLinkRequirements,
-    network::SessionReady, network::Transport, network::TransportEvidence,
-    network::TxAggregateTimingEvidence, network::TxRadioEvidence, network::evidence_crc32c,
-    phy::StartupArtifactChunk, phy::StartupArtifactStatus, system::StackUsage,
-    system::TimebaseProbeEvidence, system::TimebaseProbeRequest, wifi::StationEpochEvidence,
-    wifi::StationLifecycleEvent, wifi::WifiMonitorCaptureRequest, wifi::WifiMonitorEvidence,
-    wifi::WifiMonitorFrameChunk, wifi::WifiMonitorRequest, wifi::WifiNetworkInterface,
-    wifi::WifiRadioRestartEvidence, wifi::WifiRoleTransitionEvidence, wifi::WifiScanEvidence,
-    wifi::WifiScanRequest,
+    network::OperationStatus, phy::StartupArtifactChunk, phy::StartupArtifactStatus,
+    system::StackUsage, wifi::StationLifecycleEvent, wifi::WifiNetworkInterface,
 };
 use zeroize::Zeroizing;
 
-mod airtime;
 mod target;
 pub use target::{ApplicationReset, Dut, DutEvent, StationNetwork, Target};
 mod reboot;
@@ -58,12 +38,9 @@ use reboot::{ExpectedReboot, RebootObservation};
 mod received;
 pub use received::{Received, message_info};
 
-const RX_PROBE_PAYLOAD: usize = 64;
-const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
-const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
-// Configure, Arm, Start and up to two directional SessionReady waits. The
-// collector runs before these operations and must cover their failure bounds.
-pub const SESSION_START_TIMEOUT: Duration = PROTOCOL_READY_TIMEOUT.saturating_mul(5);
+/// How long the link waits for a protocol readiness step: a Hello, an
+/// accepted command, an initialization.
+pub const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
 const STARTUP_ARTIFACT_TIMEOUT: Duration = Duration::from_secs(30);
 const SERIAL_OPEN_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 const SERIAL_OPEN_BUSY_RETRY: Duration = Duration::from_millis(50);
@@ -295,9 +272,10 @@ pub struct SerialCapture {
     worker: Option<thread::JoinHandle<()>>,
     output: PathBuf,
     persisted: bool,
-    measurements: Option<crate::measurements::CaptureRecorder>,
-    /// The armed program-counter profile, drained when the capture finishes.
-    profile: Option<oer_hil_scenario::ProfileRequest>,
+    observer: Option<Box<dyn CaptureObserver>>,
+    /// The armed program-counter profile and the request it records, drained
+    /// when the capture finishes.
+    profile: Option<Profile>,
 }
 
 fn command_response_matches(
@@ -311,39 +289,43 @@ fn command_response_matches(
         && message.request_id == request_id
 }
 
+/// A command the device accepted: the messages that complete it carry its
+/// boot, request and session zero, after the acceptance.
 #[derive(Clone, Copy, Debug)]
-pub struct UdpRxReady {
-    pub address: Ipv4Addr,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct UdpTxReady {
-    pub address: Ipv4Addr,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct TcpReady {
-    pub address: Ipv4Addr,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct SessionHandle {
-    session_id: u64,
-    first_event: usize,
-    flow_ids: [Option<u8>; SESSION_FLOW_CAPACITY],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct StationEpochHandle {
-    request_id: u32,
-    first_event: usize,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct WifiCommandHandle {
+pub struct CommandHandle {
+    path: &'static str,
     boot_id: u64,
     request_id: u32,
     first_event: usize,
+}
+
+impl CommandHandle {
+    /// The cursor just after the command's acceptance.
+    pub fn first_event(&self) -> usize {
+        self.first_event
+    }
+
+    pub fn request_id(&self) -> u32 {
+        self.request_id
+    }
+
+    /// Whether `message` belongs to this command.
+    pub fn correlates(&self, message: &Received) -> bool {
+        message.boot_id == self.boot_id
+            && message.session_id == 0
+            && message.request_id == self.request_id
+    }
+
+    /// A handle of a command of `path` the tests accepted by hand.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn accepted(path: &'static str, boot_id: u64, request_id: u32, first_event: usize) -> Self {
+        Self {
+            path,
+            boot_id,
+            request_id,
+            first_event,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -354,23 +336,21 @@ pub struct StationConnectionObservation {
     pub event_cursor_after: usize,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SessionEvidence {
-    pub transport: TransportEvidence,
-    pub flow_transport: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
-    pub radio: Option<RadioEvidence>,
-    pub tx_timing: Option<TxAggregateTimingEvidence>,
-    pub rx_delivery: Option<RxDeliveryEvidence>,
-    pub network_scheduler: Option<NetworkSchedulerEvidence>,
-    pub rx_zero_copy: Option<RxZeroCopyEvidence>,
-    pub stack: StackUsage,
-    pub link: LinkHealth,
-    pub finished: Finished,
+/// What a capture reports, when it persists, about the messages it decoded:
+/// the repetition's measurement projection implements it.
+pub trait CaptureObserver: Send + Sync {
+    /// Project `messages` (and the count of bytes received) into the
+    /// document `measurements.json` keeps; it is called once, before any
+    /// fallible write, so the projection survives a storage failure.
+    fn observe(&self, messages: &[Received], received_bytes: u64) -> serde_json::Value;
 }
 
-pub struct MonitorCaptureEvidence {
-    pub chunks: Vec<WifiMonitorFrameChunk>,
-    pub summary: WifiMonitorEvidence,
+/// A program-counter profile a capture arms after the boot's Hello: the
+/// target's arming command and the scenario's request `profile.json` records.
+#[derive(Clone, Debug)]
+pub struct Profile {
+    pub control: oer_hil_protocol::telemetry::ProfileControl,
+    pub request: serde_json::Value,
 }
 
 fn open_serial_after_busy_release(port: &Path) -> serialport::Result<serialport::TTYPort> {
@@ -417,24 +397,13 @@ pub use capture::test_support;
 pub mod error;
 use error::LinkError;
 mod protocol;
-mod readiness;
+pub use protocol::latest_boot_id_in;
 #[cfg(test)]
 mod tests;
-mod validation;
-
-#[cfg(test)]
-use protocol::beacon_loss_count_in;
-use readiness::session_ready_covers;
-pub use readiness::{
-    await_network_ready, await_tcp_ready, await_udp_rx_ready, await_udp_tx_ready,
-    prepare_udp_reverse_flow, probe_udp_rx_ready, probe_udp_rx_ready_via,
-};
-use validation::validate_stack_usage;
 
 pub mod startup_artifact;
 
-pub mod measurements;
-pub mod peer_line;
+pub mod peer;
 pub mod transport;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

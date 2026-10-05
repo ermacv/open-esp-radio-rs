@@ -6,8 +6,8 @@
 //!    read, refuses the push, since the gate would check what is not pushed.
 //! 2. The branch is not `main`: `main` changes only through pull requests,
 //!    which CI checks and merges.
-//! 3. The fast gate ([`crate::gate`]) checks the packages `HEAD`'s commits
-//!    change against the merge base with `origin/main`.
+//! 3. The registry's fast checks ([`crate::registry`]) check what `HEAD`'s
+//!    commits change against the merge base with `origin/main`.
 //! 4. Push the branch, open its pull request when it has none, and enable
 //!    auto-merge: GitHub rebases it onto `main` once CI passes. With
 //!    `--draft` the pull request is a draft and nothing merges it.
@@ -19,9 +19,10 @@
 //! there by anyone else in the meantime refuses the push instead of being
 //! lost.
 
-use oer_process as process;
+use oer_process::{self as process, git};
 
-use crate::{Context, Result, gate};
+use crate::{Result, gate, registry};
+use oer_process::Checkout;
 
 /// The base pull requests merge into.
 const MAIN: &str = "main";
@@ -87,77 +88,64 @@ pub fn update(remote: Option<&str>, descends: bool) -> Update {
     }
 }
 
-fn git(ctx: &Context, arguments: &[&str]) -> Result<String> {
-    Ok(gate::git(ctx, arguments)?.trim().to_owned())
-}
-
-fn gh(ctx: &Context, arguments: &[&str]) -> Result<String> {
+fn gh(ctx: &Checkout, arguments: &[&str]) -> Result<String> {
     let output = process::capture(ctx.command("gh").args(arguments))?;
     Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
 /// Gate, push, open the pull request; see the module documentation.
-pub fn run(ctx: &Context, draft: bool) -> Result<()> {
-    let tracked: Vec<String> = git(ctx, &["status", "--porcelain", "--untracked-files=no"])?
-        .lines()
-        .map(|line| line.get(3..).unwrap_or(line).to_owned())
-        .collect();
-    let untracked: Vec<String> = git(ctx, &["ls-files", "--others", "--exclude-standard"])?
-        .lines()
-        .map(str::to_owned)
-        .collect();
+pub fn run(ctx: &Checkout, draft: bool) -> Result<()> {
+    // Porcelain lines start with their status columns: never trim them.
+    let tracked: Vec<String> =
+        git::lines(&ctx.root, ["status", "--porcelain", "--untracked-files=no"])?
+            .iter()
+            .map(|line| line.get(3..).unwrap_or(line).to_owned())
+            .collect();
+    let untracked = git::lines(&ctx.root, ["ls-files", "--others", "--exclude-standard"])?;
     if let Some(reason) = unpushable(&tracked, &untracked) {
         return Err(format!("push: {reason}").into());
     }
-    let branch = git(ctx, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let branch = git::text(&ctx.root, ["rev-parse", "--abbrev-ref", "HEAD"])?;
     if let Some(reason) = unreviewable(&branch) {
         return Err(format!("push: {reason}").into());
     }
-    process::capture(
-        ctx.command("git")
-            .args(["fetch", "--quiet", "origin", MAIN]),
-    )?;
-    let base = git(ctx, &["merge-base", "HEAD", &format!("origin/{MAIN}")])?;
-    let head = git(ctx, &["rev-parse", "HEAD"])?;
+    git::output(&ctx.root, ["fetch", "--quiet", "origin", MAIN])?;
+    let base = git::text(&ctx.root, ["merge-base", "HEAD", &format!("origin/{MAIN}")])?;
+    let head = git::text(&ctx.root, ["rev-parse", "HEAD"])?;
     if head == base {
         println!("push: nothing to push; HEAD is in origin/{MAIN}");
         return Ok(());
     }
-    let files = gate::committed(ctx, &base)?;
-    let tree = gate::Tree::load(&ctx.root)?;
-    let mut selection = gate::select(&tree, &files);
-    gate::select_locks(ctx, &tree, &files, &base, None, &mut selection)?;
-    let affected = gate::affected(ctx, &selection)?;
+    let change = gate::Change::of(
+        ctx,
+        gate::committed(ctx, &base)?,
+        &base,
+        None,
+        registry::Tier::Fast,
+    )?;
     println!(
         "push: gating {} on {}: {} files, {} package(s) with dependents",
         &head[..12],
         &base[..12],
-        files.len(),
-        affected.len()
+        change.files.len(),
+        change.affected.len()
     );
-    gate::run(ctx, &tree, &selection, &affected, gate::Depth::Fast)
+    registry::run_change(ctx, &change)
         .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
     let reference = format!("refs/heads/{branch}");
-    let remote = git(ctx, &["ls-remote", "origin", &reference])?
+    let remote = git::text(&ctx.root, ["ls-remote", "origin", &reference])?
         .split_whitespace()
         .next()
         .map(str::to_owned);
     let descends = match &remote {
         Some(seen) => {
-            process::capture(
-                ctx.command("git")
-                    .args(["fetch", "--quiet", "origin", &reference]),
-            )?;
-            process::capture(
-                ctx.command("git")
-                    .args(["merge-base", "--is-ancestor", seen, "HEAD"]),
-            )
-            .is_ok()
+            git::output(&ctx.root, ["fetch", "--quiet", "origin", &reference])?;
+            git::output(&ctx.root, ["merge-base", "--is-ancestor", seen, "HEAD"]).is_ok()
         }
         None => true,
     };
     let update = update(remote.as_deref(), descends);
-    let mut command = ctx.command("git");
+    let mut command = git::command(&ctx.root);
     command.args(["push", "--quiet", "--set-upstream"]);
     if let Update::Rewrite { seen } = &update {
         command.arg(format!("--force-with-lease={reference}:{seen}"));

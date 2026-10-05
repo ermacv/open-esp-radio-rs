@@ -20,6 +20,13 @@ pub use io::write_frame;
 #[cfg(feature = "registry")]
 pub use key::MessageInfo;
 
+// The host's view of what an image serves, assembled from its Hello and
+// image key pages.
+#[cfg(feature = "registry")]
+mod image_keys;
+#[cfg(feature = "registry")]
+pub use image_keys::DeviceImageKeys;
+
 /// The reviewed wire of this revision: the framing version and every
 /// message's path, key and kind, one per line. The registry test keeps it
 /// equal to the registry; two revisions whose locks are equal speak the same

@@ -11,7 +11,7 @@
 use core::{convert::Infallible, future::pending, pin::pin};
 
 use embassy_futures::select::{Either, select};
-use gatt_application::security::{
+use oer_bluetooth_gatt_trouble::security::{
     bonds::RamBondStore,
     epoch::{self, ShutdownAction},
 };
@@ -262,7 +262,7 @@ fn build(controller: Gated, resources: &mut Resources) -> Stack<'_, Gated, Defau
 }
 
 fn record_shutdown(state: &State, exit: &HostExit) {
-    use gatt_application::security::{bonds::StoreError, gatt::RunError};
+    use oer_bluetooth_gatt_trouble::security::{bonds::StoreError, gatt::RunError};
     use oer_hil_protocol::{
         bluetooth::BluetoothGattResetOutcome as Reset, bluetooth::BluetoothGattShutdown,
         bluetooth::BluetoothGattStopCause as Cause,

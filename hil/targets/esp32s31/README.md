@@ -45,7 +45,7 @@ plaintext GATT application on their own tasks; it adds no radio-system task.
 The Bluetooth entropy service owns the SoC random source that the Wi-Fi client
 also reads. The Wi-Fi console answers `bluetooth::GetGatt` with the
 application's observations and advertises `bluetooth_gatt`. The host drives it
-with the ATT echo load in `runner-bluetooth`'s
+with the ATT echo load in `oer-hil-family-bluetooth`'s
 `workload::bluetooth::coexistence`: one connection writes and reads back the
 application value for the measured interval, then disconnects gracefully.
 

@@ -33,7 +33,7 @@ pub fn orphans(context: &Context<'_>) -> Vec<String> {
             ));
         }
     }
-    for package in &context.manifests.packages {
+    for package in context.model.packages() {
         for root in &package.missing_roots {
             problems.push(format!(
                 "{}: target {root} does not exist",
@@ -52,27 +52,16 @@ pub fn orphans(context: &Context<'_>) -> Vec<String> {
 }
 
 /// A `// CAPABILITY:` anchor or a vendor `SOURCE` citation marker on a
-/// comment line.
+/// comment line, by the recognisers of their owners.
 fn marker(line: &str) -> Option<&'static str> {
-    let line = line.trim_start();
-    if !(line.starts_with("//") || line.starts_with("/*") || line.starts_with('*')) {
-        return None;
+    use oer_vendor_provenance::citation::{Syntax, is_marker_line};
+    if crate::anchors::capability(line).is_some() {
+        Some("CAPABILITY anchor")
+    } else if is_marker_line(line, Syntax::Rust) {
+        Some("vendor SOURCE citation")
+    } else {
+        None
     }
-    if line.starts_with("// CAPABILITY:") {
-        return Some("CAPABILITY anchor");
-    }
-    let mut rest = line;
-    while let Some(at) = rest.find("SOURCE") {
-        let after = &rest[at + "SOURCE".len()..];
-        let before = rest[..at].chars().next_back();
-        if !before.is_some_and(|c| c.is_alphanumeric() || c == '_')
-            && after.starts_with([':', '(', '['])
-        {
-            return Some("vendor SOURCE citation");
-        }
-        rest = after;
-    }
-    None
 }
 
 /// Capability anchors and vendor citations appear only in files a crate

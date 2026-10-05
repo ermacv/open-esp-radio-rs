@@ -11,7 +11,9 @@ use std::{
     process::{Command, Stdio},
 };
 
-use crate::{Result, manifest::Manifests, repo::Repo, workspaces};
+use oer_repo::{Model, Repo};
+
+use crate::Result;
 
 /// Fetches every workspace of `repo`: an offline `cargo fetch` first, which
 /// costs a fraction of a second when everything is present, and an online
@@ -19,8 +21,8 @@ use crate::{Result, manifest::Manifests, repo::Repo, workspaces};
 /// that went online.
 pub fn run(repo: &Repo, cargo: &Path) -> Result<Vec<String>> {
     let mut fetched = Vec::new();
-    for manifest in workspaces::discover(&Manifests::load(repo)?) {
-        let path = repo.root().join(&manifest);
+    for manifest in Model::load(repo)?.workspaces() {
+        let path = repo.root().join(manifest);
         let fetch = |online: bool| {
             let mut command = Command::new(cargo);
             command
@@ -43,7 +45,7 @@ pub fn run(repo: &Repo, cargo: &Path) -> Result<Vec<String>> {
         if !fetch(true)?.success() {
             return Err(format!("cargo fetch failed for {manifest}"));
         }
-        fetched.push(manifest);
+        fetched.push(manifest.clone());
     }
     Ok(fetched)
 }

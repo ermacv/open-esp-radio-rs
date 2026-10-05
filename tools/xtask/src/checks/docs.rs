@@ -10,9 +10,9 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use super::common;
-use crate::{Context, Result, paths};
+use crate::Result;
 use oer_process as process;
+use oer_process::Checkout;
 
 mod cli;
 mod markdown;
@@ -20,10 +20,11 @@ use markdown::check_markdown;
 
 /// Check every owned Markdown document's local links, and check and render
 /// the static qualification catalogs and programs.
-pub fn run(ctx: &Context) -> Result<()> {
-    let packages = common::source_packages(ctx)?;
-    let mut documents = owned_documents(ctx, &packages)?;
-    let groups = catalog_groups(ctx)?;
+pub fn run(ctx: &Checkout) -> Result<()> {
+    let repo = oer_repo::Repo::from_git(&ctx.root)?;
+    let model = oer_repo::Model::load(&repo)?;
+    let mut documents = owned_documents(ctx, &repo, model.packages())?;
+    let groups = catalog_groups(ctx, &repo)?;
     let output = ctx.root.join("target/docs");
     fs::create_dir_all(&output)?;
     documents.extend(run_catalogs(ctx, &output, &groups)?);
@@ -51,7 +52,7 @@ pub fn run(ctx: &Context) -> Result<()> {
 /// Check every command line of a repository Cargo alias that `texts`
 /// (document, code) show against the command trees the tools print, and
 /// return how many were checked.
-fn check_commands(ctx: &Context, texts: &[(String, String)]) -> Result<usize> {
+fn check_commands(ctx: &Checkout, texts: &[(String, String)]) -> Result<usize> {
     use oer_command_tree::{CommandNode, REQUEST};
     let mut nodes = Vec::new();
     // Through the aliases of `.cargo/config.toml`, as the documents run them;
@@ -59,7 +60,9 @@ fn check_commands(ctx: &Context, texts: &[(String, String)]) -> Result<usize> {
     // that also builds may replace its executable.
     for (tool, source) in cli::TOOLS {
         let tree = match source {
-            cli::TreeSource::Alias => process::capture(ctx.cargo().args([tool, REQUEST]))?.stdout,
+            cli::TreeSource::Alias => {
+                process::capture(oer_toolchain::cargo_in(&ctx.root).args([tool, REQUEST]))?.stdout
+            }
             cli::TreeSource::File(path) => fs::read(ctx.root.join(path))?,
         };
         nodes.extend(serde_json::from_slice::<Vec<CommandNode>>(&tree)?);
@@ -92,10 +95,10 @@ fn check_commands(ctx: &Context, texts: &[(String, String)]) -> Result<usize> {
 /// evaluator's `catalog anchors`) against all catalogs at once, since an
 /// anchor may name an entry of any of them. `changed` files, relative to the
 /// root, list the entries whose anchored code an edit touched.
-pub fn capabilities(ctx: &Context, changed: &[PathBuf]) -> Result<()> {
+pub fn capabilities(ctx: &Checkout, changed: &[PathBuf]) -> Result<()> {
     let binary = qualification_binary(ctx)?;
     let mut arguments = vec![OsString::from("catalog"), OsString::from("anchors")];
-    for group in catalog_groups(ctx)? {
+    for group in catalog_groups(ctx, &oer_repo::Repo::from_git(&ctx.root)?)? {
         for catalog in group.catalogs {
             arguments.push("--catalog".into());
             arguments.push(catalog.into_os_string());
@@ -108,6 +111,28 @@ pub fn capabilities(ctx: &Context, changed: &[PathBuf]) -> Result<()> {
     let mut command = ctx.command(&binary);
     command.args(arguments).arg("--root").arg(&ctx.root);
     process::run(&mut command)
+}
+
+/// Validate every qualification program and evaluate its committed
+/// evidence (`cargo qualification validate` and `evaluate`).
+pub fn programs(ctx: &Checkout) -> Result<()> {
+    let binary = qualification_binary(ctx)?;
+    for group in catalog_groups(ctx, &oer_repo::Repo::from_git(&ctx.root)?)? {
+        for program in group.programs {
+            for action in ["validate", "evaluate"] {
+                qualification_command(
+                    ctx,
+                    &binary,
+                    [
+                        action.into(),
+                        "--manifest".into(),
+                        program.clone().into_os_string(),
+                    ],
+                )?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -130,9 +155,9 @@ struct LinkSummary {
     anchors: usize,
 }
 
-fn catalog_groups(ctx: &Context) -> Result<Vec<CatalogGroup>> {
+fn catalog_groups(ctx: &Checkout, repo: &oer_repo::Repo) -> Result<Vec<CatalogGroup>> {
     let mut groups = BTreeMap::<String, CatalogGroup>::new();
-    for path in paths::source_files(ctx)? {
+    for path in repo.files().map(|file| ctx.root.join(file)) {
         let relative = path.strip_prefix(&ctx.root)?;
         let parts = relative.components().collect::<Vec<_>>();
         let classify = |owner: &str| {
@@ -186,19 +211,23 @@ fn catalog_groups(ctx: &Context) -> Result<Vec<CatalogGroup>> {
     Ok(groups.into_values().collect())
 }
 
-fn qualification_binary(ctx: &Context) -> Result<PathBuf> {
+fn qualification_binary(ctx: &Checkout) -> Result<PathBuf> {
     // All scopes use the same catalog tool; avoid recompiling it per scope.
     let target = ctx.root.join("target");
-    process::run(ctx.cargo().env("CARGO_TARGET_DIR", &target).args([
-        "build",
-        "--locked",
-        "--profile",
-        "qualification",
-        "--package",
-        "oer-qualification",
-        "--bin",
-        "oer-qualification",
-    ]))?;
+    process::run(
+        oer_toolchain::cargo_in(&ctx.root)
+            .env("CARGO_TARGET_DIR", &target)
+            .args([
+                "build",
+                "--locked",
+                "--profile",
+                "qualification",
+                "--package",
+                "oer-qualification",
+                "--bin",
+                "oer-qualification",
+            ]),
+    )?;
     let binary = target
         .join("qualification")
         .join(format!("oer-qualification{}", std::env::consts::EXE_SUFFIX));
@@ -209,7 +238,7 @@ fn qualification_binary(ctx: &Context) -> Result<PathBuf> {
 }
 
 fn qualification_command(
-    ctx: &Context,
+    ctx: &Checkout,
     binary: &Path,
     arguments: impl IntoIterator<Item = OsString>,
 ) -> Result<String> {
@@ -221,7 +250,7 @@ fn qualification_command(
     Ok(stdout)
 }
 
-fn run_catalogs(ctx: &Context, output: &Path, groups: &[CatalogGroup]) -> Result<Vec<PathBuf>> {
+fn run_catalogs(ctx: &Checkout, output: &Path, groups: &[CatalogGroup]) -> Result<Vec<PathBuf>> {
     let binary = qualification_binary(ctx)?;
     run_catalog_actions(output, groups, |group, action| {
         let mut arguments = vec![OsString::from("catalog")];
@@ -318,43 +347,31 @@ fn run_catalog_actions(
     Ok(())
 }
 
-fn owned_documents(ctx: &Context, packages: &[common::SourcePackage]) -> Result<Vec<PathBuf>> {
-    let tracked = paths::tracked_files(ctx)?
-        .into_iter()
-        .collect::<BTreeSet<_>>();
+fn owned_documents(
+    ctx: &Checkout,
+    repo: &oer_repo::Repo,
+    packages: &[oer_repo::Package],
+) -> Result<Vec<PathBuf>> {
     let mut documents = BTreeSet::new();
-    for path in paths::source_files(ctx)? {
-        if path.extension().is_none_or(|extension| extension != "md") {
-            continue;
-        }
-        let relative = path.strip_prefix(&ctx.root)?;
-        let owner_name = path.file_name().is_some_and(|name| {
+    for file in repo.files().filter(|file| file.ends_with(".md")) {
+        let relative = Path::new(file);
+        let owner_name = relative.file_name().is_some_and(|name| {
             name == "README.md" || name == "FEATURES.md" || name == "OWNERSHIP.md"
         });
-        if tracked.contains(&path)
+        if repo.is_tracked(file)
             || relative.starts_with("docs")
             || relative == Path::new("CONTRIBUTING.md")
             || owner_name
         {
-            documents.insert(path);
+            documents.insert(ctx.root.join(file));
         }
     }
-    for item in packages {
-        if let Some(readme) = &item.package.readme {
-            let path = item
-                .manifest
-                .parent()
-                .ok_or("package manifest has no parent")?
-                .join(readme.as_std_path());
-            if !path.is_file() {
-                return Err(format!(
-                    "package {} readme is missing: {}",
-                    item.package.name,
-                    path.display()
-                )
-                .into());
+    for package in packages {
+        if let Some(readme) = &package.readme {
+            if !repo.is_file(readme) {
+                return Err(format!("package {} readme is missing: {readme}", package.name).into());
             }
-            documents.insert(path.canonicalize()?);
+            documents.insert(ctx.root.join(readme));
         }
     }
     if documents.is_empty() {

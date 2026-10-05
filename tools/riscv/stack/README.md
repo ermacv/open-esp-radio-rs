@@ -4,7 +4,10 @@
 its machine code, over the program model of
 [`oer-riscv-program`](../program/README.md),
 [`oer-riscv-analysis`](../analysis/README.md) and
-[`oer-riscv-lift`](../lift/README.md).
+[`oer-riscv-lift`](../lift/README.md). It reads the image's symbols (the
+functions with their aliases), sections, relocations and DWARF through
+[`oer-elf`](../../elf/README.md), whose RV32 relocation table decides which
+relocation is an address word or a control transfer.
 
 Facts of the build come first. An image linked with `--emit-relocs` keeps
 its relocations, each checked against the word it describes (a mismatch is an
@@ -182,7 +185,7 @@ CLIC level and route writers to run inside the functions its contract
 allows (start-up, the IPC line's install, the table's routes).
 
 This is the repository's only stack analyzer. The firmware stack gate
-([`oer-esp32s31-firmware`](../../firmware/README.md)'s `stack`) runs it on every
+([`oer-image`](../../image/README.md)'s `stack`) runs it on every
 runtime and bootstrap ELF: the interrupt stacks above, and each task stack's
 root through `Analysis::bound_with` with the same resolutions. An ELF without
 `.stack_sizes` analyses here with observed frames only; the gate refuses it,

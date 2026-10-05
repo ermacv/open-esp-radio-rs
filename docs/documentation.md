@@ -111,7 +111,7 @@ meaning of evidence or inventing a replacement proof.
 Use the repository's pinned toolchain for examples and API documentation.
 `cargo xtask check docs` checks owned local Markdown links, checks that every
 repository path named in inline code (such as `crates/memory/`) still exists,
-checks every `cargo xtask`, `cargo hil`, `cargo qualification`, `cargo memory`,
+checks every `cargo xtask`, `cargo tidy`, `cargo hil`, `cargo qualification`,
 `cargo registers` and `cargo blobray` command in inline code and shell code
 blocks against the command tree the tool prints for `__command-tree` (each
 subcommand exists, each long flag is accepted by its command or an ancestor;

@@ -111,7 +111,7 @@ pub fn prepare(
             file_name: spec.name.to_owned(),
             target: spec.target.into(),
             size_bytes: bytes.len() as u64,
-            sha256: sha256(&bytes),
+            sha256: oer_durable::sha256_bytes(&bytes),
             mode: spec.mode,
         });
     }
@@ -202,7 +202,7 @@ fn validate_existing_bundle(directory: &Path, expected: &Bundle) -> Result<()> {
         if !metadata.file_type().is_file()
             || metadata.len() != artifact.size_bytes
             || metadata.permissions().mode() & 0o777 != artifact.mode
-            || sha256_file(&path)? != artifact.sha256
+            || oer_durable::sha256_file(&path)? != artifact.sha256
         {
             return Err(format!("existing bundle artifact mismatch: {}", path.display()).into());
         }
@@ -216,47 +216,30 @@ fn validate_existing_bundle(directory: &Path, expected: &Bundle) -> Result<()> {
 }
 
 fn source_identity(root: &Path) -> Result<SourceIdentity> {
-    let commit = command_output(
-        Command::new("git")
-            .current_dir(root)
-            .args(["rev-parse", "HEAD"]),
-    )?;
-    let state = Command::new("git")
-        .current_dir(root)
-        .args(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
-        .output()?;
-    if !state.status.success() {
-        return Err("cannot capture repository state for fixture bundle".into());
-    }
-    let diff = Command::new("git")
-        .current_dir(root)
-        .args(["diff", "--binary", "--no-ext-diff", "HEAD", "--"])
-        .output()?;
-    if !diff.status.success() {
-        return Err("cannot capture repository content identity for fixture bundle".into());
-    }
+    let commit = oer_process::git::text(root, ["rev-parse", "HEAD"])?;
+    let state = oer_process::git::output(
+        root,
+        ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    )
+    .map_err(|error| format!("cannot capture repository state for fixture bundle: {error}"))?;
+    let diff = oer_process::git::output(root, ["diff", "--binary", "--no-ext-diff", "HEAD", "--"])
+        .map_err(|error| {
+            format!("cannot capture repository content identity for fixture bundle: {error}")
+        })?;
     let mut workspace = Sha256::new();
-    workspace.update(&state.stdout);
-    workspace.update(&diff.stdout);
+    workspace.update(&state);
+    workspace.update(&diff);
     Ok(SourceIdentity {
-        commit: commit.trim().to_owned(),
-        dirty: !state.stdout.is_empty(),
+        commit,
+        dirty: !state.is_empty(),
         workspace_state_sha256: format!("{:x}", workspace.finalize()),
     })
-}
-
-fn command_output(command: &mut Command) -> Result<String> {
-    let output = command.output()?;
-    if !output.status.success() {
-        return Err(format!("command failed with {}", output.status).into());
-    }
-    Ok(String::from_utf8(output.stdout)?)
 }
 
 fn bundle_identity(bundle: &Bundle) -> Result<String> {
     let mut identity = bundle.clone();
     identity.generation.clear();
-    Ok(sha256(&serde_json::to_vec(&identity)?))
+    Ok(oer_durable::sha256_bytes(&serde_json::to_vec(&identity)?))
 }
 
 fn copy_and_hash(source: &Path, destination: &Path) -> Result<String> {
@@ -274,24 +257,6 @@ fn copy_and_hash(source: &Path, destination: &Path) -> Result<String> {
     }
     destination.sync_all()?;
     Ok(format!("{:x}", digest.finalize()))
-}
-
-fn sha256_file(path: &Path) -> Result<String> {
-    let mut file = File::open(path)?;
-    let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let count = file.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        digest.update(&buffer[..count]);
-    }
-    Ok(format!("{:x}", digest.finalize()))
-}
-
-pub(crate) fn sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
 }
 
 fn write_json(path: &Path, value: &impl serde::Serialize) -> Result<()> {

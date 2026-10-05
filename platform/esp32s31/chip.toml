@@ -19,3 +19,16 @@ wifi-bands = ["2g4"]
 bluetooth = ["le", "br-edr"]
 ieee802154 = true
 cores = 2
+
+# Where every image lies in flash. The image pipeline encodes the ESP-IDF
+# bootloader, the partition table and the OTA selection for these offsets at
+# build time; a flash writes the bundle there. `application` and `otadata`
+# are the partitions of `partitions` (the image pipeline holds them to it).
+[flash]
+bootloader = 0x2000
+partition-table = 0x8000
+application = 0x10000
+otadata = 0xd000
+partitions = "platform/esp32s31/partitions/applications.csv"
+# How a written image starts: the writer's hard reset.
+start = "reset"

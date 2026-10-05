@@ -4,40 +4,38 @@
 //! whole tier runs in seconds:
 //!
 //! - [`sources`]: every Rust file is reachable from a crate root, and
-//!   capability anchors and vendor citations sit only in reachable files;
+//!   capability anchors ([`anchors`], the one recogniser of their grammar)
+//!   and vendor `SOURCE` citations (`oer_vendor_provenance::citation`) sit
+//!   only in reachable files;
 //! - [`records`]: every repository path a qualification or evidence record
 //!   names exists;
 //! - [`workspaces`]: every package belongs to a discovered workspace, and
 //!   every workspace has its lock file;
 //! - [`dependencies`]: every declared dependency is named by its package;
-//! - [`classification`]: every package declares a known layer and platform,
-//!   names an existing chip or family, follows the name rule, and keeps the
-//!   evidence and HIL role edges;
-//! - [`zeroed`]: no `link_section` names a zeroed region outside
-//!   `oer_memory::zeroed_static!`;
+//! - [`classification`]: every package's `[package.metadata.open-radio]`
+//!   classifies it, names an existing chip or family and input files, and
+//!   its name follows the rule; every dependency keeps the layer, platform
+//!   and role rules of [`oer_repo::policy`];
+//! - [`spawns`]: only entry crates run `cargo hil` or `cargo xtask`;
 //! - [`layouts`]: code relying on a foreign type's layout names the release
 //!   it was reviewed at, and its workspace still locks that release.
 //!
-//! The same model answers what other tooling would otherwise rediscover:
-//! [`workspaces`] lists every Cargo workspace and [`chips`] every chip
-//! profile, for `oer-xtask` and CI alike.
+//! The checks are text policy over the repository model of `oer-repo`,
+//! which also answers the `workspaces` and `chips` commands.
 //!
 //! Each check returns its problems; an empty report is a pass.
 
 pub mod allowlist;
-pub mod chips;
+pub mod anchors;
 pub mod classification;
 pub mod dependencies;
 pub mod fetch;
-pub mod interrupts;
 pub mod layouts;
-pub mod manifest;
 pub mod reachability;
 pub mod records;
-pub mod repo;
 pub mod sources;
+pub mod spawns;
 pub mod workspaces;
-pub mod zeroed;
 
 #[cfg(test)]
 mod testing;
@@ -45,16 +43,15 @@ mod testing;
 use std::collections::{BTreeMap, BTreeSet};
 
 use allowlist::Allowlist;
-use manifest::Manifests;
+use oer_repo::{Model, Repo};
 use reachability::{Reach, Walker};
-use repo::Repo;
 
 pub type Result<T> = std::result::Result<T, String>;
 
 /// Everything the checks share, read once.
 pub struct Context<'a> {
     pub repo: &'a Repo,
-    pub manifests: Manifests,
+    pub model: Model,
     pub allowlist: Allowlist,
     /// What each package's roots reach, by manifest path.
     pub reach: BTreeMap<String, Reach>,
@@ -64,7 +61,7 @@ pub struct Context<'a> {
 
 impl<'a> Context<'a> {
     pub fn load(repo: &'a Repo) -> Result<Self> {
-        let manifests = Manifests::load(repo)?;
+        let model = Model::load(repo)?;
         let allowlist = if repo.is_file(allowlist::PATH) {
             Allowlist::parse(&repo.read(allowlist::PATH)?)?
         } else {
@@ -73,14 +70,14 @@ impl<'a> Context<'a> {
         let mut walker = Walker::default();
         let mut reach = BTreeMap::new();
         let mut reachable = BTreeSet::new();
-        for package in &manifests.packages {
+        for package in model.packages() {
             let found = walker.reach(repo, &package.roots)?;
             reachable.extend(found.files.iter().cloned());
             reach.insert(package.manifest.clone(), found);
         }
         Ok(Self {
             repo,
-            manifests,
+            model,
             allowlist,
             reach,
             reachable,
@@ -97,7 +94,6 @@ pub struct Outcome {
 /// Runs every check.
 pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
     let context = Context::load(repo)?;
-    let chips = chips::Chips::load(repo)?;
     Ok(vec![
         Outcome {
             check: "orphan sources",
@@ -121,19 +117,19 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         },
         Outcome {
             check: "classification",
-            problems: classification::check(&context, &chips),
+            problems: classification::check(&context),
         },
         Outcome {
-            check: "zeroed statics",
-            problems: zeroed::check(&context)?,
+            check: "layer dependencies",
+            problems: oer_repo::policy::check(&context.model),
+        },
+        Outcome {
+            check: "command-line spawns",
+            problems: spawns::check(&context)?,
         },
         Outcome {
             check: "reviewed layouts",
             problems: layouts::check(&context)?,
-        },
-        Outcome {
-            check: "static interrupts",
-            problems: interrupts::check(&context),
         },
     ])
 }

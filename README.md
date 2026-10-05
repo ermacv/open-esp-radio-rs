@@ -98,41 +98,39 @@ and every package depending on them, and the tests of the changed packages.
 [tooling reference](tools/xtask/README.md) lists every check.
 
 The [CI workflow](.github/workflows/ci.yml) runs on every push to any branch,
-in a few jobs that each run a sequence of commands over one build cache:
-`cargo fmt --check` for every workspace, `cargo clippy --workspace
---all-targets -- -D warnings` and `cargo test --workspace` for the root
-workspace, the policy and architecture checks, type checks of the final HIL
-images and the examples with the image compiler flags, the ESP32-C5
-workspaces, every register publication and every qualification program; a
-newer push to the same branch cancels the run it supersedes, except on
-`main`. The [Documentation workflow](.github/workflows/docs.yml) checks the
-guides and API documentation, and the [Nightly workflow](.github/workflows/nightly.yml)
-builds every HIL image class and every ESP32-S31 example with their audits,
-checks the RV32 decoder against the toolchain's `llvm-objdump`, and runs
-Blobray and each chip's vendor verification, provenance included.
+in a few jobs that each run a sequence of checks over one build cache: each
+job is `cargo xtask check tier full --job <job>`, and the check registry
+(`cargo xtask check tier --list`, the [tooling reference](tools/xtask/README.md#the-check-registry))
+decides what it runs — formatting of every workspace, Clippy and the tests
+of the root workspace, the policy and architecture checks, type checks of the
+final HIL images and the examples with the image compiler flags, both final
+images built with their audits, the ESP32-C5 workspaces, every register
+publication and qualification program, and the provenance of every cited
+vendor function; a newer push to the same branch cancels the run it
+supersedes, except on `main`. The [Documentation workflow](.github/workflows/docs.yml)
+checks the guides and API documentation, and the [Nightly workflow](.github/workflows/nightly.yml)
+runs the nightly tier: every HIL image class and every ESP32-S31 example
+built with their audits, the RV32 decoder against the toolchain's
+`llvm-objdump`, Blobray and each chip's vendor probes and host stands.
 
 For API changes, run `cargo xtask doc`: one `cargo doc --no-deps` per
 documentation target with `RUSTDOCFLAGS=-D warnings`, as each package's
 `[package.metadata.docs.rs]` selects, and `cargo test --doc --workspace`. Run
 focused package tests and the relevant target profile while iterating.
 
-The complete source checkpoint is the [CI workflow](.github/workflows/ci.yml):
-each step runs one command, and every command also runs locally:
+The complete source checkpoint is CI's full tier, and every job also runs
+locally:
 
 ```console
-cargo xtask check metadata
-cargo xtask check network
-cargo xtask check architecture
-cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check
-cargo xtask check phy --chip esp32s31
-cargo xtask check images
+cargo xtask check tier --list
+cargo xtask check tier full --job host
+cargo xtask check tier full --job architecture
+cargo xtask check tier full --job firmware
+cargo xtask check tier full --job models
 ```
 
-They need the embedded target; `check images` also needs `espflash` and the
-toolchain's `llvm-tools` component on `PATH`. Each example is checked from its
-own directory, as the `firmware` CI job shows: `cargo check --release --locked`
-for the default and every listed feature profile, plus
-`cargo test --lib --locked --target <host>` where the example has host tests.
+They need the embedded target; the `images` job also needs the toolchain's
+`llvm-tools` component and fetches the pinned ROM ELF itself.
 Together they check dependency
 and ownership boundaries, generated PAC outputs and compiled artifacts. Independent example,
 integration, HIL and Blobray workspaces have their own build configuration; the

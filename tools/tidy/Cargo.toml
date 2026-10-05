@@ -5,11 +5,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "Fast fail-closed repository integrity checks"
+description = "Fast fail-closed repository integrity checks: text policy over the repository model"
 
 [dependencies]
-oer-chip-profile = { path = "../chip-profile" }
-oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout" }
+oer-toolchain = { path = "../toolchain" }
+oer-command-tree = { path = "../command-tree" }
+oer-process = { path = "../process" }
+oer-repo = { path = "../repo" }
+oer-vendor-provenance = { path = "../vendor-provenance" }
 serde_json = "=1.0.151"
 toml = "=1.1.4"
 
@@ -22,3 +25,4 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
+host-layer = "entry"

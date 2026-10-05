@@ -27,11 +27,13 @@ env:
 
 # Few jobs, each a sequence sharing one build cache: a free account runs 20
 # jobs at once across every workflow, and every job pays for its checkout and
-# cache restore. Each step is one command of the xtask reference.
+# cache restore. What each job checks is the check registry's
+# (`cargo xtask check tier --list`, tools/xtask/src/registry.rs): a job only
+# prepares its runner and runs its checks up to the full tier.
 jobs:
-  # The root workspace on the host: the integrity tier, formatting of every
-  # workspace, Clippy, tests with their feature sets, locks, locked metadata
-  # and network dependency boundaries.
+  # The root workspace on the host: tidy, formatting of every workspace,
+  # Clippy, tests with their feature sets, locks, locked metadata and network
+  # dependency boundaries.
   host:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -47,33 +49,13 @@ jobs:
             target
           key: host-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
           restore-keys: host-${{ runner.os }}-
-      - run: cargo tidy check
-      - name: Format every workspace
-        run: |
-          # Every Cargo workspace, as oer-tidy discovers them.
-          for manifest in $(cargo tidy workspaces)
-          do
-            echo "::group::$manifest"
-            cargo fmt --all --manifest-path "$manifest" -- --check
-            echo "::endgroup::"
-          done
-      # The evaluator resolves HIL image sources with offline `cargo tree` in
-      # the firmware workspaces, and xtask reads metadata offline.
       - name: Fetch every workspace
         run: cargo tidy fetch
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      # Report every failing test binary in one run instead of the first.
-      - run: cargo test --workspace --locked --no-fail-fast
-      # The GATT application's `secure` module is off by default; test it too.
-      - run: cargo test --locked --no-fail-fast -p oer-example-bluetooth-gatt --all-features
-      - name: Declared test feature sets
-        run: cargo xtask --verbose check feature-sets
-      - run: cargo xtask --verbose lock --check
-      - run: cargo xtask --verbose check metadata
-      - run: cargo xtask --verbose check network
+      - run: cargo xtask --verbose check tier full --job host
 
-  # Clippy for every production feature profile on the chip target, plus the
-  # layer, facade, unsafe-code and PAC-access boundaries.
+  # Clippy for every production feature profile on the chip target, the
+  # layer, facade, unsafe-code and PAC-access boundaries, and the
+  # chip-target doctests.
   architecture:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -91,18 +73,12 @@ jobs:
           restore-keys: architecture-${{ runner.os }}-
       - name: Fetch every workspace
         run: cargo tidy fetch
-      - run: cargo xtask --verbose check architecture
-      # A compile_fail doctest proves that publishing borrowed DMA memory
-      # needs `unsafe`; the API exists only on the chip target.
-      - name: Chip-target doctest
-        run: |
-          target=$(cargo tidy chips --json | jq -r '.[] | select(.id == "esp32s31") | .["rust-target"]')
-          cargo test --doc --locked -p oer-esp32s31-soc-esp-hal --features axi-gdma-mem2mem --target "$target"
+      - run: cargo xtask --verbose check tier full --job architecture
 
   # Code built for a chip: the final HIL images' runtimes type-checked
-  # exactly as the image builder compiles them (every class nightly), the
-  # ESP32-S31 examples with their image flags, the ESP32-C5 workspaces, the
-  # ESP32-C5 PAC and HAL, and the compiled PHY library.
+  # exactly as the image builder compiles them, the ESP32-S31 examples with
+  # their image flags, the ESP32-C5 workspaces, PAC and HAL, and the
+  # compiled PHY library.
   firmware:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -122,37 +98,9 @@ jobs:
           restore-keys: firmware-${{ runner.os }}-
       - name: Fetch every workspace
         run: cargo tidy fetch
-      - run: cargo xtask --verbose check firmware --class performance --class correctness --type-check
-      - name: ESP32-S31 examples
-        run: |
-          for example in access-point monitor station thread
-          do
-            echo "::group::$example"
-            cargo xtask --verbose build firmware "$example" --type-check
-            echo "::endgroup::"
-          done
-      - name: Access-point example host tests
-        working-directory: examples/esp32s31/access-point
-        run: cargo test --lib --locked --target x86_64-unknown-linux-gnu
-      - name: ESP32-C5 HIL agent
-        working-directory: hil/targets/esp32c5
-        run: |
-          for features in boot-smoke system-watchdog; do
-            cargo clippy --locked --release -p oer-esp32c5-hil-agent --no-default-features --features "$features" -- -D warnings
-          done
-      - name: ESP32-C5 register probe
-        working-directory: verification/esp32c5/hardware/register-probe
-        run: cargo build --locked --release
-      - name: ESP32-C5 PAC and HAL
-        run: |
-          target=$(cargo tidy chips --json | jq -r '.[] | select(.id == "esp32c5") | .["rust-target"]')
-          cargo build --locked -p oer-esp32c5-pac -p oer-esp32c5-hal --target "$target"
-      - run: cargo xtask --verbose check phy --chip esp32s31
+      - run: cargo xtask --verbose check tier full --job firmware
 
-  # Every register publication (the model validates and the generated SVD,
-  # bindings and PAC are what it yields) and every qualification program
-  # (its catalogs and selection validate, and the evaluator assesses its
-  # committed evidence).
+  # Every register publication and every qualification program.
   models:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -170,24 +118,7 @@ jobs:
           restore-keys: models-${{ runner.os }}-
       - name: Fetch every workspace
         run: cargo tidy fetch
-      - name: Register publications
-        run: |
-          for manifest in registers/*/publication/registers.toml
-          do
-            echo "::group::$manifest"
-            cargo registers validate --manifest "$manifest"
-            cargo registers generate --manifest "$manifest" --check
-            echo "::endgroup::"
-          done
-      - name: Qualification programs
-        run: |
-          for program in qualification/targets/*/*.toml
-          do
-            echo "::group::$program"
-            cargo qualification validate --manifest "$program"
-            cargo qualification evaluate --manifest "$program"
-            echo "::endgroup::"
-          done
+      - run: cargo xtask --verbose check tier full --job models
 
   # Blobray's RISC-V executor against the pinned RISC-V architectural tests,
   # with the Sail formal model as the reference. Needs clang and lld.
@@ -211,15 +142,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang lld
       - name: Fetch every workspace
         run: cargo tidy fetch
-      - run: cargo xtask --verbose check isa-conformance
+      - run: cargo xtask --verbose check tier full --job isa-conformance
 
-  # Both final HIL application images, their placement/stack audits and the
-  # Blobray target audit. Needs espflash and the toolchain's LLVM tools.
+  # Both final HIL application images and the station example, built by the
+  # image pipeline with every gate and the Blobray target audit. Needs the
+  # toolchain's LLVM tools.
   images:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      ESPFLASH_VERSION: 4.5.0
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -229,32 +159,43 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/.cargo/bin/espflash
             target
             tools/blobray/target
-          key: images-${{ runner.os }}-${{ env.ESPFLASH_VERSION }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: images-${{ runner.os }}-${{ env.ESPFLASH_VERSION }}-
-      - name: Install espflash
-        run: |
-          command -v espflash >/dev/null && espflash --version | grep -q "$ESPFLASH_VERSION" || {
-            sudo apt-get update && sudo apt-get install -y libudev-dev
-            cargo install --locked espflash --version "$ESPFLASH_VERSION"
-          }
+          key: images-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: images-${{ runner.os }}-
       - name: Put the toolchain's LLVM tools on PATH
         run: |
           host=$(rustc -vV | sed -n 's/^host: //p')
           echo "$(rustc --print sysroot)/lib/rustlib/$host/bin" >> "$GITHUB_PATH"
       - name: Fetch every workspace
         run: cargo tidy fetch
-      # The interrupt-stack gate bounds every image with the pinned ROM ELF.
-      - name: Pinned ESP32-S31 ROM ELF
-        run: cargo xtask --verbose vendor-fetch esp32s31 --artifact rom
-      - run: cargo xtask --verbose check images
+      - run: cargo xtask --verbose check tier full --job images
+
+  # The provenance of every cited vendor function against the pinned vendor
+  # artifacts, which the check fetches.
+  verification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: verification-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'verification/*/artifacts.toml') }}
+          restore-keys: verification-${{ runner.os }}-
+      - name: Fetch every workspace
+        run: cargo tidy fetch
+      - run: cargo xtask --verbose check tier full --job verification
 
   # The one check branch protection requires: every job above passed.
   ci-ok:
     if: always()
-    needs: [host, architecture, firmware, models, isa-conformance, images]
+    needs: [host, architecture, firmware, models, isa-conformance, images, verification]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

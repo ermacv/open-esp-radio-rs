@@ -10,19 +10,13 @@
 use std::{
     ffi::OsString,
     io::Write as _,
-    path::PathBuf,
     sync::mpsc,
     time::{Duration, Instant},
 };
 
-use crate::{Context, Result, flash};
-
-/// How long a reset's ROM banner is read.
-const BANNER: Duration = Duration::from_secs(3);
-/// How long a port that re-enumerates after a reset may take to return.
-const REATTACH: Duration = Duration::from_secs(5);
-/// How long a port may take to return after its hub port's power cycle.
-const POWER_REATTACH: Duration = Duration::from_secs(10);
+use crate::Result;
+use oer_hil_board::{console, reset::ResetPath};
+use oer_process::Checkout;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum Via {
@@ -87,6 +81,17 @@ pub(crate) enum BoardCommand {
     },
 }
 
+impl Via {
+    fn path(self) -> ResetPath {
+        match self {
+            Self::Rts => ResetPath::Rts,
+            Self::Jtag => ResetPath::Jtag,
+            Self::Power => ResetPath::Power,
+            Self::Download => ResetPath::Download,
+        }
+    }
+}
+
 fn parse_duration(text: &str) -> std::result::Result<Duration, String> {
     oer_hil_arbiter::parse_duration(text).map_err(|error| error.to_string())
 }
@@ -109,19 +114,14 @@ pub(crate) enum PeerCli {
 }
 
 struct Target {
-    mac: String,
-    port: PathBuf,
-    chip: Option<String>,
+    board: oer_hil_board::Board,
     arbiter: oer_hil_arbiter::Arbiter,
 }
 
-fn target(board: &str) -> Result<Target> {
+fn target(ctx: &Checkout, board: &str) -> Result<Target> {
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
-    let resolved = crate::firmware_catalog::resolve_board(&arbiter, board)?;
     Ok(Target {
-        mac: resolved.mac,
-        port: resolved.port,
-        chip: resolved.chip,
+        board: oer_hil_board::Board::attached(&ctx.root, &arbiter.stand()?, board)?,
         arbiter,
     })
 }
@@ -131,44 +131,47 @@ fn lease(
     owner: String,
     work: String,
     air: bool,
-) -> Result<oer_hil_arbiter::Grant> {
-    let claims = std::iter::once(oer_hil_arbiter::Claim::board(&target.mac))
+) -> Result<oer_hil_arbiter::lock::BoardLease> {
+    let claims = std::iter::once(oer_hil_arbiter::Claim::board(target.board.mac()))
         .chain(air.then(|| oer_hil_arbiter::Claim::shared(oer_hil_arbiter::AIR)))
         .collect();
-    target.arbiter.acquire(&oer_hil_arbiter::Request {
-        owner,
-        work,
-        scenarios: Vec::new(),
-        claims,
-    })
+    target.arbiter.lease_board(
+        &oer_hil_arbiter::Request {
+            owner,
+            work,
+            scenarios: Vec::new(),
+            claims,
+        },
+        target.board.mac(),
+    )
 }
 
 pub(crate) fn board(
-    ctx: &Context,
+    ctx: &Checkout,
     owner: String,
     command: BoardCommand,
 ) -> Result<std::process::ExitCode> {
     match command {
         BoardCommand::Reset { board, via } => {
-            let target = target(&board)?;
-            let _grant = lease(
+            let target = target(ctx, &board)?;
+            let _lease = lease(
                 &target,
                 owner,
                 format!("board reset {board} --via {via:?}"),
                 false,
             )?;
-            let line = reset(&target, via)?;
+            let line = target.board.reset(via.path())?;
             println!(
                 "{board} ({}) reset via {}: {}",
-                target.mac,
+                target.board.mac(),
                 format!("{via:?}").to_lowercase(),
                 line.as_deref()
                     .unwrap_or("no ROM reset line on its console")
             );
         }
         BoardCommand::Check { board } => {
-            let target = target(&board)?;
-            let _grant = lease(&target, owner, format!("board check {board}"), false)?;
+            let target = target(ctx, &board)?;
+            let _lease = lease(&target, owner, format!("board check {board}"), false)?;
             check(&target, &board)?;
         }
         BoardCommand::Console {
@@ -176,16 +179,16 @@ pub(crate) fn board(
             duration,
             until,
         } => {
-            let target = target(&board)?;
-            let _grant = lease(&target, owner, format!("board console {board}"), false)?;
+            let target = target(ctx, &board)?;
+            let _lease = lease(&target, owner, format!("board console {board}"), false)?;
             let log = ctx
                 .root
                 .join("target/hil/console")
-                .join(target.mac.replace(':', ""));
+                .join(oer_hil_stand_model::mac::compact(target.board.mac()));
             std::fs::create_dir_all(&log)?;
-            let log = log.join(format!("console-{}.log", unix_seconds()));
-            let lines = flash::serial_lines(flash::open_without_reset(&target.port)?);
-            let seen = flash::capture(lines, duration, until.as_deref(), &log)?;
+            let log = log.join(format!("console-{}.log", oer_durable::unix_seconds()));
+            let lines = console::lines(target.board.open_console()?);
+            let seen = console::capture(lines, duration, until.as_deref(), &log)?;
             eprintln!("hil: console of {board} written to {}", log.display());
             if until.is_some() && !seen {
                 return Ok(std::process::ExitCode::FAILURE);
@@ -202,34 +205,6 @@ pub(crate) fn board(
     Ok(std::process::ExitCode::SUCCESS)
 }
 
-/// Cycle `board`'s hub port under its lease, watching the board leave USB
-/// and return (`cargo hil stand discover --verify-power`).
-pub(crate) fn watched_power_cycle(
-    owner: String,
-    board: &str,
-) -> Result<oer_hil_arbiter::control::PowerCycle> {
-    let target = target(board)?;
-    let power = target
-        .arbiter
-        .devices()?
-        .into_iter()
-        .find(|device| device.mac == target.mac)
-        .and_then(|device| device.power)
-        .ok_or("the board does not reset by power; add `power` to its `reset` in the stand file")?;
-    let _grant = lease(
-        &target,
-        owner,
-        format!("stand discover --verify-power {board}"),
-        false,
-    )?;
-    let mac = target.mac.clone();
-    power.cycle_observed(&|| {
-        oer_hil_arbiter::attached_ports()
-            .iter()
-            .any(|port| port.mac.as_deref() == Some(mac.as_str()))
-    })
-}
-
 /// Whether a reset's ROM line shows the board booting from flash, or why not.
 fn booted(line: Option<&str>) -> std::result::Result<(), String> {
     match line {
@@ -241,19 +216,10 @@ fn booted(line: Option<&str>) -> std::result::Result<(), String> {
     }
 }
 
-fn reset_path(via: Via) -> oer_hil_arbiter::ResetPath {
-    match via {
-        Via::Rts => oer_hil_arbiter::ResetPath::Rts,
-        Via::Jtag => oer_hil_arbiter::ResetPath::Jtag,
-        Via::Power => oer_hil_arbiter::ResetPath::Power,
-        Via::Download => oer_hil_arbiter::ResetPath::Download,
-    }
-}
-
 /// `cargo hil board soak`: batches of cycles under their own leases, ending
 /// at `cycles`, after `duration`, or at the first reset that did not boot.
 fn soak(
-    ctx: &Context,
+    ctx: &Checkout,
     owner: String,
     board: &str,
     cycles: Option<u32>,
@@ -261,7 +227,7 @@ fn soak(
     via: &[Via],
     batch: u32,
 ) -> Result<std::process::ExitCode> {
-    let target = target(board)?;
+    let target = target(ctx, board)?;
     let started = Instant::now();
     let done = |cycle: u32| {
         cycles.is_some_and(|cycles| cycle >= cycles)
@@ -269,7 +235,7 @@ fn soak(
     };
     let (mut cycle, mut resets, mut failure) = (0_u32, 0_u32, None);
     'soak: while !done(cycle) {
-        let _grant = lease(
+        let _lease = lease(
             &target,
             owner.clone(),
             format!("board soak {board} cycles {}..", cycle + 1),
@@ -282,7 +248,7 @@ fn soak(
             cycle += 1;
             for &path in via {
                 resets += 1;
-                let line = reset(&target, path)?;
+                let line = target.board.reset(path.path())?;
                 let name = format!("{path:?}").to_lowercase();
                 match booted(line.as_deref()) {
                     Ok(()) => println!("{cycle} {name}: {}", line.unwrap_or_default()),
@@ -292,12 +258,12 @@ fn soak(
                         let log = ctx
                             .root
                             .join("target/hil/console")
-                            .join(target.mac.replace(':', ""))
-                            .join(format!("soak-failure-{}.log", unix_seconds()));
+                            .join(oer_hil_stand_model::mac::compact(target.board.mac()))
+                            .join(format!("soak-failure-{}.log", oer_durable::unix_seconds()));
                         std::fs::create_dir_all(log.parent().ok_or("no parent")?)?;
-                        if let Ok(serial) = flash::open_without_reset(&target.port) {
-                            let lines = flash::serial_lines(serial);
-                            let _ = flash::capture(lines, Duration::from_secs(5), None, &log);
+                        if let Ok(serial) = target.board.open_console() {
+                            let lines = console::lines(serial);
+                            let _ = console::capture(lines, Duration::from_secs(5), None, &log);
                             eprintln!("hil: console after the failure in {}", log.display());
                         }
                         failure = Some(format!("cycle {cycle} via {name}: {why}"));
@@ -309,9 +275,9 @@ fn soak(
     }
     target.arbiter.record_board_by(
         owner,
-        Some(target.mac.clone()),
+        Some(target.board.mac().to_owned()),
         oer_hil_arbiter::BoardEventKind::Soaked {
-            paths: via.iter().copied().map(reset_path).collect(),
+            paths: via.iter().map(|via| via.path()).collect(),
             cycles: cycle,
             resets,
             failure: failure.clone(),
@@ -328,7 +294,11 @@ fn soak(
     })
 }
 
-pub(crate) fn peer(owner: String, args: &[OsString]) -> Result<std::process::ExitCode> {
+pub(crate) fn peer(
+    ctx: &Checkout,
+    owner: String,
+    args: &[OsString],
+) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     let PeerCli::Send {
         board,
@@ -339,12 +309,12 @@ pub(crate) fn peer(owner: String, args: &[OsString]) -> Result<std::process::Exi
     if line.is_empty() {
         return Err("cargo hil peer send needs a command line".into());
     }
-    let target = target(&board)?;
-    let _grant = lease(&target, owner, format!("peer send {board} {line}"), true)?;
-    let mut serial = flash::open_without_reset(&target.port)?;
+    let target = target(ctx, &board)?;
+    let _lease = lease(&target, owner, format!("peer send {board} {line}"), true)?;
+    let mut serial = target.board.open_console()?;
     // A fresh line ends whatever the peer's parser held.
     serial.write_all(format!("\n{line}\n").as_bytes())?;
-    let lines = flash::serial_lines(serial);
+    let lines = console::lines(serial);
     let command = line.split_whitespace().next().unwrap_or_default();
     let answered = answer(&lines, command, duration, &mut |text| println!("{text}"));
     Ok(match answered {
@@ -354,8 +324,9 @@ pub(crate) fn peer(owner: String, args: &[OsString]) -> Result<std::process::Exi
 }
 
 /// Print `lines` until the `@OK` (true) or `@ERR` (false) answer to
-/// `command`, or `None` after `duration`. An answer naming another command,
-/// such as noise a peer read while it booted, is only printed.
+/// `command` in the peers' one grammar ([`oer_hil_link::peer::parse`]), or
+/// `None` after `duration`. An answer naming another command, such as noise
+/// a peer read while it booted, is only printed.
 fn answer(
     lines: &mpsc::Receiver<Vec<u8>>,
     command: &str,
@@ -369,14 +340,18 @@ fn answer(
             Ok(line) => {
                 let text = String::from_utf8_lossy(&line);
                 print(&text);
-                let mut words = text.split_whitespace();
-                let (status, about) = (words.next(), words.next());
-                if about.is_some_and(|about| about.eq_ignore_ascii_case(command)) {
-                    match status {
-                        Some("@OK") => return Some(true),
-                        Some("@ERR") => return Some(false),
-                        _ => {}
+                match oer_hil_link::peer::parse(text.trim()) {
+                    Some(oer_hil_link::peer::Line::Ok { command: about })
+                        if about.eq_ignore_ascii_case(command) =>
+                    {
+                        return Some(true);
                     }
+                    Some(oer_hil_link::peer::Line::Err { command: about, .. })
+                        if about.eq_ignore_ascii_case(command) =>
+                    {
+                        return Some(false);
+                    }
+                    _ => {}
                 }
             }
             Err(_) => return None,
@@ -385,116 +360,29 @@ fn answer(
     None
 }
 
-/// Reset the target and return its ROM's `rst:` line, reading the console
-/// again when the reset made the port re-enumerate.
-fn reset(target: &Target, via: Via) -> Result<Option<String>> {
-    let lines = match via {
-        Via::Rts => flash::serial_lines(retrying(|| flash::reset_into_application(&target.port))?),
-        Via::Jtag => {
-            let lines = flash::serial_lines(retrying(|| flash::open_without_reset(&target.port))?);
-            let chip = target
-                .chip
-                .as_deref()
-                .ok_or("the board is not in the stand file")?;
-            crate::jtag::reset(chip, &target.mac)?;
-            lines
-        }
-        Via::Download => {
-            let control =
-                oer_hil_stand::control::BoardControl::of_board(&target.port, &target.mac)?;
-            let entry = control.download_entry().ok_or(
-                "the board does not reset by power; add `power` to its `reset` in the stand file",
-            )?;
-            let banner = entry()?;
-            return Ok(oer_hil_arbiter::control::reset_line(&banner).map(str::to_owned));
-        }
-        Via::Power => {
-            let power = target
-                .arbiter
-                .devices()?
-                .into_iter()
-                .find(|device| device.mac == target.mac)
-                .and_then(|device| device.power)
-                .ok_or(
-                    "the board does not reset by power; add `power` to its `reset` in the stand file",
-                )?;
-            power.cycle()?;
-            return Ok(reattached_rom_line(target, POWER_REATTACH));
-        }
-    };
-    if let Some(line) = rom_line(&lines, BANNER) {
-        return Ok(Some(line));
-    }
-    // A chip whose USB Serial/JTAG port re-enumerates prints the banner
-    // before the port returns.
-    Ok(reattached_rom_line(target, REATTACH))
-}
-
-/// The ROM's `rst:` line once the board's port returns within `within`.
-fn reattached_rom_line(target: &Target, within: Duration) -> Option<String> {
-    let deadline = Instant::now() + within;
-    while Instant::now() < deadline {
-        if let Ok(serial) = flash::open_without_reset(&target.port) {
-            return rom_line(&flash::serial_lines(serial), BANNER);
-        }
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    None
-}
-
-/// Open a board's port, retrying for two seconds: the console reader of the
-/// previous reset releases the port only at its next read timeout.
-fn retrying<T, E>(
-    mut open: impl FnMut() -> std::result::Result<T, E>,
-) -> std::result::Result<T, E> {
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        match open() {
-            Err(_) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
-            result => return result,
-        }
-    }
-}
-
 /// Whether `board` boots from flash after an RTS reset: its ROM reset line,
 /// or why not. A quarantined board is checked without a lease, which nobody
 /// else can hold.
-pub(crate) fn boots(board: &str) -> Result<String> {
-    let target = target(board)?;
-    let line =
-        reset(&target, Via::Rts)?.ok_or("no ROM reset line on its console after an RTS reset")?;
+pub(crate) fn boots(ctx: &Checkout, board: &str) -> Result<String> {
+    let target = target(ctx, board)?;
+    let line = target
+        .board
+        .reset(ResetPath::Rts)?
+        .ok_or("no ROM reset line on its console after an RTS reset")?;
     if line.contains("DOWNLOAD") {
         return Err(format!("its ROM waits for a download: {line}").into());
     }
     Ok(line)
 }
 
-fn rom_line(lines: &mpsc::Receiver<Vec<u8>>, within: Duration) -> Option<String> {
-    let deadline = Instant::now() + within;
-    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
-        match lines.recv_timeout(remaining) {
-            Ok(line) => {
-                let text = String::from_utf8_lossy(&line).trim().to_owned();
-                if text.starts_with("rst:") && text.contains("boot:") {
-                    return Some(text);
-                }
-            }
-            Err(_) => return None,
-        }
-    }
-    None
-}
-
 fn check(target: &Target, board: &str) -> Result<()> {
-    let devices = target.arbiter.devices()?;
-    let device = devices.iter().find(|device| device.mac == target.mac);
+    let mac = target.board.mac();
     println!(
-        "{board} ({}): attached at {}, chip {}",
-        target.mac,
-        target.port.display(),
-        target.chip.as_deref().unwrap_or("unknown")
+        "{board} ({mac}): attached at {}, chip {}",
+        target.board.port().display(),
+        target.board.chip()
     );
-    match target.arbiter.latest_flash(&target.mac)? {
+    match target.arbiter.latest_flash(mac)? {
         Some(event) => println!("  firmware: {event}"),
         None => println!("  firmware: unknown"),
     }
@@ -502,7 +390,7 @@ fn check(target: &Target, board: &str) -> Result<()> {
         .arbiter
         .maintenance()?
         .into_iter()
-        .find(|entry| entry.mac == target.mac)
+        .find(|entry| entry.mac == mac)
     {
         println!(
             "  maintenance by {}: {}",
@@ -511,7 +399,7 @@ fn check(target: &Target, board: &str) -> Result<()> {
     }
     println!(
         "  reset paths: rts, jtag{}",
-        if device.is_some_and(|device| device.power.is_some()) {
+        if target.board.has_power() {
             ", power (hub port)"
         } else {
             ""
@@ -519,9 +407,9 @@ fn check(target: &Target, board: &str) -> Result<()> {
     );
     // A text-protocol peer answers SYNC; a HIL runtime answers only its binary
     // protocol, which the runner speaks.
-    let mut serial = flash::open_without_reset(&target.port)?;
+    let mut serial = target.board.open_console()?;
     serial.write_all(b"\nSYNC\n")?;
-    let lines = flash::serial_lines(serial);
+    let lines = console::lines(serial);
     let mut heard = Vec::new();
     let answered = answer(&lines, "SYNC", Duration::from_secs(2), &mut |text| {
         heard.push(text.to_owned())
@@ -538,12 +426,6 @@ fn check(target: &Target, board: &str) -> Result<()> {
         ),
     }
     Ok(())
-}
-
-fn unix_seconds() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs())
 }
 
 #[cfg(test)]
@@ -603,19 +485,6 @@ mod tests {
     }
 
     #[test]
-    fn the_rom_reset_line_is_picked_from_the_banner() {
-        let banner = lines(&[
-            "ESP-ROM:esp32c5-eco2-20250121",
-            "rst:0x15 (USB_UART_HPSYS),boot:0x18 (SPI_FAST_FLASH_BOOT)",
-        ]);
-        assert_eq!(
-            rom_line(&banner, Duration::from_secs(1)).as_deref(),
-            Some("rst:0x15 (USB_UART_HPSYS),boot:0x18 (SPI_FAST_FLASH_BOOT)")
-        );
-        assert_eq!(rom_line(&lines(&["app"]), Duration::from_millis(200)), None);
-    }
-
-    #[test]
     fn a_reset_names_its_path() {
         use clap::Parser as _;
         #[derive(clap::Parser)]
@@ -629,5 +498,26 @@ mod tests {
             BoardCommand::Reset { via: Via::Jtag, .. }
         ));
         assert!(Wrap::try_parse_from(["x", "reset", "esp32c5", "--via", "en"]).is_err());
+        // The stand's help names exactly the paths the parser takes.
+        let help = crate::command::STAND_HELP
+            .lines()
+            .find(|line| line.contains("cargo hil board reset"))
+            .unwrap();
+        let listed = help
+            .split("--via ")
+            .nth(1)
+            .and_then(|rest| rest.split(']').next())
+            .unwrap();
+        for via in listed.split('|') {
+            assert!(
+                Wrap::try_parse_from(["x", "reset", "esp32c5", "--via", via]).is_ok(),
+                "{via}"
+            );
+        }
+        assert_eq!(
+            listed.split('|').count(),
+            <Via as clap::ValueEnum>::value_variants().len()
+        );
+        assert!(Wrap::try_parse_from(["x", "reset", "esp32c5", "--download"]).is_err());
     }
 }

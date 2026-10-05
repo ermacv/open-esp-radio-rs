@@ -1,0 +1,28 @@
+[package]
+name = "oer-repo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "The repository model: its files, Cargo manifests and workspaces, chips, package classification, dependency policy and path-package closures"
+readme = "README.md"
+
+[dependencies]
+oer-chip-profile = { path = "../chip-profile" }
+oer-process = { path = "../process" }
+toml = "=1.1.4"
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+layer = "tool"
+platform = "host"
+host-layer = "foundation"
+# The tests read this checkout's model.
+inputs = ["**/Cargo.toml", "platform/*/chip.toml"]

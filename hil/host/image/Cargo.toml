@@ -6,28 +6,25 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "HIL image builder: firmware construction, image audits and the records it hands to run evidence"
+description = "HIL images: each image class's spec for the image pipeline, snapshot builds and the records they hand to run evidence"
 
 [dependencies]
 oer-chip-profile = { path = "../../../tools/chip-profile" }
-oer-esp32s31-firmware = { path = "../../../tools/firmware" }
-# The layout seed a runtime image build is linked with.
-oer-esp32s31-platform-layout = { path = "../../../platform/esp32s31/layout", features = ["build"] }
-oer-hil-durable = { path = "../durable" }
-oer-hil-evidence = { path = "../evidence" }
+oer-durable = { path = "../../../tools/durable" }
+oer-elf = { path = "../../../tools/elf" }
+oer-hil-run-bundle = { path = "../run-bundle" }
 oer-hil-image-class = { path = "../image-class" }
 oer-hil-source-snapshot = { path = "../source-snapshot" }
+oer-image = { path = "../../../tools/image" }
 oer-process = { path = "../../../tools/process" }
-fs2 = "0.4"
-object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
+oer-toolchain = { path = "../../../tools/toolchain" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
 tempfile = "3"
 toml = "1.1"
 
 [dev-dependencies]
-oer-hil-evidence = { path = "../evidence", features = ["test-support"] }
+oer-hil-run-bundle = { path = "../run-bundle", features = ["test-support"] }
 oer-hil-source-snapshot = { path = "../source-snapshot", features = ["test-support"] }
 
 [lints]
@@ -36,4 +33,5 @@ workspace = true
 [package.metadata.open-radio]
 layer = "hil"
 platform = "host"
-hil = "operation"
+host-layer = "orchestration"
+hil = "orchestration"

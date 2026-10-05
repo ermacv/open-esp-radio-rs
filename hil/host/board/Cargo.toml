@@ -6,12 +6,21 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "HIL board support: how the stand flashes, starts and resets a chip"
+description = "HIL board I/O: ports, the one flash writer, starts, the reset ladder, OpenOCD, hub power and consoles"
 
 [dependencies]
+# The library of the same espflash the images are encoded with: one connection
+# writes every flash segment.
+espflash = { version = "=4.5.0", default-features = false, features = ["serialport"] }
 oer-chip-profile = { path = "../../../tools/chip-profile" }
+oer-hil-stand-model = { path = "../../stand/model" }
+oer-image = { path = "../../../tools/image" }
 oer-process = { path = "../../../tools/process" }
+serde = { version = "1.0", features = ["derive"] }
 serialport = { version = "4.8.1", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true
@@ -19,4 +28,7 @@ workspace = true
 [package.metadata.open-radio]
 layer = "hil"
 platform = "host"
+host-layer = "stand"
 hil = "operation"
+# The tests read the example stand file and the chip profiles.
+inputs = ["hil/stand/stand.example.toml", "platform/*/chip.toml"]

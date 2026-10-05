@@ -9,6 +9,7 @@ publish = false
 description = "Privileged Linux fixture installer and fixed launchers for open ESP radio HIL"
 
 [dependencies]
+oer-durable = { path = "../../../tools/durable" }
 clap = { version = "4.5", features = ["derive"] }
 fs2 = "0.4"
 libc = "0.2"
@@ -25,4 +26,5 @@ workspace = true
 [package.metadata.open-radio]
 layer = "hil"
 platform = "host"
+host-layer = "stand"
 hil = "observation"

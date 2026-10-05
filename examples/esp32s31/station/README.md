@@ -42,14 +42,14 @@ Build the complete application from the repository root:
 
 ```console
 cargo xtask build firmware station
-cargo xtask build firmware station --flash --monitor --port /dev/ttyACM0
+cargo hil flash --board <board> --monitor 30s target/firmware/esp32s31-station/build-<id>
 ```
 
 The [shared platform](../../../platform/esp32s31/README.md) initializes PSRAM,
 relocates the separately linked application and keeps DMA and interrupt storage
-in SRAM. The command checks ELF placement and stack frames before packaging
-or flashing. `cargo build` in this example produces only the stage-two ELF;
-flash the complete image through `xtask`. Hardware readiness still requires
+in SRAM. The build checks ELF placement and stack frames before packaging
+the image bundle. `cargo build` in this example produces only the stage-two
+ELF; flash the bundle `xtask` built. Hardware readiness still requires
 appropriate scenario evidence.
 
 See the [Wi-Fi network integration](../../../docs/wifi-egress.md#owned-tx-path)

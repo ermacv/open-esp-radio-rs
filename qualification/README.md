@@ -51,7 +51,7 @@ An unknown or unselected ID is an error. This closure is not a change-impact
 analysis or an instruction to rerun its checks. Without a focus, catalog mode
 includes all source facts, inventory facets and references as well as capability
 declarations; program mode includes the selected program and linked source facts.
-Neither command changes a gate outcome or fails just because work remains.
+Neither command fails just because work remains.
 Invalid declarations and corrupt evidence still fail validation.
 `status` prints a compact state view and counts of original HIL observations,
 including excluded history. `status --details` expands scopes, limits, owner
@@ -255,7 +255,7 @@ views, not another readiness decision or tracked snapshot.
 program selections, and renders the complete catalog set in both input orders
 to check deterministic presentation. It uses `catalog check --catalog`,
 `catalog check --manifest`, and `catalog render --catalog`; it does not use
-manifest rendering, `validate`, `evaluate`, or `gate`, and it does not read
+manifest rendering, `validate` or `evaluate`, and it does not read
 vendor evidence or HIL runs. Its ignored static views live below
 `target/docs/catalogs/` and carry no readiness verdict.
 
@@ -268,7 +268,7 @@ production composition and evidence exist. The chip's
 [feature inventory](../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md#qualification-scope-mapping)
 maps these requirements to current source boundaries.
 
-### Validate, evaluate and gate a program
+### Validate and evaluate a program
 
 Validate each program from the repository root:
 
@@ -283,15 +283,13 @@ cargo qualification validate \
   --manifest qualification/targets/esp32s31/ieee802154.toml
 ```
 
-Three commands have deliberately different contracts:
+The two commands have deliberately different contracts:
 
 - `validate` rejects malformed manifests, unsafe references, invalid
   dependency graphs, mismatched verification inputs and corrupt HIL bundles;
   an incomplete target is still a valid development state;
 - `evaluate` emits the same derived verdict and optionally a complete JSON
-  report through `--json-report PATH`;
-- `gate` returns non-zero unless every required capability and dependency is
-  ready.
+  report through `--json-report PATH`.
 
 `catalog check --catalog` and `catalog render --catalog` are static operations
 over the complete explicitly loaded catalog set. The `--manifest` check form
@@ -339,14 +337,14 @@ cargo qualification catalog check --manifest qualification/targets/esp32s31/blue
 ```
 
 Use `evaluate --manifest PATH --json-report PATH` for a current evidence-backed
-assessment, or `gate --manifest PATH` when every selected capability must be ready.
+assessment; its verdict says which selected capabilities are ready.
 The catalog-check summary counts all loaded catalog declarations, including
 unselected ones; the evaluator report describes only the resolved product set.
 
 ## Execution selection
 
 `cargo qualification plan --manifest <program> [--capability <id>]` emits a
-read-only JSON selection from the same HIL decisions as `status` and `gate`.
+read-only JSON selection from the same HIL decisions as `status` and `evaluate`.
 Each obligation explains `satisfied`, `run`, `review` (inspect excluded
 observations), `investigate` (a current failure) or `unsupported`, and binds the
 digest of the scenario's current normalized document. It performs no build,
@@ -416,7 +414,8 @@ axes, evidence requirements or capability dependency graph.
 The catalog states what is supported; a code anchor states where. A
 `// CAPABILITY: <id>[, <id>...]` line comment directly above a Rust item,
 after its doc comments and attributes, names the inventory items, source
-facts or catalog capabilities that item owns:
+facts or catalog capabilities that item owns (the line grammar has one
+recogniser, `oer_tidy::anchors`, which `cargo tidy check` uses too):
 
 ```rust
 /// Finite station attempts and reconnect generations.
@@ -579,10 +578,11 @@ partition table, and the sources of the image builder, packer and memory
 auditor. A shard binds those files, its own observer's manifest directories
 and the observer's lock, toolchain and input registry, so a change in another
 radio's driver leaves it current. A record of another schema is an error.
-The evaluator independently runs `cargo tree`
-for the image's runtime (with the features its build provenance records) and
-bootstrap; when the recorded list lacks the manifest of any package found
-there, the shard falls back to the broad binding. An observation whose
+The evaluator independently takes the path-package closure of the image's
+runtime (with the features its build provenance records) and bootstrap for
+the image's target from the repository model (`oer-repo`); when the recorded
+list lacks the manifest of any package found there, the shard falls back to
+the broad binding. An observation whose
 firmware was built with inherited `RUSTFLAGS` or `CARGO_ENCODED_RUSTFLAGS` is
 never recorded: no source binding covers the builder's environment, and
 `hil-evidence` names the skipped run. Firmware builds drop inherited
@@ -598,16 +598,21 @@ changed source makes it stale until the scenario runs again and is recorded,
 and a bound source that no longer exists is an error: record the scenario again
 or delete the shard.
 Running scenarios never writes tracked files: recording is an explicit step,
-`cargo hil evidence record` (this checkout's pending clean runs, or `--run
-ID`), which calls `hil-evidence` with the run's observer receipt, and `cargo hil
-evidence pending` lists what is not recorded yet. `--hil-target` selects the
+`cargo qualification hil-evidence --hil-target <chip> --pending` (this
+checkout's pending clean runs, which leave the pending list once observed) or
+`--run ID`; the evaluator reads the runs itself with the checkout's current
+observer descriptor, and the stand never runs it. `cargo hil evidence
+pending` lists what is not recorded yet. `--hil-target` selects the
 programs naming that HIL target, which must agree on their run and evidence
 directories. Commit the shards. `INPUT` reports `hil-shards` and `hil-current-shards`.
 
 ### Bundle validation and attempt seals
 
-The HIL runner writes bundles below `target/hil/runs/<run-id>/`.
-Qualification independently checks `integrity.json`, every indexed file hash,
+The HIL runner writes bundles below `target/hil/runs/<run-id>/`, and
+qualification reads them through the run bundle's one typed reader
+(`oer-hil-run-bundle`): its independence is the seals it verifies and the
+files it hashes again at admission, not a second reader. It checks
+`integrity.json`, every indexed file hash,
 manifest/suite identity, current source applicability,
 scenario outcome and repetition count. Markdown reports are not proof inputs.
 A generated run directory without a manifest is incomplete mutable execution
@@ -682,7 +687,7 @@ transitive dependencies, including shared feature unification: edges come from
 `cargo tree`, package features and unit profiles from Cargo's
 `compiler-artifact` messages, and emitted build-script flags are bound with
 output directories normalized. `cargo hil` builds the runner,
-keeps a receipt under `target/hil/observers/` and launches a copy identified by
+keeps a receipt under `target/hil/runners/` and launches a copy identified by
 executable hash; a direct Cargo build has no receipt and cannot establish
 current observer compatibility. The registry's `build.profile` selects the
 required host profile (`debug` maps to Cargo's `dev`). An observation whose

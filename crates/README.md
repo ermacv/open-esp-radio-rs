@@ -54,6 +54,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
 | `adapters/openthread/ieee802154/` | Portable OpenThread `Radio` over any `Ieee802154RadioPort` |
+| `adapters/trouble/bluetooth/gatt/` | Portable GATT application over the Trouble Host (plaintext profile; `secure` adds Numeric Comparison pairing, bonds and encrypted access) that the Bluetooth HIL agents compose |
 | `adapters/embassy/esp32s31/executor/` | Scheduler-free Embassy executor and time driver |
 | `adapters/virtual/time/` | Per-instance virtual monotonic time for host tests and simulations: a `VirtualClock` its owner advances and a `SkipClock` whose waits skip to their deadline |
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |

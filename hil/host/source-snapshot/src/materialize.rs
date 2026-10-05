@@ -9,7 +9,7 @@ pub(super) fn materialize(directory: &Path, destination: &Path) -> Result<(Snaps
     if snapshot.schema != 1
         || manifest.schema != 1
         || digest(&serde_json::to_vec(&manifest)?) != snapshot.snapshot_id
-        || oer_hil_durable::sha256_file(&directory.join("sources.tar"))? != snapshot.archive_sha256
+        || oer_durable::sha256_file(&directory.join("sources.tar"))? != snapshot.archive_sha256
     {
         return Err("source snapshot identity or archive integrity mismatch".into());
     }
@@ -64,7 +64,7 @@ pub(super) fn materialize(directory: &Path, destination: &Path) -> Result<(Snaps
         // the digest below checks what was written, so no fsync is needed.
         std::io::copy(&mut entry, &mut target)?;
         drop(target);
-        if oer_hil_durable::sha256_file(&output)? != file.sha256 {
+        if oer_durable::sha256_file(&output)? != file.sha256 {
             return Err("source archive content digest mismatch".into());
         }
         #[cfg(unix)]

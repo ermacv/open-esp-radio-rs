@@ -21,7 +21,7 @@ Claude Code agents do almost all the work; the owner sets the tasks.
 
 ## Gate, push, commit
 
-- Iterate with `cargo test -p <package> <test>`; gate uncommitted work with `cargo xtask check changed`, under a minute warm (`--full` adds CI's heavy set). Output is a summary; logs are in `target/xtask/logs/`.
+- Iterate with `cargo test -p <package> <test>`; gate uncommitted work with `cargo xtask check changed`, under a minute warm (`--full` adds CI's full tier). One check registry decides what the gate, push and every CI job run (`cargo xtask check tier --list`; a CI job is `cargo xtask check tier full --job <job>`). Output is a summary; logs are in `target/xtask/logs/`.
 - Work on a branch in its own worktree. `main` changes only through pull requests: `cargo xtask push` gates exactly `HEAD`, pushes the branch, opens its PR and enables auto-merge (`--draft` leaves merging to a person). CI on the PR is the full check; do not wait for it. A red `main` comes before other work. Skill: `push-and-ci`; reference: [the push gate](tools/xtask/README.md#the-push-gate).
 - After a pull that changed a lock file: `cargo tidy fetch` (Cargo is offline). After a dependency change: `cargo xtask lock`. A second checkout: `cargo xtask worktree add` (its own warm `target/`; never share a target directory).
 - Commits use Conventional subjects (`feat(blobray): …`, `fix(esp32s31): …`), scoped and imperative. A production change that Blobray or verification work needs lands in its own product-scoped commit. A PR names the ownership boundary, the checks run, any qualification/HIL evidence and every generated SVD/PAC change.

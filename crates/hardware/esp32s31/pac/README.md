@@ -77,7 +77,7 @@ names each word and its guarantee.
 ## Validation
 
 `cargo registers generate --check`, `cargo xtask check architecture` and
-`cargo xtask check images` validate register
+`cargo xtask check firmware --class performance --class correctness` validate register
 sources, dependency direction, handwritten unsafe boundaries and the final
 linked image. Publication checks also cover source-only publication reproducibility unconditionally. Artifact-scoped
 publication is additionally checked when its review report is present.

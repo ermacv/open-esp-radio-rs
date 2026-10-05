@@ -4,7 +4,6 @@
 registers = "run --quiet --profile blobray -p oer-register-tool --"
 xtask = "run --quiet -p oer-xtask --"
 hil = "run --quiet -p oer-hil-cli --"
-memory = "run --quiet -p oer-memory-report --"
 qualification = "run --quiet --profile qualification -p oer-qualification --"
 blobray = "run --quiet --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-cli --bin blobray --"
 # The repository model of oer-tidy: `cargo tidy check`, `workspaces`,

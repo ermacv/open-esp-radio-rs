@@ -1,7 +1,6 @@
 //! Read-only execution selection derived from the same capability decisions.
 use crate::{Result, engineering::ProjectMap, hil::EvidenceStatus, model::WorkKind};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 #[derive(Debug, Serialize)]
 pub(crate) struct Plan {
@@ -91,10 +90,8 @@ impl Plan {
                 )
             })
             .collect::<Vec<_>>();
-        let scope_sha256 = format!(
-            "{:x}",
-            Sha256::digest(serde_json::to_vec(&(&target, &map.focus, &scope))?)
-        );
+        let scope_sha256 =
+            oer_durable::sha256_bytes(&serde_json::to_vec(&(&target, &map.focus, &scope))?);
         Ok(Self {
             schema: 2,
             kind: "open-esp-radio-hil-selection",

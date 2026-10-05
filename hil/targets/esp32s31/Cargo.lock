@@ -1648,6 +1648,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-bluetooth-gatt-trouble"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embedded-io-async 0.7.0",
+ "heapless 0.9.3",
+ "trouble-host",
+]
+
+[[package]]
 name = "oer-bluetooth-hci"
 version = "0.1.0"
 dependencies = [
@@ -1833,6 +1845,7 @@ dependencies = [
  "heapless 0.9.3",
  "log",
  "oer-bluetooth-controller",
+ "oer-bluetooth-gatt-trouble",
  "oer-bluetooth-hci",
  "oer-embassy-net-owned",
  "oer-esp32s31-bluetooth-system",
@@ -1854,7 +1867,6 @@ dependencies = [
  "oer-esp32s31-soc-esp-hal",
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-runtime",
- "oer-example-bluetooth-gatt",
  "oer-hil-agent",
  "oer-hil-esp32s31-telemetry",
  "oer-hil-image-keys",
@@ -2257,18 +2269,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-example-bluetooth-gatt"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embedded-io-async 0.7.0",
- "heapless 0.9.3",
- "trouble-host",
-]
-
-[[package]]
 name = "oer-hil-agent"
 version = "0.1.0"
 dependencies = [
@@ -2281,7 +2281,7 @@ dependencies = [
  "embedded-io-async 0.7.0",
  "heapless 0.9.3",
  "log",
- "oer-example-bluetooth-gatt",
+ "oer-bluetooth-gatt-trouble",
  "oer-hil-protocol",
  "trouble-host",
  "xarxa",

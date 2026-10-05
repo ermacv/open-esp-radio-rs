@@ -14,7 +14,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use sha2::{Digest, Sha256};
+use oer_vendor_artifacts::Manifest;
 
 const SOURCE_ENV: &str = "OER_ESP_IDF_DIR";
 const COMMON_LL: &str = "components/esp_hal_ieee802154/include/hal/ieee802154_common_ll.h";
@@ -33,9 +33,8 @@ const INCLUDE_DIRS: &[&str] = &[
 /// this stand compiles.
 const ARTIFACTS: &str = "../../artifacts.toml";
 const IDF_SOURCE: &str = "esp-idf";
-/// Directory `cargo xtask vendor-fetch` fills with the pinned sources,
-/// relative to the repository root, followed by the revision.
-const FETCHED: &str = "target/vendor/esp-idf";
+/// The repository root, relative to this package.
+const REPOSITORY: &str = "../../../..";
 /// Translation units compiled only with a Cargo feature.
 const FEATURE_UNITS: &[(&str, &str)] = &[(
     "components/ieee802154/esp_ieee802154_multipan.c",
@@ -48,48 +47,34 @@ struct Source {
     sha256: String,
 }
 
-/// The pinned revision and files of the ESP-IDF source in the manifest.
-fn ledger(text: &str) -> (String, Vec<Source>) {
-    let manifest: toml::Table = toml::from_str(text).expect("artifact manifest");
-    let tables = |key: &str| -> Vec<toml::Table> {
-        manifest[key]
-            .as_array()
-            .expect("manifest arrays")
-            .iter()
-            .map(|v| v.as_table().expect("manifest tables").clone())
-            .collect()
-    };
-    let field = |table: &toml::Table, key: &str| -> String {
-        table[key].as_str().expect("string field").to_owned()
-    };
-    let revision = tables("source")
-        .into_iter()
-        .find(|s| field(s, "id") == IDF_SOURCE)
-        .map(|s| field(&s, "revision"))
+/// The pinned ESP-IDF source of the manifest: its fetched directory in the
+/// repository at `root` and revision, and its files.
+fn ledger(text: &str, root: &Path) -> (PathBuf, String, Vec<Source>) {
+    let manifest = Manifest::parse(text).expect("artifact manifest");
+    let idf = manifest
+        .source(IDF_SOURCE)
         .expect("the manifest pins the ESP-IDF source");
-    let sources = tables("artifact")
-        .into_iter()
-        .filter(|a| field(a, "source") == IDF_SOURCE)
-        .map(|a| {
-            let path = field(&a, "path");
-            Source {
-                requires: FEATURE_UNITS
-                    .iter()
-                    .find(|(unit, _)| *unit == path)
-                    .map(|(_, feature)| (*feature).to_owned()),
-                sha256: field(&a, "sha256"),
-                path,
-            }
+    let revision = idf
+        .revision
+        .clone()
+        .expect("the ESP-IDF source pins a revision");
+    let sources = manifest
+        .artifact
+        .iter()
+        .filter(|a| a.source == IDF_SOURCE)
+        .map(|a| Source {
+            requires: FEATURE_UNITS
+                .iter()
+                .find(|(unit, _)| *unit == a.path)
+                .map(|(_, feature)| (*feature).to_owned()),
+            sha256: a.sha256.clone(),
+            path: a.path.clone(),
         })
         .collect();
-    (revision, sources)
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::new(), |mut out, byte| {
-        write!(out, "{byte:02x}").expect("writing to a String cannot fail");
-        out
-    })
+    let directory = manifest
+        .source_directory(root, idf)
+        .expect("the fetched ESP-IDF directory");
+    (directory, revision, sources)
 }
 
 struct Accessor {
@@ -233,20 +218,20 @@ fn main() {
     println!("cargo::rerun-if-changed={ARTIFACTS}");
     println!("cargo::rerun-if-changed=shim");
 
-    let (revision, sources) = ledger(&fs::read_to_string(manifest.join(ARTIFACTS)).unwrap());
+    let (fetched, revision, sources) = ledger(
+        &fs::read_to_string(manifest.join(ARTIFACTS)).unwrap(),
+        &manifest.join(REPOSITORY),
+    );
     // The fetched pinned sources, or an ESP-IDF checkout named explicitly.
-    let idf = env::var_os(SOURCE_ENV)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| manifest.join("../../../..").join(FETCHED).join(&revision));
+    let idf = env::var_os(SOURCE_ENV).map_or(fetched, PathBuf::from);
     for source in &sources {
         let path = idf.join(&source.path);
         println!("cargo::rerun-if-changed={}", path.display());
-        let bytes = fs::read(&path)
+        let pinned = oer_vendor_artifacts::verified(&path, &source.sha256)
             .unwrap_or_else(|error| panic!("{}: {error} (ESP-IDF {revision})", path.display()));
-        let digest = hex(&Sha256::digest(&bytes));
-        assert_eq!(
-            digest, source.sha256,
-            "{} does not match ESP-IDF {revision}",
+        assert!(
+            pinned,
+            "{} is missing or does not match ESP-IDF {revision}",
             source.path
         );
     }

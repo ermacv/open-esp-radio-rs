@@ -2,10 +2,8 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, File, OpenOptions},
-    io::Write as _,
+    fs::{self},
     path::{Component, Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
 use crate::{
@@ -15,8 +13,6 @@ use crate::{
         CapabilityOrigin, CatalogView, HilRequirementDocument, Qualification, VendorEvidenceRef,
     },
 };
-
-static INVENTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// The code that owns each catalog entry: the locations of its
 /// `// CAPABILITY:` anchors, by entry id.
@@ -104,28 +100,10 @@ pub(crate) fn write(
 }
 
 fn write_file(directory: &Path, name: &str, contents: &str) -> Result<()> {
-    let output = directory.join(name);
-    let temporary = directory.join(format!(
-        ".{name}.tmp-{}-{}",
-        std::process::id(),
-        INVENTORY_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let result = (|| -> Result<()> {
-        let mut file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temporary)?;
-        file.write_all(contents.as_bytes())?;
-        file.flush()?;
-        file.sync_all()?;
-        fs::rename(&temporary, &output)?;
-        File::open(directory)?.sync_all()?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(temporary);
-    }
-    result
+    Ok(
+        oer_durable::atomic_write(&directory.join(name), contents.as_bytes())
+            .map_err(|error| error.to_string())?,
+    )
 }
 
 fn render_domain(
@@ -724,7 +702,7 @@ mod tests {
             fs::create_dir_all(path.join("scenarios")).unwrap();
             fs::write(
                 path.join("scenarios/static.toml"),
-                "schema = 5\nid = \"static\"\nrole = \"investigation\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
+                "schema = 5\nid = \"static\"\ndescription = \"static\"\nrole = \"investigation\"\nrepetitions = 1\n[system]\nkind = \"boot-smoke\"\n",
             )
             .unwrap();
             fs::write(path.join("FEATURES.md"), "# Features\n\n## ownership\n").unwrap();

@@ -29,9 +29,10 @@ fn ticket(id: u64, owner: &str, process: ProcessIdentity) -> Ticket {
         work: format!("work {id}"),
         estimate_secs: 60,
         process,
-        enqueued_unix: crate::unix_now(),
+        enqueued_unix: oer_durable::unix_seconds(),
         claims: vec![Claim::board("AA")],
         priority: Default::default(),
+        job: None,
         unknown: Default::default(),
     }
 }
@@ -53,7 +54,7 @@ fn a_preempted_holder_is_terminated_and_recorded_with_who_and_why() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
     let process = holder_process();
-    holder(&arbiter, 7, "phy", process, crate::unix_now());
+    holder(&arbiter, 7, "phy", process, oer_durable::unix_seconds());
     let end = arbiter
         .preempt(7, "infra", "stuck calibration", Duration::from_secs(10))
         .unwrap();
@@ -76,7 +77,7 @@ fn a_preempted_lease_is_charged_only_up_to_its_preemption() {
     let (process, _) = (ProcessIdentity::current().unwrap(), ());
     // Granted ten minutes ago; preempting this test process itself is not
     // signalled here, only marked.
-    let granted = crate::unix_now() - 600;
+    let granted = oer_durable::unix_seconds() - 600;
     holder(&arbiter, 3, "phy", process, granted);
     arbiter.mark_preempted(3, "infra", "why").unwrap();
     let before = crate::balance::of(&state(&arbiter).balances, "phy");

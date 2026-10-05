@@ -5,10 +5,11 @@ use std::{path::Path, time::Duration};
 use oer_hil_scenario::ScenarioFamily as _;
 
 use crate::{Result, fixture, scenario::Scenario};
-use oer_hil_evidence::run::Failure;
-use oer_hil_image_class::{DeviceImageKeys, ImageClass};
+use oer_hil_image_class::ImageClass;
+use oer_hil_lab::config::LabConfig;
 use oer_hil_link::SerialCapture;
-use oer_hil_stand::config::LabConfig;
+use oer_hil_protocol::DeviceImageKeys;
+use oer_hil_run_bundle::run::Failure;
 
 pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
     fixture::preflight::scenario_precondition(lab, selected).or_else(|| {
@@ -36,23 +37,18 @@ pub(crate) fn validate_flashed_image(
     // A bootloader that resets in a loop keeps state an RTS reset and a
     // reflash leave: climb to the resets that clear it.
     let console = std::fs::read_to_string(preflight.join("uart.log")).unwrap_or_default();
-    let Some(found) = oer_hil_stand::recovery::boot_loop(&console) else {
+    let Some(found) = oer_hil_lab::recovery::boot_loop(&console) else {
         return Err(error);
     };
     eprintln!(
         "hil: the bootloader resets in a loop ({}); escalating the reset",
         found.reset_line
     );
-    let origin = output
-        .ancestors()
-        .find(|directory| directory.join("manifest.json").is_file())
-        .and_then(|run| run.file_name())
-        .map_or_else(String::new, |run| run.to_string_lossy().into_owned());
+    let origin = oer_hil_run_bundle::store::run_of(output).unwrap_or_default();
     let mut attempt = 0;
     let mut answered = None;
-    let escalation = oer_hil_stand::recovery::escalate_boot_loop(
-        &lab.dut.serial,
-        None,
+    let escalation = oer_hil_lab::recovery::escalate_boot_loop(
+        &lab.dut_board()?,
         found,
         output,
         &origin,
@@ -82,12 +78,12 @@ pub(crate) fn validate_flashed_image(
                 .collect::<Vec<_>>()
                 .join(", "),
             match escalation.ladder.end {
-                oer_hil_stand::control::LadderEnd::Loadable { .. } => {
+                oer_hil_board::reset::LadderEnd::Loadable { .. } => {
                     "its ROM answers, so firmware can be loaded again"
                 }
                 _ => "the board is quarantined for a person",
             },
-            oer_hil_stand::recovery::RESET_ESCALATION_FILE
+            oer_hil_lab::recovery::RESET_ESCALATION_FILE
         )
         .into()),
     }

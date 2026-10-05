@@ -22,7 +22,7 @@ pub(crate) fn run(
         // All downloads, patching and compilation happen without root, before
         // the installer takes terminal control for its narrow system writes.
         if provider == Provider::LinuxNet {
-            super::hostapd::build(root)?;
+            oer_hil_family_ieee80211_fixture::hostapd::build(root)?;
         }
 
         let provider_binaries: &[&str] = match provider {
@@ -33,7 +33,7 @@ pub(crate) fn run(
             ],
             Provider::LinuxBluetooth => &["open-radio-bluetooth-launcher", "open-radio-bluetooth"],
         };
-        let mut build = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+        let mut build = Command::new(oer_toolchain::cargo_program());
         build.current_dir(root).args([
             "build",
             "--locked",
@@ -60,9 +60,9 @@ pub(crate) fn run(
         // worse than a late one.
         eprintln!(
             "hil-arbiter: queueing for {}",
-            oer_hil_stand::software::resource(provider)
+            oer_hil_lab::software::resource(provider)
         );
-        let grant = oer_hil_stand::software::install_grant(provider)?;
+        let grant = oer_hil_lab::software::install_grant(provider)?;
         // sudo runs in this foreground process group with the terminal's
         // standard streams, so it owns password echo, input and job control,
         // and its exit status is the command's.

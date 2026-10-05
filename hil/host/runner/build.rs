@@ -54,6 +54,22 @@ fn package(
     }
     let value: serde_json::Value =
         toml_edit::de::from_str(&fs::read_to_string(manifest).unwrap()).unwrap();
+    // Repository files a package compiles in from outside its directory
+    // (`#[path]` modules, `include_str!`) are its declared inputs.
+    for input in value["package"]["metadata"]["open-radio"]["inputs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|input| !input.contains('*'))
+    {
+        let input = root.join(input);
+        if input.is_dir() {
+            tree(root, &input, inputs);
+        } else {
+            file(root, &input, inputs);
+        }
+    }
     for section in std::iter::once(&value).chain(
         value["target"]
             .as_object()
@@ -73,7 +89,7 @@ fn package(
         }
     }
 }
-use oer_hil_schema::{observer as observer_build, resolve as observer_resolve};
+use oer_hil_observer::{inputs as observer_build, resolve as observer_resolve};
 
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());

@@ -2,10 +2,17 @@
 
 The pinned vendor artifacts of a chip. `verification/<chip>/artifacts.toml`
 is the only pin: git sources at a revision, release assets and local build
-outputs, each artifact with its SHA-256. This crate parses it, resolves every
-artifact in the host-wide store (`$OER_VENDOR_CACHE`, default
-`~/.cache/open-esp-radio/vendor`, linked from each checkout's
-`target/vendor`), and fetches and verifies what is missing.
+outputs, each artifact with its SHA-256. This crate is its only reader
+(`Manifest::parse`, `Manifest::load`, typed `Source` and `Artifact`,
+`Manifest::location`, `fetched(root, chip, id)` for one verified artifact
+such as the ROM ELF the firmware stack gate reads). It resolves every
+artifact in the host-wide store (`$OER_VENDOR_CACHE`, default `open-esp-radio/vendor` in the
+user's XDG cache directory, through `oer-durable`, linked from each
+checkout's `target/vendor`), and fetches and verifies what is missing.
+
+It depends only on `toml`, `serde` and the foundation crates, so the host
+IEEE 802.15.4 stand's build script and the Blobray workspace's vendor
+scenarios read the pins through it too.
 
 `cargo xtask vendor-fetch` and the vendor checks of
 [xtask](../xtask/README.md) read the pins through it, and so does the HIL

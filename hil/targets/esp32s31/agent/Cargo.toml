@@ -78,13 +78,13 @@ bluetooth-radio = [
     "dep:critical-section",
 ]
 bluetooth-hil = ["bluetooth-radio"]
-bluetooth-gatt = ["bluetooth-radio", "dep:gatt-application", "dep:trouble-host"]
+bluetooth-gatt = ["bluetooth-radio", "dep:oer-bluetooth-gatt-trouble", "dep:trouble-host"]
 # The secure GATT image restarts the Controller epoch around one retained bond
 # store and serves the `bluetooth-secure-gatt` scenario.
 bluetooth-secure-gatt = [
     "bluetooth-radio",
-    "dep:gatt-application",
-    "gatt-application/secure",
+    "dep:oer-bluetooth-gatt-trouble",
+    "oer-bluetooth-gatt-trouble/secure",
     "dep:trouble-host",
     "dep:oer-hil-agent",
     "dep:oer-hil-image-keys",
@@ -128,7 +128,7 @@ wifi-ble-coex = [
     "dep:oer-bluetooth-hci",
     "dep:oer-esp32s31-bluetooth-system",
     "dep:oer-esp32s31-radio-esp-hal",
-    "dep:gatt-application",
+    "dep:oer-bluetooth-gatt-trouble",
     "dep:trouble-host",
 ]
 driver-observation = [
@@ -303,7 +303,7 @@ oer-esp32s31-radio-system = { workspace = true, optional = true }
 oer-esp32s31-hal = { workspace = true, optional = true }
 oer-esp32s31-phy = { workspace = true, optional = true }
 embedded-io = { version = "0.7.1", optional = true }
-gatt-application = { package = "oer-example-bluetooth-gatt", path = "../../../../examples/bluetooth-gatt", optional = true }
+oer-bluetooth-gatt-trouble = { path = "../../../../crates/adapters/trouble/bluetooth/gatt", optional = true }
 oer-bluetooth-controller = { path = "../../../../crates/protocols/bluetooth/le/controller", optional = true }
 oer-bluetooth-hci = { path = "../../../../crates/protocols/bluetooth/hci", optional = true }
 trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
@@ -345,7 +345,6 @@ layer = "hil"
 platform = "chip"
 chip = "esp32s31"
 hil = "observation"
-default-configuration = false
 supported-feature-profiles = [
     "open-radio-hil,owned-network",
 ]

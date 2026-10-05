@@ -5,11 +5,12 @@ it never decides readiness. Routes for every task: [README](README.md#choose-a-r
 
 | Directory | Owns |
 | --- | --- |
-| `protocol/`, `schema/` | Host/target wire protocol; evidence contract shared with qualification |
+| `protocol/`, `schema/`, `observer/` | Host/target wire protocol; the evidence contract shared with qualification; the observer's build identity |
 | `scenarios/` | Versioned scenario documents and their [roles](scenarios/README.md#roles) |
-| `host/` | `cargo hil` (`cli/`), runner, arbiter, image builder, fixtures ([host guide](host/README.md)) |
+| `host/` | `cargo hil` (`cli/`), runner, the stand packages (board I/O, arbiter, flash operation, stand host), image builder, fixtures ([host guide](host/README.md)) |
+| `stand/` | The stand model (`model/`: stand file, board names, state paths) and host files ([stand file](stand/model/README.md)) |
 | `targets/<chip>/`, `agent/` | Target firmware workspaces; chip-independent agent logic |
-| `evidence/<chip>/` | Tracked evidence shards (`cargo hil evidence record`) |
+| `evidence/<chip>/` | Tracked evidence shards (`cargo qualification hil-evidence`) |
 
 ## Rules
 

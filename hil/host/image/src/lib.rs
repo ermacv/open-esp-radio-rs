@@ -1,180 +1,127 @@
-//! Reproducible HIL firmware construction and image auditing: builds from
-//! the live tree or a frozen source snapshot, the placement and stack audits,
-//! and the firmware and build records the builder hands to run evidence.
+//! HIL images: what each image class builds for each chip, through the one
+//! image pipeline (`oer-image`), from the live tree or a frozen source
+//! snapshot, and the firmware and build records the builder hands to run
+//! evidence.
+//!
+//! This crate owns what is HIL's own about an image: the class's features
+//! and network integration, the agent package of each chip, the HIL stack
+//! policies, the radio observers' placement, where class builds and their
+//! compile caches live, and the records. Compiling, gating and encoding are
+//! the pipeline's.
 
-use std::num::NonZeroU32;
 use std::{
-    env,
     error::Error,
-    ffi::OsString,
-    fs,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
 };
 
-use oer_process::CommandExt as _;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
-use oer_hil_image_class::{FeatureDelta, ImageClass};
+use oer_hil_image_class::{FeatureDelta, ImageClass, NETWORK, NETWORK_FEATURE};
+use oer_image::{ImageBundle, ImageSpec, Overrides, Required};
 
-pub mod esp_idf;
-pub use esp_idf::CLI_ENV;
 pub mod frozen;
 pub mod record;
-pub mod source_inputs;
-pub mod stack;
-
-/// This package's directory in the repository.
-pub const REPOSITORY_DIRECTORY: &str = "hil/host/image";
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-const RUNTIME_BIN: &str = "oer-esp32s31-hil-agent";
-/// The network implementation every image links, as records name it.
-pub use oer_esp32s31_firmware::network::NETWORK;
-use oer_esp32s31_firmware::network::NETWORK_FEATURE;
-use oer_esp32s31_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime};
+/// Version of the `image build` artifact report on stdout.
+const ARTIFACT_REPORT_SCHEMA: u16 = 4;
 
-/// Version of the `image build`/`image flash` artifact report on stdout.
-const ARTIFACT_REPORT_SCHEMA: u16 = 3;
+/// The package whose code turns a class into an image spec: its closure
+/// joins every HIL image's source inputs.
+const BUILDER: &str = "oer-hil-image";
 
-/// The HIL images' stack policy, which extends the platform's.
-const STACK_POLICY: &str = "hil/targets/esp32s31/stack.toml";
-
+/// The report `cargo hil image build` prints: the bundle and what passed.
 #[derive(Serialize)]
 pub struct ArtifactReport<'a> {
     schema: u16,
     image_class: &'a str,
+    chip: &'a str,
     target: &'a str,
-    network: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    network: Option<&'a str>,
     profile: &'a str,
+    bundle: String,
     runtime_elf: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    runtime_bin: Option<String>,
-    runtime_stack_report: String,
-    placement_report: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bootstrap_elf: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bootstrap_stack_report: Option<String>,
-    effective_embedded_lock: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    effective_bootstrap_lock: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bootloader: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    partition_table: Option<String>,
     application_image: String,
     application_sha256: String,
-    interrupt_stack_audit: &'a str,
-    task_stack_audit: &'a str,
-    move_size_audit: &'a str,
-    placement_audit: &'a str,
-    application_audit: &'a str,
-    autonomous_source_graph: &'a str,
-    flashed: bool,
+    reports: Vec<String>,
+    warnings: &'a [String],
 }
 
-/// The report of `class` built as `artifacts`, as `image build` and
-/// `image flash` publish it.
-pub fn artifact_report(
-    class: oer_hil_image_class::ImageClass,
-    artifacts: &Artifacts,
-    flashed: bool,
-) -> Result<ArtifactReport<'_>> {
-    let staged = artifacts.staged();
-    let esp_idf = match &artifacts.boot {
-        BootArtifacts::EspIdf(boot) => Some(boot),
-        BootArtifacts::Staged { .. } => None,
-    };
-    let report = ArtifactReport {
+/// The report of `class` built as `artifacts`.
+pub fn artifact_report(class: ImageClass, artifacts: &Artifacts) -> Result<ArtifactReport<'_>> {
+    let bundle = &artifacts.bundle;
+    Ok(ArtifactReport {
         schema: ARTIFACT_REPORT_SCHEMA,
         image_class: class.id(),
-        target: &artifacts.rust_target,
-        network: NETWORK,
+        chip: &bundle.chip,
+        target: &bundle.rust_target,
+        network: network(bundle.boot),
         profile: class.runtime_profile(),
-        runtime_elf: artifacts.runtime_elf.display().to_string(),
-        runtime_bin: staged.map(|(runtime_bin, ..)| runtime_bin.display().to_string()),
-        runtime_stack_report: artifacts
-            .output
-            .join(oer_esp32s31_firmware::stack::RUNTIME_REPORT)
-            .display()
-            .to_string(),
-        placement_report: artifacts.output.join("placement.txt").display().to_string(),
-        bootstrap_elf: staged.map(|(_, bootstrap_elf, _)| bootstrap_elf.display().to_string()),
-        bootstrap_stack_report: staged.map(|_| {
-            artifacts
-                .output
-                .join(oer_esp32s31_firmware::stack::BOOTSTRAP_REPORT)
-                .display()
-                .to_string()
-        }),
-        effective_embedded_lock: artifacts.effective_embedded_lock.display().to_string(),
-        effective_bootstrap_lock: staged.map(|(.., lock)| lock.display().to_string()),
-        bootloader: esp_idf.map(|boot| boot.bootloader.display().to_string()),
-        partition_table: esp_idf.map(|boot| boot.partition_table.display().to_string()),
-        application_image: artifacts.application_image.display().to_string(),
-        application_sha256: sha256_file(&artifacts.application_image)?,
-        interrupt_stack_audit: "PASS",
-        task_stack_audit: "PASS",
-        move_size_audit: "PASS",
-        placement_audit: "PASS",
-        application_audit: "PASS",
-        autonomous_source_graph: "PASS",
-        flashed,
-    };
-    Ok(report)
+        bundle: bundle.directory.display().to_string(),
+        runtime_elf: bundle.runtime_elf().display().to_string(),
+        application_image: bundle.application().display().to_string(),
+        application_sha256: oer_durable::sha256_file(&bundle.application())?,
+        reports: bundle
+            .reports
+            .iter()
+            .map(|report| bundle.path(report).display().to_string())
+            .collect(),
+        warnings: &bundle.warnings,
+    })
 }
 
-fn sha256_file(path: &Path) -> Result<String> {
-    let mut digest = Sha256::new();
-    digest.update(fs::read(path)?);
-    Ok(format!("{:x}", digest.finalize()))
-}
-
-#[derive(Clone)]
+/// A HIL image: the pipeline's bundle and what the run records beside it.
+#[derive(Clone, Debug)]
 pub struct Artifacts {
-    /// The chip the image runs on and its Rust target triple.
-    pub chip: String,
-    pub rust_target: String,
-    pub output: PathBuf,
-    pub runtime_elf: PathBuf,
-    pub effective_embedded_lock: PathBuf,
-    pub application_image: PathBuf,
-    /// What the chip's boot flow adds to the application.
-    pub boot: BootArtifacts,
-    /// `source-inputs.json`: the repository files the image was built from.
-    pub source_inputs: Option<PathBuf>,
-    /// Host tools that produced this build, recorded in its provenance.
-    pub environment: oer_hil_evidence::build::BuildEnvironment,
-    /// The seed the runtime's code and read-only data were shuffled by;
-    /// `None` is the linker's natural order.
-    pub layout_seed: Option<NonZeroU32>,
+    pub bundle: ImageBundle,
     /// Runtime features added to or removed from the class's own.
     pub features: FeatureDelta,
-    /// The reviewed ROM summaries the image's stack analysis applied; empty
-    /// for an image without one. A summary no image applies is stale.
-    pub rom_summaries: std::collections::BTreeSet<String>,
+    /// Host tools that produced this build, recorded in its provenance.
+    pub environment: oer_hil_run_bundle::build::BuildEnvironment,
+}
+
+/// The network integration an image of a chip that boots `boot` links:
+/// [`NETWORK`] for a staged chip, none for an ESP-IDF application.
+pub fn network(boot: oer_chip_profile::Boot) -> Option<&'static str> {
+    (boot == oer_chip_profile::Boot::Staged).then_some(NETWORK)
 }
 
 /// The profile of `chip` in the repository this runner was built from.
 pub fn chip_profile(chip: &str) -> Result<oer_chip_profile::Profile> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    oer_chip_profile::Profile::load(&root, chip).map_err(|error| error.to_string().into())
+    oer_chip_profile::Profile::load(&oer_process::built_root(), chip)
+        .map_err(|error| error.to_string().into())
 }
 
 /// Whether the runner builds and flashes `class` for `chip`: the staged
 /// boot flow for a class the chip's runtime declares, or the ESP-IDF
-/// bootloader with a flash layout for a class its HIL agent serves.
+/// bootloader with a flash map for a class its HIL agent serves.
 pub fn builds_on(root: &Path, chip: &str, class: ImageClass) -> Result<bool> {
     let profile = oer_chip_profile::Profile::load(root, chip).map_err(|error| error.to_string())?;
     Ok(match profile.boot {
         oer_chip_profile::Boot::Staged => class.enabled_features_on(chip).is_some(),
         oer_chip_profile::Boot::EspIdfBootloader => {
-            profile.flash.is_some() && esp_idf::serves(root, chip, class)?
+            profile.flash.is_some() && serves(root, chip, class)?
         }
     })
+}
+
+/// Whether `chip`'s HIL agent at `root` builds `class`: the agent declares
+/// every feature the class selects.
+pub fn serves(root: &Path, chip: &str, class: ImageClass) -> Result<bool> {
+    let profile = oer_chip_profile::Profile::load(root, chip).map_err(|error| error.to_string())?;
+    let path = oer_hil_image_class::agent::manifest(&profile, root);
+    let manifest: toml::Value = toml::from_str(&std::fs::read_to_string(&path)?)?;
+    let declared = manifest
+        .get("features")
+        .and_then(toml::Value::as_table)
+        .ok_or_else(|| format!("{} declares no features", path.display()))?;
+    Ok(class
+        .runtime_features()
+        .split(',')
+        .all(|feature| declared.contains_key(feature)))
 }
 
 /// The chips, sorted, the runner builds and flashes every one of `classes`
@@ -193,47 +140,9 @@ pub fn chips_building(root: &Path, classes: &[ImageClass]) -> Result<Vec<String>
     Ok(chips)
 }
 
-/// The files an image's boot flow writes or needs besides the application.
-#[derive(Clone, Debug)]
-pub enum BootArtifacts {
-    /// The ROM loads the platform bootstrap, which stages the packed runtime.
-    Staged {
-        runtime_bin: PathBuf,
-        bootstrap_elf: PathBuf,
-        effective_bootstrap_lock: PathBuf,
-    },
-    /// The chip's catalog ESP-IDF bootloader loads the application from its
-    /// partition.
-    EspIdf(EspIdfBoot),
-}
-
-/// An ESP-IDF application's bootloader, partition table and flash layout.
-#[derive(Clone, Debug)]
-pub struct EspIdfBoot {
-    /// The chip as `espflash` names it.
-    pub espflash_chip: String,
-    pub bootloader: PathBuf,
-    pub partition_table: PathBuf,
-    pub flash: oer_chip_profile::FlashLayout,
-}
-
-impl Artifacts {
-    /// The staged boot files, for code that exists only for staged images.
-    pub fn staged(&self) -> Option<(&Path, &Path, &Path)> {
-        match &self.boot {
-            BootArtifacts::Staged {
-                runtime_bin,
-                bootstrap_elf,
-                effective_bootstrap_lock,
-            } => Some((runtime_bin, bootstrap_elf, effective_bootstrap_lock)),
-            BootArtifacts::EspIdf(_) => None,
-        }
-    }
-}
-
 /// The seed of a runtime image's link order: `None` keeps the linker's
 /// natural order, a seed shuffles ordinary code and read-only data by it.
-pub type LayoutSeed = Option<NonZeroU32>;
+pub type LayoutSeed = Option<std::num::NonZeroU32>;
 
 /// How a run builds its images from the current sources.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -244,121 +153,163 @@ pub struct CurrentBuild {
     pub features: FeatureDelta,
 }
 
-/// The build environment's layout seed variable.
-pub const LAYOUT_SEED_ENV: &str = oer_esp32s31_platform_layout::build::LAYOUT_SEED_ENV;
+/// Where one image class build of a chip writes its bundle and compiles.
+pub(crate) struct Placement {
+    pub(crate) output: PathBuf,
+    pub(crate) cache: PathBuf,
+}
 
+/// The image spec of `class` for `chip`, from the tree at `root`.
+pub(crate) fn spec(
+    root: &Path,
+    chip: &str,
+    class: ImageClass,
+    (layout_seed, features): (LayoutSeed, &FeatureDelta),
+    overrides: Overrides,
+    placement: Placement,
+) -> Result<ImageSpec> {
+    let profile = oer_chip_profile::Profile::load(root, chip)?;
+    let workspace = oer_hil_image_class::agent::workspace(&profile, root);
+    let class_features = match network(profile.boot) {
+        Some(_) => class.build_features(NETWORK_FEATURE),
+        None => class.runtime_features().to_owned(),
+    };
+    let package = oer_hil_image_class::agent::package(&profile);
+    Ok(ImageSpec {
+        root: root.to_owned(),
+        chip: chip.to_owned(),
+        application: oer_image::Application {
+            workspace: workspace.strip_prefix(root)?.to_owned(),
+            binary: package.clone(),
+            package,
+            features: features
+                .apply(&class_features)
+                .split(',')
+                .filter(|feature| !feature.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            default_features: false,
+        },
+        stack_policy: Path::new("hil/targets").join(chip).join("stack.toml"),
+        // A diagnostic image's observers are not the product's: its
+        // interrupt stacks may be `partial + ?`, with their holes named.
+        interrupts: if class.diagnostic() {
+            Required::Partial
+        } else {
+            Required::Proven
+        },
+        layout_seed,
+        overrides,
+        builders: vec![BUILDER.to_owned()],
+        reads: Vec::new(),
+        output: placement.output,
+        cache: placement.cache,
+        audit: (profile.boot == oer_chip_profile::Boot::Staged).then(|| {
+            Box::new(move |elf: &oer_elf::Elf<'_>| {
+                let critical = elf
+                    .section_by_name(".critical.data")
+                    .map(|section| section.address..section.address + section.size);
+                audit_radio_observers(
+                    class,
+                    critical,
+                    elf.symbols().map(|symbol| (symbol.name, symbol.address)),
+                )
+            }) as oer_image::Audit
+        }),
+    })
+}
+
+/// Build `class` for the staged chip from the live tree at `root`, with the
+/// caller's local overrides, into the class's directory below
+/// `target/hil/<chip>`.
 pub fn build(
     root: &Path,
-    class: oer_hil_image_class::ImageClass,
+    class: ImageClass,
     layout_seed: LayoutSeed,
     features: &FeatureDelta,
 ) -> Result<Artifacts> {
-    build_selected(root, class, layout_seed, features)
-}
-
-fn build_selected(
-    root: &Path,
-    class: oer_hil_image_class::ImageClass,
-    layout_seed: LayoutSeed,
-    features: &FeatureDelta,
-) -> Result<Artifacts> {
-    let local_esp_hal = local_esp_hal_override()?;
-    let local_embassy = local_embassy_override()?;
-    let local_xarxa = local_xarxa_override()?;
-    build_resolved(
+    let chip = oer_image::staged::CHIP;
+    let output = root.join("target/hil").join(chip).join(format!(
+        "{}-{}-{}{}{}",
+        class.runtime_profile(),
+        class.id(),
+        NETWORK,
+        seed_suffix(layout_seed),
+        features.suffix()
+    ));
+    let spec = spec(
         root,
+        chip,
         class,
-        LocalOverrides {
-            esp_hal: local_esp_hal.as_deref(),
-            embassy: local_embassy.as_deref(),
-            xarxa: local_xarxa.as_deref(),
+        (layout_seed, features),
+        Overrides::from_environment()?,
+        Placement {
+            output,
+            cache: shared_compile_cache(root, class),
         },
-        BuildPlacement {
-            output: None,
-            cache: &shared_compile_cache(root, class),
-            layout_seed,
-            features,
-        },
-    )
+    )?;
+    built(&spec, features)
 }
 
-/// Where one image build writes its artifacts and keeps compiled units.
-#[derive(Clone, Copy)]
-pub(crate) struct BuildPlacement<'a> {
-    /// Artifact directory; the class/network default when absent.
-    pub(crate) output: Option<&'a Path>,
-    /// The compile cache shared by every build of one image class and
-    /// network. Cargo fingerprints decide reuse: registry packages are
-    /// reused, while packages from a freshly materialized source tree always
-    /// rebuild.
-    pub(crate) cache: &'a Path,
-    /// The runtime's layout seed. It is part of the default artifact
-    /// directory; a shared compile cache only relinks for it.
-    pub(crate) layout_seed: LayoutSeed,
-    /// Runtime features added to or removed from the class's own; part of
-    /// the default artifact directory too.
-    pub(crate) features: &'a FeatureDelta,
+/// Run the pipeline for `spec` and keep the HIL record's context.
+pub(crate) fn built(spec: &ImageSpec, features: &FeatureDelta) -> Result<Artifacts> {
+    let bundle = oer_image::build(spec)?;
+    for warning in &bundle.warnings {
+        eprintln!("warning: {warning}");
+    }
+    Ok(Artifacts {
+        bundle,
+        features: features.clone(),
+        environment: oer_hil_run_bundle::build::BuildEnvironment::capture(),
+    })
 }
 
-/// Type-check the runtime of `class` against the committed pins, with the
-/// image build's target, features and compiler configuration but without
-/// code generation, in the class's shared compile cache. A pre-push check:
+/// Type-check the runtime of `class` for the staged chip against the
+/// committed pins, with the image build's target, features and compiler
+/// configuration, in the class's shared compile cache. A pre-push check:
 /// lints that need monomorphization (`large_assignments`) and the link-time
-/// placement and stack audits still need `cargo hil image build`.
-pub fn check(root: &Path, class: oer_hil_image_class::ImageClass) -> Result<()> {
+/// gates still need `cargo hil image build`.
+pub fn check(root: &Path, class: ImageClass) -> Result<()> {
     let cache = shared_compile_cache(root, class);
-    let target = oer_esp32s31_firmware::target(root)?;
-    let lock = oer_esp32s31_firmware::network::BuildLock::prepare(
-        &root.join("hil/targets/esp32s31"),
-        &cache.join("check-lock"),
-    )?;
-    let stack_policy = oer_esp32s31_firmware::stack::StackPolicy::load(&root.join(STACK_POLICY))?;
-    let mut command = runtime_command(root, "check", class, &target);
-    command
-        .arg("--release")
-        .env("CARGO_TARGET_DIR", cache.join("runtime"));
-    lock.configure(&mut command);
-    oer_esp32s31_firmware::compiler::configure_image_compiler(
-        &mut command,
-        &stack_policy,
-        &target,
-    )?;
-    ensure_fetched(
+    let spec = spec(
         root,
-        &root.join("hil/targets/esp32s31/Cargo.toml"),
-        |command| lock.configure(command),
+        oer_image::staged::CHIP,
+        class,
+        (None, &FeatureDelta::default()),
+        Overrides::default(),
+        Placement {
+            output: cache.join("check"),
+            cache,
+        },
     )?;
-    // Through the shared runner, so a caller's output policy (xtask logs
-    // child output by default) applies to the type check too.
-    oer_process::run(&mut command)
-        .map_err(|error| format!("the {} runtime does not type-check: {error}", class.id()).into())
+    oer_image::type_check(&spec)
+        .map_err(|error| format!("the {} runtime: {error}", class.id()).into())
 }
 
-/// A Cargo `subcommand` over `class`'s runtime exactly as its image compiles
-/// it: the agent package, the chip target and the class's features alone.
-fn runtime_command(root: &Path, subcommand: &str, class: ImageClass, target: &str) -> Command {
-    let mut command = cargo_command();
+/// The names of the packages `class`'s staged runtime compiles: the agent's
+/// normal dependency graph for the chip target with the class's features,
+/// as [`check`] type-checks it.
+pub fn packages(root: &Path, class: ImageClass) -> Result<std::collections::BTreeSet<String>> {
+    let chip = oer_image::staged::CHIP;
+    let target = oer_chip_profile::rust_target(root, chip)?;
+    let mut command = Command::new(oer_toolchain::cargo_program());
     command
         .current_dir(root)
-        .arg(subcommand)
-        .arg("--manifest-path")
-        .arg(root.join("hil/targets/esp32s31/Cargo.toml"))
-        .args(["-p", RUNTIME_BIN, "--target", target, "--locked"])
+        .args(["tree", "--manifest-path"])
+        .arg(root.join("hil/targets").join(chip).join("Cargo.toml"))
+        .args([
+            "-p",
+            "oer-esp32s31-hil-agent",
+            "--target",
+            &target,
+            "--locked",
+        ])
         .args([
             "--no-default-features",
             "--features",
             &class.build_features(NETWORK_FEATURE),
-        ]);
-    command
-}
-
-/// The names of the packages `class`'s runtime compiles: the agent's normal
-/// dependency graph for the chip target with the class's features, as
-/// [`check`] type-checks it.
-pub fn packages(root: &Path, class: ImageClass) -> Result<std::collections::BTreeSet<String>> {
-    let target = oer_esp32s31_firmware::target(root)?;
-    let mut command = runtime_command(root, "tree", class, &target);
-    command.args(["-e", "normal", "--prefix", "none"]);
+        ])
+        .args(["-e", "normal", "--prefix", "none"]);
     let output = command.output()?;
     if !output.status.success() {
         return Err(format!(
@@ -379,100 +330,16 @@ fn tree_packages(tree: &str) -> std::collections::BTreeSet<String> {
         .collect()
 }
 
-/// Names the host build root instead of the user's cache directory.
-pub const BUILD_ROOT_ENV: &str = "OER_BUILD_ROOT";
-
-/// The directory every checkout of this host builds images in from source
-/// snapshots: the snapshots themselves, the build slots, their compile caches
-/// and the snapshot builds. One per host, so each agent's build of the same
-/// sources reuses the same compiled units, and its size is bounded by the
-/// slots instead of growing with the number of checkouts.
-pub fn host_build_root() -> Result<PathBuf> {
-    if let Some(root) = env::var_os(BUILD_ROOT_ENV).filter(|root| !root.is_empty()) {
-        return Ok(PathBuf::from(root));
-    }
-    // Unit tests build into the workspace's disposable target directory,
-    // never into the host's shared build root.
-    #[cfg(test)]
-    return Ok(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/test-build-root"));
-    #[cfg(not(test))]
-    Ok(env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
-        .ok_or("HOME is required to locate the host build root")?
-        .join("open-esp-radio/build"))
-}
-
 /// Where the host keeps the source snapshots its builds read.
 pub fn source_snapshot_store() -> Result<PathBuf> {
-    Ok(host_build_root()?.join("source-snapshots"))
+    Ok(oer_image::host_build_root()?.join("source-snapshots"))
 }
 
 /// The host build root of `chip` images.
 pub fn chip_build_root(chip: &str) -> Result<PathBuf> {
-    Ok(host_build_root()?.join(chip))
+    Ok(oer_image::host_build_root()?.join(chip))
 }
 
-/// A slot of the host-wide limit on concurrent image compilations: each holds
-/// one runtime build's fat LTO, about 1.5 GB and one core for minutes.
-/// Parallel builds of several agents otherwise pushed the host into swap.
-struct BuildToken(fs::File);
-
-impl BuildToken {
-    fn acquire() -> Result<Self> {
-        use fs2::FileExt as _;
-        let tokens = host_build_root()?.join("tokens");
-        fs::create_dir_all(&tokens)?;
-        let count = build_tokens();
-        let mut announced = false;
-        loop {
-            for token in 0..count {
-                let file = fs::OpenOptions::new()
-                    .create(true)
-                    .truncate(false)
-                    .write(true)
-                    .open(tokens.join(format!("{token}.lock")))?;
-                if file.try_lock_exclusive().is_ok() {
-                    return Ok(Self(file));
-                }
-            }
-            if !announced {
-                eprintln!("waiting for one of the host's {count} image build slots");
-                announced = true;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
-    }
-}
-
-impl Drop for BuildToken {
-    fn drop(&mut self) {
-        let _ = fs2::FileExt::unlock(&self.0);
-    }
-}
-
-/// Image compilations the host runs at once: half its cores, and no more
-/// than its memory holds at 2 GB each.
-fn build_tokens() -> usize {
-    let cores = std::thread::available_parallelism().map_or(1, usize::from);
-    let memory_gb = fs::read_to_string("/proc/meminfo")
-        .ok()
-        .and_then(|info| {
-            info.lines()
-                .find_map(|line| line.strip_prefix("MemTotal:"))
-                .and_then(|kb| {
-                    kb.trim()
-                        .trim_end_matches("kB")
-                        .trim()
-                        .parse::<usize>()
-                        .ok()
-                })
-        })
-        .map_or(4, |kb| kb >> 20);
-    (cores / 2).min(memory_gb / 2).max(1)
-}
-
-/// The shared compile cache of the repository at `root`.
 /// Overrides the directory of the shared compile caches, so a baseline
 /// worktree compiles into its checkout's warm caches: registry packages are
 /// reused, while the worktree's own packages, at other paths, are units of
@@ -484,12 +351,19 @@ fn compile_cache_base(root: &Path, overridden: Option<std::ffi::OsString>) -> Pa
     overridden
         .filter(|directory| !directory.is_empty())
         .map_or_else(
-            || root.join("target/hil/esp32s31/build-cache"),
+            || {
+                root.join("target/hil")
+                    .join(oer_image::staged::CHIP)
+                    .join("build-cache")
+            },
             PathBuf::from,
         )
 }
 
-pub fn shared_compile_cache(root: &Path, class: oer_hil_image_class::ImageClass) -> PathBuf {
+/// The compile cache of `class` shared by every build of the repository at
+/// `root`. Cargo fingerprints decide reuse: registry packages are reused,
+/// while packages from a freshly materialized source tree always rebuild.
+pub fn shared_compile_cache(root: &Path, class: ImageClass) -> PathBuf {
     compile_cache_base(root, std::env::var_os(BUILD_CACHE_ENV)).join(format!(
         "{}-{}-{}",
         class.runtime_profile(),
@@ -498,658 +372,10 @@ pub fn shared_compile_cache(root: &Path, class: oer_hil_image_class::ImageClass)
     ))
 }
 
-/// Downloads what the workspace of `manifest` at `root` needs and the local
-/// Cargo cache lacks, with the lock file `configure` selects. Cargo runs
-/// offline in this repository; an offline `cargo fetch` of a complete cache
-/// takes a fraction of a second, and only a missing dependency goes online.
-fn ensure_fetched(root: &Path, manifest: &Path, configure: impl Fn(&mut Command)) -> Result<()> {
-    let fetch = |online: bool| -> Result<bool> {
-        let mut command = cargo_command();
-        command
-            .current_dir(root)
-            .args(["fetch", "--locked", "--manifest-path"])
-            .arg(manifest);
-        if online {
-            command.args(["--config", "net.offline=false"]);
-        } else {
-            command.stdout(Stdio::null()).stderr(Stdio::null());
-        }
-        configure(&mut command);
-        Ok(command.status()?.success())
-    };
-    if fetch(false)? || fetch(true)? {
-        Ok(())
-    } else {
-        Err(format!("cannot fetch the dependencies of {}", manifest.display()).into())
-    }
-}
-
-#[derive(Default)]
-struct LocalOverrides<'a> {
-    esp_hal: Option<&'a Path>,
-    embassy: Option<&'a Path>,
-    xarxa: Option<&'a Path>,
-}
-
-fn build_resolved(
-    root: &Path,
-    class: oer_hil_image_class::ImageClass,
-    local: LocalOverrides<'_>,
-    placement: BuildPlacement<'_>,
-) -> Result<Artifacts> {
-    let LocalOverrides {
-        esp_hal: local_esp_hal,
-        embassy: local_embassy,
-        xarxa: local_xarxa,
-    } = local;
-    ensure_no_old_application_dependency(root)?;
-    let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
-    let target = oer_esp32s31_firmware::target(root)?;
-    let BuildPlacement {
-        output: output_override,
-        cache,
-        layout_seed,
-        features,
-    } = placement;
-    let output = output_override.map_or_else(
-        || {
-            root.join("target/hil/esp32s31").join(format!(
-                "{}-{}-{}{}{}",
-                class.runtime_profile(),
-                class.id(),
-                NETWORK,
-                seed_suffix(layout_seed),
-                features.suffix()
-            ))
-        },
-        Path::to_owned,
-    );
-    let runtime_target = cache.join("runtime");
-    let bootstrap_target = cache.join("bootstrap");
-    fs::create_dir_all(&output)?;
-    fs::write(output.join("image-class.txt"), format!("{}\n", class.id()))?;
-    let log = BuildLog::create(&output.join("build.log"))?;
-    // Private copies of both committed catalogs: patched networks and local
-    // overrides resolve into them, never into the source tree.
-    let runtime_lock = oer_esp32s31_firmware::network::BuildLock::prepare(
-        &root.join("hil/targets/esp32s31"),
-        &output.join("locks/runtime"),
-    )?;
-    let bootstrap_lock = oer_esp32s31_firmware::network::BuildLock::prepare(
-        &root.join("platform/esp32s31"),
-        &output.join("locks/bootstrap"),
-    )?;
-    let overridden = local_esp_hal.is_some() || local_embassy.is_some() || local_xarxa.is_some();
-
-    let compiled_runtime_elf = runtime_target
-        .join(&target)
-        .join("release")
-        .join(RUNTIME_BIN);
-    // Artifacts are copied out of the compile cache, which a later build of
-    // the same class may overwrite.
-    let runtime_elf = output.join("runtime.elf");
-    let runtime_bin = output.join("runtime.bin");
-    let compiled_bootstrap_elf = bootstrap_target
-        .join(&target)
-        .join("release")
-        .join(BOOTSTRAP_BIN);
-    let bootstrap_elf = output.join("bootstrap.elf");
-    let effective_embedded_lock = output.join("effective-Cargo.lock");
-    let effective_bootstrap_lock = output.join("bootstrap-Cargo.lock");
-    let application_image = output.join("application.bin");
-
-    let runtime_features = features.apply(&class.build_features(NETWORK_FEATURE));
-    let stack_policy = oer_esp32s31_firmware::stack::StackPolicy::load(&root.join(STACK_POLICY))?;
-    let mut runtime = cargo_command();
-    runtime
-        .current_dir(root)
-        .arg("build")
-        .arg("--manifest-path")
-        .arg(&manifest)
-        .args(["-p", RUNTIME_BIN, "--release", "--target", &target])
-        .args(["--no-default-features", "--features", &runtime_features])
-        .env("CARGO_TARGET_DIR", &runtime_target)
-        .env("CARGO_INCREMENTAL", "0");
-    // Only a recorded seed reaches the link: `cargo_command` removed any
-    // inherited one.
-    if let Some(seed) = layout_seed {
-        runtime.env(LAYOUT_SEED_ENV, seed.to_string());
-    }
-    if !overridden {
-        runtime.arg("--locked");
-    }
-    runtime_lock.configure(&mut runtime);
-    add_local_esp_hal_patches(&mut runtime, local_esp_hal);
-    add_local_embassy_patches(&mut runtime, local_embassy);
-    add_local_xarxa_patches(&mut runtime, local_xarxa);
-    oer_esp32s31_firmware::compiler::configure_image_compiler(
-        &mut runtime,
-        &stack_policy,
-        &target,
-    )?;
-    if !overridden {
-        ensure_fetched(root, &manifest, |command| runtime_lock.configure(command))?;
-    }
-    let token = BuildToken::acquire()?;
-    log.run(&mut runtime, "build stage-two runtime")?;
-    drop(token);
-    require_file(&compiled_runtime_elf, "runtime ELF")?;
-    fs::copy(&compiled_runtime_elf, &runtime_elf)?;
-    // Local overrides deliberately resolve path packages; only a network
-    // selection has a fixed expected pin change.
-    if !overridden {
-        runtime_lock.validate()?;
-    }
-
-    // A diagnostic image's observers are not the product's: its interrupt
-    // stacks may be `partial + ?`, with their holes named.
-    let required = if class.diagnostic() {
-        oer_esp32s31_firmware::interrupt_stack::Required::Partial
-    } else {
-        oer_esp32s31_firmware::interrupt_stack::Required::Proven
-    };
-    let stacks = oer_esp32s31_firmware::stack::audit_runtime_stacks(
-        root,
-        &runtime_elf,
-        &stack_policy,
-        required,
-        &output,
-    );
-    eprintln!(
-        "interrupt_stack_report={}",
-        output
-            .join(oer_esp32s31_firmware::stack::INTERRUPT_REPORT)
-            .display()
-    );
-    eprintln!(
-        "stack_report={}",
-        output
-            .join(oer_esp32s31_firmware::stack::RUNTIME_REPORT)
-            .display()
-    );
-    let stacks = stacks.map_err(|error| log.failed("runtime stack gate", error))?;
-    for warning in &stacks.warnings {
-        eprintln!("warning: {warning}");
-    }
-
-    let mut objcopy = Command::new(program_from_env("LLVM_OBJCOPY", "llvm-objcopy"));
-    objcopy
-        .args(["-O", "binary"])
-        .arg(&runtime_elf)
-        .arg(&runtime_bin);
-    log.run(&mut objcopy, "flatten stage-two runtime")?;
-    let crc =
-        pack_runtime(&runtime_bin).map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
-    let placement = audit_runtime(&runtime_elf, &runtime_bin, class)
-        .map_err(|error| log.failed("runtime placement audit", error))?;
-    fs::write(output.join("placement.txt"), placement)?;
-
-    // The bootstrap embeds the runtime with `include_bytes!`; a stable path
-    // that keeps its timestamp while its bytes are unchanged leaves the
-    // bootstrap fresh.
-    let embedded_runtime = bootstrap_target.join("stage-two-runtime.bin");
-    replace_if_changed(&runtime_bin, &embedded_runtime)?;
-    let mut bootstrap = cargo_command();
-    bootstrap.current_dir(root);
-    oer_esp32s31_firmware::bootstrap_command(
-        &mut bootstrap,
-        root,
-        &target,
-        &absolute(&embedded_runtime)?,
-        &bootstrap_target,
-    );
-    if local_esp_hal.is_none() {
-        bootstrap.arg("--locked");
-    }
-    bootstrap_lock.configure(&mut bootstrap);
-    add_bootstrap_patches(&mut bootstrap, local_esp_hal);
-    oer_esp32s31_firmware::compiler::configure_image_compiler(
-        &mut bootstrap,
-        &stack_policy,
-        &target,
-    )?;
-    if local_esp_hal.is_none() {
-        ensure_fetched(
-            root,
-            &root.join("platform/esp32s31/Cargo.toml"),
-            |command| bootstrap_lock.configure(command),
-        )?;
-    }
-    log.run(&mut bootstrap, "build Flash/SRAM bootstrap")?;
-    require_file(&compiled_bootstrap_elf, "bootstrap ELF")?;
-    fs::copy(&compiled_bootstrap_elf, &bootstrap_elf)?;
-    let bootstrap_stack = oer_esp32s31_firmware::stack::audit_bootstrap_stack(
-        root,
-        &bootstrap_elf,
-        &stack_policy,
-        &output,
-    );
-    eprintln!(
-        "bootstrap_stack_report={}",
-        output
-            .join(oer_esp32s31_firmware::stack::BOOTSTRAP_REPORT)
-            .display()
-    );
-    for warning in bootstrap_stack.map_err(|error| log.failed("bootstrap stack gate", error))? {
-        eprintln!("warning: {warning}");
-    }
-
-    let mut save_image = Command::new(program_from_env("ESPFLASH", "espflash"));
-    oer_esp32s31_firmware::save_image_command(
-        &mut save_image,
-        root,
-        &bootstrap_elf,
-        &application_image,
-    );
-    log.run(&mut save_image, "encode ESP application image")?;
-    audit_application_image(&application_image)
-        .map_err(|error| log.failed("application image audit", error))?;
-    fs::copy(runtime_lock.path(), &effective_embedded_lock)?;
-    fs::copy(bootstrap_lock.path(), &effective_bootstrap_lock)?;
-    let compiled = source_inputs::collect(
-        root,
-        &[
-            (&runtime_target.join(&target).join("release"), RUNTIME_BIN),
-            (
-                &bootstrap_target.join(&target).join("release"),
-                BOOTSTRAP_BIN,
-            ),
-        ],
-    )?;
-    let mut inputs = source_inputs::configuration(
-        root,
-        &compiled,
-        &[
-            Path::new("hil/targets/esp32s31"),
-            Path::new("platform/esp32s31"),
-        ],
-        &[
-            Path::new(STACK_POLICY),
-            // The stack gate's ROM pin and summaries.
-            Path::new("verification/esp32s31/artifacts.toml"),
-            Path::new("platform/esp32s31/linker/rom/functions.toml"),
-            Path::new(oer_esp32s31_firmware::PARTITION_TABLE),
-        ],
-    )?;
-    inputs.extend(compiled);
-    let source_inputs = source_inputs::write(&output, &inputs)?;
-
-    eprintln!("runtime_crc32={crc:08x}");
-    eprintln!("placement_audit=PASS");
-    eprintln!("interrupt_stack_audit=PASS");
-    eprintln!("task_stack_audit=PASS");
-    eprintln!("autonomous_source_graph=PASS");
-    Ok(Artifacts {
-        chip: String::from(oer_esp32s31_firmware::CHIP),
-        rust_target: target,
-        output,
-        runtime_elf,
-        effective_embedded_lock,
-        application_image,
-        boot: BootArtifacts::Staged {
-            runtime_bin,
-            bootstrap_elf,
-            effective_bootstrap_lock,
-        },
-        source_inputs: Some(source_inputs),
-        environment: oer_hil_evidence::build::BuildEnvironment::capture(),
-        layout_seed,
-        features: features.clone(),
-        rom_summaries: stacks.summaries,
-    })
-}
-
 /// The artifact directory suffix of a seeded build, so a seed never reuses
 /// another layout's artifacts.
 pub(crate) fn seed_suffix(layout_seed: LayoutSeed) -> String {
     layout_seed.map_or_else(String::new, |seed| format!("-seed{seed}"))
-}
-
-fn cargo_command() -> Command {
-    let mut command = Command::new(program_from_env("CARGO", "cargo"));
-    for variable in inherited_build_overrides(env::vars_os().map(|(name, _)| name)) {
-        command.env_remove(variable);
-    }
-    // A layout seed reaches a build only as the build's recorded seed, never
-    // from the caller's environment.
-    command.env_remove(LAYOUT_SEED_ENV);
-    command
-}
-
-/// Inherited Cargo variables that would change a firmware image without
-/// appearing in the checkout: profiles, build and target settings. The build
-/// relies on the repository's Cargo configuration instead. `RUSTFLAGS` stays
-/// and is recorded in the build provenance; job count and target directory do
-/// not change the image.
-fn inherited_build_overrides(
-    names: impl Iterator<Item = std::ffi::OsString>,
-) -> Vec<std::ffi::OsString> {
-    names
-        .filter(|name| {
-            let name = name.to_string_lossy();
-            ["CARGO_PROFILE_", "CARGO_BUILD_", "CARGO_TARGET_"]
-                .iter()
-                .any(|prefix| name.starts_with(prefix))
-                && name != "CARGO_BUILD_JOBS"
-                && name != "CARGO_TARGET_DIR"
-        })
-        .collect()
-}
-
-pub fn program_from_env(variable: &str, fallback: &str) -> OsString {
-    env::var_os(variable).unwrap_or_else(|| fallback.into())
-}
-
-fn local_esp_hal_override() -> Result<Option<PathBuf>> {
-    let Some(local) = env::var_os("ESP_HAL_ROOT").map(PathBuf::from) else {
-        return Ok(None);
-    };
-    let packages = [
-        ("esp-bootloader-esp-idf", "esp-bootloader-esp-idf"),
-        ("esp-hal", "esp-hal"),
-        ("esp-sync", "esp-sync"),
-    ];
-    let missing = packages
-        .iter()
-        .filter_map(|(_, path)| (!local.join(path).is_dir()).then_some(*path))
-        .collect::<Vec<_>>();
-    if !missing.is_empty() {
-        return Err(format!(
-            "ESP_HAL_ROOT={} is missing required package directories: {}",
-            local.display(),
-            missing.join(", ")
-        )
-        .into());
-    }
-    Ok(Some(local))
-}
-
-fn local_embassy_override() -> Result<Option<PathBuf>> {
-    let Some(local) = env::var_os("EMBASSY_ROOT").map(PathBuf::from) else {
-        return Ok(None);
-    };
-    let packages = ["embassy-net", "embassy-net-driver"];
-    let missing = packages
-        .iter()
-        .filter_map(|path| (!local.join(path).is_dir()).then_some(*path))
-        .collect::<Vec<_>>();
-    if !missing.is_empty() {
-        return Err(format!(
-            "EMBASSY_ROOT={} is missing required package directories: {}",
-            local.display(),
-            missing.join(", ")
-        )
-        .into());
-    }
-    Ok(Some(local))
-}
-
-fn local_xarxa_override() -> Result<Option<PathBuf>> {
-    // Do not use an XARXA_* name here: Xarxa's build script owns that prefix
-    // for compile-time protocol configuration and rejects unknown variables.
-    let Some(local) = env::var_os("OPEN_RADIO_XARXA_ROOT").map(PathBuf::from) else {
-        return Ok(None);
-    };
-    let packages = ["xarxa-driver"];
-    let missing = packages
-        .iter()
-        .filter_map(|path| (!local.join(path).is_dir()).then_some(*path))
-        .collect::<Vec<_>>();
-    if !missing.is_empty() {
-        return Err(format!(
-            "OPEN_RADIO_XARXA_ROOT={} is missing required package directories: {}",
-            local.display(),
-            missing.join(", ")
-        )
-        .into());
-    }
-    Ok(Some(local))
-}
-
-fn add_local_esp_hal_patches(command: &mut Command, local: Option<&Path>) {
-    let Some(local) = local else {
-        return;
-    };
-    let packages = [
-        ("esp-bootloader-esp-idf", "esp-bootloader-esp-idf"),
-        ("esp-hal", "esp-hal"),
-        ("esp-sync", "esp-sync"),
-    ];
-    for (package, path) in packages {
-        command.arg("--config").arg(format!(
-            "patch.\"https://github.com/ermacv/esp-hal\".{package}.path=\"{}\"",
-            local.join(path).display()
-        ));
-    }
-}
-
-/// The local overrides the bootstrap build takes: esp-hal's, the only one
-/// it depends on. A patch it does not use would be recorded in its lock
-/// file, which `--locked` refuses.
-fn add_bootstrap_patches(command: &mut Command, local_esp_hal: Option<&Path>) {
-    add_local_esp_hal_patches(command, local_esp_hal);
-}
-
-fn add_local_embassy_patches(command: &mut Command, local: Option<&Path>) {
-    let Some(local) = local else {
-        return;
-    };
-    for package in ["embassy-net", "embassy-net-driver"] {
-        command.arg("--config").arg(format!(
-            "patch.\"https://github.com/ermacv/embassy.git\".{package}.path=\"{}\"",
-            local.join(package).display()
-        ));
-    }
-}
-
-fn add_local_xarxa_patches(command: &mut Command, local: Option<&Path>) {
-    let Some(local) = local else {
-        return;
-    };
-    for (package, package_root) in [
-        ("xarxa", local.to_owned()),
-        ("xarxa-driver", local.join("xarxa-driver")),
-    ] {
-        command.arg("--config").arg(format!(
-            "patch.\"https://github.com/ermacv/xarxa.git\".{package}.path=\"{}\"",
-            package_root.display()
-        ));
-    }
-}
-
-/// The log of one image build: every step's standard error, as the terminal
-/// also shows it, so a failure's cause survives the caller's terminal.
-pub struct BuildLog {
-    path: PathBuf,
-}
-
-/// A build step that failed, with the line that says why when one does, and
-/// the build log holding its whole output.
-#[derive(Debug)]
-pub struct BuildStepFailed {
-    pub step: String,
-    pub cause: String,
-    pub log: PathBuf,
-}
-
-impl std::fmt::Display for BuildStepFailed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} failed: {}", self.step, self.cause)
-    }
-}
-
-impl Error for BuildStepFailed {}
-
-impl BuildLog {
-    /// Start an empty log at `path`.
-    pub fn create(path: &Path) -> Result<Self> {
-        fs::write(path, b"")?;
-        Ok(Self {
-            path: path.to_owned(),
-        })
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn append(&self, text: &str) -> Result<()> {
-        use std::io::Write as _;
-        let mut file = fs::OpenOptions::new().append(true).open(&self.path)?;
-        file.write_all(text.as_bytes())?;
-        Ok(())
-    }
-
-    /// Run `command` as the step `description`, copying its standard error
-    /// to the terminal and the log.
-    pub fn run(&self, command: &mut Command, description: &str) -> Result<()> {
-        use std::io::BufRead as _;
-        eprintln!("==> {description}");
-        self.append(&format!("==> {description}\n"))?;
-        command.stderr(Stdio::piped());
-        let mut child = oer_process::owned::Child::spawn(command)?;
-        let stderr = child
-            .take_stderr()
-            .ok_or("the build step has no standard error")?;
-        let log = self.path.clone();
-        let copier = std::thread::spawn(move || -> Vec<String> {
-            use std::io::Write as _;
-            let mut file = fs::OpenOptions::new().append(true).open(&log).ok();
-            let mut lines = Vec::new();
-            for line in std::io::BufReader::new(stderr)
-                .lines()
-                .map_while(std::io::Result::ok)
-            {
-                eprintln!("{line}");
-                if let Some(file) = file.as_mut() {
-                    let _ = writeln!(file, "{line}");
-                }
-                lines.push(line);
-            }
-            lines
-        });
-        let status = child.wait_timeout(Some(std::time::Duration::from_secs(30 * 60)))?;
-        let lines = copier.join().unwrap_or_default();
-        if !status.success() {
-            return Err(BuildStepFailed {
-                step: description.to_owned(),
-                cause: decisive_line(&lines).unwrap_or_else(|| format!("exit {status}")),
-                log: self.path.clone(),
-            }
-            .into());
-        }
-        Ok(())
-    }
-
-    /// Record an in-process step's failure in the log and name the log.
-    pub fn failed(
-        &self,
-        step: &str,
-        error: Box<dyn Error + Send + Sync>,
-    ) -> Box<dyn Error + Send + Sync> {
-        let _ = self.append(&format!("==> {step}\n{error}\n"));
-        BuildStepFailed {
-            step: step.to_owned(),
-            cause: error.to_string(),
-            log: self.path.clone(),
-        }
-        .into()
-    }
-}
-
-/// The line of a failed step's standard error that says why: an espflash
-/// error id, else the last `error` line, else the last non-empty line.
-pub fn decisive_line(lines: &[String]) -> Option<String> {
-    let trimmed = || {
-        lines
-            .iter()
-            .rev()
-            .map(|line| line.trim())
-            .filter(|line| !line.is_empty())
-    };
-    trimmed()
-        .find(|line| line.contains("espflash::"))
-        .or_else(|| {
-            trimmed().find(|line| {
-                let lower = line.to_ascii_lowercase();
-                lower.starts_with("error") || lower.contains(" error:") || lower.contains("× ")
-            })
-        })
-        .or_else(|| trimmed().next())
-        .map(str::to_owned)
-}
-
-pub fn run_command(command: &mut Command, description: &str) -> Result<()> {
-    eprintln!("==> {description}");
-    let status = oer_process::owned::Child::spawn(command)?
-        .wait_timeout(Some(std::time::Duration::from_secs(30 * 60)))?;
-    if !status.success() {
-        return Err(format!("{description} failed with {status}").into());
-    }
-    Ok(())
-}
-
-fn absolute(path: &Path) -> Result<PathBuf> {
-    Ok(if path.is_absolute() {
-        path.to_owned()
-    } else {
-        env::current_dir()?.join(path)
-    })
-}
-
-/// Copy `source` to `target` unless `target` already holds the same bytes, so
-/// that an unchanged file keeps the timestamp Cargo compares.
-fn replace_if_changed(source: &Path, target: &Path) -> Result<()> {
-    let bytes = fs::read(source)?;
-    if fs::read(target).is_ok_and(|existing| existing == bytes) {
-        return Ok(());
-    }
-    fs::create_dir_all(target.parent().ok_or("target has no parent")?)?;
-    let mut staged = tempfile::NamedTempFile::new_in(target.parent().ok_or("no parent")?)?;
-    std::io::Write::write_all(&mut staged, &bytes)?;
-    staged.persist(target)?;
-    Ok(())
-}
-
-fn require_file(path: &Path, description: &str) -> Result<()> {
-    if path.is_file() {
-        Ok(())
-    } else {
-        Err(format!("missing {description}: {}", path.display()).into())
-    }
-}
-
-pub fn require_program(program: &std::ffi::OsStr) -> Result<()> {
-    let status = Command::new(program)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .supervised_status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "required program `{}` is unavailable",
-            program.to_string_lossy()
-        )
-        .into())
-    }
-}
-
-pub fn ensure_no_old_application_dependency(root: &Path) -> Result<()> {
-    for relative in [
-        "hil/targets/esp32s31/Cargo.toml",
-        "platform/esp32s31/bootstrap/Cargo.toml",
-        "hil/targets/esp32s31/agent/Cargo.toml",
-        "platform/esp32s31/board/Cargo.toml",
-    ] {
-        let path = root.join(relative);
-        let contents = fs::read_to_string(&path)?;
-        if contents.contains("esp32s31_rust") {
-            return Err(format!("{} still depends on esp32s31_rust", path.display()).into());
-        }
-    }
-    Ok(())
 }
 
 pub fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
@@ -1159,7 +385,7 @@ pub fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
         "hil/targets/esp32s31/Cargo.lock",
     ] {
         let path = root.join(relative);
-        let contents = fs::read_to_string(&path)?;
+        let contents = std::fs::read_to_string(&path)?;
         for forbidden in [
             "name = \"esp-phy\"",
             "name = \"esp-rtos\"",
@@ -1177,29 +403,6 @@ pub fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn audit_runtime(
-    elf: &Path,
-    binary: &Path,
-    class: oer_hil_image_class::ImageClass,
-) -> Result<String> {
-    let report = oer_esp32s31_firmware::audit_runtime(elf, binary)
-        .map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
-    use object::{Object, ObjectSection, ObjectSymbol};
-    let bytes = fs::read(elf)?;
-    let object = object::File::parse(bytes.as_slice())?;
-    let critical = object
-        .section_by_name(".critical.data")
-        .map(|section| section.address()..section.address() + section.size());
-    audit_radio_observers(
-        class,
-        critical,
-        object
-            .symbols()
-            .filter_map(|symbol| symbol.name().ok().map(|name| (name, symbol.address()))),
-    )?;
-    Ok(report)
-}
-
 /// Radio compositions retain their observer state in critical SRAM. Images
 /// without a radio composition still pass the shared firmware/stack audits,
 /// but have no radio observer storage to require.
@@ -1207,7 +410,7 @@ fn audit_radio_observers<'a>(
     class: ImageClass,
     critical: Option<std::ops::Range<u64>>,
     symbols: impl Iterator<Item = (&'a str, u64)>,
-) -> Result<()> {
+) -> oer_image::Result<()> {
     if matches!(
         class,
         ImageClass::SystemWatchdog
@@ -1253,51 +456,48 @@ fn audit_radio_observers<'a>(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-mod build_log_tests {
-    use super::*;
-
-    #[test]
-    fn the_decisive_line_prefers_the_espflash_error_id() {
-        let lines = [
-            "   Compiling x",
-            "Error: espflash::image_too_big",
-            "  × Image size 4210448B exceeds partition size 4194304B",
-            "",
-        ]
-        .map(String::from);
-        assert_eq!(
-            decisive_line(&lines).as_deref(),
-            Some("Error: espflash::image_too_big")
-        );
-        let cargo = ["warning: x", "error: could not compile `y`", "  note"].map(String::from);
-        assert_eq!(
-            decisive_line(&cargo).as_deref(),
-            Some("error: could not compile `y`")
-        );
-        assert_eq!(decisive_line(&["tail".into()]).as_deref(), Some("tail"));
-        assert_eq!(decisive_line(&[]), None);
+/// The failed build step behind `error`, when a step failed.
+pub fn failed_step<'a>(error: &'a (dyn Error + 'static)) -> Option<&'a oer_image::BuildStepFailed> {
+    let mut cause = Some(error);
+    while let Some(current) = cause {
+        if let Some(failed) = current.downcast_ref::<oer_image::BuildStepFailed>() {
+            return Some(failed);
+        }
+        cause = current.source();
     }
+    None
+}
 
-    #[test]
-    fn a_failed_step_keeps_its_output_in_the_log() {
-        let directory = tempfile::tempdir().unwrap();
-        let log = BuildLog::create(&directory.path().join("build.log")).unwrap();
-        let error = log
-            .run(
-                Command::new("sh").args(["-c", "echo noise >&2; echo 'error: broken' >&2; exit 3"]),
-                "a step",
-            )
-            .unwrap_err();
-        let failed = error.downcast_ref::<BuildStepFailed>().unwrap();
-        assert_eq!(failed.cause, "error: broken");
-        let text = fs::read_to_string(log.path()).unwrap();
-        assert!(
-            text.contains("==> a step\nnoise\nerror: broken\n"),
-            "{text}"
-        );
+/// Build `classes` at `base` in a detached worktree and in this checkout,
+/// then compare each pair; fails unless every pair is equivalent.
+pub fn compare_images(
+    root: &Path,
+    base: &str,
+    classes: &[String],
+    review: &oer_image::compare::Review,
+) -> Result<()> {
+    let worktree =
+        oer_process::git::Worktree::detached(root, &root.join("target/compare/base"), base)?;
+    let worktree = worktree.path();
+    let mut equivalent = true;
+    for class in classes {
+        let class: ImageClass = class.parse()?;
+        // The image pipeline builds the worktree's sources with its own
+        // builder: the comparison is of the sources alone.
+        let [base_elf, current_elf] = [worktree, root].map(|root| {
+            build(root, class, None, &Default::default())
+                .map(|artifacts| artifacts.bundle.runtime_elf())
+        });
+        let comparison = oer_image::compare::compare_elf(&base_elf?, &current_elf?, review)?;
+        equivalent &= comparison.equivalent(&review.allowed);
+    }
+    if equivalent {
+        println!("images equivalent modulo placement against {base}");
+        Ok(())
+    } else {
+        Err(format!("images differ from {base} beyond placement").into())
     }
 }
+
+#[cfg(test)]
+mod tests;

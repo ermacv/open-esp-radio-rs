@@ -1,7 +1,6 @@
 //! Run one authenticated ESP32-S31 vendor-comparison scenario: the
 //! scenario set, its inputs and the dispatch that decides its verdicts and
 //! evidence shard. The binary adds the reviewer commands.
-use crate::session::evidence_index::Index;
 use crate::{
     ampdu_resort, ble, calibration_leaves, calibration_prefix, channel, coex, coex_hw, coverage,
     decisions,
@@ -13,6 +12,7 @@ use crate::{
     retry, rfpll, rx_append, rx_gain, session, state, tracking, tx_dc,
 };
 use clap::Subcommand;
+use oer_vendor_evidence::Index;
 use oer_vendor_scenario_engine::findings::RunReport;
 use std::{
     path::{Path, PathBuf},
@@ -243,7 +243,7 @@ fn single(shard: Shard, outcome: Result<Outcome>) -> Result<ExitCode> {
             return Ok(code);
         }
         let index = evidence::shard(shard.scenario, &shard.production, &claims, &shard.verdict)?;
-        evidence::write(directory, &index)?;
+        oer_vendor_scenario_engine::shard::record(directory, &index)?;
     }
     Ok(code)
 }
@@ -768,8 +768,6 @@ mod evidence {
             verdict,
         )
     }
-
-    pub use oer_vendor_scenario_engine::shard::write;
 }
 
 /// Every vendor input and extra production image `all` requires.
@@ -926,7 +924,7 @@ fn all(common: Common, inputs: AllInputs, report: &dyn RunReport) -> Result<Exit
     }
     // A line is unobserved when no scenario observes it; every decision must
     // still review one.
-    let root = observation::root()?;
+    let root = oer_process::built_root();
     let unobserved_lines = lines.unobserved();
     let mut sources = observation::Sources::default();
     sources.check(&root, decisions::observation::DECISIONS, &unobserved_lines)?;
@@ -1006,7 +1004,7 @@ fn all(common: Common, inputs: AllInputs, report: &dyn RunReport) -> Result<Exit
             } else {
                 &common.production
             };
-            evidence::write(
+            oer_vendor_scenario_engine::shard::record(
                 directory,
                 &evidence::shard(name, production, claims, &common.verdict)?,
             )?;

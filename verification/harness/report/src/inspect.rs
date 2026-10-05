@@ -12,10 +12,7 @@
 //! The pass is intraprocedural and forgets what it knows where control can
 //! enter from elsewhere, so an access through a pointer computed in another
 //! function, or after a join, is not attributed.
-use object::{
-    Object, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget, SectionIndex,
-    SymbolKind,
-};
+use oer_elf::rv32::Role;
 use oer_riscv_lift::RiscvDecoder;
 use oer_riscv_model::{
     DecodedOp, FunctionDecoder, FunctionSemantics, InstructionFlow, IntegerOp, MemoryKind, Operand,
@@ -87,35 +84,26 @@ struct Reference {
 
 impl Reference {
     fn is_call(&self) -> bool {
-        matches!(
-            self.kind,
-            object::elf::R_RISCV_CALL | object::elf::R_RISCV_CALL_PLT | object::elf::R_RISCV_JAL
-        )
+        matches!(oer_elf::rv32::kind(self.kind).role, Role::Call | Role::Jump)
     }
 
     /// Whether the relocation supplies the upper bits of an address.
     fn is_upper(&self) -> bool {
         matches!(
-            self.kind,
-            object::elf::R_RISCV_HI20 | object::elf::R_RISCV_PCREL_HI20
+            oer_elf::rv32::kind(self.kind).role,
+            Role::AbsoluteHigh | Role::PcRelativeHigh
         )
     }
 
     /// Whether the relocation supplies the low bits of a symbol's address.
     fn is_lower_absolute(&self) -> bool {
-        matches!(
-            self.kind,
-            object::elf::R_RISCV_LO12_I | object::elf::R_RISCV_LO12_S
-        )
+        matches!(oer_elf::rv32::kind(self.kind).role, Role::AbsoluteLow)
     }
 
     /// Whether the relocation completes the address its paired `auipc`
     /// started.
     fn is_lower_pc_relative(&self) -> bool {
-        matches!(
-            self.kind,
-            object::elf::R_RISCV_PCREL_LO12_I | object::elf::R_RISCV_PCREL_LO12_S
-        )
+        matches!(oer_elf::rv32::kind(self.kind).role, Role::PcRelativeLow)
     }
 
     /// The symbol address the relocation names.
@@ -233,11 +221,8 @@ impl Corpus {
             self.add_object(id, bytes, true);
             return Ok(());
         }
-        let archive = object::read::archive::ArchiveFile::parse(bytes)?;
-        for member in archive.members() {
-            let member = member?;
-            let name = String::from_utf8_lossy(member.name()).into_owned();
-            self.add_object(&format!("{id}[{name}]"), member.data(bytes)?, false);
+        for (name, data) in oer_elf::members(bytes)? {
+            self.add_object(&format!("{id}[{name}]"), data, false);
         }
         Ok(())
     }
@@ -246,80 +231,75 @@ impl Corpus {
     /// that are not an ELF object, such as an archive symbol table, add
     /// nothing.
     fn add_object(&mut self, origin: &str, bytes: &[u8], linked: bool) {
-        let Ok(file) = object::File::parse(bytes) else {
+        let Ok(file) = oer_elf::Elf::parse(bytes) else {
             return;
         };
         let mut references: BTreeMap<(usize, u64), Reference> = BTreeMap::new();
         for section in file.sections() {
-            for (offset, relocation) in section.relocations() {
-                let RelocationFlags::Elf { r_type } = relocation.flags() else {
-                    continue;
-                };
-                if r_type == object::elf::R_RISCV_RELAX {
+            for relocation in file.relocations(section.index).unwrap_or_default() {
+                if oer_elf::rv32::kind(relocation.r_type).role == Role::Hint {
                     continue;
                 }
-                let RelocationTarget::Symbol(index) = relocation.target() else {
+                let oer_elf::Target::Symbol(index) = relocation.target else {
                     continue;
                 };
-                let Ok(symbol) = file.symbol_by_index(index) else {
+                let Ok(symbol) = file.symbol_at(index) else {
                     continue;
                 };
-                let target_section = symbol.section_index();
-                let name = match symbol.kind() {
-                    SymbolKind::Section => target_section
-                        .and_then(|s| file.section_by_index(s).ok())
-                        .and_then(|s| s.name().ok().map(str::to_owned))
+                let target_section = symbol.section.and_then(|s| file.section(s).ok());
+                let name = match symbol.kind {
+                    oer_elf::SymbolKind::Section => target_section
+                        .as_ref()
+                        .map(|s| s.name.to_owned())
                         .unwrap_or_default(),
-                    _ => symbol.name().unwrap_or_default().to_owned(),
+                    _ => symbol.name.to_owned(),
                 };
-                let literal = target_section.and_then(|s| {
-                    literal(
-                        &file,
-                        s,
-                        symbol.address().wrapping_add_signed(relocation.addend()),
-                    )
+                let literal = target_section.as_ref().and_then(|s| {
+                    literal(s, symbol.address.wrapping_add_signed(relocation.addend))
                 });
                 references.insert(
-                    (section.index().0, offset),
+                    (section.index, relocation.at),
                     Reference {
-                        kind: r_type,
+                        kind: relocation.r_type,
                         target: name,
-                        addend: relocation.addend(),
+                        addend: relocation.addend,
                         literal,
                     },
                 );
             }
         }
         for symbol in file.symbols() {
-            let (Ok(name), Some(index)) = (symbol.name(), symbol.section_index()) else {
+            let Some(index) = symbol.section else {
                 continue;
             };
-            if symbol.kind() != SymbolKind::Text || symbol.size() == 0 {
+            if symbol.kind != oer_elf::SymbolKind::Text || symbol.size == 0 || !symbol.defined {
                 continue;
             }
-            let Ok(section) = file.section_by_index(index) else {
+            let Ok(section) = file.section(index) else {
                 continue;
             };
-            let Ok(data) = section.data() else {
+            let start = symbol.address - section.address;
+            let Some(code) = section
+                .data
+                .get(start as usize..(start + symbol.size) as usize)
+            else {
                 continue;
             };
-            let start = symbol.address() - section.address();
-            let Some(code) = data.get(start as usize..(start + symbol.size()) as usize) else {
-                continue;
-            };
-            let Ok(entry) = u32::try_from(symbol.address()) else {
+            let Ok(entry) = u32::try_from(symbol.address) else {
                 continue;
             };
             let references = references
-                .range((index.0, start)..(index.0, start + symbol.size()))
+                .range((index, start)..(index, start + symbol.size))
                 .map(|((_, offset), reference)| ((offset - start) as u32, reference.clone()))
                 .collect();
             if linked {
-                self.names.entry(entry).or_insert_with(|| name.to_owned());
+                self.names
+                    .entry(entry)
+                    .or_insert_with(|| symbol.name.to_owned());
             }
             self.functions.push(Function {
                 origin: origin.to_owned(),
-                name: name.to_owned(),
+                name: symbol.name.to_owned(),
                 entry,
                 code: code.to_vec(),
                 references,
@@ -526,10 +506,9 @@ impl Corpus {
 }
 
 /// The NUL-terminated printable string at `address` of `section`, if any.
-fn literal(file: &object::File<'_>, section: SectionIndex, address: u64) -> Option<String> {
-    let section = file.section_by_index(section).ok()?;
-    let data = section.data().ok()?;
-    let start = usize::try_from(address.checked_sub(section.address())?).ok()?;
+fn literal(section: &oer_elf::Section<'_>, address: u64) -> Option<String> {
+    let start = usize::try_from(address.checked_sub(section.address)?).ok()?;
+    let data = section.data;
     let bytes = data.get(start..)?;
     let end = bytes.iter().position(|b| *b == 0)?;
     let text = std::str::from_utf8(&bytes[..end]).ok()?;
@@ -1279,7 +1258,7 @@ pub fn parse_address(text: &str) -> std::result::Result<u32, String> {
 /// The installed chip's corpus from this checkout. A pinned code artifact
 /// the checkout does not hold is reported and skipped.
 pub fn load() -> Result<Corpus> {
-    let corpus = Corpus::load(&oer_vendor_scenario_engine::observation::root()?)?;
+    let corpus = Corpus::load(&oer_process::built_root())?;
     for id in &corpus.missing {
         eprintln!("{id}: not in this checkout, skipped");
     }

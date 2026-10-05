@@ -8,6 +8,7 @@ The harness holds the chip-neutral parts of vendor verification:
 | `oer-probe-macros` | `macros/` | Procedural-macro frontend of the declarations |
 | `oer-vendor-scenario-engine` | `scenarios/` | Scenario engine: authenticated artifacts, Blobray sessions, the comparison harness, coverage, point mutants and evidence shards |
 | `oer-vendor-scenario-report` | `report/` | Reviewer reports: untriaged locations, function view, closure gateways, unclaimed compared pairs and the `xref`, `show`, `fields` and `prints` inspection of pinned vendor code |
+| `oer-vendor-scenario-cli` | `cli/` | The one scenario binary, `vendor-scenarios <chip> <command>`: the chip installs its scenario library, the command is one of its scenarios or a reviewer command; `cargo xtask vendor-scenario <chip>` builds and runs it |
 
 The probe compiler is a host build tool; it owns no production behavior and
 does not depend on Blobray's executor. The
@@ -20,7 +21,8 @@ line the engine provides.
 
 The engine decides every verdict and recorded set; it hands each claimed
 suite's `Findings` to a `RunReport` the scenario binary passes in, and the
-report crate implements it. Dependencies run from the report crate to the
+report crate implements it. Pins come from `oer-vendor-artifacts`, the one
+reader of `artifacts.toml`, and a shard's path closure from `oer-repo`. Dependencies run from the report crate to the
 engine only, so editing a report changes no scenario's verdict sources.
 
 ## Declare an entry

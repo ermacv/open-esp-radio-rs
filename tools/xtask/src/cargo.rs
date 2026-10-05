@@ -1,10 +1,11 @@
 //! Cargo resolution preserves workspace isolation and the committed lock catalog.
 
 use crate::{
-    Context, Result,
+    Result,
     graph::{self, Graph},
 };
 use oer_process as process;
+use oer_process::Checkout;
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -12,10 +13,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub fn workspace_manifest(context: &Context, manifest: &Path) -> Result<PathBuf> {
+pub fn workspace_manifest(context: &Checkout, manifest: &Path) -> Result<PathBuf> {
     let output = process::capture(
-        context
-            .cargo()
+        oer_toolchain::cargo_in(&context.root)
             .args([
                 "locate-project",
                 "--workspace",
@@ -38,14 +38,14 @@ pub fn workspace_manifest(context: &Context, manifest: &Path) -> Result<PathBuf>
 }
 
 fn document(
-    context: &Context,
+    context: &Checkout,
     manifest: &Path,
     features: &[String],
     target: Option<&str>,
     locked: bool,
     no_deps: bool,
 ) -> Result<Value> {
-    let mut command = context.cargo();
+    let mut command = oer_toolchain::cargo_in(&context.root);
     command
         .args(["metadata", "--format-version", "1", "--manifest-path"])
         .arg(manifest)
@@ -65,7 +65,7 @@ fn document(
     )?)
 }
 pub fn metadata(
-    context: &Context,
+    context: &Checkout,
     manifest: &Path,
     features: &[String],
     target: Option<&str>,
@@ -75,7 +75,7 @@ pub fn metadata(
         context, manifest, features, target, locked, false,
     )?)
 }
-pub fn metadata_no_deps(context: &Context, manifest: &Path) -> Result<cargo_metadata::Metadata> {
+pub fn metadata_no_deps(context: &Checkout, manifest: &Path) -> Result<cargo_metadata::Metadata> {
     let value = document(context, manifest, &[], None, true, true)?;
     graph::validate_packages(&value)?;
     Ok(serde_json::from_value(value)?)
@@ -108,7 +108,7 @@ fn rebase(specification: &mut toml::Value, base: &Path) -> Result<()> {
 }
 
 pub fn isolated_graph(
-    context: &Context,
+    context: &Checkout,
     manifest: &Path,
     features: &[String],
     target: Option<&str>,
@@ -233,9 +233,8 @@ pub fn isolated_graph(
     fs::write(temporary.path().join("src/lib.rs"), "")?;
     fs::write(temporary.path().join("Cargo.lock"), &lock_text)?;
     fs::write(&scratch, toml::to_string(&consumer)?)?;
-    let context = Context {
+    let context = Checkout {
         root: origin_base.to_owned(),
-        cargo: context.cargo.clone(),
     };
     let resolve = |locked| -> Result<Graph> {
         let graph = metadata(&context, &scratch, &[], target, locked)?;

@@ -9,10 +9,10 @@ use core::{
     task::{Context, Poll, Waker},
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use gatt_application::security::{
+use oer_bluetooth_controller::{LeController, LeControllerConfig};
+use oer_bluetooth_gatt_trouble::security::{
     bonds::RamBondStore, comparison::NumericComparison, epoch, gatt::Observation,
 };
-use oer_bluetooth_controller::{LeController, LeControllerConfig};
 use oer_bluetooth_hci::*;
 use oer_bluetooth_hci_transport::*;
 use oer_hil_agent::bluetooth_gatt::secure::reset_gate::GatedController;

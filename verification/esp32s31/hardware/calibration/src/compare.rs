@@ -10,52 +10,31 @@
 //! it describes the environment rather than calibration and is excluded. A
 //! field without a review leaves the comparison INCOMPLETE; reviews naming
 //! no compared field are rejected.
-use crate::capture::{
-    ANALOG_EXTENSION, CONSOLE_EXTENSION, Capture, Lifecycle, PRODUCTION_PREFIX, REGISTER_EXTENSION,
-    VENDOR_PREFIX,
-};
+use crate::Result;
+use crate::boots::{Images, Lifecycle, ProductionBoot, Readings, VendorBoot};
 use crate::committed::{
     CALIBRATION, CALIBRATION_BYTES, OutputField, PARENT, PARENT_BYTES, TRACKING_PROGRESS_FIELD,
-    VENDOR_OBJECT, committed,
+    committed,
 };
-use crate::registers::Space;
-use crate::{Result, production, repository_root, vendor};
+use crate::registers::Register;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+
+pub use crate::committed::VENDOR_OBJECT;
 
 /// Summary format.
-const SCHEMA: u16 = 3;
+pub const SCHEMA: u16 = 4;
 /// Tolerance file format.
 const TOLERANCE_SCHEMA: u16 = 2;
-/// Reviewed tolerances, relative to this package.
-const TOLERANCES: &str = "tolerances.toml";
-/// Tracked summaries of the lifecycle points, relative to the repository
-/// root.
-const SUMMARY: &str = "verification/esp32s31/evidence/hardware/calibration.json";
-const RESTART_SUMMARY: &str = "verification/esp32s31/evidence/hardware/calibration-restart.json";
-/// Summary of an IEEE 802.15.4 point, a diagnostic beside its captures.
-const DIAGNOSTIC_SUMMARY: &str = "summary.json";
+/// The reviewed tolerances, compiled in so a run binds the reviews it used.
+const TOLERANCES: &str = include_str!("tolerances.toml");
 const SECONDS_PER_DAY: u64 = 86_400;
-/// Extension of the captured production artifacts.
-const ARTIFACT_EXTENSION: &str = "bin";
-
-#[derive(clap::Args)]
-pub struct Arguments {
-    /// Directory written by `capture`.
-    #[arg(long)]
-    captures: PathBuf,
-    #[arg(long)]
-    tolerances: Option<PathBuf>,
-    #[arg(long)]
-    output: Option<PathBuf>,
-}
 
 /// The reviews file: every name carries one review, or several whose
 /// lifecycle points differ.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ReviewFile {
+pub struct ReviewFile {
     schema: u16,
     #[serde(default)]
     fields: BTreeMap<String, Reviews>,
@@ -129,7 +108,7 @@ impl ReviewFile {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Verdict {
     Match,
@@ -137,95 +116,92 @@ pub enum Verdict {
     Incomplete,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-struct Summary {
-    schema: u16,
+/// The cross-check's verdict and everything it rests on: the typed result
+/// the workload records in the run bundle.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Summary {
+    pub schema: u16,
     /// UTC day the captures started.
-    date: String,
-    lifecycle: Lifecycle,
-    verdict: Verdict,
-    vendor_object: &'static str,
-    vendor_application_sha256: String,
-    vendor_idf_revision: String,
-    vendor_captures: usize,
-    production_image: String,
-    production_application_sha256: String,
-    production_captures: usize,
-    fields: Vec<FieldSummary>,
+    pub date: String,
+    pub lifecycle: Lifecycle,
+    pub verdict: Verdict,
+    pub vendor_object: String,
+    pub images: Images,
+    pub vendor_captures: usize,
+    pub production_captures: usize,
+    pub fields: Vec<FieldSummary>,
     /// Relation fields that are not compared, with their reasons.
-    excluded: Vec<Excluded>,
+    pub excluded: Vec<Excluded>,
     /// Vendor object byte ranges no compared field covers, `[start, end)`.
-    uncovered: Vec<[usize; 2]>,
+    pub uncovered: Vec<[usize; 2]>,
     /// The calibrated radio-PHY register image of both sides.
-    registers: RegisterSummary,
+    pub registers: RegisterSummary,
     /// The calibrated analog image of both sides.
-    analog: RegisterSummary,
+    pub analog: RegisterSummary,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-struct RegisterSummary {
-    verdict: Verdict,
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct RegisterSummary {
+    pub verdict: Verdict,
     /// Registers both sides read and the rule compared.
-    compared: usize,
-    matched: usize,
+    pub compared: usize,
+    pub matched: usize,
     /// Registers outside their vendor range widened by their own vendor
     /// spread.
-    differing: Vec<RegisterDifference>,
+    pub differing: Vec<RegisterDifference>,
     /// Reviewed registers left out, with their reasons.
-    excluded: Vec<ExcludedRegister>,
+    pub excluded: Vec<ExcludedRegister>,
     /// Registers whose read reset the chip in the calibrated state.
-    unreadable: Vec<String>,
+    pub unreadable: Vec<String>,
     /// Vendor-readable registers production did not report.
-    not_read: Vec<String>,
+    pub not_read: Vec<String>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-struct RegisterDifference {
-    name: String,
-    vendor: [u32; 2],
-    production: [u32; 2],
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct RegisterDifference {
+    pub name: String,
+    pub vendor: [u32; 2],
+    pub production: [u32; 2],
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-struct ExcludedRegister {
-    name: String,
-    reason: String,
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ExcludedRegister {
+    pub name: String,
+    pub reason: String,
 }
 
 /// Register values by address, and the addresses whose read reset the chip.
 type RegisterValues = (BTreeMap<u32, Vec<u32>>, std::collections::BTreeSet<u32>);
 
-/// Every register value of `texts` in `space` by address, and the
-/// unreadable ones.
-fn register_values(space: Space, texts: &[String]) -> Result<RegisterValues> {
+/// Every register value of `boots` by address, and the unreadable ones.
+fn register_values<'a>(boots: impl IntoIterator<Item = &'a Readings>) -> RegisterValues {
     let mut values: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     let mut unreadable = std::collections::BTreeSet::new();
-    for text in texts {
-        for (address, value) in space.replies(text)? {
-            values.entry(address).or_default().push(value);
+    for readings in boots {
+        for (address, value) in &readings.values {
+            values.entry(*address).or_default().push(*value);
         }
-        unreadable.extend(vendor::unreadable(text)?);
+        unreadable.extend(readings.unreadable.iter().copied());
     }
-    Ok((values, unreadable))
+    (values, unreadable)
 }
 
 /// Compare the production register image with the vendor boots'. A
 /// register passes when every production value lies within the vendor
 /// range widened by the vendor range's own width, the fields' rule applied
 /// to whole registers.
-fn compare_registers(
-    space: Space,
-    image: &[crate::registers::Register],
-    vendor: &[String],
-    production: &[String],
+fn compare_registers<'a>(
+    image: &[Register],
+    vendor: impl IntoIterator<Item = &'a Readings>,
+    production: impl IntoIterator<Item = &'a Readings>,
     reviews: &BTreeMap<String, Tolerance>,
-) -> Result<RegisterSummary> {
-    let (vendor_values, unreadable) = register_values(space, vendor)?;
-    let (production_values, _) = register_values(space, production)?;
+) -> RegisterSummary {
+    let (vendor_values, unreadable) = register_values(vendor);
+    let (production_values, _) = register_values(production);
     let range = |values: &[u32]| {
         values.iter().fold([u32::MAX, u32::MIN], |[low, high], &v| {
             [low.min(v), high.max(v)]
@@ -281,30 +257,30 @@ fn compare_registers(
     } else {
         Verdict::Match
     };
-    Ok(summary)
+    summary
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-struct Excluded {
-    name: &'static str,
-    reason: String,
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Excluded {
+    pub name: String,
+    pub reason: String,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-struct FieldSummary {
-    name: &'static str,
-    verdict: Verdict,
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FieldSummary {
+    pub name: String,
+    pub verdict: Verdict,
     /// The widest vendor range of any element.
-    margin: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mask: Option<Vec<u64>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
+    pub margin: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mask: Option<Vec<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
     /// Per element, the vendor and production `[min, max]`.
-    vendor: Vec<[i64; 2]>,
-    production: Vec<[i64; 2]>,
+    pub vendor: Vec<[i64; 2]>,
+    pub production: Vec<[i64; 2]>,
 }
 
 /// The fields the cross-check compares: the parent root's relation without
@@ -390,7 +366,7 @@ fn compare_field(
         .zip(&production_ranges)
         .all(|(v, p)| v[0] - margin <= p[0] && p[1] <= v[1] + margin);
     Ok(FieldSummary {
-        name: field.name,
+        name: field.name.to_owned(),
         verdict: match (tolerance, within) {
             (None, _) => Verdict::Incomplete,
             (Some(_), true) => Verdict::Match,
@@ -444,90 +420,84 @@ fn utc_date(unix_seconds: u64) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
-fn numbered(directory: &Path, prefix: &str, extension: &str) -> Result<Vec<PathBuf>> {
-    let mut paths = std::fs::read_dir(directory)?
-        .map(|entry| Ok(entry?.path()))
-        .collect::<Result<Vec<_>>>()?;
-    paths.retain(|path| {
-        path.is_file()
-            && path.extension().and_then(|e| e.to_str()) == Some(extension)
-            && path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with(prefix))
-    });
-    paths.sort();
-    Ok(paths)
+impl ReviewFile {
+    /// The reviewed tolerances this library was built with, checked
+    /// against the relation: a review naming no compared field fails.
+    pub fn reviewed() -> Result<Self> {
+        let reviews: Self = toml::from_str(TOLERANCES)?;
+        if reviews.schema != TOLERANCE_SCHEMA {
+            return Err(format!("unsupported tolerance schema {}", reviews.schema).into());
+        }
+        let fields = fields();
+        if let Some(unknown) = reviews
+            .fields
+            .keys()
+            .find(|name| !fields.iter().any(|f| f.name == name.as_str()))
+        {
+            return Err(
+                format!("tolerance for {unknown}, which the relation does not compare").into(),
+            );
+        }
+        Ok(reviews)
+    }
 }
 
-pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
-    let root = repository_root();
-    let tolerance_path = arguments
-        .tolerances
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(TOLERANCES));
-    let reviews: ReviewFile = toml::from_str(&std::fs::read_to_string(&tolerance_path)?)?;
-    if reviews.schema != TOLERANCE_SCHEMA {
-        return Err(format!("unsupported tolerance schema {}", reviews.schema).into());
+/// Compare the `vendor` and `production` boots captured at `lifecycle`
+/// under `reviews`, over the register image `image` and the analog image
+/// `analog`. An IEEE 802.15.4 point compares register state only: the
+/// reference firmware reports no calibration object.
+pub fn compare(
+    lifecycle: Lifecycle,
+    images: &Images,
+    vendor: &[VendorBoot],
+    production: &[ProductionBoot],
+    reviews: ReviewFile,
+    (image, analog_image): (&[Register], &[Register]),
+) -> Result<Summary> {
+    let tolerances = reviews.at(lifecycle)?;
+    let calibrated = !lifecycle.ieee802154();
+    if vendor.is_empty() || production.is_empty() {
+        return Err("the captures hold no vendor or no production boot".into());
     }
-    let fields = fields();
-    if let Some(unknown) = reviews
-        .fields
-        .keys()
-        .find(|name| !fields.iter().any(|f| f.name == name.as_str()))
-    {
-        return Err(format!("tolerance for {unknown}, which the relation does not compare").into());
-    }
-    let capture: Capture = serde_json::from_slice(&std::fs::read(
-        arguments.captures.join(crate::capture::RECORD),
-    )?)?;
-    let tolerances = reviews.at(capture.lifecycle)?;
-    // The IEEE 802.15.4 reference firmware reports no calibration objects:
-    // those points compare register state only.
-    let calibrated = !capture.lifecycle.ieee802154();
-    let vendor: Vec<Vec<u8>> = if !calibrated {
-        vec![]
-    } else {
-        numbered(&arguments.captures, VENDOR_PREFIX, CONSOLE_EXTENSION)?
-            .iter()
-            .map(|path| {
-                let mut objects = vendor::parse(&std::fs::read_to_string(path)?)?;
-                objects
-                    .remove(VENDOR_OBJECT)
-                    .ok_or_else(|| format!("{} lacks {VENDOR_OBJECT}", path.display()).into())
+    let objects = |sides: Vec<Option<&Vec<u8>>>, side: &str| -> Result<Vec<Vec<u8>>> {
+        sides
+            .into_iter()
+            .map(|bytes| {
+                bytes
+                    .cloned()
+                    .ok_or_else(|| format!("a {side} boot carries no calibration").into())
             })
-            .collect::<Result<Vec<_>>>()?
-    };
-    let texts = |prefix: &str, extension: &str| -> Result<Vec<String>> {
-        numbered(&arguments.captures, prefix, extension)?
-            .iter()
-            .map(|path| Ok(std::fs::read_to_string(path)?))
             .collect()
     };
+    let (vendor_objects, production_outputs) = if calibrated {
+        (
+            objects(
+                vendor.iter().map(|b| b.calibration.as_ref()).collect(),
+                "vendor",
+            )?,
+            objects(
+                production.iter().map(|b| b.calibration.as_ref()).collect(),
+                "production",
+            )?,
+        )
+    } else {
+        (vec![], vec![])
+    };
     let registers = compare_registers(
-        Space::Mmio,
-        &crate::registers::partition(&root, crate::registers::PARTITION)?,
-        &texts(VENDOR_PREFIX, REGISTER_EXTENSION)?,
-        &texts(PRODUCTION_PREFIX, REGISTER_EXTENSION)?,
+        image,
+        vendor.iter().map(|b| &b.registers),
+        production.iter().map(|b| &b.registers),
         &tolerances.registers,
-    )?;
+    );
     let analog = compare_registers(
-        Space::Analog,
-        &crate::registers::analog(&root, crate::registers::ANALOG_DOMAIN)?,
-        &texts(VENDOR_PREFIX, ANALOG_EXTENSION)?,
-        &texts(PRODUCTION_PREFIX, ANALOG_EXTENSION)?,
+        analog_image,
+        vendor.iter().map(|b| &b.analog),
+        production.iter().map(|b| &b.analog),
         &tolerances.registers,
-    )?;
-    let production = numbered(&arguments.captures, PRODUCTION_PREFIX, ARTIFACT_EXTENSION)?
-        .iter()
-        .map(|path| production::output(&std::fs::read(path)?))
-        .collect::<Result<Vec<_>>>()?;
-    if calibrated && (vendor.is_empty() || production.is_empty()) {
-        return Err("the captures hold no vendor or no production calibration".into());
-    }
-    let fields = if calibrated { fields } else { vec![] };
-    let length = vendor.first().map_or(0, Vec::len);
-    if vendor.iter().any(|bytes| bytes.len() != length) {
+    );
+    let fields = if calibrated { fields() } else { vec![] };
+    let length = vendor_objects.first().map_or(0, Vec::len);
+    if vendor_objects.iter().any(|bytes| bytes.len() != length) {
         return Err(format!("{VENDOR_OBJECT} captures differ in length").into());
     }
     let excluded = fields
@@ -535,12 +505,12 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         .filter_map(|field| {
             let review = tolerances.fields.get(field.name).filter(|t| t.excluded)?;
             Some(Excluded {
-                name: field.name,
+                name: field.name.to_owned(),
                 reason: review.reason.clone(),
             })
         })
         .chain(calibrated.then(|| Excluded {
-            name: TRACKING_PROGRESS_FIELD,
+            name: TRACKING_PROGRESS_FIELD.to_owned(),
             reason: "counts tracking work, not calibration".into(),
         }))
         .collect::<Vec<_>>();
@@ -551,8 +521,8 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             compare_field(
                 field,
                 tolerances.fields.get(field.name),
-                &vendor,
-                &production,
+                &vendor_objects,
+                &production_outputs,
             )
         })
         .collect::<Result<Vec<_>>>()?;
@@ -569,58 +539,20 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     } else {
         Verdict::Match
     };
-    let summary = Summary {
+    Ok(Summary {
         schema: SCHEMA,
-        date: utc_date(capture.started_unix_seconds),
-        lifecycle: capture.lifecycle,
+        date: utc_date(images.started_unix_seconds),
+        lifecycle,
         verdict,
-        vendor_object: VENDOR_OBJECT,
-        vendor_application_sha256: capture.vendor_application_sha256,
-        vendor_idf_revision: capture.vendor_idf_revision,
+        vendor_object: VENDOR_OBJECT.to_owned(),
+        images: images.clone(),
         vendor_captures: vendor.len(),
-        production_image: capture
-            .production_image
-            .ok_or("a vendor-only capture has no production side to compare")?,
-        production_application_sha256: capture
-            .production_application_sha256
-            .ok_or("a vendor-only capture has no production side to compare")?,
         production_captures: production.len(),
         fields: summaries,
         excluded,
         uncovered: uncovered(length, &fields),
         registers,
         analog,
-    };
-    // The tracked summary records the cold lifecycle point; other points
-    // stay beside their captures unless an output is named.
-    let output = arguments
-        .output
-        .clone()
-        .unwrap_or_else(|| match capture.lifecycle {
-            Lifecycle::Cold => root.join(SUMMARY),
-            Lifecycle::Restart => root.join(RESTART_SUMMARY),
-            Lifecycle::Ieee802154 | Lifecycle::Ieee802154Restart => {
-                arguments.captures.join(DIAGNOSTIC_SUMMARY)
-            }
-        });
-    if let Some(parent) = output.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut bytes = serde_json::to_vec_pretty(&summary)?;
-    bytes.push(b'\n');
-    std::fs::write(&output, bytes)?;
-    for field in &summary.fields {
-        println!("{:<24} {:?}", field.name, field.verdict);
-    }
-    println!(
-        "calibration cross-check {:?}: {}",
-        summary.verdict,
-        output.display()
-    );
-    Ok(if summary.verdict == Verdict::Match {
-        std::process::ExitCode::SUCCESS
-    } else {
-        std::process::ExitCode::FAILURE
     })
 }
 
@@ -691,18 +623,14 @@ mod tests {
             image("A.EXCLUDED", 0x1c),
             image("A.MISSED", 0x20),
         ];
-        let line = vendor::register_line;
-        let vendor_boot = |varying| {
-            format!(
-                "{}{}{}{}{}",
-                line(0x10, 7),
-                line(0x14, varying),
-                vendor::unreadable_line(0x18),
-                line(0x1c, 1),
-                line(0x20, 1)
-            )
+        let vendor_boot = |varying| Readings {
+            values: BTreeMap::from([(0x10, 7), (0x14, varying), (0x1c, 1), (0x20, 1)]),
+            unreadable: [0x18].into(),
         };
-        let production = format!("{}{}{}", line(0x10, 7), line(0x14, 13), line(0x1c, 9));
+        let production = Readings {
+            values: BTreeMap::from([(0x10, 7), (0x14, 13), (0x1c, 9)]),
+            unreadable: Default::default(),
+        };
         let reviews = BTreeMap::from([(
             "A.EXCLUDED".to_owned(),
             Tolerance {
@@ -712,13 +640,11 @@ mod tests {
             },
         )]);
         let summary = compare_registers(
-            Space::Mmio,
             &registers,
             &[vendor_boot(10), vendor_boot(11)],
-            &[production],
+            [&production],
             &reviews,
-        )
-        .unwrap();
+        );
         // 13 lies beyond 11 + (11 - 10).
         assert_eq!((summary.compared, summary.matched), (2, 1));
         assert_eq!(summary.differing[0].name, "A.VARYING");
@@ -726,6 +652,71 @@ mod tests {
         assert_eq!(summary.excluded[0].name, "A.EXCLUDED");
         assert_eq!(summary.not_read, ["A.MISSED"]);
         assert_eq!(summary.verdict, Verdict::Diff);
+    }
+
+    #[test]
+    fn an_ieee802154_point_compares_register_state_only() {
+        let image = [Register {
+            name: "A.X".into(),
+            address: 0x10,
+        }];
+        let readings = |value| Readings {
+            values: BTreeMap::from([(0x10, value)]),
+            unreadable: Default::default(),
+        };
+        let vendor = [
+            VendorBoot {
+                registers: readings(4),
+                analog: readings(1),
+                ..VendorBoot::default()
+            },
+            VendorBoot {
+                registers: readings(6),
+                analog: readings(1),
+                ..VendorBoot::default()
+            },
+        ];
+        let production = [ProductionBoot {
+            calibration: None,
+            registers: readings(8),
+            analog: readings(1),
+        }];
+        let images = Images {
+            started_unix_seconds: 1_790_467_200,
+            production_image: "diagnostic-ieee802154-radio".into(),
+            ..Images::default()
+        };
+        let summary = compare(
+            Lifecycle::Ieee802154,
+            &images,
+            &vendor,
+            &production,
+            ReviewFile::reviewed().unwrap(),
+            (&image, &image),
+        )
+        .unwrap();
+        assert_eq!(summary.verdict, Verdict::Match);
+        assert!(summary.fields.is_empty() && summary.excluded.is_empty());
+        assert_eq!(summary.date, "2026-09-27");
+        assert_eq!(
+            (summary.registers.compared, summary.registers.matched),
+            (1, 1)
+        );
+        // The typed result round-trips through its run-bundle form.
+        let json = serde_json::to_value(&summary).unwrap();
+        assert_eq!(serde_json::from_value::<Summary>(json).unwrap(), summary);
+        // A cold point needs every boot's calibration.
+        assert!(
+            compare(
+                Lifecycle::Cold,
+                &images,
+                &vendor,
+                &production,
+                ReviewFile::reviewed().unwrap(),
+                (&image, &image),
+            )
+            .is_err()
+        );
     }
 
     #[test]

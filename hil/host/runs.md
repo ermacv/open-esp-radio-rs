@@ -36,8 +36,14 @@ outcome, the artifact directory and the files in it; use it rather than
 `find`, which does not follow the store link. `why` names, per failed
 repetition, the recorded failure, the measurements that missed their
 criteria (a criterion miss, unlike a fault), cleanup failures, host USB
-events of its boards, the artifact directory and the end of `uart.log`. `compare` and `history` use per-scenario
-means of numeric measurements over repetitions. These views never decide
+events of its boards, the artifact directory and the end of `uart.log`.
+Every view reads the bundles through the run bundle's typed reader and
+aggregates measurements through `oer-hil-analysis`'s one `samples`, one value
+per repetition. `compare` judges each measurement of a common scenario with
+the same noise-aware comparison as `cargo hil ab` (Welch's 95 % interval and
+a 2 % practical tolerance, `insufficient repetitions` below three a side) and
+prints both means, the relative difference and the verdict; `history` shows
+the mean of each repetition set. These views never decide
 qualification. `cargo hil wait RUN` follows a run's `events.jsonl`, printing
 each step, until the run ends or its runner is gone, and exits with its
 outcome: 0 passed, 1 failed, broken, blocked or skipped, 2 interrupted,
@@ -119,7 +125,7 @@ runner first puts its ROM into download mode through its hub port's power (the
 ladder's download entry) and then flashes.
 
 A target that does not answer within those 20 s climbs the recovery ladder
-(`oer_hil_stand::control::climb`): the resets of its stand-file `reset`
+(`oer_hil_lab::control::climb`): the resets of its stand-file `reset`
 ladder in order (an RTS pulse on its USB Serial/JTAG port, a system reset
 through its builtin USB-JTAG with OpenOCD, whose executable the `cargo hil`
 wrapper passes to the runner, its hub port's power), each followed by the
@@ -242,9 +248,11 @@ were deleted meanwhile fails and asks to be enqueued again. `wait JOB` blocks un
 skipped, 4 broken, 5 no run created, 6 abandoned (its process is gone without
 finishing, told by its PID and start time). Every `run` and `run-all`, enqueued or in the foreground, is such a job from its start, so
 `queue` and the dashboard's Preparing section show runs before they ask for
-the stand: each with its phase, from the arbiter's holders and queue matched
-by the job's process or its runner child (waits for a job, building images,
-waiting for the stand, holding the stand). Building costs no balance and
+the stand: each with its phase, read from the one queue (waits for a job,
+building images, waiting for the stand, holding the stand). A job is the
+arbiter's ticket model: its process and the runner it starts carry the
+job's id (`OER_HIL_JOB`), and every request they make is a ticket of that
+job, so the queue names each holder's and waiter's job. Building costs no balance and
 takes no place in the queue. A job whose process is gone is recorded as
 abandoned when the list is read. `queue` also lists the jobs that ended
 without a judged run within the last hour (at most 5) with the last line of
@@ -270,9 +278,13 @@ runner, built in the worktree, while the bisection holds a whole-stand lease;
 that runner uses a private arbiter directory with a copy of the stand file
 (and of the older `devices.json` registry, for revisions before it).
 
-A passed run makes the commit good and a failed one bad. A commit whose image
+Every step's run is launched through `oer-hil-experiment`'s one
+`launch_run`, which learns the run from the runner's receipt; a revision's
+own runner is built with `oer-hil-observer` and its runs reach the shared
+store through the worktree's `target/hil/runs` link. The scenario's outcome
+judges the commit: passed makes it good, failed bad. A commit whose image
 does not compile or does not link (told apart from the run's archived build
-log), or whose own runner starts no run, is broken: neither good nor bad, and
+log), or whose own runner does not build or starts no run, is broken: neither good nor bad, and
 the search probes the untested commit nearest the middle instead. Any other
 run outcome (blocked, broken, interrupted, a quarantined board) stops the
 bisection, since the next steps would meet the same stand. `report.json`
@@ -309,14 +321,16 @@ round from the rounds before it. Every run records `experiment` (its id, arm and
 commit and each override's path, commit and dirtiness) in its manifest and
 no evidence. A comparison takes hours, so like a run it is a job: `--enqueue`
 starts it detached and prints the job id for `cargo hil wait`, and `--after
-JOB` orders it after another job. Every round runs the `cargo hil` binary and runner fixed
-when the comparison was enqueued or started, so a pull into the checkout
-meanwhile cannot change the protocol the arms are run with. A job enqueued
+JOB` orders it after another job. Every run of an arm is a job of its own,
+launched with the runner fixed when the comparison was enqueued or started,
+so a pull into the checkout meanwhile cannot change the protocol the arms are
+run with. A job enqueued
 from a worktree without an owner of its own runs for the owner of the
 checkout the worktree was added from.
 
 The report takes one value per run and measurement (the mean over the run's
-repetitions) and compares the arms with `hil_perf::compare`: each arm's mean,
+repetitions) and compares the arms with `oer-hil-analysis`'s one comparison,
+the one `runs compare` uses: each arm's mean,
 deviation and count, the difference B − A with the half-width of its Welch
 95 % confidence interval, and a verdict: `significant` (the interval excludes
 zero and the difference is at least 2 % of A's mean) with the better arm,

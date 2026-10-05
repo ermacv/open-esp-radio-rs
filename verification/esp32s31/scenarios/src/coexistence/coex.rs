@@ -548,25 +548,24 @@ fn model(id: &str, address: u32, words: u16, value: u32) -> CallDeclaration {
 /// Symbol addresses of the linked image, and the bytes of every data symbol.
 #[allow(clippy::type_complexity)]
 fn image_data(elf: &[u8]) -> Result<(BTreeMap<String, u32>, BTreeMap<String, Vec<u8>>)> {
-    use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
-    let file = object::File::parse(elf)?;
+    let file = oer_elf::Elf::parse(elf)?;
     let mut symbols = BTreeMap::new();
     let mut data = BTreeMap::new();
     for symbol in file.symbols() {
-        let (Ok(name), Ok(address)) = (symbol.name(), u32::try_from(symbol.address())) else {
+        let (name, Ok(address)) = (symbol.name, u32::try_from(symbol.address)) else {
             continue;
         };
-        if name.is_empty() || symbol.is_undefined() {
+        if name.is_empty() || !symbol.defined {
             continue;
         }
         symbols.entry(name.to_owned()).or_insert(address);
-        if symbol.kind() == SymbolKind::Data
-            && let Some(index) = symbol.section_index()
+        if symbol.kind == oer_elf::SymbolKind::Data
+            && let Some(index) = symbol.section
         {
-            let section = file.section_by_index(index)?;
-            let offset = (symbol.address() - section.address()) as usize;
-            let bytes = section.data()?;
-            let end = offset + symbol.size() as usize;
+            let section = file.section(index)?;
+            let offset = (symbol.address - section.address) as usize;
+            let bytes = section.data;
+            let end = offset + symbol.size as usize;
             if end <= bytes.len() {
                 data.insert(name.to_owned(), bytes[offset..end].to_vec());
             }
@@ -578,29 +577,26 @@ fn image_data(elf: &[u8]) -> Result<(BTreeMap<String, u32>, BTreeMap<String, Vec
 /// The schemes of `coexist_scheme.o` in `archive`: every `coex_schm_<name>`
 /// data object except the environment, in name order, with its bytes.
 fn archive_schemes(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
-    use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
-    let archive = object::read::archive::ArchiveFile::parse(bytes)?;
-    for member in archive.members() {
-        let member = member?;
-        if member.name() != b"coexist_scheme.o" {
+    for (member, data) in oer_elf::members(bytes)? {
+        if member != "coexist_scheme.o" {
             continue;
         }
-        let file = object::File::parse(member.data(bytes)?)?;
+        let file = oer_elf::Elf::parse(data)?;
         let mut schemes = vec![];
         for symbol in file.symbols() {
-            let name = symbol.name()?;
-            if symbol.kind() != SymbolKind::Data
+            let name = symbol.name;
+            if symbol.kind != oer_elf::SymbolKind::Data
                 || !name.starts_with("coex_schm_")
                 || name == "coex_schm_env"
             {
                 continue;
             }
             let index = symbol
-                .section_index()
+                .section
                 .ok_or_else(|| invalid(format!("{name} has no section")))?;
-            let data = file.section_by_index(index)?.data()?;
-            let start = symbol.address() as usize;
-            let end = start + symbol.size() as usize;
+            let data = file.section(index)?.data;
+            let start = symbol.address as usize;
+            let end = start + symbol.size as usize;
             let bytes = data
                 .get(start..end)
                 .ok_or_else(|| invalid(format!("{name} lies outside its section")))?;

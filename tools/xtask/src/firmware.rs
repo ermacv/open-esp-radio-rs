@@ -1,368 +1,113 @@
-//! Complete application images using the platform boot contract.
-mod monitor;
-mod workspace;
+//! `cargo xtask build firmware`: the standalone examples' images, built by
+//! the image pipeline into a retained bundle each.
 
-pub use workspace::FirmwareBuild;
+use crate::Result;
+use oer_process::Checkout;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::{Context, Result};
-use oer_esp32s31_firmware::BOOTSTRAP_BIN;
-use oer_process as process;
-use std::{env, fs, path::Path};
+/// The examples' workspace, relative to the checkout.
+pub const EXAMPLES: &str = "examples/esp32s31";
 
-/// The example's package (binary) name and manifest.
-fn example(ctx: &Context, example: &str) -> Result<(String, std::path::PathBuf)> {
-    let manifest = ctx
-        .root
-        .join("examples/esp32s31")
-        .join(example)
-        .join("Cargo.toml");
+/// Every bootable example of [`EXAMPLES`], by directory.
+pub const NAMES: [&str; 4] = ["access-point", "monitor", "station", "thread"];
+
+/// The image spec of `example` with `features`, building into `output`
+/// with the example's shared compile cache.
+fn spec(
+    ctx: &Checkout,
+    example: &str,
+    (features, no_default_features): (&[String], bool),
+    output: PathBuf,
+) -> Result<oer_image::ImageSpec> {
+    let manifest = ctx.root.join(EXAMPLES).join(example).join("Cargo.toml");
     let data: toml::Table = toml::from_str(&fs::read_to_string(&manifest)?)?;
-    let binary = data
+    let package = data
         .get("package")
         .and_then(|p| p.get("name"))
         .and_then(toml::Value::as_str)
         .ok_or("example has no package name")?
         .to_owned();
-    Ok((binary, manifest))
+    let chip = oer_image::staged::CHIP;
+    Ok(oer_image::ImageSpec {
+        root: ctx.root.clone(),
+        chip: chip.to_owned(),
+        application: oer_image::Application {
+            workspace: PathBuf::from(EXAMPLES),
+            binary: package.clone(),
+            package,
+            features: features.to_vec(),
+            default_features: !no_default_features,
+        },
+        stack_policy: Path::new("platform").join(chip).join("stack.toml"),
+        interrupts: oer_image::Required::Proven,
+        layout_seed: None,
+        overrides: oer_image::Overrides::default(),
+        builders: Vec::new(),
+        reads: Vec::new(),
+        output,
+        cache: cache(ctx, example),
+        audit: None,
+    })
 }
 
-/// The Cargo `subcommand` (`build` or `check`) of an example's runtime with
-/// the image compiler configuration every image build applies.
-#[allow(clippy::too_many_arguments)]
-fn runtime_command(
-    ctx: &Context,
-    subcommand: &str,
-    (binary, manifest): (&str, &Path),
-    target: &str,
-    cache: &Path,
-    lock: &oer_esp32s31_firmware::network::BuildLock,
-    (features, no_default_features): (&[String], bool),
-    policy: &oer_esp32s31_firmware::stack::StackPolicy,
-) -> Result<std::process::Command> {
-    let mut command = ctx.cargo();
-    command
-        .args([
-            subcommand,
-            "--release",
-            "--locked",
-            "--target",
-            target,
-            "--manifest-path",
-        ])
-        .arg(manifest)
-        .args(["--bin", binary])
-        .env("CARGO_TARGET_DIR", cache)
-        .env("CARGO_INCREMENTAL", "0");
-    lock.configure(&mut command);
-    if no_default_features {
-        command.arg("--no-default-features");
-    }
-    if !features.is_empty() {
-        command.arg("--features").arg(features.join(","));
-    }
-    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, policy, target)?;
-    Ok(command)
+/// The directory of `example`'s compile cache and bundles.
+fn directory(ctx: &Checkout, example: &str) -> PathBuf {
+    ctx.root
+        .join("target/firmware")
+        .join(format!("{}-{example}", oer_image::staged::CHIP))
+}
+
+/// The compile cache of `example`'s builds.
+pub fn cache(ctx: &Checkout, example: &str) -> PathBuf {
+    directory(ctx, example).join("cargo")
 }
 
 /// Type-check an example's runtime exactly as its image build compiles it
 /// (target, features and image compiler flags), without code generation.
 pub fn type_check(
-    ctx: &Context,
-    name: &str,
-    features: &[String],
-    no_default_features: bool,
-) -> Result<()> {
-    let (binary, manifest) = example(ctx, name)?;
-    let target = oer_esp32s31_firmware::target(&ctx.root)?;
-    let policy = stack_policy(ctx)?;
-    let cache = ctx
-        .root
-        .join("target/firmware")
-        .join(format!("esp32s31-{name}"))
-        .join("check");
-    let lock = oer_esp32s31_firmware::network::BuildLock::prepare(
-        &ctx.root.join("examples/esp32s31"),
-        &cache.join("lock"),
-    )?;
-    process::run(&mut runtime_command(
-        ctx,
-        "check",
-        (&binary, &manifest),
-        &target,
-        &cache.join("runtime"),
-        &lock,
-        (features, no_default_features),
-        &policy,
-    )?)?;
-    lock.validate()?;
-    println!("{name}: the runtime type-checks with the image flags");
-    Ok(())
-}
-
-pub fn build(
-    ctx: &Context,
-    example_name: &str,
-    features: &[String],
-    no_default_features: bool,
-) -> Result<FirmwareBuild> {
-    let (binary, manifest) = example(ctx, example_name)?;
-    let binary = binary.as_str();
-    let target = oer_esp32s31_firmware::target(&ctx.root)?;
-    let directory_output = ctx
-        .root
-        .join("target/firmware")
-        .join(format!("esp32s31-{example_name}"));
-    let workspace = workspace::Workspace::acquire(&directory_output)?;
-    let output = workspace.output();
-    let policy = stack_policy(ctx)?;
-    let runtime_target = workspace.cache().join("runtime");
-    // A patched dependency resolves into this private copy, never the
-    // example's catalog. The examples share one workspace and its lockfile.
-    let runtime_lock = oer_esp32s31_firmware::network::BuildLock::prepare(
-        &ctx.root.join("examples/esp32s31"),
-        &workspace.cache().join("lock"),
-    )?;
-    let mut command = runtime_command(
-        ctx,
-        "build",
-        (binary, &manifest),
-        &target,
-        &runtime_target,
-        &runtime_lock,
-        (features, no_default_features),
-        &policy,
-    )?;
-    process::run(&mut command)?;
-    runtime_lock.validate()?;
-    let runtime = workspace.snapshot(
-        &runtime_target.join(&target).join("release").join(binary),
-        "runtime.elf",
-    )?;
-    let stacks = oer_esp32s31_firmware::stack::audit_runtime_stacks(
-        &ctx.root,
-        &runtime,
-        &policy,
-        oer_esp32s31_firmware::interrupt_stack::Required::Proven,
-        output,
-    )?;
-    for warning in stacks.warnings {
-        println!("warning: {warning}");
-    }
-    let packed = output.join("runtime.bin");
-    process::run(
-        ctx.command(env::var_os("LLVM_OBJCOPY").unwrap_or_else(|| "llvm-objcopy".into()))
-            .args(["-O", "binary"])
-            .arg(&runtime)
-            .arg(&packed),
-    )?;
-    oer_esp32s31_firmware::pack_runtime(&packed)?;
-    fs::write(
-        output.join("placement.txt"),
-        oer_esp32s31_firmware::audit_runtime(&runtime, &packed)?,
-    )?;
-    let bootstrap_target = workspace.cache().join("bootstrap");
-    let mut command = ctx.cargo();
-    oer_esp32s31_firmware::bootstrap_command(
-        &mut command,
-        &ctx.root,
-        &target,
-        &packed,
-        &bootstrap_target,
-    );
-    command.arg("--locked");
-    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &policy, &target)?;
-    process::run(&mut command)?;
-    let bootstrap = workspace.snapshot(
-        &bootstrap_target
-            .join(&target)
-            .join("release")
-            .join(BOOTSTRAP_BIN),
-        "bootstrap.elf",
-    )?;
-    for warning in
-        oer_esp32s31_firmware::stack::audit_bootstrap_stack(&ctx.root, &bootstrap, &policy, output)?
-    {
-        println!("warning: {warning}");
-    }
-    let image = output.join("application.bin");
-    let mut command = ctx.command(env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
-    oer_esp32s31_firmware::save_image_command(&mut command, &ctx.root, &bootstrap, &image);
-    process::run(&mut command)?;
-    oer_esp32s31_firmware::audit_application_image(&image)?;
-    let rom_container = output.join("rom-container.bin");
-    let mut command = ctx.command(env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
-    oer_esp32s31_firmware::save_rom_image_command(
-        &mut command,
-        &ctx.root,
-        &bootstrap,
-        &rom_container,
-    );
-    process::run(&mut command)?;
-    let container = fs::read(&rom_container)?;
-    fs::write(
-        output.join("bootloader.bin"),
-        oer_esp32s31_firmware::flash::rom_bootloader(&container)?,
-    )?;
-    fs::remove_file(rom_container)?;
-    let mut command = ctx.command(env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
-    command
-        .args(["partition-table", "--to-binary", "--output"])
-        .arg(output.join("partitions.bin"))
-        .arg(
-            ctx.root
-                .join("platform/esp32s31/partitions/applications.csv"),
-        );
-    process::run(&mut command)?;
-    fs::write(
-        output.join("otadata.bin"),
-        oer_esp32s31_firmware::flash::ota0_selector_image(),
-    )?;
-    fs::copy(runtime_lock.path(), output.join("runtime-Cargo.lock"))?;
-    fs::copy(
-        ctx.root.join("platform/esp32s31/Cargo.lock"),
-        output.join("bootstrap-Cargo.lock"),
-    )?;
-    println!("application image: {}", image.display());
-    println!("bootstrap ELF: {}", bootstrap.display());
-    Ok(workspace.finish())
-}
-
-/// The standalone examples' stack policy.
-fn stack_policy(ctx: &Context) -> Result<oer_esp32s31_firmware::stack::StackPolicy> {
-    oer_esp32s31_firmware::stack::StackPolicy::load(&ctx.root.join("platform/esp32s31/stack.toml"))
-}
-
-/// Flash the exact audited images and select ota_0 without erasing other partitions.
-///
-/// The HIL stand is leased for the flash and the optional monitor; the lease
-/// has no watchdog, because an interactive monitor has no budget.
-pub fn flash(
-    build: &FirmwareBuild,
+    ctx: &Checkout,
     example: &str,
-    port: Option<&Path>,
-    monitor: bool,
+    features: &[String],
+    no_default_features: bool,
 ) -> Result<()> {
-    use oer_esp32s31_firmware::flash::{
-        AfterFlash, BOOTLOADER_OFFSET, FlashSegment, OTA_0_OFFSET, OTA_SELECTOR_OFFSET,
-        PARTITION_TABLE_OFFSET, write_segments,
-    };
-    use sha2::Digest as _;
-    let output = build.directory();
-    let arbiter = oer_hil_arbiter::Arbiter::open()?;
-    let registered = match port {
-        Some(_) => None,
-        None => only_attached_board("esp32s31", &arbiter.devices()?),
-    };
-    let port = port.or(registered.as_deref());
-    let board = port
-        .map(|port| oer_hil_arbiter::port_mac(port).unwrap_or_else(|| port.display().to_string()));
-    let mut request = oer_hil_arbiter::Request::from_environment(format!(
-        "build firmware {example} --flash{}",
-        if monitor { " --monitor" } else { "" }
-    ))?;
-    request.claims = match &board {
-        Some(board) => vec![
-            oer_hil_arbiter::Claim::board(board),
-            oer_hil_arbiter::Claim::shared(oer_hil_arbiter::AIR),
-        ],
-        None => Vec::new(),
-    };
-    let _grant = arbiter.acquire(&request)?;
-    let lease = oer_esp32s31_firmware::device::DeviceLease::select(port)?;
-    // The selector goes last: an interrupted write leaves the previous
-    // selection pointing at an image whose checksum no longer validates.
-    let segments = [
-        (BOOTLOADER_OFFSET, "bootloader.bin", "bootloader"),
-        (PARTITION_TABLE_OFFSET, "partitions.bin", "partition table"),
-        (OTA_0_OFFSET, "application.bin", "application"),
-        (OTA_SELECTOR_OFFSET, "otadata.bin", "ota_0 selector"),
-    ]
-    .into_iter()
-    .map(|(address, filename, description)| {
-        Ok(FlashSegment {
-            address,
-            data: fs::read(output.join(filename))?,
-            description,
-        })
-    })
-    .collect::<Result<Vec<_>>>()?;
-    write_segments(lease.port(), &segments, AfterFlash::HardReset)?;
-    let port = Some(lease.port());
-    let application = &segments[2].data;
-    arbiter.record_board(
-        lease
-            .port()
-            .canonicalize()
-            .ok()
-            .as_deref()
-            .and_then(oer_hil_arbiter::port_mac),
-        oer_hil_arbiter::BoardEventKind::Flashed {
-            image: example.to_owned(),
-            application_sha256: format!("{:x}", sha2::Sha256::digest(application)),
-            commit: None,
-            dirty: None,
-            origin: format!("xtask build firmware {example} --flash"),
-        },
+    let spec = spec(
+        ctx,
+        example,
+        (features, no_default_features),
+        directory(ctx, example).join("check"),
     )?;
-    if monitor {
-        monitor::run(port.ok_or("--monitor requires --port")?)?;
-    }
+    oer_image::type_check(&spec)?;
+    println!("{example}: the runtime type-checks with the image flags");
     Ok(())
 }
 
-/// The port of the only attached board registered as `chip`. Several USB
-/// boards are attached to the stand, so automatic selection uses the board
-/// registry rather than the number of serial ports.
-fn only_attached_board(
-    chip: &str,
-    devices: &[oer_hil_arbiter::Device],
-) -> Option<std::path::PathBuf> {
-    select_board(chip, devices, &oer_hil_arbiter::attached_ports())
-}
-
-fn select_board(
-    chip: &str,
-    devices: &[oer_hil_arbiter::Device],
-    attached: &[oer_hil_arbiter::AttachedPort],
-) -> Option<std::path::PathBuf> {
-    let mut matches = attached.iter().filter(|port| {
-        devices
-            .iter()
-            .any(|device| Some(&device.mac) == port.mac.as_ref() && device.chip == chip)
-    });
-    match (matches.next(), matches.next()) {
-        (Some(port), None) => Some(std::path::PathBuf::from(&port.port)),
-        _ => None,
+/// Build `example` into a new bundle below its directory and keep it: a
+/// later build never replaces the files of an earlier one.
+pub fn build(
+    ctx: &Checkout,
+    example: &str,
+    features: &[String],
+    no_default_features: bool,
+) -> Result<oer_image::ImageBundle> {
+    let directory = directory(ctx, example);
+    fs::create_dir_all(&directory)?;
+    let output = tempfile::Builder::new()
+        .prefix("build-")
+        .tempdir_in(&directory)?
+        .keep();
+    let bundle = oer_image::build(&spec(
+        ctx,
+        example,
+        (features, no_default_features),
+        output,
+    )?)?;
+    for warning in &bundle.warnings {
+        println!("warning: {warning}");
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn automatic_flashing_picks_the_only_attached_board_of_the_chip() {
-        let device = |mac: &str, chip: &str| oer_hil_arbiter::Device {
-            mac: mac.into(),
-            name: mac.to_lowercase(),
-            chip: chip.into(),
-            power: None,
-        };
-        let port = |port: &str, mac: &str| oer_hil_arbiter::AttachedPort {
-            port: port.into(),
-            mac: Some(mac.into()),
-            vid: 0x303a,
-            pid: 0x1001,
-            product: None,
-        };
-        let devices = [device("AA", "esp32s31"), device("BB", "esp32c5")];
-        let attached = [port("/dev/ttyACM1", "BB"), port("/dev/ttyACM0", "AA")];
-        assert_eq!(
-            select_board("esp32s31", &devices, &attached),
-            Some("/dev/ttyACM0".into())
-        );
-        assert_eq!(select_board("esp32s3", &devices, &attached), None);
-        let two = [device("AA", "esp32s31"), device("BB", "esp32s31")];
-        assert_eq!(select_board("esp32s31", &two, &attached), None);
-    }
+    println!("image bundle: {}", bundle.directory.display());
+    println!("application image: {}", bundle.application().display());
+    Ok(bundle)
 }

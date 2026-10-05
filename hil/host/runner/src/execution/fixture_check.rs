@@ -2,8 +2,9 @@
 use std::path::Path;
 
 use crate::Result;
-use crate::scenario::Scenario;
-use oer_hil_stand::config::LabConfig;
+use crate::scenario::{Families, Scenario};
+use oer_hil_lab::config::LabConfig;
+use oer_hil_workload::family::Registry as _;
 
 pub(crate) fn check_without_device(
     root: &Path,
@@ -14,50 +15,25 @@ pub(crate) fn check_without_device(
     let resolved = lab.resolve(plan.wifi);
     let lab = &resolved;
     let required = plan.requirements;
-    let _lease = oer_hil_stand::lock::FixtureLock::acquire_without_device(lab, required)?;
+    let _lease = oer_hil_lab::lock::FixtureLock::acquire_without_device(lab, required)?;
     let output = root.join("target/hil/fixture-checks").join(format!(
         "{}-{}",
-        oer_hil_durable::unix_millis()?,
+        oer_durable::unix_millis(),
         scenario.id()
     ));
     std::fs::create_dir_all(&output)?;
-    let cleanup = oer_hil_execution::fixture::cleanup::Scope::new(&output);
-    let result = crate::fixture::preflight::check(lab, scenario)
-        .and_then(|()| hil_wifi::fixture::prepared::Prepared::start(lab, &plan, &output))
-        .and_then(|prepared| {
-            if required.station_control {
-                let mut ap = prepared.ap()?;
-                ap.stop()?;
-                ap.restart()?;
-            }
-            if let oer_hil_stand::config::StationFixtureConfig::OpenWrt(config) =
-                &lab.station_fixture
-            {
-                if required.station_udp_rx_capture || required.station_udp_tx_capture {
-                    hil_wifi::fixture::openwrt::evidence::check_capture(config)?;
-                }
-                if required.laptop_air_monitor {
-                    hil_wifi::fixture::local::air_monitor::check_without_device(config, &output)?;
-                }
-            }
-            if required.station_udp_rx_capture
-                && let Some(observer) = hil_wifi::fixture::openwrt::air_monitor::Capture::start(
-                    lab,
-                    None,
-                    std::time::Duration::from_secs(1),
-                    &output,
-                )?
-            {
-                observer.finish()?;
-            }
-            Ok(())
-        });
+    let cleanup = oer_hil_workload::fixture::cleanup::Scope::new(&output);
+    let result = crate::fixture::preflight::check(lab, scenario).and_then(|()| {
+        Families::FIXTURES
+            .iter()
+            .try_for_each(|provider| provider.exercise(lab, &plan, &output))
+    });
     let records = cleanup.finish()?;
     let restored = records.iter().all(|record| record.failure.is_none());
     let report = serde_json::json!({"schema": 1, "scenario": scenario.id(), "device_accessed": false,
         "prepared": result.is_ok(), "restored": restored,
         "failure": result.as_ref().err().map(|error| error.to_string()), "cleanup": records});
-    oer_hil_durable::atomic_json(&output.join("result.json"), &report)?;
+    oer_durable::atomic_json(&output.join("result.json"), &report)?;
     crate::emit_json(
         &serde_json::json!({"report": report, "artifacts": output}),
         true,

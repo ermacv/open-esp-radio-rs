@@ -23,12 +23,9 @@
 //! units. A site whose load address or field is unknown stays unresolved.
 use crate::{Analysis, Fact, Resolutions, TransferKind};
 use gimli::Reader as _;
-use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
+use oer_elf::dwarf::{Reader, gimli};
 use oer_riscv_model::{Error, ErrorCode, Result};
 use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
-
-type Reader = gimli::EndianRcSlice<gimli::RunTimeEndian>;
 
 /// One type's name and layout.
 #[derive(Debug)]
@@ -128,7 +125,7 @@ pub struct TypeFacts {
 /// The trait and method of a trait implementation's symbol,
 /// `<Type as path::Trait>::method`, by its demangled name.
 fn trait_method(symbol: &str) -> Option<(String, String)> {
-    let demangled = addr2line::demangle_auto(symbol.into(), None);
+    let demangled = oer_elf::demangle(symbol);
     let name = crate::dwarf::plain(&demangled);
     // A legacy symbol ends in its hash.
     let name = match name.rsplit_once("::h") {
@@ -174,31 +171,22 @@ fn invalid(message: impl Into<String>) -> Error {
 impl TypeFacts {
     /// Read the type facts of `elf`.
     pub fn read(elf: &[u8]) -> Result<Self> {
-        let file = object::File::parse(elf).map_err(|_| invalid("invalid ELF"))?;
-        let dwarf = gimli::Dwarf::load(
-            |id: gimli::SectionId| -> std::result::Result<Reader, gimli::Error> {
-                let data = file
-                    .section_by_name(id.name())
-                    .and_then(|section| section.uncompressed_data().ok())
-                    .unwrap_or_default();
-                Ok(gimli::EndianRcSlice::new(
-                    Rc::from(&*data),
-                    gimli::RunTimeEndian::Little,
-                ))
-            },
-        )
-        .map_err(|error| invalid(format!("DWARF: {error}")))?;
+        let file = oer_elf::Elf::parse(elf).map_err(|_| invalid("invalid ELF"))?;
+        let dwarf = oer_elf::dwarf::load(&file).map_err(|error| invalid(error.to_string()))?;
         let error = |error: gimli::Error| invalid(format!("DWARF: {error}"));
         let mut facts = Self::default();
         let mut sized: BTreeMap<u32, Vec<String>> = BTreeMap::new();
         // Typed subprograms by their symbol, for the trait methods' arities.
         let mut typed_symbols: Vec<(usize, String)> = Vec::new();
         for symbol in file.symbols() {
-            if symbol.kind() == SymbolKind::Text
-                && symbol.size() > 0
-                && let (Ok(address), Ok(name)) = (u32::try_from(symbol.address()), symbol.name())
+            if symbol.kind == oer_elf::SymbolKind::Text
+                && symbol.size > 0
+                && let Ok(address) = u32::try_from(symbol.address)
             {
-                sized.entry(address & !1).or_default().push(name.to_owned());
+                sized
+                    .entry(address & !1)
+                    .or_default()
+                    .push(symbol.name.to_owned());
             }
         }
         facts.merged = sized

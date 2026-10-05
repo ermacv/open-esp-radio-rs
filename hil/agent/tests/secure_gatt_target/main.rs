@@ -2,7 +2,7 @@
 #![cfg(feature = "secure-gatt")]
 use oer_hil_agent::bluetooth_gatt::secure::{state, store};
 mod reset_gate_tests;
-use gatt_application::security::gatt::Observation;
+use oer_bluetooth_gatt_trouble::security::gatt::Observation;
 use oer_hil_protocol::bluetooth::*;
 use oer_hil_protocol::{base, bluetooth};
 
@@ -12,7 +12,7 @@ fn snapshot(state: &state::State) -> BluetoothSecureGattEvidence {
 
 #[test]
 fn application_failure_preserves_status_without_sensitive_host_payloads() {
-    use gatt_application::security::gatt::RunError;
+    use oer_bluetooth_gatt_trouble::security::gatt::RunError;
     use trouble_host::{BleHostError, Error};
     let state = state::State::new();
     for (error, expected) in [
@@ -68,7 +68,7 @@ fn terminal_stop_clears_restart_intent_without_inventing_cold_release() {
 
 #[test]
 fn injected_load_failure_is_single_use_and_preserves_the_real_ram_record() {
-    use gatt_application::security::bonds::{BondStore, RamBondStore, StoreError};
+    use oer_bluetooth_gatt_trouble::security::bonds::{BondStore, RamBondStore, StoreError};
     use trouble_host::{Address, BondInformation, Identity, LongTermKey, prelude::SecurityLevel};
     fn ready<F: Future>(future: F) -> F::Output {
         match core::pin::pin!(future).poll(&mut core::task::Context::from_waker(

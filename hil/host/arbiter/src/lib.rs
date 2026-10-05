@@ -1,27 +1,30 @@
-//! Host-wide arbitration of the single physical HIL stand.
+//! Host-wide arbitration of the single physical HIL stand: the one owner of
+//! hardware exclusion.
 //!
-//! Every hardware command asks the arbiter for a lease before it takes the
-//! existing fixture `flock`s. Requests wait in one FIFO queue shared by every
-//! checkout of the user; a short request may be granted ahead of the head once
-//! in a row. A lease covers flashing and running only. It carries a budget
-//! (explicit, estimated from earlier leases of the same work, or a default):
-//! the holder is warned at the budget and terminated at twice the budget.
+//! Every hardware command asks the arbiter for a lease of the boards,
+//! fixtures and air it claims. Requests wait in one queue shared by every
+//! checkout of the user, ordered by their owners' balances; leases on
+//! disjoint resources run in parallel. Once granted, the holder takes the
+//! [`lock`] files of what it uses, the arbiter's final exclusion layer. State
+//! lives in one directory (the stand model's `paths::arbiter`) guarded by a
+//! lock file, so a process that dies leaves a ticket or lease that the next
+//! reader reaps. The directory also keeps the lease history, the [`jobs`] of
+//! deferred `cargo hil` runs, whose requests are tickets of that queue, and
+//! the board [`journal`].
 //!
-//! The arbiter orders access; it does not replace the fixture locks, which
-//! remain the final exclusion. State lives in one directory guarded by a lock
-//! file, so a process that dies leaves a ticket or lease that the next reader
-//! reaps. The directory also keeps the lease history and a journal of board
-//! state changes (flashed firmware, startup artifact uploads and writes).
+//! The arbiter reads the stand file through the stand model and returns a
+//! board's hub port to its working state through board I/O; it actuates no
+//! hardware itself.
 #![forbid(unsafe_code)]
 
 pub mod balance;
-mod board;
-pub mod control;
-mod devices;
 mod estimate;
 mod grant;
 pub mod health;
 mod history;
+pub mod jobs;
+pub mod journal;
+pub mod lock;
 pub mod maintenance;
 mod notify;
 pub mod owners;
@@ -36,36 +39,17 @@ mod store;
 mod unknown;
 
 pub use balance::HARD_LIMIT;
-pub use board::{BoardEvent, BoardEventKind, RecoveryStep, ResetPath};
-pub use devices::{
-    AttachedPort, Device, attached_ports, board_mac, device_label, devices_of, normalize_mac,
-    port_mac,
-};
 pub use estimate::{DEFAULT_ESTIMATE, EstimateSource, format_duration, parse_duration};
-pub use grant::{Grant, LEASE_ENV, OWNER_ENV, Request, default_owner};
+pub use grant::{Grant, LEASE_ENV, OWNER_ENV, Request, default_owner, owner_from_environment};
 pub use history::{GrantReason, LeaseOutcome, LeaseRecord, OwnerBalance};
+pub use journal::{BoardEvent, BoardEventKind, ImageIdentity};
 pub use maintenance::{
     Confirmation, Maintenance, QuarantineTrigger, SERVICE_POLL, STAND_SERVICE, ServiceKind,
 };
 pub use owners::{NoOwner, NotAnOwner, Owner};
-pub use process::process_started_unix_millis;
 pub use state::{AIR, Claim, Mode, Priority, STAND};
 pub use status::{HolderStatus, QueuedStatus, Status};
-pub use store::{Arbiter, DIRECTORY_ENV};
+pub use store::Arbiter;
 pub use unknown::Unknown;
 
 pub type Result<T> = oer_process::Result<T>;
-
-/// Milliseconds since the Unix epoch.
-fn unix_now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as u64)
-}
-
-/// Seconds since the Unix epoch.
-fn unix_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs())
-}

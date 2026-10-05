@@ -13,9 +13,9 @@ use std::{
 use crate::{
     Arbiter,
     balance::{self, HARD_LIMIT, MIN_SLICE},
-    board::{device_label, latest},
     estimate::{self, format_duration},
     history::{self, GrantReason, LeaseOutcome, LeaseRecord, OwnerBalance},
+    journal::{device_label, latest},
     notify,
     process::ProcessIdentity,
     queue,
@@ -55,7 +55,8 @@ pub fn default_owner() -> crate::Result<String> {
     Ok(owner.id().to_owned())
 }
 
-pub(crate) fn owner_from_environment() -> crate::Result<String> {
+/// The owner `OER_HIL_OWNER` names, else the checkout's registered one.
+pub fn owner_from_environment() -> crate::Result<String> {
     match std::env::var(OWNER_ENV)
         .ok()
         .filter(|owner| !owner.trim().is_empty())
@@ -221,9 +222,10 @@ impl Arbiter {
                 work: request.work.clone(),
                 estimate_secs: estimate.as_secs(),
                 process: me,
-                enqueued_unix: crate::unix_now(),
+                enqueued_unix: oer_durable::unix_seconds(),
                 claims: claims.clone(),
                 priority,
+                job: crate::jobs::current(),
                 unknown: Default::default(),
             });
             Ok(id)
@@ -278,11 +280,11 @@ impl Arbiter {
             );
         }
         self.report_board(&request.owner);
-        let (devices, unloaded) = boards_to_restore(self.devices(), self.stand_file());
+        let (stand, unloaded) = boards_to_restore(self.stand(), self.stand_file());
         if let Some(warning) = unloaded {
             eprintln!("{warning}");
         }
-        let boards = crate::restore::claimed_boards(&claims, &devices);
+        let boards = crate::restore::claimed_boards(&claims, stand.as_ref());
         // A holder that ended without its release left its boards as they were.
         crate::restore::restore(self, &boards, &format!("grant of lease #{id}"));
         Ok(Grant {
@@ -390,7 +392,7 @@ impl Arbiter {
                 state.holders.push(Holder {
                     ticket,
                     token: token.to_owned(),
-                    granted_unix: crate::unix_now(),
+                    granted_unix: oer_durable::unix_seconds(),
                     reason: Some(GrantReason {
                         balance_ms: balance,
                         over,
@@ -403,10 +405,11 @@ impl Arbiter {
                     balance,
                 });
             }
-            let (_, ahead, wait) = queue::expected_starts(state, crate::unix_now(), SHUTDOWN_GRACE)
-                .into_iter()
-                .find(|(ticket, ..)| *ticket == id)
-                .ok_or("this request left the HIL queue")?;
+            let (_, ahead, wait) =
+                queue::expected_starts(state, oer_durable::unix_seconds(), SHUTDOWN_GRACE)
+                    .into_iter()
+                    .find(|(ticket, ..)| *ticket == id)
+                    .ok_or("this request left the HIL queue")?;
             let claims = state
                 .queue
                 .iter()
@@ -469,8 +472,9 @@ impl Arbiter {
             eprintln!("hil-arbiter: board journal unavailable");
             return;
         };
-        let devices = self.devices().unwrap_or_default();
-        let label = |event: &crate::BoardEvent| device_label(event.device.as_deref(), &devices);
+        let stand = self.stand().ok();
+        let label =
+            |event: &crate::BoardEvent| device_label(event.device.as_deref(), stand.as_ref());
         let previous = history
             .iter()
             .rev()
@@ -679,7 +683,12 @@ impl Grant {
                 if divisible
                     && !ending.yield_requested.load(Ordering::Relaxed)
                     && let Ok(Some((waiter, balance))) = arbiter.transaction(|state| {
-                        Ok(queue::outranked_by(state, id, crate::unix_now(), slice))
+                        Ok(queue::outranked_by(
+                            state,
+                            id,
+                            oer_durable::unix_seconds(),
+                            slice,
+                        ))
                     })
                 {
                     ending.yield_requested.store(true, Ordering::Relaxed);
@@ -766,7 +775,7 @@ impl Drop for Grant {
                     owner: holder.ticket.owner,
                     work: holder.ticket.work,
                     granted_unix: holder.granted_unix,
-                    released_unix: crate::unix_now(),
+                    released_unix: oer_durable::unix_seconds(),
                     outcome: if holder.preempted.is_some() {
                         LeaseOutcome::PreemptedOnRequest
                     } else {
@@ -806,17 +815,17 @@ fn token() -> crate::Result<String> {
 #[cfg(test)]
 mod tests;
 
-/// The stand's boards for restoration, and the warning when the stand file
-/// does not load: such a grant restores no hub port, and says so rather than
-/// restore nothing in silence.
+/// The stand file for restoration, and the warning when it does not load:
+/// such a grant restores no hub port, and says so rather than restore
+/// nothing in silence.
 pub(crate) fn boards_to_restore(
-    devices: crate::Result<Vec<crate::Device>>,
+    stand: crate::Result<oer_hil_stand_model::StandFile>,
     stand_file: &std::path::Path,
-) -> (Vec<crate::Device>, Option<String>) {
-    match devices {
-        Ok(devices) => (devices, None),
+) -> (Option<oer_hil_stand_model::StandFile>, Option<String>) {
+    match stand {
+        Ok(stand) => (Some(stand), None),
         Err(error) => (
-            Vec::new(),
+            None,
             Some(format!(
                 "hil-arbiter: the stand file {} does not load, so no hub port is restored: {error}",
                 stand_file.display()

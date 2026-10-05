@@ -482,16 +482,15 @@ pub fn compared_bytes(objects: &[(u32, Vec<u8>)], compared: &[(u32, u32)]) -> Re
 /// places by section name: a local object without a symbol, such as a
 /// static byte in `.bss.<name>`, is addressed by its section.
 pub fn image_symbols(elf: &std::path::Path) -> Result<BTreeMap<String, u32>> {
-    use object::{Object, ObjectSymbol};
     let bytes = std::fs::read(elf)?;
-    let file = object::File::parse(&*bytes)?;
+    let file = oer_elf::Elf::parse(&bytes)?;
     let mut symbols = BTreeMap::new();
     for symbol in file.symbols() {
-        if let (Ok(name), Ok(address)) = (symbol.name(), u32::try_from(symbol.address()))
-            && !name.is_empty()
-            && !symbol.is_undefined()
+        if let Ok(address) = u32::try_from(symbol.address)
+            && !symbol.name.is_empty()
+            && symbol.defined
         {
-            symbols.entry(name.to_owned()).or_insert(address);
+            symbols.entry(symbol.name.to_owned()).or_insert(address);
         }
     }
     if let Ok(map) = std::fs::read_to_string(elf.with_file_name(crate::state::LINK_MAP)) {

@@ -139,10 +139,7 @@ impl Arbiter {
             let mut registry = self.registry()?;
             registry.schema = 1;
             registry.checkouts.insert(checkout.clone(), owner);
-            let temporary = self.owners_path().with_extension("json.tmp");
-            fs::write(&temporary, serde_json::to_vec_pretty(&registry)?)?;
-            fs::rename(&temporary, self.owners_path())?;
-            Ok(())
+            oer_durable::atomic_write(&self.owners_path(), &serde_json::to_vec_pretty(&registry)?)
         })
     }
 

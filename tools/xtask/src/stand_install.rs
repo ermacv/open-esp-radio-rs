@@ -14,25 +14,23 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Context, Result};
+use crate::Result;
 use oer_process as process;
+use oer_process::Checkout;
 
 /// The package, and binary, the tool installs: `cargo hil`.
 const PACKAGE: &str = "oer-hil-cli";
 
 fn home() -> Result<PathBuf> {
     std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
         .map(PathBuf::from)
         .ok_or_else(|| "HOME is required to install the stand tool".into())
 }
 
 /// Where the tool's clone, build and binary live.
 pub fn tool_directory() -> Result<PathBuf> {
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .map_or_else(|| home().map(|home| home.join(".local/share")), Ok)?;
-    Ok(base.join("open-esp-radio/stand-tool"))
+    oer_durable::xdg::path(oer_durable::xdg::Base::Data, "stand-tool")
 }
 
 /// The wrapper script: the installed binary against the caller's checkout.
@@ -48,28 +46,26 @@ pub fn wrapper(binary: &Path, fallback_root: &Path) -> String {
     )
 }
 
-pub fn run(ctx: &Context) -> Result<()> {
+pub fn run(ctx: &Checkout) -> Result<()> {
     let tool = tool_directory()?;
     let source = tool.join("src");
     let remote = String::from_utf8(
-        process::capture(ctx.command("git").args(["remote", "get-url", "origin"]))?.stdout,
+        process::capture(
+            oer_process::git::command(&ctx.root).args(["remote", "get-url", "origin"]),
+        )?
+        .stdout,
     )?;
     let remote = remote.trim();
     if !source.join(".git").is_dir() {
         fs::create_dir_all(&tool)?;
         process::run(
-            ctx.command("git")
+            oer_process::git::command(&ctx.root)
                 .args(["clone", "--quiet", remote])
                 .arg(&source),
         )?;
     }
-    process::run(
-        ctx.command("git")
-            .arg("-C")
-            .arg(&source)
-            .args(["fetch", "--quiet", "origin", "main"]),
-    )?;
-    process::run(ctx.command("git").arg("-C").arg(&source).args([
+    process::run(oer_process::git::command(&source).args(["fetch", "--quiet", "origin", "main"]))?;
+    process::run(oer_process::git::command(&source).args([
         "checkout",
         "--quiet",
         "--detach",
@@ -77,7 +73,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     ]))?;
     let git_text = |args: &[&str]| -> Result<String> {
         Ok(String::from_utf8(
-            process::capture(ctx.command("git").arg("-C").arg(&source).args(args))?.stdout,
+            process::capture(oer_process::git::command(&source).args(args))?.stdout,
         )?
         .trim()
         .to_owned())
@@ -103,7 +99,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     // The tool's work is file and device I/O: the incremental dev profile
     // rebuilds in seconds where the release profile took minutes.
     process::run(
-        ctx.cargo()
+        oer_toolchain::cargo_in(&ctx.root)
             .current_dir(&source)
             .args(["build", "--locked", "-p", PACKAGE]),
     )?;
@@ -131,13 +127,12 @@ pub fn run(ctx: &Context) -> Result<()> {
 /// The files the tool is built from, relative to its clone: the workspace
 /// manifest, lock file and toolchain, and the directory of every path
 /// package the tool's package depends on.
-fn build_inputs(ctx: &Context, source: &Path) -> Result<Vec<String>> {
-    let output = process::capture(ctx.cargo().current_dir(source).args([
-        "metadata",
-        "--format-version",
-        "1",
-        "--locked",
-    ]))?;
+fn build_inputs(ctx: &Checkout, source: &Path) -> Result<Vec<String>> {
+    let output = process::capture(
+        oer_toolchain::cargo_in(&ctx.root)
+            .current_dir(source)
+            .args(["metadata", "--format-version", "1", "--locked"]),
+    )?;
     let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)?;
     let mut inputs = path_package_closure(&metadata, PACKAGE, source)?;
     inputs.extend(["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo"].map(String::from));

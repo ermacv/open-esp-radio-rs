@@ -11,13 +11,10 @@
 use std::{
     collections::HashMap,
     fs,
-    io::Read as _,
     os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
 };
-
-use sha2::{Digest, Sha256};
 
 type Key = (u64, u64, u64, i64, i64, i64, i64);
 
@@ -29,12 +26,6 @@ struct Cache {
     /// Digest and the last time an evaluation used it.
     entries: HashMap<String, (String, u64)>,
     added: bool,
-}
-
-fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs())
 }
 
 /// Hash every file for the rest of this process, for commands whose results
@@ -66,11 +57,7 @@ fn location() -> Option<PathBuf> {
     if std::env::var("OER_QUALIFICATION_HASH_CACHE").is_ok_and(|value| value == "0") || cfg!(test) {
         return None;
     }
-    let base = std::env::var_os("XDG_CACHE_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
-    Some(base.join("open-esp-radio/qualification/sha256.json"))
+    oer_durable::xdg::path(oer_durable::xdg::Base::Cache, "qualification/sha256.json").ok()
 }
 
 fn key(metadata: &fs::Metadata) -> String {
@@ -95,28 +82,20 @@ pub(crate) fn sha256_file(path: &Path) -> crate::Result<String> {
         let mut known = cache().lock().map_err(|_| "hash cache poisoned")?;
         let enabled = known.path.is_some();
         if enabled && let Some((digest, seen)) = known.entries.get_mut(&key) {
-            *seen = now();
+            *seen = oer_durable::unix_seconds();
             let digest = digest.clone();
             known.added = true;
             return Ok(digest);
         }
         enabled
     };
-    let mut file = fs::File::open(path)?;
-    let mut digest = Sha256::new();
-    let mut buffer = vec![0; 1 << 20];
-    loop {
-        let read = file.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        digest.update(&buffer[..read]);
-    }
-    let digest = format!("{:x}", digest.finalize());
+    let digest = oer_durable::sha256_file(path).map_err(|error| error.to_string())?;
     // A file written while it was hashed is not remembered.
     if use_cache && self::key(&fs::metadata(path)?) == key {
         let mut known = cache().lock().map_err(|_| "hash cache poisoned")?;
-        known.entries.insert(key, (digest.clone(), now()));
+        known
+            .entries
+            .insert(key, (digest.clone(), oer_durable::unix_seconds()));
         known.added = true;
     }
     Ok(digest)
@@ -130,16 +109,14 @@ pub(crate) fn save() {
     let Some(path) = cache.path.clone().filter(|_| cache.added) else {
         return;
     };
-    let oldest = now().saturating_sub(MAX_AGE_SECONDS);
+    let oldest = oer_durable::unix_seconds().saturating_sub(MAX_AGE_SECONDS);
     cache.entries.retain(|_, (_, seen)| *seen >= oldest);
-    let write = || -> crate::Result<()> {
-        fs::create_dir_all(path.parent().ok_or("cache path has no parent")?)?;
-        let temporary = path.with_extension(format!("json.{}", std::process::id()));
-        fs::write(&temporary, serde_json::to_vec(&cache.entries)?)?;
-        fs::rename(&temporary, &path)?;
-        Ok(())
-    };
-    if write().is_ok() {
+    if oer_durable::atomic_write(
+        &path,
+        &serde_json::to_vec(&cache.entries).unwrap_or_default(),
+    )
+    .is_ok()
+    {
         cache.added = false;
     }
 }
@@ -160,7 +137,7 @@ mod tests {
         assert_ne!(first, key(&fs::metadata(&path).unwrap()));
         assert_eq!(
             sha256_file(&path).unwrap(),
-            format!("{:x}", Sha256::digest(b"two"))
+            oer_durable::sha256_bytes(b"two")
         );
         fs::remove_dir_all(directory).unwrap();
     }

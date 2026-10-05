@@ -98,7 +98,8 @@ pub(crate) fn of(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{QuarantineTrigger, RecoveryStep};
+    use crate::QuarantineTrigger;
+    use oer_hil_board::reset::RecoveryStep;
 
     const MAC: &str = "30:ED:A0:F3:F6:D0";
 

@@ -1,7 +1,7 @@
 //! Single-executor evidence and UI routing, compiled unchanged by host tests.
 use core::cell::Cell;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
-use gatt_application::security::{
+use oer_bluetooth_gatt_trouble::security::{
     comparison::{Challenge, NumericComparison},
     gatt::Observation,
 };
@@ -52,9 +52,9 @@ impl State {
     }
     pub fn application_failure<C, S>(
         &self,
-        failure: &gatt_application::security::gatt::RunError<C, S>,
+        failure: &oer_bluetooth_gatt_trouble::security::gatt::RunError<C, S>,
     ) {
-        use gatt_application::security::gatt::RunError;
+        use oer_bluetooth_gatt_trouble::security::gatt::RunError;
         use oer_hil_protocol::bluetooth::BluetoothGattApplicationFailure as F;
         use trouble_host::{BleHostError, Error};
         let failure = match failure {

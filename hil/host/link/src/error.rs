@@ -17,14 +17,14 @@ pub struct LinkError {
 }
 
 impl LinkError {
-    pub(crate) fn transport(message: impl Into<String>) -> Self {
+    pub fn transport(message: impl Into<String>) -> Self {
         Self {
             kind: ErrorKind::Transport,
             message: message.into(),
         }
     }
 
-    pub(crate) fn protocol(message: impl Into<String>) -> Self {
+    pub fn protocol(message: impl Into<String>) -> Self {
         Self {
             kind: ErrorKind::Protocol,
             message: message.into(),

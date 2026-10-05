@@ -35,7 +35,7 @@ fn compile(directory: &Path, declarations: &[&str]) -> Vec<u8> {
         "#![no_std]\n#![no_main]\nextern crate fixture as _;\ninclude!({:?});\n#[unsafe(no_mangle)] pub extern \"C\" fn _start() -> ! {{ loop {{core::hint::spin_loop();}} }}",
         directory.join("probe_catalog.rs"))).unwrap();
     std::fs::write(directory.join("link.x"), "ENTRY(_start)\nSECTIONS { . = 0x10000000; .text : { *(.text .text.*) } .blobray.probes : { KEEP(*(.blobray.probes)) } .rodata : { *(.rodata .rodata.*) } /DISCARD/ : { *(.eh_frame*) } }\n").unwrap();
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let rustc = oer_toolchain::program(oer_toolchain::Tool::Rustc).unwrap();
     let options = [
         "--edition=2024",
         "--target=riscv32imafc-unknown-none-elf",

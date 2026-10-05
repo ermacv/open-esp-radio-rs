@@ -10,7 +10,7 @@
 //! the functions no execution entered that the closure reaches only through
 //! excluded functions: their code is unreachable for the same reason.
 use crate::harness::{Result, invalid};
-use crate::session::evidence_index::{CoverageDecisions, Location, LocationKind};
+use oer_vendor_evidence::{CoverageDecisions, Location, LocationKind};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -69,7 +69,7 @@ pub fn decisions() -> Result<&'static [Decision]> {
         return Ok(decisions);
     }
     let file = CoverageDecisions::read(
-        &crate::observation::root()?,
+        &oer_process::built_root(),
         Path::new(crate::chip().coverage),
     )
     .map_err(|error| invalid(error.to_string()))?;

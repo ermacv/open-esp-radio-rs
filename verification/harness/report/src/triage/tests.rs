@@ -25,8 +25,12 @@ const RET: [u8; 4] = 0x0000_8067u32.to_le_bytes();
 fn code(diagnostic: &[&str]) -> Code {
     let bytes: Vec<u8> = CODE.iter().flat_map(|w| w.to_le_bytes()).collect();
     let registers = Registers::parse(
-        "[[registers]]\naddress = 0x20104020\nidentity = \"MAC.TX_CONFIG\"\n\
-         [[registers.fields]]\nsvd-name = \"ENABLE\"\nbit-offset = 0\nbit-width = 1\n",
+        "schema = 2\ncrate-name = \"oer_chip_pac_raw\"\n\
+         [[registers]]\naddress = 0x20104020\nwidth = 32\naccess = \"read-write\"\n\
+         identity = \"MAC.TX_CONFIG\"\nperipheral = \"MAC\"\nperipheral-type = \"Mac\"\n\
+         peripheral-module = \"mac\"\nregister-method = \"tx_config\"\n\
+         [[registers.fields]]\nsvd-name = \"ENABLE\"\nmethod = \"enable\"\nbit-offset = 0\n\
+         bit-width = 1\naccess = \"read-write\"\n",
     )
     .unwrap();
     Code {

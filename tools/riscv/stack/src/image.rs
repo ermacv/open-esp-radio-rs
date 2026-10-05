@@ -1,7 +1,6 @@
 //! Functions, compiler frame records and value-analysis observations of one
 //! static RV32 image.
 use crate::TransferKind;
-use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
 use oer_riscv_analysis::{FunctionInput, KnownJump, PreparedReferences, research};
 use oer_riscv_lift::RiscvDecoder;
 use oer_riscv_model::*;
@@ -12,144 +11,38 @@ use std::collections::BTreeMap;
 const MEMORY_LIMIT: u64 = 1 << 32;
 const SP: u8 = 2;
 
-/// A defined code symbol and its aliases.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Function {
-    pub address: u32,
-    pub size: u32,
-    /// Every symbol name at `address`, sorted.
-    pub names: Vec<String>,
-    /// Section index in the ELF section table.
-    pub section: u32,
-}
-
-impl Function {
-    pub fn label(&self) -> String {
-        match self.names.first() {
-            Some(name) => name.clone(),
-            None => format!("{:#010x}", self.address),
-        }
-    }
-}
+/// A defined code symbol and every alias at its address.
+pub use oer_elf::Function;
 
 fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorCode::Integrity, message)
 }
 
-pub(crate) fn parse(elf: &[u8]) -> Result<object::File<'_>> {
-    let file = object::File::parse(elf).map_err(|_| invalid("invalid ELF"))?;
-    if file.kind() != object::ObjectKind::Executable
-        || file.architecture() != object::Architecture::Riscv32
-        || !file.is_little_endian()
-    {
-        return Err(invalid(
-            "stack analysis requires a static little-endian RV32 executable",
-        ));
-    }
-    Ok(file)
+pub(crate) fn parse(elf: &[u8]) -> Result<oer_elf::Elf<'_>> {
+    oer_elf::Elf::executable(elf)
+        .map_err(|_| invalid("stack analysis requires a static little-endian RV32 executable"))
 }
 
-/// The defined code symbols of `elf` as functions, ascending by address: its
-/// function symbols, and its global untyped symbols in an executable section
-/// outside every sized function, such as assembly entries and the ROM's
-/// `__call_*` trampolines. A symbol without a size extends to the next code
-/// symbol of its section, or to the section's end. Mapping symbols (`$x`,
-/// `$d`) and local labels (`.L`) are not functions.
+/// The defined code symbols of `elf` as functions, ascending by address
+/// ([`oer_elf::Elf::functions`]).
 pub fn functions(elf: &[u8]) -> Result<Vec<Function>> {
-    let file = parse(elf)?;
-    let sized: Vec<(u64, u64)> = file
-        .symbols()
-        .filter(|symbol| symbol.kind() == SymbolKind::Text && symbol.size() > 0)
-        .map(|symbol| (symbol.address(), symbol.address() + symbol.size()))
-        .collect();
-    let executable = |symbol: &object::Symbol<'_, '_>| {
-        symbol
-            .section_index()
-            .and_then(|index| file.section_by_index(index).ok())
-            .is_some_and(|section| {
-                matches!(section.flags(), object::SectionFlags::Elf { sh_flags }
-                    if sh_flags & u64::from(object::elf::SHF_EXECINSTR) != 0)
-            })
-    };
-    let mut by_address: BTreeMap<u32, (u32, Vec<String>, u32)> = BTreeMap::new();
-    for symbol in file.symbols() {
-        let untyped_entry = symbol.kind() == SymbolKind::Unknown
-            && symbol.is_global()
-            && executable(&symbol)
-            && !sized
-                .iter()
-                .any(|&(start, end)| symbol.address() > start && symbol.address() < end);
-        if symbol.is_undefined() || !(symbol.kind() == SymbolKind::Text || untyped_entry) {
-            continue;
-        }
-        let Ok(name) = symbol.name() else { continue };
-        if name.is_empty() || name.starts_with('$') || name.starts_with(".L") {
-            continue;
-        }
-        let Some(section) = symbol.section_index() else {
-            continue;
-        };
-        let address = u32::try_from(symbol.address()).map_err(|_| invalid("symbol beyond RV32"))?;
-        let size = u32::try_from(symbol.size()).map_err(|_| invalid("symbol size beyond RV32"))?;
-        let entry = by_address
-            .entry(address)
-            .or_insert((0, Vec::new(), section.0 as u32));
-        entry.0 = entry.0.max(size);
-        entry.1.push(name.to_owned());
-    }
-    let starts: Vec<u32> = by_address.keys().copied().collect();
-    let mut functions = Vec::with_capacity(by_address.len());
-    for (index, (address, (size, mut names, section))) in by_address.into_iter().enumerate() {
-        names.sort();
-        names.dedup();
-        let size = if size != 0 {
-            size
-        } else {
-            let header = file
-                .section_by_index(object::SectionIndex(section as usize))
-                .map_err(|_| invalid("symbol in a missing section"))?;
-            let end = header.address() + header.size();
-            let next = starts
-                .get(index + 1)
-                .map_or(end, |&next| u64::from(next).min(end));
-            u32::try_from(next.saturating_sub(u64::from(address)))
-                .map_err(|_| invalid("function extent beyond RV32"))?
-        };
-        if size == 0 {
-            continue;
-        }
-        functions.push(Function {
-            address,
-            size,
-            names,
-            section,
-        });
-    }
-    Ok(functions)
+    parse(elf)?
+        .functions()
+        .map_err(|error| invalid(error.to_string()))
 }
 
 /// The little-endian word at `address` of an allocated section with file
 /// contents that is neither writable nor executable, such as `.rodata`: code
 /// loaded into RAM may hold tables the program rewrites, such as a vector
 /// table in an `AX` section.
-pub(crate) fn read_only_word(file: &object::File<'_>, address: u32) -> Option<u32> {
-    use object::elf::{SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE};
+pub(crate) fn read_only_word(file: &oer_elf::Elf<'_>, address: u32) -> Option<u32> {
     let address = u64::from(address);
     file.sections().find_map(|section| {
-        let object::SectionFlags::Elf { sh_flags } = section.flags() else {
-            return None;
-        };
-        let readonly =
-            sh_flags & u64::from(SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR) == u64::from(SHF_ALLOC);
-        if !readonly
-            || address < section.address()
-            || address + 4 > section.address() + section.size()
-        {
+        let readonly = section.allocated && !section.writable && !section.executable;
+        if !readonly || address < section.address || address + 4 > section.address + section.size {
             return None;
         }
-        let data = section.data().ok()?;
-        let at = (address - section.address()) as usize;
-        Some(u32::from_le_bytes(data.get(at..at + 4)?.try_into().ok()?))
+        section.word(address)
     })
 }
 
@@ -159,14 +52,14 @@ pub(crate) fn read_only_word(file: &object::File<'_>, address: u32) -> Option<u3
 pub(crate) fn table(elf: &[u8], address: u32) -> Result<Option<Vec<u32>>> {
     let file = parse(elf)?;
     let Some(symbol) = file.symbols().find(|symbol| {
-        symbol.kind() == SymbolKind::Data
-            && symbol.address() == u64::from(address)
-            && symbol.size() > 0
-            && symbol.size() % 4 == 0
+        symbol.kind == oer_elf::SymbolKind::Data
+            && symbol.address == u64::from(address)
+            && symbol.size > 0
+            && symbol.size % 4 == 0
     }) else {
         return Ok(None);
     };
-    let words: Option<Vec<u32>> = (0..symbol.size() / 4)
+    let words: Option<Vec<u32>> = (0..symbol.size / 4)
         .map(|i| read_only_word(&file, address.wrapping_add(4 * i as u32)))
         .collect();
     Ok(words)
@@ -176,15 +69,9 @@ pub(crate) fn table(elf: &[u8], address: u32) -> Result<Option<Vec<u32>>> {
 pub(crate) fn executable_ranges(elf: &[u8]) -> Result<Vec<(u32, u32)>> {
     let file = parse(elf)?;
     let mut ranges = Vec::new();
-    for section in file.sections() {
-        let object::SectionFlags::Elf { sh_flags } = section.flags() else {
-            continue;
-        };
-        if sh_flags & u64::from(object::elf::SHF_EXECINSTR) == 0 {
-            continue;
-        }
-        let start = u32::try_from(section.address()).map_err(|_| invalid("section beyond RV32"))?;
-        let end = u32::try_from(section.address() + section.size())
+    for section in file.sections().filter(|section| section.executable) {
+        let start = u32::try_from(section.address).map_err(|_| invalid("section beyond RV32"))?;
+        let end = u32::try_from(section.address + section.size)
             .map_err(|_| invalid("section beyond RV32"))?;
         ranges.push((start, end));
     }
@@ -215,9 +102,7 @@ pub fn stack_sizes(elf: &[u8]) -> Result<BTreeMap<u32, u64>> {
     let Some(section) = file.section_by_name(".stack_sizes") else {
         return Ok(sizes);
     };
-    let bytes = section
-        .data()
-        .map_err(|_| invalid("unreadable .stack_sizes"))?;
+    let bytes = section.data;
     let mut at = 0;
     while at < bytes.len() {
         let address = bytes
@@ -238,17 +123,16 @@ pub fn stack_sizes(elf: &[u8]) -> Result<BTreeMap<u32, u64>> {
 }
 
 /// The bytes of `function` in its section.
-pub(crate) fn function_bytes<'a>(file: &object::File<'a>, function: &Function) -> Result<&'a [u8]> {
+pub(crate) fn function_bytes<'a>(file: &oer_elf::Elf<'a>, function: &Function) -> Result<&'a [u8]> {
     let section = file
-        .section_by_index(object::SectionIndex(function.section as usize))
+        .section(function.section)
         .map_err(|_| invalid("function in a missing section"))?;
-    let data = section
-        .data()
-        .map_err(|_| invalid("unreadable code section"))?;
     let start = u64::from(function.address)
-        .checked_sub(section.address())
+        .checked_sub(section.address)
         .ok_or_else(|| invalid("function before its section"))? as usize;
-    data.get(start..start + function.size as usize)
+    section
+        .data
+        .get(start..start + function.size as usize)
         .ok_or_else(|| invalid(format!("{} exceeds its section", function.label())))
 }
 
@@ -350,17 +234,22 @@ pub(crate) fn observing<R>(
 ) -> Result<R> {
     let file = parse(elf)?;
     let memory = WorkingMemory::new(MEMORY_LIMIT)?;
-    let view = ProgramView::new(elf, &file, &memory, &mut || Ok(()))?;
+    let view = ProgramView::new(elf, file.object(), &memory, &mut || Ok(()))?;
     let mut observe = |function: &Function, jumps: &[KnownJump]| -> Result<Observation> {
         let mut control = || Ok(());
         let code = function_bytes(&file, function)?;
-        let references =
-            PreparedReferences::new(&[], function.section, &RiscvDecoder, &memory, &mut control)?;
+        let references = PreparedReferences::new(
+            &[],
+            function.section as u32,
+            &RiscvDecoder,
+            &memory,
+            &mut control,
+        )?;
         let mut observer = Observer::default();
         let summary = research(
             FunctionInput {
                 image: Some(&view),
-                section: function.section,
+                section: function.section as u32,
                 extent: CodeRange {
                     start: u64::from(function.address),
                     length: u64::from(function.size),

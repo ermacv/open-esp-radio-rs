@@ -78,6 +78,7 @@ fn collection_tracks_additions_relocation_and_duplicate_or_unregistered_entries(
 
 fn fixture(catalog: &[u8], symbol_name: &str, kind: object::SectionKind) -> Vec<u8> {
     use object::write::{Object, Symbol, SymbolSection};
+    use object::{Object as _, ObjectSection as _};
     let mut object = Object::new(
         object::BinaryFormat::Elf,
         object::Architecture::Riscv32,

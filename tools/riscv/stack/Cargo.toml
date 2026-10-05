@@ -9,10 +9,7 @@ publish = false
 description = "Worst-case stack bounds of a static RV32 image from its machine code"
 
 [dependencies]
-addr2line = { version = "=0.27.1", default-features = false, features = ["rustc-demangle"] }
-# addr2line's `gimli`, with the reference-counted reader `Dwarf` owns.
-gimli = { version = "=0.34.0", default-features = false, features = ["endian-reader", "std"] }
-object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
+oer-elf = { path = "../../elf" }
 oer-riscv-analysis = { path = "../analysis" }
 oer-riscv-decode = { path = "../decode" }
 oer-riscv-lift = { path = "../lift" }
@@ -30,4 +27,5 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
+host-layer = "build"
 inputs = ["platform/esp32s31/linker/rom/functions.toml"]

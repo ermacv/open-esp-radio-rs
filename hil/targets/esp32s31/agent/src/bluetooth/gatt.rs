@@ -8,8 +8,8 @@
 use core::cell::Cell;
 
 #[cfg(feature = "bluetooth-gatt")]
-use gatt_application::gatt;
-use gatt_application::gatt::Observation;
+use oer_bluetooth_gatt_trouble::gatt;
+use oer_bluetooth_gatt_trouble::gatt::Observation;
 use oer_bluetooth_hci::bt_hci::controller::ExternalController;
 use oer_esp32s31_bluetooth_system::BluetoothHostTransport;
 #[cfg(feature = "bluetooth-gatt")]

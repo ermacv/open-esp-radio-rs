@@ -2,11 +2,11 @@
 
 ESP-IDF applications that run vendor code on the HIL board, so hardware
 cross-checks compare vendor and production behavior on the same device.
-`cargo xtask vendor-firmware --chip esp32s31 [PROJECT]` builds them against the
+Each project is an entry of the stand's firmware catalog (its
+`firmware.toml`): `cargo hil firmware build <image>` builds it against the
 pinned ESP-IDF and the pinned vendor archives of
-[`artifacts.toml`](../artifacts.toml); outputs and `build.json` stay in
-`target/vendor-firmware/esp32s31/<project>/`. A project with a `firmware.toml`
-is also an entry of the stand's firmware catalog, so `cargo hil firmware flash
+[`artifacts.toml`](../artifacts.toml), with outputs and `build.json` in
+`target/vendor-firmware/esp32s31/<project>/`, and `cargo hil firmware flash
 <image> --board <board>` builds, flashes and journals it. Each application uses the HIL
 partition table, so the HIL runner flashes it into `ota_0` like a production
 image.

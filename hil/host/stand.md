@@ -12,7 +12,7 @@ Bluetooth adapter, and the air, shared by all radio work and exclusive for
 scenarios tagged `air-exclusive` that measure the radio environment. Leases
 whose claims do not conflict run in parallel; conflicting requests are served
 by their owners' balances (below). Hardware commands (`run`, `run-all`, `fixture check`, the Bluetooth
-fixture check and `cargo xtask build firmware <example> --flash`) wait for
+fixture check and `flash`) wait for
 their claims instead of failing when they are busy. A run builds its images
 before it queues, so the lease covers flashing and execution only.
 
@@ -30,29 +30,52 @@ A leased command that is itself a stand command (`cargo hil …` or
 queues, so a mistyped option fails at once instead of after the wait; commands
 the runner parses (`run`, `run-all`, `image`) are checked when they run.
 
-`flash --board NAME|MAC ELF` is the manual cycle for images outside the
-runner and the ESP-IDF catalog, such as a new chip's first no_std images. It
-derives the application image with `espflash save-image` before queueing,
-leases only that board and the air (shared; `--air exclusive` for RF
-measurements; `--air none` for an image that never enables the radio, which
-then runs beside an exclusive air lease), lets
-`espflash` write the chip's project bootloader, the partition table and the
-application for the board's registered chip, and journals the image under
-`--image` or the ELF's file name together with the bootloader digest. It then
-resets the board into the application with the RTS line, the boot strap
-released: `espflash`'s own reset and monitor connect to the ROM loader first
-and leave an esp32c5 in download mode. `--monitor 30s` captures the console,
+`flash --board NAME|MAC BUNDLE|ELF` is the manual cycle for images outside
+the runner and the ESP-IDF catalog: an image bundle that `cargo xtask build
+firmware` or `cargo hil image build` made (its directory), or the ELF of an
+ESP-IDF-bootloader chip's first no_std images, which the image pipeline
+bundles with the chip's project bootloader before queueing. It leases only
+that board and the air (shared; `--air exclusive` for RF measurements; `--air
+none` for an image that never enables the radio, which then runs beside an
+exclusive air lease) and goes through the flash operation like every flash
+(below), journaling the image under `--image` or the bundle's or ELF's name.
+`--monitor 30s` captures the console,
 read from the port itself, into
 `target/hil/flash/<mac>/console-*.log` for at most that long; with
 `--until TEXT` it ends at the first line containing TEXT and fails when none
-does. `--via jtag` writes the bootloader, partition table and
-application merged from offset 0 through OpenOCD and the chip's JTAG, and
-resets it through the debug module; the console is opened first without
-touching the reset lines. It works over any running image, including one that
-breaks USB Serial/JTAG resets (see [Hardware errata](../../docs/hardware-errata.md)).
-`cargo hil firmware flash IMAGE --board BOARD --jtag` does the same for a
-catalog image, writing each of its flash files at its address. The OpenOCD
-build comes from the ESP-IDF tools in the shared cache. The lease ends with the capture, so an open monitor never holds a board.
+does. `--via jtag` writes the bundle's segments through OpenOCD and the
+chip's JTAG and resets it through the debug module; the console is opened
+first without touching the reset lines. It works over any running image,
+including one that breaks USB Serial/JTAG resets (see
+[Hardware errata](../../docs/hardware-errata.md)). `cargo hil firmware flash
+IMAGE --board BOARD --jtag` does the same for a catalog image. The OpenOCD
+build comes from the ESP-IDF tools in the shared cache. The lease ends with
+the capture, so an open monitor never holds a board.
+
+### The flash operation
+
+Every flash of a stand board, `flash`, `firmware flash`, the runner's flash
+of its device under test and of the reference peers and the calibration
+cross-check, is one operation (`oer-hil-flash`):
+
+1. **lease**: the board is claimed in the arbiter and, once granted, its
+   lock file taken;
+2. **write**: the bundle's segments go through one espflash connection for
+   the chip its profile names (`platform/<chip>/chip.toml`), the OTA
+   selection last, a segment whose flash already matches skipped after an
+   MD5 comparison, a failed serial link retried up to three times; a board
+   that is not on USB, because its image switched its USB Serial/JTAG off,
+   is first put into the ROM's download mode through its hub port's power;
+3. **journal**: the board journal records the image name, the SHA-256 of its
+   application, its commit and whether the tree differed, and who wrote it;
+4. **start**: as the chip profile's `[flash] start` says. `reset`: the
+   writer's hard reset started it (esp32s31). `power-on`: the writer leaves
+   the ROM in its download mode and a power-on reset of the board's hub port
+   starts the image, an RTS reset on a board that does not reset by power
+   (esp32c5): after the download mode an RTS reset starts an esp32c5's
+   application with a silent console that later RTS resets do not revive
+   (the host sees EOF or `EPROTO` on the port); after a power-on reset RTS
+   resets work.
 
 ```console
 cargo hil flash --board esp32c5 --monitor 30s --until READY target/.../app.elf
@@ -145,8 +168,9 @@ TEXT` stops another owner's lease the same way at once: its owner is charged
 no longer from that moment, the holder prints who preempted it and why when it
 releases, the history records it as `preempted-on-request`, and the user is
 notified. Estimates from earlier leases of
-the same work only predict when a waiting request starts. `cargo hil evidence
-record` records a run's evidence shards. `cargo hil doctor`
+the same work only predict when a waiting request starts. Recording a run's
+evidence shards (`cargo qualification hil-evidence`) reads finished bundles and
+never queues. `cargo hil doctor`
 reports conflicting holders without queueing.
 
 A command started in the background returns when its lease ends; its exit is
@@ -166,7 +190,7 @@ The stand holds several equal boards, currently an ESP32-S31 and an ESP32-C5.
 No board has a fixed role: a scenario or other consumer chooses which board it
 uses as its device under test or as a peer, and may flash its own firmware.
 The stand file (`~/.config/open-esp-radio/stand.toml`,
-[`oer-hil-stand-schema`](../stand/schema/README.md)) describes the hubs and
+[`oer-hil-stand-model`](../stand/model/README.md)) describes the hubs and
 the boards: each board's id, chip, radios, roles, hub port and reset ladder.
 Each board is identified by the MAC address its USB Serial/JTAG port reports
 as USB serial number, independent of `/dev/ttyACM*` numbering. Every board is part of the
@@ -271,7 +295,9 @@ its timeout (ten minutes to program, one otherwise). A tool that holds a long
 interactive session under a board lease, such as the calibration cross-check,
 opens the port through the same library functions,
 `oer_hil_board::reset::{open_without_reset,
-reset_into_application}`, never through `serialport` itself.
+reset_into_application}`, never through `serialport` itself. Every reset,
+here and in the runner's recoveries, is a rung of the one ladder of
+board I/O (`oer_hil_board::reset`).
 
 ```console
 cargo hil devices                     # the stand file's boards: label, port, last firmware
@@ -282,9 +308,7 @@ cargo hil board console esp32c5 --for 30s --until @READY
 cargo hil board soak esp32c5 --for 8h --via rts,jtag
 cargo hil peer send esp32c5 SYNC
 cargo hil lease --board esp32c5 --flashed ieee802154-peer --application build/peer.bin \
-    --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:AA:25:64-if00 \
-    -- idf.py -p /dev/ttyACM1 flash
-cargo hil board flashed --image NAME --sha256 HASH --device MAC   # inside a lease
+    --device esp32c5 -- idf.py -p /dev/ttyACM1 flash
 ```
 
 ## ESP-IDF firmware catalog
@@ -310,25 +334,20 @@ cargo hil firmware flash ieee802154-peer --board esp32c5
 ```
 
 `firmware flash` builds the image, leases only the named board with the air
-shared, writes every file of the build's `flasher_args.json` and journals the
-image with the digest from its `build.json`, the repository commit and whether
-the project differs from it. A board whose registered chip differs from the
-image's target is refused.
+shared, bundles the build's application with its own bootloader and
+partition table (the build's `flasher_args.json` must place them at the
+chip's flash map and flash nothing else) and writes the bundle through the
+flash operation, journaling the image with its digest, the repository commit
+and whether the project differs from it. `--if-changed` leaves a board alone
+whose journal says it carries the current build. A board whose chip differs
+from the image's target is refused.
 
-Every flash that ends in the ROM download mode (`firmware flash`, `flash` and
-the runner's own) starts the new image through the board's registered EN
-reset path when it has one, a power-on reset, and waits for its port to
-return. After the download mode an RTS reset through the USB Serial/JTAG
-starts an esp32c5's application with a silent console that later RTS resets
-do not revive (the host sees EOF or `EPROTO` on the port); after a power-on
-reset RTS resets work. A board without an EN path is started through RTS.
-
-The runner records its own flashes and registers the board it flashes as
-`esp32s31` when its chip is unknown.
-Any other flash (a peer, a vendor image, a manual `espflash`) is recorded
-with `lease --flashed`, which journals it only when the command succeeds, or
-with `board flashed`. Name the board with `--port` or `--device`, and the
-application with `--application FILE` or `--sha256`.
+The board journal (`board.jsonl` of the arbiter directory) has one writer of
+a flash, the flash operation. A flash outside it (a vendor image, a manual
+`espflash` or `idf.py flash`) is recorded with `lease --flashed IMAGE`, which
+journals it only when the leased command succeeds: name the board with
+`--device NAME|MAC` and the application with `--application FILE` or
+`--sha256`.
 
 On every grant the arbiter prints the last flashed firmware of every board
 (image, commit, application hash, owner) and lists the flashes other owners
@@ -336,9 +355,12 @@ made since this owner's previous lease. It only reports this state; it never
 erases or restores it. The startup artifact, which carries the PHY calibration
 cache, is a host file uploaded at every boot; a relative path belongs to each
 checkout, so another owner's cache never reaches a run. `cargo hil queue` lists
-the newest upload or write of every such file. The queue, history, journal and device registry live in the
-user's host cache, so every checkout of the repository shares them. A checkout without the arbiter
-still fails fast on the fixture locks and bypasses the queue; a granted holder
+the newest upload or write of every such file. The queue, history, journal and jobs live in the arbiter directory of the
+user's host cache, so every checkout of the repository shares them. The
+arbiter's last exclusion layer is a lock file per board (named by its MAC)
+and per fixture resource in `open-esp-radio/leases` of the XDG cache
+directory, taken once a lease is granted: a process outside the queue (a
+checkout without the arbiter) still fails fast on them, and a granted holder
 waits for such a process to finish.
 
 ## Host fixtures

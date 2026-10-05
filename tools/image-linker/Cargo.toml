@@ -8,8 +8,8 @@ publish = false
 description = "The ESP32-S31 image linker: checks the link inputs, then runs rust-lld unchanged"
 
 [dependencies]
+oer-elf = { path = "../elf" }
 oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout" }
-object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
 
 [dev-dependencies]
 tempfile = "=3.27.0"
@@ -21,3 +21,4 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
+host-layer = "build"

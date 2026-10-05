@@ -18,7 +18,8 @@ Scenario authors also read the
    `cargo xtask vendor-fetch <chip>`; never commit the artifacts, dumps or
    `_oracles/`. Other hashes record where a fact was observed; they are not pins.
 2. **Cite.** A recovered fact names its vendor function in a
-   `SOURCE(<chip>):` block (a chip-neutral path names its chips). The cited
+   `SOURCE(<chip>):` block (one recogniser, `oer_vendor_provenance::citation`,
+   which `cargo tidy check` uses too) (a chip-neutral path names its chips). The cited
    function is registered with its reviewed fingerprint in
    `verification/<chip>/facts/provenance.toml`; grep that file by explicit
    path, never read it whole. A bare name cites every pinned copy (the
@@ -36,8 +37,18 @@ Scenario authors also read the
    shadow implementation or a duplicated fixture table.
 6. **Shards.** `evidence/scenarios` shards are regenerated only by the
    check's owner (`cargo xtask evidence --chip <chip>`), in commits of their
-   own; never edit, rebase-resolve or hand-merge them.
-7. **Commits.** A production change the comparison needs lands in its own
+   own; never edit, rebase-resolve or hand-merge them. The format, the one
+   writer and the source policy are `oer-vendor-evidence`
+   (`verification/evidence`); its producers are the Blobray scenario engine
+   and the host stands (`verification/<chip>/host/<name>`, shard
+   `<name>-host`, written by the stand's own `shard` command). A shard never
+   records a file of a report package.
+7. **Hardware cross-checks** are HIL runs: `cargo hil run
+   phy-vendor-calibration` (and its `-restart`, `-ieee802154` points) flashes
+   the vendor firmware and production alternately and records the
+   comparison of `oer-esp32s31-phy-vendor-calibration` as the run bundle's
+   typed result. Nothing is written to `verification/<chip>/evidence/`.
+8. **Commits.** A production change the comparison needs lands in its own
    product-scoped commit, never inside a `blobray` or verification commit.
 
 ## Commands (all `run_in_background: true`)
@@ -47,4 +58,5 @@ cargo xtask vendor-fetch esp32s31
 cargo xtask check provenance --chip esp32s31
 cargo xtask vendor-scenario <scenario>
 cargo xtask evidence --chip esp32s31 --check --changed-since origin/main
+cargo hil plan phy-vendor-calibration
 ```

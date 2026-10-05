@@ -3,7 +3,7 @@
 //! The crate-root attributes are the lint policy that rustc and Clippy
 //! enforce; this check keeps them in agreement with the reviewed lists.
 
-use crate::{Result, checks::common::ProductionPackage};
+use crate::{Result, checks::common::Classified};
 
 /// Generated register bindings of each chip and of the register layouts
 /// chips share; they state no crate-root policy.
@@ -64,46 +64,29 @@ fn required_attribute(name: &str) -> Option<&'static str> {
     }
 }
 
-fn library_root(package: &cargo_metadata::Package) -> Option<&std::path::Path> {
-    package
-        .targets
-        .iter()
-        .find(|target| {
-            target.kind.iter().any(|kind| {
-                matches!(
-                    kind,
-                    cargo_metadata::TargetKind::Lib | cargo_metadata::TargetKind::RLib
-                )
-            })
-        })
-        .map(|target| target.src_path.as_std_path())
-}
-
-pub(super) fn check(packages: &[ProductionPackage]) -> Result<()> {
+pub(super) fn check(root: &std::path::Path, packages: &[Classified]) -> Result<()> {
     for item in packages {
         let name = item.package.name.as_str();
-        let Some(root) = library_root(&item.package) else {
+        let Some(library) = &item.package.library_root else {
             return Err(format!("driver package has no library target: {name}").into());
         };
         if item
             .package
             .dependencies
             .iter()
-            .any(|d| CLOSED_PACS.contains(&d.name.as_str()))
+            .any(|d| CLOSED_PACS.contains(&d.package.as_str()))
             && !PAC_CONSUMERS.contains(&name)
         {
             return Err(format!("package crosses closed-PAC ownership boundary: {name}").into());
         }
         if let Some(attribute) = required_attribute(name)
-            && !std::fs::read_to_string(root)?
+            && !std::fs::read_to_string(root.join(library))?
                 .lines()
                 .any(|line| line.trim() == attribute)
         {
-            return Err(format!(
-                "{name} must declare `{attribute}` at its crate root {}",
-                root.display()
-            )
-            .into());
+            return Err(
+                format!("{name} must declare `{attribute}` at its crate root {library}").into(),
+            );
         }
     }
     Ok(())

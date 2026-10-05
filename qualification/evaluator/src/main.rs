@@ -13,7 +13,7 @@ use model::{CatalogView, QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--run RUN_ID ...] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n       cargo qualification catalog anchors --catalog PATH [--catalog PATH ...] [--changed FILE ...] [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nhil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, as tracked shards bound to their firmware and observer sources.\ncatalog anchors checks the `// CAPABILITY: <id>` comments in code against every selected catalog entry (pass all catalogs: an anchor naming an unselected entry is unknown) and lists the entries anchored in --changed files.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
+const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--run RUN_ID ... | --pending] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n       cargo qualification catalog anchors --catalog PATH [--catalog PATH ...] [--changed FILE ...] [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nhil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, or of the checkout's pending runs (--pending, which then leaves the pending list), as tracked shards bound to their firmware and observer sources.\ncatalog anchors checks the `// CAPABILITY: <id>` comments in code against every selected catalog entry (pass all catalogs: an anchor naming an unselected entry is unknown) and lists the entries anchored in --changed files.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
@@ -22,7 +22,6 @@ enum Command {
     Plan,
     Validate,
     Evaluate,
-    Gate,
     CatalogCheck,
     CatalogRender,
     CatalogAnchors,
@@ -30,13 +29,12 @@ enum Command {
 }
 
 impl Command {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 9] = [
         Self::Status,
         Self::Next,
         Self::Plan,
         Self::Validate,
         Self::Evaluate,
-        Self::Gate,
         Self::HilEvidence,
         Self::CatalogCheck,
         Self::CatalogRender,
@@ -51,7 +49,6 @@ impl Command {
             Self::Plan => &["plan"],
             Self::Validate => &["validate"],
             Self::Evaluate => &["evaluate"],
-            Self::Gate => &["gate"],
             Self::HilEvidence => &["hil-evidence"],
             Self::CatalogCheck => &["catalog", "check"],
             Self::CatalogRender => &["catalog", "render"],
@@ -80,8 +77,8 @@ impl Command {
                 "--json-report",
             ],
             Self::Plan => &["--manifest", "--capability", "--root", "--json-report"],
-            Self::Validate | Self::Evaluate | Self::Gate => REPORTS,
-            Self::HilEvidence => &["--manifest", "--hil-target", "--run", "--root"],
+            Self::Validate | Self::Evaluate => REPORTS,
+            Self::HilEvidence => &["--manifest", "--hil-target", "--run", "--pending", "--root"],
             Self::CatalogCheck => &["--manifest", "--catalog", "--root"],
             Self::CatalogRender => &["--manifest", "--catalog", "--out", "--root"],
             Self::CatalogAnchors => &["--catalog", "--changed", "--root"],
@@ -165,6 +162,8 @@ struct Arguments {
     hil_target: Option<String>,
     /// `hil-evidence --run`: record only these runs' observations.
     runs: Vec<String>,
+    /// `hil-evidence --pending`: record the checkout's pending runs.
+    pending: bool,
     /// `catalog anchors --changed`: repository-relative files an edit touched.
     changed: Vec<PathBuf>,
 }
@@ -190,6 +189,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut details = false;
     let mut hil_target = None;
     let mut runs = Vec::new();
+    let mut pending = false;
     let mut changed = Vec::new();
     while index < arguments.len() {
         let option = arguments[index].as_str();
@@ -229,6 +229,13 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                     .clone();
                 index += 2;
                 runs.push(value);
+            }
+            "--pending" => {
+                if pending {
+                    return Err("duplicate --pending".into());
+                }
+                pending = true;
+                index += 1;
             }
             "--hil-target" => {
                 let value = arguments
@@ -290,9 +297,10 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         Command::HilEvidence if manifest.is_some() == hil_target.is_some() => {
             return Err("hil-evidence requires exactly one of --manifest or --hil-target".into());
         }
-        Command::Plan | Command::Validate | Command::Evaluate | Command::Gate
-            if manifest.is_none() =>
-        {
+        Command::HilEvidence if pending && !runs.is_empty() => {
+            return Err("hil-evidence takes --run or --pending, not both".into());
+        }
+        Command::Plan | Command::Validate | Command::Evaluate if manifest.is_none() => {
             return Err("missing --manifest".into());
         }
         _ => {}
@@ -308,6 +316,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         details,
         hil_target,
         runs,
+        pending,
         changed,
     })
 }
@@ -373,6 +382,7 @@ fn execute(arguments: Arguments) -> Result<()> {
             &arguments.root.join(manifest),
             &arguments.root,
             &arguments.runs,
+            arguments.pending,
         );
     }
     let manifest = arguments.manifest.as_ref().ok_or("missing --manifest")?;
@@ -382,7 +392,12 @@ fn execute(arguments: Arguments) -> Result<()> {
         arguments.root.join(manifest)
     };
     if arguments.command == Command::HilEvidence {
-        return record_hil_evidence(&manifest_path, &arguments.root, &arguments.runs);
+        return record_hil_evidence(
+            &manifest_path,
+            &arguments.root,
+            &arguments.runs,
+            arguments.pending,
+        );
     }
     if arguments.command == Command::CatalogCheck {
         let catalog = CatalogView::load_for_program(&arguments.root, &manifest_path)?;
@@ -420,15 +435,6 @@ fn execute(arguments: Arguments) -> Result<()> {
         };
         inventory::write(&qualification, &path, &arguments.root)?;
     }
-    if arguments.command == Command::Gate && !qualification.all_required_ready() {
-        return Err(format!(
-            "qualification gate rejected target {}: {}/{} required capabilities are ready",
-            qualification.target,
-            qualification.ready_count(),
-            qualification.capabilities.len()
-        )
-        .into());
-    }
     if arguments.command == Command::Validate {
         println!(
             "VALID\ttarget={}\tschema={QUALIFICATION_SCHEMA}",
@@ -438,20 +444,50 @@ fn execute(arguments: Arguments) -> Result<()> {
     Ok(())
 }
 
+/// Record the qualifying observations of the program's runs as tracked
+/// shards: of `runs`, of the checkout's pending runs with `pending`, or else
+/// of every run. The evaluator reads the runs itself; a pending run it
+/// observed leaves the pending list, a pending run of another chip stays.
 fn record_hil_evidence(
     manifest: &std::path::Path,
     root: &std::path::Path,
     runs: &[String],
+    pending: bool,
 ) -> Result<()> {
-    let runs = (!runs.is_empty()).then(|| {
-        runs.iter()
-            .cloned()
-            .collect::<std::collections::BTreeSet<_>>()
-    });
+    use oer_hil_run_bundle::store::pending as pending_list;
+    let runs = if pending {
+        let listed = pending_list::load(root)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|entry| entry.run)
+            .collect::<std::collections::BTreeSet<_>>();
+        if listed.is_empty() {
+            println!("HIL-EVIDENCE\tshards=0\tpending=0");
+            return Ok(());
+        }
+        Some(listed)
+    } else {
+        (!runs.is_empty()).then(|| {
+            runs.iter()
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>()
+        })
+    };
     let evidence = Qualification::record_hil_evidence(manifest, root, runs.as_ref())?;
     println!("HIL-EVIDENCE\tshards={}", evidence.recorded.len());
     for scenario in &evidence.recorded {
         println!("HIL-SHARD\t{scenario}");
+    }
+    if pending {
+        let observed = evidence
+            .verdicts
+            .iter()
+            .filter(|(_, _, verdict)| verdict.id() != "not-found")
+            .map(|(run, _, _)| run.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        pending_list::forget(root, &observed).map_err(|error| error.to_string())?;
     }
     // One line per scenario of each requested run: what became of it and why.
     for (run, scenario, verdict) in &evidence.verdicts {

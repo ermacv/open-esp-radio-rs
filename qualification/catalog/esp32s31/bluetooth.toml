@@ -2722,7 +2722,7 @@ section = "bluetooth-security-privacy"
 title = "LE Secure Connections integration"
 status = "host-only"
 level = "composed-product"
-scope-and-limitations = "Pairing and SMP belong to the Host: the [secure GATT application](../../../../../examples/bluetooth-gatt/src/security.rs) pairs with LE Secure Connections Numeric Comparison through the Trouble Host. The Controller side of the resulting encryption is the Link Layer encryption row."
+scope-and-limitations = "Pairing and SMP belong to the Host: the [secure GATT application](../../../../../crates/adapters/trouble/bluetooth/gatt/src/security.rs) pairs with LE Secure Connections Numeric Comparison through the Trouble Host. The Controller side of the resulting encryption is the Link Layer encryption row."
 
 [[items]]
 id = "bluetooth-encrypted-advertising-data"
@@ -2978,7 +2978,7 @@ section = "bluetooth-hci-host-boundary"
 title = "Trouble Host integration"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "The HIL firmware runs the [GATT application](../../../../../examples/bluetooth-gatt/src/gatt.rs) on the Trouble Host over the production HCI transport of the [Bluetooth composition](../../../../composition/esp32s31/embassy/bluetooth/src/lib.rs)."
+scope-and-limitations = "The HIL firmware runs the [GATT application](../../../../../crates/adapters/trouble/bluetooth/gatt/src/gatt.rs) on the Trouble Host over the production HCI transport of the [Bluetooth composition](../../../../composition/esp32s31/embassy/bluetooth/src/lib.rs)."
 
 [[items]]
 id = "bluetooth-controller-scheduler-timebase"

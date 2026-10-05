@@ -2,7 +2,7 @@
 //!
 //! The keys mirror the record schemas of the qualification evaluator
 //! (`qualification/evaluator/src/model*`, `hil/shard.rs`) and
-//! the vendor evidence schema (`verification/schema/scenario-evidence.rs`):
+//! the vendor evidence index (`oer-vendor-evidence`, `verification/evidence`):
 //!
 //! - program manifests (`qualification/targets/**.toml`): `catalogs`, and
 //!   `[hil] catalog`;
@@ -23,7 +23,9 @@ use std::collections::BTreeSet;
 use serde_json::Value as Json;
 use toml::{Table, Value};
 
-use crate::{Context, Result, manifest::strings};
+use oer_repo::manifest::strings;
+
+use crate::{Context, Result};
 
 /// Keys whose string or string-array value names repository paths, in any
 /// table of a qualification record.
@@ -107,8 +109,8 @@ fn is_record(file: &str) -> bool {
 /// Every repository path a record names exists.
 pub fn check(context: &Context<'_>) -> Result<Vec<String>> {
     let packages: BTreeSet<&str> = context
-        .manifests
-        .packages
+        .model
+        .packages()
         .iter()
         .map(|package| package.name.as_str())
         .collect();

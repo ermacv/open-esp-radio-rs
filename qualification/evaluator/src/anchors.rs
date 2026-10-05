@@ -1,5 +1,8 @@
 //! Code anchors bind catalog entries to the code that owns them.
 //!
+//! The anchor line's grammar has one recogniser, `oer_tidy::anchors`,
+//! which also keeps anchors out of uncompiled files.
+//!
 //! A `// CAPABILITY: <id>[, <id>...]` line comment placed directly above a
 //! Rust item (after its doc comments and attributes) names the catalog
 //! inventory items, source facts or catalog capabilities that item owns. The
@@ -25,18 +28,12 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
-
 use crate::Result;
 use crate::model::{CatalogView, ImplementationProof, SourceStatus};
 
-const MARKER: &str = "// CAPABILITY:";
-
-/// Directories never scanned: build output, private inputs and VCS state.
-const SKIPPED: &[&str] = &["target", "_oracles"];
-
-/// What a package is for; `oer-tidy` derives it from the package's layer.
-pub(crate) use oer_tidy::classification::Scope;
+/// What a package is for; the repository model derives it from the
+/// package's layer.
+pub(crate) use oer_repo::Scope;
 
 /// The package that owns an anchored file, as its manifest classifies it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -313,21 +310,29 @@ fn list(locations: &[Location]) -> String {
         .join(", ")
 }
 
-/// Every anchor under `root`, and every marker that cannot be one.
+/// Every anchor of the repository at `root` (its file inventory,
+/// [`oer_repo::Repo::load`]), and every marker that cannot be one.
 pub(crate) fn scan(root: &Path) -> Result<(Vec<Anchor>, Vec<Problem>)> {
-    let mut files = Vec::new();
-    collect(root, root, &mut files)?;
-    files.sort();
-    let mut packages = Packages::default();
+    let repo = oer_repo::Repo::load(root)?;
+    let model = oer_repo::Model::load(&repo)?;
     let mut anchors = Vec::new();
     let mut problems = Vec::new();
-    for relative in files {
-        let text = fs::read_to_string(root.join(&relative))?;
+    for file in repo.files().filter(|file| file.ends_with(".rs")) {
+        let relative = PathBuf::from(file);
+        let text = fs::read_to_string(root.join(file))?;
         let markers = markers(&relative, &text, &mut problems);
         if markers.is_empty() {
             continue;
         }
-        let package = packages.of(root, &relative)?;
+        // The owning package as its manifest classifies it; an unclassified
+        // owner, or none, anchors nothing.
+        let package = model.owner(file).and_then(|owner| {
+            let class = model.classification(owner).ok()?;
+            Some(Package {
+                name: owner.name.clone(),
+                scope: class.scope,
+            })
+        });
         for (location, ids, item) in markers {
             let Some(package) = package.clone() else {
                 problems.push(Problem::Unclassified { location });
@@ -346,23 +351,6 @@ pub(crate) fn scan(root: &Path) -> Result<(Vec<Anchor>, Vec<Problem>)> {
     Ok((anchors, problems))
 }
 
-fn collect(root: &Path, directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(directory)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let kind = entry.file_type()?;
-        if kind.is_dir() {
-            if !name.starts_with('.') && !SKIPPED.contains(&name.as_ref()) {
-                collect(root, &entry.path(), files)?;
-            }
-        } else if kind.is_file() && name.ends_with(".rs") {
-            files.push(entry.path().strip_prefix(root)?.to_owned());
-        }
-    }
-    Ok(())
-}
-
 /// The markers of one file: location, named ids and the anchored item.
 fn markers(
     path: &Path,
@@ -372,14 +360,14 @@ fn markers(
     let lines = text.lines().collect::<Vec<_>>();
     let mut found = Vec::new();
     for (index, line) in lines.iter().enumerate() {
-        let Some(rest) = line.trim_start().strip_prefix(MARKER) else {
+        let Some(ids) = oer_tidy::anchors::capability(line) else {
             continue;
         };
         let location = Location {
             path: path.to_owned(),
             line: index + 1,
         };
-        let ids = match parse_ids(rest) {
+        let ids = match ids {
             Ok(ids) => ids,
             Err(reason) => {
                 problems.push(Problem::Malformed { location, reason });
@@ -392,26 +380,6 @@ fn markers(
         }
     }
     found
-}
-
-fn parse_ids(rest: &str) -> std::result::Result<Vec<String>, String> {
-    let mut ids = Vec::new();
-    for id in rest.split(',').map(str::trim) {
-        let valid = id.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
-            && id
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-            && !id.ends_with('-')
-            && !id.contains("--");
-        if !valid {
-            return Err(format!("`{id}` is not a catalog id"));
-        }
-        if ids.iter().any(|known| known == id) {
-            return Err(format!("`{id}` is repeated"));
-        }
-        ids.push(id.to_owned());
-    }
-    Ok(ids)
 }
 
 /// The item the lines after a marker declare, skipping comments and
@@ -460,72 +428,6 @@ fn is_item(line: &str) -> bool {
             || token.starts_with("impl<")
             || token == "macro_rules!"
     })
-}
-
-/// Package classification of each directory, read once.
-#[derive(Default)]
-struct Packages(BTreeMap<PathBuf, Option<Package>>);
-
-impl Packages {
-    fn of(&mut self, root: &Path, file: &Path) -> Result<Option<Package>> {
-        let mut directory = file.parent();
-        while let Some(current) = directory {
-            if let Some(known) = self.0.get(current) {
-                return Ok(known.clone());
-            }
-            let manifest = root.join(current).join("Cargo.toml");
-            if manifest.is_file()
-                && let Some(package) = classify(&fs::read_to_string(&manifest)?, &manifest)?
-            {
-                self.0.insert(current.to_owned(), package.clone());
-                return Ok(package);
-            }
-            directory = current.parent();
-        }
-        Ok(None)
-    }
-}
-
-#[derive(Deserialize)]
-struct Manifest {
-    package: Option<ManifestPackage>,
-}
-
-#[derive(Deserialize)]
-struct ManifestPackage {
-    name: String,
-    #[serde(default)]
-    metadata: Option<ManifestMetadata>,
-}
-
-#[derive(Deserialize)]
-struct ManifestMetadata {
-    #[serde(rename = "open-radio")]
-    open_radio: Option<toml::Table>,
-}
-
-/// `None` when the manifest is a virtual workspace; `Some(None)` for a
-/// package without classification.
-fn classify(text: &str, path: &Path) -> Result<Option<Option<Package>>> {
-    let manifest: Manifest =
-        toml_edit::de::from_str(text).map_err(|error| format!("{}: {error}", path.display()))?;
-    let Some(package) = manifest.package else {
-        return Ok(None);
-    };
-    let Some(open_radio) = package.metadata.and_then(|metadata| metadata.open_radio) else {
-        return Ok(Some(None));
-    };
-    let class = oer_tidy::classification::classify(&package.name, &|key| {
-        open_radio
-            .get(key)
-            .and_then(toml::Value::as_str)
-            .map(str::to_owned)
-    })
-    .map_err(|error| format!("{}: {error}", path.display()))?;
-    Ok(Some(Some(Package {
-        name: package.name,
-        scope: class.scope,
-    })))
 }
 
 /// Every violation of the anchoring rules.

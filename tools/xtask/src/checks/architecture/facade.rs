@@ -1,7 +1,8 @@
 //! Resolve facade consumers independently of workspace feature unification.
 
-use crate::{Context, Result, cargo};
+use crate::{Result, cargo};
 use oer_process as process;
+use oer_process::Checkout;
 
 use super::super::common::*;
 
@@ -42,9 +43,10 @@ struct Profile {
     forbidden: &'static [&'static [&'static str]],
 }
 
-pub(super) fn check(ctx: &Context) -> Result<()> {
+pub(super) fn check(ctx: &Checkout) -> Result<()> {
+    let model = model(ctx)?;
     let manifest = ctx.root.join(MANIFEST);
-    let target = super::super::target(&ctx.root)?;
+    let target = oer_chip_profile::rust_target(&ctx.root, oer_image::staged::CHIP)?;
     for profile in [
         Profile {
             features: Some(""),
@@ -148,8 +150,17 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             None | Some("" | "wifi" | "bluetooth" | "ieee802154")
         ) {
             for package in packages.iter().filter(|package| package.source.is_none()) {
+                let directory = package
+                    .manifest_path
+                    .parent()
+                    .and_then(|directory| directory.as_std_path().strip_prefix(&ctx.root).ok())
+                    .and_then(|directory| directory.to_str())
+                    .ok_or_else(|| format!("{} is outside the checkout", package.manifest_path))?;
+                let local = model
+                    .package_at(directory)
+                    .ok_or_else(|| format!("{directory} is no package of the repository"))?;
                 if matches!(
-                    classification(package)?.platform,
+                    model.classification(local)?.platform,
                     Platform::Chip(_) | Platform::Family(_)
                 ) {
                     return Err(format!(
@@ -161,7 +172,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             }
         }
         process::run(
-            ctx.cargo()
+            oer_toolchain::cargo_in(&ctx.root)
                 .args([
                     "test",
                     "--quiet",

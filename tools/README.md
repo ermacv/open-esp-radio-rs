@@ -1,25 +1,29 @@
 # Repository tooling
 
-Tools are grouped by the contract they own. Blobray and memory-report are
-independent reusable tools; `xtask` contains this repository's build and policy
+Tools are grouped by the contract they own. Blobray is an independent
+reusable tool; `xtask` contains this repository's build and policy
 checks. A utility does not need its own Cargo package.
 
 | Path | Inputs and result |
 | --- | --- |
 | [blobray](blobray/README.md) | Captured binary research, reviewed knowledge and bounded concrete comparison |
-| [memory-report](memory-report/README.md) | Generic ELF memory and linked-code analysis; the consumer supplies placement policy |
+| [elf](elf/README.md) | The one ELF and archive view: symbols with their aliases by address, sections, segments, relocations with the one RV32 relocation table, relocatable functions and DWARF source locations; nothing else parses `llvm-nm`/`llvm-objdump` output |
+| [vendor-provenance](vendor-provenance/README.md) | The `SOURCE` citation grammar (also tidy's recogniser), the one relocation-normalized fingerprint of vendor RV32 functions, the provenance registry and its check, and archive revision diffs |
 | [riscv/decode](riscv/decode/README.md) | RV32 instruction bytes to typed instructions, lengths and text, for a selected extension set |
-| [riscv/model](riscv/model/README.md), [riscv/program](riscv/program/README.md), [riscv/analysis](riscv/analysis/README.md), [riscv/lift](riscv/lift/README.md) | RV32 program model: identities and contracts, static images, bounded CFG and value analysis, RV32 lifting |
-| [riscv/stack](riscv/stack/README.md) | Worst-case stack bounds of a static RV32 image, failing closed with the unresolved sites by reason; the only stack analyzer, which the firmware stack gate runs |
+| [riscv/model](riscv/model/README.md), [riscv/program](riscv/program/README.md), [riscv/analysis](riscv/analysis/README.md), [riscv/lift](riscv/lift/README.md) | RV32 program model: identities and contracts, static images, bounded CFG and value analysis, RV32 lifting, and placement-independent function listings (`listing`) that `cargo xtask compare elf` compares |
+| [riscv/stack](riscv/stack/README.md) | Worst-case stack bounds of a static RV32 image, failing closed with the unresolved sites by reason; the only stack analyzer, which the image pipeline's stack gate runs |
 | [symbol-lineage](symbol-lineage/README.md) | Source function names carried across obfuscated vendor archive revisions |
-| [process](process/README.md) | Host child-process ownership, cancellation and bounded cleanup shared by xtask and HIL |
-| [firmware](firmware/README.md) | Firmware image operations, flash segment writes and shared serial-device leases |
+| [process](process/README.md) | Host child-process ownership, cancellation and bounded cleanup; the one Git runner, the checkout a tool acts on (`Checkout`, `built_root`) and live-process facts from `/proc` |
+| [durable](durable/README.md) | Atomic file replacement, SHA-256 of files and bytes, wall-clock timestamps and the XDG state directories every tool keeps outside a checkout |
+| [toolchain](toolchain/README.md) | The one lookup of Cargo, `rustc`, the toolchain's LLVM tools and `espflash`, the tool versions builds record, and the image compiler setup with the image linker built from the tree being built |
+| [image](image/README.md) | The one image pipeline, `build(ImageSpec) -> ImageBundle`: staged and ESP-IDF-bootloader images, every stack and placement gate, the flash contents encoded at build time with the `espflash` library, the ESP-IDF catalog builds, build exclusion and source inputs from the real dependency closure |
 | `command-tree` | The command tree every repository tool prints for `__command-tree`, which `cargo xtask check docs` holds the documented commands to |
-| `chip-profile` | Supported chips resolved from `platform/<chip>/chip.toml`: Rust target, boot flow, `espflash` chip name, silicon revisions |
-| [vendor-artifacts](vendor-artifacts/README.md) | A chip's pinned vendor artifacts (`verification/<chip>/artifacts.toml`), the host-wide store and fetching into it, for xtask and the HIL stand's ESP-IDF builds |
+| `chip-profile` | Supported chips resolved from `platform/<chip>/chip.toml`: Rust target (`rust_target`), boot flow, `espflash` chip name, silicon revisions and the flash map (`FlashMap`: offsets, partition tables and how a written image starts, `Start`); the HIL agent's paths belong to [`oer-hil-image-class`](../hil/host/image-class) |
+| [repo](repo/README.md) | The one model of the repository: file inventory, manifests, workspaces, chips, typed package classification, the layer/platform/role dependency rules, `owner(path)` and path-package closures |
+| [vendor-artifacts](vendor-artifacts/README.md) | The only reader of a chip's pinned vendor artifacts (`verification/<chip>/artifacts.toml`), the host-wide store and fetching into it, for xtask, the image pipeline's stack gate, the vendor scenarios, host stands' build scripts and the HIL stand's ESP-IDF builds |
 | [registers](registers/README.md) | Register model contracts, publication and generated SVD/bindings |
-| [tidy](tidy/README.md) | Fast fail-closed text checks of the whole tree: orphan sources, record paths, anchors, workspaces and unused dependencies |
-| [xtask](xtask/README.md) | Cargo/source/architecture checks and their regression tests |
+| [tidy](tidy/README.md) | Fast fail-closed text policy over the repository model: orphan sources, record paths, anchors, workspaces, classification, layer dependencies, unused dependencies and reviewed layouts |
+| [xtask](xtask/README.md) | The entry command line: the check registry behind the gate, push and every CI job, CI state, locks, worktrees, sweeps and the repository checks; domain work stays with its owners |
 
 The [qualification evaluator](../qualification/README.md) belongs to its
 readiness domain. [HIL](../hil/README.md) owns hardware execution and fixtures;

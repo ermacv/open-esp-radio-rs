@@ -4,7 +4,6 @@
 use std::path::Path;
 
 use oer_hil_protocol::wifi::{NetworkCredentials, NetworkIpv4Configuration};
-use oer_hil_scenario::Settings;
 
 use crate::Result;
 
@@ -55,5 +54,5 @@ pub trait StationNetwork {
 pub struct Target<'a> {
     pub dut: &'a dyn Dut,
     pub station: &'a dyn StationNetwork,
-    pub settings: Settings,
+    pub settings: oer_hil_protocol::wifi::TargetSettings,
 }

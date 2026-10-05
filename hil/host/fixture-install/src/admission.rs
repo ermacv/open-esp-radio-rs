@@ -8,8 +8,6 @@ mod linux {
         path::{Component, Path, PathBuf},
     };
 
-    use sha2::{Digest as _, Sha256};
-
     use crate::{ArtifactRole, InstallResult, InstallState, Provider, RECEIPT_SCHEMA, Result};
 
     pub struct OperationalLease {
@@ -65,7 +63,7 @@ mod linux {
             require_file(&path, artifact.mode, self.expected_uid, self.expected_gid)?;
             let bytes = fs::read(&path)?;
             if bytes.len() as u64 != artifact.size_bytes
-                || format!("{:x}", Sha256::digest(&bytes)) != artifact.sha256
+                || oer_durable::sha256_bytes(&bytes) != artifact.sha256
             {
                 return Err(format!(
                     "recovery-required: committed artifact identity differs at {}",

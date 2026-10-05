@@ -350,8 +350,11 @@ impl FunctionSemantics for RiscvDecoder {
                 ..
             }
         );
-        if matches!(r.relocation_type, R_RISCV_LO12_S | R_RISCV_PCREL_LO12_S) && !store
-            || matches!(r.relocation_type, R_RISCV_LO12_I | R_RISCV_PCREL_LO12_I)
+        let kind = rv32::kind(r.relocation_type);
+        let low = matches!(kind.role, Role::AbsoluteLow | Role::PcRelativeLow);
+        if low && kind.field == rv32::Field::Store && !store
+            || low
+                && kind.field == rv32::Field::Immediate
                 && !matches!(
                     operation,
                     SemanticOp::Integer {
@@ -366,15 +369,14 @@ impl FunctionSemantics for RiscvDecoder {
         {
             return ValueRelocation::Unsupported;
         }
-        match r.relocation_type {
-            R_RISCV_NONE | R_RISCV_RELAX | R_RISCV_ALIGN | R_RISCV_BRANCH | R_RISCV_JAL
-            | R_RISCV_RVC_BRANCH | R_RISCV_RVC_JUMP => ValueRelocation::Ignore,
-            R_RISCV_CALL | R_RISCV_CALL_PLT => ValueRelocation::CallUpper,
-            R_RISCV_HI20 => ValueRelocation::UpperAbsolute,
-            R_RISCV_PCREL_HI20 => ValueRelocation::UpperPcRelative,
-            R_RISCV_LO12_I | R_RISCV_LO12_S => ValueRelocation::LowerAbsolute,
-            R_RISCV_PCREL_LO12_I | R_RISCV_PCREL_LO12_S => ValueRelocation::LowerPcRelative,
-            _ => ValueRelocation::Unsupported,
+        match kind.role {
+            Role::Hint | Role::Branch | Role::Jump => ValueRelocation::Ignore,
+            Role::Call => ValueRelocation::CallUpper,
+            Role::AbsoluteHigh => ValueRelocation::UpperAbsolute,
+            Role::PcRelativeHigh => ValueRelocation::UpperPcRelative,
+            Role::AbsoluteLow => ValueRelocation::LowerAbsolute,
+            Role::PcRelativeLow => ValueRelocation::LowerPcRelative,
+            Role::Word | Role::Other => ValueRelocation::Unsupported,
         }
     }
 }

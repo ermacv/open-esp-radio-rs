@@ -1,0 +1,45 @@
+[package]
+name = "oer-hil-run-bundle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "The HIL run bundle: format, writer and seal, the one typed reader, integrity, the run store and build provenance"
+
+[features]
+# The run-session fixtures of the image builder's record tests.
+test-support = []
+
+[dependencies]
+oer-toolchain = { path = "../../../tools/toolchain" }
+oer-chip-profile = { path = "../../../tools/chip-profile" }
+oer-durable = { path = "../../../tools/durable" }
+oer-hil-image-class = { path = "../image-class" }
+oer-hil-protocol = { path = "../../protocol", features = ["registry"] }
+oer-hil-scenario = { path = "../scenario" }
+oer-hil-schema = { path = "../../schema" }
+oer-hil-observer = { path = "../../observer" }
+oer-hil-source-snapshot = { path = "../source-snapshot" }
+oer-process = { path = "../../../tools/process" }
+fs2 = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tempfile = "3"
+
+[dev-dependencies]
+oer-hil-scenario = { path = "../scenario", features = ["test-support"] }
+oer-hil-source-snapshot = { path = "../source-snapshot", features = ["test-support"] }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+layer = "hil"
+platform = "host"
+host-layer = "execution"
+# The evaluator reads the evidence this package writes.
+inputs = ["qualification/evaluator"]
+hil = "observation"

@@ -597,10 +597,11 @@ record them as a scenario source.
 
 Domain modules keep their crate-root paths (`crate::gain`, `crate::ble`) as
 re-exports. The library's `run.rs` holds the scenario command line and the
-dispatch that decides verdicts and writes shards. The binary lives in its own
-report package, [`scenarios-cli`](scenarios-cli): it adds the reviewer
-commands of the [report crate](../harness/README.md) and passes its reviewer
-to `run`, so neither changes a shard's sources.
+dispatch that decides verdicts and writes shards. The binary is every chip's
+one report package, [`vendor-scenarios`](../harness/cli) (`vendor-scenarios
+esp32s31 <command>`): it adds the reviewer commands of the
+[report crate](../harness/README.md) and passes its reviewer to `run`, so
+neither changes a shard's sources.
 
 ## Coverage decisions
 
@@ -717,7 +718,8 @@ there. The placeholders only locate the declarations a scenario still owes.
 | `host/ieee802154/` | [Host stand](host/ieee802154/README.md) that compiles the public ESP-IDF IEEE 802.15.4 driver against recorded boundaries |
 | `facts/` | Reviewed code fingerprints of cited vendor functions (`provenance.toml`) and [name maps](facts/names/README.md) |
 | `hil-vendor/` | [Vendor firmware](hil-vendor/README.md) for hardware cross-checks |
-| `hardware/` | [Calibration cross-check](hardware/calibration/README.md) of vendor and production on the board |
+| `hardware/` | The [calibration cross-check](hardware/calibration/README.md)'s comparison of vendor and production on the board; the HIL `phy` scenarios capture it |
+| `phy-relation/` | [The reviewed calibration relation](phy-relation/README.md) the probes, the tracking scenario and the cross-check share |
 
 The [technical references](../../docs/vendor/esp32s31/README.md) describe Bluetooth Controller,
 DTM, advertising, scanning, connection and IEEE 802.15.4 boundaries. They do not

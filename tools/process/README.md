@@ -28,6 +28,22 @@ budget is shared by nested cleanup scopes and limits subprocesses started there.
 Leaving the scope restores cancellation, including during unwinding. Arbitrary
 blocking code inside a closure is not forcibly interrupted.
 
+Three more jobs have their one owner here:
+
+- `git`: every repository tool runs Git as `git -C <directory> …` through
+  `git::output`, `git::text`, `git::lines`, `git::run` or, for extra
+  arguments or environment, `git::command`; a failure carries Git's error
+  output.
+- `Checkout` and `built_root`: the checkout a tool acts on. A tool is built
+  from a checkout and this package is its path dependency, so
+  `built_root()` is the tree the binary came from, and
+  `Checkout::discover(tool)` refuses to run inside another checkout
+  (`--root` selects one explicitly). Cargo is started through
+  `oer-toolchain`.
+- `proc`: a live process's start time (`start_ticks`, `started_unix_millis`)
+  from Linux `/proc`, which tells a recycled PID from the process that held
+  it.
+
 The implementation supports Unix process groups. It is not a sandbox: descendants
 that create another group/session and processes on a remote SSH host need their
 own lifecycle owner. Integration tests use real processes to exercise signals,

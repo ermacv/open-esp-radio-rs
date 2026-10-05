@@ -1,5 +1,6 @@
 # Code fingerprints of the vendor functions production `SOURCE:` blocks
-# and the register model cite, as reviewed. Maintained by
+# and the register model cite, and those the verification decisions
+# exclude code of, as reviewed. Maintained by
 # `cargo xtask vendor-provenance`; checked by `cargo xtask check
 # provenance`.
 schema = 1

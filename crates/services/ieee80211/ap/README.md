@@ -26,7 +26,10 @@ retried by the transmit planner. The composition enables the port. The beacon
 carries an empty TIM until the access point buffers for sleeping peers.
 EAPOL-Key frames go out as unprotected data MPDUs on the voice queue at the
 management rate. A WPA3 BSS's IGTK reaches stations in Message 3; the port holds only the
-group and pairwise keys. Data: each authorized peer (Open by its association, a protected BSS's by
+group and pairwise keys. Management frame protection, which WPA3-Personal requires, is
+not served yet: robust management frames go out unprotected, without BIP,
+and SA Query is not answered. The direct S31 access point serves no WPA3 at
+all (`wifi-security-wpa3-personal-access-point` is `absent`). Data: each authorized peer (Open by its association, a protected BSS's by
 its handshake) has a link holding its pairwise key, the CCMP packet numbers
 sent to it, its receive replay state and its duplicate filter.
 `run_until(deadline, deliver)` sends each queued frame to an authorized peer

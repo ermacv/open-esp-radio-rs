@@ -341,7 +341,7 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
@@ -415,7 +415,7 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
@@ -561,7 +561,7 @@ fn an_open_station_authenticates_associates_and_leaves() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
@@ -634,7 +634,7 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
@@ -672,7 +672,7 @@ fn a_wpa3_station_authenticates_by_sae_while_the_bss_goes_on() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Wpa3Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let wpa3 = AccessPointService::new_wpa3(
         ADDRESS,
         RsnGtk::new(1, true, [9; 16]).unwrap(),
@@ -789,7 +789,7 @@ fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let wpa2 = AccessPointService::new(
         ADDRESS,
         Pmk::derive(PASSPHRASE, SSID).unwrap(),
@@ -887,7 +887,7 @@ fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out(
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let wpa2 = AccessPointService::new(
         ADDRESS,
         Pmk::derive(PASSPHRASE, SSID).unwrap(),
@@ -1011,7 +1011,7 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(&router),
         &timer,
@@ -1093,7 +1093,7 @@ fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let wpa2 = AccessPointService::new(
         ADDRESS,
         Pmk::derive(PASSPHRASE, SSID).unwrap(),
@@ -1223,12 +1223,12 @@ fn last_tim(model: &LowerMacModel) -> (u8, u8) {
 }
 
 /// An Open access point with the station associated.
-fn associated<'a>(
+fn associated<'a, const HELD: usize>(
     model: &'a LowerMacModel,
     router: &'a PortApRouter<'a, Env<'a>>,
     timer: &'a VirtualTimer,
     ssid: &'a WifiSsid,
-    storage: &'a mut PortApStorage,
+    storage: &'a mut PortApStorage<HELD>,
 ) -> PortAccessPoint<'a, Env<'a>> {
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
         client(router),
@@ -1262,7 +1262,7 @@ fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
     let aid = access_point
         .service()
@@ -1337,7 +1337,7 @@ fn group_frames_wait_for_the_dtim_while_a_peer_dozes() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
     let start = timer.now.get();
     serve(
@@ -1407,7 +1407,7 @@ fn a_peer_s_block_ack_agreement_reorders_its_data_until_it_ends() {
     let timer = VirtualTimer::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
-    let mut storage = PortApStorage::new();
+    let mut storage = PortApStorage::<8>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
     let now = timer.now.get();
     let delivered = serve(
@@ -1457,4 +1457,43 @@ fn a_peer_s_block_ack_agreement_reorders_its_data_until_it_ends() {
     );
     assert!(model.rx_block_acks().is_empty());
     assert_eq!(access_point.counters().rx_agreements, 1);
+}
+
+#[test]
+fn the_composition_sizes_the_frames_held_for_dozing_peers() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    // Room for one held frame only.
+    let mut storage = PortApStorage::<1>::new();
+    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let start = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(start + 1_000, null_data(true))],
+        start + 2_000,
+    );
+    let best_effort = WmmUserPriority::new(0).unwrap();
+    let from = [0x02, 0, 0, 0, 0, 0x99];
+    access_point.send(&ethernet(STATION, from, b"kept"), best_effort);
+    access_point.send(&ethernet(STATION, from, b"dropped"), best_effort);
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[],
+        start + 3_000,
+    );
+    assert_eq!(
+        (
+            access_point.counters().held,
+            access_point.counters().held_dropped
+        ),
+        (1, 1)
+    );
 }

@@ -28,3 +28,5 @@ layer = "hil"
 platform = "host"
 host-layer = "stand"
 hil = "observation"
+# The sudoers allowlist is checked against the helper's operations.
+inputs = ["hil/host/linux-net/open-radio-net"]

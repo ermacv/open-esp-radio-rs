@@ -10,7 +10,9 @@ use sha2::{Digest as _, Sha256};
 use super::*;
 use crate::{
     model::validate_adapters,
-    transaction::test_support::{Effects, Layout, Stage, apply, policy_bytes},
+    transaction::test_support::{
+        Effects, LINUX_NET_OPERATIONS, Layout, Stage, apply, policy_bytes,
+    },
 };
 
 const OPERATOR: &str = "fixture_test";
@@ -1745,5 +1747,40 @@ fn direct_stable_launch_cannot_mix_loaded_and_selected_generations() {
         assert_eq!(launched, expected);
         assert_ne!(launched, "A/hostapd-B");
         assert_ne!(launched, "A/B");
+    }
+}
+
+#[test]
+fn the_network_policy_grants_exactly_the_helper_s_operations() {
+    let _serial = serial();
+    let directory = tempfile::tempdir().unwrap();
+    let (_, bundle) = make_bundle(directory.path(), Provider::LinuxNet, "operations");
+    let policy = String::from_utf8(policy_bytes(&bundle).unwrap()).unwrap();
+    // Every `case` of the helper's dispatch is one operation; the runner
+    // calls each through non-interactive sudo, so a new one the policy
+    // misses stops every scenario that needs it.
+    let helper = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../linux-net/open-radio-net"),
+    )
+    .unwrap();
+    let dispatch = helper.split("case \"$1\" in\n").nth(1).unwrap();
+    let mut operations: Vec<&str> = dispatch
+        .lines()
+        .filter_map(|line| line.strip_prefix("    ")?.strip_suffix(')'))
+        .filter(|label| {
+            !label.is_empty()
+                && label
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        })
+        .collect();
+    operations.sort_unstable();
+    let mut allowed = LINUX_NET_OPERATIONS.to_vec();
+    allowed.sort_unstable();
+    assert_eq!(operations, allowed);
+    for operation in LINUX_NET_OPERATIONS {
+        assert!(policy.contains(&format!(
+            "NOPASSWD: /usr/local/sbin/open-radio-net {operation}\n"
+        )));
     }
 }

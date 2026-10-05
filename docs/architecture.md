@@ -122,7 +122,34 @@ running it as a process or by reading what it wrote.
 | Qualification | `cargo qualification` ([evaluator](../qualification/README.md)) | Catalogs, programs, assessment | The run bundle, scenario catalog and shard formats, the repository model, foundation; never the runner, lab, HIL images or stand operation |
 | Gate | `cargo xtask`, `cargo tidy` ([xtask](../tools/xtask/README.md), [tidy](../tools/tidy/README.md)) | Check registry, push, CI state, worktrees, sweeps, text policy | The repository model and foundation; every other application runs as a process |
 
-`cargo tidy check` holds the dependency rules: the [host layers](#host-layers),
+Every host-layer package declares `host-app` and `host-boundary` in
+`package.metadata.open-radio`. The application values are `gate`, `fw`,
+`stand`, `hil`, `verification`, `blobray`, `registers` and `qualification`;
+shared owners are `foundation`, `devices`, `images`, `analysis` and `formats`.
+`application` marks private code, `library` an exposed library and `format`
+a shared data contract. Command lines use `application`.
+
+Normal and build dependencies cannot link another owner's `application`
+code. Libraries cross only these boundaries; host layer rules still apply:
+
+| Consumer | Permitted shared owners |
+| --- | --- |
+| gate | foundation |
+| fw | foundation, devices, images, analysis, formats |
+| stand | foundation, devices, formats |
+| hil | foundation, devices, images, analysis, formats, stand, verification |
+| verification | foundation, images, analysis, formats, blobray, registers |
+| blobray, analysis | foundation, analysis, formats |
+| registers | foundation, analysis, formats, verification |
+| qualification, foundation, formats | foundation, formats |
+| devices | foundation, formats |
+| images | foundation, analysis, formats |
+
+The `formats` owner exposes only `format` packages. Test dependencies may
+compose applications for a regression; they still follow host layer rules.
+The dependency policy is `oer_repo::policy::application_edge_allowed`.
+
+`cargo tidy check` holds the dependency rules: the [host layers](#host-layers), these application boundaries,
 qualification's ban on HIL orchestration and stand operation
 (`oer_repo::policy::qualification_edge_allowed`), and one release profile for
 every firmware workspace (`oer_tidy::workspaces::release_profiles`).
@@ -141,6 +168,22 @@ before writing, writes that snapshot and records a receipt (segment digests
 and a write generation); "written" and "started" are distinct states, so an
 unchanged image is not reflashed and an interrupted write leaves no stale
 claim.
+
+Delegated device access currently relies on the ancestor process retaining
+its lock. The delegate checks the token before I/O, but ancestor death after
+that check can release exclusion during the operation. Delegation does not
+yet guarantee exclusion independently of the parent lifetime. A device
+broker must retain ownership for each admitted operation, reject new work
+after owner loss and release the board only when active I/O has stopped;
+a regression must kill the parent during I/O while a third process tries
+to acquire the same board.
+
+**Process context.** Delegation and stand leases currently travel through
+inherited environment variables, including to descendants that do not need
+device access. An operation-scoped context should be passed explicitly to
+its intended child by the process foundation. Its tests must cover ordinary
+children, delegated children and owner loss without leaking a token to an
+unrelated subprocess.
 
 **Image compile cache.** Every firmware build of a host, whatever the
 checkout, application, chip, image class or example, and the vendor

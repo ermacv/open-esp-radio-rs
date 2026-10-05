@@ -20,4 +20,6 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "foundation"
+host-app = "foundation"
+host-boundary = "library"
 inputs = ["verification/*/artifacts.toml", "platform/*/chip.toml"]

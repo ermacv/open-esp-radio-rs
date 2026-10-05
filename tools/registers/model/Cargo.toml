@@ -28,3 +28,5 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "verification"
+host-app = "registers"
+host-boundary = "library"

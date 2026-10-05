@@ -1,4 +1,5 @@
 [package]
+workspace = "../.."
 name = "oer-vendor-evidence-shard"
 version.workspace = true
 edition.workspace = true
@@ -25,3 +26,5 @@ layer = "verification"
 evidence = "verdict"
 platform = "host"
 host-layer = "foundation"
+host-app = "formats"
+host-boundary = "format"

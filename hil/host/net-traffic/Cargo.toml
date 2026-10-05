@@ -26,5 +26,7 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "execution"
+host-app = "hil"
+host-boundary = "application"
 hil = "observation"
 

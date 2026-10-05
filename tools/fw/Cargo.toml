@@ -40,3 +40,5 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "entry"
+host-app = "fw"
+host-boundary = "application"

@@ -26,6 +26,7 @@
 //! Each check returns its problems; an empty report is a pass.
 
 pub mod allowlist;
+pub mod applications;
 pub mod classification;
 pub mod dependencies;
 pub mod fetch;
@@ -125,6 +126,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "layer dependencies",
             problems: oer_repo::policy::check(&context.model),
+        },
+        Outcome {
+            check: "host applications",
+            problems: applications::check(&context),
         },
         Outcome {
             check: "command-line spawns",

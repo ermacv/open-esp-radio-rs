@@ -28,7 +28,11 @@
 //!   duplicated `flock` descriptor would be unlocked by whichever copy drops
 //!   first. Because an ancestor can still die abnormally, a delegate checks
 //!   [`DelegatedDevice::ensure_held`] before each operation on the board: the
-//!   lock must still be held under its token.
+//!   lock must still be held under its token. This check is not atomic with
+//!   the following I/O: parent death after the check can release exclusion
+//!   during that operation. Delegated access therefore requires the parent
+//!   lifetime; a broker retaining ownership through admitted I/O is needed
+//!   for exclusion independent of it.
 //!
 //! [`DeviceAccess`] is either; board I/O takes it.
 #![forbid(unsafe_code)]

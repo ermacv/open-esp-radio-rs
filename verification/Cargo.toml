@@ -20,7 +20,7 @@ members = [
 # format, the PHY calibration capture and the PHY relation and calibration
 # the radio workspace's HIL links, and the firmware and host stands with workspaces of their own.
 exclude = [
-    "evidence/shard",
+    "evidence-shard",
     "phy-calibration-capture",
     "esp32s31/phy-relation",
     "esp32s31/hardware",

@@ -36,7 +36,9 @@ mod testing;
 use std::collections::BTreeMap;
 
 pub use chips::Chips;
-pub use classification::{Classification, Evidence, Hil, HostLayer, Layer, Platform, Scope};
+pub use classification::{
+    Classification, Evidence, Hil, HostApp, HostBoundary, HostLayer, Layer, Platform, Scope,
+};
 pub use files::Repo;
 pub use manifest::{Dependency, Kind, Manifests, Package, Workspace};
 

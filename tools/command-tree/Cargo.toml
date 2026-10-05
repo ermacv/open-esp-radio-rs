@@ -21,6 +21,8 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "foundation"
+host-app = "foundation"
+host-boundary = "library"
 
 [package.metadata.docs.rs]
 features = ["clap"]

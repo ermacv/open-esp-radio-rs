@@ -28,3 +28,5 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "build"
+host-app = "images"
+host-boundary = "library"

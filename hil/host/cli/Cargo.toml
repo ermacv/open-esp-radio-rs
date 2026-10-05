@@ -51,6 +51,8 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "entry"
+host-app = "hil"
+host-boundary = "application"
 hil = "operation"
 # The tests read the workspace Cargo configuration and the ESP-IDF firmware
 # catalog.

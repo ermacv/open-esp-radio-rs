@@ -15,8 +15,9 @@ blobray = "run --quiet --manifest-path tools/blobray/Cargo.toml --profile blobra
 verification = "run --quiet --manifest-path verification/Cargo.toml --profile verification -p oer-verification-cli --bin verification --"
 # The repository model of oer-tidy: `cargo tidy check`, `workspaces`,
 # `chips` and `fetch`. Its few dependencies rarely change, so it still
-# builds after a pull that changed what xtask needs.
-tidy = "run --quiet -p oer-tidy --"
+# builds from its own workspace, without firmware Git dependencies, after
+# a pull that changed a firmware pin or what xtask needs.
+tidy = "run --quiet --manifest-path tools/tidy/Cargo.toml -p oer-tidy --"
 
 [net]
 # GitHub access in the lab uses HTTPS credentials managed by Git. Delegate git

@@ -77,7 +77,9 @@ fi
 
 # Tidy, only when its binary exists: a cold build takes a while, a warm run
 # about two seconds. A busy build directory or a slow run is skipped.
-if [ -x "$target/debug/oer-tidy" ] && command -v cargo >/dev/null 2>&1; then
+tidy_target=${CARGO_TARGET_DIR:-$root/tools/tidy/target}
+case $tidy_target in /*) ;; *) tidy_target=$root/$tidy_target ;; esac
+if [ -x "$tidy_target/debug/oer-tidy" ] && command -v cargo >/dev/null 2>&1; then
     output=$(bounded 30 cargo tidy check 2>&1)
     status=$?
     if [ "$status" -eq 0 ]; then

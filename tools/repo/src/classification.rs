@@ -221,6 +221,81 @@ impl fmt::Display for HostLayer {
     }
 }
 
+/// The owner of a host package: an application or a shared library family.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HostApp {
+    Gate,
+    Fw,
+    Stand,
+    Hil,
+    Verification,
+    Blobray,
+    Registers,
+    Qualification,
+    Foundation,
+    Devices,
+    Images,
+    Analysis,
+    Formats,
+}
+
+impl HostApp {
+    pub const ALL: [Self; 13] = [
+        Self::Gate,
+        Self::Fw,
+        Self::Stand,
+        Self::Hil,
+        Self::Verification,
+        Self::Blobray,
+        Self::Registers,
+        Self::Qualification,
+        Self::Foundation,
+        Self::Devices,
+        Self::Images,
+        Self::Analysis,
+        Self::Formats,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Gate => "gate",
+            Self::Fw => "fw",
+            Self::Stand => "stand",
+            Self::Hil => "hil",
+            Self::Verification => "verification",
+            Self::Blobray => "blobray",
+            Self::Registers => "registers",
+            Self::Qualification => "qualification",
+            Self::Foundation => "foundation",
+            Self::Devices => "devices",
+            Self::Images => "images",
+            Self::Analysis => "analysis",
+            Self::Formats => "formats",
+        }
+    }
+}
+
+/// What another application may link: a reviewed library or a data format.
+/// Application implementation (including command lines) stays with its owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HostBoundary {
+    Application,
+    Library,
+    Format,
+}
+
+impl HostBoundary {
+    pub const ALL: [Self; 3] = [Self::Application, Self::Library, Self::Format];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Application => "application",
+            Self::Library => "library",
+            Self::Format => "format",
+        }
+    }
+}
+
 /// The keys `[package.metadata.open-radio]` may hold.
 pub const KEYS: &[&str] = &[
     "layer",
@@ -230,6 +305,8 @@ pub const KEYS: &[&str] = &[
     "evidence",
     "hil",
     "host-layer",
+    "host-app",
+    "host-boundary",
     "supported-feature-profiles",
     "test-feature-sets",
     "inputs",
@@ -250,6 +327,9 @@ pub struct Classification {
     /// required for a host package, allowed for a portable one, absent
     /// otherwise.
     pub host_layer: Option<HostLayer>,
+    /// Application owner and the boundary it exposes to other applications.
+    pub host_app: Option<HostApp>,
+    pub host_boundary: Option<HostBoundary>,
     /// Feature sets (comma-separated) that replace an all-features build
     /// when the package's features are alternatives.
     pub supported_feature_profiles: Vec<String>,
@@ -386,6 +466,28 @@ pub fn classify(
                 .ok_or_else(|| format!("package {name} has unknown host layer `{value}`"))?,
         ),
     };
+    let host_app = text("host-app")?
+        .map(|value| {
+            HostApp::ALL
+                .into_iter()
+                .find(|app| app.name() == value)
+                .ok_or_else(|| format!("package {name} has unknown host application `{value}`"))
+        })
+        .transpose()?;
+    let host_boundary = text("host-boundary")?
+        .map(|value| {
+            HostBoundary::ALL
+                .into_iter()
+                .find(|boundary| boundary.name() == value)
+                .ok_or_else(|| format!("package {name} has unknown host boundary `{value}`"))
+        })
+        .transpose()?;
+    if host_app.is_some() != host_boundary.is_some() || (host_app.is_some() && host_layer.is_none())
+    {
+        return Err(format!(
+            "package {name}: host-app and host-boundary must be declared together with host-layer"
+        ));
+    }
     let list = |key: &str| -> Result<Vec<String>, String> {
         match table.get(key) {
             None => Ok(Vec::new()),
@@ -430,6 +532,8 @@ pub fn classify(
         evidence,
         hil,
         host_layer,
+        host_app,
+        host_boundary,
         supported_feature_profiles: feature_sets(
             "supported-feature-profiles",
             "supported feature profile",
@@ -599,7 +703,7 @@ mod tests {
             assert!(error.contains(message), "{invalid}: {error}");
         }
         // Every declared key is a field above; the list and the parser agree.
-        assert_eq!(KEYS.len(), 10);
+        assert_eq!(KEYS.len(), 12);
     }
 
     #[test]
@@ -670,5 +774,25 @@ mod tests {
             assert!(classified(invalid).is_err(), "{invalid}");
         }
         assert!(HostLayer::Entry < HostLayer::Foundation);
+    }
+
+    #[test]
+    fn application_ownership_and_boundary_are_typed_together() {
+        let host = "layer = 'tool'\nplatform = 'host'\nhost-layer = 'entry'\n";
+        let class = classified(&format!(
+            "{host}host-app = 'fw'\nhost-boundary = 'application'"
+        ))
+        .unwrap();
+        assert_eq!(class.host_app, Some(HostApp::Fw));
+        assert_eq!(class.host_boundary, Some(HostBoundary::Application));
+        for fields in [
+            "host-app = 'fw'",
+            "host-boundary = 'library'",
+            "host-app = 'unknown'\nhost-boundary = 'application'",
+            "host-app = 'fw'\nhost-boundary = 'unknown'",
+        ] {
+            assert!(classified(&format!("{host}{fields}")).is_err(), "{fields}");
+        }
+        assert!(classified("layer = 'hardware'\nplatform = 'portable'\nhost-app = 'fw'\nhost-boundary = 'application'").is_err());
     }
 }

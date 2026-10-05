@@ -33,4 +33,6 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "stand"
+host-app = "stand"
+host-boundary = "library"
 hil = "orchestration"

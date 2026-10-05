@@ -23,5 +23,7 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "foundation"
+host-app = "foundation"
+host-boundary = "library"
 # The tests parse the tracked pins with the chip profiles.
 inputs = ["verification/*/artifacts.toml", "platform/*/chip.toml"]

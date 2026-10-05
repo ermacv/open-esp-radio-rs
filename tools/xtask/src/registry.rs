@@ -362,7 +362,7 @@ pub const CHECKS: &[Check] = &[
         id: "final-images",
         tier: Tier::Full,
         job: "images",
-        summary: "both final HIL images built with every gate and Blobray's target audit",
+        summary: "final radio images and staged boot smoke built with every gate",
         trigger: None,
         run: |ctx, _| {
             hil(
@@ -374,6 +374,8 @@ pub const CHECKS: &[Check] = &[
                     "performance",
                     "--class",
                     "correctness",
+                    "--class",
+                    "boot-smoke",
                 ],
             )
         },
@@ -691,7 +693,7 @@ fn fmt(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
     let model;
     // Always the workspace's own packages by name: `--all` also walks path
     // dependencies, and a dependency below another workspace's directory
-    // (verification/evidence/shard) makes cargo-fmt fail on the wrong
+    // (verification/evidence-shard) makes cargo-fmt fail on the wrong
     // workspace.
     let runs: Vec<(String, Vec<&str>)> = match scope {
         Scope::Tree => {

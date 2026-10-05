@@ -25,5 +25,7 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "stand"
+host-app = "stand"
+host-boundary = "library"
 hil = "operation"
 inputs = ["stand/stand.example.toml", "platform/*/chip.toml"]

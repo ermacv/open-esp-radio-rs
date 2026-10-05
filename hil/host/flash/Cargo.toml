@@ -29,6 +29,8 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "stand"
+host-app = "hil"
+host-boundary = "application"
 hil = "operation"
 # The tests read the chip profiles.
 inputs = ["platform/*/chip.toml"]

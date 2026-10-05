@@ -60,9 +60,11 @@ const STATION_DUMP: &str = "Station 32:ed:a0:f3:f6:d0 (on wlan0)
 	rx bitrate:	135.0 MBit/s MCS 7 40MHz
 ";
 
+const AQM: &str = "tid0_aqm_drops=3\ntid0_aqm_overlimit=1\n";
+
 #[test]
 fn the_laptop_client_link_snapshot_reads_its_one_station() {
-    let snapshot = LaptopLinkSnapshot::parse(STATION_DUMP).unwrap();
+    let snapshot = LaptopLinkSnapshot::parse(STATION_DUMP, AQM, 5).unwrap();
     assert_eq!(
         (
             snapshot.tx_packets,
@@ -74,8 +76,18 @@ fn the_laptop_client_link_snapshot_reads_its_one_station() {
         (2391, 87, 2, 4512, 1)
     );
     assert_eq!(snapshot.tx_bitrate, "150.0 MBit/s MCS 7 40MHz short GI");
+    assert_eq!(
+        (
+            snapshot.tid0_aqm_drops,
+            snapshot.tid0_aqm_overlimit,
+            snapshot.interface_tx_dropped
+        ),
+        (3, 1, 5)
+    );
     // A managed client lists its AP alone; two stations are not its link.
     let two = format!("{STATION_DUMP}{STATION_DUMP}");
-    assert!(LaptopLinkSnapshot::parse(&two).is_err());
-    assert!(LaptopLinkSnapshot::parse("").is_err());
+    assert!(LaptopLinkSnapshot::parse(&two, AQM, 0).is_err());
+    assert!(LaptopLinkSnapshot::parse("", AQM, 0).is_err());
+    // Counters the helper did not print are no evidence.
+    assert!(LaptopLinkSnapshot::parse(STATION_DUMP, "tid0_aqm_drops=3\n", 0).is_err());
 }

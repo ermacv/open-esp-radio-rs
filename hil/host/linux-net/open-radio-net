@@ -412,7 +412,7 @@ fi
 
 case "$1" in
     capabilities)
-        /usr/bin/printf 'schema=14 station_ap=ht20,ht40,he20 legacy_ap=dsss client=ht,non-ht observer=20,40 managed=1 rfkill=restore\n'
+        /usr/bin/printf 'schema=15 station_ap=ht20,ht40,he20 legacy_ap=dsss client=ht,non-ht client_aqm=1 observer=20,40 managed=1 rfkill=restore\n'
         ;;
     identity)
         if test -e /sys/class/net/wlan0/phy80211; then
@@ -429,6 +429,17 @@ case "$1" in
         ;;
     client)
         start_client
+        ;;
+    client-aqm)
+        # The mac80211 AQM counters of the client's one station, its AP:
+        # TID 0's drops and overlimits, packets the client dropped before
+        # they became frames.
+        phy=$(/usr/bin/basename "$(/usr/bin/readlink /sys/class/net/wlan0/phy80211)")
+        test -n "$phy"
+        set -- /sys/kernel/debug/ieee80211/"$phy"/netdev:wlan0/stations/*/aqm
+        test "$#" -eq 1
+        test -r "$1"
+        /usr/bin/awk '$1 == 0 { printf "tid0_aqm_drops=%s\ntid0_aqm_overlimit=%s\n", $6, $8; found = 1 } END { exit !found }' "$1"
         ;;
     monitor)
         # Compatibility mode: retain an associated/AP wlan0 and add a monitor

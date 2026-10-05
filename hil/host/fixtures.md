@@ -25,6 +25,14 @@ AP scenarios derive target bandwidth from their link profile. A router hosting
 their managed client uses the same primary and secondary channel. These scenarios
 start a fresh epoch of the selected radio; other radios and the wired uplink are
 not brought down. Scoped client forwarding/VIF cleanup remains a separate owner.
+Every AP workload records its primary client's link counters over each
+session (`primary_client_link`, tagged by client), so a lost datagram names its
+side. The OpenWrt client reads its station counters and TID 0's AQM drops over
+SSH. The laptop client reads `iw dev wlan0 station dump` (`tx_failed`,
+`tx_retries`), `wlan0`'s `tx_dropped`, and, through the helper's `client-aqm`
+operation (schema 15), mac80211's TID 0 AQM drops and overlimits: its root
+queueing discipline is `noqueue`, so a packet it drops before it becomes a
+frame shows there and leaves no gap in the AP's sequence.
 `fixture-applied.json` records actual settings without network credentials.
 Cleanup failures are retained and quarantine subsequent network workloads in
 the same runner invocation.

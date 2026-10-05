@@ -7,9 +7,8 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_mac::{
     block_ack::{
-        ADDBA_ACTION_BODY_LEN, BLOCK_ACK_CATEGORY, BlockAckAction, RxReorderBuffer, RxReorderError,
-        RxReorderMpdu, RxReorderRelease, parse_block_ack_action, write_declined_addba_response,
-        write_successful_addba_response,
+        ADDBA_ACTION_BODY_LEN, BLOCK_ACK_CATEGORY, BlockAckAction, parse_block_ack_action,
+        write_declined_addba_response, write_successful_addba_response,
     },
     ccmp::{
         CCMP_HEADER_LEN, CcmpHeader, CcmpKeyId, CcmpReplayLane, CcmpRxReplayState,
@@ -48,6 +47,9 @@ use oer_ieee80211_upper_mac::{
 };
 use oer_ieee80211_upper_mac_service::client::{PortError, PortFrame, PortInput, PortMsdu};
 use oer_ieee80211_upper_mac_service::queue::{PORT_FRAME_CAPACITY, PORT_TX_QUEUE, TxQueue};
+use oer_ieee80211_upper_mac_service::reorder::{
+    CURRENT_SLOT, Offer, PORT_REORDER_WINDOW, ReorderRelease, RxReorder,
+};
 use oer_ieee80211_upper_mac_service::{AmpduFrames, UpperMacTxError};
 use oer_time::{Clock, Duration, Instant};
 
@@ -65,16 +67,6 @@ const BLOCK_ACK_RESPONSE_MICROS: u32 = 10
     + oer_ieee80211_mac::phy::PhyRate::Legacy(oer_ieee80211_mac::phy::LegacyRate::Ofdm6M)
         .max_ppdu_duration_micros(32);
 
-/// MPDUs the reorder buffers of all agreements hold together.
-pub const PORT_REORDER_SLOTS: usize = 8;
-/// The widest receive Block Ack window the station accepts.
-pub const PORT_REORDER_WINDOW: usize = 64;
-/// The reorder identity of the MPDU being received, which the window
-/// releases at once and the station delivers from the port's buffer; the
-/// storage slots are the identities below it.
-const CURRENT_SLOT: u8 = PORT_REORDER_SLOTS as u8;
-/// Every reorder identity: the storage slots and the current MPDU.
-const REORDER_IDENTITIES: usize = PORT_REORDER_SLOTS + 1;
 const TIDS: usize = 8;
 const MANAGEMENT_HEADER_LEN: usize = 24;
 const PROBE_RESPONSE_SUBTYPE: u8 = 5;
@@ -171,29 +163,6 @@ struct MpduPayload {
     pairwise: bool,
 }
 
-/// An out-of-order MPDU a reorder window keeps: a copy, so that the port's
-/// buffer goes back at once.
-#[derive(Clone)]
-struct StoredFrame {
-    bytes: [u8; PORT_FRAME_CAPACITY],
-    len: usize,
-}
-
-impl StoredFrame {
-    fn copy(frame: &[u8]) -> Option<Self> {
-        let mut bytes = [0; PORT_FRAME_CAPACITY];
-        bytes.get_mut(..frame.len())?.copy_from_slice(frame);
-        Some(Self {
-            bytes,
-            len: frame.len(),
-        })
-    }
-
-    fn bytes(&self) -> &[u8] {
-        &self.bytes[..self.len]
-    }
-}
-
 /// The outcome of offering one frame for transmission.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PortSend {
@@ -228,10 +197,9 @@ pub struct PortTxCounters {
 /// connection borrows them for its association; the connection itself
 /// stays small and is built without staging them on the stack.
 pub struct PortConnectionBuffers {
-    /// The reorder window of each TID with a receive Block Ack agreement.
-    reorder: [Option<RxReorderBuffer<PORT_REORDER_WINDOW, REORDER_IDENTITIES>>; TIDS],
-    /// Copies of the out-of-order MPDUs the windows keep.
-    slots: [Option<StoredFrame>; PORT_REORDER_SLOTS],
+    /// The reorder window of each TID with a receive Block Ack agreement,
+    /// and copies of the out-of-order MPDUs the windows keep.
+    reorder: RxReorder<TIDS>,
     queue: TxQueue,
     subframes: [[u8; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
 }
@@ -239,8 +207,7 @@ pub struct PortConnectionBuffers {
 impl PortConnectionBuffers {
     pub const fn new() -> Self {
         Self {
-            reorder: [const { None }; TIDS],
-            slots: [const { None }; PORT_REORDER_SLOTS],
+            reorder: RxReorder::new(),
             queue: TxQueue::new(),
             subframes: [[0; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
         }
@@ -248,8 +215,7 @@ impl PortConnectionBuffers {
 
     /// Empty the buffers for a new association.
     fn reset(&mut self) {
-        self.reorder.iter_mut().for_each(|window| *window = None);
-        self.slots.iter_mut().for_each(|slot| *slot = None);
+        self.reorder.reset();
         self.queue.clear();
     }
 }
@@ -269,8 +235,6 @@ pub struct PortConnection<'b, P: LowerMacBeaconTiming, R> {
     pairwise_replay: CcmpRxReplayState,
     group_replay: CcmpRxReplayState,
     duplicates: RxDuplicateFilter,
-    /// When each window that buffers an MPDU releases past its gap.
-    reorder_gaps: [Option<Instant>; TIDS],
     sa_query: StationSaQuery,
     power: Option<PortPowerSave<P>>,
     /// Reorder windows and their MPDUs, queued frames and A-MPDU subframes.
@@ -377,7 +341,6 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
             pairwise_replay: CcmpRxReplayState::default(),
             group_replay,
             duplicates: RxDuplicateFilter::new(),
-            reorder_gaps: [None; TIDS],
             sa_query: StationSaQuery::new(),
             power: None,
             buffers,
@@ -446,10 +409,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
 
     /// Whether a receive Block Ack agreement of `tid` runs.
     pub fn block_ack(&self, tid: u8) -> bool {
-        self.buffers
-            .reorder
-            .get(usize::from(tid))
-            .is_some_and(Option::is_some)
+        self.buffers.reorder.is_active(self.config.bssid, tid)
     }
 
     /// The earliest instant the connection needs its owner without input.
@@ -460,7 +420,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
             self.tx_block_ack
                 .as_ref()
                 .and_then(StaTxBlockAckOriginator::earliest_alarm_deadline),
-            self.reorder_gaps.iter().flatten().min().copied(),
+            self.buffers.reorder.next_gap_deadline(),
             self.link.deadline(),
         ]
         .into_iter()
@@ -1139,7 +1099,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
                 let accepted = usize::from(tid) < TIDS
                     && window != 0
                     && tid <= capabilities.rx_block_ack_max_tid
-                    && self.buffers.reorder[usize::from(tid)].is_none();
+                    && !self.buffers.reorder.is_active(self.config.bssid, tid);
                 let window = window
                     .min(capabilities.rx_block_ack_max_window)
                     .min(PORT_REORDER_WINDOW as u16);
@@ -1150,16 +1110,25 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
                     start_sequence: starting_sequence,
                     window,
                 };
-                let buffer = RxReorderBuffer::new(starting_sequence, window).ok();
                 let installed = accepted
-                    && buffer.is_some()
-                    && context
+                    && self.buffers.reorder.accept(
+                        self.config.bssid,
+                        tid,
+                        starting_sequence,
+                        window,
+                    )
+                    && if context
                         .link
                         .apply(LowerMacSetting::AddRxBlockAck(agreement))
-                        .is_ok();
+                        .is_ok()
+                    {
+                        true
+                    } else {
+                        self.buffers.reorder.stop(self.config.bssid, tid);
+                        false
+                    };
                 let mut response = [0_u8; ADDBA_ACTION_BODY_LEN];
                 if installed {
-                    self.buffers.reorder[usize::from(tid)] = buffer;
                     write_successful_addba_response(&mut response, dialog_token, tid, window)
                 } else {
                     write_declined_addba_response(&mut response, dialog_token, tid & 0x0f, window)
@@ -1179,14 +1148,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
                 Ok(())
             }
             Some(BlockAckAction::Delba { tid, .. }) => {
-                if let Some(mut buffer) = self
-                    .buffers
-                    .reorder
-                    .get_mut(usize::from(tid))
-                    .and_then(Option::take)
-                {
-                    let release = buffer.stop();
-                    self.recycle(&release);
+                if self.buffers.reorder.stop(self.config.bssid, tid) {
                     context.link.apply(LowerMacSetting::RemoveRxBlockAck {
                         vif: context.link.config().vif,
                         peer: self.config.bssid,
@@ -1217,15 +1179,11 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         let tid = bytes[17] >> 4;
         let starting_sequence =
             SequenceNumber::from_sequence_control(u16::from_le_bytes([bytes[18], bytes[19]]));
-        let Some(buffer) = self
-            .buffers
-            .reorder
-            .get_mut(usize::from(tid))
-            .and_then(Option::as_mut)
-        else {
-            return;
-        };
-        if let Some(release) = buffer.move_window_to(starting_sequence) {
+        if let Some(release) =
+            self.buffers
+                .reorder
+                .move_window(self.config.bssid, tid, starting_sequence)
+        {
             self.release(&release, None, deliver);
         }
     }
@@ -1371,107 +1329,56 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         now: Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
     ) {
-        for tid in 0..TIDS {
-            if self.reorder_gaps[tid].is_some_and(|due| due <= now) {
-                self.reorder_gaps[tid] = None;
-                if let Some(buffer) = self.buffers.reorder[tid].as_mut() {
-                    let release = buffer.expire_gap();
-                    self.counters.reorder_gap_timeouts =
-                        self.counters.reorder_gap_timeouts.saturating_add(1);
-                    self.release(&release, None, deliver);
-                }
-            }
-            let buffers = self.buffers.reorder[tid]
-                .as_ref()
-                .is_some_and(|buffer| buffer.occupied() != 0);
-            self.reorder_gaps[tid] = if buffers {
-                Some(self.reorder_gaps[tid].unwrap_or_else(|| {
-                    // An unrepresentable deadline is never reached.
-                    now.checked_add(self.config.rx_reorder_gap)
-                        .unwrap_or(Instant::from_micros(u64::MAX))
-                }))
-            } else {
-                None
-            };
+        while let Some(release) = self.buffers.reorder.expire_due_gap(now) {
+            self.counters.reorder_gap_timeouts =
+                self.counters.reorder_gap_timeouts.saturating_add(1);
+            self.release(&release, None, deliver);
         }
+        self.buffers
+            .reorder
+            .arm_gaps(now, self.config.rx_reorder_gap);
     }
 
-    /// Buffer one MPDU of an agreement and deliver what its window releases.
     /// Offer one MPDU of a Block Ack agreement to its reorder window. An
     /// MPDU the window releases at once is delivered from the port's
-    /// buffer; only one it keeps is copied into the storage.
+    /// buffer; only one it keeps is copied into the storage, whose oldest
+    /// run of the same window goes first when every slot is taken.
     fn reorder_mpdu(
         &mut self,
         tid: u8,
         frame: PortFrame<P::RxBuffer>,
         deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
     ) {
-        let sequence = SequenceNumber::from_sequence_control(wire::sequence_control(frame.bytes()));
-        let Some(window) = self.buffers.reorder[usize::from(tid)].as_ref() else {
-            return;
-        };
-        let kept = match window.retains_on_ingest(sequence) {
-            Ok(kept) => kept,
-            Err(RxReorderError::DuplicateSequence(_)) => {
-                self.counters.duplicates = self.counters.duplicates.saturating_add(1);
-                return;
-            }
-            Err(_) => return,
-        };
-        let (slot, current) = if kept {
-            let Some(slot) = self.free_slot(tid, deliver) else {
-                return;
-            };
-            let Some(stored) = StoredFrame::copy(frame.bytes()) else {
-                self.counters.unbuffered = self.counters.unbuffered.saturating_add(1);
-                return;
-            };
-            self.buffers.slots[slot] = Some(stored);
-            // The copy is kept; the port's buffer goes back now.
-            (slot as u8, None)
-        } else {
-            (CURRENT_SLOT, Some(frame))
-        };
-        let Some(window) = self.buffers.reorder[usize::from(tid)].as_mut() else {
-            self.clear_slot(slot);
-            return;
-        };
-        match window.ingest(RxReorderMpdu { sequence, slot }) {
-            Ok(release) => {
-                if release.rejected.is_some() {
-                    self.clear_slot(slot);
-                    self.counters.behind_window = self.counters.behind_window.saturating_add(1);
+        let bssid = self.config.bssid;
+        let mut make_room = true;
+        loop {
+            match self
+                .buffers
+                .reorder
+                .offer(bssid, tid, frame.bytes(), make_room)
+            {
+                Offer::MakeRoom(release) => {
+                    self.release(&release, None, deliver);
+                    make_room = false;
                 }
-                self.release(&release, current, deliver);
+                Offer::Released { release, current } => {
+                    self.release(&release, current.then_some(frame), deliver);
+                    return;
+                }
+                Offer::Duplicate => {
+                    self.counters.duplicates = self.counters.duplicates.saturating_add(1);
+                    return;
+                }
+                Offer::Behind => {
+                    self.counters.behind_window = self.counters.behind_window.saturating_add(1);
+                    return;
+                }
+                Offer::Unbuffered => {
+                    self.counters.unbuffered = self.counters.unbuffered.saturating_add(1);
+                    return;
+                }
+                Offer::NoAgreement | Offer::Dropped => return,
             }
-            Err(RxReorderError::DuplicateSequence(_)) => {
-                self.clear_slot(slot);
-                self.counters.duplicates = self.counters.duplicates.saturating_add(1);
-            }
-            Err(_) => self.clear_slot(slot),
-        }
-    }
-
-    /// A free storage slot, releasing the oldest run of `tid`'s window
-    /// to make room when every slot is taken.
-    fn free_slot(
-        &mut self,
-        tid: u8,
-        deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
-    ) -> Option<usize> {
-        if let Some(slot) = self.buffers.slots.iter().position(Option::is_none) {
-            return Some(slot);
-        }
-        let release = self.buffers.reorder[usize::from(tid)]
-            .as_mut()?
-            .expire_gap();
-        self.release(&release, None, deliver);
-        self.buffers.slots.iter().position(Option::is_none)
-    }
-
-    fn clear_slot(&mut self, slot: u8) {
-        if let Some(stored) = self.buffers.slots.get_mut(usize::from(slot)) {
-            *stored = None;
         }
     }
 
@@ -1479,7 +1386,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     /// current one from the port's buffer.
     fn release(
         &mut self,
-        release: &RxReorderRelease<PORT_REORDER_WINDOW>,
+        release: &ReorderRelease,
         mut current: Option<PortFrame<P::RxBuffer>>,
         deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
     ) {
@@ -1488,22 +1395,8 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
                 if let Some(frame) = current.take() {
                     self.deliver_mpdu(frame, deliver);
                 }
-            } else if let Some(stored) = self
-                .buffers
-                .slots
-                .get_mut(usize::from(mpdu.slot))
-                .and_then(Option::take)
-            {
+            } else if let Some(stored) = self.buffers.reorder.take(mpdu.slot) {
                 self.deliver_stored(stored.bytes(), deliver);
-            }
-        }
-    }
-
-    /// Drop the MPDUs an ended agreement released.
-    fn recycle(&mut self, release: &RxReorderRelease<PORT_REORDER_WINDOW>) {
-        for mpdu in release.iter() {
-            if let Some(slot) = self.buffers.slots.get_mut(usize::from(mpdu.slot)) {
-                *slot = None;
             }
         }
     }
@@ -1787,9 +1680,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         }
         self.buffers.queue.clear();
         for tid in 0..TIDS as u8 {
-            if let Some(mut buffer) = self.buffers.reorder[usize::from(tid)].take() {
-                let release = buffer.stop();
-                self.recycle(&release);
+            if self.buffers.reorder.stop(self.config.bssid, tid) {
                 context.link.apply(LowerMacSetting::RemoveRxBlockAck {
                     vif: context.link.config().vif,
                     peer: self.config.bssid,

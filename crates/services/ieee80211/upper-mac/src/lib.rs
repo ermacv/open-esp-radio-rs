@@ -29,8 +29,12 @@
 //! (the planner ages aggregates on the port's radio clock) and runs under any
 //! executor.
 
+#[cfg(test)]
+extern crate std;
+
 pub mod client;
 pub mod queue;
+pub mod reorder;
 pub mod router;
 
 pub use router::{Awaited, EventRouter, Registration, RouterFull};

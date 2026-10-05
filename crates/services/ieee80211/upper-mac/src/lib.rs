@@ -75,11 +75,51 @@ pub enum UpperMacTxError<E> {
     Port(E),
 }
 
-/// The encoded subframes of one A-MPDU and how the port sends them.
+/// One MPDU, from its MAC header to the end of its body, in the two parts
+/// the port's buffer gathers: the `header` a service encodes and the `body`
+/// it borrows, unchanged, from the frame's owner. Each attempt writes both
+/// into the buffer the port lends, so a retransmission reads the owner
+/// again rather than a copy.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MpduParts<'f> {
+    pub header: &'f [u8],
+    pub body: &'f [u8],
+}
+
+impl<'f> MpduParts<'f> {
+    pub const fn new(header: &'f [u8], body: &'f [u8]) -> Self {
+        Self { header, body }
+    }
+
+    /// A frame encoded whole, as a management frame is.
+    pub const fn whole(frame: &'f [u8]) -> Self {
+        Self {
+            header: frame,
+            body: &[],
+        }
+    }
+
+    pub const fn len(&self) -> usize {
+        self.header.len() + self.body.len()
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Write the MPDU into `out`, which is [`Self::len`] octets long.
+    fn write_to(&self, out: &mut [u8]) {
+        let (header, body) = out.split_at_mut(self.header.len());
+        header.copy_from_slice(self.header);
+        body.copy_from_slice(self.body);
+    }
+}
+
+/// The subframes of one A-MPDU and how the port sends them.
 #[derive(Clone, Copy, Debug)]
 pub struct AmpduFrames<'f> {
     /// Subframe `i` of the request, from its header to the end of its body.
-    pub subframes: &'f [&'f [u8]],
+    pub subframes: &'f [MpduParts<'f>],
     pub key: KeySelector,
     /// The recipient's Minimum MPDU Start Spacing, IEEE encoding 0-7.
     pub min_mpdu_start_spacing: u8,
@@ -126,7 +166,7 @@ where
     /// request's [`TxBody::Mpdu`] describing it, protected with `key`.
     pub async fn send_mpdu(
         &mut self,
-        frame: &[u8],
+        frame: MpduParts<'_>,
         key: KeySelector,
         request: TxRequest,
         ladder: &impl RateLadder,
@@ -169,12 +209,12 @@ where
         &mut self,
         exchange: &TxExchange,
         plan: &TxAttemptPlan,
-        frames: &[&[u8]],
+        frames: &[MpduParts<'_>],
         key: KeySelector,
     ) -> Result<Registration<'r, 'p, P, WAITERS, RX>, UpperMacTxError<P::Error>> {
         let request = exchange.request();
         let request_frame: [u8; oer_ieee80211_mac::block_ack::BLOCK_ACK_REQUEST_LEN];
-        let (bytes, set_retry, response, key): (&[u8], bool, TxResponse, KeySelector) =
+        let (bytes, set_retry, response, key): (MpduParts<'_>, bool, TxResponse, KeySelector) =
             match plan.content {
                 AttemptContent::Mpdu { set_retry_bit } => {
                     let TxBody::Mpdu(mpdu) = request.body else {
@@ -197,7 +237,7 @@ where
                 } => {
                     let header = frames
                         .first()
-                        .and_then(|frame| frame.get(4..16))
+                        .and_then(|frame| frame.header.get(4..16))
                         .ok_or(UpperMacTxError::InvalidFrames)?;
                     let mut receiver = [0; 6];
                     let mut transmitter = [0; 6];
@@ -206,7 +246,7 @@ where
                     request_frame =
                         encode_block_ack_request(receiver, transmitter, tid, starting_sequence);
                     (
-                        &request_frame[..],
+                        MpduParts::whole(&request_frame),
                         false,
                         TxResponse::BlockAck,
                         KeySelector::Plaintext,
@@ -219,7 +259,7 @@ where
             .tx_buffer(bytes.len())
             .map_err(UpperMacTxError::Port)?
             .ok_or(UpperMacTxError::NoBuffer)?;
-        buffer.frame_mut().copy_from_slice(bytes);
+        bytes.write_to(buffer.frame_mut());
         if set_retry && !set_retry_bit(buffer.frame_mut()) {
             self.port.release_tx_buffer(buffer);
             return Err(UpperMacTxError::InvalidFrames);
@@ -361,7 +401,7 @@ where
                 self.port.release_ampdu_buffer(buffer);
                 return Err(UpperMacTxError::NoBuffer);
             };
-            bytes.copy_from_slice(frame);
+            frame.write_to(bytes);
             if retry & (1 << index) != 0 && !set_retry_bit(bytes) {
                 self.port.release_ampdu_buffer(buffer);
                 return Err(UpperMacTxError::InvalidFrames);

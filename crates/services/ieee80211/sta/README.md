@@ -125,8 +125,9 @@ recipient ends the agreement.
 
 The station has no transmit queue of its own: while it is awake
 `run_until` takes the network's frames, destination after destination, one
-at a time when it is ready to send them, and encodes each into its MPDU
-(an A-MPDU's subframe returns the frame to the network once encoded); a
+at a time when it is ready to send them, encodes each one's MPDU header
+and sends its payload from the network's owner (`MpduParts`), which it
+keeps until the exchange ends and the port's buffer holds the only copy; a
 dozing station leaves them with the network. A frame's user priority is
 its own (`classify_ethernet_wmm`: the VLAN PCP or the IP DSCP; 0 to a
 non-QoS access point), and a frame of another priority than the run it

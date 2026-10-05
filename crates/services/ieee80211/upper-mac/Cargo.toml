@@ -9,6 +9,7 @@ description = "Executor-independent driver of the IEEE 802.11 transmit planner o
 readme = "README.md"
 
 [dependencies]
+oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath" }
 oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac" }
 oer-ieee80211-mac = { path = "../../../protocols/ieee80211/mac" }
 oer-ieee80211-softmac = { path = "../../../protocols/ieee80211/softmac" }
@@ -16,6 +17,8 @@ oer-ieee80211-upper-mac = { path = "../../../protocols/ieee80211/upper-mac" }
 oer-time = { path = "../../../time" }
 
 [dev-dependencies]
+oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath", features = ["model"] }
+oer-network-interface = { path = "../../../network/interface" }
 oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac", features = ["model"] }
 oer-time = { path = "../../../time" }
 

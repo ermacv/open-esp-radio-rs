@@ -1,6 +1,7 @@
 //! Station power save over the lower-MAC port.
 
 use core::marker::PhantomData;
+use oer_ieee80211_upper_mac_service::MpduParts;
 use oer_ieee80211_upper_mac_service::client::PortError;
 
 use oer_ieee80211_lower_mac::{
@@ -461,7 +462,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         context
             .link
             .transmit(
-                &frame,
+                MpduParts::whole(&frame),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
                 config.management_rate,

@@ -68,6 +68,10 @@ use oer_ieee80211_upper_mac::{
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortMsdu};
 use oer_ieee80211_upper_mac_service::frame::PORT_FRAME_CAPACITY;
+use oer_ieee80211_upper_mac_service::{
+    aggregate::{AmpduSubframes, PORT_AMPDU_SUBFRAMES},
+    reorder::PORT_REORDER_SLOTS,
+};
 use oer_network_interface::NetworkInterfaceId;
 use oer_time::{Clock, Duration, Instant, RadioInstant, Timer};
 
@@ -1947,8 +1951,12 @@ fn queued_frames_of_an_agreed_tid_leave_as_one_a_mpdu_body() {
     );
     let before = world.model.submitted().len();
 
-    // Four frames of TID 0 leave as one A-MPDU; the voice frame alone.
-    for payload in [b"a".as_slice(), b"b", b"c", b"d"] {
+    // Twelve frames of TID 0, more than the eight subframes an aggregate
+    // once had, leave as one A-MPDU; the voice frame alone.
+    let payloads: Vec<Vec<u8>> = (0..12_u8)
+        .map(|n| vec![0x60 + n; 20 + usize::from(n)])
+        .collect();
+    for payload in &payloads {
         world.send(&ethernet(PEER, IPV4, payload));
     }
     world.send(&ethernet(PEER, IPV4, &voice(b"voice")));
@@ -1962,17 +1970,24 @@ fn queued_frames_of_an_agreed_tid_leave_as_one_a_mpdu_body() {
         .filter(|attempt| attempt.frames[0][0] == 0x88)
         .collect();
     assert_eq!(data.len(), 2);
-    assert!(data[0].ampdu && data[0].frames.len() == 4);
+    assert!(data[0].ampdu && data[0].frames.len() == 12);
     assert!(!data[1].ampdu);
+    // Each subframe ends in its frame's payload, gathered from the
+    // network's owner after the header; every owner went back.
+    for (subframe, payload) in data[0].frames.iter().zip(&payloads) {
+        assert!(subframe.ends_with(payload));
+    }
+    assert!(data[1].frames[0].ends_with(&voice(b"voice")));
+    assert!(world.frames.is_empty());
     let counters = station.connection().unwrap().tx_counters();
     assert_eq!(
         (counters.aggregates, counters.subframes, counters.mpdus),
-        (1, 4, 1)
+        (1, 12, 1)
     );
     // The rate control saw the aggregate's BlockAck and the voice frame.
-    assert_eq!(world.rate_log.borrow().ampdus, [(4, 4)]);
+    assert_eq!(world.rate_log.borrow().ampdus, [(12, 12)]);
     assert_eq!(world.rate_log.borrow().mpdus.last(), Some(&(1, true)));
-    assert_eq!(counters.acknowledged, 5);
+    assert_eq!(counters.acknowledged, 13);
     // The subframes carry consecutive sequence numbers of TID 0.
     let sequences: Vec<u16> = data[0]
         .frames
@@ -2077,7 +2092,11 @@ fn the_station_holds_no_frame_buffer_of_its_own() {
     let frame = PORT_FRAME_CAPACITY;
     assert!(core::mem::size_of::<Connection>() < frame);
     assert!(core::mem::size_of::<Station>() < 2 * frame);
-    assert!(core::mem::size_of::<PortStationStorage>() > 20 * frame);
+    assert!(core::mem::size_of::<PortStationStorage<TestFrame>>() > PORT_REORDER_SLOTS * frame);
+    // An A-MPDU's subframes are headers and the network's owners, no copy
+    // of a frame.
+    assert_eq!(PORT_AMPDU_SUBFRAMES, 32);
+    assert!(core::mem::size_of::<AmpduSubframes<TestFrame>>() < 2 * frame);
 }
 
 #[test]

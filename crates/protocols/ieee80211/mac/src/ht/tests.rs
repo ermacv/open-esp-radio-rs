@@ -6,7 +6,7 @@ use crate::protection::HtProtectionMode;
 
 #[test]
 fn ht_operation_carries_the_current_protection_byte() {
-    let channel = WifiChannel::mhz20(6).unwrap();
+    let channel = crate::channel::Channel::ghz2_4(6, crate::channel::ChannelWidth::Mhz20).unwrap();
     let element = ht_operation_ie(
         channel,
         HtOperationProtection {
@@ -23,7 +23,7 @@ fn ht_operation_carries_the_current_protection_byte() {
 
 #[test]
 fn ht20_records_are_complete_and_bounded() {
-    let channel = WifiChannel::mhz20(6).unwrap();
+    let channel = crate::channel::Channel::ghz2_4(6, crate::channel::ChannelWidth::Mhz20).unwrap();
     let capability = ht_capability_ie(TEST_HT_CAPABILITIES, channel);
     assert_eq!(&capability[..2], &[45, 26]);
     assert_eq!(u16::from_le_bytes([capability[2], capability[3]]), 0x102c);
@@ -50,8 +50,8 @@ fn ht20_records_are_complete_and_bounded() {
 
 #[test]
 fn ht40_records_keep_width_geometry_and_peer_facts_coherent() {
-    let above = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
-    let below = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Below).unwrap();
+    let above = crate::channel::Channel::ghz2_4(6, WifiChannelWidth::Mhz40Above).unwrap();
+    let below = crate::channel::Channel::ghz2_4(6, WifiChannelWidth::Mhz40Below).unwrap();
     let capability = ht_capability_ie(TEST_HT_CAPABILITIES, above);
     assert_eq!(u16::from_le_bytes([capability[2], capability[3]]), 0x106e);
     assert_eq!(
@@ -73,7 +73,7 @@ fn ht40_records_keep_width_geometry_and_peer_facts_coherent() {
 
 #[test]
 fn peer_mcs32_is_still_parsed_without_local_advertisement() {
-    let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
+    let channel = crate::channel::Channel::ghz2_4(6, WifiChannelWidth::Mhz40Above).unwrap();
     let local = ht_capability_ie(TEST_HT_CAPABILITIES, channel);
     let mut peer_record = local;
     HtDuplicateMcs32::new().advertise_receive_only(&mut peer_record);
@@ -84,7 +84,10 @@ fn peer_mcs32_is_still_parsed_without_local_advertisement() {
     assert!(peer.supports_ht_duplicate_mcs32());
     assert_eq!(peer.ht_duplicate_mcs32(), Some(HtDuplicateMcs32::new()));
 
-    let mut malformed_ht20 = ht_capability_ie(TEST_HT_CAPABILITIES, WifiChannel::mhz20(6).unwrap());
+    let mut malformed_ht20 = ht_capability_ie(
+        TEST_HT_CAPABILITIES,
+        crate::channel::Channel::ghz2_4(6, crate::channel::ChannelWidth::Mhz20).unwrap(),
+    );
     HtDuplicateMcs32::new().advertise_receive_only(&mut malformed_ht20);
     let malformed_peer = ht_peer_capabilities(&malformed_ht20).unwrap();
     assert!(!malformed_peer.supports_ht_duplicate_mcs32());
@@ -93,7 +96,7 @@ fn peer_mcs32_is_still_parsed_without_local_advertisement() {
 
 #[test]
 fn peer_specific_capability_uses_vendor_ampdu_negotiation() {
-    let channel = WifiChannel::mhz20(6).unwrap();
+    let channel = crate::channel::Channel::ghz2_4(6, crate::channel::ChannelWidth::Mhz20).unwrap();
     let mut peer_record = ht_capability_ie(TEST_HT_CAPABILITIES, channel);
     peer_record[4] = 0x17;
     let peer = ht_peer_capabilities(&peer_record).unwrap();
@@ -119,7 +122,7 @@ fn local_profile_cannot_override_channel_geometry() {
         WifiChannelWidth::Mhz40Above,
         WifiChannelWidth::Mhz40Below,
     ] {
-        let channel = WifiChannel::new_2_4_ghz(6, width).unwrap();
+        let channel = crate::channel::Channel::ghz2_4(6, width).unwrap();
         let expected = ht_capability_ie(TEST_HT_CAPABILITIES, channel);
         for supplied_geometry in 0u16..8 {
             let geometry_bits = (supplied_geometry & 1) << 1

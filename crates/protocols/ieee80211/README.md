@@ -43,7 +43,10 @@ Consumers use `qos` for traffic intent, `extensions::wmm` for WMM elements and
 QoS classification includes the DSCP mapping and downgrade helpers. The
 admission/downgrade loop belongs to the chip MAC TX runtime; parsing an
 advertised WMM Parameter Set neither acquires admission nor selects a
-hardware queue. AP encoders take an explicit `Advertisement`;
+hardware queue. AP encoders take an explicit `Advertisement` and a
+`Channel` of either band: a 5 GHz beacon or Association Response carries
+no DSSS Parameter Set and no ERP element, and a beacon refuses a 5 GHz
+advertisement with a DSSS rate;
 `roles/esp32s31/ieee80211/ap/src/profile.rs` selects the hardware
 advertisement. The portable codec carries no implicit ESP32-S31 profile.
 

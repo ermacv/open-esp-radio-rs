@@ -78,7 +78,7 @@ fn response_preserves_advertisement_without_tim_or_beacon_mutation() {
             &mut beacon,
             AP,
             &WifiSsid::new(b"ap").unwrap(),
-            WifiChannel::mhz20(13).unwrap(),
+            crate::channel::Channel::from_wifi_channel(WifiChannel::mhz20(13).unwrap()),
             100,
             2,
             seq(0),

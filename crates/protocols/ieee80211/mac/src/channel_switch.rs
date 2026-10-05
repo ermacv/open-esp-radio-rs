@@ -107,10 +107,34 @@ impl ChannelSwitch {
         }
     }
 
-    /// The Channel Switch Announcement element and, for a 40 MHz channel,
-    /// the Secondary Channel Offset element after it, written into `out`:
-    /// their length, or `None` when `out` is too short.
+    /// The extended announcement of a move to `channel`, which names its
+    /// operating class: the form a move to another band needs, as a plain
+    /// announcement names a channel of the current band.
+    pub fn extended_to(channel: Channel, mode: ChannelSwitchMode, count: u8) -> Self {
+        Self {
+            operating_class: Some(operating_class_of(channel)),
+            ..Self::to(channel, mode, count)
+        }
+    }
+
+    /// The announcement's elements, written into `out`: their length, or
+    /// `None` when `out` is too short. An extended announcement is the
+    /// Extended Channel Switch Announcement, whose operating class names
+    /// the width; a plain one is the Channel Switch Announcement and, for a
+    /// 40 MHz channel, the Secondary Channel Offset after it.
     pub fn encode_elements(self, out: &mut [u8]) -> Option<usize> {
+        if let Some(class) = self.operating_class {
+            let element = [
+                EXTENDED_CHANNEL_SWITCH_ELEMENT_ID,
+                4,
+                mode_value(self.mode),
+                class,
+                self.channel_number,
+                self.count,
+            ];
+            out.get_mut(..element.len())?.copy_from_slice(&element);
+            return Some(element.len());
+        }
         let mut elements = [0_u8; 8];
         elements[..5].copy_from_slice(&[
             CHANNEL_SWITCH_ELEMENT_ID,
@@ -259,6 +283,30 @@ fn offset_of(value: u8) -> Result<SecondaryChannelOffset, ChannelSwitchError> {
         1 => Ok(SecondaryChannelOffset::Above),
         3 => Ok(SecondaryChannelOffset::Below),
         _ => Err(ChannelSwitchError::Malformed),
+    }
+}
+
+/// The global operating class (IEEE Std 802.11-2020 Table E-4) of a 20 or
+/// 40 MHz `channel`.
+fn operating_class_of(channel: Channel) -> u8 {
+    let number = channel.number();
+    match (channel.band(), channel.width()) {
+        (Band::Ghz2_4, ChannelWidth::Mhz20) => 81,
+        (Band::Ghz2_4, ChannelWidth::Mhz40Above) => 83,
+        (Band::Ghz2_4, ChannelWidth::Mhz40Below) => 84,
+        (Band::Ghz5, width) => {
+            let [twenty, above, below] = match number {
+                36..=48 => [115, 116, 117],
+                52..=64 => [118, 119, 120],
+                100..=144 => [121, 122, 123],
+                _ => [125, 126, 127],
+            };
+            match width {
+                ChannelWidth::Mhz20 => twenty,
+                ChannelWidth::Mhz40Above => above,
+                ChannelWidth::Mhz40Below => below,
+            }
+        }
     }
 }
 

@@ -376,7 +376,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     association[34..56].copy_from_slice(&RSN);
     association[56..].copy_from_slice(&oer_ieee80211_mac::ht::ht_capability_ie(
         crate::profile::HT_CAPABILITIES,
-        WifiChannel::mhz20(6).unwrap(),
+        oer_ieee80211_mac::channel::Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()),
     ));
     assert!(matches!(
         engine
@@ -744,7 +744,7 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
     service.authenticate_open(peer, oer_time::Instant::from_micros(1));
     let ht_ie = oer_ieee80211_mac::ht::ht_capability_ie(
         crate::profile::HT_CAPABILITIES,
-        WifiChannel::mhz20(6).unwrap(),
+        oer_ieee80211_mac::channel::Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()),
     );
     service
         .associate_open(

@@ -69,7 +69,6 @@ use oer_ieee80211_mac::{
         CCMP_HEADER_LEN, CcmpHeader, CcmpKeyId, CcmpPacketNumberStep, CcmpReplayLane,
         CcmpRxReplayState, CcmpTxPacketNumber,
     },
-    channel::WifiChannel,
     data::{
         DataDecapError, DataInterfaceRole, IEEE80211_LEGACY_DATA_HEADER_LEN,
         IEEE80211_QOS_DATA_HEADER_LEN, RxDuplicateFilter, decapsulate_data_frames,
@@ -104,6 +103,7 @@ use oer_ieee80211_upper_mac_service::{
 use oer_time::{Clock, Duration, Instant, Timer};
 
 use oer_ieee80211_ap::beacon::ApChannelSwitchError;
+use oer_ieee80211_ap::channel::requires_radar_detection;
 use oer_ieee80211_ap::{
     ApBufferedUnicastRelease, ApDownlinkDisposition, ApPeerPowerState, ApPowerSaveAction,
 };
@@ -253,19 +253,45 @@ pub trait PortApAuthenticator {
     fn handshake_material(&mut self) -> ([u8; 32], u64);
 }
 
+/// What an access point claims and sends at in one band.
+#[derive(Clone, Copy, Debug)]
+pub struct PortApBand<'a> {
+    /// The rates, HT capabilities and WMM parameters it claims. A 5 GHz
+    /// advertisement carries no DSSS rate.
+    pub advertisement: &'a Advertisement,
+    /// The rate of beacons, management frames and group data; each peer's
+    /// data goes at its rate control's. A 5 GHz rate is an OFDM one.
+    pub management_rate: PhyRate,
+}
+
+/// The bands an access point serves: a band without a [`PortApBand`] is one
+/// it never operates in.
+#[derive(Clone, Copy, Debug)]
+pub struct PortApBands<'a> {
+    pub ghz2_4: Option<PortApBand<'a>>,
+    pub ghz5: Option<PortApBand<'a>>,
+}
+
+impl<'a> PortApBands<'a> {
+    /// The access point's claims in `band`, if it serves it.
+    pub const fn for_band(&self, band: Band) -> Option<PortApBand<'a>> {
+        match band {
+            Band::Ghz2_4 => self.ghz2_4,
+            Band::Ghz5 => self.ghz5,
+        }
+    }
+}
+
 /// The BSS an access point runs; its security is its service's.
 #[derive(Clone, Copy, Debug)]
 pub struct PortApProfile<'a> {
     pub ssid: &'a WifiSsid,
-    pub channel: WifiChannel,
+    /// The channel the BSS starts on.
+    pub channel: Channel,
     pub beacon_interval_tu: u16,
     pub dtim_period: u8,
-    /// The rates, HT capabilities and WMM parameters the access point
-    /// claims.
-    pub advertisement: &'a Advertisement,
-    /// The rate of beacons, management frames and group data; each peer's
-    /// data goes at its rate control's.
-    pub management_rate: PhyRate,
+    /// What the access point claims and sends at in each band it serves.
+    pub bands: PortApBands<'a>,
     pub coex: CoexPriority,
     /// The step of the CCMP packet numbers the access point sends under.
     pub ccmp_step: CcmpPacketNumberStep,
@@ -476,6 +502,9 @@ pub struct PortApCounters {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PortApBuildError {
     Beacon(ApBeaconBuildError),
+    /// The access point cannot serve the profile's channel: it claims
+    /// nothing in its band, or the channel needs radar detection.
+    UnservableChannel(Channel),
     /// The service's address is not the client's interface address.
     AddressMismatch,
 }
@@ -502,8 +531,8 @@ pub enum PortApError<E> {
     PacketNumbers,
     /// The beacon cannot announce the switch.
     ChannelSwitch(ApChannelSwitchError),
-    /// The BSS cannot operate on the channel: the access point runs in the
-    /// 2.4 GHz band.
+    /// The access point cannot serve the channel: it claims nothing in its
+    /// band, or the channel needs radar detection.
     UnsupportedChannel(Channel),
     /// No announced switch is due.
     NoChannelSwitch,
@@ -629,9 +658,12 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         if service.address() != client.config().address {
             return Err(PortApBuildError::AddressMismatch);
         }
+        let Some(PortApBand { advertisement, .. }) = serving(&profile, profile.channel) else {
+            return Err(PortApBuildError::UnservableChannel(profile.channel));
+        };
         let beacon = ApBeacon::new(
             beacon,
-            profile.advertisement,
+            advertisement,
             client.config().address,
             profile.ssid,
             profile.channel,
@@ -681,9 +713,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// the access point answers, restart the interface's TSF and, in a
     /// protected BSS, install the group key.
     pub async fn start(&mut self) -> Result<(), PortApError<PortError<X>>> {
-        self.client
-            .retune(Channel::from_wifi_channel(self.profile.channel))
-            .await?;
+        self.client.retune(self.profile.channel).await?;
         self.client.configure(
             None,
             ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::PROBE_REQUESTS),
@@ -818,11 +848,18 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         mode: ChannelSwitchMode,
         count: u8,
     ) -> Result<(), PortApError<PortError<X>>> {
-        if target.band() != Band::Ghz2_4 {
+        if serving(&self.profile, target).is_none() {
             return Err(PortApError::UnsupportedChannel(target));
         }
+        // A plain announcement names a channel of the current band; a move
+        // to the other band names its operating class.
+        let switch = if target.band() == self.profile.channel.band() {
+            ChannelSwitch::to(target, mode, count)
+        } else {
+            ChannelSwitch::extended_to(target, mode, count)
+        };
         self.beacon
-            .announce_channel_switch(ChannelSwitch::to(target, mode, count))
+            .announce_channel_switch(switch)
             .map_err(PortApError::ChannelSwitch)
     }
 
@@ -832,11 +869,13 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let target = self
             .channel_switch_target()
             .ok_or(PortApError::NoChannelSwitch)?;
-        let channel = WifiChannel::new_2_4_ghz(target.number(), target.width())
-            .map_err(|_| PortApError::UnsupportedChannel(target))?;
+        let advertisement = serving(&self.profile, target)
+            .ok_or(PortApError::UnsupportedChannel(target))?
+            .advertisement;
+        let channel = target;
         self.beacon
             .rewrite(
-                self.profile.advertisement,
+                advertisement,
                 self.client.config().address,
                 self.profile.ssid,
                 channel,
@@ -851,11 +890,22 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         Ok(())
     }
 
+    /// What the access point claims on its current channel.
+    fn advertisement(&self) -> &'p Advertisement {
+        self.band().advertisement
+    }
+
+    /// What the access point claims and sends at in its current band.
+    fn band(&self) -> PortApBand<'p> {
+        serving(&self.profile, self.profile.channel)
+            .expect("the access point operates only on a channel it serves")
+    }
+
     /// The channel of the announced switch that is due.
     fn channel_switch_target(&self) -> Option<Channel> {
         self.beacon
             .channel_switch_due()
-            .and_then(|switch| switch.target(Band::Ghz2_4).ok())
+            .and_then(|switch| switch.target(self.profile.channel.band()).ok())
     }
 
     /// Serve the BSS until `deadline`: a beacon at every TBTT, a response
@@ -975,7 +1025,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 TxMpdu::whole(frame),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
-                self.profile.management_rate,
+                self.band().management_rate,
                 self.profile.coex,
             )
             .await?;
@@ -986,6 +1036,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// queue.
     async fn publish_beacon(&mut self, now: Instant) -> Result<(), PortApError<PortError<X>>> {
         self.advertise_current_protection()?;
+        let management_rate = self.band().management_rate;
         let sequence = self.service.next_management_sequence();
         let bitmap = self
             .service
@@ -1008,7 +1059,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 TxMpdu::whole(frame),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
-                profile.management_rate,
+                management_rate,
                 profile.coex,
             )
             .await?;
@@ -1223,7 +1274,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         }
         let address = self.client.config().address;
         let retry = frame.get(1).is_some_and(|flags| flags & 0x08 != 0);
-        match parse_ap_management_request(self.profile.advertisement, frame, address) {
+        match parse_ap_management_request(self.advertisement(), frame, address) {
             Some(ApManagementRequest::Probe { peer, ssid }) => self.probe(peer, ssid).await,
             Some(ApManagementRequest::OpenAuthentication { peer }) => {
                 self.authenticate(peer, retry, now).await
@@ -1463,7 +1514,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let sequence = self.service.next_management_sequence();
         let mut response = [0; AP_BEACON_CAPACITY];
         let length = write_ht_association_response_frame_for_security(
-            self.profile.advertisement,
+            self.advertisement(),
             &mut response,
             self.service.address(),
             peer,
@@ -1516,7 +1567,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 TxMpdu::whole(&mpdu[..length]),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
-                self.profile.management_rate,
+                self.band().management_rate,
                 self.profile.coex,
             )
             .await?;
@@ -1581,7 +1632,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             (length, KeySelector::Key(key))
         };
         let rate = if group {
-            self.profile.management_rate
+            self.band().management_rate
         } else {
             self.link_mut(destination)
                 .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?
@@ -1697,8 +1748,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .flatten()
             .find(|link| link.peer == destination)?;
         let txop = self
-            .profile
-            .advertisement
+            .advertisement()
             .wmm
             .access_category(WmmAccessCategory::BestEffort)
             .txop_limit_units_32_us;
@@ -2176,7 +2226,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 TxMpdu::whole(&frame[..length]),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
-                self.profile.management_rate,
+                self.band().management_rate,
                 self.profile.coex,
             )
             .await?;
@@ -2396,4 +2446,14 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         )?;
         self.send_management(&frame[..length]).await
     }
+}
+
+/// What `profile` claims and sends at on `channel`, when the access point
+/// can serve it: it claims something in the channel's band, and the channel
+/// needs no radar detection.
+fn serving<'a>(profile: &PortApProfile<'a>, channel: Channel) -> Option<PortApBand<'a>> {
+    if requires_radar_detection(channel) {
+        return None;
+    }
+    profile.bands.for_band(channel.band())
 }

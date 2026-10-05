@@ -14,7 +14,8 @@
 
 use oer_ieee80211_mac::beacon::dtim;
 use oer_ieee80211_mac::channel_switch::{
-    CHANNEL_SWITCH_ELEMENT_ID, ChannelSwitch, SECONDARY_CHANNEL_OFFSET_ELEMENT_ID,
+    CHANNEL_SWITCH_ELEMENT_ID, ChannelSwitch, EXTENDED_CHANNEL_SWITCH_ELEMENT_ID,
+    SECONDARY_CHANNEL_OFFSET_ELEMENT_ID,
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
@@ -24,7 +25,7 @@ use oer_ieee80211_mac::{
         AP_BEACON_CAPACITY, ApBeaconBuildError, ApBeaconProtectionError, TimPartialVirtualBitmap,
         stamp, update_bss_protection, write_ht_beacon, write_tim_partial_virtual_bitmap,
     },
-    channel::WifiChannel,
+    channel::Channel,
     protection::ApBssProtection,
     security::ApSecurityPolicy,
     ssid::WifiSsid,
@@ -88,7 +89,7 @@ impl<'storage> ApBeacon<'storage> {
         advertisement: &Advertisement,
         access_point: [u8; 6],
         ssid: &WifiSsid,
-        channel: WifiChannel,
+        channel: Channel,
         beacon_interval_tu: u16,
         dtim_period: u8,
         management_sequence: SequenceNumber,
@@ -127,7 +128,7 @@ impl<'storage> ApBeacon<'storage> {
         advertisement: &Advertisement,
         access_point: [u8; 6],
         ssid: &WifiSsid,
-        channel: WifiChannel,
+        channel: Channel,
         beacon_interval_tu: u16,
         dtim_period: u8,
         management_sequence: SequenceNumber,
@@ -200,7 +201,9 @@ impl<'storage> ApBeacon<'storage> {
             }
             if matches!(
                 self.storage[offset],
-                CHANNEL_SWITCH_ELEMENT_ID | SECONDARY_CHANNEL_OFFSET_ELEMENT_ID
+                CHANNEL_SWITCH_ELEMENT_ID
+                    | EXTENDED_CHANNEL_SWITCH_ELEMENT_ID
+                    | SECONDARY_CHANNEL_OFFSET_ELEMENT_ID
             ) {
                 self.storage.copy_within(offset + length..self.len, offset);
                 self.len -= length;
@@ -216,9 +219,17 @@ impl<'storage> ApBeacon<'storage> {
     fn write_channel_switch_count(&mut self, count: u8) -> Option<()> {
         let mut offset = FIXED_BEACON_LENGTH;
         while offset + 2 <= self.len {
-            if self.storage[offset] == CHANNEL_SWITCH_ELEMENT_ID && self.storage[offset + 1] == 3 {
-                self.storage[offset + 4] = count;
-                return Some(());
+            // The count is the last field of either announcement.
+            match (self.storage[offset], self.storage[offset + 1]) {
+                (CHANNEL_SWITCH_ELEMENT_ID, 3) => {
+                    self.storage[offset + 4] = count;
+                    return Some(());
+                }
+                (EXTENDED_CHANNEL_SWITCH_ELEMENT_ID, 4) => {
+                    self.storage[offset + 5] = count;
+                    return Some(());
+                }
+                _ => {}
             }
             offset += 2 + usize::from(self.storage[offset + 1]);
         }

@@ -7,7 +7,7 @@
 use crate::{
     block_ack::{BlockAckAction, parse_block_ack_action},
     ccmp::CCMP_HEADER_LEN,
-    channel::WifiChannel,
+    channel::{Band, Channel},
     data::{DataInterfaceRole, ETHERNET_HEADER_LEN, LLC_SNAP_HEADER_LEN, plan_data_encapsulation},
     ht::{
         HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie_for_peer,
@@ -833,7 +833,7 @@ pub fn write_ht_association_response_frame_for_security(
     status: u16,
     association_id: u16,
     management_sequence: SequenceNumber,
-    channel: WifiChannel,
+    channel: Channel,
     peer_ht: Option<HtPeerCapabilities>,
     security: ApSecurityPolicy,
     protection: ApBssProtection,
@@ -849,7 +849,7 @@ pub fn write_ht_association_response_frame_for_security(
     let body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = (&mut frame[MANAGEMENT_HEADER_LEN..])
         .try_into()
         .expect("checked association response body length");
-    write_ht_association_response(
+    let body_len = write_ht_association_response(
         profile,
         body,
         status,
@@ -865,7 +865,7 @@ pub fn write_ht_association_response_frame_for_security(
                 .to_le_bytes(),
         );
     }
-    Ok(AP_ASSOCIATION_RESPONSE_LEN)
+    Ok(MANAGEMENT_HEADER_LEN + body_len)
 }
 
 /// Encode one AP-originated peer teardown frame.
@@ -913,33 +913,23 @@ fn write_management_header(
     frame[22..24].copy_from_slice(&management_sequence.sequence_control().to_le_bytes());
 }
 
-/// Build the finite AP HT association response body.
+/// Build the finite AP HT association response body: its length, which
+/// is [`AP_ASSOCIATION_RESPONSE_BODY_LEN`] in the 2.4 GHz band and shorter
+/// in the 5 GHz band, where the BSS has no ERP element.
 pub fn write_ht_association_response(
     profile: &Advertisement,
     body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN],
     status: u16,
     association_id: u16,
-    channel: WifiChannel,
+    channel: Channel,
     peer_ht: Option<HtPeerCapabilities>,
     protection: ApBssProtection,
-) -> Result<(), ApAssociationResponseError> {
+) -> Result<usize, ApAssociationResponseError> {
     if status == 0 && association_id & 0x3fff == 0 {
         return Err(ApAssociationResponseError::MissingAssociationId);
     }
-    body[..AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN].fill(0);
+    body.fill(0);
     body[..2].copy_from_slice(&profile.capabilities(LinkProtection::Ccmp).to_le_bytes());
-    body[6..8].copy_from_slice(&[1, 8]);
-    body[8..16].copy_from_slice(profile.legacy_rates.supported());
-    body[16..18].copy_from_slice(&[50, 4]);
-    body[18..22].copy_from_slice(profile.legacy_rates.extended());
-    body[22..25].copy_from_slice(&[42, 1, protection.erp_information()]);
-    body[25..AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN].copy_from_slice(&profile.wmm.element());
-    let ht_capability = ht_capability_ie_for_peer(profile.ht, channel, peer_ht);
-    let ht_operation = ht_operation_ie(channel, protection.ht);
-    let ht_capability_end = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + ht_capability.len();
-    body[AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN..ht_capability_end]
-        .copy_from_slice(&ht_capability);
-    body[ht_capability_end..].copy_from_slice(&ht_operation);
     body[2..4].copy_from_slice(&status.to_le_bytes());
     let encoded_association_id = if status == 0 {
         0xc000 | (association_id & 0x3fff)
@@ -947,7 +937,22 @@ pub fn write_ht_association_response(
         0
     };
     body[4..6].copy_from_slice(&encoded_association_id.to_le_bytes());
-    Ok(())
+    let mut offset = 6;
+    let mut put = |bytes: &[u8]| {
+        body[offset..offset + bytes.len()].copy_from_slice(bytes);
+        offset += bytes.len();
+    };
+    put(&[1, 8]);
+    put(profile.legacy_rates.supported());
+    put(&[50, 4]);
+    put(profile.legacy_rates.extended());
+    if channel.band() == Band::Ghz2_4 {
+        put(&[42, 1, protection.erp_information()]);
+    }
+    put(&profile.wmm.element());
+    put(&ht_capability_ie_for_peer(profile.ht, channel, peer_ht));
+    put(&ht_operation_ie(channel, protection.ht));
+    Ok(offset)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

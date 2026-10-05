@@ -80,7 +80,7 @@ pub(super) fn with_authorized_ap_capabilities(
     );
     let ht_ie = oer_ieee80211_mac::ht::ht_capability_ie(
         oer_esp32s31_ieee80211_ap::profile::HT_CAPABILITIES,
-        WifiChannel::mhz20(13).unwrap(),
+        oer_ieee80211_mac::channel::Channel::from_wifi_channel(WifiChannel::mhz20(13).unwrap()),
     );
     for peer in [[4; 6], [6; 6]] {
         service.authenticate_open(peer, oer_time::Instant::from_micros(0));

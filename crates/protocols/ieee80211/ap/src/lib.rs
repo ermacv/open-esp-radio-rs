@@ -12,6 +12,7 @@
 extern crate std;
 
 pub mod beacon;
+pub mod channel;
 pub mod limits;
 pub mod pmksa;
 pub mod sae;

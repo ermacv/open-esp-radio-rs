@@ -58,7 +58,7 @@ fn a_wpa3_beacon_offers_sae_with_protected_management_frames() {
         &mut bytes,
         ap,
         &ssid,
-        WifiChannel::mhz20(6).unwrap(),
+        crate::channel::Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()),
         100,
         2,
         seq(1),
@@ -100,7 +100,7 @@ fn builds_the_bounded_wpa2_ht20_beacon() {
         &mut bytes,
         ap,
         &ssid,
-        WifiChannel::mhz20(6).unwrap(),
+        crate::channel::Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()),
         100,
         2,
         seq(0x0abc),
@@ -136,7 +136,7 @@ fn ht40_beacon_advertises_the_validated_secondary_channel() {
         &mut bytes,
         [2; 6],
         &ssid,
-        channel,
+        crate::channel::Channel::from_wifi_channel(channel),
         100,
         2,
         seq(0),
@@ -181,7 +181,7 @@ fn rejects_unrepresentable_beacon_policy_before_mutation() {
             &mut bytes,
             [0; 6],
             &ssid,
-            WifiChannel::mhz20(14).unwrap(),
+            crate::channel::Channel::from_wifi_channel(WifiChannel::mhz20(14).unwrap()),
             100,
             2,
             seq(0),
@@ -201,7 +201,7 @@ fn protection_update_rewrites_only_erp_and_ht_operation_after_tim_growth() {
         &mut bytes,
         [2; 6],
         &WifiSsid::new(b"ap").unwrap(),
-        WifiChannel::mhz20(6).unwrap(),
+        crate::channel::Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()),
         100,
         2,
         seq(0),
@@ -258,4 +258,85 @@ impl NegotiatedAkm for crate::station::SelectedRsn {
             crate::security::AssociationSecurity::Open => panic!("an Open selection has no AKM"),
         }
     }
+}
+
+/// The test advertisement with the OFDM rates a 5 GHz BSS carries: 6, 12
+/// and 24 Mbit/s basic.
+const OFDM_ADVERTISEMENT: crate::ap::profile::Advertisement =
+    crate::ap::profile::Advertisement::new(
+        crate::ap::profile::LegacyRates::new(
+            [0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c],
+            [0x8c, 0x98, 0xb0, 0x6c],
+        ),
+        TEST_ADVERTISEMENT.ht,
+        TEST_ADVERTISEMENT.wmm,
+        0x0001,
+    );
+
+#[test]
+fn a_5_ghz_beacon_carries_no_dsss_parameter_set_erp_or_dsss_rate() {
+    use crate::channel::{Channel, ChannelWidth};
+
+    let ap = [0x02, 0, 0, 0, 0, 1];
+    let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
+    let channel = Channel::ghz5(36, ChannelWidth::Mhz40Above).unwrap();
+    let mut bytes = [0; AP_BEACON_CAPACITY];
+    // DSSS rates have no place in the band.
+    assert_eq!(
+        write_ht_beacon(
+            &TEST_ADVERTISEMENT,
+            &mut bytes,
+            ap,
+            &ssid,
+            channel,
+            100,
+            1,
+            seq(0),
+            ApSecurityPolicy::Wpa2Personal,
+            ApBssProtection::default(),
+        ),
+        Err(ApBeaconBuildError::DsssRateIn5Ghz)
+    );
+    let len = write_ht_beacon(
+        &OFDM_ADVERTISEMENT,
+        &mut bytes,
+        ap,
+        &ssid,
+        channel,
+        100,
+        1,
+        seq(0),
+        ApSecurityPolicy::Wpa2Personal,
+        ApBssProtection::default(),
+    )
+    .unwrap();
+    let frame = &mut bytes[..len];
+    let ids: [bool; 3] = [3, 42, 61].map(|id| {
+        let mut offset = 36;
+        let mut found = false;
+        while offset + 2 <= frame.len() {
+            found |= frame[offset] == id;
+            offset += 2 + usize::from(frame[offset + 1]);
+        }
+        found
+    });
+    // No DSSS Parameter Set, no ERP; the HT Operation names channel 36 with
+    // its secondary above.
+    assert_eq!(ids, [false, false, true]);
+    let parsed = parse_management(frame, 36, -40).unwrap();
+    assert!(
+        parsed
+            .ht_operation_ie_bytes()
+            .is_some_and(|ht| ht[2] == 36 && ht[3] & 0x03 == 1)
+    );
+    // The protection update needs no ERP element in the band.
+    let protection = ApBssProtection {
+        non_erp_present: false,
+        erp: ErpProtection::new(false, false),
+        ht: HtOperationProtection {
+            mode: HtProtectionMode::NonHtMixed,
+            non_greenfield_present: false,
+        },
+    };
+    assert_eq!(update_bss_protection(frame, protection), Ok(()));
 }

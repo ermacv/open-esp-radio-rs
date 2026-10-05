@@ -86,7 +86,7 @@ fn ht_capabilities() -> ApAssociationCapabilities {
         short_preamble: true,
         ht: ht_peer_capabilities(&ht_capability_ie(
             TEST_HT_CAPABILITIES,
-            WifiChannel::mhz20(6).unwrap(),
+            oer_ieee80211_mac::channel::Channel::from_wifi_channel(WifiChannel::mhz20(6).unwrap()),
         )),
         qos_supported: true,
     }

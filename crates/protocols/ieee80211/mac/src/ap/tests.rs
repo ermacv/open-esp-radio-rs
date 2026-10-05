@@ -276,7 +276,7 @@ fn ap_action_frame_and_parser_preserve_per_peer_addba_identity() {
 #[test]
 fn association_response_owns_status_aid_and_ht_channel_capability() {
     let mut body = [0; AP_ASSOCIATION_RESPONSE_BODY_LEN];
-    let ht20 = WifiChannel::mhz20(6).unwrap();
+    let ht20 = crate::channel::Channel::ghz2_4(6, crate::channel::ChannelWidth::Mhz20).unwrap();
     write_ht_association_response(
         &TEST_ADVERTISEMENT,
         &mut body,
@@ -335,7 +335,8 @@ fn association_response_owns_status_aid_and_ht_channel_capability() {
         Err(ApAssociationResponseError::MissingAssociationId)
     );
 
-    let ht40 = WifiChannel::new_2_4_ghz(6, crate::channel::WifiChannelWidth::Mhz40Below).unwrap();
+    let ht40 =
+        crate::channel::Channel::ghz2_4(6, crate::channel::WifiChannelWidth::Mhz40Below).unwrap();
     write_ht_association_response(
         &TEST_ADVERTISEMENT,
         &mut body,
@@ -584,7 +585,7 @@ fn association_retains_the_peers_complete_ht40_receive_facts() {
     association[16..22].copy_from_slice(&access_point);
     association[28..34].copy_from_slice(&[1, 4, 0x82, 0x84, 0x0c, 0x6c]);
     let channel =
-        WifiChannel::new_2_4_ghz(6, crate::channel::WifiChannelWidth::Mhz40Above).unwrap();
+        crate::channel::Channel::ghz2_4(6, crate::channel::WifiChannelWidth::Mhz40Above).unwrap();
     association[34..].copy_from_slice(&crate::ht::ht_capability_ie(TEST_HT_CAPABILITIES, channel));
 
     let Some(ApManagementRequest::Association {
@@ -624,7 +625,7 @@ fn complete_response_encoders_own_addresses_sequence_and_status() {
         0,
         0xc001,
         seq(8),
-        WifiChannel::mhz20(6).unwrap(),
+        crate::channel::Channel::ghz2_4(6, crate::channel::ChannelWidth::Mhz20).unwrap(),
         None,
         ApSecurityPolicy::Wpa2Personal,
         ApBssProtection::default(),
@@ -633,4 +634,37 @@ fn complete_response_encoders_own_addresses_sequence_and_status() {
     assert_eq!(&association[..2], &0x0010_u16.to_le_bytes());
     assert_eq!(&association[22..24], &0x0080_u16.to_le_bytes());
     assert_eq!(&association[28..30], &0xc001_u16.to_le_bytes());
+}
+
+#[test]
+fn a_5_ghz_association_response_carries_no_erp_element() {
+    let mut body = [0; AP_ASSOCIATION_RESPONSE_BODY_LEN];
+    let ghz2_4 = crate::channel::Channel::ghz2_4(6, crate::channel::ChannelWidth::Mhz20).unwrap();
+    let ghz5 = crate::channel::Channel::ghz5(36, crate::channel::ChannelWidth::Mhz20).unwrap();
+    let length = |channel| {
+        let mut body = [0; AP_ASSOCIATION_RESPONSE_BODY_LEN];
+        let length = write_ht_association_response(
+            &TEST_ADVERTISEMENT,
+            &mut body,
+            0,
+            1,
+            channel,
+            None,
+            ApBssProtection::default(),
+        )
+        .unwrap();
+        (length, body)
+    };
+    let (long, _) = length(ghz2_4);
+    assert_eq!(long, AP_ASSOCIATION_RESPONSE_BODY_LEN);
+    let (short, written) = length(ghz5);
+    assert_eq!(short, AP_ASSOCIATION_RESPONSE_BODY_LEN - 3);
+    body.copy_from_slice(&written);
+    // Rates, extended rates, then the WMM element: no ERP between them.
+    assert_eq!(body[22], 221);
+    assert!(
+        body[..short]
+            .windows(3)
+            .any(|window| window == [61, 22, 36])
+    );
 }

@@ -33,12 +33,12 @@ and extension queues as `PortInput`s (`Frame(PortFrame)` in the port's own
 through its `UpperMacTx`, and applies settings, the BSS's EDCA parameters,
 its interface configuration, retunes and lifecycle commands, with every
 failure a `PortClientError`. `PortMsdu` is the MSDU a service hands its
-application: the port's buffer, or parts to copy. `queue::TxQueue` is a
-service's first-in first-out ring of `PORT_TX_QUEUE` Ethernet frames of at
-most `PORT_FRAME_CAPACITY` octets, each with its user priority, whose
-`head_run` is the run of one priority an A-MPDU may carry; an MPDU encoded
-from a queued frame fits `PORT_MPDU_CAPACITY`. `aggregate::AmpduSubframes`
-holds the encoded subframes of one A-MPDU, at most `PORT_TX_QUEUE`, and
+application: the port's buffer, or parts to copy. A service sends no copy of a frame from a queue
+of its own: it takes the network's owners from its source
+(`oer-ieee80211-datapath`'s `DestinationTxQueues`) when it sends them, and
+`frame` names the sizes it keeps (`PORT_FRAME_CAPACITY`, and
+`PORT_MPDU_CAPACITY` for an MPDU it encodes). `aggregate::AmpduSubframes`
+holds the encoded subframes of one A-MPDU, at most `PORT_AMPDU_SUBFRAMES`, and
 makes its `AmpduRequest` (on-air lengths with FCS and MIC) and the
 `AmpduFrames` the client sends; how many frames it carries is
 `oer-ieee80211-upper-mac`'s `AmpduLimits`.

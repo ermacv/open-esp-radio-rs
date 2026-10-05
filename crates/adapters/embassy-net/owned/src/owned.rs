@@ -644,6 +644,10 @@ impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH:
     ) -> Poll<()> {
         self.tx.poll_ready_for(destination, minimum, context)
     }
+
+    fn poll_ready_any(&self, context: &mut Context<'_>) -> Poll<()> {
+        self.tx.poll_ready_any(context)
+    }
 }
 
 impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>

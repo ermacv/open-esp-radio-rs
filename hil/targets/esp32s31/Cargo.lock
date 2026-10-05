@@ -2439,6 +2439,7 @@ dependencies = [
 name = "oer-ieee80211-sta-service"
 version = "0.1.0"
 dependencies = [
+ "oer-ieee80211-datapath",
  "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",

@@ -16,10 +16,13 @@ use oer_ieee80211_upper_mac::{AmpduRequest, TxReport, TxRequest};
 use crate::{
     AmpduFrames,
     client::{PortClient, PortClientEnv, PortClientError, PortError},
-    queue::{PORT_MPDU_CAPACITY, PORT_TX_QUEUE},
+    frame::PORT_MPDU_CAPACITY,
 };
 
 const FCS_LEN: u16 = 4;
+
+/// Subframes of one A-MPDU a service builds.
+pub const PORT_AMPDU_SUBFRAMES: usize = 8;
 const CCMP_MIC_LEN: u16 = 8;
 
 /// How a client's port sends A-MPDUs, which its integrator names once in
@@ -83,12 +86,12 @@ where
     }
 }
 
-/// The encoded subframes of one A-MPDU, at most [`PORT_TX_QUEUE`], each
+/// The encoded subframes of one A-MPDU, at most [`PORT_AMPDU_SUBFRAMES`], each
 /// from its MAC header to the end of its body; every subframe is under the
 /// key of the last one pushed.
 pub struct AmpduSubframes {
-    mpdus: [[u8; PORT_MPDU_CAPACITY]; PORT_TX_QUEUE],
-    lengths: [usize; PORT_TX_QUEUE],
+    mpdus: [[u8; PORT_MPDU_CAPACITY]; PORT_AMPDU_SUBFRAMES],
+    lengths: [usize; PORT_AMPDU_SUBFRAMES],
     count: usize,
     key: KeySelector,
 }
@@ -102,8 +105,8 @@ impl Default for AmpduSubframes {
 impl AmpduSubframes {
     pub const fn new() -> Self {
         Self {
-            mpdus: [[0; PORT_MPDU_CAPACITY]; PORT_TX_QUEUE],
-            lengths: [0; PORT_TX_QUEUE],
+            mpdus: [[0; PORT_MPDU_CAPACITY]; PORT_AMPDU_SUBFRAMES],
+            lengths: [0; PORT_AMPDU_SUBFRAMES],
             count: 0,
             key: KeySelector::Plaintext,
         }
@@ -156,7 +159,7 @@ impl AmpduSubframes {
             } else {
                 0
             };
-        let mut on_air = [0_u16; PORT_TX_QUEUE];
+        let mut on_air = [0_u16; PORT_AMPDU_SUBFRAMES];
         for (on_air, length) in on_air.iter_mut().zip(&self.lengths[..self.count]) {
             *on_air = *length as u16 + trailer;
         }
@@ -173,7 +176,7 @@ impl AmpduSubframes {
     /// recipient of `min_mpdu_start_spacing` (IEEE encoding 0-7).
     pub fn frames<'a>(
         &'a self,
-        slices: &'a mut [&'a [u8]; PORT_TX_QUEUE],
+        slices: &'a mut [&'a [u8]; PORT_AMPDU_SUBFRAMES],
         min_mpdu_start_spacing: u8,
     ) -> AmpduFrames<'a> {
         for ((slice, mpdu), length) in slices.iter_mut().zip(&self.mpdus).zip(&self.lengths) {
@@ -212,7 +215,7 @@ mod tests {
         // FCS and MIC on air.
         assert_eq!((request.mpdu_length(0), request.mpdu_length(1)), (52, 72));
         assert_eq!(request.subframes(), 2);
-        let mut slices = [&[][..]; PORT_TX_QUEUE];
+        let mut slices = [&[][..]; PORT_AMPDU_SUBFRAMES];
         let frames = subframes.frames(&mut slices, 5);
         assert_eq!(frames.subframes.len(), 2);
         assert_eq!(frames.subframes[1], &[60; 60][..]);
@@ -223,7 +226,7 @@ mod tests {
     #[test]
     fn a_full_aggregate_refuses_before_encoding_and_clear_empties_it() {
         let mut subframes = AmpduSubframes::new();
-        for _ in 0..PORT_TX_QUEUE {
+        for _ in 0..PORT_AMPDU_SUBFRAMES {
             assert_eq!(
                 subframes.push(|_| Ok::<_, ()>((24, KeySelector::Plaintext))),
                 Ok(true)

@@ -57,30 +57,70 @@ impl AmpduLimits {
     /// aggregate and its BlockAck stay within the TXOP limit; a run of
     /// fewer than two frames goes out as single MPDUs, which may exceed it.
     pub fn run(&self, ethernet_lens: impl IntoIterator<Item = usize>) -> usize {
-        if !self.port.formats.contains_rate(self.rate) {
+        let Some(mut run) = self.begin() else {
             return 0;
-        }
-        let limit = usize::from(self.window)
-            .min(usize::from(self.port.max_subframes))
-            .min(usize::from(MAX_AMPDU_SUBFRAMES));
-        let maximum = self.peer_max_length().min(self.port.max_length);
-        let mut length = 0_u32;
-        let mut run = 0;
-        for ethernet_len in ethernet_lens.into_iter().take(limit) {
-            let subframe = subframe_bound(ethernet_len);
-            if length + subframe > maximum {
+        };
+        for ethernet_len in ethernet_lens {
+            if !run.admit(ethernet_len) {
                 break;
             }
-            if self.txop_limit_micros.is_some_and(|txop| {
-                self.rate.max_ppdu_duration_micros(length + subframe) + BLOCK_ACK_RESPONSE_MICROS
-                    > txop
-            }) {
-                break;
-            }
-            length += subframe;
-            run += 1;
         }
-        run
+        run.frames()
+    }
+
+    /// Begin a run whose frames the caller admits one at a time, as it takes
+    /// them from its source; `None` when the port sends no A-MPDU at the
+    /// rate.
+    pub fn begin(&self) -> Option<AmpduRun> {
+        self.port
+            .formats
+            .contains_rate(self.rate)
+            .then(|| AmpduRun {
+                limits: *self,
+                limit: usize::from(self.window)
+                    .min(usize::from(self.port.max_subframes))
+                    .min(usize::from(MAX_AMPDU_SUBFRAMES)),
+                maximum: self.peer_max_length().min(self.port.max_length),
+                length: 0,
+                frames: 0,
+            })
+    }
+}
+
+/// One A-MPDU's run being built: the frames admitted so far within its
+/// [`AmpduLimits`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AmpduRun {
+    limits: AmpduLimits,
+    limit: usize,
+    maximum: u32,
+    length: u32,
+    frames: usize,
+}
+
+impl AmpduRun {
+    /// Admit the next frame, an Ethernet-II frame of `ethernet_len` octets:
+    /// `false`, admitting nothing, when it would exceed a limit.
+    pub fn admit(&mut self, ethernet_len: usize) -> bool {
+        if self.frames == self.limit {
+            return false;
+        }
+        let length = self.length + subframe_bound(ethernet_len);
+        if length > self.maximum
+            || self.limits.txop_limit_micros.is_some_and(|txop| {
+                self.limits.rate.max_ppdu_duration_micros(length) + BLOCK_ACK_RESPONSE_MICROS > txop
+            })
+        {
+            return false;
+        }
+        self.length = length;
+        self.frames += 1;
+        true
+    }
+
+    /// The frames admitted.
+    pub const fn frames(&self) -> usize {
+        self.frames
     }
 }
 
@@ -152,11 +192,26 @@ mod tests {
     }
 
     #[test]
+    fn a_run_admits_frames_one_at_a_time_until_a_limit() {
+        let limits = AmpduLimits {
+            window: 2,
+            ..limits()
+        };
+        let mut run = limits.begin().unwrap();
+        assert!(run.admit(1_514));
+        assert!(run.admit(100));
+        // The window's two frames are taken; nothing more is admitted.
+        assert!(!run.admit(100));
+        assert_eq!(run.frames(), 2);
+    }
+
+    #[test]
     fn a_rate_the_port_does_not_aggregate_carries_no_run() {
         let limits = AmpduLimits {
             rate: PhyRate::Legacy(LegacyRate::Ofdm54M),
             ..limits()
         };
         assert_eq!(limits.run([100; 8]), 0);
+        assert!(limits.begin().is_none());
     }
 }

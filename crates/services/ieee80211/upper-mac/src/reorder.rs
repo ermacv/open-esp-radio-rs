@@ -17,7 +17,7 @@ use oer_ieee80211_mac::{
 };
 use oer_time::{Duration, Instant};
 
-use crate::queue::PORT_FRAME_CAPACITY;
+use crate::frame::PORT_FRAME_CAPACITY;
 
 /// MPDUs the reorder windows of all agreements hold together.
 pub const PORT_REORDER_SLOTS: usize = 8;

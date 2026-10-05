@@ -1,12 +1,14 @@
 //! The connected station over the lower-MAC port: its data plane, Block Ack
 //! agreements, SA Query, disconnection and power save.
 
+use oer_ieee80211_datapath::{DestinationTxQueues, SoftwareTxFrame};
 use oer_ieee80211_lower_mac::{
     Cipher, KeyInstall, KeyScope, KeySelector, LowerMacBeaconTiming, LowerMacSetting, MacAddress,
     RxBlockAckAgreement, RxCryptoStatus, RxEvidence, RxMeta,
 };
 use oer_ieee80211_mac::block_ack::TX_BLOCK_ACK_MAX_TIDS;
 use oer_ieee80211_mac::block_ack::{TxBlockAckOriginator, TxBlockAckResponseDisposition};
+use oer_ieee80211_mac::qos::classify_ethernet_wmm;
 use oer_ieee80211_mac::{
     block_ack::{
         ADDBA_ACTION_BODY_LEN, BLOCK_ACK_CATEGORY, BlockAckAction, parse_block_ack_action,
@@ -43,21 +45,21 @@ use oer_ieee80211_sta::{
     sa_query::{SaQueryStep, StationSaQuery},
 };
 use oer_ieee80211_upper_mac::{
-    TxBody, TxReceiver, TxReport, TxRequest, aggregate::AmpduLimits, rate_control::RateControl,
+    TxBody, TxReceiver, TxReport, TxRequest,
+    aggregate::{AmpduLimits, AmpduRun},
+    rate_control::RateControl,
 };
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
-use oer_ieee80211_upper_mac_service::aggregate::AmpduSubframes;
+use oer_ieee80211_upper_mac_service::aggregate::{AmpduSubframes, PORT_AMPDU_SUBFRAMES};
 use oer_ieee80211_upper_mac_service::client::{PortError, PortFrame, PortInput, PortMsdu};
-use oer_ieee80211_upper_mac_service::queue::{
-    PORT_FRAME_CAPACITY, PORT_MPDU_CAPACITY, PORT_TX_QUEUE, TxQueue,
-};
+use oer_ieee80211_upper_mac_service::frame::PORT_MPDU_CAPACITY;
 use oer_ieee80211_upper_mac_service::reorder::{
     CURRENT_SLOT, Offer, PORT_REORDER_WINDOW, ReorderRelease, RxReorder,
 };
 use oer_time::{Clock, Duration, Instant};
 
 use super::{
-    link::{PortConnectionFrame, PortLink, PortLinkError, PortStationEnv},
+    link::{PortConnectionFrame, PortLink, PortLinkError, PortStationEnv, PortStationFrame},
     power::{PortPowerSave, PowerContext, acknowledged},
     rsn::{EAPOL_ETHER_TYPE, PortKeys, send_protected_eapol},
     wire,
@@ -159,17 +161,7 @@ struct MpduPayload {
     pairwise: bool,
 }
 
-/// The outcome of offering one frame for transmission.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PortSend {
-    /// The frame waits in the transmit queue, which the receive loop
-    /// ([`PortStation::run_until`](super::PortStation::run_until)) sends.
-    Queued,
-    /// The transmit queue is full; nothing was queued.
-    Full,
-}
-
-/// What the transmit queue sent.
+/// What the station sent.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PortTxCounters {
     /// Frames sent alone.
@@ -196,7 +188,6 @@ pub struct PortConnectionBuffers {
     /// The reorder window of each TID with a receive Block Ack agreement,
     /// and copies of the out-of-order MPDUs the windows keep.
     reorder: RxReorder<TIDS>,
-    queue: TxQueue,
     subframes: AmpduSubframes,
 }
 
@@ -204,7 +195,6 @@ impl PortConnectionBuffers {
     pub const fn new() -> Self {
         Self {
             reorder: RxReorder::new(),
-            queue: TxQueue::new(),
             subframes: AmpduSubframes::new(),
         }
     }
@@ -212,7 +202,6 @@ impl PortConnectionBuffers {
     /// Empty the buffers for a new association.
     fn reset(&mut self) {
         self.reorder.reset();
-        self.queue.clear();
     }
 }
 
@@ -233,7 +222,7 @@ pub struct PortConnection<'b, P: LowerMacBeaconTiming, R> {
     duplicates: RxDuplicateFilter,
     sa_query: StationSaQuery,
     power: Option<PortPowerSave<P>>,
-    /// Reorder windows and their MPDUs, queued frames and A-MPDU subframes.
+    /// Reorder windows and their MPDUs, and A-MPDU subframes.
     buffers: &'b mut PortConnectionBuffers,
     tx_counters: PortTxCounters,
     /// An EAPOL frame the access point sent under the pairwise key, awaiting
@@ -304,6 +293,13 @@ pub(crate) struct ConnectionContext<'a, 'p, X: PortStationEnv> {
     /// point's group rekeys.
     pub supplicant: Option<&'a mut RsnConnectedSupplicant>,
     pub key_unwrap: &'a mut X::KeyUnwrap,
+    /// The network's frames to send.
+    pub frames: &'a X::Frames,
+    /// The destination last served: the next turn goes to the one after it.
+    pub cursor: &'a mut Option<[u8; 6]>,
+    /// A frame taken from the network that waits for its own exchange: one
+    /// of another user priority than the A-MPDU it followed.
+    pub frontier: &'a mut Option<PortStationFrame<X>>,
 }
 
 impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
@@ -372,14 +368,9 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         &self.rate
     }
 
-    /// What the transmit queue sent.
+    /// What the station sent.
     pub const fn tx_counters(&self) -> PortTxCounters {
         self.tx_counters
-    }
-
-    /// Whether the transmit queue takes another frame.
-    pub const fn can_queue(&self) -> bool {
-        !self.buffers.queue.is_full()
     }
 
     /// The station's TX Block Ack agreements, when it originates any.
@@ -427,9 +418,12 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         .min()
     }
 
-    fn traffic(&self) -> PmTraffic {
+    /// The traffic the power manager weighs: whether the network has a
+    /// frame for the station to send.
+    fn traffic<X: PortStationEnv>(context: &ConnectionContext<'_, '_, X>) -> PmTraffic {
         PmTraffic {
-            tx_pending: !self.buffers.queue.is_empty(),
+            tx_pending: context.frontier.is_some()
+                || context.frames.next_head_after(None).is_some(),
             connection_pending: false,
         }
     }
@@ -456,7 +450,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         sleep_type: SleepType,
     ) -> Result<(), PortLinkError<PortError<X>>> {
         if let Some(mut power) = self.power.take() {
-            let traffic = self.traffic();
+            let traffic = Self::traffic(context);
             power
                 .stop(&mut Self::power_context(
                     context,
@@ -471,7 +465,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             interval_tu: self.config.beacon_interval_tu,
             tim: None,
         };
-        let traffic = self.traffic();
+        let traffic = Self::traffic(context);
         power
             .start(
                 &mut Self::power_context(context, self.config.bssid, traffic),
@@ -482,33 +476,11 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         Ok(())
     }
 
-    /// Queue one Ethernet-II frame to the access point's BSS; the receive
-    /// loop sends it.
-    pub(crate) fn send<E>(
-        &mut self,
-        ethernet: &[u8],
-        user_priority: u8,
-    ) -> Result<PortSend, PortLinkError<E>> {
-        if ethernet.len() < ETHERNET_HEADER_LEN || ethernet.len() > PORT_FRAME_CAPACITY {
-            return Err(PortLinkError::Frame(
-                StationFrameError::EthernetFrameTooShort,
-            ));
-        }
-        let priority = WmmUserPriority::new(user_priority).ok_or(PortLinkError::Frame(
-            StationFrameError::UserPriorityOutOfRange,
-        ))?;
-        Ok(if self.buffers.queue.push(ethernet, priority) {
-            PortSend::Queued
-        } else {
-            PortSend::Full
-        })
-    }
-
-    /// Send the queued frames while the station is awake: a run of one
-    /// user priority as an A-MPDU where its TX Block Ack agreement is
-    /// operational and the port aggregates at the data rate, every other
-    /// frame alone. An exchange that ended without a report counts as
-    /// failed; any other error ends the loop.
+    /// Send the network's frames while the station is awake: a run of one
+    /// user priority to one destination as an A-MPDU where its TX Block Ack
+    /// agreement is operational and the port aggregates at the data rate,
+    /// every other frame alone. An exchange that ended without a report
+    /// counts as failed; any other error ends the loop.
     async fn drain<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
@@ -516,9 +488,11 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         if let Some(power) = &mut self.power {
             power.take_release();
         }
-        while let Some(head) = self.buffers.queue.get(0) {
-            let priority = head.priority;
-            let traffic = self.traffic();
+        loop {
+            let traffic = Self::traffic(context);
+            if !traffic.tx_pending {
+                return Ok(());
+            }
             if let Some(power) = &mut self.power
                 && power
                     .tx_data(&mut Self::power_context(
@@ -530,18 +504,16 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             {
                 return Ok(());
             }
-            let run = self.aggregate_run::<X>(context, priority);
-            let sent = if run >= 2 {
-                self.transmit_aggregate(context, priority, run).await
-            } else {
-                let frame = self
-                    .buffers
-                    .queue
-                    .pop()
-                    .ok_or(PortLinkError::MissingState)?;
-                self.transmit(context, frame.ethernet(), frame.priority)
+            let Some(frame) = Self::next_frame(context) else {
+                return Ok(());
+            };
+            let priority = self.priority(&frame);
+            let sent = match self.aggregate_run(context, priority, &frame) {
+                Some(run) => self.transmit_aggregate(context, priority, frame, run).await,
+                None => self
+                    .transmit(context, frame.ethernet(), priority)
                     .await
-                    .map(|report| (report, 1))
+                    .map(|report| (report, 1)),
             };
             let acknowledged_now = match sent {
                 Ok((report, frames)) => {
@@ -580,7 +552,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                 }
                 Err(error) => return Err(error),
             };
-            let traffic = self.traffic();
+            let traffic = Self::traffic(context);
             if let Some(power) = &mut self.power {
                 power
                     .tx_data_done(
@@ -590,7 +562,29 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                     .await?;
             }
         }
-        Ok(())
+    }
+
+    /// The next frame to send: one an A-MPDU left, then the head of the
+    /// destination after the last one served.
+    fn next_frame<X: PortStationEnv>(
+        context: &mut ConnectionContext<'_, '_, X>,
+    ) -> Option<PortStationFrame<X>> {
+        if let Some(frame) = context.frontier.take() {
+            return Some(frame);
+        }
+        let (destination, _) = context.frames.next_head_after(*context.cursor)?;
+        *context.cursor = Some(destination);
+        context.frames.try_take_for(destination)
+    }
+
+    /// The user priority of `ethernet`, as its DSCP or VLAN tag gives it,
+    /// where the access point serves QoS; zero otherwise.
+    fn priority(&self, frame: &impl SoftwareTxFrame) -> WmmUserPriority {
+        if self.config.peer_qos {
+            classify_ethernet_wmm(frame.ethernet()).user_priority
+        } else {
+            WmmUserPriority::UP0
+        }
     }
 
     /// The TXOP limit of `priority`'s access category in microseconds;
@@ -604,77 +598,90 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         (units != 0).then_some(u32::from(units) * 32)
     }
 
-    /// How many queued frames of `priority` from the head one A-MPDU
-    /// carries: those its operational agreement's window, the port's and
-    /// the peer's limits admit; one where no A-MPDU applies.
+    /// The A-MPDU run that `head` of `priority` begins, its head and the
+    /// next frame the network queued for its destination admitted: where its
+    /// operational agreement's window, the port's and the peer's limits and
+    /// the TXOP limit admit two frames. `None` sends `head` alone.
     fn aggregate_run<X: PortStationEnv<Port = P, RateControl = R>>(
         &self,
         context: &ConnectionContext<'_, '_, X>,
         priority: WmmUserPriority,
-    ) -> usize {
-        let tid = priority.value();
-        let (Some(agreement), Some(port), Some(_)) = (
-            self.tx_block_ack
-                .as_ref()
-                .and_then(|originator| originator.operational(tid)),
-            context.link.ampdu_capabilities(),
-            self.keys,
-        ) else {
-            return 1;
-        };
+        head: &PortStationFrame<X>,
+    ) -> Option<AmpduRun> {
+        let agreement = self.tx_block_ack.as_ref()?.operational(priority.value())?;
+        let port = context.link.ampdu_capabilities()?;
+        self.keys?;
         if !self.config.peer_qos {
-            return 1;
+            return None;
         }
-        let limits = AmpduLimits {
+        let mut run = AmpduLimits {
             window: agreement.window,
             port,
             peer_ampdu_parameters: self.config.peer.ht_ampdu_parameters,
             txop_limit_micros: self.txop_limit_micros(priority),
             rate: self.rate.ampdu_rate(),
-        };
-        let queue = &self.buffers.queue;
-        limits
-            .run(
-                (0..queue.head_run(PORT_TX_QUEUE))
-                    .filter_map(|index| queue.get(index))
-                    .map(|frame| frame.ethernet().len()),
-            )
-            .max(1)
+        }
+        .begin()?;
+        let destination = destination(head.ethernet())?;
+        let next = context.frames.head_for(destination)?;
+        (run.admit(head.ethernet().len()) && run.admit(next.ethernet_bytes)).then_some(run)
     }
 
-    /// Send the first `run` queued frames of `priority` as one A-MPDU under
-    /// the pairwise key; the report and the frames it carried.
+    /// Send `head` and the frames of `priority` the network queued for its
+    /// destination that `run` admits after it, taken one at a time, as one
+    /// A-MPDU under the pairwise key; the report and the frames it carried.
+    /// A frame of another priority waits as the frontier for its own
+    /// exchange; one the run does not admit stays in the network's queue.
     async fn transmit_aggregate<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         priority: WmmUserPriority,
-        run: usize,
+        head: PortStationFrame<X>,
+        mut run: AmpduRun,
     ) -> Result<(TxReport, usize), PortLinkError<PortError<X>>> {
         let tid = priority.value();
+        let destination = destination(head.ethernet()).ok_or(PortLinkError::MissingState)?;
         let mut first_sequence = None;
         self.buffers.subframes.clear();
-        for _ in 0..run {
-            let frame = self
-                .buffers
-                .queue
-                .pop()
-                .ok_or(PortLinkError::MissingState)?;
+        // The run admitted the head and the next frame already.
+        let mut admitted = 1_usize;
+        let mut frame = Some(head);
+        while let Some(owner) = frame.take() {
             let sequence = context.sequences.take_qos(tid).ok_or(PortLinkError::Frame(
                 StationFrameError::UserPriorityOutOfRange,
             ))?;
             first_sequence.get_or_insert(sequence);
             let mut out = [0_u8; PORT_MPDU_CAPACITY];
             let (length, selector) =
-                self.encode_data(context, frame.ethernet(), priority, sequence, &mut out)?;
-            self.buffers
-                .subframes
-                .push(|buffer| {
-                    buffer[..length].copy_from_slice(&out[..length]);
-                    Ok::<_, PortLinkError<PortError<X>>>((length, selector))
-                })?
-                .then_some(())
-                .ok_or(PortLinkError::MissingState)?;
+                self.encode_data(context, owner.ethernet(), priority, sequence, &mut out)?;
+            // The subframe is encoded: the network's owner goes back.
+            drop(owner);
+            self.buffers.subframes.push(|buffer| {
+                buffer[..length].copy_from_slice(&out[..length]);
+                Ok::<_, PortLinkError<PortError<X>>>((length, selector))
+            })?;
+            if self.buffers.subframes.len() == PORT_AMPDU_SUBFRAMES {
+                break;
+            }
+            let admitted_next = admitted == 1
+                || context
+                    .frames
+                    .head_for(destination)
+                    .is_some_and(|next| run.admit(next.ethernet_bytes));
+            if !admitted_next {
+                break;
+            }
+            admitted += 1;
+            let Some(next) = context.frames.try_take_for(destination) else {
+                break;
+            };
+            if self.priority(&next) == priority {
+                frame = Some(next);
+            } else {
+                *context.frontier = Some(next);
+            }
         }
+        let run = self.buffers.subframes.len();
         let first_sequence = first_sequence.ok_or(PortLinkError::MissingState)?;
         let committed_at = context.link.port().now().map_err(PortLinkError::Port)?;
         let ampdu = self
@@ -692,7 +699,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             mpdu_retry_limit: config.retry_limit,
             body: TxBody::Ampdu(ampdu),
         };
-        let mut slices = [&[][..]; PORT_TX_QUEUE];
+        let mut slices = [&[][..]; PORT_AMPDU_SUBFRAMES];
         let frames = self.buffers.subframes.frames(
             &mut slices,
             (self.config.peer.ht_ampdu_parameters >> 2) & 0x07,
@@ -839,7 +846,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             Some(StaLinkAction::Lost) => return Ok(Some(PortDisconnect::BeaconLoss)),
             None => {}
         }
-        let traffic = self.traffic();
+        let traffic = Self::traffic(context);
         if let Some(power) = &mut self.power {
             power
                 .expire(&mut Self::power_context(
@@ -897,7 +904,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         let frame = match input {
             PortInput::Frame(frame) => frame,
             PortInput::Tbtt(_) => {
-                let traffic = self.traffic();
+                let traffic = Self::traffic(context);
                 if let Some(power) = &mut self.power {
                     power
                         .tbtt(&mut Self::power_context(
@@ -955,7 +962,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                     parse_sta_beacon(bytes, self.config.bssid, self.config.association_id.get())
                 {
                     let _ = self.link.observe_beacon(context.timer.now(), beacon);
-                    let traffic = self.traffic();
+                    let traffic = Self::traffic(context);
                     if let Some(power) = &mut self.power {
                         power
                             .beacon(
@@ -1195,7 +1202,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             self.counters.duplicates = self.counters.duplicates.saturating_add(1);
             return Ok(());
         }
-        let traffic = self.traffic();
+        let traffic = Self::traffic(context);
         if let Some(power) = &mut self.power {
             power
                 .rx_data(
@@ -1635,7 +1642,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         context: &mut ConnectionContext<'_, '_, X>,
         send_deauthentication: bool,
     ) -> Result<(), PortLinkError<PortError<X>>> {
-        let traffic = self.traffic();
+        let traffic = Self::traffic(context);
         if let Some(mut power) = self.power.take() {
             power
                 .stop(&mut Self::power_context(
@@ -1653,7 +1660,8 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             )
             .await?;
         }
-        self.buffers.queue.clear();
+        // A frame taken from the network goes back with the association.
+        *context.frontier = None;
         for tid in 0..TIDS as u8 {
             if self.buffers.reorder.stop(self.config.bssid, tid) {
                 context.link.apply(LowerMacSetting::RemoveRxBlockAck {
@@ -1747,4 +1755,9 @@ fn encode_open_data<E>(
     frame[header_len..llc_end].copy_from_slice(&plan.llc_snap);
     frame[llc_end..].copy_from_slice(payload);
     Ok(required)
+}
+
+/// The Ethernet destination of `ethernet`.
+fn destination(ethernet: &[u8]) -> Option<[u8; 6]> {
+    ethernet.get(..6)?.try_into().ok()
 }

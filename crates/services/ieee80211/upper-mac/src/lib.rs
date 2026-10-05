@@ -34,7 +34,7 @@ extern crate std;
 
 pub mod aggregate;
 pub mod client;
-pub mod queue;
+pub mod frame;
 pub mod reorder;
 pub mod router;
 

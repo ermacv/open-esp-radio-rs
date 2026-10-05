@@ -150,7 +150,9 @@ pub fn run(context: &Checkout) -> Result<usize> {
 #[cfg(test)]
 mod workflow_tests {
     /// The repository keeps Cargo offline, so a CI runner without a Cargo
-    /// cache must turn the network back on in every workflow.
+    /// cache must turn the network back on in every workflow that runs
+    /// Cargo. One that only calls another runs none of its own; the called
+    /// workflow sets it, since a call does not pass `env` on.
     #[test]
     fn every_workflow_lets_cargo_download() {
         let workflows =
@@ -158,6 +160,9 @@ mod workflow_tests {
         for entry in std::fs::read_dir(&workflows).unwrap() {
             let path = entry.unwrap().path();
             let text = std::fs::read_to_string(&path).unwrap();
+            if !text.contains("cargo ") {
+                continue;
+            }
             assert!(
                 text.contains("CARGO_NET_OFFLINE: 'false'"),
                 "{} runs Cargo offline",

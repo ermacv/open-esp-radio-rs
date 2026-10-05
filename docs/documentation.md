@@ -177,11 +177,13 @@ the commit being built; links inside the book are unchanged.
 `target/doc/` for host packages, `target/riscv32imafc-unknown-none-elf/doc/` for
 chip packages and the Wi-Fi composition workspace's own target directory.
 
-Every push runs the workflow's checks and packages one site: the
-book at the root and API documentation under `api/host/`, `api/esp32s31/` and
-`api/esp32s31-wifi/`. A manual run from `main` deploys it to the
-[Pages address](https://ermacv.github.io/open-esp-radio-rs/) with the official
-GitHub Pages actions.
+CI runs the workflow's checks on every push as its `docs` job, which the
+required `ci-ok` waits for, so a pull request whose documentation fails does
+not merge. A manual run of [the Pages workflow](../.github/workflows/pages.yml)
+from `main` packages one site (the book at the root and API documentation
+under `api/host/`, `api/esp32s31/` and `api/esp32s31-wifi/`) and deploys it to
+the [Pages address](https://ermacv.github.io/open-esp-radio-rs/) with the
+official GitHub Pages actions.
 
 ## Basis for these conventions
 

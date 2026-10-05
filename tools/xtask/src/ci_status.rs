@@ -83,8 +83,11 @@ fn conclusion<'de, D: serde::Deserializer<'de>>(
         .map_err(serde::de::Error::custom)
 }
 
-/// The names of the workflows in `.github/workflows` of `root`: the
-/// top-level `name:` of each file.
+/// The names of the workflows in `.github/workflows` of `root` that judge
+/// a pushed commit: the top-level `name:` of each file a `push` triggers.
+/// A workflow only another calls, or only a person starts, has no runs of
+/// its own for a commit, so its last run would read as the commit's verdict
+/// forever.
 fn workflows(root: &Path) -> std::io::Result<BTreeSet<String>> {
     let mut names = BTreeSet::new();
     for entry in std::fs::read_dir(root.join(".github/workflows"))? {
@@ -95,10 +98,11 @@ fn workflows(root: &Path) -> std::io::Result<BTreeSet<String>> {
         {
             continue;
         }
-        if let Some(name) = std::fs::read_to_string(&path)?
-            .lines()
-            .find_map(|line| line.strip_prefix("name:"))
-        {
+        let text = std::fs::read_to_string(&path)?;
+        if !text.lines().any(|line| line.trim_end() == "  push:") {
+            continue;
+        }
+        if let Some(name) = text.lines().find_map(|line| line.strip_prefix("name:")) {
             names.insert(name.trim().trim_matches(['\'', '"']).to_owned());
         }
     }
@@ -256,7 +260,18 @@ mod tests {
         .unwrap();
         std::fs::write(
             workflows_directory.join("docs.yaml"),
-            "# Docs\nname: 'Documentation'\njobs:\n  build:\n    name: inner\n",
+            "# Docs\nname: 'Documentation'\non:\n  push:\njobs:\n  build:\n    name: inner\n",
+        )
+        .unwrap();
+        // Called by another, or started by a person: no verdict of its own.
+        std::fs::write(
+            workflows_directory.join("checks.yml"),
+            "name: Checks\non:\n  workflow_call:\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workflows_directory.join("pages.yml"),
+            "name: Pages\non:\n  workflow_dispatch:\n",
         )
         .unwrap();
         std::fs::write(

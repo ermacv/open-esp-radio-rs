@@ -109,7 +109,8 @@ runs:
 - `nightly`: once a night on `main`.
 
 Every runner works over a change's reach or over the whole tree. Each CI job
-(`.github/workflows/ci.yml`, `docs.yml`, `nightly.yml`) prepares its runner
+(`.github/workflows/ci.yml`, `docs.yml` which CI calls as its `docs` job,
+`nightly.yml`) prepares its runner
 (caches, a toolchain component, clang, GNU ld) and runs `cargo xtask check
 tier TIER --job JOB`; a test holds the workflows to the registry, so no
 workflow lists checks of its own. A check without a trigger runs only with

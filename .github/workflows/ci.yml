@@ -192,10 +192,15 @@ jobs:
         run: cargo tidy fetch
       - run: cargo xtask --verbose check tier full --job verification
 
+  # API documentation and doctests, Markdown links and documented commands,
+  # qualification catalogs, capability anchors and the mdBook guides.
+  docs:
+    uses: ./.github/workflows/docs.yml
+
   # The one check branch protection requires: every job above passed.
   ci-ok:
     if: always()
-    needs: [host, architecture, firmware, models, isa-conformance, images, verification]
+    needs: [host, architecture, firmware, models, isa-conformance, images, verification, docs]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

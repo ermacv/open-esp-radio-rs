@@ -217,7 +217,7 @@ fn record(kind: u32, ra: u32, stage: u32) {
 /// Set `source`'s bit, without an index whose bounds check could fail: a
 /// panic while recording would re-enter the fatal path.
 fn set(words: &mut [u32; SOURCE_WORDS], source: usize) {
-    if let Some(word) = words.iter_mut().nth(source / 32) {
+    if let Some(word) = words.get_mut(source / 32) {
         *word |= 1 << (source % 32);
     }
 }

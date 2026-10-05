@@ -1979,6 +1979,7 @@ pub async fn run(
                 StartupArtifactDisposition::Created
             }
         };
+        crate::phy_calibration_projection::record(&cache);
         let encoded =
             crate::phy_calibration_artifact::encode(&cache, PHY_CALIBRATION_ARTIFACT.take())
                 .expect("typed PHY calibration artifact exceeds its explicit HIL storage budget");

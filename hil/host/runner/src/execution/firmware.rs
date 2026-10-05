@@ -1,17 +1,19 @@
 //! Run-local firmware preparation and exact-image flash ordering.
 
-use oer_hil_run_bundle::run::RunEventKind;
+use oer_hil_run_bundle_format::run::RunEventKind;
 use std::path::Path;
 
 use crate::Result;
-use oer_hil_arbiter::lock::BoardLock;
+use oer_device_lock::DeviceAccess;
 use oer_hil_image::{Artifacts, CurrentBuild};
-use oer_hil_image_class::ImageClass;
 use oer_hil_lab::config::LabConfig;
-use oer_hil_run_bundle::{
-    run::{Failure, FailureKind, Outcome, PlannedFirmware, RunSession},
-    verify::ArchivedFirmware,
-};
+use oer_hil_run_bundle::run::RunSession;
+use oer_hil_run_bundle::verify::ArchivedFirmware;
+use oer_hil_run_bundle_format::run::Failure;
+use oer_hil_run_bundle_format::run::FailureKind;
+use oer_hil_run_bundle_format::run::Outcome;
+use oer_hil_run_bundle_format::run::PlannedFirmware;
+use oer_hil_schema::image::ImageClass;
 
 pub(crate) enum RunFirmware {
     BuildCurrent(CurrentBuild),
@@ -35,7 +37,7 @@ impl RunFirmware {
 pub(crate) fn prepare_run_image(
     root: &Path,
     lab: &LabConfig,
-    lock: &BoardLock,
+    lock: &DeviceAccess,
     class: ImageClass,
     firmware: &RunFirmware,
     session: &mut RunSession,
@@ -54,7 +56,7 @@ pub(crate) enum Built {
 
 pub(crate) fn prepare_image(
     lab: &LabConfig,
-    lock: &BoardLock,
+    lock: &DeviceAccess,
     class: ImageClass,
     build: CurrentBuild,
     session: &mut RunSession,
@@ -98,7 +100,7 @@ pub(crate) fn build_image(
 
 pub(crate) fn flash_built(
     lab: &LabConfig,
-    lock: &BoardLock,
+    lock: &DeviceAccess,
     class: ImageClass,
     built: Built,
     session: &mut RunSession,
@@ -115,7 +117,7 @@ pub(crate) fn flash_built(
 /// was yielded and the board may carry other firmware.
 pub(crate) fn flash_archived_artifacts(
     lab: &LabConfig,
-    lock: &BoardLock,
+    lock: &DeviceAccess,
     class: ImageClass,
     artifacts: &Artifacts,
     session: &mut RunSession,
@@ -138,7 +140,7 @@ pub(crate) fn flash_archived_artifacts(
 pub(crate) fn reflash_replayed(
     root: &Path,
     lab: &LabConfig,
-    lock: &BoardLock,
+    lock: &DeviceAccess,
     archived: &ArchivedFirmware,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
@@ -246,7 +248,7 @@ fn flash_archived_build(
 fn prepare_replayed_image(
     root: &Path,
     lab: &LabConfig,
-    lock: &BoardLock,
+    lock: &DeviceAccess,
     archived: &ArchivedFirmware,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {

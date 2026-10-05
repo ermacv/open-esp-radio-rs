@@ -14,7 +14,11 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
 | `riscv/` | RV32 layers shared by Blobray: `decode/` (instructions), `model/`, `program/`, `analysis/` and `lift/` (the program model); `stack/` (stack bounds, the only stack analyzer) |
 | `process/`, `durable/`, `toolchain/` | Foundation: child processes, Git and the checkout (`oer-process`); atomic files, digests, timestamps and XDG state directories (`oer-durable`); host tool lookup, recorded tool versions, the image compiler and the Blobray workspace's Cargo commands (`oer-toolchain`). Nothing else re-implements them |
 | `image/` | `oer-image`: the one image pipeline, `build(ImageSpec) -> ImageBundle` per boot kind, with every gate, build-time encoding (espflash library), the ESP-IDF catalog builds, build exclusion and source inputs; `compare` (images function by function modulo placement) |
-| `chip-profile/`, `command-tree/` | Chip profiles with their flash map and start policy, CLI command trees; the flash writer is HIL board I/O (`hil/host/board`) |
+| `chip-profile/`, `command-tree/` | Chip profiles with their flash map and start policy, CLI command trees |
+| `fw/` | `oer-fw`, `cargo fw`: the dev kit (build, flash, monitor, devices); links images, devices, chip profiles and the foundation only |
+| `device/`, `devices/` | The devices layer: `DeviceId` (`mac/`), the device lock (`lock/`), port, discovery, console, reset, OpenOCD, the flash writer (`flash/`) and the receipted image write (`image/`); `oer-devices` assembles them into a board one process owns |
+| `image-bundle/`, `image-encode/`, `image-policy/`, `image-check/`, `image-checks/`, `image-compare/`, `esp-idf/` | Image formats and plug-ins of `oer-image`: the bundle format, build-time encoding, stack policy, the optional checks, function-level comparison and ESP-IDF catalog builds |
+| `vendor-pins/`, `markers/`, `stats/`, `check/` | Vendor pin reader, the `SOURCE`/`CAPABILITY` marker recognisers, host statistics, the PHY archive policy run as a process |
 | `vendor-artifacts/` | `oer-vendor-artifacts`: the only reader of `verification/<chip>/artifacts.toml`, the store and fetch, and the layout of a chip's verification project (`project::Project`); depends only on toml, serde and the foundation so build scripts and Blobray use it |
 | `image-linker/` | `oer-image-linker`: every image's linker; refuses an input section bound for a zeroed region (the platform layout's list) that holds a non-zero byte or a relocation, then runs `rust-lld` unchanged |
 
@@ -28,7 +32,8 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
 - Every firmware image is built by `oer-image` (`build(ImageSpec) ->
   ImageBundle`); no other tool compiles, gates, packs or encodes an image or
   its bootloader, partition table or OTA data, and a flash only writes a
-  bundle's segments, through the HIL flash operation (`oer-hil-flash`).
+  bundle's snapshot, through the device image write (`oer-device-image`,
+  which records a receipt per board).
   Flash offsets and the start policy come from `platform/<chip>/chip.toml`'s
   `[flash]` map.
 - Files, manifests, workspaces, chips, classification, the dependency rules
@@ -38,8 +43,9 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
 - Blobray needs `--manifest-path tools/blobray/Cargo.toml` for every Cargo
   command, or `cargo blobray`.
 - A command or flag change updates the docs that name it: `cargo xtask check
-  docs` checks every documented xtask, tidy, hil, qualification, registers
-  and blobray command against that tool's command tree.
+  docs` checks every documented xtask, fw, stand, tidy, hil, qualification,
+  registers, verification and blobray command against that tool's command
+  tree.
 - Every host package declares its `open-radio.host-layer` and depends only
   down the [host layers](../docs/architecture.md#host-layers); only entry
   crates spawn `cargo hil` or `cargo xtask`.

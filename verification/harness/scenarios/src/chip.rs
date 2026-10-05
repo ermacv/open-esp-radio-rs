@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 /// One chip's scenario configuration.
 pub struct Chip {
-    /// Chip identifier, such as `esp32s31`.
+    /// Chip identifier, as `platform/<id>/chip.toml` names it.
     pub name: &'static str,
     /// The tracked artifact manifest, relative to the repository root.
     pub manifest: &'static str,
@@ -50,9 +50,10 @@ pub struct Chip {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Isa {
     /// RV32IMAFC with Zba, Zbb, Zbs, Zcb and Zcmp, as ESP-IDF builds the
-    /// ESP32-S31 (floating point stays unsupported by the executor).
+    /// `riscv32imafc` chips (floating point stays unsupported by the
+    /// executor).
     Rv32imafcZbaZbbZbsZcbZcmp,
-    /// Base RV32IMAC, as ESP-IDF builds the ESP32-C5.
+    /// Base RV32IMAC, as ESP-IDF builds the `riscv32imac` chips.
     Rv32imac,
 }
 

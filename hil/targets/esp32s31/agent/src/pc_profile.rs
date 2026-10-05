@@ -72,7 +72,7 @@ impl ProfileTimer for SystimerProfileTimer {
 /// `token` is its source's, whose table entry names [`sample_core0`].
 pub(crate) fn init(alarm: Alarm<'static>, token: crate::ProfileSample) {
     let periodic = PeriodicTimer::new(alarm);
-    if let Err(error) = oer_esp32s31_soc_esp_hal::interrupt_table::enable(&token) {
+    if let Err(error) = oer_espressif_interrupt_table_esp_hal::enable(&token) {
         panic!("profile alarm: {error:?}");
     }
     critical_section::with(|cs| TIMER.borrow_ref_mut(cs).replace(periodic));
@@ -82,7 +82,7 @@ pub(crate) fn init(alarm: Alarm<'static>, token: crate::ProfileSample) {
 /// enables interrupts. `token` is its source's, whose table entry names
 /// [`sample_core1`] on core 1.
 pub(crate) fn enable_core1_sampler(token: crate::ProfileCore1Sample) {
-    if let Err(error) = oer_esp32s31_soc_esp_hal::interrupt_table::enable(&token) {
+    if let Err(error) = oer_espressif_interrupt_table_esp_hal::enable(&token) {
         panic!("profile core 1 sampler: {error:?}");
     }
 }

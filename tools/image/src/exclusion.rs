@@ -1,98 +1,40 @@
-//! Build exclusion: one mechanism, an advisory exclusive lock on a file
-//! ([`Lease`]), for every place builds must not overlap.
+//! Build exclusion: one mechanism, the foundation's advisory file lock
+//! ([`oer_process::lock::FileLock`]), for every place builds must not
+//! overlap.
 //!
 //! - [`BuildLock`]: one build owns the private lockfile copy in its
 //!   directory; a second build of the same directory fails at once.
-//! - [`Lease::wait`]: one build at a time of an output directory (an
-//!   example's compile cache), the next waiting for it.
+//! - the host's one compile cache ([`crate::compile_cache`]) is used by one
+//!   build at a time, from its Cargo run until its outputs are copied out,
+//!   the next waiting for it ([`oer_toolchain::image::lock_compile_cache`]);
 //! - [`slot`]: the host-wide limit on concurrent image compilations, one of
-//!   a fixed number of lock files.
+//!   a fixed number of lock files;
+//! - the ESP-IDF cache: exclusive while its tree and tools change, shared
+//!   while builds read them.
 //!
 //! The lock is the kernel's `flock`: released when its owner exits, however
 //! it exits, so a crashed build never leaves a stale lock behind.
 use crate::Result;
-use fs2::FileExt;
+use oer_process::lock::{FileLock, Mode};
 use std::{
     collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
     process::Command,
-    time::Duration,
 };
-
-/// An exclusive lock on one file, held until dropped.
-///
-/// Closing one descriptor does not release flock while a forked pre-exec
-/// child still holds the shared open file description, so the owner
-/// unlocks explicitly when it drops the lease, failures included.
-pub struct Lease(fs::File);
-
-impl Lease {
-    fn open(path: &Path) -> Result<fs::File> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        Ok(fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(path)?)
-    }
-
-    /// The lease of `path`, or `None` while another owner holds it.
-    pub fn try_acquire(path: &Path) -> Result<Option<Self>> {
-        let file = Self::open(path)?;
-        match file.try_lock_exclusive() {
-            Ok(()) => Ok(Some(Self(file))),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
-            Err(error) => Err(format!("lock {}: {error}", path.display()).into()),
-        }
-    }
-
-    /// The lease of `path`, waiting for its owner (cancellably); `waiting`
-    /// is printed once when the wait starts.
-    pub fn wait(path: &Path, waiting: &str) -> Result<Self> {
-        Self::wait_any(&[path.to_owned()], waiting)
-    }
-
-    /// The first free lease of `paths`, waiting until one is free.
-    fn wait_any(paths: &[PathBuf], waiting: &str) -> Result<Self> {
-        let mut announced = false;
-        loop {
-            for path in paths {
-                if let Some(lease) = Self::try_acquire(path)? {
-                    return Ok(lease);
-                }
-            }
-            if !announced {
-                eprintln!("{waiting}");
-                announced = true;
-            }
-            oer_process::sleep(Duration::from_millis(200))?;
-        }
-    }
-}
-
-impl Drop for Lease {
-    fn drop(&mut self) {
-        if let Err(error) = FileExt::unlock(&self.0) {
-            eprintln!("release a build lease: {error}");
-        }
-    }
-}
 
 /// One of the host's image compilation slots below `directory`: each holds
 /// one runtime build's fat LTO, about 1.5 GB and one core for minutes, and
 /// parallel builds of several checkouts otherwise pushed the host into
 /// swap. Waits for a free slot.
-pub fn slot(directory: &Path) -> Result<Lease> {
+pub fn slot(directory: &Path) -> Result<FileLock> {
     let count = slots();
     let paths: Vec<PathBuf> = (0..count)
         .map(|slot| directory.join(format!("{slot}.lock")))
         .collect();
-    Lease::wait_any(
+    FileLock::wait_any(
         &paths,
+        Mode::Exclusive,
         &format!("waiting for one of the host's {count} image build slots"),
     )
 }
@@ -118,6 +60,59 @@ fn slots() -> usize {
     (cores / 2).min(memory_gb / 2).max(1)
 }
 
+/// One build of the bundle in `output`, its only one: the build fills the
+/// staging directory, a sibling of `output`, and [`Staging::publish`] moves
+/// it into place once the whole build succeeded. A build that fails leaves
+/// the bundle published before untouched and its staging directory, with
+/// its build log, until the next build of `output` starts.
+pub struct Staging {
+    output: PathBuf,
+    directory: PathBuf,
+    _lease: FileLock,
+}
+
+impl Staging {
+    /// Start the build of `output`; fails at once while another build of it
+    /// runs.
+    pub fn begin(output: &Path) -> Result<Self> {
+        let directory = oer_image_bundle::staging_directory(output)?;
+        let parent = directory
+            .parent()
+            .ok_or("a staging directory has a parent")?;
+        fs::create_dir_all(parent)?;
+        let name = output
+            .file_name()
+            .ok_or("an output names a directory")?
+            .to_string_lossy();
+        let lease = FileLock::try_acquire(
+            &parent.join(format!(".{name}.build.lease")),
+            Mode::Exclusive,
+        )?
+        .ok_or_else(|| format!("another build owns {}", output.display()))?;
+        oer_image_bundle::remove_directory(&directory)?;
+        fs::create_dir_all(&directory)?;
+        Ok(Self {
+            output: output.to_owned(),
+            directory,
+            _lease: lease,
+        })
+    }
+
+    /// Where the build writes the bundle's files.
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+
+    /// Publish `bundle`, built in [`Staging::directory`], as the bundle in
+    /// the output.
+    pub fn publish(
+        self,
+        bundle: oer_image_bundle::ImageBundle,
+    ) -> Result<oer_image_bundle::ImageBundle> {
+        bundle.publish(&self.output)
+    }
+}
+
 /// A private copy of one workspace's committed `Cargo.lock` for one build.
 ///
 /// Cargo resolves through `resolver.lockfile-path`, so a patched or locally
@@ -128,13 +123,13 @@ fn slots() -> usize {
 pub struct BuildLock {
     committed: PathBuf,
     path: PathBuf,
-    _lease: Lease,
+    _lease: FileLock,
 }
 
 impl BuildLock {
     /// Copy `workspace/Cargo.lock` to `directory/Cargo.lock` for one build.
     pub fn prepare(workspace: &Path, directory: &Path) -> Result<Self> {
-        let lease = Lease::try_acquire(&directory.join("build.lease"))?
+        let lease = FileLock::try_acquire(&directory.join("build.lease"), Mode::Exclusive)?
             .ok_or_else(|| format!("another build owns {}", directory.display()))?;
         let committed = workspace.join("Cargo.lock");
         let path = directory.join("Cargo.lock");

@@ -1,8 +1,8 @@
 use super::*;
-use oer_hil_scenario::link::{AccessPointSecurity, ManagementFrameProtection};
+use oer_hil_scenario_catalog::link::{AccessPointSecurity, ManagementFrameProtection};
 
-fn observation(phy: PhyExpectation) -> Observation {
-    Observation {
+fn observation(phy: PhyExpectation) -> OpenWrtRadio {
+    OpenWrtRadio {
         enabled: true,
         channel: 13,
         htmode: if phy == PhyExpectation::He20 {
@@ -130,7 +130,7 @@ impl Backend for Fake {
         }
         Ok(Zeroizing::new(self.before.to_string()))
     }
-    fn observe(&self) -> Result<Observation> {
+    fn observe(&self) -> Result<OpenWrtRadio> {
         if self.fail == "observe" {
             return Err("injected missing hostapd".into());
         }
@@ -399,7 +399,7 @@ fn a_beacon_schedule_sets_the_radio_interval_and_the_bss_dtim_and_is_verified() 
     else {
         panic!("OpenWrt test lab required");
     };
-    let beacon = oer_hil_scenario::link::AccessPointBeacon {
+    let beacon = oer_hil_scenario_catalog::link::AccessPointBeacon {
         interval_tu: 100,
         dtim_period: 3,
     };
@@ -423,7 +423,7 @@ fn a_beacon_schedule_sets_the_radio_interval_and_the_bss_dtim_and_is_verified() 
     assert!(plain[&openwrt.ap_section].get("dtim_period").is_none());
     // A hostapd that runs another schedule fails the profile.
     let frequency = 2407 + u16::from(profile.channel) * 5;
-    let mut observed = Observation {
+    let mut observed = OpenWrtRadio {
         enabled: true,
         channel: profile.channel,
         geometry: format!(

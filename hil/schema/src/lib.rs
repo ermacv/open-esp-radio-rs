@@ -9,6 +9,8 @@
 //! decisions stay with each consumer.
 #![forbid(unsafe_code)]
 
+pub mod dependency;
+pub mod image;
 pub mod run;
 pub mod scenario;
 pub mod snapshot;

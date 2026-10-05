@@ -7,13 +7,10 @@ fn software_policy_does_not_require_vendor_equivalence_or_hide_hardware_obligati
         .join("../..")
         .canonicalize()
         .unwrap();
-    let program = ManifestDocument::load_and_validate(
-        &root.join("qualification/targets/esp32s31/wifi-sta.toml"),
-        &root,
-    )
-    .unwrap()
-    .document;
-    let capability = |id: &str| program.capabilities.iter().find(|c| c.id == id).unwrap();
+    let station = ManifestDocument::load_and_validate(&program(&root, "wifi-sta.toml"), &root)
+        .unwrap()
+        .document;
+    let capability = |id: &str| station.capabilities.iter().find(|c| c.id == id).unwrap();
     for id in ["authentication-association", "wpa2"] {
         let owned = capability(id);
         assert!(owned.vendor_not_applicable.is_some());
@@ -47,7 +44,7 @@ fn software_policy_does_not_require_vendor_equivalence_or_hide_hardware_obligati
         );
     }
     let bluetooth = ManifestDocument::load_and_validate(
-        &root.join("qualification/targets/esp32s31/bluetooth-peripheral-acl.toml"),
+        &program(&root, "bluetooth-peripheral-acl.toml"),
         &root,
     )
     .unwrap()
@@ -70,12 +67,10 @@ fn ap_availability_qualifies_only_selected_functional_transitions() {
         .join("../..")
         .canonicalize()
         .unwrap();
-    let focused = ManifestDocument::load_and_validate(
-        &root.join("qualification/targets/esp32s31/wifi-ap-availability.toml"),
-        &root,
-    )
-    .unwrap()
-    .document;
+    let focused =
+        ManifestDocument::load_and_validate(&program(&root, "wifi-ap-availability.toml"), &root)
+            .unwrap()
+            .document;
     assert_eq!(
         focused.required_capabilities,
         ["station-ap-loss-recovery", "station-initial-ap-absence"]
@@ -116,12 +111,9 @@ fn ap_availability_qualifies_only_selected_functional_transitions() {
         initial.hil_requirements[0].scenario,
         "station-ap-initial-absence"
     );
-    let broad = ManifestDocument::load_and_validate(
-        &root.join("qualification/targets/esp32s31/wifi-sta.toml"),
-        &root,
-    )
-    .unwrap()
-    .document;
+    let broad = ManifestDocument::load_and_validate(&program(&root, "wifi-sta.toml"), &root)
+        .unwrap()
+        .document;
     for id in [
         "interrupt-recovery",
         "async-deadlines",
@@ -133,4 +125,13 @@ fn ap_availability_qualifies_only_selected_functional_transitions() {
             "functional success cannot discharge {id}'s wider requirements"
         );
     }
+}
+
+/// The chip program `name` of this checkout: `qualification/targets/<chip>/<name>`.
+fn program(root: &Path, name: &str) -> std::path::PathBuf {
+    std::fs::read_dir(root.join("qualification/targets"))
+        .unwrap()
+        .map(|chip| chip.unwrap().path().join(name))
+        .find(|program| program.is_file())
+        .unwrap_or_else(|| panic!("no chip has the program {name}"))
 }

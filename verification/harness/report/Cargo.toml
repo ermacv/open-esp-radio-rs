@@ -1,5 +1,4 @@
 [package]
-workspace = "../../../tools/blobray"
 name = "oer-vendor-scenario-report"
 version.workspace = true
 edition.workspace = true
@@ -12,7 +11,7 @@ description = "Reviewer reports of the typed vendor-comparison scenarios: untria
 [dependencies]
 oer-elf = { path = "../../../tools/elf" }
 oer-process = { path = "../../../tools/process" }
-oer-vendor-evidence = { path = "../../../verification/evidence" }
+oer-vendor-evidence-shard = { path = "../../evidence/shard" }
 oer-riscv-model = { path = "../../../tools/riscv/model" }
 oer-riscv-lift = { path = "../../../tools/riscv/lift" }
 oer-vendor-scenario-engine = { path = "../scenarios" }

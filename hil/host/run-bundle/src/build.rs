@@ -1,188 +1,57 @@
-//! Firmware subjects, source materials and build provenance.
+//! Firmware subjects and source materials: the content-addressed object
+//! store and the capture of a build's sources.
 
 use std::{
     env,
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::Result;
 use oer_durable::{atomic_write, sha256_file};
-use oer_hil_image_class::ImageClass;
+use oer_hil_run_bundle_format::build::*;
 use oer_hil_source_snapshot::FrozenSources;
+use oer_process::lock::{FileLock, Mode};
 
-pub const BUILD_PROVENANCE_SCHEMA: u16 = 1;
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SourceRebuildStatus {
-    SourceSnapshot,
-    CleanCommit,
-    TrackedPatch,
-    Incomplete,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SourceLimitation {
-    RepositoryStateNotCaptured,
-    SourceRemoteUnavailable,
-    UntrackedContentNotArchived,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct SourceFileIdentity {
-    pub path: PathBuf,
-    pub size_bytes: u64,
-    pub sha256: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct SourceMaterial {
-    pub name: String,
-    pub checkout_path: PathBuf,
-    pub remote: Option<String>,
-    pub commit: String,
-    pub dirty: bool,
-    pub workspace_sha256: String,
-    pub rebuild_status: SourceRebuildStatus,
-    pub tracked_patch_path: Option<PathBuf>,
-    pub tracked_patch_size_bytes: Option<u64>,
-    pub tracked_patch_sha256: Option<String>,
-    pub untracked_files: Vec<SourceFileIdentity>,
-    pub limitations: Vec<SourceLimitation>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BuildFileMaterial {
-    pub name: String,
-    pub path: PathBuf,
-    pub archive_path: Option<PathBuf>,
-    pub size_bytes: u64,
-    pub sha256: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BuildParameters {
-    pub image: ImageClass,
-    /// None is retained when decoding older bundles with no recorded selection.
-    #[serde(default)]
-    pub network: Option<String>,
-    pub runtime_profile: String,
-    pub target: String,
-    pub runtime_features: String,
-    /// The seed the runtime was linked with; absent for the natural order.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub layout_seed: Option<std::num::NonZeroU32>,
-    /// Runtime features added to or removed from the class's own; an image
-    /// built with any is an experiment's, never its class's.
-    #[serde(
-        default,
-        skip_serializing_if = "oer_hil_image_class::FeatureDelta::is_empty"
-    )]
-    pub features: oer_hil_image_class::FeatureDelta,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum BuildSubjectRole {
-    Application,
-    BootstrapElf,
-    RuntimeBin,
-    RuntimeElf,
-    Bootloader,
-    PartitionTable,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BuildSubject {
-    pub role: BuildSubjectRole,
-    pub path: PathBuf,
-    pub size_bytes: u64,
-    pub sha256: String,
-}
-
-/// One host tool that took part in a firmware build.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BuildTool {
-    pub name: String,
-    pub program: String,
-    pub version: Option<String>,
-}
-
-/// Host tools and inherited settings under which a firmware image was built.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BuildEnvironment {
-    pub tools: Vec<BuildTool>,
-    pub inherited_rustflags: Option<String>,
-    pub inherited_encoded_rustflags: Option<String>,
-    pub cargo_incremental: String,
-    pub source_date_epoch: Option<String>,
-}
-
-impl BuildEnvironment {
-    /// Query the tools the image builder runs. Call it when the build runs,
-    /// so the record names the tools that produced the image.
-    pub fn capture() -> Self {
-        Self {
-            tools: oer_toolchain::versions()
-                .into_iter()
-                .map(|tool| BuildTool {
-                    name: tool.tool.name().to_owned(),
-                    program: tool.program,
-                    version: tool.version,
-                })
-                .collect(),
-            inherited_rustflags: env::var("RUSTFLAGS").ok(),
-            inherited_encoded_rustflags: env::var("CARGO_ENCODED_RUSTFLAGS").ok(),
-            cargo_incremental: String::from("0"),
-            source_date_epoch: env::var("SOURCE_DATE_EPOCH").ok(),
-        }
-    }
-
-    /// A fixed environment in which every recorded tool reports a version,
-    /// independent of the tools installed on the test host.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn synthetic() -> Self {
-        Self {
-            tools: oer_toolchain::Tool::ALL
-                .into_iter()
-                .map(|tool| BuildTool {
-                    name: tool.name().to_owned(),
-                    program: tool.name().to_owned(),
-                    version: Some(format!("{} synthetic-test-version", tool.name())),
-                })
-                .collect(),
-            inherited_rustflags: None,
-            inherited_encoded_rustflags: None,
-            cargo_incremental: String::from("0"),
-            source_date_epoch: None,
-        }
+/// Query the tools the image builder runs. Call it when the build runs,
+/// so the record names the tools that produced the image.
+pub fn capture_environment() -> BuildEnvironment {
+    BuildEnvironment {
+        tools: oer_toolchain::versions()
+            .into_iter()
+            .map(|tool| BuildTool {
+                name: tool.tool.name().to_owned(),
+                program: tool.program,
+                version: tool.version,
+            })
+            .collect(),
+        inherited_rustflags: env::var("RUSTFLAGS").ok(),
+        inherited_encoded_rustflags: env::var("CARGO_ENCODED_RUSTFLAGS").ok(),
+        cargo_incremental: String::from("0"),
+        source_date_epoch: env::var("SOURCE_DATE_EPOCH").ok(),
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum BuildReproducibility {
-    Unverified,
-    Verified,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BuildProvenance {
-    pub schema: u16,
-    pub build_id: String,
-    pub build_type: String,
-    pub parameters: BuildParameters,
-    pub sources: Vec<SourceMaterial>,
-    pub files: Vec<BuildFileMaterial>,
-    pub environment: BuildEnvironment,
-    pub subjects: Vec<BuildSubject>,
-    pub source_reconstructable: bool,
-    pub reproducibility: BuildReproducibility,
+/// A fixed environment in which every recorded tool reports a version,
+/// independent of the tools installed on the test host.
+#[cfg(any(test, feature = "test-support"))]
+pub fn synthetic_environment() -> BuildEnvironment {
+    BuildEnvironment {
+        tools: oer_toolchain::Tool::ALL
+            .into_iter()
+            .map(|tool| BuildTool {
+                name: tool.name().to_owned(),
+                program: tool.name().to_owned(),
+                version: Some(format!("{} synthetic-test-version", tool.name())),
+            })
+            .collect(),
+        inherited_rustflags: None,
+        inherited_encoded_rustflags: None,
+        cargo_incremental: String::from("0"),
+        source_date_epoch: None,
+    }
 }
 
 #[derive(Clone)]
@@ -222,7 +91,7 @@ pub fn archive_content_addressed(
     let size_bytes = source_metadata.len();
     let sha256 = sha256_file(source)?;
     // Collection deletes objects only while no archive uses the store.
-    let _store = ObjectStoreLock::shared(target_directory)?;
+    let _store = object_store_lock(target_directory, Mode::Shared)?;
     let object = target_directory
         .join("objects/sha256")
         .join(&sha256[..2])
@@ -252,36 +121,8 @@ pub fn archive_content_addressed(
 
 /// The lock that orders archiving into a checkout's object store before its
 /// collection: archives hold it shared, collection exclusively.
-struct ObjectStoreLock(File);
-
-impl ObjectStoreLock {
-    fn open(target_directory: &Path) -> Result<File> {
-        let objects = target_directory.join("objects");
-        fs::create_dir_all(&objects)?;
-        Ok(OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(objects.join("lock"))?)
-    }
-
-    fn shared(target_directory: &Path) -> Result<Self> {
-        let file = Self::open(target_directory)?;
-        fs2::FileExt::lock_shared(&file)?;
-        Ok(Self(file))
-    }
-
-    fn exclusive(target_directory: &Path) -> Result<Self> {
-        let file = Self::open(target_directory)?;
-        fs2::FileExt::lock_exclusive(&file)?;
-        Ok(Self(file))
-    }
-}
-
-impl Drop for ObjectStoreLock {
-    fn drop(&mut self) {
-        let _ = fs2::FileExt::unlock(&self.0);
-    }
+fn object_store_lock(target_directory: &Path, mode: Mode) -> Result<FileLock> {
+    FileLock::acquire(&target_directory.join("objects/lock"), mode)
 }
 
 /// What [`collect_objects`] deleted.
@@ -305,7 +146,7 @@ pub fn collect_objects(target_directory: &Path) -> Result<CollectedObjects> {
     if !root.is_dir() {
         return Ok(collected);
     }
-    let _store = ObjectStoreLock::exclusive(target_directory)?;
+    let _store = object_store_lock(target_directory, Mode::Exclusive)?;
     for prefix in fs::read_dir(&root)? {
         let prefix = prefix?;
         if !prefix.file_type()?.is_dir() {

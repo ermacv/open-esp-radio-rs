@@ -7,13 +7,14 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-oer-esp32s31-platform-runtime = { path = "../../../platform/esp32s31/runtime" }
+oer-espressif-staged-runtime = { path = "../../../platform/espressif/staged-runtime", features = ["esp32s31", "two-harts"] }
+oer-esp32s31-platform-board = { path = "../../../platform/esp32s31/board", features = ["stage-two"] }
 embassy-executor = { version = "0.10.0", default-features = false }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "8930609f2af67e2e296a4d8f900ea3636a0acc6b", default-features = false, features = ["esp32s31", "static-interrupts", "rt", "unstable"] }
-esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "8930609f2af67e2e296a4d8f900ea3636a0acc6b", default-features = false, features = ["auto", "esp32s31", "log-04"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921", default-features = false, features = ["esp32s31", "static-interrupts", "rt", "unstable"] }
+esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921", default-features = false, features = ["auto", "esp32s31", "log-04"] }
 log = "0.4"
 oer = { package = "open-esp-radio", path = "../../../crates/oer", default-features = false, features = ["openthread"] }
-oer-esp32s31-executor-embassy = { path = "../../../crates/adapters/embassy/esp32s31/executor", features = ["esp32s31"] }
+oer-espressif-executor-embassy = { path = "../../../crates/adapters/embassy/espressif/executor", features = ["esp32s31"] }
 openthread = { git = "https://github.com/ermacv/openthread", rev = "5173f96654a2f317e29fb7d8e69fb8a887607f6d", default-features = false, features = ["isupper", "csl", "link-metrics-subject", "link-metrics-initiator", "time-sync"] }
 static_cell = "2.1.1"
 # The C library functions OpenThread links beyond what the Rust core provides.

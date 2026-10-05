@@ -4,13 +4,12 @@
 
 use std::path::Path;
 
-use oer_hil_image_class::ImageClass;
 use oer_hil_lab::config::LabConfig;
 use oer_hil_protocol::DeviceImageKeys;
 use oer_hil_protocol::bluetooth;
-use oer_hil_scenario::{
-    AirUse, PeerImage, Plan, ScenarioFamily, bounded, requirements::Requirements,
-};
+use oer_hil_scenario::{AirUse, PeerImage, Plan, ScenarioFamily};
+use oer_hil_scenario_catalog::{bounded, requirements::Requirements};
+use oer_hil_schema::image::ImageClass;
 use oer_hil_workload::{context::Context, family::Workload, fixture::Fixtures};
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +48,7 @@ pub enum BluetoothScenario {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         quiet_cycles: Option<u16>,
     },
-    /// Direct Test Mode with the ESP32-C5 reference peer: the ESP32-S31
+    /// Direct Test Mode with the reference peer: the board under test
     /// receives LE 1M, 2M and Coded (S=8 and S=2) and transmits LE 1M and
     /// 2M, with a silence control on each receiver.
     DtmPeer { minimum_packets: u16 },

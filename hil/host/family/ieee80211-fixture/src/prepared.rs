@@ -5,6 +5,7 @@
 use super::controlled_ap::ControlledAp;
 use crate::Result;
 use oer_hil_lab::config::{LabConfig, StationFixtureConfig};
+use oer_hil_run_bundle_format::run::fixtures::{self, Applied, BeaconProtection, Protection};
 use oer_hil_scenario::Plan;
 use std::{
     cell::{RefCell, RefMut},
@@ -54,11 +55,13 @@ impl Prepared {
                 ap.stop()?;
                 ap.restart()?;
             }
-            if let ControlledAp::OpenWrt(owner) = &ap {
-                oer_durable::atomic_json(&output.join("fixture-applied.json"), &owner.report()?)?;
-            }
-            if let ControlledAp::Local(owner) = &ap {
-                oer_durable::atomic_json(&output.join("fixture-applied.json"), &owner.report())?;
+            let applied = match &ap {
+                ControlledAp::OpenWrt(owner) => Some(Applied::OpenWrt(owner.report()?)),
+                ControlledAp::Local(owner) => Some(Applied::Local(owner.report())),
+                ControlledAp::External => None,
+            };
+            if let Some(applied) = applied {
+                fixtures::write(output, &applied)?;
             }
             Some(RefCell::new(ap))
         } else {
@@ -87,6 +90,7 @@ fn protection_peer(lab: &LabConfig, plan: &Plan, output: &Path) -> Result<Option
         )
         .into());
     };
+    let record = output;
     let output = output.join("protection-peer");
     std::fs::create_dir_all(&output)?;
     let peer = if required.non_ht_member {
@@ -117,23 +121,33 @@ fn protection_peer(lab: &LabConfig, plan: &Plan, output: &Path) -> Result<Option
             BEACON_WINDOW,
             &output.join(format!("beacons-{window}")),
         )?;
-        let protection = BeaconProtection::from_beacons(&beacons);
+        let protection = from_beacons(&beacons);
         observed.push(protection);
-        if protection.satisfies(required) {
-            oer_durable::atomic_json(
-                &output.join("fixture-protection.json"),
-                &serde_json::json!({"schema": 1, "bssid": bssid.to_string(),
-                    "non_ht_member": required.non_ht_member, "legacy_bss": required.legacy_bss,
-                    "windows": observed}),
+        if satisfies(protection, required) {
+            fixtures::write(
+                record,
+                &Protection {
+                    schema: 1,
+                    bssid: bssid.to_string(),
+                    established: None,
+                    non_ht_member: required.non_ht_member,
+                    legacy_bss: required.legacy_bss,
+                    windows: observed,
+                },
             )?;
             return Ok(Some(peer));
         }
     }
-    oer_durable::atomic_json(
-        &output.join("fixture-protection.json"),
-        &serde_json::json!({"schema": 1, "bssid": bssid.to_string(), "established": false,
-            "non_ht_member": required.non_ht_member, "legacy_bss": required.legacy_bss,
-            "windows": observed}),
+    fixtures::write(
+        record,
+        &Protection {
+            schema: 1,
+            bssid: bssid.to_string(),
+            established: Some(false),
+            non_ht_member: required.non_ht_member,
+            legacy_bss: required.legacy_bss,
+            windows: observed.clone(),
+        },
     )?;
     Err(super::Error::new(format!(
         "the station fixture AP did not advertise the induced protection within {} s: {observed:?}",
@@ -143,42 +157,34 @@ fn protection_peer(lab: &LabConfig, plan: &Plan, output: &Path) -> Result<Option
 }
 
 /// The protection fields of every beacon in one observation window.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
-struct BeaconProtection {
-    beacons: usize,
-    /// Every beacon carried ERP Use_Protection.
-    erp_use_protection: bool,
-    /// The HT Protection field when every beacon agreed on it.
-    ht_protection: Option<u8>,
+fn from_beacons(beacons: &[oer_hil_family_ieee80211_evidence::air::AirFrame]) -> BeaconProtection {
+    let ht_protection = beacons
+        .first()
+        .and_then(|beacon| beacon.ht_protection)
+        .filter(|mode| {
+            beacons
+                .iter()
+                .all(|beacon| beacon.ht_protection == Some(*mode))
+        });
+    BeaconProtection {
+        beacons: beacons.len(),
+        erp_use_protection: !beacons.is_empty()
+            && beacons
+                .iter()
+                .all(|beacon| beacon.erp_information.is_some_and(|erp| erp & 0x02 != 0)),
+        ht_protection,
+    }
 }
 
-impl BeaconProtection {
-    fn from_beacons(beacons: &[oer_hil_family_ieee80211_evidence::air::AirFrame]) -> Self {
-        let ht_protection = beacons
-            .first()
-            .and_then(|beacon| beacon.ht_protection)
-            .filter(|mode| {
-                beacons
-                    .iter()
-                    .all(|beacon| beacon.ht_protection == Some(*mode))
-            });
-        Self {
-            beacons: beacons.len(),
-            erp_use_protection: !beacons.is_empty()
-                && beacons
-                    .iter()
-                    .all(|beacon| beacon.erp_information.is_some_and(|erp| erp & 0x02 != 0)),
-            ht_protection,
-        }
-    }
-
-    /// A non-HT member requires non-HT mixed HT protection; an overlapping
-    /// legacy BSS requires ERP Use_Protection.
-    fn satisfies(self, required: oer_hil_scenario::requirements::Requirements) -> bool {
-        self.beacons != 0
-            && (!required.non_ht_member || self.ht_protection == Some(3))
-            && (!required.legacy_bss || self.erp_use_protection)
-    }
+/// A non-HT member requires non-HT mixed HT protection; an overlapping
+/// legacy BSS requires ERP Use_Protection.
+fn satisfies(
+    protection: BeaconProtection,
+    required: oer_hil_scenario_catalog::requirements::Requirements,
+) -> bool {
+    protection.beacons != 0
+        && (!required.non_ht_member || protection.ht_protection == Some(3))
+        && (!required.legacy_bss || protection.erp_use_protection)
 }
 
 #[cfg(test)]
@@ -195,19 +201,28 @@ mod tests {
 
     #[test]
     fn protection_is_established_only_when_every_beacon_carries_it() {
-        let non_ht = oer_hil_scenario::requirements::Requirements {
+        let non_ht = oer_hil_scenario_catalog::requirements::Requirements {
             non_ht_member: true,
             ..Default::default()
         };
-        let legacy = oer_hil_scenario::requirements::Requirements {
+        let legacy = oer_hil_scenario_catalog::requirements::Requirements {
             legacy_bss: true,
             ..Default::default()
         };
-        assert!(BeaconProtection::from_beacons(&[beacon(0, 3), beacon(0, 3)]).satisfies(non_ht));
-        assert!(!BeaconProtection::from_beacons(&[beacon(0, 3), beacon(0, 0)]).satisfies(non_ht));
-        assert!(!BeaconProtection::from_beacons(&[]).satisfies(non_ht));
-        assert!(BeaconProtection::from_beacons(&[beacon(3, 1)]).satisfies(legacy));
-        assert!(!BeaconProtection::from_beacons(&[beacon(2, 1), beacon(0, 1)]).satisfies(legacy));
-        assert!(!BeaconProtection::from_beacons(&[beacon(0, 3)]).satisfies(legacy));
+        assert!(satisfies(
+            from_beacons(&[beacon(0, 3), beacon(0, 3)]),
+            non_ht
+        ));
+        assert!(!satisfies(
+            from_beacons(&[beacon(0, 3), beacon(0, 0)]),
+            non_ht
+        ));
+        assert!(!satisfies(from_beacons(&[]), non_ht));
+        assert!(satisfies(from_beacons(&[beacon(3, 1)]), legacy));
+        assert!(!satisfies(
+            from_beacons(&[beacon(2, 1), beacon(0, 1)]),
+            legacy
+        ));
+        assert!(!satisfies(from_beacons(&[beacon(0, 3)]), legacy));
     }
 }

@@ -11,12 +11,12 @@
 //! field without a review leaves the comparison INCOMPLETE; reviews naming
 //! no compared field are rejected.
 use crate::Result;
-use crate::boots::{Images, Lifecycle, ProductionBoot, Readings, VendorBoot};
 use crate::committed::{
     CALIBRATION, CALIBRATION_BYTES, OutputField, PARENT, PARENT_BYTES, TRACKING_PROGRESS_FIELD,
     committed,
 };
-use crate::registers::Register;
+use oer_phy_calibration_capture::boots::{Images, Lifecycle, ProductionBoot, Readings, VendorBoot};
+use oer_phy_calibration_capture::space::Register;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -612,7 +612,7 @@ mod tests {
 
     #[test]
     fn registers_compare_within_their_own_vendor_spread() {
-        let image = |name: &str, address| crate::registers::Register {
+        let image = |name: &str, address| oer_phy_calibration_capture::space::Register {
             name: name.into(),
             address,
         };

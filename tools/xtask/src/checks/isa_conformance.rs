@@ -55,7 +55,8 @@ pub fn run(ctx: &Checkout, cc: &Path) -> Result<()> {
     let suite = arch_test(&directory, &inputs.arch_test)?;
     let sail = sail(ctx, &directory, &inputs.sail)?;
     process::run(
-        oer_toolchain::blobray::cargo(&ctx.root, "test")
+        oer_toolchain::workspace::BLOBRAY
+            .cargo(&ctx.root, "test")
             .args([
                 "--locked",
                 "-p",

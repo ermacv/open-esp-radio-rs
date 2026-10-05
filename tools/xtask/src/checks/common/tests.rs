@@ -28,7 +28,7 @@ fn package(name: &str, class: &str) -> String {
 fn chip(id: &str, family: &str, target: &str) -> String {
     format!(
         "schema = 1\nid = \"{id}\"\nfamily = \"{family}\"\nrust-target = \"{target}\"\n\
-         boot = \"esp-idf-bootloader\"\nespflash-chip = \"{id}\"\nrevisions = [\"rev0\"]\n\
+         boot = \"staged\"\nespflash-chip = \"{id}\"\nrevisions = [\"rev0\"]\n\
          [properties]\nwifi-bands = [\"2g4\"]\nbluetooth = [\"le\"]\nieee802154 = false\ncores = 1\n"
     )
 }
@@ -166,9 +166,7 @@ fn a_chip_package_compiles_for_its_own_chip_target() {
         ),
     ]);
     let packages = production_packages(dir.path(), &model).unwrap();
-    let configurations =
-        architecture_configurations(dir.path(), &packages, "riscv32imafc-unknown-none-elf")
-            .unwrap();
+    let configurations = architecture_configurations(dir.path(), &packages).unwrap();
     let target = |package: &str| {
         configurations
             .iter()
@@ -182,7 +180,7 @@ fn a_chip_package_compiles_for_its_own_chip_target() {
     );
     assert_eq!(
         target("target-library"),
-        BTreeSet::from(["riscv32imafc-unknown-none-elf"])
+        BTreeSet::from(["riscv32imac-unknown-none-elf"])
     );
 }
 
@@ -211,7 +209,7 @@ fn a_family_package_compiles_for_every_target_of_its_family() {
         files.extend(chips.iter().map(|(path, text)| (*path, text.as_str())));
         let (dir, model) = repository(&files);
         let packages = production_packages(dir.path(), &model).unwrap();
-        architecture_configurations(dir.path(), &packages, "host-target")
+        architecture_configurations(dir.path(), &packages)
     };
     let targets = configurations("vendor")
         .unwrap()
@@ -227,4 +225,47 @@ fn a_family_package_compiles_for_every_target_of_its_family() {
     );
     let error = configurations("absent").unwrap_err().to_string();
     assert!(error.contains("which no chip declares"), "{error}");
+}
+
+#[test]
+fn a_profile_selecting_a_chip_compiles_only_for_that_chip_target() {
+    let chips = [
+        (
+            "platform/esp32x7/chip.toml",
+            chip("esp32x7", "vendor", "riscv32imafc-unknown-none-elf"),
+        ),
+        (
+            "platform/esp32x8/chip.toml",
+            chip("esp32x8", "vendor", "riscv32imac-unknown-none-elf"),
+        ),
+    ];
+    // A profile selects a chip through the package's feature table too.
+    let policy = "[package]\nname = 'policy'\n[features]\nesp32x7 = []\nesp32x8 = []\n\
+                  esp32x8-radio = ['esp32x8', 'dep:radio']\nembassy-radio = ['esp32x8-radio']\n\
+                  [package.metadata.open-radio]\nlayer = 'adapter'\nplatform = 'portable'\n\
+                  supported-feature-profiles = ['esp32x7', 'embassy-radio']\n";
+    let mut files = vec![WORKSPACE, ("libraries/policy/Cargo.toml", policy)];
+    files.extend(chips.iter().map(|(path, text)| (*path, text.as_str())));
+    let (dir, model) = repository(&files);
+    let packages = production_packages(dir.path(), &model).unwrap();
+    let found = architecture_configurations(dir.path(), &packages)
+        .unwrap()
+        .into_iter()
+        .map(|configuration| (configuration.target, configuration.features.join(" ")))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        found,
+        BTreeSet::from([
+            ("riscv32imac-unknown-none-elf".to_owned(), String::new()),
+            ("riscv32imafc-unknown-none-elf".to_owned(), String::new()),
+            (
+                "riscv32imac-unknown-none-elf".to_owned(),
+                "--no-default-features --features embassy-radio".to_owned()
+            ),
+            (
+                "riscv32imafc-unknown-none-elf".to_owned(),
+                "--no-default-features --features esp32x7".to_owned()
+            ),
+        ])
+    );
 }

@@ -16,7 +16,7 @@ the runner (`oer-hil-runner`), which `oer-hil-observer` builds and
 | `evidence` | `cargo hil evidence pending` and `dismiss`: the checkout's pending evidence (`oer_hil_run_bundle::store::pending`); `cargo qualification hil-evidence --pending` records it |
 | `experiments` | The arguments of `ab` and `bisect`, run by `oer-hil-experiment` |
 | `board`, `flash`, `stand`, `dashboard` | Arguments and calls only: board resets, consoles and soaks and the peer console through board I/O (`oer-hil-board`), manual flashing through the flash operation (`oer-hil-flash`), stand discovery, doctor and fixture probes through `oer-hil-stand-host`; the live page |
-| `firmware_catalog` | `cargo hil firmware`: lists and builds the ESP-IDF firmware catalog (`hil/peers`, `hil/bootloaders`, `verification/<chip>/hil-vendor`), which `oer-image`'s `esp_idf::catalog` builds against the pinned ESP-IDF, and flashes it through `oer_hil_flash::catalog` |
+| `firmware_catalog` | `cargo hil firmware`: lists and builds the ESP-IDF firmware catalog (`hil/peers`, `verification/<chip>/hil-vendor`), which `oer-image`'s `esp_idf::catalog` builds against the pinned ESP-IDF, and flashes it through `oer_hil_flash::catalog` |
 
 Commands and flags are documented in the [host guide](../README.md), the
 [stand guide](../stand.md) and the [runs guide](../runs.md); `cargo hil --help`
@@ -26,7 +26,7 @@ prints them.
 
 - A leading `--root PATH` names the checkout to act on; otherwise the binary
   acts on the checkout it was built from and refuses to run in another one.
-  The installed `oer-stand` (`cargo xtask stand-install`) and a job's detached
+  The installed `oer-stand` (`cargo stand install`) and a job's detached
   process pass it.
 - The runner locates OpenOCD of the ESP-IDF tools itself
   (`oer_hil_board::openocd::Openocd::locate`) and builds a chip's catalog

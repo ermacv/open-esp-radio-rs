@@ -145,7 +145,7 @@ fn chip_code_is_in_chip_only_and_chip_platform_packages() {
 
 #[test]
 fn declared_inputs_select_the_packages_that_read_them() {
-    let selection = run(&["qualification/catalog/esp32s31/coex.toml"]);
+    let selection = run(&["qualification/catalog/chip-a/coex.toml"]);
     assert!(selection.docs);
     assert_eq!(
         selection.packages,
@@ -270,35 +270,5 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
     assert_eq!(
         lock_dependents(old, &added),
         BTreeSet::from(["c".to_owned()])
-    );
-}
-
-#[test]
-fn chip_code_type_checks_the_final_images_and_each_class_that_compiles_it() {
-    use oer_hil_image_class::ImageClass;
-    let graph = |packages: &[&str]| packages.iter().map(|p| (*p).to_owned()).collect();
-    let graphs = vec![
-        (
-            ImageClass::BluetoothGatt,
-            graph(&["agent", "oer-bluetooth-radio"]),
-        ),
-        (ImageClass::Performance, graph(&["agent", "oer-wifi"])),
-        (ImageClass::Correctness, graph(&["agent", "oer-wifi"])),
-        (
-            ImageClass::DiagnosticIeee802154Thread,
-            graph(&["agent", "oer-ieee802154-radio"]),
-        ),
-    ];
-    assert_eq!(
-        image_classes(&BTreeSet::from(["oer-ieee802154-radio"]), &graphs),
-        [
-            ImageClass::Performance,
-            ImageClass::Correctness,
-            ImageClass::DiagnosticIeee802154Thread
-        ]
-    );
-    assert_eq!(
-        image_classes(&BTreeSet::from(["oer-wifi"]), &graphs),
-        [ImageClass::Performance, ImageClass::Correctness]
     );
 }

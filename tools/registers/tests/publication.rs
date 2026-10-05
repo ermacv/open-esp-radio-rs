@@ -5,7 +5,13 @@ fn manifest() -> (tempfile::TempDir, PathBuf, String) {
         .join("../..")
         .canonicalize()
         .unwrap();
-    let base = root.join("registers/esp32s31/publication");
+    // The first chip with a register publication.
+    let base = std::fs::read_dir(root.join("registers"))
+        .unwrap()
+        .map(|chip| chip.unwrap().path().join("publication"))
+        .filter(|base| base.join("registers.toml").is_file())
+        .min()
+        .unwrap();
     let source = fs::read_to_string(base.join("registers.toml")).unwrap();
     // All relative inputs/outputs in this concrete composition start with ../.
     let source = source.replace("\"../", &format!("\"{}/../", base.display()));

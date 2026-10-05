@@ -7,7 +7,7 @@
 //! through registers until a call or another write clobbers them), and
 //! words in code that hold an address. Two links of the same code that
 //! differ only in where functions and data were placed list alike; that is
-//! what `cargo xtask compare elf` compares. Compressed and full encodings of
+//! what `cargo fw compare` compares. Compressed and full encodings of
 //! one instruction list alike too.
 
 use oer_riscv_decode::{Extension, Float, Inst, Instruction, Reg, Register};

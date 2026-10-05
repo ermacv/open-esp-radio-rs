@@ -69,8 +69,8 @@ mod tests {
     use crate::testing::problems;
 
     const CHIP: (&str, &str) = (
-        "platform/esp32s31/chip.toml",
-        "schema = 1\nid = \"esp32s31\"\nfamily = \"espressif\"\nrust-target = \"riscv32imafc-unknown-none-elf\"\nboot = \"staged\"\nespflash-chip = \"esp32s31\"\nrevisions = [\"rev0\"]\n[properties]\nwifi-bands = [\"2g4\"]\nbluetooth = [\"le\"]\nieee802154 = true\ncores = 2\n",
+        "platform/chip-a/chip.toml",
+        "schema = 1\nid = \"chip-a\"\nfamily = \"espressif\"\nrust-target = \"riscv32imafc-unknown-none-elf\"\nboot = \"staged\"\nespflash-chip = \"chip-a\"\nrevisions = [\"rev0\"]\n[properties]\nwifi-bands = [\"2g4\"]\nbluetooth = [\"le\"]\nieee802154 = true\ncores = 2\n",
     );
 
     fn manifest(name: &str, table: &str) -> String {

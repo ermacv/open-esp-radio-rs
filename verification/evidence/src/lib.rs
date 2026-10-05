@@ -2,11 +2,8 @@
 //! per scenario, so each scenario run rewrites only its own file. A scenario
 //! writes its shard after it passed; qualification consumes the directory.
 //!
-//! - [`index`]: the shard format ([`Index`]), its validation and whether its
-//!   recorded sources are still current, and the cross-scenario views of a
-//!   whole directory ([`Evidence`]);
-//! - [`store`]: the one reader and writer of shard files, and which shards
-//!   of a directory are stale;
+//! The shard format, its reader and writer are `oer-vendor-evidence-shard`.
+//!
 //! - [`policy`]: the verdict source policy — the path closure a shard may
 //!   record, without the report packages that decide no verdict;
 //! - [`diff`]: what two versions of one shard say differently;
@@ -23,13 +20,9 @@
 #![forbid(unsafe_code)]
 
 pub mod diff;
-pub mod index;
 pub mod policy;
 pub mod producer;
 #[cfg(feature = "producers")]
 pub mod run;
-pub mod store;
-
-pub use index::*;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

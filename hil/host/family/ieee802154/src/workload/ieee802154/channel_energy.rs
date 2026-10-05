@@ -1,7 +1,7 @@
 //! IEEE 802.15.4 channel energy and clear-channel assessment against a busy
 //! channel.
 //!
-//! The reference peer (`hil/peers/esp32c5-ieee802154`) transmits one
+//! The reference peer (the IEEE 802.15.4 peer project of `hil/peers`) transmits one
 //! maximum-length frame back to back on the session channel. One session on
 //! the device under test measures the energy on that channel and on a far
 //! channel and assesses both, retuning between them:

@@ -6,7 +6,7 @@ air. This guide covers leases, boards and their firmware; the
 [runs and investigation](runs.md) what a run leaves behind.
 
 
-The [arbiter](arbiter/README.md) orders every use of the stand. A lease claims the resources its work uses:
+The [arbiter](../../stand/arbiter/README.md) orders every use of the stand. A lease claims the resources its work uses:
 boards by MAC, fixtures such as the laptop radio, the OpenWrt host or the
 Bluetooth adapter, and the air, shared by all radio work and exclusive for
 scenarios tagged `air-exclusive` that measure the radio environment. Leases
@@ -17,12 +17,12 @@ their claims instead of failing when they are busy. A run builds its images
 before it queues, so the lease covers flashing and execution only.
 
 ```console
-cargo hil queue                       # holders, queue with expected starts, board state
+cargo stand queue                       # holders, queue with expected starts, board state
 cargo hil dashboard                   # the same, live, with recent runs: http://127.0.0.1:8765
 cargo hil run <scenario>              # one run, one lease
 cargo hil run a b c                   # one run of three scenarios, one lease
-cargo hil lease --board esp32c5 -- idf.py -p <port> flash
-cargo hil --owner phy lease --board esp32s31 -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
+cargo stand lease --board esp32c5 -- idf.py -p <port> flash
+cargo stand --owner phy lease --board esp32s31 -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
 ```
 
 A leased command that is itself a stand command (`cargo hil …` or
@@ -30,31 +30,22 @@ A leased command that is itself a stand command (`cargo hil …` or
 queues, so a mistyped option fails at once instead of after the wait; commands
 the runner parses (`run`, `run-all`, `image`) are checked when they run.
 
-`flash --board NAME|MAC BUNDLE|ELF` is the manual cycle for images outside
-the runner and the ESP-IDF catalog: an image bundle that `cargo xtask build
-firmware` or `cargo hil image build` made (its directory), or the ELF of an
-ESP-IDF-bootloader chip's first no_std images, which the image pipeline
-bundles with the chip's project bootloader before queueing. It leases only
-that board and the air (shared; `--air exclusive` for RF measurements; `--air
-none` for an image that never enables the radio, which then runs beside an
-exclusive air lease) and goes through the flash operation like every flash
-(below), journaling the image under `--image` or the bundle's or ELF's name.
-`--monitor 30s` captures the console,
-read from the port itself, into
-`target/hil/flash/<mac>/console-*.log` for at most that long; with
-`--until TEXT` it ends at the first line containing TEXT and fails when none
-does. `--via jtag` writes the bundle's segments through OpenOCD and the
-chip's JTAG and resets it through the debug module; the console is opened
-first without touching the reset lines. It works over any running image,
-including one that breaks USB Serial/JTAG resets (see
-[Hardware errata](../../docs/hardware-errata.md)). `cargo hil firmware flash
-IMAGE --board BOARD --jtag` does the same for a catalog image. The OpenOCD
+A manual flash outside the runner is the dev kit's: `cargo fw flash
+--device MAC|PORT IMAGE` writes an image bundle (its directory, from `cargo
+fw build` or `cargo hil image build`), an example (built first) or an
+ESP-IDF catalog image (built first) to an attached board. It takes the
+board's device lock, which a stand lease of another process holds, so it
+fails at once on a leased board (or waits with `--wait`) and never writes
+under a run; the write is the receipted image write of `oer-device-image`,
+and `--monitor` reads the console afterwards. Over JTAG only the runner's
+flash operation writes (an image that breaks USB Serial/JTAG resets, see
+[Hardware errata](../../docs/hardware-errata.md)). The OpenOCD
 build comes from the ESP-IDF tools in the shared cache. The lease ends with
 the capture, so an open monitor never holds a board.
 
 ### The flash operation
 
-Every flash of a stand board, `flash`, `firmware flash`, the runner's flash
+Every flash of a stand board by HIL, the runner's flash
 of its device under test and of the reference peers and the calibration
 cross-check, is one operation (`oer-hil-flash`):
 
@@ -78,7 +69,7 @@ cross-check, is one operation (`oer-hil-flash`):
    resets work.
 
 ```console
-cargo hil flash --board esp32c5 --monitor 30s --until READY target/.../app.elf
+cargo fw flash --device <MAC|PORT> --monitor target/firmware/<chip>-<example>/build-<id>
 ```
 
 `dashboard` serves a page on the loopback interface (`--port` changes the
@@ -129,12 +120,12 @@ arguments before `--`, and refuses two different owners:
 The environment variable `OER_HIL_OWNER` carries the same choice. A lease
 belongs to one of the agents that use the stand: `stand`, `wifi`, `phy`,
 `bluetooth`, `blobray`, `infra`, `802154`, `esp32c5` or `network`. Each checkout
-registers its owner once with `cargo hil owner set NAME`, kept in
-`owners.json` of the arbiter directory; `cargo hil owner` prints it. Nothing
+registers its owner once with `cargo stand owner set NAME`, kept in
+`owners.json` of the arbiter directory; `cargo stand owner` prints it. Nothing
 is derived from the checkout's directory name: a lease requested for no
-agent is refused with an error naming `cargo hil owner set`. `cargo hil owner
+agent is refused with an error naming `cargo stand owner set`. `cargo stand owner
 merge OLD NEW` charges an old name's balance and history to its agent, and
-`cargo hil owner forget NAME` drops a balance that belongs to no agent. A request
+`cargo stand owner forget NAME` drops a balance that belongs to no agent. A request
 names no duration: the stand charges the time a lease holds, as follows.
 
 Every lease charges its owner's balance the time it holds, and an owner whose
@@ -147,7 +138,7 @@ balance is served first, the earlier request on a tie. Balances halve every
 two hours and stay within an hour either way, and every settlement subtracts
 the mean over the owners active in the last day, so balances move smoothly and
 their sum stays near zero: an idle owner drifts up while others hold and down
-while others wait. `cargo hil queue` and the dashboard show every balance
+while others wait. `cargo stand queue` and the dashboard show every balance
 and who is served next; the lease history records each lease's charge, its
 owner's balance at release and the balances its grant was decided by.
 
@@ -163,7 +154,7 @@ hour, and a scenario started after a renewal has 40 minutes. A single scenario
 and a `lease` command run to their end. Every
 lease ends at one hour: it is stopped with `SIGTERM`, which runs the ordinary
 cancellation and fixture cleanup, a `lease` stopped this way exits with status
-124, and `SIGKILL` follows five minutes later. `cargo hil preempt ID --reason
+124, and `SIGKILL` follows five minutes later. `cargo stand preempt ID --reason
 TEXT` stops another owner's lease the same way at once: its owner is charged
 no longer from that moment, the holder prints who preempted it and why when it
 releases, the history records it as `preempted-on-request`, and the user is
@@ -184,13 +175,13 @@ waits in the queue, which can last longer than the work itself. A timeout that
 fires while the request waits only drops it from the queue; one that fires
 during the lease stops the work with `SIGTERM` and the ordinary cleanup, so a
 run ends interrupted with no verdict. Every lease already ends at the one-hour
-hard limit; to stop a lease that is stuck, use `cargo hil preempt`.
+hard limit; to stop a lease that is stuck, use `cargo stand preempt`.
 
 The stand holds several equal boards, currently an ESP32-S31 and an ESP32-C5.
 No board has a fixed role: a scenario or other consumer chooses which board it
 uses as its device under test or as a peer, and may flash its own firmware.
 The stand file (`~/.config/open-esp-radio/stand.toml`,
-[`oer-hil-stand-model`](../stand/model/README.md)) describes the hubs and
+[`oer-stand-file`](../../stand/file/README.md)) describes the hubs and
 the boards: each board's id, chip, radios, roles, hub port and reset ladder.
 Each board is identified by the MAC address its USB Serial/JTAG port reports
 as USB serial number, independent of `/dev/ttyACM*` numbering. Every board is part of the
@@ -198,7 +189,7 @@ stand: flash and use any board only under a lease.
 
 ## The stand file
 
-`cargo hil stand discover` maps every Espressif board `uhubctl` reports to
+`cargo stand discover` maps every Espressif board `uhubctl` reports to
 its stand-file hub, port and touch button and compares the result with the
 stand file: `ok` for a board on its port, `moved`, `missing` with why its
 port is empty (the port is off; the port is powered but empty, so its button
@@ -212,38 +203,38 @@ lease and requires the board's own USB device to leave while the port is off
 and to return once it is on: the ROM prints its power-on reset reason before
 the board's USB enumerates, so the board's own port never shows it.
 
-`cargo hil stand doctor` checks the host around the stand file: the file
+`cargo stand doctor` checks the host around the stand file: the file
 (private, valid, every board's chip and radios against its profile), the
-repository's udev rule installed (`hil/stand/udev/`) and `uhubctl` reading
+repository's udev rule installed (`stand/udev/`) and `uhubctl` reading
 every stand hub without sudo, and NetworkManager leaving `wlan0` to the
-fixtures (`hil/stand/networkmanager/`, installed in
+fixtures (`stand/networkmanager/`, installed in
 `/etc/NetworkManager/conf.d/`).
 
 ```console
-cargo hil stand discover              # ok s31-a on rsh-mid:3 (button 6)
-cargo hil stand discover --blink rsh-bottom:2
-cargo hil stand discover --verify-power s31-a
-cargo hil stand doctor
+cargo stand discover              # ok s31-a on rsh-mid:3 (button 6)
+cargo stand discover --blink rsh-bottom:2
+cargo stand discover --verify-power s31-a
+cargo stand doctor
 ```
 
 ## Boards
 
-A board, or the whole stand, can be taken out of service: `cargo hil --owner
+A board, or the whole stand, can be taken out of service: `cargo stand --owner
 NAME devices maintenance BOARD|--stand --reason TEXT` records it in
-`maintenance.json` of the arbiter directory. Until `cargo hil devices release
+`maintenance.json` of the arbiter directory. Until `cargo stand devices release
 BOARD|--stand`, a request by another owner that claims the board (any board,
 for `--stand`) or the whole stand does not get it: a run waits, printing the
 reason, and starts once it is back in service; a tool acting on the board
 itself (`board`, `lease`, `flash`) is refused with the reason at once. A
 quarantined board is out of service the same way. A lease already held runs
-on. `cargo hil queue` and the dashboard list what is out of service.
+on. `cargo stand queue` and the dashboard list what is out of service.
 
 An agent that needs the stand waits for it with a shell command, never for a
-chat message: `cargo hil wait --service [BOARD...]` blocks until the named
+chat message: `cargo stand wait --service [BOARD...]` blocks until the named
 boards (every board when none is named) and the stand are back in service,
 printing what it waits for, and exits 0.
 
-`cargo hil devices`, `cargo hil queue` and the dashboard show each board's
+`cargo stand devices`, `cargo stand queue` and the dashboard show each board's
 health from the stand's own records, without touching the board: `ok`,
 `recovered recently` (the stand recovered it within the last hour, with how
 many of those recoveries were hardware-level), `maintenance`, `QUARANTINED`
@@ -262,7 +253,7 @@ Tools reach a board's port only through the stand's commands, which release
 RTS before DTR so opening a port never resets the chip, and hold a lease of
 the board while they use it; a script or terminal that opens a board's port
 itself can reset the chip.
-`cargo hil board reset BOARD` resets through the USB Serial/JTAG RTS line
+`cargo stand board reset BOARD` resets through the USB Serial/JTAG RTS line
 (default), `--via jtag` through OpenOCD and the chip's debug module,
 `--via download` by cycling the power of the board's hub port and, as soon as
 its USB returns, resetting it into the ROM's download mode (the recovery
@@ -270,7 +261,7 @@ ladder's entry for a board whose image switches its USB Serial/JTAG off), or
 `--via power` by cycling the
 power of the board's hub port (off, then on), and prints the reset
 line the ROM reports. A hub port is switched only that way, under the board's
-lease: `cargo hil lease` refuses a command that runs `uhubctl`, and the
+lease: `cargo stand lease` refuses a command that runs `uhubctl`, and the
 repository's Claude Code hook refuses `uhubctl` with an action, so no port is
 left off. When a lease of a board that resets by power is granted and
 when it is released, the arbiter returns the port to its working state: a port
@@ -295,19 +286,24 @@ its timeout (ten minutes to program, one otherwise). A tool that holds a long
 interactive session under a board lease, such as the calibration cross-check,
 opens the port through the same library functions,
 `oer_hil_board::reset::{open_without_reset,
-reset_into_application}`, never through `serialport` itself. Every reset,
+reset_into_application}`. Every serial line of the stand, those consoles,
+the flash writer's, the device-under-test session's and the peer consoles,
+is opened by one owner, `oer_hil_board::port::Port` (by path, with its
+`Settings`: line rate, read timeout, modem lines, busy retry); the link
+reads the lines the stand opens for it (`oer_hil_lab::{peer_console,
+attach_console}` and the `Dut` console opener). Every reset,
 here and in the runner's recoveries, is a rung of the one ladder of
 board I/O (`oer_hil_board::reset`).
 
 ```console
-cargo hil devices                     # the stand file's boards: label, port, last firmware
-cargo hil board check esp32c5
-cargo hil board reset esp32c5 --via jtag
-cargo hil board reset esp32c5 --via power
-cargo hil board console esp32c5 --for 30s --until @READY
-cargo hil board soak esp32c5 --for 8h --via rts,jtag
+cargo stand devices                     # the stand file's boards: label, port, last firmware
+cargo stand board check esp32c5
+cargo stand board reset esp32c5 --via jtag
+cargo stand board reset esp32c5 --via power
+cargo stand board console esp32c5 --for 30s --until @READY
+cargo stand board soak esp32c5 --for 8h --via rts,jtag
 cargo hil peer send esp32c5 SYNC
-cargo hil lease --board esp32c5 --flashed ieee802154-peer --application build/peer.bin \
+cargo stand lease --board esp32c5 --flashed ieee802154-peer --application build/peer.bin \
     --device esp32c5 -- idf.py -p /dev/ttyACM1 flash
 ```
 
@@ -315,10 +311,8 @@ cargo hil lease --board esp32c5 --flashed ieee802154-peer --application build/pe
 
 Tracked ESP-IDF firmware forms one catalog: every project with a
 `firmware.toml` beside its `CMakeLists.txt`, peers in `hil/peers/<project>/`,
-vendor references in `verification/<chip>/hil-vendor/<project>/` and each
-chip's second-stage bootloader in `hil/bootloaders/<chip>/` (`kind =
-"bootloader"`), which `cargo hil flash` writes to every board of that chip.
-A bootloader entry is never flashed on its own. `hold = "REASON"` in a
+vendor references in `verification/<chip>/hil-vendor/<project>/`; each
+image is bundled with its own bootloader and partition table. `hold = "REASON"` in a
 manifest refuses every flash of that image, including a run's automatic peer
 restore, which then blocks its scenarios with the reason; `firmware list`
 shows it. The
@@ -330,17 +324,15 @@ archives the image builds against: an ESP32-C5 image names `esp32c5`. Builds are
 ```console
 cargo hil firmware list
 cargo hil firmware build ieee802154-peer
-cargo hil firmware flash ieee802154-peer --board esp32c5
+cargo fw flash ieee802154-peer --device <MAC|PORT>
 ```
 
-`firmware flash` builds the image, leases only the named board with the air
-shared, bundles the build's application with its own bootloader and
-partition table (the build's `flasher_args.json` must place them at the
-chip's flash map and flash nothing else) and writes the bundle through the
-flash operation, journaling the image with its digest, the repository commit
-and whether the project differs from it. `--if-changed` leaves a board alone
-whose journal says it carries the current build. A board whose chip differs
-from the image's target is refused.
+`cargo fw flash IMAGE` builds a catalog image, bundles the build's
+application with its own bootloader and partition table (the build's
+`flasher_args.json` must place them at the chip's flash map and flash
+nothing else) and writes the bundle; a board whose receipt already records
+that image's digest is not written again. A board whose chip differs from
+the image's target is refused.
 
 The board journal (`board.jsonl` of the arbiter directory) has one writer of
 a flash, the flash operation. A flash outside it (a vendor image, a manual
@@ -354,7 +346,7 @@ On every grant the arbiter prints the last flashed firmware of every board
 made since this owner's previous lease. It only reports this state; it never
 erases or restores it. The startup artifact, which carries the PHY calibration
 cache, is a host file uploaded at every boot; a relative path belongs to each
-checkout, so another owner's cache never reaches a run. `cargo hil queue` lists
+checkout, so another owner's cache never reaches a run. `cargo stand queue` lists
 the newest upload or write of every such file. The queue, history, journal and jobs live in the arbiter directory of the
 user's host cache, so every checkout of the repository shares them. The
 arbiter's last exclusion layer is a lock file per board (named by its MAC)
@@ -365,7 +357,7 @@ waits for such a process to finish.
 
 ## Host fixtures
 
-`cargo hil fixtures` probes the host fixtures the stand file names:
+`cargo stand fixtures` probes the host fixtures the stand file names:
 this host's Wi-Fi radios and Bluetooth adapter and the OpenWrt station fixture
 and air observer over SSH. It prints each one's lease key (the claim a run
 takes it by), whether it answers, its model and firmware, and each

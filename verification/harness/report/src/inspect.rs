@@ -1470,7 +1470,7 @@ pub fn show(corpus: &Corpus, name: &str) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
-/// The Blobray executable `cargo xtask vendor-scenario` passes to every
+/// The Blobray executable `cargo verification scenario` passes to every
 /// command; inspection reads the pinned artifacts itself and ignores it.
 #[derive(clap::Args)]
 pub struct Runner {

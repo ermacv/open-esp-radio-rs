@@ -3,7 +3,8 @@
 use crate::harness::Result;
 use crate::session;
 use crate::{coverage, observation, state};
-use oer_vendor_evidence::{Index, policy};
+use oer_vendor_evidence::policy;
+use oer_vendor_evidence_shard::Index;
 use std::path::{Path, PathBuf};
 
 /// The compiled production images a chip's scenarios run, and where their
@@ -19,13 +20,13 @@ pub struct ProbeImages {
 
 /// Blobray workspace, which also resolves the scenario packages and the
 /// engine behind every verdict.
-const TOOL_MANIFEST: &str = "tools/blobray/Cargo.toml";
+const TOOL_MANIFEST: &str = "verification/Cargo.toml";
 /// Production crates, which shards track by executed file.
 const PRODUCTION_CRATES: &str = "crates";
 /// The pinned toolchain, and the lock file and package manifest names.
 const TOOLCHAIN: &str = "rust-toolchain.toml";
 /// The directory name Cargo writes build outputs below; like
-/// [`oer_vendor_evidence::digest_directory`], a shard never records it.
+/// [`oer_vendor_evidence_shard::digest_directory`], a shard never records it.
 const BUILD_OUTPUT: &str = "target";
 const LOCK_FILE: &str = "Cargo.lock";
 const PACKAGE_MANIFEST: &str = "Cargo.toml";
@@ -101,7 +102,7 @@ fn path_closure(
 }
 
 /// Why a shard cannot be written without the verdict libraries' dep-info.
-const VERDICT_DEP_INFO_REQUIRED: &str = "shards are written only through cargo xtask vendor-scenario, which passes the verdict libraries' dep-info";
+const VERDICT_DEP_INFO_REQUIRED: &str = "shards are written only through cargo verification scenario, which passes the verdict libraries' dep-info";
 
 /// What Cargo compiled for one shard: the probe image's dep-info, the
 /// dep-info of the libraries that decide the verdicts, and the manifests of
@@ -221,13 +222,13 @@ pub fn shard(
     let sources = paths
         .into_iter()
         .map(|path| {
-            Ok(oer_vendor_evidence::SourceDigest {
-                sha256: oer_vendor_evidence::digest_source(&root, &path)?,
+            Ok(oer_vendor_evidence_shard::SourceDigest {
+                sha256: oer_vendor_evidence_shard::digest_source(&root, &path)?,
                 path,
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let line = |(path, line): (PathBuf, u32)| oer_vendor_evidence::SourceLine { path, line };
+    let line = |(path, line): (PathBuf, u32)| oer_vendor_evidence_shard::SourceLine { path, line };
     let mut observation = observation::Sources::default();
     let (_, unobserved) =
         observation.classify(&root, crate::chip().observation, &claims.lines.unobserved())?;
@@ -249,17 +250,17 @@ pub fn shard(
         .collect();
     let decisions = PathBuf::from(crate::chip().coverage);
     let index = Index {
-        schema: oer_vendor_evidence::SCHEMA,
-        command: oer_vendor_evidence::BLOBRAY.into(),
+        schema: oer_vendor_evidence_shard::SCHEMA,
+        command: oer_vendor_evidence_shard::BLOBRAY.into(),
         target: target.into(),
         scenario: scenario.into(),
         inputs: claims.inputs.clone(),
         sources,
-        dependence: oer_vendor_evidence::Dependence {
+        dependence: oer_vendor_evidence_shard::Dependence {
             read_data: dependencies.read_data.clone(),
             fallback: dependencies.fallback.clone(),
-            coverage_decisions: Some(oer_vendor_evidence::DecisionDigest {
-                sha256: oer_vendor_evidence::CoverageDecisions::read(&root, &decisions)?
+            coverage_decisions: Some(oer_vendor_evidence_shard::DecisionDigest {
+                sha256: oer_vendor_evidence_shard::CoverageDecisions::read(&root, &decisions)?
                     .applicable_digest(&functions),
                 path: decisions,
             }),
@@ -273,11 +274,13 @@ pub fn shard(
         observed: claims.lines.observed.iter().cloned().map(line).collect(),
         unprojected: state::ranges(&unprojected)
             .into_iter()
-            .map(|(symbol, offset, length)| oer_vendor_evidence::StateRange {
-                symbol,
-                offset,
-                length,
-            })
+            .map(
+                |(symbol, offset, length)| oer_vendor_evidence_shard::StateRange {
+                    symbol,
+                    offset,
+                    length,
+                },
+            )
             .collect(),
     };
     index.validate(target)?;
@@ -287,7 +290,7 @@ pub fn shard(
 /// Write `index` into the index at `directory` through the one shard
 /// writer, and name the file.
 pub fn record(directory: &Path, index: &Index) -> Result<()> {
-    let path = oer_vendor_evidence::store::write(directory, index)?;
+    let path = oer_vendor_evidence_shard::store::write(directory, index)?;
     println!("evidence shard {}", path.display());
     Ok(())
 }

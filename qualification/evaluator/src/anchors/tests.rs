@@ -29,7 +29,7 @@ impl Repository {
             _ => "tool",
         };
         let chip = if platform == "chip" {
-            "chip = \"esp32s31\"\n"
+            "chip = \"chip-a\"\n"
         } else {
             ""
         };

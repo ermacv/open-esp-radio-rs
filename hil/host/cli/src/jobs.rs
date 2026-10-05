@@ -2,7 +2,7 @@
 //! [--after JOB]`, `cargo hil wait JOB`, and `--after JOB` in the
 //! foreground.
 //!
-//! A job is the arbiter's ticket model ([`oer_hil_arbiter::jobs`]): its
+//! A job is the arbiter's ticket model ([`oer_stand_arbiter::jobs`]): its
 //! record lives in the arbiter directory and every stand request its process
 //! and runner make carries its id. This module keeps what a job needs of the
 //! command line: a copy of this binary, the checkout's runner and the source
@@ -10,7 +10,7 @@
 
 use std::{ffi::OsString, fs, path::PathBuf};
 
-use oer_hil_arbiter::jobs::{After, Job, JobState};
+use oer_stand_arbiter::jobs::{After, Job, JobState};
 
 use crate::Result;
 use oer_process::Checkout;
@@ -26,8 +26,8 @@ pub const FROZEN_SNAPSHOT_ENV: &str = "OER_HIL_JOB_SNAPSHOT";
 pub const ENQUEUE: &str = "--enqueue";
 pub use oer_hil_experiment::job::{AFTER, AFTER_ANY};
 
-fn jobs() -> Result<oer_hil_arbiter::jobs::Jobs> {
-    Ok(oer_hil_arbiter::Arbiter::open()?.jobs())
+fn jobs() -> Result<oer_stand_arbiter::jobs::Jobs> {
+    Ok(oer_stand_arbiter::Arbiter::open()?.jobs())
 }
 
 /// What a job runs with, fixed before it waits: a copy of this binary, the
@@ -206,8 +206,8 @@ pub fn enqueue(
                 after.job.as_str(),
             ]
         }))
-        .env(oer_hil_arbiter::jobs::JOB_ENV, &id)
-        .env(oer_hil_arbiter::OWNER_ENV, owner)
+        .env(oer_stand_arbiter::jobs::JOB_ENV, &id)
+        .env(oer_stand_owners::OWNER_ENV, owner)
         .stdin(std::process::Stdio::null())
         .stdout(output.try_clone()?)
         .stderr(output);
@@ -286,12 +286,12 @@ mod board_choice_tests {
     fn the_chosen_boards_reach_each_run() {
         assert!(BoardChoiceArgs::default().arguments().is_empty());
         let both = BoardChoiceArgs {
-            board: Some("s31-b".into()),
-            peer_board: Some("c5-a".into()),
+            board: Some("dut-b".into()),
+            peer_board: Some("peer-a".into()),
         };
         assert_eq!(
             both.arguments(),
-            ["--board", "s31-b", "--peer-board", "c5-a"]
+            ["--board", "dut-b", "--peer-board", "peer-a"]
         );
     }
 }

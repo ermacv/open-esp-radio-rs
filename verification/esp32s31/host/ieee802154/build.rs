@@ -1,6 +1,6 @@
 //! Compile the pinned public ESP-IDF IEEE 802.15.4 driver for the host.
 //!
-//! Every vendor file is read from the sources `cargo xtask vendor-fetch`
+//! Every vendor file is read from the sources `cargo verification fetch`
 //! fetched, or from the checkout `OER_ESP_IDF_DIR` names, and must match the
 //! SHA-256 pinned in the repository's `artifacts.toml`. The build generates a recording
 //! replacement for every `ieee802154_ll_*` accessor declared by the real
@@ -14,7 +14,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oer_vendor_artifacts::Manifest;
+use oer_vendor_pins::Manifest;
 
 const SOURCE_ENV: &str = "OER_ESP_IDF_DIR";
 const COMMON_LL: &str = "components/esp_hal_ieee802154/include/hal/ieee802154_common_ll.h";

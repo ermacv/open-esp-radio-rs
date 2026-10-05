@@ -4,7 +4,7 @@ use oer_hil_protocol::system::StackWatermark;
 
 pub(crate) fn current_irq_snapshot() -> Option<StackWatermark> {
     {
-        let capacity = crate::psram_task_stack::IRQ_STACK_BYTES as u32;
+        let capacity = crate::psram_task_stack::irq_stack_bytes() as u32;
         let free = crate::psram_task_stack::current_hart_interrupt_stack_free_bytes() as u32;
         // Source checks compile this image without the runner's stack policy;
         // only runner-built images take snapshots, and those always carry it.

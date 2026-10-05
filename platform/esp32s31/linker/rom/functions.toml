@@ -7,7 +7,7 @@
 # (`esp32s31_rev0_rom.elf`) and requires a summary to agree with the machine
 # code wherever the analysis bounds the function itself. `cargo xtask check
 # firmware --all` (nightly) fails on a summary no image class reaches, and
-# `cargo xtask check provenance` keeps each cited function's code fingerprint,
+# `cargo verification check provenance` keeps each cited function's code fingerprint,
 # so a changed ROM fails until reviewed.
 
 # SOURCE(esp32s31): rev0 ROM `memset` (newlib's RISC-V assembly) never writes

@@ -1,6 +1,6 @@
 //! The executed host observer has its own build subject, separate from firmware.
 use super::*;
-pub(super) use oer_hil_observer::inputs as build_inputs;
+pub(super) use oer_hil_run_bundle_format::observer::inputs as build_inputs;
 use serde_json::{Value, json};
 
 /// One prepared configuration shared by archive loading and shards. Loading it
@@ -21,9 +21,9 @@ impl Current {
         }
     }
     fn read(root: &Path) -> Result<Self> {
-        let path = oer_hil_observer::receipt::selected(root);
+        let path = oer_hil_run_bundle_format::observer::receipt::selected(root);
         let receipt: Value = read_json(&path).map_err(|error| format!(
-            "current observer configuration unavailable ({}): {error}; prepare with cargo xtask hil-observer", path.display()))?;
+            "current observer configuration unavailable ({}): {error}; prepare with cargo hil observer", path.display()))?;
         let build = &receipt["build"];
         let mut resolved = build["resolved"].clone();
         if build["schema"] != 2
@@ -104,7 +104,7 @@ impl Current {
             || resolved["cargo_config"] != live["cargo_config"]
             || resolved["selected_profile"] != profile
         {
-            return Err("prepared observer configuration is stale: normal/build dependencies or Cargo configuration changed; prepare with cargo xtask hil-observer".into());
+            return Err("prepared observer configuration is stale: normal/build dependencies or Cargo configuration changed; prepare with cargo hil observer".into());
         }
         Ok(Self {
             resolved: Some(resolved),
@@ -133,10 +133,12 @@ fn lock_dependencies(resolved: &Value) -> Result<Value> {
                 .values()
                 .find(|m| m["package"]["name"] == package["name"])
                 .ok_or("local dependency manifest missing")?;
-            Some(oer_hil_observer::cargo_inputs::dependency_names_in(
-                manifest,
-                &resolved["manifests"]["Cargo.toml"],
-            )?)
+            Some(
+                oer_hil_run_bundle_format::observer::cargo_inputs::dependency_names_in(
+                    manifest,
+                    &resolved["manifests"]["Cargo.toml"],
+                )?,
+            )
         } else {
             None
         };
@@ -267,7 +269,9 @@ fn inputs(root: &Path, prefixes: &[PathBuf]) -> Result<BTreeMap<String, String>>
                     }
                     files.insert(
                         relative.to_string_lossy().into_owned(),
-                        sha256_file(&root.join(relative))?,
+                        crate::digests()
+                            .sha256_file(&root.join(relative))
+                            .map_err(|error| error.to_string())?,
                     );
                 }
             }
@@ -406,7 +410,7 @@ pub(super) fn assess(
 }
 
 #[cfg(test)]
-pub(super) use oer_hil_observer::inputs::required_configuration;
+pub(super) use oer_hil_run_bundle_format::observer::inputs::required_configuration;
 
 fn profile_configuration(resolved: &Value) -> Value {
     let Some(mut name) = resolved["selected_profile"].as_str() else {
@@ -456,7 +460,7 @@ mod tests {
                 "oer-hil-family-bluetooth",
                 "oer-hil-family-system",
                 "oer-hil-family-ieee802154",
-                "oer-hil-family-phy",
+                "oer-hil-family-phy-esp32s31",
             ]
             .into_iter()
             .filter(|package| names.contains(*package))
@@ -498,7 +502,10 @@ mod tests {
         assert_eq!(family("wifi/station-udp"), ["oer-hil-family-ieee80211"]);
         assert_eq!(family("bluetooth/dtm"), ["oer-hil-family-bluetooth"]);
         assert_eq!(family("system/boot-smoke"), ["oer-hil-family-system"]);
-        assert_eq!(family("phy/vendor-calibration"), ["oer-hil-family-phy"]);
+        assert_eq!(
+            family("phy/vendor-calibration"),
+            ["oer-hil-family-phy-esp32s31"]
+        );
         assert!(!data_inputs(&root).unwrap().is_empty());
     }
 

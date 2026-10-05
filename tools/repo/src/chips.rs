@@ -3,6 +3,9 @@
 
 use oer_chip_profile::Profile;
 
+/// The chip profile model, for the readers of [`Chips`].
+pub use oer_chip_profile as profile;
+
 use crate::{Result, files::Repo};
 
 /// Every supported chip's profile, sorted by id.
@@ -15,6 +18,17 @@ impl Chips {
             return Ok(Self::default());
         }
         Profile::all(repo.root())
+            .map(Self)
+            .map_err(|error| format!("chip profiles: {error}"))
+    }
+
+    /// Every chip profile below the checkout `root`, without reading the
+    /// rest of the repository.
+    pub fn at(root: &std::path::Path) -> Result<Self> {
+        if !root.join("platform").is_dir() {
+            return Ok(Self::default());
+        }
+        Profile::all(root)
             .map(Self)
             .map_err(|error| format!("chip profiles: {error}"))
     }

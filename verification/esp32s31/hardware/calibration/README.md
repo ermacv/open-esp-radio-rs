@@ -26,8 +26,10 @@ project it flashes against the pinned ESP-IDF (the image pipeline's
 and OTA selection the pipeline encodes around the vendor application. Every
 flash goes through the run's flash operation under its lease and lock of
 the board, which journals it. The results are the run bundle's: each boot is
-a typed observation (`vendor-boot-NN`, `production-boot-NN`, `boots::VendorBoot`
-and `boots::ProductionBoot`), the images both sides ran are `images`, and the
+a typed observation (`vendor-boot-NN`, `production-boot-NN`, the chip-neutral
+[`oer-phy-calibration-capture`](../../../phy-calibration-capture)'s
+`boots::VendorBoot` and `boots::ProductionBoot`), the images both sides ran
+are `images`, and the
 comparison is `comparison` (`compare::Summary`); a verdict other than MATCH
 fails the repetition. Nothing is written to the repository.
 

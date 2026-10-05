@@ -8,7 +8,7 @@
 
 use crate::Result;
 use oer_hil_link::{CaptureObserver, Received};
-use oer_hil_run_bundle::run::Measurement;
+use oer_hil_run_bundle_format::run::Measurement;
 use std::{
     collections::BTreeMap,
     path::{Component, Path},
@@ -30,7 +30,8 @@ impl Recorder {
     /// Record the outcome of an actually attempted semantic check. A missing
     /// check stays absent; scenario success must never synthesize it later.
     pub fn check(&self, name: &str, passed: bool) {
-        use oer_hil_run_bundle::run::{Comparison, MeasurementUnit};
+        use oer_hil_run_bundle_format::run::Comparison;
+        use oer_hil_run_bundle_format::run::MeasurementUnit;
         let mut recorded = self
             .0
             .lock()
@@ -51,7 +52,8 @@ impl Recorder {
     /// Publish the exact rate used by a workload's existing validator. Callers
     /// supply its resolved floor, including any legacy integer rounding.
     pub fn rate(&self, name: &str, value: u64, floor: Option<u64>) {
-        use oer_hil_run_bundle::run::{Comparison, MeasurementUnit};
+        use oer_hil_run_bundle_format::run::Comparison;
+        use oer_hil_run_bundle_format::run::MeasurementUnit;
         let measured = Measurement::observed(name, value, MeasurementUnit::BitsPerSecond);
         self.record([match floor {
             Some(floor) => measured.evaluated(Comparison::AtLeast, floor),

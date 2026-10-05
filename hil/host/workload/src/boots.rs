@@ -81,8 +81,13 @@ mod tests {
         assert!(boot_directory(&workload, 2).join("uart.bin").is_file());
         assert!(!boot_directory(&workload, 3).exists());
         context.finish().unwrap();
-        let written: oer_hil_run_bundle::run::Observations = serde_json::from_slice(
-            &std::fs::read(output.0.join(oer_hil_run_bundle::run::OBSERVATIONS_FILE)).unwrap(),
+        let written: oer_hil_run_bundle_format::run::Observations = serde_json::from_slice(
+            &std::fs::read(
+                output
+                    .0
+                    .join(oer_hil_run_bundle_format::run::OBSERVATIONS_FILE),
+            )
+            .unwrap(),
         )
         .unwrap();
         let observed: Vec<_> = written

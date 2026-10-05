@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
 };
 
-pub use oer_hil_run_bundle::run::CleanupRecord as Record;
+pub use oer_hil_run_bundle_format::run::CleanupRecord as Record;
 thread_local! { static RECORDS: RefCell<Option<Vec<Record>>> = const { RefCell::new(None) }; }
 thread_local! { static QUARANTINE: RefCell<Option<String>> = const { RefCell::new(None) }; }
 
@@ -31,7 +31,7 @@ pub struct Scope {
 impl Scope {
     pub fn new(output: &Path) -> Self {
         Self {
-            output: output.join(oer_hil_run_bundle::run::CLEANUP_FILE),
+            output: output.join(oer_hil_run_bundle_format::run::CLEANUP_FILE),
             previous: RECORDS.replace(Some(Vec::new())),
             finished: false,
             _thread: PhantomData,

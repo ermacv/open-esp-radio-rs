@@ -1,11 +1,9 @@
 //! Access-point workloads: the target runs the AP for laboratory clients.
 
-use oer_hil_image_class::ImageClass;
 use oer_hil_protocol::{wifi::WifiAccessPointSecurity, wifi::WifiApScheduler};
-use oer_hil_scenario::{
-    bounded,
-    link::{HtGuardIntervalExpectation, PhyExpectation},
-};
+use oer_hil_scenario_catalog::bounded;
+use oer_hil_scenario_catalog::link::{HtGuardIntervalExpectation, PhyExpectation};
+use oer_hil_schema::image::ImageClass;
 use serde::{Deserialize, Serialize};
 
 use super::{

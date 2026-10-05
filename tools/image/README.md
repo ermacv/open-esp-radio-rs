@@ -1,9 +1,9 @@
 # Image pipeline
 
 `oer-image` is the one image pipeline of the repository: `build(ImageSpec)
--> ImageBundle`. Standalone examples (`cargo xtask build firmware`) and HIL
+-> ImageBundle`. Standalone examples (`cargo fw build`) and HIL
 image classes (`oer-hil-image`, through `cargo hil image build`, the runner
-and `cargo xtask check firmware`) build every image here; nothing else
+and `cargo hil images check`) build every image here; nothing else
 compiles, gates or encodes one.
 
 ## Contract
@@ -13,16 +13,16 @@ chip, the application crate (workspace, package, binary, features), the
 stack policy, what the interrupt-stack gate requires (`Required::Proven`, or
 `Partial` for diagnostic images), the layout seed, local dependency
 `Overrides` (`ESP_HAL_ROOT`, `EMBASSY_ROOT`, `OPEN_RADIO_XARXA_ROOT`), the
-caller's builder packages and extra policy files, the bundle directory, the
-compile cache and an optional audit of the runtime ELF (HIL's observer
+caller's builder packages and extra policy files, the bundle directory
+(every build compiles in the host's one `compile_cache()`) and an optional audit of the runtime ELF (HIL's observer
 placement).
 
 The chip profile's boot kind selects the pipeline:
 
 | Boot | Module | Bootloader and partition table |
 | --- | --- | --- |
-| `staged` (esp32s31) | `staged` | The ROM-readable DIO bootloader from the `espflash` library's resources, the partition table of the flash map's CSV, the `ota_0` selection |
-| `esp-idf-bootloader` (esp32c5) | `esp_idf` | The catalog bootloader of `hil/bootloaders/<chip>` and its partition table, built against the pinned ESP-IDF (`esp_idf::catalog`, `esp_idf::idf`); its `flasher_args.json` must place them at the flash map's offsets |
+| `staged` (esp32s31, esp32c5) | `staged` | The ROM-readable DIO bootloader from the `espflash` library's resources, the partition table of the flash map's CSV, the `ota_0` selection |
+| `esp-idf-bootloader` (an ESP-IDF catalog image) | `esp_idf` | The catalog project's own bootloader and partition table, built against the pinned ESP-IDF (`esp_idf::catalog`, `esp_idf::idf`); its `flasher_args.json` must place them at the flash map's offsets |
 
 An `ImageBundle` is one directory with a `bundle.json`:
 
@@ -40,7 +40,19 @@ An `ImageBundle` is one directory with a `bundle.json`:
 
 `ImageBundle::segments` is what a flash writes: bootloader, partition table
 and application at the flash map's offsets, the OTA selection last. Board
-support writes these files and encodes nothing. `bundle::around` makes the
+support writes these files and encodes nothing.
+
+A bundle is published whole. A build takes its output's lease
+(`.<name>.build.lease` beside it: a second build of the same output fails at
+once), fills the sibling staging directory `.<name>.staging`, and
+`ImageBundle::publish` records each flash file's SHA-256 and length in
+`bundle.json` and renames the staging directory into place. A build that
+fails publishes nothing: the bundle published before stays as it was, and
+the staging directory keeps the failed build's `build.log` and `checks.json`
+until the next build of that output. `ImageBundle::load` verifies every
+flash file against its recorded digest, and a write reads the flash files
+once into an `ImageBundle::snapshot`, verified the same way, which it hashes
+into its receipt and writes over USB or JTAG. `bundle::around` makes the
 bundle of an application encoded earlier (a run's archive, a vendor
 ESP-IDF build), so replays and foreign applications are flashed the same
 way.
@@ -100,8 +112,8 @@ unresolved sites.
 Its `interrupt_stack` module is the interrupt half of the runtime's gate: it
 bounds each hart's interrupt stack from
 the runtime ELF, the pinned ROM ELF (`rom` of
-`verification/esp32s31/artifacts.toml`, from the vendor store: `cargo xtask
-vendor-fetch esp32s31 --artifact rom`; a missing or changed ROM is an error)
+`verification/esp32s31/artifacts.toml`, from the vendor store: `cargo verification
+fetch esp32s31 --artifact rom`; a missing or changed ROM is an error)
 and its reviewed summaries, with the platform's interrupt contract
 (`oer-esp32s31-platform-layout`'s `interrupts`). The analysis reports every
 hart as a bound or `partial + ?` with its holes; the gate's policy,
@@ -135,12 +147,12 @@ toolchain `rust-toolchain.toml` pins. Images build without frame pointers;
 frame-pointer walk.
 
 The stage-two header, checksum and address map come from the
-[platform layout](../../platform/esp32s31/layout/README.md), which application
+[platform layout](../../platform/espressif/staged-layout/README.md), which application
 build scripts also use to configure the linker.
 
 The staged runtime's placement audit (`staged::placement`) checks the
 PSRAM/SRAM placement contract of the
-[platform layout](../../platform/esp32s31/layout/README.md) and that each
+[platform layout](../../platform/espressif/staged-layout/README.md) and that each
 PSRAM trap and interrupt entry first swaps to its SRAM stack; the caller's
 audit runs beside it.
 
@@ -158,7 +170,7 @@ function modulo placement, over the `oer-elf` symbols and the decoded
 listings of `oer_riscv_lift::listing`: every address an instruction forms
 becomes symbol+offset, legacy mangling hashes and LLVM clone numbers are
 dropped, identical-code-folded names pair by body, and a `Review` applies
-reviewed aliases and scheduling ties. `cargo xtask compare elf` calls it;
+reviewed aliases and scheduling ties. `cargo fw compare` calls it;
 `compare images` builds both sides first (`oer_hil_image::compare_images`).
 
 ## Source inputs and exclusion
@@ -170,10 +182,13 @@ the dependency closure of `oer-image`, `oer-image-linker` and the caller's
 builder packages, as `oer-repo` resolves it, so an analyzer or linker crate
 is an input from the day it is linked.
 
-Build exclusion has one mechanism, `exclusion::Lease` (an `flock`ed file):
-one build per compile cache (`<cache>/build.lock`, waiting), one build per
-private lock copy (`BuildLock`, refusing), and the host's image build slots
-(`exclusion::slot` under `host_build_root()/tokens`: half the cores, at 2 GB
-each).
+Build exclusion has one mechanism, the foundation's file lock
+(`oer_process::lock::FileLock`, shared or exclusive): one build at a
+time in the shared compile cache (`exclusion::compile_cache`, `<cache>/build.lock`,
+waiting, held from the Cargo run until the ELF is copied out), one
+build per private lock copy (`BuildLock`, refusing), the host's image build
+slots (`exclusion::slot` under `host_build_root()/tokens`: half the cores, at
+2 GB each), and the ESP-IDF cache (exclusive while its tree and tools change,
+then converted to shared for the builds).
 
 Run host regressions with `cargo test -p oer-image`.

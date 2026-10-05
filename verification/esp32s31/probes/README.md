@@ -8,7 +8,7 @@ on the probes.
 Build and validate the three comparison images from the repository root:
 
 ```console
-cargo xtask build vendor-probes --chip esp32s31
+cargo verification probes --chip esp32s31
 ```
 
 The images `oer-esp32s31-probe-radio-elf`, `oer-esp32s31-probe-register-elf`

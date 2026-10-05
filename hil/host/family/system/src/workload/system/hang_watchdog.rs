@@ -20,6 +20,13 @@ const TARGETS: [HangTarget; 3] = [
 ];
 
 pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
+    // The chip model's region of the task stacks.
+    let profile = oer_chip_profile::Profile::load(&oer_process::built_root(), context.lab.chip())?;
+    let stacks = profile
+        .memory
+        .as_ref()
+        .and_then(oer_chip_profile::Memory::task_stack_region)
+        .ok_or_else(|| format!("chip {} names no [memory] task-stack region", profile.id))?;
     for target in TARGETS {
         let directory = output.join(scope(target));
         std::fs::create_dir_all(&directory)?;
@@ -50,7 +57,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             else {
                 return Err(format!("no hang post-mortem after the reset: {fresh:?}").into());
             };
-            if !names(target, &hang) {
+            if !names(target, &hang, &stacks) {
                 return Err(
                     format!("the hang post-mortem does not name the stall: {hang:?}").into(),
                 );
@@ -85,7 +92,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
 }
 
 /// Whether `hang` names the stall of `target` and where its hart was.
-fn names(target: HangTarget, hang: &HangFault) -> bool {
+fn names(target: HangTarget, hang: &HangFault, stacks: &oer_chip_profile::Region) -> bool {
     let (stalled, task, hart) = match target {
         // Core 1's timers are driven from core 0, so a stalled protocol
         // executor stalls the network executor's heartbeat too.
@@ -103,16 +110,16 @@ fn names(target: HangTarget, hang: &HangFault) -> bool {
         && task
         && hart.responded
         && hart.mepc != 0
-        && on_task_stack(hart.sp)
+        && on_task_stack(hart.sp, stacks)
         && !hang.samples.contains(&0)
 }
 
-/// Whether `sp` lies on a task stack: both harts' task stacks are in PSRAM,
-/// while the watchdog's own handler runs on an SRAM interrupt stack. A stalled
-/// task reported with an SRAM `sp` names the handler's frame, not the task.
-fn on_task_stack(sp: u32) -> bool {
-    let psram = oer_esp32s31_platform_layout::memory::PSRAM;
-    (psram.origin..psram.end()).contains(&sp)
+/// Whether `sp` lies in the region of the task stacks the chip profile
+/// names (`[memory] task-stacks`), apart from the interrupt stack the
+/// watchdog's own handler runs on: a stalled task reported with an `sp`
+/// outside it names the handler's frame, not the task.
+fn on_task_stack(sp: u32, stacks: &oer_chip_profile::Region) -> bool {
+    (stacks.origin..stacks.end()).contains(&sp)
 }
 
 fn scope(target: HangTarget) -> &'static str {
@@ -127,6 +134,14 @@ fn scope(target: HangTarget) -> &'static str {
 mod tests {
     use super::*;
     use oer_hil_protocol::base::{HartState, TaskStall};
+
+    /// A task-stack region, as a chip's profile names it.
+    fn stacks() -> oer_chip_profile::Region {
+        oer_chip_profile::Region {
+            origin: 0x5000_0000,
+            length: 0x0100_0000,
+        }
+    }
 
     fn hang(stalled_executors: u8, stalled_task: Option<TaskSlot>) -> HangFault {
         let hart = HartState {
@@ -151,21 +166,31 @@ mod tests {
     fn a_console_hang_must_name_the_console_and_no_executor() {
         assert!(names(
             HangTarget::Console,
-            &hang(0, Some(TaskSlot::Console))
+            &hang(0, Some(TaskSlot::Console)),
+            &stacks()
         ));
-        assert!(!names(HangTarget::Console, &hang(0b01, None)));
+        assert!(!names(HangTarget::Console, &hang(0b01, None), &stacks()));
         assert!(!names(
             HangTarget::Console,
-            &hang(0, Some(TaskSlot::SessionEvidence))
+            &hang(0, Some(TaskSlot::SessionEvidence)),
+            &stacks()
         ));
-        assert!(names(HangTarget::ProtocolExecutor, &hang(0b11, None)));
-        assert!(!names(HangTarget::NetworkExecutor, &hang(0b01, None)));
+        assert!(names(
+            HangTarget::ProtocolExecutor,
+            &hang(0b11, None),
+            &stacks()
+        ));
+        assert!(!names(
+            HangTarget::NetworkExecutor,
+            &hang(0b01, None),
+            &stacks()
+        ));
     }
 
     #[test]
     fn a_stalled_hart_on_its_interrupt_stack_is_not_named() {
         let mut fault = hang(0b11, None);
         fault.harts[0].sp = 0x2f07_0000;
-        assert!(!names(HangTarget::ProtocolExecutor, &fault));
+        assert!(!names(HangTarget::ProtocolExecutor, &fault, &stacks()));
     }
 }

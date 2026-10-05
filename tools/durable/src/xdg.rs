@@ -6,7 +6,7 @@
 //! A variable that is unset or empty counts as unset, as the specification
 //! requires: `$XDG_CACHE_HOME`, else `$HOME/.cache`; `$XDG_DATA_HOME`, else
 //! `$HOME/.local/share`; `$XDG_CONFIG_HOME`, else `$HOME/.config`. A tool's
-//! own override variable (such as `OER_HIL_ARBITER_DIR`) names the directory
+//! own override variable (such as `OER_STAND_ARBITER_DIR`) names the directory
 //! itself and is read through [`overridable`].
 
 use std::{ffi::OsString, path::PathBuf};
@@ -25,6 +25,9 @@ pub enum Base {
     Data,
     /// The user's configuration: the stand file.
     Config,
+    /// Per-session runtime files: device locks. `$XDG_RUNTIME_DIR`, else
+    /// the cache base.
+    Runtime,
 }
 
 impl Base {
@@ -33,6 +36,7 @@ impl Base {
             Self::Cache => "XDG_CACHE_HOME",
             Self::Data => "XDG_DATA_HOME",
             Self::Config => "XDG_CONFIG_HOME",
+            Self::Runtime => "XDG_RUNTIME_DIR",
         }
     }
 
@@ -41,8 +45,17 @@ impl Base {
             Self::Cache => ".cache",
             Self::Data => ".local/share",
             Self::Config => ".config",
+            Self::Runtime => ".cache",
         }
     }
+}
+
+/// Overrides the host-wide ESP-IDF cache directory.
+pub const ESP_IDF_CACHE_ENV: &str = "OER_IDF_CACHE";
+
+/// The host-wide cache of ESP-IDF trees and tools (OpenOCD included).
+pub fn esp_idf_cache() -> Result<PathBuf> {
+    overridable(ESP_IDF_CACHE_ENV, Base::Cache, "esp-idf")
 }
 
 /// `<base>/open-esp-radio/<relative>` from the process environment.
@@ -66,6 +79,7 @@ pub fn path_in(
     let set = |name: &str| variable(name).filter(|value| !value.is_empty());
     let base_directory = match set(base.variable()) {
         Some(directory) => PathBuf::from(directory),
+        None if base == Base::Runtime => return path_in(Base::Cache, relative, variable),
         None => PathBuf::from(set("HOME").ok_or_else(|| {
             format!(
                 "neither {} nor HOME is set to locate {APPLICATION}/{relative}",

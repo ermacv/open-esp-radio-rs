@@ -10,6 +10,7 @@ compilation, so loading the whole tree takes a fraction of a second.
 | Module | Answers |
 | --- | --- |
 | [`files`](src/files.rs) | The file inventory: a checkout's tracked and untracked-but-not-ignored files (`git ls-files`), without any `target`, `_oracles` or `.git` component; tracked files apart |
+| [`index`](src/index.rs) | The index view of a checkout, `IndexSnapshot::read(root)`: its `HEAD` commit, whether it is dirty, every index path (a tracked file deleted from the worktree and a symlink included) and its untracked, unignored files, nothing skipped; what the HIL source snapshot archives |
 | [`manifest`](src/manifest.rs) | Every `Cargo.toml`: packages, crate roots, library and README, features, dependencies (kind, target table, rename, path, features, optional, inherited from `[workspace.dependencies]`), workspace declarations |
 | [`workspaces`](src/workspaces.rs) | The workspaces Cargo finds, explicit and implicit, and the one each package belongs to |
 | [`chips`](src/chips.rs) | Every `platform/<chip>/chip.toml`, through `oer-chip-profile` |

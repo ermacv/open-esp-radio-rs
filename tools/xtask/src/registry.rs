@@ -209,25 +209,24 @@ pub const CHECKS: &[Check] = &[
         id: "chip-doctest",
         tier: Tier::Full,
         job: "architecture",
-        summary: "the chip-target doctests of the ESP32-S31 SoC adapter (borrowed DMA memory needs `unsafe`)",
-        trigger: Some(|change| reaches(change, CHIP_DOCTEST.0)),
-        run: chip_doctest,
+        summary: "the chip-target doctests each chip profile names (`[gate] doctests`)",
+        trigger: Some(|change| {
+            gate_data(change)
+                .flat_map(|gate| &gate.doctests)
+                .any(|doctest| reaches(change, &doctest.package))
+        }),
+        run: chip_doctests,
     },
     Check {
         id: "examples-type-check",
         tier: Tier::Full,
         job: "firmware",
-        summary: "every ESP32-S31 example's runtime type-checked with its image flags",
+        summary: "every example's runtime type-checked with its image flags",
         trigger: Some(|change| {
-            touches(change, &["platform/", crate::firmware::EXAMPLES])
+            touches(change, &["platform/", EXAMPLES])
                 || !gate::chip_code(&change.tree, &change.affected).is_empty()
         }),
-        run: |ctx, _| {
-            for example in crate::firmware::NAMES {
-                crate::firmware::type_check(ctx, example, &[], false)?;
-            }
-            Ok(())
-        },
+        run: |ctx, _| fw(ctx, &["build", "--all", "--type-check"]),
     },
     Check {
         id: "example-link",
@@ -235,75 +234,66 @@ pub const CHECKS: &[Check] = &[
         job: "images",
         summary: "the station example built, audited and encoded into a bundle",
         trigger: Some(|change| touches(change, &["platform/"])),
-        run: |ctx, _| {
-            // The interrupt-stack gate bounds the image with the pinned ROM.
-            oer_vendor_artifacts::run(&ctx.root, oer_image::staged::CHIP, &[String::from("rom")])?;
-            crate::firmware::build(ctx, "station", &[], false).map(drop)
-        },
+        // The interrupt-stack gate fetches the pinned ROM it bounds the
+        // image with.
+        run: |ctx, _| fw(ctx, &["build", "station", "--check", "all"]),
     },
     Check {
-        id: "access-point-host-tests",
+        id: "firmware-host-tests",
         tier: Tier::Full,
         job: "firmware",
-        summary: "the access-point example's library tests on the host",
-        trigger: Some(|change| touches(change, &["examples/esp32s31/access-point/"])),
-        run: access_point_host_tests,
+        summary: "the library tests on the host of the firmware packages each chip profile names",
+        trigger: Some(|change| {
+            gate_data(change)
+                .flat_map(|gate| &gate.host_tests)
+                .any(|directory| touches(change, &[format!("{}/", directory.display()).as_str()]))
+        }),
+        run: firmware_host_tests,
     },
     Check {
-        id: "esp32c5-agent",
+        id: "agent-clippy",
         tier: Tier::Full,
         job: "firmware",
-        summary: "Clippy of the ESP32-C5 HIL agent for each of its image classes",
-        trigger: Some(|change| touches(change, ESP32C5_AGENT_INPUTS)),
-        run: esp32c5_agent,
-    },
-    Check {
-        id: "esp32c5-register-probe",
-        tier: Tier::Full,
-        job: "firmware",
-        summary: "the ESP32-C5 register probe built",
+        summary: "Clippy of each HIL agent its chip profile names, for each of its feature profiles",
         trigger: Some(|change| {
             touches(
                 change,
                 &[
-                    "verification/esp32c5/hardware/",
-                    "crates/hardware/esp32c5/",
-                    "platform/esp32c5/",
-                    "registers/esp32c5/",
+                    "hil/targets/",
+                    "hil/agent/",
+                    "hil/protocol/",
+                    "crates/hardware/",
+                    "platform/",
                 ],
             )
         }),
-        run: |ctx, _| {
-            process::run(
-                oer_toolchain::cargo_in(
-                    &ctx.root
-                        .join("verification/esp32c5/hardware/register-probe"),
-                )
-                .args(["build", "--locked", "--release"]),
-            )
-        },
+        run: agent_clippy,
     },
     Check {
-        id: "esp32c5-pac-hal",
+        id: "firmware-release-builds",
         tier: Tier::Full,
         job: "firmware",
-        summary: "the ESP32-C5 PAC and HAL built for the chip target",
+        summary: "the firmware workspaces each chip profile names built in release",
         trigger: Some(|change| {
-            touches(change, &["crates/hardware/esp32c5/", "registers/esp32c5/"])
+            touches(
+                change,
+                &[
+                    "verification/",
+                    "crates/hardware/",
+                    "platform/",
+                    "registers/",
+                ],
+            )
         }),
-        run: |ctx, _| {
-            let target = oer_chip_profile::rust_target(&ctx.root, "esp32c5")?;
-            process::run(oer_toolchain::cargo_in(&ctx.root).args([
-                "build",
-                "--locked",
-                "-p",
-                "oer-esp32c5-pac",
-                "-p",
-                "oer-esp32c5-hal",
-                "--target",
-                &target,
-            ]))
-        },
+        run: firmware_release_builds,
+    },
+    Check {
+        id: "chip-target-builds",
+        tier: Tier::Full,
+        job: "firmware",
+        summary: "the packages each chip profile names built for its chip target",
+        trigger: Some(|change| touches(change, &["crates/hardware/", "registers/", "platform/"])),
+        run: chip_target_builds,
     },
     Check {
         id: "phy",
@@ -316,7 +306,7 @@ pub const CHECKS: &[Check] = &[
                 .iter()
                 .any(|file| file.starts_with("crates/") && file.ends_with("Cargo.toml"))
         }),
-        run: |ctx, _| checks::phy::run(ctx, oer_image::staged::CHIP),
+        run: |ctx, _| checks::phy::run_all(ctx),
     },
     Check {
         id: "registers",
@@ -372,12 +362,16 @@ pub const CHECKS: &[Check] = &[
         summary: "both final HIL images built with every gate and Blobray's target audit",
         trigger: None,
         run: |ctx, _| {
-            oer_vendor_artifacts::run(&ctx.root, oer_image::staged::CHIP, &[String::from("rom")])?;
-            checks::firmware::run(
+            hil(
                 ctx,
-                &gate::FINAL_IMAGES,
-                checks::firmware::Depth::Build,
-                checks::firmware::default_jobs(),
+                &[
+                    "images",
+                    "check",
+                    "--class",
+                    "performance",
+                    "--class",
+                    "correctness",
+                ],
             )
         },
     },
@@ -387,21 +381,13 @@ pub const CHECKS: &[Check] = &[
         job: "classes",
         summary: "every HIL image class built and audited as the runner builds it",
         trigger: None,
-        run: |ctx, _| {
-            oer_vendor_artifacts::run(&ctx.root, oer_image::staged::CHIP, &[String::from("rom")])?;
-            checks::firmware::run(
-                ctx,
-                &[],
-                checks::firmware::Depth::Build,
-                checks::firmware::default_jobs(),
-            )
-        },
+        run: |ctx, _| hil(ctx, &["images", "check", "--all"]),
     },
     Check {
         id: "examples",
         tier: Tier::Nightly,
         job: "examples",
-        summary: "every ESP32-S31 example built and audited, keeping only its outputs",
+        summary: "every example built and audited, keeping only its outputs",
         trigger: None,
         run: examples,
     },
@@ -431,19 +417,23 @@ pub const CHECKS: &[Check] = &[
         summary: "Clippy and the tests of the whole Blobray workspace",
         trigger: None,
         run: |ctx, _| {
-            process::run(oer_toolchain::blobray::cargo(&ctx.root, "clippy").args([
-                "--locked",
-                "--workspace",
-                "--all-targets",
-                "--",
-                "-D",
-                "warnings",
-            ]))?;
-            process::run(oer_toolchain::blobray::cargo(&ctx.root, "test").args([
-                "--locked",
-                "--workspace",
-                "--no-fail-fast",
-            ]))
+            process::run(
+                oer_toolchain::workspace::BLOBRAY
+                    .cargo(&ctx.root, "clippy")
+                    .args([
+                        "--locked",
+                        "--workspace",
+                        "--all-targets",
+                        "--",
+                        "-D",
+                        "warnings",
+                    ]),
+            )?;
+            process::run(
+                oer_toolchain::workspace::BLOBRAY
+                    .cargo(&ctx.root, "test")
+                    .args(["--locked", "--workspace", "--no-fail-fast"]),
+            )
         },
     },
     // Needs a GNU RISC-V ld 2.47 or newer for the linker adapter's tests.
@@ -461,12 +451,7 @@ pub const CHECKS: &[Check] = &[
         job: "verification",
         summary: "each verified chip's Rust comparison probe images",
         trigger: None,
-        run: |ctx, _| {
-            for chip in verified_chips(ctx)? {
-                oer_vendor_evidence::run::probes::run(ctx, &chip, false)?;
-            }
-            Ok(())
-        },
+        run: |ctx, _| verification(ctx, &["check", "probes"]),
     },
     Check {
         id: "host-stands",
@@ -474,24 +459,46 @@ pub const CHECKS: &[Check] = &[
         job: "verification",
         summary: "Clippy and the tests of each verified chip's vendor host stands",
         trigger: None,
-        run: host_stands,
+        run: |ctx, _| verification(ctx, &["check", "host-stands"]),
+    },
+    Check {
+        id: "verification",
+        tier: Tier::Nightly,
+        job: "verification",
+        summary: "Clippy and the tests of the whole vendor verification workspace",
+        trigger: None,
+        run: |ctx, _| {
+            process::run(
+                oer_toolchain::workspace::VERIFICATION
+                    .cargo(&ctx.root, "clippy")
+                    .args([
+                        "--locked",
+                        "--workspace",
+                        "--all-targets",
+                        "--",
+                        "-D",
+                        "warnings",
+                    ]),
+            )?;
+            process::run(
+                oer_toolchain::workspace::VERIFICATION
+                    .cargo(&ctx.root, "test")
+                    .args(["--locked", "--workspace", "--no-fail-fast"]),
+            )
+        },
     },
 ];
 
-/// The SoC adapter whose chip-target doctests run, and its feature.
-const CHIP_DOCTEST: (&str, &str) = ("oer-esp32s31-soc-esp-hal", "axi-gdma-mem2mem");
-
-/// The image classes the ESP32-C5 agent builds, by runtime feature.
-const ESP32C5_AGENT_FEATURES: [&str; 2] = ["boot-smoke", "system-watchdog"];
-
-/// What the ESP32-C5 agent compiles besides its own workspace.
-const ESP32C5_AGENT_INPUTS: &[&str] = &[
-    "hil/targets/esp32c5/",
-    "hil/agent/",
-    "hil/protocol/",
-    "crates/hardware/esp32c5/",
-    "platform/esp32c5/",
-];
+/// The `[gate]` tables of every chip of the changed tree.
+fn gate_data(change: &Change) -> impl Iterator<Item = &oer_repo::chips::profile::Gate> {
+    change
+        .tree
+        .model
+        .chips
+        .profiles()
+        .iter()
+        .map(|profile| &profile.gate)
+}
 
 /// The registered check `id`.
 pub fn check(id: &str) -> Option<&'static Check> {
@@ -671,25 +678,10 @@ fn label(packages: &[&str]) -> String {
     }
 }
 
-/// Every `oer-tidy` check over this checkout, in-process (`cargo tidy
-/// check` from the command line); fails listing every problem.
+/// Every `oer-tidy` check over this checkout: `cargo tidy check`, which
+/// fails listing every problem.
 fn tidy(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    let repo = oer_repo::Repo::from_git(&ctx.root)?;
-    let mut problems = Vec::new();
-    for outcome in oer_tidy::run(&repo)? {
-        for problem in outcome.problems {
-            problems.push(format!("tidy {}: {problem}", outcome.check));
-        }
-    }
-    if problems.is_empty() {
-        return Ok(());
-    }
-    Err(format!(
-        "{} problem(s) (exceptions: tools/tidy/allowlist.toml):\n{}",
-        problems.len(),
-        problems.join("\n")
-    )
-    .into())
+    process::run(oer_toolchain::cargo_in(&ctx.root).args(["tidy", "check"]))
 }
 
 fn fmt(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
@@ -766,48 +758,45 @@ fn capabilities(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
 }
 
 fn images_type_check(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
-    let classes = match scope {
-        Scope::Tree => gate::FINAL_IMAGES.to_vec(),
+    let mut args: Vec<String> = ["images", "check", "--type-check"]
+        .map(String::from)
+        .to_vec();
+    match scope {
+        // The final images CI builds on every pull request.
+        Scope::Tree => {
+            args.extend(["--class", "performance", "--class", "correctness"].map(String::from))
+        }
         Scope::Change(change) => {
-            // Chip-target code is invisible to the host checks: type-check
-            // the final images and every class whose image compiles a
-            // package with that code, so an interface change it still uses
-            // fails here.
+            // Chip-target code is invisible to the host checks: `cargo hil`
+            // type-checks the final images and every class whose image
+            // compiles a package with that code, so an interface change it
+            // still uses fails here.
             let chip = gate::chip_code(&change.tree, &change.affected);
-            let changed: BTreeSet<&str> = chip.iter().map(|(_, name)| name.as_str()).collect();
-            let mut graphs = Vec::new();
-            for class in oer_hil_image_class::ImageClass::ALL {
-                graphs.push((class, oer_hil_image::packages(&ctx.root, class)?));
-            }
-            let mut classes = gate::image_classes(&changed, &graphs);
+            args.push(String::from("--reaching"));
+            args.push(
+                chip.iter()
+                    .map(|(_, name)| name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
             if change.tier >= Tier::Full {
                 // And every class whose last build read a changed file.
-                let paths: Vec<PathBuf> = change.files.iter().map(PathBuf::from).collect();
-                for class in checks::firmware::affected(&paths)? {
-                    if !classes.contains(&class) {
-                        classes.push(class);
-                    }
+                for file in &change.files {
+                    args.push(String::from("--changed"));
+                    args.push(file.clone());
                 }
             }
-            println!(
-                "gate: {} package(s) with chip code; type-checking {} image class(es)",
-                chip.len(),
-                classes.len()
-            );
-            classes
+            if change.files.iter().any(|file| file == "Cargo.lock") {
+                args.push(String::from("--vendor-dependencies-absent"));
+            }
         }
-    };
-    if let Scope::Change(change) = scope
-        && change.files.iter().any(|file| file == "Cargo.lock")
-    {
-        oer_hil_image::ensure_vendor_dependencies_absent(&ctx.root)?;
     }
-    checks::firmware::run(
-        ctx,
-        &classes,
-        checks::firmware::Depth::TypeCheck,
-        checks::firmware::default_jobs(),
-    )
+    process::run(oer_toolchain::cargo_in(&ctx.root).arg("hil").args(&args))
+}
+
+/// Run HIL, `cargo hil ARGS`, in the checkout: it owns the image classes.
+fn hil(ctx: &Checkout, args: &[&str]) -> Result<()> {
+    process::run(oer_toolchain::cargo_in(&ctx.root).arg("hil").args(args))
 }
 
 fn clippy(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
@@ -926,62 +915,111 @@ fn doc(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
     Ok(())
 }
 
-fn chip_doctest(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    let (package, feature) = CHIP_DOCTEST;
-    let target = oer_chip_profile::rust_target(&ctx.root, oer_image::staged::CHIP)?;
-    process::run(oer_toolchain::cargo_in(&ctx.root).args([
-        "test",
-        "--doc",
-        "--locked",
-        "-p",
-        package,
-        "--features",
-        feature,
-        "--target",
-        &target,
-    ]))
+fn chip_doctests(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
+    for profile in oer_repo::chips::Chips::at(&ctx.root)?.profiles() {
+        for doctest in &profile.gate.doctests {
+            process::run(oer_toolchain::cargo_in(&ctx.root).args([
+                "test",
+                "--doc",
+                "--locked",
+                "-p",
+                &doctest.package,
+                "--features",
+                &doctest.features,
+                "--target",
+                &profile.rust_target,
+            ]))?;
+        }
+    }
+    Ok(())
 }
 
-fn access_point_host_tests(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    let directory = ctx
-        .root
-        .join(crate::firmware::EXAMPLES)
-        .join("access-point");
-    process::run(oer_toolchain::cargo_in(&directory).args([
-        "test",
-        "--lib",
-        "--locked",
-        "--target",
-        &oer_toolchain::host_target()?,
-    ]))
+fn firmware_host_tests(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
+    let host = oer_toolchain::host_target()?;
+    for profile in oer_repo::chips::Chips::at(&ctx.root)?.profiles() {
+        for directory in &profile.gate.host_tests {
+            process::run(
+                oer_toolchain::cargo_in(&ctx.root.join(directory))
+                    .args(["test", "--lib", "--locked", "--target", &host]),
+            )?;
+        }
+    }
+    Ok(())
 }
 
-fn esp32c5_agent(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    let directory = ctx.root.join("hil/targets/esp32c5");
-    for features in ESP32C5_AGENT_FEATURES {
-        process::run(oer_toolchain::cargo_in(&directory).args([
-            "clippy",
-            "--locked",
-            "--release",
-            "-p",
-            "oer-esp32c5-hil-agent",
-            "--no-default-features",
-            "--features",
-            features,
-            "--",
-            "-D",
-            "warnings",
-        ]))?;
+/// Clippy of each chip's HIL agent for every feature profile its manifest
+/// declares (`supported-feature-profiles`).
+fn agent_clippy(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
+    let model = checks::common::model(ctx)?;
+    for profile in oer_repo::chips::Chips::at(&ctx.root)?.profiles() {
+        if !profile.gate.agent_clippy {
+            continue;
+        }
+        let manifest = profile.hil_agent_manifest(&ctx.root);
+        let relative = manifest
+            .strip_prefix(&ctx.root)?
+            .to_string_lossy()
+            .into_owned();
+        let package = model
+            .owner(&relative)
+            .ok_or_else(|| format!("{relative} has no package"))?;
+        let features = &model.classification(package)?.supported_feature_profiles;
+        for features in features {
+            process::run(
+                oer_toolchain::cargo_in(&profile.hil_agent_workspace(&ctx.root)).args([
+                    "clippy",
+                    "--locked",
+                    "--release",
+                    "-p",
+                    &profile.hil_agent_package(),
+                    "--no-default-features",
+                    "--features",
+                    features,
+                    "--",
+                    "-D",
+                    "warnings",
+                ]),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn firmware_release_builds(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
+    for profile in oer_repo::chips::Chips::at(&ctx.root)?.profiles() {
+        for workspace in &profile.gate.release_builds {
+            process::run(oer_toolchain::cargo_in(&ctx.root.join(workspace)).args([
+                "build",
+                "--locked",
+                "--release",
+            ]))?;
+        }
+    }
+    Ok(())
+}
+
+fn chip_target_builds(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
+    for profile in oer_repo::chips::Chips::at(&ctx.root)?.profiles() {
+        if profile.gate.target_builds.is_empty() {
+            continue;
+        }
+        let mut command = oer_toolchain::cargo_in(&ctx.root);
+        command.args(["build", "--locked"]);
+        for package in &profile.gate.target_builds {
+            command.args(["-p", package]);
+        }
+        command.args(["--target", &profile.rust_target]);
+        process::run(&mut command)?;
     }
     Ok(())
 }
 
 fn registers(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    for chip in oer_vendor_artifacts::project::supported(&ctx.root)? {
+    for chip in oer_repo::chips::Chips::at(&ctx.root)?.ids() {
         let manifest = ctx
             .root
             .join("registers")
-            .join(&chip)
+            .join(chip)
             .join("publication/registers.toml");
         if !manifest.is_file() {
             continue;
@@ -1003,72 +1041,32 @@ fn qualification(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
     checks::docs::programs(ctx)
 }
 
-/// The chips with pinned vendor artifacts.
-fn verified_chips(ctx: &Checkout) -> Result<Vec<String>> {
-    Ok(oer_vendor_artifacts::project::supported(&ctx.root)?
-        .into_iter()
-        .filter(|chip| {
-            ctx.root
-                .join("verification")
-                .join(chip)
-                .join("artifacts.toml")
-                .is_file()
-        })
-        .collect())
+fn provenance(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
+    verification(ctx, &["check", "provenance"])
 }
 
-fn provenance(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    for chip in verified_chips(ctx)? {
-        if !oer_vendor_artifacts::unfetched(&ctx.root, &chip)?.is_empty() {
-            oer_vendor_artifacts::fetch_vendor_sources(&ctx.root, &chip)?;
-        }
-        oer_vendor_provenance::registry::check(&ctx.root, &chip)?;
-    }
-    Ok(())
+/// Run vendor verification, `cargo verification ARGS`, in the checkout: it
+/// owns the pins, provenance, scenarios, probes and host stands.
+fn verification(ctx: &Checkout, args: &[&str]) -> Result<()> {
+    process::run(
+        oer_toolchain::cargo_in(&ctx.root)
+            .arg("verification")
+            .args(args),
+    )
 }
 
 fn examples(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    let mut failed = Vec::new();
-    for example in crate::firmware::NAMES {
-        if let Err(error) = crate::firmware::build(ctx, example, &[], false) {
-            eprintln!("{example}: {error}");
-            failed.push(example);
-        }
-        // Keep the example's audit outputs, drop its compile cache: a
-        // runner's disk holds one example's cache at a time.
-        let cache = crate::firmware::cache(ctx, example);
-        if cache.exists() {
-            std::fs::remove_dir_all(cache)?;
-        }
-    }
-    if failed.is_empty() {
-        Ok(())
-    } else {
-        Err(format!("examples failed: {}", failed.join(", ")).into())
-    }
+    // The examples share the host's one image compile cache.
+    fw(ctx, &["build", "--all"])
 }
 
-fn host_stands(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    let model = checks::common::model(ctx)?;
-    for chip in verified_chips(ctx)? {
-        for manifest in
-            oer_vendor_evidence::producer::host_stand::stands(&model, &chip)?.into_values()
-        {
-            let manifest = ctx.root.join(manifest);
-            process::run(
-                oer_toolchain::cargo_in(&ctx.root)
-                    .args(["clippy", "--locked", "--manifest-path"])
-                    .arg(&manifest)
-                    .args(["--all-targets", "--", "-D", "warnings"]),
-            )?;
-            process::run(
-                oer_toolchain::cargo_in(&ctx.root)
-                    .args(["test", "--locked", "--no-fail-fast", "--manifest-path"])
-                    .arg(&manifest),
-            )?;
-        }
-    }
-    Ok(())
+/// The example workspaces' directory prefix.
+const EXAMPLES: &str = "examples/";
+
+/// Run the dev kit, `cargo fw ARGS`, in the checkout: it owns the
+/// examples' images.
+fn fw(ctx: &Checkout, args: &[&str]) -> Result<()> {
+    process::run(oer_toolchain::cargo_in(&ctx.root).arg("fw").args(args))
 }
 
 #[cfg(test)]

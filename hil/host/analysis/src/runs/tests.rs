@@ -1,14 +1,18 @@
 use std::path::Path;
 
-use oer_hil_image_class::ImageClass;
-use oer_hil_run_bundle::{
-    run::{
-        Comparison, Failure, FirmwareArtifact, Measurement, MeasurementUnit, PlannedFirmware,
-        RUN_SCHEMA, RunPlan, ScenarioResult,
-        test_support::{repetition, write_run},
-    },
-    store::Note,
-};
+use oer_hil_run_bundle::run::test_support::repetition;
+use oer_hil_run_bundle::run::test_support::write_run;
+use oer_hil_run_bundle::store::Note;
+use oer_hil_run_bundle_format::run::Comparison;
+use oer_hil_run_bundle_format::run::Failure;
+use oer_hil_run_bundle_format::run::FirmwareArtifact;
+use oer_hil_run_bundle_format::run::Measurement;
+use oer_hil_run_bundle_format::run::MeasurementUnit;
+use oer_hil_run_bundle_format::run::PlannedFirmware;
+use oer_hil_run_bundle_format::run::RUN_SCHEMA;
+use oer_hil_run_bundle_format::run::RunPlan;
+use oer_hil_run_bundle_format::run::ScenarioResult;
+use oer_hil_schema::image::ImageClass;
 
 use super::*;
 
@@ -192,19 +196,29 @@ fn runs_are_found_explained_and_compared() {
         shown.contains("post-mortem/") && shown.contains("uart.log"),
         "{shown}"
     );
-    let compared = compare(&runs[0], &runs[1], Some("rx"));
+    let compared = compare(&runs[0], &runs[1], Some("rx")).unwrap();
     // One repetition a side is too few to judge, whatever the difference.
     assert!(
         compared.contains("-50.0% insufficient repetitions"),
         "{compared}"
     );
-    let history = history(&runs, "s", Some("rx"));
+    let history = history(&runs, "s", Some("rx")).unwrap();
     assert_eq!(
         history
             .lines()
             .filter(|l| l.starts_with(char::is_numeric))
             .count(),
         2
+    );
+    // Without a filter every measurement is a column; a filter that
+    // matches nothing leaves none.
+    let columns = |text: &str| text.lines().filter(|l| l.contains("column ")).count();
+    assert!(columns(&history) > 0, "{history}");
+    let all = crate::runs::history(&runs, "s", None).unwrap();
+    assert!(columns(&all) >= columns(&history), "{all}");
+    assert_eq!(
+        columns(&crate::runs::history(&runs, "s", Some("no-such-metric")).unwrap()),
+        0
     );
     assert_eq!(
         stability(&runs, "s"),
@@ -247,7 +261,7 @@ fn runs_compare_judges_repetitions_with_the_one_noise_aware_comparison() {
     let a = [100_000_000, 101_000_000, 99_000_000, 100_500_000];
     let b = [110_000_000, 111_000_000, 109_500_000, 110_500_000];
     let (left, right) = (run("1-a", &a), run("2-b", &b));
-    let text = compare(&left, &right, None);
+    let text = compare(&left, &right, None).unwrap();
     let expected = crate::samples::compare(
         Some(crate::samples::Better::Higher),
         &a.map(|value| value as f64),
@@ -378,7 +392,7 @@ fn waiting_ends_at_the_run_end_with_its_outcome() {
 
 #[test]
 fn observer_builds_no_run_names_are_collected_after_a_grace() {
-    use oer_hil_observer::store as observer_store;
+    use oer_hil_run_bundle_format::observer::store as observer_store;
     use serde_json::json;
     let directory = tempfile::tempdir().unwrap();
     let store = RunStore::at(directory.path());

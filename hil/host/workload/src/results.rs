@@ -1,7 +1,7 @@
 //! The typed results of one repetition: the evidence its workload observed,
 //! step by step, and the claim it makes. [`Results::write`] is the one
 //! writer of a repetition's `observations.json`
-//! ([`oer_hil_run_bundle::run::Observations`]); workloads never write report
+//! ([`oer_hil_run_bundle_format::run::Observations`]); workloads never write report
 //! files of their own.
 
 use std::{
@@ -9,9 +9,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use oer_hil_run_bundle::run::{
-    Claim, OBSERVATIONS_FILE, OBSERVATIONS_SCHEMA, Observation, Observations,
-};
+use oer_hil_run_bundle_format::run::Claim;
+use oer_hil_run_bundle_format::run::OBSERVATIONS_FILE;
+use oer_hil_run_bundle_format::run::OBSERVATIONS_SCHEMA;
+use oer_hil_run_bundle_format::run::Observation;
+use oer_hil_run_bundle_format::run::Observations;
 use serde::Serialize;
 
 use crate::Result;

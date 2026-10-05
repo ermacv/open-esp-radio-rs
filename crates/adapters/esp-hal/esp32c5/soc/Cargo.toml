@@ -14,7 +14,7 @@ esp32c5 = ["dep:esp-hal"]
 [dependencies]
 critical-section = "1.2.0"
 oer-soc-deadline = { path = "../../../../hardware/soc/deadline" }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "8930609f2af67e2e296a4d8f900ea3636a0acc6b", default-features = false, features = ["esp32c5", "unstable"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921", default-features = false, features = ["esp32c5", "unstable"], optional = true }
 
 [lints]
 workspace = true

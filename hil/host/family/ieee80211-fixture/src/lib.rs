@@ -15,7 +15,6 @@ mod capture_process;
 mod channel;
 pub mod controlled_ap;
 pub mod host_network;
-pub mod hostapd;
 pub mod local;
 pub mod openwrt;
 pub mod prepared;

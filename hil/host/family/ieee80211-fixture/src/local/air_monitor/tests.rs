@@ -5,7 +5,7 @@ const TARGET: &str = "02:00:00:00:00:01";
 const PEER: &str = "02:00:00:00:00:02";
 
 /// Target data (`D`) and peer BlockAck (`B`) records at microsecond times.
-fn egress(records: &[(u64, char)]) -> TargetEgressAirTimingEvidence {
+fn egress(records: &[(u64, char)]) -> TargetEgressAirTiming {
     let frames = records
         .iter()
         .map(|&(time, kind)| {

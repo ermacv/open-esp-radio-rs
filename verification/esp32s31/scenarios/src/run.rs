@@ -12,7 +12,7 @@ use crate::{
     retry, rfpll, rx_append, rx_gain, session, state, tracking, tx_dc,
 };
 use clap::Subcommand;
-use oer_vendor_evidence::Index;
+use oer_vendor_evidence_shard::Index;
 use oer_vendor_scenario_engine::findings::RunReport;
 use std::{
     path::{Path, PathBuf},

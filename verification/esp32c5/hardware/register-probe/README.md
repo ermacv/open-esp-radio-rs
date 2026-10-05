@@ -29,13 +29,16 @@ and host. A block whose read does not complete is `INCOMPLETE`.
 | `EVENT_ENABLE` | thirteen events 12:0 |
 | `COEX_PTI` | TX/RX PTI 3:0, ACK PTI 7:4, bit 8 |
 
-From this directory, build the image and flash it through the stand:
+`cargo fw flash` writes image bundles and catalog images only, so `espflash`
+flashes this ELF under a board lease. From the repository root, with the
+board's port from `cargo stand board check esp32c5`:
 
 ```console
-cargo build --release
-cargo hil flash --board esp32c5 --via jtag --image esp32c5-register-probe \
-  --monitor 30s --until PROBE-DONE \
-  target/riscv32imac-unknown-none-elf/release/oer-esp32c5-register-probe
+(cd verification/esp32c5/hardware/register-probe && cargo build --release)
+elf=verification/esp32c5/hardware/register-probe/target/riscv32imac-unknown-none-elf/release/oer-esp32c5-register-probe
+cargo stand lease --board esp32c5 --air none --flashed esp32c5-register-probe \
+  --device esp32c5 --application "$elf" -- sh -c \
+  "espflash flash --chip esp32c5 --port PORT $elf && timeout 30 espflash monitor --chip esp32c5 --port PORT --non-interactive --elf $elf"
 ```
 
 The image boots through the ESP-IDF second-stage bootloader that `espflash`

@@ -189,7 +189,7 @@ mod tests {
     }
 
     fn observed(value: u64) -> Value {
-        json!({"name": "wifi.station.control-responsive", "value": value, "unit": "count", "threshold": {"comparison": "exactly", "value": 1}, "verdict": "passed"})
+        json!({"name": "wifi.station.control-responsive", "value": value, "unit": "count", "semantics": 1, "better": null, "threshold": {"comparison": "exactly", "value": 1}, "verdict": "passed"})
     }
 
     #[test]
@@ -200,7 +200,7 @@ mod tests {
         .unwrap();
         let share = &published["wifi.protection.rts-cts-before-data"];
         let sample = |value: u64| {
-            json!({"name":"wifi.protection.rts-cts-before-data","value":value,"unit":"basis-points",
+            json!({"name":"wifi.protection.rts-cts-before-data","value":value,"unit":"basis-points", "semantics": 1, "better": "higher",
                 "threshold":{"comparison":"at-least","value":9_500},"verdict":"passed"})
         };
         assert!(passes(
@@ -242,7 +242,7 @@ mod tests {
         assert!(!initial.contains_key("wifi.station.recovery-retry-exhausted"));
         assert!(recovered.contains_key("wifi.station.recovery-retry-exhausted"));
         let name = "wifi.station.initial-retry-exhausted";
-        let unrelated = serde_json::json!({"name":"wifi.station.control-responsive","value":1,"unit":"count","threshold":{"comparison":"exactly","value":1},"verdict":"passed"});
+        let unrelated = serde_json::json!({"name":"wifi.station.control-responsive","value":1,"unit":"count", "semantics": 1, "better": null,"threshold":{"comparison":"exactly","value":1},"verdict":"passed"});
         assert_eq!(
             assess(name, &initial[name], &[unrelated]),
             Assessment::Unavailable
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn criteria_are_recomputed_without_rewriting_the_original_assessment() {
         let original = json!({"name":"udp.rx.target-rate", "value":90_000_000,
-            "unit":"bits-per-second", "threshold":{"comparison":"at-least","value":95_000_000},
+            "unit":"bits-per-second", "semantics": 1, "better": "higher", "threshold":{"comparison":"at-least","value":95_000_000},
             "verdict":"failed"});
         let measurements = vec![original.clone()];
         for (floor, expected) in [(85_000_000, true), (90_000_000, true), (95_000_000, false)] {

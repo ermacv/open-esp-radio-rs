@@ -16,6 +16,9 @@ use std::{
 use crate::{Result, openwrt::evidence::resolve_station_mac, openwrt::tx_monitor::MacFrameKey};
 use oer_hil_family_ieee80211_evidence::air::{self, AirFrame, FrameKind, MacAddress};
 use oer_hil_lab::config::OpenWrtConfig;
+use oer_hil_run_bundle_format::run::fixtures::{
+    self, AirIntervalSummary, AirMonitor, TargetEgressAirTiming,
+};
 
 const MONITOR_INTERFACE: &str = "mon0";
 const MAX_CAPTURE_BYTES: u64 = 128 * 1024 * 1024;
@@ -33,7 +36,7 @@ pub fn check_without_device(config: &OpenWrtConfig, output: &Path) -> Result<()>
         true,
     )?;
     let evidence = capture.finish()?;
-    oer_durable::atomic_json(&output.join("fixture-monitor.json"), &evidence)
+    fixtures::write(output, &evidence.record())
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]
@@ -53,36 +56,28 @@ pub struct LocalAirMonitorEvidence {
     pub backward_block_ack_starts: u32,
     /// Target-oriented egress timing. This is deliberately independent of
     /// whether the target is a station or an access point.
-    pub target_egress: TargetEgressAirTimingEvidence,
+    pub target_egress: TargetEgressAirTiming,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
-pub struct AirIntervalSummary {
-    pub samples: u32,
-    pub total_micros: u64,
-    pub minimum_micros: u64,
-    pub p50_micros: u64,
-    pub p95_micros: u64,
-    pub p99_micros: u64,
-    pub maximum_micros: u64,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]
-pub struct TargetEgressAirTimingEvidence {
-    pub target_data_frames: u32,
-    pub peer_block_ack_frames: u32,
-    /// Whether the observer decoded enough target data records to pair every
-    /// peer BlockAck with a target transmission. Pair-derived intervals stay
-    /// absent when this is false; sparse target decoding must not manufacture
-    /// apparently valid multi-millisecond gaps.
-    pub target_data_pairing_available: bool,
-    /// Direction-neutral cadence of peer BlockAck responses to the target.
-    /// This remains useful when the observer cannot decode the target's HT40
-    /// A-MPDU records, but it cannot separate peer response time from the
-    /// target's post-BlockAck scheduling delay.
-    pub peer_block_ack_interarrival: Option<AirIntervalSummary>,
-    pub data_to_block_ack: Option<AirIntervalSummary>,
-    pub block_ack_to_next_data: Option<AirIntervalSummary>,
+impl LocalAirMonitorEvidence {
+    /// The fixture record of this evidence, without the per-frame MAC units
+    /// only the live comparison uses.
+    pub fn record(&self) -> AirMonitor {
+        AirMonitor {
+            captured_frames: self.captured_frames,
+            kernel_dropped: self.kernel_dropped,
+            logical_data_units: self.logical_data_units,
+            retry_attempts: self.retry_attempts,
+            missing_mac_metadata: self.missing_mac_metadata,
+            block_ack_frames: self.block_ack_frames,
+            full_block_ack_frames: self.full_block_ack_frames,
+            tail_block_ack_frames: self.tail_block_ack_frames,
+            hole_block_ack_frames: self.hole_block_ack_frames,
+            unique_block_acked_mpdus: self.unique_block_acked_mpdus,
+            backward_block_ack_starts: self.backward_block_ack_starts,
+            target_egress: self.target_egress.clone(),
+        }
+    }
 }
 
 pub struct LocalAirMonitorCapture {
@@ -228,7 +223,7 @@ impl LocalAirMonitorCapture {
 }
 
 pub(crate) fn resolve_observer_action(config: &OpenWrtConfig) -> Result<Geometry> {
-    let output = oer_hil_stand_host::ssh::command(
+    let output = oer_stand_ssh::command(
         &config.ssh_target,
         &format!("iw dev {} info", config.wireless_interface),
     )
@@ -341,7 +336,7 @@ fn analyze(frames: &[AirFrame], target: MacAddress) -> LocalAirMonitorEvidence {
     evidence
 }
 
-fn target_egress_timing(frames: &[AirFrame], target: MacAddress) -> TargetEgressAirTimingEvidence {
+fn target_egress_timing(frames: &[AirFrame], target: MacAddress) -> TargetEgressAirTiming {
     let mut target_data_frames = 0_u32;
     let mut peer_block_ack_frames = 0_u32;
     let mut last_target_data = None;
@@ -383,7 +378,7 @@ fn target_egress_timing(frames: &[AirFrame], target: MacAddress) -> TargetEgress
 
     let target_data_pairing_available = peer_block_ack_frames != 0
         && usize::try_from(peer_block_ack_frames).ok() == Some(data_to_block_ack.len());
-    TargetEgressAirTimingEvidence {
+    TargetEgressAirTiming {
         target_data_frames,
         peer_block_ack_frames,
         target_data_pairing_available,

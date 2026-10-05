@@ -37,7 +37,7 @@ pub fn image_packages(root: &Path) -> Result<Vec<PathBuf>> {
     let model = oer_repo::Model::load(&oer_repo::Repo::load(root)?)?;
     let mut directories = BTreeSet::new();
     for profile in model.chips.profiles() {
-        for (workspace, _) in oer_hil_image_class::agent::image_packages(profile, root) {
+        for (workspace, _) in profile.hil_image_packages(root) {
             let workspace = workspace
                 .strip_prefix(root)
                 .map_err(|_| "a firmware workspace outside the repository")?
@@ -116,23 +116,10 @@ enum Checkout {
     /// keeps Cargo's unit identities stable in the shared compile cache, and
     /// unchanged files keep their modification times, so Cargo rebuilds only
     /// the packages a snapshot actually changes.
-    Workspace { path: PathBuf, _lock: WorkspaceLock },
-}
-
-/// The exclusive lock of one build workspace, released explicitly on drop.
-///
-/// Closing this descriptor alone does not release the `flock` while a child
-/// that another thread forked, and that has not yet executed its program,
-/// still holds the shared open file description; the workspace would then
-/// look busy to the next build for that moment.
-struct WorkspaceLock(fs::File);
-
-impl Drop for WorkspaceLock {
-    fn drop(&mut self) {
-        if let Err(error) = fs2::FileExt::unlock(&self.0) {
-            eprintln!("release the source build workspace lock: {error}");
-        }
-    }
+    Workspace {
+        path: PathBuf,
+        _lock: oer_process::lock::FileLock,
+    },
 }
 
 impl Checkout {
@@ -145,8 +132,8 @@ impl Checkout {
 }
 
 /// Persistent build workspaces of the host: one per source tree that can
-/// build at the same time; later builds wait for a slot. Each slot keeps its
-/// own compile caches, so the slots bound the host's build disk use.
+/// build at the same time; later builds wait for a slot. They all compile in
+/// the image pipeline's one shared compile cache.
 const WORKSPACE_SLOTS: usize = 3;
 
 impl FrozenSources {
@@ -164,9 +151,10 @@ impl FrozenSources {
     /// every file whose bytes and mode are unchanged, receives the rest and
     /// loses anything the snapshot does not contain.
     pub fn open_in_workspace(directory: &Path, workspace: &Path) -> Result<Self> {
-        use fs2::FileExt as _;
-        let lock = Self::workspace_lock(workspace)?;
-        lock.lock_exclusive()?;
+        let lock = oer_process::lock::FileLock::acquire(
+            &Self::workspace_lock(workspace)?,
+            oer_process::lock::Mode::Exclusive,
+        )?;
         Self::open_locked(directory, workspace, lock)
     }
 
@@ -176,45 +164,46 @@ impl FrozenSources {
     /// Cargo rebuilds only the packages whose sources changed. A cold build in
     /// a temporary directory takes longer than waiting for a slot.
     pub fn open_in_free_workspace(directory: &Path, base: &Path) -> Result<Self> {
-        use fs2::FileExt as _;
         let name = base
             .file_name()
             .ok_or("source build workspace has no name")?
             .to_string_lossy()
             .into_owned();
-        let mut announced = false;
-        loop {
-            for slot in 0..WORKSPACE_SLOTS {
-                let workspace = base.with_file_name(format!("{name}-{slot}"));
-                let lock = Self::workspace_lock(&workspace)?;
-                if lock.try_lock_exclusive().is_ok() {
-                    return Self::open_locked(directory, &workspace, lock);
-                }
-            }
-            if !announced {
-                eprintln!(
-                    "waiting for one of the {WORKSPACE_SLOTS} source build slots at {}",
-                    base.display()
-                );
-                announced = true;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
+        let workspaces = (0..WORKSPACE_SLOTS)
+            .map(|slot| base.with_file_name(format!("{name}-{slot}")))
+            .collect::<Vec<_>>();
+        let locks = workspaces
+            .iter()
+            .map(|workspace| Self::workspace_lock(workspace))
+            .collect::<Result<Vec<_>>>()?;
+        let lock = oer_process::lock::FileLock::wait_any(
+            &locks,
+            oer_process::lock::Mode::Exclusive,
+            &format!(
+                "waiting for one of the {WORKSPACE_SLOTS} source build slots at {}",
+                base.display()
+            ),
+        )?;
+        let slot = locks
+            .iter()
+            .position(|path| path == lock.path())
+            .ok_or("a source build slot lock outside the slots")?;
+        Self::open_locked(directory, &workspaces[slot], lock)
     }
 
-    fn workspace_lock(workspace: &Path) -> Result<fs::File> {
-        let parent = workspace
+    /// The lock file of the build workspace `workspace`.
+    fn workspace_lock(workspace: &Path) -> Result<PathBuf> {
+        workspace
             .parent()
             .ok_or("source build workspace has no parent")?;
-        fs::create_dir_all(parent)?;
-        Ok(fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(workspace.with_extension("lock"))?)
+        Ok(workspace.with_extension("lock"))
     }
 
-    fn open_locked(directory: &Path, workspace: &Path, lock: fs::File) -> Result<Self> {
+    fn open_locked(
+        directory: &Path,
+        workspace: &Path,
+        lock: oer_process::lock::FileLock,
+    ) -> Result<Self> {
         let staging = workspace.with_extension("staging");
         if fs::symlink_metadata(&staging).is_ok() {
             fs::remove_dir_all(&staging)?;
@@ -232,7 +221,7 @@ impl FrozenSources {
         let sources = Self {
             checkout: Checkout::Workspace {
                 path: workspace.to_owned(),
-                _lock: WorkspaceLock(lock),
+                _lock: lock,
             },
             snapshot,
             manifest,
@@ -267,16 +256,6 @@ impl FrozenSources {
             .iter()
             .any(|source| source.name == role)
             .then(|| self.checkout.path().join(role))
-    }
-
-    /// Where this checkout's compile caches belong: beside a build
-    /// workspace, so the units compiled from its paths stay with it, or
-    /// inside a temporary checkout.
-    pub fn cache_base(&self) -> PathBuf {
-        match &self.checkout {
-            Checkout::Workspace { path, .. } => path.with_extension("cache"),
-            Checkout::Temporary(directory) => directory.path().join("cache"),
-        }
     }
 
     pub fn sources(&self) -> &[SourceInput] {
@@ -443,23 +422,6 @@ fn source_include_arguments(unresolved: &[(&str, &Path)]) -> String {
         .join(" ")
 }
 
-fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    oer_process::git::output(root, args)
-        .map_err(|error| format!("source snapshot Git query failed: {error}").into())
-}
-
-fn paths(bytes: &[u8]) -> Result<BTreeSet<PathBuf>> {
-    bytes
-        .split(|b| *b == 0)
-        .filter(|p| !p.is_empty())
-        .map(|p| {
-            let path = PathBuf::from(std::str::from_utf8(p)?);
-            contained(&path)?;
-            Ok(path)
-        })
-        .collect()
-}
-
 fn contained(path: &Path) -> Result<()> {
     if path.as_os_str().is_empty()
         || path
@@ -479,43 +441,28 @@ fn contained(path: &Path) -> Result<()> {
 /// snapshot neither requires nor archives.
 const EVIDENCE_OUTPUTS: &[&str] = &["hil/evidence"];
 
-/// The Git state a snapshot archives: the index's tracked paths and the
-/// untracked, unignored files, from Git directly rather than through the
-/// repository model (`oer_repo::Repo`), whose file set answers a different
-/// question. The model lists files present on disk below the skipped
-/// components (`target`, `_oracles`); an archive must also name a tracked
-/// file the worktree deleted, keep a symlink as one, and read every
-/// component, or a rebuild from it would not be the checkout's state.
+/// The Git state a snapshot archives: the checkout's index view
+/// ([`oer_repo::index::IndexSnapshot`]), which names a tracked file the
+/// worktree deleted, keeps a symlink as one and skips no component, so a
+/// rebuild from the archive is the checkout's state; not the repository
+/// model's file set, which lists existing files without build output.
 fn select(name: &str, root: &Path) -> Result<Selection> {
-    let top = String::from_utf8(git(root, &["rev-parse", "--show-toplevel"])?)?;
-    if Path::new(top.trim()).canonicalize()? != root.canonicalize()? {
-        return Err(format!("snapshot source {name} must name its repository root").into());
-    }
-    let commit = String::from_utf8(git(root, &["rev-parse", "HEAD"])?)?
-        .trim()
-        .to_owned();
-    let tracked = paths(&git(root, &["ls-files", "--cached", "-z"])?)?;
-    let mut untracked = paths(&git(
-        root,
-        &["ls-files", "--others", "--exclude-standard", "-z"],
-    )?)?;
+    let index = oer_repo::index::IndexSnapshot::read(root)
+        .map_err(|error| format!("snapshot source {name}: {error}"))?;
+    let paths = |paths: BTreeSet<String>| paths.into_iter().map(PathBuf::from).collect();
+    let mut untracked: BTreeSet<PathBuf> = paths(index.untracked);
     // Recorded evidence shards are outputs of earlier runs, not build inputs.
     untracked.retain(|path| {
         !EVIDENCE_OUTPUTS
             .iter()
             .any(|output| path.starts_with(output))
     });
-    let dirty = !git(
-        root,
-        &["status", "--porcelain=v1", "--untracked-files=normal"],
-    )?
-    .is_empty();
     Ok(Selection {
         name: name.into(),
         root: root.into(),
-        commit,
-        dirty,
-        tracked,
+        commit: index.commit,
+        dirty: index.dirty,
+        tracked: paths(index.tracked),
         untracked,
     })
 }
@@ -792,11 +739,10 @@ mod tests;
 #[cfg(any(test, feature = "test-support"))]
 pub use tests::test_snapshot;
 
-mod dependency;
 mod materialize;
-pub use dependency::Dependency;
 #[cfg(test)]
 use materialize::materialize;
+use oer_hil_schema::dependency::Dependency;
 
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_capture(root: &Path) -> Snapshot {

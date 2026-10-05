@@ -1,6 +1,8 @@
 use super::test_support::{integrated_session, manifest, session, temporary_directory};
 use super::*;
-use crate::build::{SourceLimitation, SourceRebuildStatus, capture_source_material};
+use crate::build::capture_source_material;
+use oer_hil_run_bundle_format::build::SourceLimitation;
+use oer_hil_run_bundle_format::build::SourceRebuildStatus;
 
 #[test]
 fn messages_used_collects_both_directions_from_every_capture() {
@@ -58,7 +60,7 @@ fn failed_suite() -> SuiteResult {
     SuiteResult {
         schema: RUN_SCHEMA,
         run_id: String::from("run<&>"),
-        target: String::from("esp32s31"),
+        target: String::from("chip-a"),
         outcome: Outcome::Failed,
         started_unix_millis: 1,
         finished_unix_millis: 251,
@@ -324,7 +326,7 @@ fn broken_or_interrupted_repetitions_can_retain_failed_measurements() {
 }
 
 #[test]
-fn the_boot_flow_decides_an_images_subjects_and_staged_bundles_keep_their_shape() {
+fn a_staged_image_keeps_its_runtime_and_bootstrap_subjects() {
     let staged = serde_json::json!({
         "image": "boot-smoke",
         "application_path": "firmware/boot-smoke/application.bin",
@@ -335,34 +337,11 @@ fn the_boot_flow_decides_an_images_subjects_and_staged_bundles_keep_their_shape(
         "bootstrap_elf_sha256": "03",
     });
     let artifact: FirmwareArtifact = serde_json::from_value(staged.clone()).unwrap();
-    // A bundle without the field is a staged image, and a staged image is
-    // written without it.
-    assert_eq!(artifact.boot, Boot::Staged);
     assert_eq!(serde_json::to_value(&artifact).unwrap(), staged);
     assert_eq!(
         artifact.required_subjects(),
         ["runtime.bin", "bootstrap.elf"]
     );
-
-    let mut application = artifact;
-    application.boot = Boot::EspIdfBootloader;
-    assert_eq!(
-        application.required_subjects(),
-        ["bootloader.bin", "partition-table.bin"]
-    );
-    assert_eq!(
-        serde_json::to_value(&application).unwrap()["boot"],
-        "esp-idf-bootloader"
-    );
-    let files = application.subjects().map(|subject| subject.file);
-    assert_eq!(
-        files,
-        [
-            "runtime.elf",
-            "runtime.bin",
-            "bootstrap.elf",
-            "bootloader.bin",
-            "partition-table.bin"
-        ]
-    );
+    let files = artifact.subjects().map(|subject| subject.file);
+    assert_eq!(files, ["runtime.elf", "runtime.bin", "bootstrap.elf"]);
 }

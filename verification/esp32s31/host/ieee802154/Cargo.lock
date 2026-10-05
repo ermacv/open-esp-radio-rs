@@ -187,6 +187,8 @@ dependencies = [
  "oer-ieee802154",
  "oer-vendor-artifacts",
  "oer-vendor-evidence",
+ "oer-vendor-evidence-shard",
+ "oer-vendor-pins",
 ]
 
 [[package]]
@@ -317,8 +319,7 @@ version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
  "oer-durable",
- "serde",
- "toml",
+ "oer-vendor-pins",
 ]
 
 [[package]]
@@ -327,9 +328,28 @@ version = "0.1.0"
 dependencies = [
  "oer-process",
  "oer-repo",
+ "oer-vendor-evidence-shard",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "oer-vendor-evidence-shard"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "toml",
+]
+
+[[package]]
+name = "oer-vendor-pins"
+version = "0.1.0"
+dependencies = [
+ "oer-chip-profile",
+ "serde",
  "toml",
 ]
 

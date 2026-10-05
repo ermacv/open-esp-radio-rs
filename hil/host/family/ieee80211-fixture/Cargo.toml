@@ -9,6 +9,8 @@ publish = false
 description = "Wi-Fi HIL fixtures: laptop hostapd and wpa_supplicant, the OpenWrt AP, clients and monitors, air captures and the host route, and their fixture provider"
 
 [dependencies]
+oer-hil-run-bundle-format = { path = "../../run-bundle/format" }
+oer-hil-scenario-catalog = { path = "../../scenario/catalog" }
 oer-durable = { path = "../../../../tools/durable" }
 oer-hil-family-ieee80211-evidence = { path = "../ieee80211-evidence" }
 oer-hil-fixture = { path = "../../fixture" }
@@ -16,7 +18,7 @@ oer-hil-lab = { path = "../../lab" }
 oer-hil-net-traffic = { path = "../../net-traffic" }
 oer-hil-protocol = { path = "../../../protocol" }
 oer-hil-scenario = { path = "../../scenario" }
-oer-hil-stand-host = { path = "../../stand-host" }
+oer-stand-ssh = { path = "../../../../stand/ssh" }
 oer-hil-workload = { path = "../../workload" }
 oer-process = { path = "../../../../tools/process" }
 oer-toolchain = { path = "../../../../tools/toolchain" }
@@ -29,7 +31,6 @@ zeroize = "1.8.1"
 
 [dev-dependencies]
 oer-hil-family-ieee80211-evidence = { path = "../ieee80211-evidence", features = ["test-support"] }
-oer-hil-run-bundle = { path = "../../run-bundle" }
 oer-hil-workload = { path = "../../workload", features = ["test-support"] }
 
 [lints]

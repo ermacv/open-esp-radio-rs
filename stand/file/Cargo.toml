@@ -1,0 +1,29 @@
+[package]
+name = "oer-stand-file"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "The stand file: its hubs, boards and fixture sections, its one board resolver and the paths of the stand's state"
+
+[dependencies]
+oer-device-mac = { path = "../../tools/device/mac" }
+oer-durable = { path = "../../tools/durable" }
+oer-chip-profile = { path = "../../tools/chip-profile" }
+serde = { version = "1.0", features = ["derive"] }
+toml = "1.1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+layer = "hil"
+platform = "host"
+host-layer = "stand"
+hil = "operation"
+inputs = ["stand/stand.example.toml", "platform/*/chip.toml"]

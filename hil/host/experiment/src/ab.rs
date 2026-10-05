@@ -8,15 +8,31 @@
 //! overrides into a source snapshot, which the experiment's runner builds:
 //! both arms therefore need the checkout's HIL protocol version.
 //!
-//! For every layout seed, the first round runs A, then B, each building its
-//! images. The remaining rounds replay those exact images; each round, A then
-//! B of one seed, holds a whole-stand lease of its own, so drift of the air
-//! and the calibrations falls on both arms alike, and other owners' shorter
-//! work goes between rounds. Every run is launched through
-//! [`crate::launch::launch_run`] as a job of its own, records its arm and
-//! variant in its manifest ([`oer_hil_run_bundle::experiment`]) and no
-//! evidence. The report compares, per scenario and measurement, the arms'
-//! run means ([`oer_hil_analysis::arms`]) and is written to `ab-report.json`.
+//! The experiment runs in rounds: both arms on one layout seed. For every
+//! layout seed, round 0 is the **preparation**: it builds each arm's images
+//! (A, then B), each run under a lease of its own, and warms the stand up;
+//! its runs are recorded with the preparation phase and never paired. The
+//! **measured** rounds `1..=repetitions` replay those exact images, each
+//! round holding one whole-stand lease for both arms, so drift of the air
+//! and the calibrations falls on both arms of a round alike, and other
+//! owners' shorter work goes between rounds. `--repetitions N` is the
+//! number of measured rounds, so N pairs per layout seed.
+//!
+//! Which arm runs first in a measured round is balanced and seeded: the
+//! measured rounds of a layout seed come in consecutive pairs, one AB and
+//! one BA, and which of the two leads is drawn from
+//! `oer_stats::balanced_swaps` with the experiment's order seed (given, or
+//! the experiment id) mixed with the layout seed. Warm-up, temperature drift and recovery order therefore
+//! fall on both arms alike instead of always on B. The order seed is in the
+//! report, and every run records its round (layout seed, index, order,
+//! order seed) in its manifest with its arm and variant
+//! ([`oer_hil_run_bundle_format::experiment`]).
+//!
+//! Every run is launched through [`crate::launch::launch_run`] as a job of
+//! its own and records no evidence. The report compares, per metric, the
+//! two arms' run means paired by measured round, after checking that every
+//! run belongs to this one experiment ([`oer_hil_analysis::arms`]), and is
+//! written to `ab-report.json`.
 
 use std::{
     collections::BTreeMap,
@@ -26,15 +42,20 @@ use std::{
 
 use oer_hil_analysis::{
     Run,
-    arms::{self, MeasurementComparison},
+    arms::{self, MeasurementComparison, ValidatedExperiment},
 };
-use oer_hil_image_class::FeatureDelta;
-use oer_hil_run_bundle::{
-    RunId, RunStore,
-    experiment::{Arm, DependencyOverride, Experiment, Variant},
-};
+use oer_hil_run_bundle::RunId;
+use oer_hil_run_bundle::RunStore;
+use oer_hil_run_bundle_format::experiment::Arm;
+use oer_hil_run_bundle_format::experiment::DependencyOverride;
+use oer_hil_run_bundle_format::experiment::Experiment;
+use oer_hil_run_bundle_format::experiment::Order;
+use oer_hil_run_bundle_format::experiment::Phase;
+use oer_hil_run_bundle_format::experiment::Round;
+use oer_hil_run_bundle_format::experiment::Variant;
+use oer_hil_schema::dependency::Dependency;
+use oer_hil_schema::image::FeatureDelta;
 use oer_hil_schema::run::Outcome;
-use oer_hil_source_snapshot::Dependency;
 use oer_process::git::Worktree;
 use serde::Serialize;
 
@@ -44,7 +65,7 @@ use crate::{
     launch::{Launch, Runner, launch_run},
 };
 
-const REPORT_SCHEMA: u16 = 1;
+const REPORT_SCHEMA: u16 = 3;
 
 /// A variant as written on the command line, before its revision and
 /// checkouts are resolved.
@@ -106,19 +127,23 @@ pub struct Spec {
     pub a: VariantSpec,
     pub b: VariantSpec,
     pub scenarios: Vec<String>,
-    /// Runs of each arm per layout seed.
+    /// Measured rounds per layout seed, after its preparation round: the
+    /// pairs each layout seed contributes.
     pub repetitions: u32,
     /// Layout seeds 1..=K, each built and run for both arms.
     pub layout_seeds: u32,
     /// The runner arguments naming the boards every run uses.
     pub boards: Vec<String>,
+    /// The seed of the rounds' order; `None` takes the experiment id.
+    pub order_seed: Option<u64>,
 }
 
 /// One run of an arm.
 #[derive(Clone, Debug, Serialize)]
 pub struct ArmRun {
     pub arm: Arm,
-    pub seed: NonZeroU32,
+    /// The round it ran in: layout seed, index, order and order seed.
+    pub round: Round,
     pub run: String,
     pub outcome: Option<String>,
 }
@@ -132,6 +157,8 @@ pub struct Report {
     pub scenarios: Vec<String>,
     pub repetitions: u32,
     pub layout_seeds: u32,
+    /// The seed every round's order was drawn from.
+    pub order_seed: u64,
     pub runs: Vec<ArmRun>,
     pub comparisons: Vec<MeasurementComparison>,
 }
@@ -150,7 +177,9 @@ pub fn run(checkout: &Path, owner: &str, runner: &Runner, spec: &Spec) -> Result
     if spec.repetitions == 0 || spec.layout_seeds == 0 {
         return Err("--repetitions and --layout-seeds must be at least 1".into());
     }
-    let id = oer_durable::unix_millis().to_string();
+    let started = oer_durable::unix_millis();
+    let id = started.to_string();
+    let order_seed = spec.order_seed.unwrap_or(started);
     let directory = checkout.join("target/hil/ab").join(&id);
     std::fs::create_dir_all(&directory)?;
     let current =
@@ -159,6 +188,10 @@ pub fn run(checkout: &Path, owner: &str, runner: &Runner, spec: &Spec) -> Result
         .into_iter()
         .map(|(arm, variant)| prepare(checkout, &directory, arm, variant, &current))
         .collect::<Result<Vec<_>>>()?;
+    let prepared = |arm: Arm| match arm {
+        Arm::A => &arms[0],
+        Arm::B => &arms[1],
+    };
     let mut report = Report {
         schema: REPORT_SCHEMA,
         id: id.clone(),
@@ -167,6 +200,7 @@ pub fn run(checkout: &Path, owner: &str, runner: &Runner, spec: &Spec) -> Result
         scenarios: spec.scenarios.clone(),
         repetitions: spec.repetitions,
         layout_seeds: spec.layout_seeds,
+        order_seed,
         runs: Vec::new(),
         comparisons: Vec::new(),
     };
@@ -174,6 +208,13 @@ pub fn run(checkout: &Path, owner: &str, runner: &Runner, spec: &Spec) -> Result
     let seeds = (1..=spec.layout_seeds)
         .filter_map(NonZeroU32::new)
         .collect::<Vec<_>>();
+    let schedule = seeds
+        .iter()
+        .map(|seed| (*seed, orders(order_seed, *seed, spec.repetitions)))
+        .collect::<BTreeMap<_, _>>();
+    // Measured round `index` (1..=repetitions) takes the order at
+    // `index - 1`; the preparation round runs A, then B.
+    let round_of = |seed: NonZeroU32, index: u32| round(&schedule[&seed], seed, index, order_seed);
     let session = Session {
         checkout,
         owner,
@@ -184,69 +225,64 @@ pub fn run(checkout: &Path, owner: &str, runner: &Runner, spec: &Spec) -> Result
         store: RunStore::shared()?,
     };
     let mut loaded = Vec::new();
-    // The first round of each seed builds each arm's images.
+    // The preparation round of each seed builds each arm's images, each run
+    // under a lease of its own; no analysis pairs it.
     let mut first = BTreeMap::new();
     for seed in &seeds {
-        for arm in &arms {
-            let run = arm.run(&session, &spec.scenarios, &Firmware::Build(*seed), None)?;
-            first.insert((arm.arm, *seed), run.clone());
-            record(
-                &session.store,
-                &mut report,
-                &mut loaded,
-                arm.arm,
-                *seed,
-                &run,
+        let round = round_of(*seed, 0);
+        for arm in round.order.arms() {
+            let run = prepared(arm).run(
+                &session,
+                &spec.scenarios,
+                &Firmware::Build(*seed),
+                round,
+                None,
             )?;
+            first.insert((arm, *seed), run.clone());
+            record(&session.store, &mut report, &mut loaded, arm, round, &run)?;
             write_report(&path, &report)?;
         }
     }
-    // The other rounds replay those images. One round, A then B of one
-    // seed, holds the stand, so drift falls on both arms alike; between
-    // rounds the lease is released and shorter work of owners with a higher
-    // balance goes first. Every round leases the same work, so the arbiter
-    // estimates the next round from the rounds before it.
-    if spec.repetitions > 1 {
-        let arbiter = oer_hil_arbiter::Arbiter::open()?;
-        let work = round_work(&spec.scenarios);
-        for _ in 1..spec.repetitions {
-            for seed in &seeds {
-                let grant = arbiter.acquire(&oer_hil_arbiter::Request {
-                    owner: owner.to_owned(),
-                    work: work.clone(),
-                    scenarios: spec.scenarios.clone(),
-                    claims: vec![oer_hil_arbiter::Claim::stand()],
-                })?;
-                for arm in &arms {
-                    let built = &first[&(arm.arm, *seed)];
-                    for (_, scenarios) in classes_of(&loaded, built) {
-                        let run = arm.run(
-                            &session,
-                            &scenarios,
-                            &Firmware::Replay(built.clone()),
-                            Some(&grant),
-                        )?;
-                        record(
-                            &session.store,
-                            &mut report,
-                            &mut loaded,
-                            arm.arm,
-                            *seed,
-                            &run,
-                        )?;
-                        write_report(&path, &report)?;
-                    }
+    // The measured rounds replay those images. One round, both arms of one
+    // seed in the round's order, holds the stand under one grant, so drift
+    // falls on both arms alike; between rounds the lease is released and
+    // shorter work of owners with a higher balance goes first. Every round
+    // leases the same work, so the arbiter estimates the next round from
+    // the rounds before it.
+    let arbiter = oer_stand_arbiter::Arbiter::open()?;
+    let work = round_work(&spec.scenarios);
+    for index in 1..=spec.repetitions {
+        for seed in &seeds {
+            let round = round_of(*seed, index);
+            let grant = arbiter.acquire(&oer_stand_arbiter::Request {
+                owner: owner.to_owned(),
+                work: work.clone(),
+                scenarios: spec.scenarios.clone(),
+                claims: vec![oer_stand_claims::Claim::stand()],
+            })?;
+            for arm in round.order.arms() {
+                let built = &first[&(arm, *seed)];
+                for (_, scenarios) in classes_of(&loaded, built) {
+                    let run = prepared(arm).run(
+                        &session,
+                        &scenarios,
+                        &Firmware::Replay(built.clone()),
+                        round,
+                        Some(&grant),
+                    )?;
+                    record(&session.store, &mut report, &mut loaded, arm, round, &run)?;
+                    write_report(&path, &report)?;
                 }
-                drop(grant);
             }
+            drop(grant);
         }
     }
-    report.comparisons = arms::compare(
-        &loaded
-            .iter()
-            .map(|(arm, run)| (*arm, run))
-            .collect::<Vec<_>>(),
-    );
+    let experiment =
+        ValidatedExperiment::new(&loaded.iter().map(|(_, run)| run).collect::<Vec<_>>())?;
+    if experiment.id() != id {
+        return Err(format!("the runs record experiment {}, not {id}", experiment.id()).into());
+    }
+    report.comparisons = arms::compare(&experiment)?;
     write_report(&path, &report)?;
     for arm in arms {
         if let Err(error) = arm.worktree.remove() {
@@ -263,6 +299,32 @@ pub fn run(checkout: &Path, owner: &str, runner: &Runner, spec: &Spec) -> Result
     })
 }
 
+/// Round `index` of `layout_seed`: the preparation for 0, which runs A then
+/// B, else the measured round whose order is `orders[index - 1]`.
+fn round(orders: &[Order], layout_seed: NonZeroU32, index: u32, order_seed: u64) -> Round {
+    Round {
+        layout_seed: layout_seed.get(),
+        index,
+        phase: Phase::of(index),
+        order: match index.checked_sub(1) {
+            None => Order::Ab,
+            Some(measured) => orders[measured as usize],
+        },
+        order_seed,
+    }
+}
+
+/// The order of each of the `rounds` measured rounds of `layout_seed`:
+/// balanced AB/BA pairs drawn from `order_seed` mixed with the layout seed,
+/// so every layout seed has its own reproducible sequence.
+fn orders(order_seed: u64, layout_seed: NonZeroU32, rounds: u32) -> Vec<Order> {
+    let stream = order_seed ^ u64::from(layout_seed.get()).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    oer_stats::balanced_swaps(stream, rounds as usize)
+        .into_iter()
+        .map(Order::swapped)
+        .collect()
+}
+
 /// The arbiter work of one replay round: the same for every round of an
 /// experiment on these scenarios, so each round's estimate is the rounds'
 /// own duration.
@@ -276,13 +338,13 @@ fn record(
     report: &mut Report,
     loaded: &mut Vec<(Arm, Run)>,
     arm: Arm,
-    seed: NonZeroU32,
+    round: Round,
     id: &RunId,
 ) -> Result<()> {
     let run = Run::open(store, id.as_str())?;
     report.runs.push(ArmRun {
         arm,
-        seed,
+        round,
         run: id.to_string(),
         outcome: run.outcome().map(|outcome| outcome.id().to_owned()),
     });
@@ -392,14 +454,15 @@ fn prepare(
 }
 
 impl PreparedArm {
-    /// One run of this arm, a job of its own, under `grant` when the
-    /// experiment holds the stand; the created run's id.
+    /// One run of this arm in `round`, a job of its own, under `grant`
+    /// when the experiment holds the stand; the created run's id.
     fn run(
         &self,
         session: &Session<'_>,
         scenarios: &[String],
         firmware: &Firmware,
-        grant: Option<&oer_hil_arbiter::Grant>,
+        round: Round,
+        grant: Option<&oer_stand_arbiter::Grant>,
     ) -> Result<RunId> {
         let mut arguments = vec![String::from("run")];
         arguments.extend(scenarios.iter().cloned());
@@ -424,6 +487,7 @@ impl PreparedArm {
             id: session.id.to_owned(),
             arm: self.arm,
             variant: self.variant.clone(),
+            round,
         };
         let arguments = arguments
             .into_iter()
@@ -432,12 +496,12 @@ impl PreparedArm {
         let mut job = Running::new(session.checkout, session.owner, &arguments)?;
         let mut launch = Launch::new(session.checkout, session.runner)
             .args(arguments)
-            .env(oer_hil_arbiter::OWNER_ENV, session.owner)
+            .env(oer_stand_owners::OWNER_ENV, session.owner)
             .env(
-                oer_hil_run_bundle::experiment::EXPERIMENT_ENV,
+                oer_hil_run_bundle_format::experiment::EXPERIMENT_ENV,
                 serde_json::to_string(&experiment)?,
             )
-            .env(oer_hil_arbiter::jobs::JOB_ENV, job.id())
+            .env(oer_stand_arbiter::jobs::JOB_ENV, job.id())
             .log(session.directory.join(format!(
                 "run-{}-{}.log",
                 self.arm,
@@ -456,27 +520,37 @@ impl PreparedArm {
 
 pub fn summary(report: &Report) -> String {
     let mut text = format!(
-        "ab {}: A {} vs B {}, {} runs\n",
+        "ab {}: A {} vs B {}, {} runs, order seed {}\n",
         report.id,
         describe(&report.a),
         describe(&report.b),
-        report.runs.len()
+        report.runs.len(),
+        report.order_seed
     );
     for entry in &report.comparisons {
-        let c = &entry.comparison;
+        let Some(c) = entry.comparison.compared() else {
+            text.push_str(&format!(
+                "  {} {}: no pairs ({} unpaired measured rounds): nothing compared\n",
+                entry.metric.scenario, entry.metric.name, entry.unpaired_rounds
+            ));
+            continue;
+        };
         text.push_str(&format!(
-            "  {} {}: A {:.3} ±{:.3} (n={}), B {:.3} ±{:.3} (n={}) {}; B−A {:+.3} ±{:.3}: {}{}\n",
-            entry.scenario,
-            entry.measurement,
+            "  {} {}: A {:.3} ±{:.3} (n={}), B {:.3} ±{:.3} (n={}) {}; paired B−A {:+.3} ±{:.3} \
+             ({} pairs, {} unpaired): {}{}\n",
+            entry.metric.scenario,
+            entry.metric.name,
             c.a.mean,
             c.a.deviation,
             c.a.count,
             c.b.mean,
             c.b.deviation,
             c.b.count,
-            entry.unit,
+            entry.metric.unit,
             c.difference,
             c.interval,
+            entry.pairs.len(),
+            entry.unpaired_rounds,
             c.verdict,
             if entry.better.is_none() {
                 " (ungated)"

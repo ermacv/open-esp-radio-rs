@@ -6,7 +6,7 @@ artifacts. The probes depend on production crates; no production crate or
 firmware depends on them.
 
 ```console
-cargo xtask build vendor-probes --chip esp32c5
+cargo verification probes --chip esp32c5
 ```
 
 builds `oer-esp32c5-probe-radio-elf` for `riscv32imac-unknown-none-elf` into

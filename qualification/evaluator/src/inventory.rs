@@ -790,18 +790,24 @@ mod tests {
             .unwrap()
     }
 
+    /// The chip catalog `name` of this checkout, relative to `root`:
+    /// `qualification/catalog/<chip>/<name>` of the first chip that has it.
+    fn catalog_file(root: &Path, name: &str) -> PathBuf {
+        let mut chips: Vec<PathBuf> = std::fs::read_dir(root.join("qualification/catalog"))
+            .unwrap()
+            .map(|chip| chip.unwrap().path())
+            .filter(|chip| chip.join(name).is_file())
+            .collect();
+        chips.sort();
+        chips[0].join(name).strip_prefix(root).unwrap().to_owned()
+    }
+
     /// The real catalogs change with every declared feature, so their
     /// renders are held to invariants, not to counts.
     #[test]
     fn full_static_render_is_deterministic_and_has_no_runtime_identity() {
         let root = repository();
-        let catalog = CatalogView::load(
-            &root,
-            &[PathBuf::from(
-                "qualification/catalog/esp32s31/wifi-phy.toml",
-            )],
-        )
-        .unwrap();
+        let catalog = CatalogView::load(&root, &[catalog_file(&root, "wifi-phy.toml")]).unwrap();
         let output = root.join("target/qualification/catalog/test-render");
         let first = render_domain(&catalog, &CodeLocations::default(), &output, &root).unwrap();
         let second = render_domain(&catalog, &CodeLocations::default(), &output, &root).unwrap();
@@ -911,13 +917,13 @@ scope-and-limitations = "No composition"
     fn combined_real_catalogs_render_alike_in_any_order() {
         let root = repository();
         let paths = [
-            "qualification/catalog/esp32s31/wifi-phy.toml",
-            "qualification/catalog/esp32s31/coex.toml",
-            "qualification/catalog/esp32s31/bluetooth.toml",
-            "qualification/catalog/esp32s31/whole-radio.toml",
-            "qualification/catalog/esp32s31/ieee802154.toml",
+            "wifi-phy.toml",
+            "coex.toml",
+            "bluetooth.toml",
+            "whole-radio.toml",
+            "ieee802154.toml",
         ]
-        .map(PathBuf::from);
+        .map(|name| catalog_file(&root, name));
         let catalog = CatalogView::load(&root, &paths).unwrap();
         let reversed =
             CatalogView::load(&root, &paths.into_iter().rev().collect::<Vec<_>>()).unwrap();

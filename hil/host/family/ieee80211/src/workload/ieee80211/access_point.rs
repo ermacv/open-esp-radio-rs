@@ -23,7 +23,7 @@ use oer_hil_family_ieee80211_fixture::{
 use oer_hil_lab::config::StationFixtureConfig;
 use oer_hil_link::SerialCapture;
 use oer_hil_net_traffic::SessionEvidence;
-use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
+use oer_hil_scenario_catalog::link::{HtGuardIntervalExpectation, PhyExpectation};
 
 mod clients;
 mod icmp;
@@ -33,8 +33,6 @@ mod report;
 mod tcp;
 mod udp;
 
-#[cfg(test)]
-use crate::workload::traffic::tx_traffic::Burst;
 use clients::{ConnectedClients, connect_clients, restore_clients};
 use icmp::qualify_icmp;
 use multi_client::qualify_multi_client_udp;
@@ -48,6 +46,8 @@ use oer_hil_net_traffic::paced_tcp::{
 use oer_hil_net_traffic::paced_udp::HostTransmission as UdpTransmission;
 #[cfg(test)]
 use oer_hil_protocol::network::Ipv4Endpoint;
+#[cfg(test)]
+use oer_hil_run_bundle_format::run::fixtures::Burst;
 #[cfg(test)]
 use report::MultiClientFlowReport;
 use report::{

@@ -3,10 +3,10 @@ use super::*;
 use oer_riscv_decode::{self as extensions, Extension};
 
 /// Executor of the full decoded ISA: RV32IMAC with Zba, Zbb, Zbs, Zcb and
-/// Zcmp, as ESP-IDF builds the ESP32-S31.
+/// Zcmp, as ESP-IDF builds the `riscv32imafc` chips.
 pub struct RiscvExecutor;
 
-/// Executor of the base RV32IMAC ISA, as ESP-IDF builds the ESP32-C5: an
+/// Executor of the base RV32IMAC ISA, as ESP-IDF builds the `riscv32imac` chips: an
 /// extension or floating-point encoding stops the run as an unsupported
 /// instruction instead of executing an instruction the chip does not have.
 pub struct Rv32imacExecutor;

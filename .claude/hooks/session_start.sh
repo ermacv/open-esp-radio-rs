@@ -69,7 +69,7 @@ free_kib=$(df -Pk "$root" 2>/dev/null | awk 'NR == 2 { print $4 }')
 if [ -n "$free_kib" ]; then
     free_gib=$((free_kib / 1048576))
     if [ "$free_gib" -lt "$threshold" ]; then
-        echo "disk: WARNING only $free_gib GiB free (below $threshold GiB); \`cargo xtask sweep\` lists rebuildable caches"
+        echo "disk: WARNING only $free_gib GiB free (below $threshold GiB); \`cargo hil sweep\` lists rebuildable caches"
     else
         echo "disk: $free_gib GiB free"
     fi

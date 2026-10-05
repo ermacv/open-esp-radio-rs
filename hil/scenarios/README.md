@@ -55,8 +55,9 @@ The family owns every executable value:
   implies the firmware image.
 - `[phy]` runs `vendor-calibration`: the pinned vendor firmware and the
   production image alternate on the board under test at one `lifecycle`
-  point, and the comparison of `oer-esp32s31-phy-vendor-calibration` is the
-  repetition's typed result. The point implies the production image
+  point, and the chip's comparison (for the ESP32-S31,
+  `oer-esp32s31-phy-vendor-calibration`, composed by
+  `oer-hil-family-phy-esp32s31`) is the repetition's typed result. The point implies the production image
   (`correctness`, or `diagnostic-ieee802154-radio` at an IEEE 802.15.4 point).
 - `[coexistence]` runs the joint Wi-Fi/Bluetooth LE image: the Linux adapter
   connects to the GATT application, then the host offers station UDP while an

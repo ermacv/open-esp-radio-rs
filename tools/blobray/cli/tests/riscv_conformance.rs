@@ -59,9 +59,9 @@ const EXCLUDED: &[(&str, &str)] = &[
         "Fencei",
         "the test stores into its own code, and image loading rejects writable code segments",
     ),
-    ("clmul-01", "Zbc is not part of the ESP32-S31 ISA"),
-    ("clmulh-01", "Zbc is not part of the ESP32-S31 ISA"),
-    ("clmulr-01", "Zbc is not part of the ESP32-S31 ISA"),
+    ("clmul-01", "Zbc is not part of the executed ISA"),
+    ("clmulh-01", "Zbc is not part of the executed ISA"),
+    ("clmulr-01", "Zbc is not part of the executed ISA"),
 ];
 
 fn environment(name: &str) -> PathBuf {

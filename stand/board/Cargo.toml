@@ -1,0 +1,36 @@
+[package]
+name = "oer-stand-board"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "A board of the stand file and, under its device access, its write, start, reset ladder, console and hub power"
+
+[dependencies]
+oer-device-console = { path = "../../tools/device/console" }
+oer-device-discovery = { path = "../../tools/device/discovery" }
+oer-device-image = { path = "../../tools/device/image" }
+oer-device-lock = { path = "../../tools/device/lock" }
+oer-device-openocd = { path = "../../tools/device/openocd" }
+oer-device-port = { path = "../../tools/device/port" }
+oer-device-reset = { path = "../../tools/device/reset" }
+oer-chip-profile = { path = "../../tools/chip-profile" }
+oer-stand-file = { path = "../file" }
+oer-stand-power = { path = "../power" }
+oer-image-bundle = { path = "../../tools/image-bundle" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+layer = "hil"
+platform = "host"
+host-layer = "stand"
+hil = "operation"
+# The tests read the example stand file and the chip profiles.
+inputs = ["stand/stand.example.toml", "platform/*/chip.toml"]

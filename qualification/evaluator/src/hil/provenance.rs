@@ -4,9 +4,11 @@
 //! does not establish the identity of their firmware inputs.
 
 use super::*;
-use oer_hil_run_bundle::build::{
-    BUILD_PROVENANCE_SCHEMA, BuildProvenance, BuildSubjectRole, SourceMaterial, SourceRebuildStatus,
-};
+use oer_hil_run_bundle_format::build::BUILD_PROVENANCE_SCHEMA;
+use oer_hil_run_bundle_format::build::BuildProvenance;
+use oer_hil_run_bundle_format::build::BuildSubjectRole;
+use oer_hil_run_bundle_format::build::SourceMaterial;
+use oer_hil_run_bundle_format::build::SourceRebuildStatus;
 
 /// The build type of a HIL firmware record this evaluator can bind.
 const BUILD_TYPE: &str = "open-esp-radio-hil-firmware/v1";
@@ -135,7 +137,12 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
             return Ok(Binding::Unavailable);
         };
         let lock_path = root.join("Cargo.lock");
-        if lock.path != Path::new("Cargo.lock") || lock.sha256 != sha256_file(&lock_path)? {
+        if lock.path != Path::new("Cargo.lock")
+            || lock.sha256
+                != crate::digests()
+                    .sha256_file(&lock_path)
+                    .map_err(|error| error.to_string())?
+        {
             return Ok(Binding::Unavailable);
         }
         if provenance.sources.len() > 1 {

@@ -9,7 +9,8 @@
 //!    ROM's download mode, where a flash finds it; an RTS reset then boots
 //!    the image again.
 use crate::Result;
-use oer_hil_board::reset::{self, Ladder, LadderEnd, RecoveryStep};
+use oer_device_reset as reset;
+use oer_device_reset::{Ladder, LadderEnd, RecoveryStep};
 use oer_hil_workload::context::Context;
 use serde::Serialize;
 use std::{
@@ -41,7 +42,7 @@ struct Evidence {
 
 pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
     let port = context.lab.dut.serial.clone();
-    let board = context.lab.dut_board()?;
+    let board = context.dut_board()?;
     let answers = |name: &str| answers(&output.join(name), context);
     if !answers("before") {
         return Err("requires the diagnostic-usb-jtag-off image".into());
@@ -159,7 +160,7 @@ fn cleared_by_power(ladder: &Ladder) -> Result<()> {
 
 /// Whether the ROM's reset line shows it waiting for a download.
 fn waits_for_download(line: &str) -> Result<()> {
-    if oer_hil_board::console::is_reset_line(line) && line.contains("DOWNLOAD") {
+    if oer_device_console::is_reset_line(line) && line.contains("DOWNLOAD") {
         Ok(())
     } else {
         Err(format!("the ROM does not wait for a download after the entry: `{line}`").into())
@@ -173,7 +174,7 @@ fn millis(duration: Duration) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_hil_board::reset::LadderStep;
+    use oer_device_reset::LadderStep;
 
     fn step(step: RecoveryStep, cleared: bool) -> LadderStep {
         LadderStep {

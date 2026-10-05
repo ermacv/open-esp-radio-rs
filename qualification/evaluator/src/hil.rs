@@ -30,14 +30,16 @@ use crate::Result;
 // producer learns is known here at once, never split into two copies.
 // Independence comes from verifying the seals and hashing every file again
 // at admission, through that shared code, never from a second reader.
-use oer_hil_run_bundle::{
-    RunBundle,
-    run::{
-        FirmwareArtifact, PlannedFirmware, RUN_SCHEMA, RepositoryProvenance, RunManifest,
-        SuiteResult,
-        validation::{safe_relative, valid_sha256, validate_suite},
-    },
-};
+use oer_hil_run_bundle_format::RunBundle;
+use oer_hil_run_bundle_format::run::FirmwareArtifact;
+use oer_hil_run_bundle_format::run::PlannedFirmware;
+use oer_hil_run_bundle_format::run::RUN_SCHEMA;
+use oer_hil_run_bundle_format::run::RepositoryProvenance;
+use oer_hil_run_bundle_format::run::RunManifest;
+use oer_hil_run_bundle_format::run::SuiteResult;
+use oer_hil_run_bundle_format::run::validation::safe_relative;
+use oer_hil_run_bundle_format::run::validation::valid_sha256;
+use oer_hil_run_bundle_format::run::validation::validate_suite;
 
 #[derive(Clone, Debug)]
 pub(crate) struct RepositoryState {
@@ -79,7 +81,7 @@ pub(crate) struct ScenarioCatalog {
 impl ScenarioCatalog {
     /// The catalog at `catalog` below the trusted repository `root`,
     /// discovered and validated by the scenario catalog's one reader
-    /// ([`oer_hil_scenario::catalog::documents`]); this evaluator keeps each
+    /// ([`oer_hil_scenario_catalog::documents`]); this evaluator keeps each
     /// document as a value and never imports the runner's family types.
     pub(crate) fn load(root: &Path, catalog: &Path) -> Result<Self> {
         if catalog.as_os_str().is_empty()
@@ -89,7 +91,7 @@ impl ScenarioCatalog {
         {
             return Err("HIL scenario catalog must be a contained relative path".into());
         }
-        let documents = oer_hil_scenario::catalog::documents(&root.canonicalize()?.join(catalog))
+        let documents = oer_hil_scenario_catalog::documents(&root.canonicalize()?.join(catalog))
             .map_err(|error| error.to_string())?;
         let mut repetitions = BTreeMap::new();
         let mut roles = BTreeMap::new();
@@ -317,7 +319,7 @@ fn load_run(run_directory: &Path, target: &str) -> Result<LoadedRun> {
         vec![Unit {
             manifest: manifest.clone(),
             suite,
-            seal: PathBuf::from(oer_hil_run_bundle::run::INTEGRITY),
+            seal: PathBuf::from(oer_hil_run_bundle_format::run::INTEGRITY),
         }]
     };
     if units
@@ -388,7 +390,7 @@ struct CompletionSeal {
 /// What a scenario is for; a scenario is a qualification scenario because a
 /// program references it, and [`ScenarioCatalog::check_roles`] holds the
 /// declared role to the programs.
-pub(crate) use oer_hil_scenario::Role as ScenarioRole;
+pub(crate) use oer_hil_scenario_catalog::Role as ScenarioRole;
 
 impl HilEvidenceIndex {
     #[cfg(test)]
@@ -640,7 +642,9 @@ impl HilEvidenceIndex {
                 let mut seen = BTreeSet::new();
                 for scenario in suite.scenarios {
                     let completion_seal = Some(CompletionSeal {
-                        sha256: sha256_file(&run_directory.join(&seal))?,
+                        sha256: crate::digests()
+                            .sha256_file(&run_directory.join(&seal))
+                            .map_err(|error| error.to_string())?,
                         path: seal.clone(),
                     });
                     let subject = Some(subject::ObservationSubject::load(
@@ -741,16 +745,13 @@ impl HilEvidenceIndex {
 // The run vocabulary is the runner's own, from the shared schema.
 use oer_hil_schema::run::{Outcome, RunState};
 
-fn sha256_file(path: &Path) -> Result<String> {
-    crate::hash_cache::sha256_file(path)
-}
-
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    oer_hil_run_bundle::run::validation::read_json(path).map_err(|error| error.to_string().into())
+    oer_hil_run_bundle_format::run::validation::read_json(path)
+        .map_err(|error| error.to_string().into())
 }
 
 fn read_optional_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>> {
-    oer_hil_run_bundle::run::validation::read_optional_json(path)
+    oer_hil_run_bundle_format::run::validation::read_optional_json(path)
         .map_err(|error| error.to_string().into())
 }
 

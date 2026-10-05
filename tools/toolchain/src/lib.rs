@@ -16,8 +16,8 @@ use std::{
     process::Command,
 };
 
-pub mod blobray;
 pub mod image;
+pub mod workspace;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

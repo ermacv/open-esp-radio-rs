@@ -44,7 +44,7 @@ fn observer_reference<S: serde::Serializer>(
     observer: &Option<std::sync::Arc<serde_json::Value>>,
     serializer: S,
 ) -> std::result::Result<S::Ok, S::Error> {
-    use oer_hil_observer::store::{EMBEDDED, REFERENCED};
+    use oer_hil_run_bundle_format::observer::store::{EMBEDDED, REFERENCED};
     match observer.as_deref() {
         Some(record) if record["schema"] == EMBEDDED => serde_json::json!({
             "schema": REFERENCED,
@@ -65,7 +65,7 @@ fn shared_observer(
     record: &serde_json::Value,
     store: &Path,
 ) -> Result<std::sync::Arc<serde_json::Value>> {
-    use oer_hil_observer::store::{self as observer_store, REFERENCED};
+    use oer_hil_run_bundle_format::observer::store::{self as observer_store, REFERENCED};
     use std::{
         collections::HashMap,
         sync::{Arc, Mutex, OnceLock},
@@ -223,6 +223,8 @@ pub(super) fn file(run: &Path, relative: &Path) -> Result<Option<FileIdentity>> 
     Ok(Some(FileIdentity {
         path: relative.to_owned(),
         size_bytes: fs::metadata(&path)?.len(),
-        sha256: sha256_file(&path)?,
+        sha256: crate::digests()
+            .sha256_file(&path)
+            .map_err(|error| error.to_string())?,
     }))
 }

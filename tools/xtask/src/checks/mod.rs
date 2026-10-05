@@ -4,14 +4,12 @@ pub mod architecture;
 pub mod changed;
 pub mod docs;
 pub mod feature_sets;
-pub mod firmware;
 pub mod isa_conformance;
 pub mod metadata;
 pub mod network;
 pub mod phy;
 pub mod standalone;
 
-mod artifacts;
 pub(crate) mod common;
 
 pub use metadata::run as metadata;

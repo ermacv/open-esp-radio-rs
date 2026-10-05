@@ -372,8 +372,8 @@ independently of the product TCP buffer size.
 
 HIL retains its `stack.toml` (CPU1's stack) and diagnostic observers.
 Board initialization, relocation and interrupt-stack mechanics belong to the
-shared platform; application images use the same mechanism through `cargo xtask
-build firmware`. A hardware scenario verdict remains a separate HIL responsibility.
+shared platform; application images use the same mechanism through `cargo fw
+build`. A hardware scenario verdict remains a separate HIL responsibility.
 
 ## Station AP availability
 

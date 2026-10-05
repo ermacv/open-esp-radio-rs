@@ -89,7 +89,8 @@ fn package(
         }
     }
 }
-use oer_hil_observer::{inputs as observer_build, resolve as observer_resolve};
+use oer_hil_observer::resolve as observer_resolve;
+use oer_hil_run_bundle_format::observer::inputs as observer_build;
 
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());

@@ -5,12 +5,12 @@
 //! hardware observations.
 use crate::{Artifacts, Result, chip_profile, frozen::build_slots};
 use oer_durable::{atomic_json, sha256_file};
-use oer_hil_image_class::ImageClass;
-use oer_hil_run_bundle::{
-    build,
-    run::{FirmwareArchive, FirmwareArtifact, RepositoryProvenance},
-    verify::FirmwareRecipe,
-};
+use oer_hil_run_bundle::build;
+use oer_hil_run_bundle::run::FirmwareArchive;
+use oer_hil_run_bundle::verify::FirmwareRecipe;
+use oer_hil_run_bundle_format::run::FirmwareArtifact;
+use oer_hil_run_bundle_format::run::RepositoryProvenance;
+use oer_hil_schema::image::ImageClass;
 use serde::Serialize;
 use std::{
     fs,
@@ -21,7 +21,7 @@ use std::{
 struct Record {
     schema: u16,
     kind: &'static str,
-    target: &'static str,
+    target: String,
     repository: RepositoryProvenance,
     firmware: Vec<FirmwareArtifact>,
 }
@@ -34,7 +34,8 @@ pub fn publish(
     class: ImageClass,
     artifacts: &Artifacts,
 ) -> Result<PathBuf> {
-    let target = root.join("target/hil/esp32s31");
+    let chip = artifacts.bundle.chip.clone();
+    let target = root.join("target/hil").join(&chip);
     let builds = target.join("builds");
     fs::create_dir_all(&builds)?;
     let staging = tempfile::Builder::new()
@@ -42,7 +43,7 @@ pub fn publish(
         .tempdir_in(&builds)?;
     let directory = staging.path();
     let (frozen, sources, materials) =
-        build::archive_snapshot(snapshot, directory, &target, &build_slots("esp32s31")?)?;
+        build::archive_snapshot(snapshot, directory, &target, &build_slots(&chip)?)?;
     frozen.verify_unchanged()?;
     let (artifact, _) = firmware::archive(
         &FirmwareArchive {
@@ -64,7 +65,7 @@ pub fn publish(
         &Record {
             schema: 1,
             kind: "open-esp-radio-build",
-            target: "esp32s31",
+            target: chip,
             repository: RepositoryProvenance {
                 commit: source.commit.clone(),
                 dirty: source.dirty,
@@ -73,18 +74,18 @@ pub fn publish(
             firmware: vec![artifact],
         },
     )?;
-    oer_hil_run_bundle::run::write_integrity_index(directory, "build-only")?;
+    oer_hil_run_bundle_format::run::write_integrity_index(directory, "build-only")?;
     let id = sha256_file(&directory.join("integrity.json"))?;
     let destination = builds.join(id);
     if destination.exists() {
         if !fs::symlink_metadata(&destination)?.file_type().is_dir()
             || sha256_file(&destination.join("integrity.json"))?
                 != sha256_file(&directory.join("integrity.json"))?
-            || serde_json::to_value(oer_hil_run_bundle::run::collect_integrity_files(
+            || serde_json::to_value(oer_hil_run_bundle_format::run::collect_integrity_files(
                 &destination,
-            )?)? != serde_json::to_value(oer_hil_run_bundle::run::collect_integrity_files(
-                directory,
-            )?)?
+            )?)? != serde_json::to_value(
+                oer_hil_run_bundle_format::run::collect_integrity_files(directory)?,
+            )?
         {
             return Err("published build record does not match its identity".into());
         }

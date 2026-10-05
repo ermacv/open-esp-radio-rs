@@ -114,6 +114,8 @@ network/udp ccf606e215dfb376 property
 network/udp-multi-flow 8bb6cec70ec1525d property
 phy/analog-image/bytes 30518bae8aff1851 topic
 phy/analog-image/read a5e51fb2610df9cf endpoint
+phy/calibration-projection/read 60aba41ea46379c5 endpoint
+phy/calibration-projection/words 905733f794fde633 topic
 phy/fault-injection 9a7847427676328c property
 phy/fault/control 429c6820a65f6d48 endpoint
 phy/fault/state e129357570a57835 topic

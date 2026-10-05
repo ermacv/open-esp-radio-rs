@@ -19,7 +19,7 @@ fn functions_are_classified_by_name_then_code() {
         function("callees", "c2", "n2", &[3]),
         function("old_name", "c3", "n3", &[4, 5]),
         function("edited", "c4", "n4", &[6, 7, 8, 9]),
-        function("gone", "c5", "n5", &[10, 11, 12, 13]),
+        function("gone", "peer", "n5", &[10, 11, 12, 13]),
     ];
     let new = [
         function("same", "c1", "n1", &[1, 2]),

@@ -1,24 +1,39 @@
 //! The `[phy]` scenario table.
 
+use std::marker::PhantomData;
 use std::path::Path;
 
-use oer_esp32s31_phy_vendor_calibration::boots::Lifecycle;
-use oer_hil_image_class::ImageClass;
 use oer_hil_lab::config::LabConfig;
-use oer_hil_scenario::{AirUse, Plan, ScenarioFamily, bounded};
+use oer_hil_scenario::{AirUse, Plan, ScenarioFamily};
+use oer_hil_scenario_catalog::bounded;
+use oer_hil_schema::image::ImageClass;
 use oer_hil_workload::context::Context;
 use oer_hil_workload::{family::Workload, fixture::Fixtures};
+use oer_phy_calibration_capture::boots::Lifecycle;
 use serde::{Deserialize, Serialize};
 
 use crate::Result;
+use crate::comparison::Comparison;
 
-/// The chip whose PHY the cross-check compares.
-pub const CHIP: &str = "esp32s31";
+/// The vendor firmware projects of `chip`'s PHY calibration cross-check,
+/// relative to the repository root: its profile's `[hil]
+/// vendor-calibration`.
+pub fn vendor_projects(chip: &str) -> Result<std::path::PathBuf> {
+    oer_chip_profile::Profile::load(&oer_process::built_root(), chip)?
+        .hil
+        .and_then(|hil| hil.vendor_calibration)
+        .ok_or_else(|| format!("{chip} has no PHY calibration cross-check").into())
+}
 
-/// One PHY workload.
+/// One PHY workload, compared by the chip's comparison `C`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum PhyScenario {
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    deny_unknown_fields,
+    bound = ""
+)]
+pub enum PhyScenario<C: Comparison> {
     /// The vendor firmware's and the production image's PHY calibration
     /// and register state at one lifecycle point, alternating boot by boot
     /// on the board under test, compared under the reviewed relation.
@@ -31,8 +46,8 @@ pub enum PhyScenario {
         /// 802.15.4 point).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         image: Option<ImageClass>,
-        /// The vendor firmware project of `verification/esp32s31/hil-vendor`;
-        /// the lifecycle point's own by default.
+        /// The vendor firmware project of the chip's vendor calibration
+        /// projects; the lifecycle point's own by default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         vendor_project: Option<String>,
         /// Further device windows the IEEE 802.15.4 reference firmware reads
@@ -47,6 +62,9 @@ pub enum PhyScenario {
         /// comparison.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         vendor_only: bool,
+        /// The chip's comparison; not part of the table.
+        #[serde(skip)]
+        comparison: PhantomData<C>,
     },
 }
 
@@ -58,7 +76,7 @@ pub struct Window {
     pub words: u32,
 }
 
-impl PhyScenario {
+impl<C: Comparison> PhyScenario<C> {
     /// The production image class the scenario compares.
     pub fn image(&self) -> ImageClass {
         let Self::VendorCalibration {
@@ -72,7 +90,7 @@ impl PhyScenario {
     }
 }
 
-impl ScenarioFamily for PhyScenario {
+impl<C: Comparison> ScenarioFamily for PhyScenario<C> {
     fn validate(&self) -> Result<()> {
         let Self::VendorCalibration {
             lifecycle,
@@ -108,16 +126,17 @@ impl ScenarioFamily for PhyScenario {
     }
 }
 
-impl Workload for PhyScenario {
+impl<C: Comparison> Workload for PhyScenario<C> {
     fn precondition(&self, lab: &LabConfig) -> Result<()> {
-        if lab.chip() != CHIP {
+        if lab.chip() != C::CHIP {
             return Err(format!(
-                "the calibration cross-check compares the {CHIP} PHY, not {}",
+                "the PHY calibration cross-check compares {} boards, not {}",
+                C::CHIP,
                 lab.chip()
             )
             .into());
         }
-        Ok(())
+        vendor_projects(lab.chip()).map(|_| ())
     }
 
     fn run(&self, output: &Path, context: &Context<'_>, _fixtures: &Fixtures) -> Result<()> {
@@ -130,7 +149,7 @@ impl Workload for PhyScenario {
             vendor_only,
             ..
         } = self;
-        crate::workload::calibration::run(
+        crate::workload::calibration::run::<C>(
             &crate::workload::calibration::Calibration {
                 lifecycle: *lifecycle,
                 boots: *boots,
@@ -151,8 +170,32 @@ impl Workload for PhyScenario {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::comparison::{Compared, RegisterImages};
 
-    fn table(text: &str) -> PhyScenario {
+    /// A comparison of no chip, for the table's own rules.
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
+    struct Fake;
+
+    impl Comparison for Fake {
+        const CHIP: &'static str = "chip-x";
+        const VENDOR_OBJECT: &'static str = "phy_param";
+
+        fn images(_: &Path) -> Result<RegisterImages> {
+            Err("no images".into())
+        }
+
+        fn compare(
+            _: Lifecycle,
+            _: &oer_phy_calibration_capture::boots::Images,
+            _: &[oer_phy_calibration_capture::boots::VendorBoot],
+            _: &[oer_phy_calibration_capture::boots::ProductionBoot],
+            _: &RegisterImages,
+        ) -> Result<Compared> {
+            Err("no comparison".into())
+        }
+    }
+
+    fn table(text: &str) -> PhyScenario<Fake> {
         toml::from_str(text).unwrap()
     }
 
@@ -191,7 +234,7 @@ mod tests {
                 .is_err()
         );
         assert!(
-            toml::from_str::<PhyScenario>(
+            toml::from_str::<PhyScenario<Fake>>(
                 "kind = \"vendor-calibration\"\nlifecycle = \"cold\"\nboots = 1\ncolor = 1\n"
             )
             .is_err()

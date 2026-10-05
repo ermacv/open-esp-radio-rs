@@ -11,11 +11,11 @@
 
 use std::{collections::BTreeMap, fs};
 
-use oer_hil_run_bundle::{
-    RunStore,
-    run::{MeasurementUnit, RunState},
-    store::Sidecar,
-};
+use oer_hil_run_bundle::RunStore;
+use oer_hil_run_bundle::store::Sidecar;
+use oer_hil_run_bundle_format::run::MeasurementUnit;
+use oer_hil_run_bundle_format::run::MetricId;
+use oer_hil_run_bundle_format::run::RunState;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -44,9 +44,11 @@ pub struct RunSummary {
 
 /// Bumped whenever [`RunSummary`] or the samples it holds change meaning,
 /// so cached summaries are recomputed.
-const SUMMARY_VERSION: u32 = 4;
+const SUMMARY_VERSION: u32 = 5;
 
-pub fn summary(run: &Run) -> RunSummary {
+/// The summary of `run`; an error when its suite reports incompatible
+/// metrics ([`samples::samples`]).
+pub fn summary(run: &Run) -> Result<RunSummary> {
     let manifest = run.bundle.manifest();
     let mut layout_seeds = manifest
         .firmware
@@ -65,7 +67,7 @@ pub fn summary(run: &Run) -> RunSummary {
         .collect::<Vec<_>>();
     networks.sort();
     networks.dedup();
-    RunSummary {
+    Ok(RunSummary {
         version: SUMMARY_VERSION,
         id: run.id().to_owned(),
         started_millis: run.started_millis(),
@@ -78,11 +80,12 @@ pub fn summary(run: &Run) -> RunSummary {
             .suite
             .as_ref()
             .map(samples::samples)
+            .transpose()?
             .unwrap_or_default()
             .into_iter()
             .filter(|sample| sample.gate.is_some())
             .collect(),
-    }
+    })
 }
 
 /// Which code placement a run measured: the linker's natural order or the
@@ -115,8 +118,25 @@ pub struct Baseline {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BaselineMeasurement {
     pub unit: MeasurementUnit,
+    /// The semantics version of the metric the baseline measured.
+    pub semantics: u16,
     pub better: Better,
     pub spread: Spread,
+}
+
+impl BaselineMeasurement {
+    /// Why this baseline cannot judge values of `metric` (same scenario and
+    /// name); `None` when it can.
+    pub fn incompatibility(&self, metric: &MetricId) -> Option<String> {
+        MetricId {
+            scenario: metric.scenario.clone(),
+            name: metric.name.clone(),
+            unit: self.unit,
+            semantics: self.semantics,
+            better: Some(self.better),
+        }
+        .incompatibility(metric)
+    }
 }
 
 /// The baselines of `store`, by scenario.
@@ -142,17 +162,18 @@ pub fn set_baseline(
     }
     let mut by_scenario: BTreeMap<String, BTreeMap<String, BaselineMeasurement>> = BTreeMap::new();
     for sample in &run.samples {
-        if !scenarios.is_empty() && !scenarios.contains(&sample.scenario) {
+        if !scenarios.is_empty() && !scenarios.contains(&sample.metric.scenario) {
             continue;
         }
         if let (Some(spread), Some(better)) = (sample.spread(), sample.better()) {
             by_scenario
-                .entry(sample.scenario.clone())
+                .entry(sample.metric.scenario.clone())
                 .or_default()
                 .insert(
-                    sample.measurement.clone(),
+                    sample.metric.name.clone(),
                     BaselineMeasurement {
-                        unit: sample.unit,
+                        unit: sample.metric.unit,
+                        semantics: sample.metric.semantics,
                         better,
                         spread,
                     },
@@ -219,28 +240,29 @@ struct CommitRow {
 
 /// Per-commit summary of the gated measurements of `scenarios` (every gated
 /// scenario when empty) in clean runs, oldest first, with each commit
-/// compared to the scenario's baseline.
+/// compared to the scenario's baseline. Each metric identity is its own
+/// section: a name whose unit, semantics or direction changed between
+/// commits is never summarized as one series, and a baseline of another
+/// identity judges nothing.
 pub fn report(
     runs: &[RunSummary],
     scenarios: &[String],
     measurement: Option<&str>,
     baselines: &BTreeMap<String, Baseline>,
 ) -> String {
-    // (scenario, measurement) -> one row per commit, in first-run order.
-    let mut rows: BTreeMap<(String, String), Vec<CommitRow>> = BTreeMap::new();
+    // Metric -> one row per commit, in first-run order.
+    let mut rows: BTreeMap<MetricId, Vec<CommitRow>> = BTreeMap::new();
     for run in runs.iter().filter(|run| !run.dirty && run.commit.is_some()) {
         for sample in run.samples.iter().cloned() {
-            if !scenarios.is_empty() && !scenarios.contains(&sample.scenario) {
+            if !scenarios.is_empty() && !scenarios.contains(&sample.metric.scenario) {
                 continue;
             }
-            if measurement.is_some_and(|filter| !sample.measurement.contains(filter)) {
+            if measurement.is_some_and(|filter| !sample.metric.name.contains(filter)) {
                 continue;
             }
             let commit = short(&run.commit);
             let layout = layout(&run.layout_seeds);
-            let entries = rows
-                .entry((sample.scenario.clone(), sample.measurement.clone()))
-                .or_default();
+            let entries = rows.entry(sample.metric.clone()).or_default();
             match entries
                 .iter_mut()
                 .find(|entry| entry.commit == commit && entry.layout == layout)
@@ -264,7 +286,7 @@ pub fn report(
         return "no clean run has a gated measurement of the selection\n".into();
     }
     let mut text = String::new();
-    for ((scenario, name), entries) in rows {
+    for (metric, entries) in rows {
         let first = &entries[0].sample;
         let Some(gate) = first.gate else {
             continue;
@@ -273,15 +295,23 @@ pub fn report(
             Better::Higher => "higher is better",
             Better::Lower => "lower is better",
         };
-        let (factor, unit) = scale(gate.threshold, first.unit);
+        let (factor, unit) = scale(gate.threshold, metric.unit);
         text.push_str(&format!(
-            "{scenario} {name} — gate {:.2} {unit}, {direction}\n",
+            "{} {} (semantics {}) — gate {:.2} {unit}, {direction}\n",
+            metric.scenario,
+            metric.name,
+            metric.semantics,
             gate.threshold / factor
         ));
         let baseline = baselines
-            .get(&scenario)
-            .and_then(|baseline| Some((baseline, baseline.measurements.get(&name)?)));
-        if let Some((baseline, measurement)) = baseline {
+            .get(&metric.scenario)
+            .and_then(|baseline| Some((baseline, baseline.measurements.get(&metric.name)?)));
+        let incompatible =
+            baseline.and_then(|(_, measurement)| measurement.incompatibility(&metric));
+        let baseline = baseline.filter(|_| incompatible.is_none());
+        if let Some(reason) = &incompatible {
+            text.push_str(&format!("  baseline measured another metric: {reason}\n"));
+        } else if let Some((baseline, measurement)) = baseline {
             text.push_str(&format!(
                 "  baseline {} {}: {} — {}\n",
                 short(&baseline.commit),
@@ -323,7 +353,7 @@ pub fn report(
             };
             text.push_str(&format!(
                 "  {commit:<10} {layout:<10} {}{verdict}{gate}  [{run_ids}]\n",
-                format_spread(&spread, sample.unit)
+                format_spread(&spread, sample.metric.unit)
             ));
         }
     }
@@ -363,7 +393,7 @@ fn layout_sensitivity(entries: &[CommitRow]) -> String {
             .map(|(_, spread)| spread.deviation)
             .sum::<f64>()
             / layouts.len() as f64;
-        let unit = layouts[0].0.sample.unit;
+        let unit = layouts[0].0.sample.metric.unit;
         let (factor, unit_name) = scale(between.mean, unit);
         text.push_str(&format!(
             "  {commit:<10} across {} layouts: means {:.2}±{:.2} {unit_name}, repetitions ±{:.2}\n",
@@ -377,20 +407,27 @@ fn layout_sensitivity(entries: &[CommitRow]) -> String {
 }
 
 /// Every gated measurement of `run` that regressed against its scenario's
-/// baseline, as report lines; empty when none did.
+/// baseline, or that its baseline cannot judge because it measured another
+/// metric (unit, semantics or direction), as report lines; empty when none.
 pub fn regressions(run: &RunSummary, baselines: &BTreeMap<String, Baseline>) -> Vec<String> {
     run.samples
         .iter()
         .filter_map(|sample| {
-            let baseline = baselines.get(&sample.scenario)?;
-            let reference = baseline.measurements.get(&sample.measurement)?;
+            let baseline = baselines.get(&sample.metric.scenario)?;
+            let reference = baseline.measurements.get(&sample.metric.name)?;
+            if let Some(reason) = reference.incompatibility(&sample.metric) {
+                return Some(format!(
+                    "{}: baseline {} measured another metric ({reason}); set a new baseline",
+                    sample.metric, baseline.run
+                ));
+            }
             let spread = sample.spread()?;
             (change(&reference.spread, reference.better, &spread) == Change::Regressed).then(|| {
                 format!(
                     "{} {}: {} against baseline {} {}",
-                    sample.scenario,
-                    sample.measurement,
-                    format_spread(&spread, sample.unit),
+                    sample.metric.scenario,
+                    sample.metric.name,
+                    format_spread(&spread, sample.metric.unit),
                     format_spread(&reference.spread, reference.unit),
                     baseline.run
                 )
@@ -427,7 +464,7 @@ pub fn summaries_since(store: &RunStore, since_millis: u64) -> Result<Vec<RunSum
                 let Some(run) = Run::load(&store.run(&name)) else {
                     continue;
                 };
-                let computed = summary(&run);
+                let computed = summary(&run)?;
                 if run.is_sealed() {
                     oer_durable::atomic_json(&cached, &computed)?;
                 }

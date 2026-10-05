@@ -13,7 +13,8 @@ use std::{path::Path, time::Duration};
 use oer_hil_protocol::base::{BootEvidence, Checkpoint, Fault, HangFault, ResetReason};
 
 use oer_hil_link::SerialCapture;
-use oer_hil_run_bundle::run::{Failure, FailureKind};
+use oer_hil_run_bundle_format::run::Failure;
+use oer_hil_run_bundle_format::run::FailureKind;
 
 /// How long a target may take to answer after a failure: a hang is reset by
 /// its watchdog about seven seconds after it starts.
@@ -51,14 +52,14 @@ pub fn jtag_snapshot_through_stand_openocd(
     output: &Path,
     elf: Option<&Path>,
 ) {
-    match oer_hil_board::openocd::Openocd::locate() {
+    match oer_device_openocd::Openocd::locate() {
         Ok(openocd) => jtag_snapshot(&openocd, chip, mac, output, elf),
         Err(error) => eprintln!("hil: no JTAG post-mortem of the silent target: {error}"),
     }
 }
 
 pub fn jtag_snapshot(
-    openocd: &oer_hil_board::openocd::Openocd,
+    openocd: &oer_device_openocd::Openocd,
     chip: &str,
     mac: &str,
     output: &Path,
@@ -112,9 +113,13 @@ pub fn inspect(port: &Path, mac: &str, output: &Path, elf: Option<&Path>) -> Opt
     let port = if port.exists() {
         port.to_owned()
     } else {
-        oer_hil_board::ports::wait_for(mac, ANSWER_WITHIN)?
+        oer_device_discovery::wait_for(
+            &oer_device_discovery::DeviceId::parse(mac).ok()?,
+            ANSWER_WITHIN,
+        )?
     };
-    let capture = SerialCapture::attach(&port, &output.join("post-mortem")).ok()?;
+    let capture =
+        SerialCapture::attach(crate::attach_console(&port), &output.join("post-mortem")).ok()?;
     let started = std::time::Instant::now();
     let answer = loop {
         // Attached without a reset, the capture has seen no hello: discovery,
@@ -446,12 +451,12 @@ mod tests {
         .unwrap();
         use std::os::unix::fs::PermissionsExt as _;
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let openocd = oer_hil_board::openocd::Openocd {
+        let openocd = oer_device_openocd::Openocd {
             program: script,
             scripts: directory.path().to_owned(),
         };
         let output = directory.path().join("repetition");
-        jtag_snapshot(&openocd, "esp32c5", "38:44:BE:AA:25:64", &output, None);
+        jtag_snapshot(&openocd, "chip-b", "38:44:BE:AA:25:64", &output, None);
         let snapshot: serde_json::Value =
             serde_json::from_slice(&std::fs::read(output.join(JTAG_POST_MORTEM_FILE)).unwrap())
                 .unwrap();
@@ -476,11 +481,11 @@ exit 1
         std::fs::set_permissions(&silent, std::fs::Permissions::from_mode(0o755)).unwrap();
         let quiet = directory.path().join("quiet");
         jtag_snapshot(
-            &oer_hil_board::openocd::Openocd {
+            &oer_device_openocd::Openocd {
                 program: silent,
                 scripts: directory.path().to_owned(),
             },
-            "esp32c5",
+            "chip-b",
             "38:44:BE:AA:25:64",
             &quiet,
             None,

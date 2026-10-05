@@ -177,8 +177,8 @@ oer_probe_macros::probe! {
         // The walker fills the units: every buffer's leading guard is
         // overwritten by frame bytes, and each unit's last descriptor is
         // marked done with its length.
-        for index in 0..completed {
-            let buffer = addresses[index] as *mut u32;
+        for (index, &address) in addresses.iter().enumerate().take(completed) {
+            let buffer = address as *mut u32;
             // SAFETY: the walker owns every descriptor of the started ring;
             // this fixture acts as that walker on the arena it reported.
             unsafe { buffer.write_volatile(length) };

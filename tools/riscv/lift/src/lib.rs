@@ -269,7 +269,8 @@ mod tests {
 
 pub mod listing;
 
-/// Every form the decoder knows: the ESP32-S31's instruction set without Zcmt.
+/// Every form the decoder knows: `rv32imafc` with the bit-manipulation and
+/// code-size extensions, without Zcmt.
 pub fn decode_instruction(bytes: &[u8]) -> Option<(Instruction, usize)> {
     oer_riscv_decode::decode(bytes, Extensions::ALL)
 }

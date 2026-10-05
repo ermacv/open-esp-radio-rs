@@ -68,7 +68,7 @@ The wrapper returns the runner's exit code (or `128 + signal` on Unix).
 Prepare the same observer descriptor without running HIL with:
 
 ```console
-cargo xtask hil-observer
+cargo hil observer
 ```
 
 Qualification reads this descriptor once per evaluation, or the invocation's
@@ -91,7 +91,7 @@ visible. Source compatibility is still checked per workload.
 | [Runs and investigation](runs.md) | The shared run store, failure post-mortems and board recovery, enqueued runs, bisection, A/B comparison, performance, profiles and layout seeds |
 | [Host fixtures](fixtures.md) | Network fixture preparation and restoration, evidence boundaries, Linux fixture software installation, probe load and air observers |
 | [Execution and evidence architecture](architecture.md) | Package ownership, the run lifecycle and the bundle contract |
-| [Stand arbiter](arbiter/README.md) | The queue, claims, balances and state files |
+| [Stand arbiter](../../stand/arbiter/README.md) | The queue, claims, balances and state files |
 
 ## Configure the stand
 
@@ -107,7 +107,7 @@ cargo hil doctor
 The stand file is `~/.config/open-esp-radio/stand.toml` (or under
 `$XDG_CONFIG_HOME`), shared by every checkout of this user; `--stand-file`
 names another file. Its schema and rules, the one resolver of a board name and the paths of the
-stand's state belong to [`oer-hil-stand-model`](../stand/model/README.md). It is the only source for
+stand's state belong to [`oer-stand-file`](../../stand/file/README.md). It is the only source for
 the stand's identity, its hubs and pool of boards, STA/AP credentials and
 addresses and the fixtures; it lives outside the repository, and scenarios
 contain no lab secrets or machine-specific paths. The stand id and the
@@ -184,8 +184,8 @@ file. Each successful build emits one JSON report on stdout with class, chip,
 target, profile, network, the bundle directory, its runtime ELF, application
 image and digest, its gate reports and their warnings; diagnostics stay on
 stderr. An ELF or `application.bin` left beside a failed build is not a
-successful image report. `cargo hil flash --board BOARD <bundle>` writes a
-bundle to a stand board through the flash operation ([stand](stand.md#the-flash-operation)).
+successful image report. `cargo fw flash --device MAC|PORT <bundle>` writes a
+bundle to an attached board; a run writes its images through the flash operation ([stand](stand.md#the-flash-operation)).
 
 For an explicit source snapshot, use:
 
@@ -233,9 +233,8 @@ paths. Artifacts (including copies of both ELFs) and the snapshot reference
 remain under `~/.cache/open-esp-radio/build/<chip>/snapshot-builds/`. The live
 checkout is not a build source for this explicit mode.
 
-Each slot keeps its compile caches beside it, in
-`source-build-<n>.cache/<profile>-<class>-<network>/`; `cargo xtask check
-firmware` builds its classes there too. At most half the host's cores, and no
+Every image build compiles in one shared cache,
+`~/.cache/open-esp-radio/build/cargo/`; `cargo hil images check` builds its classes there too. At most half the host's cores, and no
 more than its memory holds at 2 GB each, compile image runtimes at once across
 all checkouts; further builds wait for a free build slot in
 `~/.cache/open-esp-radio/build/tokens/`.

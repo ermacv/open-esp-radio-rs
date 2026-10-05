@@ -6,8 +6,8 @@ implementation on the air. Each project is an entry of the stand's firmware
 catalog (its `firmware.toml`): `cargo hil firmware build <image>` builds it
 against the pinned ESP-IDF and the pinned vendor archives of
 [`artifacts.toml`](../artifacts.toml), with outputs in
-`target/vendor-firmware/esp32c5/<project>/`, and `cargo hil firmware flash
-<image> --board esp32c5` builds, flashes and journals it.
+`target/vendor-firmware/esp32c5/<project>/`, and `cargo fw flash
+<image> --device <MAC|PORT> builds, flashes and journals it.
 
 | Project | Behavior |
 | --- | --- |

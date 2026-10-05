@@ -550,12 +550,12 @@ steps = [{ register = "CH%s_EVENT", index = 1, value = 3 }]
 
     #[test]
     fn other_chips_sources_are_skipped() {
-        assert!(applies_to(Path::new("soc/esp32s31/clocks.rs"), "esp32s31"));
-        assert!(applies_to(Path::new("interrupt/mod.rs"), "esp32s31"));
-        assert!(!applies_to(Path::new("soc/esp32c6/clocks.rs"), "esp32s31"));
+        assert!(applies_to(Path::new("soc/chip-a/clocks.rs"), "chip-a"));
+        assert!(applies_to(Path::new("interrupt/mod.rs"), "chip-a"));
+        assert!(!applies_to(Path::new("soc/esp32c6/clocks.rs"), "chip-a"));
         assert!(!applies_to(
             Path::new("rtc_cntl/sleep/esp32h2.rs"),
-            "esp32s31"
+            "chip-a"
         ));
     }
 }

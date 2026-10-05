@@ -1,8 +1,8 @@
 //! RV32 bit-manipulation (Zba, Zbb, Zbs), code-size (Zcb, Zcmp) and CSR
 //! access (Zicsr) encodings, which the pinned rv-asm 0.2.1 does not decode.
 //!
-//! ESP-IDF builds for the ESP32-S31 target
-//! `rv32imafc_zba_zbb_zbs_zcb_zcmp_zcmt`. Zcmp occupies the 16-bit encoding
+//! ESP-IDF builds for the `rv32imafc_zba_zbb_zbs_zcb_zcmp_zcmt` chip
+//! targets. Zcmp occupies the 16-bit encoding
 //! space rv-asm reads as C.FSDSP, and Zcb the reserved space of quadrants 0
 //! and 1, so those spaces are classified here before rv-asm sees them. Zcmt
 //! table jumps need the `jvt` CSR and stay unsupported.

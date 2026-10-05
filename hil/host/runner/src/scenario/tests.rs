@@ -1,6 +1,6 @@
 use super::*;
-use oer_hil_image_class::ImageClass;
 use oer_hil_scenario::identity::normalize;
+use oer_hil_schema::image::ImageClass;
 
 fn catalog() -> Catalog {
     Catalog::load(&oer_process::built_root().join("hil/scenarios")).unwrap()
@@ -265,10 +265,17 @@ fn selection_requirements_union_every_family() {
 #[test]
 fn a_scenario_is_marked_unsupported_exactly_when_no_current_image_serves_it() {
     let root = oer_process::built_root();
-    let manifest: toml::Table = toml::from_str(
-        &std::fs::read_to_string(root.join("hil/targets/esp32s31/agent/Cargo.toml")).unwrap(),
-    )
-    .unwrap();
+    // A chip whose agent builds the radio classes: it links the network.
+    let staged = oer_chip_profile::Profile::all(&root)
+        .unwrap()
+        .into_iter()
+        .find(|profile| {
+            oer_hil_image_class::declares(&profile.id, oer_hil_image_class::NETWORK_FEATURE)
+        })
+        .unwrap();
+    let manifest: toml::Table =
+        toml::from_str(&std::fs::read_to_string(staged.hil_agent_manifest(&root)).unwrap())
+            .unwrap();
     let features = manifest["features"].as_table().unwrap();
     // The firmware builds a class only while it declares every feature of
     // the class's recipe.
@@ -283,8 +290,7 @@ fn a_scenario_is_marked_unsupported_exactly_when_no_current_image_serves_it() {
         let served = if class == ImageClass::BootSmoke {
             built(class)
         } else {
-            class
-                .image_keys_on("esp32s31")
+            oer_hil_image_class::image_keys_on(class, &staged.id)
                 .is_some_and(|reported| scenario.family.served_by(&reported))
         };
         assert_eq!(

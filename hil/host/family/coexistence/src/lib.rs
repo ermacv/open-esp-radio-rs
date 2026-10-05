@@ -14,7 +14,6 @@ use std::{net::Ipv4Addr, path::Path, time::Duration};
 
 use oer_hil_family_bluetooth::workload::bluetooth::coexistence::Echo;
 use oer_hil_family_ieee80211_fixture::host_network::BenchmarkIpv4Route;
-use oer_hil_image_class::ImageClass;
 use oer_hil_lab::config::LabConfig;
 use oer_hil_net_traffic::{
     NetworkSession as _, await_udp_rx_ready,
@@ -24,12 +23,14 @@ use oer_hil_protocol::{
     network::Completion, network::Direction, network::FlowConfig, network::SessionConfig,
     network::SessionFlowConfig, network::SessionLinkRequirements, network::Transport,
 };
-use oer_hil_run_bundle::run::{Comparison, Measurement, MeasurementUnit, MeasurementVerdict};
-use oer_hil_scenario::{
-    AirUse, Plan, ScenarioFamily, bounded,
-    link::{PhyExpectation, WifiLabUse},
-    requirements::Requirements,
-};
+use oer_hil_run_bundle_format::run::Comparison;
+use oer_hil_run_bundle_format::run::Measurement;
+use oer_hil_run_bundle_format::run::MeasurementUnit;
+use oer_hil_run_bundle_format::run::MeasurementVerdict;
+use oer_hil_scenario::{AirUse, Plan, ScenarioFamily};
+use oer_hil_scenario_catalog::link::{PhyExpectation, WifiLabUse};
+use oer_hil_scenario_catalog::{bounded, requirements::Requirements};
+use oer_hil_schema::image::ImageClass;
 use oer_hil_workload::{
     Result,
     context::Context,

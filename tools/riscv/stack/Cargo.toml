@@ -28,4 +28,4 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "build"
-inputs = ["platform/esp32s31/linker/rom/functions.toml"]
+inputs = ["platform/*/linker/rom/functions.toml", "platform/*/chip.toml"]

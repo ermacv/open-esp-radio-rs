@@ -1,4 +1,5 @@
-use oer_hil_run_bundle::run::{RunState, test_support::write_run};
+use oer_hil_run_bundle::run::test_support::write_run;
+use oer_hil_run_bundle_format::run::RunState;
 
 use super::*;
 

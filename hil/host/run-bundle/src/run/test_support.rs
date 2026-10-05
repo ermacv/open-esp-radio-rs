@@ -9,14 +9,14 @@ use std::{
 };
 
 use oer_durable::{UNIQUE_FILE_COUNTER, atomic_json};
-use oer_hil_image_class::ImageClass;
+use oer_hil_schema::image::ImageClass;
 
 use super::*;
-use crate::{
-    Result,
-    build::{SourceLimitation, SourceMaterial, SourceRebuildStatus},
-    verify::FirmwareRecipe,
-};
+use crate::Result;
+use crate::verify::FirmwareRecipe;
+use oer_hil_run_bundle_format::build::SourceLimitation;
+use oer_hil_run_bundle_format::build::SourceMaterial;
+use oer_hil_run_bundle_format::build::SourceRebuildStatus;
 
 /// A fresh directory below the system temporary directory.
 pub fn temporary_directory(label: &str) -> PathBuf {
@@ -34,7 +34,7 @@ pub fn manifest() -> RunManifest {
     RunManifest {
         schema: RUN_SCHEMA,
         run_id: String::from("run<&>"),
-        target: String::from("esp32s31"),
+        target: String::from("chip-a"),
         state: RunState::Completed,
         started_unix_millis: 1,
         finished_unix_millis: Some(2),
@@ -132,19 +132,38 @@ pub fn integrated_session(target_directory: &Path) -> RunSession {
 }
 
 /// The repository files a staged build record cites, below `root`.
+/// The staged chip of the fixture images.
+pub const TEST_CHIP: &str = "chip-a";
+
+/// The fixture chip's profile (`platform/chip-a/chip.toml`).
+pub const TEST_CHIP_PROFILE: &str = "schema = 1\nid = \"chip-a\"\nfamily = \"f\"\n\
+    rust-target = \"riscv32imafc-unknown-none-elf\"\nboot = \"staged\"\n\
+    espflash-chip = \"esp32c6\"\nrevisions = []\n\
+    [properties]\nwifi-bands = []\nbluetooth = []\nieee802154 = false\ncores = 1\n\
+    [flash]\nbootloader = 0x2000\npartition-table = 0x8000\napplication = 0x10000\n\
+    otadata = 0xd000\npartitions = \"platform/chip-a/partitions/applications.csv\"\n\
+    application-encoding = { mode = \"qio\", frequency-mhz = 80, size-mib = 16 }\n\
+    bootloader-mode = \"dio\"\nstart = \"reset\"\n";
+
 pub fn write_test_build_materials(root: &Path) {
     for relative in [
         "Cargo.lock",
-        "hil/targets/esp32s31/Cargo.lock",
-        "hil/targets/esp32s31/Cargo.toml",
-        "hil/targets/esp32s31/stack.toml",
-        "platform/esp32s31/stack.toml",
-        "platform/esp32s31/partitions/applications.csv",
+        "hil/targets/chip-a/Cargo.lock",
+        "hil/targets/chip-a/Cargo.toml",
+        "platform/chip-a/stack.toml",
+        "platform/chip-a/partitions/applications.csv",
     ] {
         let path = root.join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, format!("test material: {relative}\n")).unwrap();
     }
+    // The HIL policy extends the platform's, as the provenance follows it.
+    fs::write(
+        root.join("hil/targets/chip-a/stack.toml"),
+        "extends = \"../../../platform/chip-a/stack.toml\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("platform/chip-a/chip.toml"), TEST_CHIP_PROFILE).unwrap();
 }
 
 /// A session writing into `directory` for `target_directory`, built from
@@ -156,7 +175,7 @@ pub fn session_for(directory: &Path, target_directory: &Path, checkout: &Path) -
     session
 }
 
-/// The recipe of the staged esp32s31 images with the owned network, for
+/// The recipe of the staged chip-a images with the owned network, for
 /// records built by these fixtures.
 pub struct TestRecipe;
 

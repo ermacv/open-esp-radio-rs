@@ -38,13 +38,6 @@ const GLOBAL: &[&str] = &[
     "rustfmt.toml",
 ];
 
-/// The image classes CI builds on every pull request; the gate
-/// type-checks them whenever chip code changes.
-pub const FINAL_IMAGES: [oer_hil_image_class::ImageClass; 2] = [
-    oer_hil_image_class::ImageClass::Performance,
-    oer_hil_image_class::ImageClass::Correctness,
-];
-
 /// How long the tests of one workspace may run in the gate.
 pub const TEST_LIMIT: Duration = Duration::from_secs(20 * 60);
 
@@ -383,25 +376,6 @@ pub fn chip_code<'a>(tree: &Tree, affected: &'a BTreeSet<Key>) -> BTreeSet<&'a K
                 .iter()
                 .any(|p| &p.workspace == workspace && &p.name == name && p.host && !p.chip)
         })
-        .collect()
-}
-
-/// The image classes to type-check for chip code in `changed` packages:
-/// the final images, and every class whose image's package graph (`graphs`)
-/// compiles one of them, in catalog order.
-pub fn image_classes(
-    changed: &BTreeSet<&str>,
-    graphs: &[(oer_hil_image_class::ImageClass, BTreeSet<String>)],
-) -> Vec<oer_hil_image_class::ImageClass> {
-    graphs
-        .iter()
-        .filter(|(class, packages)| {
-            FINAL_IMAGES.contains(class)
-                || packages
-                    .iter()
-                    .any(|package| changed.contains(package.as_str()))
-        })
-        .map(|(class, _)| *class)
         .collect()
 }
 

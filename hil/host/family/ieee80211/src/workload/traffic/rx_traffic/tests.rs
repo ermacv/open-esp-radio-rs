@@ -15,11 +15,11 @@ fn reported_rates_preserve_the_existing_host_and_target_gate_resolutions() {
         .unwrap();
     assert_eq!(
         target.verdict,
-        Some(oer_hil_run_bundle::run::MeasurementVerdict::Passed)
+        Some(oer_hil_run_bundle_format::run::MeasurementVerdict::Passed)
     );
     assert_eq!(
         host.verdict,
-        Some(oer_hil_run_bundle::run::MeasurementVerdict::Failed)
+        Some(oer_hil_run_bundle_format::run::MeasurementVerdict::Failed)
     );
     assert_eq!(target.threshold.unwrap().value, 1_000);
     assert_eq!(host.threshold.unwrap().value, 1_999);

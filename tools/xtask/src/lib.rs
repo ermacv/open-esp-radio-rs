@@ -7,15 +7,12 @@ pub mod cargo;
 pub mod checks;
 pub mod ci_status;
 pub mod doc;
-pub mod firmware;
 pub mod gate;
 pub mod graph;
 pub mod hooks;
 pub mod push;
 pub mod registry;
 pub mod report;
-pub mod stand_install;
-pub mod sweep;
 pub mod worktree;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

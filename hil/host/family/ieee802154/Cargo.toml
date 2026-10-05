@@ -9,9 +9,12 @@ publish = false
 description = "IEEE 802.15.4 HIL workloads"
 
 [dependencies]
+oer-device-peer-line = { path = "../../../../tools/device/peer-line" }
+oer-hil-schema = { path = "../../../schema" }
+oer-hil-scenario-catalog = { path = "../../scenario/catalog" }
+oer-hil-lab = { path = "../../lab" }
 oer-hil-link = { path = "../../link" }
 oer-hil-scenario = { path = "../../scenario" }
-oer-hil-image-class = { path = "../../image-class" }
 oer-hil-workload = { path = "../../workload" }
 oer-hil-protocol = { path = "../../../protocol" }
 serde = { version = "1.0", features = ["derive"] }

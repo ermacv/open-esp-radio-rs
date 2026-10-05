@@ -1,9 +1,6 @@
 fn main() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    oer_esp32s31_platform_layout::build::configure_runtime(
-        "oer-esp32s31-hil-agent",
-        &manifest.join("../../../../platform/esp32s31/linker"),
-    );
+    oer_esp32s31_platform_layout::build::configure_runtime("oer-esp32s31-hil-agent");
     enabled_features(manifest);
 }
 

@@ -10,7 +10,7 @@ use std::{
 
 use crate::Result;
 use oer_hil_lab::config::OpenWrtConfig;
-use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
+use oer_hil_scenario_catalog::link::{HtGuardIntervalExpectation, PhyExpectation};
 
 const PRE_WORKLOAD_CHANNEL_SAMPLE: Duration = Duration::from_secs(12);
 
@@ -286,7 +286,7 @@ impl OpenWrtRxCapture {
 }
 
 fn openwrt_command(config: &OpenWrtConfig, script: &str) -> Result<std::process::Output> {
-    oer_hil_stand_host::ssh::command(&config.ssh_target, script)
+    oer_stand_ssh::command(&config.ssh_target, script)
         .supervised_output()
         .and_then(crate::Error::ssh_output)
 }
@@ -348,8 +348,7 @@ fn snapshot(
         ingress = config.ingress_interface,
         wireless = config.wireless_interface,
     );
-    let output =
-        oer_hil_stand_host::ssh::command(&config.ssh_target, &script).supervised_output()?;
+    let output = oer_stand_ssh::command(&config.ssh_target, &script).supervised_output()?;
     if !output.status.success() {
         return Err(crate::Error::new(format!(
             "cannot snapshot OpenWrt station counters: {}",
@@ -419,8 +418,7 @@ pub fn resolve_station_mac(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<S
          printf '%s\\n' \"$mac\"",
         config.wireless_interface
     );
-    let output =
-        oer_hil_stand_host::ssh::command(&config.ssh_target, &script).supervised_output()?;
+    let output = oer_stand_ssh::command(&config.ssh_target, &script).supervised_output()?;
     if !output.status.success() {
         return Err(crate::Error::new(format!(
             "cannot resolve the sole associated OpenWrt station: {}",
@@ -482,8 +480,7 @@ fn measure_channel_utilization(config: &OpenWrtConfig) -> Result<ChannelUtilizat
         wireless = config.wireless_interface,
         seconds = PRE_WORKLOAD_CHANNEL_SAMPLE.as_secs(),
     );
-    let output =
-        oer_hil_stand_host::ssh::command(&config.ssh_target, &script).supervised_output()?;
+    let output = oer_stand_ssh::command(&config.ssh_target, &script).supervised_output()?;
     if !output.status.success() {
         return Err(crate::Error::new(format!(
             "cannot measure OpenWrt pre-workload channel utilization: {}",
@@ -544,8 +541,7 @@ pub fn doctor_tools(config: &OpenWrtConfig) -> Result<()> {
          test -d /sys/class/net/{ingress}",
         ingress = config.ingress_interface,
     );
-    let output =
-        oer_hil_stand_host::ssh::command(&config.ssh_target, &script).supervised_output()?;
+    let output = oer_stand_ssh::command(&config.ssh_target, &script).supervised_output()?;
     if !output.status.success() {
         return Err(crate::Error::new(format!(
             "OpenWrt fixture doctor failed over noninteractive SSH: {}",
@@ -575,7 +571,7 @@ fn spawn_capture(
         lifetime.as_secs(),
         capture_process::quote(&capture_process::controlled(&program, ":"))
     );
-    let mut command = oer_hil_stand_host::ssh::command(&config.ssh_target, &script);
+    let mut command = oer_stand_ssh::command(&config.ssh_target, &script);
     let child = capture_process::Capture::start(
         &mut command,
         format!("tcpdump: listening on {interface},"),

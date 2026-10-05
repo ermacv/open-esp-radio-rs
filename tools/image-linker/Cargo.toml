@@ -5,11 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "The ESP32-S31 image linker: checks the link inputs, then runs rust-lld unchanged"
+description = "The image linker: checks the link inputs, then runs rust-lld unchanged"
 
 [dependencies]
 oer-elf = { path = "../elf" }
-oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout" }
+
 
 [dev-dependencies]
 tempfile = "=3.27.0"

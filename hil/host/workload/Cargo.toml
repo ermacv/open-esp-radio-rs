@@ -17,24 +17,25 @@ test-support = [
 ]
 
 [dependencies]
+oer-hil-run-bundle-format = { path = "../run-bundle/format" }
+oer-hil-schema = { path = "../../schema" }
+oer-hil-scenario-catalog = { path = "../scenario/catalog" }
+oer-image-bundle = { path = "../../../tools/image-bundle" }
 oer-hil-lab = { path = "../lab" }
+oer-device-lock = { path = "../../../tools/device/lock" }
+oer-stand-board = { path = "../../../stand/board" }
 oer-hil-link = { path = "../link" }
-oer-hil-run-bundle = { path = "../run-bundle" }
 oer-hil-scenario = { path = "../scenario" }
 oer-durable = { path = "../../../tools/durable" }
-oer-image = { path = "../../../tools/image" }
 rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }
 oer-process = { path = "../../../tools/process" }
 oer-hil-protocol = { path = "../../protocol", features = ["registry"] }
-serialport = { version = "4.8.1", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 [dev-dependencies]
-oer-hil-image-class = { path = "../image-class" }
 oer-hil-lab = { path = "../lab", features = ["test-support"] }
 oer-hil-link = { path = "../link", features = ["test-support"] }
-oer-hil-run-bundle = { path = "../run-bundle", features = ["test-support"] }
 oer-hil-scenario = { path = "../scenario", features = ["test-support"] }
 
 [lints]

@@ -157,9 +157,9 @@ that number is no bound to hold a watermark to.
 From the repository root:
 
 ```console
-cargo xtask build firmware monitor
-cargo xtask build firmware station
-cargo hil flash --board <board> --monitor 30s target/firmware/esp32s31-access-point/build-<id>
+cargo fw build monitor
+cargo fw build station
+cargo fw flash --device <MAC|PORT> --monitor target/firmware/esp32s31-station/build-<id>
 ```
 
 Select `station`, `access-point`, `monitor` or `thread`. Application
@@ -169,7 +169,7 @@ under `target/firmware/esp32s31-<example>/build-<id>/`:
 `application.bin`, ROM `bootloader.bin`, `partitions.bin`, `otadata.bin`,
 the slot partition table, packed runtime, `runtime.elf`, `bootstrap.elf`,
 both resolved lockfiles, `source-inputs.json` and placement/stack reports;
-`cargo hil flash` writes it to a stand board. The build rejects invalid placement and a stack whose
+`cargo fw flash` writes it to an attached board (`cargo fw flash station` builds and writes in one step). The build rejects invalid placement and a stack whose
 root's call-chain bound does not fit its storage less its reserve before flash.
 A task stack's bound may be partial (the executor's task polls are indirect
 calls the analysis does not resolve); its report names every unresolved site,
@@ -177,6 +177,6 @@ and runtime stack painting and boundary watchpoints check the exercised
 chains.
 
 The [image pipeline](../../tools/image/README.md) supplies packing,
-structural checks and encoding to `xtask` and HIL. HIL retains its image classification,
+structural checks and encoding to `cargo fw` and HIL. HIL retains its image classification,
 observer placement requirements, stack budgets and sealed evidence. Source or
 image checks alone do not establish RF qualification.

@@ -15,24 +15,18 @@ use std::{
 
 use cargo_metadata::{Message, TargetKind, camino::Utf8PathBuf};
 
-use super::artifacts;
 use crate::{Result, cargo};
 use oer_process as process;
 use oer_process::Checkout;
 
-const PHY: &str = "crates/hardware/esp32s31/phy/Cargo.toml";
-const PHY_PACKAGE: &str = "oer-esp32s31-phy";
-/// Packages the PHY build may compile for the chip target.
+/// Shared packages the PHY build may compile for the chip target; the chip's
+/// own (its profile's `[gate.phy] packages`) join them.
 const PHY_PACKAGES: &[&str] = &[
     // The zero-valid marker `oer-memory`'s zeroed statics use (the one
     // esp-hal's `#[ram(zeroed)]` requires); a no-std trait crate.
     "bytemuck",
     "critical-section",
     "oer-memory",
-    "oer-esp32s31-hal",
-    "oer-esp32s31-pac",
-    "oer-esp32s31-pac-raw",
-    "oer-esp32s31-phy",
     // Portable PHY trace events and the typed trace ring they are recorded
     // in. The graph is audited with default features, so `oer-trace` brings
     // no timer: `embassy-time` comes only with the opt-in PHY `trace` feature.
@@ -113,16 +107,20 @@ fn built_packages(
 /// PHY itself must be among the chip-built packages: a build layout the
 /// target-directory rule no longer recognizes fails rather than passing an
 /// empty set.
-fn check_built_packages(built: &BuiltPackages) -> Result<()> {
-    if !built.chip.contains(PHY_PACKAGE) {
+fn check_built_packages(
+    built: &BuiltPackages,
+    phy: &oer_repo::chips::profile::PhyLibrary,
+) -> Result<()> {
+    if !built.chip.contains(&phy.package) {
         return Err(format!(
-            "the PHY build reported no chip-target artifact of {PHY_PACKAGE}; \
-             its packages cannot be audited"
+            "the PHY build reported no chip-target artifact of {}; \
+             its packages cannot be audited",
+            phy.package
         )
         .into());
     }
     for package in &built.chip {
-        if !PHY_PACKAGES.contains(&package.as_str()) {
+        if !PHY_PACKAGES.contains(&package.as_str()) && !phy.packages.contains(package) {
             return Err(format!("unexpected package in source-only PHY build: {package}").into());
         }
     }
@@ -136,11 +134,12 @@ fn check_built_packages(built: &BuiltPackages) -> Result<()> {
     Ok(())
 }
 
-fn phy_artifact(messages: &[u8]) -> Result<PathBuf> {
+fn phy_artifact(messages: &[u8], package: &str) -> Result<PathBuf> {
+    let library = package.replace('-', "_");
     let mut artifacts = BTreeSet::new();
     for message in Message::parse_stream(Cursor::new(messages)) {
         if let Message::CompilerArtifact(artifact) = message?
-            && artifact.target.name == "oer_esp32s31_phy"
+            && artifact.target.name == library
             && !artifact.profile.test
             && artifact
                 .target
@@ -165,44 +164,91 @@ fn phy_artifact(messages: &[u8]) -> Result<PathBuf> {
         .into_std_path_buf())
 }
 
-fn phy(ctx: &Checkout) -> Result<PathBuf> {
-    let target = oer_chip_profile::rust_target(&ctx.root, oer_image::staged::CHIP)?;
+fn phy(
+    ctx: &Checkout,
+    profile: &oer_repo::chips::profile::Profile,
+    phy: &oer_repo::chips::profile::PhyLibrary,
+) -> Result<PathBuf> {
+    let target = &profile.rust_target;
     let output = process::capture(oer_toolchain::cargo_in(&ctx.root).args([
         "build",
         "--locked",
         "-p",
-        "oer-esp32s31-phy",
+        &phy.package,
         "--lib",
         "--release",
         "--target",
-        &target,
+        target,
         "--message-format=json-render-diagnostics",
     ]))?;
-    let artifact = phy_artifact(&output.stdout)?;
-    artifacts::audit_phy(ctx, &artifact)?;
-    let manifest = ctx.root.join(PHY);
-    let graph = cargo::metadata(ctx, &manifest, &[], Some(&target), true)?;
+    let artifact = phy_artifact(&output.stdout, &phy.package)?;
+    // The archive's symbol policy reads ELF: its own check process. The
+    // PHY's code may call into the chip's other packages its build compiles.
+    let mut audit = oer_toolchain::cargo_in(&ctx.root);
+    audit
+        .args([
+            "run",
+            "--quiet",
+            "--locked",
+            "-p",
+            "oer-check-phy-archive",
+            "--",
+        ])
+        .arg(&artifact);
+    for source in phy
+        .packages
+        .iter()
+        .filter(|package| **package != phy.package)
+    {
+        audit.args(["--source", source]);
+    }
+    process::run(&mut audit)?;
+    let graph = cargo::metadata(ctx, &ctx.root.join("Cargo.toml"), &[], Some(target), true)?;
     let names = graph
         .metadata
         .packages
         .iter()
         .map(|package| (package.manifest_path.clone(), package.name.to_string()))
         .collect();
-    check_built_packages(&built_packages(&output.stdout, &names, &target)?)?;
+    check_built_packages(&built_packages(&output.stdout, &names, target)?, phy)?;
     Ok(artifact)
 }
 
-/// Build the PHY library for the chip target and audit its artifact and graph.
-/// Only ESP32-S31 has a production PHY library; any other chip is an error
-/// rather than a silent audit of the ESP32-S31 library.
+/// Build `chip`'s production PHY library (`[gate.phy]` of its profile) for
+/// the chip target and audit its artifact and graph; a chip without one is
+/// an error naming the chips that have one.
 pub fn run(ctx: &Checkout, chip: &str) -> Result<()> {
-    if chip != "esp32s31" {
-        return Err(
-            format!("chip {chip} has no production PHY library; supported: esp32s31").into(),
-        );
-    }
-    let artifact = phy(ctx)?;
+    let chips = oer_repo::chips::Chips::at(&ctx.root)?;
+    let with_phy = || {
+        chips
+            .profiles()
+            .iter()
+            .filter(|profile| profile.gate.phy.is_some())
+            .map(|profile| profile.id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let profile = chips
+        .profile(chip)
+        .ok_or_else(|| format!("no chip profile `{chip}`"))?;
+    let phy = profile.gate.phy.as_ref().ok_or_else(|| {
+        format!(
+            "chip {chip} has no production PHY library; supported: {}",
+            with_phy()
+        )
+    })?;
+    let artifact = self::phy(ctx, profile, phy)?;
     println!("PHY rlib audit passed: {}", artifact.display());
+    Ok(())
+}
+
+/// [`run`] for every chip with a production PHY library.
+pub fn run_all(ctx: &Checkout) -> Result<()> {
+    for profile in oer_repo::chips::Chips::at(&ctx.root)?.profiles() {
+        if profile.gate.phy.is_some() {
+            run(ctx, &profile.id)?;
+        }
+    }
     Ok(())
 }
 

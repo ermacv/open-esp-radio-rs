@@ -5,13 +5,13 @@ use super::*;
 /// Validate recorded measurement values (a run's or a shard's) against the
 /// run bundle's one measurement contract: each must be a measurement of
 /// this build's vocabulary, and together they must pass
-/// [`oer_hil_run_bundle::run::validation::validate_measurements`].
+/// [`oer_hil_run_bundle_format::run::validation::validate_measurements`].
 pub(super) fn validate(values: &[serde_json::Value], outcome: Outcome) -> Result<()> {
     let measurements = values
         .iter()
         .map(|value| serde_json::from_value(value.clone()))
-        .collect::<std::result::Result<Vec<oer_hil_run_bundle::run::Measurement>, _>>()?;
-    oer_hil_run_bundle::run::validation::validate_measurements(&measurements, outcome)
+        .collect::<std::result::Result<Vec<oer_hil_run_bundle_format::run::Measurement>, _>>()?;
+    oer_hil_run_bundle_format::run::validation::validate_measurements(&measurements, outcome)
         .map_err(|error| error.to_string().into())
 }
 

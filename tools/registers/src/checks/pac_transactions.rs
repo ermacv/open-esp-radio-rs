@@ -2,7 +2,7 @@
 //!
 //! A radio PAC (`crates/hardware/*/pac/src`) never polls, retries or keeps a
 //! step machine; those belong to the HAL, where every such loop carries an
-//! explicit budget (see the ESP32-S31 PAC README). A loop in a handwritten
+//! explicit budget (see the chip PAC READMEs). A loop in a handwritten
 //! PAC module is therefore rejected, except a `while` that walks an index
 //! over a fixed-length table (`index < TABLE.len()` or `index != COUNT`),
 //! which writes a straight-line register sequence. There is no exception
@@ -89,14 +89,10 @@ mod tests {
 
     #[test]
     fn only_handwritten_pac_sources_are_checked() {
-        assert!(handwritten("crates/hardware/esp32s31/pac/src/phy/i2c.rs"));
-        assert!(!handwritten(
-            "crates/hardware/esp32s31/pac/src/generated.rs"
-        ));
-        assert!(!handwritten(
-            "crates/hardware/esp32s31/pac/src/phy/tests.rs"
-        ));
-        assert!(!handwritten("crates/hardware/esp32s31/pac/raw/src/lib.rs"));
-        assert!(!handwritten("crates/hardware/esp32s31/hal/src/phy.rs"));
+        assert!(handwritten("crates/hardware/chip-a/pac/src/phy/i2c.rs"));
+        assert!(!handwritten("crates/hardware/chip-a/pac/src/generated.rs"));
+        assert!(!handwritten("crates/hardware/chip-a/pac/src/phy/tests.rs"));
+        assert!(!handwritten("crates/hardware/chip-a/pac/raw/src/lib.rs"));
+        assert!(!handwritten("crates/hardware/chip-a/hal/src/phy.rs"));
     }
 }

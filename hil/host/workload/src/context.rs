@@ -17,7 +17,7 @@ pub struct Context<'a> {
     pub results: Results,
     /// The program-counter profile each capture arms after the boot's hello
     /// and drains when it finishes.
-    pub profile: Option<oer_hil_scenario::ProfileRequest>,
+    pub profile: Option<oer_hil_scenario_catalog::ProfileRequest>,
     output: &'a Path,
     /// How a capture opens; the board under test reset through its console
     /// unless a test replaces it.
@@ -25,6 +25,9 @@ pub struct Context<'a> {
     /// The run's writer of the board under test's images, when the run
     /// knows the scenario's image bundle.
     images: Option<&'a dyn BoardImages>,
+    /// The run's access to the board under test, when its lease holds it:
+    /// what every operation of a workload on the board goes through.
+    device: Option<&'a oer_device_lock::DeviceAccess>,
 }
 
 /// The images of the board under test within the run's lease, for a
@@ -34,9 +37,9 @@ pub struct Context<'a> {
 /// it; the runner reflashes the scenario's image before its next scenario.
 pub trait BoardImages: Sync {
     /// The scenario's own image, as the run built, archived and flashed it.
-    fn scenario_image(&self) -> &oer_image::ImageBundle;
+    fn scenario_image(&self) -> &oer_image_bundle::ImageBundle;
     /// Write `bundle`, which the board journal names `name`, and start it.
-    fn flash(&self, bundle: &oer_image::ImageBundle, name: &str) -> Result<()>;
+    fn flash(&self, bundle: &oer_image_bundle::ImageBundle, name: &str) -> Result<()>;
     /// Write the scenario's own image back and start it.
     fn restore(&self) -> Result<()>;
 }
@@ -55,7 +58,23 @@ impl<'a> Context<'a> {
             profile: None,
             opener: None,
             images: None,
+            device: None,
         }
+    }
+
+    /// Let the workload operate the board under test under `device`.
+    pub fn with_device(mut self, device: Option<&'a oer_device_lock::DeviceAccess>) -> Self {
+        self.device = device;
+        self
+    }
+
+    /// The board under test, leased under the run's access to it: its
+    /// resets, console and power.
+    pub fn dut_board(&self) -> Result<oer_stand_board::LeasedBoard> {
+        let device = self
+            .device
+            .ok_or("this run holds no lease of its device under test")?;
+        self.lab.dut_board()?.lease(device)
     }
 
     /// Let the workload write the board under test's images through
@@ -82,7 +101,10 @@ impl<'a> Context<'a> {
     }
 
     /// Profile every capture of this workload.
-    pub fn with_profile(mut self, profile: Option<oer_hil_scenario::ProfileRequest>) -> Self {
+    pub fn with_profile(
+        mut self,
+        profile: Option<oer_hil_scenario_catalog::ProfileRequest>,
+    ) -> Self {
         self.profile = profile;
         self
     }
@@ -123,7 +145,7 @@ impl<'a> Context<'a> {
         .observed_by(Box::new(recorder));
         Ok(match self.profile {
             Some(profile) => capture.profiled(Profile {
-                control: profile.control(),
+                control: oer_hil_scenario::profile_control(profile),
                 request: serde_json::to_value(profile)?,
             })?,
             None => capture,

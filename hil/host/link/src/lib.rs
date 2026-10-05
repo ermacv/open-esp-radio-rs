@@ -32,7 +32,7 @@ use oer_hil_protocol::{
 use zeroize::Zeroizing;
 
 mod target;
-pub use target::{ApplicationReset, Dut, DutEvent, StationNetwork, Target};
+pub use target::{ConsoleOpener, Dut, DutEvent, SerialLine, StationNetwork, Target};
 mod reboot;
 use reboot::{ExpectedReboot, RebootObservation};
 mod received;
@@ -42,8 +42,6 @@ pub use received::{Received, message_info};
 /// accepted command, an initialization.
 pub const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
 const STARTUP_ARTIFACT_TIMEOUT: Duration = Duration::from_secs(30);
-const SERIAL_OPEN_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
-const SERIAL_OPEN_BUSY_RETRY: Duration = Duration::from_millis(50);
 const PROTOCOL_EVENT_CAPACITY: usize = 16_384;
 
 #[derive(Default)]
@@ -351,26 +349,6 @@ pub trait CaptureObserver: Send + Sync {
 pub struct Profile {
     pub control: oer_hil_protocol::telemetry::ProfileControl,
     pub request: serde_json::Value,
-}
-
-fn open_serial_after_busy_release(port: &Path) -> serialport::Result<serialport::TTYPort> {
-    let deadline = Instant::now() + SERIAL_OPEN_BUSY_TIMEOUT;
-    loop {
-        match serialport::new(port.to_string_lossy(), 115_200)
-            .preserve_dtr_on_open()
-            .open_native()
-        {
-            Ok(serial) => return Ok(serial),
-            Err(error)
-                if error.kind == serialport::ErrorKind::NoDevice
-                    && port.exists()
-                    && Instant::now() < deadline =>
-            {
-                thread::sleep(SERIAL_OPEN_BUSY_RETRY);
-            }
-            Err(error) => return Err(error),
-        }
-    }
 }
 
 impl Drop for SerialCapture {

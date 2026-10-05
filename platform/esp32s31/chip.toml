@@ -6,7 +6,8 @@ id = "esp32s31"
 # The family whose shared code the chip uses (`platform = "family"` packages).
 family = "espressif"
 rust-target = "riscv32imafc-unknown-none-elf"
-# The ROM loads platform/esp32s31/bootstrap, which stages the runtime into PSRAM.
+# The ROM loads the ESP-IDF bootloader, which loads platform/esp32s31/bootstrap;
+# the bootstrap stages the runtime into PSRAM.
 boot = "staged"
 espflash-chip = "esp32s31"
 revisions = ["rev0"]
@@ -30,5 +31,221 @@ partition-table = 0x8000
 application = 0x10000
 otadata = 0xd000
 partitions = "platform/esp32s31/partitions/applications.csv"
+# The application image's header: ESP-IDF's bootloader switches the board's
+# 16-MiB flash to QIO at 80 MHz before it loads the bootstrap (the bootstrap
+# then tunes 120 MHz itself). The ROM reads the bootloader in DIO.
+application-encoding = { mode = "qio", frequency-mhz = 80, size-mib = 16 }
+bootloader-mode = "dio"
 # How a written image starts: the writer's hard reset.
 start = "reset"
+
+# The staged-boot address map as host tools check images against it: the
+# firmware's own copy is platform/esp32s31/layout (LAYOUT), which the linker
+# scripts read. Sizes describe the fitted memories.
+[memory]
+# Application-owned internal SRAM (ESP-IDF's SRAM_START..SRAM_SEG_END).
+sram = { origin = 0x2f000000, length = 0x0007afc0 }
+# The unified 64-MiB Flash XIP instruction/data window.
+flash-xip = { origin = 0x40000000, length = 0x04000000 }
+# Cached external RAM aperture of the fitted 16-MiB PSRAM.
+psram = { origin = 0x50000000, length = 0x01000000 }
+# Stage-two code relocated to PSRAM, after the bootstrap's 64-KiB probe page.
+runtime-psram = { origin = 0x50010000, length = 0x00ff0000 }
+# The runtime's task stacks lie in PSRAM.
+task-stacks = "psram"
+
+# The interrupt contract the interrupt-stack check reads: the staged runtime
+# (platform/espressif/staged-runtime) installs these vectors and stacks; the
+# chip-neutral symbols are platform/espressif/staged-layout (interrupts.rs).
+[interrupts]
+table-symbol = "__OER_INTERRUPT_TABLE"
+# `Binding<Interrupt, Priority, Cpu>`: source u16 at 0, level u8 at 2, core
+# u32 at 4, handler word at 8; fields as [offset, bytes].
+table-entry-bytes = 12
+table-source = [0, 2]
+table-level = [2, 1]
+table-core = [4, 4]
+table-handler = 8
+vector-table-symbol = "_runtime_psram_mtvt_source"
+exception-entry-symbol = "_start_trap"
+source-table-symbol = "__EXTERNAL_INTERRUPTS"
+harts = [0, 1]
+# esp-hal's IPC line.
+always-levels = [1]
+# Each hart's dedicated SRAM interrupt stack.
+irq-stack-bytes = 0x8000
+irq-stack-guard-bytes = 1024
+irq-stack-margin-percent = 10
+
+# The only writer of the IPC callback, whose `handler` argument (`a1`) is
+# every function the IPC dispatch runs, and the functions that call it.
+[interrupts.ipc]
+post = "<esp_hal::interrupt::ipc::Ipc>::call_function"
+post-handler-argument = 1
+dispatch = [
+    "esp_hal::interrupt::ipc::implem::dispatch",
+    "esp_hal::interrupt::ipc::implem::callback_handler",
+]
+
+[[interrupts.level-writers]]
+writer = "esp_hal::interrupt::arch::cpu_int::set_priority_raw"
+contexts = [
+    "esp_hal::interrupt::arch::init_vectoring",
+    "esp_hal::interrupt::ipc::implem::install_core",
+]
+
+[[interrupts.level-writers]]
+writer = "esp_hal::interrupt::map_raw"
+contexts = [
+    "esp_hal::interrupt::setup_interrupts",
+    "<esp_hal::interrupt::InterruptRoutes>::enable",
+    "<esp_hal::interrupt::InterruptRoutes>::disable",
+]
+
+# The mask ROM the stack analyses read: the pinned ROM ELF
+# (verification/esp32s31/artifacts.toml), the reviewed function summaries
+# and the vendor radio ROM no final image may call into.
+[rom]
+elf = "rom"
+summaries = "platform/esp32s31/linker/rom/functions.toml"
+forbidden = [
+    { name = "eco0-radio-api", start = 0x2f800bf0, end = 0x2f8016bc },
+    { name = "eco0-radio-body", start = 0x2f823c12, end = 0x2f83e6d0 },
+]
+
+# The staged runtime's placement contract (platform/espressif/linker/runtime
+# script): code, data and the CPU0 task stack in PSRAM; interrupt entries,
+# vector tables, interrupt stacks, critical and DMA data in SRAM.
+[placement]
+name = "psram-code-psram-data-psram-stack"
+image = { start = "__runtime_image_start", end = "__runtime_payload_end", origin = "runtime-psram" }
+entry = { symbol = "_runtime_start", text = ["__runtime_text_start", "__runtime_text_end"] }
+range = [
+    { range = ["__runtime_data_start", "__runtime_data_bss_end"], region = "psram" },
+    { range = ["__runtime_isr_start", "__runtime_isr_end"], region = "sram" },
+    { range = ["__runtime_critical_data_start", "__runtime_critical_bss_end"], region = "sram" },
+    { range = ["__runtime_dma_data_start", "__runtime_dma_bss_end"], region = "sram" },
+    { range = ["_stack_end", "_stack_start"], region = "psram", bytes = 0x30000 },
+    { range = ["__runtime_cpu0_irq_stack_bottom", "__runtime_cpu0_irq_stack_top"], region = "sram", bytes = 0x8000 },
+    { range = ["__runtime_cpu1_irq_stack_bottom", "__runtime_cpu1_irq_stack_top"], region = "sram", bytes = 0x8000 },
+]
+symbol = [
+    { name = "_start_trap", bytes = 4, region = "sram" },
+    { name = "_runtime_psram_irq_entry_{n}", numbers = [1, 47], bytes = 4, region = "sram" },
+    { name = "_runtime_psram_mtvt_source", bytes = 192, region = "sram" },
+    { name = "_mtvt_table", bytes = 192, region = "sram" },
+    { name = "_mtvt_table2", bytes = 192, region = "sram" },
+]
+stack-swap = [
+    { name = "_start_trap" },
+    { name = "_runtime_psram_irq_entry_{n}", numbers = [1, 47] },
+]
+
+# The staged boot's host contract: the stage-two header the image pipeline
+# packs (platform/espressif/staged-layout stage_two.rs) and the input sections
+# the runtime linker script zeroes (zeroed.rs), which the image linker refuses
+# initialized bytes in.
+[staged]
+zeroed-inputs = [
+    ".dram2_uninit.bss", ".dram2_uninit.bss.*", ".dram2_uninit", ".dram2_uninit.*",
+    ".rtc_fast.bss", ".rtc_fast.bss.*",
+    ".critical.bss", ".critical.bss.*", ".flash.critical.bss", ".flash.critical.bss.*",
+    ".dma.bss", ".dma.bss.*",
+    ".psram.bss", ".psram.bss.*", ".sbss", ".sbss.*", ".bss", ".bss.*", "COMMON",
+]
+
+# The stage-two header: little-endian words; "STG2" magic, the handoff ABI
+# version, the header's own size and the payload CRC-32 (computed with its
+# field read as zero) at these byte offsets.
+[staged.stage-two]
+magic = 0x32475453
+abi-version = 1
+header-bytes = 44
+magic-offset = 0
+abi-version-offset = 4
+header-size-offset = 28
+crc-offset = 40
+
+# The HIL agent's graph is the source-only radio stack: the root lock and
+# hil/targets/esp32s31 must not pull in the vendor radio packages.
+[hil]
+forbidden-packages = ["esp-phy", "esp-rtos", "esp-wifi-sys-esp32s31"]
+# The vendor firmware projects of the PHY calibration cross-check.
+vendor-calibration = "verification/esp32s31/hil-vendor"
+
+# The chip's packages by the role the repository policies give them.
+[packages]
+generated = ["oer-esp32s31-pac-raw"]
+audited-unsafe = [
+    "oer-esp32s31-bluetooth",
+    "oer-esp32s31-hal",
+    "oer-esp32s31-pac",
+    "oer-esp32s31-soc-esp-hal",
+    "oer-esp32s31-phy",
+    "oer-esp32s31-ieee80211-dma",
+    "oer-esp32s31-radio-esp-hal",
+    "oer-esp32s31-bluetooth-system",
+    "oer-esp32s31-ieee80211-system",
+    "oer-esp32s31-ieee802154-system",
+]
+closed-pac = ["oer-esp32s31-pac"]
+pac-consumers = ["oer-esp32s31-pac-raw", "oer-esp32s31-pac", "oer-esp32s31-hal"]
+backends = [
+    "oer-esp32s31-hal",
+    "oer-esp32s31-bluetooth",
+    "oer-esp32s31-ieee80211-mac",
+    "oer-esp32s31-ieee80211-sta",
+    "oer-esp32s31-ieee80211-ap",
+]
+wifi = [
+    "oer-esp32s31-ieee80211-mac",
+    "oer-esp32s31-ieee80211-sta",
+    "oer-esp32s31-ieee80211-ap",
+    "oer-esp32s31-ieee80211-runtime",
+    "oer-esp32s31-ieee80211-system",
+]
+bluetooth = ["oer-esp32s31-bluetooth"]
+
+# What the repository gate builds and audits for the chip (`cargo xtask`).
+[gate]
+validation-probes = ["oer-esp32s31-bluetooth"]
+# Borrowed DMA memory needs `unsafe`: the SoC adapter's doctests run on the
+# chip target.
+doctests = [{ package = "oer-esp32s31-soc-esp-hal", features = "axi-gdma-mem2mem" }]
+host-tests = ["examples/esp32s31/access-point"]
+# esp-hal's interrupt routes stay the image's table.
+static-interrupts = true
+shared-words = true
+integration = { manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml", package = "oer-esp32s31-ieee80211-system", phy = "oer-esp32s31-phy" }
+phy = { package = "oer-esp32s31-phy", packages = ["oer-esp32s31-hal", "oer-esp32s31-pac", "oer-esp32s31-pac-raw", "oer-esp32s31-phy"] }
+facade = [
+    { features = "esp32s31", required = ["oer-esp32s31-hal"], forbidden = ["wifi", "bluetooth"] },
+    { features = "esp32s31-wifi", required = ["oer-esp32s31-ieee80211-sta", "oer-esp32s31-ieee80211-ap"], forbidden = ["bluetooth"] },
+    { features = "esp32s31-bluetooth", required = ["oer-esp32s31-bluetooth", "oer-bluetooth-hci", "oer-bluetooth-ll"], forbidden = ["wifi"], bluetooth-only = true },
+    { features = "ieee802154,esp32s31", required = ["oer-ieee802154", "oer-esp32s31-hal"], forbidden = ["wifi", "bluetooth"] },
+    { features = "esp32s31-ieee802154", required = ["oer-espressif-ieee802154-engine", "oer-ieee802154"], forbidden = ["wifi", "bluetooth"] },
+    # The composition joins the shared radio through the esp-hal radio
+    # platform, which carries the Bluetooth hardware engine's resources.
+    { features = "openthread", required = ["oer-esp32s31-ieee802154-system", "oer-ieee802154-openthread"], forbidden = ["wifi"] },
+]
+network = [
+    { boundary = "owned-product", manifest = "examples/esp32s31/access-point/Cargo.toml", features = ["--no-default-features", "--features", "owned-network"] },
+    { boundary = "owned-product", manifest = "hil/targets/esp32s31/agent/Cargo.toml", features = ["--no-default-features", "--features", "open-radio-hil,owned-network"] },
+    { boundary = "radio-core", manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", features = ["--no-default-features"] },
+    { boundary = "owned-product", manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml" },
+    { boundary = "owned-product", manifest = "examples/esp32s31/station/Cargo.toml", features = ["--no-default-features", "--features", "owned-network"] },
+]
+
+# The Rust probe images of the vendor comparison (verification/esp32s31/probes),
+# in build order: the artifact role each serves.
+[[probe]]
+role = "rust-artifact"
+package = "oer-esp32s31-probe-radio-elf"
+
+[[probe]]
+role = "rust-artifact:wifi-registers"
+package = "oer-esp32s31-probe-register-elf"
+
+[[probe]]
+role = "rust-artifact:bluetooth"
+package = "oer-esp32s31-probe-bluetooth-elf"

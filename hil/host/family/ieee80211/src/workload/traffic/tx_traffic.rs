@@ -7,6 +7,7 @@ pub use receiver::Receiver;
 
 use crate::link::WifiCapture as _;
 use oer_hil_net_traffic::NetworkSession as _;
+use oer_hil_run_bundle_format::run::fixtures::Burst;
 use oer_hil_workload::context::Context;
 use std::{
     collections::HashSet,
@@ -42,7 +43,7 @@ use oer_hil_net_traffic::{
     await_udp_tx_ready,
     udp::{configure_qualification_receive_buffer, confirm_reverse_flow},
 };
-use oer_hil_scenario::link::PhyExpectation;
+use oer_hil_scenario_catalog::link::PhyExpectation;
 use serde::Serialize;
 
 const DEFAULT_PORT: u16 = 9_002;
@@ -65,38 +66,6 @@ pub struct Config {
     pub maximum_idle_channel_utilization_255: Option<u8>,
     /// Suspend the shared PHY's periodic tracking for the session.
     pub suspend_phy_tracking: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
-pub struct Burst {
-    pub bytes: u64,
-    pub datagrams: u64,
-    pub missing: u64,
-    pub reordered: u64,
-    pub first_reordered_after: Option<u32>,
-    pub first_reordered_sequence: Option<u32>,
-    pub maximum_reorder_distance: u32,
-    pub duplicates: u64,
-    pub elapsed_us: u64,
-    pub started_at_zero: bool,
-    pub lowest_sequence: u32,
-    pub highest_sequence: u32,
-    pub maximum_interarrival_us: u64,
-    pub sequence_after_maximum_interarrival: Option<u32>,
-    pub missing_runs: u64,
-    pub maximum_missing_run: u64,
-    pub maximum_missing_run_start: Option<u32>,
-    pub maximum_missing_run_end: Option<u32>,
-}
-
-impl Burst {
-    pub fn throughput_kbps(self) -> u64 {
-        self.bytes
-            .saturating_mul(8)
-            .saturating_mul(1_000)
-            .checked_div(self.elapsed_us.max(1))
-            .unwrap_or(0)
-    }
 }
 
 struct ActiveBurst {

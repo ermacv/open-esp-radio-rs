@@ -16,7 +16,7 @@ use oer_hil_protocol::{
 use crate::Result;
 use oer_hil_family_ieee80211_fixture::controlled_ap::ControlledAp;
 use oer_hil_link::SerialCapture;
-use oer_hil_scenario::link::PhyExpectation;
+use oer_hil_scenario_catalog::link::PhyExpectation;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const QUALIFIED_ATTEMPTS: u16 = 3;

@@ -1,4 +1,5 @@
 use super::*;
+use oer_hil_image_class::NETWORK_FEATURE;
 
 #[test]
 fn radio_observer_placement_remains_required_only_for_radio_compositions() {
@@ -79,73 +80,73 @@ fn the_radio_less_classes_need_no_driver_observation() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(oer_hil_image_class::ImageClass::ALL.len(), 28);
+    assert_eq!(oer_hil_schema::image::ImageClass::ALL.len(), 28);
     assert_eq!(
-        oer_hil_image_class::ImageClass::SystemPanicReset.runtime_features(),
+        oer_hil_schema::image::ImageClass::SystemPanicReset.runtime_features(),
         "system-panic-reset"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::Performance.id(),
+        oer_hil_schema::image::ImageClass::Performance.id(),
         "performance"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::Correctness.id(),
+        oer_hil_schema::image::ImageClass::Correctness.id(),
         "correctness"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::WifiBleCoex.runtime_features(),
+        oer_hil_schema::image::ImageClass::WifiBleCoex.runtime_features(),
         "wifi-ble-coex"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::Correctness.runtime_features(),
+        oer_hil_schema::image::ImageClass::Correctness.runtime_features(),
         "open-radio-hil,driver-observation"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticMacIrq.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticMacIrq.runtime_features(),
         "open-radio-hil,mac-irq-telemetry"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticTaskResidence.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticTaskResidence.runtime_features(),
         "open-radio-hil,task-residence-telemetry"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticTxArchitecture.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticTxArchitecture.runtime_features(),
         "open-radio-hil,tx-architecture-probes"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticTaskPoll.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticTaskPoll.runtime_features(),
         "open-radio-hil,task-poll-telemetry"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticCore0RxCoarse.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticCore0RxCoarse.runtime_features(),
         "open-radio-hil,core0-rx-coarse-telemetry"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticCore0RxCycles.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticCore0RxCycles.runtime_features(),
         "open-radio-hil,core0-rx-cycle-telemetry"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticRxDelivery.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticRxDelivery.runtime_features(),
         "open-radio-hil,rx-delivery-telemetry"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticIeee802154EventStatus.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticIeee802154EventStatus.runtime_features(),
         "open-radio-hil,ieee802154-event-status-probe"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticIeee802154EdEvent.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticIeee802154EdEvent.runtime_features(),
         "open-radio-hil,ieee802154-ed-event-probe"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticIeee802154Radio.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticIeee802154Radio.runtime_features(),
         "open-radio-hil,ieee802154-radio"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticIeee802154RadioTrace.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticIeee802154RadioTrace.runtime_features(),
         "open-radio-hil,ieee802154-radio,ieee802154-trace"
     );
     assert_eq!(
-        oer_hil_image_class::ImageClass::DiagnosticIeee802154Thread.runtime_features(),
+        oer_hil_schema::image::ImageClass::DiagnosticIeee802154Thread.runtime_features(),
         "open-radio-hil,ieee802154-thread"
     );
 }
@@ -161,10 +162,23 @@ fn removed_rx_phy_images_are_rejected_by_both_decoders() {
     }
 }
 
+/// This checkout's first chip whose HIL agent links the network
+/// integration (`network`) or does not.
+fn networked(network: bool) -> oer_chip_profile::Profile {
+    oer_chip_profile::Profile::all(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."))
+        .unwrap()
+        .into_iter()
+        .find(|profile| oer_hil_image_class::declares(&profile.id, NETWORK_FEATURE) == network)
+        .unwrap()
+}
+
 #[test]
 fn the_classes_that_sample_the_program_counter_are_those_whose_features_enable_it() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let staged = networked(true);
     let manifest: toml::Table =
-        toml::from_str(include_str!("../../../targets/esp32s31/agent/Cargo.toml")).unwrap();
+        toml::from_str(&std::fs::read_to_string(staged.hil_agent_manifest(&root)).unwrap())
+            .unwrap();
     let features = manifest["features"].as_table().unwrap();
     let enables = |class: ImageClass| {
         let mut pending = class
@@ -209,104 +223,79 @@ fn a_seeded_build_has_artifacts_of_its_own() {
 }
 
 #[test]
-fn the_shared_compile_caches_move_only_when_overridden() {
-    let root = Path::new("/checkout");
-    assert_eq!(
-        compile_cache_base(root, None),
-        Path::new("/checkout/target/hil/esp32s31/build-cache")
-    );
-    assert_eq!(
-        compile_cache_base(root, Some("".into())),
-        Path::new("/checkout/target/hil/esp32s31/build-cache")
-    );
-    assert_eq!(
-        compile_cache_base(root, Some("/main/target/hil/esp32s31/build-cache".into())),
-        Path::new("/main/target/hil/esp32s31/build-cache")
-    );
-}
-
-#[test]
 fn cargo_tree_lines_name_their_packages() {
-    let tree = "oer-esp32s31-hil-agent v0.1.0 (/repo/hil/targets/esp32s31/agent)\n\
+    let tree = "oer-chip-a-hil-agent v0.1.0 (/repo/hil/targets/chip-a/agent)\n\
                 critical-section v1.2.0\n\
                 oer-ieee802154 v0.1.0 (/repo/crates/protocols/ieee802154) (*)\n";
     assert_eq!(
         tree_packages(tree),
-        [
-            "critical-section",
-            "oer-esp32s31-hil-agent",
-            "oer-ieee802154"
-        ]
-        .map(str::to_owned)
-        .into()
+        ["critical-section", "oer-chip-a-hil-agent", "oer-ieee802154"]
+            .map(str::to_owned)
+            .into()
     );
 }
 
 #[test]
-fn the_esp32c5_target_builds_the_boot_smoke_and_system_watchdog_images() {
+fn the_application_chip_builds_the_boot_smoke_and_system_watchdog_images() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    assert!(serves(&root, "esp32c5", ImageClass::BootSmoke).unwrap());
-    assert!(serves(&root, "esp32c5", ImageClass::SystemWatchdog).unwrap());
-    assert!(!serves(&root, "esp32c5", ImageClass::Correctness).unwrap());
+    let chip = networked(false).id;
+    assert!(serves(&root, &chip, ImageClass::BootSmoke).unwrap());
+    assert!(serves(&root, &chip, ImageClass::SystemWatchdog).unwrap());
+    assert!(!serves(&root, &chip, ImageClass::Correctness).unwrap());
 }
 
 #[test]
 fn each_chip_s_spec_takes_its_agent_policy_and_network() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let placement = || Placement {
-        output: "/out".into(),
-        cache: "/cache".into(),
-    };
+    let placement = || PathBuf::from("/out");
+    let staged_chip = networked(true);
+    let application_chip = networked(false);
     let staged = spec(
         &root,
-        "esp32s31",
+        &staged_chip.id,
         ImageClass::Correctness,
         (None, &FeatureDelta::default()),
         Overrides::default(),
         placement(),
     )
     .unwrap();
-    assert_eq!(staged.application.package, "oer-esp32s31-hil-agent");
+    assert_eq!(staged.application.package, staged_chip.hil_agent_package());
     assert!(
         staged
             .application
             .features
             .contains(&NETWORK_FEATURE.to_owned())
     );
-    assert_eq!(
-        staged.stack_policy,
-        Path::new("hil/targets/esp32s31/stack.toml")
-    );
-    assert!(staged.audit.is_some());
-    assert_eq!(staged.builders, [BUILDER]);
-    let diagnostic = spec(
+    assert_eq!(staged.stack_policy, staged_chip.hil_stack_policy());
+    assert!(staged.checks.is_some());
+    assert!(!staged.builder_inputs.is_empty());
+    let _diagnostic = spec(
         &root,
-        "esp32s31",
+        &staged_chip.id,
         ImageClass::DiagnosticTaskPoll,
         (None, &FeatureDelta::default()),
         Overrides::default(),
         placement(),
     )
     .unwrap();
-    assert_eq!(diagnostic.interrupts, Required::Partial);
     let esp_idf = spec(
         &root,
-        "esp32c5",
+        &application_chip.id,
         ImageClass::SystemWatchdog,
         (None, &FeatureDelta::default()),
         Overrides::default(),
         placement(),
     )
     .unwrap();
-    assert_eq!(esp_idf.application.package, "oer-esp32c5-hil-agent");
     assert_eq!(
-        esp_idf.application.workspace,
-        Path::new("hil/targets/esp32c5")
+        esp_idf.application.package,
+        application_chip.hil_agent_package()
+    );
+    assert_eq!(
+        root.join(&esp_idf.application.workspace),
+        application_chip.hil_agent_workspace(&root)
     );
     assert_eq!(esp_idf.application.features, ["system-watchdog"]);
-    assert_eq!(
-        esp_idf.stack_policy,
-        Path::new("hil/targets/esp32c5/stack.toml")
-    );
-    assert!(esp_idf.audit.is_none());
+    assert_eq!(esp_idf.stack_policy, application_chip.hil_stack_policy());
+    assert!(esp_idf.checks.is_some());
 }

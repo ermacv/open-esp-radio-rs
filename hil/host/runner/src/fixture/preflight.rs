@@ -5,7 +5,8 @@ use crate::{
     scenario::{Families, Scenario},
 };
 use oer_hil_lab::config::LabConfig;
-use oer_hil_run_bundle::run::{Failure, FailureKind};
+use oer_hil_run_bundle_format::run::Failure;
+use oer_hil_run_bundle_format::run::FailureKind;
 use oer_hil_scenario::ScenarioFamily as _;
 use oer_hil_workload::family::Registry as _;
 
@@ -24,41 +25,40 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
     Ok(())
 }
 
-/// Refuse a peer board whose newest journaled flash is another image than
-/// `expected`. A board without a journaled flash passes; the consumer's own
-/// handshake decides.
+/// Refuse a peer board whose receipt (the devices layer's record of what
+/// its flash holds, never the stand's journal) names another image than
+/// `expected`, or an unfinished write. A board without a receipt passes;
+/// the consumer's own handshake decides.
 fn require_peer_image(
     lab: &LabConfig,
     peer: &oer_hil_lab::config::PeerBoardConfig,
     expected: &str,
     reflash: &str,
 ) -> crate::Result<()> {
-    let arbiter = oer_hil_arbiter::Arbiter::open()?.with_stand_file(lab.path().to_owned());
-    other_image(arbiter.latest_flash(&peer.mac)?.as_ref(), expected).map_or(
-        Ok(()),
-        |(image, owner)| {
-            Err(format!(
-                "board {} carries `{image}` flashed by {owner}, not `{expected}`; {reflash}",
-                lab.stand().label(&peer.mac)
-            )
-            .into())
-        },
-    )
+    let id = oer_device_lock::DeviceId::parse(&peer.mac)?;
+    let state = oer_device_image::Store::open()?.state(&id)?;
+    match other_image(state.as_ref(), expected) {
+        None => Ok(()),
+        Some(what) => Err(format!(
+            "board {} {what}, not `{expected}`; {reflash}",
+            lab.stand().label(&peer.mac)
+        )
+        .into()),
+    }
 }
 
-/// The image and its flasher when `latest` is a flash of another image than
-/// `expected`.
-fn other_image(
-    latest: Option<&oer_hil_arbiter::BoardEvent>,
-    expected: &str,
-) -> Option<(String, String)> {
-    match latest.map(|event| (&event.kind, &event.owner)) {
-        Some((oer_hil_arbiter::BoardEventKind::Flashed { image, .. }, owner))
-            if image != expected =>
-        {
-            Some((image.clone(), owner.clone()))
+/// What the board holds when `state` is not a write of `expected`.
+fn other_image(state: Option<&oer_device_image::State>, expected: &str) -> Option<String> {
+    use oer_device_image::State;
+    match state? {
+        State::Written { receipt } | State::Started { receipt } if receipt.image != expected => {
+            Some(format!(
+                "carries `{}` written by {}",
+                receipt.image, receipt.by
+            ))
         }
-        _ => None,
+        State::Writing { by, .. } => Some(format!("holds an unfinished write by {by}")),
+        State::Written { .. } | State::Started { .. } => None,
     }
 }
 
@@ -91,25 +91,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_peer_is_refused_only_when_its_newest_flash_is_another_image() {
-        let flash = |image: &str| oer_hil_arbiter::BoardEvent {
-            unix: 1,
-            owner: String::from("bluetooth"),
-            checkout: None,
-            device: Some(String::from("38:44:BE:AA:25:64")),
-            kind: oer_hil_arbiter::BoardEventKind::Flashed {
-                image: image.to_owned(),
-                application_sha256: String::from("ab"),
-                commit: None,
-                dirty: None,
-                origin: String::from("test"),
-            },
+    fn a_peer_is_refused_only_when_its_receipt_is_another_image() {
+        use oer_device_image::{Receipt, State};
+        let receipt = |image: &str| Receipt {
+            chip: String::from("chip-b"),
+            image: image.to_owned(),
+            segments: Vec::new(),
+            digest: String::from("ab"),
+            by: String::from("bluetooth"),
+            unix_millis: 1,
         };
         assert_eq!(other_image(None, "peer"), None);
-        assert_eq!(other_image(Some(&flash("peer")), "peer"), None);
+        let started = |image: &str| State::Started {
+            receipt: receipt(image),
+        };
+        assert_eq!(other_image(Some(&started("peer")), "peer"), None);
         assert_eq!(
-            other_image(Some(&flash("ble-peer")), "peer"),
-            Some((String::from("ble-peer"), String::from("bluetooth")))
+            other_image(Some(&started("ble-peer")), "peer").as_deref(),
+            Some("carries `ble-peer` written by bluetooth")
         );
+        let writing = State::Writing {
+            by: String::from("cargo fw"),
+            unix_millis: 1,
+        };
+        assert!(other_image(Some(&writing), "peer").is_some());
     }
 }

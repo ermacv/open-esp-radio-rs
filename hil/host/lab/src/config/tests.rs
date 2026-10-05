@@ -1,9 +1,9 @@
 use super::*;
 
-const EXAMPLE: &str = include_str!("../../../../stand/stand.example.toml");
+const EXAMPLE: &str = include_str!("../../../../../stand/stand.example.toml");
 
 /// A board's port: `/dev/tty-<id>`, as if every board were attached.
-fn attached(board: &oer_hil_stand_model::Board) -> crate::Result<std::path::PathBuf> {
+fn attached(board: &oer_stand_file::Board) -> crate::Result<std::path::PathBuf> {
     Ok(format!("/dev/tty-{}", board.id).into())
 }
 
@@ -208,7 +208,7 @@ fn independent_observer_accepts_only_safe_identifiers_and_managed_ap() {
 #[test]
 fn a_wifi_link_occupies_its_channel_and_secondary_channel() {
     let lab = LabConfig::for_test();
-    let link = |phy| oer_hil_scenario::link::WifiLabUse {
+    let link = |phy| oer_hil_scenario_catalog::link::WifiLabUse {
         link: Some(phy),
         ..Default::default()
     };
@@ -222,10 +222,10 @@ fn a_wifi_link_occupies_its_channel_and_secondary_channel() {
         (2_426_000, 2_468_000)
     );
     // The IEEE 802.15.4 channel 15 (2424-2426 MHz) just touches channel 6.
-    let peer = oer_hil_arbiter::spectrum::Spectrum::ieee802154(
+    let peer = oer_stand_claims::spectrum::Spectrum::ieee802154(
         15,
-        oer_hil_arbiter::spectrum::Need::None,
-        oer_hil_arbiter::spectrum::Emits::None,
+        oer_stand_claims::spectrum::Need::None,
+        oer_stand_claims::spectrum::Emits::None,
     );
     assert_eq!(peer.high_khz, 2_426_000);
 }
@@ -359,7 +359,7 @@ fn a_run_whose_peers_need_two_chips_is_refused() {
 #[test]
 fn a_peer_that_is_not_attached_fails_only_the_runs_that_use_it() {
     let file = stand_file(|_| {});
-    let only_s31 = |board: &oer_hil_stand_model::Board| -> crate::Result<std::path::PathBuf> {
+    let only_s31 = |board: &oer_stand_file::Board| -> crate::Result<std::path::PathBuf> {
         match board.id.as_str() {
             "s31-a" => Ok("/dev/ttyACM0".into()),
             other => Err(format!("board `{other}` is not attached").into()),

@@ -22,7 +22,7 @@ use crate::bluetooth_route_policy::{
 };
 
 use critical_section::Mutex;
-use oer_esp32s31_soc_esp_hal::interrupt_table::{self, Route};
+use oer_espressif_interrupt_table_esp_hal::{self as interrupt_table, Route};
 use oer_interrupt_table::Entry;
 
 use esp_hal::{interrupt::Priority, peripherals::Interrupt, system::Cpu};

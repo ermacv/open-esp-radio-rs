@@ -6,8 +6,9 @@
 //! code must never stale evidence. Producers compute what a shard may record
 //! through [`closure`] and check it with [`check_verdict_sources`];
 //! [`reject_report_sources`] catches a committed shard that bypassed them.
-use crate::{Result, store};
+use crate::Result;
 use oer_repo::closure::{Edges, Features, Target};
+use oer_vendor_evidence_shard::store;
 use std::path::{Path, PathBuf};
 
 /// The path packages building one package compiles, split by whether their
@@ -107,12 +108,25 @@ mod tests {
     #[test]
     fn a_committed_shard_recording_report_code_is_rejected() {
         let directory = tempfile::tempdir().unwrap();
-        let mut shard = crate::store::tests::shard("leaf", vec![]);
-        shard.sources = vec![crate::SourceDigest {
-            path: PathBuf::from("verification/harness/report/src/triage.rs"),
-            sha256: "0".repeat(64),
-        }];
-        crate::store::write(directory.path(), &shard).unwrap();
+        let shard = oer_vendor_evidence_shard::Index {
+            schema: oer_vendor_evidence_shard::SCHEMA,
+            command: oer_vendor_evidence_shard::BLOBRAY.into(),
+            target: "chip-a".into(),
+            scenario: "leaf".into(),
+            inputs: Default::default(),
+            sources: vec![oer_vendor_evidence_shard::SourceDigest {
+                path: PathBuf::from("verification/harness/report/src/triage.rs"),
+                sha256: "0".repeat(64),
+            }],
+            dependence: oer_vendor_evidence_shard::Dependence::whole_closure("test"),
+            entries: vec![],
+            untriaged: vec![],
+            functions: vec![],
+            unobserved: vec![],
+            observed: vec![],
+            unprojected: vec![],
+        };
+        oer_vendor_evidence_shard::store::write(directory.path(), &shard).unwrap();
         let report = [PathBuf::from("verification/harness/report")];
         let error = reject_report_sources(directory.path(), &report).unwrap_err();
         assert!(error.to_string().contains("leaf.json"), "{error}");

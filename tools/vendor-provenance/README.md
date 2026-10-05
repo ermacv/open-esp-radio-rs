@@ -20,7 +20,7 @@ patches with that crate's RV32 relocation table. A `Function` carries:
 
 [`oer-symbol-lineage`](../symbol-lineage/README.md) uses it too.
 
-The other modules are the provenance check itself; `cargo xtask check
+The other modules are the provenance check itself; `cargo verification check
 provenance`, `vendor-provenance` and `vendor-diff` ([xtask](../xtask/README.md))
 only parse arguments and call them:
 
@@ -35,5 +35,5 @@ only parse arguments and call them:
   library never runs the vendor scenarios);
 - `diff`: function-by-function classification of two archive revisions. A test pins one function's fingerprint and `oer-elf` pins the
 relocation table: changing either changes registered fingerprints, which are
-then regenerated with `cargo xtask vendor-provenance --chip <chip> --rebuild`
-after `cargo xtask check provenance` passed with the previous fingerprints.
+then regenerated with `cargo verification provenance --chip <chip> --rebuild`
+after `cargo verification check provenance` passed with the previous fingerprints.

@@ -76,7 +76,7 @@ impl core::fmt::Display for ClientLinkEvidence {
     }
 }
 use oer_hil_lab::config::StationFixtureConfig;
-use oer_hil_scenario::link::HtGuardIntervalExpectation;
+use oer_hil_scenario_catalog::link::HtGuardIntervalExpectation;
 
 pub(super) enum ConnectedClients {
     Laptop {

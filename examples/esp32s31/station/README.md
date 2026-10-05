@@ -41,8 +41,8 @@ lost.
 Build the complete application from the repository root:
 
 ```console
-cargo xtask build firmware station
-cargo hil flash --board <board> --monitor 30s target/firmware/esp32s31-station/build-<id>
+cargo fw build station
+cargo fw flash --device <MAC|PORT> --monitor target/firmware/esp32s31-station/build-<id>
 ```
 
 The [shared platform](../../../platform/esp32s31/README.md) initializes PSRAM,

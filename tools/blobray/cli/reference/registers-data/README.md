@@ -78,8 +78,8 @@ alternative index and a read-selection or write-replacement mask), a `blocked`
 function whose analysis stopped (for example an unknown extent), or a `gap`
 naming code no function was selected from: an unsupported object, a thin
 archive member, a malformed container or an ELF diagnostic. The summary counts
-analyzed, partial and blocked functions, gaps and observations. `cargo xtask
-register-inventory` compares these accesses with the register model.
+analyzed, partial and blocked functions, gaps and observations. `cargo registers
+inventory` compares these accesses with the register model.
 
 Observations name no hardware registers: the reviewed register model owns
 register identity and fields. Instruction access widths remain observations,

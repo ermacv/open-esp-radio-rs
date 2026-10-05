@@ -43,7 +43,7 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 ## Checks
 
 - `cargo test -p <package>`, then `cargo xtask check changed`.
-- `cargo xtask check firmware --class performance --type-check` for chip-side changes; `cargo xtask check network` for network-owner or manifest changes.
+- `cargo hil images check --class performance --type-check` for chip-side changes; `cargo xtask check network` for network-owner or manifest changes.
 - HIL smoke: `cargo hil run icmp-latency tcp-bidirectional station-reconnect` (`hil-run` skill).
 
 Skills: `protocol-change`, `driver-or-hardware-change`, `hil-run`, `vendor-evidence`, `qualification-entry` (catalog `qualification/catalog/esp32s31/wifi-phy.toml`), `push-and-ci`.

@@ -10,7 +10,13 @@ use std::fs;
 use support::Fixture;
 
 fn audit(f: &Fixture, value: Value, boundary: Boundary) -> oer_xtask::Result<()> {
-    network::audit(&Graph::from_value(value)?, &f.manifest, boundary, f.root())
+    network::audit(
+        &Graph::from_value(value)?,
+        &f.manifest,
+        boundary,
+        f.root(),
+        &["chip-a".to_owned()],
+    )
 }
 fn root_id(f: &Fixture, value: &Value) -> String {
     value["packages"]
@@ -238,11 +244,11 @@ fn isolated_consumer_does_not_unify_unrelated_member_features() {
             .iter()
             .any(|v| v.as_str() == "plain")
     );
-    network::audit(&graph, &f.manifest, Boundary::Owned, f.root()).unwrap();
+    network::audit(&graph, &f.manifest, Boundary::Owned, f.root(), &[]).unwrap();
     assert_eq!(before, fs::read(f.root().join("Cargo.lock")).unwrap());
     f.package("adapter","network-adapter-fixture","[dependencies]\nhelper = { package = \"packet-helper\", path = \"../helper\", features = [\"hardware\"] }\n");
     let graph = cargo::isolated_graph(&f.context, &f.manifest, &[], None).unwrap();
-    assert!(network::audit(&graph, &f.manifest, Boundary::Owned, f.root()).is_err());
+    assert!(network::audit(&graph, &f.manifest, Boundary::Owned, f.root(), &[]).is_err());
 }
 #[test]
 fn relative_patch_preserves_chip_identity() {
@@ -259,7 +265,7 @@ fn relative_patch_preserves_chip_identity() {
     f.write("Cargo.toml", &text);
     f.metadata();
     let graph = cargo::isolated_graph(&f.context, &f.manifest, &[], None).unwrap();
-    assert!(network::audit(&graph, &f.manifest, Boundary::Owned, f.root()).is_err());
+    assert!(network::audit(&graph, &f.manifest, Boundary::Owned, f.root(), &[]).is_err());
 }
 #[test]
 fn unused_patch_is_removed_only_from_temporary_consumer() {
@@ -271,7 +277,7 @@ fn unused_patch_is_removed_only_from_temporary_consumer() {
     f.metadata();
     let before = fs::read(f.root().join("Cargo.lock")).unwrap();
     let graph = cargo::isolated_graph(&f.context, &f.manifest, &[], None).unwrap();
-    network::audit(&graph, &f.manifest, Boundary::Owned, f.root()).unwrap();
+    network::audit(&graph, &f.manifest, Boundary::Owned, f.root(), &[]).unwrap();
     assert_eq!(
         text,
         fs::read_to_string(f.root().join("Cargo.toml")).unwrap()

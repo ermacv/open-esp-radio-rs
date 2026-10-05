@@ -8,7 +8,7 @@ Claude Code agents do almost all the work; the owner sets the tasks.
 
 - **Ask, never fall back.** When a requirement or rule admits materially different readings that change the implementation, drop required data, add a fallback or leave work unfinished, explain the ambiguity and ask the user; continue only independent work until they answer. Never silently pick a conservative reading, older behavior, approximation or omission. An explicit user decision stays authoritative: do not ask it again.
 - **No compatibility layers.** Change an interface together with every caller: no deprecated aliases, re-export shims, legacy readers or fallback paths for an old shape.
-- **Background work.** Builds, tests, checks and HIL runs (`cargo build|test|clippy|check|doc`, `cargo xtask check`, `cargo xtask push`, `cargo xtask build`, `cargo hil run`, `cargo hil wait`) run with `run_in_background: true`; act on the completion notification and keep answering meanwhile. Greps and reads stay in the foreground. No foreground `sleep` polling. Never wait for or signal processes by name (`pgrep -f`, `pkill -f`): the pattern matches the waiting shell too. Chain dependent steps in one command or wait on a PID. A hook enforces this.
+- **Background work.** Builds, tests, checks and HIL runs (`cargo build|test|clippy|check|doc`, `cargo xtask check`, `cargo xtask push`, `cargo fw build`, `cargo hil run`, `cargo hil wait`) run with `run_in_background: true`; act on the completion notification and keep answering meanwhile. Greps and reads stay in the foreground. No foreground `sleep` polling. Never wait for or signal processes by name (`pgrep -f`, `pkill -f`): the pattern matches the waiting shell too. Chain dependent steps in one command or wait on a PID. A hook enforces this.
 - **zsh.** An unquoted `$VAR` holding several words stays one argument: pass lists of scenarios or paths literally or as an array.
 - **Tests.** Every behavioral change gets a focused regression test, beside its module (`#[cfg(test)]`) or in the crate's `tests/`. See [testing rules](crates/CLAUDE.md#tests).
 - **MMIO and unsafe.** Handwritten code reaches MMIO only through typed PAC accessors; publish a missing field in the SVD/PAC instead of a local mask or shift. Keep `unsafe` narrow and documented ([crates/UNSAFE.md](crates/UNSAFE.md)). Lint policy lives in `[lints]` tables and crate-root attributes, not tool flags.
@@ -35,9 +35,10 @@ Each directory's `CLAUDE.md` holds its layout, local rules and commands.
 | `crates/` | Production libraries and the `oer` facade: [crates/CLAUDE.md](crates/CLAUDE.md) |
 | `registers/` | Reviewed register models and generated SVD/bindings: [registers/CLAUDE.md](registers/CLAUDE.md) |
 | `hil/` | HIL protocol, runner, targets, scenarios and evidence: [hil/CLAUDE.md](hil/CLAUDE.md) |
-| `verification/` | Vendor pins, recovered facts and comparisons: [verification/CLAUDE.md](verification/CLAUDE.md) |
+| `verification/` | `cargo verification` (own workspace): vendor pins, recovered facts and comparisons: [verification/CLAUDE.md](verification/CLAUDE.md) |
 | `qualification/` | Capability catalogs, programs and the evaluator: [qualification/CLAUDE.md](qualification/CLAUDE.md) |
-| `tools/` | xtask, tidy, Blobray, register tool, memory report: [tools/CLAUDE.md](tools/CLAUDE.md) |
+| `tools/` | Gate (xtask, tidy), dev kit (`cargo fw`), images, devices, Blobray, register tool: [tools/CLAUDE.md](tools/CLAUDE.md) |
+| `stand/` | `cargo stand` and the shared stand's packages: [stand guide](hil/host/stand.md) |
 | `platform/` | Board boot, staged runtime entry, linker placement, chip profiles: [platform/esp32s31/README.md](platform/esp32s31/README.md) |
 | `examples/` | Buildable applications |
 | `docs/` | Cross-owner contracts: [architecture](docs/architecture.md), [documentation](docs/documentation.md), [verification and qualification](docs/verification-and-qualification.md) |

@@ -2,11 +2,10 @@
 //!
 //! The evaluator judges evidence of any chip: the workspaces, packages and
 //! build files a HIL image reads come from `platform/<chip>/chip.toml` and
-//! the conventions `oer-chip-profile` names, never from constants of one
-//! chip.
+//! the conventions the chip profile names (read through the repository
+//! model), never from constants of one chip.
 
 use super::*;
-use oer_chip_profile::Profile;
 
 /// One chip's HIL image inputs, as repository-relative paths.
 pub(crate) struct ChipFirmware {
@@ -29,11 +28,11 @@ pub(crate) fn all(root: &Path) -> Result<Vec<ChipFirmware>> {
             .to_path_buf())
     };
     let mut chips = Vec::new();
-    for profile in Profile::all(root).map_err(|error| error.to_string())? {
-        let agent = relative(oer_hil_image_class::agent::workspace(&profile, root))?;
+    for profile in oer_repo::chips::Chips::at(root)?.profiles() {
+        let agent = relative(profile.hil_agent_workspace(root))?;
         let platform = relative(profile.platform_workspace(root))?;
         let mut packages = Vec::new();
-        for (workspace, package) in oer_hil_image_class::agent::image_packages(&profile, root) {
+        for (workspace, package) in profile.hil_image_packages(root) {
             packages.push((relative(workspace)?.join("Cargo.toml"), package));
         }
         let build_files = [
@@ -48,7 +47,7 @@ pub(crate) fn all(root: &Path) -> Result<Vec<ChipFirmware>> {
         .filter(|path| root.join(path).is_file())
         .collect();
         chips.push(ChipFirmware {
-            rust_target: profile.rust_target,
+            rust_target: profile.rust_target.clone(),
             packages,
             build_files,
             directories: vec![agent, platform],

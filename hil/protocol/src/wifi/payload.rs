@@ -214,7 +214,7 @@ pub struct WifiMonitorObserved<T> {
     pub value: T,
 }
 
-/// Typed transport form of the ESP32-S31 receive vector. The raw hardware
+/// Typed transport form of the staged chip's receive vector. The raw hardware
 /// rate code remains explicitly scoped to its decoded PHY format.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct WifiMonitorPhyEvidence {

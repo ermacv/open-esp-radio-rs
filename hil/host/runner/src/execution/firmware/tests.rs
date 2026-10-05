@@ -10,15 +10,25 @@ fn write(path: &Path, bytes: &[u8]) {
 fn build_inputs(root: &Path) -> Artifacts {
     for relative in [
         "Cargo.lock",
-        "hil/targets/esp32s31/Cargo.lock",
-        "hil/targets/esp32s31/Cargo.toml",
-        "hil/targets/esp32s31/stack.toml",
-        "platform/esp32s31/stack.toml",
-        "platform/esp32s31/Cargo.lock",
-        "platform/esp32s31/partitions/applications.csv",
+        "hil/targets/chip-a/Cargo.lock",
+        "hil/targets/chip-a/Cargo.toml",
+        "hil/targets/chip-a/stack.toml",
+        "platform/chip-a/stack.toml",
+        "platform/chip-a/Cargo.lock",
+        "platform/chip-a/partitions/applications.csv",
     ] {
         write(&root.join(relative), relative.as_bytes());
     }
+    // The fixture chip's profile and the HIL policy's base, which the build
+    // provenance reads.
+    write(
+        &root.join("platform/chip-a/chip.toml"),
+        oer_hil_run_bundle::run::test_support::TEST_CHIP_PROFILE.as_bytes(),
+    );
+    write(
+        &root.join("hil/targets/chip-a/stack.toml"),
+        b"extends = \"../../../platform/chip-a/stack.toml\"\n",
+    );
     let build = root.join("build");
     for (name, bytes) in [
         ("application.bin", b"exact application".as_slice()),
@@ -37,26 +47,27 @@ fn build_inputs(root: &Path) -> Artifacts {
     ] {
         write(&build.join(name), bytes);
     }
-    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let profile = oer_chip_profile::Profile::load(&repository, "esp32s31").unwrap();
-    let mut bundle = oer_image::ImageBundle::new(&build, &profile, profile.flash.clone().unwrap());
-    bundle.staged = Some(oer_image::bundle::Staged {
-        bootstrap_package: "oer-esp32s31-platform-bootstrap".into(),
+    let profile: oer_chip_profile::Profile =
+        toml::from_str(oer_hil_run_bundle::run::test_support::TEST_CHIP_PROFILE).unwrap();
+    let mut bundle =
+        oer_image_bundle::ImageBundle::new(&build, &profile, profile.flash.clone().unwrap());
+    bundle.staged = Some(oer_image_bundle::Staged {
+        bootstrap_package: "oer-chip-a-platform-bootstrap".into(),
     });
     bundle.otadata = true;
     for (committed, file) in [
-        ("hil/targets/esp32s31/Cargo.lock", "runtime-Cargo.lock"),
-        ("platform/esp32s31/Cargo.lock", "bootstrap-Cargo.lock"),
+        ("hil/targets/chip-a/Cargo.lock", "runtime-Cargo.lock"),
+        ("platform/chip-a/Cargo.lock", "bootstrap-Cargo.lock"),
     ] {
-        bundle.locks.push(oer_image::bundle::Lock {
+        bundle.locks.push(oer_image_bundle::Lock {
             committed: committed.into(),
             file: file.into(),
         });
     }
     Artifacts {
         bundle,
-        features: oer_hil_image_class::FeatureDelta::default(),
-        environment: oer_hil_run_bundle::build::BuildEnvironment::synthetic(),
+        features: oer_hil_schema::image::FeatureDelta::default(),
+        environment: oer_hil_run_bundle::build::synthetic_environment(),
     }
 }
 
@@ -64,7 +75,7 @@ fn session(root: &Path) -> RunSession {
     crate::tests::register();
     let mut session = RunSession::create(
         root,
-        "esp32s31",
+        "chip-a",
         "test-cell",
         "test-dut",
         Path::new("/test/no-device"),
@@ -75,7 +86,7 @@ fn session(root: &Path) -> RunSession {
     session
         .bind_source_snapshot(
             snapshot.directory(),
-            &oer_hil_image::frozen::build_slots("esp32s31").unwrap(),
+            &oer_hil_image::frozen::build_slots("chip-a").unwrap(),
         )
         .unwrap();
     session
@@ -147,7 +158,7 @@ fn flash_failure_is_typed_after_archival() {
 fn current_build_has_the_canonical_firmware_plan_identity() {
     assert!(matches!(
         RunFirmware::BuildCurrent(oer_hil_image::CurrentBuild {
-            features: oer_hil_image_class::FeatureDelta::default(),
+            features: oer_hil_schema::image::FeatureDelta::default(),
             layout_seed: None,
         })
         .plan(),
@@ -168,10 +179,10 @@ fn replay_import_is_archived_before_flashing_the_new_run_local_path() {
 
     let archived = oer_hil_run_bundle::verify::archived_firmware(
         root.path(),
-        "esp32s31",
+        "chip-a",
         &source_id,
         ImageClass::Correctness,
-        &oer_hil_image::record::Recipe,
+        &oer_hil_run_bundle::run::test_support::TestRecipe,
     )
     .unwrap();
     let mut replay = session(root.path());
@@ -204,10 +215,10 @@ fn corrupt_replay_is_rejected_before_flash_without_a_build_fallback() {
 
     let archived = oer_hil_run_bundle::verify::archived_firmware(
         root.path(),
-        "esp32s31",
+        "chip-a",
         &source_id,
         ImageClass::Correctness,
-        &oer_hil_image::record::Recipe,
+        &oer_hil_run_bundle::run::test_support::TestRecipe,
     )
     .unwrap();
     #[cfg(unix)]

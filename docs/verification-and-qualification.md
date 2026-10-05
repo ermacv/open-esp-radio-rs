@@ -182,7 +182,7 @@ change to a shard's sources makes that shard stale: its evidence supports no
 claim until its scenario runs again, while shards whose sources are unchanged
 stay current. The scenario code a shard records is what Cargo compiled into
 the libraries that decide verdicts: the scenario engine and the chip's
-scenario library, whose dep-info `cargo xtask vendor-scenario` passes to the
+scenario library, whose dep-info `cargo verification scenario` passes to the
 scenario binary. Every verification package declares
 `package.metadata.open-radio.evidence` as `verdict` or `report`; a report
 package only renders reviewer aids, a verdict package may not depend on one,
@@ -199,7 +199,7 @@ stand scenario comparing the compiled public ESP-IDF driver with the
 production engine, over the pinned `esp-idf` sources. Its entries carry no
 Blobray coverage, observation or state counts.
 
-`cargo xtask evidence --chip <chip>` rewrites every stale shard, or the shards of the
+`cargo verification evidence --chip <chip>` rewrites every stale shard, or the shards of the
 scenarios it names. The verification owner runs it; other changes leave shards
 alone, and a shard their sources made stale stays stale until then. Git merges
 shards as binary files, so a conflicting merge keeps one side intact instead of
@@ -311,7 +311,7 @@ The commands below produce and assess evidence for an explicitly selected
 checkpoint. They are not prerequisites for reading project status.
 
 ```console
-cargo xtask evidence --chip esp32s31
+cargo verification evidence --chip esp32s31
 
 cargo qualification evaluate \
   --manifest qualification/targets/esp32s31/wifi-sta.toml \

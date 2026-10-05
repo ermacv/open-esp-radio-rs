@@ -10,7 +10,7 @@
 //! proposals for a reviewer: exclusions stay reviewed decisions.
 use crate::inspect::{Corpus, STACK, Step, ZERO};
 use oer_riscv_model::{InstructionFlow, MemoryKind, Operand, SemanticOp};
-use oer_vendor_evidence::{Location, LocationKind};
+use oer_vendor_evidence_shard::{Location, LocationKind};
 use oer_vendor_scenario_engine::harness::Result;
 use oer_vendor_scenario_engine::registers::Registers;
 use std::collections::{BTreeMap, BTreeSet};

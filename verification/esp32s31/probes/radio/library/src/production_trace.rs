@@ -162,7 +162,7 @@ oer_probe_macros::probe! {
             let performed = outcome.correction.is_some();
             *output = [
                 outcome.reference_temperature as u16,
-                progress | u16::from(performed) * RFPLL_PROGRESS,
+                progress | (u16::from(performed) * RFPLL_PROGRESS),
             ];
             i32::from(outcome.reference_temperature as u16) | (i32::from(performed) << 16)
         })
@@ -480,7 +480,6 @@ oer_probe_macros::probe! {
             Err(oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut) => return 2,
             Err(_) => return 5,
         };
-        let mut parent = parent;
         if parent.advance(completion).is_err() {
             return 3;
         }
@@ -718,8 +717,8 @@ const COMMON_CALIBRATION_PROGRESS: u16 = 0x8;
 const TRANSMIT_CALIBRATION_PROGRESS: u16 = 0x10;
 
 const fn calibration_progress(common: bool, transmit: bool) -> u16 {
-    (common as u16) * COMMON_CALIBRATION_PROGRESS
-        | (transmit as u16) * TRANSMIT_CALIBRATION_PROGRESS
+    ((common as u16) * COMMON_CALIBRATION_PROGRESS)
+        | ((transmit as u16) * TRANSMIT_CALIBRATION_PROGRESS)
 }
 
 oer_probe_macros::probe! {
@@ -807,9 +806,9 @@ oer_probe_macros::probe! {
         ));
         // The vendor progress word `phy_param_track_tot` returns.
         let progress = run.as_ref().map_or(0, |outcome| {
-            u16::from(outcome.rfpll_corrected) * RFPLL_PROGRESS
-                | u16::from(outcome.tx_power.wifi) * WIFI_POWER_PROGRESS
-                | u16::from(outcome.tx_power.bluetooth_ieee802154) * BLUETOOTH_POWER_PROGRESS
+            (u16::from(outcome.rfpll_corrected) * RFPLL_PROGRESS)
+                | (u16::from(outcome.tx_power.wifi) * WIFI_POWER_PROGRESS)
+                | (u16::from(outcome.tx_power.bluetooth_ieee802154) * BLUETOOTH_POWER_PROGRESS)
                 | calibration_progress(
                     outcome.calibration.common,
                     outcome.calibration.transmit,

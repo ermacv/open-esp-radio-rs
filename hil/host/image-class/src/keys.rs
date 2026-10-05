@@ -11,20 +11,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ImageClass;
 use oer_hil_protocol::DeviceImageKeys;
+use oer_hil_schema::image::ImageClass;
 
-/// The runtime manifests of this tree, by chip.
-const RUNTIME_MANIFESTS: [(&str, &str); 2] = [
-    (
-        "esp32s31",
-        include_str!("../../../targets/esp32s31/agent/Cargo.toml"),
-    ),
-    (
-        "esp32c5",
-        include_str!("../../../targets/esp32c5/agent/Cargo.toml"),
-    ),
-];
+// Every chip's HIL agent manifest of this tree (`build.rs`).
+include!(concat!(env!("OUT_DIR"), "/manifests.rs"));
+
+/// The chips whose HIL agent this tree builds, in profile order.
+pub fn agent_chips() -> impl Iterator<Item = &'static str> {
+    RUNTIME_MANIFESTS.iter().map(|(chip, _)| *chip)
+}
 
 fn runtime_manifest(chip: &str) -> Option<&'static str> {
     RUNTIME_MANIFESTS
@@ -74,46 +70,47 @@ fn closure(graph: &BTreeMap<String, Vec<String>>, roots: &[&str]) -> BTreeSet<St
     enabled
 }
 
-impl ImageClass {
-    /// Every Cargo feature this class's runtime on `chip` is built with, or
-    /// `None` where the chip's runtime has no such class.
-    pub fn enabled_features_on(self, chip: &str) -> Option<BTreeSet<String>> {
-        let graph = feature_graph(runtime_manifest(chip)?);
-        // A class whose own features the chip's runtime lacks is not built
-        // there. The network integration's feature gates no key, so the
-        // class's own features decide what it reports.
-        let own = self.runtime_features();
-        let roots: Vec<&str> = own.split(',').filter(|root| !root.is_empty()).collect();
-        if !own.split(',').all(|feature| graph.contains_key(feature)) {
-            return None;
-        }
-        let roots: Vec<&str> = roots
-            .into_iter()
-            .filter(|root| graph.contains_key(*root))
-            .collect();
-        Some(closure(&graph, &roots))
-    }
+/// Whether `chip`'s runtime declares the Cargo feature `feature`.
+pub fn declares(chip: &str, feature: &str) -> bool {
+    runtime_manifest(chip).is_some_and(|manifest| feature_graph(manifest).contains_key(feature))
+}
 
-    /// The image keys this class's runtime on `chip` reports, or `None`
-    /// for the boot smoke image, which reports none, and for a class the
-    /// chip does not build.
-    pub fn image_keys_on(self, chip: &str) -> Option<DeviceImageKeys> {
-        if self == Self::BootSmoke {
-            return None;
-        }
-        let enabled = self.enabled_features_on(chip)?;
-        Some(DeviceImageKeys::of_keys(oer_hil_image_keys::image_keys(
-            &|feature| enabled.contains(feature),
-        )))
+/// Every Cargo feature `class`'s runtime on `chip` is built with, or `None`
+/// where the chip's runtime has no such class.
+pub fn enabled_features_on(class: ImageClass, chip: &str) -> Option<BTreeSet<String>> {
+    let graph = feature_graph(runtime_manifest(chip)?);
+    // A class whose own features the chip's runtime lacks is not built
+    // there. The network integration's feature gates no key, so the
+    // class's own features decide what it reports.
+    let own = class.runtime_features();
+    let roots: Vec<&str> = own.split(',').filter(|root| !root.is_empty()).collect();
+    if !own.split(',').all(|feature| graph.contains_key(feature)) {
+        return None;
     }
+    let roots: Vec<&str> = roots
+        .into_iter()
+        .filter(|root| graph.contains_key(*root))
+        .collect();
+    Some(closure(&graph, &roots))
+}
+
+/// The image keys `class`'s runtime on `chip` reports, or `None` for the
+/// boot smoke image, which reports none, and for a class the chip does not
+/// build.
+pub fn image_keys_on(class: ImageClass, chip: &str) -> Option<DeviceImageKeys> {
+    if class == ImageClass::BootSmoke {
+        return None;
+    }
+    let enabled = enabled_features_on(class, chip)?;
+    Some(DeviceImageKeys::of_keys(oer_hil_image_keys::image_keys(
+        &|feature| enabled.contains(feature),
+    )))
 }
 
 /// The class of `chip` whose keys a flashed image reports.
 pub fn classify_flashed(chip: &str, image_keys: &DeviceImageKeys) -> Option<ImageClass> {
     ImageClass::ALL.into_iter().find(|class| {
-        class
-            .image_keys_on(chip)
-            .is_some_and(|expected| expected.same_keys(image_keys))
+        image_keys_on(*class, chip).is_some_and(|expected| expected.same_keys(image_keys))
     })
 }
 
@@ -123,8 +120,23 @@ mod tests {
 
     use super::*;
 
+    /// The chip whose agent builds the most classes: the tree's full HIL
+    /// agent.
+    fn full_agent() -> &'static str {
+        RUNTIME_MANIFESTS
+            .iter()
+            .map(|(chip, _)| *chip)
+            .max_by_key(|chip| {
+                ImageClass::ALL
+                    .iter()
+                    .filter(|class| image_keys_on(**class, chip).is_some())
+                    .count()
+            })
+            .expect("a chip has a HIL agent")
+    }
+
     fn keys(class: ImageClass) -> DeviceImageKeys {
-        class.image_keys_on("esp32s31").unwrap()
+        image_keys_on(class, full_agent()).unwrap()
     }
 
     #[test]
@@ -149,7 +161,7 @@ mod tests {
         for (chip, _) in RUNTIME_MANIFESTS {
             let mut seen = BTreeMap::new();
             for class in ImageClass::ALL {
-                let Some(image_keys) = class.image_keys_on(chip) else {
+                let Some(image_keys) = image_keys_on(class, chip) else {
                     continue;
                 };
                 if let Some(other) = seen.insert(image_keys.keys().clone(), class) {
@@ -176,20 +188,20 @@ mod tests {
         let mut foreign = performance.keys().clone();
         foreign.insert(<bluetooth::Dtm as Message>::KEY);
         assert_eq!(
-            classify_flashed("esp32s31", &DeviceImageKeys::of_keys(foreign)),
+            classify_flashed(full_agent(), &DeviceImageKeys::of_keys(foreign)),
             None
         );
         let mut missing = performance.keys().clone();
         missing.remove(&<network::Udp as Message>::KEY);
         assert_eq!(
-            classify_flashed("esp32s31", &DeviceImageKeys::of_keys(missing)),
+            classify_flashed(full_agent(), &DeviceImageKeys::of_keys(missing)),
             None
         );
     }
 
     #[test]
     fn every_feature_the_keys_read_is_the_runtime_s() {
-        let graph = feature_graph(runtime_manifest("esp32s31").unwrap());
+        let graph = feature_graph(runtime_manifest(full_agent()).unwrap());
         for feature in oer_hil_image_keys::READ_FEATURES {
             assert!(graph.contains_key(*feature), "{feature}");
         }
@@ -215,9 +227,16 @@ mod tests {
     }
 
     #[test]
-    fn the_esp32c5_builds_its_system_watchdog_image() {
-        let watchdog = ImageClass::SystemWatchdog.image_keys_on("esp32c5").unwrap();
-        assert!(watchdog.has::<system::WatchdogTest>());
-        assert!(ImageClass::Performance.image_keys_on("esp32c5").is_none());
+    fn a_partial_agent_builds_only_its_own_classes() {
+        for (chip, _) in RUNTIME_MANIFESTS {
+            if *chip == full_agent() {
+                continue;
+            }
+            let built = ImageClass::ALL
+                .iter()
+                .filter(|class| image_keys_on(**class, chip).is_some())
+                .count();
+            assert!(built > 0 && built < ImageClass::ALL.len(), "{chip}");
+        }
     }
 }

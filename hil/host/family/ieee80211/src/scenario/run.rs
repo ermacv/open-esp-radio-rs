@@ -2,8 +2,8 @@
 
 use std::{path::Path, time::Duration};
 
-use oer_hil_image_class::ImageClass;
-use oer_hil_scenario::link::PhyExpectation;
+use oer_hil_scenario_catalog::link::PhyExpectation;
+use oer_hil_schema::image::ImageClass;
 use oer_hil_workload::context::Context;
 
 use super::{
@@ -228,7 +228,9 @@ fn assess_protection(
     peer: Option<MacAddress>,
     context: &Context<'_>,
 ) -> Result<()> {
-    use oer_hil_run_bundle::run::{Comparison, Measurement, MeasurementUnit};
+    use oer_hil_run_bundle_format::run::Comparison;
+    use oer_hil_run_bundle_format::run::Measurement;
+    use oer_hil_run_bundle_format::run::MeasurementUnit;
     let evidence = capture.finish(peer)?;
     if evidence.data_ppdus < MINIMUM_PROTECTION_PPDUS || evidence.nav_evaluated == 0 {
         return Err(format!(
@@ -263,7 +265,7 @@ fn assess_protection(
     let failed = measurements
         .iter()
         .filter(|measurement| {
-            measurement.verdict == Some(oer_hil_run_bundle::run::MeasurementVerdict::Failed)
+            measurement.verdict == Some(oer_hil_run_bundle_format::run::MeasurementVerdict::Failed)
         })
         .map(|measurement| format!("{}={}", measurement.name, measurement.value))
         .collect::<Vec<_>>();

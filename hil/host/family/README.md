@@ -48,10 +48,10 @@ family composed of two others. A fixture provider implements
 
 1. A crate `family/<family>/` named `oer-hil-family-<family>`, `layer =
    "hil"`, `hil = "orchestration"`, with its table, `Workload` and `FAMILY`.
-2. Its key in the observer's workload identity (`hil/observer/src/inputs.rs`)
-   and its scenarios under `hil/scenarios/<family>/`.
+2. Its scenarios under `hil/scenarios/<family>/`.
 3. Its `FAMILY` in the runner's registry and its crate in the runner's
-   dependencies and in `hil/schema/observer-inputs.json`. A family may reach
+   dependencies and in its scope of `hil/schema/observer-inputs.json` (the
+   observer's workload identity). A family may reach
    a crate of an excluded workspace (the PHY family reaches the target's
    calibration artifact); the observer resolves its inherited dependencies
    through that workspace's manifest.
@@ -59,5 +59,6 @@ family composed of two others. A fixture provider implements
 ```console
 cargo test -p oer-hil-family-ieee80211 -p oer-hil-family-bluetooth \
   -p oer-hil-family-system -p oer-hil-family-ieee802154 \
-  -p oer-hil-family-coexistence -p oer-hil-family-phy
+  -p oer-hil-family-coexistence -p oer-hil-family-phy \
+  -p oer-hil-family-phy-esp32s31
 ```

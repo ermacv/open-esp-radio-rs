@@ -11,7 +11,7 @@ Reads the hook input JSON on stdin and blocks (exit 2, one line on stderr):
   heavy-commands.json, written by `cargo xtask hooks`);
 - `pkill -f` / `pgrep -f` in any mode: wait on a PID or a job instead;
 - `uhubctl` with an action (`-a`, `--action`): a hub port is switched only by
-  `cargo hil board reset BOARD --via power`, a power cycle under the board's
+  `cargo stand board reset BOARD --via power`, a power cycle under the board's
   lease; reading the hub's state stays allowed.
 
 Everything else exits 0 without output, leaving the normal permission flow.
@@ -60,9 +60,14 @@ with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 CARGO_HEAVY = set(HEAVY["cargo"])
 XTASK_HEAVY = tuple(HEAVY["xtask"])
 XTASK_LISTING = set(HEAVY["xtask_listing"])
-HIL_HEAVY = set(HEAVY["hil"])
-HIL_PAIRS = [list(pair) for pair in HEAVY["hil_pairs"]]
-HIL_DEFERRED = set(HEAVY["hil_deferred"])
+TOOLS = {
+    tool["name"]: (
+        set(tool["heavy"]),
+        [list(pair) for pair in tool["pairs"]],
+        set(tool["deferred"]),
+    )
+    for tool in HEAVY["tools"]
+}
 
 BACKGROUND_HINT = (
     "builds, tests, checks and HIL runs run with run_in_background: true; "
@@ -188,14 +193,15 @@ def heavy_command(words):
         if XTASK_LISTING & set(rest):
             return None
         return f"cargo xtask {operands[0]}"
-    if sub == "hil" and operands:
-        if operands[0] in HIL_HEAVY:
-            if operands[0] != "wait" and HIL_DEFERRED & set(rest):
+    if sub in TOOLS and operands:
+        heavy, pairs, deferred = TOOLS[sub]
+        if operands[0] in heavy:
+            if operands[0] != "wait" and deferred & set(rest):
                 return None
-            return f"cargo hil {operands[0]}"
-        for pair in HIL_PAIRS:
+            return f"cargo {sub} {operands[0]}"
+        for pair in pairs:
             if operands[:2] == pair:
-                return "cargo hil " + " ".join(pair)
+                return f"cargo {sub} " + " ".join(pair)
     return None
 
 
@@ -247,7 +253,7 @@ def check_bash(tool_input):
                       "line; wait on a PID (`wait`, `tail --pid`) or a job "
                       "(`cargo hil wait JOB|RUN`)")
             if switches_hub_power(words):
-                block("a hub port is switched only by `cargo hil board reset BOARD "
+                block("a hub port is switched only by `cargo stand board reset BOARD "
                       "--via power`, a power cycle under the board's lease; "
                       "`uhubctl` without an action only reads the hub")
             path = reads_generated(words)

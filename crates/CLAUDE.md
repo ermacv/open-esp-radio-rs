@@ -40,5 +40,5 @@ tests use the virtual clocks of `oer-time-virtual`.
 
 - `cargo test -p <package> <test>`; `cargo xtask check changed` before committing.
 - `cargo xtask check architecture` after a change to dependencies, features, layers or unsafe policy.
-- `cargo xtask check firmware --class performance --type-check` to type-check an image class.
+- `cargo hil images check --class performance --type-check` to type-check an image class.
 - `cargo xtask doc` after an API change.

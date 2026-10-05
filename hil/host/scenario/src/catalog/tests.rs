@@ -118,7 +118,7 @@ fn a_scenario_names_no_chip() {
     tree.write("a-system/beta-system.toml", BETA);
     tree.write(
         "z-system/alpha-system.toml",
-        &ALPHA.replacen("\n", "\ntargets = [\"esp32c5\"]\n", 1),
+        &ALPHA.replacen("\n", "\ntargets = [\"chip-b\"]\n", 1),
     );
     assert!(Catalog::load(&tree.0.join("catalog")).is_err());
 }

@@ -1,6 +1,0 @@
-# Firmware catalog entry: the ESP-IDF second-stage bootloader every flash of
-# the stand writes to an esp32c5 board.
-image = "bootloader-esp32c5"
-chip = "esp32c5"
-pins = "esp32c5"
-kind = "bootloader"

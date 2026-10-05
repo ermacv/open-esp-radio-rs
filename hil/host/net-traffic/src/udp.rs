@@ -9,7 +9,7 @@ use rustix::{
 };
 use std::{io, net::UdpSocket};
 
-/// The saturated ESP32-S31 TX stream can exceed 90 Mbit/s.  The Linux default
+/// A saturated board TX stream can exceed 90 Mbit/s.  The Linux default
 /// receive queue is commonly only 212,992 bytes, which is short enough to
 /// overflow during an ordinary scheduler pause and falsely attribute host
 /// loss to the radio driver.

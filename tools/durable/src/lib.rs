@@ -1,6 +1,6 @@
 //! Durable host files shared by every repository tool: atomic replacement,
-//! content digests, wall-clock timestamps and the user's state directories
-//! ([`xdg`]).
+//! content digests (remembered across processes by [`digests`]),
+//! JSON Lines logs ([`jsonl`]), wall-clock timestamps and the user's state directories ([`xdg`]).
 
 use std::{
     fs::{self, File, OpenOptions},
@@ -13,6 +13,8 @@ use std::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+pub mod digests;
+pub mod jsonl;
 pub mod xdg;
 
 /// The error type of every durable file operation.

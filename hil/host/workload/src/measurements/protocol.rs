@@ -4,7 +4,8 @@ use oer_hil_link::Received;
 use oer_hil_protocol::{
     base::LinkHealth, network::EvidenceRecord, network::TransportEvidence, system::StackUsage,
 };
-use oer_hil_run_bundle::run::{Measurement, MeasurementUnit as Unit};
+use oer_hil_run_bundle_format::run::Measurement;
+use oer_hil_run_bundle_format::run::MeasurementUnit as Unit;
 use std::collections::BTreeMap;
 
 pub(super) fn observations(

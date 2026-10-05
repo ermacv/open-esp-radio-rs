@@ -7,12 +7,12 @@ use clap::Parser as _;
 use crate::scenario::{Catalog, requirements};
 use crate::{
     Result, cli::Cli, cli::CliCommand, cli::ImageCommand, cli::ReportCommand, cli::ScenarioCommand,
-    emit_json, execution::firmware::RunFirmware, execution::orchestration, fixture,
+    emit_json, execution::firmware::RunFirmware, execution::orchestration,
 };
 use oer_hil_image as image;
 use oer_hil_lab as lab;
-use oer_hil_scenario::SCENARIO_SCHEMA;
 use oer_hil_scenario::ScenarioFamily as _;
+use oer_hil_scenario_catalog::SCENARIO_SCHEMA;
 use oer_hil_workload::family::Registry as _;
 use oer_hil_workload::output;
 
@@ -22,20 +22,7 @@ pub(crate) fn run() -> Result<()> {
     let cli = Cli::parse();
     output::reserve_machine_stdout()?;
     let _signals = oer_process::install_signal_handlers()?;
-    let command = match cli.command {
-        CliCommand::Fixture {
-            command:
-                crate::cli::FixtureCommand::Install {
-                    provider,
-                    dry_run,
-                    adapter,
-                },
-        } => return fixture::install::run(&root, provider, dry_run, &adapter),
-        CliCommand::Fixture {
-            command: crate::cli::FixtureCommand::BuildHostapd,
-        } => return oer_hil_family_ieee80211_fixture::hostapd::build(&root),
-        command => command,
-    };
+    let command = cli.command;
     let lab_path = cli
         .stand_file
         .unwrap_or(lab::config::LabConfig::default_path()?);
@@ -48,17 +35,13 @@ pub(crate) fn run() -> Result<()> {
     match command {
         CliCommand::Fixture {
             command:
-                crate::cli::FixtureCommand::Install { .. } | crate::cli::FixtureCommand::BuildHostapd,
-        } => unreachable!("install and build commands return before the stand file is read"),
-        CliCommand::Fixture {
-            command:
                 crate::cli::FixtureCommand::BluetoothCheck {
                     adapter,
                     dtm_version,
                 },
         } => {
             let _software = oer_hil_lab::software::SoftwareLease::acquire_one(
-                oer_hil_fixture_install::Provider::LinuxBluetooth,
+                oer_stand_fixture_install::Provider::LinuxBluetooth,
             )?;
             oer_hil_family_bluetooth::fixture::bluetooth::check(&root, adapter, dtm_version)
         }
@@ -136,13 +119,15 @@ pub(crate) fn run() -> Result<()> {
                 classes,
                 source_snapshot,
                 layout_seed,
+                chip,
             } => {
+                let chip = image::chip_for(&root, &classes, chip.as_deref())?;
                 let frozen = source_snapshot
                     .as_deref()
                     .map(|snapshot| {
                         oer_hil_source_snapshot::FrozenSources::open_in_free_workspace(
                             snapshot,
-                            &image::frozen::build_slots("esp32s31")?,
+                            &image::frozen::build_slots(&chip)?,
                         )
                     })
                     .transpose()?;
@@ -151,9 +136,10 @@ pub(crate) fn run() -> Result<()> {
                         (Some(frozen), Some(snapshot)) => {
                             let artifacts = image::frozen::build(
                                 frozen,
+                                &chip,
                                 class,
                                 layout_seed,
-                                &oer_hil_image_class::FeatureDelta::default(),
+                                &oer_hil_schema::image::FeatureDelta::default(),
                             )?;
                             let record =
                                 oer_hil_image::record::publish(&root, snapshot, class, &artifacts)?;
@@ -162,9 +148,10 @@ pub(crate) fn run() -> Result<()> {
                         }
                         _ => image::build(
                             &root,
+                            &chip,
                             class,
                             layout_seed,
-                            &oer_hil_image_class::FeatureDelta::default(),
+                            &oer_hil_schema::image::FeatureDelta::default(),
                         )?,
                     };
                     emit_json(&image::artifact_report(class, &artifacts)?, true)?;
@@ -215,7 +202,7 @@ pub(crate) fn run() -> Result<()> {
             // An image with other features is not its class's image: only an
             // experiment, whose runs never qualify, may build one.
             if features.as_ref().is_some_and(|delta| !delta.is_empty())
-                && oer_hil_run_bundle::experiment::Experiment::from_environment()?.is_none()
+                && oer_hil_run_bundle_format::experiment::Experiment::from_environment()?.is_none()
             {
                 return Err(
                     "--features builds an experiment's image; use `cargo hil ab` with a \
@@ -256,7 +243,7 @@ pub(crate) fn run() -> Result<()> {
                     &image::frozen::build_slots(&chip)?,
                 )?;
                 for class in orchestration::image_classes(&selected) {
-                    let artifacts = image::frozen::build_for_chip(
+                    let artifacts = image::frozen::build(
                         &frozen,
                         &chip,
                         class,
@@ -348,7 +335,7 @@ pub(crate) fn run() -> Result<()> {
                 orchestration::selection_description(&tag),
                 oer_hil_image::CurrentBuild {
                     layout_seed,
-                    features: oer_hil_image_class::FeatureDelta::default(),
+                    features: oer_hil_schema::image::FeatureDelta::default(),
                 },
                 orchestration::Invocation {
                     arguments: invocation,

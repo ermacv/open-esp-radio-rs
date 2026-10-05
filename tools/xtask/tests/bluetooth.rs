@@ -26,7 +26,7 @@ fn optional_wifi_is_rejected_only_when_selected_by_the_consumer() {
         )
         .unwrap();
         assert_eq!(
-            architecture::reject_wifi_in_bluetooth(&graph, &fixture.manifest).is_ok(),
+            architecture::reject_wifi_in_bluetooth(&graph, &fixture.manifest, &[]).is_ok(),
             accepted
         );
     }
@@ -35,14 +35,10 @@ fn optional_wifi_is_rejected_only_when_selected_by_the_consumer() {
 #[test]
 fn renamed_transitive_build_dependency_cannot_hide_wifi() {
     let fixture = Fixture::new();
-    fixture.package(
-        "crates/hardware/test-radio",
-        "oer-esp32s31-ieee80211-ap",
-        "",
-    );
+    fixture.package("crates/hardware/test-radio", "oer-chip-a-ieee80211-ap", "");
     fixture.package(
         "helper", "packet-helper",
-        "[build-dependencies]\ngenerator = { package = \"oer-esp32s31-ieee80211-ap\", path = \"../crates/hardware/test-radio\" }\n",
+        "[build-dependencies]\ngenerator = { package = \"oer-chip-a-ieee80211-ap\", path = \"../crates/hardware/test-radio\" }\n",
     );
     fixture.package(
         "adapter",
@@ -50,10 +46,10 @@ fn renamed_transitive_build_dependency_cannot_hide_wifi() {
         "[dependencies]\nqueue = { package = \"packet-helper\", path = \"../helper\" }\n",
     );
     let graph = Graph::from_value(fixture.metadata()).unwrap();
-    let error = architecture::reject_wifi_in_bluetooth(&graph, &fixture.manifest)
+    let error = architecture::reject_wifi_in_bluetooth(&graph, &fixture.manifest, &[])
         .unwrap_err()
         .to_string();
-    assert!(error.contains("oer-esp32s31-ieee80211-ap"), "{error}");
+    assert!(error.contains("oer-chip-a-ieee80211-ap"), "{error}");
 }
 
 #[test]
@@ -66,5 +62,5 @@ fn development_only_wifi_does_not_enter_the_production_closure() {
         "[dev-dependencies]\npeer = { package = \"oer-ieee80211-sta\", path = \"../helper\" }\n",
     );
     let graph = Graph::from_value(fixture.metadata()).unwrap();
-    architecture::reject_wifi_in_bluetooth(&graph, &fixture.manifest).unwrap();
+    architecture::reject_wifi_in_bluetooth(&graph, &fixture.manifest, &[]).unwrap();
 }

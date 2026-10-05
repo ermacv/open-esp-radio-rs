@@ -94,7 +94,7 @@ pub(crate) fn rf_sleeps(entries: &[TraceEntry]) -> Vec<RfSleep> {
 struct Report<'a> {
     schema: u32,
     power_save: oer_hil_protocol::wifi::WifiStationPowerSave,
-    access_point_beacon: oer_hil_scenario::link::AccessPointBeacon,
+    access_point_beacon: oer_hil_scenario_catalog::link::AccessPointBeacon,
     rf_sleeps: usize,
     counter_runs: usize,
     counter_holds_still: usize,
@@ -209,14 +209,14 @@ mod tests {
         for count in [1, 60, u16::MAX] {
             let workload = StationSleep {
                 link: crate::scenario::LinkExpectation {
-                    phy: oer_hil_scenario::link::PhyExpectation::He20,
+                    phy: oer_hil_scenario_catalog::link::PhyExpectation::He20,
                     minimum_mcs: None,
                     guard_interval: Default::default(),
                     management_frame_protection: Default::default(),
                     access_point_security: Default::default(),
                 },
                 power_save: oer_hil_protocol::wifi::WifiStationPowerSave::MinModem,
-                access_point_beacon: oer_hil_scenario::link::AccessPointBeacon {
+                access_point_beacon: oer_hil_scenario_catalog::link::AccessPointBeacon {
                     interval_tu: 100,
                     dtim_period: 3,
                 },

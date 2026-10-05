@@ -5,8 +5,9 @@
 //!
 //! This crate owns what is HIL's own about an image: the class's features
 //! and network integration, the agent package of each chip, the HIL stack
-//! policies, the radio observers' placement, where class builds and their
-//! compile caches live, and the records. Compiling, gating and encoding are
+//! policies, the radio observers' placement, where class builds write their
+//! bundles, and the records. Every build compiles in the pipeline's one
+//! shared compile cache (`oer_image::compile_cache`). Compiling, gating and encoding are
 //! the pipeline's.
 
 use std::{
@@ -17,9 +18,14 @@ use std::{
 
 use serde::Serialize;
 
-use oer_hil_image_class::{FeatureDelta, ImageClass, NETWORK, NETWORK_FEATURE};
-use oer_image::{ImageBundle, ImageSpec, Overrides, Required};
+use oer_hil_image_class::NETWORK;
+use oer_hil_schema::image::{FeatureDelta, ImageClass};
+use oer_image::{ImageSpec, Overrides};
+use oer_image_bundle::ImageBundle;
+use oer_image_check_interrupts::Required;
+use oer_image_checks::Gates;
 
+pub mod builder;
 pub mod frozen;
 pub mod record;
 
@@ -28,9 +34,15 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 /// Version of the `image build` artifact report on stdout.
 const ARTIFACT_REPORT_SCHEMA: u16 = 4;
 
-/// The package whose code turns a class into an image spec: its closure
-/// joins every HIL image's source inputs.
-const BUILDER: &str = "oer-hil-image";
+/// The packages whose code builds a HIL image: the pipeline's, its checks
+/// and this one, which turns a class into an image spec. Their closure joins
+/// every HIL image's source inputs.
+const BUILDERS: [&str; 4] = [
+    oer_image::PIPELINE[0],
+    oer_image::PIPELINE[1],
+    "oer-image-checks",
+    "oer-hil-image",
+];
 
 /// The report `cargo hil image build` prints: the bundle and what passed.
 #[derive(Serialize)]
@@ -58,7 +70,7 @@ pub fn artifact_report(class: ImageClass, artifacts: &Artifacts) -> Result<Artif
         image_class: class.id(),
         chip: &bundle.chip,
         target: &bundle.rust_target,
-        network: network(bundle.boot),
+        network: oer_hil_image_class::network_on(class, &bundle.chip),
         profile: class.runtime_profile(),
         bundle: bundle.directory.display().to_string(),
         runtime_elf: bundle.runtime_elf().display().to_string(),
@@ -80,13 +92,7 @@ pub struct Artifacts {
     /// Runtime features added to or removed from the class's own.
     pub features: FeatureDelta,
     /// Host tools that produced this build, recorded in its provenance.
-    pub environment: oer_hil_run_bundle::build::BuildEnvironment,
-}
-
-/// The network integration an image of a chip that boots `boot` links:
-/// [`NETWORK`] for a staged chip, none for an ESP-IDF application.
-pub fn network(boot: oer_chip_profile::Boot) -> Option<&'static str> {
-    (boot == oer_chip_profile::Boot::Staged).then_some(NETWORK)
+    pub environment: oer_hil_run_bundle_format::build::BuildEnvironment,
 }
 
 /// The profile of `chip` in the repository this runner was built from.
@@ -95,24 +101,17 @@ pub fn chip_profile(chip: &str) -> Result<oer_chip_profile::Profile> {
         .map_err(|error| error.to_string().into())
 }
 
-/// Whether the runner builds and flashes `class` for `chip`: the staged
-/// boot flow for a class the chip's runtime declares, or the ESP-IDF
-/// bootloader with a flash map for a class its HIL agent serves.
-pub fn builds_on(root: &Path, chip: &str, class: ImageClass) -> Result<bool> {
-    let profile = oer_chip_profile::Profile::load(root, chip).map_err(|error| error.to_string())?;
-    Ok(match profile.boot {
-        oer_chip_profile::Boot::Staged => class.enabled_features_on(chip).is_some(),
-        oer_chip_profile::Boot::EspIdfBootloader => {
-            profile.flash.is_some() && serves(root, chip, class)?
-        }
-    })
+/// Whether the runner builds and flashes `class` for `chip`: the chip's
+/// runtime declares every feature of the class.
+pub fn builds_on(_root: &Path, chip: &str, class: ImageClass) -> Result<bool> {
+    Ok(oer_hil_image_class::enabled_features_on(class, chip).is_some())
 }
 
 /// Whether `chip`'s HIL agent at `root` builds `class`: the agent declares
 /// every feature the class selects.
 pub fn serves(root: &Path, chip: &str, class: ImageClass) -> Result<bool> {
     let profile = oer_chip_profile::Profile::load(root, chip).map_err(|error| error.to_string())?;
-    let path = oer_hil_image_class::agent::manifest(&profile, root);
+    let path = profile.hil_agent_manifest(root);
     let manifest: toml::Value = toml::from_str(&std::fs::read_to_string(&path)?)?;
     let declared = manifest
         .get("features")
@@ -140,6 +139,28 @@ pub fn chips_building(root: &Path, classes: &[ImageClass]) -> Result<Vec<String>
     Ok(chips)
 }
 
+/// The chip to build `classes` for: `requested`, which must build every
+/// one of them, or else the one chip that does.
+pub fn chip_for(root: &Path, classes: &[ImageClass], requested: Option<&str>) -> Result<String> {
+    if let Some(chip) = requested {
+        for class in classes {
+            if !builds_on(root, chip, *class)? {
+                return Err(format!("{chip} does not build {}", class.id()).into());
+            }
+        }
+        return Ok(chip.to_owned());
+    }
+    match chips_building(root, classes)?.as_slice() {
+        [chip] => Ok(chip.clone()),
+        [] => Err("no chip builds every requested class".into()),
+        chips => Err(format!(
+            "{} build every requested class; name one with --chip",
+            chips.join(", ")
+        )
+        .into()),
+    }
+}
+
 /// The seed of a runtime image's link order: `None` keeps the linker's
 /// natural order, a seed shuffles ordinary code and read-only data by it.
 pub type LayoutSeed = Option<std::num::NonZeroU32>;
@@ -153,12 +174,6 @@ pub struct CurrentBuild {
     pub features: FeatureDelta,
 }
 
-/// Where one image class build of a chip writes its bundle and compiles.
-pub(crate) struct Placement {
-    pub(crate) output: PathBuf,
-    pub(crate) cache: PathBuf,
-}
-
 /// The image spec of `class` for `chip`, from the tree at `root`.
 pub(crate) fn spec(
     root: &Path,
@@ -166,15 +181,12 @@ pub(crate) fn spec(
     class: ImageClass,
     (layout_seed, features): (LayoutSeed, &FeatureDelta),
     overrides: Overrides,
-    placement: Placement,
+    output: PathBuf,
 ) -> Result<ImageSpec> {
     let profile = oer_chip_profile::Profile::load(root, chip)?;
-    let workspace = oer_hil_image_class::agent::workspace(&profile, root);
-    let class_features = match network(profile.boot) {
-        Some(_) => class.build_features(NETWORK_FEATURE),
-        None => class.runtime_features().to_owned(),
-    };
-    let package = oer_hil_image_class::agent::package(&profile);
+    let workspace = profile.hil_agent_workspace(root);
+    let class_features = oer_hil_image_class::build_features_on(class, chip);
+    let package = profile.hil_agent_package();
     Ok(ImageSpec {
         root: root.to_owned(),
         chip: chip.to_owned(),
@@ -190,22 +202,18 @@ pub(crate) fn spec(
                 .collect(),
             default_features: false,
         },
-        stack_policy: Path::new("hil/targets").join(chip).join("stack.toml"),
-        // A diagnostic image's observers are not the product's: its
-        // interrupt stacks may be `partial + ?`, with their holes named.
-        interrupts: if class.diagnostic() {
-            Required::Partial
-        } else {
-            Required::Proven
-        },
+        stack_policy: profile.hil_stack_policy(),
         layout_seed,
         overrides,
-        builders: vec![BUILDER.to_owned()],
+        builder_inputs: builder::closure(root, &BUILDERS)?,
         reads: Vec::new(),
-        output: placement.output,
-        cache: placement.cache,
-        audit: (profile.boot == oer_chip_profile::Boot::Staged).then(|| {
-            Box::new(move |elf: &oer_elf::Elf<'_>| {
+        output,
+        // HIL images always request every check; each applies where the
+        // chip's data names what it checks.
+        checks: Some(Box::new(Gates {
+            // A diagnostic image's observers are not the product's: its
+            // interrupt stacks may be `partial + ?`, with their holes named.
+            audit: Some(Box::new(move |elf: &oer_elf::Elf<'_>| {
                 let critical = elf
                     .section_by_name(".critical.data")
                     .map(|section| section.address..section.address + section.size);
@@ -214,21 +222,25 @@ pub(crate) fn spec(
                     critical,
                     elf.symbols().map(|symbol| (symbol.name, symbol.address)),
                 )
-            }) as oer_image::Audit
-        }),
+            }) as oer_image_checks::Audit),
+            ..Gates::all(if class.diagnostic() {
+                Required::Partial
+            } else {
+                Required::Proven
+            })
+        })),
     })
 }
 
-/// Build `class` for the staged chip from the live tree at `root`, with the
-/// caller's local overrides, into the class's directory below
-/// `target/hil/<chip>`.
+/// Build `class` for `chip` from the live tree at `root`, with the caller's
+/// local overrides, into the class's directory below `target/hil/<chip>`.
 pub fn build(
     root: &Path,
+    chip: &str,
     class: ImageClass,
     layout_seed: LayoutSeed,
     features: &FeatureDelta,
 ) -> Result<Artifacts> {
-    let chip = oer_image::staged::CHIP;
     let output = root.join("target/hil").join(chip).join(format!(
         "{}-{}-{}{}{}",
         class.runtime_profile(),
@@ -243,10 +255,7 @@ pub fn build(
         class,
         (layout_seed, features),
         Overrides::from_environment()?,
-        Placement {
-            output,
-            cache: shared_compile_cache(root, class),
-        },
+        output,
     )?;
     built(&spec, features)
 }
@@ -260,55 +269,58 @@ pub(crate) fn built(spec: &ImageSpec, features: &FeatureDelta) -> Result<Artifac
     Ok(Artifacts {
         bundle,
         features: features.clone(),
-        environment: oer_hil_run_bundle::build::BuildEnvironment::capture(),
+        environment: oer_hil_run_bundle::build::capture_environment(),
     })
 }
 
-/// Type-check the runtime of `class` for the staged chip against the
-/// committed pins, with the image build's target, features and compiler
-/// configuration, in the class's shared compile cache. A pre-push check:
+/// Type-check the runtime of `class` for `chip` against the committed
+/// pins, with the image build's target, features and compiler
+/// configuration, in the image pipeline's shared compile cache. A pre-push check:
 /// lints that need monomorphization (`large_assignments`) and the link-time
 /// gates still need `cargo hil image build`.
-pub fn check(root: &Path, class: ImageClass) -> Result<()> {
-    let cache = shared_compile_cache(root, class);
-    let spec = spec(
+pub fn check(root: &Path, chip: &str, class: ImageClass) -> Result<()> {
+    let output =
+        root.join("target/hil")
+            .join(chip)
+            .join(format!("check-{}-{}", class.id(), NETWORK));
+    let mut spec = spec(
         root,
-        oer_image::staged::CHIP,
+        chip,
         class,
         (None, &FeatureDelta::default()),
         Overrides::default(),
-        Placement {
-            output: cache.join("check"),
-            cache,
-        },
+        output,
     )?;
+    // A type check makes no image for the class's gates to examine; they
+    // run on `cargo hil image build`.
+    spec.checks = None;
     oer_image::type_check(&spec)
         .map_err(|error| format!("the {} runtime: {error}", class.id()).into())
 }
 
-/// The names of the packages `class`'s staged runtime compiles: the agent's
-/// normal dependency graph for the chip target with the class's features,
-/// as [`check`] type-checks it.
-pub fn packages(root: &Path, class: ImageClass) -> Result<std::collections::BTreeSet<String>> {
-    let chip = oer_image::staged::CHIP;
-    let target = oer_chip_profile::rust_target(root, chip)?;
+/// The names of the packages `class`'s runtime for `chip` compiles: the
+/// agent's normal dependency graph for the chip target with the class's
+/// features, as [`check`] type-checks it.
+pub fn packages(
+    root: &Path,
+    chip: &str,
+    class: ImageClass,
+) -> Result<std::collections::BTreeSet<String>> {
+    let profile = oer_chip_profile::Profile::load(root, chip)?;
+    let features = oer_hil_image_class::build_features_on(class, chip);
     let mut command = Command::new(oer_toolchain::cargo_program());
     command
         .current_dir(root)
         .args(["tree", "--manifest-path"])
-        .arg(root.join("hil/targets").join(chip).join("Cargo.toml"))
+        .arg(profile.hil_agent_workspace(root).join("Cargo.toml"))
         .args([
             "-p",
-            "oer-esp32s31-hil-agent",
+            &profile.hil_agent_package(),
             "--target",
-            &target,
+            &profile.rust_target,
             "--locked",
         ])
-        .args([
-            "--no-default-features",
-            "--features",
-            &class.build_features(NETWORK_FEATURE),
-        ])
+        .args(["--no-default-features", "--features", &features])
         .args(["-e", "normal", "--prefix", "none"]);
     let output = command.output()?;
     if !output.status.success() {
@@ -340,63 +352,36 @@ pub fn chip_build_root(chip: &str) -> Result<PathBuf> {
     Ok(oer_image::host_build_root()?.join(chip))
 }
 
-/// Overrides the directory of the shared compile caches, so a baseline
-/// worktree compiles into its checkout's warm caches: registry packages are
-/// reused, while the worktree's own packages, at other paths, are units of
-/// their own.
-pub const BUILD_CACHE_ENV: &str = "OER_HIL_BUILD_CACHE";
-
-/// The directory of the shared compile caches of the repository at `root`.
-fn compile_cache_base(root: &Path, overridden: Option<std::ffi::OsString>) -> PathBuf {
-    overridden
-        .filter(|directory| !directory.is_empty())
-        .map_or_else(
-            || {
-                root.join("target/hil")
-                    .join(oer_image::staged::CHIP)
-                    .join("build-cache")
-            },
-            PathBuf::from,
-        )
-}
-
-/// The compile cache of `class` shared by every build of the repository at
-/// `root`. Cargo fingerprints decide reuse: registry packages are reused,
-/// while packages from a freshly materialized source tree always rebuild.
-pub fn shared_compile_cache(root: &Path, class: ImageClass) -> PathBuf {
-    compile_cache_base(root, std::env::var_os(BUILD_CACHE_ENV)).join(format!(
-        "{}-{}-{}",
-        class.runtime_profile(),
-        class.id(),
-        NETWORK
-    ))
-}
-
 /// The artifact directory suffix of a seeded build, so a seed never reuses
 /// another layout's artifacts.
 pub(crate) fn seed_suffix(layout_seed: LayoutSeed) -> String {
     layout_seed.map_or_else(String::new, |seed| format!("-seed{seed}"))
 }
 
+/// Fails when the root lock or a chip's HIL agent workspace pulls in a
+/// package the chip's profile forbids its HIL agent (`[hil]
+/// forbidden-packages`): the source-only radio graph.
 pub fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
-    for relative in [
-        "Cargo.lock",
-        "hil/targets/esp32s31/Cargo.toml",
-        "hil/targets/esp32s31/Cargo.lock",
-    ] {
-        let path = root.join(relative);
-        let contents = std::fs::read_to_string(&path)?;
-        for forbidden in [
-            "name = \"esp-phy\"",
-            "name = \"esp-rtos\"",
-            "name = \"esp-wifi-sys-esp32s31\"",
+    for profile in oer_chip_profile::Profile::all(root)? {
+        let Some(hil) = &profile.hil else {
+            continue;
+        };
+        let workspace = profile.hil_agent_workspace(root);
+        for path in [
+            root.join("Cargo.lock"),
+            workspace.join("Cargo.toml"),
+            workspace.join("Cargo.lock"),
         ] {
-            if contents.contains(forbidden) {
-                return Err(format!(
-                    "{} pulls `{forbidden}` into the source-only graph",
-                    path.display()
-                )
-                .into());
+            let contents = std::fs::read_to_string(&path)?;
+            for package in &hil.forbidden_packages {
+                let forbidden = format!("name = \"{package}\"");
+                if contents.contains(&forbidden) {
+                    return Err(format!(
+                        "{} pulls `{forbidden}` into the source-only graph",
+                        path.display()
+                    )
+                    .into());
+                }
             }
         }
     }
@@ -472,23 +457,23 @@ pub fn failed_step<'a>(error: &'a (dyn Error + 'static)) -> Option<&'a oer_image
 /// then compare each pair; fails unless every pair is equivalent.
 pub fn compare_images(
     root: &Path,
+    chip: &str,
     base: &str,
-    classes: &[String],
-    review: &oer_image::compare::Review,
+    classes: &[ImageClass],
+    review: &oer_image_compare::Review,
 ) -> Result<()> {
     let worktree =
         oer_process::git::Worktree::detached(root, &root.join("target/compare/base"), base)?;
     let worktree = worktree.path();
     let mut equivalent = true;
-    for class in classes {
-        let class: ImageClass = class.parse()?;
+    for &class in classes {
         // The image pipeline builds the worktree's sources with its own
         // builder: the comparison is of the sources alone.
         let [base_elf, current_elf] = [worktree, root].map(|root| {
-            build(root, class, None, &Default::default())
+            build(root, chip, class, None, &Default::default())
                 .map(|artifacts| artifacts.bundle.runtime_elf())
         });
-        let comparison = oer_image::compare::compare_elf(&base_elf?, &current_elf?, review)?;
+        let comparison = oer_image_compare::compare_elf(&base_elf?, &current_elf?, review)?;
         equivalent &= comparison.equivalent(&review.allowed);
     }
     if equivalent {

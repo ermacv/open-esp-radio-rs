@@ -14,7 +14,7 @@ The peer is a [firmware catalog](../../host/stand.md#esp-idf-firmware-catalog) e
 [`verification/esp32c5/artifacts.toml`](../../../verification/esp32c5/artifacts.toml):
 
 ```console
-cargo hil firmware flash ble-dtm-peer --board esp32c5
+cargo fw flash ble-dtm-peer --device <MAC|PORT>
 ```
 
 The tracked `sdkconfig.defaults` selects the Controller-only Bluetooth build

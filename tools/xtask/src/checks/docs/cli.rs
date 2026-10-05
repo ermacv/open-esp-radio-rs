@@ -9,12 +9,15 @@ use oer_command_tree::CommandNode;
 
 /// The Cargo aliases whose commands the documentation shows, and where
 /// each tool's command tree comes from.
-pub(super) const TOOLS: [(&str, TreeSource); 6] = [
+pub(super) const TOOLS: [(&str, TreeSource); 9] = [
     ("xtask", TreeSource::Alias),
+    ("fw", TreeSource::Alias),
+    ("stand", TreeSource::Alias),
     ("tidy", TreeSource::Alias),
     ("hil", TreeSource::Alias),
     ("qualification", TreeSource::Alias),
     ("registers", TreeSource::Alias),
+    ("verification", TreeSource::Alias),
     // Blobray is a separate, standalone workspace; its tests keep this file
     // equal to its live tree, so the check need not build it.
     (
@@ -249,7 +252,7 @@ mod tests {
 
     #[test]
     fn documented_commands_resolve_through_subcommands_values_and_ancestor_flags() {
-        assert!(check("cargo xtask check phy --chip esp32s31").is_empty());
+        assert!(check("cargo xtask check phy --chip chip-a").is_empty());
         assert!(check("cargo xtask --root . check docs").is_empty());
         assert!(check("cargo hil --owner wifi run boot-smoke --repeat 3").is_empty());
         assert!(check("$ cargo hil queue --json | jq . && cargo xtask check docs").is_empty());
@@ -258,7 +261,7 @@ mod tests {
             ["`cargo xtask` has no subcommand hil"]
         );
         assert!(check("cargo hil run <scenario> [--repeat N]").is_empty());
-        assert!(check("cargo xtask vendor-scenario --chip c gain --library lib.a").is_empty());
+        assert!(check("cargo verification scenario --chip c gain --library lib.a").is_empty());
         assert!(check("cargo hil run x -- --anything").is_empty());
     }
 

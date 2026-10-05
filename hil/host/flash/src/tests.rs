@@ -1,47 +1,91 @@
 use std::cell::RefCell;
 
+use oer_chip_profile::Start;
+
 use super::*;
 
 const MAC: &str = "38:44:BE:AA:25:64";
 
-/// A board that records what the operation asks of it, and what the
-/// journal held when it was asked to start.
+/// A leased board that records what the operation asks of it, keeps the
+/// receipt its write would publish, and what the journal held when it was
+/// asked to write.
 struct Fake<'a> {
-    mac: &'static str,
-    journal: &'a Arbiter,
-    write: std::result::Result<Start, &'static str>,
+    mac: DeviceId,
+    journal: &'a Journal,
+    write: std::result::Result<(), &'static str>,
+    running: RefCell<Option<Receipt>>,
     calls: RefCell<Vec<String>>,
 }
 
+impl<'a> Fake<'a> {
+    fn new(journal: &'a Journal, write: std::result::Result<(), &'static str>) -> Self {
+        Self {
+            mac: DeviceId::parse(MAC).unwrap(),
+            journal,
+            write,
+            running: RefCell::new(None),
+            calls: RefCell::new(Vec::new()),
+        }
+    }
+}
+
 impl Target for Fake<'_> {
-    fn mac(&self) -> &str {
-        self.mac
+    fn mac(&self) -> &DeviceId {
+        &self.mac
     }
 
-    fn write(&self, bundle: &ImageBundle, via: Via) -> Result<Start> {
-        let journaled = self.journal.latest_flash(self.mac)?.is_some();
+    fn flash(
+        &self,
+        _: &Store,
+        bundle: &ImageBundle,
+        image: &str,
+        via: Via,
+        by: &str,
+    ) -> Result<Receipt> {
+        let journaled = self.journal.latest_flash(&self.mac)?.is_some();
         self.calls.borrow_mut().push(format!(
-            "write {} {via:?} journaled={journaled}",
+            "flash {} {via:?} journaled={journaled}",
             bundle.chip
         ));
-        self.write.map_err(Into::into)
+        self.write
+            .map_err(|error| -> Box<dyn std::error::Error + Send + Sync> { error.into() })?;
+        let receipt = Receipt::of(&bundle.snapshot()?, image, by);
+        *self.running.borrow_mut() = Some(receipt.clone());
+        Ok(receipt)
     }
 
-    fn start(&self, start: Start) -> Result<()> {
-        let journaled = self.journal.latest_flash(self.mac)?.is_some();
-        self.calls
-            .borrow_mut()
-            .push(format!("start {start:?} journaled={journaled}"));
-        Ok(())
+    fn carries(&self, _: &Store, bundle: &ImageBundle) -> Result<Option<Receipt>> {
+        let wanted = Receipt::of(&bundle.snapshot()?, "", "");
+        Ok(self
+            .running
+            .borrow()
+            .clone()
+            .filter(|running| running.digest == wanted.digest))
     }
 }
 
 fn bundle(directory: &Path) -> ImageBundle {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let profile = oer_image::profile(&root, "esp32c5").unwrap();
-    let bundle = ImageBundle::new(directory, &profile, profile.flash.clone().unwrap());
+    // A chip whose written image starts by power-on reset.
+    let profile = oer_chip_profile::Profile::all(&root)
+        .unwrap()
+        .into_iter()
+        .find(|profile| {
+            profile
+                .flash
+                .as_ref()
+                .is_some_and(|flash| flash.start == Start::PowerOn)
+        })
+        .unwrap();
+    let output = directory.join("bundle");
+    let staging = oer_image_bundle::staging_directory(&output).unwrap();
+    std::fs::create_dir_all(&staging).unwrap();
+    let bundle = ImageBundle::new(&staging, &profile, profile.flash.clone().unwrap());
+    for segment in bundle.segments() {
+        std::fs::write(&segment.file, segment.description).unwrap();
+    }
     std::fs::write(bundle.application(), b"application").unwrap();
-    bundle
+    bundle.publish(&output).unwrap()
 }
 
 fn image(bundle: &ImageBundle) -> Image<'_> {
@@ -57,100 +101,51 @@ fn image(bundle: &ImageBundle) -> Image<'_> {
 }
 
 #[test]
-fn the_flash_writes_under_the_lock_then_journals_then_starts() {
+fn the_flash_writes_then_journals_as_history() {
     let directory = tempfile::tempdir().unwrap();
-    let journal = Arbiter::at(directory.path().join("arbiter")).unwrap();
-    let lock = BoardLock::try_acquire_in(&directory.path().join("locks"), MAC).unwrap();
+    let journal = Journal::at(directory.path().join("arbiter/board.jsonl"));
+    let store = Store::at(directory.path().join("receipts"));
     let bundle = bundle(directory.path());
-    let board = Fake {
-        mac: MAC,
-        journal: &journal,
-        write: Ok(Start::PowerOn),
-        calls: RefCell::new(Vec::new()),
-    };
-    flash(&journal, "peer", &lock, &board, &image(&bundle), Via::Usb).unwrap();
+    let board = Fake::new(&journal, Ok(()));
+    let receipt = flash(&journal, &store, "peer", &board, &image(&bundle), Via::Usb).unwrap();
     assert_eq!(
         *board.calls.borrow(),
-        [
-            "write esp32c5 Usb journaled=false",
-            "start PowerOn journaled=true"
-        ]
+        [format!("flash {} Usb journaled=false", bundle.chip)]
     );
     let flashed = journal.latest_flash(MAC).unwrap().unwrap();
     assert_eq!(flashed.owner, "peer");
-    assert!(
-        journal
-            .carries(
-                MAC,
-                "ieee802154-peer",
-                &oer_durable::sha256_bytes(b"application")
-            )
-            .unwrap()
+    assert_eq!(
+        receipt.segment("application").unwrap().sha256,
+        oer_durable::sha256_bytes(b"application")
     );
 }
 
 #[test]
-fn a_failed_write_is_not_journaled_nor_started() {
+fn a_failed_write_is_not_journaled() {
     let directory = tempfile::tempdir().unwrap();
-    let journal = Arbiter::at(directory.path().join("arbiter")).unwrap();
-    let lock = BoardLock::try_acquire_in(&directory.path().join("locks"), MAC).unwrap();
+    let journal = Journal::at(directory.path().join("arbiter/board.jsonl"));
+    let store = Store::at(directory.path().join("receipts"));
     let bundle = bundle(directory.path());
-    let board = Fake {
-        mac: MAC,
-        journal: &journal,
-        write: Err("Protocol error"),
-        calls: RefCell::new(Vec::new()),
-    };
-    assert!(flash(&journal, "peer", &lock, &board, &image(&bundle), Via::Usb).is_err());
+    let board = Fake::new(&journal, Err("Protocol error"));
+    assert!(flash(&journal, &store, "peer", &board, &image(&bundle), Via::Usb).is_err());
     assert_eq!(board.calls.borrow().len(), 1);
     assert!(journal.latest_flash(MAC).unwrap().is_none());
 }
 
 #[test]
-fn another_board_s_lock_writes_nothing() {
+fn a_carried_bundle_is_answered_by_the_receipt_carries_read() {
     let directory = tempfile::tempdir().unwrap();
-    let journal = Arbiter::at(directory.path().join("arbiter")).unwrap();
-    let lock =
-        BoardLock::try_acquire_in(&directory.path().join("locks"), "30:ED:A0:F3:F6:D0").unwrap();
+    let journal = Journal::at(directory.path().join("arbiter/board.jsonl"));
+    let store = Store::at(directory.path().join("receipts"));
     let bundle = bundle(directory.path());
-    let board = Fake {
-        mac: MAC,
-        journal: &journal,
-        write: Ok(Start::Reset),
-        calls: RefCell::new(Vec::new()),
-    };
-    let error = flash(&journal, "peer", &lock, &board, &image(&bundle), Via::Usb)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("does not cover"), "{error}");
-    assert!(board.calls.borrow().is_empty());
-}
-
-#[test]
-fn an_image_the_board_carries_is_not_written_again() {
-    let directory = tempfile::tempdir().unwrap();
-    let journal = Arbiter::at(directory.path().join("arbiter")).unwrap();
-    let lock = BoardLock::try_acquire_in(&directory.path().join("locks"), MAC).unwrap();
-    let bundle = bundle(directory.path());
-    let board = Fake {
-        mac: MAC,
-        journal: &journal,
-        write: Ok(Start::Reset),
-        calls: RefCell::new(Vec::new()),
-    };
-    assert_eq!(
-        flash_if_changed(&journal, "peer", &lock, &board, &image(&bundle), Via::Jtag).unwrap(),
-        Flashed::Written
-    );
-    assert_eq!(
-        flash_if_changed(&journal, "peer", &lock, &board, &image(&bundle), Via::Jtag).unwrap(),
-        Flashed::Carried
-    );
-    assert_eq!(board.calls.borrow().len(), 2, "one write and its start");
-    // A new build is written.
-    std::fs::write(bundle.application(), b"rebuilt").unwrap();
-    assert_eq!(
-        flash_if_changed(&journal, "peer", &lock, &board, &image(&bundle), Via::Jtag).unwrap(),
-        Flashed::Written
-    );
+    let board = Fake::new(&journal, Ok(()));
+    let written =
+        flash_if_changed(&journal, &store, "peer", &board, &image(&bundle), Via::Usb).unwrap();
+    assert!(matches!(written, Flashed::Written(_)));
+    // The store itself holds nothing: only the receipt `carries` returned
+    // answers.
+    let carried =
+        flash_if_changed(&journal, &store, "peer", &board, &image(&bundle), Via::Usb).unwrap();
+    assert_eq!(carried, Flashed::Carried(written.receipt().clone()));
+    assert_eq!(board.calls.borrow().len(), 1);
 }

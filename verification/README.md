@@ -9,7 +9,7 @@ no HIL board scenarios and no private vendor artifacts.
 | --- | --- | --- |
 | L0 pins | which vendor code is the reference | [`esp32s31/artifacts.toml`](esp32s31/artifacts.toml) |
 | L1 facts | recovered constants, tables and register facts describe the pinned code | production `SOURCE:` blocks, [`registers`](../registers/README.md) evidence, [`esp32s31/facts`](esp32s31/facts) |
-| L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md); `cargo xtask evidence` writes their shards to `esp32s31/evidence/scenarios` |
+| L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md); `cargo verification evidence` writes their shards to `esp32s31/evidence/scenarios` |
 | L3 hardware | the drivers work on the board and calibrate as the vendor firmware does | [`hil`](../hil/README.md), whose runs `cargo qualification hil-evidence` records as shards to `hil/evidence/<chip>/`, [`esp32s31/hardware`](esp32s31/hardware/calibration/README.md) with [`esp32s31/hil-vendor`](esp32s31/hil-vendor/README.md) |
 | L4 readiness | a capability is qualified | [`qualification`](../qualification/README.md) |
 
@@ -20,11 +20,15 @@ verification/
                      producer contract, shared with xtask and qualification
   harness/           probe code generation and macros, and the chip-neutral
                      scenario engine (harness/scenarios)
+  phy-calibration-capture/
+                     L3: the chip-neutral capture of the PHY calibration
+                     cross-check, which the HIL phy family records
   esp32s31/
     artifacts.toml   L0: every pinned archive, ROM ELF and SDK build
     facts/           L1: cited-function fingerprints, recovered name maps
     probes/          L2: isolated workspace of compiled production entries
     scenarios/       L2: typed Blobray comparisons against the pinned binaries
+                     (the verdict library; cli/ is its binary)
     host/ieee802154/ L2: the public IEEE 802.15.4 driver compiled on the host
     evidence/        the L2 shards (scenarios/) once generated; no shard
                      is tracked at present
@@ -35,14 +39,14 @@ verification/
                      scenarios and a board register probe
 ```
 
-**L0.** `cargo xtask vendor-fetch esp32s31` downloads and verifies every pinned
+**L0.** `cargo verification fetch esp32s31` downloads and verifies every pinned
 artifact into `target/vendor/`; scenarios default to those paths and reject
 any other bytes. Changing a pin means changing the manifest, then following
 the pinned behavior in production.
 
 **L1.** A recovered fact names the vendor function it was read from. `cargo
-xtask check provenance --chip esp32s31` fails when such a function changed since its facts
-were reviewed; `cargo xtask vendor-diff --chip esp32s31` shows what changed between two pins,
+verification check provenance --chip esp32s31` fails when such a function changed since its facts
+were reviewed; `cargo verification diff --chip esp32s31` shows what changed between two pins,
 and `tools/symbol-lineage` pairs obfuscated names across releases. See the
 [source policy](../docs/source-policy.md).
 
@@ -54,7 +58,7 @@ when any source it records changed or a reviewed coverage decision that
 applies to its closures did, and rejects a shard whose recorded source or
 decision file no longer exists. CI does not rerun the vendor scenarios,
 because the `local-build` pins of `esp32s31/artifacts.toml` cannot be
-downloaded: Blobray's periodic local `cargo xtask evidence --chip <chip>
+downloaded: Blobray's periodic local `cargo verification evidence --chip <chip>
 --check` is the gate; `--changed-since <rev>` skips the shards that record no
 file changed since a rebase's base. Only that check's owner regenerates the shards, in
 commits of their own after each check; other changes, including rebases over a

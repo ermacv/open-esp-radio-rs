@@ -7,7 +7,7 @@ name: Nightly
 #   it (CI builds the two final images on every push), so a stack frame or
 #   placement regression in a diagnostic class is found before it blocks a
 #   run;
-# - examples: every ESP32-S31 example built and audited (CI type-checks
+# - examples: every example built and audited (CI type-checks
 #   them), and the RV32 decoder's accepted encodings against the toolchain's
 #   llvm-objdump;
 # - blobray: Blobray's workspace, Clippy and tests, and its standalone

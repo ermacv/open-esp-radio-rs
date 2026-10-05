@@ -117,7 +117,7 @@ pub(super) fn print(map: &ProjectMap, next_only: bool, details: bool) {
     }
     for index in &map.evidence_indexes {
         println!(
-            "EVIDENCE\t{}\tregenerate the stale shards with cargo xtask evidence --chip <chip>",
+            "EVIDENCE\t{}\tregenerate the stale shards with cargo verification evidence --chip <chip>",
             index.display()
         );
     }
@@ -240,7 +240,7 @@ pub(super) fn markdown(map: &ProjectMap, output: &Path, root: &Path) -> Result<S
             ));
         }
     }
-    text.push_str("\n## Vendor evidence indexes\n\nTheir producers (the typed vendor scenarios and the host stands) regenerate the stale shards with `cargo xtask evidence --chip <chip>`; a production or scenario change makes them stale.\n\n");
+    text.push_str("\n## Vendor evidence indexes\n\nTheir producers (the typed vendor scenarios and the host stands) regenerate the stale shards with `cargo verification evidence --chip <chip>`; a production or scenario change makes them stale.\n\n");
     // An index no scenario has written yet is a destination, not a link.
     let mut written = 0;
     for index in &map.evidence_indexes {

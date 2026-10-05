@@ -1309,12 +1309,12 @@ fn validate_dependencies(capabilities: &BTreeMap<String, Capability>) -> Result<
 /// The shards of the native scenario evidence index, each with whether its
 /// sources are current. A missing index directory supports no claim.
 pub(crate) struct NativeEvidence {
-    pub(crate) shards: Vec<(oer_vendor_evidence::Index, bool)>,
+    pub(crate) shards: Vec<(oer_vendor_evidence_shard::Index, bool)>,
 }
 
 impl NativeEvidence {
     fn load(root: &Path, path: &Path, target: &str) -> Result<Self> {
-        let evidence = oer_vendor_evidence::Evidence::load(root, path, target)
+        let evidence = oer_vendor_evidence_shard::Evidence::load(root, path, target)
             .map_err(|error| format!("scenario evidence index {}: {error}", path.display()))?;
         Ok(Self {
             shards: evidence.shards,
@@ -1330,7 +1330,7 @@ impl NativeEvidence {
                 && shard.entries.iter().any(|entry| {
                     entry.source == reference.source
                         && entry.symbol == reference.symbol
-                        && entry.verdict == oer_vendor_evidence::MATCH
+                        && entry.verdict == oer_vendor_evidence_shard::MATCH
                 })
         })
     }

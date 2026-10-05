@@ -94,7 +94,7 @@ pub(crate) async fn serve<C: Requests>(
         ImageKeySet::new(crate::image_features::keys()),
         maximum_payload_bytes,
     );
-    oer_esp32s31_soc_esp_hal::interrupt_table::enable(&usb.route)
+    oer_espressif_interrupt_table_esp_hal::enable(&usb.route)
         .unwrap_or_else(|error| panic!("the console's USB route: {error:?}"));
     let (rx, tx) = UsbSerialJtag::new(usb.device).into_async().split();
     CONSOLE.run(rx, tx, intake, &Chip, serve).await

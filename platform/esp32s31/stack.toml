@@ -2,7 +2,7 @@ schema = 5
 
 # Every linked function without a compiler frame record (`-Z emit-stack-sizes`)
 # needs exactly one review there: assembly, vector data or compiler runtime.
-coverage_policy = "stack-coverage.toml"
+coverage_policy = "../espressif/stack-coverage.toml"
 
 # Reject implicit copies/moves large enough to hide owner graphs or buffers in
 # compiler temporaries. The lint is enforced while building the final fat-LTO
@@ -21,7 +21,8 @@ max_move_bytes = 4096
 # and tail-calls `runtime_main`, which runs CPU0's executor for good.
 [cpu0_task_stack]
 root = "runtime_main"
-storage_symbol = "__open_radio_cpu0_task_stack"
+bottom_symbol = "__runtime_cpu0_task_stack_bottom"
+top_symbol = "__runtime_cpu0_task_stack_top"
 minimum_free_bytes = 16384
 
 # The dedicated SRAM interrupt stacks are bounded by the interrupt-stack gate

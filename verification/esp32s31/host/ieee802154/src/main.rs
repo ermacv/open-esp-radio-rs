@@ -116,7 +116,7 @@ fn shard(index: &Path) -> Result<()> {
         &matched,
         inputs,
     )?;
-    let path = oer_vendor_evidence::store::write(index, &shard)?;
+    let path = oer_vendor_evidence_shard::store::write(index, &shard)?;
     println!("evidence shard {}", path.display());
     Ok(())
 }

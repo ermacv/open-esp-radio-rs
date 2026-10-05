@@ -46,7 +46,7 @@ impl Extensions {
     pub const ZICSR: Self = Self(1 << 9);
     /// RV32IMAC.
     pub const RV32IMAC: Self = Self::M.union(Self::A).union(Self::C);
-    /// Every extension this crate decodes: the ESP32-S31's
+    /// Every extension this crate decodes:
     /// `rv32imafc_zicsr_zba_zbb_zbs_zcb_zcmp` without Zcmt.
     pub const ALL: Self = Self::RV32IMAC
         .union(Self::F)

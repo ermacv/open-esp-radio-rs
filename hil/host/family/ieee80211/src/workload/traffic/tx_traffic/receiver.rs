@@ -1,8 +1,9 @@
 //! Event-driven UDP collection, bounded by a correlated target result.
 
-use super::{ActiveBurst, Burst};
+use super::ActiveBurst;
 use crate::Result;
 use oer_hil_link::transport::events::{EventPoll, deadline_after};
+use oer_hil_run_bundle_format::run::fixtures::{self, Burst, Reception, ReceptionEnd as End};
 use rustix::net::{RecvFlags, recvfrom};
 use std::{
     fs, io,
@@ -26,19 +27,6 @@ enum Stop {
     Aborted,
 }
 
-#[derive(Clone, Copy, serde::Serialize)]
-#[serde(rename_all = "kebab-case")]
-enum End {
-    Delivered,
-    DeliveryDeadline,
-    TargetUnavailable,
-    SessionDeadline,
-    Cancelled,
-    ReceiveError,
-    HostOverflow,
-    Aborted,
-}
-
 pub struct Receiver {
     stop: Arc<Mutex<Option<Stop>>>,
     wake: Arc<mio::Waker>,
@@ -55,7 +43,7 @@ impl Receiver {
         label: &str,
     ) -> Result<Self> {
         fs::create_dir_all(output)?;
-        let output = output.join(format!("{label}-reception.json"));
+        let (directory, label) = (output.to_owned(), label.to_owned());
         let socket = socket.try_clone()?;
         let poll = EventPoll::new()?;
         poll.register(&socket, false)?;
@@ -75,7 +63,8 @@ impl Receiver {
                 worker_stop,
                 poll,
                 ReceptionOutput {
-                    path: output,
+                    directory,
+                    label,
                     drops_before,
                 },
                 Some(progress_tx),
@@ -149,8 +138,11 @@ impl Drop for Receiver {
     }
 }
 
+/// Where the reception record goes: the repetition directory and the
+/// record's label.
 struct ReceptionOutput {
-    path: PathBuf,
+    directory: PathBuf,
+    label: String,
     drops_before: Option<u32>,
 }
 
@@ -164,7 +156,8 @@ fn collect(
     mut progress: Option<std::sync::mpsc::SyncSender<u64>>,
 ) -> Result<Vec<Burst>> {
     let ReceptionOutput {
-        path: output,
+        directory,
+        label,
         drops_before,
     } = output;
     let mut packet = [0_u8; 2048];
@@ -280,19 +273,20 @@ fn collect(
         end = End::HostOverflow;
         error = Some(io::Error::other(format!("host UDP socket dropped {dropped} datagrams in the kernel; delivery is not a valid radio-only measurement")).into());
     }
-    fs::write(
-        output,
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "schema": 2,
-            "host_kernel_drops": kernel_drops,
-            "completion": end,
-            "expected_datagrams": expected,
-            "received_unique_datagrams": unique,
-            "undelivered_datagrams": expected.map(|count| count.saturating_sub(unique)),
-            "elapsed_micros": started.elapsed().as_micros(),
-            "bursts": bursts,
-            "error": error.as_ref().map(|error| error.to_string()),
-        }))?,
+    fixtures::write_labelled(
+        &directory,
+        &label,
+        &Reception {
+            schema: 2,
+            host_kernel_drops: kernel_drops,
+            completion: end,
+            expected_datagrams: expected,
+            received_unique_datagrams: unique,
+            undelivered_datagrams: expected.map(|count| count.saturating_sub(unique)),
+            elapsed_micros: u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            bursts: bursts.clone(),
+            error: error.as_ref().map(|error| error.to_string()),
+        },
     )?;
     match error {
         Some(error) => Err(error),

@@ -6,24 +6,35 @@
   "dependencies": {
     "common": [
       "oer-hil-workload",
-      "oer-hil-board",
+      "oer-device-image",
+      "oer-device-lock",
+      "oer-stand-journal",
+      "oer-stand-owners",
+      "oer-device-reset",
+      "oer-stand-board",
+      "oer-image-bundle",
       "oer-hil-image-class",
       "oer-durable",
       "oer-hil-source-snapshot",
       "oer-hil-scenario",
+      "oer-hil-scenario-catalog",
       "oer-hil-run-bundle",
+      "oer-hil-run-bundle-format",
+      "oer-hil-schema",
       "oer-hil-analysis",
       "oer-hil-image",
       "oer-image",
+      "oer-image-check-interrupts",
+      "oer-chip-profile",
       "oer-hil-link",
       "oer-hil-lab",
       "oer-hil-flash",
-      "oer-hil-arbiter",
+      "oer-stand-arbiter",
       "rustix",
       "oer-process",
       "oer-toolchain",
       "oer-command-tree",
-      "oer-hil-fixture-install",
+      "oer-stand-fixture-install",
       "clap",
       "tempfile",
       "oer-hil-protocol",
@@ -53,7 +64,7 @@
       "oer-hil-family-bluetooth"
     ],
     "phy": [
-      "oer-hil-family-phy"
+      "oer-hil-family-phy-esp32s31"
     ]
   },
   "timing": {

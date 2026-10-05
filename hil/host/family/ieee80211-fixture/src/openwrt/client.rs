@@ -15,7 +15,7 @@ use oer_hil_protocol::wifi::WifiAccessPointSecurity;
 
 use crate::Result;
 use oer_hil_lab::config::{AccessPointConfig, OpenWrtConfig};
-use oer_hil_scenario::link::HtGuardIntervalExpectation;
+use oer_hil_scenario_catalog::link::HtGuardIntervalExpectation;
 
 // Linux network-interface names contain at most IFNAMSIZ-1 (15) bytes.
 // Keeping the fixture name below that boundary avoids an opaque nl80211
@@ -793,7 +793,7 @@ fn ssh_with_timeout(
     timeout: Duration,
 ) -> Result<std::process::Output> {
     oer_process::output(
-        &mut oer_hil_stand_host::ssh::command(&fixture.ssh_target, script),
+        &mut oer_stand_ssh::command(&fixture.ssh_target, script),
         Some(timeout),
     )
     .and_then(crate::Error::ssh_output)

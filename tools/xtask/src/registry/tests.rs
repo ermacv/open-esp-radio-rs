@@ -99,7 +99,7 @@ fn change(files: &[&str], tier: Tier) -> Change {
         ),
         (
             "crates/driver/Cargo.toml",
-            "[package]\nname = \"driver\"\n[package.metadata.open-radio]\nlayer = \"hardware\"\nplatform = \"chip\"\nchip = \"esp32s31\"\n",
+            "[package]\nname = \"driver\"\n[package.metadata.open-radio]\nlayer = \"hardware\"\nplatform = \"chip\"\nchip = \"chip-a\"\n",
         ),
     ] {
         let path = directory.path().join(path);
@@ -167,7 +167,7 @@ fn a_change_never_runs_a_whole_tier_check_or_one_above_its_tier() {
     let everything = change(
         &[
             "crates/driver/Cargo.toml",
-            "platform/esp32s31/chip.toml",
+            "platform/chip-a/chip.toml",
             "README.md",
         ],
         Tier::Full,
@@ -189,7 +189,10 @@ fn a_job_runs_its_checks_up_to_its_tier() {
     let full: Vec<&str> = ids(of_job(Tier::Full, "verification"));
     assert_eq!(full, ["provenance"]);
     let nightly: Vec<&str> = ids(of_job(Tier::Nightly, "verification"));
-    assert_eq!(nightly, ["provenance", "vendor-probes", "host-stands"]);
+    assert_eq!(
+        nightly,
+        ["provenance", "vendor-probes", "host-stands", "verification"]
+    );
     assert!(of_job(Tier::Full, "no-such-job").is_empty());
     assert_eq!("nightly".parse::<Tier>(), Ok(Tier::Nightly));
     assert!("weekly".parse::<Tier>().is_err());

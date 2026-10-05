@@ -6,7 +6,7 @@ evaluator included, goes through it.
 
 | Module | Owns |
 | --- | --- |
-| `run` | The typed documents (manifest, plan, suite, scenario and repetition results with their measurements, the cleanup and USB records of a repetition, the integrity index and the scenario seals), the writer `RunSession` (create, bind sources and firmware, seal a scenario, finish, mark interrupted), `integrity` (the seal and its one verification, every file hashed again) and `validation` (the structural rules writer and readers share) |
+| `run` | The typed documents (manifest, plan, suite, scenario and repetition results with their measurements (name, value, unit, `semantics` version, declared `better` direction, threshold, verdict; `MetricId` is their identity), the cleanup and USB records of a repetition, the integrity index and the scenario seals), the writer `RunSession` (create, bind sources and firmware, seal a scenario, finish, mark interrupted), `integrity` (the seal and its one verification, every file hashed again) and `validation` (the structural rules writer and readers share) |
 | `read` | `RunBundle::open`, the typed reader: manifest, plan, suite, events, scenario documents and results, cleanup and USB records, lab and build provenance, the verified integrity seal and scenario seals, the runner's checkout, liveness |
 | `store` | `RunStore`: the store every checkout shares (`$OER_HIL_STORE`, else `<XDG data>/open-esp-radio/hil`) with `runs/`, the observer builds, the sidecars (pins, quarantine, performance baselines, caches) and a checkout's link `target/hil/runs`; `store::pending`, the checkout's pending evidence |
 | `receipt` | `OER_HIL_RUN_RECEIPT`, the receipt a runner names the runs it creates in, and `RunId` |

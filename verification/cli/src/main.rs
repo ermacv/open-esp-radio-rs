@@ -1,0 +1,288 @@
+//! `cargo verification`: the vendor verification application. It fetches
+//! the pinned vendor artifacts, compares vendor revisions, records and
+//! checks provenance, runs the typed scenarios, regenerates and checks the
+//! evidence shards, and builds the comparison probes and host stands. The
+//! gate runs it as a process.
+use std::ffi::OsString;
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use clap::{Parser, Subcommand};
+use oer_process::Checkout;
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+#[derive(Parser)]
+#[command(about = "Vendor verification: pins, provenance, scenarios and evidence")]
+struct Cli {
+    #[arg(long, global = true)]
+    root: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Download the chip's pinned vendor artifacts into `target/vendor` and
+    /// verify every artifact against `artifacts.toml`.
+    Fetch {
+        chip: String,
+        /// Only these artifacts of `artifacts.toml`, by id (such as `rom`).
+        #[arg(long = "artifact", value_name = "ID")]
+        artifacts: Vec<String>,
+    },
+    /// Link `ROOT/target/vendor` to the host-wide vendor artifact store (a
+    /// new worktree finds the fetched artifacts).
+    LinkStore { root: PathBuf },
+    /// Compare two revisions of a vendor archive function by function, or
+    /// every pinned artifact with its namesake in `--baseline`.
+    Diff {
+        #[arg(long)]
+        chip: String,
+        #[arg(long, requires = "new", conflicts_with = "baseline")]
+        old: Option<PathBuf>,
+        #[arg(long, requires = "old")]
+        new: Option<PathBuf>,
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+        /// Also list unchanged functions.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Record reviewed code fingerprints of cited vendor functions.
+    Provenance {
+        #[arg(long)]
+        chip: String,
+        /// Functions whose pinned code was reviewed: symbols, or the
+        /// `artifact[member]::symbol` form `check provenance` prints.
+        #[arg(long, value_delimiter = ',')]
+        accept: Vec<String>,
+        /// Recompute the registry from the current citations.
+        #[arg(long)]
+        rebuild: bool,
+        /// Directory of the revision the facts were observed in, for
+        /// `--rebuild`.
+        #[arg(long, requires = "rebuild")]
+        baseline: Option<PathBuf>,
+        /// Print each accepted function's annotated pinned code before
+        /// recording it.
+        #[arg(long, requires = "accept")]
+        show: bool,
+    },
+    /// Build the typed vendor scenarios, then run one scenario with the
+    /// forwarded arguments (for example `gain --library ...`).
+    #[command(disable_help_flag = true)]
+    Scenario {
+        #[arg(long)]
+        chip: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+    /// Rewrite the vendor evidence shards whose recorded sources changed, or
+    /// the named scenarios' shards. Resolves conflicting shards after a merge.
+    Evidence {
+        #[arg(long)]
+        chip: String,
+        /// Linker the scenarios prepare images with.
+        #[arg(long, default_value = "ld.lld")]
+        linker: PathBuf,
+        /// Ignored output root of the scenario runs.
+        #[arg(long, default_value = "target/blobray-research/evidence")]
+        output: PathBuf,
+        /// Rerun the named scenarios, or every one, into the output root and
+        /// fail unless each committed shard equals its rerun, without
+        /// rewriting any. A differing shard reports its changed claims and
+        /// sources.
+        #[arg(long)]
+        check: bool,
+        /// With `--check`, rerun only shards that record a file changed
+        /// since this revision, in the worktree or untracked; a shard that
+        /// does not parse is always rerun.
+        #[arg(long, requires = "check")]
+        changed_since: Option<String>,
+        /// Print every vendor location the committed shards leave untriaged
+        /// that no other scenario covers, without running a scenario.
+        #[arg(long, conflicts_with = "check")]
+        untriaged: bool,
+        /// Scenarios to rewrite, or with `--check` to rerun; every stale
+        /// shard, or with `--check` every shard, when empty.
+        scenarios: Vec<String>,
+    },
+    /// Build the chip's Rust comparison probe images.
+    Probes {
+        #[arg(long)]
+        chip: String,
+        #[arg(long)]
+        list_roles: bool,
+    },
+    Check {
+        #[command(subcommand)]
+        check: Check,
+    },
+}
+
+#[derive(Subcommand)]
+enum Check {
+    /// Check that every vendor function production and the register model
+    /// cite is registered with its reviewed, still pinned code; fetches the
+    /// pins first when one is missing. Every verified chip without `--chip`.
+    Provenance {
+        #[arg(long)]
+        chip: Option<String>,
+    },
+    /// Build every verified chip's comparison probe images.
+    Probes,
+    /// Clippy and the tests of each verified chip's vendor host stands.
+    HostStands,
+}
+
+/// The chips with pinned vendor artifacts.
+fn verified_chips(ctx: &Checkout) -> Result<Vec<String>> {
+    Ok(oer_vendor_artifacts::project::supported(&ctx.root)?
+        .into_iter()
+        .filter(|chip| {
+            ctx.root
+                .join("verification")
+                .join(chip)
+                .join("artifacts.toml")
+                .is_file()
+        })
+        .collect())
+}
+
+fn provenance(ctx: &Checkout, chip: &str) -> Result<()> {
+    if !oer_vendor_artifacts::unfetched(&ctx.root, chip)?.is_empty() {
+        oer_vendor_artifacts::fetch_vendor_sources(&ctx.root, chip)?;
+    }
+    oer_vendor_provenance::registry::check(&ctx.root, chip)
+}
+
+fn host_stands(ctx: &Checkout) -> Result<()> {
+    let model = oer_repo::Model::load(&oer_repo::Repo::from_git(&ctx.root)?)?;
+    for chip in verified_chips(ctx)? {
+        for manifest in
+            oer_vendor_evidence::producer::host_stand::stands(&model, &chip)?.into_values()
+        {
+            let manifest = ctx.root.join(manifest);
+            oer_process::run(
+                oer_toolchain::cargo_in(&ctx.root)
+                    .args(["clippy", "--locked", "--manifest-path"])
+                    .arg(&manifest)
+                    .args(["--all-targets", "--", "-D", "warnings"]),
+            )?;
+            oer_process::run(
+                oer_toolchain::cargo_in(&ctx.root)
+                    .args(["test", "--locked", "--no-fail-fast", "--manifest-path"])
+                    .arg(&manifest),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn run() -> Result<ExitCode> {
+    let cli = Cli::parse();
+    let ctx = match cli.root {
+        Some(root) => Checkout::new(root)?,
+        None => Checkout::discover("verification")?,
+    };
+    let _signals = oer_process::install_signal_handlers()?;
+    match cli.command {
+        Command::Fetch { chip, artifacts } => {
+            oer_vendor_artifacts::run(&ctx.root, &chip, &artifacts)?
+        }
+        Command::LinkStore { root } => {
+            oer_vendor_artifacts::link_store(&root, &oer_vendor_artifacts::store()?)?
+        }
+        Command::Diff {
+            chip,
+            old,
+            new,
+            baseline,
+            all,
+        } => oer_vendor_provenance::diff::run(&ctx.root, &chip, old, new, baseline, all)?,
+        Command::Provenance {
+            chip,
+            accept,
+            rebuild,
+            baseline,
+            show,
+        } => {
+            let show_code = |symbol: &str| -> oer_vendor_provenance::Result<()> {
+                let code = oer_vendor_evidence::run::scenario::run(
+                    &ctx,
+                    &chip,
+                    &["show".into(), symbol.into()],
+                )?;
+                if code == ExitCode::SUCCESS {
+                    Ok(())
+                } else {
+                    Err(format!("scenario show {symbol} failed").into())
+                }
+            };
+            oer_vendor_provenance::registry::update(
+                &ctx.root,
+                &chip,
+                &accept,
+                rebuild,
+                baseline,
+                show.then_some(&show_code as &oer_vendor_provenance::registry::Show<'_>),
+            )?
+        }
+        Command::Scenario { chip, args } => {
+            return oer_vendor_evidence::run::scenario::run(&ctx, &chip, &args);
+        }
+        Command::Evidence {
+            chip,
+            linker,
+            output,
+            check,
+            changed_since,
+            untriaged,
+            scenarios,
+        } => {
+            use oer_vendor_evidence::run::regenerate;
+            return if untriaged {
+                regenerate::untriaged(&ctx, &chip)
+            } else if check {
+                regenerate::check(&ctx, &chip, scenarios, changed_since, linker, output)
+            } else {
+                regenerate::run(&ctx, &chip, scenarios, linker, output)
+            };
+        }
+        Command::Probes { chip, list_roles } => {
+            oer_vendor_evidence::run::probes::run(&ctx, &chip, list_roles)?
+        }
+        Command::Check { check } => match check {
+            Check::Provenance { chip: Some(chip) } => provenance(&ctx, &chip)?,
+            Check::Provenance { chip: None } => {
+                for chip in verified_chips(&ctx)? {
+                    provenance(&ctx, &chip)?;
+                }
+            }
+            Check::Probes => {
+                for chip in verified_chips(&ctx)? {
+                    oer_vendor_evidence::run::probes::run(&ctx, &chip, false)?;
+                }
+            }
+            Check::HostStands => host_stands(&ctx)?,
+        },
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn main() -> ExitCode {
+    if oer_command_tree::requested() {
+        use clap::CommandFactory as _;
+        let tree = oer_command_tree::command_tree(&Cli::command(), &[String::from("verification")]);
+        println!("{}", oer_command_tree::json(&tree));
+        return ExitCode::SUCCESS;
+    }
+    match run() {
+        Ok(status) => status,
+        Err(error) => {
+            eprintln!("verification: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}

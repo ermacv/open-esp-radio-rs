@@ -5,9 +5,9 @@
 //! manifest names its chip. A checkout's [`CHECKOUT_RUNS`] is a symbolic link
 //! to the store's `runs/`; everything else below `target/hil` (build caches,
 //! snapshots) stays per checkout. Beside `runs/` the store keeps the observer
-//! builds its runs refer to ([`oer_hil_observer::store`]) and its
+//! builds its runs refer to ([`oer_hil_run_bundle_format::observer::store`]) and its
 //! [`Sidecar`]s; a checkout keeps the clean runs whose evidence it has not
-//! recorded in its [`pending`] list. Qualification still decides per bundle
+//! recorded in its [`pending`](oer_hil_run_bundle_format::pending) list. Qualification still decides per bundle
 //! whether it applies to the checkout's sources.
 
 use std::{
@@ -18,7 +18,8 @@ use std::{
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::{Result, read::RunBundle};
+use crate::Result;
+use oer_hil_run_bundle_format::read::RunBundle;
 
 /// Overrides the store's root directory.
 pub const ENV: &str = "OER_HIL_STORE";
@@ -226,79 +227,13 @@ pub enum Linked {
 /// nearest ancestor directory holding a run manifest.
 pub fn run_of(path: &Path) -> Option<String> {
     path.ancestors()
-        .find(|directory| directory.join(crate::read::MANIFEST).is_file())
+        .find(|directory| {
+            directory
+                .join(oer_hil_run_bundle_format::read::MANIFEST)
+                .is_file()
+        })
         .and_then(Path::file_name)
         .map(|name| name.to_string_lossy().into_owned())
-}
-
-pub mod pending {
-    //! A checkout's clean runs whose evidence it has not recorded yet.
-    //!
-    //! `cargo hil run` never writes tracked files: a clean run's passed
-    //! scenarios are noted in the checkout's [`PENDING`] list, and
-    //! `cargo qualification hil-evidence --pending` turns them into tracked
-    //! shards when the change they qualify is committed.
-
-    use std::path::Path;
-
-    use serde::{Deserialize, Serialize};
-
-    use crate::Result;
-
-    /// The checkout's pending list, relative to its root.
-    pub const PENDING: &str = "target/hil/pending-evidence.json";
-
-    /// A clean run whose evidence is not recorded yet.
-    #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-    pub struct Pending {
-        pub run: String,
-        /// The scenarios that passed in it.
-        pub scenarios: Vec<String>,
-        /// The lease owner the run was made for; several sessions may share
-        /// a checkout.
-        pub owner: String,
-    }
-
-    /// The checkout's pending runs.
-    pub fn load(checkout: &Path) -> Result<Vec<Pending>> {
-        match std::fs::read(checkout.join(PENDING)) {
-            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-            Err(error) => Err(error.into()),
-        }
-    }
-
-    /// Add runs with passed scenarios to the checkout's pending list.
-    pub fn remember(checkout: &Path, runs: &[Pending]) -> Result<()> {
-        update(checkout, |pending| {
-            for run in runs.iter().filter(|run| !run.scenarios.is_empty()) {
-                if !pending.iter().any(|entry| entry.run == run.run) {
-                    pending.push(run.clone());
-                }
-            }
-        })
-    }
-
-    /// Drop recorded or dismissed runs from the pending list.
-    pub fn forget(checkout: &Path, runs: &[String]) -> Result<()> {
-        update(checkout, |pending| {
-            pending.retain(|entry| !runs.contains(&entry.run));
-        })
-    }
-
-    fn update(checkout: &Path, change: impl FnOnce(&mut Vec<Pending>)) -> Result<()> {
-        let path = checkout.join(PENDING);
-        std::fs::create_dir_all(path.parent().ok_or("pending list has no parent")?)?;
-        let lock = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(path.with_extension("lock"))?;
-        fs2::FileExt::lock_exclusive(&lock)?;
-        let mut pending = load(checkout)?;
-        change(&mut pending);
-        oer_durable::atomic_json(&path, &pending)
-    }
 }
 
 #[cfg(test)]

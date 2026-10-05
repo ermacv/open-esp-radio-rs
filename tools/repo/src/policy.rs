@@ -9,6 +9,9 @@
 //!   `oer-time-embassy`); the time-driver rule covers dev dependencies too.
 //! - A verdict package never depends on a report package, and an
 //!   observation package never on HIL orchestration or stand operation.
+//! - A qualification package reads run bundles, scenario catalogs and
+//!   shards: its normal and build dependencies never reach HIL orchestration
+//!   (runner, lab, HIL images) or stand operation; tests may.
 //! - A host package depends only on its own host layer and the layers below
 //!   it ([`HostLayer`]): entry, orchestration, execution, verification,
 //!   stand, build, foundation.
@@ -94,6 +97,16 @@ pub fn hil_edge_allowed(source: Option<Hil>, target: Option<Hil>) -> bool {
         && matches!(target, Some(Hil::Orchestration | Hil::Operation)))
 }
 
+/// Whether a package of layer `source` may take a `kind` dependency on one
+/// with HIL role `target`: qualification evaluates recorded runs through
+/// the formats only, so its normal and build dependencies reach neither HIL
+/// orchestration (runner, lab, images) nor stand operation.
+pub fn qualification_edge_allowed(source: Layer, kind: Kind, target: Option<Hil>) -> bool {
+    !(source == Layer::Qualification
+        && kind != Kind::Development
+        && matches!(target, Some(Hil::Orchestration | Hil::Operation)))
+}
+
 /// Whether a package of host layer `source` may depend on one of host layer
 /// `target`: only on its own layer and those below it. A package without a
 /// host layer (production code, a portable helper) constrains nothing.
@@ -134,6 +147,17 @@ pub fn check(model: &Model) -> Vec<String> {
                         source.host_layer.map_or("?", HostLayer::name),
                         package.name,
                         class.host_layer.map_or("?", HostLayer::name),
+                        target.name
+                    ));
+                }
+                if !qualification_edge_allowed(source.layer, dependency.kind, class.hil) {
+                    problem(format!(
+                        "qualification package {} depends on HIL {} package {}; qualification reads recorded runs through the formats only",
+                        package.name,
+                        match class.hil {
+                            Some(Hil::Orchestration) => "orchestration",
+                            _ => "stand operation",
+                        },
                         target.name
                     ));
                 }
@@ -223,8 +247,8 @@ mod tests {
     use crate::{Model, files::Repo, testing::tree};
 
     const CHIP: (&str, &str) = (
-        "platform/esp32s31/chip.toml",
-        "schema = 1\nid = \"esp32s31\"\nfamily = \"espressif\"\nrust-target = \"riscv32imafc-unknown-none-elf\"\nboot = \"staged\"\nespflash-chip = \"esp32s31\"\nrevisions = [\"rev0\"]\n[properties]\nwifi-bands = [\"2g4\"]\nbluetooth = [\"le\"]\nieee802154 = true\ncores = 2\n",
+        "platform/chip-a/chip.toml",
+        "schema = 1\nid = \"chip-a\"\nfamily = \"espressif\"\nrust-target = \"riscv32imafc-unknown-none-elf\"\nboot = \"staged\"\nespflash-chip = \"chip-a\"\nrevisions = [\"rev0\"]\n[properties]\nwifi-bands = [\"2g4\"]\nbluetooth = [\"le\"]\nieee802154 = true\ncores = 2\n",
     );
 
     fn manifest(name: &str, class: &str, dependencies: &str) -> String {
@@ -289,7 +313,7 @@ mod tests {
     #[test]
     fn platforms_stay_within_their_chip_and_family() {
         let class = |platform: &str| format!("layer = \"hardware\"\n{platform}");
-        let chip = class("platform = \"chip\"\nchip = \"esp32s31\"");
+        let chip = class("platform = \"chip\"\nchip = \"chip-a\"");
         let family = class("platform = \"family\"\nfamily = \"espressif\"");
         let other = class("platform = \"family\"\nfamily = \"other\"");
         assert!(edge(&chip, &family, "dependencies").is_empty());
@@ -364,6 +388,30 @@ mod tests {
             1
         );
         assert!(edge(&evidence("report"), &evidence("verdict"), "dependencies").is_empty());
+    }
+
+    #[test]
+    fn qualification_never_links_hil_orchestration_or_stand_operation() {
+        let qualification =
+            "layer = \"qualification\"\nplatform = \"host\"\nhost-layer = \"entry\"";
+        let hil = |role: &str| {
+            format!(
+                "layer = \"hil\"\nplatform = \"host\"\nhil = \"{role}\"\nhost-layer = \"execution\""
+            )
+        };
+        assert_eq!(
+            edge(qualification, &hil("orchestration"), "dependencies"),
+            [
+                "s/Cargo.toml: qualification package oer-s depends on HIL orchestration package oer-t; qualification reads recorded runs through the formats only"
+            ]
+        );
+        assert_eq!(
+            edge(qualification, &hil("operation"), "build-dependencies").len(),
+            1
+        );
+        // Tests may drive a runner; formats (observation) are always fine.
+        assert!(edge(qualification, &hil("orchestration"), "dev-dependencies").is_empty());
+        assert!(edge(qualification, &hil("observation"), "dependencies").is_empty());
     }
 
     #[test]

@@ -1,0 +1,71 @@
+# Vendor verification is its own host workspace with its own lock file and
+# target directory: the scenario engine, the chips' typed scenarios, the
+# probe code generator, the evidence producers and the `cargo vendor`
+# command line. It path-depends on the Blobray engine crates, the binary
+# analysis libraries, the vendor artifacts and the shard and register
+# binding formats; neither the radio workspace nor Blobray's links it.
+[workspace]
+members = [
+    "cli",
+    "*/scenarios",
+    "*/scenarios/cli",
+    "evidence",
+    "harness/cli",
+    "harness/codegen",
+    "harness/macros",
+    "harness/report",
+    "harness/scenarios",
+]
+# Packages below this directory that belong to another workspace: the shard
+# format, the PHY calibration capture and the PHY relation and calibration
+# the radio workspace's HIL links, and the firmware and host stands with workspaces of their own.
+exclude = [
+    "evidence/shard",
+    "phy-calibration-capture",
+    "esp32s31/phy-relation",
+    "esp32s31/hardware",
+    "esp32s31/host",
+    "esp32s31/probes",
+    "esp32s31/hil-vendor",
+    "esp32c5/hardware",
+    "esp32c5/probes",
+    "esp32c5/hil-vendor",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ermacv/open-esp-radio-rs"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+# A mutable call inside `debug_assert!` disappears from optimized firmware.
+# Driver protocol state must advance identically in debug and release builds.
+debug_assert_with_mut_call = "deny"
+# `clippy.toml` lists methods radio code must not call, such as busy waiting
+# instead of yielding; an intentional use carries a local `allow` with a reason.
+disallowed_methods = "deny"
+
+[profile.release]
+opt-level = 3
+debug = true
+lto = "fat"
+codegen-units = 1
+
+[profile.dev]
+debug = "line-tables-only"
+
+# Scenarios run Blobray's executor over whole vendor images, prohibitively
+# slow at dev opt-level 0; `cargo vendor` and the scenario builds use this
+# incremental optimized profile.
+[profile.verification]
+inherits = "dev"
+opt-level = 3
+debug = 1
+incremental = true
+codegen-units = 16

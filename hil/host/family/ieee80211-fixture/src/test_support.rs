@@ -79,16 +79,16 @@ fn fixture_lifecycle_harness() {
         let error = super::controlled_ap::ControlledAp::start(
             &lab.station,
             &lab.station_fixture,
-            oer_hil_scenario::link::PhyExpectation::Ht40,
-            oer_hil_scenario::link::ManagementFrameProtection::Disabled,
-            oer_hil_scenario::link::AccessPointSecurity::Wpa2Personal,
+            oer_hil_scenario_catalog::link::PhyExpectation::Ht40,
+            oer_hil_scenario_catalog::link::ManagementFrameProtection::Disabled,
+            oer_hil_scenario_catalog::link::AccessPointSecurity::Wpa2Personal,
             None,
         )
         .err()
         .expect("injected fixture failure");
         assert_eq!(
             oer_hil_workload::failure::classify(&*error).kind,
-            oer_hil_run_bundle::run::FailureKind::Infrastructure
+            oer_hil_run_bundle_format::run::FailureKind::Infrastructure
         );
         scope.finish().unwrap();
         return;
@@ -191,7 +191,7 @@ fn fixture_lifecycle_harness() {
         if case == "monitor-error" || case == "monitor-existing" {
             assert_eq!(
                 oer_hil_workload::failure::classify(&**result.as_ref().err().unwrap()).kind,
-                oer_hil_run_bundle::run::FailureKind::Infrastructure
+                oer_hil_run_bundle_format::run::FailureKind::Infrastructure
             );
         }
         if case.ends_with("cancel") {

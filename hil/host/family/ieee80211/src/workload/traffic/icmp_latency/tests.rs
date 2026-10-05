@@ -1,6 +1,6 @@
 use std::{net::Ipv4Addr, time::Duration};
 
-use oer_hil_run_bundle::run::MeasurementVerdict;
+use oer_hil_run_bundle_format::run::MeasurementVerdict;
 
 use oer_hil_net_traffic::icmp::Summary;
 

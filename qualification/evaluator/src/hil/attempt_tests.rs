@@ -2,6 +2,9 @@ use super::*;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// The current run document schema.
+const RUN: u16 = oer_hil_run_bundle_format::run::RUN_SCHEMA;
+
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture {
@@ -24,7 +27,7 @@ impl Fixture {
         write(
             &run.join("manifest.json"),
             &json!({
-                "schema":3,"run_id":"run-1","target":"esp32s31","state":"running",
+                "schema":RUN,"run_id":"run-1","target":"chip-a","state":"running",
                 "started_unix_millis":100,"finished_unix_millis":null,"duration_millis":null,
                 "repository":{"commit":"current","dirty":false,"workspace_sha256":"00".repeat(32)}
             }),
@@ -42,7 +45,8 @@ impl Fixture {
         manifest["firmware"][0]["application_path"] = json!("firmware/boot-smoke/application.bin");
         manifest["firmware"][0]["application_size_bytes"] =
             json!(fs::metadata(&application).unwrap().len());
-        manifest["firmware"][0]["application_sha256"] = json!(sha256_file(&application).unwrap());
+        manifest["firmware"][0]["application_sha256"] =
+            json!(crate::digests().sha256_file(&application).unwrap());
         manifest["firmware"][0]["build_provenance_path"] =
             json!("firmware/boot-smoke/build-provenance.json");
         write(&run.join("manifest.json"), &manifest);
@@ -51,9 +55,9 @@ impl Fixture {
         manifest["state"] = json!("completed");
         manifest["finished_unix_millis"] = json!(200);
         manifest["duration_millis"] = json!(100);
-        let result = json!({"schema":3,"scenario":"boot-smoke","image":"boot-smoke","outcome":"passed",
+        let result = json!({"schema":RUN,"scenario":"boot-smoke","image":"boot-smoke","outcome":"passed",
             "required_repetitions":1,"failure":null,
-            "repetitions":[{"schema":3,"repetition":1,"outcome":"passed","started_unix_millis":0,
+            "repetitions":[{"schema":RUN,"repetition":1,"outcome":"passed","started_unix_millis":0,
                 "duration_millis":0,"artifact_directory":"scenarios/boot-smoke/repetition-001",
                 "attachments":[],"measurements":[],"failure":null}]});
         write(
@@ -62,7 +66,7 @@ impl Fixture {
                 "repetitions":1,"system":{"kind":"boot-smoke"}}),
         );
         write(&run.join("scenarios/boot-smoke/result.json"), &result);
-        let files = oer_hil_run_bundle::run::collect_integrity_files(&run)
+        let files = oer_hil_run_bundle_format::run::collect_integrity_files(&run)
             .unwrap()
             .into_iter()
             .filter(|file| file.path.starts_with("scenarios") || file.path.starts_with("firmware"))
@@ -71,7 +75,7 @@ impl Fixture {
         write(
             &run.join("attempts/boot-smoke.json"),
             &json!({"schema":1,"manifest":manifest,"files":files,
-            "suite":{"schema":3,"run_id":"run-1","target":"esp32s31","outcome":"passed",
+            "suite":{"schema":RUN,"run_id":"run-1","target":"chip-a","outcome":"passed",
                 "started_unix_millis":100,"finished_unix_millis":200,"duration_millis":100,
                 "counts":{"scenarios":1,"passed":1,"failed":0,"broken":0,"blocked":0,"interrupted":0,"skipped":0},
                 "scenarios":[result]}}),
@@ -84,7 +88,7 @@ impl Fixture {
             &self.root,
             Path::new("runs"),
             Path::new("evidence"),
-            "esp32s31",
+            "chip-a",
             &RepositoryState {
                 commit: "current".into(),
                 dirty: false,
@@ -187,7 +191,7 @@ fn later_image_preparation_does_not_rebind_a_preflight_blocked_attempt() {
     for file in seal["files"].as_array_mut().unwrap() {
         if file["path"] == "scenarios/boot-smoke/result.json" {
             file["size_bytes"] = json!(fs::metadata(&result).unwrap().len());
-            file["sha256"] = json!(sha256_file(&result).unwrap());
+            file["sha256"] = json!(crate::digests().sha256_file(&result).unwrap());
         }
     }
     write(&path, &seal);
@@ -271,7 +275,7 @@ fn sealed_failure_is_indexed_even_when_campaign_never_finishes() {
     for file in seal["files"].as_array_mut().unwrap() {
         if file["path"] == "scenarios/boot-smoke/result.json" {
             file["size_bytes"] = json!(fs::metadata(&result).unwrap().len());
-            file["sha256"] = json!(sha256_file(&result).unwrap());
+            file["sha256"] = json!(crate::digests().sha256_file(&result).unwrap());
         }
     }
     write(&path, &seal);

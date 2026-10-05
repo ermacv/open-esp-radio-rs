@@ -10,17 +10,18 @@ readme = "README.md"
 
 [features]
 default = []
-esp32s31 = ["dep:esp-hal", "dep:oer-esp32s31-soc-esp-hal", "dep:oer-interrupt-table"]
+esp32s31 = ["dep:esp-hal", "dep:oer-interrupt-table",
+    "dep:oer-espressif-interrupt-table-esp-hal"]
 
 [dependencies]
 critical-section = "1.2.0"
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "8930609f2af67e2e296a4d8f900ea3636a0acc6b", default-features = false, features = ["esp32s31", "static-interrupts", "unstable"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "46a45a813177122cc7485723c07d54751b3ef921", default-features = false, features = ["esp32s31", "static-interrupts", "unstable"], optional = true }
 oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
 oer-esp32s31-bluetooth = { path = "../../../../hardware/esp32s31/driver/bluetooth" }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
 oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
-oer-esp32s31-soc-esp-hal = { path = "../soc", features = ["esp32s31"], optional = true }
 oer-interrupt-table = { path = "../../../../runtime/interrupt-table", optional = true }
+oer-espressif-interrupt-table-esp-hal = { path = "../../espressif/interrupt-table", features = ["esp32s31"], optional = true }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }

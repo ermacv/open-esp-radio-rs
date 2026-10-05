@@ -124,14 +124,14 @@ the exact provider plan first; these commands do not execute any listed build,
 capability, sudo or hardware step and do not load the stand file:
 
 ```console
-cargo hil fixture install --provider linux-net --dry-run
-cargo hil fixture install --provider linux-bluetooth --dry-run
+cargo stand fixture install --provider linux-net --dry-run
+cargo stand fixture install --provider linux-bluetooth --dry-run
 ```
 
 The helper `capabilities` and sudoers validation subprocesses each have a
 five-second execution deadline; timeout is an installation/preparation failure.
 Bluetooth preparation and execution share the versioned contract in
-[`bluetooth_contract.rs`](fixture-install/src/bluetooth_contract.rs).
+[`bluetooth_contract.rs`](../../stand/fixture-install/src/bluetooth_contract.rs).
 Synchronous HCI command receive failures report the command identity, elapsed
 time, packet count and last event identity in the helper's existing error
 report. They do not record event payloads or keys, retry commands, or extend
@@ -145,8 +145,8 @@ binaries appear as `missing`, while present files remain `present-unverified`.
 Install exactly one provider with interactive authorization:
 
 ```console
-cargo hil fixture install --provider linux-net
-cargo hil fixture install --provider linux-bluetooth
+cargo stand fixture install --provider linux-net
+cargo stand fixture install --provider linux-bluetooth
 ```
 
 Installation is stand maintenance: it claims only
@@ -173,7 +173,7 @@ operator. Linux is required; installation is not supported on other hosts.
 Preparation runs as the operator. Network preparation retains the pinned
 hostapd build, patch and provenance plus the locked probe and fixed-launcher
 builds. Bluetooth preparation builds only its finite helper, fixed launcher and
-installer with the same locked `target/hil/fixture-build` output; it does not
+installer with the same locked root `target/debug` output; it does not
 build or download hostapd. The runner rejects an invocation already running as
 root before starting either build. It then transfers the foreground terminal
 to ordinary `sudo`; no password pipe or askpass path exists, and the general
@@ -325,8 +325,8 @@ packet. These are supplemental UART diagnostics, not MAC completion or host
 reception evidence. The current per-flow records do not correlate individual
 packets with hardware publication and completion.
 
-`cargo hil fixture install --provider linux-net` first builds hostapd as
-`cargo hil fixture build-hostapd` does, without root, then installs the resulting binary, build provenance and helper through
+`cargo stand fixture install --provider linux-net` first builds hostapd as
+`cargo stand fixture build-hostapd` does, without root, then installs the resulting binary, build provenance and helper through
 interactive sudo. The build uses the pinned hostapd release and reviewed
 [coexistence patch](linux-net/hostapd/README.md). It requires a C compiler,
 make, pkg-config, libnl3 and OpenSSL development files, curl, tar and patch.
@@ -355,7 +355,7 @@ and 200 requests from distinct locally administered MACs at 6–6.995 s.
 The source uses event/deadline waits, rejects pacing lateness above 4 ms,
 and stops on controller EOF or cancellation.
 
-`cargo hil fixture install --provider linux-net` builds and installs the bounded Rust helper
+`cargo stand fixture install --provider linux-net` builds and installs the bounded Rust helper
 `open-radio-probe`. The helper accepts no command-line arguments or arbitrary
 frame input. It checks the controlled `wlan0` association SSID/channel, owns
 a temporary monitor interface on the same PHY, and removes it before reporting

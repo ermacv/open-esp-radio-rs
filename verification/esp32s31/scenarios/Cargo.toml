@@ -1,5 +1,4 @@
 [package]
-workspace = "../../../tools/blobray"
 name = "oer-esp32s31-vendor-scenarios"
 version.workspace = true
 edition.workspace = true
@@ -13,7 +12,7 @@ description = "Typed ESP32-S31 vendor-comparison scenarios driven through the Bl
 oer-elf = { path = "../../../tools/elf" }
 oer-durable = { path = "../../../tools/durable" }
 oer-process = { path = "../../../tools/process" }
-oer-vendor-evidence = { path = "../../../verification/evidence" }
+oer-vendor-evidence-shard = { path = "../../evidence/shard" }
 oer-riscv-model = { path = "../../../tools/riscv/model" }
 blobray-application = { path = "../../../tools/blobray/crates/application" }
 blobray-domain = { path = "../../../tools/blobray/crates/domain" }
@@ -24,7 +23,7 @@ serde = { version = "=1.0.229", features = ["derive"] }
 toml = "=1.1.4"
 
 [dev-dependencies]
-oer-vendor-artifacts = { path = "../../../tools/vendor-artifacts" }
+oer-vendor-pins = { path = "../../../tools/vendor-pins" }
 
 [lints]
 workspace = true

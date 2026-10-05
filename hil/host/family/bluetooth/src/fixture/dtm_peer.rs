@@ -1,6 +1,6 @@
 //! Driver of the Bluetooth LE Direct Test Mode reference peer.
 //!
-//! The peer is an ESP32-C5 running `hil/peers/esp32c5-ble-dtm`: the vendor
+//! The peer runs the BLE DTM project of `hil/peers`: the vendor
 //! Controller behind a line protocol on its console (see that README). Every
 //! command is answered by `@OK` or `@ERR`; `END` first prints the Controller's
 //! packet count. The grammar, `SYNC`, the transport and the transcript are
@@ -17,7 +17,7 @@ use crate::Result;
 
 /// Protocol version the driver speaks.
 pub const DTM_PEER_PROTOCOL: u32 = 1;
-/// The catalog image of `hil/peers/esp32c5-ble-dtm`.
+/// The catalog image of the BLE DTM peer project of `hil/peers`.
 pub const DTM_PEER_IMAGE: PeerImage = PeerImage {
     name: "ble-dtm-peer",
     reflash: "restore it with `cargo hil firmware flash ble-dtm-peer --board <peer board>`",
@@ -110,7 +110,12 @@ impl DtmPeer<RecordingLink<SerialLink>> {
     /// `transcript`, and take the running peer over with `SYNC`.
     pub fn open_recorded(path: &Path, transcript: &PeerTranscript) -> Result<Self> {
         Ok(Self {
-            console: PeerConsole::open_recorded(path, transcript, EXPECTED, READY_TIMEOUT)?,
+            console: PeerConsole::open_recorded(
+                oer_hil_lab::peer_console(path)?,
+                transcript,
+                EXPECTED,
+                READY_TIMEOUT,
+            )?,
         })
     }
 }

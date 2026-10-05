@@ -1,4 +1,6 @@
-use oer_hil_run_bundle::{RunStore, run::test_support::write_run, store::Sidecar};
+use oer_hil_run_bundle::RunStore;
+use oer_hil_run_bundle::run::test_support::write_run;
+use oer_hil_run_bundle::store::Sidecar;
 
 use super::*;
 use crate::runs::tests::bundle;

@@ -9,11 +9,13 @@ publish = false
 description = "Bluetooth LE HIL workloads and the Linux Bluetooth fixture"
 
 [dependencies]
+oer-hil-schema = { path = "../../../schema" }
 oer-hil-lab = { path = "../../lab" }
 oer-hil-link = { path = "../../link" }
 oer-hil-scenario = { path = "../../scenario" }
+oer-hil-scenario-catalog = { path = "../../scenario/catalog" }
+oer-hil-run-bundle-format = { path = "../../run-bundle/format" }
 oer-durable = { path = "../../../../tools/durable" }
-oer-hil-image-class = { path = "../../image-class" }
 oer-hil-workload = { path = "../../workload" }
 rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }
 oer-process = { path = "../../../../tools/process" }

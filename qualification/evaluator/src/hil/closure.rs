@@ -200,7 +200,8 @@ impl Closure {
         files.extend(scenario_files(root, &scenarios)?);
         // A run that lists the messages it exchanged binds only the protocol
         // modules they belong to; without that list it binds all of them.
-        let bundle = oer_hil_run_bundle::RunBundle::open(run).map_err(|error| error.to_string())?;
+        let bundle =
+            oer_hil_run_bundle_format::RunBundle::open(run).map_err(|error| error.to_string())?;
         let excluded = match bundle {
             Some(bundle) => unused_protocol_modules(
                 &fs::read_to_string(root.join(PROTOCOL_LOCK))?,
@@ -319,12 +320,12 @@ mod tests {
     #[test]
     fn only_build_and_run_inputs_are_in_the_closure() {
         let closure =
-            Closure::from_directories(&["crates/hardware/esp32s31/hal", "hil/scenarios"], &[]);
-        assert!(closure.contains(Path::new("crates/hardware/esp32s31/hal/src/lib.rs")));
+            Closure::from_directories(&["crates/hardware/chip-a/hal", "hil/scenarios"], &[]);
+        assert!(closure.contains(Path::new("crates/hardware/chip-a/hal/src/lib.rs")));
         assert!(closure.contains(Path::new("hil/scenarios/system/boot-smoke.toml")));
         assert!(closure.contains(Path::new("Cargo.lock")));
         assert!(!closure.contains(Path::new("docs/architecture.md")));
-        assert!(!closure.contains(Path::new("crates/hardware/esp32s31/hal-extra/src/lib.rs")));
+        assert!(!closure.contains(Path::new("crates/hardware/chip-a/hal-extra/src/lib.rs")));
         assert!(!closure.contains(Path::new("tools/blobray/src/main.rs")));
     }
 

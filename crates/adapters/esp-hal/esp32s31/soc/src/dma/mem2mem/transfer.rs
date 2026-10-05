@@ -13,12 +13,12 @@ use super::{
     },
     status::AxiGdmaMem2MemStatus,
 };
-use crate::interrupt_table::{self, Route};
 use crate::{PsramCacheWritebackError, writeback_psram_for_dma_read};
 use core::marker::PhantomData;
 use esp_hal::interrupt::Priority;
 use esp_hal::peripherals::{DMA_AXI_CH0, Interrupt};
 use esp_hal::system::Cpu;
+use oer_espressif_interrupt_table_esp_hal::{self as interrupt_table, Route};
 use oer_interrupt_table::Entry;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

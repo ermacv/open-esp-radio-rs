@@ -39,7 +39,10 @@ criteria (a criterion miss, unlike a fault), cleanup failures, host USB
 events of its boards, the artifact directory and the end of `uart.log`.
 Every view reads the bundles through the run bundle's typed reader and
 aggregates measurements through `oer-hil-analysis`'s one `samples`, one value
-per repetition. `compare` judges each measurement of a common scenario with
+per repetition. A measurement is identified by scenario, name, unit,
+`semantics` (a version its producer bumps when the value's meaning changes
+under the same name) and `better`; values whose identity differs are never
+combined or compared. `compare` judges each measurement of a common scenario with
 the same noise-aware comparison as `cargo hil ab` (Welch's 95 % interval and
 a 2 % practical tolerance, `insufficient repetitions` below three a side) and
 prints both means, the relative difference and the verdict; `history` shows
@@ -100,7 +103,7 @@ it answers clears the loop and the repetition continues. Every step and its
 ROM line are recorded in the repetition's `reset-escalation.json` and a
 clearing step in the board journal. When no step clears it and the ROM stays
 silent, the board is quarantined with trigger `boot-loop` for a person, and
-runs and `cargo hil wait --service` wait for its release; a ROM that answers
+runs and `cargo stand wait --service` wait for its release; a ROM that answers
 leaves the board serving, since firmware can be loaded into it.
 
 A target that does not answer within those 20 s is first read through its
@@ -154,7 +157,7 @@ quarantine the repetition and the run's remaining repetitions end
 which is no verdict on the code under test, every request for the board is
 refused with the reason, and the user is notified. What the stand saw stays in
 the repetition's `post-mortem/`, which the quarantine names. After pressing
-the board's reset button or power-cycling it, `cargo hil devices release
+the board's reset button or power-cycling it, `cargo stand devices release
 BOARD --confirm reset|power-cycle` returns it once an RTS reset shows it
 booting from flash; the release is journaled. `--confirm rom-answers` returns
 a board nobody touched, such as one an older runner quarantined although its
@@ -168,7 +171,7 @@ rebuilds it. For the operational commands (`queue`, `lease`, `devices`,
 `board`, `runs`, `perf`, `dashboard`) use the installed tool instead:
 
 ```console
-cargo xtask stand-install      # build origin/main's oer-hil-cli once, install oer-stand
+cargo stand install      # build origin/main's oer-hil-cli once, install oer-stand
 oer-stand queue
 oer-stand runs why <run-id>
 ```
@@ -296,8 +299,13 @@ ambiguous (exit 1), or why it stopped (exit 2). Its runs record no evidence.
 
 ```console
 cargo hil ab --a 'rev=main' --b 'rev=main;override:xarxa=/home/me/src/xarxa' \
-  --scenario udp-rx-ht40-task-residence-saturated --repetitions 3 --layout-seeds 2
+  --scenario udp-rx-ht40-task-residence-saturated --repetitions 3 --layout-seeds 2 \
+  --order-seed 7
 ```
+
+`--order-seed SEED` fixes the balanced AB/BA order of the measured rounds
+(default: the experiment id), so an experiment's order can be replayed; the
+seed is recorded in the report and every run's manifest.
 
 `ab` compares two variants of the firmware on the same scenarios. A variant
 is a repository revision (`rev=`, HEAD when omitted) and, after `;`, local
@@ -312,14 +320,17 @@ class's. Each arm's revision is
 checked out in a worktree below `target/hil/ab/<id>/` and captured with its
 overrides into a source snapshot; this checkout's runner builds and runs
 both, so both revisions must have this checkout's `messages.lock`. For
-every layout seed `1..=K` the first round runs A, then B, building their
-images; the remaining rounds replay those exact images. Each round, A then B
-of one seed, holds a whole-stand lease of its own, so drift of the air and
-the calibrations falls on both arms, and releases it: shorter work of owners
-with a higher balance goes between rounds, and the queue estimates the next
-round from the rounds before it. Every run records `experiment` (its id, arm and variant: the
-commit and each override's path, commit and dirtiness) in its manifest and
-no evidence. A comparison takes hours, so like a run it is a job: `--enqueue`
+every layout seed `1..=K` the preparation round (round 0) runs A, then B,
+building their images and warming the stand up, each run under a lease of
+its own; it is recorded with the `preparation` phase and never paired. The
+measured rounds `1..=N` (`--repetitions N`) replay those exact images. Each
+measured round, both arms of one seed in its balanced AB/BA order, holds one
+whole-stand lease, so drift of the air and the calibrations falls on both
+arms, and releases it: shorter work of owners with a higher balance goes
+between rounds, and the queue estimates the next
+round from the rounds before it. Every run records `experiment` (its id, arm, variant: the
+commit and each override's path, commit and dirtiness, and its round: layout
+seed, index, phase, order and order seed) in its manifest and no evidence. A comparison takes hours, so like a run it is a job: `--enqueue`
 starts it detached and prints the job id for `cargo hil wait`, and `--after
 JOB` orders it after another job. Every run of an arm is a job of its own,
 launched with the runner fixed when the comparison was enqueued or started,
@@ -329,14 +340,17 @@ from a worktree without an owner of its own runs for the owner of the
 checkout the worktree was added from.
 
 The report takes one value per run and measurement (the mean over the run's
-repetitions) and compares the arms with `oer-hil-analysis`'s one comparison,
-the one `runs compare` uses: each arm's mean,
-deviation and count, the difference B − A with the half-width of its Welch
+repetitions) and pairs the two arms' values of each measured round, after
+checking that every run belongs to the one experiment (one id and order seed,
+each arm on one variant). Per measurement it gives each arm's mean,
+deviation and count, the paired difference B − A with the half-width of its
 95 % confidence interval, and a verdict: `significant` (the interval excludes
 zero and the difference is at least 2 % of A's mean) with the better arm,
-`within-noise`, or `insufficient-repetitions` (fewer than 3 runs on a side).
-A gated measurement's direction is its gate's; an ungated one is compared as
-if higher were better and says so. `ab-report.json` beside the worktrees
+`within-noise`, or `insufficient-repetitions` (fewer than 3 pairs); a
+measurement without one complete pair is reported as `no-pairs`.
+A measurement's direction is the `better` (`higher` or `lower`) its
+producer declares, or its gate's; a significant difference of one without a
+direction is reported as `changed` with the higher arm, never as better. `ab-report.json` beside the worktrees
 holds the variants, every run and every comparison; the command prints a
 summary.
 

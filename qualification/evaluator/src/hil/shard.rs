@@ -8,9 +8,10 @@
 //! firmware and observer were built from. A shard supports qualification
 //! while those sources are unchanged, whatever else the repository changed.
 use super::*;
-use oer_hil_observer::store as observer_store;
-use oer_hil_run_bundle::build::{BuildParameters, BuildProvenance};
-use oer_vendor_evidence::{SourceDigest, digest_directory};
+use oer_hil_run_bundle_format::build::BuildParameters;
+use oer_hil_run_bundle_format::build::BuildProvenance;
+use oer_hil_run_bundle_format::observer::store as observer_store;
+use oer_vendor_evidence_shard::{SourceDigest, digest_directory};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -58,7 +59,9 @@ struct Repetition {
 fn digest(root: &Path, path: &Path) -> Result<String> {
     let full = root.join(path);
     if full.is_file() {
-        sha256_file(&full)
+        Ok(crate::digests()
+            .sha256_file(&full)
+            .map_err(|error| error.to_string())?)
     } else {
         digest_directory(root, path).map_err(|e| e.to_string().into())
     }
@@ -772,18 +775,19 @@ pub(crate) fn observers(index: &HilEvidenceIndex) -> Vec<&Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_hil_run_bundle::build::{BuildEnvironment, BuildReproducibility};
+    use oer_hil_run_bundle_format::build::BuildEnvironment;
+    use oer_hil_run_bundle_format::build::BuildReproducibility;
     use serde_json::json;
 
     /// A build provenance of the correctness image for `target` with
     /// `features`, built under `environment`.
     fn provenance(target: &str, features: &str, environment: BuildEnvironment) -> BuildProvenance {
         BuildProvenance {
-            schema: oer_hil_run_bundle::build::BUILD_PROVENANCE_SCHEMA,
+            schema: oer_hil_run_bundle_format::build::BUILD_PROVENANCE_SCHEMA,
             build_id: String::from("build"),
             build_type: String::from("test"),
             parameters: BuildParameters {
-                image: oer_hil_image_class::ImageClass::Correctness,
+                image: oer_hil_schema::image::ImageClass::Correctness,
                 network: None,
                 runtime_profile: String::from("profile"),
                 target: target.to_owned(),
@@ -846,7 +850,7 @@ mod tests {
                 "crates/radio/Cargo.toml",
                 "crates/radio/src/lib.rs",
                 "platform/linker/link.x",
-                "hil/targets/esp32s31/Cargo.toml",
+                "hil/targets/chip-a/Cargo.toml",
                 ".cargo/config.toml"
             ]),
         );
@@ -868,7 +872,7 @@ mod tests {
             "hil/host/runner",
             "rust-toolchain.toml",
             "Cargo.lock",
-            "hil/targets/esp32s31/Cargo.toml",
+            "hil/targets/chip-a/Cargo.toml",
             ".cargo/config.toml",
         ] {
             assert!(
@@ -921,13 +925,21 @@ mod tests {
             environment(None, None),
         );
         let packages = image_packages(&root, &image.parameters).unwrap().unwrap();
+        // The chip of that target: its agent, its Bluetooth driver and its
+        // staged boot's bootstrap.
+        let chip = oer_repo::chips::profile::Profile::all(&root)
+            .unwrap()
+            .into_iter()
+            .find(|profile| profile.rust_target == "riscv32imafc-unknown-none-elf")
+            .unwrap()
+            .id;
         for expected in [
-            "hil/targets/esp32s31/agent",
-            "crates/hardware/esp32s31/driver/bluetooth",
-            "platform/esp32s31/bootstrap",
+            format!("hil/targets/{chip}/agent"),
+            format!("crates/hardware/{chip}/driver/bluetooth"),
+            format!("platform/{chip}/bootstrap"),
         ] {
             assert!(
-                packages.contains(Path::new(expected)),
+                packages.contains(Path::new(&expected)),
                 "{expected}: {packages:?}"
             );
         }

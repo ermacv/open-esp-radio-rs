@@ -1023,7 +1023,7 @@ fn a_lost_hello_stands_without_a_boot_on_the_console() {
 fn an_answer_late_in_a_boot_begins_no_boot() {
     let output = Output::new();
     let (capture, input, writes) = capture_with_commands(&output);
-    input.send(Ok(b"ESP-ROM:esp32s31\r\n".to_vec())).unwrap();
+    input.send(Ok(b"ESP-ROM:chip-a\r\n".to_vec())).unwrap();
     wait_for_console(&capture, b"ESP-ROM:");
     // The answer begins no boot, so the host asks for no capability page.
     let target = std::thread::spawn(move || {

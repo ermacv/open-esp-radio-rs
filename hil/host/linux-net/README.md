@@ -4,8 +4,8 @@ Use the canonical [Linux fixture software installation](../fixtures.md#linux-fix
 route from the repository root:
 
 ```console
-cargo hil fixture install --provider linux-net --dry-run
-cargo hil fixture install --provider linux-net
+cargo stand fixture install --provider linux-net --dry-run
+cargo stand fixture install --provider linux-net
 ```
 
 Run Cargo as the unprivileged operator; it requests sudo only for installation.

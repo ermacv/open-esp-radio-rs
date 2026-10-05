@@ -11,7 +11,9 @@ use oer_process::CommandExt as _;
 
 use crate::Result;
 
-pub use oer_hil_run_bundle::run::{USB_EVENTS_FILE, UsbEvent, UsbEventKind};
+pub use oer_hil_run_bundle_format::run::USB_EVENTS_FILE;
+pub use oer_hil_run_bundle_format::run::UsbEvent;
+pub use oer_hil_run_bundle_format::run::UsbEventKind;
 
 /// The USB devices of a repetition's boards, resolved while they are
 /// attached: after a disconnect their sysfs entries are gone.

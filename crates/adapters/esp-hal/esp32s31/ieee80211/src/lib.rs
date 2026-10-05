@@ -14,7 +14,7 @@ use esp_hal::{
     rng::Rng,
     system::Cpu,
 };
-use oer_esp32s31_soc_esp_hal::interrupt_table::{self, Route};
+use oer_espressif_interrupt_table_esp_hal::{self as interrupt_table, Route};
 use oer_interrupt_table::Entry;
 
 use oer_esp32s31_hal::coex::CoexPtiTable;

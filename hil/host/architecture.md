@@ -29,17 +29,18 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | `source-snapshot/` (`oer-hil-source-snapshot`) | none | Source snapshots: capture of the repository and local dependency checkouts, their identity, and verified materialization into build workspaces |
 | `family/ieee80211/`, `family/bluetooth/`, `family/system/`, `family/ieee802154/` (`oer-hil-family-*`) | none | One radio family: its scenario table (`ScenarioFamily`: validation, plan, requirements, image keys, peer image, air use), its `Workload` and its target exchanges; each depends on `oer-hil-workload`, never on another family |
 | `family/coexistence/` (`oer-hil-family-coexistence`) | none | The joint Wi-Fi and Bluetooth workload, the one family that composes two others |
-| `family/phy/` (`oer-hil-family-phy`) | none | The PHY workload: the vendor-versus-production calibration cross-check, which writes the vendor firmware and the scenario's image alternately through the run's `BoardImages` and records the comparison of `oer-esp32s31-phy-vendor-calibration` as its typed result |
+| `family/phy/` (`oer-hil-family-phy`) | none | The PHY workload: the vendor-versus-production calibration cross-check, which writes the vendor firmware and the scenario's image alternately through the run's `BoardImages` and records the chip's comparison, reached through its comparison port, as its typed result; it names no chip |
+| `family/phy-esp32s31/` (`oer-hil-family-phy-esp32s31`) | none | The ESP32-S31 composition of the PHY family: `oer-esp32s31-phy-vendor-calibration` behind the comparison port; the runner's family registry lists its `FAMILY` |
 | `family/ieee80211-fixture/` (`oer-hil-family-ieee80211-fixture`) | none | The Wi-Fi fixtures (local Linux and OpenWrt access points, hostapd, host network routes, air monitors) and their `FixtureProvider` |
 | `family/ieee80211-evidence/` (`oer-hil-family-ieee80211-evidence`) | none | Radio-evidence analysis of Wi-Fi sessions: air captures, protection and the RX delivery frontier |
 | `net-traffic/` (`oer-hil-net-traffic`) | none | Host traffic against the target's network sessions: session start and evidence, readiness, paced UDP and TCP, offered load and the one ICMP method (datagram sockets) |
-| `../stand/model/` (`oer-hil-stand-model`) | none | The stand file, the one resolver of a board name (id, chip or MAC) and the XDG paths of the stand's state |
-| `board/` (`oer-hil-board`) | none | Board I/O: attached ports and a board's `/dev/serial/by-id` port, the one flash writer (espflash library, the chip from its profile, retries, unchanged segments skipped, OTA selection last), starts, the one reset ladder, OpenOCD, hub power and consoles |
-| `arbiter/` (`oer-hil-arbiter`) | none | Claims, the queue and its job tickets, balances, preemption, maintenance, the lock files (the final exclusion layer) and the board journal with its one flash writer |
-| `flash/` (`oer-hil-flash`) | none | The flash operation, the only way the host writes a board: lease, write, journal, start; and the ESP-IDF catalog flash |
-| `stand-host/` (`oer-hil-stand-host`) | none | The stand's host: discovery of its boards, the host doctor, fixture reachability and the one SSH helper to its OpenWrt hosts |
+| `../../stand/file/` (`oer-stand-file`) | none | The stand file, the one resolver of a board name (id, chip or MAC) and the XDG paths of the stand's state |
+| `../../stand/board/` (`oer-stand-board`) | none | A stand board: its leased device (the device lock of `oer-device-lock`), the receipted image write of `oer-device-image`, starts, the reset ladder, hub power and consoles |
+| `../../stand/arbiter/` (`oer-stand-arbiter`) | none | Claims, the queue and its job tickets, balances, preemption, maintenance; a board whose device lock a foreign process holds is busy |
+| `flash/` (`oer-hil-flash`) | none | The flash operation of HIL: lease, write, journal, start; and the ESP-IDF catalog flash |
+| `../../stand/discover/`, `../../stand/doctor/`, `../../stand/ssh/` | none | The stand's host: discovery of its boards, the host doctor, fixture reachability and the one SSH helper to its OpenWrt hosts |
 | `fixture/` (`oer-hil-fixture`) | `open-radio-bluetooth`, `open-radio-probe` | Finite Linux helpers; the library is their versioned request/report contract with the runner |
-| `fixture-install/` (`oer-hil-fixture-install`) | `open-radio-fixture-install` and the three fixed launchers | Root-executed installation and admission; the runner uses the same library to plan and prepare |
+| `../../stand/fixture-install/` (`oer-stand-fixture-install`) | `open-radio-fixture-install` and the three fixed launchers | Root-executed installation and admission; the runner uses the same library to plan and prepare |
 
 The installer package depends on no radio, Bluetooth or HIL execution crate, so
 its dependency graph is the whole root-executed installation surface.
@@ -70,7 +71,7 @@ network, probe or Bluetooth helper execution; they neither recover nor install.
 These locks never acquire a device or replace the physical fixture leases below.
 The stand's arbiter orders both sides: a run claims
 `fixture-software:<provider>` shared and takes the software lease only once
-granted, and `cargo hil fixture install` claims it exclusively before `sudo`.
+granted, and `cargo stand fixture install` claims it exclusively before `sudo`.
 An installation therefore waits only for runs using its provider, never for a
 queued run, and runs queued after it wait for the new generation.
 
@@ -100,7 +101,7 @@ claim an earlier physical action:
 | --- | --- |
 | 1. Selection and plan | CLI/catalog code resolves typed scenarios. `RunSession` creates a unique directory and writes `plan.json`. |
 | 2. Firmware archive | `image` builds every selected class whose scenarios meet their configuration preconditions, before the stand is leased. `RunSession::record_firmware` stores the subjects and returns the run-local `firmware/<class>/application.bin`. An explicit replay source is validated by `oer_hil_run_bundle::verify` under the lease. |
-| 3. Leases and lab provenance | The runner waits for the [arbiter](arbiter/README.md) lease on the boards, fixtures and air the selection claims. The run's fixture lock then takes the arbiter's lock files of its boards (by MAC), the local wiphy and the managed OpenWrt host its selection uses; these are local user-account locks, not distributed reservations. While they are held, `lab::provenance` records the secret-free topology before any flash. |
+| 3. Leases and lab provenance | The runner waits for the [arbiter](../../stand/arbiter/README.md) lease on the boards, fixtures and air the selection claims. The run's fixture lock then takes the arbiter's lock files of its boards (by MAC), the local wiphy and the managed OpenWrt host its selection uses; these are local user-account locks, not distributed reservations. While they are held, `lab::provenance` records the secret-free topology before any flash. |
 | 4. Flash | The flash operation (`oer-hil-flash`) writes the bundle around that archived application under the run's lock of the board, through board I/O's one writer, journals it and starts it as the chip profile says. The workload never flashes a different build-tree copy. |
 | 5. Repetitions | `fixture::prepared` owns peer/host preparation; `session` owns serial reset, raw `uart.bin`, decoded protocol and target-health state; a workload owns its child processes and typed observations. Primary failures remain distinct from infrastructure failures. |
 | 6. Cleanup and attachment indexing | Each repetition enters a cleanup scope before fixture preparation. Cleanup/restoration finishes before attachments and `result.json` are collected. `cleanup.json` preserves every attempted restoration and its failure independently of the workload result. |
@@ -126,10 +127,10 @@ fixture installation are described in [stand](stand.md), [runs](runs.md) and
 
 ```console
 cargo hil doctor
-cargo hil fixture install --provider linux-net --dry-run
-cargo hil fixture install --provider linux-bluetooth --dry-run
-cargo hil fixture install --provider linux-net
-cargo hil fixture install --provider linux-bluetooth
+cargo stand fixture install --provider linux-net --dry-run
+cargo stand fixture install --provider linux-bluetooth --dry-run
+cargo stand fixture install --provider linux-net
+cargo stand fixture install --provider linux-bluetooth
 cargo hil fixture bluetooth-check --adapter hci0
 cargo hil doctor timebase
 cargo hil plan udp-rx-ht40-ceiling
@@ -368,7 +369,7 @@ The laptop helper contract is schema 6. Its `client` action returns status 10
 only when a prepared client exhausts the association wait; command failures
 and malformed supplicant status are infrastructure errors. `doctor` and the
 selected run preflight reject older helpers before flashing or resetting the DUT.
-Provision it with `cargo hil fixture install --provider linux-net`
+Provision it with `cargo stand fixture install --provider linux-net`
 from the repository root before using laptop client scenarios. Installation
 performs software-only verification; it never substitutes for this helper
 preflight or a fixture/hardware check.
@@ -380,9 +381,9 @@ packet captures use their configured duration plus shutdown allowance. Remote
 process lifetimes additionally depend on the OpenWrt scripts' timeouts and traps.
 
 Serial-device and fixture leases live in the user's host cache, outside
-individual checkouts. Serial leases are shared with `cargo hil flash` and
-the verification captures, and use USB identity when available, otherwise the
-canonical device path.
+individual checkouts. A board itself is held through the device lock (`oer-device-lock`, keyed by
+its MAC), which `cargo fw`, `cargo stand`, the runner and the verification
+captures share.
 A run additionally leases every required local wiphy and the managed OpenWrt
 host boot. Local client/monitor interfaces sharing a radio conflict. The remote boot identity makes different SSH aliases and radio
 interfaces on one OpenWrt host conflict; the whole host is reserved because
@@ -393,7 +394,7 @@ External unmanaged APs have no discovered physical identity and are not
 claimed. Build/flash-only commands and device inspection acquire no
 AP or laptop-radio resources.
 
-The [stand arbiter](arbiter/README.md) orders these locks. Every command that
+The [stand arbiter](../../stand/arbiter/README.md) orders these locks. Every command that
 takes them first waits for a host-wide lease on the resources it claims; the
 locks remain the final exclusion, and a granted holder waits for any lock
 still held by a process outside the queue. A run holds the lease from its

@@ -12,8 +12,8 @@
 //! evidence` calls it.
 use crate::Result;
 use crate::producer::{Producer, host_stand};
-use crate::{Index, store};
 use oer_process::Checkout;
+use oer_vendor_evidence_shard::{Index, store};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -49,7 +49,7 @@ struct Blobray<'a> {
 
 impl Producer for Blobray<'_> {
     fn command(&self) -> &'static str {
-        crate::BLOBRAY
+        oer_vendor_evidence_shard::BLOBRAY
     }
 
     fn owns(&self, _scenario: &str) -> bool {
@@ -105,7 +105,7 @@ struct HostStand<'a> {
 
 impl Producer for HostStand<'_> {
     fn command(&self) -> &'static str {
-        crate::HOST_STAND
+        oer_vendor_evidence_shard::HOST_STAND
     }
 
     fn owns(&self, scenario: &str) -> bool {
@@ -222,7 +222,7 @@ pub fn untriaged(ctx: &Checkout, chip: &str) -> Result<ExitCode> {
 /// in `directory`, or every location when `all`.
 fn render_untriaged(directory: &Path, all: bool) -> Result<String> {
     let shards = store::shards(directory)?;
-    let locations = crate::untriaged(&shards.iter().collect::<Vec<_>>());
+    let locations = oer_vendor_evidence_shard::untriaged(&shards.iter().collect::<Vec<_>>());
     let mut functions = std::collections::BTreeMap::<&str, usize>::new();
     for location in &locations {
         *functions.entry(&location.function).or_default() += 1;
@@ -300,7 +300,8 @@ pub fn check(
     let mut committed: Vec<String> = store::names(&directory)?
         .into_iter()
         .filter(|name| {
-            store::read(&directory, name).is_none_or(|shard| shard.command == crate::BLOBRAY)
+            store::read(&directory, name)
+                .is_none_or(|shard| shard.command == oer_vendor_evidence_shard::BLOBRAY)
         })
         .collect();
     // Named scenarios narrow the check; each must have a committed shard.
@@ -367,7 +368,7 @@ pub fn check(
     } else {
         let names: Vec<&str> = differing.iter().map(|s| s.as_str()).collect();
         eprintln!(
-            "evidence shards differ from their rerun: {}; regenerate them with `cargo xtask evidence --chip {chip} {}`",
+            "evidence shards differ from their rerun: {}; regenerate them with `cargo verification evidence --chip {chip} {}`",
             names.join(", "),
             names.join(" ")
         );

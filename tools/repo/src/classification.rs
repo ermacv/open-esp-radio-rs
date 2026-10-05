@@ -524,16 +524,16 @@ mod tests {
 
     #[test]
     fn chip_and_family_identifiers_follow_their_platform() {
-        let class = classified("layer = 'hardware'\nplatform = 'chip'\nchip = 'esp32s31'").unwrap();
-        assert_eq!(class.platform, Platform::Chip("esp32s31".into()));
+        let class = classified("layer = 'hardware'\nplatform = 'chip'\nchip = 'chip-a'").unwrap();
+        assert_eq!(class.platform, Platform::Chip("chip-a".into()));
         let class =
             classified("layer = 'hardware'\nplatform = 'family'\nfamily = 'espressif'").unwrap();
         assert_eq!(class.platform, Platform::Family("espressif".into()));
         for invalid in [
             "layer = 'hardware'\nplatform = 'chip'",
-            "layer = 'hardware'\nplatform = 'portable'\nchip = 'esp32s31'",
+            "layer = 'hardware'\nplatform = 'portable'\nchip = 'chip-a'",
             "layer = 'hardware'\nplatform = 'chip'\nchip = 'ESP32'",
-            "layer = 'hardware'\nplatform = 'family'\nchip = 'esp32s31'",
+            "layer = 'hardware'\nplatform = 'family'\nchip = 'chip-a'",
             // Code shared by chips is a family package or a register
             // library, never one selected per chip by a feature.
             "layer = 'hardware'\nplatform = 'selected'",
@@ -568,7 +568,7 @@ mod tests {
     #[test]
     fn every_key_is_typed() {
         let class = classified(
-            "layer = 'hil'\nplatform = 'chip'\nchip = 'esp32s31'\nhil = 'observation'\n\
+            "layer = 'hil'\nplatform = 'chip'\nchip = 'chip-a'\nhil = 'observation'\n\
              supported-feature-profiles = ['left,right']\ntest-feature-sets = ['left', 'left,right']\n\
              inputs = ['docs/*.md']",
         )
@@ -616,12 +616,12 @@ mod tests {
         let manifests = "hil/targets/**/Cargo.toml";
         assert!(input_matches(
             manifests,
-            "hil/targets/esp32s31/agent/Cargo.toml"
+            "hil/targets/chip-a/agent/Cargo.toml"
         ));
         assert!(input_matches(manifests, "hil/targets/Cargo.toml"));
         assert!(!input_matches(
             manifests,
-            "hil/targets/esp32s31/agent/src/main.rs"
+            "hil/targets/chip-a/agent/src/main.rs"
         ));
         assert!(input_matches("docs/*.md", "docs/guide.md"));
         assert!(input_matches("a/*-x*/b", "a/one-x2/b"));
@@ -632,7 +632,7 @@ mod tests {
     fn package_names_share_one_prefix_and_only_the_facade_is_branded() {
         for (name, layer) in [
             ("oer-ieee80211-sta", Layer::Protocol),
-            ("oer-esp32s31-ieee80211-embassy-net-owned", Layer::Adapter),
+            ("oer-chip-a-ieee80211-embassy-net-owned", Layer::Adapter),
             ("oer-hil-runner", Layer::Hil),
             ("open-esp-radio", Layer::Facade),
         ] {
@@ -664,7 +664,7 @@ mod tests {
         assert_eq!(class.host_layer, Some(HostLayer::Build));
         for invalid in [
             "layer = 'role'\nplatform = 'portable'\nhost-layer = 'build'",
-            "layer = 'tool'\nplatform = 'chip'\nchip = 'esp32s31'\nhost-layer = 'build'",
+            "layer = 'tool'\nplatform = 'chip'\nchip = 'chip-a'\nhost-layer = 'build'",
             "layer = 'tool'\nplatform = 'host'\nhost-layer = 'middle'",
         ] {
             assert!(classified(invalid).is_err(), "{invalid}");

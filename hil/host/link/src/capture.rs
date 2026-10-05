@@ -5,7 +5,7 @@ use super::*;
 use crate::transport::events::EventPoll;
 use std::{
     collections::VecDeque,
-    os::fd::{AsRawFd, FromRawFd as _, IntoRawFd as _, OwnedFd},
+    os::fd::{AsRawFd, FromRawFd as _, OwnedFd},
 };
 
 impl SerialCapture {
@@ -15,12 +15,12 @@ impl SerialCapture {
         self
     }
 
-    /// Observe an already-running target. Do not clear input, toggle reset
-    /// lines, upload artifacts or initialize the runtime.
-    pub fn attach(port: &Path, output: &Path) -> Result<Self> {
-        let port = port.to_owned();
+    /// Observe an already-running target on the console `open` opens
+    /// without touching its lines. Do not clear input, toggle reset lines,
+    /// upload artifacts or initialize the runtime.
+    pub fn attach(open: ConsoleOpener, output: &Path) -> Result<Self> {
         Self::start_transport_at(output, CaptureOrigin::Attachment, move || {
-            let serial = open_serial_after_busy_release(&port)
+            let serial = open()
                 .map_err(|error| LinkError::transport(format!("serial attach failed: {error}")))?;
             nonblocking_serial(serial)
         })
@@ -30,16 +30,13 @@ impl SerialCapture {
     /// failures and early returns leave a capture and a structured diagnosis.
     pub fn start_with_reset(dut: &dyn Dut, output: &Path) -> Result<Self> {
         let port = dut.console().to_owned();
-        let reset = dut.application_reset();
+        let open = dut.console_with_reset();
         Self::start_transport(output, move || {
-            let mut serial = open_serial_after_busy_release(&port).map_err(|error| {
+            let serial = open().map_err(|error| {
                 LinkError::transport(format!(
-                    "serial open failed for {}: {error}",
+                    "serial open and target reset failed for {}: {error}",
                     port.display()
                 ))
-            })?;
-            reset(&mut serial).map_err(|error| {
-                LinkError::transport(format!("serial target reset failed: {error}"))
             })?;
             nonblocking_serial(serial)
         })
@@ -326,14 +323,14 @@ impl SerialCapture {
     }
 }
 
-fn nonblocking_serial(serial: serialport::TTYPort) -> std::result::Result<fs::File, LinkError> {
+fn nonblocking_serial(serial: Box<dyn SerialLine>) -> std::result::Result<fs::File, LinkError> {
     #[allow(
         unsafe_code,
-        reason = "serialport exposes its descriptor only as a raw fd"
+        reason = "a serial port hands its descriptor over only as a raw fd"
     )]
-    // SAFETY: `into_raw_fd` releases sole ownership of the open descriptor,
+    // SAFETY: `into_raw_descriptor` releases sole ownership of the open descriptor,
     // which this `OwnedFd` takes exactly once.
-    let file = fs::File::from(unsafe { OwnedFd::from_raw_fd(serial.into_raw_fd()) });
+    let file = fs::File::from(unsafe { OwnedFd::from_raw_fd(serial.into_raw_descriptor()) });
     let flags = rustix::fs::fcntl_getfl(&file);
     flags
         .and_then(|flags| rustix::fs::fcntl_setfl(&file, flags | rustix::fs::OFlags::NONBLOCK))

@@ -1,4 +1,5 @@
-use super::{pending::Pending, *};
+use super::*;
+use oer_hil_run_bundle_format::pending::{self, Pending};
 
 #[test]
 fn a_checkout_links_to_the_store_and_refuses_runs_of_its_own() {

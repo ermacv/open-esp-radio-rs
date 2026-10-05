@@ -7,7 +7,9 @@ pub(super) fn record_rx_silence(
     limit_ms: Option<u32>,
     evidence: TransportEvidence,
 ) {
-    use oer_hil_run_bundle::run::{Comparison, Measurement, MeasurementUnit};
+    use oer_hil_run_bundle_format::run::Comparison;
+    use oer_hil_run_bundle_format::run::Measurement;
+    use oer_hil_run_bundle_format::run::MeasurementUnit;
     if let Some(observed) = evidence.rx_maximum_silence_micros {
         let measurement = Measurement::observed(
             "udp.rx.maximum-silence",
@@ -89,7 +91,7 @@ mod tests {
         assert_eq!(values[0].threshold.unwrap().value, 50_000);
         assert_eq!(
             values[0].verdict,
-            Some(oer_hil_run_bundle::run::MeasurementVerdict::Failed)
+            Some(oer_hil_run_bundle_format::run::MeasurementVerdict::Failed)
         );
     }
 }

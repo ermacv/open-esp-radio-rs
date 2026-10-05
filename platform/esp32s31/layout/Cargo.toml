@@ -6,12 +6,15 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Staged-boot address map, runtime placement profiles and stage-two image contract"
-readme = "README.md"
+description = "Staged-boot address map of ESP32-S31-Function-CoreBoard-1"
 
 [features]
-# Emit the layout to linker scripts from a Cargo build script (requires std).
-build = []
+# Link a binary with the shared linker scripts from a Cargo build script
+# (requires std).
+build = ["oer-espressif-staged-layout/build"]
+
+[dependencies]
+oer-espressif-staged-layout = { path = "../../espressif/staged-layout" }
 
 [lints]
 workspace = true

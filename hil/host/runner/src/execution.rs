@@ -3,7 +3,9 @@
 use std::path::Path;
 
 use crate::scenario::Scenario;
-use oer_hil_run_bundle::run::{Failure, FailureKind, Outcome};
+use oer_hil_run_bundle_format::run::Failure;
+use oer_hil_run_bundle_format::run::FailureKind;
+use oer_hil_run_bundle_format::run::Outcome;
 
 pub(crate) mod doctor;
 pub(crate) mod firmware;
@@ -17,7 +19,7 @@ pub(crate) use oer_hil_workload::failure::classify;
 
 #[derive(Default)]
 pub(crate) struct ExecutionEvidence {
-    pub(crate) measurements: Vec<oer_hil_run_bundle::run::Measurement>,
+    pub(crate) measurements: Vec<oer_hil_run_bundle_format::run::Measurement>,
     pub(crate) failure: Option<Failure>,
     pub(crate) interrupted: bool,
     /// The stand quarantined the board after this repetition.
@@ -46,12 +48,14 @@ pub(crate) fn execute_workload(
     output: &Path,
     fixtures: &oer_hil_workload::fixture::Fixtures,
     images: Option<&dyn oer_hil_workload::context::BoardImages>,
+    device: Option<&oer_device_lock::DeviceAccess>,
 ) -> ExecutionEvidence {
     // The board's MAC outlives its port name, which a reset can change.
     let mac = lab.dut.mac.as_str();
     let context = oer_hil_workload::context::Context::new(lab, selected.plan().settings, output)
         .with_profile(selected.header.profile)
-        .with_images(images);
+        .with_images(images)
+        .with_device(device);
     let result = selected.family.run(output, &context, fixtures);
     // The workload's typed observations, whatever its outcome.
     let result = match (result, context.finish()) {
@@ -85,7 +89,10 @@ pub(crate) fn execute_workload(
     let recovery = (failed && post_mortem.is_none())
         .then(|| {
             let origin = oer_hil_run_bundle::store::run_of(output).unwrap_or_default();
-            match lab.dut_board() {
+            let leased = device
+                .ok_or_else(|| "the run holds no lease of it".into())
+                .and_then(|device| lab.dut_board()?.lease(device));
+            match leased {
                 Ok(board) => {
                     oer_hil_lab::recovery::recover(&board, output, elf.as_deref(), &origin)
                 }
@@ -145,11 +152,14 @@ pub(crate) fn execute_workload(
     evidence
 }
 
-/// Hold each hart's observed interrupt-stack use of an ESP32-S31 repetition
-/// to the image's static bound: a watermark above it fails the repetition,
-/// as does an analysis that cannot run; a `partial + ?` hart is only observed.
+/// Hold each hart's observed interrupt-stack use of a repetition to the
+/// image's static bound: a watermark above it fails the repetition, as does
+/// an analysis that cannot run; a `partial + ?` hart is only observed. A
+/// chip whose profile names no interrupt contract has no bound to hold.
 fn check_interrupt_stacks(chip: &str, elf: Option<&Path>, evidence: &mut ExecutionEvidence) {
-    if chip != "esp32s31" {
+    let bounded = oer_chip_profile::Profile::load(&oer_process::built_root(), chip)
+        .is_ok_and(|profile| profile.interrupts.is_some());
+    if !bounded {
         return;
     }
     let peaks = interrupt_stack::observed_peaks(&evidence.measurements);
@@ -158,14 +168,15 @@ fn check_interrupt_stacks(chip: &str, elf: Option<&Path>, evidence: &mut Executi
     }
     let evaluated = elf
         .ok_or_else(|| "the run archived no runtime ELF to bound the interrupt stacks".to_owned())
-        .and_then(interrupt_stack::bounds)
+        .and_then(|elf| interrupt_stack::bounds(chip, elf))
         .and_then(|bounds| interrupt_stack::evaluate(&peaks, &bounds));
     match evaluated {
         Ok(measurements) => {
             let exceeded: Vec<String> = measurements
                 .iter()
                 .filter(|measurement| {
-                    measurement.verdict == Some(oer_hil_run_bundle::run::MeasurementVerdict::Failed)
+                    measurement.verdict
+                        == Some(oer_hil_run_bundle_format::run::MeasurementVerdict::Failed)
                 })
                 .map(|measurement| {
                     format!(

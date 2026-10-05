@@ -10,7 +10,7 @@
 //! the functions no execution entered that the closure reaches only through
 //! excluded functions: their code is unreachable for the same reason.
 use crate::harness::{Result, invalid};
-use oer_vendor_evidence::{CoverageDecisions, Location, LocationKind};
+use oer_vendor_evidence_shard::{CoverageDecisions, Location, LocationKind};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::Path;

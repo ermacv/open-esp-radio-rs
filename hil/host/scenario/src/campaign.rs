@@ -7,8 +7,9 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Catalog, Result, Scenario, ScenarioFamily, requirements::Requirements};
-use oer_hil_image_class::ImageClass;
+use crate::{Catalog, Result, Scenario, ScenarioFamily};
+use oer_hil_scenario_catalog::requirements::Requirements;
+use oer_hil_schema::image::ImageClass;
 
 const CAMPAIGN_SCHEMA: u16 = 7;
 

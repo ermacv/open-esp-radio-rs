@@ -12,11 +12,11 @@
 //! clear and marks the protected MPDUs it delivers as decrypted by the
 //! backend.
 
+use super::Model;
 use std::{collections::VecDeque, vec, vec::Vec};
 
 use oer_ieee80211_lower_mac::{
     Band, Channel, ChannelWidth, KeySelector, RxCryptoStatus, RxEvidence, RxMeta, VifId,
-    model::LowerMacModel,
 };
 use oer_ieee80211_mac::{
     ccmp::{CcmpHeader, CcmpKeyId, CcmpPacketNumber},
@@ -220,7 +220,7 @@ impl ScriptedAp {
     }
 
     /// Read every attempt the station submitted since the last read.
-    pub fn absorb(&mut self, model: &LowerMacModel) {
+    pub fn absorb(&mut self, model: &Model) {
         let submitted = model.submitted();
         while self.seen < submitted.len() {
             let attempt = &submitted[self.seen];
@@ -234,7 +234,7 @@ impl ScriptedAp {
     /// One step: read what the station submitted, send the TBTT and beacon
     /// that are due, and deliver one queued frame. Whether anything
     /// happened.
-    pub fn step(&mut self, model: &LowerMacModel, now_micros: u64) -> bool {
+    pub fn step(&mut self, model: &Model, now_micros: u64) -> bool {
         let mut progress = false;
         let submitted = model.submitted();
         while self.seen < submitted.len() {
@@ -267,7 +267,7 @@ impl ScriptedAp {
         progress
     }
 
-    fn observe(&mut self, model: &LowerMacModel, frame: &[u8], key: KeySelector) {
+    fn observe(&mut self, model: &Model, frame: &[u8], key: KeySelector) {
         let frame_control = frame[0];
         match frame_control {
             // Probe Request.
@@ -615,7 +615,7 @@ pub fn bip_transmitter() -> oer_ieee80211_rsn::bip::BipTransmitter {
 
 /// The access point hears the station and is heard only on its primary
 /// channel, at 20 or 40 MHz.
-fn on_channel(model: &LowerMacModel) -> bool {
+fn on_channel(model: &Model) -> bool {
     model
         .channel()
         .is_some_and(|channel| channel.band() == Band::Ghz2_4 && channel.number() == AP_CHANNEL)

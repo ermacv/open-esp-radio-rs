@@ -4,8 +4,8 @@
 use core::{convert::Infallible, marker::PhantomData};
 use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_ieee80211_upper_mac::rate_control::{RateControl, link_metric};
-use oer_ieee80211_upper_mac_service::aggregate::AmpduSubframes;
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortError, PortMsdu, PortRxBuffer};
+use oer_ieee80211_upper_mac_service::{aggregate::AmpduSubframes, frame::NetworkBody};
 
 use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, Ieee80211LowerMacPort, ReceiveFilter, RxMeta,
@@ -215,7 +215,7 @@ pub struct PortStationStorage<F> {
     connection: PortConnectionBuffers,
     /// The headers of one A-MPDU's subframes and the network's frames
     /// they carry.
-    subframes: AmpduSubframes<F>,
+    subframes: AmpduSubframes<NetworkBody<F>>,
 }
 
 impl<F: SoftwareTxFrame> PortStationStorage<F> {
@@ -264,7 +264,7 @@ pub struct PortStation<'p, X: PortStationEnv> {
     /// A frame taken from the network that waits for its own exchange.
     frontier: Option<PortStationFrame<X>>,
     /// The subframes of the A-MPDU being sent.
-    subframes: &'p mut AmpduSubframes<PortStationFrame<X>>,
+    subframes: &'p mut AmpduSubframes<NetworkBody<PortStationFrame<X>>>,
     connection: Option<PortConnection<'p, X::Port, X::RateControl>>,
     report: PortAttemptReport,
 }

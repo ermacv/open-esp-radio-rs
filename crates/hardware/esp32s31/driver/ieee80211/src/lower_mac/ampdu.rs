@@ -170,24 +170,32 @@ const fn subframe_capacity(len: usize) -> Option<usize> {
     }
 }
 
+/// The core's aggregate takes no body: the backend in front of it places a
+/// body after its header in the MPDU it pushes.
 impl<S: AmpduBackingSource, const SLOTS: usize> AmpduBuffer for Esp32s31AmpduBuffer<'_, S, SLOTS> {
-    /// `None` also when the source has no free backing or its backing is
+    type Body = core::convert::Infallible;
+
+    /// Refused also when the source has no free backing or its backing is
     /// too short for the MPDU with its metadata, MIC and FCS.
-    fn push_mpdu(&mut self, len: usize) -> Option<&mut [u8]> {
+    fn push_mpdu(
+        &mut self,
+        len: usize,
+        _body: Option<core::convert::Infallible>,
+    ) -> Result<&mut [u8], Option<core::convert::Infallible>> {
         if self.count >= SLOTS || len == 0 {
-            return None;
+            return Err(None);
         }
-        let capacity = subframe_capacity(len)?;
-        let mut backing = self.source.backing()?;
+        let capacity = subframe_capacity(len).ok_or(None)?;
+        let mut backing = self.source.backing().ok_or(None)?;
         if backing.stable_dma_region().len() < capacity {
             // Dropping the backing returns it.
-            return None;
+            return Err(None);
         }
         let index = self.count;
         let subframe = self.subframes[index].insert(Subframe { backing, len });
         self.count += 1;
         let region = subframe.backing.stable_dma_region().into_mut_slice();
-        Some(&mut region[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + len])
+        Ok(&mut region[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + len])
     }
 
     fn subframes(&self) -> usize {

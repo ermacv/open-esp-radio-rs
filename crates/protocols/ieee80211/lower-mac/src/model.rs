@@ -9,7 +9,9 @@
 //! and outcomes queued with [`LowerMacModel::respond`] end each attempt as
 //! soon as it is published, so a driver that awaits
 //! [`Ieee80211LowerMacPort::next_event`] runs without the test in between.
-//! [`LowerMacModel::submitted`] records what each admitted attempt carried.
+//! [`LowerMacModel::submitted`] records what each admitted attempt carried,
+//! each MPDU whole: the model copies a body after its header as it admits
+//! the attempt, and keeps the body's owner until the caller reclaims it.
 //! [`LowerMacModel::poison`] makes the backend's state unknown: the port
 //! reports its terminal event and refuses every later call.
 //!
@@ -143,21 +145,56 @@ impl TxBuffer for ModelBuffer {
     }
 }
 
-/// An aggregate buffer of the model: its MPDUs in order.
-#[derive(Debug, Default, Eq, PartialEq)]
-pub struct ModelAmpdu(pub Vec<Vec<u8>>);
+/// A body the model's test owns: its octets.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelBody(pub Vec<u8>);
 
-impl AmpduBuffer for ModelAmpdu {
-    fn push_mpdu(&mut self, len: usize) -> Option<&mut [u8]> {
-        if len > MODEL_MAX_MPDU || self.0.len() == usize::from(MODEL_AMPDU.max_subframes) {
-            return None;
+impl TxBody for ModelBody {
+    fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// An aggregate buffer of the model: its MPDUs in order, each with its body
+/// copied after its header, and the bodies it holds by subframe.
+#[derive(Debug, Eq, PartialEq)]
+pub struct ModelAmpdu<O = ModelBody> {
+    pub mpdus: Vec<Vec<u8>>,
+    bodies: Vec<(usize, O)>,
+}
+
+impl<O> Default for ModelAmpdu<O> {
+    fn default() -> Self {
+        Self {
+            mpdus: Vec::new(),
+            bodies: Vec::new(),
         }
-        self.0.push(vec![0; len]);
-        self.0.last_mut().map(Vec::as_mut_slice)
+    }
+}
+
+impl<O: TxBody> AmpduBuffer for ModelAmpdu<O> {
+    type Body = O;
+
+    fn push_mpdu(&mut self, len: usize, body: Option<O>) -> Result<&mut [u8], Option<O>> {
+        let body_len = body.as_ref().map_or(0, |body| body.bytes().len());
+        if len > MODEL_MAX_MPDU
+            || body_len > len
+            || self.mpdus.len() == usize::from(MODEL_AMPDU.max_subframes)
+        {
+            return Err(body);
+        }
+        let header = len - body_len;
+        let mut mpdu = vec![0; len];
+        if let Some(body) = body {
+            mpdu[header..].copy_from_slice(body.bytes());
+            self.bodies.push((self.mpdus.len(), body));
+        }
+        self.mpdus.push(mpdu);
+        Ok(&mut self.mpdus.last_mut().expect("just pushed")[..header])
     }
 
     fn subframes(&self) -> usize {
-        self.0.len()
+        self.mpdus.len()
     }
 }
 
@@ -330,15 +367,18 @@ impl State {
 /// The in-memory backend. Every admitted attempt stays in flight until the
 /// test or a queued outcome ends it. Time enters as a value: its radio
 /// clock reads what the test last passed to [`LowerMacModel::set_now`].
-pub struct LowerMacModel {
+pub struct LowerMacModel<O = ModelBody> {
     state: RefCell<State>,
+    /// The bodies of admitted attempts, by attempt and subframe, until the
+    /// caller reclaims them.
+    bodies: RefCell<Vec<(TxId, usize, O)>>,
     /// Receive buffers lent and not yet dropped.
     rx_lent: Rc<Cell<usize>>,
     /// The radio clock, as the test last set it.
     now: Cell<Ieee80211Instant>,
 }
 
-impl Default for LowerMacModel {
+impl<O: TxBody> Default for LowerMacModel<O> {
     fn default() -> Self {
         Self::new()
     }
@@ -354,11 +394,12 @@ impl PortError for ModelPoisoned {
     }
 }
 
-impl LowerMacModel {
+impl<O: TxBody> LowerMacModel<O> {
     /// A model whose radio clock stands at the epoch.
     pub fn new() -> Self {
         Self {
             state: RefCell::default(),
+            bodies: RefCell::new(Vec::new()),
             rx_lent: Rc::new(Cell::new(0)),
             now: Cell::new(Ieee80211Instant::from_micros(0)),
         }
@@ -542,6 +583,11 @@ impl LowerMacModel {
         self.state.borrow().monitor
     }
 
+    /// Bodies the model holds, of every attempt.
+    pub fn bodies_held(&self) -> usize {
+        self.bodies.borrow().len()
+    }
+
     fn admit<P>(
         &self,
         attempt: &TxAttempt<P>,
@@ -622,9 +668,9 @@ impl LowerMacModel {
 /// The future of [`LowerMacModel::next_event`]: ready while an event or a
 /// loss is queued. It registers no waker; a driver polls it again after the
 /// test changed the model.
-pub struct NextModelEvent<'a>(&'a LowerMacModel);
+pub struct NextModelEvent<'a, O>(&'a LowerMacModel<O>);
 
-impl Future for NextModelEvent<'_> {
+impl<O> Future for NextModelEvent<'_, O> {
     type Output = Result<ModelEvent, EventsLost>;
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
@@ -637,11 +683,12 @@ impl Future for NextModelEvent<'_> {
     }
 }
 
-impl Ieee80211LowerMacPort for LowerMacModel {
+impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
     type Event = ModelEvent;
     type RxBuffer = ModelRxBuffer;
     type Error = ModelPoisoned;
     type TxBuffer = ModelBuffer;
+    type TxBody = O;
 
     fn into_received(event: ModelEvent) -> Result<(ModelRxBuffer, RxMeta), ModelEvent> {
         match event {
@@ -690,24 +737,64 @@ impl Ieee80211LowerMacPort for LowerMacModel {
 
     fn submit(
         &self,
-        attempt: MpduAttempt<ModelBuffer>,
-    ) -> SubmitResult<MpduAttempt<ModelBuffer>, ModelPoisoned> {
+        mut attempt: MpduAttempt<ModelBuffer, O>,
+    ) -> SubmitResult<MpduAttempt<ModelBuffer, O>, ModelPoisoned> {
         drop(self.serving()?);
+        let header = attempt.payload.header_len();
         let frame = &attempt.payload.frame.0;
         let individual = frame.get(4).is_some_and(|byte| byte & 1 == 0);
-        let refused = if frame.len() < 10 {
-            Err(SubmitError::InvalidLength)
-        } else if individual
-            && attempt.payload.response == TxResponse::None
-            && !MODEL_CAPABILITIES
-                .individual_no_ack
-                .contains_rate(attempt.rate)
-        {
-            Err(SubmitError::Unsupported)
-        } else {
-            self.admit(&attempt, vec![frame.clone()], None)
+        let refused = match header {
+            Some(header) if header >= 10 => {
+                if individual
+                    && attempt.payload.response == TxResponse::None
+                    && !MODEL_CAPABILITIES
+                        .individual_no_ack
+                        .contains_rate(attempt.rate)
+                {
+                    Err(SubmitError::Unsupported)
+                } else {
+                    // The body follows the header the caller wrote.
+                    let mut mpdu = frame.clone();
+                    if let Some(body) = &attempt.payload.body {
+                        mpdu[header..].copy_from_slice(body.bytes());
+                    }
+                    self.admit(&attempt, vec![mpdu], None)
+                }
+            }
+            _ => Err(SubmitError::InvalidLength),
         };
+        if refused.is_ok()
+            && let Some(body) = attempt.payload.body.take()
+        {
+            self.bodies.borrow_mut().push((attempt.id, 0, body));
+        }
         Ok(refused.map_err(|error| Refused { error, attempt }))
+    }
+
+    fn reclaim_tx_bodies(
+        &self,
+        id: TxId,
+        mut each: impl FnMut(usize, O),
+    ) -> Result<Result<(), ReclaimError>, ModelPoisoned> {
+        let state = self.serving()?;
+        if state.in_flight.iter().any(|attempt| attempt.id == id) {
+            return Ok(Err(ReclaimError::Running));
+        }
+        drop(state);
+        let mut bodies = self.bodies.borrow_mut();
+        if !bodies.iter().any(|(attempt, _, _)| *attempt == id) {
+            return Ok(Err(ReclaimError::Unknown));
+        }
+        let mut index = 0;
+        while index < bodies.len() {
+            if bodies[index].0 == id {
+                let (_, subframe, body) = bodies.remove(index);
+                each(subframe, body);
+            } else {
+                index += 1;
+            }
+        }
+        Ok(Ok(()))
     }
 
     fn next_event(&self) -> impl Future<Output = Result<ModelEvent, EventsLost>> + '_ {
@@ -924,14 +1011,14 @@ impl Ieee80211LowerMacPort for LowerMacModel {
     }
 }
 
-impl LowerMacAmpdu for LowerMacModel {
-    type AmpduBuffer = ModelAmpdu;
+impl<O: TxBody> LowerMacAmpdu for LowerMacModel<O> {
+    type AmpduBuffer = ModelAmpdu<O>;
 
     fn ampdu_capabilities(&self) -> AmpduCapabilities {
         MODEL_AMPDU
     }
 
-    fn ampdu_buffer(&self) -> Result<Option<ModelAmpdu>, ModelPoisoned> {
+    fn ampdu_buffer(&self) -> Result<Option<ModelAmpdu<O>>, ModelPoisoned> {
         let mut state = self.serving()?;
         if state.ampdu_lent == MODEL_AMPDU_BUFFERS {
             return Ok(None);
@@ -940,16 +1027,16 @@ impl LowerMacAmpdu for LowerMacModel {
         Ok(Some(ModelAmpdu::default()))
     }
 
-    fn release_ampdu_buffer(&self, _buffer: ModelAmpdu) {
+    fn release_ampdu_buffer(&self, _buffer: ModelAmpdu<O>) {
         self.state.borrow_mut().ampdu_lent -= 1;
     }
 
     fn submit_ampdu(
         &self,
-        attempt: AmpduAttempt<ModelAmpdu>,
-    ) -> SubmitResult<AmpduAttempt<ModelAmpdu>, ModelPoisoned> {
+        mut attempt: AmpduAttempt<ModelAmpdu<O>>,
+    ) -> SubmitResult<AmpduAttempt<ModelAmpdu<O>>, ModelPoisoned> {
         drop(self.serving()?);
-        let subframes = &attempt.payload.subframes.0;
+        let subframes = &attempt.payload.subframes.mpdus;
         let refused = match subframes.first().and_then(|first| first.get(22..24)) {
             None => Err(SubmitError::InvalidLength),
             Some(_)
@@ -983,11 +1070,22 @@ impl LowerMacAmpdu for LowerMacModel {
                 self.admit(&attempt, subframes.clone(), Some(report))
             }
         };
+        if refused.is_ok() {
+            let id = attempt.id;
+            self.bodies.borrow_mut().extend(
+                attempt
+                    .payload
+                    .subframes
+                    .bodies
+                    .drain(..)
+                    .map(|(subframe, body)| (id, subframe, body)),
+            );
+        }
         Ok(refused.map_err(|error| Refused { error, attempt }))
     }
 }
 
-impl LowerMacBeaconTiming for LowerMacModel {
+impl<O: TxBody> LowerMacBeaconTiming for LowerMacModel<O> {
     fn beacon_timing_capabilities(&self) -> BeaconTimingCapabilities {
         let both = VifRoleSet::STATION.union(VifRoleSet::ACCESS_POINT);
         BeaconTimingCapabilities {
@@ -1062,7 +1160,7 @@ impl LowerMacBeaconTiming for LowerMacModel {
     }
 }
 
-impl LowerMacMonitor for LowerMacModel {
+impl<O: TxBody> LowerMacMonitor for LowerMacModel<O> {
     fn monitor_capabilities(&self) -> MonitorCapabilities {
         MonitorCapabilities {
             with_receiving_interfaces: true,
@@ -1075,7 +1173,7 @@ impl LowerMacMonitor for LowerMacModel {
     }
 }
 
-impl LowerMacCancelPublished for LowerMacModel {
+impl<O: TxBody> LowerMacCancelPublished for LowerMacModel<O> {
     fn cancel_published(&self, id: TxId) -> Result<Result<(), CancelError>, ModelPoisoned> {
         let mut state = self.serving()?;
         Ok(

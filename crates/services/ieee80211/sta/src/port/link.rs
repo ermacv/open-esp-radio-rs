@@ -19,10 +19,10 @@ use oer_ieee80211_sta::modem_sleep::{CoexView, PmCoexAction};
 use oer_ieee80211_upper_mac::{TxPlanner, TxReport, TxRequest, rate_control::RateControl};
 pub use oer_ieee80211_upper_mac_service::EventRouter;
 use oer_ieee80211_upper_mac_service::{
-    AmpduFrames, MpduParts, UpperMacTx, UpperMacTxError,
+    AmpduFrames, TxMpdu, UpperMacTx, UpperMacTxError,
     aggregate::PortAggregation,
     client::{
-        PortClient, PortClientConfig, PortClientCounters, PortClientEnv, PortClientError,
+        PortBody, PortClient, PortClientConfig, PortClientCounters, PortClientEnv, PortClientError,
         PortError, PortInput, PortRxBuffer,
     },
 };
@@ -58,11 +58,11 @@ pub trait PortStationEnv: PortClientEnv {
     /// Where the frames the station sends wait: the network's own owners,
     /// queued by Ethernet destination, which the station takes when it
     /// sends them.
-    type Frames: DestinationTxQueues;
+    type Frames: DestinationTxQueues<Frame = Self::NetworkFrame>;
 }
 
 /// A frame the station sends: an owner of its network's source.
-pub type PortStationFrame<X> = <<X as PortStationEnv>::Frames as DestinationTxQueues>::Frame;
+pub type PortStationFrame<X> = <X as PortClientEnv>::NetworkFrame;
 
 /// The coexistence schedule of the radio system a station shares its RF
 /// with, which its integrator names once in [`PortStationEnv::Coex`].
@@ -265,7 +265,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     /// exchange's end. A group-addressed frame solicits no response.
     pub async fn transmit(
         &mut self,
-        frame: MpduParts<'_>,
+        frame: TxMpdu<'_, PortBody<X>>,
         key: KeySelector,
         access_category: WmmAccessCategory,
         rate: PhyRate,
@@ -295,7 +295,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         };
         Ok(self
             .client
-            .transmit(MpduParts::whole(frame), key, access_category, rate, coex)
+            .transmit(TxMpdu::whole(frame), key, access_category, rate, coex)
             .await?)
     }
 
@@ -308,7 +308,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     /// Send one A-MPDU until the planner reports the exchange's end.
     pub(crate) async fn transmit_ampdu(
         &mut self,
-        frames: AmpduFrames<'_>,
+        frames: AmpduFrames<'_, PortBody<X>>,
         request: TxRequest,
     ) -> Result<TxReport, PortLinkError<PortError<X>>> {
         Ok(<X::Aggregation as PortAggregation<X>>::send(&mut self.client, frames, request).await?)

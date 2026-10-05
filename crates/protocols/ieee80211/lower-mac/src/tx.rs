@@ -10,9 +10,11 @@
 //! completion `take_tx_completion` or `take_block_ack_completion` returns
 //! (`hardware/esp32s31/driver/ieee80211/mac/src/tx.rs`).
 //!
-//! The frame lives in a [`TxBuffer`] the backend lends
-//! ([`Ieee80211LowerMacPort::tx_buffer`](crate::Ieee80211LowerMacPort::tx_buffer)),
-//! so a backend that publishes from its own DMA memory needs no copy.
+//! The header the caller encodes lives in a [`TxBuffer`] the backend lends
+//! ([`Ieee80211LowerMacPort::tx_buffer`](crate::Ieee80211LowerMacPort::tx_buffer));
+//! the body, such as a network frame's payload, travels by ownership as a
+//! [`TxBody`]. Whether the backend sends the body from its owner's memory
+//! or copies it into its own is the backend's choice, not the contract's.
 
 use oer_ieee80211_mac::{phy::PhyRate, qos::WmmAccessCategory, sequence::SequenceNumber};
 use oer_radio_coex::CoexPriority;
@@ -34,16 +36,18 @@ impl oer_radio_port::Correlation for TxId {
     }
 }
 
-/// Memory for one encoded MPDU, lent by the backend.
+/// Memory for one MPDU, lent by the backend.
 ///
-/// The buffer holds exactly the length it was requested with. The caller
-/// writes the MPDU from its header to the end of its body, without the FCS
-/// (and without the MIC when the backend's cipher transform appends it),
-/// then submits the buffer inside a [`TxPayload`]. The backend releases a
-/// submitted buffer when the attempt's completion is reported: the
-/// completion does not return it, so an event lost to a queue overflow
-/// cannot lose a buffer. A caller that retries re-encodes into a fresh
-/// buffer. A buffer that is not submitted goes back through
+/// The buffer holds exactly the MPDU length it was requested with, without
+/// the FCS (and without the MIC when the backend's cipher transform appends
+/// it). The caller writes the MPDU from its header up to its
+/// [`TxPayload::body`], which the backend places after it: every octet when
+/// the attempt carries no body. The caller then submits the buffer inside a
+/// [`TxPayload`]. The backend releases a submitted buffer when the
+/// attempt's completion is reported: the completion does not return it, so
+/// an event lost to a queue overflow cannot lose a buffer. A caller that
+/// retries writes the header into a fresh buffer. A buffer that is not
+/// submitted goes back through
 /// [`Ieee80211LowerMacPort::release_tx_buffer`](crate::Ieee80211LowerMacPort::release_tx_buffer).
 pub trait TxBuffer {
     /// The length the buffer was requested with.
@@ -74,11 +78,46 @@ pub enum TxResponse {
     BlockAck,
 }
 
-/// One encoded MPDU and the response it solicits.
+/// The end of an MPDU that an attempt carries by ownership: a network
+/// frame's payload, which the caller does not copy.
+///
+/// The backend holds the body from the attempt's admission until the
+/// caller takes it back with
+/// [`Ieee80211LowerMacPort::reclaim_tx_bodies`](crate::Ieee80211LowerMacPort::reclaim_tx_bodies)
+/// after the attempt ended, so a retransmission sends the same owner again.
+/// A body the caller never reclaims is dropped with the backend's state:
+/// dropping it is how its owner learns it is no longer needed.
+pub trait TxBody {
+    /// The octets the MPDU ends with.
+    fn bytes(&self) -> &[u8];
+}
+
+/// No body: the body type of a backend part that takes attempts whose
+/// bodies its owner already placed, such as a driver behind a backend that
+/// copies them.
+impl TxBody for core::convert::Infallible {
+    fn bytes(&self) -> &[u8] {
+        match *self {}
+    }
+}
+
+/// One MPDU and the response it solicits: the octets the caller wrote into
+/// `frame`, then `body`'s.
 #[derive(Debug, Eq, PartialEq)]
-pub struct TxPayload<B> {
+pub struct TxPayload<B, O> {
     pub frame: B,
+    pub body: Option<O>,
     pub response: TxResponse,
+}
+
+impl<B: TxBuffer, O: TxBody> TxPayload<B, O> {
+    /// The octets the caller writes: the buffer's MPDU without the body.
+    /// `None` when the body is longer than the buffer.
+    pub fn header_len(&self) -> Option<usize> {
+        self.frame
+            .len()
+            .checked_sub(self.body.as_ref().map_or(0, |body| body.bytes().len()))
+    }
 }
 
 /// Medium protection sent ahead of the PPDU in the same attempt.
@@ -154,6 +193,24 @@ pub struct TxAttempt<P> {
     /// [`coex_priorities`](crate::LowerMacCapabilities::coex_priorities)
     /// state onto its coexistence arbitration.
     pub coex: CoexPriority,
+}
+
+impl<P> TxAttempt<P> {
+    /// The same attempt with its payload mapped by `map`.
+    pub fn map_payload<Q>(self, map: impl FnOnce(P) -> Q) -> TxAttempt<Q> {
+        TxAttempt {
+            id: self.id,
+            vif: self.vif,
+            access_category: self.access_category,
+            payload: map(self.payload),
+            rate: self.rate,
+            protection: self.protection,
+            key: self.key,
+            power: self.power,
+            backoff: self.backoff,
+            coex: self.coex,
+        }
+    }
 }
 
 /// Why an admitted attempt ended without a portable status of its own.
@@ -256,8 +313,19 @@ pub enum SubmitError {
     Unsupported,
 }
 
-/// A refused submission: the error and the attempt with its buffers, so
-/// the caller can correct and resubmit it or release its buffers.
+/// Why the bodies of an attempt cannot be reclaimed.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ReclaimError {
+    /// The attempt has not ended: no completion was reported and no
+    /// cancellation proved it over.
+    Running,
+    /// No attempt of that identity holds a body: none was admitted, or its
+    /// bodies were reclaimed already.
+    Unknown,
+}
+
+/// A refused submission: the error and the attempt with its buffers and
+/// bodies, so the caller can correct and resubmit it or release them.
 #[derive(Debug, Eq, PartialEq)]
 pub struct Refused<A> {
     pub error: SubmitError,

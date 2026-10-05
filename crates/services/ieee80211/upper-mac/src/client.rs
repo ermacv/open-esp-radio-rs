@@ -22,6 +22,7 @@ use core::{
     task::Poll,
 };
 
+use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_ieee80211_lower_mac::{
     Channel, CoexPriority, EventsLost, FailureClass, Ieee80211LowerMacPort, KeySelector,
     LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu, LowerMacBeaconTiming,
@@ -36,18 +37,27 @@ use oer_ieee80211_upper_mac::{
 use oer_time::{Instant, Timer};
 
 use crate::{
-    AmpduFrames, EventRouter, MpduParts, UpperMacTx, UpperMacTxError, aggregate::PortAggregation,
+    AmpduFrames, EventRouter, TxMpdu, UpperMacTx, UpperMacTxError, aggregate::PortAggregation,
+    frame::NetworkBody,
 };
 
 const FCS_LEN: u32 = 4;
 const CCMP_MIC_LEN: u32 = 8;
 
+/// The owner of an MPDU's body that a client's port takes: the network's
+/// frame, as [`NetworkBody`].
+pub type PortBody<X> = NetworkBody<<X as PortClientEnv>::NetworkFrame>;
+
 /// The types a client of the port is built from, which a service's
 /// environment names once.
 pub trait PortClientEnv {
-    /// The lower-MAC backend. A client reads the TBTTs its interface's
-    /// schedule reports.
-    type Port: LowerMacBeaconTiming;
+    /// The network's frame a client sends, whose payload the port takes by
+    /// ownership as an MPDU's body.
+    type NetworkFrame: SoftwareTxFrame;
+    /// The lower-MAC backend, which takes the network's frames as bodies. A
+    /// client reads the TBTTs its interface's schedule reports.
+    type Port: LowerMacBeaconTiming
+        + Ieee80211LowerMacPort<TxBody = NetworkBody<Self::NetworkFrame>>;
     /// The HE TXOP RTS budget of the transmit planner.
     type Budget: HeTxopRtsBudget;
     /// The rate of each retry of an MPDU.
@@ -252,7 +262,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     /// response.
     pub async fn transmit(
         &mut self,
-        frame: MpduParts<'_>,
+        frame: TxMpdu<'_, PortBody<X>>,
         key: KeySelector,
         access_category: WmmAccessCategory,
         rate: PhyRate,
@@ -276,7 +286,14 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
             coex,
             mpdu_retry_limit: self.config.retry_limit,
             body: TxBody::Mpdu(MpduRequest {
-                length: frame.len() as u32 + FCS_LEN + mic,
+                length: (frame.header.len()
+                    + frame
+                        .body
+                        .as_ref()
+                        .map_or(0, |body| oer_ieee80211_lower_mac::TxBody::bytes(body).len()))
+                    as u32
+                    + FCS_LEN
+                    + mic,
                 response: match receiver {
                     TxReceiver::Individual => oer_ieee80211_lower_mac::TxResponse::Ack,
                     TxReceiver::Group => oer_ieee80211_lower_mac::TxResponse::None,
@@ -299,7 +316,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     /// Send one A-MPDU until the planner reports the exchange's end.
     pub async fn transmit_ampdu(
         &mut self,
-        frames: AmpduFrames<'_>,
+        frames: AmpduFrames<'_, PortBody<X>>,
         request: TxRequest,
     ) -> Result<TxReport, PortClientError<PortError<X>>>
     where

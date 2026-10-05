@@ -43,8 +43,8 @@ use oer_esp32s31_ieee80211_mac::{
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduPayload, Backoff, BlockAckReport, Channel, ChannelWidth, CoexPriority,
     FailureClass, KeySelector, MacAddress, PhyFormatSet, PhyRate, PortError, Protection,
-    ReceiveFilter, SubmitError, TxAttempt, TxBuffer, TxId, TxPayload, TxPower, TxResponse,
-    TxStatus, VifConfig, VifRole,
+    ReceiveFilter, ReclaimError, SubmitError, TxAttempt, TxBody, TxBuffer, TxId, TxPayload,
+    TxPower, TxResponse, TxStatus, VifConfig, VifRole,
 };
 use oer_ieee80211_mac::{
     phy::{HtMcs, HtRate, LegacyRate, PpduBandwidth},
@@ -566,6 +566,7 @@ fn attempt(port: &Port, id: u32, frame: &[u8]) -> Esp32s31MpduAttempt<'static, 5
         access_category: WmmAccessCategory::BestEffort,
         payload: TxPayload {
             frame: buffer,
+            body: None,
             response: TxResponse::Ack,
         },
         rate: PhyRate::Legacy(LegacyRate::Ofdm12M),
@@ -1004,6 +1005,16 @@ impl AmpduBackingSource for Backings {
     }
 }
 
+/// A body the test owns: its octets.
+#[derive(Debug, Eq, PartialEq)]
+struct TestBody(Vec<u8>);
+
+impl TxBody for TestBody {
+    fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 type AmpduPort = Esp32s31LowerMac<
     'static,
     CriticalSectionRawMutex,
@@ -1019,6 +1030,7 @@ type AmpduPort = Esp32s31LowerMac<
     Backings,
     2,
     1,
+    TestBody,
 >;
 
 fn install_ampdu(port: &AmpduPort) -> &'static Backings {
@@ -1108,15 +1120,16 @@ fn attempts_on_different_queues_complete_by_their_identity() {
         PhyFormatSet::HT.union(PhyFormatSet::HE)
     );
 
-    // An MPDU on the voice queue.
-    let mut buffer = port.tx_buffer(26).unwrap().unwrap();
-    buffer.frame_mut().copy_from_slice(&data_frame());
+    // An MPDU on the voice queue, with a body after its header.
+    let mut buffer = port.tx_buffer(26 + 4).unwrap().unwrap();
+    buffer.frame_mut()[..26].copy_from_slice(&data_frame());
     let mpdu = TxAttempt {
         id: TxId(1),
         vif: STA,
         access_category: WmmAccessCategory::Voice,
         payload: TxPayload {
             frame: buffer,
+            body: Some(TestBody(std::vec![0xab; 4])),
             response: TxResponse::Ack,
         },
         rate: PhyRate::Legacy(LegacyRate::Ofdm12M),
@@ -1131,12 +1144,15 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     // An aggregate of two MPDUs on the best-effort queue.
     let mut aggregate = port.ampdu_buffer().unwrap().unwrap();
     assert!(matches!(port.ampdu_buffer(), Ok(None)));
-    for sequence in [100_u16, 101] {
-        let mpdu = aggregate.push_mpdu(26).unwrap();
+    // The second subframe ends with a body the port holds.
+    for (sequence, body) in [(100_u16, None), (101, Some(TestBody(std::vec![0xcd; 6])))] {
+        let len = 26 + body.as_ref().map_or(0, |body: &TestBody| body.0.len());
+        let mpdu = aggregate.push_mpdu(len, body).unwrap();
+        assert_eq!(mpdu.len(), 26);
         mpdu.copy_from_slice(&data_frame());
         mpdu[22..24].copy_from_slice(&(sequence << 4).to_le_bytes());
     }
-    assert!(aggregate.push_mpdu(26).is_none());
+    assert!(aggregate.push_mpdu(26, None).is_err());
     let ampdu = TxAttempt {
         id: TxId(2),
         vif: STA,
@@ -1157,6 +1173,11 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     };
     assert!(matches!(port.submit_ampdu(ampdu), Ok(Ok(()))));
     assert_eq!(backings.free.0.borrow().len(), BACKINGS - 2);
+    // The port holds the bodies while their attempts run.
+    assert_eq!(
+        port.reclaim_tx_bodies(TxId(1), |_, _| panic!("still running")),
+        Ok(Err(ReclaimError::Running))
+    );
     assert_eq!(
         with_hardware_of(&port, |hardware| (hardware.legacy.len(), hardware.ht.len())),
         (1, 1)
@@ -1183,11 +1204,27 @@ fn attempts_on_different_queues_complete_by_their_identity() {
         })
     );
     assert_eq!(backings.free.0.borrow().len(), BACKINGS);
+    let mut back = Vec::new();
+    assert_eq!(
+        port.reclaim_tx_bodies(TxId(2), |index, body| back.push((index, body))),
+        Ok(Ok(()))
+    );
+    assert_eq!(back, [(1, TestBody(std::vec![0xcd; 6]))]);
     with_hardware_of(&port, |hardware| {
         hardware.completion[VO] = Some(MacTxCompletionObservation::new_model(0, 0));
     });
     port.on_interrupt(EVENT_TX_COMPLETE);
     assert_eq!(next_completion(&port).id, TxId(1));
+    let mut back = Vec::new();
+    assert_eq!(
+        port.reclaim_tx_bodies(TxId(1), |index, body| back.push((index, body))),
+        Ok(Ok(()))
+    );
+    assert_eq!(back, [(0, TestBody(std::vec![0xab; 4]))]);
+    assert_eq!(
+        port.reclaim_tx_bodies(TxId(1), |_, _| panic!("reclaimed twice")),
+        Ok(Err(ReclaimError::Unknown))
+    );
 
     // The aggregate owner is lent again; a refused aggregate comes back.
     let empty = port.ampdu_buffer().unwrap().unwrap();

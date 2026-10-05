@@ -40,17 +40,20 @@ of its own: it takes the network's owners from its source
 `PORT_MPDU_HEADER_CAPACITY` for the header it encodes before an Ethernet
 frame's payload, `PORT_MPDU_CAPACITY` for a whole MPDU) and splits an
 Ethernet-II frame into the header a service encodes and the payload it
-sends unchanged (`split_ethernet`). An MPDU goes to the port as
-`MpduParts { header, body }`: a data frame's encoded header and its payload,
-borrowed from the network's owner, or a management frame whole
-(`MpduParts::whole`); each attempt gathers both into the buffer the port
-lends, the only copy of the payload, and a retransmission reads the owner
-again. `aggregate::AmpduSubframes<F>` holds one A-MPDU, at most
-`PORT_AMPDU_SUBFRAMES` (32) subframes: each one's header and the network's
-frame `F` that carries its payload, kept until `clear` when the exchange
-ends, and makes its `AmpduRequest` (on-air lengths with FCS and MIC) and the
-`AmpduFrames` the client sends; how many frames it carries is
-`oer-ieee80211-upper-mac`'s `AmpduLimits`.
+sends unchanged (`split_ethernet`); `NetworkBody<F>` is a network frame as
+the port's `TxBody`, its payload after that header. A client's environment
+names the network's frame once (`PortClientEnv::NetworkFrame`), and its port
+takes `NetworkBody` of it (`PortBody`). An MPDU goes to the port as
+`TxMpdu { header, body }`: a data frame's encoded header and its payload's
+owner, or a management frame whole (`TxMpdu::whole`); each attempt writes
+the header into the buffer the port lends and hands the port the body,
+which comes back after the attempt for the next one, so a retransmission
+sends the same owner. `aggregate::AmpduSubframes<O>` holds one A-MPDU, at
+most `PORT_AMPDU_SUBFRAMES` (32) subframes: each one's header and body,
+until `clear` drops the bodies when the exchange ended, and makes its
+`AmpduRequest` (on-air lengths with FCS and MIC) and the `AmpduFrames` the
+client sends; how many frames it carries is `oer-ieee80211-upper-mac`'s
+`AmpduLimits`.
 `reorder::RxReorder<AGREEMENTS>` reorders the receive Block Ack agreements
 of a service by peer and TID: `offer` releases an in-order MPDU at once as
 the release's `CURRENT_SLOT`, which the caller delivers from the port's
@@ -63,26 +66,30 @@ station and access-point services build on all of them.
 
 `UpperMacTx::new(&router, vif, planner)` binds one interface; the router
 allocates attempt identities outside the backend-reserved range.
-`send_mpdu(MpduParts, key, request, ladder, entropy)` and, for a port with the
+`send_mpdu(TxMpdu, key, request, ladder, entropy)` and, for a port with the
 `LowerMacAmpdu` extension,
-`send_ampdu(AmpduFrames { subframes, key, min_mpdu_start_spacing }, request,
-ladder, entropy)` run one exchange to its `TxReport`:
+`send_ampdu(AmpduFrames { headers, bodies, key, min_mpdu_start_spacing },
+request, ladder, entropy)` run one exchange to its `TxReport`:
 
 1. the planner plans an attempt (`TxAttemptPlan`);
-2. the driver copies the caller's encoded MPDU, the selected subframes of
-   the aggregate, or a BlockAckReq it encodes from the first subframe's
-   addresses into a buffer the port lends, sets the Retry bit where the
-   plan says so, and submits one `TxAttempt` with the plan's rate,
-   protection, backoff, power and coexistence level;
-3. it awaits the attempt's completion from the router;
+2. the driver writes the caller's header, the selected subframes' headers
+   of the aggregate, or a BlockAckReq it encodes from the first subframe's
+   addresses into a buffer the port lends, hands the port their bodies,
+   sets the Retry bit where the plan says so, and submits one `TxAttempt`
+   with the plan's rate, protection, backoff, power and coexistence level;
+3. it awaits the attempt's completion from the router and reclaims the
+   bodies to the subframes they came from (`BodiesHeld` when the port keeps
+   those of an attempt that ended);
 4. it feeds the completion and the port's radio time to the planner and
    repeats with the next plan until the exchange ends.
 
-The caller's frames are read-only: a retransmission is a fresh copy of the
-first encoding, so its sequence number and CCMP packet number repeat. A
-refusal, a missing buffer or router slot, a completion lost in a gap, a
-poisoned port or a port error end the exchange with an `UpperMacTxError`; a
-refused attempt's buffer goes back to the port.
+The caller's headers are read-only: a retransmission writes the first
+encoding again, so its sequence number and CCMP packet number repeat, and
+sends the same bodies. A refusal, a missing buffer or router slot, a
+completion lost in a gap (whose bodies come back once the cancellation
+proved the attempt over), a poisoned port (which keeps the bodies until its
+reset) or a port error end the exchange with an `UpperMacTxError`; a refused
+attempt's buffer goes back to the port.
 
 The portable station of `oer-ieee80211-sta-service` (`port`) sends every
 frame through it; the ESP32-S31 roles do not use it yet. Its tests run

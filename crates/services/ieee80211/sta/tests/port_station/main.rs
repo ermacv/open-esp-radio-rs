@@ -67,7 +67,7 @@ use oer_ieee80211_upper_mac::{
 };
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortMsdu};
-use oer_ieee80211_upper_mac_service::frame::PORT_FRAME_CAPACITY;
+use oer_ieee80211_upper_mac_service::frame::{NetworkBody, PORT_FRAME_CAPACITY};
 use oer_ieee80211_upper_mac_service::{
     aggregate::{AmpduSubframes, PORT_AMPDU_SUBFRAMES},
     reorder::PORT_REORDER_SLOTS,
@@ -153,6 +153,9 @@ impl Drop for TestFrame {
 
 /// The network's queues the station takes its frames from.
 type TestFrames = MemoryTxQueues<TestFrame, 32>;
+
+/// The model, whose bodies are the network's frames.
+type Model = LowerMacModel<NetworkBody<TestFrame>>;
 
 thread_local! {
     /// Frames returned to the network: sent, dropped or released.
@@ -250,7 +253,8 @@ impl PortCoexistence for &ScriptedCoex {
 }
 
 impl PortClientEnv for Env<'_> {
-    type Port = LowerMacModel;
+    type NetworkFrame = TestFrame;
+    type Port = Model;
     type Budget = ProtectEveryHeTxop;
     type Ladder = FixedRate;
     type Entropy = Seeded;
@@ -312,7 +316,7 @@ fn sae_random() -> u32 {
 
 /// The model, tuned and enabled, its event router and the virtual clock.
 struct World {
-    model: &'static LowerMacModel,
+    model: &'static Model,
     router: &'static PortRouter<'static, Env<'static>>,
     timer: VirtualTimer,
     coex: &'static ScriptedCoex,
@@ -322,7 +326,7 @@ struct World {
 
 impl World {
     fn new() -> Self {
-        let model = LowerMacModel::new();
+        let model = Model::new();
         model.set_now(RadioInstant::from_micros(1_000));
         model
             .apply(LowerMacSetting::Channel(channel(1)))
@@ -331,7 +335,7 @@ impl World {
         model.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
         // Every published attempt succeeds at once.
         model.respond(core::iter::repeat_n(ModelOutcome::Success, 100_000));
-        let model: &'static LowerMacModel = Box::leak(Box::new(model));
+        let model: &'static Model = Box::leak(Box::new(model));
         Self {
             model,
             router: Box::leak(Box::new(EventRouter::new(model, 1))),
@@ -1979,6 +1983,7 @@ fn queued_frames_of_an_agreed_tid_leave_as_one_a_mpdu_body() {
     }
     assert!(data[1].frames[0].ends_with(&voice(b"voice")));
     assert!(world.frames.is_empty());
+    assert_eq!(world.model.bodies_held(), 0);
     let counters = station.connection().unwrap().tx_counters();
     assert_eq!(
         (counters.aggregates, counters.subframes, counters.mpdus),

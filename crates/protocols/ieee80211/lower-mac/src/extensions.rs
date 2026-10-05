@@ -15,18 +15,30 @@ use crate::{
     capabilities::PhyFormatSet,
     control::{SettingError, VifId, VifRoleSet},
     port::{Ieee80211LowerMacPort, SubmitResult},
-    tx::TxId,
+    tx::{TxBody, TxId},
 };
 
 /// Memory for the MPDUs of one A-MPDU, lent by the backend.
 ///
-/// The caller appends the encoded MPDUs in transmission order, each without
-/// FCS; the backend adds delimiters and padding. It is released when the
-/// attempt's completion is reported, as a [`TxBuffer`](crate::TxBuffer) is.
+/// The caller appends the MPDUs in transmission order, each without FCS;
+/// the backend adds delimiters and padding. It is released when the
+/// attempt's completion is reported, as a [`TxBuffer`](crate::TxBuffer) is;
+/// the bodies it holds stay with the backend until
+/// [`Ieee80211LowerMacPort::reclaim_tx_bodies`] after the attempt ended. A
+/// buffer released unsubmitted drops its bodies.
 pub trait AmpduBuffer {
-    /// Append one MPDU of `len` bytes and return its bytes for writing;
-    /// `None` when the buffer cannot hold another MPDU of that length.
-    fn push_mpdu(&mut self, len: usize) -> Option<&mut [u8]>;
+    /// The owner of an MPDU's body.
+    type Body: TxBody;
+
+    /// Append one MPDU of `len` bytes that ends with `body`, which the
+    /// buffer takes, and return its octets before the body for writing; the
+    /// body back when the buffer cannot hold another MPDU of that length or
+    /// the body is longer than the MPDU.
+    fn push_mpdu(
+        &mut self,
+        len: usize,
+        body: Option<Self::Body>,
+    ) -> Result<&mut [u8], Option<Self::Body>>;
 
     /// The MPDUs appended so far.
     fn subframes(&self) -> usize;
@@ -72,7 +84,7 @@ pub type AmpduAttempt<A> = crate::TxAttempt<AmpduPayload<A>>;
 /// unless the backend reports
 /// [`HardwareServices::AMPDU_RETRY_SELECTION`](crate::HardwareServices::AMPDU_RETRY_SELECTION).
 pub trait LowerMacAmpdu: Ieee80211LowerMacPort {
-    type AmpduBuffer: AmpduBuffer;
+    type AmpduBuffer: AmpduBuffer<Body = Self::TxBody>;
 
     fn ampdu_capabilities(&self) -> AmpduCapabilities;
 

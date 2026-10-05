@@ -7,7 +7,7 @@ use core::{
     pin::pin,
     task::{Context, Poll, Waker},
 };
-use std::vec::Vec;
+use std::{vec, vec::Vec};
 
 use crate::Ieee80211Instant;
 use oer_ieee80211_mac::tsf::{TsfInstant, time_units};
@@ -23,12 +23,14 @@ use oer_ieee80211_mac::{
 
 use crate::{
     model::{
-        LowerMacModel as Model, MODEL_CAPABILITIES as CAPABILITIES,
-        MODEL_EVENT_CAPACITY as EVENT_CAPACITY, MODEL_MAX_MPDU as MAX_MPDU,
-        MODEL_TX_BUFFERS as BUFFERS, ModelBuffer,
+        LowerMacModel, MODEL_CAPABILITIES as CAPABILITIES, MODEL_EVENT_CAPACITY as EVENT_CAPACITY,
+        MODEL_MAX_MPDU as MAX_MPDU, MODEL_TX_BUFFERS as BUFFERS, ModelBody, ModelBuffer,
     },
     *,
 };
+
+/// The model with bodies a test owns.
+type Model = LowerMacModel<ModelBody>;
 
 /// Take the next event without an executor; `None` when none is ready.
 fn poll_event<P: Ieee80211LowerMacPort>(port: &P) -> Option<Result<P::Event, EventsLost>> {
@@ -133,11 +135,12 @@ fn attempt<P>(id: u32, payload: P, rate: PhyRate) -> TxAttempt<P> {
     }
 }
 
-fn mpdu(model: &Model, id: u32, sequence: u16) -> MpduAttempt<ModelBuffer> {
+fn mpdu(model: &Model, id: u32, sequence: u16) -> MpduAttempt<ModelBuffer, ModelBody> {
     attempt(
         id,
         TxPayload {
             frame: buffer(model, &header(sequence)),
+            body: None,
             response: TxResponse::Ack,
         },
         OFDM24,
@@ -223,7 +226,7 @@ fn each_queue_holds_one_attempt_and_completions_correlate_by_identity() {
 #[test]
 fn values_outside_the_limits_are_refused_as_unsupported() {
     let model = enabled_station();
-    let refuse = |mutate: fn(&mut MpduAttempt<ModelBuffer>)| {
+    let refuse = |mutate: fn(&mut MpduAttempt<ModelBuffer, ModelBody>)| {
         let mut request = mpdu(&model, 1, 1);
         mutate(&mut request);
         let Ok(Err(refused)) = model.submit(request) else {
@@ -238,9 +241,9 @@ fn values_outside_the_limits_are_refused_as_unsupported() {
             .contains(HardwareServices::BACKOFF_DRAW)
     );
     for mutate in [
-        (|request: &mut MpduAttempt<ModelBuffer>| {
+        (|request: &mut MpduAttempt<ModelBuffer, ModelBody>| {
             request.backoff = Backoff::HardwareDraw { cw_exponent: 4 };
-        }) as fn(&mut MpduAttempt<ModelBuffer>),
+        }) as fn(&mut MpduAttempt<ModelBuffer, ModelBody>),
         |request| request.backoff = Backoff::Slots(1024),
         |request| request.power = TxPower::MaxDbm(-1),
         |request| request.coex = CoexPriority::Critical,
@@ -275,7 +278,7 @@ fn an_ampdu_completion_carries_the_block_ack() {
     assert_eq!(model.ampdu_buffer(), Ok(None));
     for sequence in [100, 101] {
         aggregate
-            .push_mpdu(24)
+            .push_mpdu(24, None)
             .unwrap()
             .copy_from_slice(&header(sequence));
     }
@@ -318,7 +321,7 @@ fn an_empty_aggregate_is_refused() {
     let mut payload = refused.attempt.payload;
     payload
         .subframes
-        .push_mpdu(24)
+        .push_mpdu(24, None)
         .unwrap()
         .copy_from_slice(&header(100));
     let Ok(Err(refused)) = model.submit_ampdu(attempt(2, payload, OFDM24)) else {
@@ -1067,4 +1070,106 @@ fn an_access_point_receives_the_probe_requests_it_answers() {
         ..access_point
     };
     assert!(!member.admits(&management(4, [0xff; 6], [0xff; 6])));
+}
+
+#[test]
+fn a_body_travels_by_ownership_and_comes_back_once_its_attempt_ended() {
+    let model = enabled_station();
+    let body = ModelBody(b"payload".to_vec());
+    let mut frame = model.tx_buffer(24 + 7).unwrap().unwrap();
+    frame.frame_mut()[..24].copy_from_slice(&header(7));
+    let payload = TxPayload {
+        frame,
+        body: Some(body.clone()),
+        response: TxResponse::Ack,
+    };
+    assert_eq!(payload.header_len(), Some(24));
+    assert_eq!(model.submit(attempt(1, payload, OFDM24)), Ok(Ok(())));
+    // The MPDU went whole: the header the caller wrote, then the body.
+    let sent = &model.submitted()[0].frames[0];
+    assert_eq!(
+        (&sent[..24], &sent[24..]),
+        (&header(7)[..], &b"payload"[..])
+    );
+    // The port holds the body while the attempt runs.
+    assert_eq!(model.bodies_held(), 1);
+    assert_eq!(
+        model.reclaim_tx_bodies(TxId(1), |_, _| panic!("still running")),
+        Ok(Err(ReclaimError::Running))
+    );
+    model.complete(0, TxStatus::Success);
+    next_completion(&model);
+    let mut back = Vec::new();
+    assert_eq!(
+        model.reclaim_tx_bodies(TxId(1), |index, body| back.push((index, body))),
+        Ok(Ok(()))
+    );
+    assert_eq!(back, [(0, body)]);
+    assert_eq!(model.bodies_held(), 0);
+    assert_eq!(
+        model.reclaim_tx_bodies(TxId(1), |_, _| panic!("reclaimed twice")),
+        Ok(Err(ReclaimError::Unknown))
+    );
+}
+
+#[test]
+fn a_refused_attempt_keeps_its_body() {
+    let model = enabled_station();
+    let mut frame = model.tx_buffer(30).unwrap().unwrap();
+    frame.frame_mut()[..24].copy_from_slice(&header(7));
+    // A body longer than the MPDU leaves no header.
+    let payload = TxPayload {
+        frame,
+        body: Some(ModelBody(vec![0; 31])),
+        response: TxResponse::Ack,
+    };
+    let Ok(Err(refused)) = model.submit(attempt(1, payload, OFDM24)) else {
+        panic!("a body longer than its MPDU");
+    };
+    assert_eq!(refused.error, SubmitError::InvalidLength);
+    assert_eq!(refused.attempt.payload.body, Some(ModelBody(vec![0; 31])));
+    assert_eq!(model.bodies_held(), 0);
+    model.release_tx_buffer(refused.attempt.payload.frame);
+}
+
+#[test]
+fn an_aggregate_s_bodies_come_back_by_subframe() {
+    let model = enabled_station();
+    let mut aggregate = model.ampdu_buffer().unwrap().unwrap();
+    // A subframe without a body, then two with one.
+    aggregate
+        .push_mpdu(24, None)
+        .unwrap()
+        .copy_from_slice(&header(100));
+    for (sequence, body) in [(101, &b"one"[..]), (102, b"two")] {
+        let written = aggregate
+            .push_mpdu(24 + body.len(), Some(ModelBody(body.to_vec())))
+            .unwrap();
+        assert_eq!(written.len(), 24);
+        written.copy_from_slice(&header(sequence));
+    }
+    // A body longer than its MPDU comes back.
+    assert_eq!(
+        aggregate.push_mpdu(2, Some(ModelBody(vec![0; 3]))),
+        Err(Some(ModelBody(vec![0; 3])))
+    );
+    let ht = PhyRate::Ht(
+        oer_ieee80211_mac::phy::HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, true)
+            .unwrap(),
+    );
+    let payload = AmpduPayload {
+        subframes: aggregate,
+        tid: 0,
+        min_mpdu_start_spacing: 0,
+    };
+    assert_eq!(model.submit_ampdu(attempt(1, payload, ht)), Ok(Ok(())));
+    assert!(model.submitted()[0].frames[2].ends_with(b"two"));
+    model.complete(0, TxStatus::Success);
+    next_completion(&model);
+    let mut back = Vec::new();
+    assert_eq!(
+        model.reclaim_tx_bodies(TxId(1), |index, body| back.push((index, body.0))),
+        Ok(Ok(()))
+    );
+    assert_eq!(back, [(1, b"one".to_vec()), (2, b"two".to_vec())]);
 }

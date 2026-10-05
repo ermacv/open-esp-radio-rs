@@ -16,7 +16,7 @@ unless the backend reports them in its `HardwareServices`.
 
 | Part | Items |
 | --- | --- |
-| Submission | `tx_buffer(len)` lends a `TxBuffer` (`Ok(None)` when none is free, `Err` when the port cannot serve); the caller encodes the MPDU into it and submits `TxAttempt<TxPayload<TxBuffer>>`: caller `TxId`, `VifId`, `WmmAccessCategory`, the buffer with its `TxResponse`, `PhyRate`, `Protection` (none, RTS/CTS, CTS-to-self), `KeySelector`, `TxPower`, `Backoff` and the attempt's `CoexPriority`. A refusal is `Refused { error: SubmitError, attempt }`: nothing is sent and the attempt comes back with its buffer. An unsubmitted buffer goes back through `release_tx_buffer` |
+| Submission | `tx_buffer(len)` lends a `TxBuffer` for an MPDU of `len` octets (`Ok(None)` when none is free, `Err` when the port cannot serve); the caller writes the MPDU up to its body and submits `TxAttempt<TxPayload<TxBuffer, TxBody>>`: caller `TxId`, `VifId`, `WmmAccessCategory`, the buffer, the body by ownership (`TxBody`, the composition's type, such as a network frame whose payload the caller does not copy) and the `TxResponse`, `PhyRate`, `Protection` (none, RTS/CTS, CTS-to-self), `KeySelector`, `TxPower`, `Backoff` and the attempt's `CoexPriority`. A refusal is `Refused { error: SubmitError, attempt }`: nothing is sent and the attempt comes back with its buffer and body. An unsubmitted buffer goes back through `release_tx_buffer`. The backend holds an admitted attempt's bodies until `reclaim_tx_bodies(id, each)` hands them back by subframe once the attempt ended (its completion reported, or a cancellation proved it over), so an event lost to a queue overflow loses no body and a retransmission sends the same owners; whether a backend sends a body from its owner's memory or copies it is its own choice |
 | Events | `next_event` yields owned events viewed as `LowerMacEvent`: `Received { frame, RxMeta }`, whose frame `into_received` takes out as the backend's `RxBuffer` (dropping it returns the memory, so a consumer that keeps a frame longer than one step copies it), `TxCompleted(TxCompletion)` with `TxStatus`, ACK RSSI and SNR and the `BlockAckReport` (starting sequence, bitmap) of a BlockAckReq or A-MPDU, lifecycle terminals, `RxTooLong { length }` for a received MPDU longer than the backend's receive buffer, `Extension` for an event an extension trait views, and the terminal `Poisoned`. A loss is reported once as `EventsLost`, in place of the first dropped event |
 | Controls | `apply(LowerMacSetting)`: `Channel`, interface configuration (`VifConfig`: address, `VifRole`, BSSID, `ReceiveFilter`, whose `PROBE_REQUESTS` rule admits the Probe Requests an access point answers, wildcard ones included), key removal, receive Block Ack agreements, the `Edca` parameter set, the global `TxGate`, the beacon receive priority (`RxBeaconPriority`) and an interface's HE BSS color (`HeBssColor`). `install_key` returns the `KeyHandle` attempts select |
 | Capabilities | `LowerMacCapabilities`, the parametric limits: bands, widths, rates, `HardwareServices`, interfaces, transmit queues, longest MPDU, largest backoff, lowest power ceiling, coexistence levels, the PPDU formats of unicast no-ACK frames, each role's receive rules, key slots and receive Block Ack limits |
@@ -96,7 +96,7 @@ feature does not implement it, so the feature cannot be requested.
 
 | Extension | Operations |
 | --- | --- |
-| `LowerMacAmpdu` | `ampdu_buffer`, `submit_ampdu(TxAttempt<AmpduPayload>)` answered by a BlockAck in the completion, `AmpduCapabilities` (subframes, PPDU formats, longest aggregate) |
+| `LowerMacAmpdu` | `ampdu_buffer`, whose `push_mpdu(len, body)` takes each subframe's body by ownership and returns its octets before the body; `submit_ampdu(TxAttempt<AmpduPayload>)` answered by a BlockAck in the completion; `AmpduCapabilities` (subframes, PPDU formats, longest aggregate) |
 | `LowerMacBeaconTiming` | `tsf`, `tsf_sample`, `set_tsf`, `set_tbtt(TbttSchedule)`, `stop_tbtt` with `TbttEvent`s viewed through `tbtt(event)`; `BeaconTimingCapabilities` state which roles each operation serves. TSF values are `VifTsf` (an instant of the `Ieee80211Tsf` domain with its interface); values of two interfaces do not combine (`TsfVifMismatch`). A `TsfSample` relates an interface's TSF to the radio clock (`TSF_DRIFT_PPM`, the sum of both timers' 802.11 bound) in a generation that changes when the TSF jumps; `TsfRelation` is the portable rule a backend's TSF writer applies to tell a jump from drift |
 | `LowerMacMonitor` | `set_monitor`: every frame with a valid FCS is received; `MonitorCapabilities` state whether it runs beside receiving interfaces |
 | `LowerMacCancelPublished` | `cancel_published(TxId)`: withdraw a published attempt from the air |
@@ -185,7 +185,12 @@ implements the port in two layers:
   fit; TBTTs; received frames with their own loss report), the MAC, power
   and receive interrupt entries, and the runner `Esp32s31LowerMac::run` with
   the publication watchdog and the PHY retune of `Enable`. A poisoned port
-  parks its runner until a new install.
+  parks its runner until a new install. Its body type is the composition's
+  `O`; the core sends from its own DMA memory, so the port copies each body
+  after its header into the lent slot or subframe as it is submitted or
+  pushed (the core's own attempts take no body, `Infallible`), and holds the
+  owners, one table entry per attempt within the owed completions, until
+  they are reclaimed or an uninstall drops them.
 
 The ESP32-S31 station and access-point roles do not use the port yet. Its
 operations map onto the S31 seams as follows:

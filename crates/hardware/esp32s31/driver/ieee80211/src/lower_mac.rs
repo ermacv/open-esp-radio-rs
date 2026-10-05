@@ -410,9 +410,11 @@ impl<const BUFFER_SIZE: usize> core::fmt::Debug for Esp32s31TxBuffer<'_, BUFFER_
     }
 }
 
-/// A submission of the core: one MPDU in a lent slot.
+/// A submission of the core: one MPDU in a lent slot. The core takes no
+/// body: the backend in front of it places a body in the slot after the
+/// header before it submits.
 pub type Esp32s31MpduAttempt<'slot, const BUFFER_SIZE: usize> =
-    MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>>;
+    MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>, core::convert::Infallible>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PortState {
@@ -774,6 +776,7 @@ where
             payload:
                 TxPayload {
                     frame: Esp32s31TxBuffer { slot, len },
+                    body: _,
                     response,
                 },
             rate,
@@ -806,6 +809,7 @@ where
                             access_category,
                             payload: TxPayload {
                                 frame: Esp32s31TxBuffer { slot, len },
+                                body: None,
                                 response,
                             },
                             rate,
@@ -1204,6 +1208,13 @@ where
 
     /// End one admitted attempt: a held one at once as
     /// [`TxStatus::Aborted`], a published one with its own completion.
+    /// Whether attempt `id` is admitted and has not ended.
+    pub fn running(&self, id: TxId) -> bool {
+        self.queues
+            .iter()
+            .any(|attempt| attempt.as_ref().is_some_and(|attempt| attempt.id == id))
+    }
+
     pub fn cancel<K: LowerMacSink>(&mut self, id: TxId, sink: &mut K) -> Result<(), CancelError> {
         let Some(index) = self
             .queues

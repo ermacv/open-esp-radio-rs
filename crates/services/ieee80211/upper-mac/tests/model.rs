@@ -7,6 +7,9 @@ use core::{
     pin::pin,
     task::{Context, Poll, Waker},
 };
+use oer_ieee80211_datapath::SoftwareTxFrame;
+use oer_ieee80211_lower_mac::TxBody as _;
+use oer_network_interface::NetworkInterfaceId;
 
 use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_lower_mac::{
@@ -29,8 +32,9 @@ use oer_ieee80211_upper_mac::{
     TxReport, TxRequest,
 };
 use oer_ieee80211_upper_mac_service::{
-    AmpduFrames, EventRouter, MpduParts, UpperMacTx, UpperMacTxError,
+    AmpduFrames, EventRouter, TxMpdu, UpperMacTx, UpperMacTxError,
     client::{PortClient, PortClientConfig, PortClientEnv, PortClientError},
+    frame::NetworkBody,
 };
 
 const STATION: VifId = VifId(0);
@@ -81,8 +85,8 @@ fn run<F: Future>(future: F) -> F::Output {
     panic!("the driver waits for an event the model never produces");
 }
 
-fn enabled_station() -> LowerMacModel {
-    let model = LowerMacModel::new();
+fn enabled_station() -> Model {
+    let model = Model::new();
     let channel = Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap();
     model
         .apply(LowerMacSetting::Channel(channel))
@@ -113,9 +117,35 @@ const LIMITS: RetryLimits = RetryLimits {
 };
 
 /// The router of a test: four waiting exchanges, four received frames.
-type Router<'m> = EventRouter<'m, LowerMacModel, 4, 4>;
+/// A network frame: an Ethernet header, then the payload an MPDU's body
+/// carries.
+#[derive(Debug, Eq, PartialEq)]
+struct Frame(Vec<u8>);
 
-type Driver<'r, 'm> = UpperMacTx<'r, 'm, LowerMacModel, ProtectEveryHeTxop, 4, 4>;
+impl Frame {
+    fn carrying(payload: &[u8]) -> NetworkBody<Self> {
+        let mut ethernet = vec![0x02; 14];
+        ethernet.extend_from_slice(payload);
+        NetworkBody(Self(ethernet))
+    }
+}
+
+impl SoftwareTxFrame for Frame {
+    fn interface(&self) -> NetworkInterfaceId {
+        NetworkInterfaceId::new(0)
+    }
+
+    fn ethernet(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// The model, whose bodies are network frames.
+type Model = LowerMacModel<NetworkBody<Frame>>;
+
+type Router<'m> = EventRouter<'m, Model, 4, 4>;
+
+type Driver<'r, 'm> = UpperMacTx<'r, 'm, Model, ProtectEveryHeTxop, 4, 4>;
 
 /// Run `exchange` while the router takes the port's events, as a
 /// composition polls the router beside its exchanges.
@@ -196,7 +226,7 @@ fn a_frame_acknowledged_at_the_first_attempt_is_sent_once() {
     let report = run(exchange(
         &router,
         tx.send_mpdu(
-            MpduParts::whole(&frame),
+            TxMpdu::whole(&frame),
             KeySelector::Plaintext,
             mpdu_request(&frame, 4),
             &Ladder,
@@ -229,7 +259,7 @@ fn a_missing_ack_retries_down_the_ladder_with_the_retry_bit_until_the_limit() {
     let report = run(exchange(
         &router,
         tx.send_mpdu(
-            MpduParts::whole(&frame),
+            TxMpdu::whole(&frame),
             KeySelector::Plaintext,
             mpdu_request(&frame, 3),
             &Ladder,
@@ -258,6 +288,87 @@ fn a_missing_ack_retries_down_the_ladder_with_the_retry_bit_until_the_limit() {
 }
 
 #[test]
+fn every_retry_sends_the_same_body_and_the_port_keeps_none_after_the_exchange() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
+    let frame = qos_data(9, [6, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    // The header, then the body the port takes by ownership.
+    let (header, payload) = frame.split_at(24);
+    model.respond([
+        ModelOutcome::Fail(TxStatus::AckTimeout),
+        ModelOutcome::Success,
+    ]);
+    let report = run(exchange(
+        &router,
+        tx.send_mpdu(
+            TxMpdu {
+                header,
+                body: Some(Frame::carrying(payload)),
+            },
+            KeySelector::Plaintext,
+            mpdu_request(&frame, 3),
+            &Ladder,
+            &mut Seeded(1),
+        ),
+    ))
+    .unwrap();
+    let TxReport::Mpdu(status) = report else {
+        panic!("an MPDU report");
+    };
+    assert_eq!((status.attempts, status.acknowledged), (2, Some(true)));
+    // Both attempts carried the whole MPDU: the header, then the body.
+    let submitted = model.submitted();
+    assert_eq!(submitted.len(), 2);
+    for attempt in &submitted {
+        assert_eq!(attempt.frames[0][2..], frame[2..]);
+    }
+    assert!(retry_bit(&submitted[1].frames[0]));
+    assert_eq!(model.bodies_held(), 0);
+}
+
+#[test]
+fn a_body_comes_back_from_an_attempt_whose_completion_was_lost() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut tx = driver(&router);
+    let frame = qos_data(43, [6, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let (header, payload) = frame.split_at(24);
+    let mut entropy = Seeded(1);
+    let mut send = pin!(tx.send_mpdu(
+        TxMpdu {
+            header,
+            body: Some(Frame::carrying(payload)),
+        },
+        KeySelector::Plaintext,
+        mpdu_request(&frame, 4),
+        &Ladder,
+        &mut entropy,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(send.as_mut()).is_pending());
+    assert_eq!(model.bodies_held(), 1);
+    for _ in 0..6 {
+        receive(&model);
+    }
+    // The completion falls into the gap.
+    model.complete(0, TxStatus::Success);
+    let result = run(poll_fn(|context| {
+        if let Poll::Ready(result) = send.as_mut().poll(context) {
+            return Poll::Ready(result);
+        }
+        assert!(routing.as_mut().poll(context).is_pending());
+        Poll::Pending
+    }));
+    assert!(matches!(
+        result,
+        Err(UpperMacTxError::CompletionLost { .. })
+    ));
+    // The cancellation proved the attempt over: its body came back.
+    assert_eq!(model.bodies_held(), 0);
+}
+
+#[test]
 fn a_cts_timeout_resends_under_the_same_protection_without_the_retry_bit() {
     let model = enabled_station();
     let router = Router::new(&model, 100);
@@ -271,7 +382,7 @@ fn a_cts_timeout_resends_under_the_same_protection_without_the_retry_bit() {
     let report = run(exchange(
         &router,
         tx.send_mpdu(
-            MpduParts::whole(&frame),
+            TxMpdu::whole(&frame),
             KeySelector::Plaintext,
             mpdu_request(&frame, 4),
             &Ladder,
@@ -335,10 +446,11 @@ fn a_partial_block_ack_resends_only_the_unacknowledged_subframes() {
             )
         })
         .collect();
-    // Each subframe in two parts the port's buffer gathers.
-    let slices: Vec<MpduParts<'_>> = frames
+    // Each subframe its header and the body it hands the port.
+    let headers: Vec<&[u8]> = frames.iter().map(|frame| &frame[..24]).collect();
+    let mut bodies: Vec<Option<NetworkBody<Frame>>> = frames
         .iter()
-        .map(|frame| MpduParts::new(&frame[..24], &frame[24..]))
+        .map(|frame| Some(Frame::carrying(&frame[24..])))
         .collect();
     // 200 and 202 acknowledged, then the rest.
     model.respond([
@@ -352,7 +464,8 @@ fn a_partial_block_ack_resends_only_the_unacknowledged_subframes() {
         &router,
         tx.send_ampdu(
             AmpduFrames {
-                subframes: &slices,
+                headers: &headers,
+                bodies: &mut bodies,
                 key: KeySelector::Plaintext,
                 min_mpdu_start_spacing: 0,
             },
@@ -382,6 +495,11 @@ fn a_partial_block_ack_resends_only_the_unacknowledged_subframes() {
         assert_eq!(resent[2..], original[2..]);
     }
     assert_eq!(model.ampdu_buffers_lent(), 0);
+    // Every body came back to its subframe, the retransmitted ones twice.
+    assert_eq!(model.bodies_held(), 0);
+    for (body, frame) in bodies.iter().zip(&frames) {
+        assert_eq!(body.as_ref().unwrap().bytes(), &frame[24..]);
+    }
 }
 
 #[test]
@@ -392,10 +510,11 @@ fn one_unacknowledged_subframe_is_resent_alone() {
     let frames: Vec<Vec<u8>> = (0..3)
         .map(|index| qos_data(10 + index, [0; 8], 30))
         .collect();
-    // Each subframe in two parts the port's buffer gathers.
-    let slices: Vec<MpduParts<'_>> = frames
+    // Each subframe its header and the body it hands the port.
+    let headers: Vec<&[u8]> = frames.iter().map(|frame| &frame[..24]).collect();
+    let mut bodies: Vec<Option<NetworkBody<Frame>>> = frames
         .iter()
-        .map(|frame| MpduParts::new(&frame[..24], &frame[24..]))
+        .map(|frame| Some(Frame::carrying(&frame[24..])))
         .collect();
     model.respond([
         ModelOutcome::BlockAck(BlockAckReport {
@@ -408,7 +527,8 @@ fn one_unacknowledged_subframe_is_resent_alone() {
         &router,
         tx.send_ampdu(
             AmpduFrames {
-                subframes: &slices,
+                headers: &headers,
+                bodies: &mut bodies,
                 key: KeySelector::Plaintext,
                 min_mpdu_start_spacing: 0,
             },
@@ -454,7 +574,7 @@ fn the_contention_window_doubles_on_failures_and_resets_after_the_frame() {
         run(exchange(
             &router,
             tx.send_mpdu(
-                MpduParts::whole(&frame),
+                TxMpdu::whole(&frame),
                 KeySelector::Plaintext,
                 mpdu_request(&frame, 4),
                 &Ladder,
@@ -510,7 +630,7 @@ fn a_retry_repeats_its_packet_number_and_the_next_frame_takes_a_higher_one() {
         run(exchange(
             &router,
             tx.send_mpdu(
-                MpduParts::whole(frame),
+                TxMpdu::whole(frame),
                 KeySelector::Plaintext,
                 mpdu_request(frame, 4),
                 &Ladder,
@@ -541,14 +661,14 @@ fn a_retry_repeats_its_packet_number_and_the_next_frame_takes_a_higher_one() {
 
 #[test]
 fn a_refused_attempt_releases_its_buffer_and_reports_the_refusal() {
-    let model = LowerMacModel::new();
+    let model = Model::new();
     let router = Router::new(&model, 100);
     let mut tx = driver(&router);
     let frame = qos_data(1, [0; 8], 40);
     let result = run(exchange(
         &router,
         tx.send_mpdu(
-            MpduParts::whole(&frame),
+            TxMpdu::whole(&frame),
             KeySelector::Plaintext,
             mpdu_request(&frame, 4),
             &Ladder,
@@ -575,7 +695,7 @@ fn received_frame() -> [u8; 24] {
     frame
 }
 
-fn receive(model: &LowerMacModel) {
+fn receive(model: &Model) {
     model.receive(
         &received_frame(),
         RxMeta::unavailable(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap()),
@@ -608,7 +728,7 @@ fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
     let vo_frame = qos_data(31, [2, 0, 0, 0x20, 0, 0, 0, 0], 40);
     let mut entropy_1 = Seeded(1);
     let mut be = pin!(best_effort.send_mpdu(
-        MpduParts::whole(&be_frame),
+        TxMpdu::whole(&be_frame),
         KeySelector::Plaintext,
         request_on(&be_frame, WmmAccessCategory::BestEffort),
         &Ladder,
@@ -616,7 +736,7 @@ fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
     ));
     let mut entropy_2 = Seeded(2);
     let mut vo = pin!(voice.send_mpdu(
-        MpduParts::whole(&vo_frame),
+        TxMpdu::whole(&vo_frame),
         KeySelector::Plaintext,
         request_on(&vo_frame, WmmAccessCategory::Voice),
         &Ladder,
@@ -676,7 +796,7 @@ fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
             panic!("a received frame");
         };
         assert!(matches!(
-            LowerMacModel::view(&event),
+            Model::view(&event),
             LowerMacEvent::Received { .. }
         ));
         received += 1;
@@ -693,7 +813,7 @@ fn a_loss_is_recovered_by_cancelling_the_attempt_in_flight() {
     let frame = qos_data(40, [5, 0, 0, 0x20, 0, 0, 0, 0], 40);
     let mut entropy_3 = Seeded(1);
     let mut send = pin!(tx.send_mpdu(
-        MpduParts::whole(&frame),
+        TxMpdu::whole(&frame),
         KeySelector::Plaintext,
         mpdu_request(&frame, 4),
         &Ladder,
@@ -735,7 +855,7 @@ fn a_completion_lost_in_the_gap_ends_the_exchange_without_a_report() {
     let frame = qos_data(41, [6, 0, 0, 0x20, 0, 0, 0, 0], 40);
     let mut entropy_4 = Seeded(1);
     let mut send = pin!(tx.send_mpdu(
-        MpduParts::whole(&frame),
+        TxMpdu::whole(&frame),
         KeySelector::Plaintext,
         mpdu_request(&frame, 4),
         &Ladder,
@@ -771,7 +891,7 @@ fn a_poisoned_port_ends_every_exchange() {
     let frame = qos_data(42, [7, 0, 0, 0x20, 0, 0, 0, 0], 40);
     let mut entropy_5 = Seeded(1);
     let mut send = pin!(tx.send_mpdu(
-        MpduParts::whole(&frame),
+        TxMpdu::whole(&frame),
         KeySelector::Plaintext,
         mpdu_request(&frame, 4),
         &Ladder,
@@ -792,7 +912,8 @@ fn a_poisoned_port_ends_every_exchange() {
 struct ClientEnv;
 
 impl PortClientEnv for ClientEnv {
-    type Port = LowerMacModel;
+    type NetworkFrame = Frame;
+    type Port = Model;
     type Budget = ProtectEveryHeTxop;
     type Ladder = Ladder;
     type Entropy = Seeded;
@@ -856,7 +977,7 @@ fn a_frame_without_its_first_address_is_refused_before_the_port() {
         run(exchange(
             &router,
             client.transmit(
-                MpduParts::whole(&short),
+                TxMpdu::whole(&short),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
                 OFDM24,

@@ -19,6 +19,7 @@ use crate::{
     Result, workload::traffic::tx_traffic::Burst, workload::traffic::tx_traffic::Receiver,
 };
 use oer_hil_family_ieee80211_evidence as evidence;
+use oer_hil_family_ieee80211_fixture::host_network::{BenchmarkIpv4Route, RouteMedium};
 use oer_hil_link::SerialCapture;
 use oer_hil_net_traffic::NetworkSession as _;
 use oer_hil_net_traffic::{
@@ -69,6 +70,17 @@ pub(super) fn qualify_udp(
     let target = context.lab.access_point.target_address();
     let traffic_target = clients.traffic_target(target)?;
     let host = context.lab.access_point.client_address();
+    // The host's route to the target: over the air from the laptop client,
+    // over Ethernet to an OpenWrt client. Every datagram leaves from the
+    // route's source address, and the route is recorded with the run.
+    let route = BenchmarkIpv4Route::discover_over(
+        traffic_target,
+        Some(if clients.openwrt_primary().is_some() {
+            RouteMedium::Ethernet
+        } else {
+            RouteMedium::Wireless
+        }),
+    )?;
     if rx_rate_bps.is_some() {
         probe_udp_rx_ready_via(
             capture,
@@ -148,7 +160,9 @@ pub(super) fn qualify_udp(
         duration,
         payload: payload_bytes,
     });
-    let host_tx = send_config.map(send_udp).transpose();
+    let host_tx = send_config
+        .map(|config| send_udp(route.source(), config))
+        .transpose();
     let structured = capture.wait_for_session(session, config.timeout);
     let acknowledgement = structured
         .as_ref()
@@ -166,6 +180,9 @@ pub(super) fn qualify_udp(
         .transpose();
     let host_tx = host_tx
         .map_err(|error| oer_hil_link::error::context("AP UDP host sender failed", error))?;
+    if let Some(host) = host_tx {
+        route.record(output, traffic_target, host.source)?;
+    }
     let host_rx = host_rx
         .map_err(|error| oer_hil_link::error::context("AP UDP host receiver failed", error))?;
     let structured = structured.map_err(|error| format!("AP UDP target failed: {error}"))?;

@@ -465,9 +465,11 @@ fn spawn_sender(
         duration: config.duration,
         payload: config.payload_bytes,
     };
+    // The source the flow's reverse socket selected toward its target.
+    let source = flow.peer;
     thread::spawn(move || {
         barrier.wait();
-        send_udp(send).map_err(|error| error.to_string())
+        send_udp(source, send).map_err(|error| error.to_string())
     })
 }
 

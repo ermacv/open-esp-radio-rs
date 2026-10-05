@@ -155,13 +155,16 @@ pub fn run(
             ],
             link_requirements: SessionLinkRequirements::NONE,
         })?;
-        let host = send_paced_udp(PacedUdpConfig {
-            address: options.address,
-            port: options.port,
-            rate_bps: options.rate_bps,
-            duration: options.duration,
-            payload: options.payload,
-        })?;
+        let host = send_paced_udp(
+            host_route.source(),
+            PacedUdpConfig {
+                address: options.address,
+                port: options.port,
+                rate_bps: options.rate_bps,
+                duration: options.duration,
+                payload: options.payload,
+            },
+        )?;
         host_route.verify_socket_source(host.source)?;
         let structured = capture.wait_for_session(
             session,
@@ -260,13 +263,16 @@ pub fn run(
         ],
         link_requirements: SessionLinkRequirements::NONE,
     })?;
-    let host_result = send_paced_udp(PacedUdpConfig {
-        address: options.address,
-        port: options.port,
-        rate_bps: options.rate_bps,
-        duration: options.duration,
-        payload: options.payload,
-    });
+    let host_result = send_paced_udp(
+        host_route.source(),
+        PacedUdpConfig {
+            address: options.address,
+            port: options.port,
+            rate_bps: options.rate_bps,
+            duration: options.duration,
+            payload: options.payload,
+        },
+    );
     let host = host_result?;
     host_route.verify_socket_source(host.source)?;
     host_route.record(output, options.address, host.source)?;

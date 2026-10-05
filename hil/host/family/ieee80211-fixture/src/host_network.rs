@@ -22,7 +22,7 @@ pub struct BenchmarkIpv4Route {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-enum RouteMedium {
+pub enum RouteMedium {
     Ethernet,
     Wireless,
 }
@@ -41,7 +41,22 @@ struct HostRouteEvidence<'a> {
 }
 
 impl BenchmarkIpv4Route {
+    /// The route to a device behind the station fixture: over Ethernet to
+    /// an OpenWrt fixture, over the air from a local Linux one.
     pub fn discover(device: Ipv4Addr, fixture: &StationFixtureConfig) -> Result<Self> {
+        Self::discover_over(
+            device,
+            match fixture {
+                StationFixtureConfig::OpenWrt(_) => Some(RouteMedium::Ethernet),
+                StationFixtureConfig::LocalLinux(_) => Some(RouteMedium::Wireless),
+                StationFixtureConfig::External(_) => None,
+            },
+        )
+    }
+
+    /// The host's route to `device`, refused unless its interface is of
+    /// `expected_medium` (any, for `None`).
+    pub fn discover_over(device: Ipv4Addr, expected_medium: Option<RouteMedium>) -> Result<Self> {
         reject_overlapping_ipv4_links(device)?;
         let output = Command::new("ip")
             .args(["-4", "route", "get", &device.to_string()])
@@ -57,11 +72,7 @@ impl BenchmarkIpv4Route {
         }
         let mut route = parse_ipv4_route(&String::from_utf8(output.stdout)?, device)?;
         route.medium = interface_medium(&route.interface);
-        route.expected_medium = match fixture {
-            StationFixtureConfig::OpenWrt(_) => Some(RouteMedium::Ethernet),
-            StationFixtureConfig::LocalLinux(_) => Some(RouteMedium::Wireless),
-            StationFixtureConfig::External(_) => None,
-        };
+        route.expected_medium = expected_medium;
         if route
             .expected_medium
             .is_some_and(|expected| route.medium != expected)
@@ -84,6 +95,11 @@ impl BenchmarkIpv4Route {
         duration: std::time::Duration,
     ) -> Result<crate::local::wire_capture::Capture> {
         crate::local::wire_capture::Capture::start(&self.interface, target, output, duration)
+    }
+
+    /// The source address the route selects.
+    pub const fn source(&self) -> Ipv4Addr {
+        self.source
     }
 
     pub fn verify_socket_source(&self, actual: Ipv4Addr) -> Result<()> {

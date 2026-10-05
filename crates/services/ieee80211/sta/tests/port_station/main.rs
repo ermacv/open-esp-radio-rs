@@ -13,6 +13,7 @@ use core::{
     pin::pin,
     task::{Context, Poll, Waker},
 };
+use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
 use std::{
     cell::RefCell,
     sync::atomic::{AtomicU32, Ordering},
@@ -41,14 +42,12 @@ use oer_ieee80211_rsn::{
 };
 use oer_ieee80211_softmac::{BackoffEntropy, EdcaContention};
 use oer_ieee80211_sta::{
-    association::StaAssociatedPeer,
     attempt::{
         AssociationAttemptOutcome, StaAttemptSecurity, StaPersonalCredentials,
         Wpa2Message4Protection,
     },
     modem_sleep::{CoexView, PmCoexAction, PmCoexEvent, PmState, SleepType},
     pmksa::StaSharedPmksa,
-    rate_control::StaRateControl,
     scan::{StaCandidateScanExit, StaScanConfig},
     station::{StaLifecycleExit, StaReconnectPolicy},
 };
@@ -146,12 +145,12 @@ struct ScriptedRate<'a> {
     log: &'a RefCell<RateLog>,
 }
 
-impl<'a> StaRateControl for ScriptedRate<'a> {
+impl<'a> RateControl for ScriptedRate<'a> {
     type Config = (PhyRate, &'a RefCell<RateLog>);
 
-    fn associate(
+    fn for_peer(
         (rate, log): (PhyRate, &'a RefCell<RateLog>),
-        _peer: &StaAssociatedPeer,
+        _peer: &RatePeer,
         link_metric: Option<i8>,
     ) -> Self {
         log.borrow_mut().link_metrics.push(link_metric);

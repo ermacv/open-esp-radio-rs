@@ -89,6 +89,16 @@ pub enum StaAssociatedPeerError {
 const CAPABILITY_SHORT_PREAMBLE: u16 = 1 << 5;
 
 impl StaAssociatedPeer {
+    /// What the station's rate control knows of its access point.
+    pub const fn rate_peer(&self) -> oer_ieee80211_upper_mac::rate_control::RatePeer {
+        oer_ieee80211_upper_mac::rate_control::RatePeer {
+            phy: self.phy,
+            ht_capabilities: self.ht_capabilities,
+            he_capabilities: self.he_capabilities,
+            he_peer_state: self.he_peer_state,
+        }
+    }
+
     /// The peer `access_point` became by `response` to an association with
     /// `phy`. `he_packet_padding` reads the nominal packet padding from the
     /// access point's HE Capabilities element, an integrator's policy (the

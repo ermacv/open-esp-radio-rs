@@ -74,17 +74,23 @@ use oer_ieee80211_mac::{
         IEEE80211_QOS_DATA_HEADER_LEN, RxDuplicateFilter, decapsulate_data_frames,
         plan_data_decapsulation,
     },
+    ht::HtPeerCapabilities,
     protection::ApBssProtection,
     qos::{WmmAccessCategory, WmmUserPriority},
     security::{ApSecurityPolicy, LinkProtection},
     sequence::SequenceNumber,
     ssid::WifiSsid,
+    station::association::PhyMode,
     tsf::TsfInstant,
 };
 use oer_ieee80211_rsn::{
     OwnedEapolFrame, Pmk, RsnInterface, frames::RsnTxFrame, runner::RSN_HANDSHAKE_EAPOL_CAPACITY,
 };
-use oer_ieee80211_upper_mac::{TxBody, TxReceiver, TxReport, TxRequest, aggregate::AmpduLimits};
+use oer_ieee80211_upper_mac::{
+    TxBody, TxReceiver, TxReport, TxRequest,
+    aggregate::AmpduLimits,
+    rate_control::{RateControl, RatePeer, link_metric},
+};
 use oer_ieee80211_upper_mac_service::{
     EventRouter,
     aggregate::{AmpduSubframes, PortAggregation},
@@ -148,6 +154,10 @@ pub trait PortApEnv: PortClientEnv {
     type Authenticator: PortApAuthenticator;
     /// Where a WPA3 BSS's SAE responder runs; [`NoSae`] for another BSS.
     type Sae: PortApSae;
+    /// How the access point picks the data rates of each associated
+    /// station: one controller per peer (`FixedRateControl`, or the
+    /// Espressif `EspressifRateControl` of `oer-espressif-ieee80211-policy`).
+    type RateControl: RateControl;
 }
 
 /// The executor of an access point's SAE responder: the access point hands
@@ -245,10 +255,9 @@ pub struct PortApProfile<'a> {
     /// The rates, HT capabilities and WMM parameters the access point
     /// claims.
     pub advertisement: &'a Advertisement,
-    /// The rate of beacons, management frames and group data.
+    /// The rate of beacons, management frames and group data; each peer's
+    /// data goes at its rate control's.
     pub management_rate: PhyRate,
-    /// The rate of data to an associated peer.
-    pub data_rate: PhyRate,
     pub coex: CoexPriority,
     /// The step of the CCMP packet numbers the access point sends under.
     pub ccmp_step: CcmpPacketNumberStep,
@@ -387,10 +396,12 @@ pub enum PortApSend {
     Full,
 }
 
-/// A peer's link: its pairwise key, the CCMP packet numbers sent to it and
+/// An associated peer's link: its rate control, its pairwise key once
+/// authorized in a protected BSS, the CCMP packet numbers sent to it and
 /// received from it, and its duplicate filter.
-struct PeerLink {
+struct PeerLink<R> {
     peer: [u8; 6],
+    rate: R,
     key: Option<KeyHandle>,
     transmit: CcmpTxPacketNumber,
     replay: CcmpRxReplayState,
@@ -549,8 +560,10 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     service: AccessPointService<'p>,
     /// The group key the port holds, in a protected BSS.
     group_key: Option<KeyHandle>,
-    /// The link of each authorized peer.
-    links: [Option<PeerLink>; AP_MAX_CLIENTS],
+    /// The link of each associated peer.
+    links: [Option<PeerLink<X::RateControl>>; AP_MAX_CLIENTS],
+    /// What every peer's rate control is configured with.
+    rate_control: <X::RateControl as RateControl>::Config,
     /// The packet numbers of group data.
     group_transmit: CcmpTxPacketNumber,
     queue: &'p mut TxQueue,
@@ -565,18 +578,33 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     counters: PortApCounters,
 }
 
+/// The values of an access point's environment: its client of the port,
+/// its timer, authenticator and SAE executor, and what each peer's rate
+/// control is configured with.
+pub struct PortApParts<'p, X: PortApEnv> {
+    pub client: PortApClient<'p, X>,
+    pub timer: X::Timer,
+    pub authenticator: X::Authenticator,
+    pub sae: X::Sae,
+    pub rate_control: <X::RateControl as RateControl>::Config,
+}
+
 impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
-    /// An access point of `profile` and `service` over `client`, its beacon
-    /// template in `storage`.
+    /// An access point of `profile` and `service` over `parts`' client, its
+    /// beacon template in `storage`.
     pub fn new<const HELD: usize>(
-        client: PortApClient<'p, X>,
-        timer: X::Timer,
-        authenticator: X::Authenticator,
-        sae: X::Sae,
+        parts: PortApParts<'p, X>,
         profile: PortApProfile<'p>,
         service: AccessPointService<'p>,
         storage: &'p mut PortApStorage<HELD>,
     ) -> Result<Self, PortApBuildError> {
+        let PortApParts {
+            client,
+            timer,
+            authenticator,
+            sae,
+            rate_control,
+        } = parts;
         let PortApStorage {
             beacon,
             queue,
@@ -610,6 +638,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             service,
             group_key: None,
             links: [const { None }; AP_MAX_CLIENTS],
+            rate_control,
             group_transmit: CcmpTxPacketNumber::new(profile.ccmp_step),
             queue,
             subframes,
@@ -679,25 +708,46 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .map_err(PortApError::Key)
     }
 
-    fn link_mut(&mut self, peer: [u8; 6]) -> Option<&mut PeerLink> {
+    fn link_mut(&mut self, peer: [u8; 6]) -> Option<&mut PeerLink<X::RateControl>> {
         self.links
             .iter_mut()
             .flatten()
             .find(|link| link.peer == peer)
     }
 
-    /// Open `peer`'s link, under `key` in a protected BSS.
+    /// Open the link of `peer`, which just associated with `ht` receive
+    /// capabilities, its rate control started from `link_metric`.
     fn open_link(
         &mut self,
         peer: [u8; 6],
-        key: Option<KeyHandle>,
+        ht: Option<HtPeerCapabilities>,
+        link_metric: Option<i8>,
     ) -> Result<(), PortApError<PortError<X>>> {
+        // The peer's HT width is the BSS's where it supports 40 MHz.
+        let phy = match ht {
+            None => PhyMode::Legacy,
+            Some(ht) if self.profile.channel.bandwidth_mhz() >= 40 && ht.supports_40_mhz() => {
+                PhyMode::Ht40
+            }
+            Some(_) => PhyMode::Ht20,
+        };
+        let rate = X::RateControl::for_peer(
+            self.rate_control,
+            &RatePeer {
+                phy,
+                ht_capabilities: ht,
+                he_capabilities: None,
+                he_peer_state: None,
+            },
+            link_metric,
+        );
         let Some(slot) = self.links.iter_mut().find(|slot| slot.is_none()) else {
             return Err(PortApError::KeysFull);
         };
         *slot = Some(PeerLink {
             peer,
-            key,
+            rate,
+            key: None,
             transmit: CcmpTxPacketNumber::new(self.profile.ccmp_step),
             replay: CcmpRxReplayState::default(),
             duplicates: RxDuplicateFilter::new(),
@@ -706,7 +756,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     }
 
     /// Close `peer`'s link, removing its pairwise key from the port.
-    fn remove_pairwise_key(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
+    fn close_link(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
         let Some(slot) = self
             .links
             .iter_mut()
@@ -743,10 +793,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         !self.queue.is_full()
     }
 
-    /// Forget a peer: its pairwise key, its SAE session, the frames held for
-    /// it, then its state.
+    /// Forget a peer: its link and pairwise key, its SAE session, the frames
+    /// held for it, then its state.
     fn remove_peer(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
-        self.remove_pairwise_key(peer)?;
+        self.close_link(peer)?;
         self.buffered.drop_for(peer);
         self.stop_rx_agreements(peer)?;
         self.sae.forget(peer);
@@ -1050,6 +1100,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         now: Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
     ) -> Result<(), PortApError<PortError<X>>> {
+        let meta = received.meta();
         let frame = received.bytes();
         let power_save = observe_ap_power_save_for_access_point(frame, self.service.address())
             .filter(|observation| {
@@ -1125,7 +1176,8 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     ht: ht_capabilities,
                     qos_supported,
                 };
-                self.associate(peer, security, capabilities, now).await
+                self.associate(peer, security, capabilities, link_metric(meta), now)
+                    .await
             }
             Some(
                 ApManagementRequest::Disassociation { peer, .. }
@@ -1217,7 +1269,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         match output.result {
             ApSaeResult::Accepted { pmk, pmkid } => {
                 if self.service.peer_status(peer).is_some() {
-                    self.remove_pairwise_key(peer)?;
+                    self.close_link(peer)?;
                 }
                 self.service
                     .authenticate_sae(peer, Pmk::from_bytes(pmk), pmkid, now)?;
@@ -1271,7 +1323,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         } else {
             // A new authentication ends the peer's earlier pairwise-key
             // epoch before the service starts it over.
-            self.remove_pairwise_key(peer)?;
+            self.close_link(peer)?;
             let ApMlmeAction::AuthenticationResponse { status, .. } =
                 self.service.authenticate_open(peer, now)
             else {
@@ -1303,6 +1355,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         peer: [u8; 6],
         security: oer_ieee80211_mac::ap::ApAssociationSecurityObservation<'_>,
         capabilities: ApAssociationCapabilities,
+        link_metric: Option<i8>,
         now: Instant,
     ) -> Result<(), PortApError<PortError<X>>> {
         let Some(status) = self.service.peer_status(peer) else {
@@ -1362,9 +1415,11 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             let message1: EapolFrame = self.service.begin_wpa2_frame(peer)?;
             self.send_eapol(peer, &message1, false).await?;
         }
-        // An Open BSS's peer is authorized by its association.
-        if !protected && !repeated && association_id != 0 && self.link_mut(peer).is_none() {
-            self.open_link(peer, None)?;
+        // A new association opens the peer's link; an Open BSS's peer is
+        // authorized by it.
+        if !repeated && association_id != 0 {
+            self.close_link(peer)?;
+            self.open_link(peer, ht, link_metric)?;
         }
         Ok(())
     }
@@ -1434,7 +1489,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         }
         let access_point = self.service.address();
         let mut mpdu = [0; oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY + 64];
-        let (length, key, rate) = if self.service.link_protection() == LinkProtection::Open {
+        let (length, key) = if self.service.link_protection() == LinkProtection::Open {
             let sequence_number = self.service.current_data_sequence();
             let length = ApUnprotectedDataFrame {
                 access_point,
@@ -1445,12 +1500,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             }
             .encode(&mut mpdu)?;
             self.service.next_data_sequence();
-            let rate = if group {
-                self.profile.management_rate
-            } else {
-                self.profile.data_rate
-            };
-            (length, KeySelector::Plaintext, rate)
+            (length, KeySelector::Plaintext)
         } else {
             let peer_qos = !group
                 && self
@@ -1459,14 +1509,18 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     .is_some_and(|status| status.qos_supported);
             let (length, key, _) =
                 self.encode_protected(destination, peer_qos, more_data, ethernet, &mut mpdu)?;
-            let rate = if group {
-                self.profile.management_rate
-            } else {
-                self.profile.data_rate
-            };
-            (length, KeySelector::Key(key), rate)
+            (length, KeySelector::Key(key))
         };
-        self.client
+        let rate = if group {
+            self.profile.management_rate
+        } else {
+            self.link_mut(destination)
+                .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?
+                .rate
+                .mpdu_rate()
+        };
+        let report = self
+            .client
             .transmit(
                 &mpdu[..length],
                 key,
@@ -1476,6 +1530,16 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             )
             .await?;
         self.counters.data_sent = self.counters.data_sent.saturating_add(1);
+        if !group
+            && let TxReport::Mpdu(status) = report
+            && let Some(link) = self.link_mut(destination)
+        {
+            link.rate.observe_mpdu(
+                status.attempts,
+                status.acknowledged == Some(true),
+                status.ack_snr_db,
+            );
+        }
         Ok(())
     }
 
@@ -1545,7 +1609,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// `head_len` octets and the queued frames for it that follow, as the
     /// peer's operational TX Block Ack agreement, the port, the peer's HT
     /// A-MPDU Parameters and the Best Effort TXOP limit the BSS advertises
-    /// admit at the data rate; one where no A-MPDU applies.
+    /// admit at the peer's A-MPDU rate; one where no A-MPDU applies.
     fn aggregate_run(&self, destination: [u8; 6], head_len: usize) -> usize {
         let Some(status) = self.service.peer_status(destination) else {
             return 1;
@@ -1564,12 +1628,20 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .wmm
             .access_category(WmmAccessCategory::BestEffort)
             .txop_limit_units_32_us;
+        let Some(link) = self
+            .links
+            .iter()
+            .flatten()
+            .find(|link| link.peer == destination)
+        else {
+            return 1;
+        };
         let limits = AmpduLimits {
             window: agreement.window,
             port,
             peer_ampdu_parameters: ht.ampdu_parameters(),
             txop_limit_micros: (txop != 0).then_some(u32::from(txop) * 32),
-            rate: self.profile.data_rate,
+            rate: link.rate.ampdu_rate(),
         };
         let queue = &*self.queue;
         let following = (0..PORT_TX_QUEUE)
@@ -1583,7 +1655,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
 
     /// Send `head` and the `run - 1` queued frames for `destination` that
     /// follow it as one A-MPDU of TID 0 under the peer's pairwise key, at
-    /// the data rate.
+    /// the peer's A-MPDU rate.
     async fn transmit_aggregate(
         &mut self,
         destination: [u8; 6],
@@ -1629,9 +1701,14 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .request(AP_TX_BLOCK_ACK_TID, first_sequence, committed_at)
             .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?;
         let config = *self.client.config();
+        let initial_rate = self
+            .link_mut(destination)
+            .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?
+            .rate
+            .ampdu_rate();
         let request = TxRequest {
             access_category: WmmAccessCategory::BestEffort,
-            initial_rate: self.profile.data_rate,
+            initial_rate,
             receiver: TxReceiver::Individual,
             power: config.power,
             coex: self.profile.coex,
@@ -1649,6 +1726,15 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 .counters
                 .aggregated_acknowledged
                 .saturating_add(u32::from(status.block_acknowledged_subframes));
+            let now = self.timer.now();
+            if let Some(link) = self.link_mut(destination) {
+                link.rate.observe_ampdu(
+                    now,
+                    status.original_subframes,
+                    status.block_acknowledged_subframes,
+                    status.ack_snr_db,
+                );
+            }
         }
         Ok(())
     }
@@ -1704,7 +1790,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let protected_bss = self.service.link_protection() == LinkProtection::Ccmp;
         let protected = bytes[1] & 0x40 != 0;
         let meta = received.meta();
-        let Some(link) = self.link_mut(peer) else {
+        // An associated peer's link exists before its handshake ends; only
+        // an authorized peer's data reaches the distribution system.
+        let authorized = self.service.is_authorized(peer);
+        let Some(link) = self.link_mut(peer).filter(|_| authorized) else {
             self.counters.rx_rejected = self.counters.rx_rejected.saturating_add(1);
             return Ok(());
         };
@@ -2161,15 +2250,18 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         }
     }
 
-    /// Install the verified handshake's pairwise key in the port, then open
-    /// the peer's controlled port.
+    /// Install the verified handshake's pairwise key in the port, on the
+    /// link the peer's association opened, then open the peer's controlled
+    /// port.
     fn authorize(&mut self, peer: [u8; 6], now: Instant) -> Result<(), PortApError<PortError<X>>> {
-        if self.links.iter().all(Option::is_some) {
-            return Err(PortApError::KeysFull);
+        if self.link_mut(peer).is_none() {
+            return Err(PortApError::Service(ApServiceError::UnknownPeer));
         }
         let key = *self.service.pending_ptk(peer)?.temporal_key();
         let handle = self.install_key(KeyScope::Pairwise { peer }, &key)?;
-        self.open_link(peer, Some(handle))?;
+        if let Some(link) = self.link_mut(peer) {
+            link.key = Some(handle);
+        }
         self.service.authorize(peer, now)?;
         self.counters.handshakes = self.counters.handshakes.saturating_add(1);
         Ok(())

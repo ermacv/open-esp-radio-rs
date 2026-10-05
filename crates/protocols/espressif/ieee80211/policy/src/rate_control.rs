@@ -18,7 +18,7 @@ use oer_ieee80211_mac::{
     phy::{FecCoding, HeGiLtf, HeMcs, HeRate, HtMcs, HtRate, LegacyRate, PhyRate, PpduBandwidth},
     station::association::PhyMode,
 };
-use oer_ieee80211_sta::{association::StaAssociatedPeer, rate_control::StaRateControl};
+use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
 use oer_time::Instant;
 
 /// Instruction-evidenced fields of one 12-byte rate schedule record.
@@ -1217,14 +1217,16 @@ pub const fn beamforming_report_rate_for_metric(
     }
 }
 
-/// The Espressif controller behind the station's rate-control seam: the
-/// vendor's per-association rate control, its schedules decoded as
-/// portable rates within what the association negotiated.
+/// The Espressif controller behind the rate-control seam: the vendor's
+/// per-association rate control, its schedules decoded as portable rates
+/// within what the link negotiated. It was recovered from the vendor
+/// station; an access point keeps one per associated station with it, a
+/// use of ours.
 ///
-/// A schedule's HT rate takes the association's width, and its short guard
-/// interval only where the access point supports one at that width; an HE
-/// rate takes 0.8 us with one HE-LTF where the access point supports it,
-/// two otherwise, and LDPC where the access point receives it. A schedule
+/// A schedule's HT rate takes the link's width, and its short guard
+/// interval only where the peer supports one at that width; an HE rate
+/// takes 0.8 us with one HE-LTF where the peer supports it, two otherwise,
+/// and LDPC where the peer receives it. A schedule
 /// without a portable rate (the vendor's Long Range modes) sends at the
 /// vendor station's fallback: 54 Mb/s legacy, or HT MCS 7 with the long
 /// guard interval.
@@ -1277,18 +1279,18 @@ impl RateDecode {
     }
 }
 
-impl StaRateControl for EspressifRateControl {
+impl RateControl for EspressifRateControl {
     type Config = ();
 
-    fn associate((): (), peer: &StaAssociatedPeer, link_metric: Option<i8>) -> Self {
+    fn for_peer((): (), peer: &RatePeer, link_metric: Option<i8>) -> Self {
         let he = peer.he_capabilities;
         let phy = match peer.phy {
             PhyMode::Legacy => StaRateControlPhy::Dot11G,
             PhyMode::Ht20 | PhyMode::Ht40 => StaRateControlPhy::Ht,
             PhyMode::He20 => StaRateControlPhy::He,
         };
-        // As the vendor station: an HE access point's maximum one-stream MCS,
-        // capped at MCS 9.
+        // As the vendor station: an HE peer's maximum one-stream MCS, capped
+        // at MCS 9.
         let peer_highest_rate = he
             .filter(|_| peer.phy == PhyMode::He20)
             .and_then(|capability| match capability.receive_nss1 {

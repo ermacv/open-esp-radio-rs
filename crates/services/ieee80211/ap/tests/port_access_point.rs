@@ -1,12 +1,16 @@
 //! The access point over the lower-MAC host model: virtual time drives its
 //! beacon schedule, and the test plays the stations that probe it.
 
+use core::cell::RefCell;
+
 use core::{
     cell::Cell,
     future::{Future, poll_fn},
     pin::pin,
     task::{Context, Poll, Waker},
 };
+use oer_ieee80211_mac::station::association::PhyMode;
+use oer_ieee80211_upper_mac::rate_control::{FixedRateControl, RateControl, RatePeer};
 
 use oer_ieee80211_ap::sae::{ApSaeCredential, ApSaeRandom, ApSaeResponder};
 use oer_ieee80211_ap::{
@@ -14,8 +18,8 @@ use oer_ieee80211_ap::{
     ApPeerPhase,
 };
 use oer_ieee80211_ap_service::port::{
-    InlineSae, NoSae, PortAccessPoint, PortApAuthenticator, PortApClient, PortApEnv, PortApProfile,
-    PortApRouter, PortApSend, PortApStorage,
+    InlineSae, NoSae, PortAccessPoint, PortApAuthenticator, PortApClient, PortApEnv, PortApParts,
+    PortApProfile, PortApRouter, PortApSend, PortApStorage,
 };
 use oer_ieee80211_lower_mac::{
     CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyScope, KeySelector, LifecycleCommand,
@@ -144,6 +148,7 @@ impl<'a> PortApEnv for Env<'a> {
     type Timer = &'a VirtualTimer;
     type Authenticator = FixedMaterial;
     type Sae = NoSae;
+    type RateControl = FixedRateControl;
 }
 
 /// The environment of a WPA3 BSS, its SAE responder run inline.
@@ -161,6 +166,7 @@ impl<'a> PortApEnv for Wpa3Env<'a> {
     type Timer = &'a VirtualTimer;
     type Authenticator = FixedMaterial;
     type Sae = InlineSae<Counter>;
+    type RateControl = FixedRateControl;
 }
 
 /// Deterministic SAE scalars.
@@ -274,7 +280,6 @@ fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
         dtim_period: 2,
         advertisement: &ADVERTISEMENT,
         management_rate: RATE,
-        data_rate: DATA_RATE,
         ccmp_step: CcmpPacketNumberStep::new(1).unwrap(),
         rx_reorder_gap: oer_time::Duration::from_millis(300),
         tx_block_ack_retry: RETRY,
@@ -357,10 +362,13 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
-        client(&router),
-        &timer,
-        FixedMaterial,
-        NoSae,
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+        },
         profile(&ssid),
         service(),
         &mut storage,
@@ -431,10 +439,13 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
-        client(&router),
-        &timer,
-        FixedMaterial,
-        NoSae,
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+        },
         profile(&ssid),
         service(),
         &mut storage,
@@ -577,10 +588,13 @@ fn an_open_station_authenticates_associates_and_leaves() {
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
-        client(&router),
-        &timer,
-        FixedMaterial,
-        NoSae,
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+        },
         profile(&ssid),
         service(),
         &mut storage,
@@ -650,10 +664,13 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
-        client(&router),
-        &timer,
-        FixedMaterial,
-        NoSae,
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+        },
         profile(&ssid),
         service(),
         &mut storage,
@@ -703,10 +720,13 @@ fn a_wpa3_station_authenticates_by_sae_while_the_bss_goes_on() {
         Counter(0),
     );
     let mut access_point = PortAccessPoint::<Wpa3Env<'_>>::new(
-        client(&router),
-        &timer,
-        FixedMaterial,
-        sae,
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae,
+            rate_control: DATA_RATE,
+        },
         profile(&ssid),
         wpa3,
         &mut storage,
@@ -813,10 +833,13 @@ fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
         Box::leak(Box::new(AccessPointPeerStorage::new())),
     );
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
-        client(&router),
-        &timer,
-        FixedMaterial,
-        NoSae,
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+        },
         profile(&ssid),
         wpa2,
         &mut storage,
@@ -911,10 +934,13 @@ fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out(
         Box::leak(Box::new(AccessPointPeerStorage::new())),
     );
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
-        client(&router),
-        &timer,
-        FixedMaterial,
-        NoSae,
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+        },
         profile(&ssid),
         wpa2,
         &mut storage,
@@ -1027,10 +1053,13 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8>::new();
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
-        client(&router),
-        &timer,
-        FixedMaterial,
-        NoSae,
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+        },
         profile(&ssid),
         service(),
         &mut storage,
@@ -1117,10 +1146,13 @@ fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
         Box::leak(Box::new(AccessPointPeerStorage::new())),
     );
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
-        client(&router),
-        &timer,
-        FixedMaterial,
-        NoSae,
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+        },
         profile(&ssid),
         wpa2,
         &mut storage,
@@ -1245,10 +1277,13 @@ fn associated<'a, const HELD: usize>(
     storage: &'a mut PortApStorage<HELD>,
 ) -> PortAccessPoint<'a, Env<'a>> {
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
-        client(router),
-        timer,
-        FixedMaterial,
-        NoSae,
+        PortApParts {
+            client: client(router),
+            timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+        },
         profile(ssid),
         service(),
         storage,
@@ -1567,14 +1602,14 @@ fn with_ht_peer(
         Box::leak(Box::new(AccessPointPeerStorage::new())),
     );
     let mut access_point = PortAccessPoint::<Env<'_>>::new(
-        client(&router),
-        &timer,
-        FixedMaterial,
-        NoSae,
-        PortApProfile {
-            data_rate: HT_DATA_RATE,
-            ..profile(&ssid)
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: HT_DATA_RATE,
         },
+        profile(&ssid),
         wpa2,
         &mut storage,
     )
@@ -1792,4 +1827,168 @@ fn an_unanswered_offer_is_made_again_with_the_peer_s_data_after_the_interval() {
             &(vec![start + 1, start + 2], true)
         );
     });
+}
+
+/// What the recording rate control saw: each peer's controller as built,
+/// and each exchange it learned from.
+#[derive(Default)]
+struct RateLog {
+    peers: Vec<(PhyMode, bool, Option<i8>)>,
+    mpdus: Vec<(u8, bool)>,
+}
+
+/// A controller that keeps one rate and records what it is told.
+struct Recorded<'a> {
+    rate: PhyRate,
+    log: &'a RefCell<RateLog>,
+}
+
+impl<'a> RateControl for Recorded<'a> {
+    type Config = (PhyRate, &'a RefCell<RateLog>);
+
+    fn for_peer((rate, log): Self::Config, peer: &RatePeer, link_metric: Option<i8>) -> Self {
+        log.borrow_mut()
+            .peers
+            .push((peer.phy, peer.ht_capabilities.is_some(), link_metric));
+        Self { rate, log }
+    }
+
+    fn mpdu_rate(&self) -> PhyRate {
+        self.rate
+    }
+
+    fn ampdu_rate(&self) -> PhyRate {
+        self.rate
+    }
+
+    fn observe_mpdu(&mut self, attempts: u8, acknowledged: bool, _ack_snr_db: Option<i8>) {
+        self.log.borrow_mut().mpdus.push((attempts, acknowledged));
+    }
+
+    fn observe_ampdu(
+        &mut self,
+        _now: Instant,
+        _attempted: u16,
+        _acknowledged: u16,
+        _ack_snr_db: Option<i8>,
+    ) {
+    }
+}
+
+/// The environment of an Open BSS whose rate control records.
+struct RateEnv<'a>(core::marker::PhantomData<&'a ()>);
+
+impl PortClientEnv for RateEnv<'_> {
+    type Port = LowerMacModel;
+    type Budget = ProtectEveryHeTxop;
+    type Ladder = FixedRate;
+    type Entropy = Seeded;
+    type Aggregation = PortAmpduAggregation;
+}
+
+impl<'a> PortApEnv for RateEnv<'a> {
+    type Timer = &'a VirtualTimer;
+    type Authenticator = FixedMaterial;
+    type Sae = NoSae;
+    type RateControl = Recorded<'a>;
+}
+
+/// An Association Request of an Open BSS HT station.
+fn ht_association() -> Vec<u8> {
+    let mut frame = association();
+    let mut ht = vec![45, 26, 0x0c, 0x00, 0x03, 0xff];
+    ht.resize(28, 0);
+    frame.extend_from_slice(&ht);
+    frame
+}
+
+#[test]
+fn each_associated_peer_gets_its_own_rate_control_from_its_association() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<RateEnv<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::<8>::new();
+    let log = RefCell::new(RateLog::default());
+    let peer_rate = PhyRate::Legacy(LegacyRate::Ofdm36M);
+    let mut access_point = PortAccessPoint::<RateEnv<'_>>::new(
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: (peer_rate, &log),
+        },
+        profile(&ssid),
+        service(),
+        &mut storage,
+    )
+    .unwrap();
+    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    let start = timer.now.get();
+    // The Association Request arrives 56 dB over the noise floor.
+    let metered = RxMeta {
+        rssi_dbm: RxEvidence::HardwareObserved(-40),
+        noise_floor_dbm: RxEvidence::HardwareObserved(-96),
+        ..meta()
+    };
+    let frames = [
+        (start + 1_000, authentication(false), meta()),
+        (start + 2_000, ht_association(), metered),
+    ];
+    let stops: Vec<u64> = frames.iter().map(|(at, _, _)| *at).collect();
+    let mut sent = 0;
+    drive(
+        &model,
+        &router,
+        &timer,
+        access_point.run_until(Instant::from_micros(start + 3_000), &mut |_| {}),
+        &stops,
+        |now| {
+            while sent < frames.len() && frames[sent].0 <= now {
+                model.receive(&frames[sent].1, frames[sent].2);
+                sent += 1;
+            }
+        },
+    )
+    .unwrap();
+    // One controller, for an HT20 link, from the request's link metric.
+    assert_eq!(log.borrow().peers, [(PhyMode::Ht20, true, Some(56))]);
+
+    // The peer's data goes at its controller's rate, which learns from it;
+    // the group's at the management rate, which teaches it nothing.
+    access_point.send(
+        &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"),
+        WmmUserPriority::new(0).unwrap(),
+    );
+    access_point.send(
+        &ethernet([0xff; 6], [0x02, 0, 0, 0, 0, 0x99], b"all"),
+        WmmUserPriority::new(0).unwrap(),
+    );
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[],
+        start + 4_000,
+    );
+    assert_eq!(downlink(&model, STATION)[0].2, peer_rate);
+    assert_eq!(downlink(&model, [0xff; 6])[0].2, RATE);
+    assert_eq!(log.borrow().mpdus, [(1, true)]);
+
+    // A peer that leaves and associates again starts over.
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[
+            (start + 5_000, management(12, false, &[3, 0])),
+            (start + 6_000, authentication(false)),
+            (start + 7_000, association()),
+        ],
+        start + 8_000,
+    );
+    assert_eq!(log.borrow().peers[1..], [(PhyMode::Legacy, false, None)]);
 }

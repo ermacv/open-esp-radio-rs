@@ -14,11 +14,8 @@ use oer_ieee80211_mac::{
     station::{AssociationRequestError, StationFrameError},
 };
 use oer_ieee80211_rsn::aes::AsyncRsnKeyUnwrap;
-use oer_ieee80211_sta::{
-    modem_sleep::{CoexView, PmCoexAction},
-    rate_control::StaRateControl,
-};
-use oer_ieee80211_upper_mac::{TxPlanner, TxReport, TxRequest};
+use oer_ieee80211_sta::modem_sleep::{CoexView, PmCoexAction};
+use oer_ieee80211_upper_mac::{TxPlanner, TxReport, TxRequest, rate_control::RateControl};
 pub use oer_ieee80211_upper_mac_service::EventRouter;
 use oer_ieee80211_upper_mac_service::{
     AmpduFrames, UpperMacTx, UpperMacTxError,
@@ -54,9 +51,9 @@ pub trait PortStationEnv: PortClientEnv {
     /// RF with; [`NoCoexistence`] when it shares it with none.
     type Coex: PortCoexistence;
     /// How the station picks its data rates: one controller per
-    /// association (`StaFixedRateControl`, or the Espressif
+    /// association (`FixedRateControl`, or the Espressif
     /// `EspressifRateControl` of `oer-espressif-ieee80211-policy`).
-    type RateControl: StaRateControl;
+    type RateControl: RateControl;
 }
 
 /// The coexistence schedule of the radio system a station shares its RF
@@ -185,7 +182,7 @@ pub struct PortLink<'p, X: PortStationEnv> {
     client: PortClient<'p, X, PORT_EXCHANGES, PORT_BACKLOG>,
     config: PortStationConfig,
     coex: X::Coex,
-    rate: <X::RateControl as StaRateControl>::Config,
+    rate: <X::RateControl as RateControl>::Config,
 }
 
 impl<'p, X: PortStationEnv> PortLink<'p, X> {
@@ -197,7 +194,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         ladder: X::Ladder,
         entropy: X::Entropy,
         coex: X::Coex,
-        rate: <X::RateControl as StaRateControl>::Config,
+        rate: <X::RateControl as RateControl>::Config,
         config: PortStationConfig,
     ) -> Self {
         Self {
@@ -221,7 +218,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     }
 
     /// What every association's rate controller is configured with.
-    pub const fn rate_config(&self) -> <X::RateControl as StaRateControl>::Config {
+    pub const fn rate_config(&self) -> <X::RateControl as RateControl>::Config {
         self.rate
     }
 

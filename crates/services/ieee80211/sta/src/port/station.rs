@@ -2,11 +2,12 @@
 //! and its lifecycle backend.
 
 use core::{convert::Infallible, marker::PhantomData};
+use oer_ieee80211_upper_mac::rate_control::{RateControl, link_metric};
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortError, PortMsdu, PortRxBuffer};
 use oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY;
 
 use oer_ieee80211_lower_mac::{
-    Channel, ChannelWidth, Ieee80211LowerMacPort, ReceiveFilter, RxEvidence, RxMeta,
+    Channel, ChannelWidth, Ieee80211LowerMacPort, ReceiveFilter, RxMeta,
 };
 use oer_ieee80211_mac::{
     ccmp::{CcmpPacketNumberStep, CcmpTxPacketNumber},
@@ -37,7 +38,6 @@ use oer_ieee80211_sta::{
         StaAssociationSuccess, StaAuthenticationSuccess, StaJoinError, sae::StaSaeAuthentication,
     },
     modem_sleep::SleepType,
-    rate_control::StaRateControl,
     scan::{StaCandidateScanExit, StaScanConfig, StaScanError, StaScanPlanError},
     station::{
         StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffOutcome,
@@ -945,9 +945,9 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
             ));
         };
         let bip = owner.bip.take();
-        let rate = <X::RateControl as StaRateControl>::associate(
+        let rate = <X::RateControl as RateControl>::for_peer(
             owner.link.rate_config(),
-            &config.peer,
+            &config.peer.rate_peer(),
             owner.response_meta.and_then(link_metric),
         );
         owner.connection = Some(PortConnection::new(
@@ -985,17 +985,6 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
         }
         Ok(owner)
     }
-}
-
-/// The access point's signal over the noise floor in a frame's receive
-/// metadata, narrowed to a signed byte as the vendor's `ic_set_trc` does;
-/// `None` when the port reported either value unavailable.
-fn link_metric(meta: RxMeta) -> Option<i8> {
-    let value = |evidence: RxEvidence<i8>| match evidence {
-        RxEvidence::HardwareObserved(value) | RxEvidence::ProtocolValidated(value) => Some(value),
-        RxEvidence::Unavailable => None,
-    };
-    Some(value(meta.rssi_dbm)?.wrapping_sub(value(meta.noise_floor_dbm)?))
 }
 
 /// The application a lifecycle-driven station serves.

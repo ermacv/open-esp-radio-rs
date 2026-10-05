@@ -10,12 +10,12 @@ peers, security and power save); frame codecs belong to `oer-ieee80211-mac`.
 
 | Item | Role |
 | --- | --- |
-| `PortApEnv` | The port and transmit policy (`PortClientEnv`), the image's monotonic `Timer` the `PortApAuthenticator` that gives each handshake an unpredictable authenticator nonce and its initial replay counter, and the `PortApSae` executor of a WPA3 BSS's SAE responder (`NoSae` for another BSS) |
+| `PortApEnv` | The port and transmit policy (`PortClientEnv`), the image's monotonic `Timer` the `PortApAuthenticator` that gives each handshake an unpredictable authenticator nonce and its initial replay counter, the `PortApSae` executor of a WPA3 BSS's SAE responder (`NoSae` for another BSS), and the `RateControl` of each associated station (`oer-ieee80211-upper-mac`'s seam: `FixedRateControl`, or the Espressif `EspressifRateControl`) |
 | `PortApSae`, `InlineSae` | The access point submits one SAE frame at a time and polls for its output beside the port's input, so a Commit's elliptic-curve work runs where the composition places the executor while the BSS goes on; `InlineSae` runs the responder inline; a frame submitted while the last output is not taken is dropped (`sae_dropped`) |
-| `PortApProfile` | The BSS: SSID, channel, beacon interval, DTIM period, the claimed `Advertisement`, the management rate (beacons, management, group data), the data rate to a peer, the coexistence priority, the CCMP packet-number step and the receive reorder gap time; its security is the `AccessPointService`'s |
+| `PortApProfile` | The BSS: SSID, channel, beacon interval, DTIM period, the claimed `Advertisement`, the management rate (beacons, management, group data), the coexistence priority, the CCMP packet-number step and the receive reorder gap time; its security is the `AccessPointService`'s |
 | `PortApStorage` | The memory the composition places: the beacon template, the transmit queue (`oer-ieee80211-upper-mac-service::queue::TxQueue`), the subframes of one A-MPDU (`aggregate::AmpduSubframes`), the `HELD` frames held for power save (its const parameter, which the composition sizes for its peers' traffic and memory), shared by every dozing peer and the group, and the peers' receive Block Ack reordering (`oer-ieee80211-upper-mac-service::reorder::RxReorder`, `AP_MAX_CLIENTS` agreements) |
 | `PortAccessPoint::send` | Queues one Ethernet-II frame at its user priority (`PortApSend::Queued`, or `Full`); `run_until` sends the queue |
-| `PortAccessPoint::new` | Takes the client, the timer, the authenticator, the SAE executor, the profile, the BSS's `AccessPointService` (peers, security, the management sequence beacons and responses share) and the storage; refuses a service of another address |
+| `PortAccessPoint::new` | Takes the environment's `PortApParts` (the client, the timer, the authenticator, the SAE executor and the rate controls' configuration), the profile, the BSS's `AccessPointService` (peers, security, the management sequence beacons and responses share) and the storage; refuses a service of another address |
 | `PortAccessPoint::start` | Tunes the port to the BSS's channel, configures the access-point interface with `BSS_MEMBER` and `PROBE_REQUESTS`, restarts its TSF and, in a WPA2 BSS, installs the group key |
 | `PortAccessPoint::run_until` | Publishes a beacon at each TBTT of the beacon's own absolute schedule, a late publication moving no later TBTT, its ERP and HT protection following the associated peers; answers each Probe Request for its SSID or the wildcard SSID with the current advertisement, at most one response per 10 ms; admits stations by Open System authentication and association, a repeated request answered again without resetting the peer; removes a peer that disassociates or deauthenticates; closes a peer the service finds inactive with a Disassociation (reason 4 for inactivity, else 2) when it was associated and a Deauthentication (reason 2); in a WPA2 BSS runs the four-way handshake as the authenticator (Message 1 after a successful association, Message 3 on a verified Message 2, both retransmitted as the service schedules, a peer closed when they run out) and, on a verified Message 4, installs the peer's pairwise key before authorizing it; removes a peer's pairwise key with the peer and before a new authentication; in a WPA3 BSS hands SAE frames to the executor, authenticates a station whose exchange the responder accepted with its PMK, forgets an unassociated one whose exchange failed, and sends the responder's replies in order |
 
@@ -34,7 +34,7 @@ its handshake) has a link holding its pairwise key, the CCMP packet numbers
 sent to it, its receive replay state and its duplicate filter.
 `run_until(deadline, deliver)` sends each queued frame to an authorized peer
 (plaintext in an Open BSS; under its pairwise key, as QoS data to a QoS peer,
-in a protected one) at the data rate, or to the group (under the group key)
+in a protected one) at its rate control's rate, or to the group (under the group key)
 at the management rate, dropping one for no authorized destination
 (`data_dropped`); and hands the MSDUs of each authorized peer's data to the
 distribution system to the application as `PortMsdu`s, the only MSDU of an
@@ -66,13 +66,20 @@ interval has passed, while attempts remain. The peer's response makes the
 agreement operational (`tx_agreements`) or declines it, which ends the
 offers; the peer's DELBA as recipient, or its removal, ends it. While it is operational, a frame for the awake peer and the queued
 frames for it that follow go as one A-MPDU of TID 0 under its pairwise key
-at the data rate (`aggregates`, `aggregated_acknowledged`), as many as the
+at its A-MPDU rate (`aggregates`, `aggregated_acknowledged`), as many as the
 agreement's window, the port (`PortClientEnv::Aggregation`), the peer's HT
 A-MPDU Parameters and the Best Effort TXOP limit the BSS advertises admit
 (`AmpduLimits`), keeping the peer's minimum MPDU start spacing; the
 subframes are encoded into `PortApStorage`'s `AmpduSubframes`. An Open BSS
 offers no agreement.
-Not served yet: rate control and fragments (`malformed`).
+Rate control: a peer's link opens at its association, in every BSS, with
+its own `RateControl`, built for the peer's HT width in the BSS (HT40 where
+both support 40 MHz) from the link metric of its Association Request; its
+single MPDUs go at the controller's MPDU rate and its A-MPDUs at its A-MPDU
+rate, and every exchange's outcome teaches it. Group frames go at the
+management rate. Only an authorized peer's data reaches the distribution
+system, its link notwithstanding.
+Not served yet: fragments (`malformed`).
 
 Tests: `tests/port_access_point.rs` runs the access point over the
 `LowerMacModel` on virtual time.

@@ -295,7 +295,12 @@ its timeout (ten minutes to program, one otherwise). A tool that holds a long
 interactive session under a board lease, such as the calibration cross-check,
 opens the port through the same library functions,
 `oer_hil_board::reset::{open_without_reset,
-reset_into_application}`, never through `serialport` itself. Every reset,
+reset_into_application}`. Every serial line of the stand, those consoles,
+the flash writer's, the device-under-test session's and the peer consoles,
+is opened by one owner, `oer_hil_board::port::Port` (by path, with its
+`Settings`: line rate, read timeout, modem lines, busy retry); the link
+reads the lines the stand opens for it (`oer_hil_lab::{peer_console,
+attach_console}` and the `Dut` console opener). Every reset,
 here and in the runner's recoveries, is a rung of the one ladder of
 board I/O (`oer_hil_board::reset`).
 

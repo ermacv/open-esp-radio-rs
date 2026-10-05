@@ -16,7 +16,6 @@ use std::{
     io::{ErrorKind, Read, Write},
     path::Path,
     sync::{Arc, Mutex},
-    thread,
     time::{Duration, Instant},
 };
 
@@ -165,16 +164,16 @@ pub struct PeerConsole<L> {
 }
 
 impl PeerConsole<RecordingLink<SerialLink>> {
-    /// Open the console on `path` without resetting the peer, record every
-    /// line into `transcript`, and take the running peer over with `SYNC`.
+    /// Record every line of the console `link` into `transcript` and take
+    /// the running peer over with `SYNC`.
     pub fn open_recorded(
-        path: &Path,
+        link: SerialLink,
         transcript: &PeerTranscript,
         expected: Expected,
         timeout: Duration,
     ) -> Result<Self> {
         Self::synchronize(
-            RecordingLink::new(SerialLink::open(path)?, transcript.clone()),
+            RecordingLink::new(link, transcript.clone()),
             expected,
             timeout,
         )
@@ -317,10 +316,16 @@ pub trait PeerLink {
     fn receive(&mut self, deadline: Instant) -> Result<Option<String>>;
 }
 
+/// A peer console's serial line, as the stand opened it: reads time out
+/// (`ErrorKind::TimedOut`) instead of blocking.
+pub trait PeerLine: Read + Write + Send {}
+
+impl<T: Read + Write + Send> PeerLine for T {}
+
 /// The peer's serial console.
 pub struct SerialLink {
     path: String,
-    port: Box<dyn serialport::SerialPort>,
+    port: Box<dyn PeerLine>,
     buffered: Vec<u8>,
 }
 
@@ -336,7 +341,8 @@ pub struct PeerConsoleError {
 }
 
 impl PeerConsoleError {
-    fn new(
+    /// `operation` on the console at `path` failed with `source`.
+    pub fn new(
         path: &str,
         operation: impl Into<String>,
         source: impl std::error::Error + Send + Sync + 'static,
@@ -366,32 +372,17 @@ impl std::error::Error for PeerConsoleError {
 }
 
 impl SerialLink {
-    /// Open the console without resetting the peer. RTS is released before
-    /// DTR, so the lines never pass through the reset state (RTS asserted,
-    /// DTR released); output the running image printed before is dropped.
-    /// A USB Serial/JTAG reset of an ESP32-C5 whose IEEE 802.15.4 radio runs
-    /// can leave it in ROM download, so the peer is never reset from here.
-    pub fn open(path: &Path) -> Result<Self> {
-        let path = path.to_string_lossy().into_owned();
-        let failed = |operation: &str, error: serialport::Error| {
-            PeerConsoleError::new(&path, operation, error)
-        };
-        let mut port = serialport::new(&path, 115_200)
-            .timeout(Duration::from_millis(50))
-            .open()
-            .map_err(|error| failed("open", error))?;
-        port.write_request_to_send(false)
-            .map_err(|error| failed("release RTS", error))?;
-        port.write_data_terminal_ready(false)
-            .map_err(|error| failed("release DTR", error))?;
-        thread::sleep(Duration::from_millis(50));
-        port.clear(serialport::ClearBuffer::Input)
-            .map_err(|error| failed("clear input", error))?;
-        Ok(Self {
-            path,
+    /// The console `port` the stand opened at `path`. The stand opens a
+    /// peer's console without resetting it and drops what the running image
+    /// printed before (`oer_hil_lab::peer_console`): a USB Serial/JTAG reset
+    /// of an ESP32-C5 whose IEEE 802.15.4 radio runs can leave it in ROM
+    /// download, so the peer is never reset from here.
+    pub fn new(path: &Path, port: Box<dyn PeerLine>) -> Self {
+        Self {
+            path: path.to_string_lossy().into_owned(),
             port,
             buffered: Vec::new(),
-        })
+        }
     }
 }
 

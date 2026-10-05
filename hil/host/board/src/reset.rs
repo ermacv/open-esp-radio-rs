@@ -14,40 +14,31 @@ use std::{path::Path, thread, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
-/// Line rate and read timeout of a board console the stand opens.
-const BAUD_RATE: u32 = 115_200;
-const READ_TIMEOUT: Duration = Duration::from_millis(200);
+use crate::port::{Lines, Port, Settings};
+
 /// How long RTS holds the chip in reset when resetting into the application.
 const APPLICATION_RESET: Duration = Duration::from_millis(200);
 
 /// The console at `port`, opened without a reset: RTS is released before
-/// DTR, so the lines never pass through the reset-with-boot-strap state.
+/// DTR, so the lines never pass through the reset-with-boot-strap state
+/// ([`Lines::Released`]).
 ///
-/// Opening a USB serial port with the default modem lines resets an
-/// Espressif chip, and a UART bridge's lines drive EN and BOOT: this and
-/// [`reset_into_application`] are the only ways stand tools open a board's
-/// port, for one command or for a long interactive session alike.
-pub fn open_without_reset(port: &Path) -> serialport::Result<Box<dyn serialport::SerialPort>> {
-    let mut serial = serialport::new(port.to_string_lossy(), BAUD_RATE)
-        .timeout(READ_TIMEOUT)
-        .open()?;
-    serial.write_request_to_send(false)?;
-    serial.write_data_terminal_ready(false)?;
-    Ok(serial)
+/// This and [`reset_into_application`] are the only ways stand tools open a
+/// board's console, for one command or for a long interactive session alike.
+pub fn open_without_reset(port: &Path) -> std::io::Result<Port> {
+    Port::open(port, Settings::CONSOLE)
 }
 
 /// Reset the board at `port` into its flashed application and return its
 /// open console: RTS pulses the chip's reset while DTR keeps the boot strap
 /// released. `espflash`'s own reset after connecting leaves an esp32c5 in its
 /// ROM download mode.
-pub fn reset_into_application(port: &Path) -> serialport::Result<Box<dyn serialport::SerialPort>> {
-    let mut serial = serialport::new(port.to_string_lossy(), BAUD_RATE)
-        .timeout(READ_TIMEOUT)
-        .open()?;
-    serial.write_data_terminal_ready(false)?;
-    serial.write_request_to_send(true)?;
+pub fn reset_into_application(port: &Path) -> std::io::Result<Port> {
+    let mut serial = Port::open(port, Settings::CONSOLE.lines(Lines::Kept))?;
+    serial.set_dtr(false)?;
+    serial.set_rts(true)?;
     thread::sleep(APPLICATION_RESET);
-    serial.write_request_to_send(false)?;
+    serial.set_rts(false)?;
     Ok(serial)
 }
 
@@ -56,19 +47,21 @@ pub fn reset_into_application(port: &Path) -> serialport::Result<Box<dyn serialp
 /// download, DTR holding the boot strap across RTS's edge. The ROM serves the
 /// USB Serial/JTAG in that mode, so the stand can load firmware even when the
 /// flashed image switches the USB Serial/JTAG off once it runs.
-pub fn reset_into_download(port: &Path) -> serialport::Result<Box<dyn serialport::SerialPort>> {
-    let mut serial = serialport::new(port.to_string_lossy(), BAUD_RATE)
-        .timeout(READ_TIMEOUT)
-        .open()?;
+pub fn reset_into_download(port: &Path) -> std::io::Result<Port> {
+    let mut serial = Port::open(port, Settings::CONSOLE.lines(Lines::Kept))?;
     download_sequence(
-        |step| match step {
-            Step::Dtr(level) => serial.write_data_terminal_ready(level),
-            Step::Rts(level) => serial.write_request_to_send(level),
-            Step::ClearInput => serial.clear(serialport::ClearBuffer::Input),
-        },
+        |step| apply(&mut serial, step),
         || thread::sleep(Duration::from_millis(100)),
     )?;
     Ok(serial)
+}
+
+fn apply(serial: &mut Port, step: Step) -> std::io::Result<()> {
+    match step {
+        Step::Dtr(level) => serial.set_dtr(level),
+        Step::Rts(level) => serial.set_rts(level),
+        Step::ClearInput => serial.clear_input(),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -80,13 +73,9 @@ enum Step {
 
 /// Reset the chip behind a USB-Serial/JTAG port and discard what the old
 /// boot sent, so the next read starts with the new boot.
-pub fn reset_usb_serial_jtag(serial: &mut dyn serialport::SerialPort) -> serialport::Result<()> {
+pub fn reset_usb_serial_jtag(serial: &mut Port) -> std::io::Result<()> {
     sequence(
-        |step| match step {
-            Step::Dtr(level) => serial.write_data_terminal_ready(level),
-            Step::Rts(level) => serial.write_request_to_send(level),
-            Step::ClearInput => serial.clear(serialport::ClearBuffer::Input),
-        },
+        |step| apply(serial, step),
         || thread::sleep(Duration::from_millis(100)),
     )
 }

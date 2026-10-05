@@ -3206,6 +3206,7 @@ name = "oer-hil-family-ieee802154"
 version = "0.1.0"
 dependencies = [
  "oer-hil-image-class",
+ "oer-hil-lab",
  "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-scenario",
@@ -3232,7 +3233,6 @@ dependencies = [
  "oer-process",
  "serde",
  "serde_json",
- "serialport",
  "toml",
 ]
 
@@ -3387,7 +3387,6 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
- "serialport",
  "zeroize",
 ]
 
@@ -3582,7 +3581,6 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
- "serialport",
 ]
 
 [[package]]

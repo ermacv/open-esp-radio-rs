@@ -12,6 +12,7 @@
 
 pub mod config;
 mod dut;
+pub use dut::{attach_console, peer_console};
 mod error;
 pub use error::Error;
 pub mod lock;

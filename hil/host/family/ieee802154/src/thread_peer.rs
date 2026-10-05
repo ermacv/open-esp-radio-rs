@@ -82,7 +82,12 @@ impl ThreadPeer<RecordingLink<SerialLink>> {
     /// recording every line of the session into `transcript`.
     pub fn open_recorded(path: &Path, transcript: &PeerTranscript) -> Result<Self> {
         Ok(Self {
-            console: PeerConsole::open_recorded(path, transcript, EXPECTED, READY_TIMEOUT)?,
+            console: PeerConsole::open_recorded(
+                oer_hil_lab::peer_console(path)?,
+                transcript,
+                EXPECTED,
+                READY_TIMEOUT,
+            )?,
         })
     }
 }

@@ -225,7 +225,7 @@ impl Board {
 
     /// Open the board's console without a reset, retrying while the port is
     /// still held by the reader of a previous reset or returning after one.
-    pub fn open_console(&self) -> crate::Result<console::Serial> {
+    pub fn open_console(&self) -> crate::Result<crate::port::Port> {
         let port = self
             .current_port(REATTACH)
             .ok_or("the board's port is gone")?;

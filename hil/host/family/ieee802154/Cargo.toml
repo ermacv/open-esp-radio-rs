@@ -9,6 +9,7 @@ publish = false
 description = "IEEE 802.15.4 HIL workloads"
 
 [dependencies]
+oer-hil-lab = { path = "../../lab" }
 oer-hil-link = { path = "../../link" }
 oer-hil-scenario = { path = "../../scenario" }
 oer-hil-image-class = { path = "../../image-class" }

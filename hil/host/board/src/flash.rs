@@ -91,7 +91,13 @@ fn write_once(
             _ => None,
         })
         .ok_or_else(|| format!("{port_name} is not an attached USB serial port"))?;
-    let serial = serialport::new(&port_name, 115_200).open_native()?;
+    let serial = crate::port::Port::open(
+        port,
+        crate::port::Settings::CONSOLE
+            .lines(crate::port::Lines::Kept)
+            .timeout(std::time::Duration::ZERO),
+    )?
+    .into_native();
     let connection = Connection::new(
         serial,
         usb,

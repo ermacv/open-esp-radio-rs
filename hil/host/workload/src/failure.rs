@@ -10,7 +10,6 @@ pub fn classify(error: &(dyn std::error::Error + 'static)) -> Failure {
         if error.is::<oer_hil_link::error::LinkError>()
             || error.is::<oer_hil_lab::Error>()
             || error.is::<std::io::Error>()
-            || error.is::<serialport::Error>()
             || error.is::<oer_process::Cancelled>()
             || error.is::<oer_process::owned::DeadlineExceeded>()
         {

@@ -10,7 +10,7 @@
 //! is a typed observation of the repetition; the comparison's
 //! [`Summary`](oer_esp32s31_phy_vendor_calibration::compare::Summary) is its
 //! result, and anything but MATCH fails the repetition.
-use std::io::Read;
+use std::io::{Read, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -169,11 +169,11 @@ pub(crate) fn run(spec: &Calibration<'_>, output: &Path, context: &Context<'_>) 
 /// The console port of the board under test, just reset. The port is
 /// opened through the stand's opener, which never resets the chip on its
 /// own.
-fn reset_console(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
+fn reset_console(port: &Path) -> Result<oer_hil_board::port::Port> {
     use oer_hil_board::reset::{open_without_reset, reset_usb_serial_jtag};
     let mut serial = open_without_reset(port)?;
     serial.set_timeout(READ_TIMEOUT)?;
-    reset_usb_serial_jtag(&mut *serial)?;
+    reset_usb_serial_jtag(&mut serial)?;
     Ok(serial)
 }
 
@@ -195,18 +195,12 @@ fn calibration_boot(
         .ok_or_else(|| format!("the vendor boot reported no {VENDOR_OBJECT}"))?;
     let mut replies = String::new();
     if lifecycle == Lifecycle::Restart {
-        vendor_restart(&mut *serial, &mut replies)?;
+        vendor_restart(&mut serial, &mut replies)?;
     }
-    vendor_registers(
-        &mut *serial,
-        Space::Mmio,
-        registers,
-        lifecycle,
-        &mut replies,
-    )?;
+    vendor_registers(&mut serial, Space::Mmio, registers, lifecycle, &mut replies)?;
     let mut analog_replies = String::new();
     vendor_registers(
-        &mut *serial,
+        &mut serial,
         Space::Analog,
         analog,
         lifecycle,
@@ -262,7 +256,7 @@ fn reference_boot(
 
 /// The console of one reset vendor boot, up to its closed report, and the
 /// open port the firmware keeps answering on.
-fn vendor_boot(port: &Path) -> Result<(String, Box<dyn serialport::SerialPort>)> {
+fn vendor_boot(port: &Path) -> Result<(String, oer_hil_board::port::Port)> {
     let mut serial = reset_console(port)?;
     let started = Instant::now();
     let mut console = Vec::new();
@@ -288,7 +282,7 @@ fn vendor_boot(port: &Path) -> Result<(String, Box<dyn serialport::SerialPort>)>
 /// Restart the vendor Wi-Fi radio and require that stopping the client
 /// released every PHY modem, which closes RF. `replies` accumulates the
 /// console.
-fn vendor_restart(serial: &mut dyn serialport::SerialPort, replies: &mut String) -> Result<()> {
+fn vendor_restart(serial: &mut oer_hil_board::port::Port, replies: &mut String) -> Result<()> {
     let done = vendor::restarts(replies)?.len();
     serial.write_all(vendor::RESTART_REQUEST.as_bytes())?;
     let started = Instant::now();
@@ -322,7 +316,7 @@ fn vendor_restart(serial: &mut dyn serialport::SerialPort, replies: &mut String)
 /// [`Lifecycle::Restart`] point. `replies` holds the console so far, and
 /// its restarts.
 fn vendor_registers(
-    serial: &mut dyn serialport::SerialPort,
+    serial: &mut oer_hil_board::port::Port,
     space: Space,
     registers: &[Register],
     lifecycle: Lifecycle,

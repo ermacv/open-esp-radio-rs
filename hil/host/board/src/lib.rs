@@ -2,6 +2,9 @@
 //!
 //! - [`ports`]: the attached USB serial ports and a board's port by its MAC
 //!   (its `/dev/serial/by-id` link);
+//! - [`port`]: [`port::Port`], the one opener of a serial line (by path,
+//!   with its line rate, read timeout, modem lines and busy retry), used by
+//!   the console, resets, the flash writer, the DUT link and peer consoles;
 //! - [`flash`]: the one flash writer, an image bundle's segments through
 //!   one espflash connection for the chip its profile names, with retries,
 //!   skipping unchanged segments and the OTA selection last;
@@ -22,6 +25,7 @@ mod board;
 pub mod console;
 pub mod flash;
 pub mod openocd;
+pub mod port;
 pub mod ports;
 pub mod power;
 pub mod reset;

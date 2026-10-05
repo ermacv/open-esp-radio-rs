@@ -1,22 +1,20 @@
 //! A board's console: the one serial line reader of the stand's commands,
 //! bounded captures, and the ROM's reset line.
 //!
-//! A console is opened through [`crate::reset`]'s openers only, which never
-//! reset the chip on their own.
+//! A console is a [`Port`] opened through [`crate::reset`]'s openers only,
+//! which never reset the chip on their own.
 
+use crate::port::Port;
 use std::{
-    io::Write as _,
+    io::{Read as _, Write as _},
     path::Path,
     sync::mpsc,
     time::{Duration, Instant},
 };
 
-/// An open console port.
-pub type Serial = Box<dyn serialport::SerialPort>;
-
 /// The lines `serial` receives, until the receiver is dropped. An empty
 /// message only keeps the reader alive and is no line.
-pub fn lines(mut serial: Serial) -> mpsc::Receiver<Vec<u8>> {
+pub fn lines(mut serial: Port) -> mpsc::Receiver<Vec<u8>> {
     let (lines, received) = mpsc::channel();
     std::thread::spawn(move || {
         let mut pending = Vec::new();
@@ -77,7 +75,7 @@ pub fn capture(
 }
 
 /// Everything `serial` receives within `watch`, as text.
-pub fn read_for(mut serial: Serial, watch: Duration) -> String {
+pub fn read_for(mut serial: Port, watch: Duration) -> String {
     let started = Instant::now();
     let mut console = Vec::new();
     let mut buffer = [0_u8; 1024];

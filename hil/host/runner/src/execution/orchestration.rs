@@ -721,7 +721,7 @@ impl LiveSuite<'_> {
             return Ok(());
         }
         let path = self.lab.peer()?.serial()?;
-        let live = oer_hil_link::peer::SerialLink::open(&path)
+        let live = oer_hil_lab::peer_console(&path)
             .and_then(|mut link| oer_hil_link::peer::answers_sync(&mut link, PEER_SYNC_TIMEOUT));
         match live {
             Ok(true) => Ok(()),

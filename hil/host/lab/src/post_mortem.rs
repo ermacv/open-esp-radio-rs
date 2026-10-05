@@ -114,7 +114,8 @@ pub fn inspect(port: &Path, mac: &str, output: &Path, elf: Option<&Path>) -> Opt
     } else {
         oer_hil_board::ports::wait_for(mac, ANSWER_WITHIN)?
     };
-    let capture = SerialCapture::attach(&port, &output.join("post-mortem")).ok()?;
+    let capture =
+        SerialCapture::attach(crate::attach_console(&port), &output.join("post-mortem")).ok()?;
     let started = std::time::Instant::now();
     let answer = loop {
         // Attached without a reset, the capture has seen no hello: discovery,

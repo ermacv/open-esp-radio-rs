@@ -8,7 +8,7 @@
 //! vendor firmwares alike.
 use crate::Result;
 use oer_esp32s31_phy_vendor_calibration::registers::{self, Register, Space, analog_parts};
-use std::io::Read;
+use std::io::{Read, Write as _};
 use std::time::{Duration, Instant};
 
 /// The line that opens every boot of the reference firmware.
@@ -56,7 +56,7 @@ fn configuration() -> String {
 
 /// One console session with the reference firmware.
 pub(crate) struct Peer {
-    serial: Box<dyn serialport::SerialPort>,
+    serial: oer_hil_board::port::Port,
     /// Everything the firmware printed.
     pub(crate) console: String,
     /// Whether the radio is taken through one disable and enable before
@@ -66,7 +66,7 @@ pub(crate) struct Peer {
 
 impl Peer {
     /// The firmware of a board just reset through `serial`, once ready.
-    pub(crate) fn boot(serial: Box<dyn serialport::SerialPort>, restart: bool) -> Result<Self> {
+    pub(crate) fn boot(serial: oer_hil_board::port::Port, restart: bool) -> Result<Self> {
         let mut peer = Self {
             serial,
             console: String::new(),
@@ -192,7 +192,7 @@ impl Peer {
                 if started.elapsed() > REPLY_TIMEOUT {
                     // A read that stalls the bus hangs the chip instead of
                     // resetting it: reset the board and treat it alike.
-                    oer_hil_board::reset::reset_usb_serial_jtag(&mut *self.serial)?;
+                    oer_hil_board::reset::reset_usb_serial_jtag(&mut self.serial)?;
                     self.wait(|console| ready_lines(console) > boots, "the ready line")?;
                     lines.push_str(
                         &oer_esp32s31_phy_vendor_calibration::vendor::unreadable_line(

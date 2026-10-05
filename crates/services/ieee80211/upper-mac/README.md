@@ -35,8 +35,16 @@ failure a `PortClientError`. `PortMsdu` is the MSDU a service hands its
 application: the port's buffer, or parts to copy. `queue::TxQueue` is a
 service's first-in first-out ring of `PORT_TX_QUEUE` Ethernet frames of at
 most `PORT_FRAME_CAPACITY` octets, each with its user priority, whose
-`head_run` is the run of one priority an A-MPDU may carry. The station and
-access-point services build on both.
+`head_run` is the run of one priority an A-MPDU may carry.
+`reorder::RxReorder<AGREEMENTS>` reorders the receive Block Ack agreements
+of a service by peer and TID: `offer` releases an in-order MPDU at once as
+the release's `CURRENT_SLOT`, which the caller delivers from the port's
+buffer, copies only an MPDU its window keeps into `PORT_REORDER_SLOTS`
+shared slots (asking the caller to deliver the window's oldest run first,
+`MakeRoom`, when every slot is taken), and releases a kept run past its gap
+once the caller's gap time passed (`arm_gaps`, `expire_due_gap`). The port's
+agreement setting, replay checks and delivery stay the caller's. The
+station and access-point services build on all three.
 
 `UpperMacTx::new(&router, vif, planner)` binds one interface; the router
 allocates attempt identities outside the backend-reserved range.

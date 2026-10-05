@@ -37,8 +37,8 @@ mod station;
 mod wire;
 
 pub use connected::{
-    PORT_REORDER_SLOTS, PORT_REORDER_WINDOW, PortConnection, PortConnectionBuffers,
-    PortConnectionConfig, PortDisconnect, PortRxCounters, PortSend, PortTxCounters,
+    PortConnection, PortConnectionBuffers, PortConnectionConfig, PortDisconnect, PortRxCounters,
+    PortSend, PortTxCounters,
 };
 pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{

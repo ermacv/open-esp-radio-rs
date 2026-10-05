@@ -11,7 +11,7 @@ the runner (`oer-hil-runner`), which `oer-hil-observer` builds and
 
 | Module | Owns |
 | --- | --- |
-| `command` | Dispatch, lease options (`--owner`), `lease`, `queue`, `owner`, `preempt`, `devices`, `wait`, `runs` and `perf` (calls into `oer-hil-analysis`), `profile`, `firmware`, the merged `__command-tree`, and `run`/`run-all`: a job, a launch through `oer-hil-experiment`'s `launch_run`, pending evidence and automatic pruning |
+| `command` | `HilCli`, the one clap definition of the stand's commands (parsed, dispatched by an exhaustive match and walked for `__command-tree`; any other command is the runner's, forwarded with the lease and job options the stand takes from it, `jobs::RunnerOptions`), dispatch, lease options (`--owner`), `lease`, `queue`, `owner`, `preempt`, `devices`, `wait`, `runs` and `perf` (calls into `oer-hil-analysis`), `profile`, `firmware`, the merged `__command-tree`, and `run`/`run-all`: a job, a launch through `oer-hil-experiment`'s `launch_run`, pending evidence and automatic pruning |
 | `jobs` | The command line of jobs, whose records and tickets the arbiter owns (`oer_hil_arbiter::jobs`): `--enqueue` and `--after`, what a job is fixed with below `target/hil/jobs/cli/`, its detached process, `wait JOB` |
 | `evidence` | `cargo hil evidence pending` and `dismiss`: the checkout's pending evidence (`oer_hil_run_bundle::store::pending`); `cargo qualification hil-evidence --pending` records it |
 | `experiments` | The arguments of `ab` and `bisect`, run by `oer-hil-experiment` |

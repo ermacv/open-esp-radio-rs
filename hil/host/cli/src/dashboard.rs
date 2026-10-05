@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 use crate::Result;
 
 /// The port the page is bookmarked at; `--port` overrides it.
-const DEFAULT_PORT: u16 = 8765;
+pub(crate) const DEFAULT_PORT: u16 = 8765;
 const RECENT_LEASES: usize = 30;
 const RECENT_RUNS: usize = 25;
 const PAGE: &str = include_str!("dashboard.html");
@@ -50,15 +50,7 @@ fn watch_fixtures() {
     });
 }
 
-pub fn serve(store: &RunStore, args: &[std::ffi::OsString]) -> Result<std::process::ExitCode> {
-    let port = match args {
-        [] => DEFAULT_PORT,
-        [flag, port] if flag == "--port" => port
-            .to_str()
-            .and_then(|port| port.parse().ok())
-            .ok_or("--port takes a port number")?,
-        _ => return Err("usage: cargo hil dashboard [--port PORT]".into()),
-    };
+pub fn serve(store: &RunStore, port: u16) -> Result<std::process::ExitCode> {
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let record = arbiter.directory().join("dashboard.json");
     let me = Instance::current(port)?;

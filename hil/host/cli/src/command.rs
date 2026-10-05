@@ -1,5 +1,10 @@
 //! The `cargo hil` command: stand commands handled here, every other command
 //! forwarded to the runner this crate builds.
+//!
+//! [`HilCli`] is the one definition of the stand's command line: it parses
+//! every stand command, dispatches each to its handler by an exhaustive
+//! match, and `__command-tree` walks it, so a command cannot be listed
+//! without a handler. The runner's commands are its own clap parser's.
 use crate::Result;
 use oer_process::Checkout;
 use std::{
@@ -8,62 +13,181 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// `cargo hil`.
+#[derive(clap::Parser)]
+#[command(
+    name = "cargo hil",
+    no_binary_name = true,
+    disable_help_flag = true,
+    disable_help_subcommand = true
+)]
+struct HilCli {
+    /// Who holds the leases the command takes; default: the enclosing
+    /// lease's owner, else the checkout's registered owner.
+    #[arg(long)]
+    owner: Option<String>,
+    #[command(subcommand)]
+    command: Option<HilCommand>,
+}
+
+/// The stand's commands; any other command is the runner's.
+#[derive(clap::Subcommand)]
+enum HilCommand {
+    /// Holders, balances, queue with expected starts, boards, recent leases.
+    #[command(after_help = BALANCE_RULE)]
+    Queue {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Live page of the queue, boards, runs and leases on 127.0.0.1.
+    Dashboard {
+        #[arg(long, default_value_t = crate::dashboard::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Run one command under one lease; nested `cargo hil` joins it.
+    Lease(LeaseCli),
+    /// Reset, check, read or soak a board under a lease.
+    Board(BoardCli),
+    /// One peer text-protocol command and its answer.
+    #[command(subcommand)]
+    Peer(crate::board::PeerCli),
+    /// The stand file's boards: name, chip, port, health, last firmware.
+    Devices(DevicesCli),
+    /// The stand file against the host.
+    #[command(subcommand)]
+    Stand(crate::stand::StandCli),
+    /// Host Wi-Fi radios, Bluetooth adapter and OpenWrt hosts.
+    Fixtures,
+    /// Tracked ESP-IDF images: list, build, flash.
+    #[command(subcommand)]
+    Firmware(FirmwareCli),
+    /// The flash operation (lease, write, journal, start) on one board.
+    Flash(crate::flash::FlashCli),
+    /// Runs of the shared run store.
+    #[command(subcommand)]
+    Runs(RunsCli),
+    /// Gated measurements per commit, baselines, regressions.
+    #[command(subcommand)]
+    Perf(PerfCli),
+    /// This checkout's pending evidence.
+    #[command(subcommand)]
+    Evidence(crate::evidence::EvidenceCli),
+    /// This checkout's owner: show, set, merge or forget one.
+    Owner {
+        #[command(subcommand)]
+        command: Option<OwnerCommand>,
+    },
+    /// Stop another owner's lease.
+    Preempt {
+        /// The lease number, `#` optional.
+        id: String,
+        #[arg(long)]
+        reason: String,
+    },
+    /// Symbolized program-counter profiles of a run.
+    Profile(ProfileCli),
+    /// The first commit at which a scenario stops passing.
+    Bisect(crate::experiments::BisectCli),
+    /// A/B comparison with noise-aware verdicts.
+    Ab(crate::experiments::AbCli),
+    /// Block until a job or run ends, or until boards are in service.
+    Wait {
+        /// Wait until the boards (every board when none is named) and the
+        /// stand are in service.
+        #[arg(long)]
+        service: bool,
+        /// A job or run id; with `--service`, boards.
+        #[arg(value_name = "JOB|RUN|BOARD")]
+        ids: Vec<String>,
+    },
+    /// A runner command, forwarded with its arguments.
+    #[command(external_subcommand)]
+    Runner(Vec<OsString>),
+}
+
+/// `cargo hil owner` subcommands.
+#[derive(clap::Subcommand)]
+enum OwnerCommand {
+    /// Register this checkout's owner.
+    Set { name: String },
+    /// Charge OLD's balance and history to NEW.
+    Merge { old: String, new: String },
+    /// Drop a balance that is no agent's.
+    Forget { name: String },
+}
+
 pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> {
+    use clap::Parser as _;
     use_shared_store(ctx)?;
-    let (options, args) = LeaseOptions::split(args)?;
-    let args = args.as_slice();
-    let first = args.first().and_then(|argument| argument.to_str());
-    match first {
-        None | Some("help" | "--help" | "-h") => println!("{STAND_HELP}"),
-        Some("__command-tree") => return command_tree(ctx),
-        _ => {}
+    if matches!(args, [only] if only == oer_command_tree::REQUEST) {
+        return command_tree(ctx);
     }
-    match first.and_then(StandCommand::named) {
-        Some(StandCommand::Queue) => return queue(&args[1..]),
-        Some(StandCommand::Dashboard) => {
-            return crate::dashboard::serve(&oer_hil_run_bundle::RunStore::shared()?, &args[1..]);
+    let (owner, command) = match args.first().and_then(|argument| argument.to_str()) {
+        // The stand's help, then the runner's.
+        None | Some("help" | "--help" | "-h") => {
+            println!("{STAND_HELP}");
+            (None, HilCommand::Runner(args.to_vec()))
         }
-        Some(StandCommand::Lease) => return lease(ctx, options, &args[1..]),
-        Some(StandCommand::Board) => return board(ctx, &options, &args[1..]),
-        Some(StandCommand::Peer) => {
-            return crate::board::peer(ctx, options.owner(ctx)?, &args[1..]);
+        _ => {
+            let cli = HilCli::try_parse_from(args)?;
+            (
+                cli.owner,
+                cli.command.unwrap_or(HilCommand::Runner(Vec::new())),
+            )
         }
-        Some(StandCommand::Preempt) => return preempt(&options.owner(ctx)?, &args[1..]),
-        Some(StandCommand::Owner) => return owner(ctx, &args[1..]),
-        Some(StandCommand::Devices) => return devices(ctx, &options, &args[1..]),
-        Some(StandCommand::Stand) => {
-            return crate::stand::stand(ctx, || options.owner(ctx), &args[1..]);
+    };
+    let options = LeaseOptions { owner };
+    match command {
+        HilCommand::Queue { json } => queue(json),
+        HilCommand::Dashboard { port } => {
+            crate::dashboard::serve(&oer_hil_run_bundle::RunStore::shared()?, port)
         }
-        Some(StandCommand::Fixtures) => {
+        HilCommand::Lease(cli) => lease(ctx, options, cli),
+        HilCommand::Board(BoardCli { command }) => {
+            crate::board::board(ctx, options.owner(ctx)?, command)
+        }
+        HilCommand::Peer(cli) => crate::board::peer(ctx, options.owner(ctx)?, cli),
+        HilCommand::Preempt { id, reason } => preempt(&options.owner(ctx)?, &id, &reason),
+        HilCommand::Owner { command } => checkout_owner(ctx, command),
+        HilCommand::Devices(cli) => devices(ctx, &options, cli),
+        HilCommand::Stand(cli) => crate::stand::stand(ctx, || options.owner(ctx), cli),
+        HilCommand::Fixtures => {
             let lab = oer_hil_lab::config::LabConfig::default_path()?;
             print!(
                 "{}",
                 oer_hil_stand_host::fixtures::describe(&oer_hil_stand_host::fixtures::probe(&lab))
             );
-            return Ok(std::process::ExitCode::SUCCESS);
+            Ok(std::process::ExitCode::SUCCESS)
         }
-        Some(StandCommand::Firmware) => return firmware(ctx, &options, &args[1..]),
-        Some(StandCommand::Flash) => {
-            return crate::flash::run(ctx, options.owner(ctx)?, &args[1..]);
-        }
-        Some(StandCommand::Runs) => return runs(ctx, &options, &args[1..]),
-        Some(StandCommand::Evidence) => return crate::evidence::command(ctx, &args[1..]),
-        Some(StandCommand::Perf) => return perf(ctx, &options, &args[1..]),
-        Some(StandCommand::Profile) => return profile(ctx, &args[1..]),
-        Some(StandCommand::Wait) if args.get(1).is_some_and(|arg| arg == "--service") => {
-            return wait_for_service(&args[2..]);
-        }
-        Some(StandCommand::Wait) => return wait(&args[1..]),
-        Some(StandCommand::Ab) => return ab(ctx, &options.owner(ctx)?, args),
-        Some(StandCommand::Bisect) => {
-            return crate::experiments::bisect(ctx, &options.owner(ctx)?, &args[1..]);
-        }
-        None => {}
+        HilCommand::Firmware(cli) => firmware(ctx, &options, cli),
+        HilCommand::Flash(cli) => crate::flash::run(ctx, options.owner(ctx)?, cli),
+        HilCommand::Runs(cli) => runs(ctx, &options, cli),
+        HilCommand::Evidence(cli) => crate::evidence::command(ctx, cli),
+        HilCommand::Perf(cli) => perf(ctx, &options, cli),
+        HilCommand::Profile(cli) => profile(ctx, cli),
+        HilCommand::Wait { service: true, ids } => wait_for_service(&ids),
+        HilCommand::Wait {
+            service: false,
+            ids,
+        } => wait(&ids),
+        // A job like a run: its record keeps its own arguments.
+        HilCommand::Ab(_) => ab(ctx, options, args),
+        HilCommand::Bisect(cli) => crate::experiments::bisect(ctx, &options.owner(ctx)?, cli),
+        HilCommand::Runner(args) => runner(ctx, options, args),
     }
-    // The runner has no lease options: take them from after the command
-    // too, before the runner is built.
-    let (options, args) = options.with_late(args)?;
-    let (enqueue, after, args) = crate::jobs::take(args)?;
+}
+
+/// A runner command: its lease and job options are the stand's, taken from
+/// among its arguments; the rest go to the runner.
+fn runner(
+    ctx: &Checkout,
+    options: LeaseOptions,
+    args: Vec<OsString>,
+) -> Result<std::process::ExitCode> {
+    let (late, args) = crate::jobs::take::<crate::jobs::RunnerOptions>(args)?;
+    let options = options.merged(late.owner)?;
+    let enqueue = late.job.enqueue;
+    let after = late.job.dependency();
     if (enqueue || after.is_some()) && !produces_runs(&args) {
         return Err("--enqueue and --after apply to run and run-all".into());
     }
@@ -176,82 +300,6 @@ pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> 
 }
 
 /// Stand commands handled here, printed before the runner's own help.
-/// The stand's own commands; every other command goes to the runner.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum StandCommand {
-    Queue,
-    Dashboard,
-    Lease,
-    Board,
-    Peer,
-    Devices,
-    Stand,
-    Fixtures,
-    Firmware,
-    Flash,
-    Runs,
-    Perf,
-    Evidence,
-    Owner,
-    Preempt,
-    Profile,
-    Bisect,
-    Ab,
-    Wait,
-}
-
-impl StandCommand {
-    const ALL: [Self; 19] = [
-        Self::Queue,
-        Self::Dashboard,
-        Self::Lease,
-        Self::Board,
-        Self::Peer,
-        Self::Devices,
-        Self::Stand,
-        Self::Fixtures,
-        Self::Firmware,
-        Self::Flash,
-        Self::Runs,
-        Self::Perf,
-        Self::Evidence,
-        Self::Owner,
-        Self::Preempt,
-        Self::Profile,
-        Self::Bisect,
-        Self::Ab,
-        Self::Wait,
-    ];
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Queue => "queue",
-            Self::Dashboard => "dashboard",
-            Self::Lease => "lease",
-            Self::Board => "board",
-            Self::Peer => "peer",
-            Self::Devices => "devices",
-            Self::Stand => "stand",
-            Self::Fixtures => "fixtures",
-            Self::Firmware => "firmware",
-            Self::Flash => "flash",
-            Self::Runs => "runs",
-            Self::Perf => "perf",
-            Self::Evidence => "evidence",
-            Self::Owner => "owner",
-            Self::Preempt => "preempt",
-            Self::Profile => "profile",
-            Self::Bisect => "bisect",
-            Self::Ab => "ab",
-            Self::Wait => "wait",
-        }
-    }
-
-    fn named(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|command| command.name() == name)
-    }
-}
-
 pub(crate) const STAND_HELP: &str = "\
 Stand commands (shared by every checkout of this user):
   cargo hil perf report|baseline|check   gated measurements per commit, baselines, regressions
@@ -338,75 +386,17 @@ struct LeaseOptions {
 }
 
 impl LeaseOptions {
-    /// Split a leading `--owner NAME` from the remaining arguments.
-    fn split(args: &[OsString]) -> Result<(Self, Vec<OsString>)> {
-        let mut options = Self::default();
-        let mut rest = args.iter();
-        let mut remaining = Vec::new();
-        while let Some(argument) = rest.next() {
-            let text = argument.to_str().unwrap_or_default();
-            let (name, inline) = match text.split_once('=') {
-                Some((name, value)) => (name, Some(value.to_owned())),
-                None => (text, None),
-            };
-            let mut value = || -> Result<String> {
-                inline
-                    .clone()
-                    .or_else(|| {
-                        rest.next()
-                            .and_then(|value| value.to_str().map(str::to_owned))
-                    })
-                    .ok_or_else(|| format!("{name} requires a value").into())
-            };
-            match name {
-                "--owner" => options.owner = Some(value()?),
-                _ => {
-                    remaining.push(argument.clone());
-                    remaining.extend(rest.cloned());
-                    break;
-                }
+    /// These options with the owner `late` names among a runner command's
+    /// arguments; two different owners are refused.
+    fn merged(self, late: Option<String>) -> Result<Self> {
+        match (self.owner, late) {
+            (Some(earlier), Some(late)) if earlier != late => {
+                Err(format!("--owner is given twice, as {earlier} and {late}").into())
             }
+            (earlier, late) => Ok(Self {
+                owner: late.or(earlier),
+            }),
         }
-        Ok((options, remaining))
-    }
-
-    /// Take lease options that follow a runner command, up to a `--`, and
-    /// merge them with those before it; different owners are refused.
-    fn with_late(self, args: &[OsString]) -> Result<(Self, Vec<OsString>)> {
-        let mut options = self;
-        let mut remaining = Vec::new();
-        let mut rest = args.iter();
-        while let Some(argument) = rest.next() {
-            let text = argument.to_str().unwrap_or_default();
-            if text == "--" {
-                remaining.push(argument.clone());
-                remaining.extend(rest.by_ref().cloned());
-                break;
-            }
-            let (name, inline) = match text.split_once('=') {
-                Some((name, value)) => (name, Some(value)),
-                None => (text, None),
-            };
-            let owner = match name {
-                "--owner" => match inline {
-                    Some(value) => value.to_owned(),
-                    None => rest
-                        .next()
-                        .and_then(|value| value.to_str())
-                        .ok_or("--owner requires a value")?
-                        .to_owned(),
-                },
-                _ => {
-                    remaining.push(argument.clone());
-                    continue;
-                }
-            };
-            if let Some(earlier) = options.owner.as_ref().filter(|earlier| **earlier != owner) {
-                return Err(format!("--owner is given twice, as {earlier} and {owner}").into());
-            }
-            options.owner = Some(owner);
-        }
-        Ok((options, remaining))
     }
 
     /// Explicit options win; otherwise an enclosing lease's owner, otherwise
@@ -450,115 +440,60 @@ impl LeaseOptions {
 
 /// `cargo hil __command-tree`: every `cargo hil` command path with its
 /// subcommands and long flags, as JSON, for checking documentation against
-/// the real command line. The stand's own commands and the runner's are
-/// merged under `hil`.
+/// the real command line: the stand's parser ([`HilCli`]) walked, and the
+/// runner's own tree merged under `hil` with the options the stand takes
+/// from a runner command ([`crate::jobs::RunnerOptions`]).
 fn command_tree(ctx: &Checkout) -> Result<std::process::ExitCode> {
-    use clap::CommandFactory as _;
+    use clap::{Args as _, CommandFactory as _};
     use oer_command_tree::{CommandNode, command_tree as walk};
-    let path = |words: &[&str]| {
-        words
-            .iter()
-            .map(|word| word.to_string())
-            .collect::<Vec<_>>()
-    };
-    let node = |words: &[&str], subcommands: &[&str], flags: &[&str]| CommandNode {
-        path: path(words),
-        subcommands: subcommands.iter().map(|word| word.to_string()).collect(),
-        flags: flags.iter().map(|word| word.to_string()).collect(),
-        forwards: false,
-    };
     let runner = oer_hil_observer::prepare::prepare(&ctx.root)?.runner;
     let output = std::process::Command::new(&runner)
-        .arg("__command-tree")
+        .arg(oer_command_tree::REQUEST)
         .output()?;
     let mut runner_nodes: Vec<CommandNode> = serde_json::from_slice(&output.stdout)?;
     let runner_top = runner_nodes
         .first()
         .map(|root| root.subcommands.clone())
         .unwrap_or_default();
-    // The stand adds lease and evidence options to the runner's run commands.
+    let stand_options = walk(
+        &crate::jobs::RunnerOptions::augment_args(clap::Command::new("options")),
+        &[],
+    )
+    .remove(0)
+    .flags;
     for node in &mut runner_nodes {
-        if matches!(node.path.as_slice(), [one] if ["run", "run-all"].contains(&one.as_str())) {
-            node.flags
-                .extend(["--owner", "--enqueue", "--after", "--after-any"].map(String::from));
+        if matches!(node.path.as_slice(), [one] if produces_runs(&[OsString::from(one)])) {
+            node.flags.extend(stand_options.iter().cloned());
         }
         node.path.insert(0, String::from("hil"));
     }
-    let stand = StandCommand::ALL.map(StandCommand::name);
-    let mut root = node(&["hil"], &stand, &["--owner"]);
-    root.subcommands.extend(runner_top);
-    let mut nodes = vec![
-        root,
-        node(&["hil", "queue"], &[], &["--json"]),
-        node(&["hil", "dashboard"], &[], &["--port"]),
-        node(&["hil", "evidence"], &["pending", "dismiss"], &[]),
-        node(&["hil", "evidence", "dismiss"], &[], &["--run"]),
-        node(&["hil", "evidence", "pending"], &[], &[]),
-        node(&["hil", "owner"], &["set", "merge", "forget"], &[]),
-        node(&["hil", "owner", "set"], &[], &[]),
-        node(&["hil", "owner", "merge"], &[], &[]),
-        node(&["hil", "owner", "forget"], &[], &[]),
-        node(&["hil", "preempt"], &[], &["--reason"]),
-        node(&["hil", "wait"], &[], &["--service"]),
-    ];
-    for (name, command) in [
-        ("lease", LeaseCli::command()),
-        ("board", BoardCli::command()),
-        ("perf", PerfCli::command()),
-        ("runs", RunsCli::command()),
-        ("firmware", FirmwareCli::command()),
-        ("devices", DevicesCli::command()),
-        ("stand", crate::stand::StandCli::command()),
-        ("peer", crate::board::PeerCli::command()),
-        ("flash", crate::flash::FlashCli::command()),
-        ("profile", ProfileCli::command()),
-        ("bisect", crate::experiments::BisectCli::command()),
-        ("ab", crate::experiments::AbCli::command()),
-    ] {
-        nodes.extend(walk(&command, &path(&["hil", name])));
-    }
-    // The stand makes `ab` a job as it does a run.
-    if let Some(ab) = nodes
-        .iter_mut()
-        .find(|node| node.path == path(&["hil", "ab"]))
-    {
-        ab.flags
-            .extend(["--enqueue", "--after", "--after-any"].map(String::from));
-    }
+    let mut nodes = walk(&HilCli::command(), &[String::from("hil")]);
+    nodes[0].subcommands.extend(runner_top);
     nodes.extend(runner_nodes.into_iter().skip(1));
     println!("{}", serde_json::to_string_pretty(&nodes)?);
     Ok(std::process::ExitCode::SUCCESS)
 }
 
 /// `cargo hil owner [set NAME | merge OLD NEW | forget NAME]`.
-fn owner(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> {
-    const USAGE: &str = "usage: cargo hil owner                 this checkout's owner
-       cargo hil owner set NAME        register this checkout's owner
-       cargo hil owner merge OLD NEW   charge OLD's balance and history to NEW
-       cargo hil owner forget NAME     drop a balance that is no agent's";
-    let args = args
-        .iter()
-        .map(|arg| arg.to_str().ok_or("arguments must be UTF-8"))
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+fn checkout_owner(ctx: &Checkout, command: Option<OwnerCommand>) -> Result<std::process::ExitCode> {
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
-    let parse = |name: &str| oer_hil_arbiter::Owner::parse(name);
-    match args.as_slice() {
-        [] => match arbiter.checkout_owner(&ctx.root)? {
+    match command {
+        None => match arbiter.checkout_owner(&ctx.root)? {
             Some(owner) => println!("{owner}"),
             None => return Err(oer_hil_arbiter::NoOwner(ctx.root.clone()).into()),
         },
-        ["set", name] => {
-            let owner = parse(name)?;
+        Some(OwnerCommand::Set { name }) => {
+            let owner = oer_hil_arbiter::Owner::parse(&name)?;
             arbiter.set_checkout_owner(&ctx.root, owner)?;
             println!("{} is owned by {owner}", ctx.root.display());
         }
-        ["merge", old, new] => {
-            let new = parse(new)?;
-            arbiter.merge_owner(old, new)?;
+        Some(OwnerCommand::Merge { old, new }) => {
+            let new = oer_hil_arbiter::Owner::parse(&new)?;
+            arbiter.merge_owner(&old, new)?;
             println!("{old}'s balance and history are {new}'s");
         }
-        ["forget", name] => {
-            let forgotten = arbiter.forget_owner(name)?;
+        Some(OwnerCommand::Forget { name }) => {
+            let forgotten = arbiter.forget_owner(&name)?;
             println!(
                 "{name}: {}",
                 if forgotten {
@@ -568,7 +503,6 @@ fn owner(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> {
                 }
             );
         }
-        _ => return Err(USAGE.into()),
     }
     Ok(std::process::ExitCode::SUCCESS)
 }
@@ -578,20 +512,11 @@ fn owner(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> {
 const PREEMPT_GRACE: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// `cargo hil preempt ID --reason TEXT`.
-fn preempt(owner: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
-    const USAGE: &str = "usage: cargo hil preempt ID --reason TEXT";
-    let args = args
-        .iter()
-        .map(|arg| arg.to_str().ok_or("arguments must be UTF-8"))
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    let (id, reason) = match args.as_slice() {
-        [id, "--reason", reason] | ["--reason", reason, id] => (*id, *reason),
-        _ => return Err(USAGE.into()),
-    };
+fn preempt(owner: &str, id: &str, reason: &str) -> Result<std::process::ExitCode> {
     let id = id
         .trim_start_matches('#')
         .parse::<u64>()
-        .map_err(|_| format!("{id} is not a lease number\n{USAGE}"))?;
+        .map_err(|_| format!("{id} is not a lease number"))?;
     let end = oer_hil_arbiter::Arbiter::open()?.preempt(id, owner, reason, PREEMPT_GRACE)?;
     println!(
         "lease #{id} {}",
@@ -606,16 +531,7 @@ fn preempt(owner: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
 }
 
 /// Print the stand's holder, queue, board state and recent leases.
-fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
-    let json = match args {
-        [] => false,
-        [flag] if flag == "--json" => true,
-        [flag] if flag == "--help" || flag == "-h" => {
-            println!("usage: cargo hil queue [--json]\n\n{BALANCE_RULE}");
-            return Ok(std::process::ExitCode::SUCCESS);
-        }
-        _ => return Err("usage: cargo hil queue [--json]".into()),
-    };
+fn queue(json: bool) -> Result<std::process::ExitCode> {
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let status = arbiter.status()?;
     let store = arbiter.jobs();
@@ -635,17 +551,25 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
 }
 
 /// `cargo hil ab ...`, a job like a run: `--enqueue` starts it detached and
-/// prints its id for `cargo hil wait`, and `--after JOB` orders it.
-fn ab(ctx: &Checkout, owner: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
-    let (enqueue, after, args) = crate::jobs::take(args.to_vec())?;
-    if enqueue {
+/// prints its id for `cargo hil wait`, and `--after JOB` orders it. The job
+/// records the command's own arguments, `args` without the stand's options.
+fn ab(ctx: &Checkout, options: LeaseOptions, args: &[OsString]) -> Result<std::process::ExitCode> {
+    use clap::Parser as _;
+    let (stand, args) = crate::jobs::take::<crate::jobs::RunnerOptions>(args.to_vec())?;
+    let owner = options.merged(stand.owner)?.owner(ctx)?;
+    let after = stand.job.dependency();
+    if stand.job.enqueue {
         let frozen = crate::jobs::Frozen::capture(ctx)?;
-        let id = crate::jobs::enqueue(ctx, owner, &args, after, &frozen)?;
+        let id = crate::jobs::enqueue(ctx, &owner, &args, after, &frozen)?;
         eprintln!("hil: enqueued job {id}; `cargo hil wait {id}` blocks until it ends");
         println!("{id}");
         return Ok(std::process::ExitCode::SUCCESS);
     }
-    let mut job = oer_hil_experiment::job::Running::begin(&ctx.root, owner, &args, after.as_ref())?;
+    let Some(HilCommand::Ab(cli)) = HilCli::try_parse_from(&args)?.command else {
+        return Err("cargo hil ab: not an A/B comparison".into());
+    };
+    let mut job =
+        oer_hil_experiment::job::Running::begin(&ctx.root, &owner, &args, after.as_ref())?;
     // Every round runs the runner of the experiment's start: a pull into the
     // checkout meanwhile must not change the arms' protocol.
     let frozen = match crate::jobs::Frozen::inherited()? {
@@ -656,7 +580,7 @@ fn ab(ctx: &Checkout, owner: &str, args: &[OsString]) -> Result<std::process::Ex
         executable: frozen.runner,
         receipt: Some(frozen.receipt),
     };
-    let runs = crate::experiments::ab(ctx, owner, &runner, &args[1..])?;
+    let runs = crate::experiments::ab(ctx, &owner, &runner, cli)?;
     let (ids, outcomes): (Vec<_>, Vec<_>) = runs.into_iter().unzip();
     job.finish(&ids, &outcomes)?;
     Ok(std::process::ExitCode::SUCCESS)
@@ -665,16 +589,15 @@ fn ab(ctx: &Checkout, owner: &str, args: &[OsString]) -> Result<std::process::Ex
 /// `cargo hil wait ID`: block until the job or run ID names ends, and exit
 /// with its outcome. A job is waited for through its record, a run by
 /// following its bundle.
-fn wait(args: &[OsString]) -> Result<std::process::ExitCode> {
-    let [id] = args else {
+fn wait(ids: &[String]) -> Result<std::process::ExitCode> {
+    let [id] = ids else {
         return Err("usage: cargo hil wait JOB|RUN, or cargo hil wait --service [BOARD...]".into());
     };
-    let text = id.to_str().ok_or("an id is text")?;
-    if oer_hil_arbiter::Arbiter::open()?.jobs().read(text).is_ok() {
-        return crate::jobs::wait_command(args);
+    if oer_hil_arbiter::Arbiter::open()?.jobs().read(id).is_ok() {
+        return crate::jobs::wait_command(id);
     }
-    let run = oer_hil_analysis::Run::open(&oer_hil_run_bundle::RunStore::shared()?, text)
-        .map_err(|_| format!("{text} is neither a job nor a run"))?;
+    let run = oer_hil_analysis::Run::open(&oer_hil_run_bundle::RunStore::shared()?, id)
+        .map_err(|_| format!("{id} is neither a job nor a run"))?;
     Ok(std::process::ExitCode::from(oer_hil_analysis::runs::wait(
         run.directory(),
         |line| println!("{line}"),
@@ -683,15 +606,12 @@ fn wait(args: &[OsString]) -> Result<std::process::ExitCode> {
 
 /// `cargo hil wait --service [BOARD...]`: block until the boards (every
 /// board when none is named) and the stand are back in service.
-fn wait_for_service(args: &[OsString]) -> Result<std::process::ExitCode> {
+fn wait_for_service(boards: &[String]) -> Result<std::process::ExitCode> {
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let stand = arbiter.stand()?;
-    let macs = args
+    let macs = boards
         .iter()
-        .map(|board| {
-            let board = board.to_str().ok_or("a board name is text")?;
-            Ok(stand.resolve(board)?.mac()?)
-        })
+        .map(|board| Ok(stand.resolve(board)?.mac()?))
         .collect::<Result<Vec<_>>>()?;
     arbiter.wait_for_service(&macs, |out| {
         for entry in out {
@@ -788,26 +708,13 @@ fn nested_hil(program: &OsString, arguments: &[OsString]) -> Option<Vec<OsString
 /// running it. Commands the runner parses itself pass unchecked here.
 fn check_hil_arguments(args: &[OsString]) -> Result<()> {
     use clap::Parser as _;
-    let (_, args) = LeaseOptions::split(args)?;
-    let Some((command, rest)) = args.split_first() else {
-        return Ok(());
-    };
-    let parsed = match command.to_str().unwrap_or_default() {
-        "lease" => LeaseCli::try_parse_from(rest).map(drop),
-        "board" => BoardCli::try_parse_from(rest).map(drop),
-        "perf" => PerfCli::try_parse_from(rest).map(drop),
-        "runs" => RunsCli::try_parse_from(rest).map(drop),
-        "firmware" => FirmwareCli::try_parse_from(rest).map(drop),
-        "devices" => DevicesCli::try_parse_from(rest).map(drop),
-        "profile" => ProfileCli::try_parse_from(rest).map(drop),
-        "flash" => crate::flash::FlashCli::try_parse_from(rest).map(drop),
-        "peer" => crate::board::PeerCli::try_parse_from(rest).map(drop),
-        _ => return Ok(()),
-    };
-    parsed.map_err(|error| {
+    HilCli::try_parse_from(args).map(drop).map_err(|error| {
         format!(
             "`cargo hil {}`: {}",
-            command.to_string_lossy(),
+            args.iter()
+                .map(|argument| argument.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" "),
             error.render().to_string().trim()
         )
         .into()
@@ -819,8 +726,7 @@ fn parse_budget(text: &str) -> std::result::Result<std::time::Duration, String> 
 }
 
 /// `cargo hil lease [OPTIONS] -- COMMAND...`
-#[derive(Debug, clap::Parser)]
-#[command(name = "cargo hil lease", no_binary_name = true)]
+#[derive(Debug, clap::Args)]
 struct LeaseCli {
     /// Who holds the lease.
     #[arg(long)]
@@ -947,9 +853,7 @@ fn switches_hub_power(command: &[OsString]) -> Option<String> {
 
 /// Run one command, typically a series of HIL commands, under one lease.
 /// Nested `cargo hil` commands join the lease instead of queueing.
-fn lease(ctx: &Checkout, outer: LeaseOptions, args: &[OsString]) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
-    let cli = LeaseCli::try_parse_from(args)?;
+fn lease(ctx: &Checkout, outer: LeaseOptions, cli: LeaseCli) -> Result<std::process::ExitCode> {
     let options = LeaseOptions {
         owner: cli.owner.or(outer.owner),
     };
@@ -1031,26 +935,10 @@ fn supervise(
     }
 }
 
-/// `cargo hil board reset|check|console|soak`.
-fn board(
-    ctx: &Checkout,
-    options: &LeaseOptions,
-    args: &[OsString],
-) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
-    let BoardCli { command } = BoardCli::try_parse_from(args)?;
-    crate::board::board(ctx, options.owner(ctx)?, command)
-}
-
 /// `cargo hil runs list|why|compare|history|pin|unpin|prune` over the shared
 /// run store.
 /// `cargo hil perf`: gated measurements across commits and their baselines.
-fn perf(
-    ctx: &Checkout,
-    options: &LeaseOptions,
-    args: &[OsString],
-) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
+fn perf(ctx: &Checkout, options: &LeaseOptions, cli: PerfCli) -> Result<std::process::ExitCode> {
     use oer_hil_analysis::perf;
     let store = oer_hil_run_bundle::RunStore::shared()?;
     let now = oer_durable::unix_millis();
@@ -1058,7 +946,7 @@ fn perf(
         Ok(perf::summary(&oer_hil_analysis::Run::open(&store, id)?))
     };
     let baselines = perf::baselines(&store)?;
-    match PerfCli::try_parse_from(args)? {
+    match cli {
         PerfCli::Report {
             scenarios,
             measurement,
@@ -1102,16 +990,10 @@ fn perf(
 
 /// `cargo hil runs list|show|why|compare|history|pin|unpin|flaky|quarantine|release|prune`
 /// over the shared run store.
-fn runs(
-    ctx: &Checkout,
-    options: &LeaseOptions,
-    args: &[OsString],
-) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
+fn runs(ctx: &Checkout, options: &LeaseOptions, parsed: RunsCli) -> Result<std::process::ExitCode> {
     use oer_hil_analysis::{Run, retention, runs};
     use oer_hil_run_bundle::store::{Note, Notes, Sidecar};
     let store = oer_hil_run_bundle::RunStore::shared()?;
-    let parsed = RunsCli::try_parse_from(args)?;
     // Reading every run takes long; commands about one run read only it.
     let all = || Run::all(&store);
     let find = |id: &str| Run::open(&store, id);
@@ -1248,10 +1130,9 @@ fn runs(
 fn firmware(
     ctx: &Checkout,
     options: &LeaseOptions,
-    args: &[OsString],
+    cli: FirmwareCli,
 ) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
-    match FirmwareCli::try_parse_from(args)? {
+    match cli {
         FirmwareCli::List => crate::firmware_catalog::list(ctx)?,
         FirmwareCli::Build { image } => {
             crate::firmware_catalog::build(ctx, &image)?;
@@ -1293,10 +1174,8 @@ enum ConfirmArg {
 fn devices(
     ctx: &Checkout,
     options: &LeaseOptions,
-    args: &[OsString],
+    cli: DevicesCli,
 ) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
-    let cli = DevicesCli::try_parse_from(args)?;
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     match cli.command {
         Some(DevicesCommand::Maintenance {
@@ -1776,16 +1655,14 @@ fn hands_off_terminal(args: &[OsString]) -> bool {
         && !args.iter().any(|arg| arg == "--dry-run")
 }
 
-// The clap parsers of the stand commands, walked by `__command-tree`.
-#[derive(clap::Parser)]
-#[command(name = "cargo hil board", no_binary_name = true)]
+// The clap parsers of the stand commands, parts of [`HilCli`].
+#[derive(clap::Args)]
 struct BoardCli {
     #[command(subcommand)]
     command: crate::board::BoardCommand,
 }
 
-#[derive(clap::Parser)]
-#[command(name = "cargo hil perf", no_binary_name = true)]
+#[derive(clap::Subcommand)]
 enum PerfCli {
     /// Gated measurements of clean runs per commit, against each
     /// scenario's baseline.
@@ -1814,8 +1691,7 @@ enum PerfCli {
 }
 
 /// `cargo hil profile RUN [--scenario S] [--repetition N] [--top N]`.
-#[derive(clap::Parser)]
-#[command(name = "cargo hil profile", no_binary_name = true)]
+#[derive(clap::Args)]
 struct ProfileCli {
     /// The run whose profiled repetitions to report.
     run: String,
@@ -1844,9 +1720,7 @@ fn profile_report_path(root: &Path, run: &str, scenario: &str, relative: &Path) 
 /// Report every `profile.json` a run's repetitions left, symbolized against
 /// the run's own image, and keep each report under this checkout's
 /// `target/hil/profiles/`.
-fn profile(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
-    let cli = ProfileCli::try_parse_from(args)?;
+fn profile(ctx: &Checkout, cli: ProfileCli) -> Result<std::process::ExitCode> {
     let run = oer_hil_run_bundle::RunStore::shared()?
         .open(&cli.run)?
         .directory()
@@ -1937,8 +1811,7 @@ fn collect_profiles(
     Ok(())
 }
 
-#[derive(clap::Parser)]
-#[command(name = "cargo hil runs", no_binary_name = true)]
+#[derive(clap::Subcommand)]
 enum RunsCli {
     /// Runs of every checkout, newest last.
     List {
@@ -2025,8 +1898,7 @@ enum RunsCli {
     },
 }
 
-#[derive(clap::Parser)]
-#[command(name = "cargo hil firmware", no_binary_name = true)]
+#[derive(clap::Subcommand)]
 enum FirmwareCli {
     /// Catalog images: name, chip, project and last build.
     List,
@@ -2049,8 +1921,7 @@ enum FirmwareCli {
     },
 }
 
-#[derive(clap::Parser)]
-#[command(name = "cargo hil devices", no_binary_name = true)]
+#[derive(clap::Args)]
 struct DevicesCli {
     #[arg(long)]
     json: bool,
@@ -2091,12 +1962,22 @@ enum DevicesCommand {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn every_advertised_stand_command_is_dispatched_by_its_name() {
-        for command in super::StandCommand::ALL {
-            assert_eq!(super::StandCommand::named(command.name()), Some(command));
+    fn the_stand_command_line_is_one_parser_and_the_rest_is_the_runner_s() {
+        use clap::{CommandFactory as _, Parser as _};
+        super::HilCli::command().debug_assert();
+        let tree = oer_command_tree::command_tree(&super::HilCli::command(), &[]);
+        assert!(tree[0].subcommands.iter().any(|name| name == "queue"));
+        // `status` was once advertised without a handler: an unknown word is
+        // a runner command, never a stand node.
+        assert!(!tree[0].subcommands.iter().any(|name| name == "status"));
+        let parsed = super::HilCli::try_parse_from(["status"]).unwrap();
+        assert!(matches!(parsed.command, Some(super::HilCommand::Runner(_))));
+        let ab = tree.iter().find(|node| node.path == ["ab"]).unwrap();
+        for flag in ["--enqueue", "--after", "--after-any", "--scenario"] {
+            assert!(ab.flags.iter().any(|known| known == flag), "{flag}");
         }
-        // `status` was advertised in the command tree without a handler.
-        assert_eq!(super::StandCommand::named("status"), None);
+        assert!(super::HilCli::try_parse_from(["wait", "--service", "a", "b"]).is_ok());
+        assert!(super::HilCli::try_parse_from(["evidence", "dismiss"]).is_err());
     }
 
     #[test]
@@ -2279,39 +2160,30 @@ mod tests {
     }
 
     #[test]
-    fn lease_options_precede_the_command_and_stop_at_the_first_other_argument() {
+    fn the_owner_precedes_a_stand_command_and_may_follow_a_runner_command() {
+        use clap::Parser as _;
         let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
-        let (options, rest) =
-            LeaseOptions::split(&args(&["--owner", "phy", "run", "x", "--owner", "kept"])).unwrap();
-        assert_eq!(
-            options,
-            LeaseOptions {
-                owner: Some("phy".into()),
-            }
-        );
-        assert_eq!(rest, args(&["run", "x", "--owner", "kept"]));
-        // The runner takes no lease options: they may follow its command.
-        let (options, rest) = LeaseOptions::default()
-            .with_late(&args(&["run", "x", "--owner", "phy", "y", "--", "--owner"]))
+        let cli = HilCli::try_parse_from(args(&["--owner", "phy", "run", "x", "--owner", "kept"]))
             .unwrap();
-        assert_eq!(options.owner.as_deref(), Some("phy"));
+        assert_eq!(cli.owner.as_deref(), Some("phy"));
+        let Some(HilCommand::Runner(runner)) = cli.command else {
+            panic!("run is the runner's");
+        };
+        assert_eq!(runner, args(&["run", "x", "--owner", "kept"]));
+        // The runner takes no lease options: they may follow its command.
+        let (late, rest) = crate::jobs::take::<crate::jobs::RunnerOptions>(args(&[
+            "run", "x", "--owner", "phy", "y", "--", "--owner",
+        ]))
+        .unwrap();
         assert_eq!(rest, args(&["run", "x", "y", "--", "--owner"]));
-        let (options, _) = options.with_late(&args(&["run", "--owner=phy"])).unwrap();
+        let options = LeaseOptions::default().merged(late.owner).unwrap();
         assert_eq!(options.owner.as_deref(), Some("phy"));
-        assert!(
-            options
-                .clone()
-                .with_late(&args(&["run", "--owner", "bt"]))
-                .is_err()
-        );
-        assert!(
-            LeaseOptions::default()
-                .with_late(&args(&["run", "--owner"]))
-                .is_err()
-        );
-        let (options, rest) = LeaseOptions::split(&args(&["run", "x"])).unwrap();
-        assert_eq!(options, LeaseOptions::default());
-        assert_eq!(rest.len(), 2);
+        let options = options.merged(Some("phy".into())).unwrap();
+        assert_eq!(options.owner.as_deref(), Some("phy"));
+        assert!(options.clone().merged(Some("bt".into())).is_err());
+        assert_eq!(options.merged(None).unwrap().owner.as_deref(), Some("phy"));
+        // A stand command takes the owner only before it.
+        assert!(HilCli::try_parse_from(args(&["queue", "--owner", "phy"])).is_err());
     }
 
     #[test]
@@ -2379,7 +2251,15 @@ mod tests {
     #[test]
     fn lease_records_a_described_flash_on_the_named_board() {
         use clap::Parser as _;
-        let cli = LeaseCli::try_parse_from([
+        let parse = |words: &[&str]| -> std::result::Result<LeaseCli, clap::Error> {
+            match HilCli::try_parse_from(std::iter::once("lease").chain(words.iter().copied()))?
+                .command
+            {
+                Some(HilCommand::Lease(cli)) => Ok(cli),
+                _ => panic!("lease parses as lease"),
+            }
+        };
+        let cli = parse(&[
             "--owner",
             "802154",
             "--flashed",
@@ -2394,12 +2274,9 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(cli.command, ["idf.py", "flash"]);
+        assert!(parse(&["idf.py"]).is_err(), "COMMAND follows --");
         assert!(
-            LeaseCli::try_parse_from(["idf.py"]).is_err(),
-            "COMMAND follows --"
-        );
-        assert!(
-            LeaseCli::try_parse_from(["--sha256", "ab", "--", "x"]).is_err(),
+            parse(&["--sha256", "ab", "--", "x"]).is_err(),
             "flash details need --flashed"
         );
         let directory = tempfile::tempdir().unwrap();

@@ -11,13 +11,12 @@
 //! owner sees what the board carries. The console capture ends at its
 //! deadline or at an expected line, never with the lease, so the board is
 //! released promptly.
-use std::{ffi::OsString, path::PathBuf};
+use std::path::PathBuf;
 
 use crate::Result;
 use oer_hil_board::{Via, console, reset};
 use oer_process::Checkout;
-#[derive(clap::Parser, Debug)]
-#[command(name = "cargo hil flash", no_binary_name = true)]
+#[derive(clap::Args, Debug)]
 pub(crate) struct FlashCli {
     /// Registered board name or MAC.
     #[arg(long, value_name = "NAME|MAC")]
@@ -75,9 +74,7 @@ fn parse_air(text: &str) -> std::result::Result<Air, String> {
     }
 }
 
-pub fn run(ctx: &Checkout, owner: String, args: &[OsString]) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
-    let cli = FlashCli::try_parse_from(args)?;
+pub(crate) fn run(ctx: &Checkout, owner: String, cli: FlashCli) -> Result<std::process::ExitCode> {
     let monitor = cli
         .monitor
         .as_deref()
@@ -166,7 +163,14 @@ mod tests {
     #[test]
     fn the_command_names_board_image_capture_and_path() {
         use clap::Parser as _;
-        let cli = FlashCli::try_parse_from([
+        #[derive(clap::Parser)]
+        #[command(no_binary_name = true)]
+        struct Wrap {
+            #[command(flatten)]
+            cli: FlashCli,
+        }
+        let parse = |words: &[&str]| Wrap::try_parse_from(words).map(|wrap| wrap.cli);
+        let cli = parse(&[
             "--board",
             "esp32c5",
             "--monitor",
@@ -180,12 +184,12 @@ mod tests {
         assert_eq!(cli.image_path, PathBuf::from("app.elf"));
         assert_eq!(cli.air, Air(Some(oer_hil_arbiter::Mode::Shared)));
         assert_eq!(cli.via.via(), Via::Usb);
-        let quiet = FlashCli::try_parse_from([
+        let quiet = parse(&[
             "--board", "esp32c5", "--air", "none", "--via", "jtag", "app.elf",
         ])
         .unwrap();
         assert_eq!(quiet.air, Air(None));
         assert_eq!(quiet.via.via(), Via::Jtag);
-        assert!(FlashCli::try_parse_from(["--board", "esp32c5", "--until", "X", "a.elf"]).is_err());
+        assert!(parse(&["--board", "esp32c5", "--until", "X", "a.elf"]).is_err());
     }
 }

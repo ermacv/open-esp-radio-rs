@@ -8,7 +8,6 @@
 //! also claims the air shared, since a peer command may transmit.
 
 use std::{
-    ffi::OsString,
     io::Write as _,
     sync::mpsc,
     time::{Duration, Instant},
@@ -97,8 +96,7 @@ fn parse_duration(text: &str) -> std::result::Result<Duration, String> {
 }
 
 /// `cargo hil peer send BOARD LINE`.
-#[derive(Debug, clap::Parser)]
-#[command(name = "cargo hil peer", no_binary_name = true)]
+#[derive(Debug, clap::Subcommand)]
 pub(crate) enum PeerCli {
     /// Send one line to a peer's text protocol and print its answer, up to
     /// its `@OK` or `@ERR` line.
@@ -294,17 +292,12 @@ fn soak(
     })
 }
 
-pub(crate) fn peer(
-    ctx: &Checkout,
-    owner: String,
-    args: &[OsString],
-) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
+pub(crate) fn peer(ctx: &Checkout, owner: String, cli: PeerCli) -> Result<std::process::ExitCode> {
     let PeerCli::Send {
         board,
         line,
         duration,
-    } = PeerCli::try_parse_from(args)?;
+    } = cli;
     let line = line.join(" ");
     if line.is_empty() {
         return Err("cargo hil peer send needs a command line".into());

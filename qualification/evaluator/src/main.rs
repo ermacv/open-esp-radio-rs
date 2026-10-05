@@ -39,8 +39,15 @@ fn digests() -> &'static DigestCache {
     })
 }
 
-const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--run RUN_ID ... | --pending] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n       cargo qualification catalog anchors --catalog PATH [--catalog PATH ...] [--changed FILE ...] [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nhil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, or of the checkout's pending runs (--pending, which then leaves the pending list), as tracked shards bound to their firmware and observer sources.\ncatalog anchors checks the `// CAPABILITY: <id>` comments in code against every selected catalog entry (pass all catalogs: an anchor naming an unselected entry is unknown) and lists the entries anchored in --changed files.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
+/// What the commands read and decide, below the generated help.
+const DETAILS: &str = "\
+status and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.
+--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.
+hil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, or of the checkout's pending runs (--pending, which then leaves the pending list), as tracked shards bound to their firmware and observer sources.
+catalog anchors checks the `// CAPABILITY: <id>` comments in code against every selected catalog entry (pass all catalogs: an anchor naming an unselected entry is unknown) and lists the entries anchored in --changed files.
+--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
 
+/// The command an invocation runs, as `execute` dispatches it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
     Status,
@@ -54,123 +61,149 @@ enum Command {
     HilEvidence,
 }
 
-impl Command {
-    const ALL: [Self; 9] = [
-        Self::Status,
-        Self::Next,
-        Self::Plan,
-        Self::Validate,
-        Self::Evaluate,
-        Self::HilEvidence,
-        Self::CatalogCheck,
-        Self::CatalogRender,
-        Self::CatalogAnchors,
-    ];
-
-    /// The words that name the command after `cargo qualification`.
-    fn words(self) -> &'static [&'static str] {
-        match self {
-            Self::Status => &["status"],
-            Self::Next => &["next"],
-            Self::Plan => &["plan"],
-            Self::Validate => &["validate"],
-            Self::Evaluate => &["evaluate"],
-            Self::HilEvidence => &["hil-evidence"],
-            Self::CatalogCheck => &["catalog", "check"],
-            Self::CatalogRender => &["catalog", "render"],
-            Self::CatalogAnchors => &["catalog", "anchors"],
-        }
-    }
-
-    /// Every option the command accepts: the parser rejects the others, and
-    /// `__command-tree` prints these for the documentation check.
-    fn options(self) -> &'static [&'static str] {
-        const REPORTS: &[&str] = &["--manifest", "--root", "--json-report"];
-        match self {
-            Self::Status => &[
-                "--manifest",
-                "--catalog",
-                "--capability",
-                "--details",
-                "--root",
-                "--json-report",
-            ],
-            Self::Next => &[
-                "--manifest",
-                "--catalog",
-                "--capability",
-                "--root",
-                "--json-report",
-            ],
-            Self::Plan => &["--manifest", "--capability", "--root", "--json-report"],
-            Self::Validate | Self::Evaluate => REPORTS,
-            Self::HilEvidence => &["--manifest", "--hil-target", "--run", "--pending", "--root"],
-            Self::CatalogCheck => &["--manifest", "--catalog", "--root"],
-            Self::CatalogRender => &["--manifest", "--catalog", "--out", "--root"],
-            Self::CatalogAnchors => &["--catalog", "--changed", "--root"],
-        }
-    }
-
-    fn find(arguments: &[String]) -> Result<Self> {
-        let first = arguments.first().ok_or("missing qualification command")?;
-        if let Some(command) = Self::ALL.into_iter().find(|command| {
-            let words = command.words();
-            arguments.len() >= words.len() && words.iter().zip(arguments).all(|(w, a)| w == a)
-        }) {
-            return Ok(command);
-        }
-        if first != "catalog" {
-            return Err(format!("unknown qualification command {first:?}").into());
-        }
-        match arguments.get(1) {
-            None => Err("missing catalog operation".into()),
-            Some(operation) => Err(format!("unknown catalog operation {operation:?}").into()),
-        }
-    }
+/// `cargo qualification`: the one definition of its command line, which
+/// parses the arguments and which `__command-tree` walks.
+#[derive(clap::Parser)]
+#[command(
+    name = "cargo qualification",
+    about = "The readiness authority: capability declarations and independent evidence",
+    after_help = DETAILS
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: CommandCli,
 }
 
-/// The command tree of `cargo qualification`: each command path with its
-/// subcommands and the long options it accepts.
-fn command_tree() -> Vec<oer_command_tree::CommandNode> {
-    let words = |words: &[&str]| {
-        words
-            .iter()
-            .map(|word| word.to_string())
-            .collect::<Vec<_>>()
-    };
-    let mut nodes = vec![oer_command_tree::CommandNode {
-        path: words(&["qualification"]),
-        subcommands: Vec::new(),
-        flags: Vec::new(),
-        forwards: false,
-    }];
-    for command in Command::ALL {
-        let mut path = words(&["qualification"]);
-        for word in command.words() {
-            let parent = nodes
-                .iter_mut()
-                .find(|node| node.path == path)
-                .expect("every parent is listed before its children");
-            if !parent.subcommands.iter().any(|known| known == word) {
-                parent.subcommands.push(word.to_string());
-            }
-            path.push(word.to_string());
-            if !nodes.iter().any(|node| node.path == path) {
-                nodes.push(oer_command_tree::CommandNode {
-                    path: path.clone(),
-                    subcommands: Vec::new(),
-                    flags: Vec::new(),
-                    forwards: false,
-                });
-            }
-        }
-        let leaf = nodes
-            .iter_mut()
-            .find(|node| node.path == path)
-            .expect("the command was just listed");
-        leaf.flags = words(command.options());
-    }
-    nodes
+/// What `status`, `next` and the catalog commands read: a program, or
+/// catalogs and their transitive imports.
+#[derive(clap::Args)]
+struct Selection {
+    /// A qualification program.
+    #[arg(long)]
+    manifest: Option<PathBuf>,
+    /// A capability catalog; repeatable.
+    #[arg(long = "catalog")]
+    catalogs: Vec<PathBuf>,
+}
+
+/// The checkout and the machine-readable report of a command.
+#[derive(clap::Args)]
+struct Reporting {
+    /// The checkout; default: the current directory.
+    #[arg(long)]
+    root: Option<PathBuf>,
+    /// Also write the result as JSON here.
+    #[arg(long)]
+    json_report: Option<PathBuf>,
+}
+
+/// The checkout a command reads.
+#[derive(clap::Args)]
+struct RootOnly {
+    /// The checkout; default: the current directory.
+    #[arg(long)]
+    root: Option<PathBuf>,
+}
+
+#[derive(clap::Subcommand)]
+enum CommandCli {
+    /// Declarations or saved evidence of a selection; never runs hardware,
+    /// tests or vendor analysis.
+    Status {
+        #[command(flatten)]
+        selection: Selection,
+        /// A capability and its dependency context, not a rerun plan.
+        #[arg(long)]
+        capability: Option<String>,
+        /// Expand scopes, limits, links and observations.
+        #[arg(long)]
+        details: bool,
+        #[command(flatten)]
+        reporting: Reporting,
+    },
+    /// The next work of a selection.
+    Next {
+        #[command(flatten)]
+        selection: Selection,
+        #[arg(long)]
+        capability: Option<String>,
+        #[command(flatten)]
+        reporting: Reporting,
+    },
+    /// The plan of a program.
+    Plan {
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long)]
+        capability: Option<String>,
+        #[command(flatten)]
+        reporting: Reporting,
+    },
+    /// Validate a program.
+    Validate {
+        #[arg(long)]
+        manifest: PathBuf,
+        #[command(flatten)]
+        reporting: Reporting,
+    },
+    /// Evaluate a program.
+    Evaluate {
+        #[arg(long)]
+        manifest: PathBuf,
+        #[command(flatten)]
+        reporting: Reporting,
+    },
+    /// Record the qualifying HIL observations of runs as tracked shards.
+    HilEvidence {
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        /// The HIL target whose programs name the run and evidence
+        /// directories, instead of one `--manifest`.
+        #[arg(long)]
+        hil_target: Option<String>,
+        /// Record only this run's observations; repeatable.
+        #[arg(long = "run", value_name = "RUN_ID")]
+        runs: Vec<String>,
+        /// Record the checkout's pending runs, which then leave the pending
+        /// list.
+        #[arg(long)]
+        pending: bool,
+        #[command(flatten)]
+        root: RootOnly,
+    },
+    /// Capability catalogs without evidence.
+    #[command(subcommand)]
+    Catalog(CatalogCli),
+}
+
+#[derive(clap::Subcommand)]
+enum CatalogCli {
+    /// Validate selected catalogs, or a program's selection.
+    Check {
+        #[command(flatten)]
+        selection: Selection,
+        #[command(flatten)]
+        root: RootOnly,
+    },
+    /// Validate and render selected catalogs, or a program's view.
+    Render {
+        #[command(flatten)]
+        selection: Selection,
+        #[arg(long, value_name = "DIRECTORY")]
+        out: PathBuf,
+        #[command(flatten)]
+        root: RootOnly,
+    },
+    /// Check `// CAPABILITY: <id>` anchors against every selected entry.
+    Anchors {
+        #[arg(long = "catalog", required = true)]
+        catalogs: Vec<PathBuf>,
+        /// A repository-relative file an edit touched; repeatable.
+        #[arg(long = "changed", value_name = "FILE")]
+        changed: Vec<PathBuf>,
+        #[command(flatten)]
+        root: RootOnly,
+    },
 }
 
 #[derive(Debug)]
@@ -194,127 +227,150 @@ struct Arguments {
     changed: Vec<PathBuf>,
 }
 
-fn take_value(arguments: &[String], index: &mut usize, option: &str) -> Result<PathBuf> {
-    let value = arguments
-        .get(*index + 1)
-        .ok_or_else(|| format!("{option} requires a value"))?;
-    *index += 2;
-    Ok(PathBuf::from(value))
-}
-
 fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
-    let arguments = arguments.into_iter().collect::<Vec<_>>();
-    let command = Command::find(&arguments)?;
-    let mut index = command.words().len();
-    let mut manifest = None;
-    let mut catalogs = Vec::new();
-    let mut root = None;
-    let mut json_report = None;
-    let mut output_directory = None;
-    let mut capability = None;
-    let mut details = false;
-    let mut hil_target = None;
-    let mut runs = Vec::new();
-    let mut pending = false;
-    let mut changed = Vec::new();
-    while index < arguments.len() {
-        let option = arguments[index].as_str();
-        if !command.options().contains(&option) {
-            return Err(if Command::ALL
-                .iter()
-                .any(|command| command.options().contains(&option))
-            {
-                format!("{option} is not accepted by {}", command.words().join(" "))
-            } else {
-                format!("unknown option {option:?}")
-            }
-            .into());
-        }
-        match option {
-            "--details" => {
-                if details {
-                    return Err("duplicate --details".into());
-                }
-                details = true;
-                index += 1;
-            }
-            "--capability" => {
-                let value = arguments
-                    .get(index + 1)
-                    .ok_or("--capability requires a value")?
-                    .clone();
-                index += 2;
-                if capability.replace(value).is_some() {
-                    return Err("duplicate --capability".into());
-                }
-            }
-            "--run" => {
-                let value = arguments
-                    .get(index + 1)
-                    .ok_or("--run requires a run ID")?
-                    .clone();
-                index += 2;
-                runs.push(value);
-            }
-            "--pending" => {
-                if pending {
-                    return Err("duplicate --pending".into());
-                }
-                pending = true;
-                index += 1;
-            }
-            "--hil-target" => {
-                let value = arguments
-                    .get(index + 1)
-                    .ok_or("--hil-target requires a value")?
-                    .clone();
-                index += 2;
-                if hil_target.replace(value).is_some() {
-                    return Err("duplicate --hil-target".into());
-                }
-            }
-            "--changed" => {
-                let value = take_value(&arguments, &mut index, "--changed")?;
-                changed.push(value);
-            }
-            "--manifest" => {
-                let value = take_value(&arguments, &mut index, "--manifest")?;
-                if manifest.replace(value).is_some() {
-                    return Err("duplicate --manifest".into());
-                }
-            }
-            "--catalog" => {
-                let value = take_value(&arguments, &mut index, "--catalog")?;
-                catalogs.push(value);
-            }
-            "--root" => {
-                let value = take_value(&arguments, &mut index, "--root")?;
-                if root.replace(value).is_some() {
-                    return Err("duplicate --root".into());
-                }
-            }
-            "--json-report" => {
-                let value = take_value(&arguments, &mut index, "--json-report")?;
-                if json_report.replace(value).is_some() {
-                    return Err("duplicate --json-report".into());
-                }
-            }
-            "--out" => {
-                let value = take_value(&arguments, &mut index, "--out")?;
-                if output_directory.replace(value).is_some() {
-                    return Err("duplicate --out".into());
-                }
-            }
-            option => return Err(format!("unknown option {option:?}").into()),
-        }
-    }
-    if command == Command::CatalogRender && output_directory.is_none() {
-        return Err("catalog render requires --out".into());
-    }
+    use clap::Parser as _;
+    let cli =
+        Cli::try_parse_from(std::iter::once(String::from("cargo qualification")).chain(arguments))?;
+    let none = |command| Arguments {
+        command,
+        manifest: None,
+        catalogs: Vec::new(),
+        root: PathBuf::new(),
+        json_report: None,
+        output_directory: None,
+        capability: None,
+        details: false,
+        hil_target: None,
+        runs: Vec::new(),
+        pending: false,
+        changed: Vec::new(),
+    };
+    let (arguments, root) = match cli.command {
+        CommandCli::Status {
+            selection,
+            capability,
+            details,
+            reporting,
+        } => (
+            Arguments {
+                manifest: selection.manifest,
+                catalogs: selection.catalogs,
+                capability,
+                details,
+                json_report: reporting.json_report,
+                ..none(Command::Status)
+            },
+            reporting.root,
+        ),
+        CommandCli::Next {
+            selection,
+            capability,
+            reporting,
+        } => (
+            Arguments {
+                manifest: selection.manifest,
+                catalogs: selection.catalogs,
+                capability,
+                json_report: reporting.json_report,
+                ..none(Command::Next)
+            },
+            reporting.root,
+        ),
+        CommandCli::Plan {
+            manifest,
+            capability,
+            reporting,
+        } => (
+            Arguments {
+                manifest: Some(manifest),
+                capability,
+                json_report: reporting.json_report,
+                ..none(Command::Plan)
+            },
+            reporting.root,
+        ),
+        CommandCli::Validate {
+            manifest,
+            reporting,
+        } => (
+            Arguments {
+                manifest: Some(manifest),
+                json_report: reporting.json_report,
+                ..none(Command::Validate)
+            },
+            reporting.root,
+        ),
+        CommandCli::Evaluate {
+            manifest,
+            reporting,
+        } => (
+            Arguments {
+                manifest: Some(manifest),
+                json_report: reporting.json_report,
+                ..none(Command::Evaluate)
+            },
+            reporting.root,
+        ),
+        CommandCli::HilEvidence {
+            manifest,
+            hil_target,
+            runs,
+            pending,
+            root,
+        } => (
+            Arguments {
+                manifest,
+                hil_target,
+                runs,
+                pending,
+                ..none(Command::HilEvidence)
+            },
+            root.root,
+        ),
+        CommandCli::Catalog(CatalogCli::Check { selection, root }) => (
+            Arguments {
+                manifest: selection.manifest,
+                catalogs: selection.catalogs,
+                ..none(Command::CatalogCheck)
+            },
+            root.root,
+        ),
+        CommandCli::Catalog(CatalogCli::Render {
+            selection,
+            out,
+            root,
+        }) => (
+            Arguments {
+                manifest: selection.manifest,
+                catalogs: selection.catalogs,
+                output_directory: Some(out),
+                ..none(Command::CatalogRender)
+            },
+            root.root,
+        ),
+        CommandCli::Catalog(CatalogCli::Anchors {
+            catalogs,
+            changed,
+            root,
+        }) => (
+            Arguments {
+                catalogs,
+                changed,
+                ..none(Command::CatalogAnchors)
+            },
+            root.root,
+        ),
+    };
+    let Arguments {
+        command,
+        ref manifest,
+        ref catalogs,
+        ref hil_target,
+        ref runs,
+        pending,
+        ..
+    } = arguments;
     match command {
-        Command::CatalogAnchors if catalogs.is_empty() => {
-            return Err("catalog anchors requires --catalog".into());
-        }
         Command::Status | Command::Next | Command::CatalogCheck | Command::CatalogRender
             if manifest.is_some() == !catalogs.is_empty() =>
         {
@@ -326,24 +382,14 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         Command::HilEvidence if pending && !runs.is_empty() => {
             return Err("hil-evidence takes --run or --pending, not both".into());
         }
-        Command::Plan | Command::Validate | Command::Evaluate if manifest.is_none() => {
-            return Err("missing --manifest".into());
-        }
         _ => {}
     }
     Ok(Arguments {
-        command,
-        manifest,
-        catalogs,
-        root: root.unwrap_or(env::current_dir()?),
-        json_report,
-        output_directory,
-        capability,
-        details,
-        hil_target,
-        runs,
-        pending,
-        changed,
+        root: match root {
+            Some(root) => root,
+            None => env::current_dir()?,
+        },
+        ..arguments
     })
 }
 
@@ -527,19 +573,16 @@ fn record_hil_evidence(
     Ok(())
 }
 
-fn is_help(arguments: &[String]) -> bool {
-    matches!(arguments, [value] if matches!(value.as_str(), "--help" | "-h" | "help"))
-        || matches!(arguments, [catalog, value] if catalog == "catalog" && matches!(value.as_str(), "--help" | "-h" | "help"))
+/// The command tree of `cargo qualification`, walked from its parser.
+fn command_tree() -> Vec<oer_command_tree::CommandNode> {
+    use clap::CommandFactory as _;
+    oer_command_tree::command_tree(&Cli::command(), &[String::from("qualification")])
 }
 
 fn main() -> ExitCode {
     let raw_arguments = env::args().skip(1).collect::<Vec<_>>();
     if oer_command_tree::requested() {
         println!("{}", oer_command_tree::json(&command_tree()));
-        return ExitCode::SUCCESS;
-    }
-    if is_help(&raw_arguments) {
-        println!("{USAGE}");
         return ExitCode::SUCCESS;
     }
     // Recorded shards enter the repository; hash every file they bind: the
@@ -552,10 +595,14 @@ fn main() -> ExitCode {
     }
     let arguments = match parse_arguments(raw_arguments) {
         Ok(arguments) => arguments,
-        Err(error) => {
-            eprintln!("{USAGE}\nerror: {error}");
-            return ExitCode::FAILURE;
-        }
+        // Help, and a usage error with its usage, as clap prints them.
+        Err(error) => match error.downcast::<clap::Error>() {
+            Ok(error) => error.exit(),
+            Err(error) => {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
+        },
     };
     let result = execute(arguments);
     digests().save();

@@ -49,37 +49,46 @@ fn a_job_names_what_it_was_fixed_with_and_older_records_still_read() {
 
 #[test]
 fn enqueue_and_after_are_taken_before_a_double_dash() {
-    let (enqueue, after, rest) = take(args(&[
+    let (options, rest) = take::<RunnerOptions>(args(&[
         "run",
         "s",
         "--enqueue",
+        "--owner",
+        "phy",
         "--after",
         "12-a",
         "--",
         "--enqueue",
     ]))
     .unwrap();
-    assert!(enqueue);
+    assert!(options.job.enqueue);
+    assert_eq!(options.owner.as_deref(), Some("phy"));
     assert_eq!(
-        after,
+        options.job.dependency(),
         Some(After {
             job: String::from("12-a"),
             any: false
         })
     );
     assert_eq!(rest, args(&["run", "s", "--", "--enqueue"]));
-    let (enqueue, after, _) = take(args(&["run", "--after=7-b"])).unwrap();
-    assert!(!enqueue);
-    assert_eq!(after.map(|after| after.job), Some(String::from("7-b")));
-    let (_, after, _) = take(args(&["run", "--after-any", "8-c"])).unwrap();
+    let (options, _) = take::<RunnerOptions>(args(&["run", "--after=7-b"])).unwrap();
+    assert!(!options.job.enqueue);
     assert_eq!(
-        after,
+        options.job.dependency().map(|after| after.job),
+        Some(String::from("7-b"))
+    );
+    let (options, _) = take::<RunnerOptions>(args(&["run", "--after-any", "8-c"])).unwrap();
+    assert_eq!(
+        options.job.dependency(),
         Some(After {
             job: String::from("8-c"),
             any: true
         })
     );
-    assert!(take(args(&["run", "--after", "a", "--after-any", "b"])).is_err());
-    assert!(take(args(&["run", "--after"])).is_err());
-    assert!(take(args(&["run", "--after", "a", "--after=b"])).is_err());
+    // A flag that only begins with an option's name is the runner's.
+    let (_, rest) = take::<RunnerOptions>(args(&["run", "--owners", "x"])).unwrap();
+    assert_eq!(rest, args(&["run", "--owners", "x"]));
+    assert!(take::<RunnerOptions>(args(&["run", "--after", "a", "--after-any", "b"])).is_err());
+    assert!(take::<RunnerOptions>(args(&["run", "--after"])).is_err());
+    assert!(take::<RunnerOptions>(args(&["run", "--after", "a", "--after=b"])).is_err());
 }

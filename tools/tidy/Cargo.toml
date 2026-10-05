@@ -9,7 +9,8 @@ description = "Fast fail-closed repository integrity checks: text policy over th
 
 [dependencies]
 oer-toolchain = { path = "../toolchain" }
-oer-command-tree = { path = "../command-tree" }
+clap = { version = "=4.5.48", features = ["derive"] }
+oer-command-tree = { path = "../command-tree", features = ["clap"] }
 oer-process = { path = "../process" }
 oer-repo = { path = "../repo" }
 oer-vendor-provenance = { path = "../vendor-provenance" }

@@ -123,6 +123,7 @@ dependencies = [
  "cargo_metadata",
  "clap",
  "object",
+ "oer-command-tree",
  "oer-riscv-lift",
  "oer-riscv-model",
  "serde",
@@ -424,6 +425,15 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "toml",
+]
+
+[[package]]
+name = "oer-command-tree"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

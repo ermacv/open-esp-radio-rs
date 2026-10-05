@@ -1,7 +1,7 @@
 //! `cargo hil ab` and `cargo hil bisect`: their arguments, and calls into
 //! `oer-hil-experiment`.
 
-use std::{ffi::OsString, num::NonZeroU32};
+use std::num::NonZeroU32;
 
 use oer_hil_experiment::{ab, bisect, launch::Runner};
 use oer_hil_run_bundle::RunId;
@@ -10,8 +10,7 @@ use oer_process::Checkout;
 
 use crate::Result;
 
-#[derive(clap::Parser)]
-#[command(name = "cargo hil ab")]
+#[derive(clap::Args)]
 pub(crate) struct AbCli {
     /// Variant A: `rev=<revision>`, then `;override:<esp-hal|embassy|xarxa>=<path>`
     /// for each replaced dependency; `rev=` defaults to HEAD.
@@ -30,6 +29,10 @@ pub(crate) struct AbCli {
     layout_seeds: u32,
     #[command(flatten)]
     boards: crate::jobs::BoardChoiceArgs,
+    /// The stand makes the comparison a job as it does a run; these are
+    /// taken from the arguments before `cli` is read.
+    #[command(flatten)]
+    _job: crate::jobs::JobArgs,
 }
 
 /// Run the comparison `args` describe with `runner`; returns each created
@@ -38,12 +41,8 @@ pub(crate) fn ab(
     ctx: &Checkout,
     owner: &str,
     runner: &Runner,
-    args: &[OsString],
+    cli: AbCli,
 ) -> Result<Vec<(RunId, Option<Outcome>)>> {
-    use clap::Parser as _;
-    let cli = AbCli::try_parse_from(
-        std::iter::once(OsString::from("cargo hil ab")).chain(args.iter().cloned()),
-    )?;
     let finished = ab::run(
         &ctx.root,
         owner,
@@ -62,8 +61,7 @@ pub(crate) fn ab(
     Ok(finished.runs)
 }
 
-#[derive(clap::Parser)]
-#[command(name = "cargo hil bisect")]
+#[derive(clap::Args)]
 pub(crate) struct BisectCli {
     /// A commit at which the scenario passes.
     #[arg(long)]
@@ -83,12 +81,8 @@ pub(crate) struct BisectCli {
 pub(crate) fn bisect(
     ctx: &Checkout,
     owner: &str,
-    args: &[OsString],
+    cli: BisectCli,
 ) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
-    let cli = BisectCli::try_parse_from(
-        std::iter::once(OsString::from("cargo hil bisect")).chain(args.iter().cloned()),
-    )?;
     let finished = bisect::run(
         &ctx.root,
         owner,

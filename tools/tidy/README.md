@@ -16,8 +16,8 @@ cargo tidy fetch
 checks another checkout. The push gate always runs the checks in-process,
 and CI runs it as the first check of the registry's `host` job (`cargo
 xtask check tier full --job host`). Like every
-repository tool, it prints its commands for `__command-tree`, which `cargo
-xtask check docs` holds the documentation to.
+repository tool, it prints its commands for `__command-tree`, walked from
+its clap parser, which `cargo xtask check docs` holds the documentation to.
 
 `workspaces` prints every Cargo workspace and `chips` every chip profile
 (`platform/<chip>/chip.toml`) of that model, one per line or as a JSON

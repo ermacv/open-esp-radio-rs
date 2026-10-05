@@ -331,7 +331,10 @@ fn removed_commands_are_rejected() {
             "qualification/test.toml".to_owned(),
         ])
         .unwrap_err();
-        assert!(error.to_string().contains("unknown qualification command"));
+        assert!(
+            error.to_string().contains("unrecognized subcommand"),
+            "{error}"
+        );
     }
 }
 
@@ -344,7 +347,7 @@ fn command_rejects_silent_extra_options() {
         "--best-effort".to_owned(),
     ])
     .unwrap_err();
-    assert!(error.to_string().contains("unknown option"));
+    assert!(error.to_string().contains("--best-effort"), "{error}");
 }
 
 #[test]
@@ -356,7 +359,7 @@ fn catalog_render_requires_an_output_directory() {
         "qualification/test.toml".to_owned(),
     ])
     .unwrap_err();
-    assert!(error.to_string().contains("requires --out"));
+    assert!(error.to_string().contains("--out"), "{error}");
 
     let parsed = parse_arguments([
         "catalog".to_owned(),
@@ -401,10 +404,20 @@ fn static_catalog_form_is_distinct_from_manifest_form() {
 }
 
 #[test]
-fn help_forms_are_explicit_and_finite() {
-    assert!(is_help(&["--help".to_owned()]));
-    assert!(is_help(&["catalog".to_owned(), "--help".to_owned()]));
-    assert!(!is_help(&["evaluate".to_owned(), "--help".to_owned(),]));
+fn help_is_the_parser_s_own() {
+    for help in [
+        &["--help"][..],
+        &["catalog", "--help"],
+        &["evaluate", "--help"],
+    ] {
+        let error = parse_arguments(help.iter().map(|word| word.to_string())).unwrap_err();
+        let error = error.downcast::<clap::Error>().unwrap();
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::DisplayHelp,
+            "{help:?}"
+        );
+    }
 }
 
 #[test]
@@ -482,22 +495,23 @@ fn execution_plan_requires_an_evaluated_program() {
 
 #[test]
 fn each_command_accepts_exactly_the_options_its_tree_lists() {
-    let every = Command::ALL
+    let tree = command_tree();
+    let every = tree
         .iter()
-        .flat_map(|command| command.options())
-        .copied()
+        .flat_map(|node| node.flags.iter().map(String::as_str))
         .collect::<std::collections::BTreeSet<_>>();
-    for command in Command::ALL {
-        let required: &[&str] = match command {
-            Command::CatalogAnchors => &["--catalog", "c.toml"],
-            Command::CatalogRender => &["--manifest", "m.toml", "--out", "out"],
+    for node in tree.iter().filter(|node| node.subcommands.is_empty()) {
+        let words = &node.path[1..];
+        let required: &[&str] = match words.join(" ").as_str() {
+            "catalog anchors" => &["--catalog", "c.toml"],
+            "catalog render" => &["--manifest", "m.toml", "--out", "out"],
             _ => &["--manifest", "m.toml"],
         };
-        let base = command
-            .words()
+        let base = words
             .iter()
-            .chain(required)
-            .map(|word| word.to_string())
+            .map(String::as_str)
+            .chain(required.iter().copied())
+            .map(str::to_owned)
             .collect::<Vec<_>>();
         parse_arguments(base.clone()).unwrap();
         for option in every.iter().filter(|option| !required.contains(option)) {
@@ -514,8 +528,8 @@ fn each_command_accepts_exactly_the_options_its_tree_lists() {
             }
             assert_eq!(
                 parse_arguments(arguments).is_ok(),
-                command.options().contains(option),
-                "{command:?} {option}"
+                node.flags.iter().any(|flag| flag == option),
+                "{words:?} {option}"
             );
         }
     }

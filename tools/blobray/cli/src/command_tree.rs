@@ -8,51 +8,15 @@
 use clap::CommandFactory as _;
 
 /// The only argument with which Blobray prints its command tree.
-pub const REQUEST: &str = "__command-tree";
+pub const REQUEST: &str = oer_command_tree::REQUEST;
 
-/// Every visible command of the command line, depth first, as a JSON array.
+/// Every visible command of the command line, depth first, as a JSON array
+/// (`oer_command_tree`'s walk of the clap parser).
 pub fn json() -> String {
-    let mut nodes = Vec::new();
-    walk(
-        &super::Cli::command(),
-        vec![String::from("blobray")],
-        &mut nodes,
-    );
-    let mut text = serde_json::to_string_pretty(&nodes).expect("a command tree serializes");
+    let tree = oer_command_tree::command_tree(&super::Cli::command(), &[String::from("blobray")]);
+    let mut text = oer_command_tree::json(&tree);
     text.push('\n');
     text
-}
-
-fn walk(command: &clap::Command, path: Vec<String>, nodes: &mut Vec<serde_json::Value>) {
-    let visible = command
-        .get_subcommands()
-        .filter(|subcommand| !subcommand.is_hide_set())
-        .collect::<Vec<_>>();
-    let flags = command
-        .get_arguments()
-        .filter(|argument| !argument.is_hide_set())
-        .flat_map(|argument| {
-            argument
-                .get_long()
-                .into_iter()
-                .chain(argument.get_visible_aliases().unwrap_or_default())
-                .map(|long| format!("--{long}"))
-        })
-        .collect::<Vec<_>>();
-    let forwards = command.get_positionals().any(|argument| {
-        argument.is_trailing_var_arg_set() && argument.is_allow_hyphen_values_set()
-    });
-    nodes.push(serde_json::json!({
-        "path": path,
-        "subcommands": visible.iter().map(|s| s.get_name()).collect::<Vec<_>>(),
-        "flags": flags,
-        "forwards": forwards,
-    }));
-    for subcommand in visible {
-        let mut child = path.clone();
-        child.push(subcommand.get_name().to_owned());
-        walk(subcommand, child, nodes);
-    }
 }
 
 #[cfg(test)]

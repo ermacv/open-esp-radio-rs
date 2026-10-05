@@ -3884,6 +3884,7 @@ dependencies = [
 name = "oer-qualification"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "oer-chip-profile",
  "oer-command-tree",
  "oer-durable",
@@ -4101,6 +4102,7 @@ dependencies = [
 name = "oer-tidy"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "oer-command-tree",
  "oer-process",
  "oer-repo",

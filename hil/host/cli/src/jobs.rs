@@ -23,7 +23,6 @@ pub const FROZEN_RECEIPT_ENV: &str = "OER_HIL_JOB_RECEIPT";
 /// The source snapshot an enqueued `run` builds from, captured when it was
 /// enqueued.
 pub const FROZEN_SNAPSHOT_ENV: &str = "OER_HIL_JOB_SNAPSHOT";
-pub const ENQUEUE: &str = "--enqueue";
 pub use oer_hil_experiment::job::{AFTER, AFTER_ANY};
 
 fn jobs() -> Result<oer_hil_arbiter::jobs::Jobs> {
@@ -127,48 +126,79 @@ impl Frozen {
     }
 }
 
-/// `--enqueue` and `--after JOB` (or `--after-any JOB`) taken from `cargo
-/// hil` arguments, up to a `--`.
-pub fn take(args: Vec<OsString>) -> Result<(bool, Option<After>, Vec<OsString>)> {
-    let mut enqueue = false;
-    let mut after = None;
-    let mut remaining = Vec::new();
-    let mut rest = args.into_iter();
-    while let Some(argument) = rest.next() {
+/// The stand's job options of a command that starts runs (`run`,
+/// `run-all`, `ab`).
+#[derive(Clone, Debug, Default, clap::Args)]
+pub(crate) struct JobArgs {
+    /// Start the command detached as a job and print its id for `cargo hil
+    /// wait`.
+    #[arg(long)]
+    pub enqueue: bool,
+    /// Start once job JOB has ended passing.
+    #[arg(long, value_name = "JOB", conflicts_with = "after_any")]
+    pub after: Option<String>,
+    /// Start once job JOB has ended, whatever its outcome.
+    #[arg(long, value_name = "JOB")]
+    pub after_any: Option<String>,
+}
+
+impl JobArgs {
+    /// The job this one waits for.
+    pub(crate) fn dependency(&self) -> Option<After> {
+        self.after
+            .clone()
+            .map(|job| After { job, any: false })
+            .or_else(|| self.after_any.clone().map(|job| After { job, any: true }))
+    }
+}
+
+/// The options the stand takes from among a runner command's arguments,
+/// which the runner never sees: the lease owner and the job options.
+#[derive(Clone, Debug, Default, clap::Args)]
+pub(crate) struct RunnerOptions {
+    /// Who holds the leases the command takes.
+    #[arg(long)]
+    pub owner: Option<String>,
+    #[command(flatten)]
+    pub job: JobArgs,
+}
+
+/// Take the long options `A` defines out of `args`, up to a `--`, and parse
+/// them as `A`; every other argument stays, in order. The options are known
+/// only from `A`'s clap definition.
+pub(crate) fn take<A: clap::Args + clap::FromArgMatches>(
+    args: Vec<OsString>,
+) -> Result<(A, Vec<OsString>)> {
+    let command = A::augment_args(clap::Command::new("options").no_binary_name(true));
+    let mut taken = Vec::new();
+    let mut rest = Vec::new();
+    let mut arguments = args.into_iter();
+    while let Some(argument) = arguments.next() {
         let text = argument.to_str().unwrap_or_default();
-        let dependency = [(AFTER, false), (AFTER_ANY, true)]
-            .into_iter()
-            .find_map(|(flag, any)| {
-                if text == flag {
-                    Some((flag, any, None))
-                } else {
-                    text.strip_prefix(flag)
-                        .and_then(|value| value.strip_prefix('='))
-                        .map(|value| (flag, any, Some(value.to_owned())))
-                }
-            });
         if text == "--" {
-            remaining.push(argument);
-            remaining.extend(rest.by_ref());
+            rest.push(argument);
+            rest.extend(arguments.by_ref());
             break;
-        } else if text == ENQUEUE {
-            enqueue = true;
-        } else if let Some((flag, any, value)) = dependency {
-            let job = match value {
-                Some(value) => value,
-                None => rest
-                    .next()
-                    .and_then(|value| value.into_string().ok())
-                    .ok_or_else(|| format!("{flag} requires a job id"))?,
-            };
-            if after.replace(After { job, any }).is_some() {
-                return Err("--after or --after-any is given twice".into());
-            }
-        } else {
-            remaining.push(argument);
+        }
+        let name = text
+            .strip_prefix("--")
+            .map(|name| name.split_once('=').map_or(name, |(name, _)| name));
+        let Some(option) = name.and_then(|name| {
+            command
+                .get_arguments()
+                .find(|option| option.get_long() == Some(name))
+        }) else {
+            rest.push(argument);
+            continue;
+        };
+        let takes_value = option.get_action().takes_values() && !text.contains('=');
+        taken.push(argument);
+        if takes_value && let Some(value) = arguments.next() {
+            taken.push(value);
         }
     }
-    Ok((enqueue, after, remaining))
+    let matches = command.try_get_matches_from(taken)?;
+    Ok((A::from_arg_matches(&matches)?, rest))
 }
 
 /// Record a job for `args` and start it detached; returns its id.
@@ -226,11 +256,7 @@ pub fn enqueue(
 
 /// `cargo hil wait JOB`: block until the job settles, print its outcome and
 /// runs, and exit with the outcome's code.
-pub fn wait_command(args: &[OsString]) -> Result<std::process::ExitCode> {
-    let [id] = args else {
-        return Err("usage: cargo hil wait JOB".into());
-    };
-    let id = id.to_str().ok_or("a job id is text")?;
+pub fn wait_command(id: &str) -> Result<std::process::ExitCode> {
     let jobs = jobs()?;
     let outcome = jobs.wait(id)?;
     let job = jobs.read(id)?;

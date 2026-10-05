@@ -9,8 +9,9 @@ publish = false
 description = "Fail-closed qualification evaluator for the open radio driver"
 
 [dependencies]
+clap = { version = "=4.5.48", features = ["derive"] }
 oer-chip-profile = { path = "../../tools/chip-profile" }
-oer-command-tree = { path = "../../tools/command-tree" }
+oer-command-tree = { path = "../../tools/command-tree", features = ["clap"] }
 oer-hil-image-class = { path = "../../hil/host/image-class" }
 oer-hil-schema = { path = "../../hil/schema" }
 oer-hil-observer = { path = "../../hil/observer" }

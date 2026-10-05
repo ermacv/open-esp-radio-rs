@@ -3,8 +3,8 @@
 //! Cargo workspace and `oer-tidy chips [--json]` every chip profile, one per
 //! line or as a JSON array for CI matrices; `oer-tidy fetch` downloads what
 //! every workspace's lock file names and the Cargo cache lacks.
-//! `oer-tidy __command-tree` prints these commands for `cargo xtask check
-//! docs`.
+//! `oer-tidy __command-tree` prints these commands, walked from the clap
+//! parser, for `cargo xtask check docs`.
 
 use std::{
     path::{Path, PathBuf},
@@ -15,7 +15,40 @@ use std::{
 use oer_repo::{Model, Repo};
 use oer_tidy::Result;
 
-const USAGE: &str = "usage: oer-tidy [check | workspaces | chips | fetch] [--json] [--root DIR]";
+/// `oer-tidy`, which `cargo tidy` runs.
+#[derive(clap::Parser)]
+#[command(
+    name = "oer-tidy",
+    about = "Fast text policy over the repository model"
+)]
+struct Cli {
+    /// The checkout to read; default: the checkout this binary was built from.
+    #[arg(long, global = true, value_name = "DIR")]
+    root: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(clap::Subcommand)]
+enum Command {
+    /// Run every integrity check and fail on any problem (the default).
+    Check,
+    /// Print the manifest of every Cargo workspace.
+    Workspaces {
+        /// One JSON array, for CI matrices.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print every chip profile.
+    Chips {
+        /// One JSON array, for CI matrices.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Download what every workspace's lock file names and the Cargo cache
+    /// lacks.
+    Fetch,
+}
 
 fn main() -> ExitCode {
     match run() {
@@ -27,57 +60,18 @@ fn main() -> ExitCode {
     }
 }
 
-/// The commands `oer-tidy` accepts, for `__command-tree`.
-fn command_tree() -> Vec<oer_command_tree::CommandNode> {
-    let node =
-        |path: &[&str], subcommands: &[&str], flags: &[&str]| oer_command_tree::CommandNode {
-            path: path.iter().map(|word| (*word).to_owned()).collect(),
-            subcommands: subcommands.iter().map(|word| (*word).to_owned()).collect(),
-            flags: flags.iter().map(|word| (*word).to_owned()).collect(),
-            forwards: false,
-        };
-    vec![
-        node(
-            &["tidy"],
-            &["check", "workspaces", "chips", "fetch"],
-            &["--root"],
-        ),
-        node(&["tidy", "check"], &[], &[]),
-        node(&["tidy", "workspaces"], &[], &["--json"]),
-        node(&["tidy", "chips"], &[], &["--json"]),
-        node(&["tidy", "fetch"], &[], &[]),
-    ]
-}
-
 fn run() -> Result<ExitCode> {
+    use clap::{CommandFactory as _, Parser as _};
     if oer_command_tree::requested() {
-        println!("{}", oer_command_tree::json(&command_tree()));
+        let tree = oer_command_tree::command_tree(&Cli::command(), &[String::from("tidy")]);
+        println!("{}", oer_command_tree::json(&tree));
         return Ok(ExitCode::SUCCESS);
     }
-    let mut command = None;
-    let mut root_argument = None;
-    let mut json = false;
-    let mut arguments = std::env::args().skip(1);
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--root" => {
-                root_argument = Some(PathBuf::from(arguments.next().ok_or(USAGE)?));
-            }
-            "check" | "workspaces" | "chips" | "fetch" if command.is_none() => {
-                command = Some(argument)
-            }
-            "--json" => json = true,
-            "-h" | "--help" => {
-                println!("{USAGE}");
-                return Ok(ExitCode::SUCCESS);
-            }
-            _ => return Err(USAGE.to_owned()),
-        }
-    }
+    let cli = Cli::parse();
     let started = Instant::now();
-    let repo = Repo::from_git(&root_argument.unwrap_or_else(oer_process::built_root))?;
-    match command.as_deref() {
-        Some("workspaces") => {
+    let repo = Repo::from_git(&cli.root.unwrap_or_else(oer_process::built_root))?;
+    match cli.command {
+        Some(Command::Workspaces { json }) => {
             let manifests = Model::load(&repo)?.workspaces().to_vec();
             if json {
                 println!("{}", serde_json::Value::from(manifests));
@@ -88,7 +82,7 @@ fn run() -> Result<ExitCode> {
             }
             return Ok(ExitCode::SUCCESS);
         }
-        Some("chips") => {
+        Some(Command::Chips { json }) => {
             let chips = oer_repo::Chips::load(&repo)?;
             if json {
                 let chips: Vec<serde_json::Value> = chips
@@ -110,13 +104,12 @@ fn run() -> Result<ExitCode> {
             }
             return Ok(ExitCode::SUCCESS);
         }
-        Some("fetch") if !json => {
+        Some(Command::Fetch) => {
             let cargo = oer_toolchain::cargo_program();
             oer_tidy::fetch::run(&repo, Path::new(&cargo))?;
             return Ok(ExitCode::SUCCESS);
         }
-        _ if json => return Err(USAGE.to_owned()),
-        _ => {}
+        Some(Command::Check) | None => {}
     }
     let outcomes = oer_tidy::run(&repo)?;
     let mut failed = false;

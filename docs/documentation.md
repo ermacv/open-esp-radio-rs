@@ -113,7 +113,9 @@ Use the repository's pinned toolchain for examples and API documentation.
 repository path named in inline code (such as `crates/memory/`) still exists,
 checks every `cargo xtask`, `cargo tidy`, `cargo hil`, `cargo qualification`,
 `cargo registers` and `cargo blobray` command in inline code and shell code
-blocks against the command tree the tool prints for `__command-tree` (each
+blocks against the command tree the tool prints for `__command-tree`, which
+every tool walks from its one clap parser (`oer_command_tree::command_tree`),
+so no command is listed without the handler its parser dispatches to (each
 subcommand exists, each long flag is accepted by its command or an ancestor;
 Blobray's tree is the committed `tools/blobray/cli/command-tree.json`, which
 its tests keep current), and checks/renders static

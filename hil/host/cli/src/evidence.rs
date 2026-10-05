@@ -7,35 +7,34 @@
 //! `cargo qualification hil-evidence --hil-target CHIP --pending`, which
 //! reads the runs itself; the stand never runs the evaluator.
 
-use std::ffi::OsString;
-
 use oer_hil_run_bundle::{RunStore, store::pending};
 
 use crate::Result;
 use oer_process::Checkout;
 
-const HELP: &str = "\
-usage: cargo hil evidence pending
-       cargo hil evidence dismiss --run ID ...
-
-pending  list this checkout's clean runs whose evidence is not recorded;
-         `cargo qualification hil-evidence --hil-target CHIP --pending`
-         records them as tracked shards in hil/evidence/<chip>/
-dismiss  drop runs whose evidence will not be recorded, such as runs whose
-         inputs changed since, from the pending list";
+/// `cargo hil evidence`.
+#[derive(clap::Subcommand)]
+pub(crate) enum EvidenceCli {
+    /// List this checkout's clean runs whose evidence is not recorded;
+    /// `cargo qualification hil-evidence --hil-target CHIP --pending`
+    /// records them as tracked shards in hil/evidence/<chip>/.
+    Pending,
+    /// Drop runs whose evidence will not be recorded, such as runs whose
+    /// inputs changed since, from the pending list.
+    Dismiss {
+        #[arg(long = "run", value_name = "ID", required = true)]
+        runs: Vec<String>,
+    },
+}
 
 /// `cargo hil evidence ...`.
-pub fn command(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> {
-    let args = args
-        .iter()
-        .map(|arg| arg.to_str().ok_or("arguments must be UTF-8"))
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    match args.split_first() {
-        Some((&"dismiss", rest)) => {
-            let runs = dismiss(&ctx.root, rest)?;
-            println!("hil: dismissed {runs} pending run(s)");
+pub(crate) fn command(ctx: &Checkout, cli: EvidenceCli) -> Result<std::process::ExitCode> {
+    match cli {
+        EvidenceCli::Dismiss { runs } => {
+            pending::forget(&ctx.root, &runs)?;
+            println!("hil: dismissed {} pending run(s)", runs.len());
         }
-        Some((&"pending", [])) => {
+        EvidenceCli::Pending => {
             let store = RunStore::shared()?;
             let pending = pending::load(&ctx.root)?
                 .into_iter()
@@ -54,29 +53,8 @@ pub fn command(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCo
                 );
             }
         }
-        _ => {
-            println!("{HELP}");
-        }
     }
     Ok(std::process::ExitCode::SUCCESS)
-}
-
-/// Drop the `--run` runs whose evidence will not be recorded from the pending
-/// list; returns how many were named.
-fn dismiss(root: &std::path::Path, args: &[&str]) -> Result<usize> {
-    let mut runs = Vec::new();
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        match *arg {
-            "--run" => runs.push(rest.next().ok_or("--run needs a run ID")?.to_string()),
-            other => return Err(format!("unknown argument {other}\n{HELP}").into()),
-        }
-    }
-    if runs.is_empty() {
-        return Err(format!("dismiss needs --run ID\n{HELP}").into());
-    }
-    pending::forget(root, &runs)?;
-    Ok(runs.len())
 }
 
 #[cfg(test)]
@@ -84,20 +62,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dismissing_drops_only_the_named_runs_and_needs_one() {
-        let root = tempfile::tempdir().unwrap();
-        let entry = |run: &str| pending::Pending {
-            run: run.into(),
-            scenarios: vec![String::from("a")],
-            owner: String::from("wifi"),
+    fn dismissing_names_at_least_one_run() {
+        use clap::Parser as _;
+        #[derive(clap::Parser)]
+        struct Wrap {
+            #[command(subcommand)]
+            command: EvidenceCli,
+        }
+        assert!(Wrap::try_parse_from(["x", "dismiss"]).is_err());
+        let Wrap {
+            command: EvidenceCli::Dismiss { runs },
+        } = Wrap::try_parse_from(["x", "dismiss", "--run", "r1", "--run", "r3"]).unwrap()
+        else {
+            panic!("dismiss parses as dismiss");
         };
-        pending::remember(root.path(), &[entry("r1"), entry("r2"), entry("r3")]).unwrap();
-        assert!(dismiss(root.path(), &[]).is_err());
-        assert!(dismiss(root.path(), &["r1"]).is_err());
-        assert_eq!(
-            dismiss(root.path(), &["--run", "r1", "--run", "r3"]).unwrap(),
-            2
-        );
-        assert_eq!(pending::load(root.path()).unwrap(), [entry("r2")]);
+        assert_eq!(runs, ["r1", "r3"]);
+        assert!(Wrap::try_parse_from(["x", "pending"]).is_ok());
     }
 }

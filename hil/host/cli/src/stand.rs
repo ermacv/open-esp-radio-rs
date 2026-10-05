@@ -1,16 +1,13 @@
 //! `cargo hil stand discover|doctor`: the stand file against the host,
 //! through `oer-hil-stand-host`.
 
-use std::ffi::OsString;
-
 use oer_hil_stand_host::{discover, doctor};
 use oer_hil_stand_model::StandFile;
 
 use crate::Result;
 use oer_process::Checkout;
 
-#[derive(clap::Parser)]
-#[command(name = "cargo hil stand", no_binary_name = true)]
+#[derive(clap::Subcommand)]
 pub(crate) enum StandCli {
     /// Map each attached board to its hub port and button and compare the
     /// result with the stand file, which it never changes.
@@ -32,11 +29,10 @@ pub(crate) enum StandCli {
 pub(crate) fn stand(
     ctx: &Checkout,
     owner: impl FnOnce() -> Result<String>,
-    args: &[OsString],
+    cli: StandCli,
 ) -> Result<std::process::ExitCode> {
-    use clap::Parser as _;
     let path = oer_hil_stand_model::paths::stand_file()?;
-    match StandCli::try_parse_from(args)? {
+    match cli {
         StandCli::Discover {
             blink: Some(target),
             ..

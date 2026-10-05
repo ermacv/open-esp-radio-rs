@@ -22,6 +22,7 @@ blobray-application = { path = "../crates/application" }
 blobray-domain = { path = "../crates/domain" }
 oer-riscv-model = { path = "../../riscv/model" }
 clap = { version = "=4.5.48", features = ["derive"] }
+oer-command-tree = { path = "../../command-tree", features = ["clap"] }
 serde_json = "=1.0.151"
 serde = { version = "=1.0.229", features = ["derive"] }
 

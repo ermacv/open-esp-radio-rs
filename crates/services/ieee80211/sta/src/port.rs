@@ -23,7 +23,7 @@
 //! composition polls beside the station; the station runs in one task and
 //! [`PortLink`] reads the router's queues and transmits through it, so no
 //! two consumers compete for the port's events. A loss is an
-//! [`PortInput::EventsLost`] input, and an exchange whose completion was in
+//! [`PortInput::EventsLost`](oer_ieee80211_upper_mac_service::client::PortInput::EventsLost) input, and an exchange whose completion was in
 //! the gap cancels its attempt; the terminal poisoned event ends every phase
 //! with [`PortLinkError::Poisoned`].
 

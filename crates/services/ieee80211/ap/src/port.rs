@@ -1,7 +1,7 @@
 //! The access point over the lower-MAC port.
 //!
 //! A [`PortAccessPoint`] owns its interface's
-//! [`PortClient`](oer_ieee80211_upper_mac_service::client::PortClient), its
+//! [`PortClient`], its
 //! beacon and the [`AccessPointService`] of its BSS (peers, security and
 //! the management sequence beacons and responses share).
 //! [`PortAccessPoint::start`] tunes the port to the BSS's channel,

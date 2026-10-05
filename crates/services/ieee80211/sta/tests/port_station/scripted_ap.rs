@@ -99,6 +99,11 @@ pub struct ScriptedAp {
     pub tim_unicast: bool,
     pub beacons_sent: usize,
     pub tsf_offset: u64,
+    /// The primary channel its BSS operates on.
+    pub channel: u8,
+    /// Elements its beacons carry after all others: a Channel Switch
+    /// Announcement.
+    pub beacon_extra: Vec<u8>,
     sae_commit: Option<SaeCommit>,
     sae_keys: Option<SaeKeys>,
     pmk: Option<Pmk>,
@@ -143,6 +148,8 @@ impl ScriptedAp {
             tim_unicast: false,
             beacons_sent: 0,
             tsf_offset: 1_000_000,
+            channel: AP_CHANNEL,
+            beacon_extra: Vec::new(),
             sae_commit: None,
             sae_keys: None,
             pmk: match security {
@@ -234,6 +241,14 @@ impl ScriptedAp {
     /// One step: read what the station submitted, send the TBTT and beacon
     /// that are due, and deliver one queued frame. Whether anything
     /// happened.
+    /// The access point hears the station and is heard only on its primary
+    /// channel, at 20 or 40 MHz.
+    fn on_channel(&self, model: &Model) -> bool {
+        model.channel().is_some_and(|channel| {
+            channel.band() == Band::Ghz2_4 && channel.number() == self.channel
+        })
+    }
+
     pub fn step(&mut self, model: &Model, now_micros: u64) -> bool {
         let mut progress = false;
         let submitted = model.submitted();
@@ -259,7 +274,7 @@ impl ScriptedAp {
         if model.queued_events() == 0
             && let Some((frame, meta)) = self.outbox.pop_front()
         {
-            if on_channel(model) {
+            if self.on_channel(model) {
                 model.receive(&frame, meta);
             }
             progress = true;
@@ -279,7 +294,7 @@ impl ScriptedAp {
                         .try_into()
                         .expect("a Probe Request's address 1"),
                 );
-                if on_channel(model) && self.answers_probes {
+                if self.on_channel(model) && self.answers_probes {
                     let response = self.beacon(0x50, STA, 0);
                     self.outbox.push_back((response, meta(false)));
                 }
@@ -462,7 +477,7 @@ impl ScriptedAp {
         frame.extend_from_slice(SSID);
         frame.extend_from_slice(&[1, RATES.len() as u8]);
         frame.extend_from_slice(&RATES);
-        frame.extend_from_slice(&[3, 1, AP_CHANNEL]);
+        frame.extend_from_slice(&[3, 1, self.channel]);
         if frame_control == 0x80 {
             // TIM: DTIM count 0 of period 1; the station's AID bit when
             // traffic waits for it.
@@ -484,7 +499,7 @@ impl ScriptedAp {
             // HT Operation: the primary channel, the secondary above and
             // any channel width allowed.
             let mut operation = [0_u8; 24];
-            operation[..4].copy_from_slice(&[61, 22, AP_CHANNEL, 0x05]);
+            operation[..4].copy_from_slice(&[61, 22, self.channel, 0x05]);
             frame.extend_from_slice(&operation);
         } else if self.ht || self.he_bss_color.is_some() {
             frame.extend_from_slice(&HT_CAPABILITIES);
@@ -497,6 +512,9 @@ impl ScriptedAp {
         }
         if let Some(wmm) = &self.wmm_beacon {
             frame.extend_from_slice(wmm);
+        }
+        if frame_control == 0x80 {
+            frame.extend_from_slice(&self.beacon_extra);
         }
         frame
     }
@@ -611,14 +629,6 @@ impl ScriptedAp {
 /// association's Message 3 delivers.
 pub fn bip_transmitter() -> oer_ieee80211_rsn::bip::BipTransmitter {
     oer_ieee80211_rsn::bip::BipTransmitter::new(&RsnIgtk::new(4, [0; 6], IGTK).unwrap())
-}
-
-/// The access point hears the station and is heard only on its primary
-/// channel, at 20 or 40 MHz.
-fn on_channel(model: &Model) -> bool {
-    model
-        .channel()
-        .is_some_and(|channel| channel.band() == Band::Ghz2_4 && channel.number() == AP_CHANNEL)
 }
 
 /// Metadata of a frame the backend received; a protected one was

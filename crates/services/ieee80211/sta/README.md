@@ -213,6 +213,22 @@ sends the probes of `STATION_LINK_PROBE`, three addressed to the access
 point and two broadcast, 500 ms apart, and leaves with
 `PortDisconnect::BeaconLoss` after the last goes unanswered.
 
+The station follows its access point's announced channel switches but does
+not retune itself: the port's channel belongs to the port's owner, which
+keeps it for every interface. A Channel Switch or Extended Channel Switch
+Announcement in a beacon, or in an action frame addressed to the station,
+ends `run_until` with `PortStationEvent::ChannelSwitch` (the target, the
+mode and the instant, the announced count of beacon intervals after the
+frame's reception). Later beacons that count down to the same switch report
+nothing new. Under `StopTransmitting` the station sends no frame, link probe
+or ADDBA Request until the switch, and the network's frames wait in its
+queues. Once the owner has retuned the port it calls
+`PortStation::channel_switched`, and the beacon window restarts on the new
+channel. `PortStationLifecycle`, the owner of a port with no other client,
+retunes at the announced instant itself. Announcements that are malformed or
+name a channel the station cannot represent are counted
+(`PortRxCounters::channel_switch_refused`).
+
 It answers no Trigger frame and no NDP Announcement: HE Trigger-based
 response and beamformee feedback have no verified path on any backend, so
 the port has no extension for them (#153, #154) and a profile advertises

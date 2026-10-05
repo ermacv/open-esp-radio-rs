@@ -37,8 +37,8 @@ mod station;
 mod wire;
 
 pub use connected::{
-    PortConnection, PortConnectionBuffers, PortConnectionConfig, PortDisconnect, PortRxCounters,
-    PortTxCounters,
+    PortChannelSwitch, PortConnection, PortConnectionBuffers, PortConnectionConfig, PortDisconnect,
+    PortRxCounters, PortStationEvent, PortTxCounters,
 };
 pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{

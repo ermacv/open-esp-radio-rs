@@ -8,7 +8,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 use oer_ieee80211_datapath::SoftwareTxFrame;
-use oer_ieee80211_lower_mac::TxBody as _;
+use oer_ieee80211_lower_mac::{LowerMacMonitor as _, TxBody as _};
 use oer_network_interface::NetworkInterfaceId;
 
 use oer_ieee80211_lower_mac::Ieee80211Instant;
@@ -32,7 +32,7 @@ use oer_ieee80211_upper_mac::{
     TxReport, TxRequest,
 };
 use oer_ieee80211_upper_mac_service::{
-    AmpduFrames, EventRouter, TxMpdu, UpperMacTx, UpperMacTxError,
+    AmpduFrames, AttachError, EventRouter, TxMpdu, UpperMacTx, UpperMacTxError,
     client::{PortClient, PortClientConfig, PortClientEnv, PortClientError},
     frame::NetworkBody,
 };
@@ -722,6 +722,8 @@ fn poll_once<F: Future>(future: core::pin::Pin<&mut F>) -> Poll<F::Output> {
 fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
     let model = enabled_station();
     let router = Router::new(&model, 100);
+    // The station's interface takes the frames the port receives.
+    let _station = router.attach(STATION, VifRole::Station, ADDRESS).unwrap();
     let mut best_effort = driver(&router);
     let mut voice = driver(&router);
     let be_frame = qos_data(30, [1, 0, 0, 0x20, 0, 0, 0, 0], 40);
@@ -792,7 +794,7 @@ fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
 
     // The received frames waited in the router's receive queue.
     for _ in 0..2 {
-        let Poll::Ready(Some(Ok(event))) = poll_once(pin!(router.received())) else {
+        let Poll::Ready(Some(Ok(event))) = poll_once(pin!(router.received(STATION))) else {
             panic!("a received frame");
         };
         assert!(matches!(
@@ -802,13 +804,15 @@ fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
         received += 1;
     }
     assert_eq!(received, 2);
-    assert!(poll_once(pin!(router.received())).is_pending());
+    assert!(poll_once(pin!(router.received(STATION))).is_pending());
 }
 
 #[test]
 fn a_loss_is_recovered_by_cancelling_the_attempt_in_flight() {
     let model = enabled_station();
     let router = Router::new(&model, 100);
+    // The station's interface takes the frames the port receives.
+    let _station = router.attach(STATION, VifRole::Station, ADDRESS).unwrap();
     let mut tx = driver(&router);
     let frame = qos_data(40, [5, 0, 0, 0x20, 0, 0, 0, 0], 40);
     let mut entropy_3 = Seeded(1);
@@ -838,7 +842,7 @@ fn a_loss_is_recovered_by_cancelling_the_attempt_in_flight() {
     // The receive queue reports its own loss after the frames it kept.
     let mut frames = 0;
     loop {
-        match poll_once(pin!(router.received())) {
+        match poll_once(pin!(router.received(STATION))) {
             Poll::Ready(Some(Ok(_))) => frames += 1,
             Poll::Ready(Some(Err(_))) => break,
             other => panic!("unexpected {other:?}", other = other.is_pending()),
@@ -945,6 +949,7 @@ fn client<'r>(router: &'r Router<'r>, role: VifRole) -> PortClient<'r, ClientEnv
             retry_limit: 7,
         },
     )
+    .expect("the interface is free")
 }
 
 #[test]
@@ -987,4 +992,130 @@ fn a_frame_without_its_first_address_is_refused_before_the_port() {
         Err(PortClientError::FrameTooShort)
     );
     assert!(model.submitted().is_empty());
+}
+
+/// The access point's interface of the routing tests, beside the station's.
+const ACCESS_POINT: VifId = VifId(1);
+const AP_ADDRESS: MacAddress = [0x02, 0, 0, 0, 0, 0xa0];
+const UPSTREAM: MacAddress = [0x02, 0, 0, 0, 0, 0xb0];
+const CLIENT: MacAddress = [0x02, 0, 0, 0, 0, 0xc0];
+const ELSEWHERE: MacAddress = [0x02, 0, 0, 0, 0, 0xd0];
+
+/// A frame of `frame_control` from `transmitter` to `receiver` in BSS
+/// `bssid`.
+fn frame_of(
+    frame_control: [u8; 2],
+    receiver: MacAddress,
+    transmitter: MacAddress,
+    bssid: MacAddress,
+) -> [u8; 24] {
+    let mut frame = [0_u8; 24];
+    frame[..2].copy_from_slice(&frame_control);
+    frame[4..10].copy_from_slice(&receiver);
+    frame[10..16].copy_from_slice(&transmitter);
+    frame[16..22].copy_from_slice(&bssid);
+    frame
+}
+
+/// A model that receives every frame, so the router alone routes them.
+fn receiving_everything() -> Model {
+    let model = enabled_station();
+    assert_eq!(model.set_monitor(true), Ok(Ok(())));
+    model
+}
+
+fn deliver(model: &Model, frame: &[u8]) {
+    model.receive(
+        frame,
+        RxMeta::unavailable(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap()),
+    );
+}
+
+/// The transmitter of every frame queued for `vif`, in order.
+fn transmitters(router: &Router<'_>, vif: VifId) -> Vec<MacAddress> {
+    let mut transmitters = Vec::new();
+    while let Poll::Ready(Some(Ok(event))) = poll_once(pin!(router.received(vif))) {
+        let LowerMacEvent::Received { frame, .. } = Model::view(&event) else {
+            panic!("a received frame");
+        };
+        transmitters.push(frame[10..16].try_into().unwrap());
+    }
+    transmitters
+}
+
+#[test]
+fn the_only_attached_interface_takes_every_frame_and_none_takes_none() {
+    let model = receiving_everything();
+    let router = Router::new(&model, 1);
+    let mut routing = pin!(router.run());
+    deliver(
+        &model,
+        &frame_of([0x80, 0], [0xff; 6], ELSEWHERE, ELSEWHERE),
+    );
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert_eq!(router.unrouted_frames(), 1);
+
+    let station = router.attach(STATION, VifRole::Station, ADDRESS).unwrap();
+    assert_eq!(
+        router.attach(STATION, VifRole::Station, ADDRESS).err(),
+        Some(AttachError::Taken)
+    );
+    assert_eq!(
+        router.attach(VifId(5), VifRole::Station, ADDRESS).err(),
+        Some(AttachError::UnknownVif)
+    );
+    deliver(
+        &model,
+        &frame_of([0x80, 0], [0xff; 6], ELSEWHERE, ELSEWHERE),
+    );
+    deliver(&model, &frame_of([0x08, 0x02], ADDRESS, UPSTREAM, UPSTREAM));
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert_eq!(transmitters(&router, STATION), [ELSEWHERE, UPSTREAM]);
+
+    // Detached: its queued frames are gone and the interface is free.
+    deliver(&model, &frame_of([0x08, 0x02], ADDRESS, UPSTREAM, UPSTREAM));
+    assert!(poll_once(routing.as_mut()).is_pending());
+    drop(station);
+    assert!(transmitters(&router, STATION).is_empty());
+    assert!(router.attach(STATION, VifRole::Station, ADDRESS).is_ok());
+}
+
+#[test]
+fn a_station_and_an_access_point_on_one_port_split_the_frames_by_their_addresses() {
+    let model = receiving_everything();
+    let router = Router::new(&model, 1);
+    let mut routing = pin!(router.run());
+    let station = router.attach(STATION, VifRole::Station, ADDRESS).unwrap();
+    let _access_point = router
+        .attach(ACCESS_POINT, VifRole::AccessPoint, AP_ADDRESS)
+        .unwrap();
+
+    // Scanning: another BSS's beacon is the station's, a broadcast Probe
+    // Request the access point's, a client's data to it the access point's.
+    deliver(
+        &model,
+        &frame_of([0x80, 0], [0xff; 6], ELSEWHERE, ELSEWHERE),
+    );
+    deliver(&model, &frame_of([0x40, 0], [0xff; 6], CLIENT, [0xff; 6]));
+    deliver(
+        &model,
+        &frame_of([0x08, 0x01], AP_ADDRESS, CLIENT, AP_ADDRESS),
+    );
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert_eq!(transmitters(&router, STATION), [ELSEWHERE]);
+    assert_eq!(transmitters(&router, ACCESS_POINT), [CLIENT, CLIENT]);
+
+    // Joined: its access point's data and beacons are the station's, another
+    // BSS's beacon nobody's.
+    station.set_bssid(Some(UPSTREAM));
+    deliver(&model, &frame_of([0x08, 0x02], ADDRESS, UPSTREAM, UPSTREAM));
+    deliver(&model, &frame_of([0x80, 0], [0xff; 6], UPSTREAM, UPSTREAM));
+    deliver(
+        &model,
+        &frame_of([0x80, 0], [0xff; 6], ELSEWHERE, ELSEWHERE),
+    );
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert_eq!(transmitters(&router, STATION), [UPSTREAM, UPSTREAM]);
+    assert!(transmitters(&router, ACCESS_POINT).is_empty());
+    assert_eq!(router.unrouted_frames(), 1);
 }

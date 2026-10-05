@@ -13,10 +13,18 @@ the backend's runner, takes every event and dispatches it:
 - a completion goes to the exchange that registered its `TxId`
   (`register(id)` before the submission, `completion(id)`), so exchanges on
   different access categories run concurrently over one port;
-- received frames and `RxTooLong` reports go to a bounded receive queue
-  (`received()`), lifecycle terminals to `lifecycle()` and extension events
-  such as TBTTs to `extension()`, each reporting its own `EventsLost` in
-  place of the first entry it dropped;
+- received frames and `RxTooLong` reports go to the bounded receive queue
+  of the interface they belong to (`received(vif)`), extension events such
+  as TBTTs to the station's (`extension(vif)`), and lifecycle terminals to
+  `lifecycle()`, each reporting its own `EventsLost` in place of the first
+  entry it dropped. Every client attaches its interface (`attach(vif, role,
+  address)`, up to `ROUTER_VIFS`, released when the `Attachment` drops): the
+  only attached interface takes every frame, and a station and an access
+  point on one port split them by their addresses
+  (`oer-ieee80211-mac`'s `classify_sta_ap_rx`), a station that has not
+  joined a BSS taking what neither proves is the access point's, as it
+  scans. A frame no attached interface owns is counted (`unrouted_frames`)
+  and dropped;
 - `EventsLost` from the port marks every exchange still waiting; the
   exchange cancels its attempt by its identity and either receives the
   completion or, when the cancel is refused as not running, learns from
@@ -27,8 +35,10 @@ A service talks to the port through one `client::PortClient` per interface
 (`PortClientEnv` names the port, the planner's HE TXOP budget, the rate
 ladder, the backoff entropy and its `Aggregation`, `aggregate::PortAmpduAggregation`
 over a port with `LowerMacAmpdu` or `NoAggregation`; `PortClientConfig` the interface's VIF,
-address, role, power and retry limit). The client reads the router's receive
-and extension queues as `PortInput`s (`Frame(PortFrame)` in the port's own
+address, role, power and retry limit). `PortClient::new` attaches the
+interface, refusing one another client holds; configuring the interface's
+BSS (`configure`) routes that BSS's frames to it. The client reads its
+interface's receive and extension queues as `PortInput`s (`Frame(PortFrame)` in the port's own
 `RxBuffer`, `Tbtt`, `EventsLost`, `Poisoned`), transmits MPDUs and A-MPDUs
 through its `UpperMacTx`, and applies settings, the BSS's EDCA parameters,
 its interface configuration, retunes and lifecycle commands, with every

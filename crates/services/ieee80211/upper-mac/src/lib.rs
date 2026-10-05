@@ -39,7 +39,9 @@ pub mod reorder;
 pub mod router;
 pub mod rx_hold;
 
-pub use router::{Awaited, EventRouter, Registration, RouterFull};
+pub use router::{
+    AttachError, Attachment, Awaited, EventRouter, ROUTER_VIFS, Registration, RouterFull,
+};
 
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduPayload, CancelError, Ieee80211LowerMacPort, KeySelector, LowerMacAmpdu,

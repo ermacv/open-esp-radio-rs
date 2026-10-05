@@ -7,18 +7,25 @@
 //!
 //! - an attempt completion goes to the exchange that registered its
 //!   [`TxId`] ([`EventRouter::completion`]);
-//! - received frames and oversize-drop reports go to a bounded receive
-//!   queue ([`EventRouter::received`]);
-//! - lifecycle terminals and extension events (a TBTT) go to queues of their
-//!   own ([`EventRouter::lifecycle`], [`EventRouter::extension`]);
+//! - received frames and oversize-drop reports go to the bounded receive
+//!   queue of the interface they belong to ([`EventRouter::received`]), and
+//!   extension events (a TBTT) to the station's ([`EventRouter::extension`]):
+//!   every client of the port attaches its interface
+//!   ([`EventRouter::attach`]), and with a station and an access point on
+//!   one port a frame goes where its addresses put it
+//!   ([`classify_sta_ap_rx`]);
+//! - lifecycle terminals go to a queue of their own, which the port's owner
+//!   reads ([`EventRouter::lifecycle`]);
 //! - [`EventsLost`] marks every registered exchange whose completion has not
 //!   arrived, which recovers by cancelling its attempt, and is reported in
 //!   order by each queue;
 //! - the terminal [`Poisoned`] event ends the router and every wait.
 //!
 //! A bounded queue that overflows reports its own [`EventsLost`] in place of
-//! the first dropped entry. A completion no exchange registered is counted
-//! ([`EventRouter::unclaimed_completions`]) and dropped.
+//! the first dropped entry. A completion no exchange registered, and a frame
+//! no attached interface owns, is counted
+//! ([`EventRouter::unclaimed_completions`], [`EventRouter::unrouted_frames`])
+//! and dropped.
 //!
 //! The router owns no executor: [`EventRouter::run`] and the waits are
 //! futures that share the router by reference on one executor.
@@ -31,9 +38,10 @@ use core::{
 };
 
 use oer_ieee80211_lower_mac::{
-    CorrelationIds, EventsLost, Ieee80211LowerMacPort, LifecycleEvent, LowerMacEvent, Poisoned,
-    TxCompletion, TxId,
+    CorrelationIds, EventsLost, Ieee80211LowerMacPort, LifecycleEvent, LowerMacEvent, MacAddress,
+    Poisoned, TxCompletion, TxId, VifId, VifRole,
 };
+use oer_ieee80211_mac::vif::{StaApRxAddresses, StaApRxRoute, StaApVif, classify_sta_ap_rx};
 
 /// How a wait for an attempt's completion ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +59,65 @@ pub enum Awaited {
 /// Every completion slot is registered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RouterFull;
+
+/// Interfaces one router serves: a station and an access point.
+pub const ROUTER_VIFS: usize = 2;
+
+/// Why an interface could not attach to the router.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AttachError {
+    /// The interface is beyond [`ROUTER_VIFS`].
+    UnknownVif,
+    /// Another client holds the interface.
+    Taken,
+}
+
+/// The receive identity of an attached interface.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Route {
+    role: VifRole,
+    address: MacAddress,
+    /// The BSS a station joined; an access point's is its own address.
+    bssid: Option<MacAddress>,
+}
+
+/// The interface index `routes` sends `frame` to, if any: the only attached
+/// interface takes every frame; a station and an access point split them by
+/// their addresses, a station that has not joined a BSS taking what neither
+/// proves is the access point's, as it scans.
+fn route(routes: &[Option<Route>; ROUTER_VIFS], frame: &[u8]) -> Option<usize> {
+    let mut attached = routes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, route)| Some((index, (*route)?)));
+    let first = attached.next()?;
+    let Some(second) = attached.next() else {
+        return Some(first.0);
+    };
+    let (station, access_point) = match (first.1.role, second.1.role) {
+        (VifRole::Station, VifRole::AccessPoint) => (first, second),
+        (VifRole::AccessPoint, VifRole::Station) => (second, first),
+        // Two interfaces of one role: the frame's receiver decides.
+        _ => {
+            let receiver: [u8; 6] = frame.get(4..10)?.try_into().ok()?;
+            return [first, second]
+                .into_iter()
+                .find(|(_, route)| route.address == receiver)
+                .map(|(index, _)| index);
+        }
+    };
+    let addresses = StaApRxAddresses {
+        station: station.1.address,
+        station_bssid: station.1.bssid.unwrap_or([0; 6]),
+        access_point: access_point.1.address,
+    };
+    match classify_sta_ap_rx(frame, addresses) {
+        StaApRxRoute::Interface(StaApVif::Station) => Some(station.0),
+        StaApRxRoute::Interface(StaApVif::AccessPoint) => Some(access_point.0),
+        StaApRxRoute::Foreign if station.1.bssid.is_none() => Some(station.0),
+        StaApRxRoute::Foreign | StaApRxRoute::Ambiguous | StaApRxRoute::Malformed => None,
+    }
+}
 
 struct Waiter {
     id: TxId,
@@ -132,9 +199,12 @@ const SMALL_QUEUE: usize = 4;
 
 struct State<E, const WAITERS: usize, const RX: usize> {
     waiters: [Option<Waiter>; WAITERS],
-    received: Ring<E, RX>,
+    routes: [Option<Route>; ROUTER_VIFS],
+    received: [Ring<E, RX>; ROUTER_VIFS],
     lifecycle: Ring<LifecycleEvent, SMALL_QUEUE>,
-    extension: Ring<E, SMALL_QUEUE>,
+    extension: [Ring<E, SMALL_QUEUE>; ROUTER_VIFS],
+    /// Received frames no attached interface owns.
+    unrouted: u32,
     poisoned: bool,
     /// How often the router found the port's queue empty.
     idle: u32,
@@ -162,9 +232,11 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
             port,
             state: RefCell::new(State {
                 waiters: core::array::from_fn(|_| None),
-                received: Ring::new(),
+                routes: [None; ROUTER_VIFS],
+                received: core::array::from_fn(|_| Ring::new()),
                 lifecycle: Ring::new(),
-                extension: Ring::new(),
+                extension: core::array::from_fn(|_| Ring::new()),
+                unrouted: 0,
                 poisoned: false,
                 idle: 0,
                 router: None,
@@ -193,6 +265,36 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
     /// Completions that arrived for no registered identity.
     pub fn unclaimed_completions(&self) -> u32 {
         self.state.borrow().unclaimed
+    }
+
+    /// Received frames no attached interface owned.
+    pub fn unrouted_frames(&self) -> u32 {
+        self.state.borrow().unrouted
+    }
+
+    /// Attach interface `vif` of `role` and `address`: from now on the
+    /// router queues the frames that belong to it, until the returned
+    /// attachment drops.
+    pub fn attach(
+        &self,
+        vif: VifId,
+        role: VifRole,
+        address: MacAddress,
+    ) -> Result<Attachment<'_, 'p, P, WAITERS, RX>, AttachError> {
+        let mut state = self.state.borrow_mut();
+        let slot = state
+            .routes
+            .get_mut(usize::from(vif.0))
+            .ok_or(AttachError::UnknownVif)?;
+        if slot.is_some() {
+            return Err(AttachError::Taken);
+        }
+        *slot = Some(Route {
+            role,
+            address,
+            bssid: (role == VifRole::AccessPoint).then_some(address),
+        });
+        Ok(Attachment { router: self, vif })
     }
 
     /// Take and dispatch the port's events until it reports its terminal
@@ -242,9 +344,13 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                         }
                     }
                 }
-                state.received.mark_lost();
+                for queue in &mut state.received {
+                    queue.mark_lost();
+                }
                 state.lifecycle.mark_lost();
-                state.extension.mark_lost();
+                for queue in &mut state.extension {
+                    queue.mark_lost();
+                }
                 return Ok(());
             }
         };
@@ -265,11 +371,22 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                     None => state.unclaimed = state.unclaimed.saturating_add(1),
                 }
             }
-            LowerMacEvent::Received { .. } | LowerMacEvent::RxTooLong { .. } => {
-                state.received.push(event);
-            }
+            LowerMacEvent::Received { frame, .. } => match route(&state.routes, frame) {
+                Some(index) => state.received[index].push(event),
+                None => state.unrouted = state.unrouted.saturating_add(1),
+            },
+            // An oversize report names no interface: the station's, which
+            // counts it, or the only one attached.
+            LowerMacEvent::RxTooLong { .. } => match state.station() {
+                Some(index) => state.received[index].push(event),
+                None => state.unrouted = state.unrouted.saturating_add(1),
+            },
             LowerMacEvent::Lifecycle(lifecycle) => state.lifecycle.push(lifecycle),
-            LowerMacEvent::Extension => state.extension.push(event),
+            // A TBTT is the station's.
+            LowerMacEvent::Extension => match state.station() {
+                Some(index) => state.extension[index].push(event),
+                None => state.unrouted = state.unrouted.saturating_add(1),
+            },
             LowerMacEvent::Poisoned(Poisoned) => {
                 state.poisoned = true;
                 for waiter in state.waiters.iter_mut().flatten() {
@@ -277,9 +394,13 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                         waker.wake();
                     }
                 }
-                state.received.wake();
+                for queue in &mut state.received {
+                    queue.wake();
+                }
                 state.lifecycle.wake();
-                state.extension.wake();
+                for queue in &mut state.extension {
+                    queue.wake();
+                }
                 return Err(Poisoned);
             }
         }
@@ -372,14 +493,17 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
         .await
     }
 
-    /// The next received frame or oversize-drop report, viewed through the
-    /// port; [`EventsLost`] when frames were dropped. `None` once the port
-    /// is poisoned and the queue is empty.
-    pub async fn received(&self) -> Option<Result<P::Event, EventsLost>> {
+    /// The next received frame or oversize-drop report of interface `vif`,
+    /// viewed through the port; [`EventsLost`] when frames were dropped.
+    /// `None` once the port is poisoned and the queue is empty, and for an
+    /// interface beyond [`ROUTER_VIFS`].
+    pub async fn received(&self, vif: VifId) -> Option<Result<P::Event, EventsLost>> {
         poll_fn(|context| {
             let mut state = self.state.borrow_mut();
             let poisoned = state.poisoned;
-            let queue = &mut state.received;
+            let Some(queue) = state.received.get_mut(usize::from(vif.0)) else {
+                return Poll::Ready(None);
+            };
             match queue.take() {
                 Some(entry) => Poll::Ready(Some(entry)),
                 None if poisoned => Poll::Ready(None),
@@ -411,13 +535,16 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
         .await
     }
 
-    /// The next extension event (a TBTT), read through the extension's
-    /// view; `None` once the port is poisoned and the queue is empty.
-    pub async fn extension(&self) -> Option<Result<P::Event, EventsLost>> {
+    /// The next extension event (a TBTT) of interface `vif`, read through
+    /// the extension's view; `None` once the port is poisoned and the queue
+    /// is empty, and for an interface beyond [`ROUTER_VIFS`].
+    pub async fn extension(&self, vif: VifId) -> Option<Result<P::Event, EventsLost>> {
         poll_fn(|context| {
             let mut state = self.state.borrow_mut();
             let poisoned = state.poisoned;
-            let queue = &mut state.extension;
+            let Some(queue) = state.extension.get_mut(usize::from(vif.0)) else {
+                return Poll::Ready(None);
+            };
             match queue.take() {
                 Some(entry) => Poll::Ready(Some(entry)),
                 None if poisoned => Poll::Ready(None),
@@ -428,6 +555,70 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
             }
         })
         .await
+    }
+}
+
+impl<E, const WAITERS: usize, const RX: usize> State<E, WAITERS, RX> {
+    /// The station interface attached, or the only interface.
+    fn station(&self) -> Option<usize> {
+        let mut attached = self
+            .routes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, route)| Some((index, (*route)?)));
+        let first = attached.next()?;
+        match attached.next() {
+            None => Some(first.0),
+            Some(second) => [first, second]
+                .into_iter()
+                .find(|(_, route)| route.role == VifRole::Station)
+                .map(|(index, _)| index),
+        }
+    }
+}
+
+/// An interface attached to the router; dropping it detaches the interface
+/// and discards the frames queued for it.
+pub struct Attachment<'r, 'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> {
+    router: &'r EventRouter<'p, P, WAITERS, RX>,
+    vif: VifId,
+}
+
+impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
+    Attachment<'_, '_, P, WAITERS, RX>
+{
+    /// The attached interface.
+    pub const fn vif(&self) -> VifId {
+        self.vif
+    }
+
+    /// The BSS the station joined, or `None` while it has none; the frames
+    /// of that BSS are its own from now on.
+    pub fn set_bssid(&self, bssid: Option<MacAddress>) {
+        let mut state = self.router.state.borrow_mut();
+        if let Some(Some(route)) = state.routes.get_mut(usize::from(self.vif.0))
+            && route.role == VifRole::Station
+        {
+            route.bssid = bssid;
+        }
+    }
+}
+
+impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
+    for Attachment<'_, '_, P, WAITERS, RX>
+{
+    fn drop(&mut self) {
+        let mut state = self.router.state.borrow_mut();
+        let index = usize::from(self.vif.0);
+        if let Some(route) = state.routes.get_mut(index) {
+            *route = None;
+        }
+        if let Some(queue) = state.received.get_mut(index) {
+            while queue.take().is_some() {}
+        }
+        if let Some(queue) = state.extension.get_mut(index) {
+            while queue.take().is_some() {}
+        }
     }
 }
 

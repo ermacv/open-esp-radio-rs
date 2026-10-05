@@ -12,8 +12,8 @@ peers, security and power save); frame codecs belong to `oer-ieee80211-mac`.
 | --- | --- |
 | `PortApEnv` | The port and transmit policy (`PortClientEnv`), the image's monotonic `Timer` the `PortApAuthenticator` that gives each handshake an unpredictable authenticator nonce and its initial replay counter, and the `PortApSae` executor of a WPA3 BSS's SAE responder (`NoSae` for another BSS) |
 | `PortApSae`, `InlineSae` | The access point submits one SAE frame at a time and polls for its output beside the port's input, so a Commit's elliptic-curve work runs where the composition places the executor while the BSS goes on; `InlineSae` runs the responder inline; a frame submitted while the last output is not taken is dropped (`sae_dropped`) |
-| `PortApProfile` | The BSS: SSID, channel, beacon interval, DTIM period, the claimed `Advertisement`, the management rate (beacons, management, group data), the data rate to a peer, the coexistence priority and the CCMP packet-number step; its security is the `AccessPointService`'s |
-| `PortApStorage` | The memory the composition places: the beacon template, the transmit queue (`oer-ieee80211-upper-mac-service::queue::TxQueue`) and the `PORT_AP_BUFFERED` frames held for power save, shared by every dozing peer and the group |
+| `PortApProfile` | The BSS: SSID, channel, beacon interval, DTIM period, the claimed `Advertisement`, the management rate (beacons, management, group data), the data rate to a peer, the coexistence priority, the CCMP packet-number step and the receive reorder gap time; its security is the `AccessPointService`'s |
+| `PortApStorage` | The memory the composition places: the beacon template, the transmit queue (`oer-ieee80211-upper-mac-service::queue::TxQueue`) the `PORT_AP_BUFFERED` frames held for power save, shared by every dozing peer and the group, and the peers' receive Block Ack reordering (`oer-ieee80211-upper-mac-service::reorder::RxReorder`, `AP_MAX_CLIENTS` agreements) |
 | `PortAccessPoint::send` | Queues one Ethernet-II frame at its user priority (`PortApSend::Queued`, or `Full`); `run_until` sends the queue |
 | `PortAccessPoint::new` | Takes the client, the timer, the authenticator, the SAE executor, the profile, the BSS's `AccessPointService` (peers, security, the management sequence beacons and responses share) and the storage; refuses a service of another address |
 | `PortAccessPoint::start` | Tunes the port to the BSS's channel, configures the access-point interface with `BSS_MEMBER` and `PROBE_REQUESTS`, restarts its TSF and, in a WPA2 BSS, installs the group key |
@@ -49,7 +49,16 @@ the TIM of the peers with held frames and the group bit; a PS-Poll gets one
 held frame, a peer that wakes gets every one, and the group frames a DTIM
 beacon announced follow it, More Data set while more remain (`held`,
 `held_dropped` with every slot taken, `released`). A peer's held frames go
-with it. Not served yet: Block Ack actions (counted in `unserved`), aggregation, rate
+with it. Receive Block Ack: an authorized peer's ADDBA Request is accepted when the
+port and the reorder storage can hold its window (the port installs the
+agreement, and the response succeeds) or declined; its data of that TID is
+reordered before its packet-number check and decapsulation, an in-order MPDU
+from the port's buffer and a kept one from the storage; its BlockAckReq
+moves the window, a kept run goes past its gap after the profile's gap time,
+and its DELBA or its removal ends the agreement in the port too
+(`rx_agreements`, `behind_window`, `unbuffered`, `reorder_gap_timeouts`).
+Not served yet: the access point's own TX Block Ack agreements and
+aggregation (their actions are counted in `unserved`), rate
 control and fragments (`malformed`).
 
 Tests: `tests/port_access_point.rs` runs the access point over the

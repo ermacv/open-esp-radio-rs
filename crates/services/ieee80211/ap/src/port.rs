@@ -101,6 +101,16 @@ use oer_ieee80211_mac::ap::{ApPowerSaveObservation, observe_ap_power_save_for_ac
 use oer_ieee80211_mac::beacon::dtim;
 use oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY;
 
+use oer_ieee80211_lower_mac::{RxBlockAckAgreement, VifId};
+use oer_ieee80211_mac::ap::ApActionFrame;
+use oer_ieee80211_mac::block_ack::{
+    ADDBA_ACTION_BODY_LEN, BlockAckAction, write_declined_addba_response,
+    write_successful_addba_response,
+};
+use oer_ieee80211_upper_mac_service::reorder::{
+    CURRENT_SLOT, Offer, PORT_REORDER_WINDOW, ReorderRelease, RxReorder,
+};
+
 /// Exchanges of the access point that wait for a completion at once.
 pub const PORT_AP_EXCHANGES: usize = 2;
 /// Received frames the router keeps for the access point.
@@ -240,6 +250,9 @@ pub struct PortApProfile<'a> {
     pub coex: CoexPriority,
     /// The step of the CCMP packet numbers the access point sends under.
     pub ccmp_step: CcmpPacketNumberStep,
+    /// How long a receive reorder window keeps an MPDU behind a missing
+    /// one before it releases its run past the gap.
+    pub rx_reorder_gap: Duration,
 }
 
 /// Frames the access point holds for dozing peers and for the next DTIM,
@@ -252,6 +265,9 @@ pub struct PortApStorage {
     beacon: [u8; AP_BEACON_CAPACITY],
     queue: TxQueue,
     buffered: PowerSaveBuffer,
+    /// The peers' receive Block Ack agreements, one per peer at most on
+    /// average, and their kept MPDUs.
+    reorder: RxReorder<AP_MAX_CLIENTS>,
 }
 
 impl PortApStorage {
@@ -260,6 +276,7 @@ impl PortApStorage {
             beacon: [0; AP_BEACON_CAPACITY],
             queue: TxQueue::new(),
             buffered: PowerSaveBuffer::new(),
+            reorder: RxReorder::new(),
         }
     }
 }
@@ -415,6 +432,14 @@ pub struct PortApCounters {
     pub replayed: u32,
     /// MPDUs that do not decapsulate, fragments included.
     pub malformed: u32,
+    /// Receive Block Ack agreements accepted.
+    pub rx_agreements: u32,
+    /// MPDUs behind a Block Ack window.
+    pub behind_window: u32,
+    /// Out-of-order MPDUs longer than a storage slot.
+    pub unbuffered: u32,
+    /// Buffered runs a reorder window released past a gap.
+    pub reorder_gap_timeouts: u32,
     /// Frames held for a dozing peer or the next DTIM.
     pub held: u32,
     /// Frames for a dozing peer or the group dropped with every slot
@@ -512,6 +537,7 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     group_transmit: CcmpTxPacketNumber,
     queue: &'p mut TxQueue,
     buffered: &'p mut PowerSaveBuffer,
+    reorder: &'p mut RxReorder<AP_MAX_CLIENTS>,
     /// The protection the beacon template carries.
     advertised: ApBssProtection,
     /// Before it no Probe Response goes out.
@@ -535,6 +561,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             beacon,
             queue,
             buffered,
+            reorder,
         } = storage;
         if service.address() != client.config().address {
             return Err(PortApBuildError::AddressMismatch);
@@ -564,6 +591,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             group_transmit: CcmpTxPacketNumber::new(profile.ccmp_step),
             queue,
             buffered,
+            reorder,
             advertised: ApBssProtection::default(),
             next_probe_response: Instant::EPOCH,
             counters: PortApCounters::default(),
@@ -697,6 +725,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     fn remove_peer(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
         self.remove_pairwise_key(peer)?;
         self.buffered.drop_for(peer);
+        self.stop_rx_agreements(peer)?;
         self.sae.forget(peer);
         self.service.remove_peer(peer)?;
         Ok(())
@@ -734,6 +763,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 }
                 ApWpa2RetryProgress::None => {}
             }
+            self.expire_reorder_gaps(now, deliver);
             if let Some(frame) = self.queue.pop() {
                 self.dispatch(frame.ethernet()).await?;
                 continue;
@@ -745,6 +775,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 self.beacon.next_publication(),
                 self.service.next_peer_deadline(),
                 self.service.next_wpa2_retry_deadline(),
+                self.reorder.next_gap_deadline(),
             ]
             .into_iter()
             .flatten()
@@ -1014,6 +1045,23 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             }
             return Ok(());
         }
+        // A BlockAckReq of an authorized peer moves its agreement's window.
+        if frame.len() >= 20
+            && frame[0] == 0x84
+            && frame.get(4..10) == Some(self.service.address().as_slice())
+        {
+            let peer = [
+                frame[10], frame[11], frame[12], frame[13], frame[14], frame[15],
+            ];
+            let tid = frame[17] >> 4;
+            let start =
+                SequenceNumber::from_sequence_control(u16::from_le_bytes([frame[18], frame[19]]));
+            if self.service.is_authorized(peer)
+                && let Some(release) = self.reorder.move_window(peer, tid, start)
+            {
+                self.release(peer, &release, None, deliver);
+            }
+        }
         if let Some(observation) = power_save {
             return self.power_save(observation, now).await;
         }
@@ -1074,6 +1122,11 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     self.counters.sae_dropped = self.counters.sae_dropped.saturating_add(1);
                 }
                 Ok(())
+            }
+            Some(ApManagementRequest::BlockAck { peer, action })
+                if self.service.is_authorized(peer) =>
+            {
+                self.block_ack_action(peer, action).await
             }
             Some(
                 ApManagementRequest::SaeAuthentication { .. }
@@ -1463,11 +1516,6 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             return Ok(());
         }
         let qos = bytes[0] & 0x80 != 0;
-        let header = if qos {
-            IEEE80211_QOS_DATA_HEADER_LEN
-        } else {
-            IEEE80211_LEGACY_DATA_HEADER_LEN
-        };
         let (Some(sequence), Some(tid)) = (
             bytes
                 .get(22..24)
@@ -1493,47 +1541,143 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             self.counters.duplicates = self.counters.duplicates.saturating_add(1);
             return Ok(());
         }
-        let offset = match (protected_bss, protected) {
-            (false, false) => header,
-            (true, true) if decrypted(meta) => {
-                let Some(ccmp) = bytes
-                    .get(header..header + CCMP_HEADER_LEN)
-                    .and_then(|ccmp| <[u8; CCMP_HEADER_LEN]>::try_from(ccmp).ok())
-                    .and_then(|ccmp| CcmpHeader::parse(ccmp).ok())
-                    .filter(|ccmp| ccmp.key_id().value() == 0)
-                else {
-                    self.counters.malformed = self.counters.malformed.saturating_add(1);
-                    return Ok(());
-                };
-                let lane = tid.map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
-                if link
-                    .replay
-                    .commit_immediate(lane, ccmp.packet_number())
-                    .is_err()
-                {
-                    self.counters.replayed = self.counters.replayed.saturating_add(1);
-                    return Ok(());
-                }
-                header + CCMP_HEADER_LEN
-            }
+        match (protected_bss, protected) {
+            (false, false) => {}
+            (true, true) if decrypted(meta) => {}
             _ => {
                 self.counters.rx_rejected = self.counters.rx_rejected.saturating_add(1);
                 return Ok(());
             }
+        }
+        match tid.filter(|tid| self.reorder.is_active(peer, *tid)) {
+            Some(tid) => self.reorder_mpdu(peer, tid, received, deliver),
+            None => self.deliver_mpdu(peer, received, deliver),
+        }
+        Ok(())
+    }
+
+    /// Offer one MPDU of a peer's Block Ack agreement to its reorder
+    /// window: an MPDU it releases at once goes from the port's buffer, one
+    /// it keeps is copied into the storage.
+    fn reorder_mpdu(
+        &mut self,
+        peer: [u8; 6],
+        tid: u8,
+        frame: PortFrame<PortRxBuffer<X>>,
+        deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
+    ) {
+        let mut make_room = true;
+        loop {
+            match self.reorder.offer(peer, tid, frame.bytes(), make_room) {
+                Offer::MakeRoom(release) => {
+                    self.release(peer, &release, None, deliver);
+                    make_room = false;
+                }
+                Offer::Released { release, current } => {
+                    self.release(peer, &release, current.then_some(frame), deliver);
+                    return;
+                }
+                Offer::Duplicate => {
+                    self.counters.duplicates = self.counters.duplicates.saturating_add(1);
+                    return;
+                }
+                Offer::Behind => {
+                    self.counters.behind_window = self.counters.behind_window.saturating_add(1);
+                    return;
+                }
+                Offer::Unbuffered => {
+                    self.counters.unbuffered = self.counters.unbuffered.saturating_add(1);
+                    return;
+                }
+                Offer::NoAgreement | Offer::Dropped => return,
+            }
+        }
+    }
+
+    /// Deliver a released run of `peer`'s window in order.
+    fn release(
+        &mut self,
+        peer: [u8; 6],
+        release: &ReorderRelease,
+        mut current: Option<PortFrame<PortRxBuffer<X>>>,
+        deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
+    ) {
+        for mpdu in release.iter() {
+            if mpdu.slot == CURRENT_SLOT {
+                if let Some(frame) = current.take() {
+                    self.deliver_mpdu(peer, frame, deliver);
+                }
+            } else if let Some(stored) = self.reorder.take(mpdu.slot) {
+                self.deliver_stored(peer, stored.bytes(), deliver);
+            }
+        }
+    }
+
+    /// The payload of one in-order data MPDU of `peer` after its CCMP
+    /// replay check in a protected BSS; `None` for a replay or a malformed
+    /// MPDU, which it counts.
+    fn checked_payload(&mut self, peer: [u8; 6], bytes: &[u8]) -> Option<(usize, usize)> {
+        let qos = bytes.first()? & 0x80 != 0;
+        let header = if qos {
+            IEEE80211_QOS_DATA_HEADER_LEN
+        } else {
+            IEEE80211_LEGACY_DATA_HEADER_LEN
+        };
+        let offset = if self.service.link_protection() == LinkProtection::Ccmp {
+            let tid = qos
+                .then(|| bytes.get(24).map(|control| control & 0x0f))
+                .flatten();
+            let Some(ccmp) = bytes
+                .get(header..header + CCMP_HEADER_LEN)
+                .and_then(|ccmp| <[u8; CCMP_HEADER_LEN]>::try_from(ccmp).ok())
+                .and_then(|ccmp| CcmpHeader::parse(ccmp).ok())
+                .filter(|ccmp| ccmp.key_id().value() == 0)
+            else {
+                self.counters.malformed = self.counters.malformed.saturating_add(1);
+                return None;
+            };
+            let lane = tid.map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
+            let link = self.link_mut(peer)?;
+            if link
+                .replay
+                .commit_immediate(lane, ccmp.packet_number())
+                .is_err()
+            {
+                self.counters.replayed = self.counters.replayed.saturating_add(1);
+                return None;
+            }
+            header + CCMP_HEADER_LEN
+        } else {
+            header
         };
         let Some(length) = bytes.len().checked_sub(offset) else {
             self.counters.malformed = self.counters.malformed.saturating_add(1);
-            return Ok(());
+            return None;
+        };
+        Some((offset, length))
+    }
+
+    /// Check one in-order MPDU and hand its MSDUs on: the only MSDU of an
+    /// MPDU in the port's buffer, an A-MSDU's as parts.
+    fn deliver_mpdu(
+        &mut self,
+        peer: [u8; 6],
+        frame: PortFrame<PortRxBuffer<X>>,
+        deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
+    ) {
+        let bytes = frame.bytes();
+        let Some((offset, length)) = self.checked_payload(peer, bytes) else {
+            return;
         };
         match plan_data_decapsulation(DataInterfaceRole::AccessPoint, bytes, offset, length) {
             Ok(plan) => {
                 let payload = plan.payload_offset..plan.payload_offset + plan.payload_length;
                 if bytes.get(payload.clone()).is_none() || plan.ether_type == EAPOL_ETHER_TYPE {
-                    return Ok(());
+                    return;
                 }
                 self.counters.delivered = self.counters.delivered.saturating_add(1);
                 deliver(PortMsdu::Buffer {
-                    buffer: received.into_buffer(),
+                    buffer: frame.into_buffer(),
                     destination: plan.destination,
                     source: plan.source,
                     ether_type: plan.ether_type,
@@ -1541,29 +1685,169 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 });
             }
             Err(DataDecapError::AmsduUnsupported) => {
-                let Ok(frames) =
-                    decapsulate_data_frames(DataInterfaceRole::AccessPoint, bytes, offset, length)
-                else {
-                    self.counters.malformed = self.counters.malformed.saturating_add(1);
-                    return Ok(());
-                };
-                for parts in frames {
-                    match parts {
-                        Ok(parts) if parts.ether_type == EAPOL_ETHER_TYPE => {}
-                        Ok(parts) => {
-                            self.counters.delivered = self.counters.delivered.saturating_add(1);
-                            deliver(PortMsdu::Parts(parts));
-                        }
-                        Err(_) => {
-                            self.counters.malformed = self.counters.malformed.saturating_add(1);
-                            return Ok(());
-                        }
-                    }
-                }
+                self.deliver_parts(bytes, offset, length, deliver)
             }
             Err(_) => self.counters.malformed = self.counters.malformed.saturating_add(1),
         }
+    }
+
+    /// Check one MPDU a window kept and hand its MSDUs on as parts.
+    fn deliver_stored(
+        &mut self,
+        peer: [u8; 6],
+        bytes: &[u8],
+        deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
+    ) {
+        if let Some((offset, length)) = self.checked_payload(peer, bytes) {
+            self.deliver_parts(bytes, offset, length, deliver);
+        }
+    }
+
+    fn deliver_parts(
+        &mut self,
+        bytes: &[u8],
+        offset: usize,
+        length: usize,
+        deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
+    ) {
+        let Ok(frames) =
+            decapsulate_data_frames(DataInterfaceRole::AccessPoint, bytes, offset, length)
+        else {
+            self.counters.malformed = self.counters.malformed.saturating_add(1);
+            return;
+        };
+        for parts in frames {
+            match parts {
+                Ok(parts) if parts.ether_type == EAPOL_ETHER_TYPE => {}
+                Ok(parts) => {
+                    self.counters.delivered = self.counters.delivered.saturating_add(1);
+                    deliver(PortMsdu::Parts(parts));
+                }
+                Err(_) => {
+                    self.counters.malformed = self.counters.malformed.saturating_add(1);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Answer a peer's Block Ack action: accept an ADDBA Request whose
+    /// window the port and the storage can hold (or decline it), and end an
+    /// agreement the peer ends. The access point's own TX agreements are
+    /// not served yet.
+    async fn block_ack_action(
+        &mut self,
+        peer: [u8; 6],
+        action: BlockAckAction,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        match action {
+            BlockAckAction::AddbaRequest {
+                dialog_token,
+                tid,
+                window,
+                starting_sequence,
+                ..
+            } => {
+                let capabilities = self.client.port().capabilities();
+                let window = window
+                    .min(capabilities.rx_block_ack_max_window)
+                    .min(PORT_REORDER_WINDOW as u16);
+                let vif = self.client.config().vif;
+                let accepted = tid <= capabilities.rx_block_ack_max_tid
+                    && window != 0
+                    && self.reorder.accept(peer, tid, starting_sequence, window)
+                    && if self
+                        .client
+                        .apply(LowerMacSetting::AddRxBlockAck(RxBlockAckAgreement {
+                            vif,
+                            peer,
+                            tid,
+                            start_sequence: starting_sequence,
+                            window,
+                        }))
+                        .is_ok()
+                    {
+                        true
+                    } else {
+                        self.reorder.stop(peer, tid);
+                        false
+                    };
+                let mut body = [0_u8; ADDBA_ACTION_BODY_LEN];
+                if accepted {
+                    self.counters.rx_agreements = self.counters.rx_agreements.saturating_add(1);
+                    write_successful_addba_response(&mut body, dialog_token, tid, window)
+                } else {
+                    write_declined_addba_response(&mut body, dialog_token, tid & 0x0f, window)
+                }
+                .map_err(|_| PortApError::Service(ApServiceError::WrongPeerPhase))?;
+                let sequence_number = self.service.next_management_sequence();
+                let mut frame = [0_u8; 64];
+                let length = ApActionFrame {
+                    access_point: self.service.address(),
+                    peer,
+                    sequence_number,
+                    body: &body,
+                }
+                .encode(&mut frame)?;
+                self.send_management(&frame[..length]).await
+            }
+            BlockAckAction::Delba {
+                tid,
+                initiator: true,
+                ..
+            } => self.stop_rx_agreement(peer, tid),
+            _ => {
+                self.counters.unserved = self.counters.unserved.saturating_add(1);
+                Ok(())
+            }
+        }
+    }
+
+    /// End `peer`'s receive agreement of `tid` here and in the port.
+    fn stop_rx_agreement(
+        &mut self,
+        peer: [u8; 6],
+        tid: u8,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        if self.reorder.stop(peer, tid) {
+            let vif: VifId = self.client.config().vif;
+            self.client
+                .apply(LowerMacSetting::RemoveRxBlockAck { vif, peer, tid })?;
+        }
         Ok(())
+    }
+
+    /// End every receive agreement of `peer`.
+    fn stop_rx_agreements(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
+        let mut tids = [None; 16];
+        for (slot, tid) in tids.iter_mut().zip(self.reorder.agreements(peer)) {
+            *slot = Some(tid);
+        }
+        for tid in tids.into_iter().flatten() {
+            self.stop_rx_agreement(peer, tid)?;
+        }
+        Ok(())
+    }
+
+    /// Release the buffered run of every window whose gap timed out, then
+    /// time the gaps of the windows that keep an MPDU.
+    fn expire_reorder_gaps(
+        &mut self,
+        now: Instant,
+        deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
+    ) {
+        // The window's peer is the release's; releases of a removed peer
+        // were dropped with its agreements.
+        while let Some((peer, release)) = self.expire_due_gap(now) {
+            self.counters.reorder_gap_timeouts =
+                self.counters.reorder_gap_timeouts.saturating_add(1);
+            self.release(peer, &release, None, deliver);
+        }
+        self.reorder.arm_gaps(now, self.profile.rx_reorder_gap);
+    }
+
+    fn expire_due_gap(&mut self, now: Instant) -> Option<([u8; 6], ReorderRelease)> {
+        self.reorder.expire_due_gap(now)
     }
 
     /// Serve one EAPOL-Key frame of a peer in its handshake: answer

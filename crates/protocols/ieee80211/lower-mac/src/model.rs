@@ -364,6 +364,11 @@ impl LowerMacModel {
         }
     }
 
+    /// The receive Block Ack agreements the port holds.
+    pub fn rx_block_acks(&self) -> Vec<RxBlockAckAgreement> {
+        self.state.borrow().rx_block_ack.clone()
+    }
+
     /// The scopes of the keys installed, in slot order.
     pub fn installed_keys(&self) -> Vec<KeyScope> {
         self.state.borrow().keys.iter().flatten().copied().collect()

@@ -125,9 +125,10 @@ fn a_full_storage_makes_room_once_and_a_gap_expires_after_its_time() {
             .expire_due_gap(Instant::from_micros(300_999))
             .is_none()
     );
-    let release = reorder
+    let (peer, release) = reorder
         .expire_due_gap(Instant::from_micros(301_000))
         .unwrap();
+    assert_eq!(peer, PEER);
     assert_eq!(bodies(&mut reorder, &release, 0), [30]);
     reorder.arm_gaps(Instant::from_micros(301_000), Duration::from_millis(300));
     assert_eq!(reorder.next_gap_deadline(), None);

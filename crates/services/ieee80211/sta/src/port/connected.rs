@@ -1329,7 +1329,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         now: Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
     ) {
-        while let Some(release) = self.buffers.reorder.expire_due_gap(now) {
+        while let Some((_, release)) = self.buffers.reorder.expire_due_gap(now) {
             self.counters.reorder_gap_timeouts =
                 self.counters.reorder_gap_timeouts.saturating_add(1);
             self.release(&release, None, deliver);

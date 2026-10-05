@@ -23,3 +23,5 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "verification"
+host-app = "formats"
+host-boundary = "format"

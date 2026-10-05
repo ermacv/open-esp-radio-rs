@@ -11,7 +11,7 @@ description = "Reviewer reports of the typed vendor-comparison scenarios: untria
 [dependencies]
 oer-elf = { path = "../../../tools/elf" }
 oer-process = { path = "../../../tools/process" }
-oer-vendor-evidence-shard = { path = "../../evidence/shard" }
+oer-vendor-evidence-shard = { path = "../../evidence-shard" }
 oer-riscv-model = { path = "../../../tools/riscv/model" }
 oer-riscv-lift = { path = "../../../tools/riscv/lift" }
 oer-vendor-scenario-engine = { path = "../scenarios" }
@@ -26,3 +26,5 @@ layer = "verification"
 evidence = "report"
 platform = "host"
 host-layer = "verification"
+host-app = "verification"
+host-boundary = "application"

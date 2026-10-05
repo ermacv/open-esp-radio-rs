@@ -46,7 +46,8 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
   docs` checks every documented xtask, fw, stand, tidy, hil, qualification,
   registers, verification and blobray command against that tool's command
   tree.
-- Every host package declares its `open-radio.host-layer` and depends only
+- Every host package declares `open-radio.host-app`, `host-boundary` and
+  `host-layer`; app boundaries are enforced independently of layers. It depends only
   down the [host layers](../docs/architecture.md#host-layers); only entry
   crates spawn `cargo hil` or `cargo xtask`.
 - What runs where is the check registry's (`cargo xtask check tier
@@ -57,7 +58,7 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
 
 ## Commands (in the background)
 
-- `cargo test -p oer-xtask`, `cargo test -p oer-tidy` or `cargo test -p oer-repo`.
+- `cargo test -p oer-xtask`, `cargo test --manifest-path tools/tidy/Cargo.toml -p oer-tidy` or `cargo test -p oer-repo`.
 - `cargo tidy check` and `cargo xtask check docs`.
 - `cargo xtask check tier --list` prints the registry; `cargo xtask check
   tier full --job host` runs one CI job locally.

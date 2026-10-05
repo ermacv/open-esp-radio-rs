@@ -31,3 +31,9 @@ stand code; `orchestration` code drives runs (the runner, its families,
 images, the stand library) and may use stand operation; `operation` code
 only operates the stand (boards, flashing, the stand file) and never shapes
 a passed observation, so the evaluator's evidence closures leave it out.
+
+Host packages declare typed `host-app` ownership and `host-boundary`
+(`application`, `library`, `format`) alongside their host layer. The path
+dependency policy checks application boundaries independently of layers;
+[`architecture`](../../docs/architecture.md#host-applications) defines the
+shared consumers. Tidy requires both keys on every host-layer package.

@@ -46,7 +46,7 @@ Cargo runs offline here (`.cargo/config.toml`); these commands keep lock files, 
 
 | Command | Contract |
 | --- | --- |
-| `cargo xtask lock [--check]` | Update every workspace's `Cargo.lock` to its manifests after a dependency or pin change (online); `--check` only verifies, offline, that every lock matches its manifests and names every stale one. `cargo tidy fetch` downloads what the locks name and the cache lacks: it builds only `oer-tidy`, so it works after a pull that changed what xtask itself needs |
+| `cargo xtask lock [--check]` | Update every workspace's `Cargo.lock` to its manifests after a dependency or pin change (online); `--check` only verifies, offline, that every lock matches its manifests and names every stale one. `cargo tidy fetch` downloads what the locks name and the cache lacks: its independent host-only workspace builds offline without firmware Git sources, so it also works after a pull that moved a Git pin |
 | `cargo xtask worktree add PATH --branch B [--from REV]` / `remove PATH` / `prepare` | Create a Git worktree whose `target/` starts from this checkout's build outputs (without incremental data, HIL outputs and vendor firmware builds, whose CMake caches name the source checkout), so only the workspace's own crates rebuild; `remove` deletes it with its `target/`. When `target/` is a btrfs subvolume the seed is an instant snapshot, otherwise a reflink copy taking minutes; `prepare` turns this checkout's `target/` into a subvolume once (run it while no build uses `target/`) |
 
 ## Source and architecture checks
@@ -364,3 +364,7 @@ installation remain owned by HIL; xtask does not install fixtures or change
 network state. Linux process ownership uses explicit process groups.
 Unsupported hosts return an error when the required ownership backend is
 unavailable.
+
+The full `images` job also builds `boot-smoke` for every staged HIL target,
+including C5, through the same coverage, placement and stack gates as a run.
+Radio final images additionally receive Blobray's forbidden-ROM audit.

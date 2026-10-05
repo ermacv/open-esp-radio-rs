@@ -4,7 +4,15 @@ The native vendor-comparison evidence index of a chip
 (`verification/<chip>/evidence/scenarios`): one JSON shard per scenario, so
 each scenario run rewrites only its own file. Producers write it, `cargo
 verification evidence` keeps it current, and the qualification evaluator reads it.
-Everyone goes through this crate; nothing includes its sources by path.
+The shared data contract and store live in
+[`oer-vendor-evidence-shard`](../evidence-shard), a root-workspace format
+package. This verification workspace library owns comparison policy and
+producer orchestration. Qualification reads the format directly.
+
+The format is a peer of this package, with explicit `package.workspace`.
+Cargo can auto-claim a path dependency below a workspace member even when
+the inner workspace excludes that child; placing the shared format outside
+the member directory keeps both workspace entry points consistent.
 
 | Module | Owns |
 | --- | --- |
@@ -21,11 +29,11 @@ and the host stands ([`esp32s31/host/ieee802154`](../esp32s31/host/ieee802154/RE
 `command = "vendor-host"`). Which of them reruns which shard is decided by
 `run::regenerate`, which `cargo verification evidence` ([xtask](../../tools/xtask/README.md)) calls.
 
-Without its `producers` feature the crate depends only on the repository
-model, serde and SHA-256, so the Blobray workspace, the host stands, xtask
-and qualification share it; the feature adds the toolchain, chip profiles,
-vendor pins and the probe catalog validator for `run`.
+Without `producers` this library exposes comparison policy and the index
+API. `producers` adds toolchain, chip profiles and the probe orchestration.
+The gate invokes verification through its command line; qualification reads
+only the shared format.
 
 ```console
-cargo test -p oer-vendor-evidence --features producers
+cargo test --manifest-path verification/Cargo.toml -p oer-vendor-evidence --features producers
 ```

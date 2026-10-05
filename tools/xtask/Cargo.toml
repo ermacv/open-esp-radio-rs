@@ -28,5 +28,7 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "entry"
+host-app = "gate"
+host-boundary = "application"
 # The tests read the workflows, the hooks and the chip profiles.
 inputs = [".github/workflows", ".claude/hooks", "platform/*/chip.toml"]

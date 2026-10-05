@@ -37,6 +37,8 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "orchestration"
+host-app = "hil"
+host-boundary = "application"
 hil = "orchestration"
 # The tests read this checkout's wire lock.
 inputs = ["hil/protocol/messages.lock"]

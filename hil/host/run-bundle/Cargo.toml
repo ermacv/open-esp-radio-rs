@@ -38,6 +38,8 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "execution"
+host-app = "hil"
+host-boundary = "application"
 # The evaluator reads the evidence this package writes.
 inputs = ["qualification/evaluator"]
 hil = "observation"

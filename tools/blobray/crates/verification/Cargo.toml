@@ -19,3 +19,5 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "build"
+host-app = "blobray"
+host-boundary = "library"

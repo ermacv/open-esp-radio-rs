@@ -18,7 +18,9 @@
 
 use crate::{
     Model,
-    classification::{Classification, Evidence, Hil, HostLayer, Layer, Platform, Scope},
+    classification::{
+        Classification, Evidence, Hil, HostApp, HostBoundary, HostLayer, Layer, Platform, Scope,
+    },
     manifest::{Dependency, Kind},
 };
 
@@ -117,6 +119,38 @@ pub fn host_edge_allowed(source: Option<HostLayer>, target: Option<HostLayer>) -
     }
 }
 
+/// Whether an application can link this package of another owner. Shared
+/// libraries have explicit consumers; private application code never crosses
+/// the boundary. Host layers still constrain edges within these sets.
+pub fn application_edge_allowed(source: HostApp, target: HostApp, boundary: HostBoundary) -> bool {
+    use HostApp::*;
+    if source == target {
+        return true;
+    }
+    if boundary == HostBoundary::Application {
+        return false;
+    }
+    let permitted = match source {
+        Gate => target == Foundation,
+        Qualification | Foundation | Formats => matches!(target, Foundation | Formats),
+        Fw => matches!(target, Foundation | Devices | Images | Analysis | Formats),
+        Devices => matches!(target, Foundation | Formats),
+        Stand => matches!(target, Foundation | Devices | Formats),
+        Hil => matches!(
+            target,
+            Foundation | Devices | Images | Analysis | Formats | Stand | Verification
+        ),
+        Verification => matches!(
+            target,
+            Foundation | Images | Analysis | Formats | Blobray | Registers
+        ),
+        Blobray | Analysis => matches!(target, Foundation | Analysis | Formats),
+        Registers => matches!(target, Foundation | Analysis | Formats | Verification),
+        Images => matches!(target, Foundation | Analysis | Formats),
+    };
+    permitted && (target != Formats || boundary == HostBoundary::Format)
+}
+
 /// Every dependency of the model that breaks a rule, as
 /// `<manifest>: <problem>`. Unclassified packages are the classification
 /// check's; their edges are skipped.
@@ -139,6 +173,20 @@ pub fn check(model: &Model) -> Vec<String> {
                     problem(format!(
                         "verdict package {} depends on report package {}",
                         package.name, target.name
+                    ));
+                }
+                if let (Some(source_app), Some(target_app), Some(boundary)) =
+                    (source.host_app, class.host_app, class.host_boundary)
+                    && dependency.kind != Kind::Development
+                    && !application_edge_allowed(source_app, target_app, boundary)
+                {
+                    problem(format!(
+                        "host application {} package {} depends on {} {} package {}; applications link only their permitted shared libraries and formats",
+                        source_app.name(),
+                        package.name,
+                        target_app.name(),
+                        boundary.name(),
+                        target.name
                     ));
                 }
                 if !host_edge_allowed(source.host_layer, class.host_layer) {
@@ -443,6 +491,48 @@ mod tests {
                 &host("foundation"),
                 &format!("layer = \"role\"\n{PORTABLE}"),
                 "dependencies"
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn applications_link_only_their_declared_shared_boundaries() {
+        let host = |app: &str, boundary: &str| {
+            format!(
+                "layer = \"tool\"\nplatform = \"host\"\nhost-layer = \"entry\"\nhost-app = \"{app}\"\nhost-boundary = \"{boundary}\""
+            )
+        };
+        for kind in ["dependencies", "build-dependencies"] {
+            for (source, target, boundary) in [
+                ("fw", "stand", "library"),
+                ("gate", "images", "library"),
+                ("qualification", "hil", "library"),
+                ("hil", "stand", "application"),
+                ("verification", "blobray", "application"),
+            ] {
+                let problems = edge(&host(source, "application"), &host(target, boundary), kind);
+                assert_eq!(problems.len(), 1, "{source} -> {target}: {problems:?}");
+                assert!(problems[0].contains("applications link only"));
+            }
+            for (source, target, boundary) in [
+                ("fw", "images", "library"),
+                ("hil", "stand", "library"),
+                ("verification", "blobray", "library"),
+                ("qualification", "formats", "format"),
+                ("gate", "foundation", "library"),
+            ] {
+                assert!(
+                    edge(&host(source, "application"), &host(target, boundary), kind).is_empty()
+                );
+            }
+        }
+        // Tests may compose applications; normal/build dependencies cannot.
+        assert!(
+            edge(
+                &host("fw", "application"),
+                &host("stand", "application"),
+                "dev-dependencies"
             )
             .is_empty()
         );

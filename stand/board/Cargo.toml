@@ -31,6 +31,8 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "stand"
+host-app = "stand"
+host-boundary = "library"
 hil = "operation"
 # The tests read the example stand file and the chip profiles.
 inputs = ["stand/stand.example.toml", "platform/*/chip.toml"]

@@ -10,8 +10,9 @@ use crate::Context;
 
 pub fn check(context: &Context<'_>) -> Vec<String> {
     let manifests = &context.model.manifests;
+    let memberships = memberships(manifests);
     let mut problems = vec![];
-    for (manifest, membership) in memberships(manifests) {
+    for (&manifest, membership) in &memberships {
         if let Membership::Unclaimed(root) = membership {
             let root = if root.is_empty() { "the root" } else { root };
             problems.push(format!(
@@ -21,11 +22,46 @@ pub fn check(context: &Context<'_>) -> Vec<String> {
     }
     for workspace in &manifests.workspaces {
         for member in &workspace.members {
-            if manifests.package_at(member).is_none() {
+            if let Some(package) = manifests.package_at(member) {
+                let owner = context.model.workspace_of(package);
+                if owner != Some(workspace.manifest.as_str()) {
+                    problems.push(format!(
+                        "{}: member {} resolves to {}, not this workspace",
+                        workspace.manifest,
+                        package.manifest,
+                        owner.unwrap_or("no workspace")
+                    ));
+                }
+            } else {
                 problems.push(format!(
                     "{}: member {member} has no package manifest",
                     workspace.manifest
                 ));
+            }
+        }
+    }
+    for package in &manifests.packages {
+        if package.workspace.is_some()
+            || matches!(memberships[package.manifest.as_str()], Membership::Root)
+        {
+            continue;
+        }
+        // Cargo's inherited package fields consult the nearest declaration,
+        // even when an outer workspace lists a package the inner excludes.
+        // Explicit ownership makes both entry points agree.
+        let mut directory = package.directory.as_str();
+        while !directory.is_empty() {
+            directory = oer_repo::files::parent(directory);
+            if let Some(nearest) = manifests.workspace_at(directory) {
+                if let Some(owner) = context.model.workspace_of(package)
+                    && owner != nearest.manifest
+                {
+                    problems.push(format!(
+                        "{}: package.workspace must explicitly select {owner} across nested workspace {}",
+                        package.manifest, nearest.manifest
+                    ));
+                }
+                break;
             }
         }
     }
@@ -131,7 +167,7 @@ mod tests {
         ("firmware/app/Cargo.toml", "[package]\nname = \"app\"\n"),
         (
             "firmware/shared/Cargo.toml",
-            "[package]\nname = \"shared\"\n",
+            "[package]\nworkspace = \"../..\"\nname = \"shared\"\n",
         ),
         ("tools/stray/Cargo.toml", "[package]\nname = \"stray\"\n"),
         ("old/Cargo.lock", ""),
@@ -148,6 +184,39 @@ mod tests {
                 "island/Cargo.toml: workspace without island/Cargo.lock",
                 "old/Cargo.lock: lock file of no workspace root",
                 "tools/stray/Cargo.toml: the workspace at the root neither lists nor excludes this package",
+            ]
+        );
+    }
+
+    #[test]
+    fn nested_members_need_explicit_ownership_and_cannot_be_claimed_twice() {
+        let root = "[workspace]\nmembers = [\"inner/shared\"]\n";
+        let inner = "[workspace]\nmembers = []\nexclude = [\"shared\"]\n";
+        let implicit = "[package]\nname = \"shared\"\n";
+        let explicit = "[package]\nname = \"shared\"\nworkspace = \"../..\"\n";
+        let files = |package, workspace| {
+            [
+                ("Cargo.toml", root),
+                ("Cargo.lock", ""),
+                ("inner/Cargo.toml", workspace),
+                ("inner/Cargo.lock", ""),
+                ("inner/shared/Cargo.toml", package),
+            ]
+        };
+        assert_eq!(
+            problems(&files(implicit, inner), check),
+            [
+                "inner/shared/Cargo.toml: package.workspace must explicitly select Cargo.toml across nested workspace inner/Cargo.toml"
+            ]
+        );
+        assert!(problems(&files(explicit, inner), check).is_empty());
+        assert_eq!(
+            problems(
+                &files(explicit, "[workspace]\nmembers = [\"shared\"]\n"),
+                check
+            ),
+            [
+                "inner/Cargo.toml: member inner/shared/Cargo.toml resolves to Cargo.toml, not this workspace"
             ]
         );
     }

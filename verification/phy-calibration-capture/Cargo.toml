@@ -1,4 +1,5 @@
 [package]
+workspace = "../.."
 name = "oer-phy-calibration-capture"
 version.workspace = true
 edition.workspace = true
@@ -19,3 +20,5 @@ layer = "verification"
 evidence = "verdict"
 platform = "host"
 host-layer = "foundation"
+host-app = "formats"
+host-boundary = "format"

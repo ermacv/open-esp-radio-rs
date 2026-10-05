@@ -20,6 +20,8 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "foundation"
+host-app = "formats"
+host-boundary = "format"
 hil = "observation"
 # A contract and format leaf: the DTOs evidence and qualification share; no
 # execution code.

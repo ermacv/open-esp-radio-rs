@@ -25,6 +25,8 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "execution"
+host-app = "hil"
+host-boundary = "application"
 hil = "observation"
 # The agent tests read every chip profile and HIL target workspace.
 inputs = ["platform/*/chip.toml", "platform/*/Cargo.toml", "hil/targets/**/Cargo.toml"]

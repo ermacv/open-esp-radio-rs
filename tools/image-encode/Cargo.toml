@@ -26,4 +26,6 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "foundation"
+host-app = "images"
+host-boundary = "library"
 inputs = ["platform/*/chip.toml", "platform/espressif/staged-layout/fixtures/stage-two.txt"]

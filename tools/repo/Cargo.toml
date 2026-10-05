@@ -24,5 +24,7 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "foundation"
+host-app = "foundation"
+host-boundary = "library"
 # The tests read this checkout's model.
 inputs = ["**/Cargo.toml", "platform/*/chip.toml"]

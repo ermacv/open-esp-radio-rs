@@ -27,3 +27,5 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "build"
+host-app = "analysis"
+host-boundary = "library"

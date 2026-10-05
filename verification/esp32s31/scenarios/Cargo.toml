@@ -12,7 +12,7 @@ description = "Typed ESP32-S31 vendor-comparison scenarios driven through the Bl
 oer-elf = { path = "../../../tools/elf" }
 oer-durable = { path = "../../../tools/durable" }
 oer-process = { path = "../../../tools/process" }
-oer-vendor-evidence-shard = { path = "../../evidence/shard" }
+oer-vendor-evidence-shard = { path = "../../evidence-shard" }
 oer-riscv-model = { path = "../../../tools/riscv/model" }
 blobray-application = { path = "../../../tools/blobray/crates/application" }
 blobray-domain = { path = "../../../tools/blobray/crates/domain" }
@@ -33,3 +33,5 @@ layer = "verification"
 evidence = "verdict"
 platform = "host"
 host-layer = "verification"
+host-app = "verification"
+host-boundary = "application"

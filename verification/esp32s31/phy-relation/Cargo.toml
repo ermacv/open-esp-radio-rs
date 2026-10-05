@@ -1,4 +1,5 @@
 [package]
+workspace = "../../.."
 name = "oer-esp32s31-phy-relation"
 version.workspace = true
 edition.workspace = true
@@ -24,4 +25,6 @@ layer = "verification"
 evidence = "verdict"
 platform = "portable"
 host-layer = "verification"
+host-app = "verification"
+host-boundary = "library"
 test-feature-sets = ["projection"]

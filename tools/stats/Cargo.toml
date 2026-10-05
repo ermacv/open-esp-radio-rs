@@ -17,3 +17,5 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "foundation"
+host-app = "foundation"
+host-boundary = "library"

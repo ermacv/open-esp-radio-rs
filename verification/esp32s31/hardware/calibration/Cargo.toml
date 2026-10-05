@@ -1,4 +1,5 @@
 [package]
+workspace = "../../../.."
 name = "oer-esp32s31-phy-vendor-calibration"
 version.workspace = true
 edition.workspace = true
@@ -26,3 +27,5 @@ layer = "verification"
 evidence = "verdict"
 platform = "host"
 host-layer = "verification"
+host-app = "verification"
+host-boundary = "library"

@@ -15,7 +15,7 @@ oer-command-tree = { path = "../../tools/command-tree" }
 oer-hil-schema = { path = "../../hil/schema" }
 oer-markers = { path = "../../tools/markers" }
 oer-repo = { path = "../../tools/repo" }
-oer-vendor-evidence-shard = { path = "../../verification/evidence/shard" }
+oer-vendor-evidence-shard = { path = "../../verification/evidence-shard" }
 serde = { version = "=1.0.229", features = ["derive", "rc"] }
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"
@@ -37,6 +37,8 @@ workspace = true
 layer = "qualification"
 platform = "host"
 host-layer = "entry"
+host-app = "qualification"
+host-boundary = "application"
 # The tests read every catalog, program and review, and resolve image
 # sources through the repository model of this checkout.
 inputs = ["qualification", "**/Cargo.toml", "platform/*/chip.toml"]

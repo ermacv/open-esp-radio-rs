@@ -28,4 +28,6 @@ workspace = true
 layer = "tool"
 platform = "host"
 host-layer = "build"
+host-app = "analysis"
+host-boundary = "library"
 inputs = ["platform/*/linker/rom/functions.toml", "platform/*/chip.toml"]

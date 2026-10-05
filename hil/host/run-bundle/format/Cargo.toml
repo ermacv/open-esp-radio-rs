@@ -26,4 +26,6 @@ workspace = true
 layer = "hil"
 platform = "host"
 host-layer = "foundation"
+host-app = "formats"
+host-boundary = "format"
 hil = "observation"

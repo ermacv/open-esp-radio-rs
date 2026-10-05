@@ -31,7 +31,6 @@ members = [
     "tools/stats",
     "tools/symbol-lineage",
     "tools/toolchain",
-    "tools/tidy",
     "tools/markers",
     "tools/check/phy-archive",
     "tools/vendor-artifacts",
@@ -39,7 +38,7 @@ members = [
     "tools/repo",
     "verification/*/hardware/calibration",
     "verification/*/phy-relation",
-    "verification/evidence/shard",
+    "verification/evidence-shard",
     "verification/phy-calibration-capture",
     "hil/image-keys",
     "hil/protocol",
@@ -178,8 +177,8 @@ members = [
     "tools/registers/model",
     "tools/registers/review",
 ]
-# Firmware workspaces below the root: their packages belong to them.
-exclude = ["examples", "platform", "hil/targets"]
+# Independent workspaces below the root keep their own package ownership.
+exclude = ["examples", "platform", "hil/targets", "tools/tidy"]
 resolver = "3"
 
 [workspace.package]
@@ -220,11 +219,6 @@ debug = "line-tables-only"
 [profile.dev.package.sha2]
 opt-level = 3
 
-# The integrity tier lexes every Rust file of the tree; optimized, it runs in
-# about a second instead of five.
-[profile.dev.package.oer-tidy]
-opt-level = 3
-
 [profile.blobray]
 inherits = "dev"
 opt-level = 3
@@ -248,4 +242,3 @@ codegen-units = 16
 embassy-futures = { version = "0.1.2", registry = "crates-io" }
 embassy-sync = { version = "0.8.0", registry = "crates-io" }
 embassy-time = { version = "0.5.1", registry = "crates-io" }
-

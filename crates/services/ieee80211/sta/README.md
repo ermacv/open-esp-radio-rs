@@ -190,9 +190,13 @@ The coexistence schedule belongs to the radio system the station shares its
 RF with, not to the Wi-Fi MAC behind the port: the environment names it once
 as `PortStationEnv::Coex` (`PortCoexistence`; `NoCoexistence` for a station
 alone on its RF). The power manager decides every input with its `view()`
-and hands it every `PmCoexAction`: event requests and releases, the schedule
-interval, phase restarts and the flexible period. A refused effect ends the
-operation with `PortLinkError::Coexistence`. The beacon receive priority is
+and hands it every `PmCoexAction` (`perform`, which may wait for a radio
+system that shares its schedule under a lock): event requests and releases,
+the schedule interval, phase restarts and the flexible period. A refused
+effect ends the operation with `PortLinkError::Coexistence`. On the S31,
+`Esp32s31PortCoexistence` of `oer-esp32s31-ieee80211-runtime` serves it from
+the radio system, with the effects the direct station's power agent applies
+(`apply_coex_action`). The beacon receive priority is
 the MAC's: the manager applies `LowerMacSetting::RxBeaconPriority`, and the
 backend receives beacons at its radio system's beacon-window priority, at
 zero, or withdraws the request. Each connection frame (Probe Request,

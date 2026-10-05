@@ -216,6 +216,13 @@ pub struct RadioConnectionCoex<'radio, P, C, T> {
     radio: &'radio RadioSystem<P, C, T>,
 }
 
+impl<'radio, P, C, T> RadioConnectionCoex<'radio, P, C, T> {
+    /// The connection-frame requests of Wi-Fi on `radio`.
+    pub const fn new(radio: &'radio RadioSystem<P, C, T>) -> Self {
+        Self { radio }
+    }
+}
+
 impl<P, C, T> Clone for RadioConnectionCoex<'_, P, C, T> {
     fn clone(&self) -> Self {
         *self

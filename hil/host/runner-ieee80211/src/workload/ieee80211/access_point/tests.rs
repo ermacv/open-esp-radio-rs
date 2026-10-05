@@ -90,6 +90,8 @@ fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> Sessi
         tx_bytes,
         rx_units,
         tx_units,
+        rx_late_bytes: 0,
+        rx_late_units: 0,
         elapsed_micros: 1,
         transport_errors: 0,
     };
@@ -753,4 +755,34 @@ fn multi_client_fairness_records_the_slowest_flow_and_the_skew_it_checks() {
             .value,
         1_501
     );
+}
+
+#[test]
+fn udp_exact_delivery_counts_late_datagrams_and_fails_on_a_loss() {
+    let sent = UdpTransmission {
+        source: Ipv4Addr::LOCALHOST,
+        bytes: 3 * 1_200,
+        datagrams: 3,
+        elapsed: Duration::from_secs(1),
+        maximum_lateness: Duration::ZERO,
+        maximum_catch_up_datagrams: 1,
+        deadline_resets: 0,
+    };
+    let policy = UdpEvidencePolicy {
+        exact_delivery: true,
+        driver_observation: false,
+        rx_delivery: false,
+    };
+    // Two datagrams in the throughput window and one after it, before the
+    // terminal marker: all three delivered.
+    let mut late = evidence(2 * 1_200, 0, 2, 0);
+    late.transport.rx_late_bytes = 1_200;
+    late.transport.rx_late_units = 1;
+    late.radio = None;
+    assert!(validate_udp(Some(sent), None, late, policy).is_ok());
+    // Two in the window and none after it: one lost.
+    let mut lost = evidence(2 * 1_200, 0, 2, 0);
+    lost.radio = None;
+    let error = validate_udp(Some(sent), None, lost, policy).unwrap_err();
+    assert!(error.to_string().contains("AP UDP RX mismatch"));
 }

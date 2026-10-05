@@ -26,6 +26,8 @@ fn target_evidence(rx_units: u64, tx_units: u64, passed: bool) -> SessionEvidenc
         tx_bytes: tx_units * PAYLOAD_BYTES as u64,
         rx_units,
         tx_units,
+        rx_late_bytes: 0,
+        rx_late_units: 0,
         elapsed_micros: 3_000_000,
         transport_errors: 0,
     };

@@ -69,6 +69,8 @@ fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
         tx_bytes: 0,
         rx_units: 0,
         tx_units: 0,
+        rx_late_bytes: 0,
+        rx_late_units: 0,
         elapsed_micros: 1,
         transport_errors: 0,
     };

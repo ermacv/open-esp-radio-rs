@@ -92,6 +92,8 @@ fn transport(bytes: u64, elapsed_micros: u64) -> TransportEvidence {
         tx_bytes: 0,
         rx_units: 2,
         tx_units: 0,
+        rx_late_bytes: 0,
+        rx_late_units: 0,
         elapsed_micros,
         transport_errors: 0,
     }

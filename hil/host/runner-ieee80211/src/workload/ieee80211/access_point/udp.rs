@@ -219,19 +219,25 @@ pub(super) fn validate_udp(
     }
     match host_tx {
         Some(host) => {
+            // Delivery is every datagram before the host's terminal marker,
+            // inside the throughput window or after it.
+            let (delivered_bytes, delivered_units) = (
+                evidence.transport.rx_delivered_bytes(),
+                evidence.transport.rx_delivered_units(),
+            );
             if (policy.exact_delivery
-                && (host.bytes != evidence.transport.rx_bytes
-                    || host.datagrams != evidence.transport.rx_units))
+                && (host.bytes != delivered_bytes || host.datagrams != delivered_units))
                 || (!policy.exact_delivery
-                    && (evidence.transport.rx_bytes > host.bytes
-                        || evidence.transport.rx_units > host.datagrams))
+                    && (delivered_bytes > host.bytes || delivered_units > host.datagrams))
             {
                 return Err(format!(
-                    "AP UDP RX mismatch: host={}/{} target={}/{}",
+                    "AP UDP RX mismatch: host={}/{} target={}/{} (late {}/{})",
                     host.bytes,
                     host.datagrams,
-                    evidence.transport.rx_bytes,
-                    evidence.transport.rx_units,
+                    delivered_bytes,
+                    delivered_units,
+                    evidence.transport.rx_late_bytes,
+                    evidence.transport.rx_late_units,
                 )
                 .into());
             }

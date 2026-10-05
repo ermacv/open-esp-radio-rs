@@ -3,7 +3,6 @@
 use std::{
     hint,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
-    thread,
     time::{Duration, Instant},
 };
 
@@ -78,7 +77,9 @@ pub fn send(config: Config) -> Result<HostTransmission> {
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     socket.connect(SocketAddrV4::new(config.address, config.port))?;
     socket.set_write_timeout(Some(Duration::from_secs(2)))?;
-    send_with(config, &socket, |packet| socket.send(packet))
+    send_with(config, &socket, &mut SystemClock, |packet| {
+        socket.send(packet)
+    })
 }
 
 /// Send one paced flow from an already-bound socket.
@@ -87,14 +88,37 @@ pub fn send(config: Config) -> Result<HostTransmission> {
 /// target-to-host flow so both directions retain one exact peer endpoint.
 pub fn send_on(socket: &UdpSocket, config: Config) -> Result<HostTransmission> {
     socket.set_write_timeout(Some(Duration::from_secs(2)))?;
-    send_with(config, socket, |packet| {
+    send_with(config, socket, &mut SystemClock, |packet| {
         socket.send_to(packet, SocketAddrV4::new(config.address, config.port))
     })
 }
 
+/// Where a paced sender reads the time and waits for its next slot.
+trait PacingClock {
+    fn now(&self) -> Instant;
+
+    fn wait_until(&mut self, deadline: Instant) -> Result<()>;
+}
+
+/// The host's monotonic clock.
+struct SystemClock;
+
+impl PacingClock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn wait_until(&mut self, deadline: Instant) -> Result<()> {
+        wait_until(deadline)
+    }
+}
+
+/// Send `config`'s datagrams, one in each slot of the packet interval that
+/// starts inside the duration, then the terminal markers.
 fn send_with(
     config: Config,
     socket: &UdpSocket,
+    clock: &mut impl PacingClock,
     mut send_packet: impl FnMut(&[u8]) -> std::io::Result<usize>,
 ) -> Result<HostTransmission> {
     let source = match socket.local_addr()? {
@@ -104,7 +128,7 @@ fn send_with(
     let mut packet = vec![0x5a; config.payload];
     let interval = packet_interval(config.payload, config.rate_bps)?;
     let maximum_catch_up = interval.saturating_mul(MAX_CATCH_UP_INTERVALS);
-    let started = Instant::now();
+    let started = clock.now();
     let deadline = started + config.duration;
     let mut next = started;
     let mut bytes = 0_u64;
@@ -114,10 +138,13 @@ fn send_with(
     let mut deadline_resets = 0_u64;
 
     let result: Result<()> = (|| {
-        while Instant::now() < deadline {
+        // A datagram goes only in a slot inside the duration: the receiver
+        // measures exactly the duration from the first datagram, so one
+        // sent after waiting past the end would be outside its window.
+        while next < deadline {
             oer_process::check_cancelled()?;
-            wait_until(next)?;
-            let now = Instant::now();
+            clock.wait_until(next)?;
+            let now = clock.now();
             let lateness = now.saturating_duration_since(next);
             maximum_lateness = maximum_lateness.max(lateness);
             if lateness > maximum_catch_up {
@@ -145,8 +172,8 @@ fn send_with(
 
         Ok(())
     })();
-    let elapsed = started.elapsed();
-    let result = result.and_then(|()| send_terminal_markers_with(&mut send_packet));
+    let elapsed = clock.now().saturating_duration_since(started);
+    let result = result.and_then(|()| send_terminal_markers_with(clock, &mut send_packet));
     let progress = HostTransmission {
         source,
         bytes,
@@ -162,12 +189,14 @@ fn send_with(
 }
 
 fn send_terminal_markers_with(
+    clock: &mut impl PacingClock,
     send_packet: &mut impl FnMut(&[u8]) -> std::io::Result<usize>,
 ) -> Result<()> {
     let marker = (-1_i32).to_be_bytes();
     for index in 0..TERMINAL_MARKERS {
         if index != 0 {
-            thread::sleep(TERMINAL_MARKER_SPACING);
+            let spaced = clock.now() + TERMINAL_MARKER_SPACING;
+            clock.wait_until(spaced)?;
         }
         let length = send_packet(&marker)?;
         if length != marker.len() {
@@ -179,7 +208,7 @@ fn send_terminal_markers_with(
 
 #[cfg(test)]
 fn send_terminal_markers(socket: &UdpSocket) -> Result<()> {
-    send_terminal_markers_with(&mut |packet| socket.send(packet))
+    send_terminal_markers_with(&mut SystemClock, &mut |packet| socket.send(packet))
 }
 
 fn packet_interval(payload: usize, rate_bps: u64) -> Result<Duration> {

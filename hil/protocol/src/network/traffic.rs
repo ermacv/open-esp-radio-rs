@@ -36,12 +36,31 @@ pub struct TransportEvidence {
     /// Complete observation-window silence, including its trailing interval.
     /// Present only for a single measured UDP RX flow; never inferred from throughput.
     pub rx_maximum_silence_micros: Option<u64>,
+    /// Received payload inside the measurement window: the throughput's.
     pub rx_bytes: u64,
     pub tx_bytes: u64,
     pub rx_units: u64,
     pub tx_units: u64,
+    /// Received payload after the measurement window, before the peer's
+    /// terminal marker ended the session: delivered, outside the
+    /// throughput.
+    pub rx_late_bytes: u64,
+    pub rx_late_units: u64,
     pub elapsed_micros: u64,
     pub transport_errors: u32,
+}
+
+impl TransportEvidence {
+    /// Every datagram delivered before the peer's terminal marker, in the
+    /// measurement window or after it: what an exact delivery compares with
+    /// the peer's count.
+    pub const fn rx_delivered_units(&self) -> u64 {
+        self.rx_units.saturating_add(self.rx_late_units)
+    }
+
+    pub const fn rx_delivered_bytes(&self) -> u64 {
+        self.rx_bytes.saturating_add(self.rx_late_bytes)
+    }
 }
 
 /// Transport accounting for one configured [`SessionFlowConfig`](super::SessionFlowConfig).
@@ -57,11 +76,23 @@ pub struct FlowTransportEvidence {
     pub tx_bytes: u64,
     pub rx_units: u64,
     pub tx_units: u64,
+    /// As [`TransportEvidence::rx_late_bytes`], for this flow.
+    pub rx_late_bytes: u64,
+    pub rx_late_units: u64,
     pub elapsed_micros: u64,
     pub transport_errors: u32,
 }
 
 impl FlowTransportEvidence {
+    /// As [`TransportEvidence::rx_delivered_units`], for this flow.
+    pub const fn rx_delivered_units(&self) -> u64 {
+        self.rx_units.saturating_add(self.rx_late_units)
+    }
+
+    pub const fn rx_delivered_bytes(&self) -> u64 {
+        self.rx_bytes.saturating_add(self.rx_late_bytes)
+    }
+
     pub const fn from_session_total(flow_id: u8, total: TransportEvidence) -> Self {
         Self {
             rx_maximum_silence_micros: total.rx_maximum_silence_micros,
@@ -70,6 +101,8 @@ impl FlowTransportEvidence {
             tx_bytes: total.tx_bytes,
             rx_units: total.rx_units,
             tx_units: total.tx_units,
+            rx_late_bytes: total.rx_late_bytes,
+            rx_late_units: total.rx_late_units,
             elapsed_micros: total.elapsed_micros,
             transport_errors: total.transport_errors,
         }
@@ -82,6 +115,8 @@ impl FlowTransportEvidence {
             tx_bytes: self.tx_bytes,
             rx_units: self.rx_units,
             tx_units: self.tx_units,
+            rx_late_bytes: self.rx_late_bytes,
+            rx_late_units: self.rx_late_units,
             elapsed_micros: self.elapsed_micros,
             transport_errors: self.transport_errors,
         }
@@ -104,10 +139,14 @@ impl TransportEvidence {
                 tx_bytes: 0,
                 rx_units: 0,
                 tx_units: 0,
+                rx_late_bytes: 0,
+                rx_late_units: 0,
                 elapsed_micros: 0,
                 transport_errors: 0,
             },
             |mut total, flow| {
+                total.rx_late_bytes = total.rx_late_bytes.saturating_add(flow.rx_late_bytes);
+                total.rx_late_units = total.rx_late_units.saturating_add(flow.rx_late_units);
                 total.rx_bytes = total.rx_bytes.saturating_add(flow.rx_bytes);
                 total.tx_bytes = total.tx_bytes.saturating_add(flow.tx_bytes);
                 total.rx_units = total.rx_units.saturating_add(flow.rx_units);

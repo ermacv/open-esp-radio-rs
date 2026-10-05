@@ -52,6 +52,8 @@ impl Producer {
                             tx_bytes: 0,
                             rx_units: 0,
                             tx_units: 0,
+                            rx_late_bytes: 0,
+                            rx_late_units: 0,
                             elapsed_micros: 0,
                             transport_errors: 0,
                         },
@@ -172,6 +174,8 @@ impl Producer {
         self.flows.map(|flow| {
             flow.map(|flow| FlowTransportEvidence {
                 rx_maximum_silence_micros: None,
+                rx_late_bytes: 0,
+                rx_late_units: 0,
                 elapsed_micros: now.saturating_sub(self.started).max(1),
                 ..flow.evidence
             })

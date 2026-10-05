@@ -495,15 +495,15 @@ pub fn run(
                 evidence.transport.rx_bytes, evidence.transport.rx_units
             ))
         } else if require_exact_delivery
-            && (evidence.transport.rx_units != host.datagrams
-                || evidence.transport.rx_bytes != host.bytes)
+            && (evidence.transport.rx_delivered_units() != host.datagrams
+                || evidence.transport.rx_delivered_bytes() != host.bytes)
         {
             Some(format!(
                 "host/target RX delivery mismatch: host={}/{} target={}/{}",
                 host.bytes,
                 host.datagrams,
-                evidence.transport.rx_bytes,
-                evidence.transport.rx_units
+                evidence.transport.rx_delivered_bytes(),
+                evidence.transport.rx_delivered_units()
             ))
         } else {
             None

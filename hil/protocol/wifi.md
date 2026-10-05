@@ -47,7 +47,20 @@ timeout is a failure bound rather than a periodic readiness poll.
 
 `network::Finished` counts stack admissions, not on-air delivery. Host UDP collectors
 use its TX count to complete as soon as every datagram arrives, or record a
-delivery deadline and the remaining deficit. A missing terminal result and a
+delivery deadline and the remaining deficit.
+
+In the other direction the host's count is the agreement. The host's paced
+sender sends one datagram in each packet-interval slot that starts inside the
+session's duration, then redundant terminal markers. The target measures
+throughput over exactly the duration from the first datagram (`rx_bytes`,
+`rx_units`), and counts every datagram that arrives after that window and
+before the terminal marker ends the session as `rx_late_bytes` and
+`rx_late_units`. Late datagrams are delivered, and their sequence numbers
+count toward ordering. An exact delivery compares the host's count with
+`rx_delivered_units()`, the sum of both, and never with the window's alone:
+a datagram that waited in a queue is late, not lost. A session whose marker
+never arrives ends at the grace deadline, and what is missing then is a
+loss. A missing terminal result and a
 fully delivered stream are distinct outcomes. Each `*-reception.json` records
 Linux socket drop deltas (`SO_MEMINFO`), including losses with no later packet.
 A nonzero delta invalidates the measurement as `host-overflow`; unavailable

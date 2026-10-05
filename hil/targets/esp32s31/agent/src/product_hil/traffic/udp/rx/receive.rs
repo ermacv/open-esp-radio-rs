@@ -70,6 +70,8 @@ pub(super) async fn run(
                 tx_bytes: 0,
                 rx_units: 0,
                 tx_units: 0,
+                rx_late_bytes: 0,
+                rx_late_units: 0,
                 elapsed_micros: elapsed_us,
                 transport_errors: 0,
             },
@@ -173,7 +175,15 @@ pub(super) async fn run(
             continue;
         }
         if !window.data(received_at) {
+            // After the measurement window and before the peer's terminal
+            // marker ends the session: delivered, so it counts toward the
+            // delivery and its ordering, not toward the throughput.
             late_datagrams = late_datagrams.saturating_add(1);
+            flow.evidence.rx_late_bytes = flow.evidence.rx_late_bytes.saturating_add(length as u64);
+            flow.evidence.rx_late_units = flow.evidence.rx_late_units.saturating_add(1);
+            if single_flow {
+                sequence.observe(packet_sequence);
+            }
             continue;
         }
         flow.evidence.rx_bytes = flow.evidence.rx_bytes.saturating_add(length as u64);

@@ -216,8 +216,8 @@ fn require_recovery_exchange(
         || transport.transport_errors != 0
         || offer.datagrams != RX_DATAGRAMS
         || offer.bytes != RX_DATAGRAMS * PAYLOAD_BYTES as u64
-        || transport.rx_units != offer.datagrams
-        || transport.rx_bytes != offer.bytes
+        || transport.rx_delivered_units() != offer.datagrams
+        || transport.rx_delivered_bytes() != offer.bytes
         || transport.tx_units != receipt.datagrams
         || transport.tx_bytes != receipt.bytes
         || receipt.datagrams == 0

@@ -1365,6 +1365,8 @@ fn maximum_flow_transport_evidence_fits_and_round_trips() {
             tx_bytes: u64::MAX,
             rx_units: u64::MAX,
             tx_units: u64::MAX,
+            rx_late_bytes: 0,
+            rx_late_units: 0,
             elapsed_micros: u64::MAX,
             transport_errors: u32::MAX,
         })),
@@ -1394,6 +1396,8 @@ fn evidence_digest_is_order_and_value_sensitive() {
         tx_bytes: 0,
         rx_units: 1,
         tx_units: 0,
+        rx_late_bytes: 0,
+        rx_late_units: 0,
         elapsed_micros: 100,
         transport_errors: 0,
     });

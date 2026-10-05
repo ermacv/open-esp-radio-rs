@@ -160,6 +160,8 @@ fn merge_flow_evidence(
                 tx_bytes: first.tx_bytes.saturating_add(second.tx_bytes),
                 rx_units: first.rx_units.saturating_add(second.rx_units),
                 tx_units: first.tx_units.saturating_add(second.tx_units),
+                rx_late_bytes: 0,
+                rx_late_units: 0,
                 elapsed_micros: first.elapsed_micros.max(second.elapsed_micros),
                 transport_errors: first
                     .transport_errors

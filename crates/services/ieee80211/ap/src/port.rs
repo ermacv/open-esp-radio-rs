@@ -93,13 +93,13 @@ use oer_ieee80211_upper_mac::{
     rate_control::{RateControl, RatePeer, link_metric},
 };
 use oer_ieee80211_upper_mac_service::{
-    EventRouter, MpduParts,
+    EventRouter, TxMpdu,
     aggregate::{AmpduSubframes, PORT_AMPDU_SUBFRAMES, PortAggregation},
     client::{
         PortClient, PortClientEnv, PortClientError, PortError, PortFrame, PortInput, PortMsdu,
         PortRxBuffer,
     },
-    frame::{PORT_MPDU_HEADER_CAPACITY, split_ethernet},
+    frame::{NetworkBody, PORT_MPDU_HEADER_CAPACITY, split_ethernet},
 };
 use oer_time::{Clock, Duration, Instant, Timer};
 
@@ -161,11 +161,11 @@ pub trait PortApEnv: PortClientEnv {
     /// Where the frames the access point sends wait: the network's own
     /// owners, queued by Ethernet destination, which the access point takes
     /// when it sends them or holds for a dozing peer.
-    type Frames: DestinationTxQueues;
+    type Frames: DestinationTxQueues<Frame = Self::NetworkFrame>;
 }
 
 /// A frame the access point sends: an owner of its network's source.
-pub type PortApFrame<X> = <<X as PortApEnv>::Frames as DestinationTxQueues>::Frame;
+pub type PortApFrame<X> = <X as PortClientEnv>::NetworkFrame;
 
 /// The executor of an access point's SAE responder: the access point hands
 /// it one SAE frame at a time and takes the output when it is ready, so the
@@ -285,7 +285,7 @@ pub struct PortApProfile<'a> {
 /// reordering.
 pub struct PortApStorage<const HELD: usize, F> {
     beacon: [u8; AP_BEACON_CAPACITY],
-    subframes: AmpduSubframes<F>,
+    subframes: AmpduSubframes<NetworkBody<F>>,
     held: [Option<HeldFrame<F>>; HELD],
     /// The peers' receive Block Ack agreements, one per peer at most on
     /// average, and their kept MPDUs.
@@ -564,7 +564,7 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     /// The destination last served: the next turn goes to the one after it.
     cursor: Option<[u8; 6]>,
     /// The subframes of the A-MPDU being sent.
-    subframes: &'p mut AmpduSubframes<PortApFrame<X>>,
+    subframes: &'p mut AmpduSubframes<NetworkBody<PortApFrame<X>>>,
     buffered: PowerSaveBuffer<'p, PortApFrame<X>>,
     reorder: &'p mut RxReorder<AP_MAX_CLIENTS>,
     /// The protection the beacon template carries.
@@ -899,7 +899,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     async fn send_management(&mut self, frame: &[u8]) -> Result<(), PortApError<PortError<X>>> {
         self.client
             .transmit(
-                MpduParts::whole(frame),
+                TxMpdu::whole(frame),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
                 self.profile.management_rate,
@@ -932,7 +932,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let dtim_beacon = dtim(frame).is_some_and(|(_, count, _)| count == 0);
         client
             .transmit(
-                MpduParts::whole(frame),
+                TxMpdu::whole(frame),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
                 profile.management_rate,
@@ -956,8 +956,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     .complete_buffered_group_release(release, false)?;
                 break;
             };
-            self.transmit_data(held.frame.ethernet(), release.more_data())
-                .await?;
+            self.transmit_data(held.frame, release.more_data()).await?;
             self.counters.released = self.counters.released.saturating_add(1);
             self.service
                 .complete_buffered_group_release(release, true)?;
@@ -1000,8 +999,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 .complete_buffered_unicast_release(release, false)?;
             return Ok(());
         };
-        self.transmit_data(held.frame.ethernet(), release.more_data())
-            .await?;
+        self.transmit_data(held.frame, release.more_data()).await?;
         self.counters.released = self.counters.released.saturating_add(1);
         self.service
             .complete_buffered_unicast_release(release, true)?;
@@ -1053,7 +1051,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     return self.transmit_aggregate(destination, frame, run).await;
                 }
             }
-            return self.transmit_data(frame.ethernet(), false).await;
+            return self.transmit_data(frame, false).await;
         };
         if self.buffered.hold(frame).is_err() {
             self.counters.held_dropped = self.counters.held_dropped.saturating_add(1);
@@ -1442,7 +1440,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let report = self
             .client
             .transmit(
-                MpduParts::whole(&mpdu[..length]),
+                TxMpdu::whole(&mpdu[..length]),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
                 self.profile.management_rate,
@@ -1457,15 +1455,17 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         Ok(())
     }
 
-    /// Send one queued frame: to an authorized peer under its pairwise key,
+    /// Send one network frame: to an authorized peer under its pairwise key,
     /// or to the group under the group key, as QoS data to a QoS peer in a
-    /// protected BSS. A frame for no authorized destination is dropped.
+    /// protected BSS, its payload handed to the port by ownership. A frame
+    /// for no authorized destination is dropped.
     async fn transmit_data(
         &mut self,
-        ethernet: &[u8],
+        frame: PortApFrame<X>,
         more_data: bool,
     ) -> Result<(), PortApError<PortError<X>>> {
-        let Some(destination) = ethernet
+        let Some(destination) = frame
+            .ethernet()
             .get(..6)
             .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
         else {
@@ -1483,7 +1483,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             return Ok(());
         }
         let access_point = self.service.address();
-        let (header, payload) = split_ethernet(ethernet);
+        let header = split_ethernet(frame.ethernet()).0;
         let mut mpdu = [0; PORT_MPDU_HEADER_CAPACITY];
         let (length, key) = if self.service.link_protection() == LinkProtection::Open {
             let sequence_number = self.service.current_data_sequence();
@@ -1518,7 +1518,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let report = self
             .client
             .transmit(
-                MpduParts::new(&mpdu[..length], payload),
+                TxMpdu {
+                    header: &mpdu[..length],
+                    body: Some(NetworkBody(frame)),
+                },
                 key,
                 WmmAccessCategory::BestEffort,
                 rate,
@@ -1672,7 +1675,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             first_sequence.get_or_insert(sequence);
             if self
                 .subframes
-                .push(owner, &header[..length], KeySelector::Key(key))
+                .push(NetworkBody(owner), &header[..length], KeySelector::Key(key))
                 .is_err()
             {
                 // The loop stops at a full aggregate: only a header beyond a
@@ -1724,8 +1727,8 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             mpdu_retry_limit: config.retry_limit,
             body: TxBody::Ampdu(ampdu),
         };
-        let mut parts = [MpduParts::default(); PORT_AMPDU_SUBFRAMES];
-        let frames = self.subframes.frames(&mut parts, spacing);
+        let mut headers = [&[][..]; PORT_AMPDU_SUBFRAMES];
+        let frames = self.subframes.frames(&mut headers, spacing);
         let report =
             <X::Aggregation as PortAggregation<X>>::send(&mut self.client, frames, request).await;
         // The exchange ended: the owners go back to the network.
@@ -2097,7 +2100,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let report = self
             .client
             .transmit(
-                MpduParts::whole(&frame[..length]),
+                TxMpdu::whole(&frame[..length]),
                 KeySelector::Plaintext,
                 WmmAccessCategory::Voice,
                 self.profile.management_rate,

@@ -34,7 +34,8 @@ sent to it, its receive replay state and its duplicate filter.
 `run_until(deadline, deliver)` takes the network's frames, one destination
 after another, one at a time when it is ready to send them, and sends each,
 its MPDU header encoded and its payload from the network's owner
-(`MpduParts`), which it keeps until the exchange ends, to an authorized peer
+(`TxMpdu`, `NetworkBody`), which the port holds while each attempt runs and
+which goes back to the network when the exchange ends, to an authorized peer
 (plaintext in an Open BSS; under its pairwise key, as QoS data to a QoS peer,
 in a protected one) at its rate control's rate, or to the group (under the group key)
 at the management rate, dropping one for no authorized destination

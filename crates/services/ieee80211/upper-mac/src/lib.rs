@@ -42,7 +42,8 @@ pub use router::{Awaited, EventRouter, Registration, RouterFull};
 
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduPayload, CancelError, Ieee80211LowerMacPort, KeySelector, LowerMacAmpdu,
-    Refused, SubmitError, TxAttempt, TxBuffer, TxCompletion, TxId, TxPayload, TxResponse, VifId,
+    ReclaimError, Refused, SubmitError, TxAttempt, TxBody as PortTxBody, TxBuffer, TxCompletion,
+    TxId, TxPayload, TxResponse, VifId,
 };
 use oer_ieee80211_mac::block_ack::encode_block_ack_request;
 use oer_ieee80211_softmac::BackoffEntropy;
@@ -71,59 +72,64 @@ pub enum UpperMacTxError<E> {
     CompletionLost { attempt: TxId },
     /// The port reported its terminal poisoned event.
     Poisoned,
+    /// The port kept the bodies of an attempt that ended.
+    BodiesHeld { attempt: TxId },
     /// The port cannot serve.
     Port(E),
 }
 
-/// One MPDU, from its MAC header to the end of its body, in the two parts
-/// the port's buffer gathers: the `header` a service encodes and the `body`
-/// it borrows, unchanged, from the frame's owner. Each attempt writes both
-/// into the buffer the port lends, so a retransmission reads the owner
-/// again rather than a copy.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct MpduParts<'f> {
-    pub header: &'f [u8],
-    pub body: &'f [u8],
+/// One MPDU to send: the `header` a service encoded and, after it, the
+/// `body` it hands the port by ownership, such as a network frame's payload
+/// (a management frame is all header). Each attempt writes the header into
+/// the buffer the port lends and hands the port the body, which comes back
+/// after the attempt for the next one.
+#[derive(Debug, Eq, PartialEq)]
+pub struct TxMpdu<'h, O> {
+    pub header: &'h [u8],
+    pub body: Option<O>,
 }
 
-impl<'f> MpduParts<'f> {
-    pub const fn new(header: &'f [u8], body: &'f [u8]) -> Self {
-        Self { header, body }
-    }
-
+impl<'h, O> TxMpdu<'h, O> {
     /// A frame encoded whole, as a management frame is.
-    pub const fn whole(frame: &'f [u8]) -> Self {
+    pub const fn whole(frame: &'h [u8]) -> Self {
         Self {
             header: frame,
-            body: &[],
+            body: None,
         }
-    }
-
-    pub const fn len(&self) -> usize {
-        self.header.len() + self.body.len()
-    }
-
-    pub const fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Write the MPDU into `out`, which is [`Self::len`] octets long.
-    fn write_to(&self, out: &mut [u8]) {
-        let (header, body) = out.split_at_mut(self.header.len());
-        header.copy_from_slice(self.header);
-        body.copy_from_slice(self.body);
     }
 }
 
-/// The subframes of one A-MPDU and how the port sends them.
-#[derive(Clone, Copy, Debug)]
-pub struct AmpduFrames<'f> {
-    /// Subframe `i` of the request, from its header to the end of its body.
-    pub subframes: &'f [MpduParts<'f>],
+/// The subframes of one A-MPDU and how the port sends them: subframe `i` is
+/// `headers[i]`, then `bodies[i]`'s octets. An attempt takes the bodies of
+/// the subframes it carries and puts them back after its completion; the
+/// bodies stay the caller's when the exchange ends.
+#[derive(Debug)]
+pub struct AmpduFrames<'f, O> {
+    pub headers: &'f [&'f [u8]],
+    pub bodies: &'f mut [Option<O>],
     pub key: KeySelector,
     /// The recipient's Minimum MPDU Start Spacing, IEEE encoding 0-7.
     pub min_mpdu_start_spacing: u8,
 }
+
+/// The octets of an MPDU of `header` and `body`.
+fn mpdu_len<O: PortTxBody>(header: &[u8], body: Option<&O>) -> usize {
+    header.len() + body.map_or(0, |body| body.bytes().len())
+}
+
+/// The caller's subframe the `nth` subframe of an aggregate of `selected`
+/// carries: the index of the `nth` set bit.
+fn nth_selected(selected: u64, nth: usize) -> Option<usize> {
+    let mut remaining = selected;
+    for _ in 0..nth {
+        remaining &= remaining.checked_sub(1)?;
+    }
+    (remaining != 0).then(|| remaining.trailing_zeros() as usize)
+}
+
+/// A submitted single attempt and the caller's subframe whose body it took.
+type Submitted<'r, 'p, P, const WAITERS: usize, const RX: usize> =
+    (Registration<'r, 'p, P, WAITERS, RX>, Option<usize>);
 
 /// The transmit driver of one interface over a lower-MAC port, sharing the
 /// port's [`EventRouter`] with other drivers.
@@ -162,11 +168,12 @@ where
         &mut self.planner
     }
 
-    /// Send one MPDU: `frame` from its header to the end of its body, the
-    /// request's [`TxBody::Mpdu`] describing it, protected with `key`.
+    /// Send one MPDU: `frame`, the request's [`TxBody::Mpdu`] describing
+    /// it, protected with `key`. Its body goes back to its owner when the
+    /// exchange ends.
     pub async fn send_mpdu(
         &mut self,
-        frame: MpduParts<'_>,
+        frame: TxMpdu<'_, P::TxBody>,
         key: KeySelector,
         request: TxRequest,
         ladder: &impl RateLadder,
@@ -175,13 +182,18 @@ where
         if !matches!(request.body, TxBody::Mpdu(_)) {
             return Err(UpperMacTxError::InvalidFrames);
         }
+        let headers = [frame.header];
+        let mut bodies = [frame.body];
         let (mut exchange, mut plan) = self
             .planner
             .begin(request, ladder, entropy)
             .map_err(UpperMacTxError::Plan)?;
         loop {
-            let registration = self.submit_single(&exchange, &plan, &[frame], key)?;
-            let completion = self.completion(&registration).await?;
+            let (registration, origin) =
+                self.submit_single(&exchange, &plan, &headers, &mut bodies, key)?;
+            let completion = self
+                .completion(&registration, &mut bodies, |_| origin)
+                .await?;
             match self.step(&mut exchange, &completion, ladder, entropy)? {
                 TxStep::Attempt(next) => plan = next,
                 TxStep::Done(report) => return Ok(report),
@@ -205,61 +217,81 @@ where
 
     /// Submit an attempt that carries one MPDU: the request's MPDU, one
     /// subframe of it, or a BlockAckReq for it.
+    /// Submit an attempt that carries one MPDU: the request's MPDU, one
+    /// subframe of it, or a BlockAckReq for it; the caller's subframe whose
+    /// body it took, if any.
     fn submit_single(
         &mut self,
         exchange: &TxExchange,
         plan: &TxAttemptPlan,
-        frames: &[MpduParts<'_>],
+        headers: &[&[u8]],
+        bodies: &mut [Option<P::TxBody>],
         key: KeySelector,
-    ) -> Result<Registration<'r, 'p, P, WAITERS, RX>, UpperMacTxError<P::Error>> {
+    ) -> Result<Submitted<'r, 'p, P, WAITERS, RX>, UpperMacTxError<P::Error>> {
         let request = exchange.request();
         let request_frame: [u8; oer_ieee80211_mac::block_ack::BLOCK_ACK_REQUEST_LEN];
-        let (bytes, set_retry, response, key): (MpduParts<'_>, bool, TxResponse, KeySelector) =
-            match plan.content {
-                AttemptContent::Mpdu { set_retry_bit } => {
-                    let TxBody::Mpdu(mpdu) = request.body else {
-                        return Err(UpperMacTxError::InvalidFrames);
-                    };
-                    (frames[0], set_retry_bit, mpdu.response, key)
-                }
-                AttemptContent::Subframe { index } => (
-                    frames
-                        .get(usize::from(index))
-                        .copied()
-                        .ok_or(UpperMacTxError::InvalidFrames)?,
-                    true,
-                    TxResponse::Ack,
-                    key,
-                ),
-                AttemptContent::BlockAckRequest {
-                    tid,
-                    starting_sequence,
-                } => {
-                    let header = frames
-                        .first()
-                        .and_then(|frame| frame.header.get(4..16))
-                        .ok_or(UpperMacTxError::InvalidFrames)?;
-                    let mut receiver = [0; 6];
-                    let mut transmitter = [0; 6];
-                    receiver.copy_from_slice(&header[..6]);
-                    transmitter.copy_from_slice(&header[6..]);
-                    request_frame =
-                        encode_block_ack_request(receiver, transmitter, tid, starting_sequence);
-                    (
-                        MpduParts::whole(&request_frame),
-                        false,
-                        TxResponse::BlockAck,
-                        KeySelector::Plaintext,
-                    )
-                }
-                AttemptContent::Ampdu { .. } => return Err(UpperMacTxError::InvalidFrames),
-            };
+        let (header, origin, set_retry, response, key): (
+            &[u8],
+            Option<usize>,
+            bool,
+            TxResponse,
+            KeySelector,
+        ) = match plan.content {
+            AttemptContent::Mpdu { set_retry_bit } => {
+                let TxBody::Mpdu(mpdu) = request.body else {
+                    return Err(UpperMacTxError::InvalidFrames);
+                };
+                let header = headers.first().ok_or(UpperMacTxError::InvalidFrames)?;
+                (header, Some(0), set_retry_bit, mpdu.response, key)
+            }
+            AttemptContent::Subframe { index } => (
+                headers
+                    .get(usize::from(index))
+                    .ok_or(UpperMacTxError::InvalidFrames)?,
+                Some(usize::from(index)),
+                true,
+                TxResponse::Ack,
+                key,
+            ),
+            AttemptContent::BlockAckRequest {
+                tid,
+                starting_sequence,
+            } => {
+                let header = headers
+                    .first()
+                    .and_then(|header| header.get(4..16))
+                    .ok_or(UpperMacTxError::InvalidFrames)?;
+                let mut receiver = [0; 6];
+                let mut transmitter = [0; 6];
+                receiver.copy_from_slice(&header[..6]);
+                transmitter.copy_from_slice(&header[6..]);
+                request_frame =
+                    encode_block_ack_request(receiver, transmitter, tid, starting_sequence);
+                (
+                    &request_frame[..],
+                    None,
+                    false,
+                    TxResponse::BlockAck,
+                    KeySelector::Plaintext,
+                )
+            }
+            AttemptContent::Ampdu { .. } => return Err(UpperMacTxError::InvalidFrames),
+        };
+        let body_slot = match origin {
+            Some(origin) => Some(
+                bodies
+                    .get_mut(origin)
+                    .ok_or(UpperMacTxError::InvalidFrames)?,
+            ),
+            None => None,
+        };
+        let len = mpdu_len(header, body_slot.as_ref().and_then(|body| body.as_ref()));
         let mut buffer = self
             .port
-            .tx_buffer(bytes.len())
+            .tx_buffer(len)
             .map_err(UpperMacTxError::Port)?
             .ok_or(UpperMacTxError::NoBuffer)?;
-        bytes.write_to(buffer.frame_mut());
+        buffer.frame_mut()[..header.len()].copy_from_slice(header);
         if set_retry && !set_retry_bit(buffer.frame_mut()) {
             self.port.release_tx_buffer(buffer);
             return Err(UpperMacTxError::InvalidFrames);
@@ -269,18 +301,25 @@ where
             return Err(UpperMacTxError::RouterFull);
         };
         let id = registration.id();
+        let body_slot = body_slot.filter(|body| body.is_some());
+        let lent = body_slot.is_some().then_some(origin).flatten();
         let attempt = self.attempt(
             id,
             plan,
             TxPayload {
                 frame: buffer,
+                body: body_slot.and_then(Option::take),
                 response,
             },
             key,
         );
         match self.port.submit(attempt).map_err(UpperMacTxError::Port)? {
-            Ok(()) => Ok(registration),
+            Ok(()) => Ok((registration, lent)),
             Err(Refused { error, attempt }) => {
+                // The body comes back with the refused attempt.
+                if let (Some(origin), Some(body)) = (lent, attempt.payload.body) {
+                    bodies[origin] = Some(body);
+                }
                 self.port.release_tx_buffer(attempt.payload.frame);
                 Err(UpperMacTxError::Refused(error))
             }
@@ -308,23 +347,26 @@ where
         }
     }
 
-    /// Await the completion of a registered attempt from the router. After
-    /// a loss, cancel the attempt: an admitted cancel produces its
-    /// completion; a refusal proves it ended, and the router resolves
-    /// whether its completion is still queued or was lost.
+    /// Await the completion of a registered attempt from the router and take
+    /// back the bodies it carried, the attempt's subframe `n` into the
+    /// caller's `origin(n)`. After a loss, cancel the attempt: an admitted
+    /// cancel produces its completion; a refusal proves it ended, and the
+    /// router resolves whether its completion is still queued or was lost.
     async fn completion(
         &self,
         registration: &Registration<'r, 'p, P, WAITERS, RX>,
+        bodies: &mut [Option<P::TxBody>],
+        origin: impl Fn(usize) -> Option<usize>,
     ) -> Result<TxCompletion, UpperMacTxError<P::Error>> {
         let id = registration.id();
-        loop {
+        let completion = loop {
             match self.router.completion(id).await {
-                Awaited::Completed(completion) => return Ok(completion),
+                Awaited::Completed(completion) => break Ok(completion),
                 Awaited::Poisoned => return Err(UpperMacTxError::Poisoned),
                 Awaited::Lost => match self.port.cancel(id).map_err(UpperMacTxError::Port)? {
                     Ok(()) => {}
                     Err(CancelError::NotRunning) => {
-                        return self
+                        break self
                             .router
                             .resolve(id)
                             .await
@@ -332,6 +374,19 @@ where
                     }
                 },
             }
+        };
+        // The attempt ended either way: its bodies come back.
+        let reclaimed = self
+            .port
+            .reclaim_tx_bodies(id, |subframe, body| {
+                if let Some(slot) = origin(subframe).and_then(|origin| bodies.get_mut(origin)) {
+                    *slot = Some(body);
+                }
+            })
+            .map_err(UpperMacTxError::Port)?;
+        match reclaimed {
+            Ok(()) | Err(ReclaimError::Unknown) => completion,
+            Err(ReclaimError::Running) => Err(UpperMacTxError::BodiesHeld { attempt: id }),
         }
     }
 }
@@ -342,10 +397,11 @@ where
     B: HeTxopRtsBudget,
 {
     /// Send one A-MPDU: `frames` holds the subframes of the request's
-    /// [`TxBody::Ampdu`] in order.
+    /// [`TxBody::Ampdu`] in order; their bodies are back in `frames` when
+    /// the exchange ends.
     pub async fn send_ampdu(
         &mut self,
-        frames: AmpduFrames<'_>,
+        frames: AmpduFrames<'_, P::TxBody>,
         request: TxRequest,
         ladder: &impl RateLadder,
         entropy: &mut impl BackoffEntropy,
@@ -353,7 +409,13 @@ where
         let TxBody::Ampdu(ampdu) = request.body else {
             return Err(UpperMacTxError::InvalidFrames);
         };
-        if frames.subframes.len() != usize::from(ampdu.subframes()) {
+        let AmpduFrames {
+            headers,
+            bodies,
+            key,
+            min_mpdu_start_spacing,
+        } = frames;
+        if headers.len() != usize::from(ampdu.subframes()) || bodies.len() != headers.len() {
             return Err(UpperMacTxError::InvalidFrames);
         }
         let (mut exchange, mut plan) = self
@@ -361,14 +423,29 @@ where
             .begin(request, ladder, entropy)
             .map_err(UpperMacTxError::Plan)?;
         loop {
-            let registration = match plan.content {
+            let completion = match plan.content {
                 AttemptContent::Ampdu {
                     subframes: selected,
                     retry,
-                } => self.submit_aggregate(&plan, &frames, selected, retry, ampdu.tid)?,
-                _ => self.submit_single(&exchange, &plan, frames.subframes, frames.key)?,
+                } => {
+                    let registration = self.submit_aggregate(
+                        &plan,
+                        headers,
+                        bodies,
+                        (key, min_mpdu_start_spacing),
+                        selected,
+                        retry,
+                        ampdu.tid,
+                    )?;
+                    self.completion(&registration, bodies, |nth| nth_selected(selected, nth))
+                        .await?
+                }
+                _ => {
+                    let (registration, origin) =
+                        self.submit_single(&exchange, &plan, headers, bodies, key)?;
+                    self.completion(&registration, bodies, |_| origin).await?
+                }
             };
-            let completion = self.completion(&registration).await?;
             match self.step(&mut exchange, &completion, ladder, entropy)? {
                 TxStep::Attempt(next) => plan = next,
                 TxStep::Done(report) => return Ok(report),
@@ -376,10 +453,15 @@ where
         }
     }
 
+    /// Submit the aggregate of the `selected` subframes, the `retry` ones
+    /// with the Retry bit, each with its body taken from `bodies`.
+    #[allow(clippy::too_many_arguments)]
     fn submit_aggregate(
         &mut self,
         plan: &TxAttemptPlan,
-        frames: &AmpduFrames<'_>,
+        headers: &[&[u8]],
+        bodies: &mut [Option<P::TxBody>],
+        (key, min_mpdu_start_spacing): (KeySelector, u8),
         selected: u64,
         retry: u64,
         tid: u8,
@@ -393,15 +475,20 @@ where
         while remaining != 0 {
             let index = remaining.trailing_zeros() as usize;
             remaining &= remaining - 1;
-            let Some(frame) = frames.subframes.get(index) else {
+            let (Some(header), Some(body)) = (headers.get(index), bodies.get_mut(index)) else {
                 self.port.release_ampdu_buffer(buffer);
                 return Err(UpperMacTxError::InvalidFrames);
             };
-            let Some(bytes) = buffer.push_mpdu(frame.len()) else {
-                self.port.release_ampdu_buffer(buffer);
-                return Err(UpperMacTxError::NoBuffer);
+            let len = mpdu_len(header, body.as_ref());
+            let bytes = match buffer.push_mpdu(len, body.take()) {
+                Ok(bytes) => bytes,
+                Err(refused) => {
+                    *body = refused;
+                    self.port.release_ampdu_buffer(buffer);
+                    return Err(UpperMacTxError::NoBuffer);
+                }
             };
-            frame.write_to(bytes);
+            bytes.copy_from_slice(header);
             if retry & (1 << index) != 0 && !set_retry_bit(bytes) {
                 self.port.release_ampdu_buffer(buffer);
                 return Err(UpperMacTxError::InvalidFrames);
@@ -418,9 +505,9 @@ where
             AmpduPayload {
                 subframes: buffer,
                 tid,
-                min_mpdu_start_spacing: frames.min_mpdu_start_spacing,
+                min_mpdu_start_spacing,
             },
-            frames.key,
+            key,
         );
         match self
             .port

@@ -12,7 +12,7 @@ use crate::{
     capabilities::LowerMacCapabilities,
     control::{KeyHandle, KeyInstall, LowerMacSetting, SettingError},
     rx::{RxBuffer, RxMeta},
-    tx::{Refused, TxAttempt, TxBuffer, TxCompletion, TxId, TxPayload},
+    tx::{ReclaimError, Refused, TxAttempt, TxBody, TxBuffer, TxCompletion, TxId, TxPayload},
 };
 
 /// The portable view of one owned event.
@@ -38,8 +38,9 @@ pub enum LowerMacEvent<'a> {
     Poisoned(Poisoned),
 }
 
-/// A single attempt of the base port: one MPDU in a backend buffer.
-pub type MpduAttempt<B> = TxAttempt<TxPayload<B>>;
+/// A single attempt of the base port: one MPDU, its header in a backend
+/// buffer `B` and its body, if any, the owner `O`.
+pub type MpduAttempt<B, O> = TxAttempt<TxPayload<B, O>>;
 
 /// The result of a submission: admitted, refused with the attempt handed
 /// back, or the port's error.
@@ -50,8 +51,9 @@ pub type SubmitResult<A, E> = Result<Result<(), Refused<A>>, E>;
 /// The port has the five parts every radio port has:
 ///
 /// - **Submission**: [`Self::submit`] admits one [`TxAttempt`], one hardware
-///   transmission attempt, or refuses it as a value. The frame is written
-///   into a buffer of [`Self::tx_buffer`].
+///   transmission attempt, or refuses it as a value. The frame's header is
+///   written into a buffer of [`Self::tx_buffer`]; its body travels by
+///   ownership and comes back through [`Self::reclaim_tx_bodies`].
 /// - **Events**: [`Self::next_event`] yields owned events, read through
 ///   [`Self::view`]; reception, attempt completions, lifecycle terminals and
 ///   the terminal [`LowerMacEvent::Poisoned`]. Loss is reported as
@@ -116,6 +118,9 @@ pub trait Ieee80211LowerMacPort {
     type Error: PortError;
     /// Memory for one MPDU of an attempt.
     type TxBuffer: TxBuffer;
+    /// The owner of an MPDU's body, which the composition chooses: the
+    /// network's frame type.
+    type TxBody: TxBody;
     /// The memory of one received MPDU, lent with its event.
     type RxBuffer: RxBuffer;
 
@@ -144,13 +149,25 @@ pub trait Ieee80211LowerMacPort {
     fn release_tx_buffer(&self, buffer: Self::TxBuffer);
 
     /// Admit one attempt. `Ok(Err(_))` when the backend refused it: nothing
-    /// was sent and the attempt comes back with its buffer. An admitted
-    /// attempt reports exactly one [`LowerMacEvent::TxCompleted`] with its
-    /// identity, and its buffer is released then.
+    /// was sent and the attempt comes back with its buffer and body. An
+    /// admitted attempt reports exactly one [`LowerMacEvent::TxCompleted`]
+    /// with its identity, and its buffer is released then; its body stays
+    /// with the backend until [`Self::reclaim_tx_bodies`].
     fn submit(
         &self,
-        attempt: MpduAttempt<Self::TxBuffer>,
-    ) -> SubmitResult<MpduAttempt<Self::TxBuffer>, Self::Error>;
+        attempt: MpduAttempt<Self::TxBuffer, Self::TxBody>,
+    ) -> SubmitResult<MpduAttempt<Self::TxBuffer, Self::TxBody>, Self::Error>;
+
+    /// Hand the bodies of attempt `id` to `each`, with their subframe index
+    /// (0 for a single MPDU), once the attempt ended: its completion was
+    /// reported, or [`Self::cancel`] proved it over. The backend keeps no
+    /// body of the attempt afterwards. A poisoned backend keeps them until
+    /// the reset.
+    fn reclaim_tx_bodies(
+        &self,
+        id: TxId,
+        each: impl FnMut(usize, Self::TxBody),
+    ) -> Result<Result<(), ReclaimError>, Self::Error>;
 
     /// The next event. Taking it only dequeues it. Dropping the future
     /// loses no event. A loss is reported as [`EventsLost`] in place of the

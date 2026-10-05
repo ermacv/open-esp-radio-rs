@@ -5,6 +5,8 @@
 //! when it is ready to send them, and keeps an owner, not a copy, while a
 //! frame waits for a dozing peer.
 
+use oer_ieee80211_datapath::SoftwareTxFrame;
+use oer_ieee80211_lower_mac::TxBody;
 use oer_ieee80211_mac::data::ETHERNET_HEADER_LEN;
 
 /// Octets of one frame a service keeps: a received MPDU, or an Ethernet
@@ -25,6 +27,19 @@ pub const PORT_MPDU_CAPACITY: usize = PORT_FRAME_CAPACITY + PORT_MPDU_HEADER_CAP
 /// encoder refuses it.
 pub fn split_ethernet(ethernet: &[u8]) -> (&[u8], &[u8]) {
     ethernet.split_at(ethernet.len().min(ETHERNET_HEADER_LEN))
+}
+
+/// A network frame as the body of the MPDU that carries it: its payload,
+/// after the Ethernet header the service encodes into the MPDU's header.
+/// The port holds it while an attempt sends it; dropping it hands the frame
+/// back to the network.
+#[derive(Debug, Eq, PartialEq)]
+pub struct NetworkBody<F>(pub F);
+
+impl<F: SoftwareTxFrame> TxBody for NetworkBody<F> {
+    fn bytes(&self) -> &[u8] {
+        split_ethernet(self.0.ethernet()).1
+    }
 }
 
 #[cfg(test)]

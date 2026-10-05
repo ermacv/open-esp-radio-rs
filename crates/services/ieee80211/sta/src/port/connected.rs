@@ -49,11 +49,13 @@ use oer_ieee80211_upper_mac::{
     aggregate::{AmpduLimits, AmpduRun},
     rate_control::RateControl,
 };
-use oer_ieee80211_upper_mac_service::MpduParts;
+use oer_ieee80211_upper_mac_service::TxMpdu;
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_ieee80211_upper_mac_service::aggregate::{AmpduSubframes, PORT_AMPDU_SUBFRAMES};
 use oer_ieee80211_upper_mac_service::client::{PortError, PortFrame, PortInput, PortMsdu};
-use oer_ieee80211_upper_mac_service::frame::{PORT_MPDU_HEADER_CAPACITY, split_ethernet};
+use oer_ieee80211_upper_mac_service::frame::{
+    NetworkBody, PORT_MPDU_HEADER_CAPACITY, split_ethernet,
+};
 use oer_ieee80211_upper_mac_service::reorder::{
     CURRENT_SLOT, Offer, PORT_REORDER_WINDOW, ReorderRelease, RxReorder,
 };
@@ -300,7 +302,7 @@ pub(crate) struct ConnectionContext<'a, 'p, X: PortStationEnv> {
     pub frontier: &'a mut Option<PortStationFrame<X>>,
     /// The subframes of the A-MPDU being sent and the network's owners of
     /// their payloads.
-    pub subframes: &'a mut AmpduSubframes<PortStationFrame<X>>,
+    pub subframes: &'a mut AmpduSubframes<NetworkBody<PortStationFrame<X>>>,
 }
 
 impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
@@ -512,7 +514,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             let sent = match self.aggregate_run(context, priority, &frame) {
                 Some(run) => self.transmit_aggregate(context, priority, frame, run).await,
                 None => self
-                    .transmit(context, frame.ethernet(), priority)
+                    .transmit(context, frame, priority)
                     .await
                     .map(|report| (report, 1)),
             };
@@ -662,7 +664,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             )?;
             if context
                 .subframes
-                .push(owner, &header[..length], selector)
+                .push(NetworkBody(owner), &header[..length], selector)
                 .is_err()
             {
                 // The loop stops at a full aggregate: only a header beyond
@@ -710,9 +712,9 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             mpdu_retry_limit: config.retry_limit,
             body: TxBody::Ampdu(ampdu),
         };
-        let mut parts = [MpduParts::default(); PORT_AMPDU_SUBFRAMES];
+        let mut headers = [&[][..]; PORT_AMPDU_SUBFRAMES];
         let frames = context.subframes.frames(
-            &mut parts,
+            &mut headers,
             (self.config.peer.ht_ampdu_parameters >> 2) & 0x07,
         );
         let report = context.link.transmit_ampdu(frames, request).await;
@@ -721,10 +723,12 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         report.map(|report| (report, run))
     }
 
+    /// Send the network's frame `owner` alone, its payload handed to the
+    /// port by ownership.
     async fn transmit<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
-        ethernet: &[u8],
+        owner: PortStationFrame<X>,
         priority: WmmUserPriority,
     ) -> Result<TxReport, PortLinkError<PortError<X>>> {
         let sequence_number = if self.config.peer_qos {
@@ -737,14 +741,21 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         } else {
             context.sequences.take_non_qos()
         };
-        let (header, payload) = split_ethernet(ethernet);
         let mut frame = [0_u8; PORT_MPDU_HEADER_CAPACITY];
-        let (length, key) =
-            self.encode_data(context, header, priority, sequence_number, &mut frame)?;
+        let (length, key) = self.encode_data(
+            context,
+            split_ethernet(owner.ethernet()).0,
+            priority,
+            sequence_number,
+            &mut frame,
+        )?;
         context
             .link
             .transmit(
-                MpduParts::new(&frame[..length], payload),
+                TxMpdu {
+                    header: &frame[..length],
+                    body: Some(NetworkBody(owner)),
+                },
                 key,
                 priority.access_category(),
                 self.rate.mpdu_rate(),
@@ -1638,7 +1649,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         context
             .link
             .transmit(
-                MpduParts::whole(&frame[..length]),
+                TxMpdu::whole(&frame[..length]),
                 key,
                 oer_ieee80211_mac::qos::WmmAccessCategory::Voice,
                 config.management_rate,

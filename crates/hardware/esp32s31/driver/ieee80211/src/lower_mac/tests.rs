@@ -604,6 +604,7 @@ fn attempt(core: &mut Core, id: u32, frame: &[u8]) -> Esp32s31MpduAttempt<'stati
         access_category: WmmAccessCategory::BestEffort,
         payload: TxPayload {
             frame: buffer,
+            body: None,
             response: TxResponse::Ack,
         },
         rate: PhyRate::Legacy(LegacyRate::Ofdm24M),
@@ -2075,7 +2076,7 @@ fn aggregate_of(
 ) -> Esp32s31AmpduAttempt<'static, Backings, SUBFRAMES> {
     let mut buffer = core.ampdu_buffer().expect("an idle aggregate owner");
     for index in 0..count {
-        let mpdu = buffer.push_mpdu(len).expect("a backing");
+        let mpdu = buffer.push_mpdu(len, None).expect("a backing");
         mpdu[..26].copy_from_slice(&data_frame(BSSID));
         mpdu[22..24].copy_from_slice(&((100 + index as u16) << 4).to_le_bytes());
     }
@@ -2424,7 +2425,7 @@ fn aggregates_outside_the_limits_are_refused_with_their_subframes() {
     group
         .payload
         .subframes
-        .push_mpdu(26)
+        .push_mpdu(26, None)
         .unwrap()
         .copy_from_slice(&data_frame([0xff; 6]));
     assert_eq!(
@@ -2445,14 +2446,14 @@ fn aggregates_outside_the_limits_are_refused_with_their_subframes() {
     // cannot hold with their metadata, MIC and FCS.
     let mut buffer = core.ampdu_buffer().unwrap();
     for _ in 0..SUBFRAMES {
-        assert!(buffer.push_mpdu(26).is_some());
+        assert!(buffer.push_mpdu(26, None).is_ok());
     }
-    assert!(buffer.push_mpdu(26).is_none());
+    assert!(buffer.push_mpdu(26, None).is_err());
     assert_eq!(buffer.subframes(), SUBFRAMES);
     core.release_ampdu_buffer(buffer);
     let mut buffer = core.ampdu_buffer().unwrap();
-    assert!(buffer.push_mpdu(BACKING - 20).is_some());
-    assert!(buffer.push_mpdu(BACKING - 19).is_none());
+    assert!(buffer.push_mpdu(BACKING - 20, None).is_ok());
+    assert!(buffer.push_mpdu(BACKING - 19, None).is_err());
     // Every aggregate owner can be lent, and no more.
     let second = core.ampdu_buffer().unwrap();
     assert!(core.ampdu_buffer().is_none());

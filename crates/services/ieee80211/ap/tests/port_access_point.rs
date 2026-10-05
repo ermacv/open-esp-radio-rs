@@ -50,6 +50,7 @@ use oer_ieee80211_softmac::{BackoffEntropy, EdcaContention};
 use oer_ieee80211_upper_mac::{
     AmpduRetryPolicy, ProtectEveryHeTxop, ProtectionPolicy, RateLadder, RetryLimits, TxPlanner,
 };
+use oer_ieee80211_upper_mac_service::frame::NetworkBody;
 use oer_ieee80211_upper_mac_service::{
     aggregate::PortAmpduAggregation,
     client::{PortClient, PortClientConfig, PortClientEnv},
@@ -158,6 +159,9 @@ impl Drop for TestFrame {
 
 type TestFrames = MemoryTxQueues<TestFrame, 32>;
 
+/// The model, whose bodies are the network's frames.
+type Model = LowerMacModel<NetworkBody<TestFrame>>;
+
 thread_local! {
     /// The source of this test's access point.
     static FRAMES: Cell<Option<&'static TestFrames>> = const { Cell::new(None) };
@@ -194,7 +198,8 @@ fn returned() -> usize {
 struct Env<'a>(core::marker::PhantomData<&'a ()>);
 
 impl PortClientEnv for Env<'_> {
-    type Port = LowerMacModel;
+    type NetworkFrame = TestFrame;
+    type Port = Model;
     type Budget = ProtectEveryHeTxop;
     type Ladder = FixedRate;
     type Entropy = Seeded;
@@ -213,7 +218,8 @@ impl<'a> PortApEnv for Env<'a> {
 struct Wpa3Env<'a>(core::marker::PhantomData<&'a ()>);
 
 impl PortClientEnv for Wpa3Env<'_> {
-    type Port = LowerMacModel;
+    type NetworkFrame = TestFrame;
+    type Port = Model;
     type Budget = ProtectEveryHeTxop;
     type Ladder = FixedRate;
     type Entropy = Seeded;
@@ -258,8 +264,8 @@ fn channel() -> WifiChannel {
 }
 
 /// A model enabled on another channel, as a composition leaves it.
-fn model() -> LowerMacModel {
-    let model = LowerMacModel::new();
+fn model() -> Model {
+    let model = Model::new();
     model
         .apply(oer_ieee80211_lower_mac::LowerMacSetting::Channel(
             Channel::from_wifi_channel(WifiChannel::mhz20(1).unwrap()),
@@ -282,7 +288,7 @@ fn model() -> LowerMacModel {
 fn client<'a, X>(router: &'a PortApRouter<'a, X>) -> PortApClient<'a, X>
 where
     X: PortClientEnv<
-            Port = LowerMacModel,
+            Port = Model,
             Budget = ProtectEveryHeTxop,
             Ladder = FixedRate,
             Entropy = Seeded,
@@ -350,8 +356,8 @@ fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
 /// time advances to the earliest of the deadlines a wait asked for and the
 /// `stops` still ahead, and `at` runs at each new time.
 fn drive<T>(
-    model: &LowerMacModel,
-    router: &oer_ieee80211_upper_mac_service::EventRouter<'_, LowerMacModel, 2, 4>,
+    model: &Model,
+    router: &oer_ieee80211_upper_mac_service::EventRouter<'_, Model, 2, 4>,
     timer: &VirtualTimer,
     future: impl Future<Output = T>,
     stops: &[u64],
@@ -584,7 +590,7 @@ fn association() -> Vec<u8> {
 
 /// The subtypes and first body word of what the access point sent to the
 /// station, in order.
-fn sent_to_station(model: &LowerMacModel) -> Vec<(u8, u16)> {
+fn sent_to_station(model: &Model) -> Vec<(u8, u16)> {
     model
         .submitted()
         .into_iter()
@@ -596,9 +602,9 @@ fn sent_to_station(model: &LowerMacModel) -> Vec<(u8, u16)> {
 
 /// Run the access point until `until`, delivering each `(time, frame)` as
 /// the port receives it.
-fn serve<X: PortApEnv<Port = LowerMacModel>>(
-    model: &LowerMacModel,
-    router: &oer_ieee80211_upper_mac_service::EventRouter<'_, LowerMacModel, 2, 4>,
+fn serve<X: PortApEnv<Port = Model>>(
+    model: &Model,
+    router: &oer_ieee80211_upper_mac_service::EventRouter<'_, Model, 2, 4>,
     timer: &VirtualTimer,
     access_point: &mut PortAccessPoint<'_, X>,
     frames: &[(u64, Vec<u8>)],
@@ -1051,7 +1057,7 @@ fn sae_authentication(transaction: u16, body: &[u8]) -> Vec<u8> {
 
 /// The transaction, status and body of the last SAE Authentication frame
 /// the access point sent the station.
-fn last_sae_reply(model: &LowerMacModel) -> (u16, u16, Vec<u8>) {
+fn last_sae_reply(model: &Model) -> (u16, u16, Vec<u8>) {
     let frame = model
         .submitted()
         .into_iter()
@@ -1094,7 +1100,7 @@ fn uplink(sequence: u16, ccmp: Option<u64>, payload: &[u8]) -> Vec<u8> {
 }
 
 /// The data MPDUs the access point sent `destination`.
-fn downlink(model: &LowerMacModel, destination: [u8; 6]) -> Vec<(Vec<u8>, KeySelector, PhyRate)> {
+fn downlink(model: &Model, destination: [u8; 6]) -> Vec<(Vec<u8>, KeySelector, PhyRate)> {
     model
         .submitted()
         .into_iter()
@@ -1304,7 +1310,7 @@ fn ps_poll(association_id: u16) -> Vec<u8> {
 
 /// The TIM's bitmap control and first partial-bitmap octet of the last
 /// beacon sent.
-fn last_tim(model: &LowerMacModel) -> (u8, u8) {
+fn last_tim(model: &Model) -> (u8, u8) {
     let beacon = model
         .submitted()
         .into_iter()
@@ -1317,7 +1323,7 @@ fn last_tim(model: &LowerMacModel) -> (u8, u8) {
 
 /// An Open access point with the station associated.
 fn associated<'a, const HELD: usize>(
-    model: &'a LowerMacModel,
+    model: &'a Model,
     router: &'a PortApRouter<'a, Env<'a>>,
     timer: &'a VirtualTimer,
     ssid: &'a WifiSsid,
@@ -1624,8 +1630,8 @@ fn block_ack_action(body: &[u8]) -> Vec<u8> {
 /// its handshake, then `test` it from the time after the handshake.
 fn with_ht_peer(
     test: impl FnOnce(
-        &LowerMacModel,
-        &oer_ieee80211_upper_mac_service::EventRouter<'_, LowerMacModel, 2, 4>,
+        &Model,
+        &oer_ieee80211_upper_mac_service::EventRouter<'_, Model, 2, 4>,
         &VirtualTimer,
         &mut PortAccessPoint<'_, Env<'_>>,
         u64,
@@ -1694,7 +1700,7 @@ fn with_ht_peer(
 
 /// The ADDBA Requests the access point sent the station: each Dialog Token
 /// and Starting Sequence Number.
-fn addba_requests(model: &LowerMacModel) -> Vec<(u8, u16)> {
+fn addba_requests(model: &Model) -> Vec<(u8, u16)> {
     model
         .submitted()
         .into_iter()
@@ -1706,7 +1712,7 @@ fn addba_requests(model: &LowerMacModel) -> Vec<(u8, u16)> {
 
 /// The protected data attempts to the station: each one's subframes, as
 /// their sequence numbers, and whether it was an A-MPDU.
-fn data_attempts(model: &LowerMacModel) -> Vec<(Vec<u16>, bool)> {
+fn data_attempts(model: &Model) -> Vec<(Vec<u16>, bool)> {
     model
         .submitted()
         .into_iter()
@@ -1912,7 +1918,8 @@ impl<'a> RateControl for Recorded<'a> {
 struct RateEnv<'a>(core::marker::PhantomData<&'a ()>);
 
 impl PortClientEnv for RateEnv<'_> {
-    type Port = LowerMacModel;
+    type NetworkFrame = TestFrame;
+    type Port = Model;
     type Budget = ProtectEveryHeTxop;
     type Ladder = FixedRate;
     type Entropy = Seeded;
@@ -2107,6 +2114,7 @@ fn an_aggregate_carries_more_than_eight_subframes_each_its_owner_s_payload() {
         }
         // The owners went back once the exchange ended.
         assert_eq!(returned(), before + 12);
+        assert_eq!(model.bodies_held(), 0);
         FRAMES.with(|frames| assert!(frames.get().unwrap().is_empty()));
     });
 }

@@ -99,13 +99,17 @@ impl oer_esp32s31_ieee80211::lower_mac::RadioCoexPriorities for RadioCoex<'_> {
         }
     }
 }
+
 use oer_ieee80211_lower_mac::{
-    AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockInfo, EventsLost, FailureClass,
-    Ieee80211LowerMacPort, Ieee80211Stamp, KeyHandle, KeyInstall, LifecycleCommand, LifecycleError,
-    LifecycleEvent, LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCapabilities, LowerMacEvent,
-    LowerMacMonitor, LowerMacSetting, MonitorCapabilities, Poisoned, PortError, Refused, RxBuffer,
-    RxEvidence, RxMeta, SettingError, SubmitError, SubmitResult, TbttEvent, TbttSchedule,
-    TsfSample, TxCompletion, TxId, VifId, VifTsf,
+    AmpduAttempt, AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockInfo, EventsLost,
+    FailureClass, Ieee80211LowerMacPort, Ieee80211Stamp, KeyHandle, KeyInstall, LifecycleCommand,
+    LifecycleError, LifecycleEvent, LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCapabilities,
+    LowerMacEvent, LowerMacMonitor, LowerMacSetting, MonitorCapabilities, Poisoned, PortError,
+    Refused, RxBuffer, RxEvidence, RxMeta, SettingError, SubmitError, SubmitResult, TbttEvent,
+    TbttSchedule, TsfSample, TxCompletion, TxId, VifId, VifTsf,
+};
+use oer_ieee80211_lower_mac::{
+    AmpduBuffer, AmpduPayload, MpduAttempt, ReclaimError, TxBody, TxBuffer, TxPayload,
 };
 use oer_ieee80211_lower_mac::{Ieee80211ClockSample, Ieee80211Instant};
 
@@ -297,6 +301,63 @@ impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
     }
 }
 
+/// The bodies of one admitted attempt, which the port holds until the
+/// caller reclaims them: an MPDU's, or an aggregate's by subframe.
+struct HeldBodies<O, const SUBFRAMES: usize> {
+    id: TxId,
+    mpdu: Option<O>,
+    subframes: [Option<O>; SUBFRAMES],
+}
+
+/// An aggregate buffer of the port: the core's, whose MPDUs it fills, and
+/// the bodies whose octets it copied after their headers, which the port
+/// holds from the attempt's admission.
+pub struct Esp32s31PortAmpduBuffer<'slot, S: AmpduBacking, const SLOTS: usize, O> {
+    inner: Esp32s31AmpduBuffer<'slot, S, SLOTS>,
+    bodies: [Option<O>; SLOTS],
+}
+
+impl<S: AmpduBacking, const SLOTS: usize, O> core::fmt::Debug
+    for Esp32s31PortAmpduBuffer<'_, S, SLOTS, O>
+{
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("Esp32s31PortAmpduBuffer")
+            .field("inner", &self.inner)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The port copies each body after its header as it is pushed: the core
+/// sends from its own DMA memory.
+impl<S: AmpduBackingSource, const SLOTS: usize, O: TxBody> AmpduBuffer
+    for Esp32s31PortAmpduBuffer<'_, S, SLOTS, O>
+{
+    type Body = O;
+
+    fn push_mpdu(&mut self, len: usize, body: Option<O>) -> Result<&mut [u8], Option<O>> {
+        let body_len = body.as_ref().map_or(0, |body| body.bytes().len());
+        let Some(header) = len.checked_sub(body_len) else {
+            return Err(body);
+        };
+        let index = self.inner.subframes();
+        let Ok(mpdu) = self.inner.push_mpdu(len, None) else {
+            return Err(body);
+        };
+        if let Some(body) = &body {
+            mpdu[header..].copy_from_slice(body.bytes());
+        }
+        if let Some(slot) = self.bodies.get_mut(index) {
+            *slot = body;
+        }
+        Ok(&mut mpdu[..header])
+    }
+
+    fn subframes(&self) -> usize {
+        self.inner.subframes()
+    }
+}
+
 /// The queues of the port, one per kind of event.
 struct Queues<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> {
     completions: EventQueue<M, TxCompletion, COMPLETION_SLOTS>,
@@ -455,6 +516,7 @@ pub struct Esp32s31LowerMac<
     S: AmpduBacking = NoAmpdu,
     const AMPDU_SLOTS: usize = 2,
     const AMPDU_BUFFERS: usize = 0,
+    O = Infallible,
 > {
     #[allow(
         clippy::type_complexity,
@@ -490,6 +552,10 @@ pub struct Esp32s31LowerMac<
     /// The image's monotonic time the runner's watchdog waits on; the same
     /// time the installed core's transmit owner reads.
     timer: T,
+    /// The bodies of admitted attempts until the caller reclaims them, one
+    /// entry per attempt; the owed completions bound them.
+    #[allow(clippy::type_complexity, reason = "one entry per owed attempt")]
+    bodies: Mutex<M, RefCell<[Option<HeldBodies<O, AMPDU_SLOTS>>; COMPLETION_CAPACITY]>>,
 }
 
 impl<
@@ -507,6 +573,7 @@ impl<
     U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
+    O: TxBody,
 > Default
     for Esp32s31LowerMac<
         'slot,
@@ -523,6 +590,7 @@ impl<
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
+        O,
     >
 where
     P: WifiTxPowerProfile,
@@ -553,6 +621,7 @@ impl<
     U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
+    O: TxBody,
 >
     Esp32s31LowerMac<
         'slot,
@@ -569,6 +638,7 @@ impl<
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
+        O,
     >
 where
     P: WifiTxPowerProfile,
@@ -589,7 +659,45 @@ where
             fault: Mutex::new(Cell::new(None)),
             queues: Queues::new(),
             wake: Signal::new(),
+            bodies: Mutex::new(RefCell::new([const { None }; COMPLETION_CAPACITY])),
         }
+    }
+
+    /// Reserve the entry of attempt `id`'s bodies; `false` when the table
+    /// holds one for it already or is full.
+    fn reserve_bodies(&self, id: TxId) -> bool {
+        self.bodies.lock(|bodies| {
+            let mut bodies = bodies.borrow_mut();
+            if bodies.iter().flatten().any(|held| held.id == id) {
+                return false;
+            }
+            let Some(free) = bodies.iter_mut().find(|held| held.is_none()) else {
+                return false;
+            };
+            *free = Some(HeldBodies {
+                id,
+                mpdu: None,
+                subframes: [const { None }; AMPDU_SLOTS],
+            });
+            true
+        })
+    }
+
+    /// Fill or drop the entry of attempt `id`'s bodies.
+    fn settle_bodies(&self, id: TxId, fill: Option<impl FnOnce(&mut HeldBodies<O, AMPDU_SLOTS>)>) {
+        self.bodies.lock(|bodies| {
+            let mut bodies = bodies.borrow_mut();
+            let Some(entry) = bodies
+                .iter_mut()
+                .find(|held| held.as_ref().is_some_and(|held| held.id == id))
+            else {
+                return;
+            };
+            match (fill, entry.as_mut()) {
+                (Some(fill), Some(held)) => fill(held),
+                _ => *entry = None,
+            }
+        });
     }
 
     /// Install a disabled core with its register owner and retune. A loss
@@ -677,6 +785,12 @@ where
             .installed
             .lock(|installed| installed.borrow_mut().take());
         self.queues.discard();
+        // The core's attempts went with it: their bodies go back.
+        self.bodies.lock(|bodies| {
+            for held in bodies.borrow_mut().iter_mut() {
+                *held = None;
+            }
+        });
         self.pending_retune.lock(|pending| pending.set(None));
         installed.map(|installed| (installed.core, installed.hardware))
     }
@@ -924,6 +1038,7 @@ impl<
     U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
+    O: TxBody,
 > Ieee80211LowerMacPort
     for Esp32s31LowerMac<
         'slot,
@@ -940,6 +1055,7 @@ impl<
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
+        O,
     >
 where
     P: WifiTxPowerProfile,
@@ -952,6 +1068,7 @@ where
     type Event = Esp32s31LowerMacEvent<U>;
     type Error = Esp32s31LowerMacError;
     type TxBuffer = Esp32s31TxBuffer<'slot, BUFFER_SIZE>;
+    type TxBody = O;
     type RxBuffer = Esp32s31RxBuffer<U>;
 
     fn view(event: &Esp32s31LowerMacEvent<U>) -> LowerMacEvent<'_> {
@@ -993,17 +1110,101 @@ where
         });
     }
 
+    /// The body's octets are copied after the header into the lent slot,
+    /// which the core sends from; the body waits in the port until it is
+    /// reclaimed.
     fn submit(
         &self,
-        attempt: Esp32s31MpduAttempt<'slot, BUFFER_SIZE>,
-    ) -> SubmitResult<Esp32s31MpduAttempt<'slot, BUFFER_SIZE>, Esp32s31LowerMacError> {
+        mut attempt: MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>, O>,
+    ) -> SubmitResult<MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>, O>, Esp32s31LowerMacError>
+    {
+        let Some(header) = attempt.payload.header_len() else {
+            return Ok(Err(Refused {
+                error: SubmitError::InvalidLength,
+                attempt,
+            }));
+        };
+        let id = attempt.id;
+        if attempt.payload.body.is_some() && !self.reserve_bodies(id) {
+            return Ok(Err(Refused {
+                error: SubmitError::Busy,
+                attempt,
+            }));
+        }
+        let body = attempt.payload.body.take();
+        if let Some(body) = &body {
+            attempt.payload.frame.frame_mut()[header..].copy_from_slice(body.bytes());
+        }
+        let attempt: Esp32s31MpduAttempt<'slot, BUFFER_SIZE> =
+            attempt.map_payload(|payload| TxPayload {
+                frame: payload.frame,
+                body: None,
+                response: payload.response,
+            });
         let queues = &self.queues;
         let admitted = self.with_core(|core, hardware, _| {
             owe_completion(queues, attempt, |attempt| core.submit(hardware, attempt))
-        })?;
+        });
+        let admitted = match admitted {
+            Ok(Ok(())) => {
+                if let Some(body) = body {
+                    self.settle_bodies(
+                        id,
+                        Some(|held: &mut HeldBodies<O, AMPDU_SLOTS>| {
+                            held.mpdu = Some(body);
+                        }),
+                    );
+                }
+                Ok(())
+            }
+            Ok(Err(Refused { error, attempt })) => {
+                self.settle_bodies(id, None::<fn(&mut HeldBodies<O, AMPDU_SLOTS>)>);
+                Err(Refused {
+                    error,
+                    attempt: attempt.map_payload(|payload| TxPayload {
+                        frame: payload.frame,
+                        body,
+                        response: payload.response,
+                    }),
+                })
+            }
+            Err(error) => {
+                self.settle_bodies(id, None::<fn(&mut HeldBodies<O, AMPDU_SLOTS>)>);
+                return Err(error);
+            }
+        };
         // A publication starts its watchdog.
         self.wake.signal(());
         Ok(admitted)
+    }
+
+    fn reclaim_tx_bodies(
+        &self,
+        id: TxId,
+        mut each: impl FnMut(usize, O),
+    ) -> Result<Result<(), ReclaimError>, Esp32s31LowerMacError> {
+        if self.with_core(|core, _, _| Ok(core.running(id)))? {
+            return Ok(Err(ReclaimError::Running));
+        }
+        let held = self.bodies.lock(|bodies| {
+            bodies
+                .borrow_mut()
+                .iter_mut()
+                .find(|held| held.as_ref().is_some_and(|held| held.id == id))
+                .and_then(Option::take)
+        });
+        let Some(held) = held else {
+            return Ok(Err(ReclaimError::Unknown));
+        };
+        if let Some(body) = held.mpdu {
+            each(0, body);
+        }
+        for (index, body) in held.subframes.into_iter().enumerate() {
+            if let Some(body) = body {
+                each(index, body);
+            }
+        }
+        Ok(Ok(()))
     }
 
     async fn next_event(&self) -> Result<Esp32s31LowerMacEvent<U>, EventsLost> {
@@ -1090,6 +1291,7 @@ impl<
     U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
+    O: TxBody,
 > LowerMacBeaconTiming
     for Esp32s31LowerMac<
         '_,
@@ -1106,6 +1308,7 @@ impl<
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
+        O,
     >
 where
     P: WifiTxPowerProfile,
@@ -1193,6 +1396,7 @@ impl<
     U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
+    O: TxBody,
 > LowerMacMonitor
     for Esp32s31LowerMac<
         '_,
@@ -1209,6 +1413,7 @@ impl<
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
+        O,
     >
 where
     P: WifiTxPowerProfile,
@@ -1245,6 +1450,7 @@ impl<
     U: LowerMacRxUnit,
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
+    O: TxBody,
 > LowerMacAmpdu
     for Esp32s31LowerMac<
         'slot,
@@ -1261,6 +1467,7 @@ impl<
         S,
         AMPDU_SLOTS,
         AMPDU_BUFFERS,
+        O,
     >
 where
     P: WifiTxPowerProfile,
@@ -1270,7 +1477,7 @@ where
     R: LowerMacRetune,
     S: AmpduBackingSource,
 {
-    type AmpduBuffer = Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>;
+    type AmpduBuffer = Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>;
 
     fn ampdu_capabilities(&self) -> AmpduCapabilities {
         esp32s31_ampdu_capabilities(AMPDU_SLOTS)
@@ -1278,30 +1485,87 @@ where
 
     fn ampdu_buffer(
         &self,
-    ) -> Result<Option<Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>>, Esp32s31LowerMacError> {
-        self.with_core(|core, _, _| Ok(core.ampdu_buffer()))
+    ) -> Result<Option<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>, Esp32s31LowerMacError>
+    {
+        let inner = self.with_core(|core, _, _| Ok(core.ampdu_buffer()))?;
+        Ok(inner.map(|inner| Esp32s31PortAmpduBuffer {
+            inner,
+            bodies: [const { None }; AMPDU_SLOTS],
+        }))
     }
 
     /// An aggregate released while no backend is installed or the port is
     /// poisoned returns its subframes, and its aggregate owner is lost until
     /// the radio is reset.
-    fn release_ampdu_buffer(&self, buffer: Esp32s31AmpduBuffer<'slot, S, AMPDU_SLOTS>) {
+    fn release_ampdu_buffer(&self, buffer: Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>) {
         let _ = self.with_core(|core, _, _| {
-            core.release_ampdu_buffer(buffer);
+            core.release_ampdu_buffer(buffer.inner);
             Ok(())
         });
     }
 
     fn submit_ampdu(
         &self,
-        attempt: Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS>,
-    ) -> SubmitResult<Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS>, Esp32s31LowerMacError> {
+        attempt: AmpduAttempt<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>,
+    ) -> SubmitResult<
+        AmpduAttempt<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>,
+        Esp32s31LowerMacError,
+    > {
+        let id = attempt.id;
+        let carries = attempt.payload.subframes.bodies.iter().any(Option::is_some);
+        if carries && !self.reserve_bodies(id) {
+            return Ok(Err(Refused {
+                error: SubmitError::Busy,
+                attempt,
+            }));
+        }
+        let mut bodies = None;
+        let attempt: Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS> = attempt.map_payload(|payload| {
+            bodies = Some(payload.subframes.bodies);
+            AmpduPayload {
+                subframes: payload.subframes.inner,
+                tid: payload.tid,
+                min_mpdu_start_spacing: payload.min_mpdu_start_spacing,
+            }
+        });
+        let bodies = bodies.unwrap_or([const { None }; AMPDU_SLOTS]);
         let queues = &self.queues;
         let admitted = self.with_core(|core, hardware, _| {
             owe_completion(queues, attempt, |attempt| {
                 core.submit_ampdu(hardware, attempt)
             })
-        })?;
+        });
+        let admitted = match admitted {
+            Ok(Ok(())) => {
+                if carries {
+                    self.settle_bodies(
+                        id,
+                        Some(|held: &mut HeldBodies<O, AMPDU_SLOTS>| {
+                            held.subframes = bodies;
+                        }),
+                    );
+                }
+                Ok(())
+            }
+            Ok(Err(Refused { error, attempt })) => {
+                self.settle_bodies(id, None::<fn(&mut HeldBodies<O, AMPDU_SLOTS>)>);
+                Err(Refused {
+                    error,
+                    attempt: attempt.map_payload(|payload| AmpduPayload {
+                        subframes: Esp32s31PortAmpduBuffer {
+                            inner: payload.subframes,
+                            bodies,
+                        },
+                        tid: payload.tid,
+                        min_mpdu_start_spacing: payload.min_mpdu_start_spacing,
+                    }),
+                })
+            }
+            Err(error) => {
+                self.settle_bodies(id, None::<fn(&mut HeldBodies<O, AMPDU_SLOTS>)>);
+                return Err(error);
+            }
+        };
         // A publication starts its watchdog.
         self.wake.signal(());
         Ok(admitted)

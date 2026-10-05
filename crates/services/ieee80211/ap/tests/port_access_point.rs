@@ -43,7 +43,10 @@ use oer_ieee80211_softmac::{BackoffEntropy, EdcaContention};
 use oer_ieee80211_upper_mac::{
     AmpduRetryPolicy, ProtectEveryHeTxop, ProtectionPolicy, RateLadder, RetryLimits, TxPlanner,
 };
-use oer_ieee80211_upper_mac_service::client::{PortClient, PortClientConfig, PortClientEnv};
+use oer_ieee80211_upper_mac_service::{
+    aggregate::PortAmpduAggregation,
+    client::{PortClient, PortClientConfig, PortClientEnv},
+};
 use oer_time::{Clock, Instant, Timer};
 
 const AP: VifId = VifId(1);
@@ -133,6 +136,7 @@ impl PortClientEnv for Env<'_> {
     type Budget = ProtectEveryHeTxop;
     type Ladder = FixedRate;
     type Entropy = Seeded;
+    type Aggregation = PortAmpduAggregation;
 }
 
 impl<'a> PortApEnv for Env<'a> {
@@ -149,6 +153,7 @@ impl PortClientEnv for Wpa3Env<'_> {
     type Budget = ProtectEveryHeTxop;
     type Ladder = FixedRate;
     type Entropy = Seeded;
+    type Aggregation = PortAmpduAggregation;
 }
 
 impl<'a> PortApEnv for Wpa3Env<'a> {

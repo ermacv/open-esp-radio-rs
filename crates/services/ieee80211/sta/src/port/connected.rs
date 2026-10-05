@@ -42,15 +42,16 @@ use oer_ieee80211_sta::{
     rate_control::StaRateControl,
     sa_query::{SaQueryStep, StationSaQuery},
 };
-use oer_ieee80211_upper_mac::{
-    AmpduRequest, TxBody, TxReceiver, TxReport, TxRequest, ampdu::MAX_AMPDU_SUBFRAMES,
-};
+use oer_ieee80211_upper_mac::{TxBody, TxReceiver, TxReport, TxRequest, aggregate::AmpduLimits};
+use oer_ieee80211_upper_mac_service::UpperMacTxError;
+use oer_ieee80211_upper_mac_service::aggregate::AmpduSubframes;
 use oer_ieee80211_upper_mac_service::client::{PortError, PortFrame, PortInput, PortMsdu};
-use oer_ieee80211_upper_mac_service::queue::{PORT_FRAME_CAPACITY, PORT_TX_QUEUE, TxQueue};
+use oer_ieee80211_upper_mac_service::queue::{
+    PORT_FRAME_CAPACITY, PORT_MPDU_CAPACITY, PORT_TX_QUEUE, TxQueue,
+};
 use oer_ieee80211_upper_mac_service::reorder::{
     CURRENT_SLOT, Offer, PORT_REORDER_WINDOW, ReorderRelease, RxReorder,
 };
-use oer_ieee80211_upper_mac_service::{AmpduFrames, UpperMacTxError};
 use oer_time::{Clock, Duration, Instant};
 
 use super::{
@@ -59,13 +60,6 @@ use super::{
     rsn::{EAPOL_ETHER_TYPE, PortKeys, send_protected_eapol},
     wire,
 };
-
-/// The SIFS and the compressed BlockAck that answers an aggregate, at the
-/// lowest mandatory ERP-OFDM rate (6 Mb/s): the response a TXOP holds after
-/// the aggregate.
-const BLOCK_ACK_RESPONSE_MICROS: u32 = 10
-    + oer_ieee80211_mac::phy::PhyRate::Legacy(oer_ieee80211_mac::phy::LegacyRate::Ofdm6M)
-        .max_ppdu_duration_micros(32);
 
 const TIDS: usize = 8;
 const MANAGEMENT_HEADER_LEN: usize = 24;
@@ -201,7 +195,7 @@ pub struct PortConnectionBuffers {
     /// and copies of the out-of-order MPDUs the windows keep.
     reorder: RxReorder<TIDS>,
     queue: TxQueue,
-    subframes: [[u8; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
+    subframes: AmpduSubframes,
 }
 
 impl PortConnectionBuffers {
@@ -209,7 +203,7 @@ impl PortConnectionBuffers {
         Self {
             reorder: RxReorder::new(),
             queue: TxQueue::new(),
-            subframes: [[0; PORT_FRAME_CAPACITY + 64]; PORT_TX_QUEUE],
+            subframes: AmpduSubframes::new(),
         }
     }
 
@@ -594,9 +588,6 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         Ok(())
     }
 
-    /// How many queued frames of `priority` from the head one A-MPDU
-    /// carries: those its operational agreement's window, the port's and
-    /// the peer's limits admit; one where no A-MPDU applies.
     /// The TXOP limit of `priority`'s access category in microseconds;
     /// `None` without one.
     fn txop_limit_micros(&self, priority: WmmUserPriority) -> Option<u32> {
@@ -608,57 +599,42 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         (units != 0).then_some(u32::from(units) * 32)
     }
 
+    /// How many queued frames of `priority` from the head one A-MPDU
+    /// carries: those its operational agreement's window, the port's and
+    /// the peer's limits admit; one where no A-MPDU applies.
     fn aggregate_run<X: PortStationEnv<Port = P, RateControl = R>>(
         &self,
         context: &ConnectionContext<'_, '_, X>,
         priority: WmmUserPriority,
     ) -> usize {
         let tid = priority.value();
-        let (Some(agreement), Some(capabilities), Some(_)) = (
+        let (Some(agreement), Some(port), Some(_)) = (
             self.tx_block_ack
                 .as_ref()
                 .and_then(|originator| originator.operational(tid)),
-            <X::Aggregation as super::link::PortAggregation<X>>::capabilities(context.link.port()),
+            context.link.ampdu_capabilities(),
             self.keys,
         ) else {
             return 1;
         };
-        if !self.config.peer_qos || !capabilities.formats.contains_rate(self.rate.ampdu_rate()) {
+        if !self.config.peer_qos {
             return 1;
         }
-        let limit = usize::from(agreement.window)
-            .min(usize::from(capabilities.max_subframes))
-            .min(usize::from(MAX_AMPDU_SUBFRAMES))
-            .min(PORT_TX_QUEUE);
-        // The peer's Maximum A-MPDU Length Exponent and the port's limit.
-        let peer_length =
-            (1_u32 << (13 + u32::from(self.config.peer.ht_ampdu_parameters & 0x03))) - 1;
-        let maximum = peer_length.min(capabilities.max_length);
-        let txop = self.txop_limit_micros(priority);
-        let rate = self.rate.ampdu_rate();
-        let mut length = 0_u32;
-        let mut run = 0;
-        for index in 0..self.buffers.queue.head_run(limit) {
-            let Some(frame) = self.buffers.queue.get(index) else {
-                break;
-            };
-            // Delimiter, MAC header, CCMP header, LLC/SNAP, MIC, FCS and
-            // padding to four octets: a bound of the encoded subframe.
-            let subframe = (4 + 26 + 8 + 8 + frame.ethernet().len() as u32 + 8 + 4 + 3) & !3;
-            if length + subframe > maximum {
-                break;
-            }
-            // The aggregate and its BlockAck stay within the access
-            // category's TXOP limit; a single MPDU may exceed it.
-            if txop.is_some_and(|txop| {
-                rate.max_ppdu_duration_micros(length + subframe) + BLOCK_ACK_RESPONSE_MICROS > txop
-            }) {
-                break;
-            }
-            length += subframe;
-            run += 1;
-        }
-        run.max(1)
+        let limits = AmpduLimits {
+            window: agreement.window,
+            port,
+            peer_ampdu_parameters: self.config.peer.ht_ampdu_parameters,
+            txop_limit_micros: self.txop_limit_micros(priority),
+            rate: self.rate.ampdu_rate(),
+        };
+        let queue = &self.buffers.queue;
+        limits
+            .run(
+                (0..queue.head_run(PORT_TX_QUEUE))
+                    .filter_map(|index| queue.get(index))
+                    .map(|frame| frame.ethernet().len()),
+            )
+            .max(1)
     }
 
     /// Send the first `run` queued frames of `priority` as one A-MPDU under
@@ -670,10 +646,9 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         run: usize,
     ) -> Result<(TxReport, usize), PortLinkError<PortError<X>>> {
         let tid = priority.value();
-        let mut lengths = [0_u16; PORT_TX_QUEUE];
         let mut first_sequence = None;
-        let mut key = KeySelector::Plaintext;
-        for (index, on_air) in lengths.iter_mut().enumerate().take(run) {
+        self.buffers.subframes.clear();
+        for _ in 0..run {
             let frame = self
                 .buffers
                 .queue
@@ -683,21 +658,24 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
                 StationFrameError::UserPriorityOutOfRange,
             ))?;
             first_sequence.get_or_insert(sequence);
-            let mut out = [0_u8; PORT_FRAME_CAPACITY + 64];
+            let mut out = [0_u8; PORT_MPDU_CAPACITY];
             let (length, selector) =
                 self.encode_data(context, frame.ethernet(), priority, sequence, &mut out)?;
-            self.buffers.subframes[index][..length].copy_from_slice(&out[..length]);
-            key = selector;
-            let mic = if matches!(selector, KeySelector::Key(_)) {
-                8
-            } else {
-                0
-            };
-            *on_air = (length + 4 + mic) as u16;
+            self.buffers
+                .subframes
+                .push(|buffer| {
+                    buffer[..length].copy_from_slice(&out[..length]);
+                    Ok::<_, PortLinkError<PortError<X>>>((length, selector))
+                })?
+                .then_some(())
+                .ok_or(PortLinkError::MissingState)?;
         }
         let first_sequence = first_sequence.ok_or(PortLinkError::MissingState)?;
         let committed_at = context.link.port().now().map_err(PortLinkError::Port)?;
-        let request = AmpduRequest::new(tid, first_sequence, &lengths[..run], committed_at, true)
+        let ampdu = self
+            .buffers
+            .subframes
+            .request(tid, first_sequence, committed_at)
             .ok_or(PortLinkError::MissingState)?;
         let config = *context.link.config();
         let request = TxRequest {
@@ -707,24 +685,16 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
             power: config.power,
             coex: config.coex,
             mpdu_retry_limit: config.retry_limit,
-            body: TxBody::Ampdu(request),
+            body: TxBody::Ampdu(ampdu),
         };
-        let mut slices: [&[u8]; PORT_TX_QUEUE] = [&[]; PORT_TX_QUEUE];
-        for (index, slice) in slices.iter_mut().enumerate().take(run) {
-            let mic = if matches!(key, KeySelector::Key(_)) {
-                8
-            } else {
-                0
-            };
-            let length = usize::from(lengths[index]) - 4 - mic;
-            *slice = &self.buffers.subframes[index][..length];
-        }
-        let frames = AmpduFrames {
-            subframes: &slices[..run],
-            key,
-            min_mpdu_start_spacing: (self.config.peer.ht_ampdu_parameters >> 2) & 0x07,
-        };
-        <X::Aggregation as super::link::PortAggregation<X>>::send(context.link, frames, request)
+        let mut slices = [&[][..]; PORT_TX_QUEUE];
+        let frames = self.buffers.subframes.frames(
+            &mut slices,
+            (self.config.peer.ht_ampdu_parameters >> 2) & 0x07,
+        );
+        context
+            .link
+            .transmit_ampdu(frames, request)
             .await
             .map(|report| (report, run))
     }
@@ -745,7 +715,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         } else {
             context.sequences.take_non_qos()
         };
-        let mut frame = [0_u8; PORT_FRAME_CAPACITY + 64];
+        let mut frame = [0_u8; PORT_MPDU_CAPACITY];
         let (length, key) =
             self.encode_data(context, ethernet, priority, sequence_number, &mut frame)?;
         context

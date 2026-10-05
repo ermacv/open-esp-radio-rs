@@ -25,7 +25,8 @@ the backend's runner, takes every event and dispatches it:
 
 A service talks to the port through one `client::PortClient` per interface
 (`PortClientEnv` names the port, the planner's HE TXOP budget, the rate
-ladder and the backoff entropy; `PortClientConfig` the interface's VIF,
+ladder, the backoff entropy and its `Aggregation`, `aggregate::PortAmpduAggregation`
+over a port with `LowerMacAmpdu` or `NoAggregation`; `PortClientConfig` the interface's VIF,
 address, role, power and retry limit). The client reads the router's receive
 and extension queues as `PortInput`s (`Frame(PortFrame)` in the port's own
 `RxBuffer`, `Tbtt`, `EventsLost`, `Poisoned`), transmits MPDUs and A-MPDUs
@@ -35,7 +36,12 @@ failure a `PortClientError`. `PortMsdu` is the MSDU a service hands its
 application: the port's buffer, or parts to copy. `queue::TxQueue` is a
 service's first-in first-out ring of `PORT_TX_QUEUE` Ethernet frames of at
 most `PORT_FRAME_CAPACITY` octets, each with its user priority, whose
-`head_run` is the run of one priority an A-MPDU may carry.
+`head_run` is the run of one priority an A-MPDU may carry; an MPDU encoded
+from a queued frame fits `PORT_MPDU_CAPACITY`. `aggregate::AmpduSubframes`
+holds the encoded subframes of one A-MPDU, at most `PORT_TX_QUEUE`, and
+makes its `AmpduRequest` (on-air lengths with FCS and MIC) and the
+`AmpduFrames` the client sends; how many frames it carries is
+`oer-ieee80211-upper-mac`'s `AmpduLimits`.
 `reorder::RxReorder<AGREEMENTS>` reorders the receive Block Ack agreements
 of a service by peer and TID: `offer` releases an in-order MPDU at once as
 the release's `CURRENT_SLOT`, which the caller delivers from the port's
@@ -44,7 +50,7 @@ shared slots (asking the caller to deliver the window's oldest run first,
 `MakeRoom`, when every slot is taken), and releases a kept run past its gap
 once the caller's gap time passed (`arm_gaps`, `expire_due_gap`). The port's
 agreement setting, replay checks and delivery stay the caller's. The
-station and access-point services build on all three.
+station and access-point services build on all of them.
 
 `UpperMacTx::new(&router, vif, planner)` binds one interface; the router
 allocates attempt identities outside the backend-reserved range.

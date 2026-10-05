@@ -5,8 +5,8 @@ use core::future::Future;
 
 use oer_ieee80211_lower_mac::{
     AmpduCapabilities, Channel, CoexPriority, FailureClass, KeySelector, LifecycleCommand,
-    LifecycleError, LowerMacAmpdu, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter,
-    SettingError, TxPower, VifId, VifRole,
+    LifecycleError, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter, SettingError, TxPower,
+    VifId, VifRole,
 };
 use oer_ieee80211_mac::{
     ccmp::CcmpTxPacketNumberError,
@@ -22,6 +22,7 @@ use oer_ieee80211_upper_mac::{TxPlanner, TxReport, TxRequest};
 pub use oer_ieee80211_upper_mac_service::EventRouter;
 use oer_ieee80211_upper_mac_service::{
     AmpduFrames, UpperMacTx, UpperMacTxError,
+    aggregate::PortAggregation,
     client::{
         PortClient, PortClientConfig, PortClientCounters, PortClientEnv, PortClientError,
         PortError, PortInput, PortRxBuffer,
@@ -49,9 +50,6 @@ pub trait PortStationEnv: PortClientEnv {
     type Timer: Timer;
     /// The EAPOL-Key data unwrap of the WPA2 handshake.
     type KeyUnwrap: AsyncRsnKeyUnwrap;
-    /// How the station sends A-MPDUs: [`PortAmpduAggregation`] over a port
-    /// with [`LowerMacAmpdu`], [`NoAggregation`] over one without.
-    type Aggregation: PortAggregation<Self>;
     /// The coexistence schedule of the radio system the station shares its
     /// RF with; [`NoCoexistence`] when it shares it with none.
     type Coex: PortCoexistence;
@@ -109,67 +107,6 @@ impl PortCoexistence for NoCoexistence {
 
     async fn connection_frame(&mut self, _frame: PortConnectionFrame) -> bool {
         false
-    }
-}
-
-/// How a station's port sends A-MPDUs, which its integrator names once in
-/// [`PortStationEnv::Aggregation`].
-pub trait PortAggregation<X: PortStationEnv + ?Sized> {
-    /// The port's A-MPDU capabilities; `None` sends every frame alone.
-    fn capabilities(port: &X::Port) -> Option<AmpduCapabilities>;
-
-    /// Send one A-MPDU through the link's transmit driver.
-    fn send(
-        link: &mut PortLink<'_, X>,
-        frames: AmpduFrames<'_>,
-        request: TxRequest,
-    ) -> impl Future<Output = Result<TxReport, PortLinkError<PortError<X>>>>
-    where
-        X: Sized;
-}
-
-/// A port without [`LowerMacAmpdu`]: the station sends every frame alone,
-/// its Block Ack agreements notwithstanding.
-pub struct NoAggregation;
-
-impl<X: PortStationEnv + ?Sized> PortAggregation<X> for NoAggregation {
-    fn capabilities(_port: &X::Port) -> Option<AmpduCapabilities> {
-        None
-    }
-
-    async fn send(
-        _link: &mut PortLink<'_, X>,
-        _frames: AmpduFrames<'_>,
-        _request: TxRequest,
-    ) -> Result<TxReport, PortLinkError<PortError<X>>>
-    where
-        X: Sized,
-    {
-        Err(PortLinkError::MissingState)
-    }
-}
-
-/// A port with [`LowerMacAmpdu`]: aggregates go through its A-MPDU
-/// attempts.
-pub struct PortAmpduAggregation;
-
-impl<X: PortStationEnv + ?Sized> PortAggregation<X> for PortAmpduAggregation
-where
-    X::Port: LowerMacAmpdu,
-{
-    fn capabilities(port: &X::Port) -> Option<AmpduCapabilities> {
-        Some(port.ampdu_capabilities())
-    }
-
-    async fn send(
-        link: &mut PortLink<'_, X>,
-        frames: AmpduFrames<'_>,
-        request: TxRequest,
-    ) -> Result<TxReport, PortLinkError<PortError<X>>>
-    where
-        X: Sized,
-    {
-        link.transmit_ampdu(frames, request).await
     }
 }
 
@@ -236,6 +173,7 @@ impl<E> From<PortClientError<E>> for PortLinkError<E> {
             PortClientError::FrameTooShort => {
                 Self::Frame(StationFrameError::OutputTooSmall { required: 10 })
             }
+            PortClientError::AggregationUnsupported => Self::MissingState,
         }
     }
 }
@@ -356,16 +294,19 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
             .await?)
     }
 
+    /// The port's A-MPDU capabilities; `None` when it sends every frame
+    /// alone.
+    pub(crate) fn ampdu_capabilities(&self) -> Option<AmpduCapabilities> {
+        <X::Aggregation as PortAggregation<X>>::capabilities(self.client.port())
+    }
+
     /// Send one A-MPDU until the planner reports the exchange's end.
     pub(crate) async fn transmit_ampdu(
         &mut self,
         frames: AmpduFrames<'_>,
         request: TxRequest,
-    ) -> Result<TxReport, PortLinkError<PortError<X>>>
-    where
-        X::Port: LowerMacAmpdu,
-    {
-        Ok(self.client.transmit_ampdu(frames, request).await?)
+    ) -> Result<TxReport, PortLinkError<PortError<X>>> {
+        Ok(<X::Aggregation as PortAggregation<X>>::send(&mut self.client, frames, request).await?)
     }
 
     /// The next input the router already holds: a TBTT first, then a

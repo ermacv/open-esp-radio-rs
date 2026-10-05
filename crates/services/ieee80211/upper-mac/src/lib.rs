@@ -32,6 +32,7 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod aggregate;
 pub mod client;
 pub mod queue;
 pub mod reorder;

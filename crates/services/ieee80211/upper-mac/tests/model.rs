@@ -788,6 +788,7 @@ impl PortClientEnv for ClientEnv {
     type Budget = ProtectEveryHeTxop;
     type Ladder = Ladder;
     type Entropy = Seeded;
+    type Aggregation = oer_ieee80211_upper_mac_service::aggregate::PortAmpduAggregation;
 }
 
 fn client<'r>(router: &'r Router<'r>, role: VifRole) -> PortClient<'r, ClientEnv, 4, 4> {

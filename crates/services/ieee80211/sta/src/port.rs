@@ -42,9 +42,9 @@ pub use connected::{
 };
 pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{
-    EventRouter, NoAggregation, NoCoexistence, PORT_BACKLOG, PORT_EXCHANGES, PortAggregation,
-    PortAmpduAggregation, PortCoexistence, PortCoexistenceRefused, PortConnectionFrame, PortLink,
-    PortLinkError, PortRouter, PortStationConfig, PortStationEnv,
+    EventRouter, NoCoexistence, PORT_BACKLOG, PORT_EXCHANGES, PortCoexistence,
+    PortCoexistenceRefused, PortConnectionFrame, PortLink, PortLinkError, PortRouter,
+    PortStationConfig, PortStationEnv,
 };
 pub use power::PortPowerSave;
 pub use rsn::{PortHandshake, PortKeyInstall, PortKeys};

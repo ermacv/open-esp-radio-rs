@@ -685,12 +685,26 @@ fn tidy(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
 }
 
 fn fmt(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
-    let runs: Vec<(String, Option<Vec<&str>>)> = match scope {
-        Scope::Tree => checks::common::model(ctx)?
-            .workspaces()
-            .iter()
-            .map(|workspace| (workspace.clone(), None))
-            .collect(),
+    let model;
+    // Always the workspace's own packages by name: `--all` also walks path
+    // dependencies, and a dependency below another workspace's directory
+    // (verification/evidence/shard) makes cargo-fmt fail on the wrong
+    // workspace.
+    let runs: Vec<(String, Vec<&str>)> = match scope {
+        Scope::Tree => {
+            model = checks::common::model(ctx)?;
+            model
+                .workspaces()
+                .iter()
+                .map(|workspace| {
+                    let packages = model
+                        .members(workspace)
+                        .map(|package| package.name.as_str())
+                        .collect();
+                    (workspace.clone(), packages)
+                })
+                .collect()
+        }
         // Only the selected packages: formatting the whole root workspace
         // takes 15 s, its changed packages a fraction of that.
         Scope::Change(change) => change
@@ -705,7 +719,7 @@ fn fmt(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
                     .filter(|(owner, _)| owner == workspace)
                     .map(|(_, name)| name.as_str())
                     .collect();
-                (workspace.clone(), Some(packages))
+                (workspace.clone(), packages)
             })
             .collect(),
     };
@@ -715,15 +729,8 @@ fn fmt(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
         command
             .args(["fmt", "--manifest-path"])
             .arg(ctx.root.join(&workspace));
-        match packages {
-            None => {
-                command.arg("--all");
-            }
-            Some(packages) => {
-                for package in packages {
-                    command.args(["-p", package]);
-                }
-            }
+        for package in packages {
+            command.args(["-p", package]);
         }
         process::run(command.args(["--", "--check"]))?;
     }

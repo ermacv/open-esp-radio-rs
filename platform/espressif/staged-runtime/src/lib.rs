@@ -78,3 +78,10 @@ pub unsafe fn enable_interrupts_after_handoff() {
     // is bound; setting MIE touches no memory and leaves the stack unchanged.
     unsafe { core::arch::asm!("csrsi mstatus, 8", options(nomem, nostack)) };
 }
+
+/// The stack-protector guard that `esp_hal::init` arms its watchpoint on.
+/// esp-hal's `linkall.x` defines it; stage two links its own scripts, so the
+/// runtime owns it, in SRAM critical data.
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".critical.data.stack_guard")]
+static mut __stack_chk_guard: u32 = 0xDEED_BAAD;

@@ -47,7 +47,6 @@ use oer_ieee80211_ap::{
     AP_MAX_CLIENTS, AccessPointService, ApAssociationCapabilities, ApMlmeAction, ApPeerClose,
     ApPeerCloseKind, ApPeerPhase, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
     beacon::ApBeacon,
-    limits::AP_TIM_VIRTUAL_BITMAP_OCTETS,
     sae::{ApSaeFrame, ApSaeOutput, ApSaeRandom, ApSaeResponder, ApSaeResult},
 };
 use oer_ieee80211_lower_mac::{
@@ -63,7 +62,7 @@ use oer_ieee80211_mac::{
         write_ap_peer_disconnect, write_ht_association_response_frame_for_security,
         write_open_authentication_response, write_sae_authentication,
     },
-    beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, TimBitmapError, TimVirtualBitmap},
+    beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, TimBitmapError},
     ccmp::{
         CCMP_HEADER_LEN, CcmpHeader, CcmpKeyId, CcmpPacketNumberStep, CcmpReplayLane,
         CcmpRxReplayState, CcmpTxPacketNumber,
@@ -94,6 +93,13 @@ use oer_ieee80211_upper_mac_service::{
     queue::TxQueue,
 };
 use oer_time::{Clock, Duration, Instant, Timer};
+
+use oer_ieee80211_ap::{
+    ApBufferedUnicastRelease, ApDownlinkDisposition, ApPeerPowerState, ApPowerSaveAction,
+};
+use oer_ieee80211_mac::ap::{ApPowerSaveObservation, observe_ap_power_save_for_access_point};
+use oer_ieee80211_mac::beacon::dtim;
+use oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY;
 
 /// Exchanges of the access point that wait for a completion at once.
 pub const PORT_AP_EXCHANGES: usize = 2;
@@ -236,11 +242,16 @@ pub struct PortApProfile<'a> {
     pub ccmp_step: CcmpPacketNumberStep,
 }
 
+/// Frames the access point holds for dozing peers and for the next DTIM,
+/// together.
+pub const PORT_AP_BUFFERED: usize = 8;
+
 /// The memory of one access point that the composition places: its beacon
-/// template and its transmit queue.
+/// template, its transmit queue and the frames it holds for power save.
 pub struct PortApStorage {
     beacon: [u8; AP_BEACON_CAPACITY],
     queue: TxQueue,
+    buffered: PowerSaveBuffer,
 }
 
 impl PortApStorage {
@@ -248,6 +259,91 @@ impl PortApStorage {
         Self {
             beacon: [0; AP_BEACON_CAPACITY],
             queue: TxQueue::new(),
+            buffered: PowerSaveBuffer::new(),
+        }
+    }
+}
+
+/// One frame held for power save: an Ethernet-II frame for a dozing peer,
+/// or for the group until the next DTIM.
+struct HeldFrame {
+    order: u32,
+    ethernet: [u8; PORT_FRAME_CAPACITY],
+    len: usize,
+}
+
+impl HeldFrame {
+    fn ethernet(&self) -> &[u8] {
+        &self.ethernet[..self.len]
+    }
+
+    fn destination(&self) -> [u8; 6] {
+        let mut destination = [0; 6];
+        destination.copy_from_slice(&self.ethernet[..6]);
+        destination
+    }
+
+    fn is_group(&self) -> bool {
+        self.ethernet[0] & 1 != 0
+    }
+}
+
+/// The frames held for power save, shared by every dozing peer and the
+/// group, each released oldest first for its destination.
+struct PowerSaveBuffer {
+    frames: [Option<HeldFrame>; PORT_AP_BUFFERED],
+    next_order: u32,
+}
+
+impl PowerSaveBuffer {
+    const fn new() -> Self {
+        Self {
+            frames: [const { None }; PORT_AP_BUFFERED],
+            next_order: 0,
+        }
+    }
+
+    /// Hold `ethernet`; `false` when every slot is taken.
+    fn hold(&mut self, ethernet: &[u8]) -> bool {
+        let Some(slot) = self.frames.iter_mut().find(|slot| slot.is_none()) else {
+            return false;
+        };
+        if ethernet.len() > PORT_FRAME_CAPACITY || ethernet.len() < 6 {
+            return false;
+        }
+        let mut held = HeldFrame {
+            order: self.next_order,
+            ethernet: [0; PORT_FRAME_CAPACITY],
+            len: ethernet.len(),
+        };
+        held.ethernet[..ethernet.len()].copy_from_slice(ethernet);
+        *slot = Some(held);
+        self.next_order = self.next_order.wrapping_add(1);
+        true
+    }
+
+    /// Take the oldest frame `matches` selects.
+    fn take_oldest(&mut self, matches: impl Fn(&HeldFrame) -> bool) -> Option<HeldFrame> {
+        let index = self
+            .frames
+            .iter()
+            .enumerate()
+            .filter_map(|(index, slot)| {
+                slot.as_ref()
+                    .filter(|held| matches(held))
+                    .map(|held| (index, held.order))
+            })
+            .min_by_key(|(_, order)| self.next_order.wrapping_sub(*order).wrapping_neg())
+            .map(|(index, _)| index)?;
+        self.frames[index].take()
+    }
+
+    /// Drop every frame held for `peer`.
+    fn drop_for(&mut self, peer: [u8; 6]) {
+        for slot in &mut self.frames {
+            if slot.as_ref().is_some_and(|held| held.destination() == peer) {
+                *slot = None;
+            }
         }
     }
 }
@@ -319,6 +415,13 @@ pub struct PortApCounters {
     pub replayed: u32,
     /// MPDUs that do not decapsulate, fragments included.
     pub malformed: u32,
+    /// Frames held for a dozing peer or the next DTIM.
+    pub held: u32,
+    /// Frames for a dozing peer or the group dropped with every slot
+    /// taken.
+    pub held_dropped: u32,
+    /// Held frames sent on a wake-up, a PS-Poll or after a DTIM beacon.
+    pub released: u32,
     /// Peers authorized by a completed four-way handshake.
     pub handshakes: u32,
 }
@@ -408,6 +511,7 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     /// The packet numbers of group data.
     group_transmit: CcmpTxPacketNumber,
     queue: &'p mut TxQueue,
+    buffered: &'p mut PowerSaveBuffer,
     /// The protection the beacon template carries.
     advertised: ApBssProtection,
     /// Before it no Probe Response goes out.
@@ -427,7 +531,11 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         service: AccessPointService<'p>,
         storage: &'p mut PortApStorage,
     ) -> Result<Self, PortApBuildError> {
-        let PortApStorage { beacon, queue } = storage;
+        let PortApStorage {
+            beacon,
+            queue,
+            buffered,
+        } = storage;
         if service.address() != client.config().address {
             return Err(PortApBuildError::AddressMismatch);
         }
@@ -455,6 +563,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             links: [const { None }; AP_MAX_CLIENTS],
             group_transmit: CcmpTxPacketNumber::new(profile.ccmp_step),
             queue,
+            buffered,
             advertised: ApBssProtection::default(),
             next_probe_response: Instant::EPOCH,
             counters: PortApCounters::default(),
@@ -583,9 +692,11 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         !self.queue.is_full()
     }
 
-    /// Forget a peer: its pairwise key, its SAE session, then its state.
+    /// Forget a peer: its pairwise key, its SAE session, the frames held for
+    /// it, then its state.
     fn remove_peer(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
         self.remove_pairwise_key(peer)?;
+        self.buffered.drop_for(peer);
         self.sae.forget(peer);
         self.service.remove_peer(peer)?;
         Ok(())
@@ -624,7 +735,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 ApWpa2RetryProgress::None => {}
             }
             if let Some(frame) = self.queue.pop() {
-                self.transmit_data(frame.ethernet()).await?;
+                self.dispatch(frame.ethernet()).await?;
                 continue;
             }
             if now >= deadline {
@@ -703,8 +814,11 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     async fn publish_beacon(&mut self, now: Instant) -> Result<(), PortApError<PortError<X>>> {
         self.advertise_current_protection()?;
         let sequence = self.service.next_management_sequence();
-        let bitmap = TimVirtualBitmap::<AP_TIM_VIRTUAL_BITMAP_OCTETS>::try_new()
+        let bitmap = self
+            .service
+            .unicast_tim_bitmap()
             .map_err(PortApError::Tim)?;
+        let group_pending = self.service.group_traffic_pending();
         let Self {
             client,
             beacon,
@@ -713,8 +827,9 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             ..
         } = self;
         let frame = beacon
-            .prepare(now, sequence, false, bitmap.partial())
+            .prepare(now, sequence, group_pending, bitmap.partial())
             .ok_or(PortApError::Beacon)?;
+        let dtim_beacon = dtim(frame).is_some_and(|(_, count, _)| count == 0);
         client
             .transmit(
                 frame,
@@ -725,7 +840,138 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             )
             .await?;
         counters.beacons = counters.beacons.saturating_add(1);
+        // The group frames a DTIM beacon announced follow it.
+        if dtim_beacon && group_pending {
+            self.release_group().await?;
+        }
         Ok(())
+    }
+
+    /// Send every group frame held for this DTIM, oldest first, More Data
+    /// set on all but the last.
+    async fn release_group(&mut self) -> Result<(), PortApError<PortError<X>>> {
+        while let Some(release) = self.service.begin_buffered_group_release()? {
+            let Some(held) = self.buffered.take_oldest(HeldFrame::is_group) else {
+                self.service
+                    .complete_buffered_group_release(release, false)?;
+                break;
+            };
+            self.transmit_data(held.ethernet(), release.more_data())
+                .await?;
+            self.counters.released = self.counters.released.saturating_add(1);
+            self.service
+                .complete_buffered_group_release(release, true)?;
+        }
+        Ok(())
+    }
+
+    /// Send `count` frames held for `peer`, or every one, More Data set
+    /// while more remain.
+    async fn release_unicast(
+        &mut self,
+        peer: [u8; 6],
+        mut count: Option<usize>,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let Some(identity) = self
+            .service
+            .peer_status(peer)
+            .map(|status| status.association_identity())
+        else {
+            return Ok(());
+        };
+        while count != Some(0) {
+            let Ok(Some(release)) = self.service.begin_buffered_unicast_release(identity) else {
+                break;
+            };
+            self.send_release(peer, release).await?;
+            count = count.map(|count| count - 1);
+        }
+        Ok(())
+    }
+
+    /// Send the frame one release reserved.
+    async fn send_release(
+        &mut self,
+        peer: [u8; 6],
+        release: ApBufferedUnicastRelease,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let Some(held) = self.buffered.take_oldest(|held| held.destination() == peer) else {
+            self.service
+                .complete_buffered_unicast_release(release, false)?;
+            return Ok(());
+        };
+        self.transmit_data(held.ethernet(), release.more_data())
+            .await?;
+        self.counters.released = self.counters.released.saturating_add(1);
+        self.service
+            .complete_buffered_unicast_release(release, true)?;
+        Ok(())
+    }
+
+    /// Send one queued frame now, or hold it for a dozing peer or for the
+    /// next DTIM while any authorized peer dozes.
+    async fn dispatch(&mut self, ethernet: &[u8]) -> Result<(), PortApError<PortError<X>>> {
+        let Some(destination) = ethernet
+            .get(..6)
+            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
+        else {
+            self.counters.data_dropped = self.counters.data_dropped.saturating_add(1);
+            return Ok(());
+        };
+        let hold = if destination[0] & 1 != 0 {
+            if self.service.authorized_count() == 0 {
+                self.counters.data_dropped = self.counters.data_dropped.saturating_add(1);
+                return Ok(());
+            }
+            (self.service.group_downlink_disposition() == ApDownlinkDisposition::Buffer)
+                .then_some(None)
+        } else {
+            match self.service.admit_downlink(destination) {
+                Ok(admission) if admission.disposition() == ApDownlinkDisposition::Buffer => {
+                    Some(Some(admission.identity()))
+                }
+                Ok(_) => None,
+                Err(_) => {
+                    self.counters.data_dropped = self.counters.data_dropped.saturating_add(1);
+                    return Ok(());
+                }
+            }
+        };
+        let Some(identity) = hold else {
+            return self.transmit_data(ethernet, false).await;
+        };
+        if !self.buffered.hold(ethernet) {
+            self.counters.held_dropped = self.counters.held_dropped.saturating_add(1);
+            return Ok(());
+        }
+        match identity {
+            Some(identity) => self.service.commit_buffered_unicast(identity)?,
+            None => self.service.commit_buffered_group()?,
+        };
+        self.counters.held = self.counters.held.saturating_add(1);
+        Ok(())
+    }
+
+    /// Apply one power-management edge of an authorized peer: a peer that
+    /// wakes gets every frame held for it, a PS-Poll one. A PS-Poll of a
+    /// peer the service does not hold as dozing is the peer's error, not the
+    /// access point's.
+    async fn power_save(
+        &mut self,
+        observation: ApPowerSaveObservation,
+        now: Instant,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        match self.service.observe_power_save(observation, now) {
+            Ok(ApPowerSaveAction::StateChanged {
+                peer,
+                state: ApPeerPowerState::Active,
+                buffered_frames,
+            }) if buffered_frames > 0 => self.release_unicast(peer, None).await,
+            Ok(ApPowerSaveAction::ReleaseOne(release)) => {
+                self.send_release(release.peer(), release).await
+            }
+            Ok(_) | Err(_) => Ok(()),
+        }
     }
 
     async fn receive(
@@ -735,6 +981,15 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
     ) -> Result<(), PortApError<PortError<X>>> {
         let frame = received.bytes();
+        let power_save = observe_ap_power_save_for_access_point(frame, self.service.address())
+            .filter(|observation| {
+                let peer = match *observation {
+                    ApPowerSaveObservation::Sleeping { peer }
+                    | ApPowerSaveObservation::Active { peer }
+                    | ApPowerSaveObservation::PsPoll { peer, .. } => peer,
+                };
+                self.service.is_authorized(peer)
+            });
         // Any frame of an associated peer keeps it; an authentication that
         // never associates ends at its own deadline.
         if let Some(sender) = frame
@@ -753,7 +1008,14 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .first()
             .is_some_and(|control| (control >> 2) & 0b11 == 2)
         {
-            return self.receive_data(received, now, deliver).await;
+            self.receive_data(received, now, deliver).await?;
+            if let Some(observation) = power_save {
+                self.power_save(observation, now).await?;
+            }
+            return Ok(());
+        }
+        if let Some(observation) = power_save {
+            return self.power_save(observation, now).await;
         }
         let address = self.client.config().address;
         let retry = frame.get(1).is_some_and(|flags| flags & 0x08 != 0);
@@ -1056,7 +1318,11 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// Send one queued frame: to an authorized peer under its pairwise key,
     /// or to the group under the group key, as QoS data to a QoS peer in a
     /// protected BSS. A frame for no authorized destination is dropped.
-    async fn transmit_data(&mut self, ethernet: &[u8]) -> Result<(), PortApError<PortError<X>>> {
+    async fn transmit_data(
+        &mut self,
+        ethernet: &[u8],
+        more_data: bool,
+    ) -> Result<(), PortApError<PortError<X>>> {
         let Some(destination) = ethernet
             .get(..6)
             .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
@@ -1082,7 +1348,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 access_point,
                 peer: destination,
                 sequence_number,
-                more_data: false,
+                more_data,
                 ethernet,
             }
             .encode(&mut mpdu)?;
@@ -1113,7 +1379,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 sequence_number,
                 user_priority: 0,
                 peer_qos,
-                more_data: false,
+                more_data,
                 ccmp_header: [0; CCMP_HEADER_LEN],
                 ethernet,
             }
@@ -1190,6 +1456,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             || phase != Some(ApPeerPhase::Authorized)
         {
             self.counters.rx_rejected = self.counters.rx_rejected.saturating_add(1);
+            return Ok(());
+        }
+        // Null Data carries only its power-management bit.
+        if bytes[0] & 0x40 != 0 {
             return Ok(());
         }
         let qos = bytes[0] & 0x80 != 0;

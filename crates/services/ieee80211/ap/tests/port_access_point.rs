@@ -1188,3 +1188,191 @@ fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
     );
     assert_eq!((frame[27] >> 6, *rate), (1, RATE));
 }
+
+/// A Null Data frame of the station, its power-management bit `dozing`.
+fn null_data(dozing: bool) -> Vec<u8> {
+    let mut frame = vec![0x48, if dozing { 0x11 } else { 0x01 }, 0, 0];
+    frame.extend_from_slice(&ADDRESS);
+    frame.extend_from_slice(&STATION);
+    frame.extend_from_slice(&ADDRESS);
+    frame.extend_from_slice(&[0x20, 0]);
+    frame
+}
+
+/// A PS-Poll of the station for `association_id`.
+fn ps_poll(association_id: u16) -> Vec<u8> {
+    let mut frame = vec![0xa4, 0x00];
+    frame.extend_from_slice(&(association_id | 0xc000).to_le_bytes());
+    frame.extend_from_slice(&ADDRESS);
+    frame.extend_from_slice(&STATION);
+    frame
+}
+
+/// The TIM's bitmap control and first partial-bitmap octet of the last
+/// beacon sent.
+fn last_tim(model: &LowerMacModel) -> (u8, u8) {
+    let beacon = model
+        .submitted()
+        .into_iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .rfind(|frame| frame[0] == 0x80)
+        .unwrap();
+    let (offset, _, _) = dtim(&beacon).unwrap();
+    (beacon[offset + 4], beacon[offset + 5])
+}
+
+/// An Open access point with the station associated.
+fn associated<'a>(
+    model: &'a LowerMacModel,
+    router: &'a PortApRouter<'a, Env<'a>>,
+    timer: &'a VirtualTimer,
+    ssid: &'a WifiSsid,
+    storage: &'a mut PortApStorage,
+) -> PortAccessPoint<'a, Env<'a>> {
+    let mut access_point = PortAccessPoint::<Env<'_>>::new(
+        client(router),
+        timer,
+        FixedMaterial,
+        NoSae,
+        profile(ssid),
+        service(),
+        storage,
+    )
+    .unwrap();
+    drive(model, router, timer, access_point.start(), &[], |_| {}).unwrap();
+    let start = timer.now.get();
+    serve(
+        model,
+        router,
+        timer,
+        &mut access_point,
+        &[
+            (start + 1_000, authentication(false)),
+            (start + 2_000, association()),
+        ],
+        start + 3_000,
+    );
+    access_point
+}
+
+#[test]
+fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::new();
+    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let aid = access_point
+        .service()
+        .peer_status(STATION)
+        .unwrap()
+        .association_id;
+    let best_effort = WmmUserPriority::new(0).unwrap();
+    let from = [0x02, 0, 0, 0, 0, 0x99];
+
+    // The station dozes: its frame is held, and the next beacon's TIM says
+    // so.
+    let start = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(start + 1_000, null_data(true))],
+        start + 2_000,
+    );
+    access_point.send(&ethernet(STATION, from, b"held"), best_effort);
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[],
+        start + 120_000,
+    );
+    assert!(downlink(&model, STATION).is_empty());
+    assert_eq!(access_point.counters().held, 1);
+    let (_, bitmap) = last_tim(&model);
+    assert_ne!(bitmap & (1 << aid), 0);
+
+    // Its PS-Poll gets the one frame, More Data clear.
+    let now = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(now + 1_000, ps_poll(aid))],
+        now + 2_000,
+    );
+    let sent = downlink(&model, STATION);
+    assert_eq!(sent.len(), 1);
+    assert!(sent[0].0.ends_with(b"held"));
+    assert_eq!(sent[0].0[1] & 0x20, 0);
+
+    // Two more wait; when it wakes both go out, More Data set on the first.
+    access_point.send(&ethernet(STATION, from, b"first"), best_effort);
+    access_point.send(&ethernet(STATION, from, b"second"), best_effort);
+    let now = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(now + 5_000, null_data(false))],
+        now + 6_000,
+    );
+    let sent = downlink(&model, STATION);
+    assert_eq!(sent.len(), 3);
+    assert!(sent[1].0.ends_with(b"first") && sent[2].0.ends_with(b"second"));
+    assert_eq!((sent[1].0[1] & 0x20, sent[2].0[1] & 0x20), (0x20, 0));
+    assert_eq!(access_point.counters().released, 3);
+}
+
+#[test]
+fn group_frames_wait_for_the_dtim_while_a_peer_dozes() {
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::new();
+    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let start = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[(start + 1_000, null_data(true))],
+        start + 2_000,
+    );
+
+    access_point.send(
+        &ethernet([0xff; 6], [0x02, 0, 0, 0, 0, 0x99], b"group"),
+        WmmUserPriority::new(0).unwrap(),
+    );
+    // Run past two TBTTs: one of them is the DTIM (period 2).
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut access_point,
+        &[],
+        start + 250_000,
+    );
+    let frames: Vec<_> = model
+        .submitted()
+        .into_iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .collect();
+    let group = frames
+        .iter()
+        .position(|frame| frame[0] == 0x08 && frame[4..10] == [0xff; 6])
+        .expect("the group frame went out");
+    // It followed a DTIM beacon that announced it.
+    let beacon = &frames[group - 1];
+    let (offset, count, _) = dtim(beacon).unwrap();
+    assert_eq!((beacon[0], count, beacon[offset + 4] & 1), (0x80, 0, 1));
+    assert_eq!(access_point.counters().released, 1);
+}

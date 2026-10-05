@@ -70,6 +70,7 @@ members = [
     "crates/protocols/ieee80211/security/rsn",
     "crates/services/ieee80211/ap",
     "crates/services/ieee80211/sta",
+    "crates/services/ieee80211/sta-ap",
     "crates/services/ieee80211/rsn",
     "crates/services/ieee80211/upper-mac",
     "crates/hardware/esp32s31/hal",

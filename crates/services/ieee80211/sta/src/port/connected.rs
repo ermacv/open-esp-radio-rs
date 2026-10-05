@@ -147,7 +147,7 @@ pub struct PortRxCounters {
     /// Buffered runs a reorder window released past a missing MPDU after
     /// the gap timeout.
     pub reorder_gap_timeouts: u32,
-    /// Out-of-order MPDUs longer than [`PORT_FRAME_CAPACITY`], which the
+    /// Out-of-order MPDUs longer than [`PORT_FRAME_CAPACITY`](oer_ieee80211_upper_mac_service::frame::PORT_FRAME_CAPACITY), which the
     /// reorder storage cannot hold.
     pub unbuffered: u32,
 }

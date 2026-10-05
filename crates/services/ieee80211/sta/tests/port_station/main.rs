@@ -394,6 +394,7 @@ impl World {
                 retry_limit: 7,
             },
         )
+        .expect("the station's interface is free")
     }
 
     fn station<'a>(&'a self, security: StaAttemptSecurity<'a>) -> PortStation<'a, Env<'a>> {

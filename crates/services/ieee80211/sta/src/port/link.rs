@@ -19,7 +19,7 @@ use oer_ieee80211_sta::modem_sleep::{CoexView, PmCoexAction};
 use oer_ieee80211_upper_mac::{TxPlanner, TxReport, TxRequest, rate_control::RateControl};
 pub use oer_ieee80211_upper_mac_service::EventRouter;
 use oer_ieee80211_upper_mac_service::{
-    AmpduFrames, TxMpdu, UpperMacTx, UpperMacTxError,
+    AmpduFrames, AttachError, TxMpdu, UpperMacTx, UpperMacTxError,
     aggregate::PortAggregation,
     client::{
         PortBody, PortClient, PortClientConfig, PortClientCounters, PortClientEnv, PortClientError,
@@ -199,7 +199,8 @@ pub struct PortLink<'p, X: PortStationEnv> {
 
 impl<'p, X: PortStationEnv> PortLink<'p, X> {
     /// A link of `config.vif` over the port of `router`, which allocates
-    /// the attempt identities.
+    /// the attempt identities and queues the interface's frames for the
+    /// link; another client of the interface is refused.
     pub fn new(
         router: &'p PortRouter<'p, X>,
         planner: TxPlanner<X::Budget>,
@@ -208,8 +209,8 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         coex: X::Coex,
         rate: <X::RateControl as RateControl>::Config,
         config: PortStationConfig,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, AttachError> {
+        Ok(Self {
             client: PortClient::new(
                 router,
                 planner,
@@ -222,11 +223,11 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
                     power: config.power,
                     retry_limit: config.retry_limit,
                 },
-            ),
+            )?,
             config,
             coex,
             rate,
-        }
+        })
     }
 
     /// What every association's rate controller is configured with.

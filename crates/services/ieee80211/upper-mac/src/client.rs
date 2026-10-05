@@ -37,8 +37,8 @@ use oer_ieee80211_upper_mac::{
 use oer_time::{Instant, Timer};
 
 use crate::{
-    AmpduFrames, EventRouter, TxMpdu, UpperMacTx, UpperMacTxError, aggregate::PortAggregation,
-    frame::NetworkBody,
+    AmpduFrames, AttachError, Attachment, EventRouter, TxMpdu, UpperMacTx, UpperMacTxError,
+    aggregate::PortAggregation, frame::NetworkBody,
 };
 
 const FCS_LEN: u32 = 4;
@@ -208,6 +208,8 @@ pub enum PortClientError<E> {
 /// One interface's client of the port: see the [module](self).
 pub struct PortClient<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize> {
     router: &'p EventRouter<'p, X::Port, EXCHANGES, RX>,
+    /// The client's interface on the router: its frames are queued for it.
+    attachment: Attachment<'p, 'p, X::Port, EXCHANGES, RX>,
     tx: UpperMacTx<'p, 'p, X::Port, X::Budget, EXCHANGES, RX>,
     ladder: X::Ladder,
     entropy: X::Entropy,
@@ -219,22 +221,25 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     PortClient<'p, X, EXCHANGES, RX>
 {
     /// A client of `config.vif` over the port of `router`, which allocates
-    /// the attempt identities.
+    /// the attempt identities and queues the interface's frames for it until
+    /// the client drops; another client of the interface is refused.
     pub fn new(
         router: &'p EventRouter<'p, X::Port, EXCHANGES, RX>,
         planner: TxPlanner<X::Budget>,
         ladder: X::Ladder,
         entropy: X::Entropy,
         config: PortClientConfig,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, AttachError> {
+        let attachment = router.attach(config.vif, config.role, config.address)?;
+        Ok(Self {
             router,
+            attachment,
             tx: UpperMacTx::new(router, config.vif, planner),
             ladder,
             entropy,
             config,
             counters: PortClientCounters::default(),
-        }
+        })
     }
 
     pub fn port(&self) -> &'p X::Port {
@@ -372,7 +377,8 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     ) -> Poll<Option<PortInput<PortRxBuffer<X>>>> {
         loop {
             let router = self.router;
-            match pin!(router.extension()).poll(context) {
+            let vif = self.config.vif;
+            match pin!(router.extension(vif)).poll(context) {
                 Poll::Ready(Some(Ok(event))) => {
                     if let Some(tbtt) = <X::Port as LowerMacBeaconTiming>::tbtt(&event) {
                         return Poll::Ready(Some(PortInput::Tbtt(tbtt)));
@@ -385,7 +391,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
                 Poll::Ready(None) => return Poll::Ready(Some(PortInput::Poisoned)),
                 Poll::Pending => {}
             }
-            return match pin!(router.received()).poll(context) {
+            return match pin!(router.received(vif)).poll(context) {
                 Poll::Ready(Some(Ok(event))) => match self.frame(event) {
                     Some(input) => Poll::Ready(Some(input)),
                     None => continue,
@@ -478,7 +484,10 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
                 bssid,
                 receive,
             }),
-        })
+        })?;
+        // The station's frames of its BSS are routed to it from now on.
+        self.attachment.set_bssid(bssid);
+        Ok(())
     }
 
     /// Tune to `channel`. A backend that retunes only while disabled

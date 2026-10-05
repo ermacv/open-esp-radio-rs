@@ -318,6 +318,7 @@ where
             retry_limit: 7,
         },
     )
+    .expect("the access point's interface is free")
 }
 
 /// An Open BSS of four peers whose inactivity closes them after 10 s.

@@ -38,6 +38,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine; `port` declares the `Ieee802154RadioPort` every backend implements and the settings it applies |
 | `services/ieee80211/{sta,rsn}/` | Executor-independent drivers of the protocol state machines: station join, candidate scan, attempt and lifecycle; WPA2 handshake and key-install runners; `sta`'s `port` runs the whole station over any lower-MAC port |
 | `services/ieee80211/ap/` | The access point over any lower-MAC port: its BSS start, beacons at its TBTTs and Probe Responses |
+| `services/ieee80211/sta-ap/` | A station and an access point on one lower-MAC port: the owner that runs both and carries out the channel coordinator's actions |
 | `services/ieee80211/upper-mac/` | `EventRouter`, the one consumer of a lower-MAC port's events, dispatching completions by `TxId`, received frames, lifecycle terminals and extension events; `UpperMacTx`, which runs the transmit planner over the router, one submission per attempt, so exchanges of several access categories run concurrently |
 | `services/bluetooth/hci/transport/` | Bounded in-process HCI Host/Controller transport and the storage of one HCI epoch |
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` partitions register authority; HAL `root` and `owner` own the radio root and protocol routes; domain modules hold register operations, transactions and RF algorithms |

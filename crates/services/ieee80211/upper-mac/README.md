@@ -54,6 +54,19 @@ until `clear` drops the bodies when the exchange ended, and makes its
 `AmpduRequest` (on-air lengths with FCS and MIC) and the `AmpduFrames` the
 client sends; how many frames it carries is `oer-ieee80211-upper-mac`'s
 `AmpduLimits`.
+`rx_hold::PortRxHold<B, HELD>` stands between a service and a network
+whose receive queue may be full. A service hands every MSDU on at once and
+goes on taking the port's input, so beacons, EAPOL and its timers never
+wait for the network; while the network refuses for room
+(`NetworkRefusal::Full`), the hold keeps the MSDUs in their order and sends
+them as room appears (`flush`). An MSDU in the port's buffer waits there, up
+to `HELD`: held buffers are the port's receive memory, so a network that
+stays full makes the port's producer discard bulk data before frames that
+keep the link go short. An MSDU in parts (released late by a reorder window,
+or one of an A-MSDU) borrows memory the hold cannot keep, so it is copied
+into one of `COPIES` slots of `PORT_FRAME_CAPACITY` octets, which the
+composition sizes. Beyond them an MSDU is dropped; every outcome is counted
+(`PortRxHoldCounters`).
 `reorder::RxReorder<AGREEMENTS>` reorders the receive Block Ack agreements
 of a service by peer and TID: `offer` releases an in-order MPDU at once as
 the release's `CURRENT_SLOT`, which the caller delivers from the port's

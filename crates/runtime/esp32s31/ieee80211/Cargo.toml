@@ -34,6 +34,7 @@ oer-ieee80211-sta = { path = "../../../protocols/ieee80211/sta" }
 oer-espressif-ieee80211-policy = { path = "../../../protocols/espressif/ieee80211/policy" }
 oer-ieee80211-rsn = { path = "../../../protocols/ieee80211/security/rsn" }
 oer-ieee80211-sta-service = { path = "../../../services/ieee80211/sta" }
+oer-ieee80211-upper-mac-service = { path = "../../../services/ieee80211/upper-mac" }
 oer-ieee80211-rsn-service = { path = "../../../services/ieee80211/rsn" }
 oer-ieee80211-runtime = { path = "../../ieee80211" }
 log = { version = "0.4", optional = true }

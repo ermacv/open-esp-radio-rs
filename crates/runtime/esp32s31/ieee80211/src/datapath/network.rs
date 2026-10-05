@@ -14,6 +14,20 @@ pub const AP_NETWORK_INTERFACE_ID: NetworkInterfaceId = NetworkInterfaceId::new(
 
 /// RX-only network publication capability exposed to one finite DATAPATH service.
 /// It cannot observe or claim network-owned TX slots.
+/// How a port service's RX hold
+/// ([`PortRxHold`](oer_ieee80211_upper_mac_service::rx_hold::PortRxHold))
+/// reads the network's refusal: a full queue or packet pool is room that
+/// may come, so the port's buffer waits; anything else is final.
+pub fn network_refusal(
+    error: RxEnqueueError,
+) -> oer_ieee80211_upper_mac_service::rx_hold::NetworkRefusal {
+    use oer_ieee80211_upper_mac_service::rx_hold::NetworkRefusal;
+    match error {
+        RxEnqueueError::QueueFull | RxEnqueueError::PoolExhausted => NetworkRefusal::Full,
+        RxEnqueueError::InvalidLength(_) | RxEnqueueError::LinkDown => NetworkRefusal::Rejected,
+    }
+}
+
 pub trait DatapathNetworkRx {
     /// Whether a standalone RX service may wait while holding the radio owner.
     /// Select `DropFrame` when releasing RX capacity can require TX progress

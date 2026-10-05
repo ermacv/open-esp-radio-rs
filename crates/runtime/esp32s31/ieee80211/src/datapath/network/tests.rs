@@ -60,3 +60,28 @@ fn default_observed_sends_observe_once_before_publication() {
         ]
     );
 }
+
+#[test]
+fn only_a_full_queue_or_pool_makes_a_received_frame_wait() {
+    use oer_ieee80211_upper_mac_service::rx_hold::NetworkRefusal;
+    use oer_network_interface::FrameLengthError;
+
+    use super::network_refusal;
+
+    assert_eq!(
+        network_refusal(RxEnqueueError::QueueFull),
+        NetworkRefusal::Full
+    );
+    assert_eq!(
+        network_refusal(RxEnqueueError::PoolExhausted),
+        NetworkRefusal::Full
+    );
+    assert_eq!(
+        network_refusal(RxEnqueueError::LinkDown),
+        NetworkRefusal::Rejected
+    );
+    assert_eq!(
+        network_refusal(RxEnqueueError::InvalidLength(FrameLengthError::TooShort)),
+        NetworkRefusal::Rejected
+    );
+}

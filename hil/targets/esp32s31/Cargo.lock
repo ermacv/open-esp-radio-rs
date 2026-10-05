@@ -2006,6 +2006,7 @@ dependencies = [
  "oer-ieee80211-sta",
  "oer-ieee80211-sta-service",
  "oer-ieee80211-trace",
+ "oer-ieee80211-upper-mac-service",
  "oer-memory",
  "oer-network-interface",
  "oer-time",

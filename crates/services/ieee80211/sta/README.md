@@ -99,13 +99,13 @@ calibrated transmit power; without them the HE Association Request is
 refused.
 
 The station's data rates are its rate control's (`PortStationEnv::RateControl`,
-an `oer-ieee80211-sta` `StaRateControl`, configured by the value `PortLink::new`
+an `oer-ieee80211-upper-mac` `RateControl`, configured by the value `PortLink::new`
 takes): one controller per association, started from the peer and the link
 metric of the Association Response (its signal over its noise floor, or
 `None` when the port reported either unavailable). It gives the rate of a
 data MPDU and of an A-MPDU, and learns from each one's outcome: attempts,
 acknowledgement and ACK SNR, or the BlockAck's acknowledged subframes.
-`StaFixedRateControl` keeps one rate; the Espressif controller
+`FixedRateControl` keeps one rate; the Espressif controller
 (`oer-espressif-ieee80211-policy::rate_control::EspressifRateControl`)
 adapts as the vendor station does, within the association's width, guard
 interval and coding.

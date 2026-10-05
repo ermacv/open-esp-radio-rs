@@ -13,6 +13,8 @@
 //! - [`ampdu`]: which subframes of an A-MPDU the next attempt resends after
 //!   a BlockAck, with their Retry bit, and when the aggregate ends;
 //! - [`protection`]: RTS/CTS or CTS-to-self before each PPDU;
+//! - [`rate_control`]: the seam of a peer's data rates, which learns from
+//!   its exchanges;
 //! - [`tx`]: the [`TxPlanner`], which combines them with the
 //!   EDCA backoff draw of `oer-ieee80211-softmac` into one attempt at a time
 //!   and turns each completion into the next attempt or the exchange's
@@ -28,6 +30,7 @@
 pub mod aggregate;
 pub mod ampdu;
 pub mod protection;
+pub mod rate_control;
 pub mod retry;
 pub mod tx;
 

@@ -40,10 +40,11 @@ use oer_ieee80211_rsn_service::supplicant::{RsnGroupMessage1Step, process_group_
 use oer_ieee80211_sta::{
     link_monitor::{StaLinkAction, StaLinkMonitor},
     modem_sleep::{PmBeacon, PmTraffic, SleepType},
-    rate_control::StaRateControl,
     sa_query::{SaQueryStep, StationSaQuery},
 };
-use oer_ieee80211_upper_mac::{TxBody, TxReceiver, TxReport, TxRequest, aggregate::AmpduLimits};
+use oer_ieee80211_upper_mac::{
+    TxBody, TxReceiver, TxReport, TxRequest, aggregate::AmpduLimits, rate_control::RateControl,
+};
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_ieee80211_upper_mac_service::aggregate::AmpduSubframes;
 use oer_ieee80211_upper_mac_service::client::{PortError, PortFrame, PortInput, PortMsdu};
@@ -305,7 +306,7 @@ pub(crate) struct ConnectionContext<'a, 'p, X: PortStationEnv> {
     pub key_unwrap: &'a mut X::KeyUnwrap,
 }
 
-impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
+impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
     pub(crate) fn new(
         config: PortConnectionConfig,
         security: PortConnectionSecurity,

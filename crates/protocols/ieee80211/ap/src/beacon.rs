@@ -283,6 +283,17 @@ impl<'storage> ApBeacon<'storage> {
     }
 
     /// The next TBTT, once the first beacon has established the schedule.
+    /// Forget the TBTT schedule: the next publication starts a new one, as
+    /// a BSS that starts again from a restarted TSF does.
+    pub fn restart_schedule(&mut self) {
+        self.next_publication = None;
+    }
+
+    /// The beacon interval.
+    pub const fn interval(&self) -> Duration {
+        self.interval
+    }
+
     pub const fn next_publication(&self) -> Option<Instant> {
         if self.interval.as_micros() == 0 {
             return None;

@@ -360,6 +360,27 @@ fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
     }
 }
 
+/// The port's owner tunes the port to the BSS's channel, and the access
+/// point starts there.
+fn start<X: PortApEnv<Port = Model>>(
+    model: &Model,
+    router: &oer_ieee80211_upper_mac_service::PortRouter<'_, Model>,
+    timer: &VirtualTimer,
+    access_point: &mut PortAccessPoint<'_, X>,
+) {
+    let channel = Channel::from_wifi_channel(channel());
+    drive(
+        model,
+        router,
+        timer,
+        access_point.client_mut().retune(channel),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    access_point.start(channel).unwrap();
+}
+
 /// Poll `future` to its end beside the router; when neither moves, virtual
 /// time advances to the earliest of the deadlines a wait asked for and the
 /// `stops` still ahead, and `at` runs at each new time.
@@ -449,7 +470,7 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
     )
     .unwrap();
 
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
     assert_eq!(model.channel(), Some(Channel::from_wifi_channel(channel())));
     let vif = model.vif_config(AP).unwrap();
     assert_eq!(
@@ -526,7 +547,7 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
 
     // A wildcard request, a directed one inside the response interval, then
     // one for another SSID, and a directed one after the interval.
@@ -676,7 +697,7 @@ fn an_open_station_authenticates_associates_and_leaves() {
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
 
     let start = timer.now.get();
     serve(
@@ -753,7 +774,7 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
     let start = timer.now.get();
     serve(
         &model,
@@ -810,7 +831,7 @@ fn a_wpa3_station_authenticates_by_sae_while_the_bss_goes_on() {
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
 
     // The station's Commit, built from the primitives the station role
     // uses: the access point answers with its own Commit.
@@ -924,7 +945,7 @@ fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
     // The group key is the port's from the start.
     assert_eq!(model.installed_keys(), [KeyScope::Group { key_id: 1 }]);
 
@@ -1026,7 +1047,7 @@ fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out(
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
     let start = timer.now.get();
     serve(
         &model,
@@ -1146,7 +1167,7 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
     let start = timer.now.get();
 
     // Before the station associates, its downlink has nowhere to go.
@@ -1227,7 +1248,7 @@ fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
     let ptk = ptk();
     let rsn_ie = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, &[]).unwrap();
@@ -1351,7 +1372,7 @@ fn associated<'a, const HELD: usize>(
         storage,
     )
     .unwrap();
-    drive(model, router, timer, access_point.start(), &[], |_| {}).unwrap();
+    start(model, router, timer, &mut access_point);
     let start = timer.now.get();
     serve(
         model,
@@ -1672,7 +1693,7 @@ fn with_ht_peer(
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
     let ptk = ptk();
     let rsn_ie = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, &[]).unwrap();
@@ -1974,7 +1995,7 @@ fn each_associated_peer_gets_its_own_rate_control_from_its_association() {
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
     let start = timer.now.get();
     // The Association Request arrives 56 dB over the noise floor.
     let metered = RxMeta {
@@ -2181,7 +2202,7 @@ fn an_announced_channel_switch_moves_the_bss_at_its_tbtt() {
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
     let start = timer.now.get();
     // The first beacon starts the schedule.
     drive(
@@ -2337,7 +2358,7 @@ fn a_two_band_access_point_moves_to_5_ghz_with_an_extended_announcement() {
         &mut storage,
     )
     .unwrap();
-    drive(&model, &router, &timer, access_point.start(), &[], |_| {}).unwrap();
+    start(&model, &router, &timer, &mut access_point);
     let start = timer.now.get();
     drive(
         &model,
@@ -2418,4 +2439,87 @@ fn a_two_band_access_point_moves_to_5_ghz_with_an_extended_announcement() {
         offset += 2 + usize::from(last[offset + 1]);
     }
     assert!(!ids.contains(&3) && !ids.contains(&42) && !ids.contains(&60));
+}
+
+#[test]
+fn a_stopped_access_point_releases_its_peers_and_starts_again_where_its_owner_tuned() {
+    use oer_ieee80211_ap_service::port::PortApError;
+
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
+    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    assert!(access_point.service().peer_status(STATION).is_some());
+    assert!(access_point.schedule().is_some());
+
+    let before = model.submitted().len();
+    drive(&model, &router, &timer, access_point.stop(), &[], |_| {}).unwrap();
+    // The peer is told the access point leaves (reason 3) and forgotten.
+    let deauthentications: Vec<_> = model.submitted()[before..]
+        .iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .filter(|frame| frame[0] == 0xc0)
+        .collect();
+    assert_eq!(deauthentications.len(), 1);
+    assert_eq!(&deauthentications[0][4..10], &STATION);
+    assert_eq!(&deauthentications[0][24..26], &3_u16.to_le_bytes());
+    assert!(access_point.service().peer_status(STATION).is_none());
+    assert_eq!(access_point.schedule(), None);
+    assert_eq!(
+        model.vif_config(AP).map(|vif| vif.receive),
+        Some(ReceiveFilter::NONE)
+    );
+    // A stopped access point serves nothing.
+    let now = timer.now.get();
+    assert!(matches!(
+        drive(
+            &model,
+            &router,
+            &timer,
+            access_point.run_until(Instant::from_micros(now + 10 * INTERVAL), &mut |_| {}),
+            &[],
+            |_| {},
+        ),
+        Err(PortApError::NotStarted)
+    ));
+
+    // The owner tunes the port to channel 11 and the BSS starts there, on a
+    // new schedule.
+    let eleven = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
+    drive(
+        &model,
+        &router,
+        &timer,
+        access_point.client_mut().retune(eleven),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    access_point.start(eleven).unwrap();
+    let restart = timer.now.get();
+    drive(
+        &model,
+        &router,
+        &timer,
+        access_point.run_until(Instant::from_micros(restart + 1), &mut |_| {}),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    let schedule = access_point.schedule().unwrap();
+    assert_eq!(schedule.channel, eleven);
+    assert_eq!(schedule.next_tbtt, Instant::from_micros(restart + INTERVAL));
+    let beacon = model
+        .submitted()
+        .into_iter()
+        .map(|attempt| attempt.frames[0].clone())
+        .rfind(|frame| frame[0] == 0x80)
+        .unwrap();
+    let ds = beacon[36..]
+        .windows(3)
+        .position(|window| window[0] == 3 && window[1] == 1)
+        .unwrap();
+    assert_eq!(beacon[36 + ds + 2], 11);
 }

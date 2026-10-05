@@ -104,6 +104,7 @@ use oer_time::{Clock, Duration, Instant, Timer};
 
 use oer_ieee80211_ap::beacon::ApChannelSwitchError;
 use oer_ieee80211_ap::channel::requires_radar_detection;
+use oer_ieee80211_ap::coordinator::ApSchedule;
 use oer_ieee80211_ap::{
     ApBufferedUnicastRelease, ApDownlinkDisposition, ApPeerPowerState, ApPowerSaveAction,
 };
@@ -132,6 +133,10 @@ const REASON_INACTIVITY: u16 = 4;
 /// The reason of every other access-point teardown: the previous
 /// authentication is no longer valid.
 const REASON_AUTHENTICATION_INVALID: u16 = 2;
+/// The reason of the Deauthentications of a stopping access point: it
+/// leaves the BSS (IEEE Std 802.11-2020 Table 9-90,
+/// `DEAUTH_LEAVING`).
+const REASON_LEAVING: u16 = 3;
 /// The EtherType of EAPOL.
 const EAPOL_ETHER_TYPE: u16 = 0x888e;
 /// An EAPOL-Key frame of the four-way handshake.
@@ -536,6 +541,8 @@ pub enum PortApError<E> {
     UnsupportedChannel(Channel),
     /// No announced switch is due.
     NoChannelSwitch,
+    /// The BSS does not run: it was not started, or was stopped.
+    NotStarted,
 }
 
 /// Why [`PortAccessPoint::run_until`] returned before its deadline.
@@ -616,6 +623,8 @@ pub struct PortAccessPoint<'p, X: PortApEnv> {
     /// Before it no Probe Response goes out.
     next_probe_response: Instant,
     counters: PortApCounters,
+    /// The BSS runs: started and not stopped since.
+    running: bool,
 }
 
 /// The values of an access point's environment: its client of the port,
@@ -693,6 +702,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             advertised: ApBssProtection::default(),
             next_probe_response: Instant::EPOCH,
             counters: PortApCounters::default(),
+            running: false,
         })
     }
 
@@ -709,11 +719,32 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &self.service
     }
 
-    /// Tune to the BSS's channel, receive the BSS and the Probe Requests
-    /// the access point answers, restart the interface's TSF and, in a
-    /// protected BSS, install the group key.
-    pub async fn start(&mut self) -> Result<(), PortApError<PortError<X>>> {
-        self.client.retune(self.profile.channel).await?;
+    /// Start the BSS on `channel`, where the port's owner has tuned the
+    /// port: the beacon names the channel and starts a new schedule, the
+    /// interface receives the BSS and the Probe Requests the access point
+    /// answers, its TSF restarts and, in a protected BSS, the group key is
+    /// installed. The access point never tunes the port itself.
+    pub fn start(&mut self, channel: Channel) -> Result<(), PortApError<PortError<X>>> {
+        let advertisement = serving(&self.profile, channel)
+            .ok_or(PortApError::UnsupportedChannel(channel))?
+            .advertisement;
+        if channel != self.profile.channel {
+            self.beacon
+                .rewrite(
+                    advertisement,
+                    self.client.config().address,
+                    self.profile.ssid,
+                    channel,
+                    self.profile.beacon_interval_tu,
+                    self.profile.dtim_period,
+                    SequenceNumber::ZERO,
+                    self.service.security_policy(),
+                )
+                .map_err(|_| PortApError::Beacon)?;
+            self.profile.channel = channel;
+            self.advertised = ApBssProtection::default();
+        }
+        self.beacon.restart_schedule();
         self.client.configure(
             None,
             ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::PROBE_REQUESTS),
@@ -732,7 +763,49 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             let (key_id, key) = (gtk.key_id(), *gtk.key());
             self.group_key = Some(self.install_key(KeyScope::Group { key_id }, &key)?);
         }
+        self.running = true;
         Ok(())
+    }
+
+    /// Close the BSS: every peer gets a Deauthentication (the access point
+    /// leaves) and is forgotten with its key, the group key goes, the
+    /// interface receives nothing and no beacon goes out until the next
+    /// [`Self::start`].
+    pub async fn stop(&mut self) -> Result<(), PortApError<PortError<X>>> {
+        let mut peers = [None; AP_MAX_CLIENTS];
+        for (slot, peer) in peers.iter_mut().zip(self.service.peers()) {
+            *slot = Some(peer.address);
+        }
+        for peer in peers.into_iter().flatten() {
+            self.send_disconnect(peer, ApPeerDisconnectKind::Deauthentication, REASON_LEAVING)
+                .await?;
+            self.remove_peer(peer)?;
+            self.counters.peers_closed = self.counters.peers_closed.saturating_add(1);
+        }
+        if let Some(handle) = self.group_key.take() {
+            self.client
+                .apply(LowerMacSetting::RemoveKey(handle))
+                .map_err(|error| match error {
+                    PortClientError::Setting(error) => PortApError::Key(error),
+                    error => PortApError::Client(error),
+                })?;
+        }
+        self.client.configure(None, ReceiveFilter::NONE)?;
+        self.running = false;
+        Ok(())
+    }
+
+    /// The BSS's channel and beacon schedule while it runs, once its first
+    /// beacon set the schedule.
+    pub fn schedule(&self) -> Option<ApSchedule> {
+        if !self.running {
+            return None;
+        }
+        Some(ApSchedule {
+            channel: self.profile.channel,
+            next_tbtt: self.beacon.next_publication()?,
+            beacon_interval: self.beacon.interval(),
+        })
     }
 
     fn install_key(
@@ -911,11 +984,15 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// Serve the BSS until `deadline`: a beacon at every TBTT, a response
     /// to every management request it answers, a close of every peer that
     /// went inactive. `Some` at the TBTT an announced switch is due.
+    /// [`PortApError::NotStarted`] while the BSS does not run.
     pub async fn run_until(
         &mut self,
         deadline: Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
     ) -> Result<Option<PortApEvent>, PortApError<PortError<X>>> {
+        if !self.running {
+            return Err(PortApError::NotStarted);
+        }
         loop {
             let now = self.timer.now();
             if self.beacon.publication_due(now) {

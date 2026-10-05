@@ -54,10 +54,11 @@ use oer_ieee80211_sta::{
 };
 use oer_ieee80211_sta_service::{
     port::{
-        EventRouter, PortCoexistence, PortCoexistenceRefused, PortConnection, PortConnectionFrame,
-        PortDisconnect, PortLink, PortLinkError, PortLinkSupervision, PortProbe, PortRouter,
-        PortScan, PortScanTarget, PortStation, PortStationApplication, PortStationConfig,
-        PortStationEnv, PortStationLifecycle, PortStationProfile, PortStationStorage,
+        EventRouter, PortChannelSwitch, PortCoexistence, PortCoexistenceRefused, PortConnection,
+        PortConnectionFrame, PortDisconnect, PortLink, PortLinkError, PortLinkSupervision,
+        PortProbe, PortRouter, PortScan, PortScanTarget, PortStation, PortStationApplication,
+        PortStationConfig, PortStationEnv, PortStationEvent, PortStationLifecycle,
+        PortStationProfile, PortStationStorage,
     },
     scan::{StaCandidateScanService, StaScanBackend},
     station::StaLifecycleService,
@@ -483,6 +484,21 @@ impl World {
         millis: u32,
         delivered: &mut Vec<Vec<u8>>,
     ) -> Option<PortDisconnect> {
+        self.run_events(ap, station, millis, delivered)
+            .map(|event| match event {
+                PortStationEvent::Ended(disconnect) => disconnect,
+                PortStationEvent::ChannelSwitch(switch) => panic!("unexpected {switch:?}"),
+            })
+    }
+
+    /// Run the connected station for `millis`, or until it reports.
+    fn run_events(
+        &self,
+        ap: &mut ScriptedAp,
+        station: &mut PortStation<'_, Env<'_>>,
+        millis: u32,
+        delivered: &mut Vec<Vec<u8>>,
+    ) -> Option<PortStationEvent> {
         let deadline = self
             .timer
             .now()
@@ -1468,16 +1484,18 @@ fn an_sae_authentication_joins_a_wpa3_access_point_body() {
     assert!(station.connection().is_some());
 }
 
-/// Serves the connection: stops after its second connection.
+/// Serves the connection: stops after its `stop_after`th connection, or
+/// when the test says so.
 struct Application<'a> {
     connections: &'a Cell<u32>,
     disconnects: &'a RefCell<Vec<PortDisconnect>>,
     stop_after: u32,
+    stop: &'a Cell<bool>,
 }
 
 impl PortStationApplication<ModelRxBuffer> for Application<'_> {
     fn stop_requested(&mut self) -> bool {
-        self.connections.get() >= self.stop_after
+        self.stop.get() || self.connections.get() >= self.stop_after
     }
 
     fn deliver(&mut self, _msdu: PortMsdu<'_, ModelRxBuffer>) {}
@@ -1501,12 +1519,14 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
     let mut ap = ScriptedAp::new(ApSecurity::Open);
     let connections = Cell::new(0);
     let disconnects = RefCell::new(Vec::new());
+    let stop = Cell::new(false);
     let mut service = StaLifecycleService::new(
         PortStationLifecycle::new(
             Application {
                 connections: &connections,
                 disconnects: &disconnects,
                 stop_after: 2,
+                stop: &stop,
             },
             Duration::from_millis(1),
         ),
@@ -2094,9 +2114,14 @@ fn the_station_holds_no_frame_buffer_of_its_own() {
         <Env<'static> as PortStationEnv>::RateControl,
     >;
     // The scan table and every frame buffer are in the composition's
-    // storage; the station and its connection are protocol state.
+    // storage; the station and its connection are protocol state. The one
+    // frame a connection keeps is an EAPOL frame awaiting the Group Key
+    // Handshake.
     let frame = PORT_FRAME_CAPACITY;
-    assert!(core::mem::size_of::<Connection>() < frame);
+    assert!(
+        core::mem::size_of::<Connection>()
+            < frame + oer_ieee80211_rsn::runner::RSN_HANDSHAKE_EAPOL_CAPACITY
+    );
     assert!(core::mem::size_of::<Station>() < 2 * frame);
     assert!(core::mem::size_of::<PortStationStorage<TestFrame>>() > PORT_REORDER_SLOTS * frame);
     // An A-MPDU's subframes are headers and the network's owners, no copy
@@ -2159,4 +2184,163 @@ fn an_in_order_msdu_is_handed_on_in_the_port_s_buffer_body() {
         [(true, 1, b"a".to_vec()), (false, 0, b"b".to_vec())]
     );
     assert_eq!(world.model.rx_buffers_lent(), 0);
+}
+
+#[test]
+fn an_announced_channel_switch_silences_the_station_until_its_owner_moves_it() {
+    on_large_stack(an_announced_channel_switch_silences_the_station_until_its_owner_moves_it_body);
+}
+
+fn an_announced_channel_switch_silences_the_station_until_its_owner_moves_it_body() {
+    use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
+
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = connect(&world, &mut ap, world.station(open()));
+    ap.next_beacon_micros = Some(world.timer.now.get());
+    let mut delivered = Vec::new();
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 300, &mut delivered),
+        None
+    );
+
+    // The access point moves to channel 11 in three beacon intervals and
+    // tells its stations to stop transmitting.
+    ap.beacon_extra = vec![37, 3, 1, 11, 3];
+    let event = world.run_events(&mut ap, &mut station, 300, &mut delivered);
+    let Some(PortStationEvent::ChannelSwitch(PortChannelSwitch { target, mode, at })) = event
+    else {
+        panic!(
+            "no announcement: {event:?} {:?} {:?}",
+            station.connection().unwrap().counters(),
+            station
+                .connection()
+                .unwrap()
+                .link()
+                .beacons()
+                .last_observation()
+        );
+    };
+    assert_eq!(target, channel(11));
+    assert_eq!(mode, ChannelSwitchMode::StopTransmitting);
+    let interval = u64::from(scripted_ap::BEACON_INTERVAL_TU) * 1_024;
+    assert_eq!(at.as_micros(), world.timer.now.get() + 3 * interval);
+    assert_eq!(
+        station
+            .connection()
+            .unwrap()
+            .channel_switch()
+            .map(|switch| switch.target),
+        Some(channel(11))
+    );
+
+    // Every beacon counts down to the same switch: nothing new to report,
+    // and the network's frame waits.
+    ap.absorb(world.model);
+    let before = world.model.submitted().len();
+    world.send(&ethernet(PEER, IPV4, b"held"));
+    assert_eq!(
+        world.run_events(&mut ap, &mut station, 250, &mut delivered),
+        None
+    );
+    assert_eq!(world.model.submitted().len(), before);
+
+    // The access point moves; the owner retunes the port and tells the
+    // station, whose frame then goes out on the new channel.
+    ap.channel = 11;
+    ap.beacon_extra.clear();
+    world
+        .drive(&mut ap, station.link_mut().retune(channel(11)))
+        .unwrap();
+    station.channel_switched(channel(11)).unwrap();
+    assert_eq!(station.connection().unwrap().channel_switch(), None);
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 50, &mut delivered),
+        None
+    );
+    assert!(
+        world.model.submitted()[before..]
+            .iter()
+            .any(|attempt| attempt.frames[0][0] & 0x0c == 0x08)
+    );
+    // Beacons on the new channel keep the link well past its loss window.
+    assert_eq!(
+        world.run_for(&mut ap, &mut station, 12_000, &mut delivered),
+        None
+    );
+    assert!(station.connection().is_some());
+}
+
+#[test]
+fn the_lifecycle_follows_its_access_point_to_the_announced_channel() {
+    on_large_stack(the_lifecycle_follows_its_access_point_to_the_announced_channel_body);
+}
+
+fn the_lifecycle_follows_its_access_point_to_the_announced_channel_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let connections = Cell::new(0);
+    let disconnects = RefCell::new(Vec::new());
+    let stop = Cell::new(false);
+    let mut service = StaLifecycleService::new(
+        PortStationLifecycle::new(
+            Application {
+                connections: &connections,
+                disconnects: &disconnects,
+                stop_after: 2,
+                stop: &stop,
+            },
+            Duration::from_millis(1),
+        ),
+        StaReconnectPolicy::new(3, 10, 100, 20).unwrap(),
+    );
+    let interval = u64::from(scripted_ap::BEACON_INTERVAL_TU) * 1_024;
+    // When the first beacon announcing channel 11 in two intervals went out.
+    let mut announced_at = None;
+    // When the station's port reached channel 11.
+    let mut retuned_at = None;
+    let exit = {
+        let future = service.run(world.station(open()));
+        let mut future = pin!(future);
+        let mut routing = pin!(world.router.run());
+        let mut context = Context::from_waker(Waker::noop());
+        loop {
+            world.timer.wanted.set(None);
+            if let Poll::Ready(exit) = future.as_mut().poll(&mut context) {
+                break exit;
+            }
+            assert!(routing.as_mut().poll(&mut context).is_pending());
+            let now = world.timer.now.get();
+            if announced_at.is_none() && connections.get() == 1 {
+                ap.beacon_extra = vec![37, 3, 0, 11, 2];
+                ap.next_beacon_micros = Some(now);
+                announced_at = Some(now);
+                continue;
+            }
+            // The access point moves with the station's port.
+            if announced_at.is_some()
+                && retuned_at.is_none()
+                && world.model.channel() == Some(channel(11))
+            {
+                retuned_at = Some(now);
+                ap.channel = 11;
+                ap.beacon_extra.clear();
+            }
+            // Well past the beacon loss window on the new channel.
+            if retuned_at.is_some_and(|retuned| now > retuned + 12_000_000) {
+                stop.set(true);
+            }
+            if ap.step(world.model, now) {
+                continue;
+            }
+            let next = world.timer.wanted.get().expect("a deadline");
+            world.advance_to(next.max(now));
+        }
+    };
+    assert!(matches!(exit, StaLifecycleExit::Stopped { .. }));
+    assert_eq!(connections.get(), 1);
+    assert!(disconnects.borrow().is_empty());
+    let (announced, retuned) = (announced_at.unwrap(), retuned_at.unwrap());
+    assert!(retuned >= announced + 2 * interval, "{announced} {retuned}");
+    assert!(retuned < announced + 3 * interval, "{announced} {retuned}");
 }

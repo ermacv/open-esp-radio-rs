@@ -56,8 +56,9 @@ use crate::{
 
 use super::{
     connected::{
-        ConnectionContext, PortConnection, PortConnectionBuffers, PortConnectionConfig,
-        PortConnectionSecurity, PortDisconnect, PortLinkProbe, PortLinkSupervisor,
+        ConnectionContext, PortChannelSwitch, PortConnection, PortConnectionBuffers,
+        PortConnectionConfig, PortConnectionSecurity, PortDisconnect, PortLinkProbe,
+        PortLinkSupervisor, PortStationEvent,
     },
     join::{PortAssociation, PortHePower, PortJoin},
     link::{PortLink, PortLinkError, PortStationEnv, PortStationFrame},
@@ -394,20 +395,36 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
     }
 
     /// Receive until `deadline`, handing every Ethernet frame to `deliver`.
-    /// `Some` when the association ended; the station has then left it.
+    /// `Some` when the association ended, and the station has left it, or
+    /// when the access point announced a move of its BSS, which the port's
+    /// owner carries out ([`Self::channel_switched`]).
     pub async fn run_until(
         &mut self,
         deadline: oer_time::Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
-    ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
+    ) -> Result<Option<PortStationEvent>, PortLinkError<PortError<X>>> {
         let (connection, mut context) = self.context()?;
-        let ended = connection
+        let event = connection
             .run_until(&mut context, deadline, deliver)
             .await?;
-        if ended.is_some() {
+        if let Some(PortStationEvent::Ended(_)) = event {
             self.end_connection(false).await?;
         }
-        Ok(ended)
+        Ok(event)
+    }
+
+    /// The port's owner retuned the port to `channel`, where the BSS now
+    /// operates: the station's announced switch is done.
+    pub fn channel_switched(
+        &mut self,
+        channel: Channel,
+    ) -> Result<(), PortLinkError<PortError<X>>> {
+        let now = self.timer.now();
+        self.connection
+            .as_mut()
+            .ok_or(PortLinkError::MissingState)?
+            .channel_switched(channel, now);
+        Ok(())
     }
 
     /// Restart the association's power manager with `sleep_type`.
@@ -516,24 +533,33 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         select_association_phy(candidate, self.profile.preference, ht40_capable)
     }
 
+    /// The channel the association with `candidate` operates on: an HT40
+    /// association tunes its access point's secondary channel too.
+    fn channel(&self, candidate: &ScanRecord) -> Option<Channel> {
+        let width = match (self.phy(candidate), candidate.ht40_secondary_channel()) {
+            (PhyMode::Ht40, Some(HtSecondaryChannel::Above)) => ChannelWidth::Mhz40Above,
+            (PhyMode::Ht40, Some(HtSecondaryChannel::Below)) => ChannelWidth::Mhz40Below,
+            _ => ChannelWidth::Mhz20,
+        };
+        if candidate.channel <= 14 {
+            Channel::ghz2_4(candidate.channel, width)
+        } else {
+            Channel::ghz5(candidate.channel, width)
+        }
+        .ok()
+    }
+
     async fn select_channel(&mut self) -> StepResult<X> {
         let candidate =
             self.candidate
                 .ok_or(StaAttemptStepError::terminal(PortStationError::State(
                     StaAttemptStateError::MissingPreparedPeer,
                 )))?;
-        // An HT40 association tunes its access point's secondary channel too.
-        let width = match (self.phy(&candidate), candidate.ht40_secondary_channel()) {
-            (PhyMode::Ht40, Some(HtSecondaryChannel::Above)) => ChannelWidth::Mhz40Above,
-            (PhyMode::Ht40, Some(HtSecondaryChannel::Below)) => ChannelWidth::Mhz40Below,
-            _ => ChannelWidth::Mhz20,
-        };
-        let channel = if candidate.channel <= 14 {
-            Channel::ghz2_4(candidate.channel, width)
-        } else {
-            Channel::ghz5(candidate.channel, width)
-        }
-        .map_err(|_| StaAttemptStepError::refresh_candidate(PortStationError::NoCandidate))?;
+        let channel = self
+            .channel(&candidate)
+            .ok_or(StaAttemptStepError::refresh_candidate(
+                PortStationError::NoCandidate,
+            ))?;
         self.link
             .retune(channel)
             .await
@@ -828,6 +854,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             rx_reorder_gap: self.profile.rx_reorder_gap,
             beacon_interval_tu: candidate.beacon_interval_tu,
             join_timestamp_tsf: candidate.timestamp,
+            channel: self.channel(&candidate)?,
         })
     }
 }
@@ -1086,22 +1113,39 @@ impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifec
         if let Some(connection) = station.connection() {
             self.application.connected(connection.config());
         }
+        // The station is the port's only client: the lifecycle owns the
+        // port's channel and follows its BSS's announced moves.
+        let mut switch: Option<PortChannelSwitch> = None;
         loop {
             if self.application.stop_requested() {
                 let _ = station.disconnect().await;
                 return StaAttemptOutcome::Stopped { owner: station };
             }
-            let deadline = station.timer.now().checked_add(self.poll);
+            let now = station.timer.now();
+            if let Some(due) = switch.filter(|switch| switch.at <= now) {
+                switch = None;
+                let switched = match station.link_mut().retune(due.target).await {
+                    Ok(()) => station.channel_switched(due.target),
+                    Err(error) => Err(error),
+                };
+                if let Err(error) = switched {
+                    let _ = station.end_connection(false).await;
+                    return connected_failure(station, error);
+                }
+            }
+            let deadline = now.checked_add(self.poll);
             let Some(deadline) = deadline else {
                 return connected_failure(station, PortLinkError::MissingState);
             };
+            let deadline = switch.map_or(deadline, |switch| switch.at.min(deadline));
             let application = &mut self.application;
             match station
                 .run_until(deadline, &mut |msdu| application.deliver(msdu))
                 .await
             {
                 Ok(None) => {}
-                Ok(Some(reason)) => {
+                Ok(Some(PortStationEvent::ChannelSwitch(announced))) => switch = Some(announced),
+                Ok(Some(PortStationEvent::Ended(reason))) => {
                     self.application.disconnected(reason);
                     return StaAttemptOutcome::Disconnected {
                         owner: station,

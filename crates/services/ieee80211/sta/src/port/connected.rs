@@ -8,6 +8,10 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_ieee80211_mac::block_ack::TX_BLOCK_ACK_MAX_TIDS;
 use oer_ieee80211_mac::block_ack::{TxBlockAckOriginator, TxBlockAckResponseDisposition};
+use oer_ieee80211_mac::channel::Channel;
+use oer_ieee80211_mac::channel_switch::{
+    ChannelSwitch, ChannelSwitchMode, parse_channel_switch_action,
+};
 use oer_ieee80211_mac::qos::classify_ethernet_wmm;
 use oer_ieee80211_mac::{
     block_ack::{
@@ -103,6 +107,37 @@ pub struct PortConnectionConfig {
     pub beacon_interval_tu: u16,
     /// The access point's TSF when the station joined.
     pub join_timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant,
+    /// The channel the BSS operates on.
+    pub channel: Channel,
+}
+
+/// A move of the station's BSS to another channel, which its access point
+/// announced.
+///
+/// The station does not retune: the port's owner decides the port's channel
+/// for every interface, retunes at `at` and then tells the station
+/// ([`PortStation::channel_switched`](super::PortStation::channel_switched)).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PortChannelSwitch {
+    /// The BSS's new channel.
+    pub target: Channel,
+    /// [`ChannelSwitchMode::StopTransmitting`] keeps the station silent
+    /// until the switch.
+    pub mode: ChannelSwitchMode,
+    /// When the access point moves: the announced count of beacon intervals
+    /// after the announcing frame's reception.
+    pub at: Instant,
+}
+
+/// Why [`PortStation::run_until`](super::PortStation::run_until) returned
+/// before its deadline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PortStationEvent {
+    /// The association ended; the station has left it.
+    Ended(PortDisconnect),
+    /// The access point announced a move of its BSS, or changed one it had
+    /// announced. The association goes on.
+    ChannelSwitch(PortChannelSwitch),
 }
 
 /// Why the association ended.
@@ -153,6 +188,9 @@ pub struct PortRxCounters {
     /// Out-of-order MPDUs longer than [`PORT_FRAME_CAPACITY`](oer_ieee80211_upper_mac_service::frame::PORT_FRAME_CAPACITY), which the
     /// reorder storage cannot hold.
     pub unbuffered: u32,
+    /// Channel switch announcements of the access point that were malformed
+    /// or named no channel the station represents.
+    pub channel_switch_refused: u32,
 }
 
 /// Where one checked data MPDU's payload lies, and whether it came under
@@ -241,6 +279,29 @@ pub struct PortConnection<'b, P: LowerMacBeaconTiming, R> {
     /// what its exchanges teach it.
     rate: R,
     counters: PortRxCounters,
+    /// The access point's announced move of the BSS, until the owner
+    /// reports the switch.
+    channel_switch: Option<AnnouncedSwitch>,
+}
+
+/// An announced switch and whether the owner was told of it, its fields
+/// laid out flat so the flag takes the switch's padding.
+#[derive(Clone, Copy)]
+struct AnnouncedSwitch {
+    at: Instant,
+    target: Channel,
+    mode: ChannelSwitchMode,
+    reported: bool,
+}
+
+impl AnnouncedSwitch {
+    const fn switch(self) -> PortChannelSwitch {
+        PortChannelSwitch {
+            target: self.target,
+            mode: self.mode,
+            at: self.at,
+        }
+    }
 }
 
 /// The keys a connection starts with: the pairwise and group keys, the
@@ -347,7 +408,75 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             probe,
             rate,
             counters: PortRxCounters::default(),
+            channel_switch: None,
         }
+    }
+
+    /// The access point's announced move of the BSS, until the switch.
+    pub fn channel_switch(&self) -> Option<PortChannelSwitch> {
+        self.channel_switch.map(AnnouncedSwitch::switch)
+    }
+
+    /// The port now listens on `channel`, where the BSS operates: the
+    /// announcement is done and the beacon window restarts there.
+    pub(crate) fn channel_switched(&mut self, channel: Channel, now: Instant) {
+        self.config.channel = channel;
+        self.channel_switch = None;
+        self.arm_link(now);
+    }
+
+    /// Record the access point's `announcement`, received at `now`. One to
+    /// the current channel announces nothing.
+    fn announce(&mut self, announcement: ChannelSwitch, now: Instant) {
+        let Ok(target) = announcement.target(self.config.channel.band()) else {
+            self.counters.channel_switch_refused =
+                self.counters.channel_switch_refused.saturating_add(1);
+            return;
+        };
+        if target == self.config.channel {
+            return;
+        }
+        let delay = Duration::from_micros(
+            u64::from(self.config.beacon_interval_tu) * 1024 * u64::from(announcement.count),
+        );
+        let Some(at) = now.checked_add(delay) else {
+            self.counters.channel_switch_refused =
+                self.counters.channel_switch_refused.saturating_add(1);
+            return;
+        };
+        let switch = PortChannelSwitch {
+            target,
+            mode: announcement.mode,
+            at,
+        };
+        // Each beacon counts down to the same switch; only a changed target
+        // or mode is news.
+        let reported = self.channel_switch.is_some_and(|known| {
+            known.reported && (known.target, known.mode) == (switch.target, switch.mode)
+        });
+        self.channel_switch = Some(AnnouncedSwitch {
+            at: switch.at,
+            target: switch.target,
+            mode: switch.mode,
+            reported,
+        });
+    }
+
+    /// The access point told the station to stop transmitting until it
+    /// moves.
+    fn silenced(&self) -> bool {
+        self.channel_switch
+            .is_some_and(|announced| announced.mode == ChannelSwitchMode::StopTransmitting)
+    }
+
+    /// The announcement the owner has not been told of.
+    fn unreported_switch(&mut self) -> Option<PortChannelSwitch> {
+        let announced = self
+            .channel_switch
+            .as_mut()
+            .filter(|announced| !announced.reported)?;
+        announced.reported = true;
+        Some(announced.switch())
     }
 
     /// End the connection and return the buffers it borrowed.
@@ -490,6 +619,10 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
     ) -> Result<(), PortLinkError<PortError<X>>> {
         if let Some(power) = &mut self.power {
             power.take_release();
+        }
+        // The network's frames wait in its queues for the switch.
+        if self.silenced() {
+            return Ok(());
         }
         loop {
             let traffic = Self::traffic(context);
@@ -817,16 +950,20 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
 
     /// Process inputs until `deadline`: received frames, TBTTs, the SA
     /// Query, power-save and reorder gap timers. Every delivered Ethernet frame goes to
-    /// `deliver`. `Some` when the association ended.
+    /// `deliver`. `Some` when the association ended or the access point
+    /// announced a move of its BSS.
     pub(crate) async fn run_until<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         deadline: Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
-    ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
+    ) -> Result<Option<PortStationEvent>, PortLinkError<PortError<X>>> {
         loop {
             if let Some(disconnect) = self.expire(context).await? {
-                return Ok(Some(disconnect));
+                return Ok(Some(PortStationEvent::Ended(disconnect)));
+            }
+            if let Some(switch) = self.unreported_switch() {
+                return Ok(Some(PortStationEvent::ChannelSwitch(switch)));
             }
             self.expire_reorder_gaps(context.timer.now(), deliver);
             self.drain(context).await?;
@@ -841,7 +978,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                 continue;
             };
             if let Some(disconnect) = self.input(context, input, deliver).await? {
-                return Ok(Some(disconnect));
+                return Ok(Some(PortStationEvent::Ended(disconnect)));
             }
         }
     }
@@ -861,6 +998,8 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             SaQueryStep::TimedOut => return Ok(Some(PortDisconnect::SaQueryTimeout)),
         }
         match self.link.due(now) {
+            // A station the access point silenced waits for the switch.
+            Some(StaLinkAction::Probe { .. }) if self.silenced() => {}
             Some(StaLinkAction::Probe { directed }) => {
                 self.send_link_probe(context, directed).await?;
                 // A window past the representable time is never reached.
@@ -890,11 +1029,12 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         context: &mut ConnectionContext<'_, '_, X>,
         now: Instant,
     ) -> Result<(), PortLinkError<PortError<X>>> {
+        let silenced = self.silenced();
         let Some(originator) = self.tx_block_ack.as_mut() else {
             return Ok(());
         };
         while originator.expire_next(now).is_some() {}
-        if self.power.as_ref().is_some_and(|power| !power.awake()) {
+        if silenced || self.power.as_ref().is_some_and(|power| !power.awake()) {
             return Ok(());
         }
         let Some(tid) = originator.take_pending(now) else {
@@ -984,7 +1124,16 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                 if let Ok(beacon) =
                     parse_sta_beacon(bytes, self.config.bssid, self.config.association_id.get())
                 {
-                    let _ = self.link.observe_beacon(context.timer.now(), beacon);
+                    let now = context.timer.now();
+                    let _ = self.link.observe_beacon(now, beacon);
+                    match beacon.channel_switch {
+                        Some(Ok(announcement)) => self.announce(announcement, now),
+                        Some(Err(_)) => {
+                            self.counters.channel_switch_refused =
+                                self.counters.channel_switch_refused.saturating_add(1);
+                        }
+                        None => {}
+                    }
                     let traffic = Self::traffic(context);
                     if let Some(power) = &mut self.power {
                         power
@@ -1045,6 +1194,14 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                 }
                 if category == BLOCK_ACK_CATEGORY {
                     self.block_ack_action(context, body).await?;
+                } else if let Some(announcement) =
+                    parse_channel_switch_action(body).unwrap_or_else(|_| {
+                        self.counters.channel_switch_refused =
+                            self.counters.channel_switch_refused.saturating_add(1);
+                        None
+                    })
+                {
+                    self.announce(announcement, context.timer.now());
                 } else if category == SA_QUERY_CATEGORY {
                     match SaQuery::parse(body) {
                         Some(SaQuery::Request { transaction }) => {

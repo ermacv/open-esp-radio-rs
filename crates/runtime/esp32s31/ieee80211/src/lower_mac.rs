@@ -161,6 +161,11 @@ impl<'pool, const SLOTS: usize, const CAPACITY: usize> Esp32s31StagedRx<'pool, S
     ) -> Self {
         Self { frame, config }
     }
+
+    /// The staged frame back, for its producer to keep.
+    pub fn into_frame(self) -> NetworkRxFrame<'pool, SLOTS, CAPACITY> {
+        self.frame
+    }
 }
 
 impl<const SLOTS: usize, const CAPACITY: usize> LowerMacRxUnit
@@ -277,6 +282,37 @@ impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
                 lost.set(true);
             }
         });
+    }
+
+    /// Queue `entry` behind a pending loss marker, or hand it back when
+    /// there is no room for both: nothing is lost.
+    fn try_push(&self, entry: T) -> Result<(), T> {
+        self.lost.lock(|lost| {
+            let marker = usize::from(lost.get());
+            if self.entries.free_capacity() < marker + 1 {
+                return Err(entry);
+            }
+            if lost.replace(false) {
+                let _ = self.entries.try_send(Err(EventsLost));
+            }
+            self.entries
+                .try_send(Ok(entry))
+                .map_err(|error| match error {
+                    embassy_sync::channel::TrySendError::Full(Ok(entry)) => entry,
+                    embassy_sync::channel::TrySendError::Full(Err(_)) => {
+                        unreachable!("an entry is sent as `Ok`")
+                    }
+                })
+        })
+    }
+
+    /// Entries that fit now.
+    fn room(&self) -> usize {
+        self.lost.lock(|lost| {
+            self.entries
+                .free_capacity()
+                .saturating_sub(usize::from(lost.get()))
+        })
     }
 
     /// The next entry, or the loss marker after the last entry.
@@ -871,6 +907,30 @@ where
     where
         T: ReceptionClock,
     {
+        self.receive(unit, false).map(|_| ())
+    }
+
+    /// Received frames that fit in the port's queue now.
+    pub fn received_room(&self) -> usize {
+        self.queues.received.room()
+    }
+
+    /// As [`Self::on_received`], but a unit the port would queue and has
+    /// no room for comes back: nothing is lost, and its producer keeps it
+    /// until there is room.
+    pub fn try_on_received(&self, unit: U) -> Result<Result<(), U>, RxError>
+    where
+        T: ReceptionClock,
+    {
+        self.receive(unit, true)
+    }
+
+    /// Queue `unit` when a receive rule or monitor reception admits it;
+    /// without room, hand it back when `keep`, else drop it as a loss.
+    fn receive(&self, unit: U, keep: bool) -> Result<Result<(), U>, RxError>
+    where
+        T: ReceptionClock,
+    {
         let frame = unit.normalized()?;
         // The receive timestamp, in the generation it was taken in; a
         // frame received before the snapshot always has its place unless a
@@ -885,18 +945,28 @@ where
                 (frame.mpdu_offset..frame.mpdu_offset + bytes.len(), meta)
             }))
         });
-        if let Ok(Some((mpdu, meta))) = received {
-            // Queued under the core's lock, as every event is: a port
-            // poisoned meanwhile drops the unit instead.
-            let _ = self.with_core(|_, _, sink| {
-                sink.queues.received.push(Esp32s31LowerMacEvent::Received {
-                    frame: Esp32s31RxBuffer { unit, mpdu },
-                    meta,
-                });
-                Ok(())
-            });
-        }
-        Ok(())
+        let Ok(Some((mpdu, meta))) = received else {
+            return Ok(Ok(()));
+        };
+        let event = Esp32s31LowerMacEvent::Received {
+            frame: Esp32s31RxBuffer { unit, mpdu },
+            meta,
+        };
+        // Queued under the core's lock, as every event is: a port poisoned
+        // meanwhile drops the unit instead.
+        let mut refused = None;
+        let _ = self.with_core(|_, _, sink| {
+            if keep {
+                refused = sink.queues.received.try_push(event).err();
+            } else {
+                sink.queues.received.push(event);
+            }
+            Ok(())
+        });
+        Ok(match refused {
+            Some(Esp32s31LowerMacEvent::Received { frame, .. }) => Err(frame.unit),
+            _ => Ok(()),
+        })
     }
 
     /// The port's runner: the publication watchdog of the attempts in
@@ -1571,6 +1641,61 @@ where
         Ok(admitted)
     }
 }
+
+impl<
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    S,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const EVENTS: usize,
+    U: LowerMacRxUnit,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+    O: TxBody,
+> PortRxSink<U>
+    for Esp32s31LowerMac<
+        'slot,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        U,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+        O,
+    >
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer + ReceptionClock,
+    H: LowerMacHardware,
+    R: LowerMacRetune,
+    S: AmpduBacking,
+{
+    fn received_room(&self) -> usize {
+        Esp32s31LowerMac::received_room(self)
+    }
+
+    fn try_on_received(&self, unit: U) -> Result<Result<(), U>, RxError> {
+        Esp32s31LowerMac::try_on_received(self, unit)
+    }
+}
+
+mod rx_publisher;
+
+pub use rx_publisher::{Esp32s31PortRxPublisher, PortRxSink};
 
 #[cfg(all(test, not(target_pointer_width = "32")))]
 mod tests;

@@ -320,3 +320,133 @@ fn chip_transaction_cannot_reclaim_the_buffer_retained_by_its_publisher() {
     ring.try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("accepted lease returned before shutdown"));
 }
+
+/// The port's received queue as the publisher sees it: room for `room`
+/// units, each kept.
+struct PortSink<'pool> {
+    room: Cell<usize>,
+    kept:
+        RefCell<std::vec::Vec<crate::lower_mac::Esp32s31StagedRx<'pool, 1, TRANSACTION_CAPACITY>>>,
+}
+
+impl<'pool>
+    crate::lower_mac::PortRxSink<crate::lower_mac::Esp32s31StagedRx<'pool, 1, TRANSACTION_CAPACITY>>
+    for PortSink<'pool>
+{
+    fn received_room(&self) -> usize {
+        self.room.get()
+    }
+
+    fn try_on_received(
+        &self,
+        unit: crate::lower_mac::Esp32s31StagedRx<'pool, 1, TRANSACTION_CAPACITY>,
+    ) -> Result<
+        Result<(), crate::lower_mac::Esp32s31StagedRx<'pool, 1, TRANSACTION_CAPACITY>>,
+        oer_esp32s31_ieee80211_mac::rx::RxError,
+    > {
+        if self.room.get() == 0 {
+            return Ok(Err(unit));
+        }
+        self.room.set(self.room.get() - 1);
+        self.kept.borrow_mut().push(unit);
+        Ok(Ok(()))
+    }
+}
+
+const PORT_INGRESS: oer_esp32s31_ieee80211_mac::rx::RxIngressConfig =
+    oer_esp32s31_ieee80211_mac::rx::RxIngressConfig {
+        ring_entry_limit: TRANSACTION_COUNT,
+        csi_config: 0,
+        flags: 0,
+    };
+
+#[test]
+fn the_port_publisher_hands_the_staged_buffer_to_the_port_or_back_to_the_transaction() {
+    use crate::lower_mac::Esp32s31PortRxPublisher;
+
+    // No room: the transaction keeps its unit and publishes nothing.
+    let (storage, mut ring, mut hardware, pointer) = transaction_fixture();
+    let pool = RxStagePool::<1, TRANSACTION_CAPACITY>::new();
+    let sink = PortSink {
+        room: Cell::new(0),
+        kept: RefCell::new(std::vec::Vec::new()),
+    };
+    let publisher = Esp32s31PortRxPublisher::<_, 2>::new(&sink, PORT_INGRESS);
+    let [mut descriptors, mut units, mut bytes] = [0_u64; 3];
+    let _ = transaction::service(
+        &mut ring,
+        storage,
+        &pool,
+        &publisher,
+        &transaction::AdmitUnreserved,
+        transaction::Counters {
+            descriptors: &mut descriptors,
+            units: &mut units,
+            bytes: &mut bytes,
+        },
+        &mut hardware,
+        (),
+    );
+    assert!(sink.kept.borrow().is_empty());
+    assert_eq!(pool.claimed_slots(), 0);
+
+    // Room: the port gets the original DMA buffer, unchanged.
+    sink.room.set(1);
+    let _ = transaction::service(
+        &mut ring,
+        storage,
+        &pool,
+        &publisher,
+        &transaction::AdmitUnreserved,
+        transaction::Counters {
+            descriptors: &mut descriptors,
+            units: &mut units,
+            bytes: &mut bytes,
+        },
+        &mut hardware,
+        (),
+    );
+    let kept = sink
+        .kept
+        .borrow_mut()
+        .pop()
+        .expect("the port took the unit");
+    let frame = kept.into_frame();
+    assert_eq!(frame.segment().buffer.as_ptr(), pointer);
+    assert_eq!(frame.segment().buffer, TRANSACTION_PAYLOAD);
+    assert_eq!(publisher.undecodable(), 0);
+}
+
+#[test]
+fn the_port_publisher_classifies_as_the_direct_path() {
+    use crate::lower_mac::Esp32s31PortRxPublisher;
+
+    let sink = PortSink {
+        room: Cell::new(0),
+        kept: RefCell::new(std::vec::Vec::new()),
+    };
+    let publisher = Esp32s31PortRxPublisher::<_, 2>::new(&sink, PORT_INGRESS);
+    let unit = transaction::CompletedUnit {
+        head_index: 0,
+        descriptor_count: 1,
+        payload_length: 64,
+    };
+    let preview = |frame_control: u16| {
+        let mut bytes = [0_u8; 24];
+        bytes[..2].copy_from_slice(&frame_control.to_le_bytes());
+        <Esp32s31PortRxPublisher<'_, PortSink<'_>, 2> as Publisher<'_, TRANSACTION_CAPACITY, 1>>::preview(
+            &publisher, unit, bytes,
+        )
+    };
+    let data = preview(0x4088);
+    assert_eq!(data.class, transaction::IngressClass::BulkProtectedData);
+    assert_eq!(data.route, transaction::IngressRoute::Standalone);
+    assert_eq!(data.frame_control, Some(0x4088));
+    assert_eq!(preview(0x0088).class, transaction::IngressClass::Critical);
+    assert_eq!(preview(0x0080).class, transaction::IngressClass::Critical);
+    sink.room.set(3);
+    assert_eq!(
+        <Esp32s31PortRxPublisher<'_, PortSink<'_>, 2> as Publisher<'_, TRANSACTION_CAPACITY, 1>>::free_capacity(&publisher),
+        3
+    );
+}

@@ -743,6 +743,54 @@ fn station_tbtts_arrive_through_the_power_interrupt() {
 }
 
 #[test]
+fn a_unit_without_room_comes_back_and_nothing_is_lost() {
+    let port = Port::new(ModelTimer);
+    install(&port, true);
+    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    assert_eq!(
+        next(&port),
+        Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
+    let mut mpdu = data_frame();
+    mpdu[4..10].copy_from_slice(&STATION);
+    mpdu[10..16].copy_from_slice(&BSSID);
+    let mpdu: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(mpdu));
+    let live = live_units();
+
+    // Two fit the queue; the third comes back to its producer.
+    assert_eq!(port.received_room(), 2);
+    for _ in 0..2 {
+        assert!(matches!(
+            port.try_on_received(TestRxUnit::new(mpdu, None, live)),
+            Ok(Ok(()))
+        ));
+    }
+    assert_eq!(port.received_room(), 0);
+    let Ok(Err(back)) = port.try_on_received(TestRxUnit::new(mpdu, None, live)) else {
+        panic!("a unit without room comes back");
+    };
+    assert_eq!(live.load(Ordering::Relaxed), 3);
+    // Taking a frame makes room for the one kept.
+    assert!(matches!(next(&port), Ok(LowerMacEvent::Received { .. })));
+    assert_eq!(port.received_room(), 1);
+    assert!(matches!(port.try_on_received(back), Ok(Ok(()))));
+    for _ in 0..2 {
+        assert!(matches!(next(&port), Ok(LowerMacEvent::Received { .. })));
+    }
+    // No loss was reported.
+    assert!(port.queues.take().is_none());
+    // A unit the receive rules refuse is dropped, not handed back.
+    let mut other = data_frame();
+    other[4..10].copy_from_slice(&[0x02, 0x99, 0, 0, 0, 1]);
+    let other: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(other));
+    assert!(matches!(
+        port.try_on_received(TestRxUnit::new(other, None, live)),
+        Ok(Ok(()))
+    ));
+    assert!(port.queues.take().is_none());
+}
+
+#[test]
 fn received_frames_are_copied_and_overflow_is_reported_once() {
     let port = Port::new(ModelTimer);
     install(&port, true);

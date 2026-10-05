@@ -81,6 +81,20 @@ pub enum IngressClass {
     Unclassified,
 }
 
+impl IngressClass {
+    /// The class of a unit whose frame control, if it was readable, is
+    /// `frame_control`: protected data is bulk, every other frame critical.
+    pub const fn of(frame_control: Option<u16>) -> Self {
+        match frame_control {
+            Some(value) if value & 0x000c == 0x0008 && value & 0x4000 != 0 => {
+                Self::BulkProtectedData
+            }
+            Some(_) => Self::Critical,
+            None => Self::Unclassified,
+        }
+    }
+}
+
 /// Fact-only logical route for overload accounting.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IngressRoute {
@@ -208,6 +222,30 @@ impl Admission for AdmitUnreserved {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_protected_data_is_bulk() {
+        // Data, Protected Frame set.
+        assert_eq!(
+            IngressClass::of(Some(0x4008)),
+            IngressClass::BulkProtectedData
+        );
+        // QoS data, protected.
+        assert_eq!(
+            IngressClass::of(Some(0x4088)),
+            IngressClass::BulkProtectedData
+        );
+        // Unprotected data (EAPOL before the keys), management, control.
+        for frame_control in [0x0008, 0x0088, 0x0080, 0x00d0, 0x0094] {
+            assert_eq!(
+                IngressClass::of(Some(frame_control)),
+                IngressClass::Critical
+            );
+        }
+        // A protected management frame stays critical.
+        assert_eq!(IngressClass::of(Some(0x40d0)), IngressClass::Critical);
+        assert_eq!(IngressClass::of(None), IngressClass::Unclassified);
+    }
 
     #[test]
     fn reserve_is_one_for_every_supported_multicredit_capacity() {

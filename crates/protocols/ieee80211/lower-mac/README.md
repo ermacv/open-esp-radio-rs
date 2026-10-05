@@ -190,7 +190,13 @@ implements the port in two layers:
   after its header into the lent slot or subframe as it is submitted or
   pushed (the core's own attempts take no body, `Infallible`), and holds the
   owners, one table entry per attempt within the owed completions, until
-  they are reclaimed or an uninstall drops them.
+  they are reclaimed or an uninstall drops them. Received units reach it from the
+  DMA receive transaction through `Esp32s31PortRxPublisher`, which
+  classifies them as the direct path does (`IngressClass::of`: protected
+  data bulk, every other frame critical, so the transaction's credit reserve
+  keeps the last staging credits for management, control and EAPOL) and
+  hands back a unit the received queue has no room for
+  (`try_on_received`), so the transaction keeps it rather than losing it.
 
 The ESP32-S31 station and access-point roles do not use the port yet. Its
 operations map onto the S31 seams as follows:

@@ -154,13 +154,7 @@ impl<
         bytes: [u8; 24],
     ) -> Esp32s31RxCompletedUnitPreview {
         let frame_control = Some(u16::from_le_bytes([bytes[0], bytes[1]]));
-        let class = match frame_control {
-            Some(value) if value & 0x000c == 0x0008 && value & 0x4000 != 0 => {
-                Esp32s31RxIngressClass::BulkProtectedData
-            }
-            Some(_) => Esp32s31RxIngressClass::Critical,
-            None => Esp32s31RxIngressClass::Unclassified,
-        };
+        let class = Esp32s31RxIngressClass::of(frame_control);
         let route = match self {
             Self::Standalone(_) => Esp32s31RxIngressRoute::Standalone,
             Self::StaAp { addresses, .. } => match classify_sta_ap_rx(&bytes, *addresses) {

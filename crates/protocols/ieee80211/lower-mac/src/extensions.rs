@@ -105,6 +105,35 @@ pub trait LowerMacAmpdu: Ieee80211LowerMacPort {
     ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>, Self::Error>;
 }
 
+/// The air an interface reserves for itself: the backend sends a CTS
+/// addressed to the interface's own address whose Duration is `duration`,
+/// so every station that hears it defers for that long (IEEE Std
+/// 802.11-2020 10.3.2.4, the NAV).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AirReservation {
+    pub duration: Duration,
+}
+
+/// The longest air reservation: the NAV a Duration field sets, 32 767 µs.
+pub const MAX_AIR_RESERVATION: Duration = Duration::from_micros(32_767);
+
+/// One air reservation attempt: it contends as its access category, at a
+/// non-HT rate, with no key and no response.
+pub type AirReservationAttempt = crate::TxAttempt<AirReservation>;
+
+/// Air reservation: one attempt sends a CTS-to-self that keeps the
+/// interface's medium for a while, as an owner that takes the radio off the
+/// channel does. Its completion reports when the CTS went out.
+pub trait LowerMacAirReservation: Ieee80211LowerMacPort {
+    /// Admit one reservation, with the base port's admission rules. A
+    /// duration above [`MAX_AIR_RESERVATION`], a rate other than a non-HT
+    /// one, a key or an interface without an address is `Unsupported`.
+    fn submit_air_reservation(
+        &self,
+        attempt: AirReservationAttempt,
+    ) -> SubmitResult<AirReservationAttempt, Self::Error>;
+}
+
 /// A value of one interface's TSF. Two interfaces count different TSFs (a
 /// station follows its access point's, an access point keeps its own), so
 /// arithmetic between values of different interfaces is an error.

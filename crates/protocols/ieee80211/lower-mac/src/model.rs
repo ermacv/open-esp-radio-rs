@@ -242,6 +242,17 @@ struct InFlight {
     phase: Phase,
     /// The BlockAck an A-MPDU's success reports: every subframe.
     full_block_ack: Option<BlockAckReport>,
+    /// The memory the attempt holds until it ends.
+    lent: Lent,
+}
+
+/// The memory an attempt in flight holds.
+#[derive(Clone, Copy)]
+enum Lent {
+    TxBuffer,
+    AmpduBuffer,
+    /// An air reservation, which the model builds itself.
+    Nothing,
 }
 
 /// An interface's TSF: it advances with the model's radio clock from the
@@ -340,10 +351,10 @@ impl State {
             ack_snr_db: (status == TxStatus::Success).then_some(20),
             block_ack,
         };
-        if attempt.full_block_ack.is_some() {
-            self.ampdu_lent -= 1;
-        } else {
-            self.buffers_lent -= 1;
+        match attempt.lent {
+            Lent::TxBuffer => self.buffers_lent -= 1,
+            Lent::AmpduBuffer => self.ampdu_lent -= 1,
+            Lent::Nothing => {}
         }
         self.push(ModelEvent::Tx(completion));
     }
@@ -593,6 +604,7 @@ impl<O: TxBody> LowerMacModel<O> {
         attempt: &TxAttempt<P>,
         frames: Vec<Vec<u8>>,
         full_block_ack: Option<BlockAckReport>,
+        lent: Lent,
     ) -> Result<(), SubmitError> {
         let mut state = self.state.borrow_mut();
         if !state.enabled {
@@ -646,6 +658,7 @@ impl<O: TxBody> LowerMacModel<O> {
             queue,
             phase,
             full_block_ack,
+            lent,
         });
         state.submitted.push(SubmittedAttempt {
             id: attempt.id,
@@ -758,7 +771,7 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
                     if let Some(body) = &attempt.payload.body {
                         mpdu[header..].copy_from_slice(body.bytes());
                     }
-                    self.admit(&attempt, vec![mpdu], None)
+                    self.admit(&attempt, vec![mpdu], None, Lent::TxBuffer)
                 }
             }
             _ => Err(SubmitError::InvalidLength),
@@ -1011,6 +1024,35 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
     }
 }
 
+/// The model sends the CTS-to-self of a reservation through the queue of
+/// its access category; the outcome the test queues ends it.
+impl<O: TxBody> LowerMacAirReservation for LowerMacModel<O> {
+    fn submit_air_reservation(
+        &self,
+        attempt: AirReservationAttempt,
+    ) -> SubmitResult<AirReservationAttempt, ModelPoisoned> {
+        let state = self.serving()?;
+        let address = state.vif(attempt.vif).map(|vif| vif.address);
+        drop(state);
+        let refused = match (address, attempt.payload.duration.as_micros()) {
+            (Some(address), duration @ 0..=32_767)
+                if matches!(attempt.rate, PhyRate::Legacy(_))
+                    && attempt.key == KeySelector::Plaintext =>
+            {
+                // Frame Control (CTS), Duration, then the receiver: the
+                // interface itself.
+                let mut cts = vec![0xc4, 0x00];
+                cts.extend_from_slice(&(duration as u16).to_le_bytes());
+                cts.extend_from_slice(&address);
+                self.admit(&attempt, vec![cts], None, Lent::Nothing)
+            }
+            (None, _) => Err(SubmitError::UnknownVif),
+            _ => Err(SubmitError::Unsupported),
+        };
+        Ok(refused.map_err(|error| Refused { error, attempt }))
+    }
+}
+
 impl<O: TxBody> LowerMacAmpdu for LowerMacModel<O> {
     type AmpduBuffer = ModelAmpdu<O>;
 
@@ -1067,7 +1109,7 @@ impl<O: TxBody> LowerMacAmpdu for LowerMacModel<O> {
                     start_sequence,
                     bitmap,
                 };
-                self.admit(&attempt, subframes.clone(), Some(report))
+                self.admit(&attempt, subframes.clone(), Some(report), Lent::AmpduBuffer)
             }
         };
         if refused.is_ok() {

@@ -1119,3 +1119,47 @@ fn a_station_and_an_access_point_on_one_port_split_the_frames_by_their_addresses
     assert!(transmitters(&router, ACCESS_POINT).is_empty());
     assert_eq!(router.unrouted_frames(), 1);
 }
+
+#[test]
+fn a_client_reserves_its_air_with_a_cts_to_itself() {
+    let model = enabled_station();
+    let router = Router::new(&model, 1);
+    let mut client = client(&router, VifRole::AccessPoint);
+    client
+        .configure(Some(ADDRESS), ReceiveFilter::BSS_MEMBER)
+        .unwrap();
+    let rate = PhyRate::Legacy(oer_ieee80211_mac::phy::LegacyRate::Ofdm6M);
+    model.respond([ModelOutcome::Success]);
+    let completion = run(exchange(
+        &router,
+        client.reserve_air(
+            oer_time::Duration::from_millis(20),
+            rate,
+            CoexPriority::Normal,
+        ),
+    ))
+    .unwrap();
+    assert_eq!(completion.status, TxStatus::Success);
+    let submitted = model.submitted();
+    assert_eq!(submitted.len(), 1);
+    assert_eq!(submitted[0].rate, rate);
+    assert_eq!(submitted[0].access_category, WmmAccessCategory::Voice);
+    // A CTS whose Duration holds the 20 ms, addressed to the interface.
+    let mut cts = vec![0xc4, 0x00, 0x20, 0x4e];
+    cts.extend_from_slice(&ADDRESS);
+    assert_eq!(submitted[0].frames, [cts]);
+    // Beyond the NAV's reach, the port refuses it.
+    assert!(matches!(
+        run(exchange(
+            &router,
+            client.reserve_air(
+                oer_time::Duration::from_millis(40),
+                rate,
+                CoexPriority::Normal,
+            ),
+        )),
+        Err(PortClientError::Tx(UpperMacTxError::Refused(
+            oer_ieee80211_lower_mac::SubmitError::Unsupported
+        )))
+    ));
+}

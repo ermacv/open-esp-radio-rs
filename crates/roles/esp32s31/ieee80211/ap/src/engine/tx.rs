@@ -4,15 +4,23 @@
 use super::*;
 
 impl<'storage> ApEngine<'storage> {
-    /// Prepare the AP-originated TID-0 ADDBA request for an authorized HT
-    /// peer. The peer table owns both the negotiation and its timer token.
+    /// Prepare the AP-originated TID-0 ADDBA request for a newly authorized
+    /// HT peer: one offer, at once and never repeated, as the vendor access
+    /// point. The peer table owns both the negotiation and its deadline.
     pub fn prepare_tx_block_ack_request(
         &mut self,
         peer: [u8; 6],
         now: oer_time::Instant,
         output: &mut [u8],
-    ) -> Result<Option<(usize, TxBlockAckAlarm)>, ApEngineError> {
-        let Some(request) = self.service.begin_tx_block_ack(peer, now)? else {
+    ) -> Result<Option<usize>, ApEngineError> {
+        self.service.queue_tx_block_ack(
+            peer,
+            TxBlockAckRetry {
+                attempts: 1,
+                interval: oer_time::Duration::ZERO,
+            },
+        )?;
+        let Some(request) = self.service.take_tx_block_ack_offer(peer, now)? else {
             return Ok(None);
         };
         let sequence = self.service.next_management_sequence();
@@ -25,7 +33,7 @@ impl<'storage> ApEngine<'storage> {
         .encode(output)?;
         #[cfg(any(feature = "diagnostics", test))]
         self.observe(ApEngineObservationEvent::TxBlockAckRequestPrepared);
-        Ok(Some((length, request.alarm)))
+        Ok(Some(length))
     }
 
     pub fn tx_block_ack_agreement(&self, peer: [u8; 6]) -> Option<OperationalTxBlockAck> {
@@ -74,17 +82,20 @@ impl<'storage> ApEngine<'storage> {
         self.service.operational_tx_block_ack_window(peer)
     }
 
-    pub fn observe_tx_block_ack_alarm(
-        &mut self,
-        peer: [u8; 6],
-        alarm: TxBlockAckAlarm,
-    ) -> Result<bool, ApEngineError> {
-        let expired = self.service.on_tx_block_ack_alarm(peer, alarm)?;
+    /// End a TX Block Ack negotiation whose response is overdue at `now`;
+    /// `true` when one was.
+    pub fn expire_tx_block_ack(&mut self, now: oer_time::Instant) -> bool {
+        let expired = self.service.expire_tx_block_ack(now).is_some();
         if expired {
             #[cfg(any(feature = "diagnostics", test))]
             self.observe(ApEngineObservationEvent::TxBlockAckNegotiationTimeout);
         }
-        Ok(expired)
+        expired
+    }
+
+    /// The deadline of the earliest TX Block Ack negotiation's response.
+    pub fn next_tx_block_ack_deadline(&self) -> Option<oer_time::Instant> {
+        self.service.next_tx_block_ack_deadline()
     }
 
     /// Encode one authenticator EAPOL action as an unprotected AP data MPDU.

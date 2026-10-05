@@ -1847,8 +1847,10 @@ fn the_station_negotiates_its_tx_block_ack_agreements_body() {
 /// An HT station profile that originates the Espressif TX Block Ack
 /// agreements.
 fn block_ack_profile() -> PortStationProfile<'static> {
+    use oer_ieee80211_mac::block_ack::{
+        TxBlockAckOriginatorConfig, TxBlockAckOriginatorPolicy, TxBlockAckRetry,
+    };
     use oer_ieee80211_mac::station::AssociationCapabilities;
-    use oer_ieee80211_sta::block_ack::{StaTxBlockAckConfig, StaTxBlockAckPolicy};
     use oer_ieee80211_sta_service::port::PortTxBlockAck;
     static HT: AssociationCapabilities = AssociationCapabilities {
         ht20: scripted_ap::HT_CAPABILITIES,
@@ -1858,17 +1860,20 @@ fn block_ack_profile() -> PortStationProfile<'static> {
     profile.capabilities = &HT;
     profile.preference = Preference::ForceHt20;
     profile.tx_block_ack = Some(PortTxBlockAck {
-        policy: StaTxBlockAckPolicy {
+        policy: TxBlockAckOriginatorPolicy {
             tids: &oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS,
             first_dialog_token: oer_espressif_ieee80211_policy::block_ack::FIRST_DIALOG_TOKEN,
             next_dialog_token: oer_espressif_ieee80211_policy::block_ack::next_dialog_token,
         },
-        config: StaTxBlockAckConfig {
+        config: TxBlockAckOriginatorConfig {
             window: 32,
             negotiation_timeout: Duration::from_millis(100),
             amsdu_tids: 0,
         },
-        attempt_limit: 2,
+        retry: TxBlockAckRetry {
+            attempts: 2,
+            interval: Duration::ZERO,
+        },
     });
     profile
 }

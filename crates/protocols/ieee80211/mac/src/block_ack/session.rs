@@ -144,7 +144,7 @@ impl TxBlockAckSession {
         now: Instant,
     ) -> Result<AddbaRequest, TxBlockAckError> {
         let dialog_token = TxBlockAckDialogToken(self.next_dialog_token);
-        self.next_dialog_token = next_dialog_token(dialog_token.value());
+        self.next_dialog_token = super::next_nonzero_dialog_token(dialog_token.value());
         self.begin_with_dialog_token(starting_sequence, now, dialog_token)
     }
 
@@ -319,11 +319,6 @@ const fn encode_ba_parameters(tid: u8, window: u16, amsdu: bool) -> u16 {
 }
 
 const fn next_generation(current: u32) -> u32 {
-    let next = current.wrapping_add(1);
-    if next == 0 { 1 } else { next }
-}
-
-const fn next_dialog_token(current: u8) -> u8 {
     let next = current.wrapping_add(1);
     if next == 0 { 1 } else { next }
 }

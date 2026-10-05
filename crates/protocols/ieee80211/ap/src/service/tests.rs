@@ -1095,8 +1095,12 @@ fn bounded_peer_table_has_an_explicit_memory_ceiling() {
     // storage holds the ten-entry PMKSA cache. The bounded table still uses
     // no dynamic allocation. Each peer's WPA2 retry keeps its two intervals
     // as `oer_time::Duration` (8 bytes more per peer than microsecond `u32`s).
+    // Each peer's TX Block Ack originator keeps, beside its session, its
+    // negotiation's deadline, the next attempt's due time, its attempts,
+    // retry interval and Dialog Token policy: the per-peer price of offers
+    // that are retried.
     assert!(
-        core::mem::size_of::<AccessPointPeerStorage>() <= 6_320,
+        core::mem::size_of::<AccessPointPeerStorage>() <= 7_400,
         "peer storage size {}",
         core::mem::size_of::<AccessPointPeerStorage>()
     );
@@ -1132,10 +1136,7 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
         .unwrap();
     service.checked_peer_mut(OTHER).unwrap().phase = ApPeerPhase::Authorized;
 
-    let request = service
-        .begin_tx_block_ack(PEER, oer_time::Instant::from_micros(100))
-        .unwrap()
-        .unwrap();
+    let request = offer(&mut service, PEER, 100).unwrap();
     assert_eq!(
         u16::from_le_bytes([request.body[3], request.body[4]]) & 1,
         1,
@@ -1143,18 +1144,9 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
     );
     assert_eq!(service.operational_tx_block_ack_window(PEER), None);
     assert!(!service.has_operational_tx_block_ack());
-    assert!(
-        service
-            .begin_tx_block_ack(PEER, oer_time::Instant::from_micros(101))
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        service
-            .begin_tx_block_ack(OTHER, oer_time::Instant::from_micros(101))
-            .unwrap()
-            .is_none()
-    );
+    // A live negotiation takes no second offer; a legacy peer gets none.
+    assert!(offer(&mut service, PEER, 101).is_none());
+    assert!(offer(&mut service, OTHER, 101).is_none());
     let response = BlockAckAction::AddbaResponse {
         dialog_token: request.dialog_token,
         status: 0,
@@ -1232,10 +1224,7 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
     assert_eq!(service.operational_tx_block_ack_window(PEER), None);
     assert!(!service.has_operational_tx_block_ack());
 
-    let request = service
-        .begin_tx_block_ack(PEER, oer_time::Instant::from_micros(200))
-        .unwrap()
-        .unwrap();
+    let request = offer(&mut service, PEER, 200).unwrap();
     let response = BlockAckAction::AddbaResponse {
         dialog_token: request.dialog_token,
         status: 0,
@@ -1273,11 +1262,16 @@ fn addba_response_after_the_negotiation_timeout_is_dropped_as_stale() {
         .unwrap();
     service.checked_peer_mut(PEER).unwrap().phase = ApPeerPhase::Authorized;
 
-    let request = service
-        .begin_tx_block_ack(PEER, oer_time::Instant::from_micros(100))
-        .unwrap()
-        .unwrap();
-    assert_eq!(service.on_tx_block_ack_alarm(PEER, request.alarm), Ok(true));
+    let request = offer(&mut service, PEER, 100).unwrap();
+    assert_eq!(
+        service.next_tx_block_ack_deadline(),
+        Some(request.alarm.deadline)
+    );
+    assert_eq!(
+        service.expire_tx_block_ack(request.alarm.deadline),
+        Some(PEER)
+    );
+    assert_eq!(service.next_tx_block_ack_deadline(), None);
     let late = BlockAckAction::AddbaResponse {
         dialog_token: request.dialog_token,
         status: 0,
@@ -1291,12 +1285,96 @@ fn addba_response_after_the_negotiation_timeout_is_dropped_as_stale() {
     assert_eq!(service.operational_tx_block_ack_window(PEER), None);
 
     // The late response must not complete a newer negotiation either.
-    let retry = service
-        .begin_tx_block_ack(PEER, oer_time::Instant::from_micros(200))
-        .unwrap()
-        .unwrap();
+    let retry = offer(&mut service, PEER, 200_000).unwrap();
     assert_ne!(retry.dialog_token, request.dialog_token);
     assert_eq!(service.on_tx_block_ack_action(PEER, late), Ok(None));
+    assert_eq!(service.operational_tx_block_ack_window(PEER), None);
+}
+
+/// Queue one immediate attempt of `peer`'s TX Block Ack offer and take it
+/// at `micros`.
+fn offer(service: &mut AccessPointService<'_>, peer: [u8; 6], micros: u64) -> Option<AddbaRequest> {
+    service
+        .queue_tx_block_ack(
+            peer,
+            TxBlockAckRetry {
+                attempts: 1,
+                interval: oer_time::Duration::ZERO,
+            },
+        )
+        .unwrap();
+    service
+        .take_tx_block_ack_offer(peer, oer_time::Instant::from_micros(micros))
+        .unwrap()
+}
+
+#[test]
+fn an_unanswered_or_unsent_offer_is_retried_after_the_interval_while_attempts_remain() {
+    let mut storage = AccessPointPeerStorage::new();
+    let mut service = service(&mut storage);
+    service.authenticate_open(PEER, oer_time::Instant::from_micros(1));
+    service
+        .associate_rsn(
+            PEER,
+            association_security(&WPA2_RSN),
+            ht_capabilities(),
+            [7; 32],
+            9,
+            oer_time::Instant::from_micros(1),
+        )
+        .unwrap();
+    // Before authorization the peer is offered nothing.
+    let retry = TxBlockAckRetry {
+        attempts: 3,
+        interval: oer_time::Duration::from_millis(1_000),
+    };
+    assert_eq!(service.queue_tx_block_ack(PEER, retry), Ok(false));
+    service.checked_peer_mut(PEER).unwrap().phase = ApPeerPhase::Authorized;
+    assert_eq!(service.queue_tx_block_ack(PEER, retry), Ok(true));
+    let at = |micros| oer_time::Instant::from_micros(micros);
+
+    // The first request goes and is not answered.
+    let first = service
+        .take_tx_block_ack_offer(PEER, at(100))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        service.expire_tx_block_ack(first.alarm.deadline),
+        Some(PEER)
+    );
+    // The second is due one interval after the timeout.
+    let due = first.alarm.deadline.saturating_add(retry.interval);
+    assert_eq!(
+        service.take_tx_block_ack_offer(PEER, at(due.as_micros() - 1)),
+        Ok(None)
+    );
+    let second = service.take_tx_block_ack_offer(PEER, due).unwrap().unwrap();
+    assert_ne!(second.dialog_token, first.dialog_token);
+    // It does not leave; the third and last is due after the interval.
+    service.tx_block_ack_offer_failed(PEER, due).unwrap();
+    let last = due.saturating_add(retry.interval);
+    let third = service
+        .take_tx_block_ack_offer(PEER, last)
+        .unwrap()
+        .unwrap();
+    // The peer declines: no attempt follows, whatever the time.
+    let declined = BlockAckAction::AddbaResponse {
+        dialog_token: third.dialog_token,
+        status: 37,
+        tid: AP_TX_BLOCK_ACK_TID,
+        immediate: true,
+        amsdu: false,
+        window: 0,
+        timeout_tu: 0,
+    };
+    assert_eq!(
+        service.on_tx_block_ack_action(PEER, declined),
+        Ok(Some(TxBlockAckResponse::Rejected(37)))
+    );
+    assert_eq!(
+        service.take_tx_block_ack_offer(PEER, at(u64::MAX / 2)),
+        Ok(None)
+    );
     assert_eq!(service.operational_tx_block_ack_window(PEER), None);
 }
 

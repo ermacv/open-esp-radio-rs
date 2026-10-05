@@ -26,9 +26,7 @@ use oer_esp32s31_ieee80211_mac::tx::{
     HtDuplicateCertificationRequest, HtDuplicateTxSelection, HtRate, LegacyRate, TxHardware,
 };
 
-use oer_ieee80211_mac::{
-    ap::ApPeerDisconnectKind, block_ack::TxBlockAckAlarm, security::LinkProtection,
-};
+use oer_ieee80211_mac::{ap::ApPeerDisconnectKind, security::LinkProtection};
 
 use oer_ieee80211_ap::{ApPeerClose, ApPeerPowerState, ApServiceError};
 
@@ -260,7 +258,6 @@ pub struct ApMac<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize> {
     engine: ApEngine<'beacon>,
     transmit: ApTx<'slot, P, E, T, BUFFER_SIZE>,
     pending: Option<PendingPublication>,
-    block_ack_alarm: Option<([u8; 6], TxBlockAckAlarm)>,
     #[cfg(any(feature = "diagnostics", test))]
     observer: ApMacObserver,
 }
@@ -269,7 +266,6 @@ pub struct ApMac<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize> {
 pub struct ApMacParked<'beacon> {
     engine: ApEngine<'beacon>,
     transmit: ApTxParked,
-    block_ack_alarm: Option<([u8; 6], TxBlockAckAlarm)>,
     #[cfg(any(feature = "diagnostics", test))]
     observer: ApMacObserver,
 }
@@ -312,7 +308,7 @@ impl<'beacon> ApMacParked<'beacon> {
             .next_peer_deadline()
             .into_iter()
             .chain(self.engine.next_wpa2_retry_deadline())
-            .chain(self.block_ack_alarm.map(|(_, alarm)| alarm.deadline))
+            .chain(self.engine.next_tx_block_ack_deadline())
             .min()
     }
 
@@ -362,7 +358,6 @@ where
             engine,
             transmit: ApTx::new(resources, config),
             pending: None,
-            block_ack_alarm: None,
             #[cfg(any(feature = "diagnostics", test))]
             observer: ApMacObserver::default(),
         }
@@ -484,14 +479,6 @@ where
             now,
             scratch,
         )?;
-        if let Some(peer) = request
-            .get(10..16)
-            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
-            && request.first().is_some_and(|fc| fc & 0xf0 != 0x40)
-            && self.engine.tx_block_ack_agreement(peer).is_some()
-        {
-            self.block_ack_alarm = None;
-        }
         let ApManagementOutcome::Response { len, begin_wpa2 } = outcome else {
             return Ok(outcome);
         };
@@ -567,7 +554,7 @@ where
         scratch: &mut [u8],
     ) -> Result<bool, ApMacError> {
         self.require_idle()?;
-        let Some((length, alarm)) = self
+        let Some(length) = self
             .engine
             .prepare_tx_block_ack_request(peer, now, scratch)?
         else {
@@ -575,7 +562,6 @@ where
         };
         self.transmit
             .start_encoded(hardware, ApTxClass::Management, &scratch[..length])?;
-        self.block_ack_alarm = Some((peer, alarm));
         self.pending = Some(PendingPublication::BlockAckRequest { peer });
         Ok(true)
     }
@@ -637,18 +623,11 @@ where
     }
 
     pub fn next_tx_block_ack_deadline(&self) -> Option<oer_time::Instant> {
-        self.block_ack_alarm.map(|(_, alarm)| alarm.deadline)
+        self.engine.next_tx_block_ack_deadline()
     }
 
     pub fn expire_tx_block_ack(&mut self, now: oer_time::Instant) -> Result<bool, ApMacError> {
-        let Some((peer, alarm)) = self.block_ack_alarm else {
-            return Ok(false);
-        };
-        if now < alarm.deadline {
-            return Ok(false);
-        }
-        self.block_ack_alarm = None;
-        Ok(self.engine.observe_tx_block_ack_alarm(peer, alarm)?)
+        Ok(self.engine.expire_tx_block_ack(now))
     }
 
     pub fn publish_ethernet<H>(
@@ -1112,7 +1091,6 @@ where
             engine,
             transmit,
             pending,
-            block_ack_alarm,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
         } = self;
@@ -1121,7 +1099,6 @@ where
                 engine,
                 transmit,
                 pending,
-                block_ack_alarm,
                 #[cfg(any(feature = "diagnostics", test))]
                 observer,
             });
@@ -1132,7 +1109,6 @@ where
                 ApMacParked {
                     engine,
                     transmit,
-                    block_ack_alarm,
                     #[cfg(any(feature = "diagnostics", test))]
                     observer,
                 },
@@ -1141,7 +1117,6 @@ where
                 engine,
                 transmit,
                 pending: None,
-                block_ack_alarm,
                 #[cfg(any(feature = "diagnostics", test))]
                 observer,
             }),
@@ -1155,7 +1130,6 @@ where
         let ApMacParked {
             engine,
             transmit,
-            block_ack_alarm,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
         } = parked;
@@ -1163,7 +1137,6 @@ where
             engine,
             transmit: ApTx::resume(resources, transmit),
             pending: None,
-            block_ack_alarm,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
         }

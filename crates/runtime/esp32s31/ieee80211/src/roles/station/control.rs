@@ -14,6 +14,7 @@
 //! receiver, deadline wait and reorder sender needed to schedule them on Embassy.
 
 use core::future::Future;
+use oer_ieee80211_mac::block_ack::TX_BLOCK_ACK_MAX_TIDS;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
@@ -182,7 +183,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
         peer: [u8; 6],
         he_enabled: bool,
-        tx_block_ack: oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator,
+        tx_block_ack: oer_ieee80211_mac::block_ack::TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS>,
         tsf_epoch: u32,
     ) -> Self {
         Self {
@@ -204,7 +205,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
         peer: [u8; 6],
         he_enabled: bool,
-        tx_block_ack: oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator,
+        tx_block_ack: oer_ieee80211_mac::block_ack::TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS>,
         rx_block_ack: &'resources StaApRxBlockAck,
         tsf_epoch: u32,
     ) -> Self {
@@ -377,7 +378,9 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         self.rx_block_ack.sessions()
     }
 
-    pub const fn tx_block_ack(&self) -> &oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator {
+    pub const fn tx_block_ack(
+        &self,
+    ) -> &oer_ieee80211_mac::block_ack::TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS> {
         self.core.tx_block_ack()
     }
 

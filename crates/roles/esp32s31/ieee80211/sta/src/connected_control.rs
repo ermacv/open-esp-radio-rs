@@ -7,6 +7,7 @@
 //! reorder-command sink and the shared TX owner.  No mailbox, executor timer
 //! or task wakeup is part of this state machine.
 
+use oer_ieee80211_mac::block_ack::TX_BLOCK_ACK_MAX_TIDS;
 use oer_ieee80211_trace::{
     BeaconMonitorOp, BeaconMonitorTrace, BlockAckDirection, ExitReason, LinkControlTrace, LinkEvent,
 };
@@ -51,9 +52,9 @@ use oer_ieee80211_mac::{
 };
 
 use oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS;
-use oer_ieee80211_sta::block_ack::{
-    StaTxBlockAckError, StaTxBlockAckOriginator, StaTxBlockAckResponse,
-    StaTxBlockAckResponseDisposition,
+use oer_ieee80211_mac::block_ack::{
+    TxBlockAckOriginator, TxBlockAckOriginatorError, TxBlockAckOriginatorResponse,
+    TxBlockAckResponseDisposition, TxBlockAckRetry,
 };
 use oer_ieee80211_sta::{
     ftm::{
@@ -523,7 +524,7 @@ pub struct ConnectedControlCoreShutdown {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedControlError {
     RxSession(RxBlockAckSessionsError),
-    TxSession(StaTxBlockAckError),
+    TxSession(TxBlockAckOriginatorError),
     Hardware(S31RxBlockAckAgreementError),
     Tx(SingleMpduTxError),
     MissingTxOutcome,
@@ -552,8 +553,8 @@ impl From<RxBlockAckSessionsError> for ConnectedControlError {
     }
 }
 
-impl From<StaTxBlockAckError> for ConnectedControlError {
-    fn from(error: StaTxBlockAckError) -> Self {
+impl From<TxBlockAckOriginatorError> for ConnectedControlError {
+    fn from(error: TxBlockAckOriginatorError) -> Self {
         Self::TxSession(error)
     }
 }
@@ -628,7 +629,7 @@ pub struct ConnectedControlCore {
     peer: [u8; 6],
     he_enabled: bool,
     he_trigger_based: Option<HeTriggerBasedTxConfig>,
-    tx_block_ack: StaTxBlockAckOriginator,
+    tx_block_ack: TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS>,
     in_flight: Option<ControlInFlight>,
     beacon_monitor: Option<StaLinkMonitor>,
     beacon_lost: bool,
@@ -669,7 +670,7 @@ impl ConnectedControlCore {
     pub fn new(
         peer: [u8; 6],
         he_enabled: bool,
-        tx_block_ack: StaTxBlockAckOriginator,
+        tx_block_ack: TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS>,
         tsf_epoch: u32,
     ) -> Self {
         Self {
@@ -791,13 +792,17 @@ impl ConnectedControlCore {
 
     /// Queue a bounded number of ADDBA publications for each recovered STA
     /// TID. A missing response or failed action-frame TX consumes one attempt
-    /// and leaves the next one pending; an explicit peer response is terminal.
+    /// and leaves the next one pending at once, as the vendor station; an
+    /// explicit peer response is terminal.
     pub fn queue_initial_tx_block_ack(&mut self, attempt_limit: u8) {
         debug_assert!(attempt_limit != 0);
-        self.tx_block_ack.queue_initial(attempt_limit);
+        self.tx_block_ack.queue_initial(TxBlockAckRetry {
+            attempts: attempt_limit,
+            interval: oer_time::Duration::ZERO,
+        });
     }
 
-    pub const fn tx_block_ack(&self) -> &StaTxBlockAckOriginator {
+    pub const fn tx_block_ack(&self) -> &TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS> {
         &self.tx_block_ack
     }
 
@@ -1066,7 +1071,7 @@ impl ConnectedControlCore {
                 }
                 ControlInFlight::TxAddba { .. } if success => {}
                 ControlInFlight::TxAddba { tid } => {
-                    self.tx_block_ack.transmit_failed(tid);
+                    self.tx_block_ack.transmit_failed(tid, tx.now());
                     tx.set_tx_block_ack_agreement(tid, None);
                 }
                 ControlInFlight::BeaconProbe
@@ -1176,7 +1181,7 @@ impl ConnectedControlCore {
             None => {}
         }
 
-        if let Some(tid) = self.tx_block_ack.take_pending() {
+        if let Some(tid) = self.tx_block_ack.take_pending(now) {
             return self.start_tx_addba(hardware, tx, tid);
         }
 
@@ -1398,8 +1403,8 @@ impl ConnectedControlCore {
             }
             BlockAckAction::AddbaResponse { .. } => {
                 let response = match self.tx_block_ack.on_response_action(action)? {
-                    StaTxBlockAckResponseDisposition::Matched(response) => response,
-                    StaTxBlockAckResponseDisposition::StaleDialogToken(token) => {
+                    TxBlockAckResponseDisposition::Matched(response) => response,
+                    TxBlockAckResponseDisposition::StaleDialogToken(token) => {
                         self.observations.stale_tx_block_ack_responses = self
                             .observations
                             .stale_tx_block_ack_responses
@@ -1408,7 +1413,7 @@ impl ConnectedControlCore {
                         return Ok(DatapathControlProgress::More);
                     }
                 };
-                let StaTxBlockAckResponse { tid, response } = response;
+                let TxBlockAckOriginatorResponse { tid, response } = response;
                 let negotiated_agreement = match response {
                     TxBlockAckResponse::Operational(agreement) => {
                         trace_link(LinkEvent::BlockAckOperational {

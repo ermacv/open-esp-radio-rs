@@ -106,7 +106,7 @@ use oer_ieee80211_upper_mac_service::queue::PORT_FRAME_CAPACITY;
 use oer_ieee80211_lower_mac::{RxBlockAckAgreement, VifId};
 use oer_ieee80211_mac::ap::ApActionFrame;
 use oer_ieee80211_mac::block_ack::{
-    ADDBA_ACTION_BODY_LEN, BlockAckAction, TxBlockAckAlarm, TxBlockAckResponse,
+    ADDBA_ACTION_BODY_LEN, BlockAckAction, TxBlockAckResponse, TxBlockAckRetry,
     write_declined_addba_response, write_successful_addba_response,
 };
 use oer_ieee80211_upper_mac_service::reorder::{
@@ -255,6 +255,9 @@ pub struct PortApProfile<'a> {
     /// How long a receive reorder window keeps an MPDU behind a missing
     /// one before it releases its run past the gap.
     pub rx_reorder_gap: Duration,
+    /// How many TX Block Ack offers a peer gets, and how long a failed one
+    /// waits before the next goes with the peer's data.
+    pub tx_block_ack_retry: TxBlockAckRetry,
 }
 
 /// The memory of one access point that the composition places: its beacon
@@ -385,15 +388,13 @@ pub enum PortApSend {
 }
 
 /// A peer's link: its pairwise key, the CCMP packet numbers sent to it and
-/// received from it, its duplicate filter and the deadline of the access
-/// point's TX Block Ack negotiation with it.
+/// received from it, and its duplicate filter.
 struct PeerLink {
     peer: [u8; 6],
     key: Option<KeyHandle>,
     transmit: CcmpTxPacketNumber,
     replay: CcmpRxReplayState,
     duplicates: RxDuplicateFilter,
-    tx_block_ack_alarm: Option<TxBlockAckAlarm>,
 }
 
 /// What the access point sent, admitted and ignored.
@@ -429,7 +430,8 @@ pub struct PortApCounters {
     pub tx_agreements_offered: u32,
     /// TX Block Ack agreements its peers accepted.
     pub tx_agreements: u32,
-    /// Offers a peer declined or left unanswered.
+    /// Offers that did not leave, or that a peer declined or left
+    /// unanswered.
     pub tx_agreements_failed: u32,
     /// A-MPDUs sent.
     pub aggregates: u32,
@@ -699,7 +701,6 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             transmit: CcmpTxPacketNumber::new(self.profile.ccmp_step),
             replay: CcmpRxReplayState::default(),
             duplicates: RxDuplicateFilter::new(),
-            tx_block_ack_alarm: None,
         });
         Ok(())
     }
@@ -786,7 +787,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 ApWpa2RetryProgress::None => {}
             }
             self.expire_reorder_gaps(now, deliver);
-            if self.expire_tx_block_ack(now)? {
+            if self.expire_tx_block_ack(now) {
                 continue;
             }
             if let Some(frame) = self.queue.pop() {
@@ -801,12 +802,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 self.service.next_peer_deadline(),
                 self.service.next_wpa2_retry_deadline(),
                 self.reorder.next_gap_deadline(),
-                self.links
-                    .iter()
-                    .flatten()
-                    .filter_map(|link| link.tx_block_ack_alarm)
-                    .map(|alarm| alarm.deadline)
-                    .min(),
+                self.service.next_tx_block_ack_deadline(),
             ]
             .into_iter()
             .flatten()
@@ -1001,6 +997,9 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         };
         let Some(identity) = hold else {
             let run = if destination[0] & 1 == 0 {
+                // An offer a failed attempt left goes with the peer's data.
+                let now = self.timer.now();
+                self.send_due_tx_block_ack_offer(destination, now).await?;
                 self.aggregate_run(destination, ethernet.len())
             } else {
                 1
@@ -1952,7 +1951,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     write_declined_addba_response(&mut body, dialog_token, tid & 0x0f, window)
                 }
                 .map_err(|_| PortApError::Service(ApServiceError::WrongPeerPhase))?;
-                self.send_action(peer, &body).await
+                self.send_action(peer, &body).await.map(|_| ())
             }
             BlockAckAction::Delba {
                 tid,
@@ -1963,13 +1962,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             | BlockAckAction::Delba {
                 initiator: false, ..
             }) => {
-                let response = self.service.on_tx_block_ack_action(peer, action)?;
-                if response.is_some()
-                    && let Some(link) = self.link_mut(peer)
-                {
-                    link.tx_block_ack_alarm = None;
-                }
-                match response {
+                match self.service.on_tx_block_ack_action(peer, action)? {
                     Some(TxBlockAckResponse::Operational(_)) => {
                         self.counters.tx_agreements = self.counters.tx_agreements.saturating_add(1);
                     }
@@ -1984,12 +1977,13 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         }
     }
 
-    /// Send one Block Ack action `body` to `peer`.
+    /// Send one Block Ack action `body` to `peer`; whether the peer
+    /// acknowledged it.
     async fn send_action(
         &mut self,
         peer: [u8; 6],
         body: &[u8],
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<bool, PortApError<PortError<X>>> {
         let sequence_number = self.service.next_management_sequence();
         let mut frame = [0_u8; 64];
         let length = ApActionFrame {
@@ -1999,46 +1993,66 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             body,
         }
         .encode(&mut frame)?;
-        self.send_management(&frame[..length]).await
+        let report = self
+            .client
+            .transmit(
+                &frame[..length],
+                KeySelector::Plaintext,
+                WmmAccessCategory::Voice,
+                self.profile.management_rate,
+                self.profile.coex,
+            )
+            .await?;
+        Ok(matches!(report, TxReport::Mpdu(status) if status.acknowledged == Some(true)))
     }
 
-    /// Offer a newly authorized `peer` the access point's TX Block Ack
-    /// agreement, once: an ADDBA Request where the BSS is protected and the
-    /// peer an HT QoS station. The peer's response or the negotiation's
-    /// timeout ends it.
+    /// Queue a newly authorized `peer`'s TX Block Ack offer with the
+    /// profile's retry policy, where the BSS is protected and the peer an
+    /// HT QoS station, and send its first attempt at once.
     async fn offer_tx_block_ack(
         &mut self,
         peer: [u8; 6],
         now: Instant,
     ) -> Result<(), PortApError<PortError<X>>> {
-        let Some(request) = self.service.begin_tx_block_ack(peer, now)? else {
-            return Ok(());
-        };
-        if let Some(link) = self.link_mut(peer) {
-            link.tx_block_ack_alarm = Some(request.alarm);
+        if self
+            .service
+            .queue_tx_block_ack(peer, self.profile.tx_block_ack_retry)?
+        {
+            self.send_due_tx_block_ack_offer(peer, now).await?;
         }
-        self.counters.tx_agreements_offered = self.counters.tx_agreements_offered.saturating_add(1);
-        self.send_action(peer, &request.body).await
+        Ok(())
     }
 
-    /// End at most one TX Block Ack negotiation whose response is overdue at
-    /// `now`; `true` when one was due.
-    fn expire_tx_block_ack(&mut self, now: Instant) -> Result<bool, PortApError<PortError<X>>> {
-        let Some((peer, alarm)) = self.links.iter_mut().flatten().find_map(|link| {
-            link.tx_block_ack_alarm
-                .filter(|alarm| now >= alarm.deadline)
-                .map(|alarm| {
-                    link.tx_block_ack_alarm = None;
-                    (link.peer, alarm)
-                })
-        }) else {
-            return Ok(false);
+    /// Send `peer`'s TX Block Ack offer when one is due at `now`: an ADDBA
+    /// Request, whose attempt a missing acknowledgement ends, the next one
+    /// due after the retry interval.
+    async fn send_due_tx_block_ack_offer(
+        &mut self,
+        peer: [u8; 6],
+        now: Instant,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        let Some(request) = self.service.take_tx_block_ack_offer(peer, now)? else {
+            return Ok(());
         };
-        if self.service.on_tx_block_ack_alarm(peer, alarm)? {
+        self.counters.tx_agreements_offered = self.counters.tx_agreements_offered.saturating_add(1);
+        if !self.send_action(peer, &request.body).await? {
+            self.service.tx_block_ack_offer_failed(peer, now)?;
             self.counters.tx_agreements_failed =
                 self.counters.tx_agreements_failed.saturating_add(1);
         }
-        Ok(true)
+        Ok(())
+    }
+
+    /// End at most one TX Block Ack negotiation whose response is overdue at
+    /// `now`, its next attempt due after the retry interval while attempts
+    /// remain; `true` when one was due.
+    fn expire_tx_block_ack(&mut self, now: Instant) -> bool {
+        let expired = self.service.expire_tx_block_ack(now).is_some();
+        if expired {
+            self.counters.tx_agreements_failed =
+                self.counters.tx_agreements_failed.saturating_add(1);
+        }
+        expired
     }
 
     /// End `peer`'s receive agreement of `tid` here and in the port.

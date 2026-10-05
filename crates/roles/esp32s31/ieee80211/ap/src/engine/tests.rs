@@ -559,9 +559,19 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         Some(SequenceNumber::new(1).unwrap())
     );
 
+    engine
+        .service
+        .queue_tx_block_ack(
+            peer,
+            oer_ieee80211_mac::block_ack::TxBlockAckRetry {
+                attempts: 1,
+                interval: oer_time::Duration::ZERO,
+            },
+        )
+        .unwrap();
     let request = engine
         .service
-        .begin_tx_block_ack(peer, oer_time::Instant::from_micros(100))
+        .take_tx_block_ack_offer(peer, oer_time::Instant::from_micros(100))
         .unwrap()
         .unwrap();
     engine
@@ -658,9 +668,19 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         )
         .unwrap();
     assert!(!engine.tx_block_ack_holds(first_agreement));
+    engine
+        .service
+        .queue_tx_block_ack(
+            peer,
+            oer_ieee80211_mac::block_ack::TxBlockAckRetry {
+                attempts: 1,
+                interval: oer_time::Duration::ZERO,
+            },
+        )
+        .unwrap();
     let request = engine
         .service
-        .begin_tx_block_ack(peer, oer_time::Instant::from_micros(200))
+        .take_tx_block_ack_offer(peer, oer_time::Instant::from_micros(200))
         .unwrap()
         .unwrap();
     engine

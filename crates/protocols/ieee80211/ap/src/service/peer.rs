@@ -293,7 +293,7 @@ impl<'peers> AccessPointService<'peers> {
         // A-MSDU owner uses this peer's independent QoS/TID-0 counter only
         // after validating HT and QoS support for both coalesced leases.
         existing.qos_supported = capabilities.qos_supported;
-        existing.tx_block_ack.stop();
+        existing.tx_block_ack.stop_all();
         existing.last_activity = now;
         existing.deadline = now.saturating_add(inactive_timeout);
         let association_id = existing.association_id;

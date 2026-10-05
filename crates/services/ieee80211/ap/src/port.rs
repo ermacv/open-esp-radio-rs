@@ -103,11 +103,14 @@ use oer_ieee80211_upper_mac_service::{
 };
 use oer_time::{Clock, Duration, Instant, Timer};
 
+use oer_ieee80211_ap::beacon::ApChannelSwitchError;
 use oer_ieee80211_ap::{
     ApBufferedUnicastRelease, ApDownlinkDisposition, ApPeerPowerState, ApPowerSaveAction,
 };
 use oer_ieee80211_mac::ap::{ApPowerSaveObservation, observe_ap_power_save_for_access_point};
 use oer_ieee80211_mac::beacon::dtim;
+use oer_ieee80211_mac::channel::Band;
+use oer_ieee80211_mac::channel_switch::{ChannelSwitch, ChannelSwitchMode};
 
 use oer_ieee80211_lower_mac::{RxBlockAckAgreement, VifId};
 use oer_ieee80211_mac::ap::ApActionFrame;
@@ -497,6 +500,22 @@ pub enum PortApError<E> {
     KeysFull,
     /// A key's transmit packet numbers are used up.
     PacketNumbers,
+    /// The beacon cannot announce the switch.
+    ChannelSwitch(ApChannelSwitchError),
+    /// The BSS cannot operate on the channel: the access point runs in the
+    /// 2.4 GHz band.
+    UnsupportedChannel(Channel),
+    /// No announced switch is due.
+    NoChannelSwitch,
+}
+
+/// Why [`PortAccessPoint::run_until`] returned before its deadline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PortApEvent {
+    /// The announced move of the BSS is due: no beacon goes out until the
+    /// port's owner has moved the port to `target` and called
+    /// [`PortAccessPoint::channel_switched`].
+    ChannelSwitch { target: Channel },
 }
 
 /// Whether the backend decrypted and verified a protected frame.
@@ -784,17 +803,75 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         Ok(())
     }
 
+    /// The access point's client of the port, through which its owner
+    /// tunes the port.
+    pub fn client_mut(&mut self) -> &mut PortApClient<'p, X> {
+        &mut self.client
+    }
+
+    /// Move the BSS to `target` after `count` beacons, the next one
+    /// included, which announce it to the peers; `mode` tells them whether
+    /// they may transmit until then. A later announcement replaces it.
+    pub fn announce_channel_switch(
+        &mut self,
+        target: Channel,
+        mode: ChannelSwitchMode,
+        count: u8,
+    ) -> Result<(), PortApError<PortError<X>>> {
+        if target.band() != Band::Ghz2_4 {
+            return Err(PortApError::UnsupportedChannel(target));
+        }
+        self.beacon
+            .announce_channel_switch(ChannelSwitch::to(target, mode, count))
+            .map_err(PortApError::ChannelSwitch)
+    }
+
+    /// The port's owner moved the port to the target of the switch that
+    /// was due: the BSS operates there, and its beacon names it.
+    pub fn channel_switched(&mut self) -> Result<(), PortApError<PortError<X>>> {
+        let target = self
+            .channel_switch_target()
+            .ok_or(PortApError::NoChannelSwitch)?;
+        let channel = WifiChannel::new_2_4_ghz(target.number(), target.width())
+            .map_err(|_| PortApError::UnsupportedChannel(target))?;
+        self.beacon
+            .rewrite(
+                self.profile.advertisement,
+                self.client.config().address,
+                self.profile.ssid,
+                channel,
+                self.profile.beacon_interval_tu,
+                self.profile.dtim_period,
+                SequenceNumber::ZERO,
+                self.service.security_policy(),
+            )
+            .map_err(|_| PortApError::Beacon)?;
+        self.profile.channel = channel;
+        self.advertised = ApBssProtection::default();
+        Ok(())
+    }
+
+    /// The channel of the announced switch that is due.
+    fn channel_switch_target(&self) -> Option<Channel> {
+        self.beacon
+            .channel_switch_due()
+            .and_then(|switch| switch.target(Band::Ghz2_4).ok())
+    }
+
     /// Serve the BSS until `deadline`: a beacon at every TBTT, a response
     /// to every management request it answers, a close of every peer that
-    /// went inactive.
+    /// went inactive. `Some` at the TBTT an announced switch is due.
     pub async fn run_until(
         &mut self,
         deadline: Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<Option<PortApEvent>, PortApError<PortError<X>>> {
         loop {
             let now = self.timer.now();
             if self.beacon.publication_due(now) {
+                if let Some(target) = self.channel_switch_target() {
+                    return Ok(Some(PortApEvent::ChannelSwitch { target }));
+                }
                 self.publish_beacon(now).await?;
                 continue;
             }
@@ -825,7 +902,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 continue;
             }
             if now >= deadline {
-                return Ok(());
+                return Ok(None);
             }
             let wake = [
                 self.beacon.next_publication(),

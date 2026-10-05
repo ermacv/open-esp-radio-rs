@@ -169,3 +169,98 @@ fn the_tbtt_schedule_survives_the_u32_microsecond_boundary() {
         (0, Duration::from_micros(5))
     );
 }
+
+#[test]
+fn an_announced_switch_counts_down_in_each_beacon_until_it_is_due() {
+    use oer_ieee80211_mac::channel::{Channel, ChannelWidth};
+    use oer_ieee80211_mac::channel_switch::{
+        ChannelSwitchMode, SecondaryChannelOffset, parse_channel_switch,
+    };
+
+    let mut storage = [0; AP_BEACON_CAPACITY];
+    let ssid = WifiSsid::new(b"ap").unwrap();
+    let mut beacon = ApBeacon::new(
+        &mut storage,
+        &ADVERTISEMENT,
+        [2; 6],
+        &ssid,
+        WifiChannel::mhz20(6).unwrap(),
+        100,
+        2,
+        SequenceNumber::new(3).unwrap(),
+        ApSecurityPolicy::Wpa2Personal,
+    )
+    .unwrap();
+    let bitmap = TimVirtualBitmap::<2>::try_new().unwrap();
+    let announced = |frame: &[u8]| parse_channel_switch(&frame[36..]).unwrap();
+    let target = Channel::ghz2_4(1, ChannelWidth::Mhz40Above).unwrap();
+    let switch = ChannelSwitch::to(target, ChannelSwitchMode::Continue, 2);
+    assert_eq!(
+        beacon.announce_channel_switch(ChannelSwitch { count: 0, ..switch }),
+        Err(ApChannelSwitchError::ZeroCount)
+    );
+    beacon.announce_channel_switch(switch).unwrap();
+    // A probe response repeats the announcement.
+    assert_eq!(announced(beacon.advertisement()), Some(switch));
+
+    let sequence = SequenceNumber::new(4).unwrap();
+    let mut counts = [0_u8; 2];
+    for tbtt in 1..=2_u64 {
+        assert_eq!(beacon.channel_switch_due(), None);
+        // A wider TIM moves the announcement with the elements after it.
+        let mut wide = TimVirtualBitmap::<2>::try_new().unwrap();
+        wide.set(TimAssociationId::new(9).unwrap(), tbtt == 2)
+            .unwrap();
+        let frame = beacon
+            .prepare(at(tbtt * 102_400), sequence, false, wide.partial())
+            .unwrap();
+        let carried = announced(frame).unwrap();
+        assert_eq!(carried.secondary, SecondaryChannelOffset::Above);
+        assert_eq!(
+            carried.target(oer_ieee80211_mac::channel::Band::Ghz2_4),
+            Ok(target)
+        );
+        counts[tbtt as usize - 1] = carried.count;
+        assert!(dtim(frame).is_some());
+    }
+    assert_eq!(counts, [2, 1]);
+    // No beacon goes out on the old channel once the switch is due.
+    assert_eq!(
+        beacon.channel_switch_due().map(|due| due.channel_number),
+        Some(1)
+    );
+    assert!(beacon.publication_due(at(3 * 102_400)));
+    assert!(
+        beacon
+            .prepare(at(3 * 102_400), sequence, false, bitmap.partial())
+            .is_none()
+    );
+
+    // Written again for the new channel, the template drops the
+    // announcement and keeps its schedule.
+    beacon
+        .rewrite(
+            &ADVERTISEMENT,
+            [2; 6],
+            &ssid,
+            WifiChannel::new_2_4_ghz(1, oer_ieee80211_mac::channel::WifiChannelWidth::Mhz40Above)
+                .unwrap(),
+            100,
+            2,
+            sequence,
+            ApSecurityPolicy::Wpa2Personal,
+        )
+        .unwrap();
+    assert_eq!(beacon.channel_switch(), None);
+    assert_eq!(beacon.next_publication(), Some(at(3 * 102_400)));
+    let frame = beacon
+        .prepare(at(3 * 102_400), sequence, false, bitmap.partial())
+        .unwrap();
+    assert_eq!(announced(frame), None);
+    // The DS Parameter Set names the new channel.
+    let ds = frame[36..]
+        .windows(3)
+        .position(|window| window[0] == 3 && window[1] == 1)
+        .unwrap();
+    assert_eq!(frame[36 + ds + 2], 1);
+}

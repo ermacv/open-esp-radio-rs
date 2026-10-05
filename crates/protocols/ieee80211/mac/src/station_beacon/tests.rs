@@ -36,6 +36,7 @@ fn decodes_dtim_group_and_partial_virtual_bitmap_for_local_aid() {
                 group_buffered: true,
             }),
             protection: StaBeaconProtection::UNPROTECTED,
+            channel_switch: None,
         })
     );
 }
@@ -98,4 +99,34 @@ fn decodes_erp_ht_and_he_protection_fields() {
     ];
     let observation = parse_sta_beacon(&beacon(&disabled), BSSID, 1).unwrap();
     assert_eq!(observation.protection, StaBeaconProtection::UNPROTECTED);
+}
+
+#[test]
+fn a_beacon_carries_its_bss_s_channel_switch_announcement() {
+    use crate::channel_switch::{ChannelSwitch, ChannelSwitchMode, SecondaryChannelOffset};
+
+    let frame = beacon(&[37, 3, 1, 11, 4, 62, 1, 3]);
+    assert_eq!(
+        parse_sta_beacon(&frame, BSSID, 17).map(|observation| observation.channel_switch),
+        Ok(Some(Ok(ChannelSwitch {
+            mode: ChannelSwitchMode::StopTransmitting,
+            channel_number: 11,
+            count: 4,
+            operating_class: None,
+            secondary: SecondaryChannelOffset::Below,
+        })))
+    );
+    // A reserved switch mode spoils the announcement, not the beacon: its
+    // traffic indication still counts.
+    let observation = parse_sta_beacon(
+        &beacon(&[TIM_ELEMENT_ID, 4, 0, 3, 0, 0, 37, 3, 7, 11, 4]),
+        BSSID,
+        17,
+    )
+    .unwrap();
+    assert_eq!(
+        observation.channel_switch,
+        Some(Err(crate::channel_switch::ChannelSwitchError::Malformed))
+    );
+    assert!(observation.tim.is_some());
 }

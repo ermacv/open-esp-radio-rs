@@ -570,6 +570,7 @@ fn idle_beacon() -> StaBeaconObservation {
             group_buffered: false,
         }),
         protection: StaBeaconProtection::UNPROTECTED,
+        channel_switch: None,
     }
 }
 
@@ -1559,6 +1560,7 @@ fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
         capability_information: 0,
         tim: None,
         protection: StaBeaconProtection::UNPROTECTED,
+        channel_switch: None,
     }));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
@@ -1605,6 +1607,7 @@ fn connected_beacon_protection_updates_the_tx_bss_facts() {
             ht: HtProtectionMode::NonHtMixed,
             he_txop_rts_threshold: Some(64),
         },
+        channel_switch: None,
     }));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
@@ -1627,6 +1630,7 @@ fn connected_beacon_protection_updates_the_tx_bss_facts() {
         capability_information: 0,
         tim: None,
         protection: StaBeaconProtection::UNPROTECTED,
+        channel_switch: None,
     }));
     embassy_futures::block_on(control.service(&mut hardware, &mut tx)).unwrap();
     assert_eq!(tx.policy().protection().bss(), associated);

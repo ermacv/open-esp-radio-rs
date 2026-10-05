@@ -1,4 +1,5 @@
 use core::pin::Pin;
+use oer_ieee80211_mac::block_ack::TX_BLOCK_ACK_MAX_TIDS;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_time::{Clock as _, Timer as _};
 
@@ -85,14 +86,14 @@ const INITIAL_GTK: [u8; 16] = [0x11; 16];
 use oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS;
 
 /// The station's originator as the connected plan builds it.
-fn tx_block_ack() -> oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator {
-    oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator::new(
-        oer_ieee80211_sta::block_ack::StaTxBlockAckPolicy {
+fn tx_block_ack() -> oer_ieee80211_mac::block_ack::TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS> {
+    oer_ieee80211_mac::block_ack::TxBlockAckOriginator::new(
+        oer_ieee80211_mac::block_ack::TxBlockAckOriginatorPolicy {
             tids: &STA_TX_BLOCK_ACK_TIDS,
             first_dialog_token: oer_espressif_ieee80211_policy::block_ack::FIRST_DIALOG_TOKEN,
             next_dialog_token: oer_espressif_ieee80211_policy::block_ack::next_dialog_token,
         },
-        oer_ieee80211_sta::block_ack::StaTxBlockAckConfig {
+        oer_ieee80211_mac::block_ack::TxBlockAckOriginatorConfig {
             window: 32,
             negotiation_timeout: oer_time::Duration::from_micros(100_000),
             amsdu_tids: 1,

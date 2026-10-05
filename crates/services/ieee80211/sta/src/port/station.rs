@@ -146,10 +146,11 @@ pub enum LinkSupervisionError {
 pub struct PortTxBlockAck {
     /// Which TIDs and Dialog Tokens: an integrator's policy (the Espressif
     /// station's is `oer-espressif-ieee80211-policy::block_ack`).
-    pub policy: oer_ieee80211_sta::block_ack::StaTxBlockAckPolicy,
-    pub config: oer_ieee80211_sta::block_ack::StaTxBlockAckConfig,
-    /// Negotiations of each TID before the station gives it up.
-    pub attempt_limit: u8,
+    pub policy: oer_ieee80211_mac::block_ack::TxBlockAckOriginatorPolicy,
+    pub config: oer_ieee80211_mac::block_ack::TxBlockAckOriginatorConfig,
+    /// Negotiations of each TID before the station gives it up, and how
+    /// long a failed one waits before the next.
+    pub retry: oer_ieee80211_mac::block_ack::TxBlockAckRetry,
 }
 
 /// Why a phase of the station failed.
@@ -169,7 +170,7 @@ pub enum PortStationError<E, U> {
     /// The profile's link supervision does not fit the association.
     LinkSupervision(LinkSupervisionError),
     /// The profile's TX Block Ack policy is not one an originator takes.
-    TxBlockAck(oer_ieee80211_sta::block_ack::StaTxBlockAckError),
+    TxBlockAck(oer_ieee80211_mac::block_ack::TxBlockAckOriginatorError),
     KeyInstall(RsnKeyInstallError<PortLinkError<E>>),
     State(StaAttemptStateError),
 }
@@ -888,12 +889,12 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
             config.peer_qos && owner.keys.is_some() && config.peer.phy != PhyMode::Legacy
         }) {
             Some(block_ack) => {
-                match oer_ieee80211_sta::block_ack::StaTxBlockAckOriginator::new(
+                match oer_ieee80211_mac::block_ack::TxBlockAckOriginator::new(
                     block_ack.policy,
                     block_ack.config,
                 ) {
                     Ok(mut originator) => {
-                        originator.queue_initial(block_ack.attempt_limit);
+                        originator.queue_initial(block_ack.retry);
                         Some(originator)
                     }
                     Err(error) => {

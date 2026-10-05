@@ -26,7 +26,7 @@ use oer_ieee80211_lower_mac::{
 use oer_ieee80211_mac::{
     ap::profile::{Advertisement, LegacyRates, WmmParameters},
     beacon::dtim,
-    block_ack::{ADDBA_ACTION_BODY_LEN, write_successful_addba_response},
+    block_ack::{ADDBA_ACTION_BODY_LEN, TxBlockAckRetry, write_successful_addba_response},
     channel::{Channel, WifiChannel},
     extensions::wmm::WmmAcParameters,
     ht::HtLocalCapabilities,
@@ -259,6 +259,13 @@ fn service() -> AccessPointService<'static> {
     )
 }
 
+/// Three TX Block Ack offers, a failed one followed by the next a second
+/// later.
+const RETRY: TxBlockAckRetry = TxBlockAckRetry {
+    attempts: 3,
+    interval: oer_time::Duration::from_millis(1_000),
+};
+
 fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
     PortApProfile {
         ssid,
@@ -270,6 +277,7 @@ fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
         data_rate: DATA_RATE,
         ccmp_step: CcmpPacketNumberStep::new(1).unwrap(),
         rx_reorder_gap: oer_time::Duration::from_millis(300),
+        tx_block_ack_retry: RETRY,
         coex: CoexPriority::Normal,
     }
 }
@@ -1716,7 +1724,7 @@ fn a_peer_that_accepts_the_tx_block_ack_agreement_gets_aggregates_until_it_ends_
 }
 
 #[test]
-fn an_offer_the_peer_leaves_unanswered_times_out_and_frames_go_alone() {
+fn an_unanswered_offer_is_made_again_with_the_peer_s_data_after_the_interval() {
     with_ht_peer(|model, router, timer, access_point, at| {
         assert_eq!(addba_requests(model).len(), 1);
         // Past the negotiation timeout, the offer has failed.
@@ -1734,13 +1742,17 @@ fn an_offer_the_peer_leaves_unanswered_times_out_and_frames_go_alone() {
                 .tx_block_ack
                 .is_none()
         );
+        // Within the interval the peer's frames go alone, offering nothing.
         let best_effort = WmmUserPriority::new(0).unwrap();
-        for payload in [&b"one"[..], b"two"] {
-            access_point.send(
-                &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload),
-                best_effort,
-            );
-        }
+        let send = |access_point: &mut PortAccessPoint<'_, Env<'_>>, payloads: &[&[u8]]| {
+            for payload in payloads {
+                access_point.send(
+                    &ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], payload),
+                    best_effort,
+                );
+            }
+        };
+        send(access_point, &[b"one", b"two"]);
         serve(model, router, timer, access_point, &[], at + 201_000);
         let attempts = data_attempts(model);
         assert_eq!(attempts.len(), 2);
@@ -1749,8 +1761,35 @@ fn an_offer_the_peer_leaves_unanswered_times_out_and_frames_go_alone() {
                 .iter()
                 .all(|(subframes, ampdu)| subframes.len() == 1 && !ampdu)
         );
-        assert_eq!(access_point.counters().aggregates, 0);
-        // No second offer.
         assert_eq!(addba_requests(model).len(), 1);
+
+        // After it, the peer's data brings the second offer first.
+        serve(model, router, timer, access_point, &[], at + 1_150_000);
+        assert_eq!(addba_requests(model).len(), 1);
+        send(access_point, &[b"three"]);
+        serve(model, router, timer, access_point, &[], at + 1_151_000);
+        let requests = addba_requests(model);
+        assert_eq!(requests.len(), 2);
+        let (token, start) = requests[1];
+        assert_ne!(token, requests[0].0);
+        assert_eq!(access_point.counters().tx_agreements_offered, 2);
+        // The peer accepts it, and its frames go as an A-MPDU.
+        let mut response = [0_u8; ADDBA_ACTION_BODY_LEN];
+        write_successful_addba_response(&mut response, token, 0, 16).unwrap();
+        serve(
+            model,
+            router,
+            timer,
+            access_point,
+            &[(at + 1_152_000, block_ack_action(&response))],
+            at + 1_153_000,
+        );
+        assert_eq!(access_point.counters().tx_agreements, 1);
+        send(access_point, &[b"four", b"five"]);
+        serve(model, router, timer, access_point, &[], at + 1_154_000);
+        assert_eq!(
+            data_attempts(model).last().unwrap(),
+            &(vec![start + 1, start + 2], true)
+        );
     });
 }

@@ -11,6 +11,7 @@ protocol that owns them:
 | --- | --- |
 | `block_ack/frame` | Stateless Block Ack Action parsing and wire identifiers |
 | `block_ack/session` | One TX agreement, its negotiation generation and alarm handling |
+| `block_ack/originator` | One peer's TX agreements, at most `TIDS`: a Dialog Token sequence they share, and each TID's queued negotiation with its attempts and the retry interval (`TxBlockAckRetry`) after a request that did not leave or a response that did not come; the station and the access point use it |
 | `fragmentation` | Validated fragment identities and the shared fragment contract |
 | `fragmentation/parsing` | Header/body validation without reassembly ownership |
 | `fragmentation/reassembly` | Complete bounded reassembler, slots and admission tokens |

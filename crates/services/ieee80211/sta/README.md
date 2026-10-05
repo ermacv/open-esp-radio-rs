@@ -112,11 +112,12 @@ interval and coding.
 
 A QoS HT or HE association under CCMP negotiates the TX Block Ack
 agreements of `PortStationProfile::tx_block_ack` once connected, through
-`StaTxBlockAckOriginator` of `oer-ieee80211-sta`: an ADDBA Request per TID
+`oer-ieee80211-mac`'s `TxBlockAckOriginator`: an ADDBA Request per TID
 of the policy, in order, each from that TID's next sequence number, while the
 station is awake. A request that is not acknowledged or not answered within
-the negotiation timeout uses one of the TID's attempts and is sent again
-while attempts remain; the access point's answer ends them, and its DELBA as
+the negotiation timeout uses one of the TID's attempts and is sent again,
+after the profile's retry interval, while attempts remain
+(`PortTxBlockAck::retry`); the access point's answer ends them, and its DELBA as
 recipient ends the agreement.
 
 `PortStation::send` queues a frame (`PortSend::Queued`, or `Full` with the

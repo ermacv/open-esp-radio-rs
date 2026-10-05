@@ -58,11 +58,13 @@ moves the window, a kept run goes past its gap after the profile's gap time,
 and its DELBA or its removal ends the agreement in the port too
 (`rx_agreements`, `behind_window`, `unbuffered`, `reorder_gap_timeouts`).
 TX Block Ack: in a protected BSS the access point offers each newly
-authorized HT QoS peer its TID-0 agreement once, by an ADDBA Request
-(`tx_agreements_offered`); the peer's response makes it operational
-(`tx_agreements`) or declines it, and an unanswered offer times out
-(`tx_agreements_failed`); the peer's DELBA as recipient, or its removal,
-ends it. While it is operational, a frame for the awake peer and the queued
+authorized HT QoS peer its TID-0 agreement by an ADDBA Request at once
+(`tx_agreements_offered`), with the profile's `tx_block_ack_retry`: an
+offer that is not acknowledged or not answered (`tx_agreements_failed`)
+uses one attempt, and the next goes with the peer's data once the retry
+interval has passed, while attempts remain. The peer's response makes the
+agreement operational (`tx_agreements`) or declines it, which ends the
+offers; the peer's DELBA as recipient, or its removal, ends it. While it is operational, a frame for the awake peer and the queued
 frames for it that follow go as one A-MPDU of TID 0 under its pairwise key
 at the data rate (`aggregates`, `aggregated_acknowledged`), as many as the
 agreement's window, the port (`PortClientEnv::Aggregation`), the peer's HT

@@ -35,7 +35,7 @@ use oer_ieee80211_mac::{
         write_sae_authentication,
     },
     beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, dtim, write_ht_beacon},
-    block_ack::{OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckResponse},
+    block_ack::{OperationalTxBlockAck, TxBlockAckResponse, TxBlockAckRetry},
     ccmp::{CcmpKeyId, CcmpReplayLane},
     channel::WifiChannel,
     data::{IEEE80211_LEGACY_DATA_HEADER_LEN, IEEE80211_QOS_DATA_HEADER_LEN},

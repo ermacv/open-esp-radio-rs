@@ -2,7 +2,7 @@
 //!
 //! Frame parsing and one generic agreement state machine live in
 //! [`oer_ieee80211_mac::block_ack`], the station's originator in
-//! `oer_ieee80211_sta::block_ack` and the vendor TIDs and Dialog Tokens in
+//! `oer_ieee80211_mac::block_ack::originator` and the vendor TIDs and Dialog Tokens in
 //! `oer_espressif_ieee80211_policy::block_ack`. This module retains only
 //! the S31 window bound, the three-register completion snapshot and the
 //! fixed hardware-slot batch. It still owns no DMA address or register access.

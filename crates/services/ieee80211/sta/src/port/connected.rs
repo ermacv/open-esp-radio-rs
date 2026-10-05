@@ -5,6 +5,8 @@ use oer_ieee80211_lower_mac::{
     Cipher, KeyInstall, KeyScope, KeySelector, LowerMacBeaconTiming, LowerMacSetting, MacAddress,
     RxBlockAckAgreement, RxCryptoStatus, RxEvidence, RxMeta,
 };
+use oer_ieee80211_mac::block_ack::TX_BLOCK_ACK_MAX_TIDS;
+use oer_ieee80211_mac::block_ack::{TxBlockAckOriginator, TxBlockAckResponseDisposition};
 use oer_ieee80211_mac::{
     block_ack::{
         ADDBA_ACTION_BODY_LEN, BLOCK_ACK_CATEGORY, BlockAckAction, parse_block_ack_action,
@@ -36,7 +38,6 @@ use oer_ieee80211_rsn::{
 };
 use oer_ieee80211_rsn_service::supplicant::{RsnGroupMessage1Step, process_group_message1};
 use oer_ieee80211_sta::{
-    block_ack::{StaTxBlockAckOriginator, StaTxBlockAckResponseDisposition},
     link_monitor::{StaLinkAction, StaLinkMonitor},
     modem_sleep::{PmBeacon, PmTraffic, SleepType},
     rate_control::StaRateControl,
@@ -238,7 +239,7 @@ pub struct PortConnection<'b, P: LowerMacBeaconTiming, R> {
     /// the Group Key Handshake.
     eapol: Option<OwnedEapolFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>>,
     /// The station's TX Block Ack agreements with the access point.
-    tx_block_ack: Option<StaTxBlockAckOriginator>,
+    tx_block_ack: Option<TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS>>,
     /// The BIP receive state under the association's IGTK.
     bip: Option<BipReceiver>,
     /// Beacons keep the link; when they stop the station probes its
@@ -308,7 +309,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     pub(crate) fn new(
         config: PortConnectionConfig,
         security: PortConnectionSecurity,
-        tx_block_ack: Option<StaTxBlockAckOriginator>,
+        tx_block_ack: Option<TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS>>,
         supervision: PortLinkSupervisor,
         rate: R,
         buffers: &'b mut PortConnectionBuffers,
@@ -381,7 +382,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
     }
 
     /// The station's TX Block Ack agreements, when it originates any.
-    pub const fn tx_block_ack(&self) -> Option<&StaTxBlockAckOriginator> {
+    pub const fn tx_block_ack(&self) -> Option<&TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS>> {
         self.tx_block_ack.as_ref()
     }
 
@@ -413,7 +414,10 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
             self.power.as_ref().and_then(PortPowerSave::next_deadline),
             self.tx_block_ack
                 .as_ref()
-                .and_then(StaTxBlockAckOriginator::earliest_alarm_deadline),
+                .and_then(TxBlockAckOriginator::earliest_alarm_deadline),
+            self.tx_block_ack
+                .as_ref()
+                .and_then(TxBlockAckOriginator::next_pending_deadline),
             self.buffers.reorder.next_gap_deadline(),
             self.link.deadline(),
         ]
@@ -862,7 +866,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         if self.power.as_ref().is_some_and(|power| !power.awake()) {
             return Ok(());
         }
-        let Some(tid) = originator.take_pending() else {
+        let Some(tid) = originator.take_pending(now) else {
             return Ok(());
         };
         let starting_sequence = context
@@ -878,7 +882,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
         if !acknowledged(&report)
             && let Some(originator) = self.tx_block_ack.as_mut()
         {
-            originator.transmit_failed(tid);
+            originator.transmit_failed(tid, now);
         }
         Ok(())
     }
@@ -1129,7 +1133,7 @@ impl<'b, P: LowerMacBeaconTiming, R: StaRateControl> PortConnection<'b, P, R> {
             }
             Some(action @ BlockAckAction::AddbaResponse { .. }) => {
                 if let Some(originator) = self.tx_block_ack.as_mut()
-                    && let Ok(StaTxBlockAckResponseDisposition::StaleDialogToken(_)) =
+                    && let Ok(TxBlockAckResponseDisposition::StaleDialogToken(_)) =
                         originator.on_response_action(action)
                 {
                     self.counters.stale_addba_responses =

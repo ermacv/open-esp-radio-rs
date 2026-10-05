@@ -49,8 +49,9 @@ use oer_ieee80211_softmac::{
     interface::{BoundVirtualInterface, VifRole},
 };
 
-use oer_ieee80211_sta::block_ack::{
-    StaTxBlockAckConfig, StaTxBlockAckError, StaTxBlockAckOriginator, StaTxBlockAckPolicy,
+use oer_ieee80211_mac::block_ack::{
+    TxBlockAckOriginator, TxBlockAckOriginatorConfig, TxBlockAckOriginatorError,
+    TxBlockAckOriginatorPolicy,
 };
 use oer_ieee80211_sta::{
     link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError},

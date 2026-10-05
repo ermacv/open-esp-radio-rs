@@ -20,8 +20,9 @@ use oer_ieee80211_mac::ap::{ApAssociationSecurityObservation, ApPowerSaveObserva
 use crate::pmksa::{AP_PMKID_LEN, ApPmksa, ApPmksaCache};
 use oer_ieee80211_mac::beacon::{TimAssociationId, TimBitmapError, TimVirtualBitmap};
 use oer_ieee80211_mac::block_ack::{
-    AddbaRequest, BlockAckAction, OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckConfig,
-    TxBlockAckError, TxBlockAckResponse, TxBlockAckSession,
+    AddbaRequest, BlockAckAction, OperationalTxBlockAck, TxBlockAckOriginator,
+    TxBlockAckOriginatorConfig, TxBlockAckOriginatorError, TxBlockAckOriginatorPolicy,
+    TxBlockAckResponse, TxBlockAckResponseDisposition, TxBlockAckRetry, next_nonzero_dialog_token,
 };
 use oer_ieee80211_mac::ht::HtPeerCapabilities;
 use oer_ieee80211_mac::protection::{
@@ -340,11 +341,11 @@ pub enum ApServiceError {
     BufferedReleaseInFlight,
     StaleBufferedRelease,
     Wpa2(RsnStateError),
-    BlockAck(TxBlockAckError),
+    BlockAck(TxBlockAckOriginatorError),
 }
 
-impl From<TxBlockAckError> for ApServiceError {
-    fn from(error: TxBlockAckError) -> Self {
+impl From<TxBlockAckOriginatorError> for ApServiceError {
+    fn from(error: TxBlockAckOriginatorError) -> Self {
         Self::BlockAck(error)
     }
 }
@@ -432,7 +433,7 @@ struct ApPeer {
     /// counters across AP clients creates artificial holes whenever the
     /// scheduler switches peers.
     next_qos_sequences: [SequenceNumber; 8],
-    tx_block_ack: TxBlockAckSession,
+    tx_block_ack: TxBlockAckOriginator<1>,
     power_state: ApPeerPowerState,
     buffered_unicast_frames: u16,
     buffered_release_in_flight: bool,
@@ -480,8 +481,8 @@ impl ApPeer {
             short_preamble: self.short_preamble,
             ht: self.ht,
             qos_supported: self.qos_supported,
-            tx_block_ack: self.tx_block_ack.operational(),
-            tx_block_ack_generation: self.tx_block_ack.generation(),
+            tx_block_ack: self.tx_block_ack.operational(AP_TX_BLOCK_ACK_TID),
+            tx_block_ack_generation: self.tx_block_ack.generation(AP_TX_BLOCK_ACK_TID),
             power_state: self.power_state,
             buffered_unicast_frames: self.buffered_unicast_frames,
             buffered_release_in_flight: self.buffered_release_in_flight,
@@ -490,7 +491,7 @@ impl ApPeer {
         }
     }
 
-    const fn authenticated(
+    fn authenticated(
         address: [u8; 6],
         association_id: u16,
         association_epoch: u32,
@@ -551,18 +552,27 @@ impl ApPeerBinding {
     }
 }
 
-const fn new_ap_tx_block_ack() -> TxBlockAckSession {
-    match TxBlockAckSession::new(TxBlockAckConfig {
-        tid: AP_TX_BLOCK_ACK_TID,
-        window: AP_TX_BLOCK_ACK_WINDOW,
-        timeout_tu: 0,
-        negotiation_timeout: AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUT,
-        // Baseline 3,839-byte A-MSDU construction and AP RX decapsulation are
-        // both source-owned. The operational agreement still keeps this bit
-        // false unless the peer echoes support in its ADDBA response.
-        amsdu: true,
-    }) {
-        Ok(session) => session,
+/// The access point's one TX Block Ack TID, its Dialog Tokens skipping zero.
+const AP_TX_BLOCK_ACK_POLICY: TxBlockAckOriginatorPolicy = TxBlockAckOriginatorPolicy {
+    tids: &[AP_TX_BLOCK_ACK_TID],
+    first_dialog_token: 1,
+    next_dialog_token: next_nonzero_dialog_token,
+};
+
+fn new_ap_tx_block_ack() -> TxBlockAckOriginator<1> {
+    match TxBlockAckOriginator::new(
+        AP_TX_BLOCK_ACK_POLICY,
+        TxBlockAckOriginatorConfig {
+            window: AP_TX_BLOCK_ACK_WINDOW,
+            negotiation_timeout: AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUT,
+            // Baseline 3,839-byte A-MSDU construction and AP RX decapsulation
+            // are both source-owned. The operational agreement still keeps
+            // this bit false unless the peer echoes support in its ADDBA
+            // response.
+            amsdu_tids: 1 << AP_TX_BLOCK_ACK_TID,
+        },
+    ) {
+        Ok(originator) => originator,
         Err(_) => panic!("valid AP TX BlockAck policy"),
     }
 }
@@ -851,7 +861,7 @@ impl<'peers> AccessPointService<'peers> {
             .iter()
             .flatten()
             .find(|existing| existing.address == peer)
-            .and_then(|existing| existing.tx_block_ack.operational())
+            .and_then(|existing| existing.tx_block_ack.operational(AP_TX_BLOCK_ACK_TID))
             .map(|agreement| agreement.window)
     }
 
@@ -905,7 +915,8 @@ impl<'peers> AccessPointService<'peers> {
             if peer.phase == ApPeerPhase::Authorized {
                 authorized = authorized.saturating_add(1);
             }
-            operational_tx_block_ack |= peer.tx_block_ack.operational().is_some();
+            operational_tx_block_ack |=
+                peer.tx_block_ack.operational(AP_TX_BLOCK_ACK_TID).is_some();
         }
         self.associated_count = associated;
         self.authorized_count = authorized;

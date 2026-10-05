@@ -1,4 +1,5 @@
 use super::*;
+use oer_ieee80211_mac::block_ack::TX_BLOCK_ACK_MAX_TIDS;
 
 /// Runtime-selected rate policy independent of HIL environment variables.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,19 +53,19 @@ impl ConnectedStaBlockAckPolicy {
     /// Tokens, its window bounded by the S31 TX queue geometry.
     pub fn tx_block_ack_originator(
         &self,
-    ) -> Result<StaTxBlockAckOriginator, ConnectedStaConfigError> {
+    ) -> Result<TxBlockAckOriginator<TX_BLOCK_ACK_MAX_TIDS>, ConnectedStaConfigError> {
         if self.tx_block_ack_window > TX_BLOCK_ACK_MAX_WINDOW {
             return Err(ConnectedStaConfigError::TxBlockAckWindow(
                 self.tx_block_ack_window,
             ));
         }
-        StaTxBlockAckOriginator::new(
-            StaTxBlockAckPolicy {
+        TxBlockAckOriginator::new(
+            TxBlockAckOriginatorPolicy {
                 tids: &oer_espressif_ieee80211_policy::block_ack::STA_TX_BLOCK_ACK_TIDS,
                 first_dialog_token: oer_espressif_ieee80211_policy::block_ack::FIRST_DIALOG_TOKEN,
                 next_dialog_token: oer_espressif_ieee80211_policy::block_ack::next_dialog_token,
             },
-            StaTxBlockAckConfig {
+            TxBlockAckOriginatorConfig {
                 window: self.tx_block_ack_window,
                 negotiation_timeout: self.tx_block_ack_negotiation_timeout,
                 amsdu_tids: u8::from(self.tid0_amsdu),
@@ -113,7 +114,7 @@ pub enum ConnectedStaConfigError {
         data_tid: u8,
     },
     PeerDoesNotSupportQos,
-    TxBlockAck(StaTxBlockAckError),
+    TxBlockAck(TxBlockAckOriginatorError),
     /// The TX Block Ack window exceeds the S31 TX queue geometry.
     TxBlockAckWindow(u16),
     RxBlockAck(RxBlockAckSessionsError),

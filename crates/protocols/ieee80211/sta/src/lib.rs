@@ -15,7 +15,6 @@
 extern crate std;
 
 pub mod attempt;
-pub mod block_ack;
 pub mod ftm;
 pub mod join;
 pub mod link_monitor;

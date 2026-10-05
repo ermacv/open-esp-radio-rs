@@ -12,6 +12,11 @@ cargo tidy chips --json
 cargo tidy fetch
 ```
 
+A pull that moves a git pin (the esp-hal fork's rev) leaves Cargo unable to
+build `oer-tidy` offline, because resolving the root workspace needs every
+git source of its lock file. Fetch once online then:
+`cargo --config net.offline=false tidy fetch`.
+
 `cargo tidy` is the alias of `cargo run --quiet -p oer-tidy --`; `--root DIR`
 checks another checkout. The push gate always runs the checks in-process,
 and CI runs it as the first check of the registry's `host` job (`cargo

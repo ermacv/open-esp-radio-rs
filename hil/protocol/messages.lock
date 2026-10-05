@@ -175,7 +175,7 @@ wifi/access-point/airtime/report a5568ab0edf671c4 topic
 wifi/access-point/start 4a6837ce5901b42f endpoint
 wifi/access-point/started 11ab76d50e5fc395 topic
 wifi/access-point/stop a3d816777c42756a endpoint
-wifi/access-point/stopped 8d0283d1f26f7196 topic
+wifi/access-point/stopped a985084a26dfe2ec topic
 wifi/driver-observation 56bbff41d89e7e5d property
 wifi/initialize 17a08d12a3fba165 endpoint
 wifi/initialized e28dc136e86fe706 topic
@@ -198,7 +198,7 @@ wifi/scan/completed 56ce65e6eb21584b topic
 wifi/station-access-point 983d21f4339a181c property
 wifi/station-access-point/start 5016be8f5cdfcda7 endpoint
 wifi/station-access-point/stop bdfd1fa8942de861 endpoint
-wifi/station-access-point/stopped 5964ae9968892df0 topic
+wifi/station-access-point/stopped b19fad621c6a61f6 topic
 wifi/station-epoch-control 2be4ec938d7449c8 property
 wifi/station-lifecycle-events c3a1976b57a6f76d property
 wifi/station/epoch/completed d3b39806204e44a2 topic

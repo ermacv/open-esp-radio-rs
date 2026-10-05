@@ -280,11 +280,8 @@ fn qualify(
         };
         let independent_air_result = independent_air_capture
             .and_then(|capture| capture.map(LocalAirMonitorCapture::finish).transpose());
-        let primary_link_result = primary_link_observation.and_then(|observation| {
-            observation
-                .map(OpenWrtClientLinkObservation::finish)
-                .transpose()
-        });
+        let primary_link_result =
+            primary_link_observation.and_then(clients::PrimaryLinkObservation::finish);
         let secondary_link_result = secondary_link_observation.and_then(|observation| {
             observation
                 .map(OpenWrtClientLinkObservation::finish)
@@ -358,7 +355,9 @@ fn qualify(
                      units={} descriptors={} recycled_descriptors={} retained_descriptors={} discarded_units={} overload_dropped={} critical_reserve={} critical_blocked={} \
                      max_service_us={}/{}/{} data/management/eapol={}/{}/{} dma_total_us/calls={}/{} data_total_us={} \
                      rx_ht40_mcs={:?} rx_ht40_gi_lgi/sgi={}/{} total_ht={} ht_ampdu={} rssi={}/{}/{}/{} protected={} mic_failures={} quarantined={} duplicates={} \
-                     radio_rejected={} protocol_rejected={} ethernet_staged={} tcp_staged={}",
+                     radio_rejected={} protocol_rejected={} ethernet_staged={} tcp_staged={} \
+                     reorder_buffered/dispatched={}/{} reorder_window_resets={} reorder_gap_timeouts={} \
+                     block_ack_requests={} bar_released/missing={}/{}",
                     stopped.rx_hardware.buffer_full,
                     stopped.rx_hardware.fifo_overflow,
                     stopped.data_frames_transmitted,
@@ -413,6 +412,13 @@ fn qualify(
                     stopped.protected_data_protocol_rejected,
                     stopped.ethernet_frames_staged,
                     stopped.ethernet_tcp_frames_staged,
+                    stopped.rx_reorder_buffered_mpdus,
+                    stopped.rx_reorder_dispatched_mpdus,
+                    stopped.rx_reorder_hardware_window_resets,
+                    stopped.rx_reorder_gap_timeouts,
+                    stopped.rx_block_ack_requests,
+                    stopped.rx_reorder_bar_released_mpdus,
+                    stopped.rx_reorder_bar_missing_sequences,
                 ),
                 Err(_) => error.to_string(),
             };
@@ -421,24 +427,10 @@ fn qualify(
                 data_error.push_str(&probe_error.to_string());
             }
             match &primary_link_result {
-                Ok(Some(evidence)) => data_error.push_str(&format!(
-                    "; OpenWrt AP-client link: rx_packets={} rx_bytes={} rx_duration_us={:?} rx_bitrate={:?} tx_packets={} tx_bytes={} tx_bitrate={:?} retries={} failed={} tx_duration_us={} tid0_aqm_drops={}",
-                    evidence.rx_packets,
-                    evidence.rx_bytes,
-                    evidence.rx_duration_micros,
-                    evidence.rx_bitrate,
-                    evidence.tx_packets,
-                    evidence.tx_bytes,
-                    evidence.tx_bitrate,
-                    evidence.tx_retries,
-                    evidence.tx_failed,
-                    evidence.tx_duration_micros,
-                    evidence.tid0_aqm_drops,
-                )),
+                Ok(evidence) => data_error.push_str(&format!("; {evidence}")),
                 Err(observation_error) => data_error.push_str(&format!(
-                    "; OpenWrt AP-client link observation failed: {observation_error}"
+                    "; primary AP-client link observation failed: {observation_error}"
                 )),
-                Ok(None) => {}
             }
             match &secondary_link_result {
                 Ok(Some(evidence)) => data_error.push_str(&format!(
@@ -489,7 +481,7 @@ fn qualify(
             }
         };
         let traffic = data_result?;
-        let primary_client_link = primary_link_result?;
+        let primary_client_link = Some(primary_link_result?);
         let secondary_client_link = secondary_link_result?;
         let independent_air = independent_air_result?;
         client_restore?;

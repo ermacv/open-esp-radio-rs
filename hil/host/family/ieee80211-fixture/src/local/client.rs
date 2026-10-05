@@ -154,6 +154,102 @@ impl ControlledClient {
         self.restored = true;
         Ok(())
     }
+
+    /// Begin observing the client's link to the AP under test: its station
+    /// counters now, compared with them at [`LaptopClientLinkObservation::finish`].
+    pub fn begin_link_observation(&self) -> Result<LaptopClientLinkObservation> {
+        Ok(LaptopClientLinkObservation {
+            before: LaptopLinkSnapshot::take()?,
+        })
+    }
+}
+
+/// What the laptop's driver counted on its link to the AP under test during
+/// one workload, from `iw dev wlan0 station dump`: the frames it gave up on
+/// (`tx_failed`) tell a loss on the air from one at the AP.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct LaptopClientLinkEvidence {
+    pub tx_packets: u64,
+    pub tx_retries: u64,
+    pub tx_failed: u64,
+    pub rx_packets: u64,
+    /// Frames from the AP that mac80211 dropped after reception.
+    pub rx_drop_misc: u64,
+    /// The bitrate of the client's frames after the workload.
+    pub tx_bitrate: String,
+}
+
+/// The laptop client's link counters at the start of a workload.
+pub struct LaptopClientLinkObservation {
+    before: LaptopLinkSnapshot,
+}
+
+impl LaptopClientLinkObservation {
+    /// The counters' growth since the observation began.
+    pub fn finish(self) -> Result<LaptopClientLinkEvidence> {
+        let after = LaptopLinkSnapshot::take()?;
+        let delta = |name: &str, before: u64, after: u64| -> Result<u64> {
+            after.checked_sub(before).ok_or_else(|| {
+                format!(
+                    "laptop client `{name}` counter reset during the workload: {before} -> {after}"
+                )
+                .into()
+            })
+        };
+        Ok(LaptopClientLinkEvidence {
+            tx_packets: delta("tx packets", self.before.tx_packets, after.tx_packets)?,
+            tx_retries: delta("tx retries", self.before.tx_retries, after.tx_retries)?,
+            tx_failed: delta("tx failed", self.before.tx_failed, after.tx_failed)?,
+            rx_packets: delta("rx packets", self.before.rx_packets, after.rx_packets)?,
+            rx_drop_misc: delta("rx drop misc", self.before.rx_drop_misc, after.rx_drop_misc)?,
+            tx_bitrate: after.tx_bitrate,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LaptopLinkSnapshot {
+    tx_packets: u64,
+    tx_retries: u64,
+    tx_failed: u64,
+    rx_packets: u64,
+    rx_drop_misc: u64,
+    tx_bitrate: String,
+}
+
+impl LaptopLinkSnapshot {
+    fn take() -> Result<Self> {
+        let output = Command::new("iw")
+            .args(["dev", "wlan0", "station", "dump"])
+            .supervised_output()?;
+        if !output.status.success() {
+            return Err(crate::Error::new(format!(
+                "cannot snapshot the laptop client's link counters: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ))
+            .into());
+        }
+        Self::parse(&String::from_utf8(output.stdout)?)
+    }
+
+    /// The one station a managed client lists: its AP.
+    fn parse(dump: &str) -> Result<Self> {
+        if dump.matches("Station ").count() != 1 {
+            return Err(crate::Error::new(
+                "the laptop client lists other than exactly one station",
+            )
+            .into());
+        }
+        use crate::local::evidence::{tagged_text, tagged_u64};
+        Ok(Self {
+            tx_packets: tagged_u64(dump, "tx packets:")?,
+            tx_retries: tagged_u64(dump, "tx retries:")?,
+            tx_failed: tagged_u64(dump, "tx failed:")?,
+            rx_packets: tagged_u64(dump, "rx packets:")?,
+            rx_drop_misc: tagged_u64(dump, "rx drop misc:")?,
+            tx_bitrate: tagged_text(dump, "tx bitrate:")?,
+        })
+    }
 }
 
 /// The station address of every controlled-client connection recorded under

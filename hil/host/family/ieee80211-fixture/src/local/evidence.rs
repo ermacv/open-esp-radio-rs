@@ -300,22 +300,24 @@ fn require_width(phy: PhyExpectation, observed: u8) -> Result<()> {
     Ok(())
 }
 
-fn tagged_u64(output: &str, key: &str) -> Result<u64> {
+/// The first number after `key` in an `iw` station listing.
+pub(crate) fn tagged_u64(output: &str, key: &str) -> Result<u64> {
     tagged_text(output, key)?
         .split_whitespace()
         .next()
-        .ok_or_else(|| format!("local AP counter `{key}` is empty"))?
+        .ok_or_else(|| format!("station counter `{key}` is empty"))?
         .parse()
-        .map_err(|error| format!("invalid local AP counter `{key}`: {error}").into())
+        .map_err(|error| format!("invalid station counter `{key}`: {error}").into())
 }
 
-fn tagged_text(output: &str, key: &str) -> Result<String> {
+/// The text after `key` in an `iw` station listing.
+pub(crate) fn tagged_text(output: &str, key: &str) -> Result<String> {
     output
         .lines()
         .find_map(|line| line.trim().strip_prefix(key).map(str::trim))
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
-        .ok_or_else(|| format!("local AP station snapshot omitted `{key}`").into())
+        .ok_or_else(|| format!("station snapshot omitted `{key}`").into())
 }
 
 fn delta(name: &str, before: u64, after: u64) -> Result<u64> {

@@ -325,6 +325,9 @@ static AP_RX_REORDER_BUFFERED_MPDUS: AtomicU32 = AtomicU32::new(0);
 static AP_RX_REORDER_DISPATCHED_MPDUS: AtomicU32 = AtomicU32::new(0);
 static AP_RX_REORDER_HARDWARE_WINDOW_RESETS: AtomicU32 = AtomicU32::new(0);
 static AP_RX_REORDER_GAP_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
+static AP_RX_BLOCK_ACK_REQUESTS: AtomicU32 = AtomicU32::new(0);
+static AP_RX_REORDER_BAR_RELEASED_MPDUS: AtomicU32 = AtomicU32::new(0);
+static AP_RX_REORDER_BAR_MISSING_SEQUENCES: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_RADIO_REJECTED: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_PROTOCOL_REJECTED: AtomicU32 = AtomicU32::new(0);
 
@@ -563,6 +566,13 @@ fn observe_access_point(observation: AccessPointObservation) {
         Ordering::Release,
     );
     AP_RX_REORDER_GAP_TIMEOUTS.store(observation.rx_reorder_gap_timeouts, Ordering::Release);
+    AP_RX_BLOCK_ACK_REQUESTS.store(observation.rx_block_ack_requests, Ordering::Release);
+    AP_RX_REORDER_BAR_RELEASED_MPDUS
+        .store(observation.rx_reorder_bar_released_mpdus, Ordering::Release);
+    AP_RX_REORDER_BAR_MISSING_SEQUENCES.store(
+        observation.rx_reorder_bar_missing_sequences,
+        Ordering::Release,
+    );
     AP_PROTECTED_DATA_RADIO_REJECTED
         .store(observation.protected_data_radio_rejected, Ordering::Release);
     rx_rejection::observe(observation.first_rx_protocol_rejection);
@@ -752,6 +762,10 @@ fn access_point_evidence(
         rx_reorder_hardware_window_resets: AP_RX_REORDER_HARDWARE_WINDOW_RESETS
             .load(Ordering::Acquire),
         rx_reorder_gap_timeouts: AP_RX_REORDER_GAP_TIMEOUTS.load(Ordering::Acquire),
+        rx_block_ack_requests: AP_RX_BLOCK_ACK_REQUESTS.load(Ordering::Acquire),
+        rx_reorder_bar_released_mpdus: AP_RX_REORDER_BAR_RELEASED_MPDUS.load(Ordering::Acquire),
+        rx_reorder_bar_missing_sequences: AP_RX_REORDER_BAR_MISSING_SEQUENCES
+            .load(Ordering::Acquire),
         protected_data_radio_rejected: AP_PROTECTED_DATA_RADIO_REJECTED.load(Ordering::Acquire),
         first_rx_protocol_rejection: rx_rejection::snapshot(),
         protected_data_protocol_rejected: AP_PROTECTED_DATA_PROTOCOL_REJECTED

@@ -606,13 +606,17 @@ fn block_ack_request_releases_retained_frames_through_the_ordered_queue() {
     );
     assert!(!reorder.has_pending_release());
 
-    // The client gave up on sequence 10: 11 and 12 follow in order.
+    // The client gave up on sequence 10: 11 and 12 follow in order, and the
+    // one number the window passed without an MPDU is missing.
     assert_eq!(
         reorder.move_window(
             request(PEER_A, 6, 11),
             oer_time::Instant::from_micros(1_002)
         ),
-        Some(2)
+        Some(WindowMove {
+            released: 2,
+            missing: 1,
+        })
     );
     assert_eq!(reorder.next_deadline(), None, "no gap is left to age");
     let mut released = std::vec::Vec::new();

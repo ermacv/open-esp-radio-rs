@@ -121,6 +121,9 @@ pub struct AccessPointControlObservation {
     pub rx_block_ack_requests: u32,
     /// Retained MPDUs released by client BlockAckReq window moves.
     pub rx_reorder_bar_released_mpdus: u32,
+    /// Sequence numbers client BlockAckReq window moves passed without an
+    /// MPDU: frames the client gave up on and this AP never received.
+    pub rx_reorder_bar_missing_sequences: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
     pub first_rx_protocol_rejection: Option<AccessPointRxRejection>,

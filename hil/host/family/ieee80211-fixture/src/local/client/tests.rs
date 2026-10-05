@@ -45,3 +45,37 @@ fn every_cycle_contributes_its_associated_station_address_once() {
         ["42:a1:a0:9c:dc:c3", "70:15:fb:a8:48:f0"]
     );
 }
+
+const STATION_DUMP: &str = "Station 32:ed:a0:f3:f6:d0 (on wlan0)
+	inactive time:	12 ms
+	rx bytes:	2850112
+	rx packets:	4512
+	tx bytes:	3002910
+	tx packets:	2391
+	tx retries:	87
+	tx failed:	2
+	rx drop misc:	1
+	signal:  	-41 dBm
+	tx bitrate:	150.0 MBit/s MCS 7 40MHz short GI
+	rx bitrate:	135.0 MBit/s MCS 7 40MHz
+";
+
+#[test]
+fn the_laptop_client_link_snapshot_reads_its_one_station() {
+    let snapshot = LaptopLinkSnapshot::parse(STATION_DUMP).unwrap();
+    assert_eq!(
+        (
+            snapshot.tx_packets,
+            snapshot.tx_retries,
+            snapshot.tx_failed,
+            snapshot.rx_packets,
+            snapshot.rx_drop_misc,
+        ),
+        (2391, 87, 2, 4512, 1)
+    );
+    assert_eq!(snapshot.tx_bitrate, "150.0 MBit/s MCS 7 40MHz short GI");
+    // A managed client lists its AP alone; two stations are not its link.
+    let two = format!("{STATION_DUMP}{STATION_DUMP}");
+    assert!(LaptopLinkSnapshot::parse(&two).is_err());
+    assert!(LaptopLinkSnapshot::parse("").is_err());
+}

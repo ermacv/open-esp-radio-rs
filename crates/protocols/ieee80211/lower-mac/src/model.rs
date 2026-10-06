@@ -1096,8 +1096,6 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
     }
 }
 
-/// The model sends the CTS-to-self of a reservation through the queue of
-/// its access category; the outcome the test queues ends it.
 impl<O: TxBody> LowerMacLiveRetune for LowerMacModel<O> {
     fn retune_live(&self, channel: Channel) -> Result<Result<(), SettingError>, ModelPoisoned> {
         {
@@ -1110,6 +1108,8 @@ impl<O: TxBody> LowerMacLiveRetune for LowerMacModel<O> {
     }
 }
 
+/// The model sends the CTS-to-self of a reservation through the queue of
+/// its access category; the outcome the test queues ends it.
 impl<O: TxBody> LowerMacAirReservation for LowerMacModel<O> {
     fn submit_air_reservation(
         &self,

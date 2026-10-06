@@ -31,6 +31,15 @@ the backend's runner, takes every event and dispatches it:
   `resolve(id)` whether the completion still came or was lost in the gap;
 - the terminal `Poisoned` event ends `run()` and every wait.
 
+The router also shares the port's physical TX queues. `send_mpdu`,
+`send_ampdu` and `reserve_air` wait for FIFO ownership of the queue named by
+the backend's access-category mapping before lending a buffer. Ownership
+lasts through retries and body reclamation, then passes to the next waiter.
+Thus two interfaces can use the same queue without a `Busy` refusal;
+different physical queues remain concurrent. Cancelling a wait before its
+grant releases its place, and port poisoning ends blocked waits. The
+router's `WAITERS` bounds both completion registrations and queue leases.
+
 A service talks to the port through one `client::PortClient` per interface
 (`PortClientEnv` names the port, the planner's HE TXOP budget, the rate
 ladder, the backoff entropy and its `Aggregation`, `aggregate::PortAmpduAggregation`

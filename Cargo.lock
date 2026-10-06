@@ -3882,6 +3882,7 @@ dependencies = [
 name = "oer-ieee80211-sta-ap-service"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "oer-espressif-ieee80211-policy",
  "oer-ieee80211-ap",
  "oer-ieee80211-ap-service",
@@ -3896,6 +3897,7 @@ dependencies = [
  "oer-ieee80211-upper-mac-service",
  "oer-network-interface",
  "oer-time",
+ "oer-time-virtual",
 ]
 
 [[package]]

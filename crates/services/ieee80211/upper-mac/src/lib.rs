@@ -188,6 +188,11 @@ where
         if !matches!(request.body, TxBody::Mpdu(_)) {
             return Err(UpperMacTxError::InvalidFrames);
         }
+        let queue = self
+            .router
+            .queue(self.port.capabilities().tx_queue(request.access_category))
+            .map_err(|_| UpperMacTxError::RouterFull)?;
+        queue.ready().await.map_err(|_| UpperMacTxError::Poisoned)?;
         let headers = [frame.header];
         let mut bodies = [frame.body];
         let (mut exchange, mut plan) = self
@@ -413,6 +418,11 @@ where
         power: TxPower,
         coex: CoexPriority,
     ) -> Result<TxCompletion, UpperMacTxError<P::Error>> {
+        let queue = self
+            .router
+            .queue(self.port.capabilities().tx_queue(access_category))
+            .map_err(|_| UpperMacTxError::RouterFull)?;
+        queue.ready().await.map_err(|_| UpperMacTxError::Poisoned)?;
         let Ok(registration) = self.router.register(self.router.next_id()) else {
             return Err(UpperMacTxError::RouterFull);
         };
@@ -466,6 +476,11 @@ where
         if headers.len() != usize::from(ampdu.subframes()) || bodies.len() != headers.len() {
             return Err(UpperMacTxError::InvalidFrames);
         }
+        let queue = self
+            .router
+            .queue(self.port.capabilities().tx_queue(request.access_category))
+            .map_err(|_| UpperMacTxError::RouterFull)?;
+        queue.ready().await.map_err(|_| UpperMacTxError::Poisoned)?;
         let (mut exchange, mut plan) = self
             .planner
             .begin(request, ladder, entropy)

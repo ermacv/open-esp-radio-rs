@@ -3,7 +3,6 @@
 //! and a station that joins the pair's access point.
 
 use core::{
-    cell::Cell,
     future::{Future, poll_fn},
     marker::PhantomData,
     pin::pin,
@@ -45,10 +44,11 @@ use oer_ieee80211_sta::{
     modem_sleep::SleepType,
     scan::StaScanConfig,
 };
-use oer_ieee80211_sta_ap_service::{PortStaAp, PortStaApEvent};
+use oer_ieee80211_sta_ap_service::{PortStaAp, PortStaApError, PortStaApEvent};
 use oer_ieee80211_sta_service::port::{
     NoCoexistence, PortDisconnect, PortLink, PortLinkSupervision, PortProbe, PortStation,
-    PortStationConfig, PortStationEnv, PortStationEvent, PortStationProfile, PortStationStorage,
+    PortStationConfig, PortStationEnv, PortStationError, PortStationEvent, PortStationProfile,
+    PortStationStorage,
 };
 use oer_ieee80211_upper_mac::{
     AmpduRetryPolicy, FixedRate, ProtectEveryHeTxop, ProtectionPolicy, RetryLimits, TxPlanner,
@@ -61,7 +61,8 @@ use oer_ieee80211_upper_mac_service::{
     frame::NetworkBody,
 };
 use oer_network_interface::NetworkInterfaceId;
-use oer_time::{Clock, Duration, Instant, RadioInstant, Timer};
+use oer_time::{Clock, Duration, Instant, RadioInstant};
+use oer_time_virtual::VirtualClock;
 
 /// Run `body` on a thread whose stack holds the drivers' unoptimized
 /// futures.
@@ -143,34 +144,7 @@ fn capabilities() -> &'static AssociationCapabilities {
     })
 }
 
-/// Virtual monotonic time: waits end when the harness advances it.
-#[derive(Default)]
-struct VirtualTimer {
-    now: Cell<u64>,
-    wanted: Cell<Option<u64>>,
-}
-
-impl Clock for &VirtualTimer {
-    fn now(&self) -> Instant {
-        Instant::from_micros(self.now.get())
-    }
-}
-
-impl Timer for &VirtualTimer {
-    fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
-        poll_fn(move |_| {
-            if self.now.get() >= deadline.as_micros() {
-                Poll::Ready(())
-            } else {
-                let deadline = deadline.as_micros();
-                self.wanted.set(Some(
-                    self.wanted.get().map_or(deadline, |w| w.min(deadline)),
-                ));
-                Poll::Pending
-            }
-        })
-    }
-}
+type VirtualTimer = VirtualClock;
 
 struct Seeded(u32);
 
@@ -274,6 +248,7 @@ fn station(
     timer: &'static VirtualTimer,
     address: MacAddress,
     ssid: &'static [u8],
+    frames: &'static TestFrames,
 ) -> PortStation<'static, Env> {
     let link = PortLink::new(
         router,
@@ -304,7 +279,7 @@ fn station(
             ssid,
             channels: &SCANNED,
             scan: StaScanConfig::new(2).unwrap(),
-            dwell_tick: Duration::from_millis(10),
+            dwell_tick: Duration::from_millis(100),
             probe: Some(*probe),
             capabilities: capabilities(),
             he_power: None,
@@ -325,7 +300,7 @@ fn station(
         },
         StaAttemptSecurity::open(StaTxSequenceCounters::new(SequenceNumber::new(0).unwrap())),
         Box::leak(Box::new(PortStationStorage::new())),
-        leak(TestFrames::new()),
+        frames,
     )
 }
 
@@ -335,6 +310,7 @@ fn access_point(
     address: MacAddress,
     ssid: &'static [u8],
     channel: Channel,
+    frames: &'static TestFrames,
 ) -> PortAccessPoint<'static, Env> {
     let client = PortClient::new(
         router,
@@ -361,7 +337,7 @@ fn access_point(
             authenticator: FixedMaterial,
             sae: NoSae,
             rate_control: DATA_RATE,
-            frames: leak(TestFrames::new()),
+            frames,
         },
         PortApProfile {
             ssid: leak(WifiSsid::new(ssid).unwrap()),
@@ -397,24 +373,25 @@ struct World {
     upstream: (&'static Model, &'static Router),
     pair: (&'static Model, &'static Router),
     client: (&'static Model, &'static Router),
+    pair_frames: &'static TestFrames,
+    client_frames: &'static TestFrames,
 }
 
 impl World {
     fn new() -> Self {
-        let timer = leak(VirtualTimer {
-            now: Cell::new(1_000),
-            wanted: Cell::new(None),
-        });
+        let timer = leak(VirtualTimer::starting_at(Instant::from_micros(1_000)));
         Self {
             timer,
             upstream: radio(),
             pair: radio(),
             client: radio(),
+            pair_frames: leak(TestFrames::new()),
+            client_frames: leak(TestFrames::new()),
         }
     }
 
     fn now(&self) -> u64 {
-        self.timer.now.get()
+        self.timer.now().as_micros()
     }
 
     fn after(&self, millis: u64) -> Instant {
@@ -425,6 +402,10 @@ impl World {
     /// what the radios publish, and when nothing moves, virtual time
     /// advances to the earliest deadline anyone waits for.
     fn drive<F: Future>(&self, future: F) -> F::Output {
+        self.drive_observing(future, || {})
+    }
+
+    fn drive_observing<F: Future>(&self, future: F, mut observe: impl FnMut()) -> F::Output {
         let air = ModelAir::new([self.upstream.0, self.pair.0, self.client.0]);
         let mut future = pin!(future);
         let mut routers = [
@@ -435,8 +416,10 @@ impl World {
         let mut context = Context::from_waker(Waker::noop());
         let mut quiet = 0;
         for _ in 0..50_000_000 {
-            self.timer.wanted.set(None);
-            if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
+            self.timer.advance_to(self.timer.now());
+            let polled = future.as_mut().poll(&mut context);
+            observe();
+            if let Poll::Ready(output) = polled {
                 return output;
             }
             for router in &mut routers {
@@ -459,13 +442,11 @@ impl World {
             quiet = 0;
             let next = self
                 .timer
-                .wanted
-                .get()
+                .next_deadline()
                 .expect("the drivers wait for an event nothing produces");
-            let next = next.max(self.now());
-            self.timer.now.set(next);
+            self.timer.advance_to(next);
             for model in [self.upstream.0, self.pair.0, self.client.0] {
-                model.set_now(RadioInstant::from_micros(next));
+                model.set_now(RadioInstant::from_micros(next.as_micros()));
             }
         }
         panic!("the drivers did not finish");
@@ -521,7 +502,7 @@ async fn serve_client(
 ) {
     let mut switch = None;
     loop {
-        let now = Instant::from_micros(timer.now.get());
+        let now = timer.now();
         if let Some(due) =
             switch.filter(|due: &oer_ieee80211_sta_service::port::PortChannelSwitch| due.at <= now)
         {
@@ -585,6 +566,7 @@ fn set_up(
         UPSTREAM,
         UPSTREAM_SSID,
         ghz2_4(6),
+        leak(TestFrames::new()),
     );
     world
         .drive(upstream.client_mut().retune(ghz2_4(6)))
@@ -592,13 +574,20 @@ fn set_up(
     upstream.start(ghz2_4(6)).unwrap();
 
     let mut pair = PortStaAp::new(
-        station(world.pair.1, world.timer, PAIR_STATION, UPSTREAM_SSID),
+        station(
+            world.pair.1,
+            world.timer,
+            PAIR_STATION,
+            UPSTREAM_SSID,
+            leak(TestFrames::new()),
+        ),
         access_point(
             world.pair.1,
             world.timer,
             PAIR_ACCESS_POINT,
             PAIR_SSID,
             ghz2_4(1),
+            world.pair_frames,
         ),
         ChannelCoordinator::new(policy, ApSearchPolicy::new(&[])),
         world.timer,
@@ -614,7 +603,13 @@ fn set_up(
             .is_none_or(|schedule| schedule.channel == ghz2_4(6))
     );
 
-    let client = station(world.client.1, world.timer, CLIENT, PAIR_SSID);
+    let client = station(
+        world.client.1,
+        world.timer,
+        CLIENT,
+        PAIR_SSID,
+        world.client_frames,
+    );
     let until = world.after(4_000);
     let (_, (_, client)) = world.drive(join(
         serve_upstream(&mut upstream, until),
@@ -735,4 +730,317 @@ fn the_leave_upstream_policy_keeps_the_access_point_and_its_peer_body() {
     assert!(pair.station().connection().is_none());
     assert_eq!(world.pair.0.channel(), Some(ghz2_4(6)));
     assert!(pair.access_point().service().peer_status(CLIENT).is_some());
+}
+
+fn policy() -> ApFollowPolicy {
+    ApFollowPolicy {
+        bands: ApBands {
+            ghz2_4: true,
+            ghz5: true,
+        },
+        announce_count: 3,
+        unservable: ApUnservable::StopAccessPoint,
+    }
+}
+
+fn lose_upstream(
+    world: &World,
+    upstream: &mut PortAccessPoint<'static, Env>,
+    pair: &mut PortStaAp<'static, Env, Env, &'static VirtualTimer>,
+) {
+    world.drive(upstream.stop()).unwrap();
+    let event = world
+        .drive(pair.run_until(world.after(1_000), &mut |_| {}, &mut |_| {}))
+        .unwrap();
+    assert!(matches!(
+        event,
+        Some(PortStaApEvent::StationEnded(
+            PortDisconnect::Deauthenticated { .. }
+        ))
+    ));
+    assert!(pair.station().connection().is_none());
+}
+
+fn ethernet(destination: MacAddress, source: MacAddress, payload: &[u8]) -> Vec<u8> {
+    let mut frame = destination.to_vec();
+    frame.extend_from_slice(&source);
+    frame.extend_from_slice(&0x0800_u16.to_be_bytes());
+    frame.extend_from_slice(payload);
+    frame
+}
+
+#[test]
+fn current_channel_retries_keep_the_access_point_and_bidirectional_data() {
+    on_large_stack(current_channel_retries_keep_the_access_point_and_bidirectional_data_inner);
+}
+
+fn current_channel_retries_keep_the_access_point_and_bidirectional_data_inner() {
+    let world = World::new();
+    let (mut upstream, mut pair, mut client) = set_up(&world, policy());
+    let association_id = client.connection().unwrap().config().association_id;
+    let peer = pair.access_point().service().peer_status(CLIENT).unwrap();
+    let ap_vif = world.pair.0.vif_config(ACCESS_POINT);
+    lose_upstream(&world, &mut upstream, &mut pair);
+    let channel_updates = world.pair.0.channel_updates();
+    let lifecycle_requests = world.pair.0.lifecycle_requests();
+    let observe = || {
+        assert_eq!(world.pair.0.channel(), Some(ghz2_4(6)));
+        assert_eq!(world.pair.0.channel_updates(), channel_updates);
+        assert_eq!(world.pair.0.lifecycle_requests(), lifecycle_requests);
+        assert_eq!(world.pair.0.vif_config(ACCESS_POINT), ap_vif);
+        assert!(world.pair.0.gate_open());
+    };
+    // An unconstrained scan would find this upstream on channel 11 and
+    // take the pair's radio away from its existing access-point peer.
+    world
+        .drive(upstream.client_mut().retune(ghz2_4(11)))
+        .unwrap();
+    upstream.start(ghz2_4(11)).unwrap();
+    for _ in 0..2 {
+        let beacons = pair.access_point().counters().beacons;
+        let until = world.after(500);
+        let (_, (result, _)) = world.drive_observing(
+            join(
+                serve_upstream(&mut upstream, until),
+                join(
+                    pair.reconnect(&mut |_| {}),
+                    serve_client(&mut client, world.timer, until),
+                ),
+            ),
+            observe,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(PortStaApError::Join(PortStationError::NoCandidate))
+            ),
+            "retry: {result:?}"
+        );
+        assert!(pair.access_point().counters().beacons > beacons);
+        assert!(pair.station().connection().is_none());
+    }
+    // The AP also serves by itself between explicit retry attempts.
+    let until = world.after(500);
+    world.drive_observing(
+        join(
+            serve_pair(&mut pair, until),
+            serve_client(&mut client, world.timer, until),
+        ),
+        observe,
+    );
+    world.drive(upstream.stop()).unwrap();
+    world
+        .drive(upstream.client_mut().retune(ghz2_4(6)))
+        .unwrap();
+    upstream.start(ghz2_4(6)).unwrap();
+    let to_ap = ethernet(PAIR_ACCESS_POINT, CLIENT, b"during upstream join");
+    let to_client = ethernet(CLIENT, PAIR_ACCESS_POINT, b"access point stays up");
+    assert!(world.client_frames.push(TestFrame(to_ap.clone())).is_ok());
+    assert!(world.pair_frames.push(TestFrame(to_client.clone())).is_ok());
+    let mut received_ap = Vec::new();
+    let mut received_client = Vec::new();
+    let until = world.after(500);
+    let (_, (result, client_result)) = world.drive_observing(
+        join(
+            serve_upstream(&mut upstream, until),
+            join(
+                pair.reconnect(&mut |msdu| {
+                    let parts = msdu.parts();
+                    let mut frame = vec![0; parts.length()];
+                    parts.copy_to(&mut frame).unwrap();
+                    received_ap.push(frame);
+                }),
+                client.run_until(until, &mut |msdu| {
+                    let parts = msdu.parts();
+                    let mut frame = vec![0; parts.length()];
+                    parts.copy_to(&mut frame).unwrap();
+                    received_client.push(frame);
+                }),
+            ),
+        ),
+        observe,
+    );
+    result.unwrap();
+    assert_eq!(client_result.unwrap(), None);
+    assert_eq!(received_ap, [to_ap]);
+    assert_eq!(received_client, [to_client]);
+    assert!(world.client_frames.is_empty());
+    assert!(world.pair_frames.is_empty());
+    assert_eq!(
+        client.connection().unwrap().config().association_id,
+        association_id
+    );
+    let after = pair.access_point().service().peer_status(CLIENT).unwrap();
+    assert_eq!(after.association_id, peer.association_id);
+    assert_eq!(after.association_epoch, peer.association_epoch);
+    assert_eq!(after.phase, peer.phase);
+    assert!(pair.station().connection().is_some());
+    assert_eq!(
+        pair.station().connection().unwrap().config().channel,
+        ghz2_4(6)
+    );
+}
+
+#[test]
+fn initial_connect_cannot_rescan_a_running_access_point() {
+    on_large_stack(initial_connect_cannot_rescan_a_running_access_point_inner);
+}
+
+fn initial_connect_cannot_rescan_a_running_access_point_inner() {
+    let world = World::new();
+    let (mut upstream, mut pair, _) = set_up(&world, policy());
+    assert!(matches!(
+        world.drive(pair.connect()),
+        Err(PortStaApError::AlreadyConnected)
+    ));
+    assert!(matches!(
+        world.drive(pair.reconnect(&mut |_| {})),
+        Err(PortStaApError::AlreadyConnected)
+    ));
+    lose_upstream(&world, &mut upstream, &mut pair);
+    let submitted = world.pair.0.submitted().len();
+    assert!(matches!(
+        world.drive(pair.connect()),
+        Err(PortStaApError::AccessPointRunning)
+    ));
+    assert_eq!(world.pair.0.channel(), Some(ghz2_4(6)));
+    assert_eq!(world.pair.0.submitted().len(), submitted);
+    assert!(pair.access_point().service().peer_status(CLIENT).is_some());
+}
+
+#[test]
+fn reconnect_refreshes_the_candidate_after_a_coordinated_channel_switch() {
+    on_large_stack(reconnect_refreshes_the_candidate_after_a_coordinated_channel_switch_inner);
+}
+
+fn reconnect_refreshes_the_candidate_after_a_coordinated_channel_switch_inner() {
+    let world = World::new();
+    let (mut upstream, mut pair, mut client) = set_up(&world, policy());
+    upstream
+        .announce_channel_switch(ghz2_4(11), ChannelSwitchMode::Continue, 3)
+        .unwrap();
+    let until = world.after(1_000);
+    world.drive(join(
+        serve_upstream(&mut upstream, until),
+        join(
+            serve_pair(&mut pair, until),
+            serve_client(&mut client, world.timer, until),
+        ),
+    ));
+    assert_eq!(pair.station().candidate().unwrap().channel, 6);
+    assert_eq!(
+        pair.station().connection().unwrap().config().channel,
+        ghz2_4(11)
+    );
+    lose_upstream(&world, &mut upstream, &mut pair);
+    upstream.start(ghz2_4(11)).unwrap();
+    let until = world.after(500);
+    let (_, (result, _)) = world.drive_observing(
+        join(
+            serve_upstream(&mut upstream, until),
+            join(
+                pair.reconnect(&mut |_| {}),
+                serve_client(&mut client, world.timer, until),
+            ),
+        ),
+        || assert_eq!(world.pair.0.channel(), Some(ghz2_4(11))),
+    );
+    result.unwrap();
+    assert_eq!(pair.station().candidate().unwrap().channel, 11);
+    assert_eq!(
+        pair.station().connection().unwrap().config().channel,
+        ghz2_4(11)
+    );
+    assert!(client.connection().is_some());
+}
+
+#[test]
+fn reconnect_waits_for_an_announced_move_after_the_upstream_is_lost() {
+    on_large_stack(reconnect_waits_for_an_announced_move_after_the_upstream_is_lost_inner);
+}
+
+fn reconnect_waits_for_an_announced_move_after_the_upstream_is_lost_inner() {
+    let world = World::new();
+    let (mut upstream, mut pair, mut client) = set_up(&world, policy());
+    upstream
+        .announce_channel_switch(ghz2_4(11), ChannelSwitchMode::Continue, 5)
+        .unwrap();
+    let until = world.after(120);
+    world.drive(join(
+        serve_upstream(&mut upstream, until),
+        serve_pair(&mut pair, until),
+    ));
+    lose_upstream(&world, &mut upstream, &mut pair);
+    assert!(matches!(
+        world.drive(pair.reconnect(&mut |_| {})),
+        Err(PortStaApError::ChannelSwitchPending)
+    ));
+    assert_eq!(world.pair.0.channel(), Some(ghz2_4(6)));
+    world
+        .drive(upstream.client_mut().retune(ghz2_4(11)))
+        .unwrap();
+    upstream.start(ghz2_4(11)).unwrap();
+    // The owner finishes its move while serving just the access point.
+    let until = world.after(1_000);
+    world.drive(join(
+        serve_upstream(&mut upstream, until),
+        join(
+            serve_pair(&mut pair, until),
+            serve_client(&mut client, world.timer, until),
+        ),
+    ));
+    assert_eq!(world.pair.0.channel(), Some(ghz2_4(11)));
+    let until = world.after(500);
+    let (_, result) = world.drive(join(
+        serve_upstream(&mut upstream, until),
+        pair.reconnect(&mut |_| {}),
+    ));
+    result.unwrap();
+    assert_eq!(
+        pair.station().connection().unwrap().config().channel,
+        ghz2_4(11)
+    );
+    assert!(pair.access_point().service().peer_status(CLIENT).is_some());
+    assert!(client.connection().is_some());
+}
+
+#[test]
+fn a_failed_authentication_retains_the_station_and_keeps_publishing_beacons() {
+    on_large_stack(a_failed_authentication_retains_the_station_and_keeps_publishing_beacons_inner);
+}
+
+fn a_failed_authentication_retains_the_station_and_keeps_publishing_beacons_inner() {
+    let world = World::new();
+    let (mut upstream, mut pair, mut client) = set_up(&world, policy());
+    lose_upstream(&world, &mut upstream, &mut pair);
+    upstream.start(ghz2_4(6)).unwrap();
+    let beacons = pair.access_point().counters().beacons;
+    // Answer the discovery probe, then stop processing upstream requests
+    // before the 200 ms dwell ends: MAC ACKs cannot complete authentication.
+    let until = world.after(100);
+    let (_, result) = world.drive_observing(
+        join(
+            serve_upstream(&mut upstream, until),
+            pair.reconnect(&mut |_| {}),
+        ),
+        || assert_eq!(world.pair.0.channel(), Some(ghz2_4(6))),
+    );
+    assert!(matches!(
+        result,
+        Err(PortStaApError::Join(PortStationError::Join(_)))
+    ));
+    assert!(pair.access_point().counters().beacons >= beacons + 3);
+    assert!(pair.station().connection().is_none());
+    assert!(pair.access_point().service().peer_status(CLIENT).is_some());
+    let until = world.after(500);
+    let (_, (result, _)) = world.drive(join(
+        serve_upstream(&mut upstream, until),
+        join(
+            pair.reconnect(&mut |_| {}),
+            serve_client(&mut client, world.timer, until),
+        ),
+    ));
+    result.unwrap();
+    assert!(pair.station().connection().is_some());
+    assert!(client.connection().is_some());
 }

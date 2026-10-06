@@ -719,6 +719,61 @@ fn poll_once<F: Future>(future: core::pin::Pin<&mut F>) -> Poll<F::Output> {
 }
 
 #[test]
+fn concurrent_exchanges_on_one_queue_wait_before_lending_a_buffer() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut first = driver(&router);
+    let mut second = driver(&router);
+    let first_frame = qos_data(30, [1, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let second_frame = qos_data(31, [2, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let mut first_entropy = Seeded(1);
+    let mut second_entropy = Seeded(2);
+    let mut first_send = pin!(first.send_mpdu(
+        TxMpdu::whole(&first_frame),
+        KeySelector::Plaintext,
+        request_on(&first_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut first_entropy,
+    ));
+    let mut second_send = pin!(second.send_mpdu(
+        TxMpdu::whole(&second_frame),
+        KeySelector::Plaintext,
+        request_on(&second_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut second_entropy,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(first_send.as_mut()).is_pending());
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    assert_eq!(model.in_flight(), 1);
+    assert_eq!(model.buffers_lent(), 1);
+    assert_eq!(model.submitted().len(), 1);
+    // The first exchange retains the queue through its retry.
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::AckTimeout);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(poll_once(first_send.as_mut()).is_pending());
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    assert_eq!(model.in_flight(), 1);
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(matches!(
+        poll_once(first_send.as_mut()),
+        Poll::Ready(Ok(TxReport::Mpdu(_)))
+    ));
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    assert_eq!(model.in_flight(), 1);
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(matches!(
+        poll_once(second_send.as_mut()),
+        Poll::Ready(Ok(TxReport::Mpdu(_)))
+    ));
+    assert_eq!(model.in_flight(), 0);
+    assert_eq!(model.buffers_lent(), 0);
+    assert_eq!(router.unclaimed_completions(), 0);
+}
+
+#[test]
 fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
     let model = enabled_station();
     let router = Router::new(&model, 100);

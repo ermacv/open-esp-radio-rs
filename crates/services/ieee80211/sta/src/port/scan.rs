@@ -63,6 +63,8 @@ pub struct PortScan<'a, 'p, X: PortStationEnv, const N: usize> {
     set_monitor: Option<SetMonitor<X::Port>>,
     monitoring: bool,
     channel: u8,
+    /// An owner-selected channel; a visit must not tune the shared port.
+    fixed_channel: Option<Channel>,
     tick_deadline: Option<Instant>,
 }
 
@@ -87,6 +89,7 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
             set_monitor: None,
             monitoring: false,
             channel: 0,
+            fixed_channel: None,
             tick_deadline: None,
         }
     }
@@ -98,6 +101,14 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
         X::Port: LowerMacMonitor,
     {
         self.set_monitor = Some(<X::Port as LowerMacMonitor>::set_monitor);
+        self
+    }
+
+    /// Receive on the owner's channel without retuning the radio.
+    /// Only the station's interface is configured. Unlike a standalone
+    /// scan, this cannot fall back to the port-wide monitor mode.
+    pub(crate) fn on_channel(mut self, channel: Channel) -> Self {
+        self.fixed_channel = Some(channel);
         self
     }
 
@@ -151,7 +162,7 @@ impl<X: PortStationEnv, const N: usize> StaScanPort for PortScan<'_, '_, X, N> {
             .receive_filters(VifRole::Station);
         self.monitoring = if filters.contains(ReceiveFilter::OTHER_BSS_MANAGEMENT) {
             false
-        } else if self.set_monitor.is_some() {
+        } else if self.fixed_channel.is_none() && self.set_monitor.is_some() {
             true
         } else {
             return Err(PortLinkError::ReceptionUnsupported);
@@ -164,7 +175,13 @@ impl<X: PortStationEnv, const N: usize> StaScanPort for PortScan<'_, '_, X, N> {
         context: StaScanChannelContext<Channel>,
         requested_dwell_ticks: u16,
     ) -> Result<u16, Self::Error> {
-        self.link.retune(context.channel).await?;
+        if let Some(channel) = self.fixed_channel {
+            if context.channel != channel {
+                return Err(PortLinkError::MissingState);
+            }
+        } else {
+            self.link.retune(context.channel).await?;
+        }
         self.channel = context.channel.number();
         Ok(requested_dwell_ticks)
     }

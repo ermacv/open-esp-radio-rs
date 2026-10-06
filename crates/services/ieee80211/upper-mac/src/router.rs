@@ -137,6 +137,14 @@ struct Waiter {
     waker: Option<Waker>,
 }
 
+/// FIFO ownership of one physical TX queue across interface clients.
+struct QueueWaiter {
+    queue: u8,
+    next: Option<usize>,
+    granted: bool,
+    waker: Option<Waker>,
+}
+
 /// A bounded queue with a loss marker in place of the first dropped entry.
 struct Ring<T, const N: usize> {
     entries: [Option<Result<T, EventsLost>>; N],
@@ -210,6 +218,7 @@ const SMALL_QUEUE: usize = 4;
 
 struct State<E, const WAITERS: usize, const RX: usize> {
     waiters: [Option<Waiter>; WAITERS],
+    queues: [Option<QueueWaiter>; WAITERS],
     routes: [Option<Route>; ROUTER_VIFS],
     received: [Ring<E, RX>; ROUTER_VIFS],
     lifecycle: Ring<LifecycleEvent, SMALL_QUEUE>,
@@ -243,6 +252,7 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
             port,
             state: RefCell::new(State {
                 waiters: core::array::from_fn(|_| None),
+                queues: core::array::from_fn(|_| None),
                 routes: [None; ROUTER_VIFS],
                 received: core::array::from_fn(|_| Ring::new()),
                 lifecycle: Ring::new(),
@@ -260,6 +270,36 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
     /// The port whose events the router takes.
     pub const fn port(&self) -> &'p P {
         self.port
+    }
+
+    /// Reserve a place in the physical queue's FIFO before lending any
+    /// buffers to the backend. Different queues remain independent.
+    pub(crate) fn queue(
+        &self,
+        queue: u8,
+    ) -> Result<TxQueueLease<'_, 'p, P, WAITERS, RX>, RouterFull> {
+        let mut state = self.state.borrow_mut();
+        let slot = state
+            .queues
+            .iter()
+            .position(Option::is_none)
+            .ok_or(RouterFull)?;
+        let previous = state
+            .queues
+            .iter_mut()
+            .flatten()
+            .find(|waiter| waiter.queue == queue && waiter.next.is_none());
+        let granted = previous.is_none();
+        if let Some(previous) = previous {
+            previous.next = Some(slot);
+        }
+        state.queues[slot] = Some(QueueWaiter {
+            queue,
+            next: None,
+            granted,
+            waker: None,
+        });
+        Ok(TxQueueLease { router: self, slot })
     }
 
     /// A fresh attempt identity outside the backend-reserved range, unique
@@ -400,6 +440,11 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
             },
             LowerMacEvent::Poisoned(Poisoned) => {
                 state.poisoned = true;
+                for waiter in state.queues.iter_mut().flatten() {
+                    if let Some(waker) = waiter.waker.take() {
+                        waker.wake();
+                    }
+                }
                 for waiter in state.waiters.iter_mut().flatten() {
                     if let Some(waker) = waiter.waker.take() {
                         waker.wake();
@@ -569,6 +614,68 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
     }
 }
 
+/// Keeps a physical TX queue through the whole exchange, including retry
+/// attempts and body reclamation. Dropping a pending lease unlinks it;
+/// dropping its owner grants the next waiter before another caller can join.
+pub(crate) struct TxQueueLease<
+    'r,
+    'p,
+    P: Ieee80211LowerMacPort,
+    const WAITERS: usize,
+    const RX: usize,
+> {
+    router: &'r EventRouter<'p, P, WAITERS, RX>,
+    slot: usize,
+}
+
+impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
+    TxQueueLease<'_, '_, P, WAITERS, RX>
+{
+    pub(crate) async fn ready(&self) -> Result<(), Poisoned> {
+        poll_fn(|context| {
+            let mut state = self.router.state.borrow_mut();
+            if state.poisoned {
+                return Poll::Ready(Err(Poisoned));
+            }
+            let waiter = state.queues[self.slot]
+                .as_mut()
+                .expect("a live queue lease");
+            if waiter.granted {
+                Poll::Ready(Ok(()))
+            } else {
+                waiter.waker = Some(context.waker().clone());
+                Poll::Pending
+            }
+        })
+        .await
+    }
+}
+
+impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
+    for TxQueueLease<'_, '_, P, WAITERS, RX>
+{
+    fn drop(&mut self) {
+        let mut state = self.router.state.borrow_mut();
+        let waiter = state.queues[self.slot].take().expect("a live queue lease");
+        if waiter.granted {
+            if let Some(next) = waiter.next {
+                let next = state.queues[next].as_mut().expect("the next live lease");
+                next.granted = true;
+                if let Some(waker) = next.waker.take() {
+                    waker.wake();
+                }
+            }
+        } else if let Some(previous) = state
+            .queues
+            .iter_mut()
+            .flatten()
+            .find(|previous| previous.next == Some(self.slot))
+        {
+            previous.next = waiter.next;
+        }
+    }
+}
+
 impl<E, const WAITERS: usize, const RX: usize> State<E, WAITERS, RX> {
     /// The station interface attached, or the only interface.
     fn station(&self) -> Option<usize> {
@@ -659,5 +766,77 @@ impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
                 *slot = None;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::task::Context;
+    use oer_ieee80211_lower_mac::model::LowerMacModel;
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        task::Wake,
+    };
+
+    #[derive(Default)]
+    struct WakeCount(AtomicUsize);
+
+    impl Wake for WakeCount {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn poll<F: Future>(future: F) -> Poll<F::Output> {
+        pin!(future).poll(&mut Context::from_waker(Waker::noop()))
+    }
+
+    #[test]
+    fn queue_handoff_is_fifo_and_cancelled_waiters_release_their_places() {
+        let model = LowerMacModel::<core::convert::Infallible>::new();
+        let router = EventRouter::<_, 4, 4>::new(&model, 1);
+        let first = router.queue(3).unwrap();
+        let cancelled = router.queue(3).unwrap();
+        let next = router.queue(3).unwrap();
+        assert_eq!(poll(first.ready()), Poll::Ready(Ok(())));
+        assert!(poll(cancelled.ready()).is_pending());
+        let wakes = Arc::new(WakeCount::default());
+        let waker = Waker::from(wakes.clone());
+        assert!(
+            pin!(next.ready())
+                .poll(&mut Context::from_waker(&waker))
+                .is_pending()
+        );
+        drop(cancelled);
+        // A reused slot cannot jump ahead of an older waiter.
+        let last = router.queue(3).unwrap();
+        drop(first);
+        assert_eq!(wakes.0.load(Ordering::Relaxed), 1);
+        assert!(poll(last.ready()).is_pending());
+        assert_eq!(poll(next.ready()), Poll::Ready(Ok(())));
+        drop(next);
+        assert_eq!(poll(last.ready()), Poll::Ready(Ok(())));
+        drop(last);
+        assert_eq!(poll(router.queue(3).unwrap().ready()), Poll::Ready(Ok(())));
+    }
+
+    #[test]
+    fn different_physical_queues_are_independent_and_poison_ends_waits() {
+        let model = LowerMacModel::<core::convert::Infallible>::new();
+        let router = EventRouter::<_, 3, 4>::new(&model, 1);
+        let first = router.queue(3).unwrap();
+        let waiting = router.queue(3).unwrap();
+        let other = router.queue(0).unwrap();
+        assert_eq!(poll(first.ready()), Poll::Ready(Ok(())));
+        assert_eq!(poll(other.ready()), Poll::Ready(Ok(())));
+        assert!(poll(waiting.ready()).is_pending());
+        assert!(matches!(router.queue(1), Err(RouterFull)));
+        model.poison();
+        assert_eq!(poll(router.run()), Poll::Ready(Poisoned));
+        assert_eq!(poll(waiting.ready()), Poll::Ready(Err(Poisoned)));
     }
 }

@@ -8,7 +8,7 @@ fn sources() -> Vec<String> {
 }
 
 fn context() -> Checkout {
-    Checkout::new(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")).unwrap()
+    Checkout::new(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
 }
 
 fn compile_rlib(source: &str, bitcode: bool) -> (tempfile::TempDir, PathBuf) {

@@ -18,6 +18,7 @@ protocol that owns them:
 | `ap/profile` | Explicit advertisement values; the chip AP profile selects rates, capabilities and WMM parameters |
 | `station/association` | Association capability types, validation and encoding |
 | `station/management` | Probe/authentication management codecs |
+| `ap` | AP management/data codecs; plaintext and pairwise-protected management headers and request bodies, without authenticating RX |
 | `security` | Link protection, station and access point security policies, and the negotiated `AssociationSecurity` both roles meet at |
 | `security/rsn` | RSN element wire syntax and the `Akm` suite vocabulary shared by station selection and the RSN crate |
 | `station/security` | Station RSN candidate policy and the selected association element |

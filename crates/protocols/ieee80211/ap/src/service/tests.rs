@@ -1098,9 +1098,11 @@ fn bounded_peer_table_has_an_explicit_memory_ceiling() {
     // Each peer's TX Block Ack originator keeps, beside its session, its
     // negotiation's deadline, the next attempt's due time, its attempts,
     // retry interval and Dialog Token policy: the per-peer price of offers
-    // that are retried.
+    // that are retried. Management protection adds one eight-byte activation
+    // and replay word plus six Message-3 IPN snapshot bytes per slot.
+    // The arrays add 216 bytes including host alignment padding.
     assert!(
-        core::mem::size_of::<AccessPointPeerStorage>() <= 7_400,
+        core::mem::size_of::<AccessPointPeerStorage>() <= 7_616,
         "peer storage size {}",
         core::mem::size_of::<AccessPointPeerStorage>()
     );
@@ -1653,4 +1655,249 @@ fn a_wpa3_access_point_refuses_psk_and_stations_without_protection() {
         ),
         AP_STATUS_INVALID_RSN
     );
+}
+
+/// Finish the protocol handshake; the service caller installs the returned
+/// pairwise key before recording authorization.
+fn begin_management_handshake(
+    service: &mut AccessPointService<'_>,
+    peer: [u8; 6],
+) -> (Ptk, RsnTxFrame<512>) {
+    let now = oer_time::Instant::from_micros(1);
+    service
+        .authenticate_sae(peer, Pmk::from_bytes(SAE_PMK), SAE_PMKID, now)
+        .unwrap();
+    let action = service
+        .associate_rsn(
+            peer,
+            association_security(&SAE_STATION_RSN),
+            ht_capabilities(),
+            [7; 32],
+            9,
+            now,
+        )
+        .unwrap();
+    assert_eq!(association_status(action), AP_STATUS_SUCCESS);
+    let ptk = Pmk::from_bytes(SAE_PMK).derive_ptk(
+        oer_ieee80211_mac::security::rsn::Akm::Sae,
+        PtkContext {
+            authenticator_address: AP,
+            supplicant_address: peer,
+            authenticator_nonce: [7; 32],
+            supplicant_nonce: [8; 32],
+        },
+    );
+    let rsn = OwnedRsnIe::<64>::try_copy(&SAE_STATION_RSN).unwrap();
+    let message2 = RsnTxFrame::<512>::message2(
+        oer_ieee80211_mac::security::rsn::Akm::Sae,
+        AP,
+        9,
+        [8; 32],
+        &rsn,
+    )
+    .unwrap()
+    .authenticate(&ptk);
+    let message2 =
+        OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, peer, message2.as_bytes())
+            .unwrap();
+    let ApWpa2Progress::Transmit(message3) = service.on_eapol(peer, message2).unwrap() else {
+        panic!("verified Message 2 produces Message 3");
+    };
+    assert_eq!(
+        service.management_tx_protection(
+            peer,
+            oer_ieee80211_mac::ap::ApManagementSubtype::Action,
+            &[8, 0, 1, 0]
+        ),
+        ApManagementProtection::Plaintext
+    );
+    (ptk, message3)
+}
+
+fn authorize_management_peer(service: &mut AccessPointService<'_>, peer: [u8; 6]) {
+    let (ptk, _) = begin_management_handshake(service, peer);
+    let now = oer_time::Instant::from_micros(1);
+    let message4 = RsnTxFrame::<512>::message4(oer_ieee80211_mac::security::rsn::Akm::Sae, AP, 10)
+        .unwrap()
+        .authenticate(&ptk);
+    let message4 =
+        OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, peer, message4.as_bytes())
+            .unwrap();
+    assert!(matches!(
+        service.on_eapol(peer, message4).unwrap(),
+        ApWpa2Progress::AuthorizePeer
+    ));
+    service.authorize(peer, now).unwrap();
+}
+
+#[test]
+fn management_protection_follows_key_authorization_and_survives_closure() {
+    use oer_ieee80211_mac::ap::ApManagementSubtype as Kind;
+    let mut storage = AccessPointPeerStorage::new();
+    let mut service = wpa3_service(&mut storage);
+    authorize_management_peer(&mut service, PEER);
+    assert_eq!(
+        service.management_tx_protection(PEER, Kind::Action, &[8, 0, 1, 0]),
+        ApManagementProtection::Pairwise
+    );
+    assert_eq!(
+        service.management_tx_protection(PEER, Kind::Action, &[4, 4]),
+        ApManagementProtection::Plaintext
+    );
+    assert_eq!(
+        service.management_tx_protection([0xff; 6], Kind::Action, &[0, 4]),
+        ApManagementProtection::GroupIntegrity
+    );
+    let deadline = service.peer_status(PEER).unwrap().deadline;
+    assert_eq!(service.begin_due_peer_close(deadline).unwrap().peer, PEER);
+    assert_eq!(
+        service.management_tx_protection(PEER, Kind::Deauthentication, &[3, 0]),
+        ApManagementProtection::Pairwise
+    );
+    service.remove_peer(PEER).unwrap();
+    assert_eq!(
+        service.management_tx_protection(PEER, Kind::Deauthentication, &[3, 0]),
+        ApManagementProtection::Plaintext
+    );
+}
+
+#[test]
+fn management_replay_and_policy_rejections_leave_activity_unchanged() {
+    use oer_ieee80211_mac::{ap::ApManagementSubtype as Kind, ccmp::CcmpPacketNumber};
+    let mut storage = AccessPointPeerStorage::new();
+    let mut service = wpa3_service(&mut storage);
+    authorize_management_peer(&mut service, PEER);
+    let status = service.peer_status(PEER).unwrap();
+    let second_peer = [2, 0, 0, 0, 0, 3];
+    assert_ne!(second_peer, PEER);
+    authorize_management_peer(&mut service, second_peer);
+    let proof = |pn| ApManagementRxProtection::PairwiseVerified(CcmpPacketNumber::new(pn).unwrap());
+    assert_eq!(
+        service.receive_management(
+            PEER,
+            Kind::Deauthentication,
+            &[3, 0],
+            ApManagementRxProtection::Plaintext
+        ),
+        ApManagementRx::Rejected(ApManagementRejection::Unprotected)
+    );
+    let query = [8, 0, 0x12, 0x34];
+    assert_eq!(
+        service.receive_management(PEER, Kind::Action, &query, proof(7)),
+        ApManagementRx::Accepted(ApManagementAction::SaQueryResponse {
+            transaction: [0x12, 0x34]
+        })
+    );
+    assert!(matches!(
+        service.receive_management(second_peer, Kind::Action, &query, proof(1)),
+        ApManagementRx::Accepted(_)
+    ));
+    assert_eq!(
+        service.receive_management(PEER, Kind::Action, &[8], proof(100)),
+        ApManagementRx::Rejected(ApManagementRejection::Malformed)
+    );
+    // Repeated authorization of the same key cannot reopen its replay state.
+    service
+        .authorize(PEER, oer_time::Instant::from_micros(1))
+        .unwrap();
+    assert_eq!(
+        service.receive_management(PEER, Kind::Action, &query, proof(7)),
+        ApManagementRx::Rejected(ApManagementRejection::Replay)
+    );
+    assert_eq!(
+        service.receive_management(PEER, Kind::Action, &query, proof(6)),
+        ApManagementRx::Rejected(ApManagementRejection::Replay)
+    );
+    assert_eq!(
+        service.receive_management(PEER, Kind::Action, &[4, 4], proof(100)),
+        ApManagementRx::Rejected(ApManagementRejection::UnexpectedProtection)
+    );
+    assert!(matches!(
+        service.receive_management(PEER, Kind::Action, &query, proof(8)),
+        ApManagementRx::Accepted(_)
+    ));
+    assert_eq!(
+        service.peer_status(PEER).unwrap().last_activity,
+        status.last_activity
+    );
+    service.remove_peer(PEER).unwrap();
+    authorize_management_peer(&mut service, PEER);
+    assert_ne!(
+        service.peer_status(PEER).unwrap().association_epoch,
+        status.association_epoch
+    );
+    assert!(matches!(
+        service.receive_management(PEER, Kind::Action, &query, proof(1)),
+        ApManagementRx::Accepted(_)
+    ));
+}
+
+#[test]
+fn the_bss_owns_one_monotonic_bip_frontier_and_refuses_invalid_group_frames() {
+    use oer_ieee80211_mac::ap::{ApManagementFrame, ApManagementSubtype};
+    use oer_ieee80211_rsn::bip::BipReceiver;
+    let mut storage = AccessPointPeerStorage::new();
+    let mut service = wpa3_service(&mut storage);
+    let mut receiver = BipReceiver::new(service.igtk().unwrap());
+    let mut first = [0; 64];
+    let len = ApManagementFrame {
+        subtype: ApManagementSubtype::Action,
+        access_point: AP,
+        peer: [0xff; 6],
+        sequence_number: SequenceNumber::ZERO,
+        body: &[0, 4, 37, 3, 0, 6, 3],
+    }
+    .encode(&mut first)
+    .unwrap();
+    let mut invalid = first;
+    invalid[10] ^= 2;
+    assert_eq!(
+        service.protect_group_management(&mut invalid, len),
+        Err(ApGroupManagementError::InvalidFrame)
+    );
+    let mut second = first;
+    let protected = service.protect_group_management(&mut first, len).unwrap();
+    assert_eq!(receiver.verify(&first[..protected]), Ok(()));
+    assert!(receiver.verify(&first[..protected]).is_err());
+    let protected = service.protect_group_management(&mut second, len).unwrap();
+    assert_eq!(receiver.verify(&second[..protected]), Ok(()));
+    assert_eq!(&first[len + 4..len + 10], &[1, 0, 0, 0, 0, 0]);
+    assert_eq!(&second[len + 4..len + 10], &[2, 0, 0, 0, 0, 0]);
+    let (ptk, message3) = begin_management_handshake(&mut service, PEER);
+    let plaintext = software_aes128_key_unwrap(ptk.kek(), message3.key_frame().key_data()).unwrap();
+    let keys = parse_gtk_key_data(
+        plaintext.as_bytes(),
+        &oer_ieee80211_mac::security::AP_WPA3_PERSONAL_RSN_ELEMENT,
+        &oer_ieee80211_mac::security::AP_SAE_H2E_RSNX_ELEMENT,
+        true,
+    )
+    .unwrap();
+    let delivered = keys.igtk.unwrap();
+    assert_eq!(delivered.packet_number(), [2, 0, 0, 0, 0, 0]);
+    let mut new_peer = BipReceiver::new(&delivered);
+    assert_eq!(
+        new_peer.verify(&second[..protected]),
+        Err(oer_ieee80211_rsn::bip::BipError::Replay)
+    );
+    service
+        .observe_wpa2_transmit(PEER, false, true, oer_time::Instant::from_micros(10))
+        .unwrap();
+    // Group TX can advance while Message 4 is missing; a retransmitted M3
+    // must retain its original authenticated bytes, including the IPN.
+    let mut third = second;
+    let protected = service.protect_group_management(&mut third, len).unwrap();
+    assert_eq!(new_peer.verify(&third[..protected]), Ok(()));
+    assert_eq!(service.igtk().unwrap().packet_number(), [3, 0, 0, 0, 0, 0]);
+    let ApWpa2RetryProgress::Transmit {
+        peer,
+        frame: repeated,
+    } = service
+        .take_due_wpa2_retry::<512>(service.next_wpa2_retry_deadline().unwrap())
+        .unwrap()
+    else {
+        panic!("Message 3 response timeout must retransmit");
+    };
+    assert_eq!(peer, PEER);
+    assert!(repeated.retransmission());
+    assert_eq!(repeated.as_bytes(), message3.as_bytes());
 }

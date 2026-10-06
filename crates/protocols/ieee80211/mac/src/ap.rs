@@ -554,6 +554,11 @@ pub enum ApManagementRequest<'a> {
         peer: [u8; 6],
         action: BlockAckAction,
     },
+    /// The association check of a peer protecting its management frames.
+    SaQuery {
+        peer: [u8; 6],
+        query: crate::management_protection::SaQuery,
+    },
 }
 
 /// Exact on-air security facts from one Association Request.
@@ -606,9 +611,22 @@ pub fn parse_ap_management_request<'a>(
             ssid: probe::ssid(&frame[24..])?,
         });
     }
-    if frame[4..10] != access_point || frame[16..22] != access_point {
+    if frame_control & 0x030f != 0
+        || peer[0] & 1 != 0
+        || peer == [0; 6]
+        || frame[4..10] != access_point
+        || frame[16..22] != access_point
+    {
         return None;
     }
+    // Parsing is not authentication. The caller must verify the pairwise
+    // integrity and replay state before acting on a protected request.
+    let protected = frame_control & 0x4000 != 0;
+    if protected && !matches!(subtype, 10 | 12 | 13) {
+        return None;
+    }
+    let body_offset = MANAGEMENT_HEADER_LEN + if protected { CCMP_HEADER_LEN } else { 0 };
+    let management_body = frame.get(body_offset..)?;
     match subtype {
         11 => {
             let body = frame.get(24..30)?;
@@ -645,7 +663,7 @@ pub fn parse_ap_management_request<'a>(
             })
         }
         10 | 12 => {
-            let body = frame.get(24..26)?;
+            let body = management_body.get(..2)?;
             let reason = u16::from_le_bytes([body[0], body[1]]);
             if subtype == 10 {
                 Some(ApManagementRequest::Disassociation { peer, reason })
@@ -653,24 +671,74 @@ pub fn parse_ap_management_request<'a>(
                 Some(ApManagementRequest::Deauthentication { peer, reason })
             }
         }
-        13 => Some(ApManagementRequest::BlockAck {
-            peer,
-            action: parse_block_ack_action(frame.get(MANAGEMENT_HEADER_LEN..)?)?,
-        }),
+        13 => {
+            if let Some(query) = crate::management_protection::SaQuery::parse(management_body) {
+                Some(ApManagementRequest::SaQuery { peer, query })
+            } else {
+                Some(ApManagementRequest::BlockAck {
+                    peer,
+                    action: parse_block_ack_action(management_body)?,
+                })
+            }
+        }
         _ => None,
     }
 }
 
-/// One unprotected AP-originated Action management frame.
+/// Management frames an access point originates after association.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ApActionFrame<'a> {
+pub enum ApManagementSubtype {
+    Action,
+    Disassociation,
+    Deauthentication,
+}
+
+impl ApManagementSubtype {
+    const fn frame_control(self) -> u16 {
+        match self {
+            Self::Action => 0x00d0,
+            Self::Disassociation => 0x00a0,
+            Self::Deauthentication => 0x00c0,
+        }
+    }
+
+    /// A robust subtype in a management header, without authenticating it.
+    pub fn parse(frame: &[u8]) -> Option<Self> {
+        let control = u16::from_le_bytes([*frame.first()?, *frame.get(1)?]);
+        if control & 0x030f != 0 {
+            return None;
+        }
+        match control & 0x00f0 {
+            0x00d0 => Some(Self::Action),
+            0x00a0 => Some(Self::Disassociation),
+            0x00c0 => Some(Self::Deauthentication),
+            _ => None,
+        }
+    }
+
+    /// Whether management frame protection applies to this body.
+    pub fn is_robust(self, body: &[u8]) -> bool {
+        match self {
+            Self::Action => body
+                .first()
+                .copied()
+                .is_some_and(crate::management_protection::is_robust_action_category),
+            Self::Disassociation | Self::Deauthentication => true,
+        }
+    }
+}
+
+/// One unprotected AP-originated management frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApManagementFrame<'a> {
+    pub subtype: ApManagementSubtype,
     pub access_point: [u8; 6],
     pub peer: [u8; 6],
     pub sequence_number: SequenceNumber,
     pub body: &'a [u8],
 }
 
-impl ApActionFrame<'_> {
+impl ApManagementFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, ApAssociationResponseError> {
         let required = MANAGEMENT_HEADER_LEN.checked_add(self.body.len()).ok_or(
             ApAssociationResponseError::OutputTooSmall {
@@ -684,12 +752,50 @@ impl ApActionFrame<'_> {
         frame.fill(0);
         write_management_header(
             frame,
-            0x00d0,
+            self.subtype.frame_control(),
             self.access_point,
             self.peer,
             self.sequence_number,
         );
         frame[MANAGEMENT_HEADER_LEN..].copy_from_slice(self.body);
+        Ok(required)
+    }
+}
+
+/// A pairwise-protected AP management MPDU. The lower MAC encrypts the
+/// body and appends the CCMP MIC; it receives an explicit key selector.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApProtectedManagementFrame<'a> {
+    pub subtype: ApManagementSubtype,
+    pub access_point: [u8; 6],
+    pub peer: [u8; 6],
+    pub sequence_number: SequenceNumber,
+    pub ccmp_header: [u8; CCMP_HEADER_LEN],
+    pub body: &'a [u8],
+}
+
+impl ApProtectedManagementFrame<'_> {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, ApAssociationResponseError> {
+        let body_offset = MANAGEMENT_HEADER_LEN + CCMP_HEADER_LEN;
+        let required = body_offset.checked_add(self.body.len()).ok_or(
+            ApAssociationResponseError::OutputTooSmall {
+                required: usize::MAX,
+            },
+        )?;
+        if output.len() < required {
+            return Err(ApAssociationResponseError::OutputTooSmall { required });
+        }
+        let frame = &mut output[..required];
+        frame.fill(0);
+        write_management_header(
+            frame,
+            self.subtype.frame_control() | 0x4000,
+            self.access_point,
+            self.peer,
+            self.sequence_number,
+        );
+        frame[MANAGEMENT_HEADER_LEN..body_offset].copy_from_slice(&self.ccmp_header);
+        frame[body_offset..].copy_from_slice(self.body);
         Ok(required)
     }
 }

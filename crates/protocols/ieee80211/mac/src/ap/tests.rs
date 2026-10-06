@@ -248,7 +248,8 @@ fn ap_action_frame_and_parser_preserve_per_peer_addba_identity() {
     let peer = [2, 0, 0, 0, 0, 2];
     let body = [3, 1, 7, 0, 0, 0x02, 0x08, 0, 0];
     let mut frame = [0_u8; 40];
-    let length = ApActionFrame {
+    let length = ApManagementFrame {
+        subtype: ApManagementSubtype::Action,
         access_point,
         peer,
         sequence_number: seq(9),
@@ -667,4 +668,69 @@ fn a_5_ghz_association_response_carries_no_erp_element() {
             .windows(3)
             .any(|window| window == [61, 22, 36])
     );
+}
+
+#[test]
+fn protected_management_codecs_keep_the_body_after_the_ccmp_header() {
+    use crate::{
+        ccmp::{CcmpHeader, CcmpKeyId, CcmpPacketNumber},
+        management_protection::SaQuery,
+    };
+    let ap = [2, 0, 0, 0, 0, 1];
+    let peer = [2, 0, 0, 0, 0, 2];
+    let ccmp = CcmpHeader::new(CcmpPacketNumber::new(7).unwrap(), CcmpKeyId::PAIRWISE).encode();
+    let query = SaQuery::Request {
+        transaction: [0x12, 0x34],
+    }
+    .encode();
+    let mut frame = [0; 64];
+    let length = ApProtectedManagementFrame {
+        subtype: ApManagementSubtype::Action,
+        access_point: ap,
+        peer,
+        sequence_number: seq(9),
+        ccmp_header: ccmp,
+        body: &query,
+    }
+    .encode(&mut frame)
+    .unwrap();
+    assert_eq!(frame[1] & 0x40, 0x40);
+    assert_eq!(&frame[24..32], &ccmp);
+    assert_eq!(&frame[32..length], &query);
+    frame[4..10].copy_from_slice(&ap);
+    frame[10..16].copy_from_slice(&peer);
+    assert_eq!(
+        parse_ap_management_request(&TEST_ADVERTISEMENT, &frame[..length], ap),
+        Some(ApManagementRequest::SaQuery {
+            peer,
+            query: SaQuery::Request {
+                transaction: [0x12, 0x34]
+            }
+        })
+    );
+    for subtype in [
+        ApManagementSubtype::Deauthentication,
+        ApManagementSubtype::Disassociation,
+    ] {
+        let length = ApProtectedManagementFrame {
+            subtype,
+            access_point: ap,
+            peer,
+            sequence_number: seq(10),
+            ccmp_header: ccmp,
+            body: &[3, 0],
+        }
+        .encode(&mut frame)
+        .unwrap();
+        frame[4..10].copy_from_slice(&ap);
+        frame[10..16].copy_from_slice(&peer);
+        assert!(matches!(
+            parse_ap_management_request(&TEST_ADVERTISEMENT, &frame[..length], ap),
+            Some(
+                ApManagementRequest::Deauthentication { reason: 3, .. }
+                    | ApManagementRequest::Disassociation { reason: 3, .. }
+            )
+        ));
+        assert!(parse_ap_management_request(&TEST_ADVERTISEMENT, &frame[..31], ap).is_none());
+    }
 }

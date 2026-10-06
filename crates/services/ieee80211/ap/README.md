@@ -21,6 +21,7 @@ peers, security and power save); frame codecs belong to `oer-ieee80211-mac`.
 | `PortAccessPoint::run_until` | Publishes a beacon at each TBTT of the beacon's own absolute schedule, a late publication moving no later TBTT, its ERP and HT protection following the associated peers; answers each Probe Request for its SSID or the wildcard SSID with the current advertisement, at most one response per 10 ms; admits stations by Open System authentication and association, a repeated request answered again without resetting the peer; removes a peer that disassociates or deauthenticates; closes a peer the service finds inactive with a Disassociation (reason 4 for inactivity, else 2) when it was associated and a Deauthentication (reason 2); in a WPA2 BSS runs the four-way handshake as the authenticator (Message 1 after a successful association, Message 3 on a verified Message 2, both retransmitted as the service schedules, a peer closed when they run out) and, on a verified Message 4, installs the peer's pairwise key before authorizing it; removes a peer's pairwise key with the peer and before a new authentication; in a WPA3 BSS hands SAE frames to the executor, authenticates a station whose exchange the responder accepted with its PMK, forgets an unassociated one whose exchange failed, and sends the responder's replies in order |
 | `PortAccessPoint::announce_channel_switch` | Announces a move of the BSS to another channel it serves (a band of its `PortApBands`, never a channel that needs radar detection, `oer-ieee80211-ap::channel::requires_radar_detection`) in the next `count` beacons and the Probe Responses meanwhile (the Channel Switch Announcement after the TIM with the Secondary Channel Offset for 40 MHz in the same band, the Extended Channel Switch Announcement naming the operating class for a move to the other band; the count written down at each beacon); at the TBTT after the beacon that counted one `run_until` returns `PortApEvent::ChannelSwitch` and sends no beacon on the old channel |
 | `PortAccessPoint::channel_switched` | Called by the port's owner once it has moved the port to the announced channel (`client_mut` reaches the access point's client); writes the beacon template again for that channel, keeping its TBTT schedule |
+| `PortAccessPoint::send_action` | Sends a category-led action body to an authorized peer or to the group through the common TX queue; robust actions of a PMF association use its pairwise key, group robust actions use BIP/IGTK, and non-robust categories remain plaintext; returns whether an individual recipient acknowledged it |
 
 Beacons go out once, unacknowledged, on the voice queue at the management
 rate, stamped with the access point's time and carrying the TIM and the DTIM
@@ -35,10 +36,35 @@ Responses; a Channel Switch Announcement action frame is not sent yet. The compo
 carries an empty TIM until the access point buffers for sleeping peers.
 EAPOL-Key frames go out as unprotected data MPDUs on the voice queue at the
 management rate. A WPA3 BSS's IGTK reaches stations in Message 3; the port holds only the
-group and pairwise keys. Management frame protection, which WPA3-Personal requires, is
-not served yet: robust management frames go out unprotected, without BIP,
-and SA Query is not answered. The direct S31 access point serves no WPA3 at
-all (`wifi-security-wpa3-personal-access-point` is `absent`). Data: each authorized peer (Open by its association, a protected BSS's by
+group and pairwise keys. `AccessPointService` owns sans-IO management protection
+policy, each peer's independent management replay frontier and SA Query response
+effects. PMF activates only after pairwise key installation and authorization;
+it survives the Closing phase until the peer and key are removed. Robust
+unicast management, including Block Ack actions and teardown, uses the same
+per-key TX PN allocator as data and an explicit pairwise key selector. Group
+robust management uses the existing software BIP-CMAC-128 mechanism with the
+IGTK; its IPN continues across AP stop/start and channel moves and never wraps.
+Message 3 captures the current allocated IPN with the IGTK, so a new peer
+rejects older group frames. Its retransmissions retain that captured frontier
+and identical authenticated bytes even when group TX advances meanwhile. A newly constructed security
+epoch must use a fresh IGTK or retain its current IPN; restarting an allocator
+from zero under the same key would reopen old group frames.
+RX requires the lower MAC's `DecryptedAndIntegrityVerified` evidence under an
+installed pairwise key, with the CCMP header retained and MIC stripped. Only
+then may the protocol advance its separate management replay frontier or
+produce an effect. Unprotected robust input of a PMF peer and rejected
+integrity/replay input do not refresh activity or change peer/key state. A
+verified SA Query Request receives a protected response with the same
+transaction identifier. The fixed peer storage adds one replay/activation word and a six-byte
+Message-3 IPN snapshot per client: 216 bytes including host alignment padding
+for fifteen clients (at most 7,616 bytes on the host).
+
+This is the shared management protection mechanism, not a complete WPA3 AP
+qualification claim. AP-initiated SA Query and protected association comeback
+handling are not implemented here; automatic CSA action announcements remain
+a separate integration step. No S31 PMF/HIL support is inferred from the host
+model. The direct S31 access point serves no WPA3
+(`wifi-security-wpa3-personal-access-point` is `absent`). Data: each authorized peer (Open by its association, a protected BSS's by
 its handshake) has a link holding its pairwise key, the CCMP packet numbers
 sent to it, its receive replay state and its duplicate filter.
 `run_until` completes a started exchange and a due beacon, then returns

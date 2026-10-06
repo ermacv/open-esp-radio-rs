@@ -262,6 +262,35 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
         "an authentication retry must not erase the in-flight WPA2 owner"
     );
 
+    // This plaintext direct path has no integrity evidence for a protected
+    // teardown. It cannot feed such input into the common request parser.
+    let mut protected = [0; 34];
+    protected[..2].copy_from_slice(&0x40c0_u16.to_le_bytes());
+    protected[4..10].copy_from_slice(&ap);
+    protected[10..16].copy_from_slice(&peer);
+    protected[16..22].copy_from_slice(&ap);
+    protected[24..32].copy_from_slice(
+        &CcmpHeader::new(CcmpPacketNumber::new(1).unwrap(), CcmpKeyId::PAIRWISE).encode(),
+    );
+    protected[32..34].copy_from_slice(&[3, 0]);
+    assert_eq!(
+        engine
+            .handle_management(
+                &mut hardware,
+                &protected,
+                [9; 32],
+                11,
+                oer_time::Instant::from_micros(5),
+                &mut output
+            )
+            .unwrap(),
+        ApManagementOutcome::Ignored,
+    );
+    assert_eq!(
+        engine.service.peer_status(peer).unwrap().phase,
+        ApPeerPhase::Securing
+    );
+
     let close = engine.begin_stop_peer().expect("associated peer to close");
     assert!(close.was_associated);
 

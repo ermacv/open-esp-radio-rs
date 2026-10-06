@@ -32,7 +32,10 @@
 //!   point hands each SAE frame on and goes on serving its BSS until the
 //!   output is ready, as the vendor runs its responder in a task of its own.
 //!   The IGTK reaches stations in Message 3; the port holds only the group
-//!   and pairwise keys.
+//!   and pairwise keys. The sans-IO service chooses pairwise CCMP for robust
+//!   management to an authorized PMF peer, and BIP/IGTK for group robust
+//!   management. Verified input passes its separate management replay check
+//!   before affecting the peer; an SA Query Request yields a protected reply.
 //!
 //! The composition enables the port and polls the router beside the access
 //! point.
@@ -45,8 +48,9 @@ use core::{
 
 use oer_ieee80211_ap::{
     AP_MAX_CLIENTS, AP_TX_BLOCK_ACK_TID, AccessPointService, ApAssociationCapabilities,
-    ApMlmeAction, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApServiceError, ApWpa2Error,
-    ApWpa2Progress, ApWpa2RetryProgress,
+    ApGroupManagementError, ApManagementAction, ApManagementProtection, ApManagementRejection,
+    ApManagementRx, ApManagementRxProtection, ApMlmeAction, ApPeerClose, ApPeerCloseKind,
+    ApPeerPhase, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
     beacon::ApBeacon,
     sae::{ApSaeFrame, ApSaeOutput, ApSaeRandom, ApSaeResponder, ApSaeResult},
 };
@@ -61,8 +65,8 @@ use oer_ieee80211_mac::{
         ApAssociationResponseError, ApDataFrame, ApDataFrameError, ApManagementRequest,
         ApPeerDisconnectKind, ApProtectedDataFrame, ApUnprotectedDataFrame,
         parse_ap_management_request, probe, probe::ResponseError, profile::Advertisement,
-        write_ap_peer_disconnect, write_ht_association_response_frame_for_security,
-        write_open_authentication_response, write_sae_authentication,
+        write_ht_association_response_frame_for_security, write_open_authentication_response,
+        write_sae_authentication,
     },
     beacon::{AP_BEACON_CAPACITY, ApBeaconBuildError, TimBitmapError},
     ccmp::{
@@ -75,6 +79,7 @@ use oer_ieee80211_mac::{
         plan_data_decapsulation,
     },
     ht::HtPeerCapabilities,
+    management_protection::SaQuery,
     protection::ApBssProtection,
     qos::WmmAccessCategory,
     security::{ApSecurityPolicy, LinkProtection},
@@ -114,7 +119,7 @@ use oer_ieee80211_mac::channel::Band;
 use oer_ieee80211_mac::channel_switch::{ChannelSwitch, ChannelSwitchMode};
 
 use oer_ieee80211_lower_mac::{RxBlockAckAgreement, VifId};
-use oer_ieee80211_mac::ap::ApActionFrame;
+use oer_ieee80211_mac::ap::{ApManagementFrame, ApManagementSubtype, ApProtectedManagementFrame};
 use oer_ieee80211_mac::block_ack::{
     ADDBA_ACTION_BODY_LEN, BlockAckAction, TxBlockAckResponse, TxBlockAckRetry,
     write_declined_addba_response, write_successful_addba_response,
@@ -434,6 +439,10 @@ struct PeerLink<R> {
 /// What the access point sent, admitted and ignored.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PortApCounters {
+    /// Management frames rejected by integrity, PMF policy or replay checks.
+    pub management_rejected: u32,
+    /// Protected SA Query Responses sent to authorized PMF peers.
+    pub sa_query_responses: u32,
     pub beacons: u32,
     pub probe_responses: u32,
     /// Probe Requests answered by none: another SSID, or inside the
@@ -517,6 +526,10 @@ pub enum PortApBuildError {
 /// Why an access-point operation failed.
 #[derive(Debug, Eq, PartialEq)]
 pub enum PortApError<E> {
+    /// A group robust management frame could not be protected.
+    GroupManagement(ApGroupManagementError),
+    /// An action lacks its category or action code.
+    InvalidManagementBody,
     Client(PortClientError<E>),
     /// The beacon template could not be stamped or protected.
     Beacon,
@@ -1325,6 +1338,67 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             return Ok(());
         }
         let frame = received.bytes();
+        // Authenticate robust management before it can refresh a peer's
+        // inactivity deadline, change an agreement or remove a key.
+        if let Some(subtype) = ApManagementSubtype::parse(frame) {
+            if frame.len() < 24
+                || frame[4..10] != self.service.address()
+                || frame[16..22] != self.service.address()
+                || frame[10] & 1 != 0
+            {
+                return Ok(());
+            }
+            let peer = frame[10..16].try_into().expect("management header checked");
+            let protected = frame[1] & 0x40 != 0;
+            let offset = 24 + if protected { CCMP_HEADER_LEN } else { 0 };
+            let Some(body) = frame.get(offset..) else {
+                self.counters.management_rejected =
+                    self.counters.management_rejected.saturating_add(1);
+                return Ok(());
+            };
+            let protection = if protected {
+                let ccmp = frame
+                    .get(24..offset)
+                    .and_then(|header| <[u8; CCMP_HEADER_LEN]>::try_from(header).ok())
+                    .and_then(|header| CcmpHeader::parse(header).ok())
+                    .filter(|header| header.key_id() == CcmpKeyId::PAIRWISE);
+                if !decrypted(meta)
+                    || self.link_mut(peer).is_none_or(|link| link.key.is_none())
+                    || ccmp.is_none()
+                {
+                    self.counters.management_rejected =
+                        self.counters.management_rejected.saturating_add(1);
+                    return Ok(());
+                }
+                ApManagementRxProtection::PairwiseVerified(
+                    ccmp.expect("CCMP header checked").packet_number(),
+                )
+            } else {
+                ApManagementRxProtection::Plaintext
+            };
+            match self
+                .service
+                .receive_management(peer, subtype, body, protection)
+            {
+                ApManagementRx::Rejected(reason) => {
+                    self.counters.management_rejected =
+                        self.counters.management_rejected.saturating_add(1);
+                    if reason == ApManagementRejection::Replay {
+                        self.counters.replayed = self.counters.replayed.saturating_add(1);
+                    }
+                    return Ok(());
+                }
+                ApManagementRx::Accepted(ApManagementAction::SaQueryResponse { transaction }) => {
+                    self.service.observe_activity(peer, now)?;
+                    self.send_action(peer, &SaQuery::Response { transaction }.encode())
+                        .await?;
+                    self.counters.sa_query_responses =
+                        self.counters.sa_query_responses.saturating_add(1);
+                    return Ok(());
+                }
+                ApManagementRx::Accepted(ApManagementAction::None) => {}
+            }
+        }
         let power_save = observe_ap_power_save_for_access_point(frame, self.service.address())
             .filter(|observation| {
                 let peer = match *observation {
@@ -1444,7 +1518,8 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             }
             Some(
                 ApManagementRequest::SaeAuthentication { .. }
-                | ApManagementRequest::BlockAck { .. },
+                | ApManagementRequest::BlockAck { .. }
+                | ApManagementRequest::SaQuery { .. },
             ) => {
                 self.counters.unserved = self.counters.unserved.saturating_add(1);
                 Ok(())
@@ -2310,27 +2385,81 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         }
     }
 
-    /// Send one Block Ack action `body` to `peer`; whether the peer
-    /// acknowledged it.
-    async fn send_action(
+    /// Send one action body to an authorized peer, or to the group. Robust
+    /// actions use the association's pairwise key or this BSS's BIP/IGTK;
+    /// non-robust categories remain plaintext. Returns whether an individual
+    /// recipient acknowledged it (group-addressed frames have no ACK).
+    pub async fn send_action(
         &mut self,
         peer: [u8; 6],
         body: &[u8],
     ) -> Result<bool, PortApError<PortError<X>>> {
-        let sequence_number = self.service.next_management_sequence();
-        let mut frame = [0_u8; 64];
-        let length = ApActionFrame {
-            access_point: self.service.address(),
-            peer,
-            sequence_number,
-            body,
+        if !self.running {
+            return Err(PortApError::NotStarted);
         }
-        .encode(&mut frame)?;
+        if body.len() < 2 {
+            return Err(PortApError::InvalidManagementBody);
+        }
+        if peer[0] & 1 == 0 && !self.service.is_authorized(peer) {
+            return Err(PortApError::Service(ApServiceError::WrongPeerPhase));
+        }
+        self.send_peer_management(peer, ApManagementSubtype::Action, body)
+            .await
+    }
+
+    async fn send_peer_management(
+        &mut self,
+        peer: [u8; 6],
+        subtype: ApManagementSubtype,
+        body: &[u8],
+    ) -> Result<bool, PortApError<PortError<X>>> {
+        let sequence_number = self.service.next_management_sequence();
+        let mut frame = [0_u8; AP_BEACON_CAPACITY];
+        let protection = self.service.management_tx_protection(peer, subtype, body);
+        let (length, key) = if protection == ApManagementProtection::Pairwise {
+            let link = self
+                .link_mut(peer)
+                .ok_or(PortApError::Service(ApServiceError::UnknownPeer))?;
+            let key = link
+                .key
+                .ok_or(PortApError::Service(ApServiceError::WrongPeerPhase))?;
+            let ccmp_header = link
+                .transmit
+                .next_header(CcmpKeyId::PAIRWISE)
+                .map_err(|_| PortApError::PacketNumbers)?;
+            let length = ApProtectedManagementFrame {
+                subtype,
+                access_point: self.service.address(),
+                peer,
+                sequence_number,
+                ccmp_header,
+                body,
+            }
+            .encode(&mut frame)?;
+            (length, KeySelector::Key(key))
+        } else {
+            let length = ApManagementFrame {
+                subtype,
+                access_point: self.service.address(),
+                peer,
+                sequence_number,
+                body,
+            }
+            .encode(&mut frame)?;
+            let length = if protection == ApManagementProtection::GroupIntegrity {
+                self.service
+                    .protect_group_management(&mut frame, length)
+                    .map_err(PortApError::GroupManagement)?
+            } else {
+                length
+            };
+            (length, KeySelector::Plaintext)
+        };
         let report = self
             .client
             .transmit(
                 TxMpdu::whole(&frame[..length]),
-                KeySelector::Plaintext,
+                key,
                 WmmAccessCategory::Voice,
                 self.band().management_rate,
                 self.profile.coex,
@@ -2540,17 +2669,13 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         kind: ApPeerDisconnectKind,
         reason: u16,
     ) -> Result<(), PortApError<PortError<X>>> {
-        let sequence = self.service.next_management_sequence();
-        let mut frame = [0; AP_BEACON_CAPACITY];
-        let length = write_ap_peer_disconnect(
-            &mut frame,
-            self.service.address(),
-            peer,
-            kind,
-            reason,
-            sequence,
-        )?;
-        self.send_management(&frame[..length]).await
+        let subtype = match kind {
+            ApPeerDisconnectKind::Disassociation => ApManagementSubtype::Disassociation,
+            ApPeerDisconnectKind::Deauthentication => ApManagementSubtype::Deauthentication,
+        };
+        self.send_peer_management(peer, subtype, &reason.to_le_bytes())
+            .await
+            .map(|_| ())
     }
 }
 

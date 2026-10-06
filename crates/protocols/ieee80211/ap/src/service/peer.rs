@@ -86,6 +86,8 @@ impl<'peers> AccessPointService<'peers> {
                 .association_id;
             self.advance_peer_generation();
             let association_epoch = self.storage().generation;
+            self.storage_mut().management_replay[index] =
+                management::ApManagementReplay::inactive();
             self.storage_mut().peers[index] = Some(ApPeer::authenticated(
                 peer,
                 association_id,
@@ -99,6 +101,8 @@ impl<'peers> AccessPointService<'peers> {
             let association_id = u16::try_from(index + 1).expect("fifteen AIDs fit u16");
             self.advance_peer_generation();
             let association_epoch = self.storage().generation;
+            self.storage_mut().management_replay[index] =
+                management::ApManagementReplay::inactive();
             self.storage_mut().peers[index] = Some(ApPeer::authenticated(
                 peer,
                 association_id,
@@ -438,6 +442,7 @@ impl<'peers> AccessPointService<'peers> {
     pub fn remove_peer(&mut self, peer: [u8; 6]) -> Result<ApMlmeAction, ApServiceError> {
         let index = self.peer_index(peer).ok_or(ApServiceError::UnknownPeer)?;
         self.storage_mut().peers[index] = None;
+        self.storage_mut().management_replay[index] = management::ApManagementReplay::inactive();
         self.advance_peer_generation();
         self.revise_status();
         Ok(ApMlmeAction::PeerRemoved { peer })

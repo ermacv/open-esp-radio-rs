@@ -3,10 +3,12 @@
 
 //! Executor- and chip-independent access-point protocol owner.
 //!
-//! This crate implements a bounded Open or WPA2-Personal peer table. Frame
+//! This crate implements a bounded Open, WPA2-Personal or WPA3-Personal peer
+//! table, including management protection policy, replay and response effects. Frame
 //! codecs remain in `oer-ieee80211-mac`; MMIO, DMA, IRQ, hardware key
 //! slots and Embassy deadlines remain in chip/runtime crates. Replay and key
-//! ownership exist only in WPA2 epochs.
+//! ownership exist only in RSN epochs. Management protection decisions take
+//! integrity evidence as values; lower-MAC key slots and TX remain outside.
 
 #[cfg(test)]
 extern crate std;
@@ -27,7 +29,8 @@ pub use service::{
     AccessPointInactiveTimeoutError, AccessPointPeerStorage, AccessPointService,
     AccessPointServiceStatus, ApAssociationCapabilities, ApAssociationIdentity,
     ApBufferedGroupRelease, ApBufferedUnicastRelease, ApDownlinkAdmission, ApDownlinkDisposition,
-    ApMlmeAction, ApPeerBinding, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerPowerState,
-    ApPeerStatus, ApPowerSaveAction, ApServiceError, ApWpa2Error, ApWpa2Progress,
-    ApWpa2RetryProgress,
+    ApGroupManagementError, ApManagementAction, ApManagementProtection, ApManagementRejection,
+    ApManagementRx, ApManagementRxProtection, ApMlmeAction, ApPeerBinding, ApPeerClose,
+    ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus, ApPowerSaveAction,
+    ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
 };

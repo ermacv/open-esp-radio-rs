@@ -97,3 +97,27 @@ fn a_transmitter_reproduces_the_independent_mic_and_advances_its_ipn() {
     assert_eq!(receiver.verify(&next), Ok(()));
     assert_eq!(transmitter.protect(&mut next[..30], 26), None);
 }
+
+#[test]
+fn transmit_ipns_never_wrap_and_failed_capacity_checks_consume_nothing() {
+    let igtk =
+        crate::frames::RsnIgtk::new(4, [0xfe, 0xff, 0xff, 0xff, 0xff, 0xff], [0x66; 16]).unwrap();
+    let mut sender = BipTransmitter::new(&igtk);
+    let mut receiver = BipReceiver::new(&igtk);
+    let mut packet = [0; 64];
+    packet[0] = 0xd0;
+    packet[4..10].fill(0xff);
+    packet[10..22].fill(2);
+    packet[24..26].copy_from_slice(&[0, 4]);
+    assert_eq!(sender.protect(&mut packet[..26], 26), None);
+    let length = sender.protect(&mut packet, 26).unwrap();
+    assert_eq!(receiver.verify(&packet[..length]), Ok(()));
+    let saved = packet;
+    assert_eq!(sender.protect(&mut packet, 26), None);
+    assert_eq!(packet, saved);
+    let exhausted = crate::frames::RsnIgtk::new(4, [0xff; 6], [0x66; 16]).unwrap();
+    assert_eq!(
+        BipTransmitter::new(&exhausted).protect(&mut packet, 26),
+        None
+    );
+}

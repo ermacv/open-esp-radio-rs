@@ -677,9 +677,9 @@ fn serve<X: PortApEnv<Port = Model>>(
         &stops,
         |now| {
             while sent < frames.len() && frames[sent].0 <= now {
-                // A protected data MPDU arrives decrypted by the backend.
+                // A protected MPDU arrives decrypted and authenticated by the backend.
                 let frame = &frames[sent].1;
-                let meta = if frame[0] & 0x0c == 0x08 && frame[1] & 0x40 != 0 {
+                let meta = if frame[1] & 0x40 != 0 {
                     RxMeta {
                         crypto: RxEvidence::HardwareObserved(
                             RxCryptoStatus::DecryptedAndIntegrityVerified,
@@ -2556,4 +2556,312 @@ fn a_stopped_access_point_releases_its_peers_and_starts_again_where_its_owner_tu
         .position(|window| window[0] == 3 && window[1] == 1)
         .unwrap();
     assert_eq!(beacon[36 + ds + 2], 11);
+}
+
+const PMF_PMK: [u8; 32] = [0x3c; 32];
+const PMF_RSN: [u8; 22] = [
+    0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 8, 0x80, 0,
+];
+
+/// Model the accepted output of the separately tested SAE executor; run the
+/// actual association, handshake, key installation and PMF over the port.
+fn pmf_service() -> AccessPointService<'static> {
+    let mut service = AccessPointService::new_wpa3(
+        ADDRESS,
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnIgtk::new(4, [0; 6], [0x66; 16]).unwrap(),
+        AccessPointClientLimit::new(4).unwrap(),
+        AccessPointInactiveTimeout::new(10).unwrap(),
+        Box::leak(Box::new(AccessPointPeerStorage::new())),
+    );
+    assert_eq!(
+        service
+            .authenticate_sae(
+                STATION,
+                Pmk::from_bytes(PMF_PMK),
+                [0x4d; 16],
+                Instant::from_micros(0)
+            )
+            .unwrap(),
+        0
+    );
+    service
+}
+
+fn join_pmf(
+    model: &Model,
+    router: &PortApRouter<'_, Env<'_>>,
+    timer: &VirtualTimer,
+    ap: &mut PortAccessPoint<'_, Env<'_>>,
+) {
+    let mut association = rsn_association();
+    association.truncate(association.len() - RSN.len());
+    association.extend_from_slice(&PMF_RSN);
+    let ptk = Pmk::from_bytes(PMF_PMK).derive_ptk(
+        Akm::Sae,
+        PtkContext {
+            authenticator_address: ADDRESS,
+            supplicant_address: STATION,
+            authenticator_nonce: ANONCE,
+            supplicant_nonce: SNONCE,
+        },
+    );
+    let rsn = OwnedRsnIe::<64>::try_copy(&PMF_RSN).unwrap();
+    let message2 = RsnTxFrame::<512>::message2(Akm::Sae, ADDRESS, REPLAY_COUNTER, SNONCE, &rsn)
+        .unwrap()
+        .authenticate(&ptk);
+    let message4 = RsnTxFrame::<512>::message4(Akm::Sae, ADDRESS, REPLAY_COUNTER + 1)
+        .unwrap()
+        .authenticate(&ptk);
+    let now = timer.now.get();
+    serve(
+        model,
+        router,
+        timer,
+        ap,
+        &[
+            (now + 1_000, association),
+            (now + 2_000, eapol(message2.as_bytes())),
+            (now + 3_000, eapol(message4.as_bytes())),
+        ],
+        now + 4_000,
+    );
+    assert_eq!(
+        ap.service().peer_status(STATION).unwrap().phase,
+        ApPeerPhase::Authorized
+    );
+    assert_eq!(ap.counters().handshakes, 1);
+    assert!(
+        model
+            .installed_keys()
+            .contains(&KeyScope::Pairwise { peer: STATION })
+    );
+}
+
+/// The backend's decrypted management representation, with the CCMP header
+/// retained and the MIC stripped, as required by the shared RX contract.
+fn verified_management(subtype: u8, pn: u64, body: &[u8]) -> Vec<u8> {
+    use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpKeyId, CcmpPacketNumber};
+    let mut frame = management(subtype, false, &[]);
+    frame[1] |= 0x40;
+    frame.extend_from_slice(
+        &CcmpHeader::new(CcmpPacketNumber::new(pn).unwrap(), CcmpKeyId::PAIRWISE).encode(),
+    );
+    frame.extend_from_slice(body);
+    frame
+}
+
+#[test]
+fn pmf_rejects_forged_and_replayed_management_before_peer_state_changes() {
+    use oer_ieee80211_mac::ccmp::CcmpHeader;
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
+    let mut ap = PortAccessPoint::<Env<'_>>::new(
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+            frames: frames(),
+        },
+        profile(&ssid),
+        pmf_service(),
+        &mut storage,
+    )
+    .unwrap();
+    start(&model, &router, &timer, &mut ap);
+    join_pmf(&model, &router, &timer, &mut ap);
+    let activity = ap.service().peer_status(STATION).unwrap().last_activity;
+    let now = timer.now.get();
+    // A forged teardown is not activity and cannot remove the association.
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut ap,
+        &[(now + 1_000, management(12, false, &[3, 0]))],
+        now + 2_000,
+    );
+    assert_eq!(
+        ap.service().peer_status(STATION).unwrap().last_activity,
+        activity
+    );
+    assert_eq!(ap.counters().management_rejected, 1);
+    // Protected bit alone provides no integrity evidence.
+    let query = [8, 0, 0x12, 0x34];
+    model.receive(&verified_management(13, 100, &query), meta());
+    let now = timer.now.get();
+    serve(&model, &router, &timer, &mut ap, &[], now + 1_000);
+    assert_eq!(ap.counters().sa_query_responses, 0);
+    assert_eq!(ap.counters().management_rejected, 2);
+    assert_eq!(
+        ap.service().peer_status(STATION).unwrap().last_activity,
+        activity
+    );
+    // A frame under the wrong key id cannot advance the valid key's PN.
+    let mut wrong_key = verified_management(13, 100, &query);
+    wrong_key[27] |= 0x40;
+    let now = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut ap,
+        &[
+            (now + 100, wrong_key),
+            (now + 200, verified_management(13, 7, &query)),
+        ],
+        now + 1_000,
+    );
+    assert_eq!(ap.counters().sa_query_responses, 1);
+    let response = model
+        .submitted()
+        .into_iter()
+        .find(|attempt| {
+            attempt.frames[0][0] == 0xd0 && attempt.frames[0][32..] == [8, 1, 0x12, 0x34]
+        })
+        .unwrap();
+    assert!(matches!(response.key, KeySelector::Key(_)));
+    assert_eq!(response.frames[0][1] & 0x40, 0x40);
+    let sent_pn = CcmpHeader::parse(response.frames[0][24..32].try_into().unwrap())
+        .unwrap()
+        .packet_number();
+    let activity = ap.service().peer_status(STATION).unwrap().last_activity;
+    let now = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut ap,
+        &[
+            (now + 100, verified_management(13, 7, &query)),
+            (now + 200, verified_management(12, 7, &[3, 0])),
+        ],
+        now + 1_000,
+    );
+    assert_eq!(ap.counters().sa_query_responses, 1);
+    assert_eq!(ap.counters().replayed, 2);
+    assert_eq!(
+        ap.service().peer_status(STATION).unwrap().last_activity,
+        activity
+    );
+    // Ordinary data and robust management share the key's TX PN allocator.
+    send(&ethernet(STATION, [2, 0, 0, 0, 0, 9], b"after-query"));
+    let now = timer.now.get();
+    serve(&model, &router, &timer, &mut ap, &[], now + 1_000);
+    let data = model
+        .submitted()
+        .into_iter()
+        .rev()
+        .find(|attempt| attempt.frames[0][0] & 0x0c == 8 && attempt.frames[0][1] & 0x40 != 0)
+        .unwrap();
+    let header = if data.frames[0][0] & 0x80 != 0 {
+        26
+    } else {
+        24
+    };
+    assert!(
+        CcmpHeader::parse(data.frames[0][header..header + 8].try_into().unwrap())
+            .unwrap()
+            .packet_number()
+            > sent_pn
+    );
+    // A fresh verified teardown can end the peer and release its key.
+    let now = timer.now.get();
+    serve(
+        &model,
+        &router,
+        &timer,
+        &mut ap,
+        &[(now + 100, verified_management(12, 8, &[3, 0]))],
+        now + 1_000,
+    );
+    assert!(ap.service().peer_status(STATION).is_none());
+    assert!(
+        !model
+            .installed_keys()
+            .contains(&KeyScope::Pairwise { peer: STATION })
+    );
+}
+
+#[test]
+fn pmf_protects_group_actions_and_teardown_and_keeps_ipns_across_restart() {
+    use oer_ieee80211_rsn::bip::BipReceiver;
+    let model = model();
+    let timer = VirtualTimer::default();
+    let router = PortApRouter::<Env<'_>>::new(&model, 1);
+    let ssid = WifiSsid::new(SSID).unwrap();
+    let mut storage = PortApStorage::<8, TestFrame>::new();
+    let mut ap = PortAccessPoint::<Env<'_>>::new(
+        PortApParts {
+            client: client(&router),
+            timer: &timer,
+            authenticator: FixedMaterial,
+            sae: NoSae,
+            rate_control: DATA_RATE,
+            frames: frames(),
+        },
+        profile(&ssid),
+        pmf_service(),
+        &mut storage,
+    )
+    .unwrap();
+    start(&model, &router, &timer, &mut ap);
+    join_pmf(&model, &router, &timer, &mut ap);
+    let mut receiver = BipReceiver::new(ap.service().igtk().unwrap());
+    let body = [0, 4, 37, 3, 0, 6, 3];
+    let report = drive(
+        &model,
+        &router,
+        &timer,
+        ap.send_action([0xff; 6], &body),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    assert!(!report);
+    let first = model.submitted().last().unwrap().clone();
+    assert_eq!(first.key, KeySelector::Plaintext);
+    assert_eq!(receiver.verify(&first.frames[0]), Ok(()));
+    assert!(receiver.verify(&first.frames[0]).is_err());
+    // Public coexistence is not a robust action even in a PMF association.
+    drive(
+        &model,
+        &router,
+        &timer,
+        ap.send_action(STATION, &[4, 0]),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    let public = model.submitted().last().unwrap().clone();
+    assert_eq!(public.key, KeySelector::Plaintext);
+    assert_eq!(public.frames[0][1] & 0x40, 0);
+    drive(&model, &router, &timer, ap.stop(), &[], |_| {}).unwrap();
+    let teardown = model
+        .submitted()
+        .into_iter()
+        .rev()
+        .find(|attempt| attempt.frames[0][0] == 0xc0)
+        .unwrap();
+    assert!(matches!(teardown.key, KeySelector::Key(_)));
+    assert_eq!(teardown.frames[0][1] & 0x40, 0x40);
+    assert_eq!(&teardown.frames[0][32..], &[3, 0]);
+    assert!(model.installed_keys().is_empty());
+    start(&model, &router, &timer, &mut ap);
+    drive(
+        &model,
+        &router,
+        &timer,
+        ap.send_action([0xff; 6], &body),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    let second = model.submitted().last().unwrap().clone();
+    assert_eq!(receiver.verify(&second.frames[0]), Ok(()));
 }

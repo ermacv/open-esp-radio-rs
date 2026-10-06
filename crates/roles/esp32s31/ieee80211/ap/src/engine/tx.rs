@@ -24,7 +24,8 @@ impl<'storage> ApEngine<'storage> {
             return Ok(None);
         };
         let sequence = self.service.next_management_sequence();
-        let length = ApActionFrame {
+        let length = ApManagementFrame {
+            subtype: ApManagementSubtype::Action,
             access_point: self.service.address(),
             peer,
             sequence_number: sequence,

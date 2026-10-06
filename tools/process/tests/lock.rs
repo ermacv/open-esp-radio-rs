@@ -21,12 +21,19 @@ fn a_handed_over_descriptor_keeps_its_lock() {
         .unwrap()
         .unwrap();
     let file = lock.into_file();
+    let retained = file.try_clone().unwrap();
     assert!(
         FileLock::try_acquire(&path, Mode::Exclusive)
             .unwrap()
             .is_none()
     );
     drop(file);
+    assert!(
+        FileLock::try_acquire(&path, Mode::Exclusive)
+            .unwrap()
+            .is_none()
+    );
+    drop(retained);
     assert!(
         FileLock::try_acquire(&path, Mode::Exclusive)
             .unwrap()

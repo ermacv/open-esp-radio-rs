@@ -49,6 +49,8 @@ an admitted operation through an external command and its descendants, without
 passing a lock descriptor or admission capability. Such children must retain
 the inherited descriptor until their I/O closes. An empty lifetime describes
 an operation without a device, such as discovery of an unidentified hub port.
+Transferred raw lock descriptors release exclusion with their last copy,
+including transient copies in other children before they close inherited FDs.
 
 Four more jobs have their one owner here:
 

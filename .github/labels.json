@@ -11,7 +11,7 @@
   },
   {
     "name": "kind:decision",
-    "color": "b60205",
+    "color": "d876e3",
     "description": "Owner choice of contract, architecture or policy with rationale."
   },
   {
@@ -107,11 +107,11 @@
   {
     "name": "target:esp32s31",
     "color": "bfdadc",
-    "description": "Scope or evidence applicability is limited to ESP32-S31."
+    "description": "Chip-specific scope includes ESP32-S31."
   },
   {
     "name": "target:esp32c5",
     "color": "bfdadc",
-    "description": "Scope or evidence applicability includes ESP32-C5 specifically."
+    "description": "Chip-specific scope includes ESP32-C5."
   }
 ]

@@ -1,4 +1,4 @@
-# Issues and dependencies
+# Manage issues and dependencies
 
 An issue names one result, the owner that accepts it and the evidence needed
 to close it. Keep the current scope and accepted decisions in the body. Keep
@@ -14,10 +14,12 @@ its children have different urgency. Add another area only when it helps an
 actual consumer find the task. Add `target:*` only for chip-specific scope;
 record revision, board, profile and features in the body.
 
-The [label definitions](../.github/labels.json) hold the names, descriptions
-and colors. A form's area or kind dropdown does not assign labels: triage
-applies the matching labels. The change form deliberately leaves its kind
-unset until its selected result is reviewed.
+The [label catalog](../.github/labels.json) is a reference configuration applied
+manually in GitHub. No command or workflow synchronizes it. When changing a
+managed label, update the catalog and the live name, description and color in
+the same task; compare them during triage. A form's area or kind dropdown does
+not assign labels: triage applies the matching labels. The change form
+deliberately leaves its kind unset until its selected result is reviewed.
 
 | Kind | Result accepted at closure |
 | --- | --- |
@@ -32,10 +34,14 @@ unset until its selected result is reviewed.
 
 Areas identify responsibility: Wi-Fi, Bluetooth, IEEE 802.15.4, shared radio,
 register publication, platform, host tooling, HIL and qualification. In the
-body name the defining paths and the layer: register/PAC, hardware mechanism,
-port contract, protocol/model, service, runtime/composition, platform,
-tooling, HIL or qualification. These layers are separate responsibilities,
-not additional label families.
+body name the defining paths and their existing
+[`package.metadata.open-radio.layer`](architecture.md#package-classification).
+The repository model's [Layer](../tools/repo/src/classification.rs) is the
+canonical vocabulary; do not create a separate issue-layer taxonomy. For work
+across packages, select the primary accepting package's layer and name the
+other owners in the body. For non-package data or documentation, identify the
+accepting code owner and its layer. A register investigation or HIL experiment
+is a work stage, not a new architecture layer.
 
 ## Write the card
 
@@ -112,16 +118,17 @@ Do not claim a root cause or a fix from a clean run alone.
 
 ## Use one Project
 
-The repository backlog uses one Project. Priority remains a label so it is
-visible outside the Project; do not maintain a second editable priority
-field. Native open/closed state records closure. Project Status records
-execution, never capability readiness.
+Maintain the live Project configuration in GitHub; repository checks do not
+create or enforce its fields, options, views or workflows. Use one Project
+for the repository backlog. Priority remains a label so it is visible
+outside the Project; do not maintain a second editable priority field.
+Native open/closed state records closure. Project Status records execution,
+never capability readiness.
 
-Set the Project's `Layer` to the primary affected boundary for navigation:
-Registers/PAC, Hardware/driver, Port contract, Protocol/service,
-Runtime/composition, Platform, Tooling, HIL or Qualification. The defining
-paths and detailed obligations stay in the issue body. Layer views separate
-driver work from portable protocol work within the same area.
+If the Project uses a `Layer` navigation field, its options use the canonical
+metadata names unchanged. Set it to the primary accepting package's layer;
+the defining paths, other affected layers and detailed obligations stay in
+the issue body. Maintain that field manually when the owner changes.
 
 | Status | Entry condition |
 | --- | --- |
@@ -132,11 +139,6 @@ driver work from portable protocol work within the same area.
 | Review | The named deliverable is available for review or qualification evaluation |
 | Waiting | Selected work awaits a named artifact, decision, apparatus or external event |
 | Done | The issue is closed with its scoped outcome recorded |
-
-Keep views for executable P0/P1 work, hardware research, drivers/ports,
-portable protocols, refactoring, validation and tracking. Filters use labels;
-the layer and owner paths in the issue explain finer distinctions. HIL and
-qualification work stays discoverable independently from implementation.
 
 At triage, classify and assign priority, then inspect dependencies before
 moving to Ready. Review Waiting cards when their named input changes, and

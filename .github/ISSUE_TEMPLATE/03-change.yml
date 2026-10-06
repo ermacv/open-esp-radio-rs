@@ -31,8 +31,8 @@ body:
     id: scope
     attributes:
       label: "Owner and scope"
-      description: "Name defining paths, layer, target/revision/profile and exclusions."
-      placeholder: "Owner paths:\nLayer:\nTarget / revision / profile:\nOut of scope:"
+      description: "Name defining paths, canonical package.metadata.open-radio.layer, target/revision/profile and exclusions."
+      placeholder: "Owner paths:\nLayer (package.metadata.open-radio.layer):\nTarget / revision / profile:\nOut of scope:"
     validations:
       required: true
   - type: textarea

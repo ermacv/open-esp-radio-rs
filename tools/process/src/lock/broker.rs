@@ -6,16 +6,16 @@
 //! process guardian; it allocates nothing and never returns into Rust cleanup.
 
 use std::{
-    ffi::CString,
     io::{Read, Write},
     os::{
         fd::AsRawFd,
+        linux::net::SocketAddrExt,
         unix::{
-            fs::PermissionsExt,
-            net::{UnixListener, UnixStream},
+            fs::MetadataExt,
+            net::{SocketAddr, UnixListener, UnixStream},
         },
     },
-    path::{Path, PathBuf},
+    path::Path,
     time::Duration,
 };
 
@@ -33,7 +33,6 @@ mod tests;
 pub struct LockBroker {
     owner: UnixStream,
     pid: libc::pid_t,
-    endpoint: PathBuf,
 }
 
 #[derive(Debug)]
@@ -59,16 +58,8 @@ impl LockBroker {
             .as_bytes()
             .try_into()
             .map_err(|_| "a broker capability must be 64 bytes")?;
-        let endpoint = lock.path().with_extension("broker");
-        match std::fs::remove_file(&endpoint) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
-        let listener = UnixListener::bind(&endpoint)?;
-        std::fs::set_permissions(&endpoint, std::fs::Permissions::from_mode(0o600))?;
+        let listener = UnixListener::bind_addr(&address(&lock.file().metadata()?)?)?;
         listener.set_nonblocking(true)?;
-        let endpoint_c = CString::new(endpoint.as_os_str().as_encoded_bytes())?;
         let (mut owner, client) = UnixStream::pair()?;
         owner.set_read_timeout(Some(HANDSHAKE))?;
         // Suppress FileLock's explicit unlock: the child receives this open file
@@ -82,9 +73,9 @@ impl LockBroker {
             return Err(std::io::Error::last_os_error().into());
         }
         if pid == 0 {
-            // SAFETY: descriptors and the pathname are live in the child's copy
+            // SAFETY: descriptors and token are live in the child's copy
             // of this stack; serve never returns or runs Rust destructors.
-            unsafe { serve(descriptors, &token, endpoint_c.as_ptr()) }
+            unsafe { serve(descriptors, &token) }
         }
         drop(client);
         drop(listener);
@@ -100,24 +91,17 @@ impl LockBroker {
             reap(pid, false);
             return Err("lock broker did not acknowledge ownership".into());
         }
-        Ok(Self {
-            owner,
-            pid,
-            endpoint,
-        })
-    }
-
-    pub fn endpoint(&self) -> &Path {
-        &self.endpoint
+        Ok(Self { owner, pid })
     }
 
     /// Admission and retention are one broker operation. Returning a guard
     /// means the broker already counts it; owner loss cannot release its lock.
-    pub fn operation(endpoint: &Path, token: &str) -> Result<BrokerOperation> {
+    /// `path` identifies the lock file, regardless of its pathname's length.
+    pub fn operation(path: &Path, token: &str) -> Result<BrokerOperation> {
         if token.len() != TOKEN_BYTES {
             return Err("invalid broker capability".into());
         }
-        let mut connection = UnixStream::connect(endpoint)
+        let mut connection = UnixStream::connect_addr(&address(&std::fs::metadata(path)?)?)
             .map_err(|error| format!("lock owner no longer admits operations: {error}"))?;
         connection.set_read_timeout(Some(HANDSHAKE))?;
         connection.set_write_timeout(Some(HANDSHAKE))?;
@@ -133,6 +117,20 @@ impl LockBroker {
             lifetime: crate::IoLifetime::new(connection),
         })
     }
+}
+
+// Linux abstract addresses are bounded by numeric file identity, rather than
+// the XDG path. The capability is sent only in the handshake, never exposed in
+// /proc/net/unix. Admission also checks peer credentials, replacing filesystem
+// socket permissions. Closing the listener removes the address automatically.
+fn address(metadata: &std::fs::Metadata) -> std::io::Result<SocketAddr> {
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    let uid = unsafe { libc::geteuid() };
+    SocketAddr::from_abstract_name(format!(
+        "oer-lock:{uid}:{}:{}",
+        metadata.dev(),
+        metadata.ino()
+    ))
 }
 
 impl Drop for LockBroker {
@@ -183,11 +181,7 @@ const EMPTY: Client = Client {
 
 /// SAFETY: runs only in the freshly forked child. Every descriptor, pointer and
 /// fixed array stays valid until _exit; only async-signal-safe calls are used.
-unsafe fn serve(
-    descriptors: [i32; 3],
-    token: &[u8; TOKEN_BYTES],
-    endpoint: *const libc::c_char,
-) -> ! {
+unsafe fn serve(descriptors: [i32; 3], token: &[u8; TOKEN_BYTES]) -> ! {
     // SAFETY: operations below use only descriptors inherited by this child and
     // preallocated stack storage. It never acquires a Rust lock or allocates.
     unsafe {
@@ -247,7 +241,6 @@ unsafe fn serve(
             if owner_lost {
                 owner_alive = false;
                 libc::close(5);
-                libc::unlink(endpoint);
             }
             let mut clock: libc::timespec = std::mem::zeroed();
             libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut clock);
@@ -328,6 +321,20 @@ unsafe fn serve(
                     libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
                 );
                 if fd >= 0 {
+                    let mut peer: libc::ucred = std::mem::zeroed();
+                    let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+                    if libc::getsockopt(
+                        fd,
+                        libc::SOL_SOCKET,
+                        libc::SO_PEERCRED,
+                        (&raw mut peer).cast(),
+                        &raw mut length,
+                    ) != 0
+                        || peer.uid != libc::geteuid()
+                    {
+                        libc::close(fd);
+                        continue;
+                    }
                     if let Some(client) = clients.iter_mut().find(|client| client.fd < 0) {
                         *client = Client {
                             fd,

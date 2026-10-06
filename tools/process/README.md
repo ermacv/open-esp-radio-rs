@@ -39,6 +39,10 @@ than an application API for globally mutating child authority.
 `lock::LockBroker` transfers an exclusive `FileLock` to an independent Linux
 broker. A live owner admits authenticated `BrokerOperation` connections. Owner
 EOF closes admission and drains admitted connections before releasing the lock.
+Its Linux abstract socket address uses the lock file's device/inode and UID,
+so even long XDG paths fit the socket limit. It admits only same-UID peers with
+the capability; the capability never appears in the address. Closing the
+listener removes the address, without a stale socket file to clean up.
 The child uses only async-signal-safe syscalls after fork and requires Linux
 `close_range`; setup errors fail closed. `IoLifetime::pin` explicitly retains
 an admitted operation through an external command and its descendants, without

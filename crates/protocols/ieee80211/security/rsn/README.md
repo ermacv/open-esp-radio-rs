@@ -29,6 +29,11 @@ validated Association element; the supplicant takes it from its own
 Association element. Both reject EAPOL-Key frames whose descriptor version
 differs from that suite.
 
+`BipTransmitter` refuses a frame when its 48-bit IPN space is exhausted, or
+when the output has no room for the MMIE; refusal consumes no IPN and leaves
+the frame unchanged. The IGTK epoch's owner retains this state across an AP
+restart or channel move rather than reusing IPNs under the same key.
+
 The implemented suites are PSK (`00-0F-AC:2`), PSK-SHA256 (`00-0F-AC:6`) and
 SAE (`00-0F-AC:8`). The MAC package names them and the negotiated
 association (`oer_ieee80211_mac::security::AssociationSecurity`); this crate

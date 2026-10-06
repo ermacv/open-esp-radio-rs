@@ -4,9 +4,14 @@ use core::fmt;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 mod block_ack;
+mod management;
 mod peer;
 mod power_save;
 mod security;
+pub use management::{
+    ApGroupManagementError, ApManagementAction, ApManagementProtection, ApManagementRejection,
+    ApManagementRx, ApManagementRxProtection,
+};
 pub use security::admit_association_security;
 
 // Preserve the existing service-level imports while limits own their definition.
@@ -449,6 +454,11 @@ struct ApPeer {
 /// static address instead.
 pub struct AccessPointPeerStorage {
     peers: [Option<ApPeer>; AP_MAX_CLIENTS],
+    /// Independent management replay frontiers, indexed by the owned peer
+    /// slots. Keeping them beside the table avoids padding every peer.
+    management_replay: [management::ApManagementReplay; AP_MAX_CLIENTS],
+    /// The original Message 3 frontier, retained across its retransmissions.
+    message3_management_ipns: [[u8; 6]; AP_MAX_CLIENTS],
     generation: u32,
     /// The security associations a WPA3 epoch's stations may resume.
     pmksa: ApPmksaCache,
@@ -458,6 +468,9 @@ impl AccessPointPeerStorage {
     pub const fn new() -> Self {
         Self {
             peers: [const { None }; AP_MAX_CLIENTS],
+            management_replay: [const { management::ApManagementReplay::inactive() };
+                AP_MAX_CLIENTS],
+            message3_management_ipns: [[0; 6]; AP_MAX_CLIENTS],
             generation: 0,
             pmksa: ApPmksaCache::new(),
         }
@@ -641,6 +654,7 @@ pub struct AccessPointServiceStatus {
 pub struct AccessPointService<'peers> {
     address: [u8; 6],
     security: AccessPointSecurityMaterial,
+    group_management: Option<oer_ieee80211_rsn::bip::BipTransmitter>,
     peer_storage: Option<&'peers mut AccessPointPeerStorage>,
     client_limit: AccessPointClientLimit,
     inactive_timeout: AccessPointInactiveTimeout,
@@ -725,14 +739,27 @@ impl<'peers> AccessPointService<'peers> {
         peer_storage: &'peers mut AccessPointPeerStorage,
     ) -> Self {
         peer_storage.peers.fill_with(|| None);
+        peer_storage.message3_management_ipns.fill([0; 6]);
+        peer_storage
+            .management_replay
+            .iter_mut()
+            .for_each(|replay| *replay = management::ApManagementReplay::inactive());
         peer_storage.pmksa = ApPmksaCache::new();
         peer_storage.generation = peer_storage
             .generation
             .checked_add(1)
             .expect("AP peer generation space is not reusable");
+        let group_management = match &security {
+            AccessPointSecurityMaterial::Wpa3Personal { igtk, .. } => {
+                Some(oer_ieee80211_rsn::bip::BipTransmitter::new(igtk))
+            }
+            AccessPointSecurityMaterial::Open
+            | AccessPointSecurityMaterial::Wpa2Personal { .. } => None,
+        };
         Self {
             address,
             security,
+            group_management,
             peer_storage: Some(peer_storage),
             client_limit,
             inactive_timeout,

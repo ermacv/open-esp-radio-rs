@@ -376,7 +376,10 @@ impl<'peers> AccessPointService<'peers> {
             };
         }
 
-        let plain = self.message3_key_data()?;
+        let index = self.peer_index(peer).ok_or(ApServiceError::UnknownPeer)?;
+        let management_ipn = self.igtk().map_or([0; 6], RsnIgtk::packet_number);
+        self.storage_mut().message3_management_ipns[index] = management_ipn;
+        let plain = self.message3_key_data(peer)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let action = self
             .checked_peer_mut(peer)?
@@ -417,7 +420,7 @@ impl<'peers> AccessPointService<'peers> {
             .pending_ptk
             .as_ref()
             .ok_or(ApWpa2Error::MissingPairwiseKey)?;
-        let plain = self.message3_key_data()?;
+        let plain = self.message3_key_data(peer)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let response =
             build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?.authenticate(ptk);
@@ -439,7 +442,8 @@ impl<'peers> AccessPointService<'peers> {
         }
     }
 
-    /// The IGTK of a BSS that protects management frames.
+    /// The IGTK of a BSS that protects management frames, with the current
+    /// allocated IPN frontier delivered to newly joining peers in Message 3.
     pub fn igtk(&self) -> Option<&RsnIgtk> {
         match &self.security {
             AccessPointSecurityMaterial::Wpa3Personal { igtk, .. } => Some(igtk),
@@ -452,6 +456,7 @@ impl<'peers> AccessPointService<'peers> {
     /// the GTK and, when management frames are protected, the IGTK.
     fn message3_key_data(
         &self,
+        peer: [u8; 6],
     ) -> Result<RsnPlainKeyData<RSN_PLAIN_KEY_DATA_CAPACITY>, ApWpa2Error> {
         let policy = self.security_policy();
         let advertised = policy.advertisement();
@@ -459,10 +464,19 @@ impl<'peers> AccessPointService<'peers> {
         let mut elements = [0_u8; 64];
         elements[..rsn.len()].copy_from_slice(rsn);
         elements[rsn.len()..rsn.len() + rsnx.len()].copy_from_slice(rsnx);
+        let index = self.peer_index(peer).ok_or(ApServiceError::UnknownPeer)?;
+        let igtk = self.igtk().map(|igtk| {
+            RsnIgtk::new(
+                igtk.key_id(),
+                self.storage().message3_management_ipns[index],
+                *igtk.key(),
+            )
+            .expect("the existing IGTK key identifier is valid")
+        });
         Ok(RsnPlainKeyData::build(
             &elements[..rsn.len() + rsnx.len()],
             self.gtk()?,
-            self.igtk(),
+            igtk.as_ref(),
         )?)
     }
 
@@ -475,6 +489,8 @@ impl<'peers> AccessPointService<'peers> {
             return Err(ApServiceError::SecurityModeMismatch);
         }
         let inactive_timeout = self.inactive_timeout.duration();
+        let management_protection = self.security_policy().management_protection().required();
+        let index = self.peer_index(peer).ok_or(ApServiceError::UnknownPeer)?;
         let existing = self.checked_peer_mut(peer)?;
         if existing.wpa2.as_ref().map(RsnApState::phase) != Some(RsnApPhase::Authorized) {
             return Err(ApServiceError::WrongPeerPhase);
@@ -486,6 +502,9 @@ impl<'peers> AccessPointService<'peers> {
         existing.wpa2_retry_alarm = None;
         existing.last_activity = now;
         existing.deadline = now.saturating_add(inactive_timeout);
+        if management_protection {
+            self.storage_mut().management_replay[index].activate();
+        }
         self.revise_status();
         Ok(())
     }

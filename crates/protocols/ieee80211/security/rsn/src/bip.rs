@@ -134,13 +134,26 @@ impl BipTransmitter {
         }
     }
 
+    /// The last allocated IPN, or the initial delivered IPN before any
+    /// transmission. A new peer must receive this frontier with its IGTK.
+    pub fn packet_number(&self) -> [u8; RSN_IPN_LEN] {
+        let bytes = (self.next_packet_number - 1).to_le_bytes();
+        let mut ipn = [0; RSN_IPN_LEN];
+        ipn.copy_from_slice(&bytes[..RSN_IPN_LEN]);
+        ipn
+    }
+
     /// Protect one group-addressed robust management frame in place: `frame`
     /// holds the header and body, and `MANAGEMENT_MIC_ELEMENT_LEN` spare
     /// octets after them receive the Management MIC element. Returns the
-    /// protected frame's length, or `None` when the spare octets are missing.
+    /// protected frame's length, or `None` when the spare octets are missing
+    /// or the 48-bit IPN space is exhausted. Failure consumes no IPN.
     pub fn protect(&mut self, frame: &mut [u8], length: usize) -> Option<usize> {
         let protected = length.checked_add(MANAGEMENT_MIC_ELEMENT_LEN)?;
-        if length < MANAGEMENT_HEADER_LEN || frame.len() < protected {
+        if length < MANAGEMENT_HEADER_LEN
+            || frame.len() < protected
+            || self.next_packet_number >= (1_u64 << 48)
+        {
             return None;
         }
         let ipn = self.next_packet_number.to_le_bytes();

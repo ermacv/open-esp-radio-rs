@@ -23,7 +23,8 @@ impl<'storage> ApEngine<'storage> {
         output: &mut [u8],
     ) -> Result<usize, ApEngineError> {
         let sequence = self.service.next_management_sequence();
-        Ok(ApActionFrame {
+        Ok(ApManagementFrame {
+            subtype: ApManagementSubtype::Action,
             access_point: self.service.address(),
             peer,
             sequence_number: sequence,
@@ -76,6 +77,11 @@ impl<'storage> ApEngine<'storage> {
         now: oer_time::Instant,
         output: &mut [u8],
     ) -> Result<ApManagementOutcome, ApEngineError> {
+        // This direct path has no PMF integrity evidence. Protected requests
+        // are handled by the port service, never by this plaintext parser.
+        if frame.get(1).is_some_and(|flags| flags & 0x40 != 0) {
+            return Ok(ApManagementOutcome::Ignored);
+        }
         let Some(request) = parse_ap_management_request(
             &crate::profile::ADVERTISEMENT,
             frame,
@@ -327,6 +333,9 @@ impl<'storage> ApEngine<'storage> {
                 self.observe(ApEngineObservationEvent::PeerRemoved);
                 Ok(ApManagementOutcome::PeerRemoved { peer })
             }
+            // The direct S31 AP path does not serve PMF. Its port service
+            // owns the protected SA Query response path.
+            ApManagementRequest::SaQuery { .. } => Ok(ApManagementOutcome::Ignored),
             ApManagementRequest::BlockAck { peer, action } => {
                 if self.service.peer_status(peer).is_none() {
                     return Ok(ApManagementOutcome::Ignored);

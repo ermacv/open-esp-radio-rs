@@ -46,7 +46,7 @@ Cargo runs offline here (`.cargo/config.toml`); these commands keep lock files, 
 
 | Command | Contract |
 | --- | --- |
-| `cargo xtask lock [--check]` | Update every workspace's `Cargo.lock` to its manifests after a dependency or pin change (online); `--check` only verifies, offline, that every lock matches its manifests and names every stale one. `cargo tidy fetch` downloads what the locks name and the cache lacks: its independent host-only workspace builds offline without firmware Git sources, so it also works after a pull that moved a Git pin |
+| `cargo xtask lock [--check]` | Update every workspace's `Cargo.lock` to its manifests after a dependency or pin change (online); `--check` only verifies, offline, that every lock matches its manifests and names every stale one. `cargo tidy fetch` downloads what the locks name and the cache lacks: its independent host-only workspace needs no firmware Git sources to start. If tidy's registry dependencies are missing, use `cargo --config net.offline=false tidy fetch` to bootstrap it |
 | `cargo xtask worktree add PATH --branch B [--from REV]` / `remove PATH` / `prepare` | Create a Git worktree whose `target/` starts from this checkout's build outputs (without incremental data, HIL outputs and vendor firmware builds, whose CMake caches name the source checkout), so only the workspace's own crates rebuild; `remove` deletes it with its `target/`. When `target/` is a btrfs subvolume the seed is an instant snapshot, otherwise a reflink copy taking minutes; `prepare` turns this checkout's `target/` into a subvolume once (run it while no build uses `target/`) |
 
 ## Source and architecture checks

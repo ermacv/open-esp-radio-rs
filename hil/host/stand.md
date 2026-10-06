@@ -34,6 +34,11 @@ Before starting any leased command, the lease admits I/O for all its selected
 boards and pins those operations into the child process. External flashers need
 no repository broker API: board exclusion survives the lease owner's death
 until the command and its descendants close their inherited lifetime descriptors.
+The process guardian sends SIGTERM to the command's process group on owner loss,
+then SIGKILL after one second. This is the cleanup window, not an extension of
+the lease: the broker retains exclusion until the actual I/O lifetimes end.
+Descendants that leave that process group still retain their lifetime descriptors
+but must arrange their own termination.
 
 A manual flash outside the runner is the dev kit's: `cargo fw flash
 --device MAC|PORT IMAGE` writes an image bundle (its directory, from `cargo

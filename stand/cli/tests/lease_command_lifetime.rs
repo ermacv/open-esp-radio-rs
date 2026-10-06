@@ -5,6 +5,7 @@ use std::{
     fs,
     io::Write as _,
     os::unix::fs::PermissionsExt as _,
+    os::unix::process::CommandExt as _,
     path::Path,
     process::{Child, Command, Stdio},
     thread,
@@ -75,15 +76,24 @@ fn external_io_retains_every_board_after_the_lease_owner_is_killed() {
     if let Ok(role) = std::env::var(ROLE) {
         let directory = std::path::PathBuf::from(std::env::var_os(DIRECTORY).unwrap());
         match role.as_str() {
+            "wrapper" => {
+                // A flasher may delegate to a subprocess in another group.
+                // Keep its inherited I/O lifetime, but let the test finish it
+                // explicitly rather than racing the guardian's one-second
+                // SIGKILL deadline for the wrapper's group.
+                let status = Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", TEST])
+                    .env(ROLE, "writer")
+                    .process_group(0)
+                    .status()
+                    .unwrap();
+                assert!(status.success());
+            }
             "writer" => {
                 // Model a third-party flasher: no Context or broker calls.
-                // The guardian first sends SIGTERM after owner loss; keep
-                // writing during that grace to expose early lock release.
-                // SAFETY: install SIG_IGN for this single fixture process.
-                unsafe { libc::signal(libc::SIGTERM, libc::SIG_IGN) };
                 let mut io = fs::File::create(directory.join("io")).unwrap();
                 fs::write(directory.join("started"), "ready").unwrap();
-                let deadline = Instant::now() + Duration::from_secs(15);
+                let deadline = Instant::now() + Duration::from_secs(60);
                 while !directory.join("finish").exists() {
                     assert!(Instant::now() < deadline, "writer was not released");
                     io.write_all(b"external flash still running\n").unwrap();
@@ -152,7 +162,7 @@ fn external_io_retains_every_board_after_the_lease_owner_is_killed() {
             .arg("--")
             .arg(std::env::current_exe().unwrap())
             .args(["--exact", TEST])
-            .env(ROLE, "writer");
+            .env(ROLE, "wrapper");
         let mut owner = Owner(lease.spawn().unwrap());
         wait_until("leased writer did not start", || {
             directory.path().join("started").exists()

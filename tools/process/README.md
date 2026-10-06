@@ -38,7 +38,9 @@ than an application API for globally mutating child authority.
 
 `lock::LockBroker` transfers an exclusive `FileLock` to an independent Linux
 broker. A live owner admits authenticated `BrokerOperation` connections. Owner
-EOF closes admission and drains admitted connections before releasing the lock.
+EOF closes admission and drains admitted connections before explicitly unlocking
+the file. Unrelated copies of its file description inherited by a concurrent
+fork cannot postpone that release.
 Its Linux abstract socket address uses the lock file's device/inode and UID,
 so even long XDG paths fit the socket limit. It admits only same-UID peers with
 the capability; the capability never appears in the address. Closing the

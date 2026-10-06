@@ -145,7 +145,7 @@ pub const CHECKS: &[Check] = &[
         id: "clippy",
         tier: Tier::Fast,
         job: "host",
-        summary: "Clippy -D warnings of the root workspace, or of a change's host packages and their dependents",
+        summary: "Clippy -D warnings of the root and tidy workspaces, or of a change's host packages and their dependents",
         trigger: Some(|change| !host_packages(change).is_empty()),
         run: clippy,
     },
@@ -153,7 +153,7 @@ pub const CHECKS: &[Check] = &[
         id: "test",
         tier: Tier::Fast,
         job: "host",
-        summary: "tests of the root workspace, or of a change's host packages (with `--full` their dependents)",
+        summary: "tests of the root and tidy workspaces, or of a change's host packages (with `--full` their dependents)",
         trigger: Some(|change| !tested(change).is_empty()),
         run: test,
     },
@@ -811,9 +811,15 @@ fn hil(ctx: &Checkout, args: &[&str]) -> Result<()> {
     process::run(oer_toolchain::cargo_in(&ctx.root).arg("hil").args(args))
 }
 
+/// Host tools covered by the host CI jobs. Blobray and verification run in
+/// their own jobs; tidy's bootstrap workspace belongs to these host jobs.
+fn host_workspaces() -> BTreeMap<&'static str, Option<Vec<&'static str>>> {
+    BTreeMap::from([("Cargo.toml", None), ("tools/tidy/Cargo.toml", None)])
+}
+
 fn clippy(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
     let runs: BTreeMap<&str, Option<Vec<&str>>> = match scope {
-        Scope::Tree => BTreeMap::from([("Cargo.toml", None)]),
+        Scope::Tree => host_workspaces(),
         Scope::Change(change) => by_workspace(host_packages(change))
             .into_iter()
             .map(|(workspace, packages)| {
@@ -851,7 +857,7 @@ fn clippy(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
 
 fn test(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
     let runs: BTreeMap<&str, Option<Vec<&str>>> = match scope {
-        Scope::Tree => BTreeMap::from([("Cargo.toml", None)]),
+        Scope::Tree => host_workspaces(),
         Scope::Change(change) => by_workspace(tested(change))
             .into_iter()
             .map(|(workspace, packages)| (workspace, Some(packages)))

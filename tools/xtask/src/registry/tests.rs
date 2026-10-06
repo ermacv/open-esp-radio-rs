@@ -1,5 +1,53 @@
 use super::*;
 
+#[cfg(unix)]
+#[test]
+fn host_ci_runs_tidy_tests_and_clippy_in_its_own_workspace() {
+    use std::os::unix::fs::PermissionsExt as _;
+    const ROLE: &str = "OER_REGISTRY_HOST_TEST_ROOT";
+    const TEST: &str = "registry::tests::host_ci_runs_tidy_tests_and_clippy_in_its_own_workspace";
+    if let Some(root) = std::env::var_os(ROLE) {
+        let ctx = Checkout::new(root).unwrap();
+        clippy(&ctx, Scope::Tree).unwrap();
+        test(&ctx, Scope::Tree).unwrap();
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
+    let cargo = root.join("cargo");
+    std::fs::write(
+        &cargo,
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$OER_REGISTRY_HOST_TEST_ROOT/calls\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut child = process::command(std::env::current_exe().unwrap());
+    child
+        .args(["--exact", TEST])
+        .env(ROLE, root)
+        .env("CARGO", cargo);
+    process::run_with_timeout(&mut child, std::time::Duration::from_secs(15)).unwrap();
+    let calls = std::fs::read_to_string(root.join("calls")).unwrap();
+    assert_eq!(calls.lines().count(), 4, "{calls}");
+    for (check, flags) in [
+        ("test", "--locked --no-fail-fast"),
+        ("clippy", "--locked --all-targets"),
+    ] {
+        for workspace in ["Cargo.toml", "tools/tidy/Cargo.toml"] {
+            let manifest = root.join(workspace);
+            let arguments = format!(
+                "{check} {flags} --manifest-path {} --workspace",
+                manifest.display()
+            );
+            assert!(
+                calls.lines().any(|line| line.starts_with(&arguments)),
+                "{calls}"
+            );
+        }
+    }
+}
+
 /// Every `cargo xtask ... check tier TIER --job JOB` of the workflows, with
 /// the file that runs it.
 fn workflow_calls() -> Vec<(String, Tier, String)> {

@@ -302,10 +302,18 @@ unsafe fn serve(descriptors: [i32; 3], token: &[u8; TOKEN_BYTES]) -> ! {
             let active = clients
                 .iter()
                 .any(|client| client.fd >= 0 && client.admitted);
-            if owner_lost {
-                if !active {
-                    libc::close(3);
+            if !owner_alive && !active {
+                // A concurrent fork in the owner may have copied the file
+                // description before handoff. Explicitly release its flock
+                // after I/O drains, regardless of those unrelated copies.
+                while libc::flock(3, libc::LOCK_UN) != 0 {
+                    if *libc::__errno_location() != libc::EINTR {
+                        libc::_exit(1);
+                    }
                 }
+                libc::close(3);
+            }
+            if owner_lost {
                 let draining = [u8::from(active)];
                 libc::write(4, draining.as_ptr().cast(), 1);
                 libc::close(4);

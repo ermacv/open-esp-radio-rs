@@ -2,13 +2,13 @@
 
 A Rust 2024 radio stack for the ESP32-S31 and ESP32-C5 (Wi-Fi, Bluetooth LE,
 IEEE 802.15.4) with its HIL stand, vendor verification and qualification.
-Claude Code agents do almost all the work; the owner sets the tasks.
+Coding agents do almost all the work; the owner sets the tasks.
 
 ## Rules
 
 - **Ask, never fall back.** When a requirement or rule admits materially different readings that change the implementation, drop required data, add a fallback or leave work unfinished, explain the ambiguity and ask the user; continue only independent work until they answer. Never silently pick a conservative reading, older behavior, approximation or omission. An explicit user decision stays authoritative: do not ask it again.
 - **No compatibility layers.** Change an interface together with every caller: no deprecated aliases, re-export shims, legacy readers or fallback paths for an old shape.
-- **Background work.** Builds, tests, checks and HIL runs (`cargo build|test|clippy|check|doc`, `cargo xtask check`, `cargo xtask push`, `cargo fw build`, `cargo hil run`, `cargo hil wait`) run with `run_in_background: true`; act on the completion notification and keep answering meanwhile. Greps and reads stay in the foreground. No foreground `sleep` polling. Never wait for or signal processes by name (`pgrep -f`, `pkill -f`): the pattern matches the waiting shell too. Chain dependent steps in one command or wait on a PID. A hook enforces this.
+- **Background work.** Builds, tests, checks and HIL runs (`cargo build|test|clippy|check|doc`, `cargo xtask check`, `cargo xtask push`, `cargo fw build`, `cargo hil run`, `cargo hil wait`) run asynchronously ([client options](#agent-entry-points)); act on completion and keep answering meanwhile. Greps and reads stay in the foreground. No foreground `sleep` polling. Never wait for or signal processes by name (`pgrep -f`, `pkill -f`): the pattern matches the waiting shell too. Chain dependent steps in one command or wait on a PID. Claude Code's pre-tool hook enforces this.
 - **zsh.** An unquoted `$VAR` holding several words stays one argument: pass lists of scenarios or paths literally or as an array.
 - **Tests.** Every behavioral change gets a focused regression test, beside its module (`#[cfg(test)]`) or in the crate's `tests/`. See [testing rules](crates/CLAUDE.md#tests).
 - **MMIO and unsafe.** Handwritten code reaches MMIO only through typed PAC accessors; publish a missing field in the SVD/PAC instead of a local mask or shift. Keep `unsafe` narrow and documented ([crates/UNSAFE.md](crates/UNSAFE.md)). Lint policy lives in `[lints]` tables and crate-root attributes, not tool flags.
@@ -19,6 +19,30 @@ Claude Code agents do almost all the work; the owner sets the tasks.
 - **Docs current.** Update the owning README or rustdoc in the same change ([documentation policy](docs/documentation.md)). Never add audit reports, work plans, migration histories, experiment diaries or test-run summaries; generated reports stay in ignored outputs.
 - **Block knowledge.** A non-obvious fact about a block found during a task (an invariant, a trap, where a value really comes from) goes into that block's guide skill or owning README in the same PR.
 - Preserve unrelated changes in an already-dirty worktree.
+
+## Agent entry points
+
+Claude Code and Codex share instructions and skills through relative symlinks:
+
+| Canonical source | Codex entry point |
+| --- | --- |
+| Root and directory `CLAUDE.md` | `AGENTS.md` beside each source file, linking to `CLAUDE.md` |
+| `.claude/skills/` | `.agents/skills`, linking to `../.claude/skills` |
+
+Edit the canonical sources; keep an `AGENTS.md` link beside any new scoped
+`CLAUDE.md`. The skills directory link includes new skills automatically and
+preserves their relative references. In Codex, invoke `$block-wifi` to load
+the same block guide that the Claude Code `block-wifi` agent starts with.
+
+In shared checklists, `run_in_background: true` is Claude Code's option.
+Codex runs a long command with `exec_command` and a short `yield_time_ms`,
+keeps the returned `session_id`, and collects completion with `write_stdin`
+while continuing other work.
+
+`.claude/settings.json` registers Claude Code permissions and hooks;
+`.claude/hooks/` and `.claude/agents/` have runtime-specific contracts.
+These symlinks do not register them as Codex permissions, hooks or custom
+agents.
 
 ## Gate, push, commit
 

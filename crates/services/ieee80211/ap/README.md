@@ -24,8 +24,11 @@ peers, security and power save); frame codecs belong to `oer-ieee80211-mac`.
 
 Beacons go out once, unacknowledged, on the voice queue at the management
 rate, stamped with the access point's time and carrying the TIM and the DTIM
-count; Probe Responses go out on the voice queue too, acknowledged and
-retried by the transmit planner. The access point does not retune for a channel
+count. Preparation sets the software timestamp before the upper MAC waits
+for its shared physical TX queue. That queue wait and MAC access can delay
+transmission past the TBTT; preparation does not refresh the timestamp at
+submission or transmission. Probe Responses go out on the voice queue too,
+acknowledged and retried by the transmit planner. The access point does not retune for a channel
 switch: the port's channel belongs to the port's owner, which moves it for
 every interface. The announcement is carried by beacons and Probe
 Responses; a Channel Switch Announcement action frame is not sent yet. The composition enables the port. The beacon

@@ -33,6 +33,9 @@ toml = "1.1"
 # them; `--check` re-runs `cargo fw` with this feature.
 checks = ["dep:oer-image-checks", "dep:oer-image-compare"]
 
+[dev-dependencies]
+oer-device-lock = { path = "../device/lock" }
+
 [lints]
 workspace = true
 

@@ -325,8 +325,12 @@ fn compare(_: &Path, _: &Path, _: Vec<String>, _: Vec<String>, _: Vec<String>) -
 
 /// Run this command again as `oer-fw` built with the `checks` feature: the
 /// image checks (and their analyzers) are only compiled into that build.
+/// Preserve this operation's explicit context through Cargo so a delegated
+/// flash stays inside its enclosing lease after the feature re-exec.
 fn with_checks(root: &Path) -> Result<ExitCode> {
-    let status = oer_process::command(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+    let mut command =
+        oer_process::command(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    command
         .current_dir(root)
         .args([
             "run",
@@ -337,8 +341,9 @@ fn with_checks(root: &Path) -> Result<ExitCode> {
             "checks",
             "--",
         ])
-        .args(std::env::args_os().skip(1))
-        .status()?;
+        .args(std::env::args_os().skip(1));
+    oer_process::Context::current()?.apply(&mut command)?;
+    let status = command.status()?;
     Ok(match status.code() {
         Some(0) => ExitCode::SUCCESS,
         Some(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),

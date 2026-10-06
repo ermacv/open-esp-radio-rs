@@ -165,7 +165,9 @@ fn report_with(ctx: &Checkout, gh: &str) -> Result<Vec<String>, String> {
             "workflowName,headSha,status,conclusion,url,databaseId,createdAt",
         ]))
         .map_err(|error| match error.downcast_ref::<std::io::Error>() {
-            Some(io) if io.kind() == std::io::ErrorKind::NotFound => "`gh` is not installed".to_owned(),
+            Some(io) if io.kind() == std::io::ErrorKind::NotFound => {
+                "`gh` is not installed".to_owned()
+            }
             _ => error
                 .to_string()
                 .lines()

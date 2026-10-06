@@ -10,7 +10,7 @@
 use core::cell::UnsafeCell;
 use core::ffi::c_char;
 
-use esp_hal::{peripherals::Interrupt, system::Cpu};
+use esp_hal::system::Cpu;
 
 const MAGIC: u32 = u32::from_le_bytes(*b"OFTL");
 const PANIC: u32 = 1;
@@ -64,6 +64,7 @@ impl Slot {
         checksum: 0,
     };
 
+    #[inline(always)]
     fn sum(&self) -> u32 {
         let mut sum = 0x811c_9dc5_u32;
         let mut mix = |word: u32| sum = (sum ^ word).wrapping_mul(0x0100_0193);
@@ -171,15 +172,9 @@ fn record(kind: u32, ra: u32, stage: u32) {
     let cpu = Cpu::current();
     let mut routed = [0; SOURCE_WORDS];
     let mut line = 0;
-    for source in 0..=u8::MAX {
-        let Ok(interrupt) = Interrupt::try_from(source) else {
-            continue;
-        };
-        let Some(cpu_interrupt) = esp_hal::interrupt::mapped_to(cpu, interrupt) else {
-            continue;
-        };
+    for (source, cpu_interrupt) in esp_hal::interrupt::mapped_sources(cpu) {
         if cpu_interrupt as usize == vector {
-            set(&mut routed, usize::from(source));
+            set(&mut routed, source);
             line = u32::from(cpu_interrupt.is_pending())
                 | u32::from(cpu_interrupt.is_enabled()) << 1
                 | u32::from(matches!(
@@ -216,6 +211,7 @@ fn record(kind: u32, ra: u32, stage: u32) {
 
 /// Set `source`'s bit, without an index whose bounds check could fail: a
 /// panic while recording would re-enter the fatal path.
+#[inline(always)]
 fn set(words: &mut [u32; SOURCE_WORDS], source: usize) {
     if let Some(word) = words.get_mut(source / 32) {
         *word |= 1 << (source % 32);

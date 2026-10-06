@@ -12,6 +12,9 @@
 //! the whole record: the header, each checkpoint and the fault carry their
 //! own CRC, and a part whose CRC fails is dropped. After a power-on the header
 //! fails and nothing is reported.
+//! A fault's CRC-32C uses no lookup table and is inlined into its caller, so
+//! an image's SRAM panic hook can seal a retained fault with caches unavailable.
+//! Checkpoint/header CRCs keep the table-based implementation in thread code.
 //!
 //! [`Record::checkpoint`] is for named phase transitions, not hot loops: each
 //! call takes the runtime's critical section and computes a CRC.
@@ -108,22 +111,35 @@ impl RawFault {
         crc: 0,
     };
 
+    #[inline(always)]
     fn digest(&self) -> u32 {
-        let mut digest = CRC.digest();
+        // A panic hook can run with caches unavailable. Use the same CRC-32C
+        // polynomial as the rest of the record, without a cached lookup table.
+        const POLYNOMIAL: u32 = CRC_32_ISCSI.poly.reverse_bits();
+        let mut digest = u32::MAX;
+        let mut update = |bytes: &[u8]| {
+            for byte in bytes {
+                digest ^= u32::from(*byte);
+                for _ in 0..8 {
+                    digest = (digest >> 1) ^ (0_u32.wrapping_sub(digest & 1) & POLYNOMIAL);
+                }
+            }
+        };
         for word in [self.kind, self.detected_uptime_ms, self.stalled_executors] {
-            digest.update(&word.to_le_bytes());
+            update(&word.to_le_bytes());
         }
         for word in self.harts.iter().flatten().chain(&self.samples) {
-            digest.update(&word.to_le_bytes());
+            update(&word.to_le_bytes());
         }
         for word in [self.stalled_task, self.task_pending_ms, self.panic_line] {
-            digest.update(&word.to_le_bytes());
+            update(&word.to_le_bytes());
         }
-        digest.update(&self.panic_file);
-        digest.update(&self.panic_message);
-        digest.finalize()
+        update(&self.panic_file);
+        update(&self.panic_message);
+        !digest
     }
 
+    #[inline(always)]
     fn seal(mut self) -> Self {
         self.crc = self.digest();
         self
@@ -331,21 +347,30 @@ impl Record {
     }
 
     /// Record that this boot panicked, cutting long texts.
+    #[inline(always)]
     pub fn record_panic(&mut self, file: &str, line: u32, message: &str) {
-        self.fault = RawFault {
-            kind: FAULT_PANIC,
-            panic_line: line,
-            panic_file: bytes(file),
-            panic_message: bytes(message),
-            ..RawFault::NONE
+        // Fill in place: copying `RawFault::NONE` can make the compiler read
+        // a constant from cached memory even when the calling hook is in SRAM.
+        let fault = &mut self.fault;
+        fault.kind = FAULT_PANIC;
+        fault.detected_uptime_ms = 0;
+        fault.stalled_executors = 0;
+        for word in fault.harts.iter_mut().flatten().chain(&mut fault.samples) {
+            *word = 0;
         }
-        .seal();
+        fault.stalled_task = 0;
+        fault.task_pending_ms = 0;
+        fault.panic_line = line;
+        fault.panic_file = bytes(file);
+        fault.panic_message = bytes(message);
+        fault.crc = fault.digest();
     }
 }
 
 /// `text` as a zero-padded array, cut at a character boundary. It copies
 /// through iterators, without an index whose bounds check could fail: the
 /// panic path records through it, and a panic there would re-enter it.
+#[inline(always)]
 fn bytes<const N: usize>(text: &str) -> [u8; N] {
     let mut end = text.len().min(N);
     while !text.is_char_boundary(end) {
@@ -400,6 +425,39 @@ impl RateMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panic_fault_crc_matches_the_table_based_record_format() {
+        for (file, line, message) in [
+            ("", 0, ""),
+            ("src/agent.rs", 123, "intentional panic"),
+            ("путь/пример.rs", u32::MAX, "сообщение"),
+        ] {
+            let mut record = Record::EMPTY;
+            record.record_panic(file, line, message);
+            let fault = &record.fault;
+            let mut expected = CRC.digest();
+            for word in [
+                fault.kind,
+                fault.detected_uptime_ms,
+                fault.stalled_executors,
+            ]
+            .into_iter()
+            .chain(fault.harts.iter().flatten().copied())
+            .chain(fault.samples)
+            .chain([fault.stalled_task, fault.task_pending_ms, fault.panic_line])
+            {
+                expected.update(&word.to_le_bytes());
+            }
+            expected.update(&fault.panic_file);
+            expected.update(&fault.panic_message);
+            assert_eq!(fault.crc, expected.finalize());
+            let mut reused = Record::EMPTY;
+            reused.record_hang(&hang());
+            reused.record_panic(file, line, message);
+            assert_eq!(reused.fault.crc, fault.crc, "previous hang fields survived");
+        }
+    }
 
     fn hang() -> HangFault {
         let hart = |mepc| HartState {

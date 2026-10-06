@@ -306,7 +306,7 @@ struct AppCoreStack(Stack<APP_CORE_BOOTSTRAP_STACK_BYTES>);
 
 #[cfg(feature = "open-radio-hil")]
 #[allow(unsafe_code, reason = "esp-hal's stack is uninitialized memory")]
-// REVIEWED-LAYOUT: esp-hal e7739ccf
+// REVIEWED-LAYOUT: esp-hal de9bd926
 // SAFETY: at the pinned esp-hal revision `Stack<SIZE>` is
 // `repr(C, align(16))` with one field, `mem: MaybeUninit<[u8; SIZE]>`, valid
 // for any bytes; `Stack::new` leaves it uninitialized.
@@ -365,7 +365,8 @@ use oer_espressif_staged_runtime as _;
 /// bound. The next boot reports what it recorded.
 #[cfg(feature = "panic-hook")]
 #[unsafe(no_mangle)]
-fn oer_platform_panic_hook(info: &core::panic::PanicInfo<'_>) {
+#[unsafe(link_section = ".flash.critical.text.panic_hook")]
+fn oer_platform_panic_hook(details: &oer_espressif_staged_runtime::panic::PanicDetails<'_>) {
     // The trace keeps what happened before the panic.
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     oer_trace::freeze(<oer_hil_trace::Panic as oer_trace::Event>::KIND, 0);
@@ -374,13 +375,13 @@ fn oer_platform_panic_hook(info: &core::panic::PanicInfo<'_>) {
         feature = "open-radio-hil",
         feature = "bluetooth-radio"
     ))]
-    system::postmortem::record_panic(info);
+    system::postmortem::record_panic(details);
     #[cfg(not(any(
         feature = "system-watchdog",
         feature = "open-radio-hil",
         feature = "bluetooth-radio"
     )))]
-    let _ = info;
+    let _ = details;
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let stage = product_hil::diagnostic_snapshot().0;
     #[cfg(not(all(feature = "open-radio-hil", not(feature = "memory-benchmark"))))]

@@ -5,7 +5,9 @@
 //! last [`FILE_BYTES`]), line and column, the message when it is a static
 //! string (its first [`MESSAGE_BYTES`]; a formatted message is only marked),
 //! the hart, whether it ran on the interrupt stack and, there, the interrupted
-//! PC. Every step is a bounded copy, so the path stays a short leaf in every
+//! PC. Interrupt-context panics omit textual metadata: compiler location and
+//! format constants may live in cached PSRAM even when their code is in SRAM.
+//! Every step is a bounded copy, so the path stays a short leaf in every
 //! context's stack bound.
 //!
 //! An image with the `panic-hook` feature defines `oer_platform_panic_hook`,
@@ -20,6 +22,18 @@ pub const FILE_BYTES: usize = 48;
 /// Bytes of a static panic message kept: its start.
 pub const MESSAGE_BYTES: usize = 64;
 const MAGIC: u32 = 0x5045_524f; // "OREP"
+
+/// Metadata safe for the image's panic hook to read. Task context keeps the
+/// caller's metadata; interrupt context leaves it empty, because compiler
+/// location and format constants may be in unavailable cached memory. The
+/// hook's code and every state object it reads must themselves be in SRAM or
+/// retained memory, and it must not acquire a lock.
+pub struct PanicDetails<'a> {
+    pub file: &'a str,
+    pub line: u32,
+    pub column: u32,
+    pub message: Option<&'a str>,
+}
 
 /// One panic, as the next boot reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -187,7 +201,7 @@ pub fn take_previous() -> Option<PanicRecord> {
 
 /// Record `info` in the retained slot without formatting.
 #[unsafe(link_section = ".flash.critical.text.panic")]
-fn record(info: &core::panic::PanicInfo<'_>) {
+fn record<'a>(info: &'a core::panic::PanicInfo<'_>) -> PanicDetails<'a> {
     let hart: usize;
     let sp: usize;
     let mepc: usize;
@@ -207,11 +221,26 @@ fn record(info: &core::panic::PanicInfo<'_>) {
     // SAFETY: the other hart may hold any lock while this one panics, so the
     // slot is written without one; the image stops after this write.
     let slot = unsafe { &mut *SLOT.0.get() };
-    let (file, line, column) = info
-        .location()
-        .map_or(("", 0, 0), |l| (l.file(), l.line(), l.column()));
-    (slot.file, slot.file_length) = file_tail(file);
-    (slot.message, slot.message_length) = match info.message().as_str() {
+    let details = if in_interrupt {
+        PanicDetails {
+            file: "",
+            line: 0,
+            column: 0,
+            message: None,
+        }
+    } else {
+        let (file, line, column) = info
+            .location()
+            .map_or(("", 0, 0), |l| (l.file(), l.line(), l.column()));
+        PanicDetails {
+            file,
+            line,
+            column,
+            message: info.message().as_str(),
+        }
+    };
+    (slot.file, slot.file_length) = file_tail(details.file);
+    (slot.message, slot.message_length) = match details.message {
         Some(message) => {
             let (kept, length) = message_head(message);
             (kept, length + 1)
@@ -221,10 +250,11 @@ fn record(info: &core::panic::PanicInfo<'_>) {
     slot.hart = hart as u32;
     slot.in_interrupt = u32::from(in_interrupt);
     slot.interrupted_pc = if in_interrupt { mepc as u32 } else { 0 };
-    slot.line = line;
-    slot.column = column;
+    slot.line = details.line;
+    slot.column = details.column;
     slot.magic = MAGIC;
     slot.checksum = slot.sum();
+    details
 }
 
 #[cfg(feature = "panic-hook")]
@@ -232,19 +262,21 @@ unsafe extern "Rust" {
     /// The image's record of its own state after the platform's record. It
     /// formats nothing, like the entry: it runs in every context's stack
     /// bound.
-    fn oer_platform_panic_hook(info: &core::panic::PanicInfo<'_>);
+    fn oer_platform_panic_hook(details: &PanicDetails<'_>);
 }
 
 #[panic_handler]
 #[unsafe(link_section = ".flash.critical.text.panic")]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
-    record(info);
+    let details = record(info);
     #[cfg(feature = "panic-hook")]
     // SAFETY: the image defines this function with the declared signature;
     // the link fails without it.
     unsafe {
-        oer_platform_panic_hook(info)
+        oer_platform_panic_hook(&details)
     };
+    #[cfg(not(feature = "panic-hook"))]
+    let _ = details;
     esp_hal::system::software_reset()
 }
 

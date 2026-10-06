@@ -23,6 +23,15 @@ panic path stays a short leaf in every stack bound. An image with
 the record to record more of its own state the same way; it returns. Every
 image then resets, and its next boot reads and clears the record with
 `panic::take_previous` and prints it.
+The hook receives `panic::PanicDetails`, rather than the original `PanicInfo`.
+Interrupt-context panics retain hart and interrupted PC, but omit location and
+message: compiler metadata can live in cached PSRAM. Task-context panics keep
+their metadata because their code and stack already require the live mapping.
+The hook and all state it reads must stay in SRAM or retained memory and take
+no locks. The final-image gate checks compiler panic entries, the handler,
+the hook and their resolved callees for cached code.
+The hook's static data references, including compiler-created constants, are
+checked through the ELF relocations as well.
 
 Every image of this platform, standalone or HIL, is built by the one image
 pipeline, [`oer-image`](../../tools/image/README.md), with the compiler flags

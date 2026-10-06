@@ -120,15 +120,10 @@ pub(crate) fn record_hang(hang: &oer_hil_protocol::base::HangFault) {
 /// Record the panic being handled. The other hart may hold the critical
 /// section while this one panics, so the record is written without it; a
 /// checkpoint racing this write can at worst fail its own CRC.
-pub(crate) fn record_panic(info: &core::panic::PanicInfo<'_>) {
-    // Formatting would put `core::fmt` on every context's panic path: a
-    // message with arguments is recorded empty.
-    let message = info.message().as_str().unwrap_or("");
-    let (file, line) = info
-        .location()
-        .map_or(("", 0), |location| (location.file(), location.line()));
+#[unsafe(link_section = ".flash.critical.text.panic_hook")]
+pub(crate) fn record_panic(details: &oer_espressif_staged_runtime::panic::PanicDetails<'_>) {
     // SAFETY: see above; the halted boot never reads the record again.
     #[allow(unsafe_code, reason = "a panic cannot wait for the critical section")]
     let record = unsafe { &mut *RECORD.0.get() };
-    record.record_panic(file, line, message);
+    record.record_panic(details.file, details.line, details.message.unwrap_or(""));
 }

@@ -78,7 +78,10 @@ SECTIONS
        itself .flash.critical.text.panic. Formatting stays in thread code. */
     *(.text.*_R*4core9panicking*);
     *(.text.*_R*4core6option13expect_failed*);
+    *(.text.*_R*4core6option13unwrap_failed*);
     *(.text.*_R*4core6result13unwrap_failed*);
+    *(.text.*_R*4core5slice5index*fail*);
+    *(.text.*_R*4core4cell*panic_already*);
     . = ALIGN(4);
     __runtime_isr_end = ABSOLUTE(.);
   } > INTERNAL_LOW

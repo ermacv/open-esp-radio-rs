@@ -85,6 +85,7 @@ unsafe extern "C" {
 }
 
 /// `hart`'s interrupt stack as `bottom..top`; `None` for a hart without one.
+#[inline(always)]
 fn interrupt_stack(hart: usize) -> Option<core::ops::Range<usize>> {
     let (bottom, top) = match hart {
         0 => (
@@ -236,6 +237,7 @@ unsafe fn guard_interrupt_stack(bottom: usize) {
 
 /// Whether `sp` lies in `hart`'s dedicated interrupt stack. Reads no memory,
 /// so a panic in any context can ask.
+#[inline(always)]
 pub(crate) fn on_interrupt_stack(hart: usize, sp: usize) -> bool {
     interrupt_stack(hart).is_some_and(|stack| (stack.start..=stack.end).contains(&sp))
 }

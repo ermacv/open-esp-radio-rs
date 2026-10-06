@@ -132,6 +132,13 @@ code every interrupt level reaches, a floating-point instruction fails (the
 handlers run with the FPU off); calls into the panic machinery and functions
 in cached memory (flash, PSRAM) are listed. It writes all of this, each
 hart's levels and their critical paths to `interrupt-stack.txt`.
+Independently of the installed interrupt handlers, it also follows linked
+compiler panic entry points, the platform panic handler and the optional
+image panic hook. A resolved callee in cached memory fails the build under
+both stack policies, so a panic helper or hook cannot silently move to PSRAM.
+The hook and its callees also must not statically reference cached memory:
+the retained ELF relocations reveal globals, lookup tables and anonymous
+constants introduced by the compiler, including constant-copy initialization.
 
 The image compiler flags have one owner, `image::configure` of
 [`oer-toolchain`](../toolchain/README.md), which a stack policy parameterizes

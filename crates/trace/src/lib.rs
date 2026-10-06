@@ -27,7 +27,9 @@
 //!
 //! Retained memory only ever sees plain loads and stores: the write index,
 //! the freeze latch and the snapshot cursor are read-modify-write atomics in
-//! the [`Trace`], which stays in ordinary RAM. After a reset the order of the
+//! the [`Trace`]. An image that freezes from a panic with caches unavailable
+//! places that `Trace` in uncached RAM; the global pointer and channel mask
+//! use `.critical.data.*` on RISC-V. After a reset the order of the
 //! retained entries comes back from their 16-bit sequence tags, and an entry
 //! a reset interrupted fails its commit word and is dropped.
 //!
@@ -51,7 +53,23 @@ use core::ptr;
 use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
 
 /// Enabled channels, one bit each; zero unless a trace is running.
+#[allow(
+    unsafe_code,
+    reason = "panic/interrupt trace state must stay in uncached memory"
+)]
+#[cfg_attr(
+    target_arch = "riscv32",
+    unsafe(link_section = ".critical.data.trace_mask")
+)]
 static MASK: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
+#[allow(
+    unsafe_code,
+    reason = "panic/interrupt trace state must stay in uncached memory"
+)]
+#[cfg_attr(
+    target_arch = "riscv32",
+    unsafe(link_section = ".critical.data.trace_pointer")
+)]
 static INSTALLED: AtomicPtr<Trace> = AtomicPtr::new(ptr::null_mut());
 
 /// Make `trace` the image's trace. Recording stays off, and whatever the
@@ -64,6 +82,7 @@ pub fn install(trace: &'static Trace) -> Boot {
 }
 
 /// The installed trace, for draining.
+#[inline(always)]
 pub fn installed() -> Option<&'static Trace> {
     let trace = INSTALLED.load(Ordering::Acquire);
     #[allow(
@@ -104,6 +123,7 @@ pub fn mask() -> u64 {
     u64::from(MASK[0].load(Ordering::Relaxed)) | (u64::from(MASK[1].load(Ordering::Relaxed)) << 32)
 }
 
+#[inline(always)]
 fn disable() {
     MASK[0].store(0, Ordering::Relaxed);
     MASK[1].store(0, Ordering::Relaxed);

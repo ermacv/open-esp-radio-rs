@@ -580,6 +580,55 @@ mod tests {
                 .stderr(Stdio::inherit());
             command
         }
+        fn writer(directory: &Path, message: &[u8]) {
+            let mut io = std::fs::File::create(directory.join("io")).unwrap();
+            io.write_all(message).unwrap();
+            let pid = std::process::id();
+            let started = oer_process::proc::start_ticks(pid).unwrap();
+            std::fs::write(
+                directory.join("writer-pid"),
+                serde_json::to_vec(&(pid, started)).unwrap(),
+            )
+            .unwrap();
+            std::fs::write(directory.join("admitted"), "ready").unwrap();
+            let deadline = Instant::now() + Duration::from_secs(60);
+            while !directory.join("finish-io").exists() {
+                if Instant::now() >= deadline {
+                    std::fs::write(directory.join("watchdog"), "expired").unwrap();
+                    panic!("broker did not stop the writer");
+                }
+                io.write_all(message).unwrap();
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        fn stopped(pid: u32, started: u64) -> bool {
+            if oer_process::proc::start_ticks(pid) != Some(started) {
+                return true;
+            }
+            std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |stat| {
+                matches!(
+                    stat.rsplit_once(") ").unwrap().1.chars().next(),
+                    Some('Z' | 'X')
+                )
+            })
+        }
+        struct FinishIo(PathBuf);
+        impl Drop for FinishIo {
+            fn drop(&mut self) {
+                // Failure cleanup only; the successful test never asks the
+                // writer to finish. The broker must terminate it instead.
+                let _ = std::fs::write(self.0.join("finish-io"), "finish");
+            }
+        }
+        struct OwnedChild(std::process::Child);
+        impl Drop for OwnedChild {
+            fn drop(&mut self) {
+                if self.0.try_wait().unwrap().is_none() {
+                    let _ = self.0.kill();
+                }
+                let _ = self.0.wait();
+            }
+        }
         if let Ok(role) = std::env::var(ROLE) {
             let directory = PathBuf::from(std::env::var_os(DIRECTORY).unwrap());
             let board = id("00:11:22:33:44:66");
@@ -603,6 +652,7 @@ mod tests {
                     std::thread::spawn(move || {
                         let _ = delegate.wait();
                     });
+                    std::fs::write(directory.join("owner-ready"), "ready").unwrap();
                     wait_for(&directory.join("drop-owner"));
                     drop(access);
                 }
@@ -616,55 +666,67 @@ mod tests {
                         let mut writer = child("writer", &directory);
                         operation.lifetime().pin(&mut writer).unwrap();
                         let mut writer = writer.spawn().unwrap();
-                        assert!(writer.wait().unwrap().success());
+                        // Broker cleanup terminates the external writer; a
+                        // signal exit is the expected result of owner loss.
+                        assert!(!writer.wait().unwrap().success());
                         return;
                     }
-                    // A real writer stays open across owner death, rather than
-                    // a test of the source spelling or of an instantaneous check.
-                    let mut io = std::fs::File::create(directory.join("io")).unwrap();
-                    std::fs::write(directory.join("admitted"), "ready").unwrap();
-                    let deadline = Instant::now() + Duration::from_secs(15);
-                    while !directory.join("finish-io").exists() {
-                        assert!(Instant::now() < deadline, "I/O fixture was not released");
-                        io.write_all(b"still writing\n").unwrap();
-                        std::thread::sleep(Duration::from_millis(10));
-                    }
-                    assert!(access.operation().is_err(), "owner loss admitted fresh I/O");
-                    assert!(
-                        DeviceAccess::try_acquire_in(&directory, &board, "stale delegate").is_err()
-                    );
-                    drop(io);
-                    drop(operation);
-                    std::fs::write(directory.join("finished"), "closed").unwrap();
+                    // Retain real I/O and its native operation until the broker
+                    // terminates this process, independently of parent timing.
+                    writer(&directory, b"still writing\n");
                 }
                 "writer" => {
                     // This exec receives only a lifetime descriptor, never a
                     // capability to start new work. It outlives both callers.
                     assert_eq!(Context::current().unwrap(), &Context::default());
-                    let mut io = std::fs::File::create(directory.join("io")).unwrap();
-                    std::fs::write(directory.join("admitted"), "ready").unwrap();
-                    let deadline = Instant::now() + Duration::from_secs(15);
-                    while !directory.join("finish-io").exists() {
-                        assert!(Instant::now() < deadline, "external I/O was not released");
-                        io.write_all(b"external I/O still running\n").unwrap();
-                        std::thread::sleep(Duration::from_millis(10));
-                    }
-                    drop(io);
-                    std::fs::write(directory.join("finished"), "closed").unwrap();
+                    writer(&directory, b"external I/O still running\n");
                 }
-                "contender-busy" => {
-                    assert!(matches!(
-                        DeviceAccess::try_acquire_in(&directory, &board, "third").unwrap(),
-                        Err(Busy::Held(_))
-                    ));
+                "contender" => {
                     assert_eq!(Context::current().unwrap(), &Context::default());
-                }
-                "contender-free" => {
+                    let lock = directory.join("001122334466.lock");
+                    assert!(
+                        FileLock::try_acquire(&lock, Mode::Exclusive)
+                            .unwrap()
+                            .is_none()
+                    );
+                    std::fs::write(directory.join("contender-ready"), "busy").unwrap();
+                    let (pid, started): (u32, u64) = serde_json::from_reader(
+                        std::fs::File::open(directory.join("writer-pid")).unwrap(),
+                    )
+                    .unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(10);
+                    let released = loop {
+                        if let Some(lock) = FileLock::try_acquire(&lock, Mode::Exclusive).unwrap() {
+                            break lock;
+                        }
+                        assert!(
+                            Instant::now() < deadline,
+                            "broker did not stop and drain I/O"
+                        );
+                        std::thread::sleep(Duration::from_millis(10));
+                    };
+                    assert!(stopped(pid, started), "board released before writer exit");
+                    assert!(!directory.join("watchdog").exists());
+                    drop(released);
                     let access = DeviceAccess::try_acquire_in(&directory, &board, "third")
                         .unwrap()
                         .unwrap();
                     assert!(!access.is_delegated());
                     let _operation = access.operation().unwrap();
+                }
+                "delegate-probe" => {
+                    // Cache delegated access while its owner is alive, without
+                    // retaining I/O that would make this probe a cleanup target.
+                    let access = DeviceAccess::try_acquire_in(&directory, &board, "probe")
+                        .unwrap()
+                        .unwrap();
+                    assert!(access.is_delegated());
+                    std::fs::write(directory.join("probe-ready"), "ready").unwrap();
+                    wait_for(&directory.join("probe-owner-ended"));
+                    assert!(access.operation().is_err(), "owner loss admitted fresh I/O");
+                    assert!(
+                        DeviceAccess::try_acquire_in(&directory, &board, "stale delegate").is_err()
+                    );
                 }
                 _ => panic!("unknown broker fixture role"),
             }
@@ -676,27 +738,43 @@ mod tests {
                 .prefix(&"x".repeat(120))
                 .tempdir()
                 .unwrap();
+            let _finish = FinishIo(directory.path().to_owned());
             let mut owner = child("owner", directory.path());
             if kill_delegate {
                 owner.env("OER_BROKER_TEST_PIN_IO", "1");
             }
-            let mut owner = owner.spawn().unwrap();
+            let mut owner = OwnedChild(owner.spawn().unwrap());
             wait_for(&directory.path().join("admitted"));
-            if kill_owner {
-                owner.kill().unwrap();
-            } else {
-                std::fs::write(directory.path().join("drop-owner"), "drop").unwrap();
-            }
-            let status = owner.wait().unwrap();
-            assert_eq!(status.success(), !kill_owner);
+            wait_for(&directory.path().join("owner-ready"));
+            let lock = directory.path().join("001122334466.lock");
+            let holder: Holder =
+                serde_json::from_reader(std::fs::File::open(&lock).unwrap()).unwrap();
+            let mut probe = child("delegate-probe", directory.path());
+            Context::default()
+                .with(context_key(&lock).unwrap(), holder.token.clone())
+                .apply(&mut probe)
+                .unwrap();
+            let mut probe = OwnedChild(probe.spawn().unwrap());
+            wait_for(&directory.path().join("probe-ready"));
+            let mut contender = OwnedChild(child("contender", directory.path()).spawn().unwrap());
+            wait_for(&directory.path().join("contender-ready"));
+            // Kill the intermediate delegate while its owner still lives, so
+            // this signal cannot race the broker's own owner-loss cleanup.
             if kill_delegate {
                 let pid = std::fs::read_to_string(directory.path().join("delegate-pid")).unwrap();
                 oer_process::capture(oer_process::command("kill").args(["-KILL", pid.trim()]))
                     .unwrap();
             }
-            let lock = directory.path().join("001122334466.lock");
-            let holder: Holder =
-                serde_json::from_reader(std::fs::File::open(&lock).unwrap()).unwrap();
+            if kill_owner {
+                owner.0.kill().unwrap();
+            } else {
+                std::fs::write(directory.path().join("drop-owner"), "drop").unwrap();
+            }
+            let status = owner.0.wait().unwrap();
+            assert_eq!(status.success(), !kill_owner);
+            // Deliberately cross the old one-second window. Post-loss checks
+            // must work even when the parent is scheduled after writer cleanup.
+            std::thread::sleep(Duration::from_millis(1500));
             assert!(holder.to_string().contains("owner exited"));
             assert!(
                 holder
@@ -708,41 +786,20 @@ mod tests {
                 assert!(Instant::now() < deadline, "broker did not close admission");
                 std::thread::sleep(Duration::from_millis(10));
             }
-            assert!(
-                child("contender-busy", directory.path())
-                    .status()
-                    .unwrap()
-                    .success()
-            );
+            assert!(contender.0.wait().unwrap().success());
             let size = std::fs::metadata(directory.path().join("io"))
                 .unwrap()
                 .len();
             std::thread::sleep(Duration::from_millis(30));
-            assert!(
+            assert_eq!(
                 std::fs::metadata(directory.path().join("io"))
                     .unwrap()
-                    .len()
-                    > size
+                    .len(),
+                size,
+                "writer continued I/O after board release"
             );
-            std::fs::write(directory.path().join("finish-io"), "finish").unwrap();
-            wait_for(&directory.path().join("finished"));
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while FileLock::try_acquire(&lock, Mode::Exclusive)
-                .unwrap()
-                .is_none()
-            {
-                assert!(
-                    Instant::now() < deadline,
-                    "broker did not release finished I/O"
-                );
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            assert!(
-                child("contender-free", directory.path())
-                    .status()
-                    .unwrap()
-                    .success()
-            );
+            std::fs::write(directory.path().join("probe-owner-ended"), "ended").unwrap();
+            assert!(probe.0.wait().unwrap().success());
         }
     }
 }

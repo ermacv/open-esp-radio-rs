@@ -15,7 +15,9 @@
 //! guards keep its admission channel alive; delegates carry an explicit
 //! [`oer_process::Context`] capability for that board. [`DeviceAccess::operation`]
 //! atomically admits I/O and retains exclusion until its returned guard drops.
-//! After owner loss the broker rejects new operations and drains admitted ones.
+//! After owner loss the broker rejects new operations, stops remaining lifetime
+//! holders after bounded cleanup and waits for connection closure and complete
+//! exit of commands and processes claimed by cleanup.
 //! Ports and their reader threads must close before their operation guard.
 //!
 //! Every acquisition in one process shares its owning guard through a registry.
@@ -43,6 +45,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Holder {
     pub pid: u32,
+    /// The owner's process start time; distinguish exited/recycled PIDs.
+    pub owner_started_ticks: u64,
+    /// The independently running broker authenticated by SO_PEERCRED.
+    pub broker_pid: u32,
     /// What the holder does with the board: its command line or lease.
     pub command: String,
     /// When it took the lock, in Unix milliseconds.
@@ -79,7 +85,15 @@ fn token() -> String {
 impl std::fmt::Display for Holder {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let age = oer_durable::unix_millis().saturating_sub(self.started_unix_millis) / 1000;
-        write!(formatter, "pid {} `{}` for {age} s", self.pid, self.command)
+        write!(formatter, "pid {} `{}` for {age} s", self.pid, self.command)?;
+        if oer_process::proc::start_ticks(self.pid) != Some(self.owner_started_ticks) {
+            write!(
+                formatter,
+                "; owner exited or is inaccessible, broker pid {} retains I/O; other UIDs, PID namespaces or restricted /proc can hide holders",
+                self.broker_pid
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -151,12 +165,14 @@ impl DeviceGuard {
 
 /// A board whose owner explicitly delegated a capability to this process.
 /// It admits each operation through the lifetime broker, never by a racy
-/// holder-record check. The operation survives owner loss; fresh work does not.
+/// holder-record check. Owner loss retains exclusion throughout I/O cleanup;
+/// fresh work is rejected.
 #[derive(Clone, Debug)]
 pub struct DelegatedDevice {
     id: DeviceId,
     path: PathBuf,
     token: String,
+    broker_pid: u32,
 }
 
 impl DelegatedDevice {
@@ -238,19 +254,25 @@ impl DeviceAccess {
             std::fs::create_dir_all(parent)?;
         }
         if let Some(token) = inherited(&path)? {
+            let holder = holder_at(&path)?.ok_or("device lock no longer has an owner")?;
+            if holder.token != token {
+                return Err("device capability no longer matches its owner".into());
+            }
             let delegate = DelegatedDevice {
                 id: id.clone(),
                 path: path.clone(),
                 token,
+                broker_pid: holder.broker_pid,
             };
-            let _operation = LockBroker::operation(&path, &delegate.token)?;
+            let _operation = LockBroker::operation(&path, &delegate.token, delegate.broker_pid)?;
             return Ok(Ok(Self::Delegated(delegate)));
         }
         match FileLock::try_acquire(&path, Mode::Exclusive)? {
             Some(lock) => {
                 let token = token();
-                record(&lock, command, &token)?;
+                let mut record_file = lock.file().try_clone()?;
                 let broker = LockBroker::start(lock, &token)?;
+                record(&mut record_file, command, &token, broker.pid())?;
                 let owned = Arc::new(Owned {
                     id: id.clone(),
                     path: path.clone(),
@@ -313,11 +335,20 @@ impl DeviceAccess {
     /// Admit I/O while its owner lives and retain exclusion through that I/O.
     /// The guard must outlive ports, resets, flashes and console readers.
     pub fn operation(&self) -> crate::Result<DeviceOperation> {
-        let (token, owner) = match self {
-            Self::Owned(guard) => (&guard.owned.token, Some(guard.clone())),
-            Self::Delegated(delegate) => (&delegate.token, None),
+        let (token, broker_pid, owner) = match self {
+            Self::Owned(guard) => (
+                &guard.owned.token,
+                guard
+                    .owned
+                    .broker
+                    .as_ref()
+                    .expect("a live owner holds its broker")
+                    .pid(),
+                Some(guard.clone()),
+            ),
+            Self::Delegated(delegate) => (&delegate.token, delegate.broker_pid, None),
         };
-        let broker = LockBroker::operation(self.path(), token)
+        let broker = LockBroker::operation(self.path(), token, broker_pid)
             .map_err(|error| format!("board {}: {error}", self.id()))?;
         Ok(DeviceOperation {
             _broker: broker,
@@ -346,15 +377,22 @@ impl DeviceAccess {
     }
 }
 
-/// Write this process's [`Holder`] record for `command` into `lock`'s file.
-fn record(lock: &FileLock, command: &str, token: &str) -> crate::Result<()> {
+/// Write this process's [`Holder`] record after its broker acknowledges startup.
+fn record(
+    file: &mut std::fs::File,
+    command: &str,
+    token: &str,
+    broker_pid: u32,
+) -> crate::Result<()> {
     let holder = Holder {
         pid: std::process::id(),
+        owner_started_ticks: oer_process::proc::start_ticks(std::process::id())
+            .ok_or("cannot identify device lock owner in /proc")?,
+        broker_pid,
         command: command.to_owned(),
         started_unix_millis: oer_durable::unix_millis(),
         token: token.to_owned(),
     };
-    let mut file = lock.file();
     file.set_len(0)?;
     file.rewind()?;
     file.write_all(&serde_json::to_vec(&holder)?)?;
@@ -407,7 +445,7 @@ pub fn foreign_holder(id: &DeviceId) -> crate::Result<Option<Option<Holder>>> {
     Ok(match holder(id)? {
         Some(holder)
             if inherited(&path)?.as_deref() == Some(holder.token.as_str())
-                && LockBroker::operation(&path, &holder.token).is_ok() =>
+                && LockBroker::operation(&path, &holder.token, holder.broker_pid).is_ok() =>
         {
             None
         }
@@ -487,7 +525,13 @@ mod tests {
             .unwrap();
         let busy = DeviceAccess::try_acquire_in(directory.path(), &board, "mine").unwrap();
         assert!(matches!(busy, Err(Busy::Held(None))));
-        record(&foreign, "theirs", &token()).unwrap();
+        record(
+            &mut foreign.file().try_clone().unwrap(),
+            "theirs",
+            &token(),
+            1,
+        )
+        .unwrap();
         // The holder's token is this process's own, not an inherited one:
         // never a delegation.
         match DeviceAccess::try_acquire_in(directory.path(), &board, "mine").unwrap() {
@@ -653,8 +697,14 @@ mod tests {
             let lock = directory.path().join("001122334466.lock");
             let holder: Holder =
                 serde_json::from_reader(std::fs::File::open(&lock).unwrap()).unwrap();
+            assert!(holder.to_string().contains("owner exited"));
+            assert!(
+                holder
+                    .to_string()
+                    .contains(&format!("broker pid {}", holder.broker_pid))
+            );
             let deadline = Instant::now() + Duration::from_secs(5);
-            while LockBroker::operation(&lock, &holder.token).is_ok() {
+            while LockBroker::operation(&lock, &holder.token, holder.broker_pid).is_ok() {
                 assert!(Instant::now() < deadline, "broker did not close admission");
                 std::thread::sleep(Duration::from_millis(10));
             }

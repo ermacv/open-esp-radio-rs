@@ -33,12 +33,23 @@ the runner parses (`run`, `run-all`, `image`) are checked when they run.
 Before starting any leased command, the lease admits I/O for all its selected
 boards and pins those operations into the child process. External flashers need
 no repository broker API: board exclusion survives the lease owner's death
-until the command and its descendants close their inherited lifetime descriptors.
+through the command's complete exit and its descendants' inherited lifetimes.
+Each direct command registers its kernel pidfd before exec and waits for the
+broker's acknowledgement before it can start I/O.
 The process guardian sends SIGTERM to the command's process group on owner loss,
 then SIGKILL after one second. This is the cleanup window, not an extension of
 the lease: the broker retains exclusion until the actual I/O lifetimes end.
-Descendants that leave that process group still retain their lifetime descriptors
-but must arrange their own termination.
+The broker then finds remaining same-UID holders of those descriptors through
+`/proc/*/fd`, including daemons that called `setsid`. It sends SIGTERM and, after
+another second, SIGKILL, repeating the search to catch forks during cleanup.
+Board release requires connection EOF and completed exit of the direct command
+and every holder claimed by cleanup. A socket can close before the remaining
+I/O descriptors during process termination; the pidfd fences that interval.
+An empty process scan cannot release the board. Other UIDs, PID namespaces and
+restricted `/proc` access can prevent cleanup; the board stays busy until those holders close
+I/O. The holder diagnostic names the draining broker after owner exit. A daemon
+that closes its inherited lifetime descriptor before cleanup claims it can
+survive the lease and carries no retained board operation.
 
 A manual flash outside the runner is the dev kit's: `cargo fw flash
 --device MAC|PORT IMAGE` writes an image bundle (its directory, from `cargo

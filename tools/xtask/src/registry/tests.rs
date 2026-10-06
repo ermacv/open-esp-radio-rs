@@ -218,6 +218,21 @@ fn a_host_source_change_runs_the_fast_host_checks() {
 }
 
 #[test]
+fn issue_policy_changes_run_the_offline_guard_in_the_fast_gate() {
+    for path in [
+        ".github/labels.json",
+        ".github/ISSUE_TEMPLATE/03-change.yml",
+        ".github/scripts/issue_labels.py",
+        ".github/scripts/test_issue_labels.py",
+        ".github/workflows/issue-labels.yml",
+    ] {
+        let selected = ids(of_change(&change(&[path], Tier::Fast)));
+        assert!(selected.contains(&"issue-labels"), "{path}: {selected:?}");
+    }
+    assert!(ids(of_job(Tier::Full, "host")).contains(&"issue-labels"));
+}
+
+#[test]
 fn chip_code_type_checks_images_and_full_adds_the_chip_audits() {
     let fast = ids(of_change(&change(
         &["crates/driver/src/lib.rs"],

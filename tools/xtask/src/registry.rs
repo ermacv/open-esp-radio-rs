@@ -118,6 +118,30 @@ pub const CHECKS: &[Check] = &[
         run: fmt,
     },
     Check {
+        id: "issue-labels",
+        tier: Tier::Fast,
+        job: "host",
+        summary: "issue-label catalog and offline creation/reconciliation regressions",
+        trigger: Some(|change| {
+            touches(
+                change,
+                &[
+                    ".github/labels.json",
+                    ".github/ISSUE_TEMPLATE/",
+                    ".github/scripts/",
+                    ".github/workflows/issue-labels.yml",
+                ],
+            )
+        }),
+        run: |ctx, _| {
+            process::run(
+                ctx.command("python3")
+                    .env("PYTHONDONTWRITEBYTECODE", "1")
+                    .args([".github/scripts/issue_labels.py", "check"]),
+            )
+        },
+    },
+    Check {
         id: "lock",
         tier: Tier::Fast,
         job: "host",

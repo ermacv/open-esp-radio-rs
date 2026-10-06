@@ -135,6 +135,12 @@ merges. Any tracked source or policy change invalidates every job's key.
 Other image-provided programs, such as gcc, cmake and Python, are not
 fingerprinted; reusable coverage remains limited to seven days.
 
+The fast host `issue-labels` check validates the issue-label catalog and runs
+the guard's offline regressions with Python 3. Live GitHub metadata is reconciled
+by the separate [issue-label workflow](../../.github/workflows/issue-labels.yml);
+it does not query or mutate GitHub from the source gate. See the
+[creation invariant](../../docs/issues.md#creation-and-automatic-control).
+
 Planning requires a clean checkout so the tree hash describes its source
 files. Repository source inputs must be tracked; external sources are
 materialized from pins in tracked configuration by their existing owners.

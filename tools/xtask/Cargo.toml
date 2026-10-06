@@ -30,5 +30,5 @@ platform = "host"
 host-layer = "entry"
 host-app = "gate"
 host-boundary = "application"
-# The tests read the workflows, the hooks and the chip profiles.
-inputs = [".github/workflows", ".claude/hooks", "platform/*/chip.toml"]
+# The checks read issue policy, workflows, hooks and chip profiles.
+inputs = [".github/workflows", ".github/labels.json", ".github/ISSUE_TEMPLATE", ".github/scripts", ".claude/hooks", "platform/*/chip.toml"]

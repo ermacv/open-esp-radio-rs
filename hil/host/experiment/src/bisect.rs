@@ -433,6 +433,7 @@ impl Bisection<'_> {
                 .context(
                     oer_process::Context::current()?
                         .clone()
+                        .with(oer_stand_owners::OWNER_KEY, self.owner)
                         .with(oer_stand_arbiter::jobs::JOB_KEY, job.id()),
                 ),
         )?;
@@ -485,7 +486,9 @@ impl Bisection<'_> {
                 .args(arguments)
                 .env(oer_stand_file::paths::ARBITER_ENV, &self.arbiter)
                 .env(oer_stand_owners::OWNER_ENV, self.owner)
-                .context(oer_process::Context::default()),
+                .context(
+                    oer_process::Context::default().with(oer_stand_owners::OWNER_KEY, self.owner),
+                ),
         )?;
         match launched.runs.last() {
             Some(run) => self.judge_run(run.as_str()),

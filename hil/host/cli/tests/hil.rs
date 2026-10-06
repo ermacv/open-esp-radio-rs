@@ -60,6 +60,60 @@ fn wrapper(root: &Path) -> Command {
         .env("FIXTURE_ROOT", root);
     command
 }
+
+#[test]
+fn resolved_owner_reaches_the_runner_without_losing_enclosing_authority() {
+    const ROLE: &str = "OER_HIL_OWNER_TEST_ROLE";
+    const EXPECTED: &str = "OER_HIL_OWNER_TEST_EXPECTED";
+    const TEST: &str = "resolved_owner_reaches_the_runner_without_losing_enclosing_authority";
+
+    let enclosing = oer_process::Context::default()
+        .with(oer_stand_owners::OWNER_KEY, "enclosing-owner")
+        .with(oer_stand_arbiter::LEASE_KEY, "enclosing-lease")
+        .with(oer_stand_arbiter::jobs::JOB_KEY, "enclosing-job")
+        .with("device:/fixture/device.lock", "delegated-capability");
+    if std::env::var_os(ROLE).is_some() {
+        let owner = std::env::var(EXPECTED).unwrap();
+        assert_eq!(
+            oer_process::Context::current().unwrap(),
+            &enclosing.with(oer_stand_owners::OWNER_KEY, &owner),
+        );
+        assert_eq!(
+            oer_stand_owners::from_environment().unwrap().as_str(),
+            owner
+        );
+        assert_eq!(std::env::var(oer_stand_owners::OWNER_ENV).unwrap(), owner);
+        return;
+    }
+
+    let directory = fixture();
+    let root = directory.path();
+    executable(
+        &root.join("runner"),
+        &format!(
+            "#!/bin/sh\n\
+         if [ \"$1\" = --observer-build ]; then\n\
+         printf '{{\"schema\":2,\"resolved\":{{\"nodes\":[]}}}}\\n'\n\
+         exit 0\nfi\n\
+         export {ROLE}=runner\n\
+         exec \"{}\" --exact {TEST} --test-threads=1\n",
+            std::env::current_exe().unwrap().display(),
+        ),
+    );
+    for (args, owner) in [
+        (vec!["--owner", "other", "owner-probe"], "other"),
+        (vec!["owner-probe", "--owner=other"], "other"),
+        (vec!["owner-probe"], "enclosing-owner"),
+    ] {
+        let mut command = wrapper(root);
+        command
+            .args(args)
+            .env(EXPECTED, owner)
+            .env(oer_stand_owners::OWNER_ENV, "env-owner");
+        enclosing.apply(&mut command).unwrap();
+        oer_process::run_with_timeout(&mut command, Duration::from_secs(15)).unwrap();
+    }
+}
 #[test]
 fn forwards_runner_exit_and_uses_locked_cargo_with_explicit_offline_only() {
     let directory = fixture();

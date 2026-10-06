@@ -32,6 +32,9 @@ prints them.
   (`oer_hil_board::openocd::Openocd::locate`) and builds a chip's catalog
   bootloader itself, through the image pipeline. A run that is a job carries
   the job's id to the runner, so the runner's requests are the job's tickets.
+- An explicit `--owner` overrides the enclosing owner in the runner's operation
+  context and environment, including A/B and bisect launches. The enclosing
+  lease and delegated board capabilities continue to reach the runner.
 - Cancellation is forwarded to the runner's process group with up to five
   minutes for cleanup; the exit code is the runner's (or `128 + signal`).
 

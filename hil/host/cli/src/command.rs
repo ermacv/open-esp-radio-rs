@@ -64,14 +64,12 @@ pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> 
         println!("{id}");
         return Ok(std::process::ExitCode::SUCCESS);
     }
-    let owner = options
-        .owner(ctx)
-        .unwrap_or_else(|_| String::from("unregistered"));
+    let owner = options.owner(ctx).ok();
     // Only a command that produces runs is a job; a read-only one is not.
     let mut job = if produces_runs(&args) {
         Some(oer_hil_experiment::job::Running::begin(
             &ctx.root,
-            &owner,
+            owner.as_deref().unwrap_or("unregistered"),
             &args,
             after.as_ref(),
         )?)
@@ -98,11 +96,12 @@ pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> 
     };
     apply_quarantine(&mut runner_args)?;
     let mut launch = oer_hil_experiment::launch::Launch::new(&ctx.root, &runner).args(runner_args);
-    for (name, value) in options.environment(ctx)? {
-        launch = launch.env(name, value);
-    }
     // The runner's stand requests are the job's tickets.
     let mut context = oer_process::Context::current()?.clone();
+    if let Some(owner) = owner {
+        launch = launch.env(oer_stand_owners::OWNER_ENV, &owner);
+        context.set(oer_stand_owners::OWNER_KEY, owner);
+    }
     if let Some(job) = &job {
         context.set(oer_stand_arbiter::jobs::JOB_KEY, job.id());
     }
@@ -342,18 +341,6 @@ impl LeaseOptions {
     /// checkout's directory name.
     fn owner(&self, ctx: &Checkout) -> Result<String> {
         Ok(oer_stand_owners::resolve(self.owner.as_deref(), &ctx.root)?.to_string())
-    }
-
-    /// The owner for the runner, when one is known; a runner that leases
-    /// without one is refused by the arbiter, one that does not lease needs
-    /// none.
-    fn environment(&self, ctx: &Checkout) -> Result<Vec<(&'static str, String)>> {
-        Ok(self
-            .owner(ctx)
-            .ok()
-            .map(|owner| (oer_stand_owners::OWNER_ENV, owner))
-            .into_iter()
-            .collect())
     }
 }
 

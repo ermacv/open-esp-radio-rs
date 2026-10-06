@@ -55,7 +55,10 @@ pub fn within_enclosing_lease(test: &str, experiment: impl FnOnce(&Path, Runner)
             oer_process::run_with_timeout(&mut owner, Duration::from_secs(15)).unwrap();
         }
         Some("owner") => {
-            let grant = Arbiter::open().unwrap().acquire(&request()).unwrap();
+            let grant = Arbiter::open()
+                .unwrap()
+                .acquire(&request("lease-parent"))
+                .unwrap();
             let mut nested = child(test, "experiment");
             grant
                 .context()
@@ -93,7 +96,14 @@ pub fn within_enclosing_lease(test: &str, experiment: impl FnOnce(&Path, Runner)
                 context.get(oer_stand_arbiter::jobs::JOB_KEY),
                 Some("parent-job")
             );
-            let grant = Arbiter::open().unwrap().acquire(&request()).unwrap();
+            assert_eq!(
+                oer_stand_owners::from_environment().unwrap().as_str(),
+                "experiment-test"
+            );
+            let grant = Arbiter::open()
+                .unwrap()
+                .acquire(&request("experiment-test"))
+                .unwrap();
             assert!(
                 grant.is_nested(),
                 "runner queued behind its enclosing lease"
@@ -112,9 +122,9 @@ pub fn within_enclosing_lease(test: &str, experiment: impl FnOnce(&Path, Runner)
     }
 }
 
-fn request() -> Request {
+fn request(owner: &str) -> Request {
     Request {
-        owner: "experiment-test".into(),
+        owner: owner.into(),
         work: "nested experiment".into(),
         scenarios: Vec::new(),
         claims: vec![Claim::stand()],

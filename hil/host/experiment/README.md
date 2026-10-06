@@ -16,6 +16,8 @@ launched directly.
 
 A/B preparation and current-runner bisection steps forward their enclosing
 lease's explicit context, replacing its job ID with the new run's job ID.
+Each launch sets the context's owner to the experiment's resolved owner, so an
+explicit override also wins inside another owner's lease.
 Measured A/B rounds select context from their round grant. Nested runners can
 therefore join the parent lease and use its delegated boards while ordinary
 build and Git subprocesses receive no operation context.

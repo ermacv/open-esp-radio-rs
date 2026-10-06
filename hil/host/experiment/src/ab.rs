@@ -510,6 +510,7 @@ impl PreparedArm {
             Some(grant) => grant.context()?,
             None => oer_process::Context::current()?.clone(),
         };
+        context.set(oer_stand_owners::OWNER_KEY, session.owner);
         context.set(oer_stand_arbiter::jobs::JOB_KEY, job.id());
         launch = launch.context(context);
         let launched = launch_run(&launch)?;

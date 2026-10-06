@@ -44,7 +44,7 @@ description = "../esp32s31_rust firmware wifi-sta-auth-probe on ESP32-S31 rev0 w
 [[sources]]
 id = "HIL_VENDOR_CALIBRATION_REGISTERS_2026_09_27"
 kind = "unattested-hil-observation"
-description = "verification/esp32s31/hil-vendor/calibration on ESP32-S31 rev0, 2026-09-27: after cold Wi-Fi PHY calibration with the pinned ESP-IDF 7b9cc1ac and libphy 20f1db05, the firmware read every readable register of the published RadioPhyPeripherals partition on host request over three boots (crates/hardware/esp32s31/calibration). 173 of 209 registers read without effect and 9 varied between boots; 36 registers of PHY_BTAGC_RECOVERED and PHY_BRX_RECOVERED reset the chip when read with their clock domain off. The partition image observes the calibrated register state for the hardware calibration cross-check; it performs no writes."
+description = "verification/esp32s31/hil-vendor/calibration on ESP32-S31 rev0, 2026-09-27: after cold Wi-Fi PHY calibration with the pinned ESP-IDF 7b9cc1ac and libphy 20f1db05, the firmware read every readable register of the published RadioPhyPeripherals partition on host request over three boots (hil/phy/esp32s31/calibration). 173 of 209 registers read without effect and 9 varied between boots; 36 registers of PHY_BTAGC_RECOVERED and PHY_BRX_RECOVERED reset the chip when read with their clock domain off. The partition image observes the calibrated register state for the hardware calibration cross-check; it performs no writes."
 
 [[sources]]
 id = "HIL_VENDOR_SCAN_BACKOFF_UPPER_LIMIT_2026_09_28"

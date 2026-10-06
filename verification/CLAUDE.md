@@ -17,9 +17,9 @@ private vendor artifacts live here.
 The host CLI, harness, evidence producers and chip scenarios belong to this
 workspace; firmware probes and host stands have their own workspaces below
 the chip directories. Root-workspace shared formats live in
-[`../hil/evidence-shard/`](../hil/evidence-shard/) and
-[`../hil/phy-calibration-capture/`](../hil/phy-calibration-capture/README.md);
-chip calibration relations and comparisons live in `../crates/hardware/<chip>/`.
+[`../qualification/evidence-shard/`](../qualification/evidence-shard/README.md) and
+[`../hil/phy/capture/`](../hil/phy/capture/README.md);
+chip calibration relations and comparisons live in `../hil/phy/<chip>/`.
 
 ## Rules
 

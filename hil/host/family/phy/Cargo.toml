@@ -17,7 +17,7 @@ oer-hil-schema = { path = "../../../schema" }
 oer-hil-scenario-catalog = { path = "../../scenario/catalog" }
 oer-chip-profile = { path = "../../../../tools/chip-profile" }
 oer-durable = { path = "../../../../tools/durable" }
-oer-phy-calibration-capture = { path = "../../../phy-calibration-capture" }
+oer-phy-calibration-capture = { path = "../../../phy/capture" }
 oer-hil-lab = { path = "../../lab" }
 oer-hil-link = { path = "../../link" }
 oer-hil-protocol = { path = "../../../protocol", features = ["registry"] }

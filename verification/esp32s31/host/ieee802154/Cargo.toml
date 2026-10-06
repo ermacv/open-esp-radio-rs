@@ -49,7 +49,7 @@ oer-ieee802154 = { path = "../../../../crates/protocols/ieee802154" }
 oer-durable = { path = "../../../../tools/durable" }
 oer-vendor-artifacts = { path = "../../../../tools/vendor-artifacts" }
 oer-vendor-evidence = { path = "../../../evidence" }
-oer-vendor-evidence-shard = { path = "../../../../hil/evidence-shard" }
+oer-vendor-evidence-shard = { path = "../../../../qualification/evidence-shard" }
 
 [features]
 # Build the vendor driver and the port with multi-PAN and two interfaces.

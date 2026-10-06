@@ -9,6 +9,7 @@ never decide it. Reference: [README](README.md).
 | `catalog/<chip>/*.toml` | Canonical capability declarations, source facts and inventories |
 | `targets/<chip>/*.toml` | Programs: selected capabilities, HIL requirements, evidence directories |
 | `evaluator/` | `oer-qualification`, the evaluator behind `cargo qualification` |
+| `evidence-shard/` | Root-workspace shared vendor and HIL evidence shard format, validation, currency and reader/writer ([README](evidence-shard/README.md)) |
 
 ## Rules
 

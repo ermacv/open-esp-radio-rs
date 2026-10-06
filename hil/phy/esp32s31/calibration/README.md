@@ -3,15 +3,15 @@
 Compares the cold PHY calibration of the pinned vendor firmware with the
 production calibration on the same ESP32-S31 board. The comparison uses the
 reviewed `phy_param` relation that the Blobray tracking scenario also uses
-([`oer-esp32s31-phy-relation`](../phy-relation/README.md)'s `committed`).
+([`oer-esp32s31-phy-relation`](../relation/README.md)'s `committed`).
 The production side goes through the same projection functions as the
 comparison probes (its `projection`).
 It does not depend on Blobray peripheral models.
 
 This package is a library: what is compared and how. The capture is a HIL
 run: the `phy` family's `vendor-calibration` workload
-([`oer-hil-family-phy`](../../../../hil/host/family/phy/README.md)) and its
-scenarios in [`hil/scenarios/phy`](../../../../hil/scenarios/phy):
+([`oer-hil-family-phy`](../../../host/family/phy/README.md)) and its
+scenarios in [`hil/scenarios/phy`](../../../scenarios/phy):
 
 ```console
 cargo hil run phy-vendor-calibration
@@ -27,7 +27,7 @@ and OTA selection the pipeline encodes around the vendor application. Every
 flash goes through the run's flash operation under its lease and lock of
 the board, which journals it. The results are the run bundle's: each boot is
 a typed observation (`vendor-boot-NN`, `production-boot-NN`, the chip-neutral
-[`oer-phy-calibration-capture`](../../../../hil/phy-calibration-capture)'s
+[`oer-phy-calibration-capture`](../../capture)'s
 `boots::VendorBoot` and `boots::ProductionBoot`), the images both sides ran
 are `images`, and the
 comparison is `comparison` (`compare::Summary`); a verdict other than MATCH

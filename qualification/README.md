@@ -10,6 +10,11 @@ host coverage and async states are reviewed declarations; vendor and HIL
 states are derived from independent evidence. Qualification remains the sole
 readiness authority for the selected scope.
 
+The root-workspace [`evidence-shard/`](evidence-shard/README.md) library owns
+the shared vendor and HIL evidence shard format, validation, currency and
+reader/writer. The evaluator records HIL shards through it, and verification
+producers use the same format for their scenario evidence.
+
 Saved HIL evidence uses the current observer descriptor prepared by `cargo hil`
 or `cargo hil observer`. Evaluation reads it once and never builds or
 executes a runner. An unavailable descriptor is diagnosed separately from an

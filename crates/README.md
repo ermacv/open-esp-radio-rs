@@ -3,10 +3,7 @@
 `crates/` contains the source-owned radio implementation, its protocol code
 and production integrations. Applications supply board identity, credentials
 and peripherals. HIL scenarios, traffic generators, UART test protocols,
-vendor artifacts and qualification policy live outside this tree. Chip-specific
-calibration relations and comparisons live beside their PHY in
-`hardware/<chip>/`, with verification metadata describing their evidence role.
-See the
+vendor artifacts and qualification policy live outside this tree. See the
 [source policy](../docs/source-policy.md). The
 [network implementation guide](../docs/network-implementations.md) explains
 the owned Xarxa/Embassy integration, its crates and its dependency pins.
@@ -45,7 +42,6 @@ Cargo package identities are independent of this directory hierarchy.
 | `services/ieee80211/upper-mac/` | `EventRouter`, the one consumer of a lower-MAC port's events, dispatching completions by `TxId`, received frames, lifecycle terminals and extension events; `UpperMacTx`, which runs the transmit planner over the router, one submission per attempt, so exchanges of several access categories run concurrently |
 | `services/bluetooth/hci/transport/` | Bounded in-process HCI Host/Controller transport and the storage of one HCI epoch |
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` partitions register authority; HAL `root` and `owner` own the radio root and protocol routes; domain modules hold register operations, transactions and RF algorithms |
-| `hardware/esp32s31/{phy-relation,calibration}/` | Root-workspace libraries for the reviewed vendor/production calibration relation and comparison, shared by verification probes, scenarios and HIL |
 | `hardware/esp32s31/driver/ieee80211/{dma,mac}/` | S31 descriptor ownership and MAC `rx/tx/rate`; `mac/tx/metadata` lowers portable traffic intent |
 | `roles/esp32s31/ieee80211/{sta,ap}/` | Executor-free chip station and access-point role composition over the MAC driver |
 | `roles/espressif/ieee802154/radio/` | Executor-free IEEE 802.15.4 radio role: the portable radio contract over the ported MAC engine |

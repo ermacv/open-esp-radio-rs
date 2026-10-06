@@ -10,6 +10,18 @@ channel coordinator (`oer-ieee80211-ap::coordinator::ChannelCoordinator`)
 that decides the port's one channel. The station's upstream BSS decides it,
 and the access point follows within its `ApFollowPolicy`.
 
+The search mode is a type parameter, selected when constructing the pair:
+
+| Mode | Construction | Backend requirements | Search policy |
+| --- | --- | --- | --- |
+| `CurrentChannel` (the default type) | `PortStaAp::new(station, ap, follow_policy, timer)` | The clients' existing port requirements | No off-channel channel list; observe the AP's operating channel |
+| `ProtectedSearch` | `PortStaAp::new_with_search(station, ap, coordinator, timer)` | `LowerMacAirReservation` and `LowerMacLiveRetune` | The coordinator's explicit `ApSearchPolicy`, including its channel list |
+
+Both modes expose `connect`, `reconnect` and `run_until`. Missing backend
+extensions cannot select protected windows, and a current-channel pair
+cannot silently ignore a supplied channel list: its constructor accepts no
+off-channel search policy.
+
 | Operation | What it does |
 | --- | --- |
 | `PortStaAp::connect` | The station joins its upstream, alone on the port, and the access point starts on the upstream's channel when the policy lets it serve it |
@@ -23,6 +35,12 @@ The actions it carries out:
 - **Stop the access point.** When the upstream goes where the policy does not let the access point follow, its peers are deauthenticated and the BSS closes. The station follows the upstream alone.
 - **Start the access point.** It starts again once the port is on a channel it may serve.
 - **Leave the upstream.** This is the alternative policy: the station leaves, and the access point keeps its channel.
+
+Permanent moves use the shared upper-MAC `PortClient::retune`. On S31 the
+channel setting refuses while enabled, so this operation disables the port,
+sets the channel and enables it again. The S31 channel setting breaks both
+VIFs' TSF relations; an announced CSA move tolerates that change. Temporary
+search windows require the separate live-retune contract below.
 
 Neither client tunes the port while both run. A lost upstream ends
 `run_until` with `PortStaApEvent::StationEnded`; subsequent calls serve the
@@ -43,7 +61,7 @@ instead of failing with `Busy`; exchanges on different queues still run
 concurrently. The access point's peers, association epochs and beacon
 schedule survive failed and successful upstream retries.
 
-The coordinator's `ApSearchPolicy` schedules receive-only off-channel
+In `ProtectedSearch`, the coordinator's `ApSearchPolicy` schedules receive-only off-channel
 windows: by default 20 ms, after each AP TBTT for 30 seconds, then about
 once a second. An empty list observes only the current channel through the
 same search loop. Between windows the AP delivers data and publishes
@@ -52,11 +70,15 @@ beacons while the disconnected station observes its upstream on that channel.
 At an absence boundary both clients finish their started exchanges. The
 owner pauses AP TX by not polling it, reserves the home channel's air with
 CTS-to-self through `upper-mac-service::absence::PortAbsence`, tunes the
-search channel and receives until the absolute end, then returns home before
-resuming the AP. It never disables the port or enables monitor mode. CTS
+search channel through `LowerMacLiveRetune` and receives until the absolute
+end, then returns home before resuming the AP. A temporary retune preserves
+both TSF relations, interfaces, keys, BlockAck state and queue ownership;
+it does not disable the port or enable monitor mode. CTS
 must complete successfully before departure; a late CTS or exchange skips
 an expired window. A failed reservation is reported with the radio home.
-Invalid windows exceeding 20 ms or reaching the next TBTT are refused.
+The window uses the configured policy's dwell; 20 ms is the default.
+An empty window is refused. An expired window or one that reaches the next
+TBTT is skipped while the AP continues serving its peers.
 Dropping passive reception returns the radio home synchronously; dropping
 an active TX remains subject to the completion/ownership contract (#213).
 If returning home fails, the retained `AbsenceState` blocks every pair
@@ -82,5 +104,10 @@ access point. `ModelAir` respects CTS NAV, so peer data queued during an
 absence waits until return. The tests cover same-channel recovery, a
 discovered channel followed by CSA and rejoin, preserved downstream peers
 and data, dense-to-sparse scheduling, delayed/failed CTS and cancellation
-of passive reception. S31 CTS support and timing still require hardware
-qualification (#202); this host step supplies no HIL evidence.
+of passive reception, a configurable dwell and skipped late windows. A
+backend that refuses enabled-port channel settings and implements neither
+absence extension tests current-channel connect, reconnect, passive rejoin
+and persistent CSA with lifecycle retuning and preserved downstream peers.
+The S31 protected mode still needs CTS support (#202) and a qualified
+live-retune implementation (#218); S31 implements neither extension yet.
+This host step supplies no HIL evidence.

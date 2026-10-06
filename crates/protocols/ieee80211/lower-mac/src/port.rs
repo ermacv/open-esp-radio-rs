@@ -69,8 +69,10 @@ pub type SubmitResult<A, E> = Result<Result<(), Refused<A>>, E>;
 /// Optional operations are extension traits over this one:
 /// [`LowerMacAmpdu`](crate::LowerMacAmpdu),
 /// [`LowerMacBeaconTiming`](crate::LowerMacBeaconTiming),
-/// [`LowerMacMonitor`](crate::LowerMacMonitor) and
-/// [`LowerMacCancelPublished`](crate::LowerMacCancelPublished). An upper
+/// [`LowerMacMonitor`](crate::LowerMacMonitor),
+/// [`LowerMacCancelPublished`](crate::LowerMacCancelPublished),
+/// [`LowerMacAirReservation`](crate::LowerMacAirReservation) and
+/// [`LowerMacLiveRetune`](crate::LowerMacLiveRetune). An upper
 /// layer that needs one requires its trait bound; a backend that lacks it
 /// does not implement it.
 ///

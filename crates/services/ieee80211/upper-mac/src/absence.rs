@@ -4,10 +4,12 @@
 //! exchange already started before beginning the visit. They stay paused
 //! until the visit ends. The router continues receiving events. Background
 //! scan and channel selection can use this same primitive.
+//! CTS-to-self and live retuning are independent backend extensions:
+//! [`LowerMacAirReservation`] and [`LowerMacLiveRetune`]. The base channel
+//! setting cannot substitute for the latter's preservation guarantees.
 
 use oer_ieee80211_lower_mac::{
-    Channel, CoexPriority, Ieee80211LowerMacPort, LowerMacAirReservation, LowerMacSetting, PhyRate,
-    TxStatus,
+    Channel, CoexPriority, LowerMacAirReservation, LowerMacLiveRetune, PhyRate, TxStatus,
 };
 use oer_time::{Instant, Timer};
 
@@ -62,14 +64,14 @@ pub enum AbsenceError<E> {
 /// radio home and reports a setting failure. Dropping a receive future also
 /// returns it home synchronously; a terminal port fault still requires the
 /// owner's recovery. This does not make an in-flight TX future cancellable.
-pub struct PortAbsence<'s, 'p, P: Ieee80211LowerMacPort> {
+pub struct PortAbsence<'s, 'p, P: LowerMacLiveRetune> {
     port: &'p P,
     state: &'s mut AbsenceState,
     home: Channel,
     away: bool,
 }
 
-impl<'s, 'p, P: Ieee80211LowerMacPort> PortAbsence<'s, 'p, P> {
+impl<'s, 'p, P: LowerMacLiveRetune> PortAbsence<'s, 'p, P> {
     /// Reserve the operating channel's air with CTS-to-self, then retune.
     /// `None` means the absolute window expired while still at home. A late
     /// CTS never shifts the window's end. The reservation covers the time
@@ -111,7 +113,7 @@ impl<'s, 'p, P: Ieee80211LowerMacPort> PortAbsence<'s, 'p, P> {
             return Ok(None);
         }
         let port = client.port();
-        port.apply(LowerMacSetting::Channel(window.channel))
+        port.retune_live(window.channel)
             .map_err(|error| AbsenceError::Client(PortClientError::Port(error)))?
             .map_err(|error| AbsenceError::Client(PortClientError::Setting(error)))?;
         Ok(Some(Self {
@@ -127,7 +129,7 @@ impl<'s, 'p, P: Ieee80211LowerMacPort> PortAbsence<'s, 'p, P> {
         self.away = false;
         let restored = self
             .port
-            .apply(LowerMacSetting::Channel(self.home))
+            .retune_live(self.home)
             .map_err(|error| AbsenceError::Client(PortClientError::Port(error)))
             .and_then(|result| {
                 result.map_err(|error| AbsenceError::Client(PortClientError::Setting(error)))
@@ -137,15 +139,12 @@ impl<'s, 'p, P: Ieee80211LowerMacPort> PortAbsence<'s, 'p, P> {
     }
 }
 
-impl<P: Ieee80211LowerMacPort> Drop for PortAbsence<'_, '_, P> {
+impl<P: LowerMacLiveRetune> Drop for PortAbsence<'_, '_, P> {
     fn drop(&mut self) {
         if self.away {
             // Drop cannot return an error. Keep the failure in the owner's
             // state rather than let it resume clients on an unknown channel.
-            self.state.recovery_required = !matches!(
-                self.port.apply(LowerMacSetting::Channel(self.home)),
-                Ok(Ok(())),
-            );
+            self.state.recovery_required = !matches!(self.port.retune_live(self.home), Ok(Ok(())),);
         }
     }
 }

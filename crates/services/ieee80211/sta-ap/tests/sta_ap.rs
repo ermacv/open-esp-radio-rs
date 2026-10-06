@@ -21,8 +21,8 @@ use oer_ieee80211_ap_service::port::{
 };
 use oer_ieee80211_datapath::{SoftwareTxFrame, memory::MemoryTxQueues};
 use oer_ieee80211_lower_mac::{
-    Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort, LifecycleCommand, LowerMacSetting,
-    MacAddress, TxPower, VifId, VifRole,
+    Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort, LifecycleCommand, LowerMacAmpdu,
+    LowerMacBeaconTiming, LowerMacMonitor, LowerMacSetting, MacAddress, TxPower, VifId, VifRole,
     model::{LowerMacModel, ModelAir},
 };
 use oer_ieee80211_mac::{
@@ -44,7 +44,7 @@ use oer_ieee80211_sta::{
     modem_sleep::SleepType,
     scan::StaScanConfig,
 };
-use oer_ieee80211_sta_ap_service::{PortStaAp, PortStaApError, PortStaApEvent};
+use oer_ieee80211_sta_ap_service::{PortStaAp, PortStaApError, PortStaApEvent, ProtectedSearch};
 use oer_ieee80211_sta_service::port::{
     NoCoexistence, PortDisconnect, PortLink, PortLinkSupervision, PortProbe, PortStation,
     PortStationConfig, PortStationEnv, PortStationError, PortStationEvent, PortStationProfile,
@@ -175,21 +175,42 @@ impl SoftwareTxFrame for TestFrame {
 
 type TestFrames = MemoryTxQueues<TestFrame, 32>;
 type Model = LowerMacModel<NetworkBody<TestFrame>>;
-type Router = PortRouter<'static, Model>;
+type TestPair = PortStaAp<'static, Env, Env, &'static VirtualTimer, ProtectedSearch>;
+type Router<P = Model> = PortRouter<'static, P>;
+type StationJoin<P> = AssociationAttemptOutcome<
+    PortStation<'static, Env<P>>,
+    PortStation<'static, Env<P>>,
+    oer_ieee80211_sta_service::port::PortAttemptError<Env<P>>,
+>;
 
 /// One environment for every driver of the test.
-struct Env(PhantomData<()>);
+trait TestPort:
+    LowerMacBeaconTiming
+    + LowerMacMonitor
+    + LowerMacAmpdu
+    + Ieee80211LowerMacPort<TxBody = NetworkBody<TestFrame>>
+{
+}
+impl<P> TestPort for P where
+    P: LowerMacBeaconTiming
+        + LowerMacMonitor
+        + LowerMacAmpdu
+        + Ieee80211LowerMacPort<TxBody = NetworkBody<TestFrame>>
+{
+}
 
-impl PortClientEnv for Env {
+struct Env<P: TestPort = Model>(PhantomData<P>);
+
+impl<P: TestPort> PortClientEnv for Env<P> {
     type NetworkFrame = TestFrame;
-    type Port = Model;
+    type Port = P;
     type Budget = ProtectEveryHeTxop;
     type Ladder = FixedRate;
     type Entropy = Seeded;
     type Aggregation = PortAmpduAggregation;
 }
 
-impl PortStationEnv for Env {
+impl<P: TestPort> PortStationEnv for Env<P> {
     type Timer = &'static VirtualTimer;
     type KeyUnwrap = RsnSoftwareAes;
     type Coex = NoCoexistence;
@@ -205,7 +226,7 @@ impl PortApAuthenticator for FixedMaterial {
     }
 }
 
-impl PortApEnv for Env {
+impl<P: TestPort> PortApEnv for Env<P> {
     type Timer = &'static VirtualTimer;
     type Authenticator = FixedMaterial;
     type Sae = NoSae;
@@ -244,13 +265,13 @@ fn radio() -> (&'static Model, &'static Router) {
     (model, leak(PortRouter::new(model, 1)))
 }
 
-fn station(
-    router: &'static Router,
+fn station<P: TestPort + 'static>(
+    router: &'static Router<P>,
     timer: &'static VirtualTimer,
     address: MacAddress,
     ssid: &'static [u8],
     frames: &'static TestFrames,
-) -> PortStation<'static, Env> {
+) -> PortStation<'static, Env<P>> {
     let link = PortLink::new(
         router,
         planner(),
@@ -305,14 +326,14 @@ fn station(
     )
 }
 
-fn access_point(
-    router: &'static Router,
+fn access_point<P: TestPort + 'static>(
+    router: &'static Router<P>,
     timer: &'static VirtualTimer,
     address: MacAddress,
     ssid: &'static [u8],
     channel: Channel,
     frames: &'static TestFrames,
-) -> PortAccessPoint<'static, Env> {
+) -> PortAccessPoint<'static, Env<P>> {
     let client = PortClient::new(
         router,
         planner(),
@@ -406,14 +427,21 @@ impl World {
         self.drive_observing(future, || {})
     }
 
-    fn drive_observing<F: Future>(&self, future: F, mut observe: impl FnMut()) -> F::Output {
+    fn drive_observing<F: Future>(&self, future: F, observe: impl FnMut()) -> F::Output {
+        self.drive_with_pair_router(future, self.pair.1, observe)
+    }
+
+    fn drive_with_pair_router<F: Future, P: Ieee80211LowerMacPort>(
+        &self,
+        future: F,
+        pair_router: &'static Router<P>,
+        mut observe: impl FnMut(),
+    ) -> F::Output {
         let air = ModelAir::new([self.upstream.0, self.pair.0, self.client.0]);
         let mut future = pin!(future);
-        let mut routers = [
-            pin!(self.upstream.1.run()),
-            pin!(self.pair.1.run()),
-            pin!(self.client.1.run()),
-        ];
+        let mut upstream_router = pin!(self.upstream.1.run());
+        let mut pair_router = pin!(pair_router.run());
+        let mut client_router = pin!(self.client.1.run());
         let mut context = Context::from_waker(Waker::noop());
         let mut quiet = 0;
         for _ in 0..50_000_000 {
@@ -423,12 +451,9 @@ impl World {
             if let Poll::Ready(output) = polled {
                 return output;
             }
-            for router in &mut routers {
-                assert!(
-                    router.as_mut().poll(&mut context).is_pending(),
-                    "a radio was poisoned"
-                );
-            }
+            assert!(upstream_router.as_mut().poll(&mut context).is_pending());
+            assert!(pair_router.as_mut().poll(&mut context).is_pending());
+            assert!(client_router.as_mut().poll(&mut context).is_pending());
             if air.step() {
                 quiet = 0;
                 continue;
@@ -546,10 +571,7 @@ async fn serve_client(
 }
 
 /// The pair, served until `until`: no event ends it early.
-async fn serve_pair(
-    pair: &mut PortStaAp<'static, Env, Env, &'static VirtualTimer>,
-    until: Instant,
-) {
+async fn serve_pair(pair: &mut TestPair, until: Instant) {
     let event = pair
         .run_until(until, &mut |_| {}, &mut |_| {})
         .await
@@ -557,13 +579,7 @@ async fn serve_pair(
     assert_eq!(event, None);
 }
 
-fn connected(
-    outcome: AssociationAttemptOutcome<
-        PortStation<'static, Env>,
-        PortStation<'static, Env>,
-        oer_ieee80211_sta_service::port::PortAttemptError<Env>,
-    >,
-) -> PortStation<'static, Env> {
+fn connected<P: TestPort>(outcome: StationJoin<P>) -> PortStation<'static, Env<P>> {
     match outcome {
         AssociationAttemptOutcome::Connected { connected, .. } => connected,
         AssociationAttemptOutcome::Failed(failure) => {
@@ -572,10 +588,7 @@ fn connected(
     }
 }
 
-fn unconnected_pair(
-    world: &World,
-    policy: ApFollowPolicy,
-) -> PortStaAp<'static, Env, Env, &'static VirtualTimer> {
+fn unconnected_pair(world: &World, policy: ApFollowPolicy) -> TestPair {
     unconnected_pair_with_search(world, policy, ApSearchPolicy::new(&[]))
 }
 
@@ -583,8 +596,8 @@ fn unconnected_pair_with_search(
     world: &World,
     policy: ApFollowPolicy,
     search: ApSearchPolicy<'static>,
-) -> PortStaAp<'static, Env, Env, &'static VirtualTimer> {
-    PortStaAp::new(
+) -> TestPair {
+    PortStaAp::new_with_search(
         station(
             world.pair.1,
             world.timer,
@@ -612,7 +625,7 @@ fn set_up(
     policy: ApFollowPolicy,
 ) -> (
     PortAccessPoint<'static, Env>,
-    PortStaAp<'static, Env, Env, &'static VirtualTimer>,
+    TestPair,
     PortStation<'static, Env>,
 ) {
     set_up_with_search(world, policy, ApSearchPolicy::new(&[]))
@@ -624,7 +637,7 @@ fn set_up_with_search(
     search: ApSearchPolicy<'static>,
 ) -> (
     PortAccessPoint<'static, Env>,
-    PortStaAp<'static, Env, Env, &'static VirtualTimer>,
+    TestPair,
     PortStation<'static, Env>,
 ) {
     let mut upstream = access_point(
@@ -791,11 +804,7 @@ fn policy() -> ApFollowPolicy {
     }
 }
 
-fn lose_upstream(
-    world: &World,
-    upstream: &mut PortAccessPoint<'static, Env>,
-    pair: &mut PortStaAp<'static, Env, Env, &'static VirtualTimer>,
-) {
+fn lose_upstream(world: &World, upstream: &mut PortAccessPoint<'static, Env>, pair: &mut TestPair) {
     world.drive(upstream.stop()).unwrap();
     let event = world
         .drive(pair.run_until(world.after(1_000), &mut |_| {}, &mut |_| {}))
@@ -1567,26 +1576,136 @@ fn invalid_search_windows_are_refused_before_reserving_or_retuning() {
 }
 
 fn invalid_search_windows_are_refused_before_reserving_or_retuning_inner() {
-    for dwell in [Duration::ZERO, Duration::from_millis(21)] {
-        let world = World::new();
-        let mut search = ApSearchPolicy::new(&SCANNED);
-        search.dwell = dwell;
-        let (mut upstream, mut pair, _) = set_up_with_search(&world, policy(), search);
-        lose_upstream(&world, &mut upstream, &mut pair);
-        let updates = world.pair.0.channel_updates();
-        let submitted = world.pair.0.submitted().len();
-        assert!(matches!(
-            world.drive(pair.run_until(world.after(500), &mut |_| {}, &mut |_| {})),
-            Err(PortStaApError::Absence(AbsenceError::InvalidWindow))
-        ));
-        assert_eq!(world.pair.0.channel_updates(), updates);
-        assert!(
-            world.pair.0.submitted()[submitted..]
+    let world = World::new();
+    let mut search = ApSearchPolicy::new(&SCANNED);
+    search.dwell = Duration::ZERO;
+    let (mut upstream, mut pair, _) = set_up_with_search(&world, policy(), search);
+    lose_upstream(&world, &mut upstream, &mut pair);
+    let updates = world.pair.0.channel_updates();
+    let submitted = world.pair.0.submitted().len();
+    assert!(matches!(
+        world.drive(pair.run_until(world.after(500), &mut |_| {}, &mut |_| {})),
+        Err(PortStaApError::Absence(AbsenceError::InvalidWindow))
+    ));
+    assert_eq!(world.pair.0.channel_updates(), updates);
+    assert!(
+        world.pair.0.submitted()[submitted..]
+            .iter()
+            .all(|attempt| attempt.frames[0][0] != 0xc4)
+    );
+    assert!(pair.access_point().service().peer_status(CLIENT).is_some());
+}
+
+#[test]
+fn passive_absences_use_the_configured_dwell() {
+    on_large_stack(passive_absences_use_the_configured_dwell_inner);
+}
+
+fn passive_absences_use_the_configured_dwell_inner() {
+    let world = World::new();
+    let mut search = ApSearchPolicy::new(&SCANNED);
+    search.dwell = Duration::from_millis(25);
+    let (mut upstream, mut pair, _) = set_up_with_search(&world, policy(), search);
+    lose_upstream(&world, &mut upstream, &mut pair);
+    let mut away = None;
+    let mut visits = Vec::new();
+    let result = world.drive_observing(
+        pair.run_until(world.after(500), &mut |_| {}, &mut |_| {}),
+        || {
+            if world.pair.0.channel() != Some(ghz2_4(6)) {
+                away.get_or_insert(world.timer.now());
+            } else if let Some(start) = away.take() {
+                visits.push(world.timer.now().saturating_duration_since(start));
+            }
+        },
+    );
+    assert_eq!(result.unwrap(), None);
+    assert!(visits.len() >= 3);
+    assert!(visits.iter().all(|duration| *duration == search.dwell));
+    assert!(pair.access_point().service().peer_status(CLIENT).is_some());
+}
+
+#[test]
+fn windows_reaching_the_next_tbtt_are_skipped_while_the_ap_keeps_serving() {
+    on_large_stack(windows_reaching_the_next_tbtt_are_skipped_while_the_ap_keeps_serving_inner);
+}
+
+fn windows_reaching_the_next_tbtt_are_skipped_while_the_ap_keeps_serving_inner() {
+    let world = World::new();
+    let mut search = ApSearchPolicy::new(&SCANNED);
+    search.guard = Duration::from_millis(90);
+    search.dwell = Duration::from_millis(25);
+    let (mut upstream, mut pair, _) = set_up_with_search(&world, policy(), search);
+    lose_upstream(&world, &mut upstream, &mut pair);
+    let beacons = pair.access_point().counters().beacons;
+    let submitted = world.pair.0.submitted().len();
+    let updates = world.pair.0.channel_updates();
+    // End at a TBTT so clipping to the caller's deadline cannot turn the
+    // last overlapping window into a safe shorter visit.
+    let until = pair
+        .access_point()
+        .schedule()
+        .unwrap()
+        .next_tbtt
+        .checked_add(Duration::from_micros(4 * 102_400))
+        .unwrap();
+    assert_eq!(
+        world
+            .drive(pair.run_until(until, &mut |_| {}, &mut |_| {}))
+            .unwrap(),
+        None
+    );
+    assert!(pair.access_point().counters().beacons >= beacons + 4);
+    assert_eq!(world.pair.0.channel_updates(), updates);
+    assert!(
+        world.pair.0.submitted()[submitted..]
+            .iter()
+            .all(|attempt| attempt.frames[0][0] != 0xc4)
+    );
+    assert!(pair.access_point().service().peer_status(CLIENT).is_some());
+}
+
+#[test]
+fn a_beacon_delayed_past_the_search_window_skips_it_without_ending_the_run() {
+    on_large_stack(a_beacon_delayed_past_the_search_window_skips_it_without_ending_the_run_inner);
+}
+
+fn a_beacon_delayed_past_the_search_window_skips_it_without_ending_the_run_inner() {
+    let world = World::new();
+    let (mut upstream, mut pair, _) =
+        set_up_with_search(&world, policy(), ApSearchPolicy::new(&SCANNED));
+    lose_upstream(&world, &mut upstream, &mut pair);
+    let next_tbtt = pair.access_point().schedule().unwrap().next_tbtt;
+    let late = next_tbtt.checked_add(Duration::from_millis(30)).unwrap();
+    let until = late.checked_add(Duration::from_millis(10)).unwrap();
+    let updates = world.pair.0.channel_updates();
+    let submitted = world.pair.0.submitted().len();
+    let mut delayed = false;
+    let result = world.drive_observing(pair.run_until(until, &mut |_| {}, &mut |_| {}), || {
+        if !delayed
+            && world
+                .pair
+                .0
+                .published()
                 .iter()
-                .all(|attempt| attempt.frames[0][0] != 0xc4)
-        );
-        assert!(pair.access_point().service().peer_status(CLIENT).is_some());
-    }
+                .any(|(_, attempt)| attempt.frames[0][0] == 0x80)
+        {
+            delayed = true;
+            world.timer.advance_to(late);
+            for model in [world.upstream.0, world.pair.0, world.client.0] {
+                model.set_now(RadioInstant::from_micros(late.as_micros()));
+            }
+        }
+    });
+    assert!(delayed);
+    assert_eq!(result.unwrap(), None);
+    assert_eq!(world.pair.0.channel_updates(), updates);
+    assert!(
+        world.pair.0.submitted()[submitted..]
+            .iter()
+            .all(|attempt| attempt.frames[0][0] != 0xc4)
+    );
+    assert!(pair.access_point().service().peer_status(CLIENT).is_some());
 }
 
 fn a_failed_authentication_retains_the_station_and_keeps_publishing_beacons_inner() {
@@ -1624,3 +1743,6 @@ fn a_failed_authentication_retains_the_station_and_keeps_publishing_beacons_inne
     assert!(pair.station().connection().is_some());
     assert!(client.connection().is_some());
 }
+
+#[path = "sta_ap/current_channel.rs"]
+mod current_channel;

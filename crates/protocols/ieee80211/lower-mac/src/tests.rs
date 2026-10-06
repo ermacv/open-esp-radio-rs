@@ -917,6 +917,119 @@ fn the_model_tsf_advances_with_its_clock_and_a_jump_starts_a_generation() {
 }
 
 #[test]
+fn live_retuning_preserves_both_tsfs_configuration_and_completed_tx_ownership() {
+    let model = enabled_station();
+    let ap = VifConfig {
+        address: OTHER_BSS,
+        role: VifRole::AccessPoint,
+        bssid: Some(OTHER_BSS),
+        receive: ReceiveFilter::BSS_MEMBER,
+    };
+    model
+        .apply(LowerMacSetting::Vif {
+            vif: ACCESS_POINT,
+            config: Some(ap),
+        })
+        .unwrap()
+        .unwrap();
+    model.set_now(Ieee80211Instant::from_micros(100));
+    model
+        .set_tsf(VifTsf::new(STATION, TsfInstant::from_micros(1_000_000)))
+        .unwrap()
+        .unwrap();
+    model
+        .set_tsf(VifTsf::new(
+            ACCESS_POINT,
+            TsfInstant::from_micros(2_000_000),
+        ))
+        .unwrap()
+        .unwrap();
+    let samples = [
+        model.tsf_sample(STATION).unwrap().unwrap(),
+        model.tsf_sample(ACCESS_POINT).unwrap().unwrap(),
+    ];
+    let clock = model.clock_sample().unwrap();
+    let agreement = RxBlockAckAgreement {
+        vif: STATION,
+        peer: PEER,
+        tid: 0,
+        start_sequence: SequenceNumber::ZERO,
+        window: 64,
+    };
+    model
+        .apply(LowerMacSetting::AddRxBlockAck(agreement))
+        .unwrap()
+        .unwrap();
+    let handle = model
+        .install_key(KeyInstall {
+            vif: STATION,
+            cipher: Cipher::Ccmp128,
+            scope: KeyScope::Pairwise { peer: PEER },
+            key: &[0x11; 16],
+        })
+        .unwrap()
+        .unwrap();
+    let body = ModelBody(b"retained across the visit".to_vec());
+    let mut outgoing = mpdu(&model, 1, 1);
+    outgoing.key = KeySelector::Key(handle);
+    let mut frame = model.tx_buffer(24 + body.0.len()).unwrap().unwrap();
+    frame.frame_mut()[..24].copy_from_slice(&header(1));
+    model.release_tx_buffer(outgoing.payload.frame);
+    outgoing.payload.frame = frame;
+    outgoing.payload.body = Some(body.clone());
+    model.submit(outgoing).unwrap().unwrap();
+    model.complete(0, TxStatus::Success);
+    // Keep the completion queued and the body unreclaimed during the visit.
+    model
+        .apply(LowerMacSetting::TxGate { open: false })
+        .unwrap()
+        .unwrap();
+    let lifecycle = model.lifecycle_requests();
+    let away = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
+    model.retune_live(away).unwrap().unwrap();
+    model.set_now(Ieee80211Instant::from_micros(600));
+    model.retune_live(channel_six()).unwrap().unwrap();
+    for (vif, before) in [STATION, ACCESS_POINT].into_iter().zip(samples) {
+        let after = model.tsf_sample(vif).unwrap().unwrap();
+        assert_eq!(after.generation, before.generation);
+        assert_eq!(after.tsf.at.as_micros(), before.tsf.at.as_micros() + 500);
+    }
+    assert_eq!(model.clock_sample().unwrap().generation, clock.generation);
+    assert_eq!(model.vif_config(STATION), Some(station_config()));
+    assert_eq!(model.vif_config(ACCESS_POINT), Some(ap));
+    assert_eq!(model.installed_keys(), [KeyScope::Pairwise { peer: PEER }]);
+    assert_eq!(model.rx_block_acks(), [agreement]);
+    assert!(!model.gate_open());
+    assert_eq!(model.lifecycle_requests(), lifecycle);
+    assert_eq!(next_completion(&model).id, TxId(1));
+    let mut reclaimed = Vec::new();
+    model
+        .reclaim_tx_bodies(TxId(1), |_, body| reclaimed.push(body))
+        .unwrap()
+        .unwrap();
+    assert_eq!(reclaimed, [body]);
+    assert_eq!(
+        model.reclaim_tx_bodies(TxId(1), |_, _| panic!("reclaimed twice")),
+        Ok(Err(ReclaimError::Unknown))
+    );
+}
+
+#[test]
+fn live_retuning_refuses_an_admitted_tx_or_a_disabled_port_without_changing_channel() {
+    let model = enabled_station();
+    let away = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
+    model.submit(mpdu(&model, 1, 1)).unwrap().unwrap();
+    assert_eq!(model.retune_live(away), Ok(Err(SettingError::Busy)));
+    assert_eq!(model.channel(), Some(channel_six()));
+    assert_eq!(model.in_flight(), 1);
+    model.complete(0, TxStatus::Success);
+    assert_eq!(next_completion(&model).status, TxStatus::Success);
+    model.lifecycle(LifecycleCommand::Disable).unwrap().unwrap();
+    assert_eq!(model.retune_live(away), Ok(Err(SettingError::Busy)));
+    assert_eq!(model.channel(), Some(channel_six()));
+}
+
+#[test]
 fn a_tsf_relation_keeps_its_generation_through_drift_after_missed_beacons() {
     let mut relation = TsfRelation::new(4, oer_time::Duration::from_micros(1));
     let tsf = TsfInstant::from_micros;

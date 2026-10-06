@@ -12,6 +12,7 @@ use oer_radio_port::CancelError;
 use oer_time::Duration;
 
 use crate::{
+    Channel,
     capabilities::PhyFormatSet,
     control::{SettingError, VifId, VifRoleSet},
     port::{Ieee80211LowerMacPort, SubmitResult},
@@ -132,6 +133,28 @@ pub trait LowerMacAirReservation: Ieee80211LowerMacPort {
         &self,
         attempt: AirReservationAttempt,
     ) -> SubmitResult<AirReservationAttempt, Self::Error>;
+}
+
+/// Temporary channel changes without a port lifecycle transition.
+///
+/// A receive-only absence requires this independently of
+/// [`LowerMacAirReservation`]. A backend that can tune only while disabled
+/// does not implement it; ordinary channel moves may still use the base
+/// port's channel setting and lifecycle.
+pub trait LowerMacLiveRetune: Ieee80211LowerMacPort {
+    /// Retune an enabled port after all admitted transmissions have ended.
+    /// Success means the receiver is on `channel` when the call returns;
+    /// it never just queues work for a runner. Refusal changes nothing;
+    /// an outstanding transmission or a disabled port is `Busy`.
+    ///
+    /// Keep interface configuration, keys, RX BlockAck agreements, TX queue
+    /// configuration and ownership, pending events, lent RX buffers and the
+    /// TX gate intact. Preserve the radio-clock generation, each interface's
+    /// advancing TSF and its relation generation, and absolute TBTT schedules.
+    /// Do not hide Disable/Enable, aborted attempts or a TSF restart.
+    /// The operation is synchronous and must not wait indefinitely; its
+    /// settling latency must be qualified for the owner's window budget.
+    fn retune_live(&self, channel: Channel) -> Result<Result<(), SettingError>, Self::Error>;
 }
 
 /// A value of one interface's TSF. Two interfaces count different TSFs (a

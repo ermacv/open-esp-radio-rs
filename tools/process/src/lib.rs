@@ -8,6 +8,8 @@ pub use context::{Context, command};
 #[cfg(unix)]
 mod io_lifetime;
 #[cfg(unix)]
+mod socket;
+#[cfg(unix)]
 pub use io_lifetime::IoLifetime;
 #[cfg(unix)]
 mod guardian;

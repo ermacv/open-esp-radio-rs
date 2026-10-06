@@ -177,6 +177,86 @@ fn links_cannot_capture_bytes_outside_the_selected_checkout() {
     assert!(capture_roots(&roots, &["external".into()], &[], output.path()).is_err());
 }
 
+#[cfg(unix)]
+#[test]
+fn agent_guidance_symlinks_do_not_block_frozen_build_inputs() {
+    let root = repository();
+    let output = tempfile::tempdir().unwrap();
+    for (path, text) in [
+        ("CLAUDE.md", "root instructions\n"),
+        ("hil/CLAUDE.md", "HIL instructions\n"),
+        (".claude/skills/example/SKILL.md", "skill instructions\n"),
+        ("AGENTS.md.rs", "a real source input\n"),
+        (".agents-notes/context.md", "another source input\n"),
+    ] {
+        let path = root.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+    fs::create_dir(root.path().join(".agents")).unwrap();
+    for (path, target) in [
+        ("AGENTS.md", "CLAUDE.md"),
+        ("hil/AGENTS.md", "CLAUDE.md"),
+        (".agents/skills", "../.claude/skills"),
+    ] {
+        std::os::unix::fs::symlink(target, root.path().join(path)).unwrap();
+    }
+    git(root.path(), &["add", "."]).unwrap();
+    git(root.path(), &["commit", "-qm", "agent entry points"]).unwrap();
+    // New local agent instructions must not require --source-include either.
+    fs::create_dir(root.path().join("tools")).unwrap();
+    std::os::unix::fs::symlink("../CLAUDE.md", root.path().join("tools/AGENTS.md")).unwrap();
+    fs::write(root.path().join(".agents/local.md"), "local instructions\n").unwrap();
+    fs::create_dir_all(root.path().join("tools/.agents/skills/local")).unwrap();
+    fs::write(
+        root.path().join("tools/.agents/skills/local/SKILL.md"),
+        "local workflow\n",
+    )
+    .unwrap();
+
+    let roots = vec![("repository".into(), root.path().to_owned())];
+    let first = capture_roots(&roots, &[], &[], output.path()).unwrap();
+    let frozen = FrozenSources::open(first.directory()).unwrap();
+    for path in [
+        "AGENTS.md",
+        "hil/AGENTS.md",
+        ".agents",
+        "tools/AGENTS.md",
+        "tools/.agents",
+    ] {
+        assert!(fs::symlink_metadata(frozen.repository().join(path)).is_err());
+    }
+    for path in [
+        "CLAUDE.md",
+        "hil/CLAUDE.md",
+        ".claude/skills/example/SKILL.md",
+        "AGENTS.md.rs",
+        ".agents-notes/context.md",
+    ] {
+        assert_eq!(
+            fs::read(frozen.repository().join(path)).unwrap(),
+            fs::read(root.path().join(path)).unwrap()
+        );
+    }
+    frozen.verify_unchanged().unwrap();
+
+    fs::write(
+        root.path().join(".agents/local.md"),
+        "changed instructions\n",
+    )
+    .unwrap();
+    let second = capture_roots(&roots, &[], &[], output.path()).unwrap();
+    assert_eq!(first.id(), second.id());
+    assert_eq!(first.archive_sha256, second.archive_sha256);
+
+    std::os::unix::fs::symlink("Cargo.toml", root.path().join("build-input.toml")).unwrap();
+    let error = capture_roots(&roots, &["build-input.toml".into()], &[], output.path())
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("review of symlink source"), "{error}");
+}
+
 #[test]
 fn materialized_inputs_do_not_follow_later_changes_to_the_live_tree() {
     let root = repository();

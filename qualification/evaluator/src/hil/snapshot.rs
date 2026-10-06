@@ -6,6 +6,7 @@ pub(super) use oer_hil_run_bundle_format::build::SourceMaterial as Source;
 
 // The producer writes the manifest with the same types, so its fields and
 // their order, which a source's identity digests, are one contract.
+use oer_hil_schema::snapshot::is_agent_guidance;
 pub(super) use oer_hil_schema::snapshot::{MANIFEST_SCHEMA, Manifest};
 
 #[derive(Deserialize)]
@@ -166,7 +167,7 @@ fn unchanged_within(root: &Path, closure: &super::closure::Closure, commit: &str
     Ok(!changed
         .iter()
         .chain(&untracked)
-        .any(|path| closure.contains(path)))
+        .any(|path| !is_agent_guidance(path) && closure.contains(path)))
 }
 
 /// Whether the run's snapshot is the checkout's current state in every file
@@ -193,9 +194,10 @@ pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<boo
     };
     let closure = run_closure(root, run);
     let relevant = |path: &Path| {
-        closure
-            .as_ref()
-            .is_none_or(|closure| closure.contains(path))
+        !is_agent_guidance(path)
+            && closure
+                .as_ref()
+                .is_none_or(|closure| closure.contains(path))
     };
     let tracked = std::str::from_utf8(&stdout)?
         .split('\0')
@@ -238,6 +240,120 @@ pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<boo
 mod tests {
     use oer_hil_schema::snapshot::SourceInput;
 
+    #[cfg(unix)]
+    #[test]
+    fn agent_guidance_does_not_stale_a_snapshot_without_a_source_closure() {
+        use super::*;
+        use oer_hil_run_bundle_format::build::SourceRebuildStatus;
+        use oer_hil_schema::snapshot::FileInput;
+
+        let root = tempfile::tempdir().unwrap();
+        let run = tempfile::tempdir().unwrap();
+        let git = |arguments: &[&str]| {
+            let configured = [
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+            ];
+            oer_process::git::output(root.path(), configured.iter().chain(arguments)).unwrap();
+        };
+        git(&["init", "-q"]);
+        let inputs = [("input.rs", "source\n"), ("CLAUDE.md", "instructions\n")];
+        for (path, bytes) in inputs {
+            fs::write(root.path().join(path), bytes).unwrap();
+        }
+        std::os::unix::fs::symlink("CLAUDE.md", root.path().join("AGENTS.md")).unwrap();
+        fs::create_dir(root.path().join(".agents")).unwrap();
+        fs::write(root.path().join(".agents/local.md"), "local instructions\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "source and agent guidance"]);
+
+        let snapshot = run.path().join("source/snapshot");
+        fs::create_dir_all(&snapshot).unwrap();
+        let source = SourceInput {
+            name: "repository".into(),
+            commit: oer_process::git::text(root.path(), ["rev-parse", "HEAD"]).unwrap(),
+            dirty: false,
+            files: inputs
+                .iter()
+                .map(|(path, bytes)| FileInput {
+                    path: PathBuf::from(path),
+                    size_bytes: bytes.len() as u64,
+                    sha256: oer_durable::sha256_bytes(bytes.as_bytes()),
+                    mode: 0o644,
+                })
+                .collect(),
+            untracked: Vec::new(),
+        };
+        let sources = vec![Source {
+            name: source.name.clone(),
+            checkout_path: root.path().to_owned(),
+            remote: None,
+            commit: source.commit.clone(),
+            dirty: source.dirty,
+            workspace_sha256: oer_durable::sha256_bytes(&serde_json::to_vec(&source).unwrap()),
+            rebuild_status: SourceRebuildStatus::SourceSnapshot,
+            tracked_patch_path: None,
+            tracked_patch_size_bytes: None,
+            tracked_patch_sha256: None,
+            untracked_files: Vec::new(),
+            limitations: Vec::new(),
+        }];
+        let manifest = Manifest {
+            schema: MANIFEST_SCHEMA,
+            sources: vec![source],
+        };
+        let mut archive =
+            tar::Builder::new(fs::File::create(snapshot.join("sources.tar")).unwrap());
+        for (path, bytes) in inputs {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            archive
+                .append_data(
+                    &mut header,
+                    Path::new("repository").join(path),
+                    bytes.as_bytes(),
+                )
+                .unwrap();
+        }
+        archive.finish().unwrap();
+        drop(archive);
+        let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+        fs::write(snapshot.join("manifest.json"), &manifest_bytes).unwrap();
+        fs::write(
+            snapshot.join("snapshot.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "schema": 1,
+                "snapshot_id": oer_durable::sha256_bytes(&manifest_bytes),
+                "archive_sha256": oer_durable::sha256_file(&snapshot.join("sources.tar")).unwrap(),
+                "files": inputs.len(),
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(run_closure(root.path(), run.path()).is_none());
+        assert!(current(root.path(), run.path(), &sources).unwrap());
+
+        fs::remove_file(root.path().join("AGENTS.md")).unwrap();
+        std::os::unix::fs::symlink("/etc/passwd", root.path().join("AGENTS.md")).unwrap();
+        fs::create_dir(root.path().join("tools")).unwrap();
+        fs::write(root.path().join("tools/AGENTS.md"), "new instructions\n").unwrap();
+        fs::write(
+            root.path().join(".agents/local.md"),
+            "changed instructions\n",
+        )
+        .unwrap();
+        assert!(current(root.path(), run.path(), &sources).unwrap());
+
+        fs::write(root.path().join("input.rs"), "changed source\n").unwrap();
+        assert!(!current(root.path(), run.path(), &sources).unwrap());
+    }
+
     #[test]
     fn a_run_stays_current_across_commits_that_leave_its_inputs_alone() {
         let root = tempfile::tempdir().unwrap();
@@ -260,6 +376,8 @@ mod tests {
         };
         git(&["init", "-q"]);
         write("crates/radio/src/lib.rs", "a");
+        write("crates/radio/AGENTS.md", "instructions");
+        write("crates/radio/.agents/settings.toml", "instructions");
         write("crates/other/src/lib.rs", "b");
         write("hil/scenarios/system/boot-smoke.toml", "c");
         write("hil/scenarios/system/other.toml", "d");
@@ -286,11 +404,20 @@ mod tests {
         write("docs/new.md", "new");
         assert!(super::unchanged_within(root, &closure, commit).unwrap());
 
+        // A broader source directory still excludes tracked and untracked guidance.
+        let directory_closure =
+            super::super::closure::Closure::from_directories(&["crates/radio"], &[]);
+        write("crates/radio/AGENTS.md", "changed instructions");
+        write("crates/radio/.agents/settings.toml", "changed instructions");
+        write("crates/radio/.agents/new.rs", "new instructions");
+        assert!(super::unchanged_within(root, &directory_closure, commit).unwrap());
+
         write("hil/scenarios/system/boot-smoke.toml", "changed");
         assert!(!super::unchanged_within(root, &closure, commit).unwrap());
         write("hil/scenarios/system/boot-smoke.toml", "c");
         write("crates/radio/src/lib.rs", "changed");
         assert!(!super::unchanged_within(root, &closure, commit).unwrap());
+        assert!(!super::unchanged_within(root, &directory_closure, commit).unwrap());
         write("crates/radio/src/lib.rs", "a");
         assert!(super::unchanged_within(root, &closure, commit).unwrap());
         assert!(

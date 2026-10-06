@@ -7,12 +7,22 @@
 //! refused: a field this build does not know would change an identity it
 //! cannot recompute.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 /// The manifest schema this build writes and reads.
 pub const MANIFEST_SCHEMA: u16 = 1;
+
+/// Agent instructions and skills are not firmware or HIL source inputs.
+/// Capture and evidence currency checks apply this same exclusion to scoped
+/// `AGENTS.md` files and every `.agents` directory, without reading them.
+pub fn is_agent_guidance(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "AGENTS.md")
+        || path
+            .components()
+            .any(|component| component.as_os_str() == ".agents")
+}
 
 /// Every source of one snapshot: the repository first, then each local
 /// dependency override.

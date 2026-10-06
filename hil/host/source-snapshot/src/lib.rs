@@ -1,8 +1,9 @@
 //! Explicit, content-addressed source input capture, independent of firmware builds.
 //!
-//! Tracked files are included automatically. Every nonignored untracked file
-//! must be named explicitly before any content is archived, or, with
-//! `--include-untracked`, lie inside a path package of the firmware
+//! Tracked source files are included automatically; agent guidance (`AGENTS.md`
+//! and `.agents/`) is not a build input and is excluded. Every nonignored
+//! untracked source file must be named explicitly before any content is
+//! archived, or, with `--include-untracked`, lie inside a path package of the firmware
 //! workspaces, the packages an image build reads, or inside the HIL host
 //! packages and scenarios, which the run reads. The manifest lists every
 //! untracked file it archived and why. This is a source
@@ -22,7 +23,7 @@ use std::{
 
 pub use oer_hil_schema::snapshot::SourceInput;
 use oer_hil_schema::snapshot::{
-    FileInput, MANIFEST_SCHEMA, Manifest, UntrackedInput, UntrackedReason,
+    FileInput, MANIFEST_SCHEMA, Manifest, UntrackedInput, UntrackedReason, is_agent_guidance,
 };
 
 /// Repository directories of the HIL host packages and scenarios, whose
@@ -444,13 +445,17 @@ const EVIDENCE_OUTPUTS: &[&str] = &["hil/evidence"];
 /// The Git state a snapshot archives: the checkout's index view
 /// ([`oer_repo::index::IndexSnapshot`]), which names a tracked file the
 /// worktree deleted, keeps a symlink as one and skips no component, so a
-/// rebuild from the archive is the checkout's state; not the repository
-/// model's file set, which lists existing files without build output.
+/// rebuild from the archive is the checkout's source state, excluding agent
+/// guidance. The repository model instead lists existing files without build
+/// output.
 fn select(name: &str, root: &Path) -> Result<Selection> {
     let index = oer_repo::index::IndexSnapshot::read(root)
         .map_err(|error| format!("snapshot source {name}: {error}"))?;
     let paths = |paths: BTreeSet<String>| paths.into_iter().map(PathBuf::from).collect();
+    let mut tracked: BTreeSet<PathBuf> = paths(index.tracked);
     let mut untracked: BTreeSet<PathBuf> = paths(index.untracked);
+    tracked.retain(|path| !is_agent_guidance(path));
+    untracked.retain(|path| !is_agent_guidance(path));
     // Recorded evidence shards are outputs of earlier runs, not build inputs.
     untracked.retain(|path| {
         !EVIDENCE_OUTPUTS
@@ -462,7 +467,7 @@ fn select(name: &str, root: &Path) -> Result<Selection> {
         root: root.into(),
         commit: index.commit,
         dirty: index.dirty,
-        tracked: paths(index.tracked),
+        tracked,
         untracked,
     })
 }

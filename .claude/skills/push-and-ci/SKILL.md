@@ -41,8 +41,10 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    user's review first. To resolve a conflict with `main`, rebase the
    branch and push again: `push` rewrites only its own branch, with
    `--force-with-lease`. Never push to `main` directly.
-7. **CI** runs on every branch push: each job of `.github/workflows/ci.yml`
-   runs `cargo xtask check tier full --job <job>`, so a failed job is
+7. **CI** runs on every branch push: xtask plans jobs by the complete Git tree and tool versions
+   ([CI reuse](../../../tools/xtask/README.md#ci-input-reuse)). Each executed
+   check job of `.github/workflows/ci.yml` runs
+   `cargo xtask check tier full --job <job>`, so a failed check job is
    reproduced locally with the same command. A new check is a registry
    entry (`tools/xtask/src/registry.rs`), never a workflow step. A failed
    check on the pull request is fixed on the same branch and pushed again

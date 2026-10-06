@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 # A branch needs only its newest commit; main's runs complete.
 concurrency:
@@ -16,6 +17,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
 
 env:
+  GH_TOKEN: ${{ github.token }}
+  CI_REUSE_MODE: ${{ vars.CI_REUSE_MODE || 'observe' }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   CARGO_INCREMENTAL: '0'
   # A fresh runner has no Cargo cache; the repository configuration keeps
   # Cargo offline for local builds.
@@ -25,9 +29,40 @@ env:
   MDBOOK_PERMALINKS_VERSION: 3.0.2
 
 jobs:
-  build:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      run_docs: ${{ steps.plan.outputs.run_docs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ci-tools-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: ci-tools-${{ runner.os }}-
+      - id: plan
+        run: cargo xtask ci prepare --workflow docs --output "$RUNNER_TEMP/ci-plan.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-plan
+          path: ${{ runner.temp }}/ci-plan.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14
+
+  docs:
+    needs: prepare
+    if: needs.prepare.outputs.run_docs == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    outputs:
+      reusable: ${{ steps.environment.outputs.reusable }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,6 +87,8 @@ jobs:
       # API documentation and doctests, Markdown links and documented
       # commands, qualification catalogs and capability anchors: the
       # registry's `docs` job.
+      - id: environment
+        run: cargo xtask ci check-environment --workflow docs --job docs
       - run: cargo xtask --verbose check tier full --job docs
       - name: Install mdBook
         run: |
@@ -86,9 +123,39 @@ jobs:
         with:
           path: target/pages
 
+  # Every planned job passed or has explicit successful input coverage.
+  docs-ok:
+    if: always()
+    needs: [prepare, docs]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ci-tools-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: ci-tools-${{ runner.os }}-
+      - name: Verify every planned result
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: cargo xtask ci verify --workflow docs --output "$RUNNER_TEMP/ci-proof.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-proof
+          path: ${{ runner.temp }}/ci-proof.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14
+
   deploy:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    needs: build
+    needs: [docs, docs-ok]
     runs-on: ubuntu-24.04
     permissions:
       pages: write

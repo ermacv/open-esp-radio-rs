@@ -47,6 +47,11 @@ enum Task {
     /// Print the state of GitHub CI on main: each workflow whose newest
     /// finished run failed, or that main is green.
     CiStatus,
+    /// Plan CI jobs by their complete inputs, without executing checks.
+    Ci {
+        #[command(subcommand)]
+        ci: Ci,
+    },
     /// Write the heavy-command list the Claude Code hooks read
     /// (`.claude/hooks/heavy-commands.json`).
     Hooks {
@@ -57,6 +62,47 @@ enum Task {
     Check {
         #[command(subcommand)]
         check: Check,
+    },
+}
+
+#[derive(Subcommand)]
+enum Ci {
+    /// Record the runner and toolchain versions for a local input plan.
+    Environment {
+        #[arg(long)]
+        workflow: oer_xtask::registry::Workflow,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Compute input identities without running checks or querying GitHub.
+    Plan {
+        #[arg(long)]
+        workflow: oer_xtask::registry::Workflow,
+        #[arg(long)]
+        environment: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Select jobs using successful GitHub coverage (CI_REUSE_MODE).
+    Prepare {
+        #[arg(long)]
+        workflow: oer_xtask::registry::Workflow,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Require the planned jobs to pass and record their coverage.
+    Verify {
+        #[arg(long)]
+        workflow: oer_xtask::registry::Workflow,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Qualify a job's actual tools for reusable coverage of the input plan.
+    CheckEnvironment {
+        #[arg(long)]
+        workflow: oer_xtask::registry::Workflow,
+        #[arg(long)]
+        job: String,
     },
 }
 
@@ -215,6 +261,23 @@ fn dispatch(ctx: &Checkout, command: Task) -> Result<std::process::ExitCode> {
             oer_xtask::ci_status::print(&ctx, "ci");
             Ok(())
         }
+        Task::Ci { ci } => match ci {
+            Ci::Environment { workflow, output } => {
+                oer_xtask::ci::write_environment(&ctx.root, workflow, &output)
+            }
+            Ci::Plan {
+                workflow,
+                environment,
+                output,
+            } => oer_xtask::ci::plan(&ctx.root, workflow, &environment, &output),
+            Ci::Prepare { workflow, output } => {
+                oer_xtask::ci::prepare(&ctx.root, workflow, &output)
+            }
+            Ci::Verify { workflow, output } => oer_xtask::ci::verify(&ctx.root, workflow, &output),
+            Ci::CheckEnvironment { workflow, job } => {
+                oer_xtask::ci::check_environment(&ctx.root, workflow, &job)
+            }
+        },
         Task::Hooks { check } => oer_xtask::hooks::run(&ctx.root, check),
         Task::Check { check } => match check {
             Check::Tier { list: true, .. } => {

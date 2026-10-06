@@ -550,6 +550,31 @@ fn connected(
     }
 }
 
+fn unconnected_pair(
+    world: &World,
+    policy: ApFollowPolicy,
+) -> PortStaAp<'static, Env, Env, &'static VirtualTimer> {
+    PortStaAp::new(
+        station(
+            world.pair.1,
+            world.timer,
+            PAIR_STATION,
+            UPSTREAM_SSID,
+            leak(TestFrames::new()),
+        ),
+        access_point(
+            world.pair.1,
+            world.timer,
+            PAIR_ACCESS_POINT,
+            PAIR_SSID,
+            ghz2_4(1),
+            world.pair_frames,
+        ),
+        ChannelCoordinator::new(policy, ApSearchPolicy::new(&[])),
+        world.timer,
+    )
+}
+
 /// The upstream on channel 6, the pair joined to it with its access point
 /// started there, and the client joined to the pair's access point.
 fn set_up(
@@ -572,26 +597,7 @@ fn set_up(
         .drive(upstream.client_mut().retune(ghz2_4(6)))
         .unwrap();
     upstream.start(ghz2_4(6)).unwrap();
-
-    let mut pair = PortStaAp::new(
-        station(
-            world.pair.1,
-            world.timer,
-            PAIR_STATION,
-            UPSTREAM_SSID,
-            leak(TestFrames::new()),
-        ),
-        access_point(
-            world.pair.1,
-            world.timer,
-            PAIR_ACCESS_POINT,
-            PAIR_SSID,
-            ghz2_4(1),
-            world.pair_frames,
-        ),
-        ChannelCoordinator::new(policy, ApSearchPolicy::new(&[])),
-        world.timer,
-    );
+    let mut pair = unconnected_pair(world, policy);
     let until = world.after(3_000);
     let (_, joined) = world.drive(join(serve_upstream(&mut upstream, until), pair.connect()));
     joined.unwrap();
@@ -767,6 +773,70 @@ fn ethernet(destination: MacAddress, source: MacAddress, payload: &[u8]) -> Vec<
     frame.extend_from_slice(&0x0800_u16.to_be_bytes());
     frame.extend_from_slice(payload);
     frame
+}
+
+/// Drop an attempt after it has sent its discovery probe and the radio
+/// has completed every published transmission, while the dwell still waits.
+async fn cancel_during_discovery(world: &World, attempt: impl Future) {
+    let submitted = world.pair.0.submitted().len();
+    let mut attempt = pin!(attempt);
+    poll_fn(|context| {
+        assert!(attempt.as_mut().poll(context).is_pending());
+        let probed = world
+            .pair
+            .0
+            .submitted()
+            .iter()
+            .skip(submitted)
+            .any(|attempt| attempt.vif == STATION && attempt.frames[0][0] == 0x40);
+        if probed && world.pair.0.in_flight() == 0 {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    })
+    .await;
+}
+
+#[test]
+fn a_cancelled_initial_join_returns_no_station_on_the_next_attempt() {
+    on_large_stack(a_cancelled_initial_join_returns_no_station_on_the_next_attempt_inner);
+}
+
+fn a_cancelled_initial_join_returns_no_station_on_the_next_attempt_inner() {
+    let world = World::new();
+    let mut pair = unconnected_pair(&world, policy());
+    world.drive(cancel_during_discovery(&world, pair.connect()));
+    assert!(matches!(
+        world.drive(pair.connect()),
+        Err(PortStaApError::NoStation)
+    ));
+    assert!(matches!(
+        world.drive(pair.reconnect(&mut |_| {})),
+        Err(PortStaApError::NoStation)
+    ));
+}
+
+#[test]
+fn a_cancelled_rejoin_returns_no_station_on_the_next_attempt() {
+    on_large_stack(a_cancelled_rejoin_returns_no_station_on_the_next_attempt_inner);
+}
+
+fn a_cancelled_rejoin_returns_no_station_on_the_next_attempt_inner() {
+    let world = World::new();
+    let (mut upstream, mut pair, _) = set_up(&world, policy());
+    lose_upstream(&world, &mut upstream, &mut pair);
+    world.drive(cancel_during_discovery(&world, pair.reconnect(&mut |_| {})));
+    assert!(matches!(
+        world.drive(pair.connect()),
+        Err(PortStaApError::NoStation)
+    ));
+    assert!(matches!(
+        world.drive(pair.reconnect(&mut |_| {})),
+        Err(PortStaApError::NoStation)
+    ));
+    assert!(pair.access_point().service().peer_status(CLIENT).is_some());
+    assert_eq!(world.pair.0.channel(), Some(ghz2_4(6)));
 }
 
 #[test]

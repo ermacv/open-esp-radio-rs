@@ -33,6 +33,9 @@ station profile's other scan channels. A candidate that requires another
 channel or width fails before authentication. `connect` refuses to scan
 while the access point runs, and both join entry points refuse an already
 connected station. An announced move must finish before `reconnect`.
+Once the station's attempt ends, `reconnect` lets the current AP run finish
+at the next TBTT, including its exchange in progress. Returning can therefore
+take about another beacon interval.
 
 The shared upper-MAC router gives exchanges FIFO ownership of their physical
 TX queue. A discovery probe and an access-point beacon wait for each other

@@ -156,7 +156,13 @@ where
     /// Join the upstream, the station alone on the port, then start the
     /// access point on the upstream's channel when its policy lets it.
     pub async fn connect(&mut self) -> Result<(), PortStaApError<S, A>> {
-        if self.station().connection().is_some() {
+        if self
+            .station
+            .as_ref()
+            .ok_or(PortStaApError::NoStation)?
+            .connection()
+            .is_some()
+        {
             return Err(PortStaApError::AlreadyConnected);
         }
         if self.running {
@@ -187,6 +193,9 @@ where
     /// point keeps its peers, publishes beacons and delivers Ethernet frames
     /// throughout the attempt, including a failed attempt. Both futures run
     /// to completion; a failed join retains the station for the next retry.
+    /// After the station's attempt ends, the current access-point run finishes
+    /// at its next TBTT and completes any exchange in progress before returning.
+    /// This can delay the return by about one beacon interval.
     ///
     /// The caller chooses when to retry. Off-channel search windows belong
     /// to the owner and are not performed by this operation.
@@ -194,7 +203,13 @@ where
         &mut self,
         access_point_deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<A>>),
     ) -> Result<(), PortStaApError<S, A>> {
-        if self.station().connection().is_some() {
+        if self
+            .station
+            .as_ref()
+            .ok_or(PortStaApError::NoStation)?
+            .connection()
+            .is_some()
+        {
             return Err(PortStaApError::AlreadyConnected);
         }
         if self.retune.is_some() || self.announcing {

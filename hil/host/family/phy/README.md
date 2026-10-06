@@ -3,13 +3,13 @@
 The `[phy]` HIL scenario family. Its one workload, `vendor-calibration`,
 captures the vendor-versus-production PHY calibration cross-check on the
 board under test. The family names no chip: it records the chip-neutral
-captures of [`oer-phy-calibration-capture`](../../../phy-calibration-capture)
+captures of [`oer-phy-calibration-capture`](../../../phy/capture)
 and reaches what a chip compares, and which register images both sides
 read, through its comparison port (`comparison::Comparison`). A
 chip-specific composition implements the port and registers
 `oer_hil_family_phy::family::<C>()`: for the ESP32-S31,
 [`oer-hil-family-phy-esp32s31`](../phy-esp32s31/README.md) with
-[`oer-esp32s31-phy-vendor-calibration`](../../../../crates/hardware/esp32s31/calibration/README.md),
+[`oer-esp32s31-phy-vendor-calibration`](../../../phy/esp32s31/calibration/README.md),
 which the runner's family registry lists.
 
 ```toml

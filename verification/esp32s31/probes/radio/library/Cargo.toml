@@ -18,7 +18,7 @@ oer-memory.workspace = true
 oer-esp32s31-hal.workspace = true
 oer-esp32s31-pac.workspace = true
 oer-esp32s31-phy = { workspace = true, features = ["validation-probes"] }
-oer-esp32s31-phy-relation = { path = "../../../../../crates/hardware/esp32s31/phy-relation", features = ["projection"] }
+oer-esp32s31-phy-relation = { path = "../../../../../hil/phy/esp32s31/relation", features = ["projection"] }
 oer-esp32s31-ieee80211-mac.workspace = true
 oer-esp32s31-ieee80211.workspace = true
 oer-esp32s31-ieee80211-dma.workspace = true

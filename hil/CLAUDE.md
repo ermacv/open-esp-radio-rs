@@ -11,8 +11,8 @@ it never decides readiness. Routes for every task: [README](README.md#choose-a-r
 | `../stand/` | `cargo stand` and the stand packages: stand file, boards, arbiter, owners, journal, power, host files ([stand guide](host/stand.md), [stand file](../stand/file/README.md)) |
 | `targets/<chip>/`, `agent/` | Target firmware workspaces; chip-independent agent logic |
 | `evidence/<chip>/` | Tracked evidence shards (`cargo qualification hil-evidence`) |
-| `evidence-shard/` | Shared vendor and HIL evidence shard format, validation, currency and reader/writer (root workspace) |
-| `phy-calibration-capture/` | Chip-neutral PHY comparison observations and vendor console protocol (root workspace); chip comparisons live in `../crates/hardware/<chip>/calibration/` |
+| `phy/capture/` | Chip-neutral PHY comparison observations and vendor console protocol (root workspace) |
+| `phy/<chip>/{relation,calibration}/` | Shared PHY calibration relation and host comparison used by the HIL PHY family, firmware agents and verification probes/scenarios (root workspace) |
 
 ## Rules
 

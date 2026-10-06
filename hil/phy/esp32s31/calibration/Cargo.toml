@@ -9,8 +9,8 @@ publish = false
 description = "The vendor-versus-production ESP32-S31 PHY calibration comparison on data: register images, vendor console protocol and the reviewed relation over the projection the firmware reports; the HIL phy family captures it"
 
 [dependencies]
-oer-phy-calibration-capture = { path = "../../../../hil/phy-calibration-capture" }
-oer-esp32s31-phy-relation = { path = "../phy-relation" }
+oer-phy-calibration-capture = { path = "../../capture" }
+oer-esp32s31-phy-relation = { path = "../relation" }
 oer-register-model = { path = "../../../../tools/registers/model" }
 serde = { version = "1.0", features = ["derive"] }
 toml = "1.1"

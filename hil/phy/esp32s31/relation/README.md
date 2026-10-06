@@ -11,8 +11,9 @@ The reviewed ESP32-S31 PHY calibration relation, shared without copies:
 The comparison probes (`verification/esp32s31/probes`) publish the words, the
 Blobray tracking scenario (`verification/esp32s31/scenarios`) compares them
 with the pinned vendor code, and the hardware calibration cross-check
-(`crates/hardware/esp32s31/calibration`) compares a board's capture with
+(`hil/phy/esp32s31/calibration`) compares a board's capture with
 the vendor's. The crate is `no_std` so the probe images link it.
 
-It belongs to the root workspace, alongside the production PHY and the
-chip's calibration comparison.
+It belongs to the root workspace, alongside the chip's HIL calibration
+comparison. Its verification metadata describes this shared checking role;
+the production PHY lives in `crates/hardware/esp32s31/phy/`.

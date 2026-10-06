@@ -339,7 +339,7 @@ oer-esp32s31-platform-layout = { path = "../../../../platform/esp32s31/layout" }
 oer-hil-esp32s31-telemetry = { workspace = true, optional = true }
 oer-ieee80211-runtime = { workspace = true, optional = true }
 oer-esp32s31-hil-calibration-artifact = { path = "../calibration-artifact", optional = true }
-oer-esp32s31-phy-relation = { path = "../../../../crates/hardware/esp32s31/phy-relation", features = ["projection"], optional = true }
+oer-esp32s31-phy-relation = { path = "../../../phy/esp32s31/relation", features = ["projection"], optional = true }
 static_cell.workspace = true
 
 [lints]

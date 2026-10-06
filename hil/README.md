@@ -31,12 +31,12 @@ receipts live in [`observer/`](observer/README.md), whose `producer` feature
 adds the Cargo-running operations that only the runner and repository tools
 use. The run bundle's format, writer and the one reader both sides use are
 [`host/run-bundle/`](host/run-bundle/README.md).
-The shared vendor and HIL evidence shard format, validation, currency and
-reader/writer live in [`evidence-shard/`](evidence-shard/). The chip-neutral
-PHY comparison capture lives in
-[`phy-calibration-capture/`](phy-calibration-capture/README.md), with the
-chip-specific relation and comparison in `crates/hardware/<chip>/`.
-These libraries belong to the root workspace; only `targets/<chip>/` builds
+The PHY calibration cross-check libraries live in `phy/`: the chip-neutral
+[`capture/`](phy/capture/README.md), and each chip's shared relation and
+comparison, for the ESP32-S31
+[`relation/`](phy/esp32s31/relation/README.md) and
+[`calibration/`](phy/esp32s31/calibration/README.md).
+They belong to the root workspace; only `targets/<chip>/` builds
 in separate firmware workspaces.
 Generated runs stay below `target/hil/runs`; they are not tracked.
 A run never writes tracked files. After `run` or `run-all` from a

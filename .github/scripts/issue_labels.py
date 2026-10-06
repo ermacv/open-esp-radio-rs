@@ -13,7 +13,7 @@ import sys
 import unittest
 from urllib.error import HTTPError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 REPOSITORY = "ermacv/open-esp-radio-rs"
@@ -96,11 +96,17 @@ def form_labels(body, labels, catalog):
     return additions
 
 
+class RepositoryRedirects(HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        raise HTTPError(request.full_url, code, "Repository redirects are not followed", headers, response)
+
+
 class GitHub:
     def __init__(self, token):
         if not token:
             raise ValueError("Set GH_TOKEN or GITHUB_TOKEN with repository Issues write access")
         self.token = token
+        self.opener = build_opener(RepositoryRedirects())
 
     def request(self, method, path, data=None):
         request = Request(
@@ -112,7 +118,7 @@ class GitHub:
                      "Content-Type": "application/json", "User-Agent": "oer-issue-labels",
                      "X-GitHub-Api-Version": "2026-03-10"},
         )
-        with urlopen(request, timeout=30) as response:
+        with self.opener.open(request, timeout=30) as response:
             body = response.read()
             return json.loads(body) if body else None
 
@@ -172,10 +178,15 @@ def enforce_issue(api, number, catalog, import_form=False):
     raise RuntimeError(f"Issue #{number} changed during label reconciliation; rerun the workflow")
 
 
-def create_issue(api, title, body, labels, catalog):
+def creation_violations(labels, catalog):
     errors = violations(labels, catalog)
     if INCOMPLETE in labels:
         errors.append(f"{INCOMPLETE} is derived by the guard, not chosen at creation")
+    return errors
+
+
+def create_issue(api, title, body, labels, catalog):
+    errors = creation_violations(labels, catalog)
     if errors:
         raise ValueError("; ".join(errors))
     issue = api.request("POST", "issues", {"title": title, "body": body, "labels": labels})
@@ -220,9 +231,7 @@ def main():
         suite = unittest.defaultTestLoader.discover(str(Path(__file__).parent), "test_issue_labels.py")
         return 0 if unittest.TextTestRunner().run(suite).wasSuccessful() else 1
     if args.command == "validate":
-        errors = violations(args.label, catalog)
-        if INCOMPLETE in args.label:
-            errors.append(f"{INCOMPLETE} is derived by the guard, not chosen at creation")
+        errors = creation_violations(args.label, catalog)
         if errors:
             raise ValueError("; ".join(errors))
         print("Issue labels satisfy the creation invariant.")

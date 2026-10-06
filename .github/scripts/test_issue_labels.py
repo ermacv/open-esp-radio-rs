@@ -3,6 +3,7 @@
 from copy import deepcopy
 from urllib.error import HTTPError
 from urllib.parse import unquote
+from urllib.request import Request
 import unittest
 
 import issue_labels as policy
@@ -190,6 +191,17 @@ class IssueLabelsTests(unittest.TestCase):
         api.request = rejected
         with self.assertRaises(HTTPError):
             policy.enforce_issue(api, 231, self.catalog)
+
+    def test_transfer_redirects_never_follow_an_issue_outside_the_repository(self):
+        request = Request("https://api.github.com/repos/ermacv/open-esp-radio-rs/issues/231")
+        for method in ("GET", "POST", "DELETE"):
+            with self.subTest(method=method):
+                request.method = method
+                with self.assertRaises(HTTPError) as error:
+                    policy.RepositoryRedirects().redirect_request(
+                        request, None, 301, "Moved", {},
+                        "https://api.github.com/repos/someone/another-repository/issues/1")
+                self.assertEqual(error.exception.code, 301)
 
 
 if __name__ == "__main__":

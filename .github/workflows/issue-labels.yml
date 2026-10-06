@@ -4,7 +4,7 @@ name: Issue labels
 # belong to xtask's check registry and run in the normal host gate.
 on:
   issues:
-    types: [opened, edited, labeled, unlabeled, reopened, closed, transferred]
+    types: [opened, edited, labeled, unlabeled, reopened, closed]
   label:
     types: [created, edited, deleted]
   push:
@@ -17,6 +17,13 @@ on:
   schedule:
     - cron: '19 */6 * * *'
   workflow_dispatch:
+
+# Keep opened as well as labeled events: a single pending slot could
+# discard the only event that imports explicit form choices.
+concurrency:
+  group: issue-labels-${{ github.event.issue.number || 'all' }}
+  queue: max
+  cancel-in-progress: false
 
 permissions:
   contents: read

@@ -30,6 +30,11 @@ A leased command that is itself a stand command (`cargo hil …` or
 queues, so a mistyped option fails at once instead of after the wait; commands
 the runner parses (`run`, `run-all`, `image`) are checked when they run.
 
+Before starting any leased command, the lease admits I/O for all its selected
+boards and pins those operations into the child process. External flashers need
+no repository broker API: board exclusion survives the lease owner's death
+until the command and its descendants close their inherited lifetime descriptors.
+
 A manual flash outside the runner is the dev kit's: `cargo fw flash
 --device MAC|PORT IMAGE` writes an image bundle (its directory, from `cargo
 fw build` or `cargo hil image build`), an example (built first) or an

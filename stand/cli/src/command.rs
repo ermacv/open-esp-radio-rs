@@ -411,6 +411,10 @@ pub(crate) fn lease(
         .args(arguments)
         .env(oer_stand_owners::OWNER_ENV, &request.owner);
     grant.context()?.apply(&mut command)?;
+    let operations = grant.operations()?;
+    for operation in &operations {
+        operation.lifetime().pin(&mut command)?;
+    }
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         &mut command,
         std::time::Duration::from_secs(300),

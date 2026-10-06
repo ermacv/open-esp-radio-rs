@@ -624,6 +624,13 @@ impl Grant {
         self.devices.iter().find(|device| device.id() == id)
     }
 
+    /// Admit I/O for every leased board before starting an external command.
+    /// Pin each operation's lifetime into the command and retain these guards
+    /// until it exits, so exclusion also survives the lease owner's death.
+    pub fn operations(&self) -> crate::Result<Vec<oer_device_lock::DeviceOperation>> {
+        self.devices.iter().map(DeviceAccess::operation).collect()
+    }
+
     /// Whether a waiting request needs a resource this lease holds.
     pub fn blocks_waiters(&self) -> bool {
         self.held.as_ref().is_some_and(|held| {

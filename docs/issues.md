@@ -85,9 +85,14 @@ the flag when valid. Do not start work or move an incomplete card out of Triage.
 The guard never closes issues or selects a priority for their author.
 
 The workflow reads current GitHub state on issue creation, edits, label changes,
-reopening, closure and transfer. It also audits all open issues on catalog/form
-changes, label-definition changes, a manual run and every six hours. The audit
-covers missed events, including events suppressed by `GITHUB_TOKEN`. Historical
+reopening and closure. Per-issue concurrency uses `queue: max` so pending
+`opened` events are retained alongside `labeled` events. Source-repository
+`transferred` events are excluded; the target receives `opened`. API redirects
+are refused, so a moved issue cannot redirect this policy into another repository.
+The workflow also reconciles all open issues on catalog/form changes,
+label-definition changes, a manual run and every six hours. This reconciliation
+can add or remove the derived flag and repair catalog definitions; it covers
+missed events, including events suppressed by `GITHUB_TOKEN`. Historical
 closed cards and pull requests are outside the active issue invariant.
 An incomplete card is reported and flagged without making source CI red;
 API failures or a broken reconciler fail its workflow. The separate read-only

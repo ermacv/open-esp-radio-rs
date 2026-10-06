@@ -2,7 +2,7 @@
 //!
 //! When a failed repetition's target does not answer the post-mortem query,
 //! or its bootloader resets in a loop, the runner climbs the board's ladder
-//! ([`oer_device_reset::climb`]): the resets of its stand-file `reset` ladder
+//! ([`oer_devices::reset::climb`]): the resets of its stand-file `reset` ladder
 //! in order, then, for a board that resets by power, the automatic entry into
 //! its ROM's download mode. The first step after which the firmware answers
 //! is journaled as a recovery; it counts as hardware-level when the port had
@@ -23,7 +23,7 @@ use std::{
     time::Duration,
 };
 
-use oer_device_reset::{Ladder, LadderEnd, RecoveryStep};
+use oer_devices::reset::{Ladder, LadderEnd, RecoveryStep};
 use oer_stand_arbiter::{Arbiter, QuarantineTrigger};
 use oer_stand_board::LeasedBoard;
 
@@ -111,11 +111,11 @@ pub fn recover(
     let finding = std::cell::RefCell::new(None);
     let download_entry = board.download_entry_if_powered();
     let rungs = board.rungs();
-    let ladder = oer_device_reset::climb(
+    let ladder = oer_devices::reset::climb(
         &rungs.iter().map(Box::as_ref).collect::<Vec<_>>(),
         download_entry
             .as_ref()
-            .map(|entry| entry as &dyn Fn() -> oer_device_reset::Result<String>),
+            .map(|entry| entry as &dyn Fn() -> oer_devices::Result<String>),
         &|| board.console(BANNER_WATCH),
         &mut || {
             let found = post_mortem::inspect(port, board.access(), output, elf);
@@ -300,7 +300,7 @@ pub fn escalate_boot_loop(
 ) -> ResetEscalation {
     let rungs = board.rungs();
     let download_entry = board.download_entry_if_powered();
-    let ladder = oer_device_reset::climb(
+    let ladder = oer_devices::reset::climb(
         &rungs
             .iter()
             .map(Box::as_ref)
@@ -308,7 +308,7 @@ pub fn escalate_boot_loop(
             .collect::<Vec<_>>(),
         download_entry
             .as_ref()
-            .map(|entry| entry as &dyn Fn() -> oer_device_reset::Result<String>),
+            .map(|entry| entry as &dyn Fn() -> oer_devices::Result<String>),
         &|| board.console(BANNER_WATCH),
         &mut boots,
     );
@@ -428,13 +428,13 @@ mod tests {
     #[test]
     fn only_a_board_whose_rom_stays_silent_is_quarantined() {
         // A ROM that answers can be reflashed, whatever the firmware does.
-        assert!(oer_device_console::is_reset_line(
+        assert!(oer_devices::console::is_reset_line(
             "rst:0x17 (CHIP_USB_UART_RESET),boot:0x5f (SPI_FAST_FLASH_BOOT)"
         ));
-        assert!(oer_device_console::is_reset_line(
+        assert!(oer_devices::console::is_reset_line(
             "rst:0x1 (POWERON),boot:0x4 (DOWNLOAD(USB/UART0))"
         ));
-        assert!(!oer_device_console::is_reset_line("garbled output"));
+        assert!(!oer_devices::console::is_reset_line("garbled output"));
     }
 
     #[test]
@@ -492,7 +492,7 @@ mod tests {
                 resets: 3,
             },
             ladder: Ladder {
-                steps: vec![oer_device_reset::LadderStep {
+                steps: vec![oer_devices::reset::LadderStep {
                     step: RecoveryStep::JtagReset,
                     outcome: Ok(Some(String::from("rst:0x3 (SW_SYS_RESET),boot:0x58"))),
                     saved_pc: None,
@@ -511,8 +511,8 @@ mod tests {
     #[test]
     fn the_rom_banner_names_where_core_zero_was() {
         let banner = "ESP-ROM:chip-a-20251218\nrst:0x17 (CHIP_USB_UART_RESET),boot:0x5f (SPI_FAST_FLASH_BOOT)\nCore0 Saved PC:0x50050cd4\nSPI mode:DIO\n";
-        assert_eq!(oer_device_reset::saved_pc(banner), Some(0x5005_0cd4));
-        assert_eq!(oer_device_reset::saved_pc("rst:0x1 (POWERON)\n"), None);
+        assert_eq!(oer_devices::reset::saved_pc(banner), Some(0x5005_0cd4));
+        assert_eq!(oer_devices::reset::saved_pc("rst:0x1 (POWERON)\n"), None);
     }
 
     #[test]

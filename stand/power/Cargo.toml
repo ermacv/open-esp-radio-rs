@@ -9,7 +9,7 @@ publish = false
 description = "A stand board's hub port power through uhubctl, and uhubctl's report parser"
 
 [dependencies]
-oer-device-discovery = { path = "../../tools/device/discovery" }
+oer-devices = { path = "../../tools/device/devices" }
 oer-device-mac = { path = "../../tools/device/mac" }
 oer-process = { path = "../../tools/process" }
 oer-stand-file = { path = "../file" }

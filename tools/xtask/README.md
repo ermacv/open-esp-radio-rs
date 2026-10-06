@@ -5,7 +5,7 @@ binary parses arguments and calls the owner of each job. Its library holds
 the repository operations — the [check registry](#the-check-registry) and the
 gate that selects from it, CI input planning and coverage, push, CI state, locks, worktrees and the
 repository checks. Domain work lives with its owners and their command
-lines: images in [`oer-image`](../image/README.md) and
+lines: images in [`oer-image`](../image/pipeline/README.md) and
 [`oer-hil-image`](../../hil/host/README.md), vendor probes, scenario runs and
 shard regeneration in [`oer-vendor-evidence`](../../verification/evidence/README.md)
 (`cargo verification`), the register inventory in the
@@ -68,8 +68,13 @@ Host-side policy over the source tree and the Cargo graph.
 The PHY library's target build. Images are not xtask's: `cargo fw build`
 ([`oer-fw`](../fw/src/main.rs)) builds the examples, `cargo hil images check`
 ([`oer-hil-cli`](../../hil/host/cli/README.md)) builds or type-checks the HIL
-image classes, and both go through [`oer-image`](../image/README.md); the
+image classes, and both go through [`oer-image`](../image/pipeline/README.md); the
 gate runs them as processes.
+
+`phy-archive/` holds the gate's compiled-symbol audit
+(`oer-check-phy-archive`). It remains a separate process so the xtask entry
+package does not link the ELF reader; the PHY check passes the compiled
+archive and its allowed source packages to it.
 
 | Command | Contract |
 | --- | --- |
@@ -296,7 +301,7 @@ performs no hardware operations.
 ## Image checks
 
 Every image is built by the one image pipeline,
-[`oer-image`](../image/README.md): `build firmware` with the examples' spec,
+[`oer-image`](../image/pipeline/README.md): `build firmware` with the examples' spec,
 `check firmware` and `compare images` through `oer-hil-image`'s class specs.
 A full `check firmware` of `performance` or `correctness` then builds the
 Blobray audit host in `tools/blobray/target` and runs the final radio target

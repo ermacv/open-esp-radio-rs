@@ -4,7 +4,7 @@
 //!    which holds the board's device access: the arbiter's grant takes it
 //!    for every leased board;
 //! 2. **write**: the devices layer's one write operation
-//!    (`oer-device-image`) invalidates the board's receipt, writes the image
+//!    (`oer_devices::image`) invalidates the board's receipt, writes the image
 //!    bundle's segments, publishes the receipt of the whole bundle, starts
 //!    the image as the chip profile's `[flash] start` says and confirms the
 //!    start;
@@ -20,8 +20,8 @@
 
 use std::path::Path;
 
-use oer_device_image::{Receipt, Store};
 use oer_device_lock::DeviceId;
+use oer_devices::image::{Receipt, Store};
 use oer_image_bundle::ImageBundle;
 use oer_stand_board::Via;
 use oer_stand_journal::{ImageIdentity, Journal};

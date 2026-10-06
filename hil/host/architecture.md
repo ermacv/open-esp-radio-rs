@@ -35,7 +35,7 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | `family/ieee80211-evidence/` (`oer-hil-family-ieee80211-evidence`) | none | Radio-evidence analysis of Wi-Fi sessions: air captures, protection and the RX delivery frontier |
 | `net-traffic/` (`oer-hil-net-traffic`) | none | Host traffic against the target's network sessions: session start and evidence, readiness, paced UDP and TCP, offered load and the one ICMP method (datagram sockets) |
 | `../../stand/file/` (`oer-stand-file`) | none | The stand file, the one resolver of a board name (id, chip or MAC) and the XDG paths of the stand's state |
-| `../../stand/board/` (`oer-stand-board`) | none | A stand board: its leased device (the device lock of `oer-device-lock`), the receipted image write of `oer-device-image`, starts, the reset ladder, hub power and consoles |
+| `../../stand/board/` (`oer-stand-board`) | none | A stand board: its leased device (the device lock of `oer-device-lock`), the receipted image write of `oer_devices::image`, starts, the reset ladder, hub power and consoles |
 | `../../stand/arbiter/` (`oer-stand-arbiter`) | none | Claims, the queue and its job tickets, balances, preemption, maintenance; a board whose device lock a foreign process holds is busy |
 | `flash/` (`oer-hil-flash`) | none | The flash operation of HIL: lease, write, journal, start; and the ESP-IDF catalog flash |
 | `../../stand/discover/`, `../../stand/doctor/`, `../../stand/ssh/` | none | The stand's host: discovery of its boards, the host doctor, fixture reachability and the one SSH helper to its OpenWrt hosts |
@@ -509,7 +509,7 @@ The host packages follow the roles of the
   builds and runs are made from, and `oer-durable` provides atomic files,
   digests and timestamps to every producer.
 - `oer-hil-image` turns an image class into an image spec for the one image
-  pipeline, [`oer-image`](../../tools/image/README.md) (the class's features
+  pipeline, [`oer-image`](../../tools/image/pipeline/README.md) (the class's features
   and network, each chip's agent and HIL stack policy, the radio observers'
   placement audit), builds from a frozen snapshot (`frozen`) and writes the
   records it hands to evidence (`record`, which also implements the recipe

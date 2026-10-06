@@ -155,14 +155,17 @@ qualification's ban on HIL orchestration and stand operation
 every firmware workspace (`oer_tidy::workspaces::release_profiles`).
 
 **Device foundation.** Every application that touches a board goes through
-the devices layer (`tools/device/*`, assembled by `oer-devices`). A board is
+the devices layer ([`tools/device/`](../tools/device/README.md)): `oer-devices`
+owns board operations as modules, with flash writes and the held-board facade
+behind its `image` feature. Device identity, locking and the reference-peer
+grammar retain independent packages with smaller dependency graphs. A board is
 its [`DeviceId`](../tools/device/mac/src/lib.rs), the MAC its USB
 Serial/JTAG port reports. The [device lock](../tools/device/lock/src/lib.rs)
 lets one process own a board at a time for a whole operation (flash with
 reopen and start, reset, monitor, a HIL lease with its power cycles); a
 refused process names the holder, and the arbiter treats a board locked by
 a foreign process as busy. The one flash write,
-[`oer-device-image`](../tools/device/image/src/lib.rs), reads a bundle's
+[`oer_devices::image`](../tools/device/devices/src/image/mod.rs), reads a bundle's
 segments once into a verified snapshot, invalidates the board's known image
 before writing, writes that snapshot and records a receipt (segment digests
 and a write generation); "written" and "started" are distinct states, so an
@@ -560,7 +563,7 @@ that are), and its initializer is `zeroed()`. A value with no zero representatio
 `ZeroedOnce<T>` written once and then shared (an interrupt's waker). `cargo
 xtask check architecture` refuses a `link_section` literal naming a zeroed
 region anywhere in Rust source, so the macro is the only way to place one.
-The image linker (`tools/image-linker`) is the backstop for what that scan
+The image linker (`tools/image/linker`) is the backstop for what that scan
 does not read, vendor
 archives included: an input section bound for a zeroed region that holds a
 non-zero byte or a relocation fails the link.
@@ -594,7 +597,7 @@ updated together when that contract changes.
 The [ESP32-S31 platform](../platform/esp32s31/README.md) owns the board profile,
 Flash bootstrap, stage-two relocation, the staged-boot address map and image
 header, linker scripts and per-core SRAM IRQ stacks. HIL and standalone examples use that same boot contract. The host
-[`oer-image`](../tools/image/README.md) pipeline builds every image: payload
+[`oer-image`](../tools/image/pipeline/README.md) pipeline builds every image: payload
 packing, the stack and placement gates and the flash contents, encoded at build
 time into an image bundle that a flash only writes; `cargo xtask` builds
 applications through it and HIL adds its image classes, observers and

@@ -18,9 +18,9 @@ oer-stand-board = { path = "../../../stand/board" }
 oer-hil-run-bundle = { path = "../run-bundle" }
 oer-hil-analysis = { path = "../analysis" }
 oer-hil-experiment = { path = "../experiment" }
-oer-image = { path = "../../../tools/image" }
-oer-image-check-interrupts = { path = "../../../tools/image-check/interrupts" }
-oer-image-compare = { path = "../../../tools/image-compare" }
+oer-image = { path = "../../../tools/image/pipeline" }
+oer-image-check-interrupts = { path = "../../../tools/image/check/interrupts" }
+oer-image-compare = { path = "../../../tools/image/compare" }
 oer-hil-image = { path = "../image" }
 oer-hil-image-class = { path = "../image-class" }
 oer-hil-source-snapshot = { path = "../source-snapshot" }

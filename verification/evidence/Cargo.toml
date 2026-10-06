@@ -17,7 +17,7 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 toml = "=1.1.4"
 oer-chip-profile = { path = "../../tools/chip-profile", optional = true }
-oer-image-policy = { path = "../../tools/image-policy", optional = true }
+oer-image-policy = { path = "../../tools/image/policy", optional = true }
 oer-probe-codegen = { path = "../harness/codegen", optional = true }
 oer-toolchain = { path = "../../tools/toolchain", optional = true }
 oer-vendor-artifacts = { path = "../../tools/vendor-artifacts", optional = true }

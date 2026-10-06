@@ -708,7 +708,7 @@ impl LiveSuite<'_> {
         let flashed = oer_hil_flash::catalog::flash(
             self.root,
             &journal,
-            &oer_device_image::Store::open()?,
+            &oer_devices::image::Store::open()?,
             oer_stand_owners::from_environment()?.as_str(),
             &board,
             &oer_hil_flash::catalog::Request {
@@ -806,7 +806,7 @@ pub(crate) struct PeerImageRecord {
 fn peer_image_record(
     journal: &oer_stand_journal::Journal,
     mac: &oer_device_lock::DeviceId,
-    receipt: &oer_device_image::Receipt,
+    receipt: &oer_devices::image::Receipt,
 ) -> Result<PeerImageRecord> {
     let application = receipt
         .segment("application")

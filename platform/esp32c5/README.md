@@ -36,7 +36,7 @@ preparation. HIL hooks also keep their code, state and table-free post-mortem
 CRC in uncached memory; interrupt-context panic text is omitted because the
 compiler may store it in PSRAM. The final-image gate rejects cached callees
 of panic entries and hooks. Images are built by the
-[image pipeline](../../tools/image/README.md) from `chip.toml` (boot
+[image pipeline](../../tools/image/pipeline/README.md) from `chip.toml` (boot
 `staged`, the `[flash]` map: application QIO at 80 MHz on 16 MiB, DIO
 bootloader). The HIL agent (`hil/targets/esp32c5/agent`) runs on the staged
 runtime; its image classes are `boot-smoke` and `system-watchdog`:

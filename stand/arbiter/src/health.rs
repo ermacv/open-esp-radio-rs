@@ -101,7 +101,7 @@ pub(crate) fn of(
 mod tests {
     use super::*;
     use crate::QuarantineTrigger;
-    use oer_device_reset::RecoveryStep;
+    use oer_devices::reset::RecoveryStep;
 
     const MAC: &str = "30:ED:A0:F3:F6:D0";
 

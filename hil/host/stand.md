@@ -57,7 +57,7 @@ fw build` or `cargo hil image build`), an example (built first) or an
 ESP-IDF catalog image (built first) to an attached board. It takes the
 board's device lock, which a stand lease of another process holds, so it
 fails at once on a leased board (or waits with `--wait`) and never writes
-under a run; the write is the receipted image write of `oer-device-image`,
+under a run; the write is the receipted image write of `oer_devices::image`,
 and `--monitor` reads the console afterwards. Over JTAG only the runner's
 flash operation writes (an image that breaks USB Serial/JTAG resets, see
 [Hardware errata](../../docs/hardware-errata.md)). The OpenOCD

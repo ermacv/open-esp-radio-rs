@@ -61,9 +61,9 @@ mod tests {
         )
         .unwrap();
         for file in [
-            "tools/image/Cargo.toml",
-            "tools/image/src/lib.rs",
-            "tools/image-linker/src/main.rs",
+            "tools/image/pipeline/Cargo.toml",
+            "tools/image/pipeline/src/lib.rs",
+            "tools/image/linker/src/main.rs",
             "tools/elf/src/lib.rs",
             "tools/riscv/stack/src/lib.rs",
             "tools/riscv/decode/src/lib.rs",

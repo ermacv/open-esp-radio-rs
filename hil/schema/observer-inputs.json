@@ -6,11 +6,10 @@
   "dependencies": {
     "common": [
       "oer-hil-workload",
-      "oer-device-image",
+      "oer-devices",
       "oer-device-lock",
       "oer-stand-journal",
       "oer-stand-owners",
-      "oer-device-reset",
       "oer-stand-board",
       "oer-image-bundle",
       "oer-hil-image-class",

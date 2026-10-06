@@ -9,7 +9,7 @@
 use std::time::{Duration, Instant};
 
 use oer_device_lock::{DeviceAccess, DeviceId};
-use oer_device_reset::RecoveryStep;
+use oer_devices::reset::RecoveryStep;
 use oer_stand_file::StandFile;
 use oer_stand_power::HubPower;
 
@@ -79,7 +79,7 @@ fn restore_one(
 ) -> crate::Result<()> {
     let _operation = access.operation()?;
     let mac = access.id();
-    if oer_device_discovery::is_attached(mac) {
+    if oer_devices::discovery::is_attached(mac) {
         return Ok(());
     }
     let mut step = if power.is_on(_operation.lifetime())? {
@@ -115,7 +115,7 @@ fn restore_one(
 fn wait_attached(mac: &DeviceId) -> bool {
     let deadline = Instant::now() + ATTACH;
     while Instant::now() < deadline {
-        if oer_device_discovery::is_attached(mac) {
+        if oer_devices::discovery::is_attached(mac) {
             return true;
         }
         std::thread::sleep(Duration::from_millis(250));

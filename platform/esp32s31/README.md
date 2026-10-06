@@ -34,7 +34,7 @@ The hook's static data references, including compiler-created constants, are
 checked through the ELF relocations as well.
 
 Every image of this platform, standalone or HIL, is built by the one image
-pipeline, [`oer-image`](../../tools/image/README.md), with the compiler flags
+pipeline, [`oer-image`](../../tools/image/pipeline/README.md), with the compiler flags
 of `oer-toolchain`'s `image` module; no `.cargo/config.toml` adds Rust
 flags.
 
@@ -154,7 +154,7 @@ for the bounded SRAM scan and restores their prior enable state. It rejects
 sampling from the IRQ stack or before initialization. Measurements describe
 observed writes, not the maximum possible depth or unwritten stack reservations.
 The maximum is the image build's interrupt-stack gate: a static bound per hart
-from the image's interrupt table ([image pipeline](../../tools/image/README.md)),
+from the image's interrupt table ([image pipeline](../../tools/image/pipeline/README.md)),
 under the contract `layout`'s `interrupts` module states. Each HIL repetition
 holds the two to each other: its peak watermark use per hart is recorded as
 `stack.cpuN-irq.used`, evaluated at most the bound the current analyzer
@@ -185,7 +185,7 @@ calls the analysis does not resolve); its report names every unresolved site,
 and runtime stack painting and boundary watchpoints check the exercised
 chains.
 
-The [image pipeline](../../tools/image/README.md) supplies packing,
+The [image pipeline](../../tools/image/pipeline/README.md) supplies packing,
 structural checks and encoding to `cargo fw` and HIL. HIL retains its image classification,
 observer placement requirements, stack budgets and sealed evidence. Source or
 image checks alone do not establish RF qualification.

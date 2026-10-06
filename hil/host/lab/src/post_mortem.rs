@@ -52,14 +52,14 @@ pub fn jtag_snapshot_through_stand_openocd(
     output: &Path,
     elf: Option<&Path>,
 ) {
-    match oer_device_openocd::Openocd::locate() {
+    match oer_devices::openocd::Openocd::locate() {
         Ok(openocd) => jtag_snapshot(&openocd, chip, access, output, elf),
         Err(error) => eprintln!("hil: no JTAG post-mortem of the silent target: {error}"),
     }
 }
 
 pub fn jtag_snapshot(
-    openocd: &oer_device_openocd::Openocd,
+    openocd: &oer_devices::openocd::Openocd,
     chip: &str,
     access: &oer_device_lock::DeviceAccess,
     output: &Path,
@@ -133,7 +133,7 @@ pub fn inspect(
     let port = if port.exists() {
         port.to_owned()
     } else {
-        oer_device_discovery::wait_for(mac, ANSWER_WITHIN)?
+        oer_devices::discovery::wait_for(mac, ANSWER_WITHIN)?
     };
     let capture =
         SerialCapture::attach(crate::attach_console(&port), &output.join("post-mortem")).ok()?;
@@ -468,7 +468,7 @@ mod tests {
         .unwrap();
         use std::os::unix::fs::PermissionsExt as _;
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let openocd = oer_device_openocd::Openocd {
+        let openocd = oer_devices::openocd::Openocd {
             program: script,
             scripts: directory.path().to_owned(),
         };
@@ -505,7 +505,7 @@ exit 1
         std::fs::set_permissions(&silent, std::fs::Permissions::from_mode(0o755)).unwrap();
         let quiet = directory.path().join("quiet");
         jtag_snapshot(
-            &oer_device_openocd::Openocd {
+            &oer_devices::openocd::Openocd {
                 program: silent,
                 scripts: directory.path().to_owned(),
             },

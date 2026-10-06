@@ -5,7 +5,7 @@
 //! by their MAC.
 //!
 //! The journal is history: it never decides what a board carries. That is
-//! the devices layer's receipt (`oer-device-image`), which every write of a
+//! the devices layer's receipt (`oer_devices::image`), which every write of a
 //! board's flash publishes, `cargo fw` included. [`Journal::record_flash`]
 //! is the only writer of a flash event: the HIL flash operation
 //! (`oer-hil-flash`) calls it after the write and start it receipted, and
@@ -20,7 +20,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oer_device_reset::{RecoveryStep, ResetPath};
+use oer_devices::reset::{RecoveryStep, ResetPath};
 use oer_process::lock::{FileLock, Mode};
 use serde::{Deserialize, Serialize};
 

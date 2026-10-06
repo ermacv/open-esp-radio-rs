@@ -11,8 +11,7 @@ readme = "README.md"
 
 [dependencies]
 oer-esp-idf = { path = "../../../../tools/esp-idf" }
-oer-device-port = { path = "../../../../tools/device/port" }
-oer-device-reset = { path = "../../../../tools/device/reset" }
+oer-devices = { path = "../../../../tools/device/devices" }
 oer-hil-schema = { path = "../../../schema" }
 oer-hil-scenario-catalog = { path = "../../scenario/catalog" }
 oer-chip-profile = { path = "../../../../tools/chip-profile" }
@@ -23,7 +22,7 @@ oer-hil-link = { path = "../../link" }
 oer-hil-protocol = { path = "../../../protocol", features = ["registry"] }
 oer-hil-scenario = { path = "../../scenario" }
 oer-hil-workload = { path = "../../workload" }
-oer-image = { path = "../../../../tools/image" }
+oer-image = { path = "../../../../tools/image/pipeline" }
 oer-process = { path = "../../../../tools/process" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

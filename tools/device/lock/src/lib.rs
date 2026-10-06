@@ -242,8 +242,7 @@ impl DeviceAccess {
                 path: path.clone(),
                 token,
             };
-            let _operation =
-                LockBroker::operation(&path.with_extension("broker"), &delegate.token)?;
+            let _operation = LockBroker::operation(&path, &delegate.token)?;
             return Ok(Ok(Self::Delegated(delegate)));
         }
         match FileLock::try_acquire(&path, Mode::Exclusive)? {
@@ -317,7 +316,7 @@ impl DeviceAccess {
             Self::Owned(guard) => (&guard.owned.token, Some(guard.clone())),
             Self::Delegated(delegate) => (&delegate.token, None),
         };
-        let broker = LockBroker::operation(&self.path().with_extension("broker"), token)
+        let broker = LockBroker::operation(self.path(), token)
             .map_err(|error| format!("board {}: {error}", self.id()))?;
         Ok(DeviceOperation {
             _broker: broker,
@@ -407,7 +406,7 @@ pub fn foreign_holder(id: &DeviceId) -> crate::Result<Option<Option<Holder>>> {
     Ok(match holder(id)? {
         Some(holder)
             if inherited(&path)?.as_deref() == Some(holder.token.as_str())
-                && LockBroker::operation(&path.with_extension("broker"), &holder.token).is_ok() =>
+                && LockBroker::operation(&path, &holder.token).is_ok() =>
         {
             None
         }
@@ -627,7 +626,11 @@ mod tests {
             return;
         }
         for (kill_owner, kill_delegate) in [(false, false), (true, false), (true, true)] {
-            let directory = tempfile::tempdir().unwrap();
+            // Exercise real delegation below an XDG-sized path exceeding SUN_LEN.
+            let directory = tempfile::Builder::new()
+                .prefix(&"x".repeat(120))
+                .tempdir()
+                .unwrap();
             let mut owner = child("owner", directory.path());
             if kill_delegate {
                 owner.env("OER_BROKER_TEST_PIN_IO", "1");
@@ -646,9 +649,11 @@ mod tests {
                 oer_process::capture(oer_process::command("kill").args(["-KILL", pid.trim()]))
                     .unwrap();
             }
-            let endpoint = directory.path().join("001122334466.broker");
+            let lock = directory.path().join("001122334466.lock");
+            let holder: Holder =
+                serde_json::from_reader(std::fs::File::open(&lock).unwrap()).unwrap();
             let deadline = Instant::now() + Duration::from_secs(5);
-            while endpoint.exists() {
+            while LockBroker::operation(&lock, &holder.token).is_ok() {
                 assert!(Instant::now() < deadline, "broker did not close admission");
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -670,7 +675,6 @@ mod tests {
             );
             std::fs::write(directory.path().join("finish-io"), "finish").unwrap();
             wait_for(&directory.path().join("finished"));
-            let lock = directory.path().join("001122334466.lock");
             let deadline = Instant::now() + Duration::from_secs(5);
             while FileLock::try_acquire(&lock, Mode::Exclusive)
                 .unwrap()

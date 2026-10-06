@@ -11,7 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use oer_device_lock::{Busy, DeviceAccess, DeviceId};
+use oer_device_lock::{Busy, DeviceAccess, DeviceId, Holder};
+use oer_process::lock::LockBroker;
 
 const TEST: &str = "external_io_retains_every_board_after_the_lease_owner_is_killed";
 const ROLE: &str = "OER_LEASE_TEST_ROLE";
@@ -118,7 +119,10 @@ fn external_io_retains_every_board_after_the_lease_owner_is_killed() {
         vec!["--board", "one", "--board", "two", "--air", "none"],
         vec!["--stand"],
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::Builder::new()
+            .prefix(&"x".repeat(120))
+            .tempdir()
+            .unwrap();
         let _writer_cleanup = WriterCleanup(directory.path().to_owned());
         fs::write(
             directory.path().join("stand.toml"),
@@ -159,9 +163,10 @@ fn external_io_retains_every_board_after_the_lease_owner_is_killed() {
         let locks = directory.path().join("open-esp-radio/devices");
         wait_until("owner loss did not close broker admission", || {
             BOARDS.iter().all(|mac| {
-                !locks
-                    .join(format!("{}.broker", mac.replace(':', "")))
-                    .exists()
+                let lock = locks.join(format!("{}.lock", mac.replace(':', "")));
+                let holder: Holder =
+                    serde_json::from_reader(fs::File::open(&lock).unwrap()).unwrap();
+                LockBroker::operation(&lock, &holder.token).is_err()
             })
         });
         let before = fs::metadata(directory.path().join("io")).unwrap().len();

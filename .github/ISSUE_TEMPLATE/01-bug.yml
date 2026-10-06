@@ -1,10 +1,10 @@
 name: "Bug"
 description: "Restore expected behavior in a reachable scenario."
-labels: ["kind:bug"]
+labels: ["triage:incomplete","kind:bug"]
 body:
   - type: markdown
     attributes:
-      value: "Name one accepted result. Follow [issue management](https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/issues.md). Triage assigns area and priority; dropdowns do not apply labels. Research and implementation do not establish hardware readiness."
+      value: "Name one accepted result. Follow [issue management](https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/issues.md). Choose classification before submitting. The issue-label guard applies your explicit selections; triage reviews them. Research and implementation do not establish hardware readiness."
   - type: textarea
     id: behavior
     attributes:
@@ -16,8 +16,16 @@ body:
     id: area
     attributes:
       label: "Primary area"
-      description: "The owner of the result; triage applies its area label."
-      options: ["Wi-Fi","Bluetooth","IEEE 802.15.4","Shared radio","Registers / PAC","Platform","Tooling","HIL","Qualification"]
+      description: "The owner of the result; the guard applies this explicit area selection."
+      options: ["area:wifi","area:bluetooth","area:ieee802154","area:radio","area:registers","area:platform","area:tooling","area:hil","area:qualification"]
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: "Priority"
+      description: "Choose explicitly: P0 interrupts, P1 blocks the selected result, P2 is useful backlog, P3 needs an activation trigger."
+      options: ["priority:P0","priority:P1","priority:P2","priority:P3"]
     validations:
       required: true
   - type: textarea

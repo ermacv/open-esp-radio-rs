@@ -8,18 +8,22 @@ documentation describes the implemented contract.
 
 ## Classify the result
 
-Use one primary `kind:*`, one primary `area:*` and, after triage, one
-`priority:*` on an executable task. A tracking issue can omit priority because
-its children have different urgency. Add another area only when it helps an
-actual consumer find the task. Add `target:*` only for chip-specific scope;
-record revision, board, profile and features in the body.
+At creation, every issue needs exactly one `kind:*` and at least one `area:*`.
+Every executable issue also needs exactly one `priority:*`. Only
+`kind:tracking` may omit priority because its children have different urgency;
+it still cannot have conflicting priorities. Triage reviews the supplied
+classification. Add another area only when it helps an actual consumer find
+the task. Add `target:*` only for chip-specific scope; record revision, board,
+profile and features in the body. A native Issue Type does not replace a kind
+label: a Task can deliver a feature, refactor, decision or validation.
 
-The [label catalog](../.github/labels.json) is a reference configuration applied
-manually in GitHub. No command or workflow synchronizes it. When changing a
-managed label, update the catalog and the live name, description and color in
-the same task; compare them during triage. A form's area or kind dropdown does
-not assign labels: triage applies the matching labels. The change form
-deliberately leaves its kind unset until its selected result is reviewed.
+The [label catalog](../.github/labels.json) defines managed names, descriptions
+and colors. The [issue-label workflow](../.github/workflows/issue-labels.yml)
+creates missing definitions and repairs description/color drift. Change the
+catalog through a PR; manual description/color edits are reverted. Renaming a
+managed label also requires migrating its issues in the same task. Unmanaged
+labels are preserved. Unknown names in a managed namespace and
+conflicting kinds or priorities violate the invariant.
 
 | Kind | Result accepted at closure |
 | --- | --- |
@@ -42,6 +46,53 @@ across packages, select the primary accepting package's layer and name the
 other owners in the body. For non-package data or documentation, identify the
 accepting code owner and its layer. A register investigation or HIL experiment
 is a work stage, not a new architecture layer.
+
+## Creation and automatic control
+
+Agents and maintainers using a plugin, API or CLI supply the full validated
+label set in the first creation request, then check the returned issue.
+The [shared validator](../.github/scripts/issue_labels.py) refuses an incomplete
+or conflicting set before its creation helper makes any API request:
+
+```sh
+python3 .github/scripts/issue_labels.py validate \
+  --label kind:refactor --label area:tooling --label priority:P2
+python3 .github/scripts/issue_labels.py create \
+  --title 'process: establish one descendant cleanup owner' --body-file /tmp/issue.md \
+  --label kind:refactor --label area:tooling --label priority:P2
+```
+
+The creation helper uses `GH_TOKEN` or `GITHUB_TOKEN` with the necessary
+repository access; GitHub can silently drop requested labels without it, so
+the helper reads the issue back and reports failure if the invariant is lost.
+For another creation tool, run `validate` on exactly the labels sent to it and
+verify its result. Do not create an unlabeled draft and patch labels later.
+
+Forms require an explicit primary area and, for executable results, priority.
+The change form also requires its feature/refactor/docs kind. When an issue
+opens, the workflow applies only these explicit canonical selections and
+validates the live labels. It never guesses classification from prose, Issue
+Type or a default priority. Form answers are initial input; later triage edits
+the labels, and old answers are never reapplied on edits or label removal.
+
+GitHub has no repository setting that rejects every unlabeled API creation.
+Disabling blank UI issues requires a form but does not restrict the API. Forms
+therefore begin with the derived `triage:incomplete` flag until the workflow
+has applied and checked their choices. A bypass through another tool is detected
+after creation: missing, unknown or conflicting classification gets that flag
+and an actionable workflow summary. Fix the actual labels; the guard removes
+the flag when valid. Do not start work or move an incomplete card out of Triage.
+The guard never closes issues or selects a priority for their author.
+
+The workflow reads current GitHub state on issue creation, edits, label changes,
+reopening, closure and transfer. It also audits all open issues on catalog/form
+changes, label-definition changes, a manual run and every six hours. The audit
+covers missed events, including events suppressed by `GITHUB_TOKEN`. Historical
+closed cards and pull requests are outside the active issue invariant.
+An incomplete card is reported and flagged without making source CI red;
+API failures or a broken reconciler fail its workflow. The separate read-only
+`python3 .github/scripts/issue_labels.py audit` command exits nonzero on violations.
+The fast host gate tests the same policy offline through the check registry.
 
 ## Write the card
 
@@ -132,7 +183,7 @@ the issue body. Maintain that field manually when the owner changes.
 
 | Status | Entry condition |
 | --- | --- |
-| Triage | Kind, scope, acceptance or priority needs review |
+| Triage | Supplied classification, scope or acceptance needs review; `triage:incomplete` must be cleared before leaving |
 | Backlog | Accepted scope, not yet selected or waiting for its future trigger |
 | Ready | Selected next work; required inputs and the next step are available |
 | In progress | An owner is actively doing the named step |
@@ -140,7 +191,7 @@ the issue body. Maintain that field manually when the owner changes.
 | Waiting | Selected work awaits a named artifact, decision, apparatus or external event |
 | Done | The issue is closed with its scoped outcome recorded |
 
-At triage, classify and assign priority, then inspect dependencies before
+At triage, review the supplied classification and priority, then inspect dependencies before
 moving to Ready. Review Waiting cards when their named input changes, and
 Backlog cards when their trigger happens. Do not infer In progress from a
 recent edit or assign an owner who has not taken the work.

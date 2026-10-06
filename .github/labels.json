@@ -113,5 +113,10 @@
     "name": "target:esp32c5",
     "color": "bfdadc",
     "description": "Chip-specific scope includes ESP32-C5."
+  },
+  {
+    "name": "triage:incomplete",
+    "color": "fef2c0",
+    "description": "Derived by the issue-label guard: required classification is missing, conflicting or unknown."
   }
 ]

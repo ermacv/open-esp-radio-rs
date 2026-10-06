@@ -1,0 +1,38 @@
+name: Issue labels
+
+# Metadata reconciliation, not a source check. The guard's offline tests
+# belong to xtask's check registry and run in the normal host gate.
+on:
+  issues:
+    types: [opened, edited, labeled, unlabeled, reopened, closed, transferred]
+  label:
+    types: [created, edited, deleted]
+  push:
+    branches: [main]
+    paths:
+      - '.github/labels.json'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/scripts/**'
+      - '.github/workflows/issue-labels.yml'
+  schedule:
+    - cron: '19 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  reconcile:
+    if: github.repository == 'ermacv/open-esp-radio-rs' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Apply explicit form choices and reconcile incomplete classification
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 .github/scripts/issue_labels.py enforce

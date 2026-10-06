@@ -8,6 +8,9 @@ dated applicable device evidence.
 ## Start with a task
 
 Open or update an issue using the [issue management rules](docs/issues.md).
+Choose its kind, area and executable-task priority before submission; the
+[creation invariant](docs/issues.md#creation-and-automatic-control) applies to
+forms, plugins, API calls and command-line creation.
 Name one reviewable result, its defining owner and the evidence needed to
 accept it. Use sub-issues for composition and dependencies for required
 artifacts; neither a research result nor a merged implementation establishes

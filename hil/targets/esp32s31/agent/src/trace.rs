@@ -29,6 +29,7 @@ const WORDS: usize = 0;
 
 #[unsafe(link_section = ".rtc_fast.persistent")]
 static RETAINED: Retained<ENTRIES, SLOTS, WORDS> = Retained::new();
+#[unsafe(link_section = ".critical.data.panic_trace")]
 static TRACE: Trace = Trace::new(&RETAINED);
 
 oer_trace::clock!(oer_time_embassy::now_micros);

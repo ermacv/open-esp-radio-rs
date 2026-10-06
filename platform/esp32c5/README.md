@@ -24,14 +24,18 @@ clock: see the ESP32-C5 entry of the [hardware errata](../../docs/hardware-errat
 
 ## Build
 
-esp-hal comes from the owner's fork, branch `oer/c5-panic-reset` (revision
-`e7739ccf`): fixed-origin PSRAM mapping (`PsramOrigin::Fixed`), code
+esp-hal comes from the owner's fork, branch `oer/pr210-panic-sram` (revision
+`de9bd926`): fixed-origin PSRAM mapping (`PsramOrigin::Fixed`), code
 preparation in PSRAM and re-initialized interrupt vectoring after the
 handoff on the ESP32-C5. The shared panic handler records into retained
 RAM and resets without formatting. HAL restores UART0's undivided XTAL
 clock directly, so reset cannot reacquire a clock-tree lock held at panic;
 chip register access stays in HAL. The shared linker places panic entry
-helpers and the record/reset path in SRAM. Images are built by the
+helpers and the record/reset path in SRAM, including outlined HAL reset
+preparation. HIL hooks also keep their code, state and table-free post-mortem
+CRC in uncached memory; interrupt-context panic text is omitted because the
+compiler may store it in PSRAM. The final-image gate rejects cached callees
+of panic entries and hooks. Images are built by the
 [image pipeline](../../tools/image/README.md) from `chip.toml` (boot
 `staged`, the `[flash]` map: application QIO at 80 MHz on 16 MiB, DIO
 bootloader). The HIL agent (`hil/targets/esp32c5/agent`) runs on the staged

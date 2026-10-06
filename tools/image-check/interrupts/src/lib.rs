@@ -38,6 +38,14 @@ pub struct InterruptStacks {
     /// What the interrupt handlers' code does that interrupt context should
     /// not, over what is resolved.
     pub handler_code: HandlerCode,
+    /// Compiler panic entries, the platform handler, the optional image hook
+    /// and all their resolved callees. This path must survive cache loss even
+    /// when the image has no interrupt that deliberately panics.
+    pub panic_code: HandlerCode,
+    /// Static references from the image hook and its resolved callees into
+    /// cached memory, by function, instruction site and referenced address.
+    /// Compiler-created constants count just like named state or tables.
+    pub panic_hook_data: Vec<(u32, u32, u64)>,
     /// The chip's address map and interrupt contract the bounds are held to.
     pub contract: Contract,
 }
@@ -80,6 +88,23 @@ impl InterruptStacks {
     /// the usable interrupt stack with the margin. Returns a warning for each
     /// hart left `partial + ?`.
     pub fn check(&self, required: Required) -> Result<Vec<String>> {
+        if let Some((function, site, target)) = self.panic_hook_data.first() {
+            return Err(format!(
+                "the panic hook references cached memory at {target:#010x} from {} \
+                 at {site:#010x}:\n{}",
+                self.name(*function),
+                self.render()
+            )
+            .into());
+        }
+        if let Some(function) = self.panic_code.cached.first() {
+            return Err(format!(
+                "the panic path runs {} from cached memory:\n{}",
+                self.name(*function),
+                self.render()
+            )
+            .into());
+        }
         let in_sram = |address: u32| {
             self.contract
                 .memory
@@ -236,6 +261,26 @@ impl InterruptStacks {
         }
         for function in code.cached.iter().take(SHOWN) {
             let _ = writeln!(out, "  in cached memory: {}", name(*function));
+        }
+        let _ = writeln!(
+            out,
+            "panic code: {} functions in cached memory",
+            self.panic_code.cached.len()
+        );
+        for function in self.panic_code.cached.iter().take(SHOWN) {
+            let _ = writeln!(out, "  in cached memory: {}", name(*function));
+        }
+        let _ = writeln!(
+            out,
+            "panic hook data: {} static references into cached memory",
+            self.panic_hook_data.len()
+        );
+        for (function, site, target) in self.panic_hook_data.iter().take(SHOWN) {
+            let _ = writeln!(
+                out,
+                "  {} at {site:#010x} references {target:#010x}",
+                name(*function)
+            );
         }
         for hart in &self.harts {
             let _ = writeln!(
@@ -408,16 +453,105 @@ pub fn interrupt_stacks_of(image: &Image) -> Result<InterruptStacks> {
         .flat_map(|hart| hart.levels.iter())
         .flat_map(|level| level.bound.reached.iter().copied())
         .collect();
-    let handler_code = handler_code(analysis, &reached, names, &contract.memory);
+    let interrupt_code = handler_code(analysis, &reached, names, &contract.memory);
+    let panic_code = panic_path_code(analysis, names, resolutions, &contract.memory)?;
+    let hook = names
+        .iter()
+        .find(|(_, name)| *name == "oer_platform_panic_hook");
+    let panic_hook_data = match hook {
+        Some((&address, _)) => cached_hook_references(
+            &oer_elf::Elf::parse(elf)?,
+            functions,
+            &analysis.bound_with(address, resolutions)?.reached,
+            &contract.memory,
+        )?,
+        None => Vec::new(),
+    };
     Ok(InterruptStacks {
         harts,
         handlers,
         summaries: analysis.summaries.clone(),
         names: names.clone(),
         level_writers,
-        handler_code,
+        handler_code: interrupt_code,
+        panic_code,
+        panic_hook_data,
         contract: contract.clone(),
     })
+}
+
+/// The retained relocations reveal compiler-created constants as well as
+/// globals. The hook only receives metadata already safe for its context;
+/// unlike task-only metadata extraction in the platform handler, none of its
+/// own static references may depend on the cache.
+fn cached_hook_references(
+    elf: &oer_elf::Elf<'_>,
+    functions: &[oer_riscv_stack::Function],
+    reached: &BTreeSet<u32>,
+    memory: &oer_chip_profile::Memory,
+) -> Result<Vec<(u32, u32, u64)>> {
+    use oer_elf::rv32::{Role, kind};
+    let mut references = BTreeSet::new();
+    for section in elf.sections().filter(|section| section.executable) {
+        for relocation in elf.relocations(section.index)? {
+            if matches!(
+                kind(relocation.r_type).role,
+                Role::Hint | Role::PcRelativeLow
+            ) {
+                continue;
+            }
+            let Some(function) = functions
+                .get(
+                    ..functions
+                        .partition_point(|function| u64::from(function.address) <= relocation.at),
+                )
+                .and_then(|before| before.last())
+                .filter(|function| {
+                    relocation.at < u64::from(function.address) + u64::from(function.size)
+                        && reached.contains(&function.address)
+                })
+            else {
+                continue;
+            };
+            let target = elf.target_address(&relocation)?;
+            if target.checked_add(1).is_some_and(|end| {
+                memory
+                    .cached()
+                    .iter()
+                    .any(|region| region.contains_range(target, end))
+            }) {
+                references.insert((function.address, u32::try_from(relocation.at)?, target));
+            }
+        }
+    }
+    Ok(references.into_iter().collect())
+}
+
+fn panic_path_code(
+    analysis: &Analysis,
+    names: &BTreeMap<u32, String>,
+    resolutions: &oer_riscv_stack::Resolutions,
+    memory: &oer_chip_profile::Memory,
+) -> Result<HandlerCode> {
+    let mut reached = BTreeSet::new();
+    for (&address, _) in names.iter().filter(|(_, name)| panic_entry(name)) {
+        reached.extend(analysis.bound_with(address, resolutions)?.reached);
+    }
+    Ok(handler_code(analysis, &reached, names, memory))
+}
+
+/// Demangled compiler entry points in the pinned toolchain, plus the image
+/// hook. Check their final machine-code call graph, rather than source names
+/// or linker-script text: helpers can be outlined or removed by optimization.
+fn panic_entry(name: &str) -> bool {
+    name.starts_with("core::panicking::")
+        || name.starts_with("core::option::unwrap_failed")
+        || name.starts_with("core::option::expect_failed")
+        || name.starts_with("core::result::unwrap_failed")
+        || (name.starts_with("core::slice::index::slice_index") && name.contains("fail"))
+        || name.starts_with("core::cell::panic_already")
+        || name.ends_with("::rust_begin_unwind")
+        || name == "oer_platform_panic_hook"
 }
 
 /// What the functions in `reached` do that interrupt context should not.
@@ -532,6 +666,8 @@ mod tests {
             names: BTreeMap::from([(timer(), "TIMER".to_owned())]),
             level_writers: Vec::new(),
             handler_code: HandlerCode::default(),
+            panic_code: HandlerCode::default(),
+            panic_hook_data: Vec::new(),
             contract: contract(),
         }
     }
@@ -567,6 +703,8 @@ mod tests {
             names: BTreeMap::new(),
             level_writers: Vec::new(),
             handler_code: HandlerCode::default(),
+            panic_code: HandlerCode::default(),
+            panic_hook_data: Vec::new(),
             contract: contract(),
         }
     }
@@ -596,6 +734,115 @@ mod tests {
                 .check(Required::Proven)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn panic_helpers_and_transitive_hook_callees_must_be_uncached() {
+        use oer_riscv_stack::{FrameSource, Function, FunctionFacts, Transfer, TransferKind};
+        let memory = contract().memory;
+        let sram = memory.sram.origin + 0x1000;
+        let cached = memory.psram.unwrap().origin + 0x1000;
+        let facts = |address, name: &str, callee: Option<u32>| FunctionFacts {
+            function: Function {
+                address,
+                size: 4,
+                names: vec![name.to_owned()],
+                section: 0,
+            },
+            frame: Some(0),
+            source: Some(FrameSource::Observed),
+            observed: Some(0),
+            complete: true,
+            transfers: callee
+                .map(|target| Transfer {
+                    site: address,
+                    target: Some(target),
+                    kind: TransferKind::Tail,
+                    source: None,
+                    table: None,
+                    load: None,
+                })
+                .into_iter()
+                .collect(),
+            site_depths: BTreeMap::new(),
+            call_arguments: BTreeMap::new(),
+            table_bases: BTreeMap::new(),
+            unresolved_registers: BTreeMap::new(),
+            level_drops: Vec::new(),
+            float_sites: Vec::new(),
+        };
+        for entry in [
+            "core::option::unwrap_failed",
+            "core::option::expect_failed",
+            "core::result::unwrap_failed",
+            "core::slice::index::slice_index_order_fail",
+            "core::cell::panic_already_borrowed",
+            "__rustc::rust_begin_unwind",
+            "oer_platform_panic_hook",
+        ] {
+            // No interrupt calls this entry. Its own path still must be
+            // checked, including a helper outlined outside SRAM.
+            for root in [sram, cached] {
+                let leaf = sram + 0x40;
+                let helper = if root == sram { cached } else { leaf };
+                let mut analysis = Analysis {
+                    functions: BTreeMap::from([
+                        (root, facts(root, entry, Some(helper))),
+                        (helper, facts(helper, "outlined_helper", None)),
+                    ]),
+                    code: Vec::new(),
+                    summaries: BTreeSet::new(),
+                };
+                let names = BTreeMap::from([
+                    (root, entry.to_owned()),
+                    (helper, "outlined_helper".to_owned()),
+                ]);
+                let resolutions = oer_riscv_stack::Resolutions::new();
+                let mut report = stacks(Vec::new());
+                report.names = names.clone();
+                report.panic_code =
+                    panic_path_code(&analysis, &names, &resolutions, &memory).unwrap();
+                for policy in [Required::Proven, Required::Partial] {
+                    let error = report.check(policy).unwrap_err().to_string();
+                    assert!(error.contains("panic path"), "{entry}: {error}");
+                    assert!(error.contains("cached memory"), "{entry}: {error}");
+                }
+                // Moving the whole path into uncached SRAM makes it pass.
+                analysis.functions = BTreeMap::from([
+                    (sram, facts(sram, entry, Some(leaf))),
+                    (leaf, facts(leaf, "outlined_helper", None)),
+                ]);
+                let names = BTreeMap::from([
+                    (sram, entry.to_owned()),
+                    (leaf, "outlined_helper".to_owned()),
+                ]);
+                report.panic_code =
+                    panic_path_code(&analysis, &names, &resolutions, &memory).unwrap();
+                assert!(report.check(Required::Proven).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn an_sram_hook_cannot_copy_a_compiler_constant_from_cached_memory() {
+        let mut report = stacks(Vec::new());
+        let hook = timer();
+        let constant = u64::from(report.contract.memory.psram.unwrap().origin) + 0x1000;
+        report
+            .names
+            .insert(hook, "oer_platform_panic_hook".to_owned());
+        report.panic_hook_data = vec![(hook, hook + 4, constant)];
+        assert!(report.panic_code.cached.is_empty());
+        for policy in [Required::Proven, Required::Partial] {
+            let error = report.check(policy).unwrap_err().to_string();
+            assert!(
+                error.contains("panic hook references cached memory"),
+                "{error}"
+            );
+            assert!(error.contains("oer_platform_panic_hook"), "{error}");
+        }
+        report.panic_hook_data.clear();
+        assert!(report.check(Required::Proven).is_ok());
     }
 
     #[test]

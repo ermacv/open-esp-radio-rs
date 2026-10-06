@@ -180,6 +180,7 @@ pub(in crate::product_hil) struct ObservedTxVector {
     pub aggregate_rate_kbps: u32,
 }
 
+#[unsafe(link_section = ".critical.data.panic_stage")]
 static DIAGNOSTIC_STAGE: AtomicU32 = AtomicU32::new(0);
 static STATION_NETWORK_RESOURCES: StaticCell<NetworkResources> = StaticCell::new();
 static ACCESS_POINT_NETWORK_RESOURCES: StaticCell<NetworkResources> = StaticCell::new();
@@ -1111,6 +1112,7 @@ fn observe_mac_irq(observation: MacIrqObservation) {
     }
 }
 
+#[inline(always)]
 pub fn diagnostic_snapshot() -> (u32, u32) {
     (DIAGNOSTIC_STAGE.load(Ordering::Acquire), 0)
 }

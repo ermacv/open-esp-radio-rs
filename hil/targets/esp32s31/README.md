@@ -428,7 +428,11 @@ registers, the vector it took and the sources pending and routed to it
 (`agent/src/fatal.rs`) in RTC fast memory and reset, and the next boot prints
 `OPEN_RADIO_HIL runtime=PANIC boot=previous` or `runtime=EXCEPTION
 boot=previous` with that state before anything else. A panic message with
-arguments is not kept, only a static one. The next boot also holds the frozen
+arguments is not kept, only a static one in task context. An interrupt-context
+panic omits location and message because compiler metadata may be in unavailable
+PSRAM; the hook receives the platform's safe `PanicDetails`. The hook's code,
+trace pointer/mask and diagnostic stage stay in SRAM, its records stay in RTC
+memory, and its fault CRC uses no cached lookup table. The next boot also holds the frozen
 trace for the host, which pages it out through the
 [trace commands](../../protocol/diagnostics.md#event-trace). The
 `station-exit-evidence` feature also enables the station runtime's own trace

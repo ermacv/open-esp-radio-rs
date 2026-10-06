@@ -45,8 +45,9 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 /// fault, formatting nothing. The next boot reports it.
 #[cfg(feature = "system-watchdog")]
 #[unsafe(no_mangle)]
-fn oer_platform_panic_hook(info: &core::panic::PanicInfo<'_>) {
-    system::postmortem::record_panic(info);
+#[unsafe(link_section = ".flash.critical.text.panic_hook")]
+fn oer_platform_panic_hook(details: &oer_espressif_staged_runtime::panic::PanicDetails<'_>) {
+    system::postmortem::record_panic(details);
 }
 
 #[unsafe(no_mangle)]

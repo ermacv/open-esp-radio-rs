@@ -62,12 +62,9 @@ pub(crate) fn checkpoint(name: &str, arg: u32) {
 /// the chip resets next and never reads the record again in this boot.
 /// Formatting would put `core::fmt` on every context's panic path: a message
 /// with arguments is recorded empty.
-pub(crate) fn record_panic(info: &core::panic::PanicInfo<'_>) {
-    let message = info.message().as_str().unwrap_or("");
-    let (file, line) = info
-        .location()
-        .map_or(("", 0), |location| (location.file(), location.line()));
+#[unsafe(link_section = ".flash.critical.text.panic_hook")]
+pub(crate) fn record_panic(details: &oer_espressif_staged_runtime::panic::PanicDetails<'_>) {
     // SAFETY: see above.
     let record = unsafe { &mut *RECORD.0.get() };
-    record.record_panic(file, line, message);
+    record.record_panic(details.file, details.line, details.message.unwrap_or(""));
 }

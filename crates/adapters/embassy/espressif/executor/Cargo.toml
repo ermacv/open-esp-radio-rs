@@ -42,8 +42,8 @@ oer-memory = { path = "../../../../memory" }
 embassy-executor = { version = "0.10.0", default-features = false, optional = true }
 embassy-time-driver = { version = "0.2", features = ["tick-hz-1_000_000"], optional = true }
 embassy-time-queue-utils = { version = "0.3", optional = true }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "e7739ccfb4288ac9547d3fa9adeb69221709268d", default-features = false, features = ["static-interrupts", "rt", "unstable"], optional = true }
-esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "e7739ccfb4288ac9547d3fa9adeb69221709268d", optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "de9bd926207d7d182f74b2add7eab3ec433f23a4", default-features = false, features = ["static-interrupts", "rt", "unstable"], optional = true }
+esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "de9bd926207d7d182f74b2add7eab3ec433f23a4", optional = true }
 portable-atomic = { version = "1.11", default-features = false, optional = true }
 oer-interrupt-table = { path = "../../../../runtime/interrupt-table", optional = true }
 oer-espressif-interrupt-table-esp-hal = { path = "../../../esp-hal/espressif/interrupt-table", optional = true }

@@ -19,7 +19,7 @@ oer-memory = { path = "../../../../memory" }
 atomic-waker = { version = "1.1.2", optional = true }
 critical-section = "1.2.0"
 oer-soc-deadline = { path = "../../../../hardware/soc/deadline" }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "e7739ccfb4288ac9547d3fa9adeb69221709268d", default-features = false, features = ["esp32s31", "static-interrupts", "unstable"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "de9bd926207d7d182f74b2add7eab3ec433f23a4", default-features = false, features = ["esp32s31", "static-interrupts", "unstable"], optional = true }
 oer-interrupt-table = { path = "../../../../runtime/interrupt-table" }
 oer-espressif-interrupt-table-esp-hal = { path = "../../espressif/interrupt-table", features = ["esp32s31"], optional = true }
 

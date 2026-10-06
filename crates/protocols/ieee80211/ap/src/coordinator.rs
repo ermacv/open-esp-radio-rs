@@ -284,6 +284,11 @@ impl<'a> ChannelCoordinator<'a> {
         self.policy
     }
 
+    /// The configured search timing and channel list.
+    pub const fn search_policy(&self) -> ApSearchPolicy<'a> {
+        self.search
+    }
+
     /// Whether the owner should observe the upstream between absences.
     pub const fn searching(&self) -> bool {
         matches!(self.upstream, Upstream::Searching { .. })

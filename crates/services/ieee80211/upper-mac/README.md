@@ -49,8 +49,11 @@ end: an expired reservation leaves the radio home. The CTS Duration covers
 the time remaining when requested, so transmission delay can extend NAV
 beyond the visit but cannot shorten its protection. `finish` returns home
 before any client resumes; dropping passive reception also restores the
-home channel synchronously. All retunes use the base channel setting,
-without a lifecycle fallback. This primitive transmits nothing while away
+home channel synchronously. Departure and return require the separate
+`LowerMacLiveRetune` extension: no lifecycle transition, with both TSF
+relations, interfaces, keys, BlockAck state and TX queue ownership preserved.
+CTS-to-self independently requires `LowerMacAirReservation`. The base
+channel setting supplies no enabled-port guarantee. This primitive transmits nothing while away
 and does not change the ownership contract of an abandoned TX future.
 The owner keeps `AbsenceState` across futures: if returning home fails,
 including during `Drop`, it requires port recovery before any client may

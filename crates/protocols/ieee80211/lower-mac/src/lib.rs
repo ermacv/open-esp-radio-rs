@@ -15,7 +15,8 @@
 //!
 //! The capability model has three parts. Structural optional features are
 //! extension traits ([`LowerMacAmpdu`], [`LowerMacBeaconTiming`],
-//! [`LowerMacMonitor`], [`LowerMacCancelPublished`]); parametric limits of
+//! [`LowerMacMonitor`], [`LowerMacCancelPublished`],
+//! [`LowerMacAirReservation`], [`LowerMacLiveRetune`]); parametric limits of
 //! what a backend has are its capabilities, and a value outside them is
 //! refused as `Unsupported`; why a backend lacks a feature is recorded in
 //! its qualification catalog.
@@ -65,9 +66,9 @@ pub use control::{
 pub use extensions::{
     AirReservation, AirReservationAttempt, AmpduAttempt, AmpduBuffer, AmpduCapabilities,
     AmpduPayload, BeaconTimingCapabilities, LowerMacAirReservation, LowerMacAmpdu,
-    LowerMacBeaconTiming, LowerMacCancelPublished, LowerMacMonitor, MAX_AIR_RESERVATION,
-    MonitorCapabilities, TSF_DRIFT_PPM, TbttEvent, TbttSchedule, TsfGeneration, TsfProjectionError,
-    TsfRelation, TsfSample, TsfSetKind, TsfVifMismatch, VifTsf,
+    LowerMacBeaconTiming, LowerMacCancelPublished, LowerMacLiveRetune, LowerMacMonitor,
+    MAX_AIR_RESERVATION, MonitorCapabilities, TSF_DRIFT_PPM, TbttEvent, TbttSchedule,
+    TsfGeneration, TsfProjectionError, TsfRelation, TsfSample, TsfSetKind, TsfVifMismatch, VifTsf,
 };
 pub use oer_radio_port::{
     CancelError, ClockInfo, Correlation, CorrelationIds, EpochError, EventsLost, FailureClass,

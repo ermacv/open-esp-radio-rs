@@ -2,7 +2,8 @@
 //!
 //! [`LowerMacModel`] implements [`Ieee80211LowerMacPort`], [`LowerMacAmpdu`],
 //! [`LowerMacBeaconTiming`], [`LowerMacMonitor`] and
-//! [`LowerMacCancelPublished`] from portable values alone, with the limits of
+//! [`LowerMacCancelPublished`], [`LowerMacAirReservation`] and
+//! [`LowerMacLiveRetune`] from portable values alone, with the limits of
 //! [`MODEL_CAPABILITIES`] and [`MODEL_AMPDU`]. It keeps every admitted attempt
 //! in flight until the test ends it: [`LowerMacModel::complete`] and
 //! [`LowerMacModel::complete_with`] end the published attempt of a queue,
@@ -1097,6 +1098,18 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
 
 /// The model sends the CTS-to-self of a reservation through the queue of
 /// its access category; the outcome the test queues ends it.
+impl<O: TxBody> LowerMacLiveRetune for LowerMacModel<O> {
+    fn retune_live(&self, channel: Channel) -> Result<Result<(), SettingError>, ModelPoisoned> {
+        {
+            let state = self.serving()?;
+            if !state.enabled || !state.in_flight.is_empty() {
+                return Ok(Err(SettingError::Busy));
+            }
+        }
+        self.apply(LowerMacSetting::Channel(channel))
+    }
+}
+
 impl<O: TxBody> LowerMacAirReservation for LowerMacModel<O> {
     fn submit_air_reservation(
         &self,

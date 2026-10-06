@@ -101,6 +101,7 @@ feature does not implement it, so the feature cannot be requested.
 | `LowerMacMonitor` | `set_monitor`: every frame with a valid FCS is received; `MonitorCapabilities` state whether it runs beside receiving interfaces |
 | `LowerMacCancelPublished` | `cancel_published(TxId)`: withdraw a published attempt from the air |
 | `LowerMacAirReservation` | `submit_air_reservation(TxAttempt<AirReservation>)`: a CTS addressed to the interface itself whose Duration (at most `MAX_AIR_RESERVATION`, the NAV's 32 767 µs) keeps the stations that hear it silent; at a non-HT rate, with no key and no response. An owner that takes the radio off the channel reserves the air first |
+| `LowerMacLiveRetune` | `retune_live(Channel)`: retune an enabled, TX-idle port without a lifecycle transition; success means reception is ready on that channel. Preserve both VIFs' TSF relations, the radio clock, interfaces, keys, BlockAck agreements, TX queue configuration and ownership, pending events, lent RX buffers, TX gate and absolute TBTT schedules. A disabled port or outstanding TX is `Busy`; settling latency requires qualification for the window budget |
 
 Parametric limits of what a backend has are its capabilities, and a value
 outside them is refused as `Unsupported`. Why a backend lacks a feature or a
@@ -149,10 +150,10 @@ from.
 
 ## Implementers
 
-| Backend | Base port | `LowerMacAmpdu` | `LowerMacBeaconTiming` | `LowerMacMonitor` | `LowerMacCancelPublished` | `LowerMacAirReservation` |
-| --- | --- | --- | --- | --- | --- | --- |
-| Host model (`model` feature, `LowerMacModel`) | Yes, four queues | Yes | Yes | Yes | Yes | Yes |
-| ESP32-S31 (`Esp32s31LowerMac`) | Yes, four queues | HT and HE SU, when built with aggregate owners | Station TSF and TBTT; access-point TSF restart only | Yes, without receiving interfaces | No | No: whether its MAC sends a software Duration is open (#202) |
+| Backend | Base port | `LowerMacAmpdu` | `LowerMacBeaconTiming` | `LowerMacMonitor` | `LowerMacCancelPublished` | `LowerMacAirReservation` | `LowerMacLiveRetune` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Host model (`model` feature, `LowerMacModel`) | Yes, four queues | Yes | Yes | Yes | Yes | Yes | Yes, with no admitted TX |
+| ESP32-S31 (`Esp32s31LowerMac`) | Yes, four queues | HT and HE SU, when built with aggregate owners | Station TSF and TBTT; access-point TSF restart only | Yes, without receiving interfaces | No | No: whether its MAC sends a software Duration is open (#202) | No: enabled-port retuning with preserved state needs research and qualification (#218) |
 
 The `model` module (built for the crate's tests and with the `model` feature)
 implements the port and every extension with an in-memory backend to show

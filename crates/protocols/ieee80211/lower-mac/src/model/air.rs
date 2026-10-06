@@ -12,7 +12,10 @@
 //! solicits no response. The model ciphers nothing: a protected frame
 //! arrives decrypted and verified when the receiver holds a pairwise key of
 //! its transmitter, or for a group frame a group key, and is not received
-//! otherwise. Air time, contention, loss and reception levels are not
+//! otherwise. An overheard CTS-to-self holds other radios' published
+//! attempts until its Duration expires; the harness advances to
+//! [`LowerMacModel::nav_until`] as well as its services' deadlines.
+//! Air time, contention, loss and reception levels are not
 //! modelled: every frame on the channel arrives, at -40 dBm.
 
 use alloc::vec::Vec;
@@ -39,6 +42,9 @@ impl<'m, O: TxBody> ModelAir<'m, O> {
     pub fn step(&self) -> bool {
         let mut carried = false;
         for (index, sender) in self.radios.iter().enumerate() {
+            if sender.nav_until().is_some() {
+                continue;
+            }
             let Some(channel) = sender.channel() else {
                 continue;
             };
@@ -62,8 +68,21 @@ impl<'m, O: TxBody> ModelAir<'m, O> {
                 let address1 = address(first, 4);
                 let mut acknowledged = false;
                 for receiver in receivers {
+                    if first[0] == 0xc4
+                        && !address1.is_some_and(|address| has_interface(receiver, address))
+                    {
+                        let duration = u16::from_le_bytes([first[2], first[3]]);
+                        receiver.reserve_medium(
+                            receiver.channel().expect("the receiver is tuned"),
+                            duration,
+                        );
+                    }
                     for frame in &attempt.frames {
-                        if let Some(meta) = arrival(receiver, frame, channel) {
+                        if let Some(meta) = arrival(
+                            receiver,
+                            frame,
+                            receiver.channel().expect("the receiver is tuned"),
+                        ) {
                             receiver.receive(frame, meta);
                         }
                     }

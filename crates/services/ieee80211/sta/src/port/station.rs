@@ -16,7 +16,7 @@ use oer_ieee80211_mac::{
     security::{AssociationAkm, AssociationSecurity, Pmkid, RsnAssociation},
     station::{
         AssociationCapabilities, AssociationResponse, SelectedRsn, StaSecurityError,
-        association::PhyMode, select_association_rsn,
+        StationFrameError, association::PhyMode, select_association_rsn,
     },
     station_power_save::StaAssociationId,
 };
@@ -249,6 +249,7 @@ pub struct PortStation<'p, X: PortStationEnv> {
     table: &'p mut ScanTable,
     refresh: bool,
     candidate: Option<ScanRecord>,
+    observed: bool,
     selected: Option<SelectedRsn>,
     association: Option<AssociationResponse>,
     /// The receive metadata of the access point's Association Response.
@@ -305,6 +306,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             table,
             refresh: true,
             candidate: None,
+            observed: false,
             selected: None,
             association: None,
             response_meta: None,
@@ -380,6 +382,25 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
     ) -> AssociationAttemptOutcome<Self, Self, PortAttemptError<X>> {
         StaAttempt::new(PortAttemptPort {
             channel: Some(channel),
+            observed: false,
+            marker: PhantomData,
+        })
+        .run(self)
+        .await
+    }
+
+    /// Join the fresh candidate obtained by [`Self::observe_on_until`]
+    /// without probing or scanning again. The owner must already have
+    /// moved the shared port to `channel` and keep it there through the
+    /// transaction. A candidate requiring a different width is refused
+    /// before authentication, just as in [`Self::connect_on`].
+    pub async fn connect_observed_on(
+        self,
+        channel: Channel,
+    ) -> AssociationAttemptOutcome<Self, Self, PortAttemptError<X>> {
+        StaAttempt::new(PortAttemptPort {
+            channel: Some(channel),
+            observed: true,
             marker: PhantomData,
         })
         .run(self)
@@ -450,6 +471,61 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         Ok(())
     }
 
+    /// Observe the configured upstream on an owner-selected channel until
+    /// `until`, or until it is found. The station must be disconnected.
+    /// This passively receives beacons and Probe Responses without tuning
+    /// the radio, changing its lifecycle or enabling monitor reception.
+    /// The returned channel includes the width the association would use.
+    pub async fn observe_on_until(
+        &mut self,
+        channel: Channel,
+        until: oer_time::Instant,
+    ) -> Result<Option<Channel>, PortLinkError<PortError<X>>> {
+        if self.connection.is_some() {
+            return Err(PortLinkError::MissingState);
+        }
+        let known_bssid = self.candidate.map(|candidate| candidate.bssid);
+        self.observed = false;
+        let Self {
+            link,
+            timer,
+            profile,
+            security,
+            table,
+            ..
+        } = self;
+        let target = PortScanTarget {
+            ssid: profile.ssid,
+            policy: security.policy(),
+            probe: None,
+        };
+        let mut scan = PortScan::new(
+            link,
+            timer,
+            security.sequences.non_qos_mut(),
+            table,
+            target,
+            profile.dwell_tick,
+        )
+        .on_channel(channel)
+        .known_bssid(known_bssid);
+        let mut candidate = scan.listen_until(channel, until).await?;
+        if let Some(candidate) = candidate.as_mut() {
+            if candidate.ssid_bytes().is_empty() {
+                let ssid = self.profile.ssid;
+                let Some(destination) = candidate.ssid.get_mut(..ssid.len()) else {
+                    return Err(PortLinkError::Frame(StationFrameError::SsidTooLong));
+                };
+                destination.copy_from_slice(ssid);
+                candidate.ssid_len = ssid.len() as u8;
+            }
+            self.candidate = Some(*candidate);
+            self.refresh = false;
+            self.observed = true;
+        }
+        Ok(candidate.and_then(|candidate| self.channel(&candidate)))
+    }
+
     /// Restart the association's power manager with `sleep_type`.
     pub async fn set_sleep_type(
         &mut self,
@@ -500,6 +576,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
     }
 
     async fn prepare_candidate(&mut self, channel: Option<Channel>) -> StepResult<X> {
+        self.observed = false;
         self.report = PortAttemptReport::default();
         if channel.is_none() && !self.refresh && self.candidate.is_some() {
             return Ok(());
@@ -906,6 +983,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
 /// station it is handed.
 pub struct PortAttemptPort<'p, X: PortStationEnv> {
     channel: Option<Channel>,
+    observed: bool,
     marker: PhantomData<fn() -> PortStation<'p, X>>,
 }
 
@@ -913,6 +991,7 @@ impl<X: PortStationEnv> PortAttemptPort<'_, X> {
     pub const fn new() -> Self {
         Self {
             channel: None,
+            observed: false,
             marker: PhantomData,
         }
     }
@@ -938,6 +1017,13 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
     type Error = PortAttemptError<X>;
 
     async fn prepare_candidate<'a>(&'a mut self, owner: &'a mut Self::Owner) -> StepResult<X> {
+        if self.observed {
+            owner.report = PortAttemptReport::default();
+            let observed = core::mem::replace(&mut owner.observed, false);
+            return owner.candidate.filter(|_| observed).map(|_| ()).ok_or(
+                StaAttemptStepError::refresh_candidate(PortStationError::NoCandidate),
+            );
+        }
         owner.prepare_candidate(self.channel).await
     }
 

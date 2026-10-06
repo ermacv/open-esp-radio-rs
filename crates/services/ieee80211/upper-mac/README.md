@@ -40,6 +40,23 @@ different physical queues remain concurrent. Cancelling a wait before its
 grant releases its place, and port poisoning ends blocked waits. The
 router's `WAITERS` bounds both completion registrations and queue leases.
 
+`absence::PortAbsence` is the owner's receive-only off-channel primitive.
+The owner brings every transmitting client to a sync point and keeps it
+paused while the router continues running. `begin` sends CTS-to-self on
+the home channel, awaits a successful completion, then tunes the requested
+channel if the absolute window is still live. Contention never moves its
+end: an expired reservation leaves the radio home. The CTS Duration covers
+the time remaining when requested, so transmission delay can extend NAV
+beyond the visit but cannot shorten its protection. `finish` returns home
+before any client resumes; dropping passive reception also restores the
+home channel synchronously. All retunes use the base channel setting,
+without a lifecycle fallback. This primitive transmits nothing while away
+and does not change the ownership contract of an abandoned TX future.
+The owner keeps `AbsenceState` across futures: if returning home fails,
+including during `Drop`, it requires port recovery before any client may
+resume. A normal `finish` reports the setting error; after cancellation the
+state reports `RecoveryRequired`, so the failure cannot be silently lost.
+
 A service talks to the port through one `client::PortClient` per interface
 (`PortClientEnv` names the port, the planner's HE TXOP budget, the rate
 ladder, the backoff entropy and its `Aggregation`, `aggregate::PortAmpduAggregation`

@@ -238,6 +238,13 @@ enum Upstream {
         next_absence: Option<Instant>,
         cursor: usize,
     },
+    /// Found, but not joined yet; the access point may still be announcing
+    /// the move to this channel.
+    Joining {
+        channel: Channel,
+        since: Instant,
+        waiting_for_move: bool,
+    },
 }
 
 /// Where the access point is.
@@ -277,6 +284,11 @@ impl<'a> ChannelCoordinator<'a> {
         self.policy
     }
 
+    /// Whether the owner should observe the upstream between absences.
+    pub const fn searching(&self) -> bool {
+        matches!(self.upstream, Upstream::Searching { .. })
+    }
+
     /// The composition wants the access point to run: on the upstream's
     /// channel once the station is connected and the policy lets it.
     pub fn want_access_point(&mut self) -> CoordinatorActions {
@@ -291,13 +303,28 @@ impl<'a> ChannelCoordinator<'a> {
     }
 
     /// The port moved to `channel`, as a [`CoordinatorAction::Retune`]
-    /// asked: a stopped access point may start there.
+    /// asked: a stopped access point may start there, or a newly discovered
+    /// upstream can now be joined after the access point's CSA.
     pub fn port_moved(&mut self, channel: Channel) -> CoordinatorActions {
         if let AccessPoint::Running(schedule) = &mut self.access_point {
             schedule.channel = channel;
         }
         if let Upstream::Connected(_) = self.upstream {
             self.upstream = Upstream::Connected(channel);
+        }
+        if let Upstream::Joining {
+            channel: found,
+            since,
+            waiting_for_move: true,
+        } = self.upstream
+            && found == channel
+        {
+            self.upstream = Upstream::Joining {
+                channel,
+                since,
+                waiting_for_move: false,
+            };
+            return CoordinatorActions::one(CoordinatorAction::JoinUpstream { channel });
         }
         self.start_if_servable()
     }
@@ -374,10 +401,14 @@ impl<'a> ChannelCoordinator<'a> {
 
     /// The station heard the upstream on `channel` while it searched.
     pub fn upstream_found(&mut self, channel: Channel) -> CoordinatorActions {
-        let Upstream::Searching { .. } = self.upstream else {
+        let Upstream::Searching { since, .. } = self.upstream else {
             return CoordinatorActions::NONE;
         };
-        self.upstream = Upstream::None;
+        self.upstream = Upstream::Joining {
+            channel,
+            since,
+            waiting_for_move: false,
+        };
         let join = CoordinatorAction::JoinUpstream { channel };
         let AccessPoint::Running(schedule) = self.access_point else {
             return CoordinatorActions::one(join);
@@ -393,11 +424,28 @@ impl<'a> ChannelCoordinator<'a> {
         }
         // The access point moves first; the station joins once the port
         // has ([`Self::port_moved`] then [`Self::station_connected`]).
+        self.upstream = Upstream::Joining {
+            channel,
+            since,
+            waiting_for_move: true,
+        };
         CoordinatorActions::one(CoordinatorAction::AnnounceSwitch {
             target: channel,
             mode: ChannelSwitchMode::Continue,
             count: self.policy.announce_count.max(1),
         })
+    }
+
+    /// A discovered upstream refused the join. Resume searching without
+    /// restarting the dense period that began at the original loss.
+    pub fn upstream_join_failed(&mut self) {
+        if let Upstream::Joining { since, .. } = self.upstream {
+            self.upstream = Upstream::Searching {
+                since,
+                next_absence: None,
+                cursor: 0,
+            };
+        }
     }
 
     /// The next absence of a search that is due at `now`.
@@ -417,15 +465,21 @@ impl<'a> ChannelCoordinator<'a> {
             .search
             .channels
             .iter()
-            .filter(|channel| **channel != schedule.channel);
+            .filter(|channel| !same_primary(**channel, schedule.channel));
         let count = candidates.clone().count();
         if count == 0 {
             return None;
         }
-        let start = match next_absence {
+        let mut start = match next_absence {
             Some(start) => start,
             None => self.absence_after(schedule, now)?,
         };
+        // A completed exchange can make the owner late. Never replay a
+        // window whose end has already passed, nor accumulate a backlog
+        // of missed dense windows.
+        if self.search.dwell != Duration::ZERO && now >= start.checked_add(self.search.dwell)? {
+            start = self.absence_after(schedule, now)?;
+        }
         if now < start {
             self.upstream = Upstream::Searching {
                 since,
@@ -457,6 +511,15 @@ impl<'a> ChannelCoordinator<'a> {
 
     /// The earliest instant the coordinator needs its owner without input.
     pub fn next_deadline(&self) -> Option<Instant> {
+        if let AccessPoint::Running(schedule) = self.access_point
+            && !self
+                .search
+                .channels
+                .iter()
+                .any(|channel| !same_primary(*channel, schedule.channel))
+        {
+            return None;
+        }
         match (self.upstream, self.access_point) {
             (
                 Upstream::Searching {
@@ -513,6 +576,10 @@ impl<'a> ChannelCoordinator<'a> {
             }
         }
     }
+}
+
+fn same_primary(first: Channel, second: Channel) -> bool {
+    first.band() == second.band() && first.number() == second.number()
 }
 
 #[cfg(test)]

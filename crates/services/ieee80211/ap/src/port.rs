@@ -974,6 +974,17 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .expect("the access point operates only on a channel it serves")
     }
 
+    /// The management rate advertised on the operating channel, also used
+    /// by the owner to reserve this BSS's air before an absence.
+    pub fn management_rate(&self) -> PhyRate {
+        self.band().management_rate
+    }
+
+    /// The profile's antenna priority for the BSS's transmissions.
+    pub const fn coex_priority(&self) -> CoexPriority {
+        self.profile.coex
+    }
+
     /// The channel of the announced switch that is due.
     fn channel_switch_target(&self) -> Option<Channel> {
         self.beacon
@@ -985,6 +996,9 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// to every management request it answers, a close of every peer that
     /// went inactive. `Some` at the TBTT an announced switch is due.
     /// [`PortApError::NotStarted`] while the BSS does not run.
+    /// A started exchange completes before returning, as does a due beacon;
+    /// the run starts no further exchange from a network queue after the
+    /// deadline. Frames retained from another operating channel are ignored.
     pub async fn run_until(
         &mut self,
         deadline: Instant,
@@ -995,12 +1009,23 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         }
         loop {
             let now = self.timer.now();
+            let reached_deadline = now >= deadline;
             if self.beacon.publication_due(now) {
                 if let Some(target) = self.channel_switch_target() {
                     return Ok(Some(PortApEvent::ChannelSwitch { target }));
                 }
                 self.publish_beacon(now).await?;
+                if reached_deadline {
+                    return Ok(None);
+                }
                 continue;
+            }
+            // A port owner can stop this run at an absence boundary.
+            // Complete the exchange already awaited (and a due beacon),
+            // but do not start another exchange from a busy network queue
+            // after the deadline.
+            if reached_deadline {
+                return Ok(None);
             }
             if let Some(close) = self.service.begin_due_peer_close(now) {
                 self.close_peer(close).await?;
@@ -1027,9 +1052,6 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             if let Some(frame) = self.next_frame() {
                 self.dispatch(frame).await?;
                 continue;
-            }
-            if now >= deadline {
-                return Ok(None);
             }
             let wake = [
                 self.beacon.next_publication(),
@@ -1295,6 +1317,13 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
     ) -> Result<(), PortApError<PortError<X>>> {
         let meta = received.meta();
+        // A router can retain frames heard during the owner's absence.
+        // They must not solicit AP transmissions after returning home.
+        if meta.channel.band() != self.profile.channel.band()
+            || meta.channel.number() != self.profile.channel.number()
+        {
+            return Ok(());
+        }
         let frame = received.bytes();
         let power_save = observe_ap_power_save_for_access_point(frame, self.service.address())
             .filter(|observation| {

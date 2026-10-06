@@ -223,6 +223,20 @@ channel or width returns `PortStationError::ChannelMismatch` before
 authentication, retaining the station for another attempt. Standalone
 `connect` continues to scan the profile's channel plan and tune its candidate.
 
+`observe_on_until(channel, until)` passively observes a disconnected
+station's upstream on an owner's grant, to an absolute deadline or a match.
+It never probes, retunes or enables monitor mode; it closes its receive
+filter on completion and rejects queued frames from another channel. It
+returns the channel and association width derived from the current beacon.
+A hidden beacon is accepted only for the previously joined BSSID and only
+with a current security advertisement admitting the station's policy. The
+scan table preserves its empty SSID; the join candidate uses the configured
+SSID of that known BSS. `connect_observed_on(channel)` consumes this fresh
+observation and runs the normal join without a second scan or probe, after
+the owner has granted the required channel. It still validates channel and
+width before authentication. The STA+AP owner uses these operations for
+passive recovery; explicit `connect_on` keeps its fresh discovery behavior.
+
 The station follows its access point's announced channel switches but does
 not retune itself: the port's channel belongs to the port's owner, which
 keeps it for every interface. A Channel Switch or Extended Channel Switch

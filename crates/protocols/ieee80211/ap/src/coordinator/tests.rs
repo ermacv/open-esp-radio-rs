@@ -282,6 +282,13 @@ fn a_lost_upstream_found_elsewhere_moves_the_access_point_first() {
             at: due,
         }]
     );
+    assert!(coordinator.port_moved(ghz2_4(1)).is_empty());
+    assert_eq!(
+        actions(coordinator.port_moved(ghz2_4(11))),
+        [CoordinatorAction::JoinUpstream {
+            channel: ghz2_4(11)
+        }]
+    );
     assert!(coordinator.port_moved(ghz2_4(11)).is_empty());
     assert!(coordinator.station_connected(ghz2_4(11)).is_empty());
 
@@ -304,4 +311,55 @@ fn an_empty_search_list_waits_on_the_access_point_s_channel() {
     coordinator.access_point_running(schedule(ghz2_4(6)));
     coordinator.upstream_lost(at(0));
     assert_eq!(coordinator.poll(at(FIRST_TBTT + 10_000)), None);
+    assert_eq!(coordinator.next_deadline(), None);
+}
+
+#[test]
+fn search_skips_the_home_primary_even_when_the_port_is_wider() {
+    let home = Channel::ghz2_4(6, ChannelWidth::Mhz40Above).unwrap();
+    let mut coordinator = running(ApFollowPolicy::DEFAULT, home);
+    coordinator.upstream_lost(at(FIRST_TBTT));
+    assert_eq!(coordinator.poll(at(FIRST_TBTT)), None);
+    for expected in [ghz2_4(1), ghz2_4(11), ghz2_4(1)] {
+        let now = coordinator.next_deadline().unwrap();
+        assert!(
+            matches!(coordinator.poll(now), Some(CoordinatorAction::Absence { channel, .. }) if channel == expected)
+        );
+    }
+}
+
+#[test]
+fn a_late_owner_skips_expired_windows_without_replaying_them() {
+    let mut coordinator = running(ApFollowPolicy::DEFAULT, ghz2_4(6));
+    coordinator.upstream_lost(at(FIRST_TBTT - 1));
+    assert_eq!(coordinator.poll(at(FIRST_TBTT - 1)), None);
+    let late = at(FIRST_TBTT + 5 * INTERVAL.as_micros() + 30_000);
+    assert_eq!(coordinator.poll(late), None);
+    let next = coordinator.next_deadline().unwrap();
+    assert!(next > late);
+    assert!(next < late.checked_add(INTERVAL).unwrap());
+    assert!(
+        matches!(coordinator.poll(next), Some(CoordinatorAction::Absence { channel, start, .. })
+        if channel == ghz2_4(1) && start == next)
+    );
+}
+
+#[test]
+fn a_failed_join_keeps_the_original_search_density() {
+    let mut coordinator = running(ApFollowPolicy::DEFAULT, ghz2_4(6));
+    coordinator.upstream_lost(at(FIRST_TBTT));
+    assert!(coordinator.searching());
+    coordinator.upstream_found(ghz2_4(6));
+    assert!(!coordinator.searching());
+    coordinator.upstream_join_failed();
+    assert!(coordinator.searching());
+    let now = at(FIRST_TBTT + 31_000_000);
+    assert_eq!(coordinator.poll(now), None);
+    let start = coordinator.next_deadline().unwrap();
+    assert!(coordinator.poll(start).is_some());
+    let gap = coordinator
+        .next_deadline()
+        .unwrap()
+        .saturating_duration_since(start);
+    assert!(gap >= Duration::from_secs(1));
 }

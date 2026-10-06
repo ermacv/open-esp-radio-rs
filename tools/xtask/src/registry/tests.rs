@@ -72,7 +72,8 @@ fn the_required_check_waits_for_every_ci_job() {
         .filter_map(|line| line.strip_prefix("  ")?.strip_suffix(':'))
         .filter(|name| !name.starts_with(' ') && !name.starts_with('#'))
         .collect();
-    let needs: BTreeSet<&str> = text
+    let required = text.split_once("\n  ci-ok:\n").unwrap().1;
+    let needs: BTreeSet<&str> = required
         .lines()
         .find_map(|line| line.trim().strip_prefix("needs: ["))
         .unwrap()
@@ -83,6 +84,34 @@ fn the_required_check_waits_for_every_ci_job() {
     let mut expected = jobs.clone();
     expected.remove("ci-ok");
     assert_eq!(needs, expected);
+}
+
+#[test]
+fn each_workflow_job_reports_its_execution_qualification_to_the_gate() {
+    for workflow in Workflow::ALL {
+        let text = std::fs::read_to_string(
+            oer_process::built_root().join(format!(".github/workflows/{workflow}.yml")),
+        )
+        .unwrap();
+        for job in workflow.spec().jobs {
+            let body = text.split_once(&format!("\n  {}:\n", job.id)).unwrap().1;
+            let body = body
+                .lines()
+                .take_while(|line| !line.starts_with("  ") || line.starts_with("    "))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(
+                body.contains("reusable: ${{ steps.environment.outputs.reusable }}"),
+                "{workflow}: {}",
+                job.id
+            );
+            assert!(body.contains("- id: environment"), "{workflow}: {}", job.id);
+            assert!(body.contains(&format!(
+                "cargo xtask ci check-environment --workflow {workflow} --job {}",
+                job.id
+            )));
+        }
+    }
 }
 
 /// A change in a fixture tree of one host package and one chip package.

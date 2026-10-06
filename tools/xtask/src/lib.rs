@@ -5,6 +5,7 @@
 
 pub mod cargo;
 pub mod checks;
+pub mod ci;
 pub mod ci_status;
 pub mod doc;
 pub mod gate;

@@ -33,6 +33,9 @@ use crate::{
     gate::{self, Change, Key},
 };
 
+mod workflows;
+pub use workflows::{JobSpec, Program, Workflow, WorkflowSpec, validate_workflows};
+
 /// When a check runs.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Tier {

@@ -3,7 +3,7 @@
 `oer-xtask` is the repository's entry command line (host layer `entry`): the
 binary parses arguments and calls the owner of each job. Its library holds
 the repository operations — the [check registry](#the-check-registry) and the
-gate that selects from it, push, CI state, locks, worktrees and the
+gate that selects from it, CI input planning and coverage, push, CI state, locks, worktrees and the
 repository checks. Domain work lives with its owners and their command
 lines: images in [`oer-image`](../image/README.md) and
 [`oer-hil-image`](../../hil/host/README.md), vendor probes, scenario runs and
@@ -112,6 +112,110 @@ whole workspace and its standalone extraction (both need GNU RISC-V ld 2.47),
 the probes and the host stands. The session start hook
 reads CI's state through `ci-status`, and the pre-tool hook reads its
 heavy-command list from `cargo xtask hooks`.
+
+## CI input reuse
+
+`registry::workflows` declares each workflow's jobs and extra tool versions,
+deriving check IDs from the check registry. Its validation requires every
+full-tier check to belong to one workflow job. Within `oer_xtask::ci`,
+`planning` computes job identities, `coverage` selects reuse and validates
+results using explicit evidence and time, and `runner` coordinates the
+GitHub and environment adapters. The coverage policy has no GitHub,
+filesystem, environment or clock calls.
+
+Every job's key covers the **complete Git tree**, its check IDs, runner OS
+and architecture, compiler flags, actual rustc/Cargo versions and the
+job's declared extra tools. ISA conformance also includes clang and lld.
+The tree already includes workflow and checker policy, Cargo manifests,
+locks and tracked dependency sources. No Cargo dependency analysis or
+narrow source boundary participates in planning. Git commit IDs and
+`ImageVersion` do not enter input keys: different commits with the same
+tree and tool inputs can share successful checks across branches and
+merges. Any tracked source or policy change invalidates every job's key.
+Other image-provided programs, such as gcc, cmake and Python, are not
+fingerprinted; reusable coverage remains limited to seven days.
+
+Planning requires a clean checkout so the tree hash describes its source
+files. Repository source inputs must be tracked; external sources are
+materialized from pins in tracked configuration by their existing owners.
+Ignored or outside local source mutations are outside this reuse contract.
+Plan/proof schema changes invalidate prior evidence.
+
+The repository variable `CI_REUSE_MODE` controls push runs:
+
+| Value | Behavior |
+| --- | --- |
+| `observe` (default) | Execute every job; the workflow summary shows which jobs could reuse earlier successful coverage |
+| `reuse` | Execute jobs without matching successful coverage |
+| `full` | Execute every job without looking for previous results |
+
+Manual runs always use `full`. Nightly retains its independent complete
+checks. Review `observe` summaries and validate equal-tree pushes, GitHub
+[reruns](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs)
+of all jobs, one job and failed jobs before enabling `reuse`. The gate
+must reject failures, cancellations and unexpected skips, and reuse chains
+must preserve the original verification date and source run ID. Setting
+`CI_REUSE_MODE` back to `full` disables reuse immediately.
+
+`prepare` reads `ci-proof` artifacts from the latest 30 successful completed
+push runs of the same workflow in this repository. A proof must belong to
+that run, attempt and commit. Every reused job must match its input key
+and check list and have an original verification no older than seven
+days. Reuse preserves that original date; chains cannot renew it.
+Unavailable APIs, expired/deleted artifacts and invalid evidence cause
+jobs to execute. Plans and proofs are retained for 14 days.
+
+`ci check-environment` compares an executing job's actual tools with the
+plan and reports qualification through its `reusable` job output. A
+version mismatch, unavailable plan or failed qualification allows the job
+to execute but excludes its result from future coverage. Runner image
+updates alone do not change qualification. `ci-ok` and `docs-ok` always run `ci verify`:
+every executed job must succeed, and every skipped job must have explicit
+valid coverage. The final gate requires a valid plan even when a job
+could not download it. Other successful, qualified jobs still enter the
+proof.
+No branch protection change is needed for the existing required `ci-ok`.
+
+Reuse trusts successful push workflows from every branch of this
+repository. Branch writers and their automation can change the workflow
+that produces proofs and required checks; run/attempt/commit binding
+assumes these producers are trusted. Keep `observe` or `full` if this
+producer scope is unsuitable.
+
+The `ci-tools` Cargo cache shared by preparation and final gates is keyed
+by runner OS, the Rust toolchain file and root lock file. It keeps one key
+across source-only commits; its OS prefix can restore an older cache on
+a miss, and Cargo checks which outputs need rebuilding. Cache contents
+never establish successful coverage. Blobray builds through its existing
+owner when image checks execute.
+
+Inspect input keys locally from a clean checkout, without executing
+checks or accessing GitHub. Keep generated files outside the checkout:
+
+```console
+cargo xtask ci environment --workflow ci --output /tmp/ci-environment.json
+cargo xtask ci plan --workflow ci --environment /tmp/ci-environment.json --output /tmp/ci-plan.json
+cargo xtask ci environment --workflow docs --output /tmp/docs-environment.json
+cargo xtask ci plan --workflow docs --environment /tmp/docs-environment.json --output /tmp/docs-plan.json
+```
+
+`ci environment` reads the workflow's declared programs: CI needs installed
+clang/lld, while documentation does not. A missing declared version
+rejects planning. GitHub-only commands (`prepare`, `verify`,
+`check-environment`) use the runner's authenticated `gh` with
+`contents: read` and `actions: read`; they never write through the API.
+Runner output files belong in its temporary directory.
+
+The design uses [Bazel's action-cache practice](https://bazel.build/remote/caching):
+identify actions by inputs, commands and environment, and execute on a
+miss. GitHub's [cache scope](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)
+explains why [workflow artifacts](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)
+carry coverage between branches.
+[skip-duplicate-actions](https://github.com/fkirc/skip-duplicate-actions)
+demonstrates deduplicating runs after rebase/squash merges when resulting
+files match. Conditional jobs inside an always-started workflow preserve
+the required gate; [workflow path filters](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
+can leave required checks pending.
 
 ## The push gate
 

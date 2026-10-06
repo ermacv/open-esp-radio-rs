@@ -107,7 +107,12 @@ final HIL images and the examples with the image compiler flags, both final
 images built with their audits, the ESP32-C5 workspaces, every register
 publication and qualification program, and the provenance of every cited
 vendor function; a newer push to the same branch cancels the run it
-supersedes, except on `main`. The [Documentation workflow](.github/workflows/docs.yml)
+supersedes, except on `main`. The [CI input planner](tools/xtask/README.md#ci-input-reuse)
+in xtask can reuse successful checks for an identical Git tree and tool
+versions, including after a PR merge changes the commit ID. Its default
+`observe` mode executes all checks while reporting possible reuse; the
+repository variable `CI_REUSE_MODE=reuse` enables skipping covered jobs.
+The [Documentation workflow](.github/workflows/docs.yml)
 checks the guides and API documentation, and the [Nightly workflow](.github/workflows/nightly.yml)
 runs the nightly tier: every HIL image class and every ESP32-S31 example
 built with their audits, the RV32 decoder against the toolchain's

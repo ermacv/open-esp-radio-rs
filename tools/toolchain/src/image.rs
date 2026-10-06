@@ -8,7 +8,7 @@
 //! `move-size-limit`, `share-generics`) on the exact stable toolchain that
 //! `rust-toolchain.toml` pins.
 //!
-//! Every image links through the image linker (`tools/image-linker`), which
+//! Every image links through the image linker (`tools/image/linker`), which
 //! refuses an input section named as zero-initialized that carries bytes and
 //! otherwise runs the target's `rust-lld` with the same arguments. The linker
 //! is built from the sources being built, the checkout or source snapshot at
@@ -73,7 +73,7 @@ pub fn lock_compile_cache(cache: &Path) -> Result<oer_process::lock::FileLock> {
 /// What an image's compiler setup depends on.
 #[derive(Clone, Debug)]
 pub struct ImageCompiler<'a> {
-    /// The tree being built: its `tools/image-linker` becomes the linker.
+    /// The tree being built: its `tools/image/linker` becomes the linker.
     pub root: &'a Path,
     /// The Cargo target directory of the linker's host build.
     pub linker_target: &'a Path,

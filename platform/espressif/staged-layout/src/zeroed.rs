@@ -4,7 +4,7 @@
 //! These output sections are `NOLOAD`: no bytes of their inputs reach the
 //! image, and the boot clears the range. A static placed there by name must
 //! therefore start as all zero bytes, or its initializer is silently lost.
-//! The image linker (`tools/image-linker`) checks every link input against
+//! The image linker (`tools/image/linker`) checks every link input against
 //! [`RUNTIME_ZEROED_REGIONS`]; a test keeps it equal to the linker script.
 
 /// One output section the boot zeroes.

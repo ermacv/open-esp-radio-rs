@@ -10,7 +10,7 @@ description = "The board journal: what each board of the stand carries and what 
 
 [dependencies]
 oer-device-mac = { path = "../../tools/device/mac" }
-oer-device-reset = { path = "../../tools/device/reset" }
+oer-devices = { path = "../../tools/device/devices" }
 oer-durable = { path = "../../tools/durable" }
 oer-process = { path = "../../tools/process" }
 oer-stand-file = { path = "../file" }

@@ -36,7 +36,7 @@ fn require_peer_image(
     reflash: &str,
 ) -> crate::Result<()> {
     let id = oer_device_lock::DeviceId::parse(&peer.mac)?;
-    let state = oer_device_image::Store::open()?.state(&id)?;
+    let state = oer_devices::image::Store::open()?.state(&id)?;
     match other_image(state.as_ref(), expected) {
         None => Ok(()),
         Some(what) => Err(format!(
@@ -48,8 +48,8 @@ fn require_peer_image(
 }
 
 /// What the board holds when `state` is not a write of `expected`.
-fn other_image(state: Option<&oer_device_image::State>, expected: &str) -> Option<String> {
-    use oer_device_image::State;
+fn other_image(state: Option<&oer_devices::image::State>, expected: &str) -> Option<String> {
+    use oer_devices::image::State;
     match state? {
         State::Written { receipt } | State::Started { receipt } if receipt.image != expected => {
             Some(format!(
@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn a_peer_is_refused_only_when_its_receipt_is_another_image() {
-        use oer_device_image::{Receipt, State};
+        use oer_devices::image::{Receipt, State};
         let receipt = |image: &str| Receipt {
             chip: String::from("chip-b"),
             image: image.to_owned(),

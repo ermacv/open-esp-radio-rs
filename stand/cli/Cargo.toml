@@ -16,12 +16,9 @@ path = "src/main.rs"
 clap = { version = "=4.5.48", features = ["derive"] }
 oer-chip-profile = { path = "../../tools/chip-profile" }
 oer-command-tree = { path = "../../tools/command-tree", features = ["clap"] }
-oer-device-console = { path = "../../tools/device/console" }
-oer-device-image = { path = "../../tools/device/image" }
+oer-devices = { path = "../../tools/device/devices", features = ["image"] }
 oer-device-lock = { path = "../../tools/device/lock" }
 oer-device-peer-line = { path = "../../tools/device/peer-line" }
-oer-device-reset = { path = "../../tools/device/reset" }
-oer-devices = { path = "../../tools/devices" }
 oer-durable = { path = "../../tools/durable" }
 oer-process = { path = "../../tools/process" }
 oer-stand-arbiter = { path = "../arbiter" }

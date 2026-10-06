@@ -13,8 +13,8 @@ use std::{
 };
 
 use crate::Result;
-use oer_device_console as console;
-use oer_device_reset::ResetPath;
+use oer_devices::console;
+use oer_devices::reset::ResetPath;
 use oer_process::Checkout;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
@@ -336,18 +336,18 @@ fn check(target: &Target, leased: &oer_stand_board::LeasedBoard, board: &str) ->
         target.board.chip()
     );
     // What the board runs is its receipt's; the journal is history.
-    match oer_device_image::Store::open()?.state(mac)? {
-        Some(oer_device_image::State::Started { receipt }) => println!(
+    match oer_devices::image::Store::open()?.state(mac)? {
+        Some(oer_devices::image::State::Started { receipt }) => println!(
             "  image: {} (bundle {}), written by {}",
             receipt.image,
             receipt.digest.get(..12).unwrap_or(&receipt.digest),
             receipt.by
         ),
-        Some(oer_device_image::State::Written { receipt }) => println!(
+        Some(oer_devices::image::State::Written { receipt }) => println!(
             "  image: {} written by {}, its start unconfirmed",
             receipt.image, receipt.by
         ),
-        Some(oer_device_image::State::Writing { by, .. }) => {
+        Some(oer_devices::image::State::Writing { by, .. }) => {
             println!("  image: unknown, a write by {by} did not finish")
         }
         None => println!("  image: unknown"),

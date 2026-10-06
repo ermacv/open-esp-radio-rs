@@ -9,17 +9,17 @@ publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
-oer-image-check-interrupts = { path = "../../../tools/image-check/interrupts" }
-oer-device-reset = { path = "../../../tools/device/reset" }
+oer-image-check-interrupts = { path = "../../../tools/image/check/interrupts" }
+oer-devices = { path = "../../../tools/device/devices", features = ["image"] }
 oer-hil-run-bundle-format = { path = "../run-bundle/format" }
 oer-hil-schema = { path = "../../schema" }
 oer-hil-scenario-catalog = { path = "../scenario/catalog" }
-oer-image-bundle = { path = "../../../tools/image-bundle" }
+oer-image-bundle = { path = "../../../tools/image/bundle" }
 oer-toolchain = { path = "../../../tools/toolchain" }
 oer-hil-lab = { path = "../lab" }
 oer-hil-link = { path = "../link" }
 oer-hil-image = { path = "../image" }
-oer-image = { path = "../../../tools/image" }
+oer-image = { path = "../../../tools/image/pipeline" }
 oer-chip-profile = { path = "../../../tools/chip-profile" }
 oer-hil-run-bundle = { path = "../run-bundle" }
 oer-hil-analysis = { path = "../analysis" }
@@ -47,7 +47,6 @@ oer-hil-protocol = { path = "../../protocol" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-oer-device-image = { path = "../../../tools/device/image" }
 oer-device-lock = { path = "../../../tools/device/lock" }
 oer-stand-journal = { path = "../../../stand/journal" }
 oer-stand-owners = { path = "../../../stand/owners" }

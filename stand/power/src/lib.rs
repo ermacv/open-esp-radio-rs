@@ -81,11 +81,11 @@ impl HubPower {
         lifetime: &oer_process::IoLifetime,
     ) -> crate::Result<PowerCycle> {
         self.action("off", 2, lifetime)?;
-        let left = wait_until(POWER_LEAVE, &|| !oer_device_discovery::is_attached(mac));
+        let left = wait_until(POWER_LEAVE, &|| !oer_devices::discovery::is_attached(mac));
         // From the moment the port is told to power on.
         let started = Instant::now();
         self.action("on", 2, lifetime)?;
-        let returned = wait_until(POWER_RETURN, &|| oer_device_discovery::is_attached(mac))
+        let returned = wait_until(POWER_RETURN, &|| oer_devices::discovery::is_attached(mac))
             .then(|| started.elapsed());
         Ok(PowerCycle { left, returned })
     }

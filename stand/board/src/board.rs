@@ -11,15 +11,15 @@ use std::{
 };
 
 use oer_chip_profile::Start;
-use oer_device_image::{Receipt, Store, Transport};
 use oer_device_lock::{DeviceAccess, DeviceId};
+use oer_devices::image::{Receipt, Store, Transport};
 use oer_stand_file::{BoardRef, ResetStep, StandFile};
 
-use oer_device_console as console;
-use oer_device_openocd::Openocd;
-use oer_device_port::{Port, retrying};
-use oer_device_reset as reset;
-use oer_device_reset::{RecoveryStep, ResetPath, Rung};
+use oer_devices::console;
+use oer_devices::openocd::Openocd;
+use oer_devices::port::{Port, retrying};
+use oer_devices::reset;
+use oer_devices::reset::{RecoveryStep, ResetPath, Rung};
 
 use oer_stand_power::{HubPower, PowerCycle};
 
@@ -76,7 +76,7 @@ impl Board {
     /// one board, or a MAC), at its `/dev/serial/by-id` port.
     pub fn attached(root: &Path, stand: &StandFile, query: &str) -> crate::Result<Self> {
         let board = stand.resolve(query)?;
-        let port = oer_device_discovery::port_of(&board.mac()?)?;
+        let port = oer_devices::discovery::port_of(&board.mac()?)?;
         Self::new(root, stand, board, port)
     }
 
@@ -207,7 +207,7 @@ impl LeasedBoard {
         if self.board.port.exists() {
             return Some(self.board.port.clone());
         }
-        oer_device_discovery::wait_for(self.mac(), within)
+        oer_devices::discovery::wait_for(self.mac(), within)
     }
 
     /// The receipt of `bundle` when the board runs it, by the devices
@@ -218,11 +218,11 @@ impl LeasedBoard {
         store: &Store,
         bundle: &oer_image_bundle::ImageBundle,
     ) -> crate::Result<Option<Receipt>> {
-        oer_device_image::carries(store, &self.access, bundle)
+        oer_devices::image::carries(store, &self.access, bundle)
     }
 
     /// Write `bundle`, known as `image`, into the board's flash through
-    /// `via` by the one write operation (`oer-device-image`, which publishes
+    /// `via` by the one write operation (`oer_devices::image`, which publishes
     /// the receipt into `store`), start it and confirm the start; `by` is
     /// the run or command that writes. A USB write starts the image as the
     /// bundle's start policy says; OpenOCD's program resets into it. A board
@@ -249,7 +249,7 @@ impl LeasedBoard {
         let written = match via {
             Via::Usb => {
                 let port = self.flashable_port()?;
-                oer_device_image::write(
+                oer_devices::image::write(
                     store,
                     &self.access,
                     bundle,
@@ -261,7 +261,7 @@ impl LeasedBoard {
                     by,
                 )?
             }
-            Via::Jtag => oer_device_image::write(
+            Via::Jtag => oer_devices::image::write(
                 store,
                 &self.access,
                 bundle,
@@ -554,7 +554,7 @@ mod tests {
             &profile,
             profile.flash.clone().unwrap(),
         );
-        let store = oer_device_image::Store::at(directory.path().join("receipts"));
+        let store = oer_devices::image::Store::at(directory.path().join("receipts"));
         let error = leased(board("s31-a"))
             .flash(&store, &bundle, "test", Via::Usb, "test")
             .unwrap_err()

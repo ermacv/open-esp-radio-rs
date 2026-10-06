@@ -570,10 +570,10 @@ mod tests {
             &[
                 "crates/wifi/src/lib.rs",
                 "hil/targets/chip-a/stack.toml",
-                "tools/image/src/lib.rs",
+                "tools/image/pipeline/src/lib.rs",
             ],
         );
-        assert_eq!(changed(&["tools/image/src/lib.rs"]), [wifi]);
+        assert_eq!(changed(&["tools/image/pipeline/src/lib.rs"]), [wifi]);
         for unread in ["Cargo.lock", "hil/host/runner/src/main.rs", "docs/guide.md"] {
             assert!(changed(&[unread]).is_empty(), "{unread}");
         }

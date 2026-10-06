@@ -266,7 +266,7 @@ pub struct ExternalConfig {
 /// The serial port of `board`, its `/dev/serial/by-id` link among the
 /// attached ports.
 fn attached_port(board: &oer_stand_file::Board) -> Result<PathBuf> {
-    oer_device_discovery::port_of(&board.mac()?)
+    oer_devices::discovery::port_of(&board.mac()?)
         .map_err(|error| format!("board `{}`: {error}", board.id).into())
 }
 

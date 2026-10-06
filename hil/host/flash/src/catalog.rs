@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use oer_device_image::Store;
+use oer_devices::image::Store;
 use oer_image::esp_idf::catalog;
 use oer_stand_board::Via;
 use oer_stand_journal::Journal;

@@ -2419,51 +2419,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-device-console"
-version = "0.1.0"
-dependencies = [
- "oer-device-port",
- "tempfile",
-]
-
-[[package]]
-name = "oer-device-discovery"
-version = "0.1.0"
-dependencies = [
- "oer-device-mac",
- "oer-process",
- "serde",
- "serialport",
- "tempfile",
-]
-
-[[package]]
-name = "oer-device-flash"
-version = "0.1.0"
-dependencies = [
- "espflash",
- "oer-chip-profile",
- "oer-device-port",
- "oer-image-bundle",
- "serialport",
-]
-
-[[package]]
-name = "oer-device-image"
-version = "0.1.0"
-dependencies = [
- "oer-chip-profile",
- "oer-device-flash",
- "oer-device-lock",
- "oer-device-openocd",
- "oer-durable",
- "oer-image-bundle",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "oer-device-lock"
 version = "0.1.0"
 dependencies = [
@@ -2484,50 +2439,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-device-openocd"
-version = "0.1.0"
-dependencies = [
- "oer-durable",
- "oer-process",
- "tempfile",
-]
-
-[[package]]
 name = "oer-device-peer-line"
 version = "0.1.0"
-
-[[package]]
-name = "oer-device-port"
-version = "0.1.0"
-dependencies = [
- "serialport",
- "tempfile",
-]
-
-[[package]]
-name = "oer-device-reset"
-version = "0.1.0"
-dependencies = [
- "oer-device-console",
- "oer-device-port",
- "serde",
-]
 
 [[package]]
 name = "oer-devices"
 version = "0.1.0"
 dependencies = [
+ "espflash",
  "oer-chip-profile",
- "oer-device-console",
- "oer-device-discovery",
- "oer-device-flash",
- "oer-device-image",
  "oer-device-lock",
- "oer-device-port",
- "oer-device-reset",
+ "oer-device-mac",
  "oer-durable",
  "oer-image-bundle",
+ "oer-process",
  "serde",
+ "serde_json",
+ "serialport",
+ "tempfile",
 ]
 
 [[package]]
@@ -3361,8 +3290,7 @@ name = "oer-hil-family-phy"
 version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
- "oer-device-port",
- "oer-device-reset",
+ "oer-devices",
  "oer-durable",
  "oer-esp-idf",
  "oer-hil-lab",
@@ -3396,8 +3324,7 @@ name = "oer-hil-family-system"
 version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
- "oer-device-console",
- "oer-device-reset",
+ "oer-devices",
  "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-scenario",
@@ -3438,8 +3365,8 @@ name = "oer-hil-flash"
 version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
- "oer-device-image",
  "oer-device-lock",
+ "oer-devices",
  "oer-durable",
  "oer-image",
  "oer-image-bundle",
@@ -3499,12 +3426,8 @@ name = "oer-hil-lab"
 version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
- "oer-device-console",
- "oer-device-discovery",
  "oer-device-lock",
- "oer-device-openocd",
- "oer-device-port",
- "oer-device-reset",
+ "oer-devices",
  "oer-durable",
  "oer-elf",
  "oer-hil-fixture",
@@ -3630,9 +3553,8 @@ dependencies = [
  "clap",
  "oer-chip-profile",
  "oer-command-tree",
- "oer-device-image",
  "oer-device-lock",
- "oer-device-reset",
+ "oer-devices",
  "oer-durable",
  "oer-hil-analysis",
  "oer-hil-family-bluetooth",
@@ -4353,11 +4275,8 @@ dependencies = [
  "libc",
  "oer-chip-profile",
  "oer-command-tree",
- "oer-device-console",
- "oer-device-image",
  "oer-device-lock",
  "oer-device-peer-line",
- "oer-device-reset",
  "oer-devices",
  "oer-durable",
  "oer-process",
@@ -4383,9 +4302,8 @@ dependencies = [
 name = "oer-stand-arbiter"
 version = "0.1.0"
 dependencies = [
- "oer-device-discovery",
  "oer-device-lock",
- "oer-device-reset",
+ "oer-devices",
  "oer-durable",
  "oer-process",
  "oer-stand-claims",
@@ -4404,13 +4322,8 @@ name = "oer-stand-board"
 version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
- "oer-device-console",
- "oer-device-discovery",
- "oer-device-image",
  "oer-device-lock",
- "oer-device-openocd",
- "oer-device-port",
- "oer-device-reset",
+ "oer-devices",
  "oer-image-bundle",
  "oer-stand-file",
  "oer-stand-power",
@@ -4495,7 +4408,7 @@ name = "oer-stand-journal"
 version = "0.1.0"
 dependencies = [
  "oer-device-mac",
- "oer-device-reset",
+ "oer-devices",
  "oer-durable",
  "oer-process",
  "oer-stand-file",
@@ -4521,8 +4434,8 @@ dependencies = [
 name = "oer-stand-power"
 version = "0.1.0"
 dependencies = [
- "oer-device-discovery",
  "oer-device-mac",
+ "oer-devices",
  "oer-process",
  "oer-stand-file",
 ]

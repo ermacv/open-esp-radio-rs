@@ -137,7 +137,7 @@ impl Arbiter {
         let events = self.journal().events()?;
         let (flashes, startup_artifacts) = latest(&events);
         let stand = self.stand()?;
-        let attached = oer_device_discovery::attached();
+        let attached = oer_devices::discovery::attached();
         let mut macs: Vec<Option<String>> = stand
             .board
             .iter()

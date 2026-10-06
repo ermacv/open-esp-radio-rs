@@ -77,7 +77,7 @@ pub(crate) fn validate_flashed_image(
                 .collect::<Vec<_>>()
                 .join(", "),
             match escalation.ladder.end {
-                oer_device_reset::LadderEnd::Loadable { .. } => {
+                oer_devices::reset::LadderEnd::Loadable { .. } => {
                     "its ROM answers, so firmware can be loaded again"
                 }
                 _ => "the board is quarantined for a person",

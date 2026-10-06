@@ -8,7 +8,7 @@ use oer_hil_protocol::wifi::{NetworkCredentials, NetworkIpv4Configuration};
 use crate::Result;
 
 /// A serial line the stand opened for the link. The stand's board I/O
-/// (`oer_device_port::Port`) is the one opener of every serial line;
+/// (`oer_devices::port::Port`) is the one opener of every serial line;
 /// the link only reads and writes what it is handed, and takes a capture's
 /// descriptor over for its nonblocking reader.
 pub trait SerialLine: std::io::Read + std::io::Write + std::os::fd::AsRawFd + Send {

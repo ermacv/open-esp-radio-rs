@@ -177,7 +177,7 @@ scenario with the owned Xarxa/Embassy network stack, the only network
 implementation; see the [implementation guide](../../docs/network-implementations.md).
 `cargo hil image build performance` and `cargo hil image build correctness`
 build the class's image bundle through the one image pipeline
-([`oer-image`](../../tools/image/README.md)) with the same stack/move,
+([`oer-image`](../../tools/image/pipeline/README.md)) with the same stack/move,
 placement and packed-image gates, encoding the bootloader, partition table
 and OTA selection at build time, without flashing or loading private stand
 file. Each successful build emits one JSON report on stdout with class, chip,

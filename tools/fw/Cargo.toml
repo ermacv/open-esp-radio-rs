@@ -16,12 +16,12 @@ path = "src/main.rs"
 clap = { version = "=4.5.48", features = ["derive"] }
 oer-command-tree = { path = "../command-tree", features = ["clap"] }
 oer-chip-profile = { path = "../chip-profile" }
-oer-devices = { path = "../devices" }
+oer-devices = { path = "../device/devices", features = ["image"] }
 oer-durable = { path = "../durable" }
-oer-image = { path = "../image" }
-oer-image-bundle = { path = "../image-bundle" }
-oer-image-checks = { path = "../image-checks", optional = true }
-oer-image-compare = { path = "../image-compare", optional = true }
+oer-image = { path = "../image/pipeline" }
+oer-image-bundle = { path = "../image/bundle" }
+oer-image-checks = { path = "../image/checks", optional = true }
+oer-image-compare = { path = "../image/compare", optional = true }
 oer-process = { path = "../process" }
 serde_json = "1.0"
 tempfile = "=3.27.0"

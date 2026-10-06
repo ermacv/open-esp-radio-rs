@@ -31,7 +31,7 @@ pub(crate) fn flash_dut(
 ) -> Result<()> {
     oer_hil_flash::flash(
         &oer_stand_journal::Journal::open()?,
-        &oer_device_image::Store::open()?,
+        &oer_devices::image::Store::open()?,
         oer_stand_owners::from_environment()?.as_str(),
         &lab.dut_board()?.lease(lock)?,
         &oer_hil_flash::Image {

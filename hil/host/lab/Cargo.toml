@@ -13,11 +13,7 @@ description = "HIL run-level stand operation: the laboratory configuration, the 
 test-support = []
 
 [dependencies]
-oer-device-console = { path = "../../../tools/device/console" }
-oer-device-discovery = { path = "../../../tools/device/discovery" }
-oer-device-openocd = { path = "../../../tools/device/openocd" }
-oer-device-port = { path = "../../../tools/device/port" }
-oer-device-reset = { path = "../../../tools/device/reset" }
+oer-devices = { path = "../../../tools/device/devices" }
 oer-hil-run-bundle-format = { path = "../run-bundle/format" }
 oer-hil-scenario-catalog = { path = "../scenario/catalog" }
 oer-elf = { path = "../../../tools/elf" }

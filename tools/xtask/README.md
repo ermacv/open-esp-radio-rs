@@ -140,6 +140,8 @@ the guard's offline regressions with Python 3. Live GitHub metadata is reconcile
 by the separate [issue-label workflow](../../.github/workflows/issue-labels.yml);
 it does not query or mutate GitHub from the source gate. See the
 [creation invariant](../../docs/issues.md#creation-and-automatic-control).
+`ci-status` reads recent runs per workflow, so metadata event traffic cannot
+hide a source workflow's last failure behind a shared page of runs.
 
 Planning requires a clean checkout so the tree hash describes its source
 files. Repository source inputs must be tracked; external sources are

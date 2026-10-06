@@ -1,5 +1,37 @@
 use super::*;
 
+#[test]
+fn enclosing_lease_reaches_current_runner_steps() {
+    crate::lease_tests::within_enclosing_lease(
+        "bisect::tests::enclosing_lease_reaches_current_runner_steps",
+        |directory, runner| {
+            let root = crate::lease_tests::repository(directory);
+            let store = RunStore::at(directory.join("store"));
+            run_with(Outcome::Passed, None, &store.runs());
+            let spec = Spec {
+                good: "HEAD".into(),
+                bad: "HEAD".into(),
+                scenario: "s".into(),
+                layout_seed: None,
+                boards: Vec::new(),
+            };
+            let bisection = Bisection {
+                checkout: &root,
+                owner: "experiment-test",
+                spec: &spec,
+                current: String::new(),
+                runner,
+                store,
+                worktree: root.clone(),
+                arbiter: directory.join("private-arbiter"),
+            };
+            assert!(
+                matches!(bisection.with_current_runner().unwrap(), Verdict::Good { run } if run == "7")
+            );
+        },
+    );
+}
+
 /// Probe `len` commits whose first bad one is `first_bad`, `broken` ones
 /// broken, recording the probed indices.
 fn bisect(len: usize, first_bad: usize, broken: &[usize]) -> (Found, Vec<usize>) {

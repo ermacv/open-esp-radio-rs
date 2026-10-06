@@ -1,6 +1,67 @@
 use super::*;
 
 #[test]
+fn enclosing_lease_reaches_preparation_and_replay() {
+    crate::lease_tests::within_enclosing_lease(
+        "ab::tests::enclosing_lease_reaches_preparation_and_replay",
+        |directory, runner| {
+            let root = crate::lease_tests::repository(directory);
+            let arm = PreparedArm {
+                arm: Arm::A,
+                variant: Variant {
+                    commit: "HEAD".into(),
+                    overrides: Vec::new(),
+                    features: FeatureDelta::default(),
+                },
+                worktree: Worktree::detached(&root, &directory.join("arm-a"), "HEAD").unwrap(),
+                snapshot: directory.join("snapshot"),
+            };
+            let session = Session {
+                checkout: &root,
+                owner: "experiment-test",
+                id: "experiment",
+                directory,
+                runner: &runner,
+                boards: &[],
+                store: RunStore::at(directory.join("store")),
+            };
+            let round = round(&[], NonZeroU32::MIN, 0, 1);
+            let run = arm
+                .run(
+                    &session,
+                    &["boot-smoke".into()],
+                    &Firmware::Build(NonZeroU32::MIN),
+                    round,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(run, RunId::new("7"));
+            let grant = oer_stand_arbiter::Arbiter::open()
+                .unwrap()
+                .acquire(&oer_stand_arbiter::Request {
+                    owner: "experiment-test".into(),
+                    work: "replay".into(),
+                    scenarios: Vec::new(),
+                    claims: vec![oer_stand_claims::Claim::stand()],
+                })
+                .unwrap();
+            assert!(grant.is_nested());
+            let run = arm
+                .run(
+                    &session,
+                    &["boot-smoke".into()],
+                    &Firmware::Replay(run),
+                    round,
+                    Some(&grant),
+                )
+                .unwrap();
+            assert_eq!(run, RunId::new("7"));
+            arm.worktree.remove().unwrap();
+        },
+    );
+}
+
+#[test]
 fn a_variant_is_a_revision_and_its_dependency_overrides() {
     assert_eq!(
         "rev=main;override:xarxa=/src/xarxa".parse::<VariantSpec>(),

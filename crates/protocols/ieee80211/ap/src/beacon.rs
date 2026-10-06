@@ -1,9 +1,11 @@
 //! Bounded AP beacon storage and executor-time TSF publication.
 //!
-//! The beacon is a template the access point stamps at each publication:
+//! The beacon is a template the access point prepares for publication:
 //! the TSF (its own time since its TSF restarted), the management sequence,
 //! the TIM and the DTIM count. Its schedule is an absolute TBTT cursor that a
 //! late publication does not move.
+//! Preparation stamps the supplied executor time; a software TX queue can
+//! delay hardware submission and on-air transmission.
 //!
 //! A move of the BSS to another channel is announced in the template: the
 //! Channel Switch Announcement (and, for a 40 MHz channel, the Secondary
@@ -251,7 +253,12 @@ impl<'storage> ApBeacon<'storage> {
         }
     }
 
-    /// Stamp one frame immediately before handing its lease to hardware.
+    /// Stamp one frame using `now` and advance its TBTT schedule.
+    ///
+    /// The returned frame can wait in a software TX queue before submission.
+    /// This method does not refresh the timestamp at hardware submission or
+    /// on-air transmission.
+    ///
     /// `None` also while an announced switch is due: no beacon goes out on
     /// the old channel after the one that counted one.
     pub fn prepare(

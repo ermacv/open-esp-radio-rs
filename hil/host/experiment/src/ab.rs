@@ -508,7 +508,7 @@ impl PreparedArm {
             )));
         let mut context = match grant {
             Some(grant) => grant.context()?,
-            None => oer_process::Context::default(),
+            None => oer_process::Context::current()?.clone(),
         };
         context.set(oer_stand_arbiter::jobs::JOB_KEY, job.id());
         launch = launch.context(context);

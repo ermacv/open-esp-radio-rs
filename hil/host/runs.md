@@ -254,8 +254,8 @@ finishing, told by its PID and start time). Every `run` and `run-all`, enqueued 
 the stand: each with its phase, read from the one queue (waits for a job,
 building images, waiting for the stand, holding the stand). A job is the
 arbiter's ticket model: its process and the runner it starts carry the
-job's id (`OER_HIL_JOB`), and every request they make is a ticket of that
-job, so the queue names each holder's and waiter's job. Building costs no balance and
+job's id (`stand.job` in their explicit process context), and every request they
+make is a ticket of that job, so the queue names each holder's and waiter's job. Building costs no balance and
 takes no place in the queue. A job whose process is gone is recorded as
 abandoned when the list is read. `queue` also lists the jobs that ended
 without a judged run within the last hour (at most 5) with the last line of

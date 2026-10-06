@@ -14,6 +14,12 @@ worktree helper, which `cargo hil images compare` shares. Nothing here runs
 `cargo hil`: a revision's own runner is built with `oer-hil-observer` and
 launched directly.
 
+A/B preparation and current-runner bisection steps forward their enclosing
+lease's explicit context, replacing its job ID with the new run's job ID.
+Measured A/B rounds select context from their round grant. Nested runners can
+therefore join the parent lease and use its delegated boards while ordinary
+build and Git subprocesses receive no operation context.
+
 ```console
 cargo test -p oer-hil-experiment
 ```

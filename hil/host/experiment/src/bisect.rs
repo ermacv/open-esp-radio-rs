@@ -431,7 +431,8 @@ impl Bisection<'_> {
                 .args(arguments)
                 .env(oer_stand_owners::OWNER_ENV, self.owner)
                 .context(
-                    oer_process::Context::default()
+                    oer_process::Context::current()?
+                        .clone()
                         .with(oer_stand_arbiter::jobs::JOB_KEY, job.id()),
                 ),
         )?;

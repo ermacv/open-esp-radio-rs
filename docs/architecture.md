@@ -100,8 +100,11 @@ packages of its own host layer and the layers below it
 | `foundation` | Processes, files, host tools, chip profiles, the repository model, vendor pins, the devices layer and the data formats | `oer-process`, `oer-durable`, `oer-toolchain`, `oer-repo`, `oer-vendor-artifacts`, `oer-device-*`, `oer-devices`, `oer-image-bundle`, `oer-hil-run-bundle-format` |
 
 So the stand and the build layer never reach HIL execution, verification
-never reaches HIL, and the foundation depends on nothing above it. Only
-entry crates run a repository command line: `cargo tidy check` rejects a
+never reaches HIL execution or orchestration, and the foundation depends
+on nothing above it. The shared relation library in
+`hil/phy/esp32s31/relation/` belongs to the `verification` host layer, so
+verification scenarios and probes may depend on it. Only entry crates
+run a repository command line: `cargo tidy check` rejects a
 non-entry package whose code spawns `cargo hil` or `cargo xtask`
 (`oer_tidy::spawns`); a library calls the owning library instead.
 

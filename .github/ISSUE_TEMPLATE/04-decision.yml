@@ -1,0 +1,52 @@
+name: "Decision"
+description: "Select a contract, architecture or explicit policy."
+labels: ["kind:decision"]
+body:
+  - type: markdown
+    attributes:
+      value: "Name one accepted result. Follow [issue management](https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/issues.md). Triage assigns area and priority; dropdowns do not apply labels. Research and implementation do not establish hardware readiness."
+  - type: textarea
+    id: decision
+    attributes:
+      label: "Decision needed"
+      description: "What must the owner choose, and what work consumes the choice?"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: "Primary area"
+      description: "The owner of the result; triage applies its area label."
+      options: ["Wi-Fi","Bluetooth","IEEE 802.15.4","Shared radio","Registers / PAC","Platform","Tooling","HIL","Qualification"]
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: "Owner and scope"
+      description: "Name defining paths, layer, target/revision/profile and exclusions."
+      placeholder: "Owner paths:\nLayer:\nTarget / revision / profile:\nOut of scope:"
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: "Options and evidence"
+      description: "Alternatives, obligations, tradeoffs, known constraints and uncertainties. Identify the owner who decides."
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "Decision record"
+      description: "Accepted option, rationale, scope, consequences for callers and superseded decisions. Fill when decided."
+    validations:
+      required: false
+  - type: textarea
+    id: relations
+    attributes:
+      label: "Relations and activation"
+      description: "Parent, blockers with the exact required artifact, related work, and any future activation trigger."
+      placeholder: "Part of:\nBlocked by (artifact and consuming step):\nRelated:\nActivation trigger:"
+    validations:
+      required: false

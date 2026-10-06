@@ -1,0 +1,117 @@
+[
+  {
+    "name": "kind:bug",
+    "color": "d73a4a",
+    "description": "Restore expected behavior with a reproducer and regression check."
+  },
+  {
+    "name": "kind:research",
+    "color": "5319e7",
+    "description": "Answer a scoped unknown with applicable evidence and explicit limits."
+  },
+  {
+    "name": "kind:decision",
+    "color": "b60205",
+    "description": "Owner choice of contract, architecture or policy with rationale."
+  },
+  {
+    "name": "kind:feature",
+    "color": "0e8a16",
+    "description": "Add one named API, behavior or capability in an explicit scope."
+  },
+  {
+    "name": "kind:refactor",
+    "color": "1d76db",
+    "description": "Establish an ownership or structural invariant and migrate consumers."
+  },
+  {
+    "name": "kind:validation",
+    "color": "006b75",
+    "description": "Evaluate a named subject against predeclared evidence criteria."
+  },
+  {
+    "name": "kind:docs",
+    "color": "0075ca",
+    "description": "Update the canonical owner documentation and validate it."
+  },
+  {
+    "name": "kind:tracking",
+    "color": "7057ff",
+    "description": "Compose required child outcomes and integration acceptance."
+  },
+  {
+    "name": "area:wifi",
+    "color": "c5def5",
+    "description": "Wi-Fi protocol, services and lower-MAC driver ownership."
+  },
+  {
+    "name": "area:bluetooth",
+    "color": "c5def5",
+    "description": "Bluetooth protocol, services and controller ownership."
+  },
+  {
+    "name": "area:ieee802154",
+    "color": "c5def5",
+    "description": "IEEE 802.15.4 protocol, services and radio ownership."
+  },
+  {
+    "name": "area:radio",
+    "color": "c5def5",
+    "description": "Shared radio contracts, clocks and coexistence ownership."
+  },
+  {
+    "name": "area:registers",
+    "color": "c5def5",
+    "description": "Reviewed hardware semantics, register models and typed PAC."
+  },
+  {
+    "name": "area:platform",
+    "color": "c5def5",
+    "description": "Chip boot, runtime, memory and interrupt ownership."
+  },
+  {
+    "name": "area:tooling",
+    "color": "c5def5",
+    "description": "Host tools, build, analysis and CI ownership."
+  },
+  {
+    "name": "area:hil",
+    "color": "c5def5",
+    "description": "Stand, fixtures, HIL scenarios and evidence acquisition."
+  },
+  {
+    "name": "area:qualification",
+    "color": "c5def5",
+    "description": "Independent requirement and evidence evaluation."
+  },
+  {
+    "name": "priority:P0",
+    "color": "b60205",
+    "description": "Interrupt: unexpected mandatory main failure or proven critical active defect."
+  },
+  {
+    "name": "priority:P1",
+    "color": "d93f0b",
+    "description": "Required for the selected near-term result or its concrete blocker."
+  },
+  {
+    "name": "priority:P2",
+    "color": "fbca04",
+    "description": "Useful scoped work that does not block the selected result."
+  },
+  {
+    "name": "priority:P3",
+    "color": "d4c5f9",
+    "description": "Optional or future work; name its activation trigger."
+  },
+  {
+    "name": "target:esp32s31",
+    "color": "bfdadc",
+    "description": "Scope or evidence applicability is limited to ESP32-S31."
+  },
+  {
+    "name": "target:esp32c5",
+    "color": "bfdadc",
+    "description": "Scope or evidence applicability includes ESP32-C5 specifically."
+  }
+]

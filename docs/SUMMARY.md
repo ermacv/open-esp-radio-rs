@@ -14,6 +14,7 @@
 # Contribute
 
 - [Make a first contribution without hardware](first-contribution.md)
+- [Manage issues and dependencies](issues.md)
 - [Documentation policy](documentation.md)
 
 # Station, network and PHY

@@ -7,6 +7,12 @@ dated applicable device evidence.
 
 ## Start with a task
 
+Open or update an issue using the [issue management rules](docs/issues.md).
+Name one reviewable result, its defining owner and the evidence needed to
+accept it. Use sub-issues for composition and dependencies for required
+artifacts; neither a research result nor a merged implementation establishes
+hardware readiness.
+
 Read [From binary evidence to a Wi-Fi station](docs/binary-to-station.md), then
 complete [the host tutorial](docs/first-contribution.md). For device work follow
 [the ESP32-S31 route](docs/station-hardware.md). The

@@ -13,7 +13,7 @@ checks. A utility does not need its own Cargo package.
 | [riscv/model](riscv/model/README.md), [riscv/program](riscv/program/README.md), [riscv/analysis](riscv/analysis/README.md), [riscv/lift](riscv/lift/README.md) | RV32 program model: identities and contracts, static images, bounded CFG and value analysis, RV32 lifting, and placement-independent function listings (`listing`) that `cargo fw compare` compares |
 | [riscv/stack](riscv/stack/README.md) | Worst-case stack bounds of a static RV32 image, failing closed with the unresolved sites by reason; the only stack analyzer, which the image pipeline's stack gate runs |
 | [symbol-lineage](symbol-lineage/README.md) | Source function names carried across obfuscated vendor archive revisions |
-| [phy-archive](phy-archive/src/lib.rs) | Verification of the source-only PHY archive's compiled symbols; xtask runs the audit as a separate process to keep ELF dependencies outside the gate |
+| [phy-archive](phy-archive/README.md) | Verification of the source-only PHY archive's compiled symbols; xtask runs the audit as a separate process to keep ELF dependencies outside the gate |
 | [process](process/README.md) | Host child-process ownership, cancellation and bounded cleanup; the one Git runner, the checkout a tool acts on (`Checkout`, `built_root`) and live-process facts from `/proc` |
 | [durable](durable/README.md) | Atomic file replacement, SHA-256 of files and bytes, wall-clock timestamps and the XDG state directories every tool keeps outside a checkout |
 | [toolchain](toolchain/README.md) | The one lookup of Cargo, `rustc`, the toolchain's LLVM tools and `espflash`, the tool versions builds record, and the image compiler setup with the image linker built from the tree being built |

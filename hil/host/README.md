@@ -212,7 +212,11 @@ file with `by: source-include`, `by: image-package` or `by: hil-host`, and a run
 option is not noted as pending evidence; `cargo qualification hil-evidence
 --hil-target <chip> --run ID` records it. Directory selections and ignored files are not accepted.
 For the configured local overrides, qualify each new file with `esp-hal:`,
-`embassy:` or `xarxa:`. No symlink or submodule content is silently followed;
+`embassy:` or `xarxa:`. Agent instructions (`AGENTS.md` at any depth and
+every `.agents/` directory) are excluded from tracked and untracked inputs
+in every source checkout: they configure coding agents, not firmware or HIL.
+Qualification applies the same exclusion when checking source currency.
+No symlink or submodule content in the remaining source inputs is silently followed;
 such inputs require review and are rejected by this capture interface.
 
 The content-addressed directory contains `manifest.json`, `snapshot.json` and

@@ -34,6 +34,10 @@ Edit the canonical sources; keep an `AGENTS.md` link beside any new scoped
 preserves their relative references. In Codex, invoke `$block-wifi` to load
 the same block guide that the Claude Code `block-wifi` agent starts with.
 
+HIL source snapshots exclude `AGENTS.md` and `.agents/` from their inputs
+([source capture](hil/host/README.md#build-and-run)); agent guidance does
+not change firmware or HIL observations.
+
 In shared checklists, `run_in_background: true` is Claude Code's option.
 Codex runs a long command with `exec_command` and a short `yield_time_ms`,
 keeps the returned `session_id`, and collects completion with `write_stdin`

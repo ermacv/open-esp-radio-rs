@@ -71,10 +71,11 @@ The PHY library's target build. Images are not xtask's: `cargo fw build`
 image classes, and both go through [`oer-image`](../image/pipeline/README.md); the
 gate runs them as processes.
 
-`phy-archive/` holds the gate's compiled-symbol audit
-(`oer-check-phy-archive`). It remains a separate process so the xtask entry
-package does not link the ELF reader; the PHY check passes the compiled
-archive and its allowed source packages to it.
+[`tools/phy-archive`](../phy-archive/src/lib.rs) holds verification's
+compiled-symbol audit (`oer-check-phy-archive`). The gate runs it as a
+separate process so the xtask entry package does not link the ELF reader;
+the PHY check passes the compiled archive and its allowed source packages
+to it.
 
 | Command | Contract |
 | --- | --- |

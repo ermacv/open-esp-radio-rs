@@ -10,7 +10,7 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
 | `registers/` | `oer-register-tool`: register model validation and PAC/SVD publication, the PAC, shared-word and inventory checks (the inventory run included) |
 | `blobray/` | Binary analysis; a separate workspace with its own lock file and target |
 | `elf/` | `oer-elf`: the one ELF/archive view (symbols with aliases, sections, segments, relocations, DWARF `Symbolizer`) and the one RV32 relocation table (`rv32`) |
-| `vendor-provenance/`, `symbol-lineage/` | `oer-vendor-provenance`: the one `SOURCE` citation recogniser (tidy uses it), the one vendor function fingerprint, the provenance registry and check, `vendor-diff`; vendor symbol names across releases |
+| `vendor-provenance/`, `symbol-lineage/`, `phy-archive/` | Verification: the `SOURCE` citation recogniser (tidy uses it), vendor function fingerprints, the provenance registry and check, `vendor-diff`, vendor symbol names across releases and the source-only PHY archive's compiled-symbol audit |
 | `riscv/` | RV32 layers shared by Blobray: `decode/` (instructions), `model/`, `program/`, `analysis/` and `lift/` (the program model); `stack/` (stack bounds, the only stack analyzer) |
 | `process/`, `durable/`, `toolchain/` | Foundation: child processes, Git and the checkout (`oer-process`); atomic files, digests, timestamps and XDG state directories (`oer-durable`); host tool lookup, recorded tool versions, the image compiler and the Blobray workspace's Cargo commands (`oer-toolchain`). Nothing else re-implements them |
 | `image/` | Image packages: `pipeline/` (`oer-image`, `build(ImageSpec) -> ImageBundle`), `bundle/`, `encode/`, `policy/`, `checks/`, `check/{interrupts,placement,stack}/`, `compare/` and `linker/` |
@@ -18,7 +18,7 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
 | `fw/` | `oer-fw`, `cargo fw`: the dev kit (build, flash, monitor, devices); links images, devices, chip profiles and the foundation only |
 | `device/` | `devices/` (`oer-devices`): discovery, port, console, reset and OpenOCD modules, plus flash, receipted image writes and the held-board facade with feature `image`; `mac/`, `lock/` and `peer-line/` retain their independent dependency boundaries |
 | `esp-idf/` | ESP-IDF build environment and pinned catalog projects |
-| `vendor-pins/`, `markers/`, `stats/`, `xtask/phy-archive/` | Vendor pin reader, the `SOURCE`/`CAPABILITY` marker recognisers, host statistics, the gate's PHY archive policy run as a process |
+| `vendor-pins/`, `markers/`, `stats/` | Vendor pin reader, the `SOURCE`/`CAPABILITY` marker recognisers and host statistics |
 | `vendor-artifacts/` | `oer-vendor-artifacts`: the only reader of `verification/<chip>/artifacts.toml`, the store and fetch, and the layout of a chip's verification project (`project::Project`); depends only on toml, serde and the foundation so build scripts and Blobray use it |
 
 ## Rules

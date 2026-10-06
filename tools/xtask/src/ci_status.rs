@@ -148,29 +148,38 @@ pub fn report(ctx: &Checkout) -> Result<Vec<String>, String> {
 fn report_with(ctx: &Checkout, gh: &str) -> Result<Vec<String>, String> {
     let workflows =
         workflows(&ctx.root).map_err(|error| format!("cannot read .github/workflows: {error}"))?;
-    let output = process::capture(ctx.command(gh).args([
-        "run",
-        "list",
-        "--branch",
-        "main",
-        "--limit",
-        "30",
-        "--json",
-        "workflowName,headSha,status,conclusion,url,databaseId,createdAt",
-    ]))
-    .map_err(|error| match error.downcast_ref::<std::io::Error>() {
-        Some(io) if io.kind() == std::io::ErrorKind::NotFound => "`gh` is not installed".to_owned(),
-        _ => error
-            .to_string()
-            .lines()
-            .rev()
-            .find(|line| !line.trim().is_empty())
-            .unwrap_or("`gh run list` failed")
-            .trim()
-            .to_owned(),
-    })?;
-    let runs = serde_json::from_slice::<Vec<Run>>(&output.stdout)
-        .map_err(|error| format!("`gh run list` printed no run list: {error}"))?;
+    let mut runs = Vec::new();
+    // Issue/label events can fill a repository-wide page without any
+    // source CI runs. Give every configured workflow its own window.
+    for workflow in &workflows {
+        let output = process::capture(ctx.command(gh).args([
+            "run",
+            "list",
+            "--workflow",
+            workflow.as_str(),
+            "--branch",
+            "main",
+            "--limit",
+            "30",
+            "--json",
+            "workflowName,headSha,status,conclusion,url,databaseId,createdAt",
+        ]))
+        .map_err(|error| match error.downcast_ref::<std::io::Error>() {
+            Some(io) if io.kind() == std::io::ErrorKind::NotFound => "`gh` is not installed".to_owned(),
+            _ => error
+                .to_string()
+                .lines()
+                .rev()
+                .find(|line| !line.trim().is_empty())
+                .unwrap_or("`gh run list` failed")
+                .trim()
+                .to_owned(),
+        })?;
+        runs.extend(
+            serde_json::from_slice::<Vec<Run>>(&output.stdout)
+                .map_err(|error| format!("`gh run list` printed no run list: {error}"))?,
+        );
+    }
     Ok(failures(&runs, &workflows)
         .into_iter()
         .map(|run| {
@@ -308,11 +317,69 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
         std::fs::create_dir_all(directory.path().join(".github/workflows")).unwrap();
+        std::fs::write(
+            directory.path().join(".github/workflows/ci.yml"),
+            "name: CI\n",
+        )
+        .unwrap();
         let ctx = Checkout::new(directory.path()).unwrap();
         assert_eq!(
             report_with(&ctx, "oer-gh-that-does-not-exist"),
             Err("`gh` is not installed".to_owned())
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn frequent_metadata_runs_do_not_hide_a_source_ci_failure() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+        let workflow_dir = directory.path().join(".github/workflows");
+        std::fs::create_dir_all(&workflow_dir).unwrap();
+        for (file, name) in [("ci.yml", "CI"), ("issue-labels.yml", "Issue labels")] {
+            std::fs::write(workflow_dir.join(file), format!("name: {name}\n")).unwrap();
+        }
+        let source = serde_json::json!([{
+            "workflowName": "CI", "headSha": "bad", "status": "completed",
+            "conclusion": "failure", "url": "ci-url", "databaseId": 1,
+            "createdAt": "2026-10-06T10:00:00Z",
+        }]);
+        let metadata: Vec<_> = (0..30)
+            .map(|index| {
+                serde_json::json!({
+                    "workflowName": "Issue labels", "headSha": "head", "status": "completed",
+                    "conclusion": "success", "url": "metadata-url", "databaseId": index + 2,
+                    "createdAt": "2026-10-06T11:00:00Z",
+                })
+            })
+            .collect();
+        let gh = directory.path().join("gh");
+        std::fs::write(
+            &gh,
+            format!(
+                r#"#!/bin/sh
+case "$1 $2" in
+  "run list")
+    case "$3:$4" in
+      "--workflow:CI") printf '%s\n' '{source}' ;;
+      "--workflow:Issue labels") printf '%s\n' '{metadata}' ;;
+      *) exit 2 ;;
+    esac ;;
+  "run view") printf '%s\n' '{{"jobs":[{{"name":"host","conclusion":"failure"}}]}}' ;;
+  *) exit 2 ;;
+esac
+"#,
+                metadata = serde_json::to_string(&metadata).unwrap(),
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let ctx = Checkout::new(directory.path()).unwrap();
+        let failures = report_with(&ctx, gh.to_str().unwrap()).unwrap();
+        assert_eq!(failures.len(), 1);
+        assert!(failures[0].contains("CI failed at bad (host)"));
     }
 
     #[test]

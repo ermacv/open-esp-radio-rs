@@ -8,9 +8,12 @@
 //! selection last: an interrupted write leaves the previous selection
 //! pointing at an image whose checksum no longer validates instead of a
 //! half-written one. A failure of the serial link is retried; a failure of
-//! the image is not. Transport errors retain their typed espflash cause through
-//! port context, so connection failures are retried and diagnostics include the
-//! cause. The serial port starts with a three-second timeout as espflash
+//! the image is not. Transport errors retain their typed serialport or espflash
+//! cause through port context, so connection failures are retried and diagnostics
+//! include the cause. Serialport reports POSIX EIO before connection as
+//! `ErrorKind::Unknown`; these port failures are retried within the same bound.
+//! Unclassified application `io::ErrorKind::Other` errors are not retried.
+//! The serial port starts with a three-second timeout as espflash
 //! requires before its first connection handshake.
 //! `write_bins_to_flash` also performs the configured post-write reset. The
 //! writer leaves that transition to espflash; repeating it would send a stub
@@ -218,6 +221,14 @@ fn transient_failure(mut error: &(dyn Error + 'static)) -> bool {
                 error,
                 espflash::Error::Connection(_) | espflash::Error::Flashing(_)
             );
+        }
+        // serialport reports POSIX EIO during open as Unknown, before espflash
+        // can wrap it as Connection. Retry that typed port failure rather than
+        // every io::ErrorKind::Other or a platform-specific diagnostic string.
+        if let Some(error) = error.downcast_ref::<serialport::Error>()
+            && error.kind() == serialport::ErrorKind::Unknown
+        {
+            return true;
         }
         if let Some(error) = error.downcast_ref::<std::io::Error>()
             && matches!(

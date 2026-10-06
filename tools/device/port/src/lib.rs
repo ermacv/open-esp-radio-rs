@@ -8,6 +8,8 @@
 //! protocol: what is written and read, and which reset sequence the lines
 //! perform, belongs to its caller (the reset, console and
 //! flash crates, the DUT link and the peer console).
+//! Open errors retain the typed [`serialport::Error`] beneath their path
+//! context, including errors before a protocol connection is established.
 #![forbid(unsafe_code)]
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -81,6 +83,24 @@ impl Settings {
 /// Pause between attempts to open a busy port.
 const BUSY_RETRY: Duration = Duration::from_millis(20);
 
+#[derive(Debug)]
+struct OpenFailure {
+    path: PathBuf,
+    source: serialport::Error,
+}
+
+impl std::fmt::Display for OpenFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "open {}: {}", self.path.display(), self.source)
+    }
+}
+
+impl std::error::Error for OpenFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
 /// An open serial port.
 pub struct Port {
     path: PathBuf,
@@ -108,8 +128,13 @@ impl Port {
                 Ok(serial) => break serial,
                 Err(_) if Instant::now() < deadline => std::thread::sleep(BUSY_RETRY),
                 Err(error) => {
-                    let message = format!("open {}: {error}", path.display());
-                    return Err(io::Error::new(io::Error::from(error).kind(), message));
+                    return Err(io::Error::new(
+                        io::Error::from(error.clone()).kind(),
+                        OpenFailure {
+                            path: path.to_owned(),
+                            source: error,
+                        },
+                    ));
                 }
             }
         };
@@ -227,6 +252,17 @@ mod tests {
             .unwrap();
         assert!(started.elapsed() >= Duration::from_millis(100));
         assert!(error.to_string().contains("ttyACM-missing"), "{error}");
+        assert_eq!(
+            error
+                .get_ref()
+                .unwrap()
+                .source()
+                .unwrap()
+                .downcast_ref::<serialport::Error>()
+                .unwrap()
+                .kind(),
+            serialport::ErrorKind::Io(io::ErrorKind::NotFound),
+        );
         let started = Instant::now();
         assert!(Port::open(&path, Settings::CONSOLE).is_err());
         assert!(started.elapsed() < Duration::from_millis(100));

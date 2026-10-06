@@ -115,6 +115,32 @@ fn resolved_owner_reaches_the_runner_without_losing_enclosing_authority() {
     }
 }
 #[test]
+fn invalid_explicit_owner_is_refused_before_runner_or_job_creation() {
+    for args in [
+        vec!["--owner", "Bad Name", "run", "boot-smoke"],
+        vec!["run", "boot-smoke", "--owner=Bad Name"],
+        vec!["--owner", "Bad Name", "exit"],
+        vec!["--owner", "Bad Name", "firmware", "list"],
+    ] {
+        let directory = fixture();
+        let root = directory.path();
+        let mut command = wrapper(root);
+        command.args(args);
+        oer_process::Context::default()
+            .with(oer_stand_owners::OWNER_KEY, "enclosing-owner")
+            .with(oer_stand_arbiter::LEASE_KEY, "enclosing-lease")
+            .apply(&mut command)
+            .unwrap();
+        let output = command.output().unwrap();
+        assert!(!output.status.success());
+        let error = String::from_utf8(output.stderr).unwrap();
+        assert!(error.contains("`Bad Name` is not an owner name"), "{error}");
+        assert!(!root.join("cargo-args").exists(), "runner was built");
+        assert!(!root.join("arbiter").exists(), "job was created");
+    }
+}
+
+#[test]
 fn forwards_runner_exit_and_uses_locked_cargo_with_explicit_offline_only() {
     let directory = fixture();
     let root = directory.path();

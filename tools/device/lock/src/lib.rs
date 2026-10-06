@@ -8,7 +8,8 @@
 //! [`Holder`] record into the file, so a refused process names who holds
 //! the board. A lock is held for a whole operation: a flash with its reopen
 //! and start, a reset, a whole monitor, or a HIL lease with its power cycles.
-//! The kernel releases it when its broker exits, after admitted I/O closes.
+//! The broker explicitly unlocks it after admitted I/O closes, independently
+//! of unrelated descriptor copies inherited by a concurrent fork.
 //!
 //! An independent lifetime broker owns the lock's file description. Owned
 //! guards keep its admission channel alive; delegates carry an explicit

@@ -64,7 +64,13 @@ pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> 
         println!("{id}");
         return Ok(std::process::ExitCode::SUCCESS);
     }
-    let owner = options.owner(ctx).ok();
+    let owner = match options.owner(ctx) {
+        Ok(owner) => Some(owner),
+        // Read-only runner commands need no registered stand owner. Invalid
+        // overrides and registry/context failures must still reach the caller.
+        Err(error) if error.is::<oer_stand_owners::NoOwner>() => None,
+        Err(error) => return Err(error),
+    };
     // Only a command that produces runs is a job; a read-only one is not.
     let mut job = if produces_runs(&args) {
         Some(oer_hil_experiment::job::Running::begin(
@@ -286,7 +292,10 @@ impl LeaseOptions {
                     .ok_or_else(|| format!("{name} requires a value").into())
             };
             match name {
-                "--owner" => options.owner = Some(value()?),
+                "--owner" => {
+                    options.owner =
+                        Some(oer_stand_owners::Owner::new(value()?.trim())?.to_string());
+                }
                 _ => {
                     remaining.push(argument.clone());
                     remaining.extend(rest.cloned());
@@ -328,6 +337,7 @@ impl LeaseOptions {
                     continue;
                 }
             };
+            let owner = oer_stand_owners::Owner::new(owner.trim())?.to_string();
             if let Some(earlier) = options.owner.as_ref().filter(|earlier| **earlier != owner) {
                 return Err(format!("--owner is given twice, as {earlier} and {owner}").into());
             }

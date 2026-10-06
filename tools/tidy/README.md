@@ -16,7 +16,11 @@ cargo tidy fetch
 packages and host foundations. A changed firmware Git pin cannot prevent
 its offline startup. `cargo tidy` runs `cargo run --quiet --manifest-path
 tools/tidy/Cargo.toml -p oer-tidy --`; `--root DIR` checks another checkout.
-Its host build outputs live in `tools/tidy/target/`.
+Its host build outputs live in `tools/tidy/target/`. If its own registry
+dependencies are absent from Cargo's offline cache, bootstrap with
+`cargo --config net.offline=false tidy fetch`. A moved firmware Git pin alone
+does not require this override. The host CI test and Clippy jobs cover both
+the root workspace and this workspace.
 The push gate invokes it as a process, and CI runs it as the first check of
 the registry's `host` job (`cargo xtask check tier full --job host`). Like every
 repository tool, it prints its commands for `__command-tree`, which `cargo

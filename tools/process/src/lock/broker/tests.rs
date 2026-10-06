@@ -44,6 +44,32 @@ fn wait_for_release(path: &Path) {
 }
 
 #[test]
+fn release_ignores_unrelated_file_description_copies_after_io_drains() {
+    let directory = tempfile::tempdir().unwrap();
+    for draining in [false, true] {
+        let path = directory.path().join(format!("device-{draining}.lock"));
+        let token = "a".repeat(TOKEN_BYTES);
+        let lock = FileLock::acquire(&path, Mode::Exclusive).unwrap();
+        // A concurrent fork can retain this same open file description.
+        // Keep a duplicate alive to make close-only release fail reliably.
+        let unrelated = lock.file().try_clone().unwrap();
+        let broker = LockBroker::start(lock, &token).unwrap();
+        let operation = draining.then(|| LockBroker::operation(&path, &token).unwrap());
+        drop(broker);
+        if operation.is_some() {
+            assert!(
+                FileLock::try_acquire(&path, Mode::Exclusive)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        drop(operation);
+        wait_for_release(&path);
+        drop(unrelated);
+    }
+}
+
+#[test]
 fn long_lock_paths_and_identical_filenames_have_independent_brokers() {
     let directory = tempfile::tempdir().unwrap();
     let long = directory.path().join("x".repeat(120));

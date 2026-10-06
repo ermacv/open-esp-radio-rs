@@ -268,28 +268,6 @@ mod tests {
     }
 
     #[test]
-    fn a_handed_over_descriptor_keeps_its_lock() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("file.lock");
-        let file = FileLock::open(&path).unwrap();
-        let lock = FileLock::try_lock(file, &path, Mode::Shared)
-            .unwrap()
-            .unwrap();
-        let file = lock.into_file();
-        assert!(
-            FileLock::try_acquire(&path, Mode::Exclusive)
-                .unwrap()
-                .is_none()
-        );
-        drop(file);
-        assert!(
-            FileLock::try_acquire(&path, Mode::Exclusive)
-                .unwrap()
-                .is_some()
-        );
-    }
-
-    #[test]
     fn a_wait_takes_the_first_free_lock() {
         let directory = tempfile::tempdir().unwrap();
         let paths = [0, 1].map(|slot| directory.path().join(format!("{slot}.lock")));

@@ -163,6 +163,11 @@ pub enum PortStationError<E, U> {
     ScanPlan(StaScanPlanError),
     /// No access point of the SSID admits the security policy.
     NoCandidate,
+    /// The candidate requires a channel different from the owner's grant.
+    ChannelMismatch {
+        granted: Channel,
+        required: Channel,
+    },
     Security(StaSecurityError),
     SaeCommit(SaeError),
     Join(StaJoinError<PortLinkError<E>>),
@@ -363,6 +368,24 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         StaAttempt::new(PortAttemptPort::new()).run(self).await
     }
 
+    /// Join on a channel already set by the port's owner. Discover the
+    /// upstream there, then run the normal authentication, association and
+    /// security transaction without scanning other channels or retuning.
+    /// The profile's dwell duration applies to this one channel; its cached
+    /// candidate is refreshed, including after an upstream channel switch.
+    /// The owner must keep the port on `channel` throughout the attempt.
+    pub async fn connect_on(
+        self,
+        channel: Channel,
+    ) -> AssociationAttemptOutcome<Self, Self, PortAttemptError<X>> {
+        StaAttempt::new(PortAttemptPort {
+            channel: Some(channel),
+            marker: PhantomData,
+        })
+        .run(self)
+        .await
+    }
+
     fn context(&mut self) -> Result<ConnectionParts<'_, 'p, X>, PortLinkError<PortError<X>>> {
         let Self {
             link,
@@ -476,9 +499,9 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             )))
     }
 
-    async fn prepare_candidate(&mut self) -> StepResult<X> {
+    async fn prepare_candidate(&mut self, channel: Option<Channel>) -> StepResult<X> {
         self.report = PortAttemptReport::default();
-        if !self.refresh && self.candidate.is_some() {
+        if channel.is_none() && !self.refresh && self.candidate.is_some() {
             return Ok(());
         }
         self.candidate = None;
@@ -503,8 +526,18 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             target,
             profile.dwell_tick,
         );
+        let scan = match channel {
+            Some(channel) => scan.on_channel(channel),
+            None => scan,
+        };
+        let channels = channel.as_slice();
+        let channels = if channel.is_some() {
+            channels
+        } else {
+            profile.channels
+        };
         let mut service = StaCandidateScanService::new(StaScanBackend::new(profile.scan));
-        match service.run(scan, profile.channels).await {
+        match service.run(scan, channels).await {
             StaCandidateScanExit::Selected { candidate, .. } => {
                 self.candidate = Some(candidate);
                 self.refresh = false;
@@ -549,7 +582,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         .ok()
     }
 
-    async fn select_channel(&mut self) -> StepResult<X> {
+    async fn select_channel(&mut self, granted: Option<Channel>) -> StepResult<X> {
         let candidate =
             self.candidate
                 .ok_or(StaAttemptStepError::terminal(PortStationError::State(
@@ -560,10 +593,20 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             .ok_or(StaAttemptStepError::refresh_candidate(
                 PortStationError::NoCandidate,
             ))?;
-        self.link
-            .retune(channel)
-            .await
-            .map_err(|error| StaAttemptStepError::retry_current(PortStationError::Link(error)))?;
+        if let Some(granted) = granted {
+            if channel != granted {
+                return Err(StaAttemptStepError::refresh_candidate(
+                    PortStationError::ChannelMismatch {
+                        granted,
+                        required: channel,
+                    },
+                ));
+            }
+        } else {
+            self.link.retune(channel).await.map_err(|error| {
+                StaAttemptStepError::retry_current(PortStationError::Link(error))
+            })?;
+        }
         // Authentication and Association already contend with the access
         // point's advertised parameters, as the vendor station does.
         if let Some(parameters) = candidate.wmm_parameters() {
@@ -861,13 +904,17 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
 
 /// The [`StaAttemptPort`] of a [`PortStation`]: every phase runs on the
 /// station it is handed.
-pub struct PortAttemptPort<'p, X>(PhantomData<fn() -> PortStation<'p, X>>)
-where
-    X: PortStationEnv;
+pub struct PortAttemptPort<'p, X: PortStationEnv> {
+    channel: Option<Channel>,
+    marker: PhantomData<fn() -> PortStation<'p, X>>,
+}
 
 impl<X: PortStationEnv> PortAttemptPort<'_, X> {
     pub const fn new() -> Self {
-        Self(PhantomData)
+        Self {
+            channel: None,
+            marker: PhantomData,
+        }
     }
 }
 
@@ -891,11 +938,11 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
     type Error = PortAttemptError<X>;
 
     async fn prepare_candidate<'a>(&'a mut self, owner: &'a mut Self::Owner) -> StepResult<X> {
-        owner.prepare_candidate().await
+        owner.prepare_candidate(self.channel).await
     }
 
     async fn select_channel<'a>(&'a mut self, owner: &'a mut Self::Owner) -> StepResult<X> {
-        owner.select_channel().await
+        owner.select_channel(self.channel).await
     }
 
     async fn authenticate<'a>(&'a mut self, owner: &'a mut Self::Owner) -> StepResult<X> {

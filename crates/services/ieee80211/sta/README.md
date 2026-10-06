@@ -213,6 +213,16 @@ sends the probes of `STATION_LINK_PROBE`, three addressed to the access
 point and two broadcast, 500 ms apart, and leaves with
 `PortDisconnect::BeaconLoss` after the last goes unanswered.
 
+`PortStation::connect_on(channel)` runs a join on the channel its port owner
+already set: it discovers the upstream on that one channel, refreshes a
+cached candidate, and runs the same authentication, association and security
+transaction as `connect`. It never retunes or enters port-wide monitor mode.
+The owner must keep the channel granted throughout the attempt and serve
+any other interfaces beside it. A candidate requiring a different primary
+channel or width returns `PortStationError::ChannelMismatch` before
+authentication, retaining the station for another attempt. Standalone
+`connect` continues to scan the profile's channel plan and tune its candidate.
+
 The station follows its access point's announced channel switches but does
 not retune itself: the port's channel belongs to the port's owner, which
 keeps it for every interface. A Channel Switch or Extended Channel Switch

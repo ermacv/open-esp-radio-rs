@@ -292,6 +292,8 @@ impl ModelTsf {
 struct State {
     enabled: bool,
     channel: Option<Channel>,
+    channel_updates: usize,
+    lifecycle_requests: usize,
     vifs: [Option<VifConfig>; 2],
     /// Each interface's TSF as the value it was last set to, the model's
     /// radio clock then and its relation.
@@ -596,6 +598,16 @@ impl<O: TxBody> LowerMacModel<O> {
         self.state.borrow().channel
     }
 
+    /// Accepted channel settings, including settings of the same channel.
+    pub fn channel_updates(&self) -> usize {
+        self.state.borrow().channel_updates
+    }
+
+    /// Lifecycle requests received while the model was not poisoned.
+    pub fn lifecycle_requests(&self) -> usize {
+        self.state.borrow().lifecycle_requests
+    }
+
     /// The EDCA parameter set last applied; `None` keeps the defaults.
     pub fn edca(&self) -> Option<oer_ieee80211_mac::extensions::wmm::WmmParameterSet> {
         self.state.borrow().edca
@@ -841,6 +853,7 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
         Ok(match setting {
             LowerMacSetting::Channel(channel) if MODEL_CAPABILITIES.supports_channel(channel) => {
                 state.channel = Some(channel);
+                state.channel_updates += 1;
                 Ok(())
             }
             LowerMacSetting::Channel(_) => Err(SettingError::UnsupportedChannel),
@@ -977,6 +990,7 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
         command: LifecycleCommand,
     ) -> Result<Result<(), LifecycleError>, ModelPoisoned> {
         let mut state = self.serving()?;
+        state.lifecycle_requests += 1;
         Ok(match command {
             LifecycleCommand::Enable if state.enabled => Err(LifecycleError::AlreadyInState),
             LifecycleCommand::Enable if state.channel.is_none() => {

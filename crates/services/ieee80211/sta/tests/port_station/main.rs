@@ -66,7 +66,6 @@ use oer_ieee80211_sta_service::{
 use oer_ieee80211_upper_mac::{
     AmpduRetryPolicy, FixedRate, ProtectEveryHeTxop, ProtectionPolicy, RetryLimits, TxPlanner,
 };
-use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortMsdu};
 use oer_ieee80211_upper_mac_service::frame::{NetworkBody, PORT_FRAME_CAPACITY};
 use oer_ieee80211_upper_mac_service::{
@@ -1099,6 +1098,58 @@ fn an_ht40_access_point_is_joined_on_its_40_mhz_channel_body() {
 }
 
 #[test]
+fn an_owner_grant_cannot_be_changed_by_the_joined_candidates_width() {
+    on_large_stack(an_owner_grant_cannot_be_changed_by_the_joined_candidates_width_body);
+}
+
+fn an_owner_grant_cannot_be_changed_by_the_joined_candidates_width_body() {
+    static HT40: AssociationCapabilities = AssociationCapabilities {
+        ht20: scripted_ap::HT_CAPABILITIES,
+        ht40: scripted_ap::HT_CAPABILITIES,
+        ..CAPABILITIES
+    };
+    let world = World::new();
+    let granted = channel(AP_CHANNEL);
+    let required = Channel::ghz2_4(AP_CHANNEL, ChannelWidth::Mhz40Above).unwrap();
+    world
+        .model
+        .apply(LowerMacSetting::Channel(granted))
+        .unwrap()
+        .unwrap();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    ap.ht40 = true;
+    let mut profile = profile();
+    profile.capabilities = &HT40;
+    let outcome = world.drive(
+        &mut ap,
+        world.station_with(open(), profile).connect_on(granted),
+    );
+    let AssociationAttemptOutcome::Failed(failure) = outcome else {
+        panic!("the candidate's 40 MHz channel was not granted");
+    };
+    let (mut station, _, _, error, _) = failure.into_parts();
+    assert!(
+        matches!(error, oer_ieee80211_sta_service::port::PortStationError::ChannelMismatch {
+        granted: actual_grant, required: actual_required,
+    } if actual_grant == granted && actual_required == required)
+    );
+    assert_eq!(world.model.channel(), Some(granted));
+    assert_eq!(ap.authentications, 0);
+    assert_eq!(ap.associations, 0);
+    assert_eq!(ap.probe_requests, [AP_CHANNEL]);
+    // The same returned owner can join once its composition grants 40 MHz.
+    world
+        .drive(&mut ap, station.link_mut().retune(required))
+        .unwrap();
+    let outcome = world.drive(&mut ap, station.connect_on(required));
+    let AssociationAttemptOutcome::Connected { connected, .. } = outcome else {
+        panic!("the granted candidate must connect");
+    };
+    assert_eq!(connected.connection().unwrap().config().channel, required);
+    assert_eq!(world.model.channel(), Some(required));
+}
+
+#[test]
 fn an_he_association_sets_the_bss_color_of_its_access_point() {
     on_large_stack(an_he_association_sets_the_bss_color_of_its_access_point_body);
 }
@@ -1695,10 +1746,10 @@ fn a_poisoned_port_ends_the_connection_and_every_send_body() {
     // A frame still queues; sending it ends on the poisoned port.
     world.send(&ethernet(PEER, IPV4, b"late"));
     let ran = world.drive(&mut ap, station.run_until(deadline, &mut |_| {}));
-    let Err(PortLinkError::Tx(UpperMacTxError::Port(error))) = ran else {
-        panic!("sending fails on the poisoned port: {ran:?}");
-    };
-    assert!(oer_ieee80211_lower_mac::PortError::is_poisoned(&error));
+    assert!(
+        matches!(ran, Err(PortLinkError::Poisoned)),
+        "sending fails on the poisoned port: {ran:?}"
+    );
 }
 
 #[test]

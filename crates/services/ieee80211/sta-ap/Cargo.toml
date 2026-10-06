@@ -18,6 +18,8 @@ oer-ieee80211-sta-service = { path = "../sta" }
 oer-ieee80211-upper-mac-service = { path = "../upper-mac" }
 
 [dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+oer-time-virtual = { path = "../../../adapters/virtual/time" }
 oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath", features = ["model"] }
 oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac", features = ["model"] }
 oer-ieee80211-mac = { path = "../../../protocols/ieee80211/mac" }

@@ -1,6 +1,6 @@
 # Vendor verification is its own host workspace with its own lock file and
 # target directory: the scenario engine, the chips' typed scenarios, the
-# probe code generator, the evidence producers and the `cargo vendor`
+# probe code generator, the evidence producers and the `cargo verification`
 # command line. It path-depends on the Blobray engine crates, the binary
 # analysis libraries, the vendor artifacts and the shard and register
 # binding formats; neither the radio workspace nor Blobray's links it.
@@ -16,13 +16,9 @@ members = [
     "harness/report",
     "harness/scenarios",
 ]
-# Packages below this directory that belong to another workspace: the shard
-# format, the PHY calibration capture and the PHY relation and calibration
-# the radio workspace's HIL links, and the firmware and host stands with workspaces of their own.
+# Chip firmware probes, vendor firmware and host stands have workspaces
+# of their own. Shared formats and calibration libraries live outside this tree.
 exclude = [
-    "evidence-shard",
-    "phy-calibration-capture",
-    "esp32s31/phy-relation",
     "esp32s31/hardware",
     "esp32s31/host",
     "esp32s31/probes",

@@ -12,7 +12,7 @@ description = "Chip-neutral engine of the typed vendor-comparison scenarios: Blo
 oer-elf = { path = "../../../tools/elf" }
 oer-process = { path = "../../../tools/process" }
 oer-vendor-evidence = { path = "../../../verification/evidence" }
-oer-vendor-evidence-shard = { path = "../../evidence-shard" }
+oer-vendor-evidence-shard = { path = "../../../hil/evidence-shard" }
 oer-register-contracts = { path = "../../../tools/registers/contracts" }
 oer-durable = { path = "../../../tools/durable" }
 oer-repo = { path = "../../../tools/repo" }

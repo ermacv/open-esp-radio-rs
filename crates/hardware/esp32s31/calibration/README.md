@@ -3,7 +3,7 @@
 Compares the cold PHY calibration of the pinned vendor firmware with the
 production calibration on the same ESP32-S31 board. The comparison uses the
 reviewed `phy_param` relation that the Blobray tracking scenario also uses
-([`oer-esp32s31-phy-relation`](../../phy-relation/README.md)'s `committed`).
+([`oer-esp32s31-phy-relation`](../phy-relation/README.md)'s `committed`).
 The production side goes through the same projection functions as the
 comparison probes (its `projection`).
 It does not depend on Blobray peripheral models.
@@ -27,7 +27,7 @@ and OTA selection the pipeline encodes around the vendor application. Every
 flash goes through the run's flash operation under its lease and lock of
 the board, which journals it. The results are the run bundle's: each boot is
 a typed observation (`vendor-boot-NN`, `production-boot-NN`, the chip-neutral
-[`oer-phy-calibration-capture`](../../../phy-calibration-capture)'s
+[`oer-phy-calibration-capture`](../../../../hil/phy-calibration-capture)'s
 `boots::VendorBoot` and `boots::ProductionBoot`), the images both sides ran
 are `images`, and the
 comparison is `comparison` (`compare::Summary`); a verdict other than MATCH
@@ -39,7 +39,7 @@ Cold calibration measures TX and RX DC and IQ that another transmission
 would bias, so the scenarios claim the 2.4 GHz band. For each of the
 table's `boots` rounds the workload takes these steps:
 
-1. Flash the [vendor calibration firmware](../../hil-vendor/README.md),
+1. Flash the [vendor calibration firmware](../../../../verification/esp32s31/hil-vendor/README.md),
    reset the board and keep the boot's `phy_param` report. Then request
    every readable register of the published radio-PHY ownership partition
    (`RadioPhyPeripherals` of `registers/esp32s31/policy/api.toml`,
@@ -58,7 +58,7 @@ table's `boots` rounds the workload takes these steps:
 
 `lifecycle = "ieee802154"` and `"ieee802154-restart"` read the registers
 with the IEEE 802.15.4 radio instead of Wi-Fi holding the PHY. The vendor
-side is the [IEEE 802.15.4 reference firmware](../../hil-vendor/ieee802154-reference)
+side is the [IEEE 802.15.4 reference firmware](../../../../verification/esp32s31/hil-vendor/ieee802154-reference)
 configured on channel 15 at 21 dBm and receiving, after one driver disable
 and enable for the restart point, read through its `PEEK` and `ANALOG`
 commands; a read that resets or hangs the chip is recorded as unreadable

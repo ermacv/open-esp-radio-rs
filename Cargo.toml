@@ -36,10 +36,8 @@ members = [
     "tools/vendor-artifacts",
     "tools/vendor-pins",
     "tools/repo",
-    "verification/*/hardware/calibration",
-    "verification/*/phy-relation",
-    "verification/evidence-shard",
-    "verification/phy-calibration-capture",
+    "hil/evidence-shard",
+    "hil/phy-calibration-capture",
     "hil/image-keys",
     "hil/protocol",
     "hil/schema",
@@ -117,6 +115,8 @@ members = [
     "crates/roles/*/bluetooth/radio",
     "crates/roles/espressif/ieee802154/radio",
     "crates/hardware/*/phy",
+    "crates/hardware/*/phy-relation",
+    "crates/hardware/*/calibration",
     "crates/hardware/*/pac/raw",
     "crates/hardware/*/pac",
     "crates/adapters/esp-hal/*/soc",
@@ -177,8 +177,8 @@ members = [
     "tools/registers/model",
     "tools/registers/review",
 ]
-# Independent workspaces below the root keep their own package ownership.
-exclude = ["examples", "platform", "hil/targets", "tools/tidy"]
+# Independent verification and firmware workspaces own their subtrees.
+exclude = ["examples", "platform", "hil/targets", "verification", "tools/tidy"]
 resolver = "3"
 
 [workspace.package]

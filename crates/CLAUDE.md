@@ -7,7 +7,7 @@ Production libraries, one directory per layer; the
 | --- | --- |
 | `protocols/` | Sans-IO protocol state machines and the ports their drivers implement |
 | `services/` | Executor-free drivers that wait on ports and feed the state machines |
-| `hardware/` | Chip and family PAC, HAL, PHY and radio drivers |
+| `hardware/` | Chip and family PAC, HAL, PHY and radio drivers; chip calibration relations and comparisons shared with verification and HIL |
 | `roles/` | Executor-free chip role compositions (Wi-Fi STA/AP, LE Controller) |
 | `runtime/` | Executor-independent async radio execution over the `oer-time` ports |
 | `adapters/`, `composition/` | Executor, `embassy-time` and board bindings; final compositions |

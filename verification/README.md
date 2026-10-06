@@ -5,24 +5,29 @@ vendor code, organized by level. The table names the ESP32-S31 owners; the
 [ESP32-C5 project](esp32c5/README.md) has the same structure. It contains no production driver behavior,
 no HIL board scenarios and no private vendor artifacts.
 
+`verification/Cargo.toml` owns the host CLI, harness, evidence producers and
+chip scenarios. Firmware probes and host stands use independent workspaces
+below their chip directory. The shared [shard format](../hil/evidence-shard)
+and [PHY capture](../hil/phy-calibration-capture/README.md) belong to the root
+workspace in `hil/`; chip calibration relations and comparisons belong to
+the root workspace in `crates/hardware/<chip>/`.
+
 | Level | Claim | Where |
 | --- | --- | --- |
 | L0 pins | which vendor code is the reference | [`esp32s31/artifacts.toml`](esp32s31/artifacts.toml) |
 | L1 facts | recovered constants, tables and register facts describe the pinned code | production `SOURCE:` blocks, [`registers`](../registers/README.md) evidence, [`esp32s31/facts`](esp32s31/facts) |
 | L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md); `cargo verification evidence` writes their shards to `esp32s31/evidence/scenarios` |
-| L3 hardware | the drivers work on the board and calibrate as the vendor firmware does | [`hil`](../hil/README.md), whose runs `cargo qualification hil-evidence` records as shards to `hil/evidence/<chip>/`, [`esp32s31/hardware`](esp32s31/hardware/calibration/README.md) with [`esp32s31/hil-vendor`](esp32s31/hil-vendor/README.md) |
+| L3 hardware | the drivers work on the board and calibrate as the vendor firmware does | [`hil`](../hil/README.md), whose runs `cargo qualification hil-evidence` records as shards to `hil/evidence/<chip>/`, the [ESP32-S31 calibration comparison](../crates/hardware/esp32s31/calibration/README.md) with [`esp32s31/hil-vendor`](esp32s31/hil-vendor/README.md) |
 | L4 readiness | a capability is qualified | [`qualification`](../qualification/README.md) |
 
 ```text
 verification/
-  evidence/          oer-vendor-evidence: the shard format, the one shard
-                     writer, currency, the verdict source policy and the
-                     producer contract, shared with xtask and qualification
+  cli/               cargo verification: the host command line
+  evidence/          oer-vendor-evidence: evidence producers and orchestration,
+                     the verdict source policy and the producer contract;
+                     re-exports the root workspace's shard format
   harness/           probe code generation and macros, and the chip-neutral
                      scenario engine (harness/scenarios)
-  phy-calibration-capture/
-                     L3: the chip-neutral capture of the PHY calibration
-                     cross-check, which the HIL phy family records
   esp32s31/
     artifacts.toml   L0: every pinned archive, ROM ELF and SDK build
     facts/           L1: cited-function fingerprints, recovered name maps
@@ -33,8 +38,7 @@ verification/
     evidence/        the L2 shards (scenarios/) once generated; no shard
                      is tracked at present
     hil-vendor/      L3: vendor ESP-IDF firmware for hardware cross-checks
-    hardware/        L3: what the vendor-versus-production board
-                     cross-checks compare (the HIL phy family captures them)
+    hardware/        L3: isolated firmware probes of board state
   esp32c5/           the same levels for the ESP32-C5: pins, facts, probes,
                      scenarios and a board register probe
 ```
@@ -71,7 +75,7 @@ vendor behavior they cover.
 build <image>` builds each vendor firmware of `hil-vendor/` against
 the pinned ESP-IDF, with its PHY, coexistence, Wi-Fi and Bluetooth library
 submodules replaced by the pinned archives, and the
-[calibration cross-check](esp32s31/hardware/calibration/README.md) compares
+[calibration cross-check](../crates/hardware/esp32s31/calibration/README.md) compares
 its cold calibration with production's on the same board through the
 tracking scenario's reviewed relation: the HIL `phy` family's
 `vendor-calibration` scenarios (`hil/scenarios/phy/`) capture both sides and

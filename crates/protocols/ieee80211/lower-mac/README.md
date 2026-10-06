@@ -177,7 +177,13 @@ control frame) or a radio on the channel has an interface of its first
 address, `AckTimeout` otherwise. The model ciphers nothing: a protected
 frame arrives decrypted and verified when the receiver holds a pairwise key
 of its transmitter (a group key for a group frame) and is not received
-otherwise. Air time, contention, loss and reception levels are not modelled.
+otherwise. An overheard CTS-to-self defers other radios' published attempts
+until its Duration expires, independently of their interface receive
+filters; a CTS addressed to one of their own interfaces does not reserve
+their medium. The harness advances to each model's `nav_until()` as well as
+the services' deadlines, converting that radio instant through its clock
+sample. Receive metadata names the receiver's configured channel. Air time,
+contention, loss and reception levels are not modelled.
 
 The ESP32-S31 MAC converts its chip values in
 [`mac/src/portable.rs`](../../../hardware/esp32s31/driver/ieee80211/mac/src/portable.rs):

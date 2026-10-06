@@ -294,6 +294,7 @@ struct State {
     channel: Option<Channel>,
     channel_updates: usize,
     lifecycle_requests: usize,
+    nav: Option<(Channel, Ieee80211Instant)>,
     vifs: [Option<VifConfig>; 2],
     /// Each interface's TSF as the value it was last set to, the model's
     /// radio clock then and its relation.
@@ -596,6 +597,40 @@ impl<O: TxBody> LowerMacModel<O> {
     /// The channel the model is tuned to.
     pub fn channel(&self) -> Option<Channel> {
         self.state.borrow().channel
+    }
+
+    /// The end of the NAV heard on this channel, in this model's radio
+    /// clock. An air harness must advance to this deadline even when all
+    /// senders are waiting for the medium.
+    pub fn nav_until(&self) -> Option<Ieee80211Instant> {
+        let state = self.state.borrow();
+        state
+            .nav
+            .filter(|(channel, until)| Some(*channel) == state.channel && *until > self.now.get())
+            .map(|(_, until)| until)
+    }
+
+    fn reserve_medium(&self, channel: Channel, micros: u16) {
+        if micros == 0 || micros > 32_767 {
+            return;
+        }
+        let Some(until) = self
+            .now
+            .get()
+            .checked_add(oer_time::RadioDuration::from_micros(u32::from(micros)))
+        else {
+            return;
+        };
+        let mut state = self.state.borrow_mut();
+        if !state.enabled {
+            return;
+        }
+        if state
+            .nav
+            .is_none_or(|(old_channel, old)| old_channel != channel || until > old)
+        {
+            state.nav = Some((channel, until));
+        }
     }
 
     /// Accepted channel settings, including settings of the same channel.

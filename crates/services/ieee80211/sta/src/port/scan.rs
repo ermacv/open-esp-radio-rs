@@ -9,7 +9,7 @@ use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     scan::{ScanRecord, ScanTable, best_matching_ssid_and_security},
     security::StaSecurityPolicy,
-    station::{StaSequenceCounter, StationFrameError},
+    station::{StaSequenceCounter, StationFrameError, select_association_rsn},
 };
 use oer_ieee80211_sta::scan::{ActiveProbeOutcome, StaScanChannelContext, StaScanPort};
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
@@ -66,6 +66,7 @@ pub struct PortScan<'a, 'p, X: PortStationEnv, const N: usize> {
     /// An owner-selected channel; a visit must not tune the shared port.
     fixed_channel: Option<Channel>,
     tick_deadline: Option<Instant>,
+    known_bssid: Option<[u8; 6]>,
 }
 
 impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
@@ -91,6 +92,7 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
             channel: 0,
             fixed_channel: None,
             tick_deadline: None,
+            known_bssid: None,
         }
     }
 
@@ -110,6 +112,50 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
     pub(crate) fn on_channel(mut self, channel: Channel) -> Self {
         self.fixed_channel = Some(channel);
         self
+    }
+
+    pub(crate) fn known_bssid(mut self, bssid: Option<[u8; 6]>) -> Self {
+        self.known_bssid = bssid;
+        self
+    }
+
+    /// Observe one owner-selected channel up to an absolute deadline.
+    /// This operation never tunes the port or starts monitor reception and
+    /// does not transmit a probe. The receive filter is closed even when
+    /// the observation fails.
+    pub(crate) async fn listen_until(
+        &mut self,
+        channel: Channel,
+        until: Instant,
+    ) -> Result<Option<ScanRecord>, PortLinkError<PortError<X>>> {
+        if self.fixed_channel != Some(channel) {
+            return Err(PortLinkError::MissingState);
+        }
+        self.begin_scan().await?;
+        self.channel = channel.number();
+        self.link.discard_backlog().await;
+        self.link
+            .configure(None, ReceiveFilter::OTHER_BSS_MANAGEMENT)?;
+        let result = async {
+            while let Some(input) = self.link.next_input(self.timer, until).await {
+                match input {
+                    PortInput::Frame(frame) if frame.meta().channel == channel => {
+                        self.observe(&frame);
+                        if let Some(candidate) = self.select_candidate()? {
+                            return Ok(Some(candidate));
+                        }
+                    }
+                    PortInput::Poisoned => return Err(PortLinkError::Poisoned),
+                    PortInput::Frame(_) | PortInput::Tbtt(_) | PortInput::EventsLost => {}
+                }
+            }
+            Ok(None)
+        }
+        .await;
+        let stopped = self.link.configure(None, ReceiveFilter::NONE);
+        let candidate = result?;
+        stopped?;
+        Ok(candidate)
     }
 
     fn observe(&mut self, frame: &PortFrame<PortRxBuffer<X>>) {
@@ -290,11 +336,24 @@ impl<X: PortStationEnv, const N: usize> StaScanPort for PortScan<'_, '_, X, N> {
     }
 
     fn select_candidate(&mut self) -> Result<Option<ScanRecord>, Self::Error> {
-        Ok(best_matching_ssid_and_security(
+        let candidate = best_matching_ssid_and_security(
             self.table.records(),
             self.target.ssid,
             self.target.policy,
         )
-        .copied())
+        .copied();
+        // A hidden beacon can identify a BSS we have already joined. Do
+        // not infer the SSID of an unknown BSSID or accept changed security.
+        Ok(candidate.or_else(|| {
+            self.table
+                .records()
+                .iter()
+                .find(|record| {
+                    Some(record.bssid) == self.known_bssid
+                        && record.ssid_bytes().is_empty()
+                        && select_association_rsn(record, self.target.policy).is_ok()
+                })
+                .copied()
+        }))
     }
 }

@@ -41,6 +41,12 @@ and SA Query is not answered. The direct S31 access point serves no WPA3 at
 all (`wifi-security-wpa3-personal-access-point` is `absent`). Data: each authorized peer (Open by its association, a protected BSS's by
 its handshake) has a link holding its pairwise key, the CCMP packet numbers
 sent to it, its receive replay state and its duplicate filter.
+`run_until` completes a started exchange and a due beacon, then returns
+before starting another queued exchange past its deadline, so the port
+owner can pause AP TX for an absence. Frames retained from another channel
+are discarded after returning home. `management_rate` and `coex_priority`
+give the owner the BSS's CTS reservation parameters.
+
 `run_until(deadline, deliver)` takes the network's frames, one destination
 after another, one at a time when it is ready to send them, and sends each,
 its MPDU header encoded and its payload from the network's owner

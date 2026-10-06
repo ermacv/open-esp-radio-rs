@@ -551,6 +551,28 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
 
     // A wildcard request, a directed one inside the response interval, then
     // one for another SSID, and a directed one after the interval.
+    // A probe queued from the owner's off-channel absence must first be
+    // discarded; replying after returning would use the wrong channel.
+    let boundary = timer.now.get();
+    model.receive(
+        &probe_request([0xff; 6], [0xff; 6], b""),
+        RxMeta::unavailable(Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap()),
+    );
+    drive(
+        &model,
+        &router,
+        &timer,
+        access_point.run_until(Instant::from_micros(boundary + 500), &mut |_| {}),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    assert!(
+        model
+            .submitted()
+            .iter()
+            .all(|attempt| attempt.frames[0][0] != 0x50)
+    );
     let start = timer.now.get();
     let requests = [
         (start + 1_000, probe_request([0xff; 6], [0xff; 6], b"")),
@@ -1200,6 +1222,18 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
     assert_eq!(access_point.counters().duplicates, 1);
 
     send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"));
+    // A completed run retains network owners queued at its boundary.
+    let boundary = Instant::from_micros(timer.now.get());
+    drive(
+        &model,
+        &router,
+        &timer,
+        access_point.run_until(boundary, &mut |_| {}),
+        &[],
+        |_| {},
+    )
+    .unwrap();
+    assert!(downlink(&model, STATION).is_empty());
     serve(
         &model,
         &router,

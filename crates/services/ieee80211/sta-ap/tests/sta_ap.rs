@@ -56,12 +56,13 @@ use oer_ieee80211_upper_mac::{
 };
 use oer_ieee80211_upper_mac_service::{
     PortRouter,
+    absence::{AbsenceError, AbsenceState, AbsenceWindow, PortAbsence},
     aggregate::PortAmpduAggregation,
     client::{PortClient, PortClientConfig, PortClientEnv},
     frame::NetworkBody,
 };
 use oer_network_interface::NetworkInterfaceId;
-use oer_time::{Clock, Duration, Instant, RadioInstant};
+use oer_time::{Clock, Duration, Instant, RadioInstant, Timer};
 use oer_time_virtual::VirtualClock;
 
 /// Run `body` on a thread whose stack holds the drivers' unoptimized
@@ -443,6 +444,27 @@ impl World {
             let next = self
                 .timer
                 .next_deadline()
+                .into_iter()
+                .chain(
+                    [self.upstream.0, self.pair.0, self.client.0]
+                        .into_iter()
+                        .filter_map(|model| {
+                            let until = model.nav_until()?;
+                            let sample = model.clock_sample().unwrap();
+                            model
+                                .clock_info()
+                                .to_monotonic_with(
+                                    oer_ieee80211_lower_mac::Ieee80211Stamp {
+                                        at: until,
+                                        generation: sample.generation,
+                                    },
+                                    &sample,
+                                )
+                                .ok()
+                                .map(|projected| projected.at)
+                        }),
+                )
+                .min()
                 .expect("the drivers wait for an event nothing produces");
             self.timer.advance_to(next);
             for model in [self.upstream.0, self.pair.0, self.client.0] {
@@ -554,6 +576,14 @@ fn unconnected_pair(
     world: &World,
     policy: ApFollowPolicy,
 ) -> PortStaAp<'static, Env, Env, &'static VirtualTimer> {
+    unconnected_pair_with_search(world, policy, ApSearchPolicy::new(&[]))
+}
+
+fn unconnected_pair_with_search(
+    world: &World,
+    policy: ApFollowPolicy,
+    search: ApSearchPolicy<'static>,
+) -> PortStaAp<'static, Env, Env, &'static VirtualTimer> {
     PortStaAp::new(
         station(
             world.pair.1,
@@ -570,7 +600,7 @@ fn unconnected_pair(
             ghz2_4(1),
             world.pair_frames,
         ),
-        ChannelCoordinator::new(policy, ApSearchPolicy::new(&[])),
+        ChannelCoordinator::new(policy, search),
         world.timer,
     )
 }
@@ -580,6 +610,18 @@ fn unconnected_pair(
 fn set_up(
     world: &World,
     policy: ApFollowPolicy,
+) -> (
+    PortAccessPoint<'static, Env>,
+    PortStaAp<'static, Env, Env, &'static VirtualTimer>,
+    PortStation<'static, Env>,
+) {
+    set_up_with_search(world, policy, ApSearchPolicy::new(&[]))
+}
+
+fn set_up_with_search(
+    world: &World,
+    policy: ApFollowPolicy,
+    search: ApSearchPolicy<'static>,
 ) -> (
     PortAccessPoint<'static, Env>,
     PortStaAp<'static, Env, Env, &'static VirtualTimer>,
@@ -597,7 +639,7 @@ fn set_up(
         .drive(upstream.client_mut().retune(ghz2_4(6)))
         .unwrap();
     upstream.start(ghz2_4(6)).unwrap();
-    let mut pair = unconnected_pair(world, policy);
+    let mut pair = unconnected_pair_with_search(world, policy, search);
     let until = world.after(3_000);
     let (_, joined) = world.drive(join(serve_upstream(&mut upstream, until), pair.connect()));
     joined.unwrap();
@@ -1077,6 +1119,474 @@ fn reconnect_waits_for_an_announced_move_after_the_upstream_is_lost_inner() {
 #[test]
 fn a_failed_authentication_retains_the_station_and_keeps_publishing_beacons() {
     on_large_stack(a_failed_authentication_retains_the_station_and_keeps_publishing_beacons_inner);
+}
+
+#[test]
+fn passive_absences_are_nav_protected_dense_then_sparse_and_keep_peer_data() {
+    on_large_stack(passive_absences_are_nav_protected_dense_then_sparse_and_keep_peer_data_inner);
+}
+
+fn passive_absences_are_nav_protected_dense_then_sparse_and_keep_peer_data_inner() {
+    let world = World::new();
+    let search = ApSearchPolicy::new(&SCANNED);
+    let (mut upstream, mut pair, mut client) = set_up_with_search(&world, policy(), search);
+    let peer = pair.access_point().service().peer_status(CLIENT).unwrap();
+    lose_upstream(&world, &mut upstream, &mut pair);
+    let lost = world.timer.now();
+    let submitted = world.pair.0.submitted().len();
+    let lifecycle = world.pair.0.lifecycle_requests();
+    let to_ap = ethernet(PAIR_ACCESS_POINT, CLIENT, b"uplink during absence");
+    let to_client = ethernet(CLIENT, PAIR_ACCESS_POINT, b"downlink during absence");
+    let mut received_ap = Vec::new();
+    let mut received_client = Vec::new();
+    let mut queued = false;
+    let mut away = None;
+    let mut windows = Vec::new();
+    let until = world.after(33_000);
+    let (pair_result, client_result) = world.drive_observing(
+        join(
+            pair.run_until(until, &mut |_| {}, &mut |msdu| {
+                let parts = msdu.parts();
+                let mut frame = vec![0; parts.length()];
+                parts.copy_to(&mut frame).unwrap();
+                received_ap.push(frame);
+            }),
+            client.run_until(until, &mut |msdu| {
+                let parts = msdu.parts();
+                let mut frame = vec![0; parts.length()];
+                parts.copy_to(&mut frame).unwrap();
+                received_client.push(frame);
+            }),
+        ),
+        || {
+            let channel = world.pair.0.channel().unwrap();
+            if channel != ghz2_4(6) {
+                if away.is_none() {
+                    assert!(world.client.0.nav_until().is_some(), "departure before CTS");
+                    away = Some((world.timer.now(), channel));
+                }
+                assert!(
+                    world.pair.0.published().is_empty(),
+                    "AP TX in a receive-only visit"
+                );
+                if !queued {
+                    assert!(world.client_frames.push(TestFrame(to_ap.clone())).is_ok());
+                    assert!(world.pair_frames.push(TestFrame(to_client.clone())).is_ok());
+                    queued = true;
+                }
+            } else if let Some((start, channel)) = away.take() {
+                let end = world.timer.now();
+                assert!(end.saturating_duration_since(start) <= search.dwell);
+                windows.push((start, end, channel));
+            }
+            assert_eq!(world.pair.0.lifecycle_requests(), lifecycle);
+        },
+    );
+    assert_eq!(pair_result.unwrap(), None);
+    assert_eq!(client_result.unwrap(), None);
+    assert!(away.is_none());
+    assert_eq!(received_ap, [to_ap]);
+    assert_eq!(received_client, [to_client]);
+    assert!(world.pair_frames.is_empty());
+    assert!(world.client_frames.is_empty());
+    assert!(pair.station().connection().is_none());
+    let after = pair.access_point().service().peer_status(CLIENT).unwrap();
+    assert_eq!(after.association_id, peer.association_id);
+    assert_eq!(after.association_epoch, peer.association_epoch);
+    let dense_end = lost.checked_add(search.dense_period).unwrap();
+    let dense: Vec<_> = windows
+        .iter()
+        .filter(|(start, _, _)| *start < dense_end)
+        .collect();
+    let sparse: Vec<_> = windows
+        .iter()
+        .filter(|(start, _, _)| *start >= dense_end)
+        .collect();
+    assert!(
+        (290..=295).contains(&dense.len()),
+        "{} dense visits",
+        dense.len()
+    );
+    assert!(
+        (2..=4).contains(&sparse.len()),
+        "{} sparse visits",
+        sparse.len()
+    );
+    for pair in dense.windows(2) {
+        assert_eq!(
+            pair[1].0.saturating_duration_since(pair[0].0),
+            Duration::from_micros(102_400)
+        );
+    }
+    for pair in sparse.windows(2) {
+        let gap = pair[1].0.saturating_duration_since(pair[0].0);
+        assert!(gap >= search.sparse_interval);
+        assert!(
+            gap < search
+                .sparse_interval
+                .checked_add(Duration::from_micros(102_400))
+                .unwrap()
+        );
+    }
+    for (index, (_, _, channel)) in windows.iter().enumerate() {
+        assert_eq!(*channel, ghz2_4(if index % 2 == 0 { 1 } else { 11 }));
+    }
+    let attempts = world.pair.0.submitted();
+    let attempts = &attempts[submitted..];
+    assert!(
+        attempts.iter().all(|attempt| attempt.frames[0][0] != 0x40),
+        "passive search sent a probe"
+    );
+    let reservations: Vec<_> = attempts
+        .iter()
+        .filter(|attempt| attempt.frames[0][0] == 0xc4)
+        .collect();
+    assert_eq!(reservations.len(), windows.len());
+    for reservation in reservations {
+        let frame = &reservation.frames[0];
+        assert_eq!(&frame[4..10], &PAIR_ACCESS_POINT);
+        let duration = u16::from_le_bytes([frame[2], frame[3]]);
+        assert!((1..=20_000).contains(&duration));
+    }
+}
+
+#[test]
+fn passive_search_rejoins_an_upstream_returning_on_the_same_channel() {
+    on_large_stack(|| passive_recovery(6));
+}
+
+#[test]
+fn passive_search_moves_the_access_point_by_csa_before_joining_a_different_channel() {
+    on_large_stack(|| passive_recovery(11));
+}
+
+fn passive_recovery(number: u8) {
+    let world = World::new();
+    let search = ApSearchPolicy::new(&SCANNED);
+    let (mut upstream, mut pair, mut client) = set_up_with_search(&world, policy(), search);
+    let peer = pair.access_point().service().peer_status(CLIENT).unwrap();
+    let aid = client.connection().unwrap().config().association_id;
+    lose_upstream(&world, &mut upstream, &mut pair);
+    let lifecycle = world.pair.0.lifecycle_requests();
+    let submitted = world.pair.0.submitted().len();
+    // Give the returning AP a beacon phase inside the passive window.
+    // Equal beacon intervals with a phase outside it are intentionally
+    // not a promise of eventual passive discovery.
+    let restart = pair
+        .access_point()
+        .schedule()
+        .unwrap()
+        .next_tbtt
+        .checked_add(Duration::from_millis(7))
+        .unwrap();
+    world.drive(world.timer.wait_until(restart));
+    world
+        .drive(upstream.client_mut().retune(ghz2_4(number)))
+        .unwrap();
+    upstream.start(ghz2_4(number)).unwrap();
+    let until = world.after(2_000);
+    world.drive(join(
+        serve_upstream(&mut upstream, until),
+        join(
+            serve_pair(&mut pair, until),
+            serve_client(&mut client, world.timer, until),
+        ),
+    ));
+    assert_eq!(
+        pair.station().connection().unwrap().config().channel,
+        ghz2_4(number)
+    );
+    assert_eq!(world.pair.0.channel(), Some(ghz2_4(number)));
+    assert_eq!(world.client.0.channel(), Some(ghz2_4(number)));
+    assert_eq!(client.connection().unwrap().config().association_id, aid);
+    assert_eq!(world.pair.0.lifecycle_requests(), lifecycle);
+    let after = pair.access_point().service().peer_status(CLIENT).unwrap();
+    assert_eq!(after.association_id, peer.association_id);
+    assert_eq!(after.association_epoch, peer.association_epoch);
+    let attempts = world.pair.0.submitted();
+    assert!(
+        attempts[submitted..]
+            .iter()
+            .all(|attempt| attempt.frames[0][0] != 0x40)
+    );
+    // Data still crosses the preserved downstream association after the move.
+    assert!(
+        world
+            .pair_frames
+            .push(TestFrame(ethernet(
+                CLIENT,
+                PAIR_ACCESS_POINT,
+                b"after recovery"
+            )))
+            .is_ok()
+    );
+    assert!(
+        world
+            .client_frames
+            .push(TestFrame(ethernet(
+                PAIR_ACCESS_POINT,
+                CLIENT,
+                b"after recovery"
+            )))
+            .is_ok()
+    );
+    let mut down = 0;
+    let mut up = 0;
+    let until = world.after(500);
+    let (_, (pair_result, client_result)) = world.drive(join(
+        serve_upstream(&mut upstream, until),
+        join(
+            pair.run_until(until, &mut |_| {}, &mut |_| up += 1),
+            client.run_until(until, &mut |_| down += 1),
+        ),
+    ));
+    assert_eq!(pair_result.unwrap(), None);
+    assert_eq!(client_result.unwrap(), None);
+    assert_eq!((up, down), (1, 1));
+}
+
+#[test]
+fn a_delayed_or_failed_cts_never_departures_without_a_live_reservation() {
+    on_large_stack(a_delayed_or_failed_cts_never_departures_without_a_live_reservation_inner);
+}
+
+fn a_delayed_or_failed_cts_never_departures_without_a_live_reservation_inner() {
+    let world = World::new();
+    let mut ap = access_point(
+        world.pair.1,
+        world.timer,
+        PAIR_ACCESS_POINT,
+        PAIR_SSID,
+        ghz2_4(6),
+        world.pair_frames,
+    );
+    world.drive(ap.client_mut().retune(ghz2_4(6))).unwrap();
+    ap.start(ghz2_4(6)).unwrap();
+    let lifecycle = world.pair.0.lifecycle_requests();
+    let window = AbsenceWindow {
+        home: ghz2_4(6),
+        channel: ghz2_4(11),
+        start: world.timer.now(),
+        until: world.after(20),
+    };
+    let mut delayed = false;
+    let mut state = AbsenceState::new();
+    let begun = world
+        .drive_observing(
+            PortAbsence::begin(
+                ap.client_mut(),
+                world.timer,
+                &mut state,
+                window,
+                MANAGEMENT_RATE,
+                CoexPriority::Normal,
+            ),
+            || {
+                assert_eq!(world.pair.0.channel(), Some(window.home));
+                if !delayed && world.pair.0.in_flight() > 0 {
+                    delayed = true;
+                    let late = window.until.checked_add(Duration::from_millis(1)).unwrap();
+                    world.timer.advance_to(late);
+                    for model in [world.upstream.0, world.pair.0, world.client.0] {
+                        model.set_now(RadioInstant::from_micros(late.as_micros()));
+                    }
+                }
+            },
+        )
+        .unwrap();
+    assert!(begun.is_none());
+    drop(begun);
+    assert!(delayed);
+    assert_eq!(world.pair.0.channel(), Some(window.home));
+    assert_eq!(world.pair.0.in_flight(), 0);
+
+    // An unsuccessful completion also leaves the operating channel alone.
+    world
+        .pair
+        .0
+        .respond([oer_ieee80211_lower_mac::model::ModelOutcome::Fail(
+            oer_ieee80211_lower_mac::TxStatus::Aborted,
+        )]);
+    let window = AbsenceWindow {
+        start: world.timer.now(),
+        until: world.after(20),
+        ..window
+    };
+    assert!(matches!(
+        world.drive(PortAbsence::begin(
+            ap.client_mut(),
+            world.timer,
+            &mut state,
+            window,
+            MANAGEMENT_RATE,
+            CoexPriority::Normal,
+        )),
+        Err(AbsenceError::Reservation(
+            oer_ieee80211_lower_mac::TxStatus::Aborted
+        ))
+    ));
+    assert_eq!(world.pair.0.channel(), Some(window.home));
+    assert_eq!(world.pair.0.lifecycle_requests(), lifecycle);
+}
+
+#[test]
+fn dropping_a_passive_visit_returns_home_without_an_in_flight_attempt() {
+    on_large_stack(dropping_a_passive_visit_returns_home_without_an_in_flight_attempt_inner);
+}
+
+fn dropping_a_passive_visit_returns_home_without_an_in_flight_attempt_inner() {
+    let world = World::new();
+    let (mut upstream, mut pair, mut client) =
+        set_up_with_search(&world, policy(), ApSearchPolicy::new(&SCANNED));
+    lose_upstream(&world, &mut upstream, &mut pair);
+    let until = world.after(1_000);
+    world.drive(async {
+        let mut station_deliver = |_: oer_ieee80211_upper_mac_service::client::PortMsdu<
+            '_,
+            oer_ieee80211_lower_mac::model::ModelRxBuffer,
+        >| {};
+        let mut ap_deliver = |_: oer_ieee80211_upper_mac_service::client::PortMsdu<
+            '_,
+            oer_ieee80211_lower_mac::model::ModelRxBuffer,
+        >| {};
+        let mut visit = pin!(pair.run_until(until, &mut station_deliver, &mut ap_deliver));
+        poll_fn(|context| {
+            assert!(visit.as_mut().poll(context).is_pending());
+            if world.pair.0.channel() != Some(ghz2_4(6)) {
+                assert_eq!(world.pair.0.in_flight(), 0);
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        })
+        .await;
+    });
+    assert_eq!(world.pair.0.channel(), Some(ghz2_4(6)));
+    assert_eq!(world.pair.0.in_flight(), 0);
+    assert!(pair.station().connection().is_none());
+    let until = world.after(500);
+    world.drive(join(
+        serve_pair(&mut pair, until),
+        serve_client(&mut client, world.timer, until),
+    ));
+    assert!(pair.access_point().service().peer_status(CLIENT).is_some());
+}
+
+#[test]
+fn a_failed_passive_return_blocks_clients_until_port_recovery() {
+    on_large_stack(a_failed_passive_return_blocks_clients_until_port_recovery_inner);
+}
+
+fn a_failed_passive_return_blocks_clients_until_port_recovery_inner() {
+    let world = World::new();
+    let mut ap = access_point(
+        world.pair.1,
+        world.timer,
+        PAIR_ACCESS_POINT,
+        PAIR_SSID,
+        ghz2_4(6),
+        world.pair_frames,
+    );
+    world.drive(ap.client_mut().retune(ghz2_4(6))).unwrap();
+    ap.start(ghz2_4(6)).unwrap();
+    let mut state = AbsenceState::new();
+    let window = AbsenceWindow {
+        home: ghz2_4(6),
+        channel: ghz2_4(11),
+        start: world.timer.now(),
+        until: world.after(20),
+    };
+    let guard = world
+        .drive(PortAbsence::begin(
+            ap.client_mut(),
+            world.timer,
+            &mut state,
+            window,
+            MANAGEMENT_RATE,
+            CoexPriority::Normal,
+        ))
+        .unwrap()
+        .unwrap();
+    world.pair.0.poison();
+    drop(guard);
+    assert!(state.recovery_required());
+    assert!(matches!(
+        world.drive(PortAbsence::begin(
+            ap.client_mut(),
+            world.timer,
+            &mut state,
+            window,
+            MANAGEMENT_RATE,
+            CoexPriority::Normal,
+        )),
+        Err(AbsenceError::RecoveryRequired)
+    ));
+}
+
+#[test]
+fn an_explicit_reconnect_can_complete_a_pending_current_channel_recovery() {
+    on_large_stack(an_explicit_reconnect_can_complete_a_pending_current_channel_recovery_inner);
+}
+
+fn an_explicit_reconnect_can_complete_a_pending_current_channel_recovery_inner() {
+    let world = World::new();
+    let (mut upstream, mut pair, _) = set_up(&world, policy());
+    lose_upstream(&world, &mut upstream, &mut pair);
+    let updates = world.pair.0.channel_updates();
+    upstream.start(ghz2_4(6)).unwrap();
+    let until = world.after(10);
+    world.drive(join(
+        serve_upstream(&mut upstream, until),
+        serve_pair(&mut pair, until),
+    ));
+    // Discovery completed at the caller's boundary; the auto-join is still
+    // pending, so the caller can explicitly choose fresh discovery instead.
+    assert!(pair.station().connection().is_none());
+    let until = world.after(500);
+    let (_, result) = world.drive(join(
+        serve_upstream(&mut upstream, until),
+        pair.reconnect(&mut |_| {}),
+    ));
+    result.unwrap();
+    let until = world.after(500);
+    world.drive(join(
+        serve_upstream(&mut upstream, until),
+        serve_pair(&mut pair, until),
+    ));
+    assert!(pair.station().connection().is_some());
+    assert_eq!(world.pair.0.channel_updates(), updates);
+    assert_eq!(
+        pair.station().connection().unwrap().config().channel,
+        ghz2_4(6)
+    );
+}
+
+#[test]
+fn invalid_search_windows_are_refused_before_reserving_or_retuning() {
+    on_large_stack(invalid_search_windows_are_refused_before_reserving_or_retuning_inner);
+}
+
+fn invalid_search_windows_are_refused_before_reserving_or_retuning_inner() {
+    for dwell in [Duration::ZERO, Duration::from_millis(21)] {
+        let world = World::new();
+        let mut search = ApSearchPolicy::new(&SCANNED);
+        search.dwell = dwell;
+        let (mut upstream, mut pair, _) = set_up_with_search(&world, policy(), search);
+        lose_upstream(&world, &mut upstream, &mut pair);
+        let updates = world.pair.0.channel_updates();
+        let submitted = world.pair.0.submitted().len();
+        assert!(matches!(
+            world.drive(pair.run_until(world.after(500), &mut |_| {}, &mut |_| {})),
+            Err(PortStaApError::Absence(AbsenceError::InvalidWindow))
+        ));
+        assert_eq!(world.pair.0.channel_updates(), updates);
+        assert!(
+            world.pair.0.submitted()[submitted..]
+                .iter()
+                .all(|attempt| attempt.frames[0][0] != 0xc4)
+        );
+        assert!(pair.access_point().service().peer_status(CLIENT).is_some());
+    }
 }
 
 fn a_failed_authentication_retains_the_station_and_keeps_publishing_beacons_inner() {

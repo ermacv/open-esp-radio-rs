@@ -680,6 +680,131 @@ fn an_open_join_connects_and_exchanges_data_both_ways() {
     on_large_stack(an_open_join_connects_and_exchanges_data_both_ways_body);
 }
 
+#[test]
+fn owner_observation_has_an_absolute_deadline_and_never_tunes_or_probes() {
+    on_large_stack(owner_observation_has_an_absolute_deadline_and_never_tunes_or_probes_body);
+}
+
+fn owner_observation_has_an_absolute_deadline_and_never_tunes_or_probes_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = world.station(open());
+    let updates = world.model.channel_updates();
+    let lifecycle = world.model.lifecycle_requests();
+    let until = Instant::from_micros(21_000);
+    assert_eq!(
+        world
+            .drive(&mut ap, station.observe_on_until(channel(1), until))
+            .unwrap(),
+        None
+    );
+    assert_eq!(world.timer.now(), until);
+    assert_eq!(world.model.channel_updates(), updates);
+    assert_eq!(world.model.lifecycle_requests(), lifecycle);
+    assert!(world.model.submitted().is_empty());
+    assert!(!world.model.monitoring());
+    assert_eq!(
+        world.model.vif_config(VifId(0)).unwrap().receive,
+        ReceiveFilter::NONE
+    );
+
+    world
+        .model
+        .apply(LowerMacSetting::Channel(channel(AP_CHANNEL)))
+        .unwrap()
+        .unwrap();
+    ap.next_beacon_micros = Some(22_000);
+    let until = Instant::from_micros(41_000);
+    assert_eq!(
+        world
+            .drive(
+                &mut ap,
+                station.observe_on_until(channel(AP_CHANNEL), until)
+            )
+            .unwrap(),
+        Some(channel(AP_CHANNEL))
+    );
+    assert_eq!(world.timer.now(), Instant::from_micros(22_000));
+    assert!(world.model.submitted().is_empty());
+    assert_eq!(
+        world.model.vif_config(VifId(0)).unwrap().receive,
+        ReceiveFilter::NONE
+    );
+}
+
+#[test]
+fn passive_recovery_identifies_only_the_known_hidden_bssid_and_joins_without_a_probe() {
+    on_large_stack(
+        passive_recovery_identifies_only_the_known_hidden_bssid_and_joins_without_a_probe_body,
+    );
+}
+
+fn passive_recovery_identifies_only_the_known_hidden_bssid_and_joins_without_a_probe_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let AssociationAttemptOutcome::Connected {
+        connected: mut station,
+        ..
+    } = world.drive(&mut ap, world.station(open()).connect())
+    else {
+        panic!("initial join");
+    };
+    world.drive(&mut ap, station.disconnect()).unwrap();
+    ap.next_beacon_micros = None;
+    let mut hidden = ap.beacon(0x80, [0xff; 6], 0);
+    assert_eq!(hidden[36], 0);
+    let ssid_len = usize::from(hidden[37]);
+    hidden.drain(38..38 + ssid_len);
+    hidden[37] = 0;
+    let mut unknown = hidden.clone();
+    unknown[16..22].copy_from_slice(&[0x02, 0, 0, 0, 0, 99]);
+    let mut wrong_security = hidden.clone();
+    wrong_security[34] |= 0x10;
+    for rejected in [unknown, wrong_security] {
+        ap.queue(rejected);
+        let until = world
+            .timer
+            .now()
+            .checked_add(Duration::from_millis(20))
+            .unwrap();
+        assert_eq!(
+            world
+                .drive(
+                    &mut ap,
+                    station.observe_on_until(channel(AP_CHANNEL), until)
+                )
+                .unwrap(),
+            None
+        );
+    }
+    let probes = ap.probe_requests.len();
+    ap.queue(hidden);
+    let until = world
+        .timer
+        .now()
+        .checked_add(Duration::from_millis(20))
+        .unwrap();
+    assert_eq!(
+        world
+            .drive(
+                &mut ap,
+                station.observe_on_until(channel(AP_CHANNEL), until)
+            )
+            .unwrap(),
+        Some(channel(AP_CHANNEL))
+    );
+    // The scan table keeps the beacon's empty SSID; only the join candidate
+    // uses the configured SSID of this previously joined BSSID.
+    assert!(station.scan_table().records()[0].ssid_bytes().is_empty());
+    assert_eq!(station.candidate().unwrap().ssid_bytes(), SSID);
+    let outcome = world.drive(&mut ap, station.connect_observed_on(channel(AP_CHANNEL)));
+    assert!(matches!(
+        outcome,
+        AssociationAttemptOutcome::Connected { .. }
+    ));
+    assert_eq!(ap.probe_requests.len(), probes);
+}
+
 fn an_open_join_connects_and_exchanges_data_both_ways_body() {
     let world = World::new();
     let mut ap = ScriptedAp::new(ApSecurity::Open);

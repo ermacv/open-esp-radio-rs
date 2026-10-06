@@ -3119,6 +3119,7 @@ dependencies = [
  "clap",
  "oer-chip-profile",
  "oer-command-tree",
+ "oer-device-lock",
  "oer-devices",
  "oer-durable",
  "oer-image",

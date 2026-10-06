@@ -29,6 +29,9 @@ permissions:
   contents: read
   issues: write
 
+env:
+  CARGO_NET_OFFLINE: 'false'
+
 jobs:
   reconcile:
     if: github.repository == 'ermacv/open-esp-radio-rs' && github.ref == 'refs/heads/main'

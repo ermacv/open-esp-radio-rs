@@ -126,3 +126,7 @@ that lease, its owner and job identity, and only the granted board capabilities.
 Ordinary subprocesses receive no lease context. Each board I/O operation is
 admitted by the device lifetime broker and retains exclusion through its ports,
 readers and external hardware commands after owner loss.
+`Grant::operations()` admits every selected board before an external command
+starts. `cargo stand lease` retains these guards and pins their lifetimes into
+the command, so a third-party flasher keeps exclusion while it closes its I/O
+even when the lease owner is killed.

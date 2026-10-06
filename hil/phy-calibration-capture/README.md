@@ -2,7 +2,7 @@
 
 The chip-neutral capture of the vendor-versus-production PHY calibration
 cross-check: what the HIL `phy` family
-([`oer-hil-family-phy`](../../hil/host/family/phy/README.md)) records on the
+([`oer-hil-family-phy`](../host/family/phy/README.md)) records on the
 board under test and a chip's comparison reads.
 
 - `boots`: the lifecycle point, each vendor and production boot and the
@@ -13,7 +13,7 @@ board under test and a chip's comparison reads.
 
 What a chip compares, and which register images it reads, belong to that
 chip's comparison, for the ESP32-S31
-[`oer-esp32s31-phy-vendor-calibration`](../esp32s31/hardware/calibration/README.md).
+[`oer-esp32s31-phy-vendor-calibration`](../../crates/hardware/esp32s31/calibration/README.md).
 It is a package of the root workspace, which the HIL family links.
 
 ```console

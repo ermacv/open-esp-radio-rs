@@ -1,7 +1,7 @@
 # Reviews of the hardware calibration cross-check fields.
 #
 # One entry per field of the `phy_param` relation
-# (verification/esp32s31/phy-relation/src/committed.rs). A field's margin is
+# (crates/hardware/esp32s31/phy-relation/src/committed.rs). A field's margin is
 # the widest range its vendor boots span in any one element; a production
 # element passes within its vendor range widened by that margin. `signed`
 # reads elements as two's-complement values, `mask` compares only the bits

@@ -692,9 +692,9 @@ fn tidy(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
 fn fmt(ctx: &Checkout, scope: Scope<'_>) -> Result<()> {
     let model;
     // Always the workspace's own packages by name: `--all` also walks path
-    // dependencies, and a dependency below another workspace's directory
-    // (verification/evidence-shard) makes cargo-fmt fail on the wrong
-    // workspace.
+    // dependencies across workspace boundaries, such as a firmware probe's
+    // macros in verification/harness/macros, and can make cargo-fmt fail
+    // on the wrong workspace.
     let runs: Vec<(String, Vec<&str>)> = match scope {
         Scope::Tree => {
             model = checks::common::model(ctx)?;

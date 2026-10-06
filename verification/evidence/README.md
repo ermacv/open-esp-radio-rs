@@ -5,14 +5,9 @@ The native vendor-comparison evidence index of a chip
 each scenario run rewrites only its own file. Producers write it, `cargo
 verification evidence` keeps it current, and the qualification evaluator reads it.
 The shared data contract and store live in
-[`oer-vendor-evidence-shard`](../evidence-shard), a root-workspace format
+[`oer-vendor-evidence-shard`](../../hil/evidence-shard), a root-workspace format
 package. This verification workspace library owns comparison policy and
 producer orchestration. Qualification reads the format directly.
-
-The format is a peer of this package, with explicit `package.workspace`.
-Cargo can auto-claim a path dependency below a workspace member even when
-the inner workspace excludes that child; placing the shared format outside
-the member directory keeps both workspace entry points consistent.
 
 | Module | Owns |
 | --- | --- |

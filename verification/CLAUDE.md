@@ -10,10 +10,16 @@ private vendor artifacts live here.
 | `<chip>/facts/` | Cited-function fingerprints (`provenance.toml`) and recovered name maps |
 | `<chip>/probes/`, `<chip>/scenarios/` | Compiled production entries (built with the chip's image compiler, in the shared firmware cache) and typed Blobray comparisons (the verdict library; `scenarios/cli` its binary) |
 | `<chip>/evidence/` | Generated scenario shards (`evidence/scenarios`, written only through `oer-vendor-evidence`); hardware cross-checks are HIL run bundles |
-| `<chip>/hil-vendor/`, `<chip>/hardware/` | Vendor firmware and board cross-checks |
+| `<chip>/hil-vendor/`, `<chip>/hardware/` | Vendor firmware and isolated firmware probes of board state |
 | `harness/` | Probe generation and the chip-neutral scenario engine |
-| `phy-calibration-capture/` | The chip-neutral capture of the PHY calibration cross-check the HIL `phy` family records |
-| `evidence/` | `oer-vendor-evidence`: the shard format, the one shard reader and writer, currency, the verdict source policy and the `Producer` contract (Blobray engine, host stands) |
+| `evidence/` | `oer-vendor-evidence`: evidence producers, orchestration, the verdict source policy and the `Producer` contract; re-exports the shared shard format |
+
+The host CLI, harness, evidence producers and chip scenarios belong to this
+workspace; firmware probes and host stands have their own workspaces below
+the chip directories. Root-workspace shared formats live in
+[`../hil/evidence-shard/`](../hil/evidence-shard/) and
+[`../hil/phy-calibration-capture/`](../hil/phy-calibration-capture/README.md);
+chip calibration relations and comparisons live in `../crates/hardware/<chip>/`.
 
 ## Rules
 

@@ -720,8 +720,9 @@ there. The placeholders only locate the declarations a scenario still owes.
 | `host/ieee802154/` | [Host stand](host/ieee802154/README.md) that compiles the public ESP-IDF IEEE 802.15.4 driver against recorded boundaries |
 | `facts/` | Reviewed code fingerprints of cited vendor functions (`provenance.toml`) and [name maps](facts/names/README.md) |
 | `hil-vendor/` | [Vendor firmware](hil-vendor/README.md) for hardware cross-checks |
-| `hardware/` | The [calibration cross-check](hardware/calibration/README.md)'s comparison of vendor and production on the board; the HIL `phy` scenarios capture it |
-| `phy-relation/` | [The reviewed calibration relation](phy-relation/README.md) the probes, the tracking scenario and the cross-check share |
+| `hardware/` | [Boot-state firmware probe](hardware/boot-state-probe/README.md) in its own workspace |
+| `../../crates/hardware/esp32s31/calibration/` | The [calibration cross-check](../../crates/hardware/esp32s31/calibration/README.md)'s comparison of vendor and production on the board; the HIL `phy` scenarios capture it |
+| `../../crates/hardware/esp32s31/phy-relation/` | [The reviewed calibration relation](../../crates/hardware/esp32s31/phy-relation/README.md) the probes, the tracking scenario and the cross-check share |
 
 The [technical references](../../docs/vendor/esp32s31/README.md) describe Bluetooth Controller,
 DTM, advertising, scanning, connection and IEEE 802.15.4 boundaries. They do not

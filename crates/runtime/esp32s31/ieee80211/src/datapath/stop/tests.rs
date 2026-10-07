@@ -22,37 +22,31 @@ impl MacRuntimeStopHardware for Hardware {
         panic!("stop must never resume MAC");
     }
 }
-/// Time that moves to each deadline waited for, recording the waits, or
-/// parks every wait.
-struct Timer {
-    now: core::cell::Cell<u64>,
+/// Records polls of the canonical clock chosen by the test.
+struct Timer<C> {
+    clock: C,
     waits: core::cell::RefCell<std::vec::Vec<u64>>,
-    park: bool,
 }
-impl Timer {
-    fn new(now: u64, park: bool) -> Self {
+impl<C> Timer<C> {
+    fn new(clock: C) -> Self {
         Self {
-            now: core::cell::Cell::new(now),
+            clock,
             waits: core::cell::RefCell::new(std::vec::Vec::new()),
-            park,
         }
     }
     fn waits(&self) -> std::vec::Vec<u64> {
         self.waits.borrow().clone()
     }
 }
-impl oer_time::Clock for Timer {
+impl<C: oer_time::Clock> oer_time::Clock for Timer<C> {
     fn now(&self) -> oer_time::Instant {
-        oer_time::Instant::from_micros(self.now.get())
+        self.clock.now()
     }
 }
-impl oer_time::Timer for Timer {
+impl<C: oer_time::Timer> oer_time::Timer for Timer<C> {
     async fn wait_until(&self, deadline: oer_time::Instant) {
         self.waits.borrow_mut().push(deadline.as_micros());
-        if self.park {
-            core::future::pending::<()>().await;
-        }
-        self.now.set(deadline.as_micros());
+        self.clock.wait_until(deadline).await;
     }
 }
 fn run(future: impl Future<Output = Result<(), StopError>>) -> Result<(), StopError> {
@@ -71,7 +65,9 @@ fn stopped_readback_needs_no_delay_and_never_resumes() {
         ready_after: 0,
         requested: false,
     };
-    let timer = Timer::new(0, false);
+    let timer = Timer::new(oer_time_virtual::SkipClock::starting_at(
+        oer_time::Instant::from_micros(0),
+    ));
     assert_eq!(
         run(stop_mac(
             &mut hw,
@@ -93,7 +89,9 @@ fn active_mac_parks_until_readback_or_explicit_timeout() {
             ready_after,
             requested: false,
         };
-        let timer = Timer::new(0, false);
+        let timer = Timer::new(oer_time_virtual::SkipClock::starting_at(
+            oer_time::Instant::from_micros(0),
+        ));
         assert_eq!(
             run(stop_mac(
                 &mut hw,
@@ -112,7 +110,9 @@ fn pending_timer_does_not_repoll_mmio_and_cancellation_retains_borrowed_owner() 
         ready_after: 99,
         requested: false,
     };
-    let timer = Timer::new(0, true);
+    let timer = Timer::new(oer_time_virtual::VirtualClock::<8>::starting_at(
+        oer_time::Instant::from_micros(0),
+    ));
     {
         let mut future = core::pin::pin!(stop_mac(
             &mut hw,
@@ -135,7 +135,9 @@ fn unrepresentable_deadline_does_not_start_hardware_stop() {
         ready_after: 99,
         requested: false,
     };
-    let timer = Timer::new(u64::MAX, false);
+    let timer = Timer::new(oer_time_virtual::SkipClock::starting_at(
+        oer_time::Instant::from_micros(u64::MAX),
+    ));
     assert_eq!(
         run(stop_mac(
             &mut hw,
@@ -146,4 +148,15 @@ fn unrepresentable_deadline_does_not_start_hardware_stop() {
     );
     assert!(!hw.requested);
     assert_eq!(hw.reads, 0);
+}
+
+#[test]
+fn cancelling_an_unpolled_wait_records_no_deadline_and_leaves_time_alone() {
+    let timer = Timer::new(oer_time_virtual::SkipClock::new());
+    let wait = oer_time::Timer::wait_until(&timer, oer_time::Instant::from_micros(20));
+    assert!(timer.waits().is_empty());
+    assert_eq!(oer_time::Clock::now(&timer), oer_time::Instant::EPOCH);
+    drop(wait);
+    assert!(timer.waits().is_empty());
+    assert_eq!(oer_time::Clock::now(&timer), oer_time::Instant::EPOCH);
 }

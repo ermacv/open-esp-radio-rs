@@ -48,7 +48,7 @@ fn exercise_probe_completion(status: u8) {
             policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy: || 0,
-            timer: Timer,
+            timer: SkipClock::new(),
         },
         ApTxConfig {
             publication_timeout: oer_time::Duration::from_micros(1_000),

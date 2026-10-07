@@ -3,20 +3,13 @@ use oer_esp32s31_hal::{
     root::RadioHardware,
     shared_radio::{ClientQuiescence, QuiescentSpan, RadioClient, SharedRadio},
 };
+use oer_time_virtual::VirtualClock;
 
 use super::*;
 use crate::{
     PhyConfig, PhyState,
     state::client::{DEFAULT_PLL_TRACK_PERIOD_MICROS, PhyClientState},
 };
-
-struct Clock(u64);
-
-impl oer_time::Clock for Clock {
-    fn now(&self) -> oer_time::Instant {
-        oer_time::Instant::from_micros(self.0)
-    }
-}
 
 /// An arbiter whose domain is registered in the arbiter's own epoch.
 fn registered_arbiter() -> SharedRadio<ConcurrentPhy> {
@@ -69,11 +62,15 @@ fn clients_share_one_domain_and_leave_it_one_by_one() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Wifi, &Clock(0)),
+        acquire_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
         Ok(ConcurrentAcquire::Settled)
     );
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Bluetooth, &Clock(0)),
+        acquire_client(
+            &mut lease,
+            RadioClient::Bluetooth,
+            &VirtualClock::<8>::new()
+        ),
         Ok(ConcurrentAcquire::Settled)
     );
     let snapshot = lease
@@ -83,7 +80,7 @@ fn clients_share_one_domain_and_leave_it_one_by_one() {
     assert!(snapshot.contains(RadioClient::Wifi));
     assert!(snapshot.contains(RadioClient::Bluetooth));
     assert!(matches!(
-        acquire_client(&mut lease, RadioClient::Wifi, &Clock(0)),
+        acquire_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
         Err(ConcurrentPhyError::Acquire(_))
     ));
 
@@ -103,11 +100,11 @@ fn an_unregistered_domain_rejects_every_client_operation() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Wifi, &Clock(0)),
+        acquire_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
         Err(ConcurrentPhyError::NotRegistered)
     );
     assert_eq!(
-        evaluate_periodic_tracking(&mut lease, &Clock(0)),
+        evaluate_periodic_tracking(&mut lease, &VirtualClock::<8>::new()),
         Err(ConcurrentPhyError::NotRegistered)
     );
     assert_eq!(
@@ -123,7 +120,7 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Wifi, &Clock(0)),
+        acquire_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
         Ok(ConcurrentAcquire::Settled)
     );
     assert_eq!(
@@ -132,12 +129,21 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
     );
     // One period later the periodic callback requests tracking.
     assert_eq!(
-        evaluate_periodic_tracking(&mut lease, &Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS)),
+        evaluate_periodic_tracking(
+            &mut lease,
+            &VirtualClock::<8>::starting_at(oer_time::Instant::from_micros(
+                DEFAULT_PLL_TRACK_PERIOD_MICROS
+            ))
+        ),
         Ok(true)
     );
     assert!(lease.attachment().tracking_pending());
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Bluetooth, &Clock(0)),
+        acquire_client(
+            &mut lease,
+            RadioClient::Bluetooth,
+            &VirtualClock::<8>::new()
+        ),
         Err(ConcurrentPhyError::TrackingPending)
     );
     // The vendor policy admits pending tracking with the client running.
@@ -171,7 +177,11 @@ fn the_vendor_policy_ignores_proofs_and_still_needs_pending_tracking() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Ieee802154, &Clock(0)),
+        acquire_client(
+            &mut lease,
+            RadioClient::Ieee802154,
+            &VirtualClock::<8>::new()
+        ),
         Ok(ConcurrentAcquire::Settled)
     );
     // Nothing is due: the vendor policy does not invent maintenance.
@@ -180,7 +190,12 @@ fn the_vendor_policy_ignores_proofs_and_still_needs_pending_tracking() {
         Err(ConcurrentPhyError::NoTrackingPending)
     );
     assert_eq!(
-        evaluate_periodic_tracking(&mut lease, &Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS)),
+        evaluate_periodic_tracking(
+            &mut lease,
+            &VirtualClock::<8>::starting_at(oer_time::Instant::from_micros(
+                DEFAULT_PLL_TRACK_PERIOD_MICROS
+            ))
+        ),
         Ok(true)
     );
     // A closed proof window does not matter under the vendor policy.
@@ -196,7 +211,7 @@ fn admission_takes_the_earliest_window_and_ignores_inactive_clients() {
     let mut clients = PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS);
     for client in [RadioClient::Wifi, RadioClient::Bluetooth] {
         clients = clients
-            .acquire(client, &Clock(0))
+            .acquire(client, &VirtualClock::<8>::new())
             .unwrap_or_else(|_| panic!("acquisition"))
             .into_owner()
             .unwrap_or_else(|_| panic!("no tracking at time zero"));
@@ -260,11 +275,15 @@ fn a_closed_domain_admits_no_client_until_rf_wakes() {
         Some(true)
     );
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Ieee802154, &Clock(0)),
+        acquire_client(
+            &mut lease,
+            RadioClient::Ieee802154,
+            &VirtualClock::<8>::new()
+        ),
         Err(ConcurrentPhyError::RfClosed)
     );
     assert_eq!(
-        evaluate_periodic_tracking(&mut lease, &Clock(0)),
+        evaluate_periodic_tracking(&mut lease, &VirtualClock::<8>::new()),
         Err(ConcurrentPhyError::RfClosed)
     );
     assert_eq!(
@@ -291,7 +310,11 @@ fn rf_closes_only_after_the_last_client_left() {
         Err(ConcurrentPhyError::RfOpen)
     ));
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Bluetooth, &Clock(0)),
+        acquire_client(
+            &mut lease,
+            RadioClient::Bluetooth,
+            &VirtualClock::<8>::new()
+        ),
         Ok(ConcurrentAcquire::Settled)
     );
     assert!(matches!(

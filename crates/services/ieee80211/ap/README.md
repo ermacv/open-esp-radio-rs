@@ -128,4 +128,6 @@ system, its link notwithstanding.
 Not served yet: fragments (`malformed`).
 
 Tests: `tests/port_access_point.rs` runs the access point over the
-`LowerMacModel` on virtual time.
+`LowerMacModel` with `oer-time-virtual::VirtualClock`. The harness advances
+the clock and the radio model together at pending deadlines or scripted
+input.

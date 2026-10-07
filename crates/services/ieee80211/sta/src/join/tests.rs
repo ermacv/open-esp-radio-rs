@@ -186,22 +186,20 @@ impl StaJoinBackend for Backend {
 
 #[derive(Debug, Default)]
 struct TestTimer {
-    now_micros: Cell<u64>,
+    clock: oer_time_virtual::SkipClock,
     waits: Cell<u32>,
 }
 
 impl Clock for TestTimer {
     fn now(&self) -> Instant {
-        Instant::from_micros(self.now_micros.get())
+        self.clock.now()
     }
 }
 
 impl Timer for TestTimer {
-    fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
-        assert!(deadline.as_micros() >= self.now_micros.get());
-        self.now_micros.set(deadline.as_micros());
+    async fn wait_until(&self, deadline: Instant) {
         self.waits.set(self.waits.get() + 1);
-        ready(())
+        self.clock.wait_until(deadline).await;
     }
 }
 
@@ -292,7 +290,7 @@ fn authentication_timeout_is_three_exact_one_second_epochs() {
     assert_eq!(runner.backend().starts, 3);
     assert_eq!(runner.backend().stops, 3);
     assert!(!runner.backend().receive_live);
-    assert_eq!(runner.timer.now_micros.get(), 3_000_000);
+    assert_eq!(runner.timer.now().as_micros(), 3_000_000);
     assert_eq!(runner.timer.waits.get(), 3_000);
 }
 
@@ -317,7 +315,7 @@ fn association_timeout_sends_seven_requests_and_stops_rx_at_1000_ms() {
             .map(|attempt| attempt.unwrap().offset.as_micros() / 1_000),
         [0, 160, 320, 480, 640, 800, 960]
     );
-    assert_eq!(runner.timer.now_micros.get(), 1_000_000);
+    assert_eq!(runner.timer.now().as_micros(), 1_000_000);
     assert_eq!(runner.timer.waits.get(), 1_000);
     assert!(!runner.backend().receive_live);
     assert_eq!(runner.backend().starts, 1);
@@ -331,7 +329,7 @@ fn association_response_on_exact_deadline_wins_before_timeout() {
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
 
     assert!(block_on(runner.associate(LOCAL, BSSID, LinkProtection::Ccmp, &mut sequence,)).is_ok());
-    assert_eq!(runner.timer.now_micros.get(), 1_000_000);
+    assert_eq!(runner.timer.now().as_micros(), 1_000_000);
     assert!(runner.backend().receive_live);
     assert_eq!(runner.backend().stops, 0);
 }
@@ -406,6 +404,21 @@ fn an_unanswered_sae_commit_times_out_after_four_seconds() {
         Some(StaJoinError::SaeFailed(StaSaeFailure::Timeout))
     );
     let (backend, timer) = runner.into_parts();
-    assert_eq!(timer.now_micros.get(), 4_000_000);
+    assert_eq!(timer.now().as_micros(), 4_000_000);
     assert_eq!(backend.sae_sequences.len(), 1);
+}
+
+#[test]
+fn cancelling_an_unpolled_wait_does_not_count_or_advance_it() {
+    let timer = TestTimer::default();
+    let deadline = Instant::from_micros(1_000);
+    let wait = timer.wait_until(deadline);
+    assert_eq!(timer.now(), Instant::EPOCH);
+    assert_eq!(timer.waits.get(), 0);
+    drop(wait);
+    assert_eq!(timer.now(), Instant::EPOCH);
+    assert_eq!(timer.waits.get(), 0);
+    block_on(timer.wait_until(deadline));
+    assert_eq!(timer.now(), deadline);
+    assert_eq!(timer.waits.get(), 1);
 }

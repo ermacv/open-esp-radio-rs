@@ -21,6 +21,7 @@ oer-ieee80211-upper-mac = { path = "../../../protocols/ieee80211/upper-mac" }
 oer-ieee80211-upper-mac-service = { path = "../upper-mac" }
 
 [dev-dependencies]
+oer-time-virtual = { path = "../../../adapters/virtual/time" }
 oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath", features = ["model"] }
 oer-network-interface = { path = "../../../network/interface" }
 critical-section = { version = "1.2.0", features = ["std"] }

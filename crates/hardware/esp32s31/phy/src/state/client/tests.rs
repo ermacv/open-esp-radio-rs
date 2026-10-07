@@ -1,4 +1,5 @@
 use super::*;
+use oer_time_virtual::VirtualClock;
 
 const CLIENTS: [RadioClient; 3] = [
     RadioClient::Wifi,
@@ -6,14 +7,9 @@ const CLIENTS: [RadioClient; 3] = [
     RadioClient::Ieee802154,
 ];
 
-struct FixedClock(u64);
-
-impl oer_time::Clock for FixedClock {
-    fn now(&self) -> oer_time::Instant {
-        oer_time::Instant::from_micros(self.0)
-    }
-}
-
+/// Scripts successive clock reads within one owner transition. A canonical
+/// virtual clock stays at its owner-set instant across reads, so it cannot
+/// test read count and the ordering of fresh samples here.
 struct ScriptedClock<const COUNT: usize> {
     samples: [u64; COUNT],
     next: core::cell::Cell<usize>,
@@ -64,21 +60,28 @@ impl PhyClientStateTestExt for PhyClientState {
         client: RadioClient,
         now_micros: u64,
     ) -> Result<PhyClientAcquireOutcome, PhyClientAcquireFailure> {
-        self.acquire(client, &FixedClock(now_micros))
+        self.acquire(
+            client,
+            &VirtualClock::<8>::starting_at(oer_time::Instant::from_micros(now_micros)),
+        )
     }
 
     fn evaluate_immediate_at(
         self,
         now_micros: u64,
     ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
-        self.evaluate_immediate_tracking(&FixedClock(now_micros))
+        self.evaluate_immediate_tracking(&VirtualClock::<8>::starting_at(
+            oer_time::Instant::from_micros(now_micros),
+        ))
     }
 
     fn evaluate_periodic_at(
         self,
         now_micros: u64,
     ) -> Result<PhyTrackEvaluation, PhyTrackEvaluationFailure> {
-        self.evaluate_periodic_tracking(&FixedClock(now_micros))
+        self.evaluate_periodic_tracking(&VirtualClock::<8>::starting_at(
+            oer_time::Instant::from_micros(now_micros),
+        ))
     }
 }
 

@@ -264,7 +264,8 @@ second value open, so the port has no setting for it until that is
 established), and roaming.
 
 Its tests (`tests/port_station`) run it over `oer-ieee80211-lower-mac`'s host
-model with a scripted access point on virtual time: an active scan, an Open
+model with a scripted access point and `oer-time-virtual::VirtualClock`:
+the harness advances the timer and radio model together. The scenarios cover an active scan, an Open
 System join with data both ways, a WPA2-PSK connection whose keys are
 installed through the port, a Block Ack window released in order with a
 replay and a duplicate dropped, power save around a TBTT with a buffered-data

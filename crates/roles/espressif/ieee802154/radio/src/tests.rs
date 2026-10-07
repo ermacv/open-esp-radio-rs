@@ -42,18 +42,6 @@ impl Ieee802154Random for FixedRandom {
     }
 }
 
-/// A radio clock that stands at 42 us.
-struct FixedClock(u64);
-
-impl oer_time::Clock for FixedClock {
-    fn now(&self) -> oer_time::Instant {
-        oer_time::Instant::from_micros(self.0)
-    }
-}
-
-/// The bench's radio clock.
-const CLOCK: FixedClock = FixedClock(42);
-
 /// Owned copy of one delivered event: the frame bytes and the event.
 #[derive(Debug, PartialEq)]
 enum Seen {
@@ -145,6 +133,7 @@ fn channel(number: u8) -> Channel {
 struct Bench<R = FixedRandom> {
     radio: Ieee802154Radio<'static, R>,
     hw: Ieee802154LlModel,
+    clock: oer_time_virtual::VirtualClock,
     sink: Sink,
 }
 
@@ -183,18 +172,19 @@ impl<R: Ieee802154Random> Bench<R> {
         let mut bench = Self {
             radio: Ieee802154Radio::new(engine, random),
             hw,
+            clock: oer_time_virtual::VirtualClock::starting_at(oer_time::Instant::from_micros(42)),
             sink: Sink::default(),
         };
         bench
             .radio
-            .enable(&mut bench.hw, &CLOCK, &mut bench.sink)
+            .enable(&mut bench.hw, &bench.clock, &mut bench.sink)
             .unwrap();
         bench
     }
 
     fn submit(&mut self, command: RadioCommand<'_>) -> Result<(), CommandError> {
         self.radio
-            .submit(&mut self.hw, &CLOCK, command, &mut self.sink)
+            .submit(&mut self.hw, &self.clock, command, &mut self.sink)
             .map(|_| ())
     }
 
@@ -205,7 +195,7 @@ impl<R: Ieee802154Random> Bench<R> {
 
     fn interrupt(&mut self, events: &[Ieee802154Event]) {
         self.hw.raise(events);
-        self.radio.isr(&mut self.hw, &CLOCK, &mut self.sink);
+        self.radio.isr(&mut self.hw, &self.clock, &mut self.sink);
     }
 
     fn transmit(&mut self, id: u32, mac: &[u8], on: u8, mode: TxMode) -> Result<(), CommandError> {
@@ -233,10 +223,12 @@ fn admission_needs_enable() {
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
     let engine = Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default());
     let mut radio = Ieee802154Radio::new(engine, FixedRandom);
+    let clock: oer_time_virtual::VirtualClock =
+        oer_time_virtual::VirtualClock::starting_at(oer_time::Instant::from_micros(42));
     assert_eq!(
         radio.submit(
             &mut Ieee802154LlModel::default(),
-            &CLOCK,
+            &clock,
             RadioCommand::Sleep {
                 id: RequestId::new(1)
             },
@@ -650,7 +642,7 @@ fn a_csma_ca_transmission_backs_off_before_each_cca_attempt() {
 
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::CcaTxStart));
     bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
     assert!(bench.seen().is_empty(), "a busy channel backs off again");
@@ -660,7 +652,7 @@ fn a_csma_ca_transmission_backs_off_before_each_cca_attempt() {
 
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     bench.interrupt(&[Ieee802154Event::TxDone]);
     assert_eq!(
         bench.seen(),
@@ -708,7 +700,7 @@ fn each_backoff_draws_one_word_from_the_random_source() {
     assert_eq!(drawn.get(), 1);
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
     // 6 % 2^4.
     assert_eq!(bench.radio.take_delay(), Some(6 * 320));
@@ -732,14 +724,14 @@ fn channel_access_failures_end_with_a_busy_channel() {
         assert!(bench.radio.take_delay().is_some());
         bench
             .radio
-            .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+            .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
         bench.tx_abort(reason);
         assert!(bench.seen().is_empty());
     }
     assert!(bench.radio.take_delay().is_some());
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
     assert_eq!(
         bench.seen(),
@@ -762,7 +754,7 @@ fn a_security_failure_ends_a_csma_ca_transmission() {
     assert!(bench.radio.take_delay().is_some());
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     bench.tx_abort(Ieee802154TxAbortReason::TxSecurityError);
     assert_eq!(
         bench.seen(),
@@ -857,7 +849,7 @@ fn a_frame_without_acknowledgement_is_retried_after_a_growing_delay() {
         bench.hw.command = None;
         bench
             .radio
-            .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+            .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
         assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::TxStart));
     }
     bench.no_ack();
@@ -883,7 +875,7 @@ fn a_csma_ca_frame_without_channel_access_is_retried() {
         assert!(bench.radio.take_delay().is_some());
         bench
             .radio
-            .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+            .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
         assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::CcaTxStart));
         bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
     }
@@ -940,7 +932,7 @@ fn transmit_security_is_armed_again_for_each_retry() {
     assert!(bench.radio.take_delay().is_some());
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     assert!(bench.hw.transmit_security, "the retry armed it again");
 }
 
@@ -972,7 +964,7 @@ fn the_radio_secures_each_attempt_with_its_mac_keys() {
     assert!(bench.radio.take_delay().is_some());
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     assert!(bench.hw.transmit_security);
     assert_eq!(bench.transmitted_security(), ([100, 0, 0, 0], 4));
     bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
@@ -981,7 +973,7 @@ fn the_radio_secures_each_attempt_with_its_mac_keys() {
     assert!(bench.radio.take_delay().is_some());
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     assert_eq!(bench.transmitted_security(), ([101, 0, 0, 0], 4));
     bench.no_ack();
 
@@ -989,11 +981,11 @@ fn the_radio_secures_each_attempt_with_its_mac_keys() {
     assert!(bench.radio.take_delay().is_some());
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     assert!(bench.radio.take_delay().is_some());
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     assert!(bench.hw.transmit_security);
     assert_eq!(bench.transmitted_security(), ([101, 0, 0, 0], 4));
     assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 102);
@@ -1762,7 +1754,7 @@ fn a_transmission_cancelled_in_its_backoff_ends_aborted() {
     // The backoff's end finds nothing to continue.
     bench
         .radio
-        .delay_elapsed(&mut bench.hw, &CLOCK, &mut bench.sink);
+        .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     assert!(bench.seen().is_empty());
     assert_ne!(bench.hw.command, Some(Ieee802154LlCommand::CcaTxStart));
     assert_eq!(

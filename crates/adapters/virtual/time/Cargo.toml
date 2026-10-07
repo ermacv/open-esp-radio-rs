@@ -11,6 +11,9 @@ description = "Deterministic per-instance virtual time for tests and simulations
 embassy-sync = "0.8.0"
 oer-time = { path = "../../../time" }
 
+[dev-dependencies]
+embassy-futures = "0.1.2"
+
 [lints]
 workspace = true
 

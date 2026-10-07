@@ -201,22 +201,20 @@ impl RsnHandshakeBackend for Backend {
 
 #[derive(Debug, Default)]
 struct TestTimer {
-    now_micros: Cell<u64>,
+    clock: oer_time_virtual::SkipClock,
     waits: Cell<u32>,
 }
 
 impl Clock for TestTimer {
     fn now(&self) -> Instant {
-        Instant::from_micros(self.now_micros.get())
+        self.clock.now()
     }
 }
 
 impl Timer for TestTimer {
-    fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
-        assert!(deadline.as_micros() >= self.now_micros.get());
-        self.now_micros.set(deadline.as_micros());
+    async fn wait_until(&self, deadline: Instant) {
         self.waits.set(self.waits.get() + 1);
-        ready(())
+        self.clock.wait_until(deadline).await;
     }
 }
 
@@ -401,7 +399,7 @@ fn message1_timeout_is_exact_and_stops_the_live_ring() {
             completed_frames: 0,
         })
     ));
-    assert_eq!(runner.timer.now_micros.get(), 3_000_000);
+    assert_eq!(runner.timer.now().as_micros(), 3_000_000);
     assert_eq!(runner.timer.waits.get(), MESSAGE1_POLLS);
     assert!(!runner.backend().receive_live);
     assert_eq!(runner.backend().stops, 1);
@@ -430,7 +428,7 @@ fn peer_message1_sends_m2_once_but_never_retries_it_on_local_timeout() {
     assert_eq!(runner.backend().transmissions, 1);
     assert_eq!(runner.backend().last_sequence, Some(seq(0x123)));
     assert_eq!(sequence.peek(), seq(0x124));
-    assert_eq!(runner.timer.now_micros.get(), 6_001_000);
+    assert_eq!(runner.timer.now().as_micros(), 6_001_000);
     assert_eq!(
         runner.timer.waits.get(),
         MESSAGE1_POLLS.min(1) + MESSAGE3_POLLS
@@ -457,7 +455,7 @@ fn repeated_peer_message1_is_the_only_message2_refresh_source() {
     ));
     assert_eq!(runner.backend().transmissions, 2);
     assert_eq!(sequence.peek(), seq(9));
-    assert_eq!(runner.timer.now_micros.get(), 6_001_000);
+    assert_eq!(runner.timer.now().as_micros(), 6_001_000);
 }
 
 #[test]
@@ -479,5 +477,20 @@ fn message1_on_exact_deadline_is_serviced_before_timeout() {
         })
     ));
     assert_eq!(runner.backend().transmissions, 1);
-    assert_eq!(runner.timer.now_micros.get(), 9_000_000);
+    assert_eq!(runner.timer.now().as_micros(), 9_000_000);
+}
+
+#[test]
+fn cancelling_an_unpolled_wait_does_not_count_or_advance_it() {
+    let timer = TestTimer::default();
+    let deadline = Instant::from_micros(1_000);
+    let wait = timer.wait_until(deadline);
+    assert_eq!(timer.now(), Instant::EPOCH);
+    assert_eq!(timer.waits.get(), 0);
+    drop(wait);
+    assert_eq!(timer.now(), Instant::EPOCH);
+    assert_eq!(timer.waits.get(), 0);
+    embassy_futures::block_on(timer.wait_until(deadline));
+    assert_eq!(timer.now(), deadline);
+    assert_eq!(timer.waits.get(), 1);
 }

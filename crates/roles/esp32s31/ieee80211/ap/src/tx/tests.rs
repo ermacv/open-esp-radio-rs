@@ -1,7 +1,5 @@
-use core::{
-    future::{Future, ready},
-    pin::pin,
-};
+use core::pin::pin;
+use oer_time_virtual::SkipClock;
 
 use oer_esp32s31_hal::types::{
     MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
@@ -82,21 +80,6 @@ impl WifiTxPowerProfile for Power {
             primary: 1,
             alternate: 1,
         }
-    }
-}
-
-struct Timer;
-
-/// Time that stands still; waits end at once.
-impl oer_time::Clock for Timer {
-    fn now(&self) -> oer_time::Instant {
-        oer_time::Instant::from_micros(1)
-    }
-}
-
-impl oer_time::Timer for Timer {
-    fn wait_until(&self, _deadline: oer_time::Instant) -> impl Future<Output = ()> {
-        ready(())
     }
 }
 
@@ -212,7 +195,7 @@ fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
             policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy: || 0,
-            timer: Timer,
+            timer: SkipClock::starting_at(oer_time::Instant::from_micros(1)),
         },
         ApTxConfig {
             publication_timeout: oer_time::Duration::from_micros(7_500),
@@ -247,7 +230,7 @@ fn ap_aggregate_config_is_protected_by_bss_rules_not_by_its_length() {
             policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy: || 0,
-            timer: Timer,
+            timer: SkipClock::starting_at(oer_time::Instant::from_micros(1)),
         },
         ApTxConfig {
             publication_timeout: oer_time::Duration::from_micros(1_000),
@@ -290,7 +273,7 @@ fn beacon_is_one_publication_and_resources_return_only_after_completion() {
         policy: WifiTxRuntimePolicy::vendor_defaults(),
         power: Power,
         entropy: || 0,
-        timer: Timer,
+        timer: SkipClock::starting_at(oer_time::Instant::from_micros(1)),
     };
     let mut tx = ApTx::new(
         resources,
@@ -335,7 +318,7 @@ fn aggregate_retry_uses_the_next_edca_contention_window() {
         policy: WifiTxRuntimePolicy::vendor_defaults(),
         power: Power,
         entropy: || u32::MAX,
-        timer: Timer,
+        timer: SkipClock::starting_at(oer_time::Instant::from_micros(1)),
     };
     let mut tx = ApTx::new(
         resources,

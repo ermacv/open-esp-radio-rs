@@ -4,6 +4,7 @@ use oer_esp32s31_hal::{
     root::{ConcurrentPartitions, RadioHardware},
     shared_radio::{BtbbError, RadioClient, SharedRadio},
 };
+use oer_time_virtual::VirtualClock;
 
 use super::*;
 use crate::{
@@ -12,14 +13,6 @@ use crate::{
     domain::PhyDomain,
     state::client::{DEFAULT_PLL_TRACK_PERIOD_MICROS, PhyClientState},
 };
-
-struct Clock(u64);
-
-impl oer_time::Clock for Clock {
-    fn now(&self) -> oer_time::Instant {
-        oer_time::Instant::from_micros(self.0)
-    }
-}
 
 /// An arbiter whose domain is registered in the arbiter's current epoch, or,
 /// when `stale`, in an epoch a later registration retired.
@@ -63,7 +56,7 @@ fn joining_an_unregistered_domain_changes_nothing() {
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
     assert_eq!(
-        join_bluetooth(&mut lease, &task, &Clock(0)).map(|(_, acquired)| acquired),
+        join_bluetooth(&mut lease, &task, &VirtualClock::<8>::new()).map(|(_, acquired)| acquired),
         Err(BluetoothPhyClientError::Phy(
             ConcurrentPhyError::NotRegistered
         ))
@@ -80,7 +73,7 @@ fn a_stale_registration_is_rejected_before_the_client_set_changes() {
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
     assert_eq!(
-        join_bluetooth(&mut lease, &task, &Clock(0)).map(|(_, acquired)| acquired),
+        join_bluetooth(&mut lease, &task, &VirtualClock::<8>::new()).map(|(_, acquired)| acquired),
         Err(BluetoothPhyClientError::StaleRegistration)
     );
     assert!(!bluetooth_is_client(&lease));
@@ -95,7 +88,11 @@ fn leaving_without_the_btbb_reference_keeps_the_membership_and_the_client() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Bluetooth, &Clock(0)),
+        acquire_client(
+            &mut lease,
+            RadioClient::Bluetooth,
+            &VirtualClock::<8>::new()
+        ),
         Ok(ConcurrentAcquire::Settled)
     );
 

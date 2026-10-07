@@ -13,6 +13,7 @@ oer-time = { path = "../../../time" }
 oer-ieee80211-rsn = { path = "../../../protocols/ieee80211/security/rsn" }
 
 [dev-dependencies]
+oer-time-virtual = { path = "../../../adapters/virtual/time" }
 embassy-futures = "0.1.2"
 oer-ieee80211-mac = { path = "../../../protocols/ieee80211/mac" }
 

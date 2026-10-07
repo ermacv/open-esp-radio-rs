@@ -207,13 +207,13 @@ impl crate::mac_clock::ReceptionClock for DwellTimer {
 }
 
 impl oer_time::Timer for DwellTimer {
-    fn wait_until(&self, deadline: oer_time::Instant) -> impl Future<Output = ()> {
+    async fn wait_until(&self, deadline: oer_time::Instant) {
         if deadline.checked_duration_since(oer_time::Clock::now(&self.clock))
             == Some(oer_time::Duration::from_millis(1))
         {
             self.ticks.set(self.ticks.get() + 1);
         }
-        self.clock.wait_until(deadline)
+        self.clock.wait_until(deadline).await;
     }
 }
 
@@ -357,4 +357,19 @@ fn standalone_scan_records_matching_bss_without_selecting_it() {
             .windows(2)
             .any(|actions| actions == [Action::AdmissionOff, Action::StopMac])
     );
+}
+
+#[test]
+fn cancelling_an_unpolled_dwell_tick_leaves_time_and_counts_alone() {
+    let timer = DwellTimer::default();
+    let deadline = oer_time::Instant::from_micros(1_000);
+    let wait = oer_time::Timer::wait_until(&timer, deadline);
+    assert_eq!(oer_time::Clock::now(&timer), oer_time::Instant::EPOCH);
+    assert_eq!(timer.ticks.get(), 0);
+    drop(wait);
+    assert_eq!(oer_time::Clock::now(&timer), oer_time::Instant::EPOCH);
+    assert_eq!(timer.ticks.get(), 0);
+    block_on(oer_time::Timer::wait_until(&timer, deadline));
+    assert_eq!(oer_time::Clock::now(&timer), deadline);
+    assert_eq!(timer.ticks.get(), 1);
 }

@@ -2,12 +2,13 @@
 //! beacon schedule, and the test plays the stations that probe it.
 
 use core::cell::{Cell, RefCell};
+use oer_time_virtual::VirtualClock;
 
 use oer_ieee80211_datapath::{SoftwareTxFrame, memory::MemoryTxQueues};
 use oer_network_interface::NetworkInterfaceId;
 
 use core::{
-    future::{Future, poll_fn},
+    future::Future,
     pin::pin,
     task::{Context, Poll, Waker},
 };
@@ -55,7 +56,7 @@ use oer_ieee80211_upper_mac_service::{
     aggregate::PortAmpduAggregation,
     client::{PortClient, PortClientConfig, PortClientEnv},
 };
-use oer_time::{Clock, Instant, Timer};
+use oer_time::{Clock, Instant};
 
 const AP: VifId = VifId(1);
 const ADDRESS: MacAddress = [0x02, 0, 0, 0, 0, 0x0a];
@@ -87,36 +88,6 @@ const ADVERTISEMENT: Advertisement = Advertisement::new(
     ),
     0x0421,
 );
-
-/// Virtual monotonic time: waits end when the harness advances it.
-#[derive(Default)]
-struct VirtualTimer {
-    now: Cell<u64>,
-    /// The earliest deadline a pending wait asked for since the last poll.
-    wanted: Cell<Option<u64>>,
-}
-
-impl Clock for &VirtualTimer {
-    fn now(&self) -> Instant {
-        Instant::from_micros(self.now.get())
-    }
-}
-
-impl Timer for &VirtualTimer {
-    fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
-        poll_fn(move |_| {
-            if self.now.get() >= deadline.as_micros() {
-                Poll::Ready(())
-            } else {
-                let deadline = deadline.as_micros();
-                self.wanted.set(Some(
-                    self.wanted.get().map_or(deadline, |w| w.min(deadline)),
-                ));
-                Poll::Pending
-            }
-        })
-    }
-}
 
 struct FixedRate;
 
@@ -209,7 +180,7 @@ impl PortClientEnv for Env<'_> {
 }
 
 impl<'a> PortApEnv for Env<'a> {
-    type Timer = &'a VirtualTimer;
+    type Timer = &'a VirtualClock;
     type Authenticator = FixedMaterial;
     type Sae = NoSae;
     type RateControl = FixedRateControl;
@@ -229,7 +200,7 @@ impl PortClientEnv for Wpa3Env<'_> {
 }
 
 impl<'a> PortApEnv for Wpa3Env<'a> {
-    type Timer = &'a VirtualTimer;
+    type Timer = &'a VirtualClock;
     type Authenticator = FixedMaterial;
     type Sae = InlineSae<Counter>;
     type RateControl = FixedRateControl;
@@ -365,7 +336,7 @@ fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
 fn start<X: PortApEnv<Port = Model>>(
     model: &Model,
     router: &oer_ieee80211_upper_mac_service::PortRouter<'_, Model>,
-    timer: &VirtualTimer,
+    timer: &VirtualClock,
     access_point: &mut PortAccessPoint<'_, X>,
 ) {
     let channel = Channel::from_wifi_channel(channel());
@@ -387,7 +358,7 @@ fn start<X: PortApEnv<Port = Model>>(
 fn drive<T>(
     model: &Model,
     router: &oer_ieee80211_upper_mac_service::PortRouter<'_, Model>,
-    timer: &VirtualTimer,
+    timer: &VirtualClock,
     future: impl Future<Output = T>,
     stops: &[u64],
     mut at: impl FnMut(u64),
@@ -397,7 +368,8 @@ fn drive<T>(
     let mut context = Context::from_waker(Waker::noop());
     let mut quiet = false;
     for _ in 0..10_000 {
-        timer.wanted.set(None);
+        // Resample the deadlines of live futures at this same instant.
+        timer.advance_to(timer.now());
         if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
             return output;
         }
@@ -416,16 +388,19 @@ fn drive<T>(
             continue;
         }
         quiet = false;
-        let stop = stops.iter().copied().find(|stop| *stop > timer.now.get());
-        let next = match (timer.wanted.get(), stop) {
+        let stop = stops
+            .iter()
+            .copied()
+            .find(|stop| *stop > timer.now().as_micros());
+        let next = match (timer.next_deadline().map(Instant::as_micros), stop) {
             (Some(wanted), Some(stop)) => wanted.min(stop),
             (wanted, stop) => wanted
                 .or(stop)
                 .expect("the access point waits for an event nothing produces"),
         };
-        timer.now.set(next.max(timer.now.get()));
-        model.set_now(oer_time::RadioInstant::from_micros(timer.now.get()));
-        at(timer.now.get());
+        timer.advance_to(Instant::from_micros(next));
+        model.set_now(oer_time::RadioInstant::from_micros(timer.now().as_micros()));
+        at(timer.now().as_micros());
     }
     panic!("the access point did not finish");
 }
@@ -451,7 +426,7 @@ fn meta() -> RxMeta {
 #[test]
 fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -485,7 +460,7 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
     assert_eq!(model.tsf(AP).unwrap().unwrap().at.as_micros(), 0);
 
     // The first beacon starts the schedule; three more follow at its TBTTs.
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     let deadline = Instant::from_micros(start + 3 * INTERVAL + 1);
     drive(
         &model,
@@ -529,7 +504,7 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
 #[test]
 fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -553,7 +528,7 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
     // one for another SSID, and a directed one after the interval.
     // A probe queued from the owner's off-channel absence must first be
     // discarded; replying after returning would use the wrong channel.
-    let boundary = timer.now.get();
+    let boundary = timer.now().as_micros();
     model.receive(
         &probe_request([0xff; 6], [0xff; 6], b""),
         RxMeta::unavailable(Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap()),
@@ -573,7 +548,7 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
             .iter()
             .all(|attempt| attempt.frames[0][0] != 0x50)
     );
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     let requests = [
         (start + 1_000, probe_request([0xff; 6], [0xff; 6], b"")),
         (start + 2_000, probe_request(ADDRESS, ADDRESS, SSID)),
@@ -656,7 +631,7 @@ fn sent_to_station(model: &Model) -> Vec<(u8, u16)> {
 fn serve<X: PortApEnv<Port = Model>>(
     model: &Model,
     router: &oer_ieee80211_upper_mac_service::PortRouter<'_, Model>,
-    timer: &VirtualTimer,
+    timer: &VirtualClock,
     access_point: &mut PortAccessPoint<'_, X>,
     frames: &[(u64, Vec<u8>)],
     until: u64,
@@ -701,7 +676,7 @@ fn serve<X: PortApEnv<Port = Model>>(
 #[test]
 fn an_open_station_authenticates_associates_and_leaves() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -721,7 +696,7 @@ fn an_open_station_authenticates_associates_and_leaves() {
     .unwrap();
     start(&model, &router, &timer, &mut access_point);
 
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -778,7 +753,7 @@ fn an_open_station_authenticates_associates_and_leaves() {
 #[test]
 fn an_inactive_peer_is_disassociated_and_deauthenticated() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -797,7 +772,7 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
     )
     .unwrap();
     start(&model, &router, &timer, &mut access_point);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -820,7 +795,7 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
 #[test]
 fn a_wpa3_station_authenticates_by_sae_while_the_bss_goes_on() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Wpa3Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -861,7 +836,7 @@ fn a_wpa3_station_authenticates_by_sae_while_the_bss_goes_on() {
     let commit = SaeCommit::new(pwe, [0x21; 32], [0x43; 32]).unwrap();
     let mut body = [0; 160];
     let length = commit.values().encode(None, false, &mut body).unwrap();
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -941,7 +916,7 @@ fn ptk() -> Ptk {
 #[test]
 fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -986,7 +961,7 @@ fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
     let message4 = RsnTxFrame::<512>::message4(Akm::Psk, ADDRESS, REPLAY_COUNTER + 1)
         .unwrap()
         .authenticate(&ptk);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -1043,7 +1018,7 @@ fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
 #[test]
 fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -1070,7 +1045,7 @@ fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out(
     )
     .unwrap();
     start(&model, &router, &timer, &mut access_point);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -1171,7 +1146,7 @@ fn downlink(model: &Model, destination: [u8; 6]) -> Vec<(Vec<u8>, KeySelector, P
 #[test]
 fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -1190,7 +1165,7 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
     )
     .unwrap();
     start(&model, &router, &timer, &mut access_point);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
 
     // Before the station associates, its downlink has nowhere to go.
     send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"early"));
@@ -1223,7 +1198,7 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
 
     send(&ethernet(STATION, [0x02, 0, 0, 0, 0, 0x99], b"down"));
     // A completed run retains network owners queued at its boundary.
-    let boundary = Instant::from_micros(timer.now.get());
+    let boundary = Instant::from_micros(timer.now().as_micros());
     drive(
         &model,
         &router,
@@ -1256,7 +1231,7 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
 #[test]
 fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -1298,7 +1273,7 @@ fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
     let message4 = RsnTxFrame::<512>::message4(Akm::Psk, ADDRESS, REPLAY_COUNTER + 1)
         .unwrap()
         .authenticate(&ptk);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     let delivered = serve(
         &model,
         &router,
@@ -1388,7 +1363,7 @@ fn last_tim(model: &Model) -> (u8, u8) {
 fn associated<'a, const HELD: usize>(
     model: &'a Model,
     router: &'a PortApRouter<'a, Env<'a>>,
-    timer: &'a VirtualTimer,
+    timer: &'a VirtualClock,
     ssid: &'a WifiSsid,
     storage: &'a mut PortApStorage<HELD, TestFrame>,
 ) -> PortAccessPoint<'a, Env<'a>> {
@@ -1407,7 +1382,7 @@ fn associated<'a, const HELD: usize>(
     )
     .unwrap();
     start(model, router, timer, &mut access_point);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         model,
         router,
@@ -1425,7 +1400,7 @@ fn associated<'a, const HELD: usize>(
 #[test]
 fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -1439,7 +1414,7 @@ fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
 
     // The station dozes: its frame is held, and the next beacon's TIM says
     // so.
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -1463,7 +1438,7 @@ fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
     assert_ne!(bitmap & (1 << aid), 0);
 
     // Its PS-Poll gets the one frame, More Data clear.
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -1480,7 +1455,7 @@ fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
     // Two more wait; when it wakes both go out, More Data set on the first.
     send(&ethernet(STATION, from, b"first"));
     send(&ethernet(STATION, from, b"second"));
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -1499,12 +1474,12 @@ fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
 #[test]
 fn group_frames_wait_for_the_dtim_while_a_peer_dozes() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -1566,12 +1541,12 @@ fn qos_uplink(tid: u8, sequence: u16, payload: &[u8]) -> Vec<u8> {
 #[test]
 fn a_peer_s_block_ack_agreement_reorders_its_data_until_it_ends() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     let delivered = serve(
         &model,
         &router,
@@ -1605,7 +1580,7 @@ fn a_peer_s_block_ack_agreement_reorders_its_data_until_it_ends() {
     assert_eq!(payloads, [b"a", b"b", b"c"]);
 
     // The station ends it: the port drops the agreement.
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -1624,13 +1599,13 @@ fn a_peer_s_block_ack_agreement_reorders_its_data_until_it_ends() {
 #[test]
 fn the_composition_sizes_the_frames_held_for_dozing_peers() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     // Room for one held frame only.
     let mut storage = PortApStorage::<1, TestFrame>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -1695,13 +1670,13 @@ fn with_ht_peer(
     test: impl FnOnce(
         &Model,
         &oer_ieee80211_upper_mac_service::PortRouter<'_, Model>,
-        &VirtualTimer,
+        &VirtualClock,
         &mut PortAccessPoint<'_, Env<'_>>,
         u64,
     ),
 ) {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -1743,7 +1718,7 @@ fn with_ht_peer(
     let message4 = RsnTxFrame::<512>::message4(Akm::Psk, ADDRESS, REPLAY_COUNTER + 1)
         .unwrap()
         .authenticate(&ptk);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -1990,7 +1965,7 @@ impl PortClientEnv for RateEnv<'_> {
 }
 
 impl<'a> PortApEnv for RateEnv<'a> {
-    type Timer = &'a VirtualTimer;
+    type Timer = &'a VirtualClock;
     type Authenticator = FixedMaterial;
     type Sae = NoSae;
     type RateControl = Recorded<'a>;
@@ -2009,7 +1984,7 @@ fn ht_association() -> Vec<u8> {
 #[test]
 fn each_associated_peer_gets_its_own_rate_control_from_its_association() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<RateEnv<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -2030,7 +2005,7 @@ fn each_associated_peer_gets_its_own_rate_control_from_its_association() {
     )
     .unwrap();
     start(&model, &router, &timer, &mut access_point);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     // The Association Request arrives 56 dB over the noise floor.
     let metered = RxMeta {
         rssi_dbm: RxEvidence::HardwareObserved(-40),
@@ -2095,13 +2070,13 @@ fn each_associated_peer_gets_its_own_rate_control_from_its_association() {
 #[test]
 fn frames_held_for_a_dozing_peer_stay_the_network_s_owners_until_it_leaves() {
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
     let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
     let from = [0x02, 0, 0, 0, 0, 0x99];
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -2218,7 +2193,7 @@ fn an_announced_channel_switch_moves_the_bss_at_its_tbtt() {
     use oer_ieee80211_mac::channel_switch::{ChannelSwitchMode, parse_channel_switch};
 
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -2237,7 +2212,7 @@ fn an_announced_channel_switch_moves_the_bss_at_its_tbtt() {
     )
     .unwrap();
     start(&model, &router, &timer, &mut access_point);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     // The first beacon starts the schedule.
     drive(
         &model,
@@ -2265,7 +2240,7 @@ fn an_announced_channel_switch_moves_the_bss_at_its_tbtt() {
     .unwrap();
     assert_eq!(event, Some(PortApEvent::ChannelSwitch { target }));
     // The switch is due at the third TBTT, before its beacon.
-    assert_eq!(timer.now.get(), start + 3 * INTERVAL);
+    assert_eq!(timer.now().as_micros(), start + 3 * INTERVAL);
     let beacons = |model: &Model| -> Vec<Vec<u8>> {
         model
             .submitted()
@@ -2339,7 +2314,7 @@ fn a_two_band_access_point_moves_to_5_ghz_with_an_extended_announcement() {
     use oer_ieee80211_mac::channel_switch::{ChannelSwitchMode, parse_channel_switch};
 
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let two_bands = PortApProfile {
@@ -2393,7 +2368,7 @@ fn a_two_band_access_point_moves_to_5_ghz_with_an_extended_announcement() {
     )
     .unwrap();
     start(&model, &router, &timer, &mut access_point);
-    let start = timer.now.get();
+    let start = timer.now().as_micros();
     drive(
         &model,
         &router,
@@ -2480,7 +2455,7 @@ fn a_stopped_access_point_releases_its_peers_and_starts_again_where_its_owner_tu
     use oer_ieee80211_ap_service::port::PortApError;
 
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -2506,7 +2481,7 @@ fn a_stopped_access_point_releases_its_peers_and_starts_again_where_its_owner_tu
         Some(ReceiveFilter::NONE)
     );
     // A stopped access point serves nothing.
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     assert!(matches!(
         drive(
             &model,
@@ -2532,7 +2507,7 @@ fn a_stopped_access_point_releases_its_peers_and_starts_again_where_its_owner_tu
     )
     .unwrap();
     access_point.start(eleven).unwrap();
-    let restart = timer.now.get();
+    let restart = timer.now().as_micros();
     drive(
         &model,
         &router,
@@ -2591,7 +2566,7 @@ fn pmf_service() -> AccessPointService<'static> {
 fn join_pmf(
     model: &Model,
     router: &PortApRouter<'_, Env<'_>>,
-    timer: &VirtualTimer,
+    timer: &VirtualClock,
     ap: &mut PortAccessPoint<'_, Env<'_>>,
 ) {
     let mut association = rsn_association();
@@ -2613,7 +2588,7 @@ fn join_pmf(
     let message4 = RsnTxFrame::<512>::message4(Akm::Sae, ADDRESS, REPLAY_COUNTER + 1)
         .unwrap()
         .authenticate(&ptk);
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     serve(
         model,
         router,
@@ -2655,7 +2630,7 @@ fn verified_management(subtype: u8, pn: u64, body: &[u8]) -> Vec<u8> {
 fn pmf_rejects_forged_and_replayed_management_before_peer_state_changes() {
     use oer_ieee80211_mac::ccmp::CcmpHeader;
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
@@ -2676,7 +2651,7 @@ fn pmf_rejects_forged_and_replayed_management_before_peer_state_changes() {
     start(&model, &router, &timer, &mut ap);
     join_pmf(&model, &router, &timer, &mut ap);
     let activity = ap.service().peer_status(STATION).unwrap().last_activity;
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     // A forged teardown is not activity and cannot remove the association.
     serve(
         &model,
@@ -2694,7 +2669,7 @@ fn pmf_rejects_forged_and_replayed_management_before_peer_state_changes() {
     // Protected bit alone provides no integrity evidence.
     let query = [8, 0, 0x12, 0x34];
     model.receive(&verified_management(13, 100, &query), meta());
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     serve(&model, &router, &timer, &mut ap, &[], now + 1_000);
     assert_eq!(ap.counters().sa_query_responses, 0);
     assert_eq!(ap.counters().management_rejected, 2);
@@ -2705,7 +2680,7 @@ fn pmf_rejects_forged_and_replayed_management_before_peer_state_changes() {
     // A frame under the wrong key id cannot advance the valid key's PN.
     let mut wrong_key = verified_management(13, 100, &query);
     wrong_key[27] |= 0x40;
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -2731,7 +2706,7 @@ fn pmf_rejects_forged_and_replayed_management_before_peer_state_changes() {
         .unwrap()
         .packet_number();
     let activity = ap.service().peer_status(STATION).unwrap().last_activity;
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -2751,7 +2726,7 @@ fn pmf_rejects_forged_and_replayed_management_before_peer_state_changes() {
     );
     // Ordinary data and robust management share the key's TX PN allocator.
     send(&ethernet(STATION, [2, 0, 0, 0, 0, 9], b"after-query"));
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     serve(&model, &router, &timer, &mut ap, &[], now + 1_000);
     let data = model
         .submitted()
@@ -2771,7 +2746,7 @@ fn pmf_rejects_forged_and_replayed_management_before_peer_state_changes() {
             > sent_pn
     );
     // A fresh verified teardown can end the peer and release its key.
-    let now = timer.now.get();
+    let now = timer.now().as_micros();
     serve(
         &model,
         &router,
@@ -2792,7 +2767,7 @@ fn pmf_rejects_forged_and_replayed_management_before_peer_state_changes() {
 fn pmf_protects_group_actions_and_teardown_and_keeps_ipns_across_restart() {
     use oer_ieee80211_rsn::bip::BipReceiver;
     let model = model();
-    let timer = VirtualTimer::default();
+    let timer = VirtualClock::default();
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();

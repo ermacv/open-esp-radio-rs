@@ -156,15 +156,16 @@ impl oer_time::Clock for TestTimer {
 }
 
 impl oer_time::Timer for TestTimer {
-    fn wait_until(&self, deadline: oer_time::Instant) -> impl Future<Output = ()> {
+    async fn wait_until(&self, deadline: oer_time::Instant) {
         core::future::poll_fn(move |_| {
             if self.pending_wait.get() {
                 core::task::Poll::Pending
             } else {
-                self.clock.advance_to(deadline);
                 core::task::Poll::Ready(())
             }
         })
+        .await;
+        self.clock.wait_until(deadline).await;
     }
 }
 

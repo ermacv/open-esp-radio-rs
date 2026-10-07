@@ -9,17 +9,11 @@ use crate::{
         i2c::{PhyWifiI2cTrackingAction, PhyWifiI2cTrackingTransition},
     },
 };
-struct Clock;
-impl oer_time::Clock for Clock {
-    fn now(&self) -> oer_time::Instant {
-        oer_time::Instant::from_micros(0)
-    }
-}
 fn clients(active: &[RadioClient]) -> PhyClientSnapshot {
     let mut owner = PhyClientState::without_registration(1000);
     for client in active {
         owner = owner
-            .acquire(*client, &Clock)
+            .acquire(*client, &oer_time_virtual::VirtualClock::<8>::new())
             .unwrap_or_else(|_| panic!("acquire"))
             .into_owner()
             .unwrap_or_else(|_| panic!("unexpected due work"));
@@ -157,14 +151,11 @@ fn inspection_rejects_reversed_clock_and_uses_updated_state_on_reinspection() {
     let after = Inspection::inspect(&state, policy, clients, 1001).unwrap();
     assert!(!before.wifi.unwrap().calibration.unwrap().common.is_due());
     assert!(after.wifi.unwrap().calibration.unwrap().common.is_due());
-    struct Later;
-    impl oer_time::Clock for Later {
-        fn now(&self) -> oer_time::Instant {
-            oer_time::Instant::from_micros(2000)
-        }
-    }
     let later = PhyClientState::without_registration(1000)
-        .acquire(RadioClient::Wifi, &Later)
+        .acquire(
+            RadioClient::Wifi,
+            &oer_time_virtual::VirtualClock::<8>::starting_at(oer_time::Instant::from_micros(2000)),
+        )
         .unwrap_or_else(|_| panic!("acquire"))
         .into_owner()
         .err()

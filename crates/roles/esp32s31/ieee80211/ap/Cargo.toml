@@ -20,6 +20,9 @@ oer-ieee80211-softmac = { path = "../../../../protocols/ieee80211/softmac" }
 oer-ieee80211-rsn = { path = "../../../../protocols/ieee80211/security/rsn" }
 oer-time = { path = "../../../../time" }
 
+[dev-dependencies]
+oer-time-virtual = { path = "../../../../adapters/virtual/time" }
+
 [features]
 default = []
 # Value-only AP protocol/MAC observations. Ordinary builds retain no

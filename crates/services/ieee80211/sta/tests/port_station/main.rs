@@ -8,12 +8,13 @@ mod scripted_ap;
 
 use core::{
     cell::Cell,
-    future::{Future, poll_fn},
+    future::Future,
     marker::PhantomData,
     pin::pin,
     task::{Context, Poll, Waker},
 };
 use oer_ieee80211_upper_mac::rate_control::{RateControl, RatePeer};
+use oer_time_virtual::VirtualClock;
 use std::{
     cell::RefCell,
     sync::atomic::{AtomicU32, Ordering},
@@ -73,7 +74,7 @@ use oer_ieee80211_upper_mac_service::{
     reorder::PORT_REORDER_SLOTS,
 };
 use oer_network_interface::NetworkInterfaceId;
-use oer_time::{Clock, Duration, Instant, RadioInstant, Timer};
+use oer_time::{Clock, Duration, Instant, RadioInstant};
 
 use scripted_ap::{AP, AP_CHANNEL, ApSecurity, PASSPHRASE, RATES, SNONCE, SSID, STA, ScriptedAp};
 
@@ -86,36 +87,6 @@ fn on_large_stack(body: fn()) {
         .unwrap()
         .join()
         .unwrap();
-}
-
-/// Virtual monotonic time: waits end when the harness advances it.
-#[derive(Default)]
-struct VirtualTimer {
-    now: Cell<u64>,
-    /// The earliest deadline a pending wait asked for since the last poll.
-    wanted: Cell<Option<u64>>,
-}
-
-impl Clock for VirtualTimer {
-    fn now(&self) -> Instant {
-        Instant::from_micros(self.now.get())
-    }
-}
-
-impl Timer for VirtualTimer {
-    fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
-        poll_fn(move |_| {
-            if self.now.get() >= deadline.as_micros() {
-                Poll::Ready(())
-            } else {
-                let deadline = deadline.as_micros();
-                self.wanted.set(Some(
-                    self.wanted.get().map_or(deadline, |w| w.min(deadline)),
-                ));
-                Poll::Pending
-            }
-        })
-    }
 }
 
 /// A seeded xorshift32 source.
@@ -262,7 +233,7 @@ impl PortClientEnv for Env<'_> {
 }
 
 impl<'a> PortStationEnv for Env<'a> {
-    type Timer = &'a VirtualTimer;
+    type Timer = &'a VirtualClock;
     type KeyUnwrap = RsnSoftwareAes;
     type Coex = &'a ScriptedCoex;
     type RateControl = ScriptedRate<'a>;
@@ -318,7 +289,7 @@ fn sae_random() -> u32 {
 struct World {
     model: &'static Model,
     router: &'static PortRouter<'static, Env<'static>>,
-    timer: VirtualTimer,
+    timer: VirtualClock,
     coex: &'static ScriptedCoex,
     rate_log: &'static RefCell<RateLog>,
     frames: &'static TestFrames,
@@ -348,18 +319,16 @@ impl World {
                 reconnect: Cell::new(false),
                 connection_frames: RefCell::new(Vec::new()),
             })),
-            timer: VirtualTimer {
-                now: Cell::new(1_000),
-                wanted: Cell::new(None),
-            },
+            timer: VirtualClock::starting_at(Instant::from_micros(1_000)),
         }
     }
 
     /// Move virtual time to `micros`: the station's timer and the model's
     /// radio clock read one time.
     fn advance_to(&self, micros: u64) {
-        self.timer.now.set(micros);
-        self.model.set_now(RadioInstant::from_micros(micros));
+        self.timer.advance_to(Instant::from_micros(micros));
+        self.model
+            .set_now(RadioInstant::from_micros(self.timer.now().as_micros()));
     }
 
     fn link(&self) -> PortLink<'static, Env<'_>> {
@@ -441,7 +410,8 @@ impl World {
         let mut context = Context::from_waker(Waker::noop());
         let mut quiet = false;
         for _ in 0..1_000_000 {
-            self.timer.wanted.set(None);
+            // Resample the deadlines of live futures at this same instant.
+            self.timer.advance_to(self.timer.now());
             if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
                 return output;
             }
@@ -451,7 +421,7 @@ impl World {
                 routing.set(self.router.run());
                 continue;
             }
-            if ap.step(self.model, self.timer.now.get()) {
+            if ap.step(self.model, self.timer.now().as_micros()) {
                 quiet = false;
                 continue;
             }
@@ -463,14 +433,14 @@ impl World {
                 continue;
             }
             quiet = false;
-            let wanted = self.timer.wanted.get();
+            let wanted = self.timer.next_deadline().map(Instant::as_micros);
             let next = match (wanted, ap.next_beacon_micros) {
                 (Some(a), Some(b)) => a.min(b),
                 (a, b) => a
                     .or(b)
                     .expect("the station waits for an event nothing produces"),
             };
-            self.advance_to(next.max(self.timer.now.get()));
+            self.advance_to(next.max(self.timer.now().as_micros()));
         }
         panic!("the station did not finish");
     }
@@ -607,6 +577,15 @@ fn voice(payload: &[u8]) -> Vec<u8> {
     let mut packet = vec![0x45, 46 << 2];
     packet.extend_from_slice(payload);
     packet
+}
+
+#[test]
+fn harness_advancement_keeps_radio_and_monotonic_time_together() {
+    let world = World::new();
+    world.advance_to(2_000);
+    world.advance_to(1_500);
+    assert_eq!(world.timer.now(), Instant::from_micros(2_000));
+    assert_eq!(world.model.now(), Ok(RadioInstant::from_micros(2_000)));
 }
 
 #[test]
@@ -1134,7 +1113,7 @@ fn the_power_manager_asks_the_radio_system_for_the_beacon_window_body() {
     // At each TBTT the station restarts the schedule and requests the air
     // for the beacon window.
     let mut delivered = Vec::new();
-    ap.next_beacon_micros = Some(world.timer.now.get() + 10_000);
+    ap.next_beacon_micros = Some(world.timer.now().as_micros() + 10_000);
     world.run_for(&mut ap, &mut station, 250, &mut delivered);
     let performed = world.coex.performed.borrow();
     assert!(performed.contains(&PmCoexAction::RestartPhases));
@@ -1550,7 +1529,7 @@ fn power_save_dozes_and_wakes_for_buffered_traffic_at_a_tbtt_body() {
     // The access point beacons 10 ms from now, then every 102.4 ms. Once
     // the station parsed a beacon and idled past the active timeout, it
     // sends a Null with PM=1 and dozes: the transmit gate closes.
-    let start = world.timer.now.get();
+    let start = world.timer.now().as_micros();
     ap.next_beacon_micros = Some(start + 10_000);
     world.run_for(&mut ap, &mut station, 100, &mut delivered);
     ap.absorb(world.model);
@@ -1715,7 +1694,7 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
         let mut routing = pin!(world.router.run());
         let mut context = Context::from_waker(Waker::noop());
         loop {
-            world.timer.wanted.set(None);
+            world.timer.advance_to(world.timer.now());
             if let Poll::Ready(exit) = future.as_mut().poll(&mut context) {
                 break exit;
             }
@@ -1727,11 +1706,15 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
                 sent_deauthentication = true;
                 continue;
             }
-            if ap.step(world.model, world.timer.now.get()) {
+            if ap.step(world.model, world.timer.now().as_micros()) {
                 continue;
             }
-            let next = world.timer.wanted.get().expect("a deadline");
-            world.advance_to(next.max(world.timer.now.get()));
+            let next = world
+                .timer
+                .next_deadline()
+                .map(Instant::as_micros)
+                .expect("a deadline");
+            world.advance_to(next.max(world.timer.now().as_micros()));
         }
     };
     let StaLifecycleExit::Stopped { progress, .. } = exit else {
@@ -2373,7 +2356,7 @@ fn an_announced_channel_switch_silences_the_station_until_its_owner_moves_it_bod
     let world = World::new();
     let mut ap = ScriptedAp::new(ApSecurity::Open);
     let mut station = connect(&world, &mut ap, world.station(open()));
-    ap.next_beacon_micros = Some(world.timer.now.get());
+    ap.next_beacon_micros = Some(world.timer.now().as_micros());
     let mut delivered = Vec::new();
     assert_eq!(
         world.run_for(&mut ap, &mut station, 300, &mut delivered),
@@ -2400,7 +2383,7 @@ fn an_announced_channel_switch_silences_the_station_until_its_owner_moves_it_bod
     assert_eq!(target, channel(11));
     assert_eq!(mode, ChannelSwitchMode::StopTransmitting);
     let interval = u64::from(scripted_ap::BEACON_INTERVAL_TU) * 1_024;
-    assert_eq!(at.as_micros(), world.timer.now.get() + 3 * interval);
+    assert_eq!(at.as_micros(), world.timer.now().as_micros() + 3 * interval);
     assert_eq!(
         station
             .connection()
@@ -2481,12 +2464,12 @@ fn the_lifecycle_follows_its_access_point_to_the_announced_channel_body() {
         let mut routing = pin!(world.router.run());
         let mut context = Context::from_waker(Waker::noop());
         loop {
-            world.timer.wanted.set(None);
+            world.timer.advance_to(world.timer.now());
             if let Poll::Ready(exit) = future.as_mut().poll(&mut context) {
                 break exit;
             }
             assert!(routing.as_mut().poll(&mut context).is_pending());
-            let now = world.timer.now.get();
+            let now = world.timer.now().as_micros();
             if announced_at.is_none() && connections.get() == 1 {
                 ap.beacon_extra = vec![37, 3, 0, 11, 2];
                 ap.next_beacon_micros = Some(now);
@@ -2509,7 +2492,11 @@ fn the_lifecycle_follows_its_access_point_to_the_announced_channel_body() {
             if ap.step(world.model, now) {
                 continue;
             }
-            let next = world.timer.wanted.get().expect("a deadline");
+            let next = world
+                .timer
+                .next_deadline()
+                .map(Instant::as_micros)
+                .expect("a deadline");
             world.advance_to(next.max(now));
         }
     };

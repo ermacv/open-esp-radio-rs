@@ -12,8 +12,9 @@
 //! a clock.
 //!
 //! [`SkipClock`] serves code under test that runs on one task and waits only
-//! for its own deadlines: each wait moves time to its deadline and ends at
-//! once, so a blocking test runs a timed sequence without an executor.
+//! for its own deadlines: a wait's first poll moves time to its deadline
+//! and completes it, so a blocking test runs a timed sequence without an
+//! executor. Creating or dropping an unpolled wait leaves time unchanged.
 
 use core::{
     cell::{Cell, RefCell},
@@ -124,10 +125,11 @@ impl<const WAITERS: usize> Timer for VirtualClock<WAITERS> {
 
 /// Virtual time that skips ahead to every deadline waited for.
 ///
-/// A wait moves time to its deadline, unless time is already past it, and
-/// ends at once; time otherwise moves only when the owner advances it. Use
-/// it where one task waits on its own deadlines; tasks that wait for each
-/// other need [`VirtualClock`].
+/// A wait's first poll moves time to its deadline, unless time is already
+/// past it, and completes the wait. Creating or dropping an unpolled wait
+/// has no effect; time otherwise moves only when the owner advances it.
+/// Use it where one task waits on its own deadlines; tasks that wait for
+/// each other need [`VirtualClock`].
 #[derive(Debug)]
 pub struct SkipClock {
     now: Cell<Instant>,
@@ -166,9 +168,8 @@ impl Clock for SkipClock {
 }
 
 impl Timer for SkipClock {
-    fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
+    async fn wait_until(&self, deadline: Instant) {
         self.advance_to(deadline);
-        core::future::ready(())
     }
 }
 

@@ -1,7 +1,5 @@
-use core::{
-    future::{Future, ready},
-    pin::pin,
-};
+use core::pin::pin;
+use oer_time_virtual::SkipClock;
 
 use oer_esp32s31_hal::types::{
     MacKeyInstallOutcome, MacLegacyRate, MacLegacyTxProgram, MacTxCompletionObservation,
@@ -126,21 +124,6 @@ impl WifiTxPowerProfile for Power {
     }
 }
 
-struct Timer;
-
-/// Time that stands still; waits end at once.
-impl oer_time::Clock for Timer {
-    fn now(&self) -> oer_time::Instant {
-        oer_time::Instant::from_micros(0)
-    }
-}
-
-impl oer_time::Timer for Timer {
-    fn wait_until(&self, _deadline: oer_time::Instant) -> impl Future<Output = ()> {
-        ready(())
-    }
-}
-
 #[test]
 fn unschedulable_beacon_reports_preparation_failure_without_publication() {
     let ap = [2, 0, 0, 0, 0, 1];
@@ -177,7 +160,7 @@ fn unschedulable_beacon_reports_preparation_failure_without_publication() {
             policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy: || 0,
-            timer: Timer,
+            timer: SkipClock::new(),
         },
         ApTxConfig {
             publication_timeout: oer_time::Duration::from_micros(1_000),
@@ -225,7 +208,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
             policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy: || 0,
-            timer: Timer,
+            timer: SkipClock::new(),
         },
         ApTxConfig {
             publication_timeout: oer_time::Duration::from_micros(1_000),
@@ -330,7 +313,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
             policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy: || 0,
-            timer: Timer,
+            timer: SkipClock::new(),
         },
         ApTxConfig {
             publication_timeout: oer_time::Duration::from_micros(1_000),

@@ -8,6 +8,7 @@ use core::{
 };
 use std::{sync::Arc, task::Wake};
 
+use embassy_futures::select::{Either, select};
 use oer_time::{Clock, Duration, Instant, TimeOverflow, Timer};
 
 use super::{SkipClock, VirtualClock};
@@ -123,7 +124,12 @@ fn a_skip_clock_wait_moves_time_to_its_deadline_and_never_back() {
     let clock = SkipClock::starting_at(Instant::from_micros(5));
     let waker = Waker::from(Arc::new(Wakes::default()));
     let wait = pin!(clock.wait_until(Instant::from_micros(20)));
+    assert_eq!(clock.now(), Instant::from_micros(5));
     assert_eq!(poll(wait, &waker), Poll::Ready(()));
+    assert_eq!(clock.now(), Instant::from_micros(20));
+
+    let reached = pin!(clock.wait_until(Instant::from_micros(20)));
+    assert_eq!(poll(reached, &waker), Poll::Ready(()));
     assert_eq!(clock.now(), Instant::from_micros(20));
 
     let past = pin!(clock.wait_until(Instant::from_micros(10)));
@@ -134,4 +140,51 @@ fn a_skip_clock_wait_moves_time_to_its_deadline_and_never_back() {
     assert_eq!(clock.now(), Instant::from_micros(20));
     clock.advance_to(Instant::from_micros(30));
     assert_eq!(clock.now(), Instant::from_micros(30));
+}
+
+#[test]
+fn an_unpolled_skip_clock_wait_has_no_effect_before_or_after_drop() {
+    let clock = SkipClock::starting_at(Instant::from_micros(5));
+    let wait = clock.wait_until(Instant::from_micros(20));
+    assert_eq!(clock.now(), Instant::from_micros(5));
+    drop(wait);
+    assert_eq!(clock.now(), Instant::from_micros(5));
+
+    let wait = clock.wait_for(Duration::from_micros(15));
+    assert_eq!(clock.now(), Instant::from_micros(5));
+    drop(wait);
+    assert_eq!(clock.now(), Instant::from_micros(5));
+}
+
+#[test]
+fn a_skip_clock_does_not_advance_for_an_unpolled_losing_select_branch() {
+    let clock = SkipClock::starting_at(Instant::from_micros(5));
+    {
+        let selected = pin!(select(
+            core::future::ready(()),
+            clock.wait_until(Instant::from_micros(20)),
+        ));
+        assert!(matches!(
+            poll(selected, Waker::noop()),
+            Poll::Ready(Either::First(()))
+        ));
+    }
+    assert_eq!(clock.now(), Instant::from_micros(5));
+}
+
+#[test]
+fn a_skip_clock_wait_uses_the_current_time_when_polled() {
+    let clock = SkipClock::starting_at(Instant::from_micros(5));
+    let wait = pin!(clock.wait_until(Instant::from_micros(20)));
+    clock.advance_to(Instant::from_micros(30));
+    assert_eq!(poll(wait, Waker::noop()), Poll::Ready(()));
+    assert_eq!(clock.now(), Instant::from_micros(30));
+}
+
+#[test]
+fn an_overflowing_skip_clock_wait_fails_without_changing_time() {
+    let clock = SkipClock::starting_at(Instant::from_micros(u64::MAX));
+    let wait = pin!(clock.wait_for(Duration::from_micros(1)));
+    assert_eq!(poll(wait, Waker::noop()), Poll::Ready(Err(TimeOverflow)));
+    assert_eq!(clock.now(), Instant::from_micros(u64::MAX));
 }

@@ -24,8 +24,9 @@ fn extraction_uses_source_inventory_and_includes_new_binary_targets() {
     write(&repository.path().join("crates/source.rs"), "not Blobray");
     let context = Checkout::new(repository.path()).unwrap();
     process::run(oer_process::git::command(&context.root).args(["init", "--quiet"])).unwrap();
-    let files = source_files(&context).unwrap();
-    extract(&source, destination.path(), files).unwrap();
+    let repo = oer_repo::Repo::from_git(&context.root).unwrap();
+    let files: Vec<_> = repo.files().map(|file| context.root.join(file)).collect();
+    extract(&source, destination.path(), &files).unwrap();
     assert!(destination.path().join("src/main.rs").is_file());
     assert!(destination.path().join("src/bin/new-launcher.rs").is_file());
     for excluded in ["private-input", "target", "_oracles", "driver"] {
@@ -72,7 +73,101 @@ fn extraction_rejects_source_symlink_outside_blobray() {
     write(&outside, "not Blobray");
     let link = source.join("borrowed.rs");
     std::os::unix::fs::symlink(outside, &link).unwrap();
-    assert!(extract(&source, destination.path(), vec![link]).is_err());
+    assert!(extract(&source, destination.path(), &[link]).is_err());
+}
+
+#[test]
+fn extraction_follows_transitive_and_all_declared_path_dependencies() {
+    let repository = tempfile::tempdir().unwrap();
+    let destination = tempfile::tempdir().unwrap();
+    write(
+        &repository.path().join("Cargo.toml"),
+        "[workspace]\nmembers = []\nexclude = ['tools/blobray']\n",
+    );
+    write(
+        &repository.path().join("tools/blobray/Cargo.toml"),
+        "[workspace]\nmembers = ['cli', 'crates/*']\n",
+    );
+    let dependencies = "\
+        [dependencies]\n\
+        foundation = { path = '../../foundation' }\n\
+        optional = { path = '../../optional', optional = true }\n\
+        [build-dependencies]\n\
+        generator = { path = '../../generator' }\n\
+        [dev-dependencies]\n\
+        testing = { path = '../../testing' }\n\
+        [target.'cfg(windows)'.dependencies]\n\
+        platform = { path = '../../platform' }\n";
+    for (directory, name, dependencies) in [
+        ("tools/blobray/cli", "cli", dependencies),
+        ("tools/blobray/crates/new-member", "new-member", ""),
+        (
+            "tools/foundation",
+            "foundation",
+            "[dependencies]\ndurable = { path = '../durable' }\n",
+        ),
+        ("tools/durable", "durable", ""),
+        ("tools/optional", "optional", ""),
+        ("tools/generator", "generator", ""),
+        ("tools/testing", "testing", ""),
+        ("tools/platform", "platform", ""),
+        ("tools/unrelated", "unrelated", ""),
+    ] {
+        write(
+            &repository.path().join(directory).join("Cargo.toml"),
+            &format!("[package]\nname = '{name}'\nversion = '0.1.0'\n{dependencies}"),
+        );
+        write(
+            &repository.path().join(directory).join("src/lib.rs"),
+            "pub fn available() {}\n",
+        );
+    }
+    let context = Checkout::new(repository.path()).unwrap();
+    process::run(oer_process::git::command(&context.root).args(["init", "--quiet"])).unwrap();
+    extract_workspace(&context, destination.path()).unwrap();
+
+    // Cargo resolves the extracted graph after its original source is gone.
+    fs::remove_dir_all(repository.path()).unwrap();
+    let output = process::capture(oer_toolchain::cargo_in(destination.path()).args([
+        "metadata",
+        "--no-deps",
+        "--format-version",
+        "1",
+        "--offline",
+    ]))
+    .unwrap();
+    let metadata: cargo_metadata::Metadata = serde_json::from_slice(&output.stdout).unwrap();
+    let packages: std::collections::BTreeSet<_> = metadata
+        .packages
+        .iter()
+        .map(|package| package.name.as_str())
+        .collect();
+    assert_eq!(
+        packages,
+        [
+            "cli",
+            "durable",
+            "foundation",
+            "generator",
+            "new-member",
+            "optional",
+            "platform",
+            "testing",
+        ]
+        .into_iter()
+        .collect()
+    );
+    assert!(!destination.path().join("tools/unrelated").exists());
+    require_contained_dependencies(
+        destination.path(),
+        metadata.packages.iter().flat_map(|package| {
+            package
+                .dependencies
+                .iter()
+                .filter_map(|dependency| dependency.path.as_ref().map(|path| path.as_std_path()))
+        }),
+    )
+    .unwrap();
 }
 
 #[test]

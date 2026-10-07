@@ -1,5 +1,5 @@
-//! Extract and compile Blobray, with the RV32 crates, `oer-elf` and the host tool lookup it takes by path, without
-//! access to any other repository path dependency.
+//! Extract and compile the Blobray workspace and its complete path-package
+//! closure, including test dependencies, without access to the repository.
 
 use std::{
     ffi::{OsStr, OsString},
@@ -42,44 +42,7 @@ pub fn run(context: &Checkout) -> Result<()> {
         .prefix("blobray-standalone-")
         .tempdir()?;
     let root = scratch.path().canonicalize()?;
-    // Members keep their repository paths, so the RV32 crates Blobray takes
-    // by path are extracted beside it and no path dependency is rewritten.
-    let members = [
-        "tools/blobray/cli",
-        "tools/blobray/crates/domain",
-        "tools/blobray/crates/artifacts",
-        "tools/blobray/crates/application",
-        "tools/blobray/crates/linker",
-        "tools/blobray/crates/analysis",
-        "tools/blobray/crates/verification",
-        "tools/blobray/crates/riscv",
-        "tools/elf",
-        "tools/riscv/analysis",
-        "tools/riscv/decode",
-        "tools/riscv/lift",
-        "tools/riscv/model",
-        "tools/riscv/program",
-        // `oer-riscv-decode`'s LLVM conformance test finds `llvm-objdump`
-        // through the one host tool lookup.
-        "tools/process",
-        "tools/toolchain",
-    ];
-    let files = source_files(context)?;
-    for member in members {
-        extract(
-            &context.root.join(member),
-            &root.join(member),
-            files.clone(),
-        )?;
-    }
-    let mut workspace: toml::Value = toml::from_str(WORKSPACE)?;
-    workspace["workspace"]["members"] = toml::Value::Array(
-        members
-            .iter()
-            .map(|s| toml::Value::String((*s).into()))
-            .collect(),
-    );
-    fs::write(root.join("Cargo.toml"), toml::to_string(&workspace)?)?;
+    extract_workspace(context, &root)?;
     let output = process::capture(command(context, &root, &toolchain).args([
         "metadata",
         "--no-deps",
@@ -99,6 +62,37 @@ pub fn run(context: &Checkout) -> Result<()> {
     )?;
     process::run(command(context, &root, &toolchain).args(["test", "--workspace", "--offline"]))?;
     eprintln!("standalone Blobray core and tests are self-contained");
+    Ok(())
+}
+
+fn extract_workspace(context: &Checkout, root: &Path) -> Result<()> {
+    let repo = oer_repo::Repo::from_git(&context.root)?;
+    let model = oer_repo::Model::load(&repo)?;
+    let workspace_manifest = oer_toolchain::workspace::BLOBRAY.manifest();
+    let roots: Vec<_> = model.members(&workspace_manifest).collect();
+    if roots.is_empty() {
+        return Err(format!("{workspace_manifest} has no workspace members").into());
+    }
+    let members: Vec<_> = model
+        .closure(
+            &roots,
+            oer_repo::closure::Edges::All,
+            None,
+            &oer_repo::closure::Features::All,
+        )?
+        .into_iter()
+        .map(|package| package.directory.clone())
+        .collect();
+    // Members keep their repository paths, so the RV32 crates Blobray takes
+    // by path are extracted beside it and no path dependency is rewritten.
+    let files: Vec<_> = repo.files().map(|file| context.root.join(file)).collect();
+    for member in &members {
+        extract(&context.root.join(member), &root.join(member), &files)?;
+    }
+    let mut workspace: toml::Value = toml::from_str(WORKSPACE)?;
+    workspace["workspace"]["members"] =
+        toml::Value::Array(members.iter().cloned().map(toml::Value::String).collect());
+    fs::write(root.join("Cargo.toml"), toml::to_string(&workspace)?)?;
     Ok(())
 }
 
@@ -129,7 +123,7 @@ fn command(context: &Checkout, root: &Path, toolchain: &OsStr) -> Command {
     command
 }
 
-fn extract(source: &Path, destination: &Path, files: Vec<PathBuf>) -> Result<()> {
+fn extract(source: &Path, destination: &Path, files: &[PathBuf]) -> Result<()> {
     let source = source.canonicalize()?;
     for file in files {
         let Ok(relative) = file.strip_prefix(&source) else {
@@ -167,14 +161,6 @@ fn require_contained_dependencies<'a>(
         }
     }
     Ok(())
-}
-
-/// The checkout's files (`oer-repo`'s inventory), as absolute paths.
-fn source_files(context: &Checkout) -> Result<Vec<std::path::PathBuf>> {
-    Ok(oer_repo::Repo::from_git(&context.root)?
-        .files()
-        .map(|file| context.root.join(file))
-        .collect())
 }
 
 #[cfg(test)]

@@ -92,7 +92,7 @@ included), `cargo hil` (runs, images, sweeps of HIL build outputs),
 
 | Command | Contract |
 | --- | --- |
-| `cargo xtask check blobray-standalone` | Extract generic Blobray source with the `tools/riscv` crates, `tools/elf` and the host tool lookup (`tools/toolchain`, `tools/process`) it takes by path, check path-dependency containment, then build and test every extracted crate |
+| `cargo xtask check blobray-standalone` | Extract the Blobray workspace and its complete path-package closure from `oer-repo`, including build, test, optional and target-specific dependencies; check path-dependency containment, then build and test every extracted crate without the repository |
 | `cargo xtask check isa-conformance [--cc CLANG]` | Fetch the pinned RISC-V architectural tests and Sail model, then compare every signature of Blobray's RISC-V executor with Sail's on the same ELF |
 
 ## The check registry

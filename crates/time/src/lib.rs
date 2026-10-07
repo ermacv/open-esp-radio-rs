@@ -1,7 +1,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-//! Chip-neutral monotonic time.
+//! Chip-neutral monotonic and radio time.
 //!
 //! Two time axes cross the radio contracts:
 //!
@@ -10,18 +10,21 @@
 //!   waits for a deadline on it. Portable code takes both as ports; an
 //!   adapter binds them to an executor's time driver and a host model binds
 //!   them to virtual time.
-//! - [`RadioInstant`] and [`RadioDuration`] are a radio backend's own
-//!   monotonic epoch, in which it schedules air events. An instant carries
-//!   its port's domain, so two ports' instants never mix. A radio port
-//!   states how its epoch relates to the monotonic time, and its
-//!   `ClockInfo` (in `oer-radio-port`) converts; nothing here does.
+//! - [`RadioInstant`] is a coordinate in its owner's radio domain and
+//!   epoch; [`RadioDuration`] is a non-negative span within that domain.
+//!   Instants of different domains cannot be compared or subtracted. The owner
+//!   validates additional interface, instance or generation identity.
+//!   Raw microseconds imply no image-monotonic or wall-clock relationship;
+//!   the existing clock relations own conversion between domains.
 //!
-//! Both axes count microseconds in `u64`, so neither wraps within the life
-//! of an image. Arithmetic is checked: an operation that would leave the
-//! representable range returns `None` or [`TimeOverflow`] instead of
-//! wrapping or saturating silently. The one explicit exception is
-//! [`Instant::saturating_add`] for deadlines, where the end of the range
-//! means "never".
+//! Both axes represent microseconds in `u64`. Radio spans include every
+//! value from zero through `u64::MAX`; [`RadioWindow`] additionally requires
+//! a non-zero span and a representable exclusive endpoint.
+//! Checked arithmetic returns `None` or [`TimeOverflow`] when a result would
+//! leave the representable range, and window construction returns
+//! [`WindowError`]. The monotonic axis also exposes explicit saturation via
+//! [`Instant::saturating_add`] for deadlines and
+//! [`Instant::saturating_duration_since`]; radio arithmetic never saturates.
 
 use core::future::Future;
 

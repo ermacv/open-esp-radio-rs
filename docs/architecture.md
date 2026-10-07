@@ -269,7 +269,20 @@ Rules:
   it returns for a hardware alarm stays in that alarm's domain, and the
   driver arms it.
 - Domains do not mix at the type level: a port's instants are
-  `RadioInstant<D>` of its own domain `D`.
+  `RadioInstant<D>` of its own domain `D`. A radio instant is a coordinate
+  in its owner's radio epoch, not an image-monotonic or wall-clock instant.
+  Its raw microseconds establish no relationship between clocks. The owner
+  retains any additional interface, instance and generation validation.
+- Radio arithmetic belongs to `oer-time`: `RadioDuration` represents every
+  non-negative `u64` microsecond span. Instant ordering and
+  `checked_duration_since` require the same domain; equal instants yield a
+  zero span and reversed instants fail. Instant `checked_add`/`checked_sub`
+  and duration `checked_add`/`checked_sub`/`checked_mul` return `None` for
+  results outside the represented range, without wrapping, narrowing or
+  clamping. `RadioWindow` is non-empty and half-open, with a representable
+  exclusive endpoint; touching windows do not overlap. Scalar extraction
+  belongs at named formula or representation boundaries. Monotonic
+  duration is not a substitute for radio-domain arithmetic.
 - Time crosses between domains only at a boundary, through the port's
   `ClockInfo` and a `ClockSample` with its generation and uncertainty; a
   stamp of another generation is not converted (`EpochError::StaleSample`).

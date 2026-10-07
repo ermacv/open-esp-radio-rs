@@ -1,9 +1,15 @@
-//! A radio backend's monotonic epoch.
+//! Checked time in a radio owner's domain and epoch.
 //!
-//! Each radio port names its own domain `D`, an empty type its package
-//! declares, so an instant of one port never compares with, or schedules
-//! on, another port's clock. A port's `ClockInfo` relates its epoch to the
-//! image's monotonic time.
+//! Each owner names its domain `D`, an empty type its package declares.
+//! Instants of different domains cannot be compared or subtracted. The
+//! owner validates any additional interface, instance or generation identity.
+//! Raw radio microseconds establish no relation to image-monotonic or
+//! wall-clock time; conversion belongs to the existing clock relations.
+//!
+//! Instants and non-negative durations span the full `u64` microsecond
+//! range. Checked arithmetic returns `None` for an unrepresentable result.
+//! A window also requires a non-zero duration and a representable exclusive
+//! endpoint.
 
 use core::{
     cmp::Ordering,
@@ -12,10 +18,36 @@ use core::{
     marker::PhantomData,
 };
 
-/// Microseconds in the radio epoch of the port of domain `D`.
+/// A microsecond coordinate in the radio domain and epoch owned by `D`.
 ///
-/// The epoch is not wall-clock time. A backend publishes every instant of
-/// one controller instance in the same epoch.
+/// The coordinate alone establishes neither an image-monotonic nor a
+/// wall-clock relationship. The owner validates interface, instance and
+/// generation identity where needed.
+///
+/// Ordering and elapsed-time arithmetic require the same domain, without
+/// requiring the domain marker itself to implement `Copy` or `Ord`:
+///
+/// ```
+/// use oer_time::{RadioDuration, RadioInstant};
+///
+/// enum Radio {}
+/// let earlier = RadioInstant::<Radio>::from_micros(10);
+/// let later = RadioInstant::<Radio>::from_micros(30);
+/// assert!(earlier < later);
+/// assert_eq!(later.checked_duration_since(earlier), Some(RadioDuration::from_micros(20)));
+/// ```
+///
+/// Different domains cannot be ordered:
+///
+/// ```compile_fail,E0308
+/// use oer_time::RadioInstant;
+///
+/// enum FirstRadio {}
+/// enum SecondRadio {}
+/// let first = RadioInstant::<FirstRadio>::from_micros(10);
+/// let second = RadioInstant::<SecondRadio>::from_micros(30);
+/// let _ = first < second;
+/// ```
 #[repr(transparent)]
 pub struct RadioInstant<D> {
     micros: u64,
@@ -23,7 +55,7 @@ pub struct RadioInstant<D> {
 }
 
 impl<D> RadioInstant<D> {
-    /// Construct an instant from monotonic microseconds.
+    /// Construct a coordinate from microseconds in this radio epoch.
     pub const fn from_micros(micros: u64) -> Self {
         Self {
             micros,
@@ -31,15 +63,45 @@ impl<D> RadioInstant<D> {
         }
     }
 
-    /// Monotonic microseconds.
+    /// The radio coordinate in microseconds, for formula or representation
+    /// boundaries.
     pub const fn as_micros(self) -> u64 {
         self.micros
     }
 
     /// The instant `duration` later, or `None` on overflow.
     pub const fn checked_add(self, duration: RadioDuration) -> Option<Self> {
-        match self.micros.checked_add(duration.0 as u64) {
+        match self.micros.checked_add(duration.0) {
             Some(micros) => Some(Self::from_micros(micros)),
+            None => None,
+        }
+    }
+
+    /// The instant `duration` earlier, or `None` before epoch zero.
+    pub const fn checked_sub(self, duration: RadioDuration) -> Option<Self> {
+        match self.micros.checked_sub(duration.0) {
+            Some(micros) => Some(Self::from_micros(micros)),
+            None => None,
+        }
+    }
+
+    /// The span from `earlier` to `self`, or `None` when `earlier` is later.
+    /// Equal instants yield a zero duration.
+    ///
+    /// Subtraction across radio domains is rejected:
+    ///
+    /// ```compile_fail,E0308
+    /// use oer_time::RadioInstant;
+    ///
+    /// enum FirstRadio {}
+    /// enum SecondRadio {}
+    /// let earlier = RadioInstant::<FirstRadio>::from_micros(10);
+    /// let later = RadioInstant::<SecondRadio>::from_micros(30);
+    /// let _ = later.checked_duration_since(earlier);
+    /// ```
+    pub const fn checked_duration_since(self, earlier: Self) -> Option<RadioDuration> {
+        match self.micros.checked_sub(earlier.micros) {
+            Some(micros) => Some(RadioDuration(micros)),
             None => None,
         }
     }
@@ -88,20 +150,47 @@ impl<D> fmt::Debug for RadioInstant<D> {
     }
 }
 
-/// A non-negative span of microseconds.
+/// A non-negative radio-time span, from zero through `u64::MAX` microseconds.
+///
+/// This is a span within a radio domain, not a conversion to monotonic time.
+/// Arithmetic rejects unrepresentable results instead of wrapping or clamping.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
-pub struct RadioDuration(u32);
+pub struct RadioDuration(u64);
 
 impl RadioDuration {
     /// Construct a duration from microseconds.
-    pub const fn from_micros(micros: u32) -> Self {
+    pub const fn from_micros(micros: u64) -> Self {
         Self(micros)
     }
 
-    /// Microseconds.
-    pub const fn as_micros(self) -> u32 {
+    /// Microseconds, for formula or representation boundaries.
+    pub const fn as_micros(self) -> u64 {
         self.0
+    }
+
+    /// The sum, or `None` past `u64::MAX` microseconds.
+    pub const fn checked_add(self, other: Self) -> Option<Self> {
+        match self.0.checked_add(other.0) {
+            Some(micros) => Some(Self(micros)),
+            None => None,
+        }
+    }
+
+    /// The difference, or `None` when `other` is longer.
+    pub const fn checked_sub(self, other: Self) -> Option<Self> {
+        match self.0.checked_sub(other.0) {
+            Some(micros) => Some(Self(micros)),
+            None => None,
+        }
+    }
+
+    /// The span repeated `count` times, or `None` past `u64::MAX` microseconds.
+    pub const fn checked_mul(self, count: u64) -> Option<Self> {
+        match self.0.checked_mul(count) {
+            Some(micros) => Some(Self(micros)),
+            None => None,
+        }
     }
 }
 
@@ -116,6 +205,9 @@ pub enum WindowError {
 
 /// A non-empty interval `[start, start + duration)` reserved for one event
 /// on the clock of the port of domain `D`.
+///
+/// Construction validates the exclusive endpoint against the full radio
+/// epoch. A valid window's [`end`](Self::end) is always representable.
 pub struct RadioWindow<D> {
     start: RadioInstant<D>,
     duration: RadioDuration,
@@ -123,6 +215,9 @@ pub struct RadioWindow<D> {
 
 impl<D> RadioWindow<D> {
     /// Reserve `duration` from `start`.
+    ///
+    /// Zero duration returns [`WindowError::Empty`]; an unrepresentable
+    /// exclusive endpoint returns [`WindowError::Overflow`].
     pub const fn new(start: RadioInstant<D>, duration: RadioDuration) -> Result<Self, WindowError> {
         if duration.0 == 0 {
             return Err(WindowError::Empty);
@@ -145,7 +240,8 @@ impl<D> RadioWindow<D> {
 
     /// First instant after the window.
     pub const fn end(self) -> RadioInstant<D> {
-        RadioInstant::from_micros(self.start.micros + self.duration.0 as u64)
+        // `new` proved this endpoint representable; the fields are private.
+        RadioInstant::from_micros(self.start.micros + self.duration.0)
     }
 
     /// Whether the two windows share an instant. Touching windows do not.
@@ -194,36 +290,189 @@ mod tests {
     /// A test port's domain.
     enum Port {}
 
-    fn window(start: u64, duration: u32) -> RadioWindow<Port> {
-        RadioWindow::new(
-            RadioInstant::<Port>::from_micros(start),
-            RadioDuration::from_micros(duration),
-        )
-        .unwrap()
+    const fn instant(micros: u64) -> RadioInstant<Port> {
+        RadioInstant::from_micros(micros)
+    }
+
+    const fn duration(micros: u64) -> RadioDuration {
+        RadioDuration::from_micros(micros)
+    }
+
+    fn window(start: u64, micros: u64) -> RadioWindow<Port> {
+        RadioWindow::new(instant(start), duration(micros)).unwrap()
     }
 
     #[test]
-    fn windows_are_non_empty_and_touching_windows_do_not_overlap() {
+    fn durations_and_elapsed_spans_cover_the_full_unsigned_range() {
+        for micros in [0, 1, 42, u32::MAX as u64, u32::MAX as u64 + 1, u64::MAX] {
+            let span = duration(micros);
+            let end = instant(micros);
+            assert_eq!(span.as_micros(), micros);
+            assert_eq!(instant(0).checked_add(span), Some(end));
+            assert_eq!(end.checked_sub(span), Some(instant(0)));
+            assert_eq!(end.checked_duration_since(instant(0)), Some(span));
+            assert_eq!(end.checked_duration_since(end), Some(duration(0)));
+            assert_eq!(end.checked_add(duration(0)), Some(end));
+            assert_eq!(end.checked_sub(duration(0)), Some(end));
+            if micros != 0 {
+                assert_eq!(instant(0).checked_duration_since(end), None);
+            }
+        }
+    }
+
+    #[test]
+    fn instant_arithmetic_rejects_the_first_result_outside_the_epoch() {
+        assert_eq!(instant(100).checked_add(duration(50)), Some(instant(150)));
+        assert_eq!(instant(100).checked_sub(duration(50)), Some(instant(50)));
         assert_eq!(
-            RadioWindow::new(
-                RadioInstant::<Port>::from_micros(5),
-                RadioDuration::from_micros(0)
-            ),
-            Err(WindowError::Empty)
+            instant(100).checked_duration_since(instant(40)),
+            Some(duration(60))
         );
+        assert_eq!(instant(100).checked_duration_since(instant(101)), None);
+        assert_eq!(instant(100).checked_sub(duration(101)), None);
+        assert_eq!(instant(0).checked_sub(duration(1)), None);
         assert_eq!(
-            RadioWindow::new(
-                RadioInstant::<Port>::from_micros(u64::MAX),
-                RadioDuration::from_micros(1)
-            ),
-            Err(WindowError::Overflow)
+            instant(u64::MAX - 1).checked_add(duration(1)),
+            Some(instant(u64::MAX))
         );
-        assert_eq!(
-            window(100, 50).end(),
-            RadioInstant::<Port>::from_micros(150)
-        );
-        assert!(!window(100, 50).overlaps(window(150, 10)));
-        assert!(window(100, 50).overlaps(window(149, 10)));
-        assert!(window(100, 50).overlaps(window(90, 20)));
+        assert_eq!(instant(u64::MAX - 1).checked_add(duration(2)), None);
+        assert_eq!(instant(u64::MAX).checked_add(duration(1)), None);
+        assert_eq!(instant(1).checked_add(duration(u64::MAX)), None);
+        assert_eq!(instant(u64::MAX - 1).checked_sub(duration(u64::MAX)), None);
+    }
+
+    #[test]
+    fn duration_sums_accept_exact_limits_and_reject_overflow() {
+        for (left, right, expected) in [
+            (0, 0, Some(0)),
+            (20, 30, Some(50)),
+            (u32::MAX as u64, 1, Some(u32::MAX as u64 + 1)),
+            (u64::MAX, 0, Some(u64::MAX)),
+            (u64::MAX - 1, 1, Some(u64::MAX)),
+            (u64::MAX - 1, 2, None),
+            (u64::MAX, 1, None),
+        ] {
+            let expected = expected.map(duration);
+            assert_eq!(duration(left).checked_add(duration(right)), expected);
+            assert_eq!(duration(right).checked_add(duration(left)), expected);
+        }
+    }
+
+    #[test]
+    fn duration_differences_accept_zero_and_reject_underflow() {
+        for (left, right, expected) in [
+            (0, 0, Some(0)),
+            (50, 20, Some(30)),
+            (u32::MAX as u64 + 1, 1, Some(u32::MAX as u64)),
+            (u64::MAX, 0, Some(u64::MAX)),
+            (u64::MAX, u64::MAX, Some(0)),
+            (0, 1, None),
+            (u64::MAX - 1, u64::MAX, None),
+        ] {
+            assert_eq!(
+                duration(left).checked_sub(duration(right)),
+                expected.map(duration)
+            );
+        }
+    }
+
+    #[test]
+    fn duration_products_accept_exact_limits_and_reject_the_next_product() {
+        // (2^32 - 1) * (2^32 + 1) is exactly u64::MAX.
+        let factor = u32::MAX as u64 + 2;
+        for (micros, count, expected) in [
+            (0, u64::MAX, Some(0)),
+            (u64::MAX, 0, Some(0)),
+            (u64::MAX, 1, Some(u64::MAX)),
+            (7, 3, Some(21)),
+            (u32::MAX as u64 + 1, 1, Some(u32::MAX as u64 + 1)),
+            (1, u64::MAX, Some(u64::MAX)),
+            (u32::MAX as u64, factor, Some(u64::MAX)),
+            (u32::MAX as u64, factor + 1, None),
+            (u64::MAX / 2, 2, Some(u64::MAX - 1)),
+            (u64::MAX / 2 + 1, 2, None),
+            (u64::MAX, 2, None),
+        ] {
+            assert_eq!(duration(micros).checked_mul(count), expected.map(duration));
+        }
+    }
+
+    #[test]
+    fn same_domain_ordering_needs_no_traits_on_the_domain_marker() {
+        let earlier = instant(0);
+        let later = instant(u64::MAX);
+        let copied = later;
+        assert_eq!(copied, later);
+        assert!(earlier < later);
+        assert_eq!(earlier.min(later), earlier);
+        assert_eq!(earlier.max(later), later);
+        assert_eq!(later.cmp(&copied), core::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn checked_radio_arithmetic_is_available_in_const_contexts() {
+        const SUM: Option<RadioDuration> = duration(10).checked_add(duration(20));
+        const DIFFERENCE: Option<RadioDuration> = duration(20).checked_sub(duration(10));
+        const PRODUCT: Option<RadioDuration> = duration(10).checked_mul(3);
+        const LATER: Option<RadioInstant<Port>> = instant(10).checked_add(duration(20));
+        const EARLIER: Option<RadioInstant<Port>> = instant(20).checked_sub(duration(10));
+        const ELAPSED: Option<RadioDuration> = instant(u64::MAX).checked_duration_since(instant(0));
+        const WINDOW: Result<RadioWindow<Port>, WindowError> =
+            RadioWindow::new(instant(0), duration(u64::MAX));
+        const END: RadioInstant<Port> = match WINDOW {
+            Ok(window) => window.end(),
+            Err(_) => panic!("the full-epoch window is representable"),
+        };
+        assert_eq!(SUM, Some(duration(30)));
+        assert_eq!(DIFFERENCE, Some(duration(10)));
+        assert_eq!(PRODUCT, Some(duration(30)));
+        assert_eq!(LATER, Some(instant(30)));
+        assert_eq!(EARLIER, Some(instant(10)));
+        assert_eq!(ELAPSED, Some(duration(u64::MAX)));
+        assert_eq!(END, instant(u64::MAX));
+    }
+
+    #[test]
+    fn windows_validate_duration_and_the_exclusive_endpoint() {
+        for start in [0, 5, u64::MAX] {
+            assert_eq!(
+                RadioWindow::new(instant(start), duration(0)),
+                Err(WindowError::Empty)
+            );
+        }
+        for (start, micros) in [(u64::MAX, 1), (u64::MAX - 1, 2), (1, u64::MAX)] {
+            assert_eq!(
+                RadioWindow::new(instant(start), duration(micros)),
+                Err(WindowError::Overflow)
+            );
+        }
+        for micros in [1, u32::MAX as u64, u32::MAX as u64 + 1, u64::MAX] {
+            let whole = window(0, micros);
+            assert_eq!(whole.start(), instant(0));
+            assert_eq!(whole.duration(), duration(micros));
+            assert_eq!(whole.end(), instant(micros));
+            let latest = window(u64::MAX - micros, micros);
+            assert_eq!(latest.start(), instant(u64::MAX - micros));
+            assert_eq!(latest.duration(), duration(micros));
+            assert_eq!(latest.end(), instant(u64::MAX));
+        }
+    }
+
+    #[test]
+    fn half_open_overlap_is_symmetric_including_full_epoch_windows() {
+        for (left, right, overlaps) in [
+            (window(100, 50), window(100, 50), true),
+            (window(100, 50), window(110, 10), true),
+            (window(100, 50), window(149, 10), true),
+            (window(100, 50), window(90, 20), true),
+            (window(100, 50), window(150, 10), false),
+            (window(100, 50), window(90, 10), false),
+            (window(100, 50), window(151, 10), false),
+            (window(0, u64::MAX), window(u64::MAX - 1, 1), true),
+            (window(0, u64::MAX - 1), window(u64::MAX - 1, 1), false),
+        ] {
+            assert_eq!(left.overlaps(right), overlaps);
+            assert_eq!(right.overlaps(left), overlaps);
+        }
     }
 }

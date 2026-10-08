@@ -76,9 +76,13 @@ ordinary source files require the anchor line read in that pass. Generated
 publications are excluded from patches and full-file reads; investigate their
 reviewed source inputs instead.
 
-One `github-actions[bot]` comment reports errors, a completed review with
-successful CI, or an incomplete review. It explicitly says **Архитектурное ревью**
-and names the model. A second model conversation verifies the candidate report
+Each completed review or reviewer failure adds a new `github-actions[bot]`
+comment. Previous reports are never edited or replaced, so findings remain
+visible after fixes and subsequent pushes. Each report identifies its head/base
+commits and links to the exact Actions attempt. Waiting for CI and review
+progress use the pending commit status without adding intermediate comments.
+A completed report explicitly says **Архитектурное ревью** and names the model.
+A second model conversation verifies the candidate report
 with fresh context and its own source reads, challenging both reported defects
 and a clean verdict. This can reduce false positives; the two passes use the
 same model and can still share blind spots.

@@ -1,6 +1,7 @@
 """Read-only architectural review through the Claude Messages API; stdlib only.
 
-Only the controller can publish one PR comment. Model tools cannot execute
+Only the controller can publish PR comments. Completed reports and failures
+are appended; progress uses the commit status. Model tools cannot execute
 code, access runner files, write GitHub data or choose a network destination.
 """
 
@@ -520,11 +521,6 @@ def ci_state(api, sha):
     return runs[0]["conclusion"] == "success", runs[0]["html_url"]
 
 
-def sticky(api, number):
-    return next((c for c in api.list(f"issues/{number}/comments")
-                 if c["user"]["login"] == "github-actions[bot]" and MARKER in c["body"]), None)
-
-
 def publish(api, pr, body):
     live = api.request("GET", f"pulls/{pr['number']}")
     if (live["state"] != "open" or live["draft"] or
@@ -532,12 +528,15 @@ def publish(api, pr, body):
             any(live[k]["sha"] != pr[k]["sha"] for k in ("head", "base"))):
         print("PR changed during review; obsolete result not published.")
         return False
-    comment = sticky(api, pr["number"])
     body = f"{MARKER}\n{body}\n\nHead: `{pr['head']['sha']}` · Base: `{pr['base']['sha']}`"
-    if comment:
-        api.request("PATCH", f"issues/comments/{comment['id']}", {"body": body})
-    else:
-        api.request("POST", f"issues/{pr['number']}/comments", {"body": body})
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    if run_id:
+        run_url = f"https://github.com/{REPOSITORY}/actions/runs/{run_id}"
+        attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+        if attempt:
+            run_url += f"/attempts/{attempt}"
+        body += f"\n\nЗапуск ревью: [GitHub Actions]({run_url})."
+    api.request("POST", f"issues/{pr['number']}/comments", {"body": body})
     return True
 
 
@@ -588,12 +587,10 @@ def review_pr(api, number, model):
         print("Only same-repository pull requests targeting main are reviewed.")
         return
     status(api, pr, "pending", "Architectural review has not completed for this commit")
-    if not publish(api, pr, "## ⏳ Архитектурное ревью выполняется\n\nПредыдущий вердикт не действует."):
-        return
     try:
         ci_ok, ci = ci_state(api, pr["head"]["sha"])
         if ci_ok is None:
-            publish(api, pr, "## ⏳ Архитектурное ревью ожидает CI\n\n" + ci + ". Предыдущий вердикт не действует.")
+            print(f"Architectural review waiting: {ci}. Previous verdict is not current.")
             return
         text, files, gaps = context(api, pr)
         report = Claude(model).review(text, Sources(api, pr), files)

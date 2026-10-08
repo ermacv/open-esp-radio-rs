@@ -17,7 +17,8 @@ in `pr/` and only read. Claude gets read-only tools (file reads and search,
 and a read-only GitHub token, and returns a structured report. A separate job
 with write access posts it as a PR review with inline comments, and sets the
 commit status `claude-runtime-review`: success without 🔴 findings, failure
-with them, error when the review did not complete. Require this status
+with them, error when the review did not complete. A failed review's run log shows
+Claude Code's final error message; its other output stays hidden. Require this status
 alongside `ci-ok` in `main` branch protection so auto-merge cannot overtake
 the reviewer. A newer review of the same PR cancels a running one. Re-reviews
 read the previous Claude review and focus on the new commits.

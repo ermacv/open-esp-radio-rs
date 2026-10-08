@@ -116,6 +116,13 @@ jobs:
             --tools "Read,Grep,Glob,Agent,Bash"
             --allowedTools "Read,Grep,Glob,Agent,Bash(git -C pr diff *),Bash(git -C pr log *),Bash(git -C pr show *),Bash(gh pr view *),Bash(gh pr diff *),Bash(gh issue view *)"
             --json-schema '{"type":"object","additionalProperties":false,"required":["summary","findings"],"properties":{"summary":{"type":"string"},"findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["severity","path","line","title","body"],"properties":{"severity":{"enum":["important","nit","pre-existing"]},"path":{"type":"string"},"line":{"type":"integer","minimum":1},"title":{"type":"string"},"body":{"type":"string"}}}}}}'
+      # The action hides Claude Code's output; on failure show only its
+      # final result message, which carries the error (API, auth, budget).
+      - name: Show why Claude Code failed
+        if: failure() && steps.claude.outputs.execution_file
+        env:
+          EXECUTION: ${{ steps.claude.outputs.execution_file }}
+        run: jq -r '.[] | select(.type == "result") | .result // .errors // empty' "$EXECUTION"
 
   publish:
     needs: [target, review]

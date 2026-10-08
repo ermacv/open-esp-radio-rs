@@ -160,6 +160,9 @@ one $5 API budget. Preflight reserves for a cache miss and caps output to the
 remaining dollars; actual cache reads use their own tariff rather than exhausting
 a cumulative-input token cap. Logs and completed or failed review comments report
 cache usage and estimated API cost.
+Each pass permits up to 60 model calls under the same dollar/output limits;
+append-only progress tells the model its remaining budget and calls, and logs
+count source-tool calls and errors without recording arguments.
 
 Planning requires a clean checkout so the tree hash describes its source
 files. Repository source inputs must be tracked; external sources are

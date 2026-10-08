@@ -289,6 +289,79 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(len(bodies[-1]["messages"]), 1)
         self.assertEqual(claude.usage["verification"]["cache_read_input_tokens"], 225883)
 
+    def test_each_pass_can_investigate_beyond_twenty_calls_within_five_dollars(self):
+        claude = review.Claude(review.MODEL)
+        bodies = []
+        counts = []
+        def request(path, body):
+            if path == "messages/count_tokens":
+                counts.append(deepcopy(body))
+                return {"input_tokens": 250000}
+            bodies.append(deepcopy(body))
+            step = (len(bodies) - 1) % 22 + 1
+            content = report_blocks(REPORT) if step == 22 else [
+                {"type": "tool_use", "id": f"read-{step}", "name": "read_file",
+                 "input": {"path": "src/lib.rs", "revision": "head", "start": 1, "count": 10}}]
+            usage = {"input_tokens": 2, "cache_read_input_tokens": 225883, "output_tokens": 200}
+            if len(bodies) == 1:
+                usage = {"input_tokens": 4, "cache_creation_input_tokens": 225883, "output_tokens": 200}
+            return message(content, usage)
+        with patch.object(claude, "request", side_effect=request):
+            self.assertEqual(claude.review("{}", review.Sources(FakeGitHub(), PR), []), REPORT)
+        self.assertEqual(len(bodies), 44)
+        self.assertLess(claude.spent_usd(), Decimal("5"))
+        self.assertEqual(len(bodies[22]["messages"]), 1)
+        self.assertEqual(bodies[22]["messages"][0]["content"][0], bodies[0]["messages"][0]["content"][0])
+        self.assertTrue(all(a["messages"] == b["messages"] for a, b in zip(counts, bodies)))
+
+    def test_progress_preserves_history_and_updates_shared_budget_in_both_passes(self):
+        claude = review.Claude(review.MODEL)
+        bodies = []
+        signed = {"type": "thinking", "thinking": "PRIVATE_THINKING", "signature": "SIGNED"}
+        read = {"type": "tool_use", "id": "read", "name": "read_file",
+                "input": {"path": "src/lib.rs", "revision": "head", "start": 1, "count": 10}}
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            bodies.append(deepcopy(body))
+            return message([signed, read] if len(bodies) in (1, 3) else report_blocks(REPORT),
+                           {"input_tokens": 10, "output_tokens": 5})
+        with patch.object(claude, "request", side_effect=request):
+            claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+        initial = bodies[0]["messages"][0]["content"][-1]["text"]
+        second = bodies[1]["messages"][-1]["content"][-1]["text"]
+        verifier = bodies[2]["messages"][0]["content"][-1]["text"]
+        self.assertIn("phase=analysis; request 1/", initial)
+        self.assertIn("$0.000000/$5.00", initial)
+        self.assertIn("request 2/", second)
+        self.assertIn("$0.000140/$5.00", second)
+        self.assertIn(f"{review.MAX_OUTPUT - 5} output tokens remain", second)
+        self.assertIn("phase=verification; request 1/", verifier)
+        self.assertIn("$0.000280/$5.00", verifier)
+        self.assertEqual(bodies[1]["messages"][:1], bodies[0]["messages"])
+        self.assertEqual(bodies[1]["messages"][1]["content"], [signed, read])
+        self.assertEqual(bodies[1]["messages"][-1]["content"][0]["type"], "tool_result")
+        self.assertEqual(len(bodies[2]["messages"]), 1)
+
+    def test_tool_diagnostics_count_batches_and_errors_without_logging_arguments(self):
+        claude = review.Claude(review.MODEL)
+        valid = {"type": "tool_use", "id": "good", "name": "read_file",
+                 "input": {"path": "src/lib.rs", "revision": "head", "start": 1, "count": 10}}
+        invalid = {**deepcopy(valid), "id": "bad"}
+        invalid["input"]["path"] = "../PRIVATE_PATH"
+        responses = iter((message([valid, invalid]), message(report_blocks(REPORT)), message(report_blocks(REPORT))))
+        def request(path, body):
+            return {"input_tokens": 10} if path == "messages/count_tokens" else next(responses)
+        with patch.object(claude, "request", side_effect=request), \
+                patch("sys.stdout", new_callable=io.StringIO) as output:
+            claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+        records = [json.loads(line) for line in output.getvalue().splitlines() if line.startswith("{")]
+        tools = next(r for r in records if r["event"] == "claude_tools")
+        self.assertEqual(tools, {"event": "claude_tools", "phase": "analysis", "step": 1, "calls": 2, "errors": 1})
+        response = next(r for r in records if r["event"] == "claude_response")
+        self.assertEqual(response["tool_calls"], 2)
+        self.assertNotIn("PRIVATE_PATH", output.getvalue())
+
     def test_both_passes_share_dollar_budget(self):
         claude = review.Claude(review.MODEL)
         calls = []
@@ -419,7 +492,7 @@ class ReviewTests(unittest.TestCase):
         with patch.object(review.Claude, "request", new=request):
             with self.assertRaisesRegex(ValueError, "лимит шагов"):
                 review.review_pr(api, 7, review.MODEL)
-        self.assertEqual(len(reports), 20)
+        self.assertEqual(len(reports), review.MAX_STEPS)
         self.assertIn("Report rejected", reports[-1]["messages"][-1]["content"])
         self.assertEqual(api.writes[-1][2]["state"], "error")
         self.assertNotIn("success", [w[2]["state"] for w in api.writes if w[1].startswith("statuses/")])
@@ -438,7 +511,7 @@ class ReviewTests(unittest.TestCase):
             return message(next(responses))
         with patch.object(claude, "request", side_effect=request):
             self.assertEqual(claude.review("{}", review.Sources(FakeGitHub(), PR), []), REPORT)
-        results = bodies[1]["messages"][-1]["content"]
+        results = [b for b in bodies[1]["messages"][-1]["content"] if b["type"] == "tool_result"]
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["tool_use_id"], "read")
         self.assertNotIn("is_error", results[0])

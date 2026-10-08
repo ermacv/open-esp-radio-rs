@@ -153,9 +153,16 @@ architectural review → Run workflow**, selecting the default branch and the PR
 number. To verify federation during setup, select `verify_auth` instead; that
 mode exchanges an OIDC token and makes one minimal Messages request (up to 16
 output tokens) without reading or commenting on a PR. A review has an estimated
-**$5 API budget shared by analysis and verification**, 20 model calls per pass
+**$5 API budget shared by analysis and verification**, 60 model calls per pass
 and 48,000 output tokens shared across both passes. Reaching a limit reports
 incomplete analysis. The workflow has a 45-minute timeout.
+The model sees an append-only controller progress message at the start of each
+pass and after tool results or report-validation feedback: remaining dollars,
+shared output tokens and calls in that pass. It is asked to batch independent
+source reads and leave budget for verification. Progress follows the shared
+cache breakpoint and never rewrites prior messages or signed thinking. These
+planning hints do not replace the controller's enforced limits or permit
+incomplete analysis to approve merging.
 Each request permits at most 24,000 output tokens, capped by the remaining shared
 output-token and dollar budgets. Output includes adaptive thinking as well as
 the visible response;
@@ -182,7 +189,8 @@ issues are kept complete. JSON log records separate ordinary input, cache writes
 cache reads, output and estimated USD for each step and each pass's total, even
 when analysis fails, without logging source or credentials. Response metadata
 records the stop reason, content-block types and request/output token limits,
-without text, thinking, signatures or tool arguments. Completed and failed review
+plus tool-call and tool-error counts, without text, thinking, signatures or tool
+arguments. Completed and failed review
 comments include the same usage, cost and budget breakdown when the reviewer was
 initialized. Only responses with available usage are counted; a request without
 a received response can incur costs not reflected in the table. Estimates use

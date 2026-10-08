@@ -333,15 +333,37 @@ class ReviewTests(unittest.TestCase):
         verifier = bodies[2]["messages"][0]["content"][-1]["text"]
         self.assertIn("phase=analysis; request 1/", initial)
         self.assertIn("$0.000000/$5.00", initial)
+        self.assertIn("input has not been counted yet", initial)
         self.assertIn("request 2/", second)
         self.assertIn("$0.000140/$5.00", second)
         self.assertIn(f"{review.MAX_OUTPUT - 5} output tokens remain", second)
         self.assertIn("phase=verification; request 1/", verifier)
         self.assertIn("$0.000280/$5.00", verifier)
+        self.assertIn("input has not been counted yet", verifier)
+        self.assertIn("input reserve of $0.000050", second)
         self.assertEqual(bodies[1]["messages"][:1], bodies[0]["messages"])
         self.assertEqual(bodies[1]["messages"][1]["content"], [signed, read])
         self.assertEqual(bodies[1]["messages"][-1]["content"][0]["type"], "tool_result")
         self.assertEqual(len(bodies[2]["messages"]), 1)
+
+    def test_progress_exposes_the_same_cache_miss_reserve_as_preflight(self):
+        claude = review.Claude(review.MODEL)
+        claude.output_used = 0
+        # $3.70 actually spent, with another $1.25 needed to admit a 250k
+        # input request. Only $0.05 remains for output, not the gross $1.30.
+        claude.usage["analysis"]["input_tokens"] = 925000
+        self.assertEqual(claude.output_allowance(250000), 2500)
+        hint = claude.progress("analysis", 2)
+        self.assertIn("gross unspent $1.300000", hint)
+        self.assertIn("input reserve of $1.250000", hint)
+        self.assertIn("$0.050000 would remain for output", hint)
+        self.assertIn("not a quote for the next request", hint)
+        # The next, larger context cannot be admitted, despite a positive
+        # gross balance. Progress must not describe a negative balance as
+        # available spending money.
+        with self.assertRaisesRegex(ValueError, "Недостаточно бюджета"):
+            claude.output_allowance(260000)
+        self.assertIn("$0.000000 would remain for output", claude.progress("analysis", 3))
 
     def test_tool_diagnostics_count_batches_and_errors_without_logging_arguments(self):
         claude = review.Claude(review.MODEL)
@@ -996,6 +1018,45 @@ class ReviewTests(unittest.TestCase):
         self.assertIn("| Итого | 10 | 1000 | 10000 | 4 | 0.007120 |", comments[0])
         self.assertIn("**$5.00**", comments[0])
         self.assertEqual(api.writes[-1][2]["state"], "error")
+
+    def test_deadline_is_shared_and_publishes_failure_before_paid_verification(self):
+        api = self.successful_api()
+        now = [0]
+        calls = []
+        def request(path, body):
+            calls.append(path)
+            if path == "messages/count_tokens":
+                if len(calls) == 3:
+                    now[0] = 11
+                return {"input_tokens": 10}
+            now[0] = 6
+            return message(report_blocks(REPORT), {"input_tokens": 10, "output_tokens": 4})
+        with patch.object(review, "MAX_REVIEW_SECONDS", 10), \
+                patch.object(review.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(review.Claude, "request", side_effect=request):
+            with self.assertRaisesRegex(ValueError, "лимит времени"):
+                review.review_pr(api, 7, review.MODEL)
+        self.assertEqual(calls, ["messages/count_tokens", "messages", "messages/count_tokens"])
+        comments = [w[2]["body"] for w in api.writes if w[1] == "issues/7/comments"]
+        self.assertEqual(len(comments), 1)
+        self.assertIn("лимит времени", comments[0])
+        self.assertIn("| Итого | 10 | 0 | 0 | 4 |", comments[0])
+        self.assertEqual(api.writes[-1][2]["state"], "error")
+
+    def test_api_timeout_uses_time_left_and_expired_deadline_sends_nothing(self):
+        claude = review.Claude(review.MODEL)
+        claude.deadline = 10
+        now = [7]
+        with patch.object(review.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(claude.credentials, "authorization", return_value="Bearer test") as auth, \
+                patch.object(claude.opener, "open", return_value=io.BytesIO(b'{"input_tokens":10}')) as opened:
+            self.assertEqual(claude.request("messages/count_tokens", {}), {"input_tokens": 10})
+            self.assertEqual(opened.call_args.kwargs["timeout"], 3)
+            now[0] = 11
+            with self.assertRaisesRegex(ValueError, "лимит времени"):
+                claude.request("messages", {})
+            self.assertEqual(opened.call_count, 1)
+            self.assertEqual(auth.call_count, 1)
 
     def test_unknown_prices_and_invalid_usage_fail_before_a_clean_verdict(self):
         with self.assertRaisesRegex(ValueError, "тарифа"):

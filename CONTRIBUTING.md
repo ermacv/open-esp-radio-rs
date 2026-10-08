@@ -155,10 +155,18 @@ mode exchanges an OIDC token and makes one minimal Messages request (up to 16
 output tokens) without reading or commenting on a PR. A review has an estimated
 **$5 API budget shared by analysis and verification**, 60 model calls per pass
 and 48,000 output tokens shared across both passes. Reaching a limit reports
-incomplete analysis. The workflow has a 45-minute timeout.
+incomplete analysis. Both passes share a 35-minute controller deadline within
+the workflow's 45-minute timeout. Each API request's timeout is capped by the
+time left; the deadline is checked between source calls and after responses.
+This leaves time to publish the ordinary incomplete-review comment and error
+status. An externally terminated runner can still prevent that publication.
 The model sees an append-only controller progress message at the start of each
-pass and after tool results or report-validation feedback: remaining dollars,
-shared output tokens and calls in that pass. It is asked to batch independent
+pass and after tool results or report-validation feedback: gross unspent dollars,
+the latest counted input's cache-miss reserve, the amount after that reserve,
+shared output tokens and calls in that pass. The first hint of each pass says
+its input has not been counted yet. A prior reserve is only a planning estimate:
+each next request, including verification, requires its own count, and growing
+context increases the reserve. It is asked to batch independent
 source reads and leave budget for verification. Progress follows the shared
 cache breakpoint and never rewrites prior messages or signed thinking. These
 planning hints do not replace the controller's enforced limits or permit

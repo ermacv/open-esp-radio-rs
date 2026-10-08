@@ -30,6 +30,9 @@ MAX_CONTEXT = 1_000_000
 MAX_COST_USD = Decimal("5.00")
 MAX_OUTPUT = 48_000
 MAX_STEPS = 60
+# Leave time before the workflow's 45-minute timeout to publish an incomplete
+# report and status. This deadline is shared by both conversations.
+MAX_REVIEW_SECONDS = 35 * 60
 # USD/MTok: input, 5-minute cache write, cache read, output (2026-10-08).
 # https://platform.claude.com/docs/en/about-claude/pricing
 PRICES = {"claude-opus-5-5": (4, 5, 0.20, 20),
@@ -481,16 +484,29 @@ class Claude:
         self.credentials = credentials or GitHubOIDC()
         self.opener = build_opener(RepositoryRedirects())
         self.usage = {phase: dict.fromkeys(USAGE_FIELDS, 0) for phase in ("analysis", "verification")}
+        self.last_input_reserve = None
+        self.deadline = None
+
+    def remaining_time(self):
+        if self.deadline is None:
+            return 600
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError("Достигнут лимит времени анализа и проверки (35 минут); анализ не завершён")
+        return min(600, remaining)
 
     def request(self, path, body):
+        self.remaining_time()
+        authorization = self.credentials.authorization()
         request = Request(f"https://api.anthropic.com/v1/{path}", method="POST",
-                          data=json.dumps(body).encode(), headers={"Authorization": self.credentials.authorization(),
+                          data=json.dumps(body).encode(), headers={"Authorization": authorization,
                           "anthropic-version": "2023-06-01", "Content-Type": "application/json"})
-        with self.opener.open(request, timeout=600) as response:
+        with self.opener.open(request, timeout=self.remaining_time()) as response:
             return json.load(response)
 
     def review(self, text, sources, files):
         self.input_used = self.output_used = 0
+        self.deadline = time.monotonic() + MAX_REVIEW_SECONDS
         try:
             candidate = self.review_pass(text, sources, files,
                                          "Investigate the PR and return a candidate architectural review.", "analysis")
@@ -518,6 +534,7 @@ class Claude:
         # including cache creation, and cap output to the remaining USD budget.
         rates = PRICES[self.model]
         reserve = input_tokens * Decimal(str(max(rates[:2]))) / 1_000_000
+        self.last_input_reserve = reserve
         available = MAX_COST_USD - self.spent_usd() - reserve
         affordable = int(available * 1_000_000 / Decimal(str(rates[3])))
         if affordable < 1:
@@ -552,10 +569,22 @@ class Claude:
         return "\n".join(rows)
 
     def progress(self, phase, step):
+        unspent = MAX_COST_USD - self.spent_usd()
+        if self.last_input_reserve is None:
+            reserve_hint = ("This pass's input has not been counted yet; the gross unspent amount "
+                            "is NOT spendable output budget. ")
+        else:
+            available = max(Decimal(0), unspent - self.last_input_reserve)
+            reserve_hint = (f"The last counted request required a full-cache-miss input reserve "
+                            f"of ${self.last_input_reserve:.6f}; after that reserve, "
+                            f"${available:.6f} would remain for output. ")
         return (f"Trusted controller progress: phase={phase}; request {step}/{MAX_STEPS} in this pass; "
                 f"{max(0, MAX_STEPS - step)} follow-up requests available. "
                 f"API cost so far ${self.spent_usd():.6f}/${MAX_COST_USD:.2f}; "
-                f"${MAX_COST_USD - self.spent_usd():.6f} remains for analysis AND verification together. "
+                f"gross unspent ${unspent:.6f} for analysis AND verification together. "
+                + reserve_hint +
+                "Every next request, including verification, must reserve its independently counted input. "
+                "The last reserve is not a quote for the next request: growing context increases it. "
                 f"{MAX_OUTPUT - self.output_used} output tokens remain across both passes, including thinking. "
                 "The analysis must leave enough budget for a separate verification conversation. "
                 "Batch independent source tool calls in the same response. Once investigation is complete, "
@@ -566,11 +595,13 @@ class Claude:
     def review_pass(self, text, sources, files, task, phase):
         # Write the shared prefix before the phase-specific suffix. Automatic
         # caching additionally advances through each independent conversation.
+        self.last_input_reserve = None
         messages = [{"role": "user", "content": [
             {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": task},
             {"type": "text", "text": self.progress(phase, 1)}]}]
         for step in range(MAX_STEPS):
+            self.remaining_time()
             sources.ensure_active()
             body = {"model": self.model, "system": PROMPT, "tools": TOOLS, "messages": messages,
                     "output_config": {"effort": "high", "format": {"type": "json_schema", "schema": REPORT_SCHEMA}}}
@@ -581,6 +612,7 @@ class Claude:
                   f"estimated cost ${self.spent_usd():.6f}/${MAX_COST_USD:.2f}.",
                   flush=True)
             sources.ensure_active()
+            self.remaining_time()
             started = time.monotonic()
             # Thinking consumes this cap too; leave room to think and act.
             response = self.request("messages", {**body, "max_tokens": max_tokens,
@@ -595,6 +627,7 @@ class Claude:
             self.input_used += sum(tokens[k] for k in USAGE_FIELDS[:3])
             self.output_used += tokens["output_tokens"]
             self.log_usage(phase, step + 1, tokens, time.monotonic() - started)
+            self.remaining_time()
             blocks = response["content"]
             calls = [b for b in blocks if b["type"] == "tool_use"]
             # Log protocol metadata only: never text, thinking, arguments or signatures.
@@ -637,6 +670,7 @@ class Claude:
                 raise ValueError("Claude tool_use: API не вернул вызовов инструментов")
             results = []
             for call in calls:
+                self.remaining_time()
                 try:
                     args = call["input"]
                     if call["name"] == "read_file":

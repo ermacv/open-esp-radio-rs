@@ -16,7 +16,7 @@ where
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: oer_time::Timer,
+    T: oer_time::Timer + crate::mac_clock::MacClockReader,
 {
     /// Service one captured event synchronously. Pending timeout-abort keeps
     /// the aggregate owners in this state machine, never in a suspended future.
@@ -34,6 +34,15 @@ where
                 at_micros: self.ordinary.now().as_micros(),
             });
         }
+        let radio_stamp = match &self.active {
+            ConnectedTxActive::Aggregate(active)
+            | ConnectedTxActive::RequestingBlockAck(active) => {
+                let stamp = self.radio_stamp()?;
+                active.retry.validate_stamp(stamp)?;
+                Some(stamp)
+            }
+            _ => None,
+        };
         let active = mem::replace(&mut self.active, ConnectedTxActive::Idle);
         match active {
             ConnectedTxActive::Idle => Err(AggregateTxError::InactiveTransaction),
@@ -63,11 +72,19 @@ where
             ConnectedTxActive::Unaggregating(unaggregating) => {
                 self.service_unaggregating(hardware, wake, unaggregating)
             }
-            ConnectedTxActive::RequestingBlockAck(active) => {
-                self.service_block_ack_request(hardware, wake, active)
-            }
+            ConnectedTxActive::RequestingBlockAck(active) => self.service_block_ack_request(
+                hardware,
+                wake,
+                active,
+                radio_stamp.expect("aggregate sample validated"),
+            ),
             ConnectedTxActive::AbortSettling(active) => self.service_abort_settle(hardware, active),
-            ConnectedTxActive::Aggregate(active) => self.service_aggregate(hardware, wake, active),
+            ConnectedTxActive::Aggregate(active) => self.service_aggregate(
+                hardware,
+                wake,
+                active,
+                radio_stamp.expect("aggregate sample validated"),
+            ),
         }
     }
 
@@ -193,6 +210,7 @@ where
         hardware: &mut H,
         wake: WifiTxWake,
         mut active: AggregateActive<SLOTS>,
+        radio_stamp: oer_ieee80211_lower_mac::Ieee80211Stamp,
     ) -> Result<WifiTxProgress, AggregateTxError> {
         #[cfg(feature = "tx-wait-probe")]
         if let Some(observer) = self.observer {
@@ -226,7 +244,7 @@ where
             hardware,
             cookie,
             &mut active.retry,
-            self.ordinary.now().as_micros(),
+            radio_stamp,
             block_ack_operational,
         )? {
             let completion = observed.completion;
@@ -482,6 +500,7 @@ where
         hardware: &mut H,
         wake: WifiTxWake,
         mut active: AggregateActive<SLOTS>,
+        radio_stamp: oer_ieee80211_lower_mac::Ieee80211Stamp,
     ) -> Result<WifiTxProgress, AggregateTxError> {
         let progress = self.ordinary.service(hardware, wake)?;
         if progress == WifiTxProgress::Pending {
@@ -507,9 +526,9 @@ where
             self.block_ack_generation(active.traffic.tid()) == Some(active.block_ack_generation);
         let decision = active.retry.observe_block_ack_request(
             block_ack,
-            self.ordinary.now().as_micros(),
+            radio_stamp,
             block_ack_operational,
-        );
+        )?;
         self.apply_retry_decision(hardware, active, decision, ack_snr_db)
     }
 

@@ -15,7 +15,7 @@ use oer_ieee80211_mac::twt::{
     IndividualTwtSetup, IndividualTwtSetupCommand, IndividualTwtTeardown, TwtWakeDurationUnit,
     TwtWireError,
 };
-use oer_time::{Duration, Instant};
+use oer_time::{Duration, Instant, RadioDuration};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IndividualTwtRequesterConfigError {
@@ -142,8 +142,8 @@ pub struct IndividualTwtAgreement {
     pub flow_type: oer_ieee80211_mac::twt::IndividualTwtFlowType,
     pub protection: bool,
     pub target_wake_time: TsfInstant,
-    pub wake_interval: Duration,
-    pub wake_duration: Duration,
+    pub wake_interval: RadioDuration,
+    pub wake_duration: RadioDuration,
 }
 
 impl IndividualTwtAgreement {
@@ -157,8 +157,8 @@ impl IndividualTwtAgreement {
             flow_type: parameters.flow_type,
             protection: parameters.protection,
             target_wake_time: TsfInstant::from_micros(parameters.target_wake_time_tsf),
-            wake_interval: Duration::from_micros(parameters.wake_interval_micros()?),
-            wake_duration: Duration::from_micros(u64::from(
+            wake_interval: RadioDuration::from_micros(parameters.wake_interval_micros()?),
+            wake_duration: RadioDuration::from_micros(u64::from(
                 parameters.wake_duration_micros(response.control)?,
             )),
         })
@@ -870,7 +870,7 @@ impl IndividualTwtRequester {
     pub fn plan_next_wake(
         &self,
         now: TsfInstant,
-        wake_guard: Duration,
+        wake_guard: RadioDuration,
     ) -> Result<Option<IndividualTwtWakePlan>, IndividualTwtWakePlanError> {
         let mut best: Option<IndividualTwtWakePlan> = None;
         for phase in self.flows {
@@ -948,12 +948,14 @@ pub enum IndividualTwtWakePlanError {
     InvalidAgreement,
     WakeGuardOutsideInterval {
         flow_id: IndividualTwtFlowId,
-        wake_guard: Duration,
-        interval: Duration,
+        wake_guard: RadioDuration,
+        interval: RadioDuration,
     },
     /// The service window ends past 2^64: beyond the TSF generation the plan
     /// is computed in.
     BeyondTsfRange,
+    /// The guard would wake before the beginning of the TSF epoch.
+    BeforeTsfEpoch,
 }
 
 /// Earliest active or upcoming service window across all installed flows.
@@ -994,25 +996,32 @@ impl IndividualTwtWakePlan {
 fn plan_agreement_wake(
     agreement: IndividualTwtAgreement,
     now: TsfInstant,
-    wake_guard: Duration,
+    wake_guard: RadioDuration,
 ) -> Result<IndividualTwtWakePlan, IndividualTwtWakePlanError> {
-    let interval = agreement.wake_interval.as_micros();
-    let duration = agreement.wake_duration.as_micros();
-    if interval == 0 || duration == 0 || duration > interval {
+    let interval = agreement.wake_interval;
+    let duration = agreement.wake_duration;
+    if interval == RadioDuration::from_micros(0)
+        || duration == RadioDuration::from_micros(0)
+        || duration > interval
+    {
         return Err(IndividualTwtWakePlanError::InvalidAgreement);
     }
-    if wake_guard.as_micros() >= interval {
+    if wake_guard >= interval {
         return Err(IndividualTwtWakePlanError::WakeGuardOutsideInterval {
             flow_id: agreement.flow_id,
             wake_guard,
-            interval: agreement.wake_interval,
+            interval,
         });
     }
-    let now = now.as_micros();
-    let target = agreement.target_wake_time.as_micros();
+    let target = agreement.target_wake_time;
     let (service_start, service_open) = if now >= target {
-        let offset = (now - target) % interval;
-        let current_start = now - offset;
+        let elapsed = now
+            .checked_duration_since(target)
+            .ok_or(IndividualTwtWakePlanError::BeyondTsfRange)?;
+        let offset = RadioDuration::from_micros(elapsed.as_micros() % interval.as_micros());
+        let current_start = now
+            .checked_sub(offset)
+            .ok_or(IndividualTwtWakePlanError::BeforeTsfEpoch)?;
         if offset < duration {
             (current_start, true)
         } else {
@@ -1033,14 +1042,15 @@ fn plan_agreement_wake(
         now
     } else {
         service_start
-            .saturating_sub(wake_guard.as_micros())
+            .checked_sub(wake_guard)
+            .ok_or(IndividualTwtWakePlanError::BeforeTsfEpoch)?
             .max(now)
     };
     Ok(IndividualTwtWakePlan {
         flow_bitmap: 1 << agreement.flow_id.get(),
-        wake: TsfInstant::from_micros(wake),
-        service_start: TsfInstant::from_micros(service_start),
-        service_end: TsfInstant::from_micros(service_end),
+        wake,
+        service_start,
+        service_end,
         service_open,
     })
 }

@@ -9,7 +9,7 @@
 
 use oer_ieee80211_mac::tsf::TsfInstant;
 use oer_radio_port::CancelError;
-use oer_time::Duration;
+use oer_time::{Duration, RadioDuration};
 
 use crate::{
     Channel,
@@ -173,38 +173,42 @@ pub struct TsfVifMismatch {
     pub right: VifId,
 }
 
+/// Failure of arithmetic between interface-scoped TSF values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TsfArithmeticError {
+    VifMismatch(TsfVifMismatch),
+    ReversedTime,
+}
+
 impl VifTsf {
     pub const fn new(vif: VifId, at: TsfInstant) -> Self {
         Self { vif, at }
     }
 
-    /// The same interface's TSF `duration` later; `None` past the end of
-    /// the TSF.
-    pub const fn checked_add(self, duration: Duration) -> Option<Self> {
-        match self.at.as_micros().checked_add(duration.as_micros()) {
-            Some(at) => Some(Self {
-                vif: self.vif,
-                at: TsfInstant::from_micros(at),
-            }),
+    /// The same interface's TSF `duration` later; `None` beyond its epoch.
+    pub const fn checked_add(self, duration: RadioDuration) -> Option<Self> {
+        match self.at.checked_add(duration) {
+            Some(at) => Some(Self { vif: self.vif, at }),
             None => None,
         }
     }
 
-    /// How long after `earlier` this value lies, saturating at zero; an
-    /// error for a value of another interface.
-    pub const fn saturating_duration_since(
+    /// Same-interface elapsed radio time. Interface mismatch and reversal
+    /// are explicit errors; neither produces a fabricated duration.
+    pub const fn checked_duration_since(
         self,
         earlier: Self,
-    ) -> Result<Duration, TsfVifMismatch> {
+    ) -> Result<RadioDuration, TsfArithmeticError> {
         if self.vif.0 != earlier.vif.0 {
-            return Err(TsfVifMismatch {
+            return Err(TsfArithmeticError::VifMismatch(TsfVifMismatch {
                 left: self.vif,
                 right: earlier.vif,
-            });
+            }));
         }
-        Ok(Duration::from_micros(
-            self.at.as_micros().saturating_sub(earlier.at.as_micros()),
-        ))
+        match self.at.checked_duration_since(earlier.at) {
+            Some(elapsed) => Ok(elapsed),
+            None => Err(TsfArithmeticError::ReversedTime),
+        }
     }
 }
 
@@ -215,9 +219,9 @@ pub struct TbttSchedule {
     /// interface the schedule is for.
     pub next: VifTsf,
     /// The beacon interval ([`time_units`](oer_ieee80211_mac::tsf::time_units) of the beacon's interval field).
-    pub beacon_interval: Duration,
+    pub beacon_interval: RadioDuration,
     /// How long before each TBTT its event is reported.
-    pub lead: Duration,
+    pub lead: RadioDuration,
 }
 
 /// One target beacon transmission time of an interface's schedule.
@@ -293,6 +297,13 @@ pub enum TsfSetKind {
     Jump,
 }
 
+/// A TSF set could not establish a representable timing relation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TsfTimingError {
+    ReversedTime,
+    ToleranceOverflow,
+}
+
 impl TsfRelation {
     /// A relation without a sample in `epoch`, a number its owner took from
     /// the shared source, whose samples are each uncertain by
@@ -319,27 +330,35 @@ impl TsfRelation {
 
     /// How far a set `elapsed` after the last sample may move the TSF
     /// without breaking the relation.
-    pub fn tolerance(&self, elapsed: Duration) -> Duration {
+    pub fn tolerance(&self, elapsed: RadioDuration) -> Result<RadioDuration, TsfTimingError> {
+        // The product of a u64 span and the fixed ppm coefficient fits u128.
         let drift =
             (u128::from(elapsed.as_micros()) * u128::from(TSF_DRIFT_PPM)).div_ceil(1_000_000);
-        Duration::from_micros(
-            u64::try_from(drift)
-                .unwrap_or(u64::MAX)
-                .saturating_add(self.sample_uncertainty.as_micros()),
-        )
+        let drift = u64::try_from(drift).map_err(|_| TsfTimingError::ToleranceOverflow)?;
+        RadioDuration::from_micros(drift)
+            .checked_add(RadioDuration::from_micros(
+                self.sample_uncertainty.as_micros(),
+            ))
+            .ok_or(TsfTimingError::ToleranceOverflow)
     }
 
     /// Record a set of the TSF from `current`, the value read just before
     /// it, to `value`.
-    pub fn set(&mut self, current: TsfInstant, value: TsfInstant) -> TsfSetKind {
+    pub fn set(
+        &mut self,
+        current: TsfInstant,
+        value: TsfInstant,
+    ) -> Result<TsfSetKind, TsfTimingError> {
         let kind = match self.last_sample {
             // The counter only advances from the last set: a reading below
             // it passed 2^64.
             Some(last) if current < last => TsfSetKind::Jump,
             Some(last) => {
-                let elapsed = Duration::from_micros(current.as_micros() - last.as_micros());
+                let elapsed = current
+                    .checked_duration_since(last)
+                    .ok_or(TsfTimingError::ReversedTime)?;
                 let moved = value.as_micros().abs_diff(current.as_micros());
-                if moved <= self.tolerance(elapsed).as_micros() {
+                if moved <= self.tolerance(elapsed)?.as_micros() {
                     TsfSetKind::Drift
                 } else {
                     TsfSetKind::Jump
@@ -351,7 +370,7 @@ impl TsfRelation {
             self.break_relation();
         }
         self.last_sample = Some(value);
-        kind
+        Ok(kind)
     }
 }
 

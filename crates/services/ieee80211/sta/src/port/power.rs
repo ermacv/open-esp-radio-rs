@@ -20,7 +20,7 @@ use oer_ieee80211_sta::modem_sleep::{
 };
 use oer_ieee80211_upper_mac::TxReport;
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
-use oer_time::{Clock, Duration, Instant};
+use oer_time::{Clock, Instant};
 
 use super::link::{PortCoexistence, PortLink, PortLinkError, PortStationEnv};
 
@@ -306,8 +306,10 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         let outcome = match self.schedule {
             Some(schedule) => link.port().set_tbtt(TbttSchedule {
                 next: VifTsf::new(vif, schedule.first_tbtt),
-                beacon_interval: Duration::from_micros(u64::from(schedule.interval_micros)),
-                lead: Duration::from_micros(u64::from(
+                beacon_interval: oer_time::RadioDuration::from_micros(u64::from(
+                    schedule.interval_micros,
+                )),
+                lead: oer_time::RadioDuration::from_micros(u64::from(
                     schedule
                         .ahead_micros
                         .saturating_add(schedule.wake_ahead_micros),

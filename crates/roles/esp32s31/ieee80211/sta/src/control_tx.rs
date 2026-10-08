@@ -206,6 +206,16 @@ where
         }
     }
 
+    /// Replace the clock capability only after the physical publication ended.
+    /// The ordinary retry policy and terminal observation remain with this owner.
+    /// On refusal both this owner and the caller's timer remain owned.
+    pub fn rebind_timer(&mut self, timer: T) -> Result<T, (ControlTxError, T)> {
+        if self.ordinary.queue_state() != oer_ieee80211_softmac::MacTxQueueState::Ready {
+            return Err((ControlTxError::Busy, timer));
+        }
+        Ok(core::mem::replace(&mut self.ordinary.timer, timer))
+    }
+
     pub const fn policy(&self) -> &WifiTxRuntimePolicy {
         self.ordinary.policy()
     }

@@ -299,6 +299,11 @@ where
         self.ordinary.work()
     }
 
+    /// Borrow the timer adapter, including its separately owned radio clock.
+    pub fn timer(&self) -> &T {
+        &self.ordinary.timer
+    }
+
     pub fn new(
         resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
         handoff: ConnectedTxHandoff,

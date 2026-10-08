@@ -133,8 +133,8 @@ fn agreement(flow: u8, target: u64, interval: u64, duration: u64) -> IndividualT
         flow_type: IndividualTwtFlowType::Announced,
         protection: false,
         target_wake_time: TsfInstant::from_micros(target),
-        wake_interval: Duration::from_micros(interval),
-        wake_duration: Duration::from_micros(duration),
+        wake_interval: RadioDuration::from_micros(interval),
+        wake_duration: RadioDuration::from_micros(duration),
     }
 }
 
@@ -148,13 +148,13 @@ fn wake_plan_refuses_a_window_past_the_tsf_range() {
     // generation the plan is computed in, so it is refused, not wrapped.
     let late = agreement(0, u64::MAX - 600, 1_000, 256);
     assert_eq!(
-        plan_agreement_wake(late, tsf(u64::MAX - 100), Duration::from_micros(10)),
+        plan_agreement_wake(late, tsf(u64::MAX - 100), RadioDuration::from_micros(10)),
         Err(IndividualTwtWakePlanError::BeyondTsfRange)
     );
     // A target past now is a window ahead, never one after a wrap.
     let ahead = agreement(0, 50, 1_000, 256);
     assert_eq!(
-        plan_agreement_wake(ahead, tsf(0), Duration::from_micros(10)),
+        plan_agreement_wake(ahead, tsf(0), RadioDuration::from_micros(10)),
         Ok(IndividualTwtWakePlan {
             flow_bitmap: 1,
             wake: tsf(40),
@@ -170,7 +170,7 @@ fn wake_plan_follows_the_periodic_schedule_from_the_target() {
     let periodic = agreement(1, 1_000, 1_000, 256);
     // Inside the third window: open, wake now.
     assert_eq!(
-        plan_agreement_wake(periodic, tsf(3_100), Duration::from_micros(10)),
+        plan_agreement_wake(periodic, tsf(3_100), RadioDuration::from_micros(10)),
         Ok(IndividualTwtWakePlan {
             flow_bitmap: 2,
             wake: tsf(3_100),
@@ -181,7 +181,7 @@ fn wake_plan_follows_the_periodic_schedule_from_the_target() {
     );
     // After it: the next window, waking the guard before it, not before now.
     assert_eq!(
-        plan_agreement_wake(periodic, tsf(3_995), Duration::from_micros(10)),
+        plan_agreement_wake(periodic, tsf(3_995), RadioDuration::from_micros(10)),
         Ok(IndividualTwtWakePlan {
             flow_bitmap: 2,
             wake: tsf(3_995),
@@ -194,7 +194,7 @@ fn wake_plan_follows_the_periodic_schedule_from_the_target() {
 
 #[test]
 fn the_earliest_of_two_flows_wins_and_open_windows_merge() {
-    let guard = Duration::from_micros(10);
+    let guard = RadioDuration::from_micros(10);
     let early = plan_agreement_wake(agreement(0, 500, 10_000, 100), tsf(0), guard).unwrap();
     let late = plan_agreement_wake(agreement(1, 900, 10_000, 100), tsf(0), guard).unwrap();
     assert_eq!(late.merge_or_earlier(early), early);
@@ -207,4 +207,32 @@ fn the_earliest_of_two_flows_wins_and_open_windows_merge() {
         (tsf(0), tsf(1_100))
     );
     assert!(merged.service_open);
+}
+
+#[test]
+fn wake_guard_before_epoch_is_an_error_even_when_now_would_clip_it() {
+    let early = agreement(0, 5, 1_000, 256);
+    assert_eq!(
+        plan_agreement_wake(early, tsf(0), RadioDuration::from_micros(10)),
+        Err(IndividualTwtWakePlanError::BeforeTsfEpoch)
+    );
+    // An already open service period wakes now and needs no future guard.
+    assert_eq!(
+        plan_agreement_wake(early, tsf(5), RadioDuration::from_micros(10))
+            .unwrap()
+            .wake,
+        tsf(5)
+    );
+    let endpoint = agreement(0, u64::MAX - 256, 1_000, 256);
+    assert_eq!(
+        plan_agreement_wake(endpoint, tsf(u64::MAX - 256), RadioDuration::from_micros(0))
+            .unwrap()
+            .service_end,
+        tsf(u64::MAX)
+    );
+    let beyond = agreement(0, u64::MAX - 255, 1_000, 256);
+    assert_eq!(
+        plan_agreement_wake(beyond, tsf(u64::MAX - 255), RadioDuration::from_micros(0)),
+        Err(IndividualTwtWakePlanError::BeyondTsfRange)
+    );
 }

@@ -185,7 +185,59 @@ impl WifiTxPowerProfile for Power {
     }
 }
 
-pub type Timer = oer_time_virtual::SkipClock;
+/// Two model clocks with different epochs and a common tick rate. Waiting
+/// advances both readings; a generation change remains a separate operation.
+/// TX requires only the read-only MAC sample capability, so this model does
+/// not implement reception conversion or RF wake notification.
+pub struct Timer {
+    monotonic: oer_time_virtual::SkipClock,
+    radio: core::cell::Cell<oer_ieee80211_lower_mac::Ieee80211Instant>,
+    pub generation: core::cell::Cell<u32>,
+    pub available: core::cell::Cell<bool>,
+}
+
+impl Default for Timer {
+    fn default() -> Self {
+        Self {
+            monotonic: oer_time_virtual::SkipClock::new(),
+            radio: core::cell::Cell::new(oer_ieee80211_lower_mac::Ieee80211Instant::from_micros(
+                5_000,
+            )),
+            generation: core::cell::Cell::new(1),
+            available: core::cell::Cell::new(true),
+        }
+    }
+}
+impl oer_time::Clock for Timer {
+    fn now(&self) -> oer_time::Instant {
+        oer_time::Clock::now(&self.monotonic)
+    }
+}
+impl oer_time::Timer for Timer {
+    async fn wait_until(&self, at: oer_time::Instant) {
+        let before = oer_time::Clock::now(&self.monotonic);
+        oer_time::Timer::wait_until(&self.monotonic, at).await;
+        let elapsed = oer_time::Clock::now(&self.monotonic).saturating_duration_since(before);
+        self.radio.set(
+            self.radio
+                .get()
+                .checked_add(oer_time::RadioDuration::from_micros(elapsed.as_micros()))
+                .expect("model tick advance stays in its radio epoch"),
+        );
+    }
+}
+impl crate::mac_clock::MacClockReader for Timer {
+    fn sample(&self) -> Option<oer_ieee80211_lower_mac::Ieee80211ClockSample> {
+        self.available
+            .get()
+            .then(|| oer_ieee80211_lower_mac::Ieee80211ClockSample {
+                radio: self.radio.get(),
+                monotonic: oer_time::Clock::now(self),
+                uncertainty: oer_time::Duration::from_micros(0),
+                generation: self.generation.get(),
+            })
+    }
+}
 
 pub fn aggregate_completion(
     starting_sequence: u16,

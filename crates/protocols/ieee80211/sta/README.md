@@ -28,7 +28,8 @@ Module map:
 - `ftm`, `twt`: bounded requester state and deadlines; their presence does not
   establish a chip timestamp or wake-schedule implementation. The TWT wake
   plan is computed in `TsfInstant`s of one TSF generation the caller tracks;
-  it never wraps, and a service window past 2^64 is `BeyondTsfRange`;
+  its intervals and guards are `RadioDuration`s. A guard before the epoch is
+  `BeforeTsfEpoch`, and an endpoint beyond the epoch is `BeyondTsfRange`;
 - `request`: caller-visible station configuration and selection values.
 
 This is not a generic 802.11 frame crate and it is not an ESP32 backend.

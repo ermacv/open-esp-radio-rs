@@ -1,4 +1,4 @@
-//! The Wi-Fi MAC local time shared by the receive path, the radio port and
+//! The Wi-Fi MAC local time shared by receive, transmit, the radio port and
 //! the station's power agent.
 //!
 //! The MAC local-time counter stamps every received frame
@@ -49,6 +49,26 @@ impl LocalTimeCounter for oer_esp32s31_hal::root::MacLocalTime {
     }
 }
 
+/// Read-only access to the current MAC radio sample.
+///
+/// TX owners use this capability for generation-bound A-MPDU aging. The
+/// MAC clock owner maintains the timeline and its relation to monotonic
+/// time; this interface exposes neither receive timestamp conversion nor
+/// explicit RF wake notification.
+pub trait MacClockReader {
+    /// A fresh sample in this radio start's current generation; `None` if a
+    /// later radio start replaced the clock.
+    fn sample(&self) -> Option<Ieee80211ClockSample>;
+}
+
+impl<M: RawMutex, L: LocalTimeCounter + Copy, C: Clock> MacClockReader
+    for MacClockHandle<'_, M, L, C>
+{
+    fn sample(&self) -> Option<Ieee80211ClockSample> {
+        MacClockHandle::sample(self)
+    }
+}
+
 /// The MAC clock as the owners that convert receive timestamps and the
 /// station's power agent use it.
 pub trait ReceptionClock {
@@ -90,6 +110,23 @@ pub struct MacClockSnapshot {
 }
 
 impl MacClockSnapshot {
+    /// A reviewed sample supplied by a host clock model.
+    #[cfg(any(test, all(feature = "test-support", not(target_pointer_width = "32"))))]
+    pub fn for_validation(sample: Ieee80211ClockSample) -> Self {
+        let mut timeline = MacTimeline::new();
+        // The model explicitly supplies the widened counter relation.
+        timeline.settle(sample.radio.as_micros() as u32, sample.radio.as_micros());
+        Self {
+            state: ClockState {
+                timeline,
+                generation: sample.generation,
+                current: Some(sample),
+                boundary: None,
+            },
+            now: sample,
+        }
+    }
+
     /// The sample the snapshot was taken with.
     pub const fn sample(&self) -> Ieee80211ClockSample {
         self.now
@@ -135,7 +172,7 @@ impl MacClockSnapshot {
 }
 
 /// A monotonic timer paired with the MAC clock, for owners that wait on the
-/// one and convert receive timestamps with the other.
+/// one and use radio timestamps with the other, including A-MPDU aging.
 pub struct ReceptionTimer<T, K> {
     pub timer: T,
     pub reception: K,
@@ -150,6 +187,12 @@ impl<T: Clock, K> Clock for ReceptionTimer<T, K> {
 impl<T: oer_time::Timer, K> oer_time::Timer for ReceptionTimer<T, K> {
     fn wait_until(&self, deadline: Instant) -> impl Future<Output = ()> {
         self.timer.wait_until(deadline)
+    }
+}
+
+impl<T, K: MacClockReader> MacClockReader for ReceptionTimer<T, K> {
+    fn sample(&self) -> Option<Ieee80211ClockSample> {
+        self.reception.sample()
     }
 }
 

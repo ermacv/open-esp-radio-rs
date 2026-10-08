@@ -853,7 +853,7 @@ where
     M: RawMutex,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: oer_time::Timer,
+    T: oer_time::Timer + crate::mac_clock::MacClockReader,
     H: TxHardware
         + ApRuntimeHardware
         + RxBlockAckHardware

@@ -447,7 +447,7 @@ type ConnectedLiveTx = ConnectedTx<
     >,
     oer_esp32s31_phy::PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_time_embassy::EmbassyClock,
+    super::MacTimer,
     TX_AMPDU_FRAME_COUNT,
     TX_AMPDU_BUFFER_SIZE,
     { crate::resources::profile::ESP32S31_DEFAULT_TX_BUFFER_SIZE },
@@ -498,7 +498,7 @@ type ConnectedTxAssemblyFailure = ConnectedStaTxHandoffFailure<
     RadioTxBacking,
     oer_esp32s31_phy::PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_time_embassy::EmbassyClock,
+    super::MacTimer,
     TX_AMPDU_FRAME_COUNT,
     TX_AMPDU_BUFFER_SIZE,
     { crate::resources::profile::ESP32S31_DEFAULT_TX_BUFFER_SIZE },
@@ -526,7 +526,7 @@ type ReturnedConnectedTxResources = oer_esp32s31_ieee80211_sta::control_tx::Wifi
     'static,
     oer_esp32s31_phy::PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_time_embassy::EmbassyClock,
+    super::MacTimer,
     { crate::resources::profile::ESP32S31_DEFAULT_TX_BUFFER_SIZE },
 >;
 type ConnectedDriverTeardownFailure = ConnectionTeardownFailure<

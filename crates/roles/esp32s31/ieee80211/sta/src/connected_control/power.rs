@@ -431,7 +431,9 @@ impl ConnectedControlCore {
                 // station takes it before power management places its first
                 // TBTT, as the vendor does on the Association Response.
                 if let Some(tsf) = join.access_point_tsf_at(clock.now) {
-                    self.station_tsf.set(hardware, tsf);
+                    self.station_tsf
+                        .set(hardware, tsf)
+                        .map_err(ConnectedControlError::TsfTiming)?;
                 }
                 self.power.engine.start(join.beacon, coex, &mut actions);
             }

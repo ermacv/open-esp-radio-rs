@@ -241,12 +241,16 @@ pub enum Esp32s31LowerMacError {
     /// The port's MAC clock belongs to a radio start a later one replaced:
     /// a [`FailureClass::Rejected`] state of a port that outlived its start.
     StaleClock,
+    /// The same-generation sample readings reversed or their uncertainty overflowed.
+    InvalidSampleTiming,
 }
 
 impl PortError for Esp32s31LowerMacError {
     fn class(&self) -> FailureClass {
         match self {
-            Self::NotInstalled | Self::StaleClock => FailureClass::Rejected,
+            Self::NotInstalled | Self::StaleClock | Self::InvalidSampleTiming => {
+                FailureClass::Rejected
+            }
             Self::Poisoned(_) => FailureClass::Poisoned,
         }
     }
@@ -1455,18 +1459,20 @@ where
             .map(|(before, after)| (before.sample(), after.sample()))
             .filter(|(before, after)| before.generation == after.generation)
             .ok_or(Esp32s31LowerMacError::StaleClock)?;
+        let uncertainty = after
+            .radio
+            .checked_duration_since(before.radio)
+            .and_then(|elapsed| elapsed.checked_add(oer_time::RadioDuration::from_micros(1)))
+            .ok_or(Esp32s31LowerMacError::InvalidSampleTiming)?;
         Ok(reading.map(|(tsf, generation)| TsfSample {
             tsf,
             local: Ieee80211Stamp {
                 at: before.radio,
                 generation: before.generation,
             },
-            uncertainty: oer_time::Duration::from_micros(
-                1 + after
-                    .radio
-                    .as_micros()
-                    .saturating_sub(before.radio.as_micros()),
-            ),
+            // The relation projection boundary represents uncertainty in
+            // microseconds of its existing scalar/monotonic relation model.
+            uncertainty: oer_time::Duration::from_micros(uncertainty.as_micros()),
             generation,
         }))
     }

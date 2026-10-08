@@ -14,6 +14,8 @@ enum Case {
     Awake,
     Dtim,
     AggregateRetry,
+    RadioGeneration,
+    EpochThreshold,
     BlockAckRequest,
     PreparedOrdinary,
     PreparedSleep,
@@ -123,6 +125,16 @@ fn dtim_preempts_selected_head_but_preserves_its_packet() {
     run(Case::DtimPriority);
 }
 
+#[test]
+fn aggregate_epoch_threshold_failure_precedes_dma_and_preserves_prepared_frames() {
+    run(Case::EpochThreshold);
+}
+
+#[test]
+fn aggregate_stale_radio_generation_preserves_completion_and_airtime_owners() {
+    run(Case::RadioGeneration);
+}
+
 fn run(case: Case) {
     use core::{
         future::Future,
@@ -168,6 +180,7 @@ fn run(case: Case) {
             AccessPointAirtimePeer::Unicast(identity)
         };
         let mut hardware = Hardware::default();
+        let entropy_draws = core::cell::Cell::new(0);
         let mut slot = pin!(TxSlot::<512>::new_model());
         let mac = ApMac::new(
             engine,
@@ -175,7 +188,10 @@ fn run(case: Case) {
                 slot: slot.as_mut(),
                 policy: WifiTxRuntimePolicy::vendor_defaults(),
                 power: Power,
-                entropy: || 0,
+                entropy: || {
+                    entropy_draws.set(entropy_draws.get() + 1);
+                    0
+                },
                 timer: Timer::default(),
             },
             ApTxConfig {
@@ -259,7 +275,13 @@ fn run(case: Case) {
         ) {
             owner.airtime = owner.airtime.take().map(Accounting::with_peer_selection);
         }
-        if matches!(case, Case::AggregateRetry | Case::BlockAckRequest) {
+        if matches!(
+            case,
+            Case::AggregateRetry
+                | Case::BlockAckRequest
+                | Case::RadioGeneration
+                | Case::EpochThreshold
+        ) {
             use oer_esp32s31_hal::types::MacHtAmpduCompletionObservation;
 
             use oer_esp32s31_ieee80211_ap::engine::ApAggregateFrame;
@@ -320,9 +342,25 @@ fn run(case: Case) {
                     .unwrap();
             }
             let (_, ordinary) = control.mac.try_aggregate_adapter().unwrap();
+            if case == Case::EpochThreshold {
+                let prepared = aggregate.active_mut().prepared().unwrap();
+                let mut stamp = super::super::super::radio_stamp(ordinary.timer()).unwrap();
+                stamp.at = oer_ieee80211_lower_mac::Ieee80211Instant::from_micros(u64::MAX);
+                assert!(matches!(aggregate.active_mut().publish(ordinary, &mut hardware, stamp),
+                    Err(oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError::Retry(
+                        oer_esp32s31_ieee80211_mac::tx::runtime::AmpduRetryError::AgingThresholdOutsideEpoch))));
+                assert_eq!(aggregate.active_mut().prepared().unwrap(), prepared);
+                assert_eq!(hardware.ht_publications, 0);
+                assert_eq!(hardware.legacy_publications, 0);
+                assert_eq!(entropy_draws.get(), 0);
+            }
             aggregate
                 .active_mut()
-                .publish(ordinary, &mut hardware)
+                .publish(
+                    ordinary,
+                    &mut hardware,
+                    super::super::super::radio_stamp(ordinary.timer()).unwrap(),
+                )
                 .unwrap();
             owner.airtime.as_mut().unwrap().publish_active();
             owner.aggregate_phase = Some(AggregateServicePhase::Published(
@@ -371,6 +409,31 @@ fn run(case: Case) {
                 ));
             }
             // The BlockAck acknowledges sequence 0 only.
+            if case == Case::RadioGeneration {
+                let (_, ordinary) = control.mac.try_aggregate_adapter().unwrap();
+                ordinary.timer().generation.set(2);
+                hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
+                    MacTxCompletionObservation::new_model(0, 0),
+                    0,
+                    0,
+                    1,
+                    true,
+                ));
+                assert!(matches!(owner.service(&mut aggregate, &mut control, &mut hardware, complete),
+                    Err(AccessPointDatapathError::Aggregate(
+                        oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError::Retry(
+                            oer_esp32s31_ieee80211_mac::tx::runtime::AmpduRetryError::ClockGenerationChanged { expected: 1, observed: 2 })))));
+                assert!(hardware.aggregate_completion.is_some());
+                assert_eq!(hardware.ht_publications, 1);
+                assert_eq!(hardware.legacy_publications, 0);
+                assert!(matches!(
+                    owner.aggregate_phase,
+                    Some(AggregateServicePhase::Published(_))
+                ));
+                assert!(aggregate.active_mut().published_agreement().is_some());
+                let (_, ordinary) = control.mac.try_aggregate_adapter().unwrap();
+                ordinary.timer().generation.set(1);
+            }
             hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
                 MacTxCompletionObservation::new_model(0, 0),
                 0,

@@ -228,13 +228,8 @@ const TX_COMPLETION_TIMEOUT: oer_time::Duration = oer_time::Duration::from_milli
 
 pub(super) type RxStorage =
     ReceiveDmaStorage<RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;
-pub(super) type ControlTx = ControlTransmitter<
-    'static,
-    PhyTxTargetPowerProfile,
-    fn() -> u32,
-    oer_time_embassy::EmbassyClock,
-    TX_BUFFER_SIZE,
->;
+pub(super) type ControlTx =
+    ControlTransmitter<'static, PhyTxTargetPowerProfile, fn() -> u32, MacTimer, TX_BUFFER_SIZE>;
 pub(super) type TxStorage = StaTxEpoch<ControlTx>;
 pub(super) type ProductionStationRuntime<'state> = StationRuntimeResources<
     'state,
@@ -275,10 +270,13 @@ pub(crate) type StationMacClock = oer_esp32s31_ieee80211_runtime::mac_clock::Mac
 /// a fresh clock in it.
 static MAC_CLOCK: StationMacClockStorage = StationMacClockStorage::new(EmbassyClock);
 
+/// TX and receive owners share this radio-start clock capability while their
+/// waits continue through the monotonic timer.
+pub(crate) type MacTimer =
+    oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer<EmbassyClock, StationMacClock>;
+
 /// A role's monotonic timer paired with the MAC clock.
-pub(crate) const fn reception_timer(
-    mac_clock: StationMacClock,
-) -> oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer<EmbassyClock, StationMacClock> {
+pub(crate) const fn reception_timer(mac_clock: StationMacClock) -> MacTimer {
     oer_esp32s31_ieee80211_runtime::mac_clock::ReceptionTimer {
         timer: EmbassyClock,
         reception: mac_clock,

@@ -20,26 +20,21 @@ type ProductionAccessPointControl = AccessPointControl<
     ProductionAccessPointRxConsumer,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_time_embassy::EmbassyClock,
+    MacTimer,
     RX_DESCRIPTOR_COUNT,
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
     TX_BUFFER_SIZE,
 >;
-type ProductionWifiTxResources = WifiTxResources<
-    'static,
-    PhyTxTargetPowerProfile,
-    fn() -> u32,
-    oer_time_embassy::EmbassyClock,
-    TX_BUFFER_SIZE,
->;
+type ProductionWifiTxResources =
+    WifiTxResources<'static, PhyTxTargetPowerProfile, fn() -> u32, MacTimer, TX_BUFFER_SIZE>;
 type ProductionAccessPointStopped = EmbassyAccessPointStopped<
     'static,
     'static,
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_time_embassy::EmbassyClock,
+    MacTimer,
     ProductionAccessPointRxProducer,
     ProductionAccessPointRxConsumer,
     RX_DESCRIPTOR_COUNT,

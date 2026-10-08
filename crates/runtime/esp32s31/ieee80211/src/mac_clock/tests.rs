@@ -4,7 +4,7 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_time::{Duration, Instant};
 use oer_time_virtual::VirtualClock;
 
-use super::{LocalTimeCounter, MAC_CLOCK_INFO, MacClockStorage};
+use super::{LocalTimeCounter, MAC_CLOCK_INFO, MacClockReader, MacClockStorage, ReceptionTimer};
 
 /// A MAC counter that reads the virtual monotonic time plus an offset, or
 /// holds still while stopped.
@@ -196,6 +196,40 @@ fn a_new_radio_start_replaces_the_clock_and_its_handles() {
     let sample = second.sample().unwrap();
     assert!(sample.generation > 1);
     assert_eq!(sample.monotonic, at(20_000));
+}
+
+#[test]
+fn tx_reader_follows_rf_generation_and_refuses_a_replaced_radio_start() {
+    let clock = VirtualClock::new();
+    let counter = Counter::new(&clock, 5_000);
+    let storage = MacClockStorage::<NoopRawMutex, _, _>::new(&clock);
+    let mac = storage.start(&counter);
+    let timer = ReceptionTimer {
+        timer: &clock,
+        reception: mac,
+    };
+    let before_sleep = MacClockReader::sample(&timer).unwrap();
+    assert_eq!(before_sleep.radio.as_micros(), 5_000);
+    assert_eq!(oer_time::Clock::now(&timer), at(0));
+
+    // The power owner reports the stopped counter's wake. The TX reader
+    // sees the updated generation while the monotonic timer keeps advancing.
+    counter.stopped_at.set(Some(5_000));
+    clock.advance_to(at(20_000));
+    mac.on_rf_wake();
+    let after_wake = MacClockReader::sample(&timer).unwrap();
+    assert_eq!(after_wake.radio, before_sleep.radio);
+    assert_ne!(after_wake.generation, before_sleep.generation);
+    assert_eq!(after_wake, mac.snapshot().unwrap().sample());
+    assert_eq!(oer_time::Clock::now(&timer), at(20_000));
+
+    let restarted = storage.start(&counter);
+    assert_eq!(MacClockReader::sample(&timer), None);
+    let rebound = ReceptionTimer {
+        timer: &clock,
+        reception: restarted,
+    };
+    assert!(MacClockReader::sample(&rebound).unwrap().generation > after_wake.generation);
 }
 
 #[test]

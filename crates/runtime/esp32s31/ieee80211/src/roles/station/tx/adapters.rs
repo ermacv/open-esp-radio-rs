@@ -326,7 +326,7 @@ where
     H: HtAmpduHardware,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: oer_time::Timer,
+    T: oer_time::Timer + crate::mac_clock::MacClockReader,
     SoftwareFrame: SoftwareTxFrame,
 {
     type Error = AggregateTxError;

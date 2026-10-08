@@ -895,7 +895,7 @@ impl ProductionWifiEpochRunner {
                     tx_slot,
                     power,
                     tx_entropy as fn() -> u32,
-                    oer_time_embassy::EmbassyClock,
+                    reception_timer(self.mac_clock),
                     ControlTxConfig {
                         completion_timeout: TX_COMPLETION_TIMEOUT,
                         poll_interval: oer_time::Duration::from_micros(1),
@@ -903,7 +903,16 @@ impl ProductionWifiEpochRunner {
                     self.rts_length_threshold,
                 )
             }),
-            ProductionOrdinaryTxResources::Epoch(tx) => tx,
+            ProductionOrdinaryTxResources::Epoch(tx) => {
+                // The physical lifecycle returned the descriptor to this
+                // storage before a new MAC start. Rebind the radio capability
+                // without discarding its ordinary TX policy or terminal state.
+                tx.control_mut()
+                    .expect("the stopped radio returned its control TX owner")
+                    .rebind_timer(reception_timer(self.mac_clock))
+                    .unwrap_or_else(|_| panic!("a stopped radio has no active TX publication"));
+                tx
+            }
         }
     }
 

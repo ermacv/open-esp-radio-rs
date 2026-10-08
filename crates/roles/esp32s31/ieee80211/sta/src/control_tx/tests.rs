@@ -416,6 +416,17 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
             },
         )
         .unwrap();
+    let refused = Timer::starting_at(oer_time::Instant::from_micros(999));
+    let Err((ControlTxError::Busy, refused)) = tx.rebind_timer(refused) else {
+        panic!("an active publication retains its clock capability");
+    };
+    assert_eq!(
+        oer_time::Clock::now(&refused),
+        oer_time::Instant::from_micros(999)
+    );
+    assert_eq!(tx.ordinary.slot.state(), TxSlotState::HardwareOwned);
+    assert_eq!(hardware.publications, 1);
+
     let key = install_sta_pairwise_ccmp(
         &mut hardware,
         [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
@@ -458,4 +469,39 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
         Ok(WifiTxProgress::Complete)
     );
     assert!(tx.try_into_connected(handoff).is_ok());
+}
+
+#[test]
+fn idle_timer_rebind_preserves_policy_and_terminal_observation() {
+    let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+    let mut tx = make_tx(slot.as_mut());
+    let mut hardware = Hardware {
+        prepare: true,
+        completions: [Some(completion(0)), None],
+        ..Hardware::default()
+    };
+    let result = crate::test_support::block_on(tx.transmit_open_authentication(
+        &mut hardware,
+        OpenAuthenticationRequest {
+            source: [2, 3, 4, 5, 6, 7],
+            bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+            sequence_number: SequenceNumber::new(7).unwrap(),
+        },
+        None,
+    ))
+    .unwrap();
+    let terminal = tx.ordinary.last_outcome();
+    tx.policy_mut().install_he_bss_color(27);
+    let old = tx
+        .rebind_timer(Timer::starting_at(oer_time::Instant::from_micros(900)))
+        .unwrap_or_else(|_| panic!("the completed owner is idle"));
+    assert!(oer_time::Clock::now(&old) < oer_time::Instant::from_micros(900));
+    assert_eq!(
+        oer_time::Clock::now(&tx.ordinary.timer),
+        oer_time::Instant::from_micros(900)
+    );
+    assert_eq!(tx.ordinary.last_outcome(), terminal);
+    assert_eq!(tx.policy().he_bss_color(), 27);
+    assert_eq!(result.status(), 0);
+    assert_eq!(hardware.publications, 1);
 }

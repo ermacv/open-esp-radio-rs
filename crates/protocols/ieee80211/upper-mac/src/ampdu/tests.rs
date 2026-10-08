@@ -332,3 +332,48 @@ fn helpers_select_compact_and_mark_retries() {
     assert_eq!(all_subframes(3), 0b111);
     assert_eq!(all_subframes(64), u64::MAX);
 }
+
+#[test]
+fn aging_threshold_is_exact_at_radio_epoch_boundaries() {
+    use oer_time::RadioDuration;
+    let policy = AmpduRetryPolicy {
+        lifetime: RadioDuration::from_micros(10),
+        aged_margin: RadioDuration::from_micros(3),
+        ..POLICY
+    };
+    let first = Ieee80211Instant::from_micros(0);
+    let state = AmpduRetryState::new(SequenceNumber::new(0).unwrap(), 2, policy, first).unwrap();
+    assert!(!state.aged(Ieee80211Instant::from_micros(7)));
+    assert!(state.aged(Ieee80211Instant::from_micros(8)));
+    let near_end = Ieee80211Instant::from_micros(u64::MAX - 8);
+    let state = AmpduRetryState::new(SequenceNumber::new(0).unwrap(), 2, policy, near_end).unwrap();
+    assert!(!state.aged(Ieee80211Instant::from_micros(u64::MAX - 1)));
+    assert!(state.aged(Ieee80211Instant::from_micros(u64::MAX)));
+    assert!(matches!(
+        AmpduRetryState::new(
+            SequenceNumber::new(0).unwrap(),
+            2,
+            policy,
+            Ieee80211Instant::from_micros(u64::MAX - 7)
+        ),
+        Err(AmpduRetryError::AgingThresholdOutsideEpoch)
+    ));
+    let early_policy = AmpduRetryPolicy {
+        lifetime: RadioDuration::from_micros(10),
+        aged_margin: RadioDuration::from_micros(11),
+        ..POLICY
+    };
+    assert!(
+        AmpduRetryState::new(SequenceNumber::new(0).unwrap(), 2, early_policy, first)
+            .unwrap()
+            .aged(first)
+    );
+    let before_epoch = AmpduRetryPolicy {
+        aged_margin: RadioDuration::from_micros(12),
+        ..early_policy
+    };
+    assert!(matches!(
+        AmpduRetryState::new(SequenceNumber::new(0).unwrap(), 2, before_epoch, first),
+        Err(AmpduRetryError::AgingThresholdOutsideEpoch)
+    ));
+}

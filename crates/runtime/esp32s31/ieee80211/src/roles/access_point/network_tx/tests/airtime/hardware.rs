@@ -142,7 +142,7 @@ impl WifiTxPowerProfile for Power {
     }
 }
 
-pub(super) type Timer = oer_time_virtual::SkipClock;
+pub(super) type Timer = crate::roles::station::tx::test_support::Timer;
 
 impl oer_esp32s31_ieee80211_mac::ap_policy::ApRxPolicyHardware for Hardware {
     fn apply_ap_link_policy(&mut self, _: [u8; 6]) {}

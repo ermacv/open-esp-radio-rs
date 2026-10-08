@@ -68,7 +68,7 @@ pub const fn ampdu_retry_policy(
 ) -> AmpduRetryPolicy {
     AmpduRetryPolicy {
         lifetime,
-        aged_margin: RadioDuration::from_micros(MSDU_AGED_MARGIN_MICROS),
+        aged_margin: RadioDuration::from_micros(MSDU_AGED_MARGIN_MICROS as u64),
         retry_limit: SHORT_RETRY_LIMIT,
         retain_single_mpdu,
     }
@@ -146,7 +146,7 @@ mod tests {
             }
         );
         let policy = ampdu_retry_policy(
-            RadioDuration::from_micros(AMPDU_MSDU_LIFETIME_MICROS),
+            RadioDuration::from_micros(u64::from(AMPDU_MSDU_LIFETIME_MICROS)),
             false,
         );
         assert_eq!(policy.retry_limit, 32);

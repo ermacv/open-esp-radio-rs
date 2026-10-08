@@ -155,8 +155,11 @@ belongs to the separate [Claude architectural review workflow](../../.github/wor
 configured as described in the [contribution guide](../../CONTRIBUTING.md#claude-architectural-review).
 It waits for successful CI and serializes jobs per PR. Identical automatic
 requests reuse a completed verdict, while explicit manual requests run again.
-The two analysis passes share a cached input prefix with separate histories;
-logs and completed comments report cache usage and estimated API cost.
+The two analysis passes share a cached input prefix with separate histories and
+one $5 API budget. Preflight reserves for a cache miss and caps output to the
+remaining dollars; actual cache reads use their own tariff rather than exhausting
+a cumulative-input token cap. Logs and completed or failed review comments report
+cache usage and estimated API cost.
 
 Planning requires a clean checkout so the tree hash describes its source
 files. Repository source inputs must be tracked; external sources are

@@ -7,6 +7,7 @@ code, access runner files, write GitHub data or choose a network destination.
 
 import argparse
 import base64
+from decimal import Decimal
 import hashlib
 import json
 import os
@@ -26,7 +27,7 @@ MARKER = "<!-- oer-claude-runtime-review -->"
 STATUS = "claude-runtime-review"
 MODEL = "claude-opus-5-5"
 MAX_CONTEXT = 1_000_000
-MAX_INPUT = 2_000_000
+MAX_COST_USD = Decimal("5.00")
 MAX_OUTPUT = 48_000
 # USD/MTok: input, 5-minute cache write, cache read, output (2026-10-08).
 # https://platform.claude.com/docs/en/about-claude/pricing
@@ -499,11 +500,32 @@ class Claude:
                 self.log_usage(phase, "total", usage)
 
     def cost(self, usage):
-        return sum(usage[k] * rate for k, rate in zip(USAGE_FIELDS, PRICES[self.model])) / 1_000_000
+        return sum(usage[k] * Decimal(str(rate))
+                   for k, rate in zip(USAGE_FIELDS, PRICES[self.model])) / 1_000_000
+
+    def spent_usd(self):
+        return sum(self.cost(usage) for usage in self.usage.values())
+
+    def output_allowance(self, input_tokens):
+        if type(input_tokens) is not int or input_tokens < 0:
+            raise ValueError("API вернул некорректную оценку входных токенов")
+        if self.output_used >= MAX_OUTPUT:
+            raise ValueError("Достигнут лимит выходных токенов ревью; анализ не завершён")
+        # count_tokens cannot predict cache hits. Reserve for a complete miss,
+        # including cache creation, and cap output to the remaining USD budget.
+        rates = PRICES[self.model]
+        reserve = input_tokens * Decimal(str(max(rates[:2]))) / 1_000_000
+        available = MAX_COST_USD - self.spent_usd() - reserve
+        affordable = int(available * 1_000_000 / Decimal(str(rates[3])))
+        if affordable < 1:
+            raise ValueError(f"Недостаточно бюджета ревью ${MAX_COST_USD:.2f} для следующего запроса; "
+                             f"расход ${self.spent_usd():.6f}, резерв входа без попаданий в кеш ${reserve:.6f}; "
+                             "анализ не завершён")
+        return min(24000, MAX_OUTPUT - self.output_used, affordable)
 
     def log_usage(self, phase, step, usage, seconds=None):
         record = {"event": "claude_usage", "model": self.model, "phase": phase, "step": step,
-                  **usage, "estimated_usd": round(self.cost(usage), 8)}
+                  **usage, "estimated_usd": float(round(self.cost(usage), 8))}
         if seconds is not None:
             record["seconds"] = round(seconds, 3)
         print(json.dumps(record), flush=True)
@@ -519,6 +541,9 @@ class Claude:
                         + f" | {self.cost(usage):.6f} |")
         rows.extend(["| Итого | " + " | ".join(str(total[k]) for k in USAGE_FIELDS)
                      + f" | {self.cost(total):.6f} |", "",
+                     f"Бюджет анализа и проверки выводов вместе: **${MAX_COST_USD:.2f}**.", "",
+                     "Учтены ответы с доступной статистикой usage; расход запроса без полученного ответа "
+                     "может не попасть в таблицу.", "",
                      "Оценка по тарифам прямого API на 2026-10-08, кеш 5 минут; "
                      "окончательный расход — в Claude Console. GitHub Actions оплачивается отдельно."])
         return "\n".join(rows)
@@ -534,15 +559,14 @@ class Claude:
             body = {"model": self.model, "system": PROMPT, "tools": TOOLS, "messages": messages,
                     "output_config": {"effort": "high", "format": {"type": "json_schema", "schema": REPORT_SCHEMA}}}
             count = self.request("messages/count_tokens", body)["input_tokens"]
-            if self.input_used + count > MAX_INPUT or self.output_used >= MAX_OUTPUT:
-                raise ValueError("Достигнут лимит токенов ревью; анализ не завершён")
+            max_tokens = self.output_allowance(count)
             print(f"Claude {phase} step {step + 1}: {count} input tokens; "
-                  f"used {self.input_used}/{MAX_INPUT} input and {self.output_used}/{MAX_OUTPUT} output.",
+                  f"used {self.input_used} input and {self.output_used}/{MAX_OUTPUT} output; "
+                  f"estimated cost ${self.spent_usd():.6f}/${MAX_COST_USD:.2f}.",
                   flush=True)
             sources.ensure_active()
             started = time.monotonic()
             # Thinking consumes this cap too; leave room to think and act.
-            max_tokens = min(24000, MAX_OUTPUT - self.output_used)
             response = self.request("messages", {**body, "max_tokens": max_tokens,
                                     "cache_control": {"type": "ephemeral"}})
             usage = response["usage"]
@@ -567,8 +591,11 @@ class Claude:
                               "stop_reason": reason, "content_types": types,
                               "max_tokens": max_tokens, "output_tokens": tokens["output_tokens"]}), flush=True)
             sources.ensure_active()
-            if self.input_used > MAX_INPUT or self.output_used > MAX_OUTPUT:
-                raise ValueError("Достигнут лимит токенов ревью; анализ не завершён")
+            if self.spent_usd() > MAX_COST_USD:
+                raise ValueError(f"Расход ревью ${self.spent_usd():.6f} превысил бюджет ${MAX_COST_USD:.2f}; "
+                                 "анализ не завершён")
+            if self.output_used > MAX_OUTPUT:
+                raise ValueError("Достигнут лимит выходных токенов ревью; анализ не завершён")
             if reason not in ("tool_use", "end_turn"):
                 raise ValueError(f"Claude {phase}: stop_reason={reason}, output_tokens={tokens['output_tokens']}, "
                                  f"max_tokens={max_tokens}; завершённый отчёт не получен")
@@ -712,6 +739,7 @@ def review_pr(api, number, model, force=False):
         print("Only same-repository pull requests targeting main are reviewed.")
         return
     status(api, pr, "pending", "Architectural review has not completed for this commit")
+    claude = None
     try:
         ci_ok, ci = ci_state(api, pr["head"]["sha"])
         if ci_ok is None:
@@ -748,7 +776,10 @@ def review_pr(api, number, model, force=False):
     except Exception as error:
         # Never publish API response bodies, runner environment or secrets.
         reason = str(error) if isinstance(error, ValueError) else type(error).__name__
-        if publish(api, pr, f"## Архитектурное ревью\n\n⚠️ Проверка неполная — разрешение на мердж не дано\n\n{reason}"):
+        body = f"## Архитектурное ревью\n\n⚠️ Проверка неполная — разрешение на мердж не дано\n\n{reason}"
+        if claude is not None:
+            body += f"\n\nМодель: `{model}`\n\n{claude.usage_markdown()}"
+        if publish(api, pr, body):
             status(api, pr, "error", "Architectural review failed; no approval")
         raise
 

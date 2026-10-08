@@ -117,8 +117,8 @@ through `output_config.format`. Normal `end_turn` responses are parsed and
 validated as reports, rather than requiring a final tool call. Claude 5.5 does
 not support forced tool calls. Semantic validation failures return controller
 feedback, so the model can read missing evidence and repair the report within
-the same call/token budget. Signed thinking blocks remain unchanged in the
-append-only history. An invalid report never becomes the final verdict;
+the same call, cost and output-token budgets. Signed thinking blocks remain
+unchanged in the append-only history. An invalid report never becomes the final verdict;
 exhausting the budget still reports incomplete analysis. Truncated responses,
 refusals, malformed JSON and inconsistent protocol responses fail closed.
 
@@ -152,33 +152,43 @@ To repeat a review after issue requirements change, use **Actions → Claude
 architectural review → Run workflow**, selecting the default branch and the PR
 number. To verify federation during setup, select `verify_auth` instead; that
 mode exchanges an OIDC token and makes one minimal Messages request (up to 16
-output tokens) without reading or commenting on a PR. Each analysis is limited
-to 20 model calls per pass, with 2,000,000 cumulative input
-tokens and 48,000 output tokens shared across both passes; reaching a limit
-reports incomplete analysis. The workflow has a 45-minute timeout.
+output tokens) without reading or commenting on a PR. A review has an estimated
+**$5 API budget shared by analysis and verification**, 20 model calls per pass
+and 48,000 output tokens shared across both passes. Reaching a limit reports
+incomplete analysis. The workflow has a 45-minute timeout.
 Each request permits at most 24,000 output tokens, capped by the remaining shared
-budget. Output includes adaptive thinking as well as the visible response;
+output-token and dollar budgets. Output includes adaptive thinking as well as
+the visible response;
 the cap must leave room for both investigation and the report. A truncated
 response never supplies findings or approval, even if it contains parseable JSON.
-The larger input budget covers repeated source investigation across large PRs;
-the preflight counts each request before paid inference. An explicit 5-minute
-prompt-cache breakpoint covers the identical tools, system instructions and
+Before each paid request, the controller counts its input and reserves its cost
+at the more expensive of the ordinary-input and cache-write rates, treating the
+whole input as a cache miss. It does not assume that an earlier cache hit will
+repeat. The remaining dollar budget caps that request's possible output. Actual
+usage then charges ordinary input, cache writes, cache reads and output at their
+separate rates; cheap repeated cache reads do not exhaust a cumulative-input
+token cap. Both passes share the same cost accounting. An actual cost above the
+budget cannot produce approval or start another request. The token-counting
+endpoint supplies an estimate, so this local guard is not an exact provider-side
+billing limit; use the workspace spend limit for provider-enforced billing control.
+An explicit 5-minute prompt-cache breakpoint covers the identical tools, system instructions and
 initial PR context shared by both passes. Their different tasks and the candidate
 report follow that breakpoint; the verifier never receives the analyst's
 conversation history. Automatic caching additionally reuses growing prefixes
 within each pass. Cache hits depend on the prefix remaining unchanged and its
 TTL; neither a verifier hit nor reuse across separate workflow runs is guaranteed.
-Input accounting
-includes ordinary tokens, cache writes and cache reads; cached inputs are not
-free and do not bypass the analysis budget. Context and linked
+Cached inputs are not free and remain part of the dollar budget. Context and linked
 issues are kept complete. JSON log records separate ordinary input, cache writes,
 cache reads, output and estimated USD for each step and each pass's total, even
 when analysis fails, without logging source or credentials. Response metadata
 records the stop reason, content-block types and request/output token limits,
-without text, thinking, signatures or tool arguments. Completed report
-comments include the same usage and cost breakdown. Estimates use the direct
-API tariffs dated in the controller and default 5-minute cache writes; final
-billing is in Claude Console. Token budgets are not dollar spend limits.
+without text, thinking, signatures or tool arguments. Completed and failed review
+comments include the same usage, cost and budget breakdown when the reviewer was
+initialized. Only responses with available usage are counted; a request without
+a received response can incur costs not reflected in the table. Estimates use
+the direct API tariffs dated in the controller and default 5-minute cache writes; final
+billing is in Claude Console. The $5 budget applies to one review run; an explicit
+manual repeat has its own budget, while reuse of a completed verdict makes no API calls.
 PRs whose context exceeds 1,000,000 characters require splitting or an explicit
 limit change. GitHub Actions runner minutes have separate billing.
 

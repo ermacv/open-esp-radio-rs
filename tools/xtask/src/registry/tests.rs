@@ -233,6 +233,19 @@ fn issue_policy_changes_run_the_offline_guard_in_the_fast_gate() {
 }
 
 #[test]
+fn runtime_review_changes_run_the_offline_controller_regressions() {
+    for path in [
+        ".github/scripts/claude_review.py",
+        ".github/scripts/test_claude_review.py",
+        ".github/workflows/claude-review.yml",
+    ] {
+        let selected = ids(of_change(&change(&[path], Tier::Fast)));
+        assert!(selected.contains(&"claude-review"), "{path}: {selected:?}");
+    }
+    assert!(ids(of_job(Tier::Full, "host")).contains(&"claude-review"));
+}
+
+#[test]
 fn chip_code_type_checks_images_and_full_adds_the_chip_audits() {
     let fast = ids(of_change(&change(
         &["crates/driver/src/lib.rs"],

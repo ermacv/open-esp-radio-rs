@@ -1,5 +1,76 @@
 # Contributing
 
+## Claude runtime review
+
+The [review workflow](.github/workflows/claude-review.yml) uses the Claude
+Messages API directly, authenticated through GitHub Actions OIDC and
+[Anthropic Workload Identity Federation](https://platform.claude.com/docs/en/manage-claude/wif-providers/github-actions).
+In the Claude Console organization holding your API credits, open **Settings
+→ Workload identity → Connect workload → GitHub Actions**. Create a service
+account and federation rule for this reviewer, scoped to `workspace:developer`
+in the workspace that should pay for inference. Set a workspace spend limit
+in Console to control monthly spend.
+
+Configure the rule's match conditions as follows (the issuer is
+`https://token.actions.githubusercontent.com` with discovery-mode JWKS):
+
+```json
+{
+  "subject_prefix": "repo:ermacv/open-esp-radio-rs:ref:refs/heads/main",
+  "audience": "https://api.anthropic.com",
+  "claims": {
+    "repository_id": "1312931455",
+    "repository_owner_id": "26526682",
+    "ref": "refs/heads/main",
+    "workflow_ref": "ermacv/open-esp-radio-rs/.github/workflows/claude-review.yml@refs/heads/main"
+  }
+}
+```
+
+Add the resulting IDs as repository **Actions variables**, not secrets:
+`ANTHROPIC_FEDERATION_RULE_ID` (`fdrl_…`), `ANTHROPIC_ORGANIZATION_ID`,
+`ANTHROPIC_SERVICE_ACCOUNT_ID` (`svac_…`) and `ANTHROPIC_WORKSPACE_ID` if
+the rule covers more than one workspace. The workflow grants `id-token: write`;
+the controller fetches a GitHub assertion, exchanges it at `/v1/oauth/token`
+and sends the temporary token as a Bearer credential. Refresh fetches a fresh
+single-use assertion. No persistent Anthropic API key or Claude GitHub App is
+needed. The optional variable `CLAUDE_REVIEW_MODEL` selects the model;
+the default is `claude-sonnet-5-5`.
+
+Opening or updating a non-draft PR from a branch in this repository invalidates
+the previous verdict and waits for its latest `CI` push run. When CI finishes,
+the reviewer reads the complete changed-file list and patches, explicitly
+referenced and GitHub-linked closing issues with their discussions, and the
+source files and callers it requests at immutable head/base SHAs. Findings
+cover concrete runtime regressions, with triggers, consequences, fixes and
+links to source lines; style suggestions are outside this review.
+
+One `github-actions[bot]` comment reports errors, a completed review with
+successful CI, or an incomplete review. API failures, missing diffs, unavailable
+issues and analysis limits cannot yield approval. The controller rechecks the
+PR revisions and CI before publishing. The controller also sets the commit
+status `claude-runtime-review`: pending while waiting/working, success only
+after complete analysis and successful CI, failure for defects or coverage
+gaps, and error when the reviewer fails. Require this status alongside `ci-ok`
+in `main` branch protection to prevent auto-merge from overtaking the reviewer.
+Enable that requirement only after this workflow is on the default branch and
+federation variables are configured, so the setup PR is not blocked by a check
+that cannot run yet. Source analysis
+does not establish hardware readiness or replace qualification/HIL evidence.
+
+The controller is checked out from the trusted base/default branch; it never
+checks out or executes the PR's code. Claude can only read repository source
+and return findings. Only the controller publishes the comment. Automatic
+review covers same-repository branches, matching CI's push trigger. Fork PRs
+need a separate CI policy before this workflow can give a merge verdict.
+
+To repeat a review after issue requirements change, use **Actions → Claude
+runtime review → Run workflow**, selecting the default branch and the PR
+number. Each analysis is limited to 20 model calls, 250,000 cumulative input
+tokens and 24,000 output tokens; reaching a limit reports incomplete analysis.
+Large PRs whose context exceeds 180,000 characters also require splitting or
+an explicit limit change. GitHub Actions runner minutes have separate billing.
+
 Contributors can work on portable Rust protocols, ownership tests, binary
 analysis, documentation and host tools without a radio board. Hardware changes
 also need the appropriate source/profile review and, when readiness is claimed,

@@ -65,6 +65,9 @@ explicit applicable rule and the dependency or data-flow path that breaks it.
 Check assumptions against
 callers before reporting. Before finishing, read_file must retrieve each finding's
 anchor line at head (at base for a removed file), even if it appeared in the diff.
+For Cargo.lock only, use a numbered line present in its complete provided patch
+as the anchor instead; never read the full lock file. Generated publications are
+not provided as patches: investigate and anchor findings in their reviewed inputs.
 A successful build does not prove on-air readiness;
 do not claim you executed tests or ran hardware. CI is evaluated separately by
 the controller. Missing code/evidence or unresolved issue requirements must be
@@ -312,6 +315,46 @@ def context(api, pr):
     return limited(data), files, gaps
 
 
+def lockfile_patch_anchor(file, revision, line):
+    """A complete provided lockfile patch is evidence without a full-file read."""
+    patch = file.get("patch")
+    if (generated(file["filename"]) or PurePosixPath(file["filename"]).name != "Cargo.lock"
+            or not patch):
+        return False
+    lines = patch.splitlines()
+    if (sum(entry.startswith("+") for entry in lines) != file["additions"] or
+            sum(entry.startswith("-") for entry in lines) != file["deletions"]):
+        return False
+    anchors = {"head": set(), "base": set()}
+    before = after = None
+    remaining_before = remaining_after = 0
+    for entry in lines:
+        hunk = re.fullmatch(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@.*", entry)
+        if hunk:
+            if remaining_before or remaining_after:
+                return False
+            before, after = int(hunk[1]), int(hunk[3])
+            remaining_before = int(hunk[2]) if hunk[2] is not None else 1
+            remaining_after = int(hunk[4]) if hunk[4] is not None else 1
+        elif entry == r"\ No newline at end of file":
+            continue
+        elif before is not None and entry.startswith((" ", "+", "-")):
+            if not entry.startswith("+"):
+                anchors["base"].add(before)
+                before += 1
+                remaining_before -= 1
+            if not entry.startswith("-"):
+                anchors["head"].add(after)
+                after += 1
+                remaining_after -= 1
+            if remaining_before < 0 or remaining_after < 0:
+                return False
+        else:
+            return False
+    return (remaining_before == remaining_after == 0 and line > 0
+            and line in anchors[revision])
+
+
 def validate_report(report, files, sources):
     if (not isinstance(report, dict) or not isinstance(report.get("summary"), str)
             or not report["summary"].strip()
@@ -331,8 +374,10 @@ def validate_report(report, files, sources):
             raise ValueError("Invalid finding: changed path, line and execution evidence required")
         file = next(f for f in files if f["filename"] == finding["path"])
         revision = "base" if file["status"] == "removed" else "head"
-        if not sources.has_read(finding["path"], revision, finding["line"]):
-            raise ValueError("Finding requires its anchor source line read in this pass")
+        if not (sources.has_read(finding["path"], revision, finding["line"])
+                or lockfile_patch_anchor(file, revision, finding["line"])):
+            raise ValueError("Finding requires its anchor source line read in this pass, "
+                             "or a Cargo.lock line present in its complete provided patch")
     for finding in report["out_of_scope_findings"]:
         if (not isinstance(finding, dict)
                 or not all(isinstance(finding.get(k), str) and finding[k].strip()
@@ -441,16 +486,15 @@ class Claude:
                 raise ValueError("Claude не завершил структурированное ревью")
             blocks = response["content"]
             calls = [b for b in blocks if b["type"] == "tool_use"]
-            finishes = [b for b in calls if b["name"] == "finish_review"]
-            if finishes:
-                if len(calls) != 1:
-                    raise ValueError("Финальный отчёт требует отдельного завершённого шага")
-                return validate_report(finishes[0]["input"], files, sources)
             results = []
             for call in calls:
                 try:
                     args = call["input"]
-                    if call["name"] == "read_file":
+                    if call["name"] == "finish_review":
+                        if len(calls) != 1:
+                            raise ValueError("finish_review must be the only tool call in its turn")
+                        return validate_report(args, files, sources)
+                    elif call["name"] == "read_file":
                         result = sources.read(args["path"], args["revision"], args["start"], args["count"])
                     elif call["name"] == "list_directory":
                         result = sources.directory(args["path"], args["revision"])
@@ -461,7 +505,9 @@ class Claude:
                     results.append({"type": "tool_result", "tool_use_id": call["id"], "content": result})
                 except (ValueError, KeyError, HTTPError, UnicodeError) as error:
                     results.append({"type": "tool_result", "tool_use_id": call["id"],
-                                    "content": f"Read failed: {type(error).__name__}", "is_error": True})
+                                    "content": (f"Tool rejected: {error}" if isinstance(error, ValueError)
+                                                else f"Tool failed: {type(error).__name__}"),
+                                    "is_error": True})
             messages.extend([{"role": "assistant", "content": blocks}, {"role": "user", "content": results}])
         raise ValueError("Достигнут лимит шагов ревью; анализ не завершён")
 

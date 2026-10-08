@@ -97,6 +97,63 @@ class ReviewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "anchor source line"):
             review.validate_report(report, PR["review_files"], sources)
 
+    def test_lockfile_finding_uses_only_actual_lines_in_complete_provided_patch(self):
+        file = {"filename": "Cargo.lock", "status": "modified", "additions": 2,
+                "deletions": 1, "patch": "@@ -8,2 +8,3 @@\n context\n-old\n+new\n+dependency"}
+        sources = review.Sources(FakeGitHub(), PR)
+        for line in (8, 9, 10):
+            report = {**REPORT, "findings": [{**FINDING, "path": "Cargo.lock", "line": line}]}
+            self.assertEqual(review.validate_report(report, [file], sources), report)
+        for line in (7, 11, 100):
+            with self.assertRaisesRegex(ValueError, "anchor source line"):
+                review.validate_report({**REPORT, "findings": [{**FINDING, "path": "Cargo.lock", "line": line}]},
+                                       [file], sources)
+        with self.assertRaisesRegex(ValueError, "Cargo.lock"):
+            sources.read("Cargo.lock", "head", 8, 1)
+
+    def test_removed_lockfile_uses_base_lines_and_multiple_hunks_have_distinct_ranges(self):
+        removed = {"filename": "examples/Cargo.lock", "status": "removed", "additions": 0,
+                   "deletions": 1, "patch": "@@ -17 +0,0 @@\n-old\n\\ No newline at end of file"}
+        report = {**REPORT, "findings": [{**FINDING, "path": removed["filename"], "line": 17}]}
+        sources = review.Sources(FakeGitHub(), PR)
+        self.assertEqual(review.validate_report(report, [removed], sources), report)
+        self.assertFalse(review.lockfile_patch_anchor(removed, "head", 17))
+        multiple = {**removed, "status": "modified", "additions": 1, "deletions": 1,
+                    "patch": "@@ -2 +2,0 @@\n-old\n@@ -20,0 +20 @@\n+new"}
+        self.assertTrue(review.lockfile_patch_anchor(multiple, "base", 2))
+        self.assertTrue(review.lockfile_patch_anchor(multiple, "head", 20))
+        self.assertFalse(review.lockfile_patch_anchor(multiple, "head", 2))
+        self.assertFalse(review.lockfile_patch_anchor(multiple, "base", 20))
+
+    def test_missing_truncated_or_generated_patches_never_bypass_source_evidence(self):
+        file = {"filename": "Cargo.lock", "status": "modified", "additions": 1,
+                "deletions": 1, "patch": "@@ -8 +8 @@\n-old\n+new"}
+        for change in ({"patch": None}, {"additions": 2},
+                       {"patch": "@@ -8,2 +8,2 @@\n-old\n+new"},
+                       {"filename": "src/lib.rs"},
+                       {"filename": "verification/chip/facts/Cargo.lock"},
+                       {"filename": "chip/pac/src/generated.rs"}):
+            with self.subTest(change=change):
+                invalid = {**file, **change}
+                report = {**REPORT, "findings": [{**FINDING, "path": invalid["filename"]}]}
+                with self.assertRaisesRegex(ValueError, "anchor source line"):
+                    review.validate_report(report, [invalid], review.Sources(FakeGitHub(), PR))
+
+    def test_both_passes_can_report_lockfile_defects_without_full_file_reads(self):
+        file = {"filename": "Cargo.lock", "status": "modified", "additions": 1,
+                "deletions": 1, "patch": "@@ -8 +8 @@\n-old\n+new"}
+        report = {**REPORT, "findings": [{**FINDING, "path": "Cargo.lock"}]}
+        claude = review.Claude(review.MODEL)
+        sources = review.Sources(FakeGitHub(), PR)
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            return {"usage": {"input_tokens": 10, "output_tokens": 1}, "stop_reason": "tool_use",
+                    "content": [{"type": "tool_use", "id": "finish", "name": "finish_review", "input": report}]}
+        with patch.object(claude, "request", side_effect=request), patch.object(sources, "get") as get:
+            self.assertEqual(claude.review("{}", sources, [file]), report)
+        get.assert_not_called()
+
     def test_architectural_report_separates_preexisting_defects_without_blocking(self):
         report = {**REPORT, "out_of_scope_findings": [UNRELATED]}
         text = review.render(PR, report, True, "CI", review.MODEL)
@@ -204,22 +261,89 @@ class ReviewTests(unittest.TestCase):
                 claude.review("{}", review.Sources(FakeGitHub(), PR), [])
         self.assertEqual(request.call_count, 2)
 
-    def test_verifier_cannot_reuse_analysts_reads_to_classify_unrelated_defects(self):
+    def test_verifier_must_read_its_own_evidence_after_rejected_unrelated_anchor(self):
         claude = review.Claude(review.MODEL)
         source_reads = [{"type": "tool_use", "id": rev, "name": "read_file",
                          "input": {"path": "src/old.rs", "revision": rev, "start": 1, "count": 3}}
                         for rev in ("head", "base")]
         finish = [{"type": "tool_use", "id": "finish", "name": "finish_review",
                    "input": {**REPORT, "out_of_scope_findings": [UNRELATED]}}]
-        responses = iter([source_reads, finish, finish])
+        responses = iter([source_reads, finish, finish, source_reads, finish])
+        bodies = []
         def request(path, body):
             if path == "messages/count_tokens":
                 return {"input_tokens": 10}
+            bodies.append(deepcopy(body))
             return {"usage": {"input_tokens": 10, "output_tokens": 10}, "stop_reason": "tool_use",
                     "content": next(responses)}
         with patch.object(claude, "request", side_effect=request):
-            with self.assertRaisesRegex(ValueError, "both base and head"):
-                claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+            result = claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+        self.assertEqual(result["out_of_scope_findings"], [UNRELATED])
+        rejected = bodies[3]["messages"][-1]["content"][0]
+        self.assertTrue(rejected["is_error"])
+        self.assertIn("both base and head", rejected["content"])
+
+    def test_invalid_finish_can_be_repaired_after_reading_its_anchor(self):
+        claude = review.Claude(review.MODEL)
+        report = {**REPORT, "findings": [FINDING]}
+        finish = [{"type": "tool_use", "id": "finish", "name": "finish_review", "input": report}]
+        read = [{"type": "tool_use", "id": "read", "name": "read_file",
+                 "input": {"path": "src/lib.rs", "revision": "head", "start": 8, "count": 1}}]
+        responses = iter([finish, read, finish, read, finish])
+        bodies = []
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            bodies.append(deepcopy(body))
+            return {"usage": {"input_tokens": 10, "output_tokens": 1}, "stop_reason": "tool_use",
+                    "content": next(responses)}
+        with patch.object(claude, "request", side_effect=request):
+            self.assertEqual(claude.review("{}", review.Sources(FakeGitHub(), PR), PR["review_files"]), report)
+        rejected = bodies[1]["messages"][-1]["content"][0]
+        self.assertTrue(rejected["is_error"])
+        self.assertIn("anchor source line", rejected["content"])
+
+    def test_repeated_invalid_reports_exhaust_budget_and_cannot_publish_green(self):
+        api = FakeGitHub()
+        api.runs = [{"run_number": 1, "run_attempt": 1, "status": "completed",
+                     "conclusion": "success", "html_url": "https://example/ci"}]
+        reports = []
+        def request(self, path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            reports.append(deepcopy(body))
+            return {"usage": {"input_tokens": 10, "output_tokens": 1}, "stop_reason": "tool_use",
+                    "content": [{"type": "tool_use", "id": "finish", "name": "finish_review",
+                                 "input": {**REPORT, "findings": [FINDING]}}]}
+        with patch.object(review.Claude, "request", new=request):
+            with self.assertRaisesRegex(ValueError, "лимит шагов"):
+                review.review_pr(api, 7, review.MODEL)
+        self.assertEqual(len(reports), 20)
+        self.assertTrue(reports[-1]["messages"][-1]["content"][0]["is_error"])
+        self.assertEqual(api.writes[-1][2]["state"], "error")
+        self.assertNotIn("success", [w[2]["state"] for w in api.writes if w[1].startswith("statuses/")])
+
+    def test_finish_batched_with_source_calls_requires_a_separate_retry(self):
+        claude = review.Claude(review.MODEL)
+        finish = {"type": "tool_use", "id": "finish", "name": "finish_review", "input": REPORT}
+        read = {"type": "tool_use", "id": "read", "name": "read_file",
+                "input": {"path": "src/lib.rs", "revision": "head", "start": 8, "count": 1}}
+        responses = iter([[finish, read], [finish], [finish]])
+        bodies = []
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            bodies.append(deepcopy(body))
+            return {"usage": {"input_tokens": 10, "output_tokens": 1}, "stop_reason": "tool_use",
+                    "content": next(responses)}
+        with patch.object(claude, "request", side_effect=request):
+            self.assertEqual(claude.review("{}", review.Sources(FakeGitHub(), PR), []), REPORT)
+        results = bodies[1]["messages"][-1]["content"]
+        self.assertEqual(len(results), 2)
+        self.assertTrue(results[0]["is_error"])
+        self.assertIn("only tool call", results[0]["content"])
+        self.assertNotIn("is_error", results[1])
+        self.assertEqual(len(bodies), 3)
 
     def test_verifier_failure_never_publishes_the_analysts_clean_verdict(self):
         api = FakeGitHub()

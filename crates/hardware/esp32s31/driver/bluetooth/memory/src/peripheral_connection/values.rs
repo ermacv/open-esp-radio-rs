@@ -120,7 +120,11 @@ pub struct PeripheralConnectionEventSpan(u32);
 
 impl PeripheralConnectionEventSpan {
     pub const fn new(ticks: u32) -> Option<Self> {
-        if ticks == 0 { None } else { Some(Self(ticks)) }
+        if ticks == 0 || ticks > i32::MAX as u32 {
+            None
+        } else {
+            Some(Self(ticks))
+        }
     }
 
     pub(super) const fn ticks(self) -> u32 {
@@ -199,23 +203,21 @@ impl PeripheralConnectionReceiveWait {
     /// The extra 61 microseconds are a fixed S31 PHY allowance recovered from
     /// the complete connection-event builder. This constructor admits only the
     /// short hardware form used by every valid legacy first transmit window.
-    pub const fn new(transmit_window_micros: u32, timing_guard_micros: u32) -> Option<Self> {
-        let Some(double_guard) = timing_guard_micros.checked_mul(2) else {
-            return None;
-        };
-        let Some(guarded_window_micros) = transmit_window_micros.checked_add(double_guard) else {
-            return None;
-        };
-        let Some(total_micros) = guarded_window_micros.checked_add(61) else {
-            return None;
-        };
-        if transmit_window_micros == 0 || total_micros > 0xfffe {
+    pub fn new(
+        transmit_window: oer_time::RadioDuration,
+        timing_guard: oer_time::RadioDuration,
+    ) -> Option<Self> {
+        let total = timing_guard
+            .checked_mul(2)?
+            .checked_add(transmit_window)?
+            .checked_add(oer_time::RadioDuration::from_micros(61))?;
+        if transmit_window.as_micros() == 0 || total.as_micros() > 65_534 {
             return None;
         }
         Some(Self {
-            transmit_window_micros,
-            timing_guard_micros,
-            total_micros: total_micros as u16,
+            transmit_window_micros: u32::try_from(transmit_window.as_micros()).ok()?,
+            timing_guard_micros: u32::try_from(timing_guard.as_micros()).ok()?,
+            total_micros: u16::try_from(total.as_micros()).ok()?,
         })
     }
 
@@ -249,16 +251,14 @@ impl PeripheralConnectionRecurringReceiveWait {
     ///
     /// The long form stores two-microsecond units. Odd long durations are
     /// rejected instead of silently reproducing the vendor's truncating shift.
-    pub const fn new(total_micros: u32) -> Option<Self> {
-        const SHORT_MAX_MICROS: u32 = u16::MAX as u32 - 1;
-        const LONG_MAX_MICROS: u32 = u16::MAX as u32 * 2;
-
-        if total_micros > LONG_MAX_MICROS
-            || (total_micros > SHORT_MAX_MICROS && total_micros & 1 != 0)
-        {
+    pub fn new(total: oer_time::RadioDuration) -> Option<Self> {
+        let micros = total.as_micros();
+        if micros > 131_070 || (micros > 65_534 && micros & 1 != 0) {
             return None;
         }
-        Some(Self { total_micros })
+        Some(Self {
+            total_micros: u32::try_from(micros).ok()?,
+        })
     }
 
     pub const fn total_micros(self) -> u32 {

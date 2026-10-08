@@ -200,12 +200,25 @@ pub struct AdvertisingEvent {
 }
 
 impl AdvertisingEvent {
-    /// The channel and its anchor at `position` in channel order.
-    pub fn channel_anchor(&self, position: usize) -> Option<(AdvertisingChannel, LeInstant)> {
-        let channel = self.channels.iter().nth(position)?;
-        let offset = u64::from(self.channel_spacing.as_micros()).checked_mul(position as u64)?;
-        let anchor = LeInstant::from_micros(self.anchor.as_micros().checked_add(offset)?);
-        Some((channel, anchor))
+    /// The channel and its anchor at `position` in channel order. An absent
+    /// position is `Ok(None)`; invalid spacing or anchor arithmetic is an error.
+    pub fn channel_anchor(
+        &self,
+        position: usize,
+    ) -> Result<Option<(AdvertisingChannel, LeInstant)>, TimingError> {
+        let Some(channel) = self.channels.iter().nth(position) else {
+            return Ok(None);
+        };
+        // A present position is at most two in the three-channel wire set.
+        let offset = self
+            .channel_spacing
+            .checked_mul(position as u64)
+            .ok_or(TimingError::DurationOverflow)?;
+        let anchor = self
+            .anchor
+            .checked_add(offset)
+            .ok_or(TimingError::BeyondEpoch)?;
+        Ok(Some((channel, anchor)))
     }
 }
 
@@ -434,22 +447,33 @@ pub struct ConnectionAllowances {
     pub first_event_length: RadioDuration,
 }
 
+/// Why physical radio geometry cannot be represented in the current epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TimingError {
+    /// An endpoint precedes the beginning of the epoch.
+    BeforeEpoch,
+    /// An endpoint exceeds the end of the epoch.
+    BeyondEpoch,
+    /// A duration sum or product exceeds the portable duration range.
+    DurationOverflow,
+    /// An elapsed span was requested in reverse order.
+    ReversedTime,
+    /// The resulting window is empty or exceeds the epoch.
+    Window(crate::WindowError),
+}
+
 impl RadioTiming {
-    /// The reservation of an air window, or `None` before the epoch.
-    pub fn reservation(&self, window: LeWindow) -> Option<LeWindow> {
+    /// Add the preparation lead to a checked air window's reservation.
+    pub fn reservation(&self, window: LeWindow) -> Result<LeWindow, TimingError> {
         let start = window
             .start()
-            .as_micros()
-            .checked_sub(u64::from(self.preparation_lead.as_micros()))?;
+            .checked_sub(self.preparation_lead)
+            .ok_or(TimingError::BeforeEpoch)?;
         let duration = window
             .duration()
-            .as_micros()
-            .checked_add(self.preparation_lead.as_micros())?;
-        LeWindow::new(
-            LeInstant::from_micros(start),
-            RadioDuration::from_micros(duration),
-        )
-        .ok()
+            .checked_add(self.preparation_lead)
+            .ok_or(TimingError::DurationOverflow)?;
+        LeWindow::new(start, duration).map_err(TimingError::Window)
     }
 }
 
@@ -562,9 +586,12 @@ mod tests {
         };
         assert_eq!(
             event.channel_anchor(1),
-            Some((AdvertisingChannel::Channel39, LeInstant::from_micros(1_400)))
+            Ok(Some((
+                AdvertisingChannel::Channel39,
+                LeInstant::from_micros(1_400)
+            )))
         );
-        assert!(event.channel_anchor(2).is_none());
+        assert_eq!(event.channel_anchor(2), Ok(None));
     }
 
     #[test]
@@ -593,6 +620,9 @@ mod tests {
         assert_eq!(reserved.end(), LeInstant::from_micros(1_050));
         let early =
             LeWindow::new(LeInstant::from_micros(10), RadioDuration::from_micros(5)).unwrap();
-        assert_eq!(timing.reservation(early), None);
+        assert_eq!(
+            timing.reservation(early),
+            Err(super::TimingError::BeforeEpoch)
+        );
     }
 }

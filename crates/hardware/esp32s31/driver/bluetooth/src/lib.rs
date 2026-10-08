@@ -63,7 +63,9 @@ pub mod validation;
 pub use ble_phy::AlwaysAwakeTimingReady;
 
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-pub use controller_time::{ControllerSchedulerEpoch, ControllerTimeSample};
+pub use controller_time::{
+    ControllerDurationError, ControllerSchedulerEpoch, ControllerTimeSample,
+};
 
 pub use scheduler::time::SchedulerInstant;
 

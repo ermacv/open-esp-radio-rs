@@ -5,12 +5,13 @@ use core::convert::Infallible;
 use crate::coexistence::{self, CoexistenceProfile};
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingConfiguration,
-    AdvertisingEvent, AdvertisingReception, AdvertisingSetId, ConnectionAllowances,
+    AdvertisingEvent, AdvertisingReception, AdvertisingSetId, CaptureError, ConnectionAllowances,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
     EventId, EventResult, LeConnectionCapabilities, LeInstant, LePhys, LeRadioCapabilities,
-    LinkAcknowledgement, RadioDuration, RadioFault, RadioOutcome, RadioRequest, RadioTiming,
-    ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
-    ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
+    LeWindow, LinkAcknowledgement, RadioDuration, RadioFault, RadioOutcome, RadioRequest,
+    RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
+    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TimingError,
+    TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
@@ -193,12 +194,18 @@ const WHOLE_INTERVAL_SPAN_MICROS: u32 = 7_499;
 const LONG_INTERVAL_MARGIN_MICROS: u32 = 2_000;
 
 /// The Controller span of one connection event in microseconds.
-fn connection_event_span(interval: u32, widening: u32) -> Result<u32, RequestError> {
-    if interval <= WHOLE_INTERVAL_SPAN_MICROS {
+fn connection_event_span(
+    interval: RadioDuration,
+    widening: RadioDuration,
+) -> Result<RadioDuration, RequestError> {
+    if interval <= RadioDuration::from_micros(u64::from(WHOLE_INTERVAL_SPAN_MICROS)) {
         return Ok(interval);
     }
-    (interval - LONG_INTERVAL_MARGIN_MICROS)
-        .checked_add(widening)
+    interval
+        .checked_sub(RadioDuration::from_micros(u64::from(
+            LONG_INTERVAL_MARGIN_MICROS,
+        )))
+        .and_then(|span| span.checked_add(widening))
         .ok_or(RequestError::Unsupported)
 }
 
@@ -208,15 +215,18 @@ const fn connection_allowances(
 ) -> ConnectionAllowances {
     ConnectionAllowances {
         local_sleep_clock_ppm,
-        widening_jitter: RadioDuration::from_micros(WIDENING_JITTER_MICROS),
-        receive_guard: RadioDuration::from_micros(RECEIVE_GUARD_MICROS),
-        receive_tail: RadioDuration::from_micros(RECEIVE_TAIL_MICROS),
-        boundary_guard: RadioDuration::from_micros(BOUNDARY_GUARD_MICROS),
-        first_event_guard: RadioDuration::from_micros(FIRST_EVENT_GUARD_MICROS),
+        widening_jitter: RadioDuration::from_micros(WIDENING_JITTER_MICROS as u64),
+        receive_guard: RadioDuration::from_micros(RECEIVE_GUARD_MICROS as u64),
+        receive_tail: RadioDuration::from_micros(RECEIVE_TAIL_MICROS as u64),
+        boundary_guard: RadioDuration::from_micros(BOUNDARY_GUARD_MICROS as u64),
+        first_event_guard: RadioDuration::from_micros(FIRST_EVENT_GUARD_MICROS as u64),
         event_length: RadioDuration::from_micros(
-            LE_1M_EVENT_MICROS.saturating_sub(preparation_lead_micros),
+            // The only constructible scheduler profile has a 137-us lead, below 1074 us.
+            (LE_1M_EVENT_MICROS - preparation_lead_micros) as u64,
         ),
-        first_event_length: RadioDuration::from_micros(LE_1M_EVENT_MICROS + BOUNDARY_GUARD_MICROS),
+        first_event_length: RadioDuration::from_micros(
+            (LE_1M_EVENT_MICROS + BOUNDARY_GUARD_MICROS) as u64,
+        ),
     }
 }
 
@@ -247,21 +257,36 @@ impl RadioClock {
             .raw_ticks_for_micros(self.epoch.project_capture(raw))
     }
 
-    fn duration(&self, micros: u32) -> u32 {
-        self.epoch.raw_duration_ticks_for_micros(micros)
+    fn duration(&self, duration: RadioDuration) -> Result<u32, RequestError> {
+        self.epoch
+            .raw_duration_ticks(duration)
+            .map_err(|_| RequestError::TooFar)
     }
 
-    fn instant(&self, raw_capture: u32) -> LeInstant {
+    fn instant(&self, raw_capture: u32) -> Result<LeInstant, CaptureError> {
+        // Only the raw-counter relation is modular. Place its signed
+        // half-range delta with checked portable epoch arithmetic.
         let micros = self.epoch.project_capture(raw_capture);
         let delta = micros.wrapping_sub(self.now as u32) as i32;
-        LeInstant::from_micros(self.now.wrapping_add_signed(i64::from(delta)))
+        let now = LeInstant::from_micros(self.now);
+        if delta >= 0 {
+            now.checked_add(RadioDuration::from_micros(delta as u64))
+                .ok_or(CaptureError::EpochProjection(TimingError::BeyondEpoch))
+        } else {
+            now.checked_sub(RadioDuration::from_micros(u64::from(delta.unsigned_abs())))
+                .ok_or(CaptureError::EpochProjection(TimingError::BeforeEpoch))
+        }
     }
 
     /// The on-air start of an LE 1M packet from its receive timestamp.
-    fn packet_start(&self, raw_capture: u32) -> LeInstant {
-        let captured = self.instant(raw_capture).as_micros();
+    fn packet_start(&self, raw_capture: u32) -> Result<LeInstant, CaptureError> {
+        let captured = self.instant(raw_capture)?;
         let delay = BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros();
-        LeInstant::from_micros(captured.saturating_sub(u64::from(delay)))
+        captured
+            .checked_sub(RadioDuration::from_micros(u64::from(delay)))
+            .ok_or(CaptureError::PacketStartCorrection(
+                TimingError::BeforeEpoch,
+            ))
     }
 }
 
@@ -415,8 +440,12 @@ impl<
                 epoch,
             },
             timing: RadioTiming {
-                preparation_lead: RadioDuration::from_micros(config.preparation_lead_micros()),
-                admission_guard: RadioDuration::from_micros(config.late_start_guard_micros()),
+                preparation_lead: RadioDuration::from_micros(u64::from(
+                    config.preparation_lead_micros(),
+                )),
+                admission_guard: RadioDuration::from_micros(u64::from(
+                    config.late_start_guard_micros(),
+                )),
                 connection: connection_allowances(
                     config.preparation_lead_micros(),
                     local_sleep_clock_ppm,
@@ -954,21 +983,34 @@ impl<
     }
 
     /// Admission of the reservation of `air` for one item.
-    fn reserve(&self, anchor: u64, duration: u32) -> Result<SchedulerRawWindow, RequestError> {
-        let lead = u64::from(self.timing.preparation_lead.as_micros());
-        let start = anchor.checked_sub(lead).ok_or(RequestError::TooLate)?;
-        let end = anchor
-            .checked_add(u64::from(duration))
+    fn reserve(
+        &self,
+        anchor: LeInstant,
+        duration: RadioDuration,
+    ) -> Result<SchedulerRawWindow, RequestError> {
+        let now = LeInstant::from_micros(self.clock.now);
+        let air = LeWindow::new(anchor, duration).map_err(|_| RequestError::TooFar)?;
+        let reservation = self.timing.reservation(air).map_err(|cause| match cause {
+            oer_bluetooth_radio::TimingError::BeforeEpoch => RequestError::TooLate,
+            _ => RequestError::TooFar,
+        })?;
+        let guarded_now = now
+            .checked_add(self.timing.admission_guard)
             .ok_or(RequestError::TooFar)?;
-        if start < self.clock.now + u64::from(self.timing.admission_guard.as_micros()) {
+        if reservation.start() < guarded_now {
             return Err(RequestError::TooLate);
         }
-        if end - self.clock.now > MAX_AHEAD_MICROS {
+        let horizon = reservation
+            .end()
+            .checked_duration_since(now)
+            .ok_or(RequestError::TooLate)?;
+        if horizon > RadioDuration::from_micros(MAX_AHEAD_MICROS) {
             return Err(RequestError::TooFar);
         }
+        self.clock.duration(reservation.duration())?;
         SchedulerRawWindow::from_projected_scheduler_window(
-            self.clock.raw(start),
-            self.clock.raw(end),
+            self.clock.raw(reservation.start().as_micros()),
+            self.clock.raw(reservation.end().as_micros()),
         )
         .ok_or(RequestError::TooFar)
     }
@@ -1097,13 +1139,16 @@ impl<
             return Err(RequestError::Busy);
         }
         let count = event.channels.len();
-        let spacing = event.channel_spacing.as_micros();
+        let spacing = event.channel_spacing;
         let mut windows = [None; 3];
         for (position, window) in windows.iter_mut().enumerate().take(count) {
-            let (_, anchor) = event.channel_anchor(position).ok_or(RequestError::TooFar)?;
-            let lead = self.timing.preparation_lead.as_micros();
+            let (_, anchor) = event
+                .channel_anchor(position)
+                .map_err(|_| RequestError::TooFar)?
+                .ok_or(RequestError::Unsupported)?;
+            let lead = self.timing.preparation_lead;
             let window_ = self.reserve(
-                anchor.as_micros(),
+                anchor,
                 spacing.checked_sub(lead).ok_or(RequestError::Unsupported)?,
             )?;
             self.free(window_)?;
@@ -1117,7 +1162,7 @@ impl<
         )
         .expect("a channel set is non-empty");
         let first = windows[0].expect("an event has a channel");
-        let raw_duration = self.clock.duration(spacing);
+        let raw_duration = self.clock.duration(spacing)?;
         let slot = self.legacy[index].as_mut().expect("the set is configured");
         let prepared = self
             .memory
@@ -1162,13 +1207,16 @@ impl<
             return Err(RequestError::Busy);
         }
         let count = event.channels.len();
-        let spacing = event.channel_spacing.as_micros();
-        let lead = self.timing.preparation_lead.as_micros();
+        let spacing = event.channel_spacing;
+        let lead = self.timing.preparation_lead;
         let mut windows = [None; 3];
         for (position, window) in windows.iter_mut().enumerate().take(count) {
-            let (_, anchor) = event.channel_anchor(position).ok_or(RequestError::TooFar)?;
+            let (_, anchor) = event
+                .channel_anchor(position)
+                .map_err(|_| RequestError::TooFar)?
+                .ok_or(RequestError::Unsupported)?;
             let window_ = self.reserve(
-                anchor.as_micros(),
+                anchor,
                 spacing.checked_sub(lead).ok_or(RequestError::Unsupported)?,
             )?;
             self.free(window_)?;
@@ -1182,7 +1230,7 @@ impl<
         )
         .expect("a channel set is non-empty");
         let first = windows[0].expect("an event has a channel");
-        let raw_duration = self.clock.duration(spacing);
+        let raw_duration = self.clock.duration(spacing)?;
         let lead_ticks = self.policy.sequence_lead_raw_delta();
         let slot = self.connectable[index]
             .as_mut()
@@ -1322,18 +1370,20 @@ impl<
         {
             return Err(RequestError::Busy);
         }
-        let anchor = scan.window.start().as_micros();
-        let duration = scan.window.duration().as_micros();
+        let anchor = scan.window.start();
+        let duration = scan.window.duration();
         let window = self.reserve(anchor, duration)?;
         self.free(window)?;
         self.check_capacity(1)?;
         // The pinned scan restart (`r_sym_ble_M0sTWGzdUqAUyXoK849F`) ends
         // the item at most 32768 microseconds after the anchor and records
         // the whole window length in the link state.
-        let item_end = self
-            .clock
-            .raw(anchor + u64::from(duration.min(SCAN_EVENT_MAX_MICROS)));
-        let window_ticks = LegacyScanWindowTicks::from_raw_ticks(self.clock.duration(duration));
+        let item_end = anchor
+            .checked_add(duration.min(RadioDuration::from_micros(u64::from(SCAN_EVENT_MAX_MICROS))))
+            .ok_or(RequestError::TooFar)?;
+        let item_end = self.clock.raw(item_end.as_micros());
+        let window_ticks = LegacyScanWindowTicks::new(self.clock.duration(duration)?)
+            .ok_or(RequestError::TooFar)?;
         let slot = self.scanners[index]
             .as_mut()
             .expect("the scanner is configured");
@@ -1450,10 +1500,7 @@ impl<
             return Err(RequestError::Busy);
         }
         let facts = *facts;
-        let window = self.reserve(
-            event.window.start().as_micros(),
-            event.window.duration().as_micros(),
-        )?;
+        let window = self.reserve(event.window.start(), event.window.duration())?;
         self.free(window)?;
         self.check_capacity(1)?;
         let channel = PeripheralConnectionDataChannel::new(event.channel.index())
@@ -1464,10 +1511,10 @@ impl<
             ConnectionEventTiming::First { timing_guard, .. } => timing_guard,
             ConnectionEventTiming::Recurring { widening, .. } => widening,
         };
-        let span = PeripheralConnectionEventSpan::new(self.clock.duration(connection_event_span(
-            event.interval.as_micros(),
-            widening.as_micros(),
-        )?))
+        let span = PeripheralConnectionEventSpan::new(
+            self.clock
+                .duration(connection_event_span(event.interval, widening)?)?,
+        )
         .ok_or(RequestError::Unsupported)?;
         let priority = PeripheralConnectionSchedulerPriority::new(event.priority)
             .ok_or(RequestError::Unsupported)?;
@@ -1486,11 +1533,9 @@ impl<
                 transmit_window,
                 timing_guard,
             } => {
-                let receive_wait = PeripheralConnectionReceiveWait::new(
-                    transmit_window.as_micros(),
-                    timing_guard.as_micros(),
-                )
-                .ok_or(RequestError::Unsupported)?;
+                let receive_wait =
+                    PeripheralConnectionReceiveWait::new(transmit_window, timing_guard)
+                        .ok_or(RequestError::Unsupported)?;
                 self.memory.connections.prepare_first_event(
                     &slot.instance,
                     PeripheralConnectionFirstEvent {
@@ -1509,9 +1554,8 @@ impl<
                 )
             }
             ConnectionEventTiming::Recurring { receive_wait, .. } => {
-                let receive_wait =
-                    PeripheralConnectionRecurringReceiveWait::new(receive_wait.as_micros())
-                        .ok_or(RequestError::Unsupported)?;
+                let receive_wait = PeripheralConnectionRecurringReceiveWait::new(receive_wait)
+                    .ok_or(RequestError::Unsupported)?;
                 self.memory.connections.prepare_recurring_event(
                     &slot.instance,
                     PeripheralConnectionRecurringEvent {
@@ -1616,10 +1660,7 @@ impl<
             TestPhy::LeCodedS8 => DtmSchedulerTransmitterPhy::LeCodedS8,
             TestPhy::LeCodedS2 => DtmSchedulerTransmitterPhy::LeCodedS2,
         };
-        let window = self.reserve(
-            test.window.start().as_micros(),
-            test.window.duration().as_micros(),
-        )?;
+        let window = self.reserve(test.window.start(), test.window.duration())?;
         self.free(window)?;
         self.check_capacity(1)?;
         self.dtm_instance()?;
@@ -1656,10 +1697,7 @@ impl<
         } else {
             DtmReceiverEventPhase::Initial
         };
-        let window = self.reserve(
-            test.window.start().as_micros(),
-            test.window.duration().as_micros(),
-        )?;
+        let window = self.reserve(test.window.start(), test.window.duration())?;
         self.free(window)?;
         self.check_capacity(1)?;
         self.dtm_instance()?;
@@ -1845,7 +1883,8 @@ impl<
     }
 
     fn finish(&mut self, id: SchedulerItemId, event: Event, sink: &mut impl BluetoothRadioSink) {
-        let mut anchor = None;
+        let mut anchor = Ok(None);
+        let mut capture_error = None;
         match id.kind() {
             SchedulerRoleKind::LegacyAdvertising => {
                 let slot =
@@ -1867,6 +1906,7 @@ impl<
                         event.id,
                         sink,
                         &mut self.faulted,
+                        &mut capture_error,
                     );
                 }
             }
@@ -1887,6 +1927,7 @@ impl<
                         event.id,
                         sink,
                         &mut self.faulted,
+                        &mut capture_error,
                     );
                 }
             }
@@ -1902,27 +1943,35 @@ impl<
                     if let PeripheralConnectionCapturedAnchorAvailability::Available(captured) =
                         result.capture
                     {
-                        anchor = Some(
-                            self.clock
-                                .packet_start(captured.wrapping_controller_ticks()),
-                        );
+                        anchor = self
+                            .clock
+                            .packet_start(captured.wrapping_controller_ticks())
+                            .map(Some);
                     }
                     if result.status == PeripheralConnectionSchedulerItemCompletionStatus::Aborted {
-                        anchor = None;
+                        anchor = Ok(None);
+                    }
+                    if let Err(error) = anchor {
+                        capture_error.get_or_insert(error);
                     }
                 }
                 slot.event = None;
                 loop {
                     match pool.receive(&slot.instance) {
                         Ok(Some(LeRxOutcome::Received(pdu))) => {
+                            let captured_at = self
+                                .clock
+                                .packet_start(pdu.captured_time().wrapping_controller_ticks())
+                                .map(Some);
+                            if let Err(error) = captured_at {
+                                capture_error.get_or_insert(error);
+                            }
                             sink.outcome(RadioOutcome::Received {
                                 id: event.id,
                                 pdu: ReceivedPdu {
                                     pdu: pdu.as_bytes(),
                                     rssi_dbm: pdu.rssi_dbm(),
-                                    captured_at: Some(self.clock.packet_start(
-                                        pdu.captured_time().wrapping_controller_ticks(),
-                                    )),
+                                    captured_at,
                                 },
                             })
                         }
@@ -1967,8 +2016,16 @@ impl<
                 slot.event = None;
             }
         }
-        let result = if event.executed {
-            EventResult::Executed { anchor }
+        let result = if let Some(cause) = capture_error {
+            EventResult::TimingFailed {
+                cause,
+                executed: event.executed,
+                anchor,
+            }
+        } else if event.executed {
+            EventResult::Executed {
+                anchor: anchor.expect("every failed capture has a terminal cause"),
+            }
         } else {
             EventResult::NotExecuted
         };
@@ -2011,19 +2068,26 @@ fn drain_chain<const PACKETS: usize>(
     id: EventId,
     sink: &mut impl BluetoothRadioSink,
     faulted: &mut bool,
+    capture_error: &mut Option<CaptureError>,
 ) {
     loop {
         match chain.take(source) {
-            Ok(Some(LeRxOutcome::Received(pdu))) => sink.outcome(RadioOutcome::Received {
-                id,
-                pdu: ReceivedPdu {
-                    pdu: pdu.as_bytes(),
-                    rssi_dbm: pdu.rssi_dbm(),
-                    captured_at: Some(
-                        clock.packet_start(pdu.captured_time().wrapping_controller_ticks()),
-                    ),
-                },
-            }),
+            Ok(Some(LeRxOutcome::Received(pdu))) => {
+                let captured_at = clock
+                    .packet_start(pdu.captured_time().wrapping_controller_ticks())
+                    .map(Some);
+                if let Err(error) = captured_at {
+                    capture_error.get_or_insert(error);
+                }
+                sink.outcome(RadioOutcome::Received {
+                    id,
+                    pdu: ReceivedPdu {
+                        pdu: pdu.as_bytes(),
+                        rssi_dbm: pdu.rssi_dbm(),
+                        captured_at,
+                    },
+                });
+            }
             Ok(Some(LeRxOutcome::Discarded)) => {}
             Ok(None) => return,
             Err(_) => {

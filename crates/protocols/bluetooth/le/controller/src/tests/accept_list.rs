@@ -27,11 +27,11 @@ impl Harness {
         opcode: Opcode,
         parameters: &[u8],
         result: Result<(), RequestError>,
-    ) -> (Option<Request>, Option<u8>) {
+    ) -> Result<(Option<Request>, Option<u8>), crate::PlanningError> {
         assert_eq!(self.command(opcode, parameters), None);
         assert!(!self.core.is_command_ready());
-        let request = self.step_with(result);
-        (request, self.status_of(opcode))
+        let request = self.step_with(result)?;
+        Ok((request, self.status_of(opcode)))
     }
 }
 
@@ -39,7 +39,7 @@ impl Harness {
 fn list_commands_reach_the_backend_and_complete_with_its_answer() {
     let mut harness = Harness::configured();
     assert_eq!(
-        harness.change_list(ADD, &RANDOM_DEVICE, Ok(())),
+        harness.change_list(ADD, &RANDOM_DEVICE, Ok(())).unwrap(),
         (
             Some(Request::FilterAcceptList(AcceptListChange::Add(
                 random_device()
@@ -48,7 +48,7 @@ fn list_commands_reach_the_backend_and_complete_with_its_answer() {
         )
     );
     assert_eq!(
-        harness.change_list(REMOVE, &RANDOM_DEVICE, Ok(())),
+        harness.change_list(REMOVE, &RANDOM_DEVICE, Ok(())).unwrap(),
         (
             Some(Request::FilterAcceptList(AcceptListChange::Remove(
                 random_device()
@@ -57,7 +57,7 @@ fn list_commands_reach_the_backend_and_complete_with_its_answer() {
         )
     );
     assert_eq!(
-        harness.change_list(CLEAR, &[], Ok(())),
+        harness.change_list(CLEAR, &[], Ok(())).unwrap(),
         (
             Some(Request::FilterAcceptList(AcceptListChange::Clear)),
             Some(SUCCESS)
@@ -71,12 +71,14 @@ fn a_full_list_answers_memory_capacity_exceeded_and_other_refusals_hardware_fail
     assert_eq!(
         harness
             .change_list(ADD, &RANDOM_DEVICE, Err(RequestError::ListFull))
+            .unwrap()
             .1,
         Some(MEMORY_CAPACITY_EXCEEDED)
     );
     assert_eq!(
         harness
             .change_list(ADD, &RANDOM_DEVICE, Err(RequestError::Busy))
+            .unwrap()
             .1,
         Some(HARDWARE_FAILURE)
     );
@@ -84,6 +86,7 @@ fn a_full_list_answers_memory_capacity_exceeded_and_other_refusals_hardware_fail
     assert_eq!(
         harness
             .change_list(REMOVE, &RANDOM_DEVICE, Err(RequestError::NotListed))
+            .unwrap()
             .1,
         Some(0x12)
     );
@@ -117,14 +120,17 @@ fn a_scanner_filtering_by_the_list_keeps_it_fixed_until_disabled() {
     assert_eq!(harness.command(CLEAR, &[]), Some(DISALLOWED));
 
     assert_eq!(harness.command(SET_SCAN_ENABLE, &[0, 0]), None);
-    assert_eq!(harness.step(), Some(Request::RemoveScanner));
+    assert_eq!(harness.step().unwrap(), Some(Request::RemoveScanner));
     assert_eq!(harness.status_of(SET_SCAN_ENABLE), Some(SUCCESS));
-    assert_eq!(harness.change_list(CLEAR, &[], Ok(())).1, Some(SUCCESS));
+    assert_eq!(
+        harness.change_list(CLEAR, &[], Ok(())).unwrap().1,
+        Some(SUCCESS)
+    );
 
     // A scanner that accepts every advertiser leaves the list free.
     harness.scan_with(false, ScanFilterPolicy::AcceptAll, 0x20, 0x10, false);
     assert_eq!(
-        harness.change_list(ADD, &RANDOM_DEVICE, Ok(())).1,
+        harness.change_list(ADD, &RANDOM_DEVICE, Ok(())).unwrap().1,
         Some(SUCCESS)
     );
 }
@@ -133,12 +139,12 @@ fn a_scanner_filtering_by_the_list_keeps_it_fixed_until_disabled() {
 fn reset_clears_a_list_that_may_hold_a_device_before_it_completes() {
     let mut harness = Harness::configured();
     assert_eq!(
-        harness.change_list(ADD, &RANDOM_DEVICE, Ok(())).1,
+        harness.change_list(ADD, &RANDOM_DEVICE, Ok(())).unwrap().1,
         Some(SUCCESS)
     );
     assert_eq!(harness.command(RESET, &[]), None);
     assert_eq!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::FilterAcceptList(AcceptListChange::Clear))
     );
     assert_eq!(harness.status_of(RESET), Some(SUCCESS));

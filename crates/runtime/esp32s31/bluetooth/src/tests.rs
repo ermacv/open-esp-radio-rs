@@ -58,6 +58,7 @@ struct State {
     defer_execution: bool,
     running: bool,
     finished: Option<BluetoothSchedulerFinishedListObservation>,
+    capture_on_start: bool,
     wake: SchedulerWakeCell,
     routes_disabled: usize,
     routes_restored: usize,
@@ -137,6 +138,9 @@ impl BluetoothRadioHardware for Model {
         &mut self,
         _wake: SchedulerWakeBatch,
     ) -> Result<(), SchedulerFinishedListCaptureError> {
+        if self.0.borrow().finished.is_some() {
+            return Err(SchedulerFinishedListCaptureError::DrainAlreadyActive);
+        }
         self.0.borrow_mut().finished =
             BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0]);
         Ok(())
@@ -146,6 +150,9 @@ impl BluetoothRadioHardware for Model {
         &mut self,
         _stopped: &BluetoothSchedulerStopped,
     ) -> Result<(), SchedulerFinishedListCaptureError> {
+        if self.0.borrow().finished.is_some() {
+            return Err(SchedulerFinishedListCaptureError::DrainAlreadyActive);
+        }
         self.0.borrow_mut().finished =
             BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[]);
         Ok(())
@@ -208,6 +215,10 @@ impl BluetoothRadioHardware for Model {
             state.running = true;
         } else {
             items.record_status_for_validation(id, 0);
+            if state.capture_on_start {
+                state.finished =
+                    BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0]);
+            }
             let _ = state
                 .wake
                 .publish_from_interrupt(SchedulerWorkerWakeClass::Ordinary);
@@ -521,7 +532,7 @@ fn an_oversized_pdu_becomes_a_memory_fault() {
         pdu: ReceivedPdu {
             pdu: &pdu,
             rssi_dbm: -40,
-            captured_at: None,
+            captured_at: Ok(None),
         },
     });
     assert_eq!(
@@ -533,7 +544,7 @@ fn an_oversized_pdu_becomes_a_memory_fault() {
         pdu: ReceivedPdu {
             pdu: &NONCONN,
             rssi_dbm: -40,
-            captured_at: None,
+            captured_at: Ok(None),
         },
     });
     assert_eq!(fits.portable().clone(), {
@@ -702,4 +713,79 @@ fn a_fault_restores_the_route_of_an_open_test() {
         crate::BluetoothRuntimeFault::Start(_)
     ));
     assert_eq!(routes(&model), (1, 1));
+}
+
+#[test]
+fn owned_outcomes_retain_failed_timing_and_correct_pdu_contents() {
+    use oer_bluetooth_radio::{CaptureError, TimingError};
+    let cause = CaptureError::PacketStartCorrection(TimingError::BeforeEpoch);
+    let received = BluetoothOutcome::copy(RadioOutcome::Received {
+        id: EventId::new(3),
+        pdu: ReceivedPdu {
+            pdu: &NONCONN,
+            rssi_dbm: -40,
+            captured_at: Err(cause),
+        },
+    });
+    let BluetoothOutcome::Received { pdu, .. } = &received else {
+        panic!("PDU is retained")
+    };
+    assert_eq!(pdu.pdu(), &NONCONN);
+    assert_eq!(pdu.captured_at, Err(cause));
+    assert_eq!(pdu.portable().captured_at, Err(cause));
+    let result = EventResult::TimingFailed {
+        cause,
+        executed: true,
+        anchor: Err(cause),
+    };
+    let ended = BluetoothOutcome::copy(RadioOutcome::EventEnded {
+        id: EventId::new(3),
+        result,
+    });
+    assert_eq!(
+        ended.portable(),
+        RadioOutcome::EventEnded {
+            id: EventId::new(3),
+            result
+        }
+    );
+}
+
+#[test]
+fn stop_drains_the_prior_finished_list_before_capturing_the_final_snapshot() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    model.0.borrow_mut().finished =
+        BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0]);
+    block_on(runtime.quiesce(|_| ())).unwrap();
+    assert!(model.0.borrow().finished.is_none());
+    assert_eq!(model.0.borrow().stops, 1);
+    block_on(runtime.request(configure())).unwrap();
+}
+
+#[test]
+fn pass_drains_prior_finished_work_before_consuming_the_next_wake() {
+    let model = Model::default();
+    model.0.borrow_mut().capture_on_start = true;
+    let runtime = installed(&model);
+    block_on(runtime.request(configure())).unwrap();
+    block_on(runtime.request(advertise(19, 10_000))).unwrap();
+    // A prior captured list and the next interrupt coexist. Draining the
+    // prior owner must precede consuming that interrupt's transfer.
+    run_for_a_millisecond(&runtime);
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    assert_eq!(
+        core::pin::pin!(runtime.next_outcome()).poll(&mut context),
+        core::task::Poll::Ready(Ok(BluetoothOutcome::EventEnded {
+            id: EventId::new(19),
+            result: EventResult::Executed { anchor: None },
+        }))
+    );
+    assert!(
+        core::pin::pin!(runtime.next_outcome())
+            .poll(&mut context)
+            .is_pending()
+    );
+    assert!(model.0.borrow().finished.is_none());
+    assert!(model.0.borrow().wake.take().is_none());
 }

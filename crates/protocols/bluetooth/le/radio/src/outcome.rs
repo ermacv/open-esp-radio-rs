@@ -2,7 +2,19 @@
 
 use oer_radio_port::Poisoned;
 
-use crate::{ConnectionId, EventId, LeInstant};
+use crate::{ConnectionId, EventId, LeInstant, TimingError};
+
+/// A hardware capture has no representable packet-start in this radio epoch.
+///
+/// The PDU and actual execution remain valid. This error belongs to one
+/// admitted event and does not poison the radio port.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CaptureError {
+    /// Placing the reviewed modular capture in the portable epoch failed.
+    EpochProjection(TimingError),
+    /// Removing the calibrated PHY capture delay crossed the epoch start.
+    PacketStartCorrection(TimingError),
+}
 
 /// One PDU received during an event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -11,8 +23,9 @@ pub struct ReceivedPdu<'pdu> {
     pub pdu: &'pdu [u8],
     /// Receive strength.
     pub rssi_dbm: i8,
-    /// The on-air start of the packet, when the backend can project it.
-    pub captured_at: Option<LeInstant>,
+    /// The on-air start, an absent hardware capture, or an explicit projection
+    /// failure. Timestamp failure does not invalidate the PDU contents.
+    pub captured_at: Result<Option<LeInstant>, CaptureError>,
 }
 
 /// How a scheduled event ended.
@@ -27,6 +40,16 @@ pub enum EventResult {
     /// The event left the schedule without executing: it was cancelled,
     /// skipped or its window passed while the radio was stopped.
     NotExecuted,
+    /// The admitted event settled with an operation-local capture failure.
+    TimingFailed {
+        /// First failed capture calculation in this event.
+        cause: CaptureError,
+        /// Whether hardware actually executed the event.
+        executed: bool,
+        /// Independent connection-anchor capture status. An invalid capture
+        /// proves reception but cannot establish or renew a time reference.
+        anchor: Result<Option<LeInstant>, CaptureError>,
+    },
 }
 
 /// What a Direct Test Mode receiver event returned.

@@ -114,3 +114,38 @@ fn complete_transaction_has_semantic_prefix_and_thirty_two_lane_edges() {
         );
     }
 }
+
+#[test]
+fn physical_duration_projection_preserves_remainders_without_wrapping() {
+    for (period, maximum, ticks, remainder) in [
+        (
+            BluetoothHalInitPeriod::Image500,
+            u64::from(u32::MAX) * 2 + 1,
+            u32::MAX,
+            1,
+        ),
+        (
+            BluetoothHalInitPeriod::Image1000,
+            u64::from(u32::MAX),
+            u32::MAX,
+            0,
+        ),
+        (
+            BluetoothHalInitPeriod::Image2000,
+            u64::from(u32::MAX) / 2,
+            u32::MAX - 1,
+            0,
+        ),
+    ] {
+        let scale =
+            BluetoothControllerHalInitConfig::new(BluetoothHalInitScale::Eight, 11, 33, period)
+                .controller_time_scale();
+        let projected = scale.checked_raw_ticks_from_micros(maximum).unwrap();
+        assert_eq!(
+            (projected.whole_ticks, projected.remainder_micros),
+            (ticks, remainder)
+        );
+        assert_eq!(scale.checked_raw_ticks_from_micros(maximum + 1), None);
+        assert_eq!(scale.checked_raw_ticks_from_micros(u64::MAX), None);
+    }
+}

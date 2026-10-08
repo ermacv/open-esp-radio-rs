@@ -6,7 +6,7 @@
 //! reservation. A proposal that cannot start by its latest start is not
 //! placed, and the role skips that event.
 
-use oer_bluetooth_radio::{LeInstant, LeWindow, RadioDuration};
+use oer_bluetooth_radio::{LeInstant, LeWindow, RadioDuration, RadioTiming, TimingError};
 
 /// One event a role wants to schedule.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -20,50 +20,76 @@ pub(crate) struct Proposal {
 /// `[start - lead, start + duration)` overlaps no busy reservation.
 pub(crate) fn place(
     proposal: Proposal,
-    lead: RadioDuration,
+    timing: RadioTiming,
     busy: &[Option<LeWindow>],
-) -> Option<LeInstant> {
+) -> Result<Option<LeInstant>, TimingError> {
     let mut start = proposal.earliest;
+    if start > proposal.latest {
+        return Ok(None);
+    }
     // Each pass either settles or moves past one busy reservation.
     for _ in 0..=busy.len() {
-        let reservation = reservation(start, proposal.duration, lead)?;
+        let reserved = reservation(start, proposal.duration, timing)?;
         match busy
             .iter()
             .flatten()
-            .filter(|window| window.overlaps(reservation))
+            .filter(|window| window.overlaps(reserved))
             .map(|window| window.end())
             .max()
         {
-            None => return (start <= proposal.latest).then_some(start),
-            Some(end) => start = end.checked_add(lead)?,
+            None => return Ok(Some(start)),
+            Some(end) => {
+                // A conflict already beyond the permitted placement range is
+                // ordinary no-work; no future anchor is required in that case.
+                let Some(latest_reservation_start) =
+                    proposal.latest.checked_sub(timing.preparation_lead)
+                else {
+                    return Ok(None);
+                };
+                if end > latest_reservation_start {
+                    return Ok(None);
+                }
+                start = end
+                    .checked_add(timing.preparation_lead)
+                    .ok_or(TimingError::BeyondEpoch)?;
+            }
         }
     }
-    None
+    Ok(None)
 }
 
 /// The reservation of an air window starting at `start`.
 pub(crate) fn reservation(
     start: LeInstant,
     duration: RadioDuration,
-    lead: RadioDuration,
-) -> Option<LeWindow> {
-    let begin = start.as_micros().checked_sub(u64::from(lead.as_micros()))?;
-    LeWindow::new(
-        LeInstant::from_micros(begin),
-        RadioDuration::from_micros(duration.as_micros().checked_add(lead.as_micros())?),
-    )
-    .ok()
+    timing: RadioTiming,
+) -> Result<LeWindow, TimingError> {
+    let window = LeWindow::new(start, duration).map_err(TimingError::Window)?;
+    timing.reservation(window)
 }
 
 #[cfg(test)]
 mod tests {
-    use oer_bluetooth_radio::{LeInstant, LeWindow, RadioDuration};
+    use oer_bluetooth_radio::{LeInstant, LeWindow, RadioDuration, RadioTiming, TimingError};
 
     use super::{Proposal, place, reservation};
 
-    const LEAD: RadioDuration = RadioDuration::from_micros(100);
+    const TIMING: RadioTiming = RadioTiming {
+        preparation_lead: RadioDuration::from_micros(100),
+        admission_guard: RadioDuration::from_micros(0),
+        connection: oer_bluetooth_radio::ConnectionAllowances {
+            local_sleep_clock_ppm: 0,
+            widening_jitter: RadioDuration::from_micros(0),
+            receive_guard: RadioDuration::from_micros(0),
+            receive_tail: RadioDuration::from_micros(0),
+            boundary_guard: RadioDuration::from_micros(0),
+            first_event_guard: RadioDuration::from_micros(0),
+            event_length: RadioDuration::from_micros(0),
+            first_event_length: RadioDuration::from_micros(0),
+        },
+    };
 
-    fn proposal(earliest: u64, latest: u64, duration: u32) -> Proposal {
+    fn proposal(earliest: u64, latest: u64, duration: u64) -> Proposal {
         Proposal {
             earliest: LeInstant::from_micros(earliest),
             latest: LeInstant::from_micros(latest),
@@ -71,19 +97,24 @@ mod tests {
         }
     }
 
-    fn busy(start: u64, duration: u32) -> Option<LeWindow> {
+    fn busy(start: u64, duration: u64) -> Option<LeWindow> {
         reservation(
             LeInstant::from_micros(start),
             RadioDuration::from_micros(duration),
-            LEAD,
+            TIMING,
         )
+        .ok()
     }
 
     #[test]
     fn a_free_timeline_keeps_the_earliest_start() {
         assert_eq!(
-            place(proposal(1_000, 2_000, 500), LEAD, &[None, busy(5_000, 100)]),
-            Some(LeInstant::from_micros(1_000))
+            place(
+                proposal(1_000, 2_000, 500),
+                TIMING,
+                &[None, busy(5_000, 100)]
+            ),
+            Ok(Some(LeInstant::from_micros(1_000)))
         );
     }
 
@@ -92,9 +123,21 @@ mod tests {
         // Busy 1_000..1_500 (reservation 900..1_500); then 1_700..1_800.
         let busy = [busy(1_000, 500), busy(1_700, 100)];
         assert_eq!(
-            place(proposal(1_000, 5_000, 200), LEAD, &busy),
-            Some(LeInstant::from_micros(1_900))
+            place(proposal(1_000, 5_000, 200), TIMING, &busy),
+            Ok(Some(LeInstant::from_micros(1_900)))
         );
-        assert_eq!(place(proposal(1_000, 1_800, 200), LEAD, &busy), None);
+        assert_eq!(place(proposal(1_000, 1_800, 200), TIMING, &busy), Ok(None));
+    }
+    #[test]
+    fn a_conflict_is_no_work_but_invalid_geometry_is_an_error() {
+        assert_eq!(
+            place(proposal(1, 2, 1), TIMING, &[]),
+            Err(TimingError::BeforeEpoch)
+        );
+        assert!(place(proposal(u64::MAX - 1, u64::MAX - 1, 2), TIMING, &[]).is_err());
+        assert_eq!(
+            place(proposal(1_000, 1_200, 100), TIMING, &[busy(1_000, 500)]),
+            Ok(None)
+        );
     }
 }

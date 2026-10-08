@@ -101,6 +101,8 @@ pub enum BluetoothRuntimeFault<E> {
     Start(SchedulerStartError<E>),
     /// The stop sequence ended before the scheduler stopped.
     StopSequence(SchedulerStopError),
+    /// A finished-list observation could not be captured losslessly.
+    FinishedLists(oer_esp32s31_bluetooth::scheduler::SchedulerFinishedListCaptureError),
     /// The radio refused the stopped receipt.
     Stop,
     /// No controller-time sample could be taken to resume.
@@ -602,7 +604,7 @@ impl<
                 {
                     installed.radio.observe_time(&sample);
                 }
-                match self.pass(installed) {
+                match self.pass(installed, &mut self.sink()) {
                     // A test event is published only on an idle scheduler, and
                     // a listed one leaves its list only after a stop; resuming
                     // restarts at the remaining events.
@@ -694,7 +696,7 @@ impl<
     > {
         let mut slot = self.installed.lock().await;
         let installed = slot.as_mut().ok_or(BluetoothRuntimeFault::NotInstalled)?;
-        if let Err(fault) = self.stop_scheduler(installed).await {
+        if let Err(fault) = self.stop_scheduler(installed, &mut self.sink()).await {
             installed.fault();
             self.poison();
             return Err(fault);
@@ -740,7 +742,7 @@ impl<
         >,
         maintenance: impl FnOnce(ClientQuiescence<'_>) -> R,
     ) -> Result<R, BluetoothRuntimeFault<H::StartError>> {
-        self.stop_scheduler(installed).await?;
+        self.stop_scheduler(installed, &mut self.sink()).await?;
         let result = maintenance(
             installed
                 .radio
@@ -773,9 +775,10 @@ impl<
             RX_PACKETS,
             ITEMS,
         >,
+        sink: &mut impl BluetoothRadioSink,
     ) -> Result<(), BluetoothRuntimeFault<H::StartError>> {
         while installed.awaiting.is_some() {
-            if let Pass::Recheck = self.pass(installed)? {
+            if let Pass::Recheck = self.pass(installed, sink)? {
                 wait_for(&self.timer, HARDWARE_RECHECK).await;
             }
         }
@@ -790,14 +793,14 @@ impl<
                 Err(error) => return Err(BluetoothRuntimeFault::StopSequence(error)),
             }
         };
-        let mut sink = self.sink();
-        if installed
+        // Drain a prior captured observation before transferring the final
+        // stopped snapshot. No finished-list bit may be silently ignored.
+        drain_finished_lists(installed, sink);
+        installed
             .hardware
             .capture_stopped_finished_lists(&stopped)
-            .is_ok()
-        {
-            drain_finished_lists(installed, &mut sink);
-        }
+            .map_err(BluetoothRuntimeFault::FinishedLists)?;
+        drain_finished_lists(installed, sink);
         installed
             .radio
             .enter_stopped(stopped)
@@ -826,12 +829,15 @@ impl<
             RX_PACKETS,
             ITEMS,
         >,
+        sink: &mut impl BluetoothRadioSink,
     ) -> Result<Pass, BluetoothRuntimeFault<H::StartError>> {
-        let mut sink = self.sink();
-        if let Some(wake) = installed.hardware.take_wake()
-            && installed.hardware.capture_finished_lists(wake).is_ok()
-        {
-            drain_finished_lists(installed, &mut sink);
+        drain_finished_lists(installed, sink);
+        if let Some(wake) = installed.hardware.take_wake() {
+            installed
+                .hardware
+                .capture_finished_lists(wake)
+                .map_err(BluetoothRuntimeFault::FinishedLists)?;
+            drain_finished_lists(installed, sink);
         }
         if installed.faulted {
             return Ok(Pass::Idle);
@@ -842,7 +848,7 @@ impl<
                     .hardware
                     .observe_wait(wait)
                     .map_err(BluetoothRuntimeFault::Scheduler)?;
-                match installed.radio.advance(observation, &mut sink) {
+                match installed.radio.advance(observation, sink) {
                     Ok(step) => step,
                     Err(fault) => {
                         installed.hardware.recover(fault);
@@ -856,7 +862,7 @@ impl<
                     .hardware
                     .observe()
                     .map_err(BluetoothRuntimeFault::Scheduler)?;
-                installed.radio.drive(view, &mut sink)
+                installed.radio.drive(view, sink)
             }
         };
         match step {

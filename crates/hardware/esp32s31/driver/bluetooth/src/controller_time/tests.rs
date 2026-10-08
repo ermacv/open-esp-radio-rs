@@ -716,3 +716,60 @@ fn post_enable_projection_retains_the_existing_scheduler_epoch() {
     assert_eq!(epoch.project_without_reanchor(&post_enable_sample), 1_001);
     assert_eq!(epoch.raw_ticks_for_micros(1_001), 102);
 }
+
+#[test]
+fn physical_duration_admission_enforces_the_retained_scales_half_range() {
+    use super::ControllerDurationError;
+    use oer_time::RadioDuration;
+    for (period, minimum, maximum, ticks) in [
+        (
+            BluetoothHalInitPeriod::Image500,
+            2,
+            u64::from(i32::MAX as u32) * 2 + 1,
+            i32::MAX as u32,
+        ),
+        (
+            BluetoothHalInitPeriod::Image1000,
+            1,
+            u64::from(i32::MAX as u32),
+            i32::MAX as u32,
+        ),
+        (
+            BluetoothHalInitPeriod::Image2000,
+            1,
+            u64::from(i32::MAX as u32) / 2,
+            i32::MAX as u32 - 1,
+        ),
+    ] {
+        let scale =
+            BluetoothControllerHalInitConfig::new(BluetoothHalInitScale::Eight, 11, 33, period)
+                .controller_time_scale();
+        let epoch =
+            ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(123), 456, scale);
+        assert_eq!(
+            epoch.raw_duration_ticks(RadioDuration::from_micros(minimum - 1)),
+            Err(ControllerDurationError::Empty)
+        );
+        assert!(
+            epoch
+                .raw_duration_ticks(RadioDuration::from_micros(minimum))
+                .is_ok()
+        );
+        assert_eq!(
+            epoch.raw_duration_ticks(RadioDuration::from_micros(maximum)),
+            Ok(ticks)
+        );
+        assert_eq!(
+            epoch.raw_duration_ticks(RadioDuration::from_micros(maximum + 1)),
+            Err(ControllerDurationError::BeyondHalfRange)
+        );
+        assert_eq!(
+            epoch.raw_duration_ticks(RadioDuration::from_micros(u64::from(u32::MAX) + 1)),
+            Err(ControllerDurationError::BeyondHalfRange)
+        );
+        assert_eq!(
+            epoch.raw_duration_ticks(RadioDuration::from_micros(u64::MAX)),
+            Err(ControllerDurationError::BeyondHalfRange)
+        );
+    }
+}

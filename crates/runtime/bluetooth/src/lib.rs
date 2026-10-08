@@ -26,13 +26,20 @@
 //! cannot recover one lost in the gap, so the service ends there through
 //! the shared [`EventsLost`]. Host ACL data enters the core while it has room for a packet;
 //! until then commands pass queued data.
+//!
+//! A required schedule outside the current radio epoch ends through
+//! [`ServeExit::Planning`] before another submission or retry. The caller keeps
+//! the core for managed physical teardown and terminal accounting. A capture
+//! timing failure belongs to its identified event: correct PDUs and TX ACKs
+//! enter the core, no invalid stamp establishes a time reference, and this same
+//! service continues after its terminal outcome.
 
 #[cfg(test)]
 extern crate std;
 
 use embassy_futures::select::{Either4, select4};
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use oer_bluetooth_controller::LeController;
+use oer_bluetooth_controller::{LeController, PlanningError};
 use oer_bluetooth_hci::HostToControllerFrame;
 use oer_bluetooth_hci_transport::{HciChannelError, InProcessHciControllerTransport};
 use oer_bluetooth_radio::{
@@ -48,6 +55,8 @@ pub const REFUSED_RETRY_DELAY: Duration = Duration::from_millis(1);
 pub enum ServeExit<E> {
     /// The transport closed.
     Closed,
+    /// A required radio continuation failed; retained owners require managed stop.
+    Planning(PlanningError),
     /// The transport refused a packet.
     Transport(HciChannelError),
     /// The radio port failed.
@@ -116,7 +125,11 @@ where
                 Ok(clock) => clock,
                 Err(error) => return ServeExit::Radio(error),
             };
-            if let Some(request) = core.next_request(now, timing) {
+            let request = match core.next_request(now, timing) {
+                Ok(request) => request,
+                Err(error) => return ServeExit::Planning(error),
+            };
+            if let Some(request) = request {
                 let result = match radio.submit(request).await {
                     Ok(result) => result,
                     Err(error) => return ServeExit::Radio(error),

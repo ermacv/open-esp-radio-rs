@@ -23,6 +23,15 @@ use oer_esp32s31_hal::bluetooth::BluetoothControllerLatchedTime;
 /// Controller-time to scheduler-time scale of one HAL configuration.
 pub use oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale;
 
+/// A physical duration cannot form a nonempty, unambiguous hardware delta.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControllerDurationError {
+    /// Zero or a duration below the retained scale's whole-tick resolution.
+    Empty,
+    /// The projected tick delta exceeds the forward signed half-range.
+    BeyondHalfRange,
+}
+
 /// One ordered controller-time sample from the always-awake latch path.
 #[derive(Debug, Eq, PartialEq)]
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
@@ -752,8 +761,23 @@ impl ControllerSchedulerEpoch {
     /// Keeping this operation on the retained epoch prevents callers from
     /// reconstructing a duration by subtracting two independently truncated
     /// absolute projections.
-    pub const fn raw_duration_ticks_for_micros(self, micros: u32) -> u32 {
-        self.scale.raw_ticks_from_micros(micros).whole_ticks
+    pub fn raw_duration_ticks(
+        self,
+        duration: oer_time::RadioDuration,
+    ) -> Result<u32, ControllerDurationError> {
+        let projection = self
+            .scale
+            .checked_raw_ticks_from_micros(duration.as_micros())
+            .ok_or(ControllerDurationError::BeyondHalfRange)?;
+        // Retain the reviewed inverse helper's truncation of fractional
+        // microseconds. The resulting whole-tick duration must still be nonzero.
+        if projection.whole_ticks == 0 {
+            return Err(ControllerDurationError::Empty);
+        }
+        if projection.whole_ticks > i32::MAX as u32 {
+            return Err(ControllerDurationError::BeyondHalfRange);
+        }
+        Ok(projection.whole_ticks)
     }
 }
 

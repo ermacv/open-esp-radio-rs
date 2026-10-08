@@ -164,13 +164,23 @@ impl DtmRole {
         now: LeInstant,
         timing: RadioTiming,
         payload: &'s mut [u8; DTM_MAX_PAYLOAD],
-    ) -> DtmRadioWork<'s> {
-        match &mut self.phase {
+    ) -> Result<DtmRadioWork<'s>, crate::PlanningError> {
+        Ok(match &mut self.phase {
             Phase::Idle => DtmRadioWork::None,
-            Phase::Running => match self.session.next_request(now, timing, payload) {
-                Some(request) => DtmRadioWork::Request(request),
-                None => DtmRadioWork::None,
-            },
+            Phase::Running => {
+                match self
+                    .session
+                    .next_request(now, timing, payload)
+                    .map_err(|cause| crate::PlanningError {
+                        role: crate::PlanningRole::DirectTest,
+                        operation: crate::PlanningOperation::Event,
+                        calculation: crate::PlanningCalculation::WindowGeometry,
+                        cause: crate::PlanningCause::DirectTest(cause),
+                    })? {
+                    Some(request) => DtmRadioWork::Request(request),
+                    None => DtmRadioWork::None,
+                }
+            }
             Phase::Draining(_, id, cancelled) => {
                 if *cancelled {
                     DtmRadioWork::None
@@ -180,7 +190,7 @@ impl DtmRole {
                 }
             }
             Phase::Releasing(..) => DtmRadioWork::Request(RadioRequest::EndTest),
-        }
+        })
     }
 
     /// The backend's answer to the last request of this role.

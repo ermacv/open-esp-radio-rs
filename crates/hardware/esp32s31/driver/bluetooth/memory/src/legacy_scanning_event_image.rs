@@ -188,8 +188,12 @@ pub struct LegacyScanWindowTicks(u32);
 
 impl LegacyScanWindowTicks {
     /// Bind one raw window length.
-    pub const fn from_raw_ticks(ticks: u32) -> Self {
-        Self(ticks)
+    pub const fn new(ticks: u32) -> Option<Self> {
+        if ticks == 0 || ticks > i32::MAX as u32 {
+            None
+        } else {
+            Some(Self(ticks))
+        }
     }
 }
 

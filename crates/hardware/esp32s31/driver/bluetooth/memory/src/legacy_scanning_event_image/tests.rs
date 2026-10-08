@@ -49,7 +49,7 @@ fn an_event_records_the_window_and_copies_the_reset_power() {
                 crate::LegacyScanFilterPolicy::AcceptAll,
             ),
         )
-        .with_window(LegacyScanWindowTicks::from_raw_ticks(20_000));
+        .with_window(LegacyScanWindowTicks::new(20_000).unwrap());
         assert_eq!(image.window_ticks(), 20_000);
         let item = LegacyScanSchedulerItemWords {
             word_00: 0,
@@ -68,4 +68,11 @@ fn an_event_records_the_window_and_copies_the_reset_power() {
         );
         assert_eq!(item.word_14 >> 20 & 0xff, u32::from(power.index()));
     }
+}
+
+#[test]
+fn scan_window_ticks_are_nonempty_forward_half_range_durations() {
+    assert!(LegacyScanWindowTicks::new(i32::MAX as u32).is_some());
+    assert_eq!(LegacyScanWindowTicks::new(i32::MAX as u32 + 1), None);
+    assert_eq!(LegacyScanWindowTicks::new(0), None);
 }

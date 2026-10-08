@@ -2558,6 +2558,7 @@ name = "oer-esp32s31-bluetooth-memory"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
+ "oer-time",
  "pin-project",
  "vcell",
 ]

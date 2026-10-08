@@ -472,7 +472,7 @@ impl<const PACKETS: usize> LeRxRingView<'_, PACKETS> {
     }
 
     #[cfg(any(test, feature = "validation-probes"))]
-    pub(crate) fn emulate_receive(&self, pdu: &[u8], tag: u16) -> bool {
+    pub(crate) fn emulate_receive(&self, pdu: &[u8], tag: u16, captured_at: u32) -> bool {
         // Hardware writes the successor of the last completed header.
         let mut current = self.ring.head;
         loop {
@@ -485,7 +485,7 @@ impl<const PACKETS: usize> LeRxRingView<'_, PACKETS> {
             };
             if header.completion_observed() && !self.header(next).completion_observed() {
                 let packet = self.packet(self.packet_of(next).unwrap());
-                packet.emulate_hardware_receive(pdu, -40, 1_000);
+                packet.emulate_hardware_receive(pdu, -40, captured_at);
                 packet.emulate_receive_tag(tag);
                 self.header(next).emulate_hardware_completion();
                 return true;
@@ -610,15 +610,20 @@ impl<const PACKETS: usize> LeRxChain<PACKETS> {
     }
 
     #[cfg(test)]
-    pub(crate) fn emulate_receive(&mut self, pdu: &[u8], tag: u16) -> bool {
-        self.with_view(|view| view.emulate_receive(pdu, tag))
+    pub(crate) fn emulate_receive(&mut self, pdu: &[u8], tag: u16, captured_at: u32) -> bool {
+        self.with_view(|view| view.emulate_receive(pdu, tag, captured_at))
     }
 
     /// Emulate hardware receiving `pdu` for `source`.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
-    pub fn emulate_receive_for_validation(&mut self, pdu: &[u8], source: LeRxSource) -> bool {
-        self.with_view(|view| view.emulate_receive(pdu, source.tag.number()))
+    pub fn emulate_receive_for_validation(
+        &mut self,
+        pdu: &[u8],
+        source: LeRxSource,
+        captured_at: u32,
+    ) -> bool {
+        self.with_view(|view| view.emulate_receive(pdu, source.tag.number(), captured_at))
     }
 
     #[cfg(any(test, feature = "validation-probes"))]

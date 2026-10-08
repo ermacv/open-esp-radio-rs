@@ -268,7 +268,7 @@ fn requests_arrive_under_the_advertising_number() {
     let instance = prepared(&mut pool, &chain);
     let source = pool.receive_source(&instance).unwrap();
     let scan_request = [0x03, 12, 9, 9, 9, 9, 9, 9, 1, 2, 3, 4, 5, 6];
-    assert!(chain.emulate_receive(&scan_request, 3));
+    assert!(chain.emulate_receive(&scan_request, 3, 1_000));
     let Some(LeRxOutcome::Received(pdu)) = chain.take(source).unwrap() else {
         panic!("the request belongs to this instance")
     };

@@ -17,6 +17,12 @@ acquire another radio. The runtime supplies timers, DMA/IRQ progress and
 network handoffs. Publication is not successful transmission: resources are
 released only through the completion or terminal recovery path.
 
+A-MPDU retry decisions use MAC radio samples from the publication's generation.
+Before servicing an aggregate's ordinary BlockAckReq, the runtime obtains a fresh
+sample and asks the aggregate owner to validate its generation. It passes the same
+stamp to the answer processing. Missing or stale timing leaves the completion,
+ordinary descriptor, retained frames and exchange accounting untouched.
+
 Probe discovery accepts broadcast or AP-addressed requests with a wildcard or
 matching SSID. The response uses the current beacon advertisement, excludes TIM,
 and shares the beacon clock and management sequence space. It is published through

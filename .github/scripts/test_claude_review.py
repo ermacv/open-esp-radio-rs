@@ -4,6 +4,8 @@ import base64
 import io
 import json
 import os
+from pathlib import Path
+import re
 from copy import deepcopy
 import unittest
 from unittest.mock import patch
@@ -61,6 +63,29 @@ class FakeGitHub:
 
 
 class ReviewTests(unittest.TestCase):
+    def test_old_prs_always_run_the_controller_from_the_default_branch(self):
+        workflow = (Path(__file__).resolve().parents[1] / 'workflows/claude-review.yml').read_text()
+        refs = re.findall(r'^\s+ref: (.+)$', workflow, re.MULTILINE)
+        self.assertTrue(refs)
+        self.assertEqual(set(refs), {'${{ github.event.repository.default_branch }}'})
+        self.assertIn("github.event.pull_request.state == 'open'", workflow)
+
+    def test_full_context_of_a_103_file_pr_is_not_truncated(self):
+        api = FakeGitHub()
+        api.files = [{"filename": f"src/component_{i}.rs", "status": "added", "additions": 1,
+                      "deletions": 0, "patch": "@@ -0,0 +1 @@\n+" + "x" * 2000}
+                     for i in range(103)]
+        api.pr["changed_files"] = 103
+        text, files, gaps = review.context(api, api.pr)
+        data = json.loads(text)
+        self.assertGreater(len(text), 180_000)
+        self.assertEqual(len(files), 103)
+        self.assertEqual(len(data["changes"]), 103)
+        self.assertTrue(all(c["patch"].endswith("x" * 2000) for c in data["changes"]))
+        self.assertEqual(gaps, [])
+        with self.assertRaisesRegex(ValueError, "превышает лимит"):
+            review.limited({"large": "x" * review.MAX_CONTEXT})
+
     def test_auth_probe_calls_messages_without_publishing_or_printing_tokens(self):
         with patch.object(review, "Claude") as claude, patch("sys.stdout", new_callable=io.StringIO) as output:
             claude.return_value.request.return_value = {"content": [{"type": "text", "text": "OK"}]}

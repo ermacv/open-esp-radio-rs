@@ -215,14 +215,24 @@ class ReviewGitHub(GitHub):
             variables["cursor"] = connection["pageInfo"]["endCursor"]
 
 
+class InactiveReview(Exception):
+    """A draft or closed PR no longer permits analysis or publication."""
+
+
 class Sources:
     def __init__(self, api, pr):
         self.api = api
+        self.number = pr["number"]
         # Patches use GitHub's three-dot comparison. The before snapshot must
         # be its merge base, not independently changed code on current main.
         self.refs = {"head": pr["head"]["sha"], "base": pr["merge_base_sha"]}
         self.cache = {}
         self.read_ranges = {}
+
+    def ensure_active(self):
+        live = self.api.request("GET", f"pulls/{self.number}")
+        if live["state"] != "open" or live["draft"]:
+            raise InactiveReview("PR is draft or closed; review stopped")
 
     def get(self, path, revision):
         path = source_path(path)
@@ -467,6 +477,7 @@ class Claude:
     def review_pass(self, text, sources, files, prompt, phase):
         messages = [{"role": "user", "content": text}]
         for step in range(20):
+            sources.ensure_active()
             body = {"model": self.model, "system": prompt, "tools": TOOLS, "messages": messages}
             count = self.request("messages/count_tokens", body)["input_tokens"]
             if self.input_used + count > MAX_INPUT or self.output_used >= MAX_OUTPUT:
@@ -474,6 +485,7 @@ class Claude:
             print(f"Claude {phase} step {step + 1}: {count} input tokens; "
                   f"used {self.input_used}/{MAX_INPUT} input and {self.output_used}/{MAX_OUTPUT} output.",
                   flush=True)
+            sources.ensure_active()
             response = self.request("messages", {**body, "max_tokens": min(12000, MAX_OUTPUT - self.output_used),
                                     "output_config": {"effort": "high"},
                                     "cache_control": {"type": "ephemeral"}})
@@ -481,6 +493,7 @@ class Claude:
             self.input_used += sum(usage.get(k, 0) for k in
                                    ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
             self.output_used += usage["output_tokens"]
+            sources.ensure_active()
             if self.input_used > MAX_INPUT or self.output_used > MAX_OUTPUT:
                 raise ValueError("Достигнут лимит токенов ревью; анализ не завершён")
             if response["stop_reason"] != "tool_use":
@@ -602,6 +615,8 @@ def review_pr(api, number, model):
             approved = not report["findings"] and not report["coverage_gaps"] and ci_ok is True
             status(api, pr, "success" if approved else "failure",
                    "Architectural review passed; CI passed" if approved else "Architectural defects or incomplete verification")
+    except InactiveReview as error:
+        print(str(error))
     except Exception as error:
         # Never publish API response bodies, runner environment or secrets.
         reason = str(error) if isinstance(error, ValueError) else type(error).__name__
@@ -620,7 +635,8 @@ def targets(api, event, event_name):
         if run["head_repository"]["full_name"] != REPOSITORY:
             return []
         return [pr["number"] for pr in api.list(f"commits/{run['head_sha']}/pulls")
-                if pr["state"] == "open" and pr["head"]["sha"] == run["head_sha"]]
+                if pr["state"] == "open" and not pr["draft"]
+                and pr["head"]["sha"] == run["head_sha"]]
     raise ValueError("Unsupported workflow event")
 
 

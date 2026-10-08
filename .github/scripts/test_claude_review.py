@@ -510,6 +510,96 @@ class ReviewTests(unittest.TestCase):
         event["workflow_run"]["head_repository"]["full_name"] = "x/y"
         self.assertEqual(review.targets(FakeGitHub(), event, "workflow_run"), [])
 
+    def test_draft_and_closed_prs_are_skipped_for_every_review_trigger(self):
+        events = {
+            "pull_request_target": {"pull_request": {"number": 7}},
+            "workflow_dispatch": {"inputs": {"pull_request": "7"}},
+            "workflow_run": {"workflow_run": {"head_repository": {"full_name": review.REPOSITORY},
+                                              "head_sha": PR["head"]["sha"]}},
+        }
+        for change in ({"draft": True}, {"state": "closed"}):
+            for event_name, event in events.items():
+                with self.subTest(change=change, event=event_name):
+                    api = FakeGitHub()
+                    api.pr.update(change)
+                    with patch.object(review, "Claude") as claude:
+                        numbers = review.targets(api, event, event_name)
+                        for number in numbers:
+                            review.review_pr(api, number, review.MODEL)
+                    if event_name == "workflow_run":
+                        self.assertEqual(numbers, [])
+                    claude.assert_not_called()
+                    self.assertEqual(api.writes, [])
+
+    def test_marking_ready_reviews_a_pr_whose_ci_already_finished(self):
+        api = FakeGitHub()
+        api.pr["draft"] = True
+        api.runs = [{"run_number": 1, "run_attempt": 1, "status": "completed",
+                     "conclusion": "success", "html_url": "https://example/ci"}]
+        with patch.object(review.Claude, "review", return_value=deepcopy(REPORT)) as analysis:
+            review.review_pr(api, 7, review.MODEL)
+            analysis.assert_not_called()
+            self.assertEqual(api.writes, [])
+            api.pr["draft"] = False
+            review.review_pr(api, 7, review.MODEL)
+        analysis.assert_called_once()
+        self.assertEqual(len([w for w in api.writes if w[1] == "issues/7/comments"]), 1)
+        self.assertEqual(api.writes[-1][2]["state"], "success")
+
+    def test_draft_transition_before_analysis_does_not_call_claude(self):
+        api = FakeGitHub()
+        sources = review.Sources(api, PR)
+        api.pr["draft"] = True
+        claude = review.Claude(review.MODEL)
+        with patch.object(claude, "request") as request:
+            with self.assertRaises(review.InactiveReview):
+                claude.review("{}", sources, [])
+        request.assert_not_called()
+
+    def test_draft_or_close_during_token_count_stops_before_paid_inference(self):
+        for change in ({"draft": True}, {"state": "closed"}):
+            with self.subTest(change=change):
+                api = FakeGitHub()
+                api.runs = [{"run_number": 1, "run_attempt": 1, "status": "completed",
+                             "conclusion": "success", "html_url": "https://example/ci"}]
+                calls = []
+                def request(self, path, body):
+                    calls.append(path)
+                    api.pr.update(change)
+                    return {"input_tokens": 10}
+                with patch.object(review.Claude, "request", new=request):
+                    review.review_pr(api, 7, review.MODEL)
+                self.assertEqual(calls, ["messages/count_tokens"])
+                self.assertEqual([w[2]["state"] for w in api.writes], ["pending"])
+
+    def test_draft_transition_during_inference_stops_before_verification_and_publication(self):
+        api = FakeGitHub()
+        api.runs = [{"run_number": 1, "run_attempt": 1, "status": "completed",
+                     "conclusion": "success", "html_url": "https://example/ci"}]
+        calls = []
+        def request(self, path, body):
+            calls.append(path)
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            api.pr["draft"] = True
+            return {"usage": {"input_tokens": 10, "output_tokens": 1}, "stop_reason": "tool_use",
+                    "content": [{"type": "tool_use", "id": "finish", "name": "finish_review", "input": REPORT}]}
+        with patch.object(review.Claude, "request", new=request):
+            review.review_pr(api, 7, review.MODEL)
+        self.assertEqual(calls, ["messages/count_tokens", "messages"])
+        self.assertEqual([w[2]["state"] for w in api.writes], ["pending"])
+
+    def test_draft_transition_after_analysis_cannot_publish_a_comment_or_green_status(self):
+        api = FakeGitHub()
+        api.runs = [{"run_number": 1, "run_attempt": 1, "status": "completed",
+                     "conclusion": "success", "html_url": "https://example/ci"}]
+        def analysis(*args):
+            api.pr["draft"] = True
+            return deepcopy(REPORT)
+        with patch.object(review.Claude, "review", side_effect=analysis):
+            review.review_pr(api, 7, review.MODEL)
+        self.assertEqual([w[2]["state"] for w in api.writes], ["pending"])
+
     def test_waiting_for_ci_sets_pending_without_comments_or_spending_api_credits(self):
         api = FakeGitHub()
         with patch.object(review, "Claude") as claude:
@@ -579,7 +669,7 @@ class ReviewTests(unittest.TestCase):
         claude = review.Claude(review.MODEL)
         with patch.object(claude, "request", return_value={"input_tokens": review.MAX_INPUT + 1}) as request:
             with self.assertRaisesRegex(ValueError, "лимит токенов"):
-                claude.review("context", None, [])
+                claude.review("context", review.Sources(FakeGitHub(), PR), [])
         self.assertEqual([c.args[0] for c in request.call_args_list], ["messages/count_tokens"])
 
     def test_oidc_exchange_caches_tokens_and_refreshes_with_a_new_assertion(self):

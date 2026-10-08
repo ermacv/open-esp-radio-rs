@@ -54,8 +54,15 @@ applicable explicit policy, GitHub's default policy will block
 `pull_request_target` from November 2, 2026. Keep the exception scoped to this
 trusted controller; see [GitHub's event-policy documentation](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target#default-policy-for-pull_request_target).
 
-Opening or updating a non-draft PR from a branch in this repository invalidates
-the previous verdict and waits for its latest `CI` push run. When CI finishes,
+Only open PRs marked ready for review are eligible. Draft and closed PRs are
+skipped for PR events, CI completion and manual review requests. Marking a PR
+ready triggers review even when its CI already finished. The controller checks
+the live PR state before each Claude request and after each inference response;
+returning to draft or closing the PR stops subsequent analysis without posting
+a verdict. Publication also rechecks that the PR is still open and non-draft.
+
+Opening, marking ready or updating a non-draft PR from a branch in this
+repository invalidates the previous verdict and waits for its latest `CI` push run. When CI finishes,
 the reviewer reads the complete changed-file list and patches, explicitly
 referenced and GitHub-linked closing issues with their discussions and relationship
 (closing commitment or reference-only context), and the

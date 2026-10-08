@@ -170,6 +170,15 @@ class ReviewTests(unittest.TestCase):
         self.assertIn("ожидает CI", comments[-1][2]["body"])
         self.assertEqual([w[2]["state"] for w in api.writes if w[1].startswith("statuses/")], ["pending"])
 
+    def test_comment_failure_cannot_leave_an_old_success_status_effective(self):
+        api = FakeGitHub()
+        review.status(api, PR, "success", "Previous approval")
+        with patch.object(review, "publish", side_effect=RuntimeError("Comment unavailable")):
+            with self.assertRaises(RuntimeError):
+                review.review_pr(api, 7, review.MODEL)
+        states = [w[2]["state"] for w in api.writes if w[1].startswith("statuses/")]
+        self.assertEqual(states, ["success", "pending"])
+
     def test_fork_and_non_main_pull_requests_are_not_reviewed(self):
         for changed in ("head", "base"):
             api = FakeGitHub()

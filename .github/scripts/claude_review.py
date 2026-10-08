@@ -410,9 +410,9 @@ def review_pr(api, number, model):
     if pr["base"]["ref"] != "main" or pr["head"]["repo"]["full_name"] != REPOSITORY:
         print("Only same-repository pull requests targeting main are reviewed.")
         return
+    status(api, pr, "pending", "Runtime review has not completed for this commit")
     if not publish(api, pr, "## ⏳ Ревью выполняется\n\nПредыдущий вердикт не действует."):
         return
-    status(api, pr, "pending", "Runtime review has not completed for this commit")
     try:
         ci_ok, ci = ci_state(api, pr["head"]["sha"])
         if ci_ok is None:

@@ -149,18 +149,6 @@ it does not query or mutate GitHub from the source gate. See the
 `ci-status` reads recent runs per workflow, so metadata event traffic cannot
 hide a source workflow's last failure behind a shared page of runs.
 
-The fast host `claude-review` check runs the Claude review controller's offline
-regressions. It makes no API requests and spends no credits. Live PR analysis
-belongs to the separate [Claude architectural review workflow](../../.github/workflows/claude-review.yml),
-configured as described in the [contribution guide](../../CONTRIBUTING.md#claude-architectural-review).
-It waits for successful CI and serializes jobs per PR. Identical automatic
-requests reuse a completed verdict, while explicit manual requests run again.
-The two analysis passes share a cached input prefix with separate histories and
-one $5 API budget. Preflight reserves for a cache miss and caps output to the
-remaining dollars; actual cache reads use their own tariff rather than exhausting
-a cumulative-input token cap. Logs and completed or failed review comments report
-cache usage and estimated API cost.
-
 Planning requires a clean checkout so the tree hash describes its source
 files. Repository source inputs must be tracked; external sources are
 materialized from pins in tracked configuration by their existing owners.

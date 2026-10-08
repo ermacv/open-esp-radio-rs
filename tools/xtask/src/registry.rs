@@ -142,6 +142,25 @@ pub const CHECKS: &[Check] = &[
         },
     },
     Check {
+        id: "claude-review",
+        tier: Tier::Fast,
+        job: "host",
+        summary: "offline Claude runtime-review controller regressions",
+        trigger: Some(|change| {
+            touches(
+                change,
+                &[".github/scripts/", ".github/workflows/claude-review.yml"],
+            )
+        }),
+        run: |ctx, _| {
+            process::run(
+                ctx.command("python3")
+                    .env("PYTHONDONTWRITEBYTECODE", "1")
+                    .args([".github/scripts/claude_review.py", "check"]),
+            )
+        },
+    },
+    Check {
         id: "lock",
         tier: Tier::Fast,
         job: "host",

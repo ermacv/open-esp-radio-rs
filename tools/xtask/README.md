@@ -149,6 +149,11 @@ it does not query or mutate GitHub from the source gate. See the
 `ci-status` reads recent runs per workflow, so metadata event traffic cannot
 hide a source workflow's last failure behind a shared page of runs.
 
+The fast host `claude-review` check runs the Claude review controller's offline
+regressions. It makes no API requests and spends no credits. Live PR analysis
+belongs to the separate [Claude runtime review workflow](../../.github/workflows/claude-review.yml),
+configured as described in the [contribution guide](../../CONTRIBUTING.md#claude-runtime-review).
+
 Planning requires a clean checkout so the tree hash describes its source
 files. Repository source inputs must be tracked; external sources are
 materialized from pins in tracked configuration by their existing owners.

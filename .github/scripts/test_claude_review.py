@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import tempfile
 from copy import deepcopy
+from decimal import Decimal
 import unittest
 from unittest.mock import patch
 
@@ -257,29 +258,114 @@ class ReviewTests(unittest.TestCase):
         self.assertTrue(all(body.get("tool_choice", {"type": "auto"}) == {"type": "auto"} for body in bodies))
         self.assertTrue(all(tool["strict"] for tool in review.TOOLS))
 
-    def test_both_passes_share_budget_including_cache_reads_and_writes(self):
+    def test_cached_investigation_above_two_million_tokens_can_reach_verification(self):
+        claude = review.Claude(review.MODEL)
+        responses = []
+        # Reproduce the large-PR usage that exhausted the old cumulative-input
+        # cap after eight source turns, despite spending only about $1.72.
+        writes = [225883, 8917, 2671, 1165, 318, 2141, 775, 4711]
+        reads = [0, 225883, 234800, 237471, 238636, 238954, 241095, 241870]
+        outputs = [5804, 411, 448, 128, 147, 429, 216, 259]
+        for write, read, output in zip(writes, reads, outputs):
+            responses.append(message([{"type": "tool_use", "id": str(write), "name": "read_file",
+                "input": {"path": "src/lib.rs", "revision": "head", "start": 1, "count": 10}}],
+                {"input_tokens": 4 if not read else 2, "cache_creation_input_tokens": write,
+                 "cache_read_input_tokens": read, "output_tokens": output}))
+        for read in (246581, 225883):
+            responses.append(message(report_blocks(REPORT), {"input_tokens": 20,
+                "cache_creation_input_tokens": 0, "cache_read_input_tokens": read, "output_tokens": 1000}))
+        bodies = []
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 250000}
+            bodies.append(deepcopy(body))
+            return responses.pop(0)
+        with patch.object(claude, "request", side_effect=request):
+            result = claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+        self.assertEqual(result, REPORT)
+        self.assertEqual(len(bodies), 10)
+        self.assertGreater(claude.input_used, 2_000_000)
+        self.assertLess(claude.spent_usd(), Decimal("2"))
+        self.assertEqual(len(bodies[-1]["messages"]), 1)
+        self.assertEqual(claude.usage["verification"]["cache_read_input_tokens"], 225883)
+
+    def test_both_passes_share_dollar_budget(self):
         claude = review.Claude(review.MODEL)
         calls = []
         def request(path, body):
             calls.append(path)
             if path == "messages/count_tokens":
-                return {"input_tokens": 10}
-            return message(report_blocks(REPORT), {"input_tokens": 1, "cache_creation_input_tokens": 1,
-                           "cache_read_input_tokens": review.MAX_INPUT - 2, "output_tokens": 1})
-        with patch.object(claude, "request", side_effect=request):
-            with self.assertRaisesRegex(ValueError, "лимит токенов"):
+                return {"input_tokens": 100000}
+            return message(report_blocks(REPORT), {"input_tokens": 0, "cache_creation_input_tokens": 100000,
+                                                   "output_tokens": 1})
+        with patch.object(review, "MAX_COST_USD", Decimal("0.60")), \
+                patch.object(claude, "request", side_effect=request):
+            with self.assertRaisesRegex(ValueError, "Недостаточно бюджета"):
                 claude.review("{}", review.Sources(FakeGitHub(), PR), [])
-        self.assertEqual(claude.input_used, review.MAX_INPUT)
+        self.assertEqual(claude.spent_usd(), Decimal("0.500020"))
         self.assertEqual(calls, ["messages/count_tokens", "messages", "messages/count_tokens"])
+
+    def test_exhausted_budget_cannot_publish_a_clean_candidate_or_completion_receipt(self):
+        api = self.successful_api()
+        calls = []
+        def request(self, path, body):
+            calls.append(path)
+            if path == "messages/count_tokens":
+                return {"input_tokens": 100000}
+            return message(report_blocks({**REPORT, "summary": "CANDIDATE_NOT_FINAL"}),
+                           {"input_tokens": 0, "cache_creation_input_tokens": 100000, "output_tokens": 1})
+        with patch.object(review, "MAX_COST_USD", Decimal("0.60")), \
+                patch.object(review.Claude, "request", new=request):
+            with self.assertRaisesRegex(ValueError, "Недостаточно бюджета"):
+                review.review_pr(api, 7, review.MODEL)
+        self.assertEqual(calls, ["messages/count_tokens", "messages", "messages/count_tokens"])
+        comments = [w[2]["body"] for w in api.writes if w[1] == "issues/7/comments"]
+        self.assertEqual(len(comments), 1)
+        self.assertIn("Проверка неполная", comments[0])
+        self.assertIn("0.500020", comments[0])
+        self.assertNotIn("CANDIDATE_NOT_FINAL", comments[0])
+        self.assertEqual([r["state"] for r in api.status_records], ["error", "pending"])
+        self.assertFalse(any(r["description"].startswith(review.COMPLETED) for r in api.status_records))
 
     def test_actual_usage_above_preflight_estimate_cannot_finish_green(self):
         claude = review.Claude(review.MODEL)
-        response = message(report_blocks(REPORT), {"input_tokens": 1, "cache_read_input_tokens": review.MAX_INPUT,
+        response = message(report_blocks(REPORT), {"input_tokens": 1, "cache_creation_input_tokens": 3000,
                                                   "output_tokens": 1})
-        with patch.object(claude, "request", side_effect=[{"input_tokens": 10}, response]) as request:
-            with self.assertRaisesRegex(ValueError, "лимит токенов"):
+        with patch.object(review, "MAX_COST_USD", Decimal("0.01")), \
+                patch.object(claude, "request", side_effect=[{"input_tokens": 10}, response]) as request:
+            with self.assertRaisesRegex(ValueError, "превысил бюджет"):
                 claude.review("{}", review.Sources(FakeGitHub(), PR), [])
         self.assertEqual(request.call_count, 2)
+
+    def test_preflight_does_not_assume_the_next_request_will_hit_cache(self):
+        claude = review.Claude(review.MODEL)
+        estimates = iter((100000, 200000))
+        calls = []
+        def request(path, body):
+            calls.append(path)
+            if path == "messages/count_tokens":
+                return {"input_tokens": next(estimates)}
+            return message(report_blocks(REPORT), {"input_tokens": 0, "cache_read_input_tokens": 100000,
+                                                   "output_tokens": 1})
+        with patch.object(review, "MAX_COST_USD", Decimal("1")), \
+                patch.object(claude, "request", side_effect=request):
+            with self.assertRaisesRegex(ValueError, "без попаданий в кеш"):
+                claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+        self.assertEqual(calls, ["messages/count_tokens", "messages", "messages/count_tokens"])
+
+    def test_remaining_dollars_cap_output_after_reserving_a_full_cache_miss(self):
+        claude = review.Claude(review.MODEL)
+        bodies = []
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 1000}
+            bodies.append(deepcopy(body))
+            return message(report_blocks(REPORT), {"input_tokens": 10, "output_tokens": 5})
+        with patch.object(review, "MAX_COST_USD", Decimal("0.01")), \
+                patch.object(claude, "request", side_effect=request):
+            self.assertEqual(claude.review("{}", review.Sources(FakeGitHub(), PR), []), REPORT)
+        self.assertEqual([b["max_tokens"] for b in bodies], [250, 243])
+        self.assertEqual(claude.spent_usd(), Decimal("0.000280"))
 
     def test_verifier_must_read_its_own_evidence_after_rejected_unrelated_anchor(self):
         claude = review.Claude(review.MODEL)
@@ -769,12 +855,21 @@ class ReviewTests(unittest.TestCase):
             self.assertEqual(api.writes[-1][2]["state"], expected)
             self.assertEqual(len([w for w in api.writes if w[1] == "issues/7/comments"]), 1)
 
-    def test_token_budget_stops_before_a_paid_messages_request(self):
+    def test_dollar_budget_stops_before_a_paid_messages_request(self):
         claude = review.Claude(review.MODEL)
-        with patch.object(claude, "request", return_value={"input_tokens": review.MAX_INPUT + 1}) as request:
-            with self.assertRaisesRegex(ValueError, "лимит токенов"):
+        with patch.object(claude, "request", return_value={"input_tokens": 1_000_001}) as request:
+            with self.assertRaisesRegex(ValueError, "Недостаточно бюджета"):
                 claude.review("context", review.Sources(FakeGitHub(), PR), [])
         self.assertEqual([c.args[0] for c in request.call_args_list], ["messages/count_tokens"])
+
+    def test_invalid_preflight_usage_stops_before_paid_inference(self):
+        for count in (-1, True, "10", None):
+            with self.subTest(count=count):
+                claude = review.Claude(review.MODEL)
+                with patch.object(claude, "request", return_value={"input_tokens": count}) as request:
+                    with self.assertRaisesRegex(ValueError, "некорректную оценку"):
+                        claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+                self.assertEqual([c.args[0] for c in request.call_args_list], ["messages/count_tokens"])
 
     def test_usage_separates_cache_costs_and_phases_without_logging_context(self):
         claude = review.Claude(review.MODEL)
@@ -812,6 +907,22 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(records[-2]["step"], "total")
         self.assertEqual(records[-2]["output_tokens"], 4)
         self.assertEqual(records[-1]["output_tokens"], 0)
+
+    def test_failed_review_comment_includes_model_usage_cost_and_budget(self):
+        api = self.successful_api()
+        response = {"usage": {"input_tokens": 10, "cache_creation_input_tokens": 1000,
+                              "cache_read_input_tokens": 10000, "output_tokens": 4},
+                    "stop_reason": "max_tokens", "content": []}
+        with patch.object(review.Claude, "request", side_effect=[{"input_tokens": 11010}, response]):
+            with self.assertRaisesRegex(ValueError, "stop_reason=max_tokens"):
+                review.review_pr(api, 7, review.MODEL)
+        comments = [w[2]["body"] for w in api.writes if w[1] == "issues/7/comments"]
+        self.assertEqual(len(comments), 1)
+        self.assertIn("Проверка неполная", comments[0])
+        self.assertIn(review.MODEL, comments[0])
+        self.assertIn("| Итого | 10 | 1000 | 10000 | 4 | 0.007120 |", comments[0])
+        self.assertIn("**$5.00**", comments[0])
+        self.assertEqual(api.writes[-1][2]["state"], "error")
 
     def test_unknown_prices_and_invalid_usage_fail_before_a_clean_verdict(self):
         with self.assertRaisesRegex(ValueError, "тарифа"):

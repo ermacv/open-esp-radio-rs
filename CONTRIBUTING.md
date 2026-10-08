@@ -51,6 +51,9 @@ referenced and GitHub-linked closing issues with their discussions, and the
 source files and callers it requests at immutable head/base SHAs. Findings
 cover concrete runtime regressions, with triggers, consequences, fixes and
 links to source lines; style suggestions are outside this review.
+Cargo.lock patches remain in the initial diff so dependency changes are visible;
+full lock-file reads are excluded from source investigation. Claude reads the
+owning Cargo.toml when it needs dependency context.
 
 One `github-actions[bot]` comment reports errors, a completed review with
 successful CI, or an incomplete review. API failures, missing diffs, unavailable

@@ -63,6 +63,18 @@ class FakeGitHub:
 
 
 class ReviewTests(unittest.TestCase):
+    def test_lockfile_changes_remain_in_diff_without_full_lockfile_reads(self):
+        api = FakeGitHub()
+        api.files[0].update(filename="Cargo.lock", additions=1, deletions=0,
+                            patch='@@ -2,0 +3 @@\n+ "oer-time",')
+        text, _, gaps = review.context(api, api.pr)
+        self.assertIn('oer-time', text)
+        self.assertEqual(gaps, [])
+        sources = review.Sources(api, api.pr)
+        for path in ('Cargo.lock', 'examples/esp32s31/Cargo.lock'):
+            with self.assertRaisesRegex(ValueError, 'Cargo.lock'):
+                sources.read(path, 'head')
+
     def test_old_prs_always_run_the_controller_from_the_default_branch(self):
         workflow = (Path(__file__).resolve().parents[1] / 'workflows/claude-review.yml').read_text()
         refs = re.findall(r'^\s+ref: (.+)$', workflow, re.MULTILINE)

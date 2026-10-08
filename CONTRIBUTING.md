@@ -111,10 +111,16 @@ A second model conversation verifies the candidate report
 with a separate history and its own source reads, challenging both reported defects
 and a clean verdict. This can reduce false positives; the two passes use the
 same model and can still share blind spots.
-The controller returns rejected report validation as a tool error, so the model
-can read missing evidence and repair the report within the same call/token
-budget. An invalid report never becomes the final verdict; exhausting the
-budget still reports incomplete analysis.
+Read-only tools use strict schemas; the final report uses
+[JSON structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+through `output_config.format`. Normal `end_turn` responses are parsed and
+validated as reports, rather than requiring a final tool call. Claude 5.5 does
+not support forced tool calls. Semantic validation failures return controller
+feedback, so the model can read missing evidence and repair the report within
+the same call/token budget. Signed thinking blocks remain unchanged in the
+append-only history. An invalid report never becomes the final verdict;
+exhausting the budget still reports incomplete analysis. Truncated responses,
+refusals, malformed JSON and inconsistent protocol responses fail closed.
 
 Independent pre-existing defects encountered during the review appear in a
 separate short summary (at most five) for human verification and possible future
@@ -150,6 +156,10 @@ output tokens) without reading or commenting on a PR. Each analysis is limited
 to 20 model calls per pass, with 2,000,000 cumulative input
 tokens and 48,000 output tokens shared across both passes; reaching a limit
 reports incomplete analysis. The workflow has a 45-minute timeout.
+Each request permits at most 24,000 output tokens, capped by the remaining shared
+budget. Output includes adaptive thinking as well as the visible response;
+the cap must leave room for both investigation and the report. A truncated
+response never supplies findings or approval, even if it contains parseable JSON.
 The larger input budget covers repeated source investigation across large PRs;
 the preflight counts each request before paid inference. An explicit 5-minute
 prompt-cache breakpoint covers the identical tools, system instructions and
@@ -163,7 +173,9 @@ includes ordinary tokens, cache writes and cache reads; cached inputs are not
 free and do not bypass the analysis budget. Context and linked
 issues are kept complete. JSON log records separate ordinary input, cache writes,
 cache reads, output and estimated USD for each step and each pass's total, even
-when analysis fails, without logging source or credentials. Completed report
+when analysis fails, without logging source or credentials. Response metadata
+records the stop reason, content-block types and request/output token limits,
+without text, thinking, signatures or tool arguments. Completed report
 comments include the same usage and cost breakdown. Estimates use the direct
 API tariffs dated in the controller and default 5-minute cache writes; final
 billing is in Claude Console. Token budgets are not dollar spend limits.

@@ -29,6 +29,16 @@ UNRELATED = {"path": "src/old.rs", "line": 2, "base_path": "src/old.rs", "base_l
              "impact": "Потеря события", "reason": "Поведение и достижимость не меняются в PR"}
 
 
+def report_blocks(report):
+    return [{"type": "text", "text": json.dumps(report)}]
+
+
+def message(blocks, usage=None):
+    return {"usage": usage or {"input_tokens": 10, "output_tokens": 1},
+            "stop_reason": "tool_use" if any(b["type"] == "tool_use" for b in blocks) else "end_turn",
+            "content": blocks}
+
+
 class FakeGitHub:
     def __init__(self):
         self.pr = deepcopy(PR)
@@ -93,6 +103,7 @@ class ReviewTests(unittest.TestCase):
         for tool in review.TOOLS:
             self.assertTrue(tool["strict"])
             check(tool["input_schema"])
+        check(review.REPORT_SCHEMA)
 
     def test_blocking_findings_need_their_actual_source_anchor_in_each_pass(self):
         sources = review.Sources(FakeGitHub(), PR)
@@ -156,8 +167,7 @@ class ReviewTests(unittest.TestCase):
         def request(path, body):
             if path == "messages/count_tokens":
                 return {"input_tokens": 10}
-            return {"usage": {"input_tokens": 10, "output_tokens": 1}, "stop_reason": "tool_use",
-                    "content": [{"type": "tool_use", "id": "finish", "name": "finish_review", "input": report}]}
+            return message(report_blocks(report))
         with patch.object(claude, "request", side_effect=request), patch.object(sources, "get") as get:
             self.assertEqual(claude.review("{}", sources, [file]), report)
         get.assert_not_called()
@@ -227,10 +237,8 @@ class ReviewTests(unittest.TestCase):
                 content = [{"type": "tool_use", "id": "read", "name": "read_file",
                             "input": {"path": "src/lib.rs", "revision": "head", "start": 1, "count": 10}}]
             else:
-                content = [{"type": "tool_use", "id": "finish", "name": "finish_review",
-                            "input": REPORT if len(bodies) == 1 else final}]
-            return {"usage": {"input_tokens": 10, "output_tokens": 5}, "stop_reason": "tool_use",
-                    "content": content}
+                content = report_blocks(REPORT if len(bodies) == 1 else final)
+            return message(content, {"input_tokens": 10, "output_tokens": 5})
         with patch.object(claude, "request", side_effect=request):
             result = claude.review("{}", review.Sources(FakeGitHub(), PR), PR["review_files"])
         self.assertEqual(result, final)
@@ -244,7 +252,9 @@ class ReviewTests(unittest.TestCase):
         self.assertTrue(all(body["system"] == review.PROMPT for body in bodies))
         self.assertEqual(bodies[0]["tools"], bodies[1]["tools"])
         self.assertTrue(all(body["cache_control"] == {"type": "ephemeral"} for body in bodies))
-        self.assertTrue(all(body["output_config"] == {"effort": "high"} for body in bodies))
+        self.assertTrue(all(body["output_config"] == {"effort": "high", "format": {
+            "type": "json_schema", "schema": review.REPORT_SCHEMA}} for body in bodies))
+        self.assertTrue(all(body.get("tool_choice", {"type": "auto"}) == {"type": "auto"} for body in bodies))
         self.assertTrue(all(tool["strict"] for tool in review.TOOLS))
 
     def test_both_passes_share_budget_including_cache_reads_and_writes(self):
@@ -254,10 +264,8 @@ class ReviewTests(unittest.TestCase):
             calls.append(path)
             if path == "messages/count_tokens":
                 return {"input_tokens": 10}
-            return {"usage": {"input_tokens": 1, "cache_creation_input_tokens": 1,
-                              "cache_read_input_tokens": review.MAX_INPUT - 2, "output_tokens": 1},
-                    "stop_reason": "tool_use", "content": [{"type": "tool_use", "id": "finish",
-                        "name": "finish_review", "input": REPORT}]}
+            return message(report_blocks(REPORT), {"input_tokens": 1, "cache_creation_input_tokens": 1,
+                           "cache_read_input_tokens": review.MAX_INPUT - 2, "output_tokens": 1})
         with patch.object(claude, "request", side_effect=request):
             with self.assertRaisesRegex(ValueError, "лимит токенов"):
                 claude.review("{}", review.Sources(FakeGitHub(), PR), [])
@@ -266,9 +274,8 @@ class ReviewTests(unittest.TestCase):
 
     def test_actual_usage_above_preflight_estimate_cannot_finish_green(self):
         claude = review.Claude(review.MODEL)
-        response = {"usage": {"input_tokens": 1, "cache_read_input_tokens": review.MAX_INPUT,
-                              "output_tokens": 1}, "stop_reason": "tool_use",
-                    "content": [{"type": "tool_use", "id": "finish", "name": "finish_review", "input": REPORT}]}
+        response = message(report_blocks(REPORT), {"input_tokens": 1, "cache_read_input_tokens": review.MAX_INPUT,
+                                                  "output_tokens": 1})
         with patch.object(claude, "request", side_effect=[{"input_tokens": 10}, response]) as request:
             with self.assertRaisesRegex(ValueError, "лимит токенов"):
                 claude.review("{}", review.Sources(FakeGitHub(), PR), [])
@@ -279,27 +286,25 @@ class ReviewTests(unittest.TestCase):
         source_reads = [{"type": "tool_use", "id": rev, "name": "read_file",
                          "input": {"path": "src/old.rs", "revision": rev, "start": 1, "count": 3}}
                         for rev in ("head", "base")]
-        finish = [{"type": "tool_use", "id": "finish", "name": "finish_review",
-                   "input": {**REPORT, "out_of_scope_findings": [UNRELATED]}}]
+        finish = report_blocks({**REPORT, "out_of_scope_findings": [UNRELATED]})
         responses = iter([source_reads, finish, finish, source_reads, finish])
         bodies = []
         def request(path, body):
             if path == "messages/count_tokens":
                 return {"input_tokens": 10}
             bodies.append(deepcopy(body))
-            return {"usage": {"input_tokens": 10, "output_tokens": 10}, "stop_reason": "tool_use",
-                    "content": next(responses)}
+            return message(next(responses), {"input_tokens": 10, "output_tokens": 10})
         with patch.object(claude, "request", side_effect=request):
             result = claude.review("{}", review.Sources(FakeGitHub(), PR), [])
         self.assertEqual(result["out_of_scope_findings"], [UNRELATED])
-        rejected = bodies[3]["messages"][-1]["content"][0]
-        self.assertTrue(rejected["is_error"])
-        self.assertIn("both base and head", rejected["content"])
+        rejected = bodies[3]["messages"][-1]["content"]
+        self.assertIn("Report rejected", rejected)
+        self.assertIn("both base and head", rejected)
 
-    def test_invalid_finish_can_be_repaired_after_reading_its_anchor(self):
+    def test_invalid_report_can_be_repaired_after_reading_its_anchor(self):
         claude = review.Claude(review.MODEL)
         report = {**REPORT, "findings": [FINDING]}
-        finish = [{"type": "tool_use", "id": "finish", "name": "finish_review", "input": report}]
+        finish = report_blocks(report)
         read = [{"type": "tool_use", "id": "read", "name": "read_file",
                  "input": {"path": "src/lib.rs", "revision": "head", "start": 8, "count": 1}}]
         responses = iter([finish, read, finish, read, finish])
@@ -308,13 +313,12 @@ class ReviewTests(unittest.TestCase):
             if path == "messages/count_tokens":
                 return {"input_tokens": 10}
             bodies.append(deepcopy(body))
-            return {"usage": {"input_tokens": 10, "output_tokens": 1}, "stop_reason": "tool_use",
-                    "content": next(responses)}
+            return message(next(responses))
         with patch.object(claude, "request", side_effect=request):
             self.assertEqual(claude.review("{}", review.Sources(FakeGitHub(), PR), PR["review_files"]), report)
-        rejected = bodies[1]["messages"][-1]["content"][0]
-        self.assertTrue(rejected["is_error"])
-        self.assertIn("anchor source line", rejected["content"])
+        rejected = bodies[1]["messages"][-1]["content"]
+        self.assertIn("Report rejected", rejected)
+        self.assertIn("anchor source line", rejected)
 
     def test_repeated_invalid_reports_exhaust_budget_and_cannot_publish_green(self):
         api = FakeGitHub()
@@ -325,20 +329,18 @@ class ReviewTests(unittest.TestCase):
             if path == "messages/count_tokens":
                 return {"input_tokens": 10}
             reports.append(deepcopy(body))
-            return {"usage": {"input_tokens": 10, "output_tokens": 1}, "stop_reason": "tool_use",
-                    "content": [{"type": "tool_use", "id": "finish", "name": "finish_review",
-                                 "input": {**REPORT, "findings": [FINDING]}}]}
+            return message(report_blocks({**REPORT, "findings": [FINDING]}))
         with patch.object(review.Claude, "request", new=request):
             with self.assertRaisesRegex(ValueError, "лимит шагов"):
                 review.review_pr(api, 7, review.MODEL)
         self.assertEqual(len(reports), 20)
-        self.assertTrue(reports[-1]["messages"][-1]["content"][0]["is_error"])
+        self.assertIn("Report rejected", reports[-1]["messages"][-1]["content"])
         self.assertEqual(api.writes[-1][2]["state"], "error")
         self.assertNotIn("success", [w[2]["state"] for w in api.writes if w[1].startswith("statuses/")])
 
-    def test_finish_batched_with_source_calls_requires_a_separate_retry(self):
+    def test_json_alongside_tool_calls_cannot_approve_before_tools_are_resolved(self):
         claude = review.Claude(review.MODEL)
-        finish = {"type": "tool_use", "id": "finish", "name": "finish_review", "input": REPORT}
+        finish = report_blocks(REPORT)[0]
         read = {"type": "tool_use", "id": "read", "name": "read_file",
                 "input": {"path": "src/lib.rs", "revision": "head", "start": 8, "count": 1}}
         responses = iter([[finish, read], [finish], [finish]])
@@ -347,15 +349,13 @@ class ReviewTests(unittest.TestCase):
             if path == "messages/count_tokens":
                 return {"input_tokens": 10}
             bodies.append(deepcopy(body))
-            return {"usage": {"input_tokens": 10, "output_tokens": 1}, "stop_reason": "tool_use",
-                    "content": next(responses)}
+            return message(next(responses))
         with patch.object(claude, "request", side_effect=request):
             self.assertEqual(claude.review("{}", review.Sources(FakeGitHub(), PR), []), REPORT)
         results = bodies[1]["messages"][-1]["content"]
-        self.assertEqual(len(results), 2)
-        self.assertTrue(results[0]["is_error"])
-        self.assertIn("only tool call", results[0]["content"])
-        self.assertNotIn("is_error", results[1])
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["tool_use_id"], "read")
+        self.assertNotIn("is_error", results[0])
         self.assertEqual(len(bodies), 3)
 
     def test_verifier_failure_never_publishes_the_analysts_clean_verdict(self):
@@ -367,6 +367,97 @@ class ReviewTests(unittest.TestCase):
                 review.review_pr(api, 7, review.MODEL)
         self.assertEqual(api.writes[-1][2]["state"], "error")
         self.assertNotIn("success", [w[2]["state"] for w in api.writes if w[1].startswith("statuses/")])
+
+    def test_structured_end_turn_with_thinking_finishes_both_passes_and_counts_the_schema(self):
+        for model in review.PRICES:
+            with self.subTest(model=model):
+                claude = review.Claude(model)
+                requests = []
+                def request(path, body):
+                    requests.append((path, deepcopy(body)))
+                    if path == "messages/count_tokens":
+                        return {"input_tokens": 10}
+                    return message([{"type": "thinking", "thinking": "PRIVATE_REASONING", "signature": "SIGNATURE"},
+                                    *report_blocks(REPORT)])
+                with patch.object(claude, "request", side_effect=request), \
+                        patch("sys.stdout", new_callable=io.StringIO) as output:
+                    self.assertEqual(claude.review("{}", review.Sources(FakeGitHub(), PR), []), REPORT)
+                self.assertEqual(len(requests), 4)
+                for count, paid in (requests[:2], requests[2:]):
+                    self.assertEqual(count[1]["output_config"], paid[1]["output_config"])
+                    self.assertEqual(paid[1]["output_config"]["format"]["schema"], review.REPORT_SCHEMA)
+                    self.assertEqual(paid[1]["max_tokens"], 24000)
+                    self.assertEqual({t["name"] for t in paid[1]["tools"]},
+                                     {"read_file", "search_file", "list_directory"})
+                self.assertNotIn("PRIVATE_REASONING", output.getvalue())
+                self.assertNotIn("SIGNATURE", output.getvalue())
+
+    def test_truncated_refused_or_unknown_response_never_uses_a_clean_looking_json_report(self):
+        for reason in ("max_tokens", "model_context_window_exceeded", "refusal", "pause_turn", "stop_sequence",
+                       "PRIVATE_UNKNOWN_REASON"):
+            with self.subTest(reason=reason):
+                api = self.successful_api()
+                response = {**message(report_blocks(REPORT)), "stop_reason": reason}
+                with patch.object(review.Claude, "request", side_effect=[{"input_tokens": 10}, response]) as request, \
+                        patch("sys.stdout", new_callable=io.StringIO) as output:
+                    with self.assertRaisesRegex(ValueError, "stop_reason="):
+                        review.review_pr(api, 7, review.MODEL)
+                self.assertEqual(request.call_count, 2)
+                self.assertEqual(api.status_records[0]["state"], "error")
+                self.assertFalse(any(r["state"] == "success" for r in api.status_records))
+                self.assertFalse(any(r["description"].startswith(review.COMPLETED) for r in api.status_records))
+                body = next(w[2]["body"] for w in api.writes if w[1] == "issues/7/comments")
+                self.assertIn("stop_reason=" + ("unknown" if reason.startswith("PRIVATE") else reason), body)
+                self.assertNotIn("PRIVATE_UNKNOWN_REASON", output.getvalue() + body)
+
+    def test_malformed_empty_and_contradictory_final_responses_are_not_accepted(self):
+        for response in (message([{"type": "text", "text": "PRIVATE_NOT_JSON"}]), message([]),
+                         message([*report_blocks(REPORT), *report_blocks(REPORT)]),
+                         {**message([{"type": "tool_use", "id": "bad", "name": "read_file", "input": {}}]),
+                          "stop_reason": "end_turn"},
+                         {**message(report_blocks(REPORT)), "stop_reason": "tool_use"}):
+            with self.subTest(response=response):
+                claude = review.Claude(review.MODEL)
+                with patch.object(claude, "request", side_effect=[{"input_tokens": 10}, response]) as request, \
+                        patch("sys.stdout", new_callable=io.StringIO) as output:
+                    with self.assertRaises(ValueError) as error:
+                        claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+                self.assertEqual(request.call_count, 2)
+                self.assertNotIn("PRIVATE_NOT_JSON", str(error.exception) + output.getvalue())
+
+    def test_report_validation_repair_preserves_signed_thinking_without_reusing_evidence(self):
+        claude = review.Claude(review.MODEL)
+        report = {**REPORT, "findings": [FINDING]}
+        signed = {"type": "thinking", "thinking": "PRIVATE", "signature": "SIGNED"}
+        invalid = message([signed, *report_blocks(report)])
+        read = message([{"type": "tool_use", "id": "read", "name": "read_file",
+                         "input": {"path": "src/lib.rs", "revision": "head", "start": 8, "count": 1}}])
+        responses = iter([invalid, read, message(report_blocks(report)), read, message(report_blocks(report))])
+        bodies = []
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            bodies.append(deepcopy(body))
+            return next(responses)
+        with patch.object(claude, "request", side_effect=request):
+            self.assertEqual(claude.review("{}", review.Sources(FakeGitHub(), PR), PR["review_files"]), report)
+        self.assertEqual(bodies[1]["messages"][1]["content"], invalid["content"])
+        self.assertIn("anchor source line", bodies[1]["messages"][2]["content"])
+        self.assertEqual(len(bodies[3]["messages"]), 1)
+
+    def test_remaining_output_budget_caps_the_verifier_including_thinking(self):
+        claude = review.Claude(review.MODEL)
+        bodies = []
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            bodies.append(deepcopy(body))
+            return message(report_blocks(REPORT), {"input_tokens": 10,
+                                                  "output_tokens": 90 if len(bodies) == 1 else 10})
+        with patch.object(review, "MAX_OUTPUT", 100), patch.object(claude, "request", side_effect=request):
+            self.assertEqual(claude.review("{}", review.Sources(FakeGitHub(), PR), []), REPORT)
+        self.assertEqual([b["max_tokens"] for b in bodies], [100, 10])
+        self.assertEqual(claude.output_used, 100)
 
     def test_lockfile_changes_remain_in_diff_without_full_lockfile_reads(self):
         api = FakeGitHub()
@@ -595,8 +686,7 @@ class ReviewTests(unittest.TestCase):
             if path == "messages/count_tokens":
                 return {"input_tokens": 10}
             api.pr["draft"] = True
-            return {"usage": {"input_tokens": 10, "output_tokens": 1}, "stop_reason": "tool_use",
-                    "content": [{"type": "tool_use", "id": "finish", "name": "finish_review", "input": REPORT}]}
+            return message(report_blocks(REPORT))
         with patch.object(review.Claude, "request", new=request):
             review.review_pr(api, 7, review.MODEL)
         self.assertEqual(calls, ["messages/count_tokens", "messages"])
@@ -692,15 +782,14 @@ class ReviewTests(unittest.TestCase):
         def request(path, body):
             if path == "messages/count_tokens":
                 return {"input_tokens": 150}
-            return {"usage": tokens, "stop_reason": "tool_use", "content": [
-                {"type": "tool_use", "id": "finish", "name": "finish_review", "input": REPORT}]}
+            return message(report_blocks(REPORT), tokens)
         with patch.object(claude, "request", side_effect=request), \
                 patch("sys.stdout", new_callable=io.StringIO) as output:
             claude.review("PRIVATE_SOURCE_SENTINEL", review.Sources(FakeGitHub(), PR), [])
         self.assertEqual(claude.usage, {"analysis": tokens, "verification": tokens})
         self.assertEqual(claude.input_used, 300)
         self.assertEqual(claude.output_used, 10)
-        records = [json.loads(line) for line in output.getvalue().splitlines() if line.startswith("{")]
+        records = [json.loads(line) for line in output.getvalue().splitlines() if '"event": "claude_usage"' in line]
         self.assertEqual(len(records), 4)
         self.assertEqual([r["phase"] for r in records], ["analysis", "verification", "analysis", "verification"])
         self.assertAlmostEqual(records[0]["estimated_usd"], 0.00035)
@@ -719,7 +808,7 @@ class ReviewTests(unittest.TestCase):
                 patch("sys.stdout", new_callable=io.StringIO) as output:
             with self.assertRaises(ValueError):
                 claude.review("{}", review.Sources(FakeGitHub(), PR), [])
-        records = [json.loads(line) for line in output.getvalue().splitlines() if line.startswith("{")]
+        records = [json.loads(line) for line in output.getvalue().splitlines() if '"event": "claude_usage"' in line]
         self.assertEqual(records[-2]["step"], "total")
         self.assertEqual(records[-2]["output_tokens"], 4)
         self.assertEqual(records[-1]["output_tokens"], 0)

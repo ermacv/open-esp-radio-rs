@@ -65,8 +65,11 @@ stops obsolete analysis without posting a verdict. Publication also rechecks
 that the PR is still open and non-draft with the same inputs.
 
 Opening, marking ready or updating a non-draft PR from a branch in this
-repository invalidates the previous verdict and waits for its latest `CI` push
-run to succeed. Failed CI blocks merging without any Claude requests or review
+repository invalidates the previous verdict and waits for its latest `CI` run
+on the current head to succeed, whether started by push or manually. A manual
+run can supersede a cancelled push run. A newer pending, failed or cancelled run
+still invalidates older successful runs; a success on another SHA cannot qualify.
+Failed CI blocks merging without any Claude requests or review
 comments; a successful CI rerun can start the analysis. Manual review requests
 also require successful CI. The reviewer then reads the complete changed-file
 list and patches, explicitly

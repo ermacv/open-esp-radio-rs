@@ -11,6 +11,7 @@ from copy import deepcopy
 from decimal import Decimal
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 import claude_review as review
 
@@ -709,6 +710,40 @@ class ReviewTests(unittest.TestCase):
         self.assertIsNone(review.ci_state(api, PR["head"]["sha"])[0])
         api.runs[-1].update(status="completed", conclusion="failure")
         self.assertIs(review.ci_state(api, PR["head"]["sha"])[0], False)
+
+    def test_manual_ci_can_supersede_cancelled_push_without_accepting_stale_success(self):
+        api = self.successful_api()
+        cancelled = {"run_number": 10, "run_attempt": 1, "status": "completed",
+                     "conclusion": "cancelled", "html_url": "https://example/push",
+                     "event": "push", "head_sha": PR["head"]["sha"]}
+        manual = {**cancelled, "run_number": 11, "event": "workflow_dispatch",
+                  "status": "in_progress", "conclusion": None, "html_url": "https://example/manual"}
+        api.runs = [cancelled, manual, {**manual, "run_number": 99, "head_sha": "f" * 40,
+                                      "status": "completed", "conclusion": "success"}]
+        original_request = api.request
+        def request(method, path, data=None):
+            if method == "GET" and path.startswith("actions/workflows/ci.yml/runs?"):
+                query = parse_qs(urlsplit(path).query)
+                runs = [r for r in api.runs if r["head_sha"] == query["head_sha"][0]]
+                if "event" in query:
+                    runs = [r for r in runs if r["event"] == query["event"][0]]
+                return {"workflow_runs": deepcopy(runs)}
+            return original_request(method, path, data)
+        with patch.object(api, "request", side_effect=request), \
+                patch.object(review.Claude, "review", return_value=deepcopy(REPORT)) as analyze:
+            self.assertIsNone(review.ci_state(api, PR["head"]["sha"])[0])
+            manual.update(status="completed", conclusion="success")
+            self.assertEqual(review.ci_state(api, PR["head"]["sha"]), (True, manual["html_url"]))
+            review.review_pr(api, 7, review.MODEL)
+            self.assertEqual(api.writes[-1][2]["state"], "success")
+            analyze.assert_called_once()
+            latest = {**cancelled, "run_number": 12, "status": "in_progress", "conclusion": None}
+            api.runs.append(latest)
+            self.assertIsNone(review.ci_state(api, PR["head"]["sha"])[0])
+            latest.update(status="completed", conclusion="failure")
+            self.assertIs(review.ci_state(api, PR["head"]["sha"])[0], False)
+            api.runs.append({**manual, "run_number": 13, "status": "completed", "conclusion": "cancelled"})
+            self.assertIs(review.ci_state(api, PR["head"]["sha"])[0], False)
 
     def test_stale_head_base_requirements_or_closed_pr_never_get_a_verdict(self):
         mutations = [{"head": {"sha": "c" * 40}}, {"base": {"sha": "c" * 40}},

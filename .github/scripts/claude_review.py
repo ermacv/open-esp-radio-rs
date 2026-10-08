@@ -696,7 +696,9 @@ class Claude:
 
 
 def ci_state(api, sha):
-    runs = api.request("GET", f"actions/workflows/ci.yml/runs?head_sha={sha}&event=push&per_page=100")["workflow_runs"]
+    # CI declares push and workflow_dispatch; both run the full registry for
+    # this exact head. A manual run may supersede a cancelled push run.
+    runs = api.request("GET", f"actions/workflows/ci.yml/runs?head_sha={sha}&per_page=100")["workflow_runs"]
     runs = sorted(runs, key=lambda run: (run["run_number"], run["run_attempt"]), reverse=True)
     if not runs or runs[0]["status"] != "completed":
         return None, "ожидается завершение CI"

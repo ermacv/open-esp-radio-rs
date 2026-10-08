@@ -33,6 +33,19 @@
 //! no peripheral latency and no PHY other than LE 1M, and connectable
 //! advertising needs the random source that encryption draws from.
 //!
+//! Schedule calculations use checked radio-domain arithmetic. `next_request`
+//! returns `Ok(None)` for ordinary absence of work or a bounded placement
+//! conflict, and a contextual [`PlanningError`] when a required continuation
+//! cannot fit the epoch. Calculation precedes committing provisional owners;
+//! cancellation and release requests do not require a future anchor.
+//! The service ends admission on planning failure and its lifecycle owner
+//! settles the retained core and admitted identities before returning memory.
+//!
+//! Receive PDUs and TX acknowledgements remain usable after a capture timing
+//! failure. A failed timestamp never opens or updates a connection time
+//! reference; the identified event ends with `TimingFailed` and other events
+//! continue through the same service.
+//!
 //! Commands complete in order. Reset, advertising and scanning enable
 //! changes, filter accept list changes, advertising-data updates while
 //! advertising and Test End complete
@@ -53,11 +66,15 @@ mod diagnostic;
 mod dtm;
 mod output;
 mod peripheral;
+mod planning;
 mod scanning;
 
 pub use controller::{ControllerBusy, LeController, LeControllerConfig, PLANNING_SLACK};
 pub use oer_bluetooth_ll::control::LeVersionInformation;
 pub use output::{HCI_PACKET_CAPACITY, HciPacket};
+pub use planning::{
+    PlanningCalculation, PlanningCause, PlanningError, PlanningOperation, PlanningRole,
+};
 pub use scanning::{DUPLICATE_FILTER_CAPACITY, MINIMUM_SCAN_WINDOW};
 
 #[cfg(test)]

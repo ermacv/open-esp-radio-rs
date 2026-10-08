@@ -35,11 +35,20 @@ enum Seen {
     Anchor(EventId, Option<LeInstant>),
     Acknowledged(ConnectionId),
     Test(EventId, TestReport),
+    TimingFailed(
+        EventId,
+        oer_bluetooth_radio::CaptureError,
+        bool,
+        Result<Option<LeInstant>, oer_bluetooth_radio::CaptureError>,
+    ),
     Fault,
 }
 
 #[derive(Default)]
-struct Sink(Vec<Seen>, Vec<Option<LeInstant>>);
+struct Sink(
+    Vec<Seen>,
+    Vec<Result<Option<LeInstant>, oer_bluetooth_radio::CaptureError>>,
+);
 
 impl BluetoothRadioSink for Sink {
     fn outcome(&mut self, outcome: RadioOutcome<'_>) {
@@ -55,6 +64,15 @@ impl BluetoothRadioSink for Sink {
                         anchor: Some(anchor),
                     },
             } => Seen::Anchor(id, Some(anchor)),
+            RadioOutcome::EventEnded {
+                id,
+                result:
+                    EventResult::TimingFailed {
+                        cause,
+                        executed,
+                        anchor,
+                    },
+            } => Seen::TimingFailed(id, cause, executed, anchor),
             RadioOutcome::EventEnded { id, result } => {
                 Seen::Ended(id, matches!(result, EventResult::Executed { .. }))
             }
@@ -85,7 +103,7 @@ fn view(busy: bool) -> SchedulerHardwareView {
 fn window(start: u64, duration: u32) -> LeWindow {
     LeWindow::new(
         LeInstant::from_micros(start),
-        RadioDuration::from_micros(duration),
+        RadioDuration::from_micros(u64::from(duration)),
     )
     .unwrap()
 }
@@ -433,7 +451,7 @@ fn a_connectable_set_receives_its_requests() {
         radio
             .memory
             .non_scanning
-            .emulate_receive_for_validation(&scan_request, source)
+            .emulate_receive_for_validation(&scan_request, source, 1_000)
     );
     execute_all(&radio, 0);
     radio.complete(&mut sink);
@@ -454,8 +472,8 @@ fn captures_become_the_on_air_packet_start() {
     assert!(delay > 0);
     let raw = radio.clock.raw(20_000);
     assert_eq!(
-        radio.clock.packet_start(raw).as_micros(),
-        radio.clock.instant(raw).as_micros() - u64::from(delay)
+        radio.clock.packet_start(raw).unwrap().as_micros(),
+        radio.clock.instant(raw).unwrap().as_micros() - u64::from(delay)
     );
 }
 
@@ -521,22 +539,29 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
         ),
         Err(RequestError::Busy)
     );
+    // Prepare the model capture before handing the item to hardware.
+    let raw_anchor = radio.clock.raw(10_000);
+    let instance = &radio.connections[0].as_ref().unwrap().0.instance;
+    assert!(
+        radio
+            .memory
+            .connections
+            .emulate_anchor_capture_for_validation(instance, raw_anchor)
+    );
     let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
         panic!("the event starts")
     };
-    // The event captured an anchor.
     execute_all(&radio, 1 << 11);
     radio.complete(&mut sink);
     assert!(matches!(sink.0.as_slice(), [Seen::Anchor(id, Some(_))] if *id == EventId::new(1)));
 
     sink.0.clear();
     let slot = &radio.connections[0].as_ref().unwrap().0;
-    assert!(
-        radio
-            .memory
-            .connections
-            .emulate_receive_for_validation(&slot.instance, &[0x02, 1, 9])
-    );
+    assert!(radio.memory.connections.emulate_receive_for_validation(
+        &slot.instance,
+        &[0x02, 1, 9],
+        1_000
+    ));
     radio
         .request(
             event(
@@ -571,17 +596,36 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
 #[test]
 fn a_connection_event_may_run_past_its_reservation_within_the_interval() {
     // Up to 7,499 us the event may take the whole interval.
-    assert_eq!(super::connection_event_span(7_499, 40), Ok(7_499));
     assert_eq!(
-        super::connection_event_span(7_500, 40),
-        Ok(7_500 - 2_000 + 40)
+        super::connection_event_span(
+            RadioDuration::from_micros(7_499),
+            RadioDuration::from_micros(40)
+        ),
+        Ok(RadioDuration::from_micros(7_499))
     );
     assert_eq!(
-        super::connection_event_span(30_000, 16),
-        Ok(30_000 - 2_000 + 16)
+        super::connection_event_span(
+            RadioDuration::from_micros(7_500),
+            RadioDuration::from_micros(40)
+        ),
+        Ok(RadioDuration::from_micros(7_500 - 2_000 + 40))
+    );
+    assert_eq!(
+        super::connection_event_span(
+            RadioDuration::from_micros(30_000),
+            RadioDuration::from_micros(16)
+        ),
+        Ok(RadioDuration::from_micros(30_000 - 2_000 + 16))
     );
     // The span never depends on the reserved air window.
-    assert!(super::connection_event_span(30_000, 16).unwrap() > 1_074);
+    assert!(
+        super::connection_event_span(
+            RadioDuration::from_micros(30_000),
+            RadioDuration::from_micros(16)
+        )
+        .unwrap()
+            > RadioDuration::from_micros(1_074)
+    );
 }
 
 #[test]
@@ -1044,4 +1088,103 @@ fn list_changes_edit_the_device_table_up_to_its_capacity() {
     change(&mut radio, AcceptListChange::Clear).unwrap();
     assert_eq!(radio.device_table_publication().count.get(), 0);
     assert!(sink.0.is_empty());
+}
+
+#[test]
+fn capture_projection_and_phy_correction_refuse_epoch_boundaries() {
+    use oer_bluetooth_radio::{CaptureError, TimingError};
+    let mut radio = radio();
+    let delay = u64::from(BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros());
+    assert_eq!(
+        radio.clock.packet_start(radio.clock.raw(delay)),
+        Ok(LeInstant::from_micros(0))
+    );
+    assert_eq!(
+        radio.clock.packet_start(radio.clock.raw(delay - 1)),
+        Err(CaptureError::PacketStartCorrection(
+            TimingError::BeforeEpoch
+        ))
+    );
+    assert_eq!(
+        radio.clock.instant(radio.clock.raw(u64::MAX)),
+        Err(CaptureError::EpochProjection(TimingError::BeforeEpoch))
+    );
+    radio.clock.now = u64::MAX;
+    assert_eq!(
+        radio.clock.instant(radio.clock.raw(u64::MAX)),
+        Ok(LeInstant::from_micros(u64::MAX))
+    );
+    assert_eq!(
+        radio.clock.instant(radio.clock.raw(0)),
+        Err(CaptureError::EpochProjection(TimingError::BeyondEpoch))
+    );
+}
+
+#[test]
+fn a_failed_capture_preserves_the_pdu_and_settles_only_its_event() {
+    use oer_bluetooth_radio::{CaptureError, TimingError};
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    radio
+        .request(
+            RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+                set: AdvertisingSetId::new(0),
+                pdu: AdvertisingPdu::new(&ADV_IND).unwrap(),
+                reception: AdvertisingReception::ScanResponse(
+                    AdvertisingPdu::new(&SCAN_RSP).unwrap(),
+                ),
+                tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
+            }),
+            &mut sink,
+        )
+        .unwrap();
+    let channels = AdvertisingChannels::single(AdvertisingChannel::Channel37);
+    radio
+        .request(advertise(7, 10_000, channels), &mut sink)
+        .unwrap();
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::Start(_)
+    ));
+    let source = radio
+        .memory
+        .connectable
+        .receive_source(&radio.connectable[0].as_ref().unwrap().instance)
+        .unwrap();
+    let pdu = [0x03, 12, 9, 9, 9, 9, 9, 9, 1, 2, 3, 4, 5, 6];
+    assert!(
+        radio
+            .memory
+            .non_scanning
+            .emulate_receive_for_validation(&pdu, source, 0)
+    );
+    execute_all(&radio, 0);
+    radio.complete(&mut sink);
+    let cause = CaptureError::PacketStartCorrection(TimingError::BeforeEpoch);
+    assert_eq!(
+        sink.0,
+        [
+            Seen::Received(EventId::new(7), pdu.to_vec()),
+            Seen::TimingFailed(EventId::new(7), cause, true, Ok(None))
+        ]
+    );
+    assert_eq!(sink.1, [Err(cause)]);
+    assert!(!radio.faulted);
+    radio.complete(&mut sink);
+    assert_eq!(
+        sink.0.len(),
+        2,
+        "terminal and receive resources settle once"
+    );
+    radio
+        .request(advertise(8, 20_000, channels), &mut sink)
+        .unwrap();
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::Start(_)
+    ));
+    execute_all(&radio, 0);
+    radio.complete(&mut sink);
+    assert_eq!(sink.0.last(), Some(&Seen::Ended(EventId::new(8), true)));
 }

@@ -729,6 +729,7 @@ impl<const N: usize> PeripheralConnectionPool<N> {
         &mut self,
         instance: &SchedulerRoleInstance,
         pdu: &[u8],
+        captured_at: u32,
     ) -> bool {
         let Ok(cpu) = self.cpu(instance) else {
             return false;
@@ -736,7 +737,25 @@ impl<const N: usize> PeripheralConnectionPool<N> {
         let Some(rx) = cpu.state.rx.as_mut() else {
             return false;
         };
-        rx.view(&cpu.graph.rx).emulate_receive(pdu, 0)
+        rx.view(&cpu.graph.rx).emulate_receive(pdu, 0, captured_at)
+    }
+
+    /// Emulate the hardware anchor capture in the active event item.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn emulate_anchor_capture_for_validation(
+        &mut self,
+        instance: &SchedulerRoleInstance,
+        raw_ticks: u32,
+    ) -> bool {
+        let Ok((graph, _, state)) = self.shared(instance) else {
+            return false;
+        };
+        if state.phase != (PeripheralConnectionPhase::Active { event: true }) {
+            return false;
+        }
+        graph.items[EVENT_ITEM].words[SCHEDULER_ITEM_CAPTURED_ANCHOR].set(raw_ticks);
+        true
     }
 
     /// Latest hardware receive time; the creation seed until a valid

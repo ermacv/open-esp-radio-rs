@@ -70,6 +70,12 @@ use oer_bluetooth_radio::{
     RadioOutcome, RadioRequest, RadioTiming, TxPower,
 };
 
+use crate::planning::{
+    PlanningCalculation as C, PlanningCause, PlanningError, PlanningOperation as O,
+    PlanningRole as R,
+};
+use oer_bluetooth_radio::TimingError;
+
 use crate::{advertising::ConnectionIndication, coexistence};
 
 /// The connection's identifier at the backend.
@@ -147,7 +153,7 @@ struct Event {
     id: EventId,
     reservation: LeWindow,
     anchor: LeInstant,
-    transmit_window: u32,
+    transmit_window: RadioDuration,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -226,6 +232,8 @@ impl Events {
 
 // CAPABILITY: bluetooth-peripheral, bluetooth-peripheral-latency, bluetooth-establishment-supervision-timeout, bluetooth-missed-event-recovery, bluetooth-termination, bluetooth-ll-data-pdu-tx, bluetooth-sn-nesn-retransmission-duplicate-suppression-and-empty-pdu-acknowledgments
 pub(crate) struct Peripheral {
+    /// Accepted indication and its exact LL owner, before first-window validation.
+    opening: Option<(ConnectionIndication, LePeripheralConnection)>,
     connection: Option<Connection>,
     events: Events,
     local_version: Option<LeVersionInformation>,
@@ -240,6 +248,7 @@ pub(crate) struct Peripheral {
 impl Peripheral {
     pub(crate) const fn new(local_version: Option<LeVersionInformation>) -> Self {
         Self {
+            opening: None,
             connection: None,
             events: Events::new(),
             local_version,
@@ -251,7 +260,7 @@ impl Peripheral {
 
     /// Whether a connection exists or is still closing.
     pub(crate) const fn is_active(&self) -> bool {
-        self.connection.is_some()
+        self.opening.is_some() || self.connection.is_some()
     }
 
     /// The handle of the Host-visible connection.
@@ -297,25 +306,16 @@ impl Peripheral {
 
     /// Create the connection from an accepted indication.
     pub(crate) fn open(&mut self, indication: ConnectionIndication) {
-        let request = indication.request;
         let connection = LePeripheralConnection::from_request(
-            request,
-            // The connectable set advertises Channel Selection Algorithm #2.
+            indication.request,
             LeChannelSelectionAlgorithm::AlgorithmTwo,
         );
-        let packet_end = indication
-            .at
-            .checked_add(RadioDuration::from_micros(
-                LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS,
-            ))
-            .expect("radio time does not overflow");
-        let timing = request.timing();
-        let anchor = packet_end
-            .checked_add(RadioDuration::from_micros(
-                timing.first_window_start_micros(),
-            ))
-            .expect("radio time does not overflow");
-        let transmit_window = timing.first_window_end_micros() - timing.first_window_start_micros();
+        self.opening = Some((indication, connection));
+    }
+
+    fn finish_open(&mut self, anchor: LeInstant, transmit_window: RadioDuration) {
+        let (indication, connection) = self.opening.take().expect("validated pending indication");
+        let request = indication.request;
         self.connection = Some(Connection {
             request,
             created_at: indication.at,
@@ -351,6 +351,7 @@ impl Peripheral {
 
     /// End the connection without a Host event, as Reset does.
     pub(crate) fn abort(&mut self) {
+        self.opening = None;
         if let Some(connection) = &mut self.connection {
             connection.closing = Some(Closing {
                 reason: None,
@@ -362,6 +363,9 @@ impl Peripheral {
     /// Whether the connection has work for the radio. `room` tells whether
     /// the Host output can take one event's receptions.
     pub(crate) fn wants_radio(&self, room: bool) -> bool {
+        if self.opening.is_some() {
+            return true;
+        }
         let Some(connection) = &self.connection else {
             return false;
         };
@@ -393,16 +397,23 @@ impl Peripheral {
 
     /// The reservation of the next event at its nominal anchor, which other
     /// roles leave free.
-    pub(crate) fn planned(&self, timing: RadioTiming) -> Option<LeWindow> {
-        let connection = self.connection.as_ref()?;
-        if connection.closing.is_some() {
-            return None;
-        }
-        let interval = RadioDuration::from_micros(connection.request.timing().interval_micros());
-        let anchor = match connection.event {
-            Some(event) => event.anchor.checked_add(interval)?,
-            None => connection.phase.anchor.checked_add(interval)?,
+    pub(crate) fn planned(&self, timing: RadioTiming) -> Result<Option<LeWindow>, PlanningError> {
+        let Some(connection) = self.connection.as_ref() else {
+            return Ok(None);
         };
+        if connection.closing.is_some() {
+            return Ok(None);
+        }
+        let interval =
+            RadioDuration::from_micros(u64::from(connection.request.timing().interval_micros()));
+        let previous = connection
+            .event
+            .map_or(connection.phase.anchor, |event| event.anchor);
+        let anchor = previous.checked_add(interval).ok_or(error(
+            O::FutureReservation,
+            C::Recurrence,
+            TimingError::BeyondEpoch,
+        ))?;
         let plan = timing::recurring(
             anchor,
             connection.phase.reference,
@@ -410,7 +421,10 @@ impl Peripheral {
             connection.request.sleep_clock_accuracy().worst_case_ppm(),
             timing.connection,
         )?;
-        timing.reservation(plan.window)
+        timing
+            .reservation(plan.window)
+            .map(Some)
+            .map_err(|cause| error(O::FutureReservation, C::Reservation, cause))
     }
 
     /// The next radio request. `earliest` is the earliest anchor the backend
@@ -419,10 +433,51 @@ impl Peripheral {
         &mut self,
         ids: &mut u32,
         now: LeInstant,
-        earliest: LeInstant,
         timing: RadioTiming,
         room: bool,
-    ) -> Option<RadioRequest<'_>> {
+    ) -> Result<Option<RadioRequest<'_>>, PlanningError> {
+        if let Some((indication, _)) = &self.opening {
+            let wire = indication.request.timing();
+            let packet_end = indication
+                .at
+                .checked_add(RadioDuration::from_micros(u64::from(
+                    LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS,
+                )))
+                .ok_or(error(
+                    O::ConnectionIndication,
+                    C::FirstAnchor,
+                    TimingError::BeyondEpoch,
+                ))?;
+            let anchor = packet_end
+                .checked_add(RadioDuration::from_micros(u64::from(
+                    wire.first_window_start_micros(),
+                )))
+                .ok_or(error(
+                    O::ConnectionIndication,
+                    C::FirstAnchor,
+                    TimingError::BeyondEpoch,
+                ))?;
+            let transmit_window =
+                RadioDuration::from_micros(u64::from(wire.first_window_end_micros()))
+                    .checked_sub(RadioDuration::from_micros(u64::from(
+                        wire.first_window_start_micros(),
+                    )))
+                    .ok_or(error(
+                        O::ConnectionIndication,
+                        C::TransmitWindow,
+                        TimingError::DurationOverflow,
+                    ))?;
+            let plan = timing::first(anchor, transmit_window, timing.connection).map_err(
+                |mut cause| {
+                    cause.operation = O::ConnectionIndication;
+                    cause
+                },
+            )?;
+            timing
+                .reservation(plan.window)
+                .map_err(|cause| error(O::ConnectionIndication, C::Reservation, cause))?;
+            self.finish_open(anchor, transmit_window);
+        }
         if self
             .connection
             .as_ref()
@@ -430,44 +485,48 @@ impl Peripheral {
         {
             // Nothing reached the backend yet.
             self.connection = None;
-            return None;
+            return Ok(None);
         }
-        let connection = self.connection.as_mut()?;
+        let Some(connection) = self.connection.as_mut() else {
+            return Ok(None);
+        };
         if !connection.open_sent {
             connection.open_sent = true;
             self.requested = Some(RequestKind::Open);
             let access_address = connection.request.access_address().value().to_le_bytes();
-            return Some(RadioRequest::OpenConnection(ConnectionConfiguration {
-                connection: CONNECTION,
-                access_address: AccessAddress(access_address),
-                crc_init: CrcInit(connection.request.crc_initialization().wire_bytes()),
-                created_at: connection.created_at,
-                tx_power: TxPower::from_dbm(0),
-                phy: LePhy::Le1M,
-            }));
+            return Ok(Some(RadioRequest::OpenConnection(
+                ConnectionConfiguration {
+                    connection: CONNECTION,
+                    access_address: AccessAddress(access_address),
+                    crc_init: CrcInit(connection.request.crc_initialization().wire_bytes()),
+                    created_at: connection.created_at,
+                    tx_power: TxPower::from_dbm(0),
+                    phy: LePhy::Le1M,
+                },
+            )));
         }
         if let Some(closing) = &mut connection.closing {
             return match connection.event {
                 Some(event) if !closing.cancel_sent => {
                     closing.cancel_sent = true;
                     self.requested = Some(RequestKind::Cancel);
-                    Some(RadioRequest::Cancel(event.id))
+                    Ok(Some(RadioRequest::Cancel(event.id)))
                 }
-                Some(_) => None,
+                Some(_) => Ok(None),
                 None => {
                     self.requested = Some(RequestKind::Close);
-                    Some(RadioRequest::CloseConnection(CONNECTION))
+                    Ok(Some(RadioRequest::CloseConnection(CONNECTION)))
                 }
             };
         }
         if connection.event.is_some() {
-            return None;
+            return Ok(None);
         }
-        connection.check_procedures(now, &mut self.events);
+        connection.check_procedures(now, &mut self.events)?;
         if connection.closing.is_some() {
             // The first closing step: no event is in progress.
             self.requested = Some(RequestKind::Close);
-            return Some(RadioRequest::CloseConnection(CONNECTION));
+            return Ok(Some(RadioRequest::CloseConnection(CONNECTION)));
         }
         if connection.pending.is_none()
             && let Some((pending, length)) = connection.prepare_transmission()
@@ -479,36 +538,31 @@ impl Peripheral {
             };
             let payload_length = connection.tx_length(pending, length);
             self.requested = Some(RequestKind::Transmit);
-            return Some(RadioRequest::Transmit {
+            return Ok(Some(RadioRequest::Transmit {
                 connection: CONNECTION,
                 pdu: DataPdu::new(kind, &connection.tx[..payload_length])
                     .expect("a legacy data PDU fits"),
-            });
+            }));
         }
         if !room {
-            if connection.supervision_lost(now) {
+            if connection.supervision_lost(now)? {
                 connection.closing = Some(Closing {
                     reason: Some(HciError::CONN_TIMEOUT.to_status()),
                     cancel_sent: false,
                 });
                 self.requested = Some(RequestKind::Close);
-                return Some(RadioRequest::CloseConnection(CONNECTION));
+                return Ok(Some(RadioRequest::CloseConnection(CONNECTION)));
             }
-            return None;
+            return Ok(None);
         }
-        let Some((prepared, event)) = connection.plan(earliest, timing) else {
+        let earliest = crate::planning::earliest(now, timing, R::Peripheral)?;
+        let Some((prepared, plan, reservation)) = connection.plan(earliest, timing)? else {
             if connection.closing.is_some() {
-                // Planning found the connection lost.
                 self.requested = Some(RequestKind::Close);
-                return Some(RadioRequest::CloseConnection(CONNECTION));
+                return Ok(Some(RadioRequest::CloseConnection(CONNECTION)));
             }
-            return None;
+            return Ok(None);
         };
-        let Event {
-            anchor: _,
-            transmit_window,
-            ..
-        } = event;
         let first = prepared.first_transmit_window_micros().is_some();
         let coexistence = coexistence::peripheral_connection_level(
             prepared.event_counter(),
@@ -517,35 +571,17 @@ impl Peripheral {
             connection.local_procedure_pending(),
         );
         let channel = DataChannel::new(prepared.channel().get()).expect("a data channel index");
-        let interval = RadioDuration::from_micros(prepared.timing().interval_micros());
-        let plan = if first {
-            timing::first(event.anchor, transmit_window, timing.connection)?
-        } else {
-            timing::recurring(
-                event.anchor,
-                connection.phase.reference,
-                transmit_window,
-                connection.request.sleep_clock_accuracy().worst_case_ppm(),
-                timing.connection,
-            )?
-        };
-        let Some(reservation) = timing.reservation(plan.window) else {
-            connection.link = Link::Completed(
-                prepared
-                    .into_submitted()
-                    .complete(LePeripheralConnectionEventPeerActivity::Missed),
-            );
-            return None;
-        };
+        let interval = RadioDuration::from_micros(u64::from(prepared.timing().interval_micros()));
         let id = crate::controller::allocate_event(ids);
         let event = Event {
             id,
             reservation,
-            ..event
+            anchor: plan.anchor,
+            transmit_window: plan.transmit_window,
         };
         connection.submitting = Some((prepared, event));
         self.requested = Some(RequestKind::Event);
-        Some(RadioRequest::ConnectionEvent(ConnectionEvent {
+        Ok(Some(RadioRequest::ConnectionEvent(ConnectionEvent {
             id,
             connection: CONNECTION,
             channel,
@@ -554,7 +590,7 @@ impl Peripheral {
             timing: plan.timing,
             priority: if first { FIRST_PRIORITY } else { PRIORITY },
             coexistence,
-        }))
+        })))
     }
 
     /// The backend's answer to the last request of the connection.
@@ -658,16 +694,30 @@ impl Peripheral {
                 let activity = match result {
                     EventResult::Executed {
                         anchor: Some(anchor),
+                    }
+                    | EventResult::TimingFailed {
+                        anchor: Ok(Some(anchor)),
+                        ..
                     } => {
                         connection.phase = timing::Phase {
                             anchor,
                             reference: anchor,
-                            transmit_window: 0,
+                            transmit_window: RadioDuration::from_micros(0),
                         };
                         connection.last_activity = Some(anchor);
                         LePeripheralConnectionEventPeerActivity::Observed
                     }
-                    _ => LePeripheralConnectionEventPeerActivity::Missed,
+                    // Hardware captured a peer packet, but its timestamp is
+                    // invalid. Account peer activity without inventing a time
+                    // reference or renewing timestamp-based supervision.
+                    EventResult::TimingFailed { anchor: Err(_), .. } => {
+                        LePeripheralConnectionEventPeerActivity::Observed
+                    }
+                    EventResult::Executed { anchor: None }
+                    | EventResult::NotExecuted
+                    | EventResult::TimingFailed {
+                        anchor: Ok(None), ..
+                    } => LePeripheralConnectionEventPeerActivity::Missed,
                 };
                 connection.link = Link::Completed(in_flight.complete(activity));
                 connection.after_event(&mut self.events);
@@ -1023,14 +1073,24 @@ impl Connection {
     }
 
     /// Procedure timeouts, checked before planning.
-    fn check_procedures(&mut self, now: LeInstant, events: &mut Events) {
+    fn check_procedures(
+        &mut self,
+        now: LeInstant,
+        events: &mut Events,
+    ) -> Result<(), PlanningError> {
         if !self.local_procedure_pending() {
             self.procedure_since = None;
-            return;
+            return Ok(());
         }
-        let since = *self.procedure_since.get_or_insert(now);
-        if now.as_micros() - since.as_micros() < u64::from(PROCEDURE_TIMEOUT.as_micros()) {
-            return;
+        let since = self.procedure_since.unwrap_or(now);
+        let elapsed = now.checked_duration_since(since).ok_or(error(
+            O::ProcedureTimeout,
+            C::Elapsed,
+            TimingError::ReversedTime,
+        ))?;
+        if elapsed < PROCEDURE_TIMEOUT {
+            self.procedure_since = Some(since);
+            return Ok(());
         }
         self.procedure_since = None;
         if !self.security.is_idle() && !self.security.is_active() {
@@ -1041,14 +1101,22 @@ impl Connection {
             self.control.expire_local_procedure();
             self.poll_procedures(events);
         }
+        Ok(())
     }
 
-    /// Whether the supervision timeout passed at `now` since the last anchor a
-    /// received packet established.
-    fn supervision_lost(&self, now: LeInstant) -> bool {
-        let supervision = u64::from(self.request.timing().supervision_timeout_micros());
-        self.last_activity
-            .is_some_and(|last| now.as_micros().saturating_sub(last.as_micros()) > supervision)
+    fn supervision_lost(&self, now: LeInstant) -> Result<bool, PlanningError> {
+        let Some(last) = self.last_activity else {
+            return Ok(false);
+        };
+        let elapsed = now.checked_duration_since(last).ok_or(error(
+            O::Supervision,
+            C::Elapsed,
+            TimingError::ReversedTime,
+        ))?;
+        Ok(elapsed
+            > RadioDuration::from_micros(u64::from(
+                self.request.timing().supervision_timeout_micros(),
+            )))
     }
 
     /// Whether a local procedure awaits the central.
@@ -1127,25 +1195,33 @@ impl Connection {
         &mut self,
         earliest: LeInstant,
         timing: RadioTiming,
-    ) -> Option<(LePeripheralConnectionEventPrepared, Event)> {
+    ) -> Result<Option<(LePeripheralConnectionEventPrepared, timing::Plan, LeWindow)>, PlanningError>
+    {
         match core::mem::replace(&mut self.link, Link::Moved) {
             Link::Created(connection) => {
                 let prepared = connection.prepare_event();
-                let event = Event {
-                    id: EventId::new(0),
-                    reservation: LeWindow::new(
-                        LeInstant::from_micros(0),
-                        RadioDuration::from_micros(1),
-                    )
-                    .ok()?,
-                    anchor: self.phase.anchor,
-                    transmit_window: self.phase.transmit_window,
+                let geometry = timing::first(
+                    self.phase.anchor,
+                    self.phase.transmit_window,
+                    timing.connection,
+                )
+                .and_then(|plan| {
+                    timing
+                        .reservation(plan.window)
+                        .map(|reservation| (plan, reservation))
+                        .map_err(|cause| error(O::Event, C::Reservation, cause))
+                });
+                let (plan, reservation) = match geometry {
+                    Ok(geometry) => geometry,
+                    Err(cause) => {
+                        self.link = Link::Created(prepared.cancel());
+                        return Err(cause);
+                    }
                 };
-                let plan = timing::first(event.anchor, event.transmit_window, timing.connection)?;
                 if plan.window.start() >= earliest {
-                    return Some((prepared, event));
+                    return Ok(Some((prepared, plan, reservation)));
                 }
-                // Too late for the first window: it counts as missed.
+                // A legitimate missed first window advances the LL policy.
                 self.link = Link::Completed(
                     prepared
                         .into_submitted()
@@ -1156,7 +1232,7 @@ impl Connection {
             Link::Completed(completed) => self.plan_recurring(completed, earliest, timing),
             link => {
                 self.link = link;
-                None
+                Ok(None)
             }
         }
     }
@@ -1166,102 +1242,154 @@ impl Connection {
         mut completed: LePeripheralConnectionEventCompleted,
         earliest: LeInstant,
         timing: RadioTiming,
-    ) -> Option<(LePeripheralConnectionEventPrepared, Event)> {
+    ) -> Result<Option<(LePeripheralConnectionEventPrepared, timing::Plan, LeWindow)>, PlanningError>
+    {
         let peer_ppm = self.request.sleep_clock_accuracy().worst_case_ppm();
-        let supervision = u64::from(completed.timing().supervision_timeout_micros());
         let mut delta = 1_u16;
         for _ in 0..PLAN_ATTEMPTS {
-            let Some(step) = LePeripheralConnectionEventDelta::new(delta) else {
-                break;
-            };
+            let step = LePeripheralConnectionEventDelta::new(delta)
+                .expect("a validated nonzero event distance");
             let provisional = completed.prepare_recurring_event(step);
-            let (anchor, transmit_window) = self.anchor_of(&provisional, delta);
-            // Supervision: the anchor passes the timeout without a packet.
-            if let Some(last) = self.last_activity
-                && anchor.as_micros().saturating_sub(last.as_micros()) > supervision
-            {
-                completed = provisional.cancel();
-                self.link = Link::Completed(completed);
-                self.closing = Some(Closing {
-                    reason: Some(HciError::CONN_TIMEOUT.to_status()),
-                    cancel_sent: false,
-                });
-                return None;
-            }
-            if provisional.connection_state() == LePeripheralConnectionState::Created
-                && provisional.event_counter() >= 6
-            {
-                completed = provisional.cancel();
-                self.link = Link::Completed(completed);
-                self.closing = Some(Closing {
-                    reason: Some(HciError::CONN_FAILED_SYNCHRONIZATION_TIMEOUT.to_status()),
-                    cancel_sent: false,
-                });
-                return None;
-            }
-            let plan = timing::recurring(
-                anchor,
-                self.phase.reference,
-                transmit_window,
-                peer_ppm,
-                timing.connection,
-            );
-            match plan {
-                Some(plan) if plan.window.start() >= earliest => {
-                    let prepared = provisional.commit();
-                    return Some((
-                        prepared,
-                        Event {
-                            id: EventId::new(0),
-                            reservation: plan.window,
-                            anchor,
-                            transmit_window,
-                        },
+            let geometry = (|| {
+                let (anchor, transmit_window) = self.anchor_of(&provisional, delta)?;
+                let lost = if let Some(last) = self.last_activity {
+                    let elapsed = anchor.checked_duration_since(last).ok_or(error(
+                        O::Supervision,
+                        C::Elapsed,
+                        TimingError::ReversedTime,
+                    ))?;
+                    elapsed
+                        > RadioDuration::from_micros(u64::from(
+                            provisional.timing().supervision_timeout_micros(),
+                        ))
+                } else {
+                    false
+                };
+                if lost {
+                    return Ok(RecurringCandidate::Lost(HciError::CONN_TIMEOUT.to_status()));
+                }
+                if provisional.connection_state() == LePeripheralConnectionState::Created
+                    && provisional.event_counter() >= 6
+                {
+                    return Ok(RecurringCandidate::Lost(
+                        HciError::CONN_FAILED_SYNCHRONIZATION_TIMEOUT.to_status(),
                     ));
                 }
-                _ => {
+                let plan = timing::recurring(
+                    anchor,
+                    self.phase.reference,
+                    transmit_window,
+                    peer_ppm,
+                    timing.connection,
+                )?;
+                let reservation = timing
+                    .reservation(plan.window)
+                    .map_err(|cause| error(O::Event, C::Reservation, cause))?;
+                if plan.window.start() >= earliest {
+                    return Ok(RecurringCandidate::Ready(plan, reservation));
+                }
+                let interval =
+                    RadioDuration::from_micros(u64::from(provisional.timing().interval_micros()));
+                // The decoded wire interval is nonzero. A late window may
+                // have its nominal anchor ahead of earliest because of widening.
+                let behind = if earliest > anchor {
+                    earliest.checked_duration_since(anchor).ok_or(error(
+                        O::Event,
+                        C::SlotAlignment,
+                        TimingError::ReversedTime,
+                    ))?
+                } else {
+                    RadioDuration::from_micros(0)
+                };
+                let skip = (behind.as_micros() / interval.as_micros()).max(1);
+                let next = u64::from(delta)
+                    .checked_add(skip)
+                    .and_then(|next| u16::try_from(next).ok())
+                    .ok_or(PlanningError {
+                        role: R::Peripheral,
+                        operation: O::Event,
+                        calculation: C::SlotAlignment,
+                        cause: PlanningCause::EventDeltaOutsideRange,
+                    })?;
+                Ok(RecurringCandidate::Late(next))
+            })();
+            match geometry {
+                Ok(RecurringCandidate::Ready(plan, reservation)) => {
+                    return Ok(Some((provisional.commit(), plan, reservation)));
+                }
+                Ok(RecurringCandidate::Lost(reason)) => {
+                    self.link = Link::Completed(provisional.cancel());
+                    self.closing = Some(Closing {
+                        reason: Some(reason),
+                        cancel_sent: false,
+                    });
+                    return Ok(None);
+                }
+                Ok(RecurringCandidate::Late(next)) => {
                     completed = provisional.cancel();
-                    // Jump close to the first admissible interval.
-                    let interval = u64::from(completed.timing().interval_micros()).max(1);
-                    let behind = earliest.as_micros().saturating_sub(anchor.as_micros());
-                    let skip = u16::try_from(behind / interval).unwrap_or(u16::MAX);
-                    delta = delta.saturating_add(skip.max(1));
+                    delta = next;
+                }
+                Err(cause) => {
+                    self.link = Link::Completed(provisional.cancel());
+                    return Err(cause);
                 }
             }
         }
         self.link = Link::Completed(completed);
-        None
+        Ok(None)
     }
 
-    /// The anchor and uncertain transmit window of the event `delta` after
-    /// the last one.
     fn anchor_of(
         &self,
         provisional: &oer_bluetooth_ll::connection::LePeripheralConnectionRecurringEventProvisional,
         delta: u16,
-    ) -> (LeInstant, u32) {
+    ) -> Result<(LeInstant, RadioDuration), PlanningError> {
         let last = provisional.event_counter().wrapping_sub(delta);
-        let micros = match provisional.connection_timing_transition() {
+        let span = match provisional.connection_timing_transition() {
             Some(transition) => {
-                // Events up to the instant keep the old interval; the
-                // instant adds the new window offset (Core Vol 6 Part B
-                // 5.1.1).
+                // Wire event counters are modular. The physical intervals
+                // up to and after the instant are checked portable durations.
                 let before = transition.instant().wrapping_sub(last);
-                u64::from(transition.previous().interval_micros()) * u64::from(before)
-                    + u64::from(transition.updated().window_offset_units()) * 1_250
-                    + u64::from(transition.updated().interval_micros())
-                        * u64::from(delta.saturating_sub(before))
+                let after = delta.checked_sub(before).ok_or(error(
+                    O::Event,
+                    C::IntervalTransition,
+                    TimingError::DurationOverflow,
+                ))?;
+                RadioDuration::from_micros(u64::from(transition.previous().interval_micros()))
+                    .checked_mul(u64::from(before))
+                    .and_then(|span| {
+                        span.checked_add(RadioDuration::from_micros(
+                            u64::from(transition.updated().window_offset_units()) * 1_250,
+                        ))
+                    })
+                    .and_then(|span| {
+                        RadioDuration::from_micros(u64::from(
+                            transition.updated().interval_micros(),
+                        ))
+                        .checked_mul(u64::from(after))
+                        .and_then(|later| span.checked_add(later))
+                    })
             }
-            None => u64::from(provisional.timing().interval_micros()) * u64::from(delta),
-        };
+            None => RadioDuration::from_micros(u64::from(provisional.timing().interval_micros()))
+                .checked_mul(u64::from(delta)),
+        }
+        .ok_or(error(
+            O::Event,
+            C::IntervalTransition,
+            TimingError::DurationOverflow,
+        ))?;
         let transmit_window = match provisional.connection_timing_transition() {
-            Some(transition) => u32::from(transition.updated().window_size_units()) * 1_250,
+            Some(transition) => RadioDuration::from_micros(
+                u64::from(transition.updated().window_size_units()) * 1_250,
+            ),
             None => self.phase.transmit_window,
         };
-        (
-            LeInstant::from_micros(self.phase.anchor.as_micros() + micros),
-            transmit_window,
-        )
+        let anchor = self.phase.anchor.checked_add(span).ok_or(error(
+            O::Event,
+            C::Recurrence,
+            TimingError::BeyondEpoch,
+        ))?;
+        Ok((anchor, transmit_window))
     }
 }
 
@@ -1318,4 +1446,14 @@ const fn clock_accuracy(encoded: u8) -> ClockAccuracy {
         6 => ClockAccuracy::Ppm30,
         _ => ClockAccuracy::Ppm20,
     }
+}
+
+enum RecurringCandidate {
+    Ready(timing::Plan, LeWindow),
+    Late(u16),
+    Lost(Status),
+}
+
+fn error(operation: O, calculation: C, cause: TimingError) -> PlanningError {
+    PlanningError::timing(R::Peripheral, operation, calculation, cause)
 }

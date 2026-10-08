@@ -77,7 +77,7 @@ fn prepare(
         LegacyScanPrimaryChannel::Channel38,
         super::LegacyScanEventTiming {
             window: window(),
-            window_ticks: super::LegacyScanWindowTicks::from_raw_ticks(0x5555),
+            window_ticks: super::LegacyScanWindowTicks::new(0x5555).unwrap(),
             raw_sequence_lead: 0x5c,
         },
         LegacyScanStartSelection::Requested,
@@ -204,7 +204,7 @@ fn a_non_scanning_chain_is_refused() {
             LegacyScanPrimaryChannel::Channel37,
             super::LegacyScanEventTiming {
                 window: window(),
-                window_ticks: super::LegacyScanWindowTicks::from_raw_ticks(0),
+                window_ticks: super::LegacyScanWindowTicks::new(1).unwrap(),
                 raw_sequence_lead: 0x5c,
             },
             LegacyScanStartSelection::Requested,

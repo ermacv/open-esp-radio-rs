@@ -9,7 +9,7 @@
 use oer_bluetooth_radio::{
     EventId, EventResult, LeInstant, LeWindow, RadioDuration, RadioOutcome, RadioRequest,
     RadioTiming, TestChannel, TestPayloadType, TestPhy, TestReceive, TestReport, TestTransmit,
-    TxPower,
+    TimingError, TxPower,
 };
 
 mod payload;
@@ -111,6 +111,41 @@ pub struct DtmSession {
     counters: DtmCounters,
 }
 
+/// Calculation that prevented a required DTM continuation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DtmCalculation {
+    /// The earliest anchor admitted by preparation and guard.
+    Admission,
+    /// First-packet or receive-window planning slack.
+    InitialAnchor,
+    /// The next point on the previous transmitter's interval grid.
+    NextAnchor,
+    /// The earliest recurring transmitter point reachable now.
+    ReachableAnchor,
+    /// The duration of skipped grid slots.
+    SlotAlignment,
+    /// The air window of a test event.
+    AirWindow,
+    /// Its preparation reservation.
+    Reservation,
+}
+
+/// A required DTM continuation cannot be represented. The session retains
+/// its test, history and counters; Test End remains available.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DtmPlanningError {
+    /// The failing calculation.
+    pub calculation: DtmCalculation,
+    /// The physical timing failure.
+    pub cause: TimingError,
+}
+
+impl DtmPlanningError {
+    fn at(calculation: DtmCalculation, cause: TimingError) -> Self {
+        Self { calculation, cause }
+    }
+}
+
 impl DtmSession {
     /// A session whose events use `tx_power`. Event identities start at
     /// `first_id` and must not collide with the caller's other events.
@@ -193,15 +228,79 @@ impl DtmSession {
         now: LeInstant,
         timing: RadioTiming,
         payload: &'payload mut [u8; DTM_MAX_PAYLOAD],
-    ) -> Option<RadioRequest<'payload>> {
+    ) -> Result<Option<RadioRequest<'payload>>, DtmPlanningError> {
+        use DtmCalculation as C;
         let Phase::Running(test) = self.phase else {
-            return None;
+            return Ok(None);
         };
         if self.outstanding.is_some() {
-            return None;
+            return Ok(None);
         }
-        let admitted = admitted_anchor(now, timing)?;
-        let earliest = admitted.checked_add(DTM_PLANNING_SLACK)?;
+        let admitted = admitted_anchor(now, timing)
+            .ok_or(DtmPlanningError::at(C::Admission, TimingError::BeyondEpoch))?;
+        let window =
+            match test {
+                DtmTest::Transmit { phy, length, .. } => {
+                    // Start admits only transmitter PHYs with a bounded airtime.
+                    let air = transmit_air_time(phy, length)
+                        .expect("start validated the transmitter PHY");
+                    let interval = packet_interval(air);
+                    let anchor =
+                        match self.last {
+                            None => admitted.checked_add(DTM_PLANNING_SLACK).ok_or(
+                                DtmPlanningError::at(C::InitialAnchor, TimingError::BeyondEpoch),
+                            )?,
+                            Some(last) => {
+                                let first = last.start().checked_add(interval).ok_or(
+                                    DtmPlanningError::at(C::NextAnchor, TimingError::BeyondEpoch),
+                                )?;
+                                let reachable = admitted
+                                    .checked_add(DTM_RECURRING_TRANSMIT_SLACK)
+                                    .ok_or(DtmPlanningError::at(
+                                        C::ReachableAnchor,
+                                        TimingError::BeyondEpoch,
+                                    ))?
+                                    .max(first);
+                                let late = reachable.checked_duration_since(first).ok_or(
+                                    DtmPlanningError::at(
+                                        C::SlotAlignment,
+                                        TimingError::ReversedTime,
+                                    ),
+                                )?;
+                                let slots = late.as_micros().div_ceil(interval.as_micros());
+                                let skipped =
+                                    interval.checked_mul(slots).ok_or(DtmPlanningError::at(
+                                        C::SlotAlignment,
+                                        TimingError::DurationOverflow,
+                                    ))?;
+                                first.checked_add(skipped).ok_or(DtmPlanningError::at(
+                                    C::SlotAlignment,
+                                    TimingError::BeyondEpoch,
+                                ))?
+                            }
+                        };
+                    LeWindow::new(anchor, air).map_err(|cause| {
+                        DtmPlanningError::at(C::AirWindow, TimingError::Window(cause))
+                    })?
+                }
+                DtmTest::Receive { .. } => {
+                    let earliest =
+                        admitted
+                            .checked_add(DTM_PLANNING_SLACK)
+                            .ok_or(DtmPlanningError::at(
+                                C::InitialAnchor,
+                                TimingError::BeyondEpoch,
+                            ))?;
+                    let anchor = self.last.map_or(earliest, |last| last.end().max(earliest));
+                    LeWindow::new(anchor, DTM_RECEIVE_WINDOW).map_err(|cause| {
+                        DtmPlanningError::at(C::AirWindow, TimingError::Window(cause))
+                    })?
+                }
+            };
+        timing
+            .reservation(window)
+            .map_err(|cause| DtmPlanningError::at(C::Reservation, cause))?;
+        // All geometry is validated before payload, history or identity state changes.
         let id = EventId::new(self.next_id);
         let request = match test {
             DtmTest::Transmit {
@@ -210,24 +309,8 @@ impl DtmSession {
                 pattern,
                 length,
             } => {
-                let air = transmit_air_time(phy, length)?;
-                let interval = u64::from(packet_interval(air).as_micros());
-                // Like the vendor's recurring transmitter event, a later
-                // packet adds the interval to the previous anchor and skips
-                // only the slots the backend can no longer admit.
-                let anchor = match self.last {
-                    None => earliest,
-                    Some(last) => {
-                        let first = last.start().as_micros() + interval;
-                        let reachable = admitted.checked_add(DTM_RECURRING_TRANSMIT_SLACK)?;
-                        let late = reachable.as_micros().saturating_sub(first);
-                        LeInstant::from_micros(first + late.div_ceil(interval) * interval)
-                    }
-                };
-                let window = LeWindow::new(anchor, air).ok()?;
                 let bytes = &mut payload[..usize::from(length)];
                 pattern.fill(bytes);
-                self.last = Some(window);
                 RadioRequest::TestTransmit(TestTransmit {
                     id,
                     channel,
@@ -240,12 +323,6 @@ impl DtmSession {
                 })
             }
             DtmTest::Receive { channel, phy } => {
-                let anchor = match self.last {
-                    Some(last) if last.end() > earliest => last.end(),
-                    _ => earliest,
-                };
-                let window = LeWindow::new(anchor, DTM_RECEIVE_WINDOW).ok()?;
-                self.last = Some(window);
                 let recurring = core::mem::replace(&mut self.recurring, true);
                 RadioRequest::TestReceive(TestReceive {
                     id,
@@ -257,8 +334,9 @@ impl DtmSession {
                 })
             }
         };
+        self.last = Some(window);
         self.outstanding = Some(id);
-        Some(request)
+        Ok(Some(request))
     }
 
     /// The backend refused the planned request; plan again later.
@@ -277,8 +355,14 @@ impl DtmSession {
             },
             RadioOutcome::EventEnded { id, result } if Some(id) == self.outstanding => {
                 match result {
-                    EventResult::Executed { .. } => self.counters.executed += 1,
-                    EventResult::NotExecuted => self.counters.not_executed += 1,
+                    EventResult::Executed { .. }
+                    | EventResult::TimingFailed { executed: true, .. } => {
+                        self.counters.executed += 1
+                    }
+                    EventResult::NotExecuted
+                    | EventResult::TimingFailed {
+                        executed: false, ..
+                    } => self.counters.not_executed += 1,
                 }
                 self.outstanding = None;
                 self.next_id = self.next_id.wrapping_add(1);
@@ -315,7 +399,7 @@ fn admitted_anchor(now: LeInstant, timing: RadioTiming) -> Option<LeInstant> {
 /// Air time of one LE Test packet: preamble, access address, header,
 /// payload and CRC.
 fn transmit_air_time(phy: TestPhy, length: u8) -> Option<RadioDuration> {
-    let length = u32::from(length);
+    let length = u64::from(length);
     match phy {
         TestPhy::Le1M => Some(RadioDuration::from_micros((1 + 4 + 2 + length + 3) * 8)),
         TestPhy::Le2M => Some(RadioDuration::from_micros((2 + 4 + 2 + length + 3) * 4)),
@@ -326,6 +410,8 @@ fn transmit_air_time(phy: TestPhy, length: u8) -> Option<RadioDuration> {
 /// `I(L) = ceil((L + 249) / 625) * 625` microseconds for a packet of `L`
 /// microseconds.
 fn packet_interval(air: RadioDuration) -> RadioDuration {
+    // Only the LE 1M/2M airtime of a u8 payload reaches this scalar formula:
+    // air <= (1 + 4 + 2 + 255 + 3) * 8 = 2120 us; the interval is <= 2500 us.
     RadioDuration::from_micros((air.as_micros() + 249).div_ceil(625) * 625)
 }
 

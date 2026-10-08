@@ -28,6 +28,11 @@ use oer_bluetooth_radio::{
     ScannerId, TxPower,
 };
 
+use crate::planning::{
+    PlanningCalculation as C, PlanningError, PlanningOperation as O, PlanningRole as R,
+};
+use oer_bluetooth_radio::TimingError;
+
 use crate::arbiter::{Proposal, place};
 
 /// Shortest scan window worth scheduling.
@@ -106,8 +111,8 @@ impl Scanner {
             ScanFilterPolicy::AcceptAll
         };
         self.interval =
-            RadioDuration::from_micros(u32::from(parameters.interval_units_625_us()) * 625);
-        self.window = RadioDuration::from_micros(u32::from(parameters.window_units_625_us()) * 625);
+            RadioDuration::from_micros(u64::from(parameters.interval_units_625_us()) * 625);
+        self.window = RadioDuration::from_micros(u64::from(parameters.window_units_625_us()) * 625);
         self.filter_duplicates = matches!(
             request.duplicate_policy(),
             LeLegacyScanningDuplicatePolicy::FilterDuplicates
@@ -193,66 +198,102 @@ impl Scanner {
     /// Place the next window around `busy` reservations, or `None` when no
     /// useful window fits before the next interval.
     pub(crate) fn place(
-        &mut self,
-        id: EventId,
+        &self,
+        next_anchor: Option<LeInstant>,
         earliest: LeInstant,
         timing: RadioTiming,
         busy: &[Option<LeWindow>],
-    ) -> Option<RadioRequest<'static>> {
-        if !self.wants_window() {
-            return None;
-        }
-        let anchor = self
-            .next_anchor
-            .map_or(earliest, |anchor| anchor.max(earliest));
-        // The window may start late within its interval while a minimum
-        // window still fits, and never runs into the next interval.
-        let interval_end = anchor.checked_add(self.interval)?;
-        let slack = self
-            .interval
-            .as_micros()
-            .saturating_sub(MINIMUM_SCAN_WINDOW.as_micros());
+    ) -> Result<Placement, PlanningError> {
+        assert!(self.wants_window(), "only an eligible scanner is planned");
+        let anchor = next_anchor.map_or(earliest, |anchor| anchor.max(earliest));
+        let interval_end = anchor
+            .checked_add(self.interval)
+            .ok_or(error(C::IntervalEnd, TimingError::BeyondEpoch))?;
+        let Some(slack) = self.interval.checked_sub(MINIMUM_SCAN_WINDOW) else {
+            return Ok(Placement::Skipped {
+                next_anchor: interval_end,
+            });
+        };
+        let latest = anchor
+            .checked_add(slack)
+            .ok_or(error(C::MinimumWindow, TimingError::BeyondEpoch))?;
         let start = place(
             Proposal {
                 earliest: anchor,
-                latest: anchor.checked_add(RadioDuration::from_micros(slack))?,
+                latest,
                 duration: MINIMUM_SCAN_WINDOW,
             },
-            timing.preparation_lead,
+            timing,
             busy,
-        );
+        )
+        .map_err(|cause| error(C::Reservation, cause))?;
         let Some(start) = start else {
-            self.next_anchor = Some(interval_end);
-            return None;
+            return Ok(Placement::Skipped {
+                next_anchor: interval_end,
+            });
         };
-        // End before the next reservation.
-        let mut end =
-            (start.as_micros() + u64::from(self.window.as_micros())).min(interval_end.as_micros());
+        // Clip the required duration before adding it to a late start. The
+        // unrestricted requested end need not exist beyond this interval.
+        let mut duration = interval_end
+            .checked_duration_since(start)
+            .ok_or(error(C::WindowClipping, TimingError::ReversedTime))?
+            .min(self.window);
         for window in busy.iter().flatten() {
             if window.start() >= start {
-                end = end.min(window.start().as_micros());
+                duration = duration.min(
+                    window
+                        .start()
+                        .checked_duration_since(start)
+                        .ok_or(error(C::WindowClipping, TimingError::ReversedTime))?,
+                );
             }
         }
-        let duration = RadioDuration::from_micros((end - start.as_micros()) as u32);
         if duration < MINIMUM_SCAN_WINDOW {
-            self.next_anchor = Some(interval_end);
-            return None;
+            return Ok(Placement::Skipped {
+                next_anchor: interval_end,
+            });
         }
-        let window = LeWindow::new(start, duration).ok()?;
+        let window = LeWindow::new(start, duration)
+            .map_err(|cause| error(C::WindowClipping, TimingError::Window(cause)))?;
+        let reservation = timing
+            .reservation(window)
+            .map_err(|cause| error(C::Reservation, cause))?;
+        Ok(Placement::Ready {
+            window,
+            reservation,
+            next_anchor: interval_end,
+        })
+    }
+
+    pub(crate) fn next_anchor(&self) -> Option<LeInstant> {
+        self.next_anchor
+    }
+
+    pub(crate) fn commit_skip(&mut self, next_anchor: Option<LeInstant>) {
+        self.next_anchor = next_anchor;
+    }
+
+    pub(crate) fn build(
+        &mut self,
+        id: EventId,
+        window: LeWindow,
+        reservation: LeWindow,
+        next_anchor: LeInstant,
+    ) -> RadioRequest<'static> {
+        let channel = self.channel;
         self.outstanding = Some(Outstanding {
             id,
-            channel: self.channel,
-            reservation: timing.reservation(window)?,
+            channel,
+            reservation,
         });
-        self.next_anchor = Some(interval_end);
-        let channel = self.channel;
+        self.next_anchor = Some(next_anchor);
         self.channel = next_channel(channel);
-        Some(RadioRequest::Scan(ScanWindow {
+        RadioRequest::Scan(ScanWindow {
             id,
             scanner: SCANNER,
             channel,
             window,
-        }))
+        })
     }
 
     pub(crate) fn busy(&self) -> Option<LeWindow> {
@@ -349,5 +390,88 @@ const fn scan_channel(channel: AdvertisingChannel) -> PrimaryScanChannel {
         AdvertisingChannel::Channel37 => PrimaryScanChannel::Channel37,
         AdvertisingChannel::Channel38 => PrimaryScanChannel::Channel38,
         AdvertisingChannel::Channel39 => PrimaryScanChannel::Channel39,
+    }
+}
+
+fn error(calculation: C, cause: TimingError) -> PlanningError {
+    PlanningError::timing(R::Scanning, O::Event, calculation, cause)
+}
+
+pub(crate) enum Placement {
+    Skipped {
+        next_anchor: LeInstant,
+    },
+    Ready {
+        window: LeWindow,
+        reservation: LeWindow,
+        next_anchor: LeInstant,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn late_window_clips_before_epoch_addition_and_commits_only_on_build() {
+        let mut scanner = Scanner::new();
+        scanner.phase = Phase::Running;
+        scanner.interval = RadioDuration::from_micros(10_000);
+        scanner.window = scanner.interval;
+        let timing = crate::tests::TIMING;
+        let earliest = LeInstant::from_micros(u64::MAX - 10_200);
+        let busy = LeWindow::new(earliest, RadioDuration::from_micros(3_000)).unwrap();
+        let Placement::Ready {
+            window,
+            reservation,
+            next_anchor,
+        } = scanner
+            .place(None, earliest, timing, &[Some(busy)])
+            .unwrap()
+        else {
+            panic!("a clipped window fits")
+        };
+        assert!(window.start().checked_add(scanner.window).is_none());
+        assert_eq!(window.end(), next_anchor);
+        assert_eq!(next_anchor, LeInstant::from_micros(u64::MAX - 200));
+        assert_eq!(reservation.end(), next_anchor);
+        assert_eq!(scanner.next_anchor(), None);
+        assert_eq!(scanner.channel, AdvertisingChannel::Channel37);
+        assert!(scanner.outstanding.is_none());
+        let id = EventId::new(9);
+        assert!(matches!(
+            scanner.build(id, window, reservation, next_anchor),
+            RadioRequest::Scan(_)
+        ));
+        assert!(scanner.owns(id));
+        assert_eq!(scanner.next_anchor(), Some(next_anchor));
+        assert_eq!(scanner.channel, AdvertisingChannel::Channel38);
+    }
+
+    #[test]
+    fn interval_overflow_is_an_error_without_advancing_the_scanner() {
+        let mut scanner = Scanner::new();
+        scanner.phase = Phase::Running;
+        scanner.interval = RadioDuration::from_micros(10_000);
+        scanner.window = scanner.interval;
+        let earliest = LeInstant::from_micros(u64::MAX - 9_999);
+        for _ in 0..2 {
+            assert!(matches!(
+                scanner.place(None, earliest, crate::tests::TIMING, &[]),
+                Err(PlanningError {
+                    calculation: C::IntervalEnd,
+                    cause: crate::PlanningCause::Timing(TimingError::BeyondEpoch),
+                    ..
+                })
+            ));
+            assert!(scanner.outstanding.is_none());
+            assert_eq!(scanner.next_anchor(), None);
+            assert_eq!(scanner.channel, AdvertisingChannel::Channel37);
+        }
+        scanner.disable();
+        assert!(matches!(
+            scanner.control_request(),
+            Some(RadioRequest::RemoveScanner(_))
+        ));
     }
 }

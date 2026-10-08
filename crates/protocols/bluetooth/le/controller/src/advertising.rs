@@ -36,12 +36,15 @@ use oer_bluetooth_ll::{
 use oer_bluetooth_radio::{
     AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu,
     AdvertisingReception, AdvertisingSetId, EventId, LeInstant, LePhy, LeWindow, RadioDuration,
-    RadioOutcome, RadioRequest, RadioTiming, TxPower,
+    RadioOutcome, RadioRequest, RadioTiming, TimingError, TxPower,
 };
 
 use crate::{
     arbiter::{Proposal, reservation},
     coexistence,
+    planning::{
+        PlanningCalculation as C, PlanningError, PlanningOperation as O, PlanningRole as R,
+    },
 };
 
 /// Longest legacy advertising PDU: header, AdvA and 31 data octets.
@@ -310,7 +313,7 @@ impl Advertiser {
                 high_duty: true, ..
             } => HIGH_DUTY_INTERVAL,
             _ => RadioDuration::from_micros(
-                u32::from(parameters.interval().minimum_units_625_us()) * 625,
+                u64::from(parameters.interval().minimum_units_625_us()) * 625,
             ),
         };
         Ok(())
@@ -420,7 +423,9 @@ impl Advertiser {
 
     /// Air time of one channel of the event and its responses, plus the
     /// lead.
-    fn channel_spacing(&self, timing: RadioTiming) -> RadioDuration {
+    fn channel_spacing(&self, timing: RadioTiming) -> Result<RadioDuration, PlanningError> {
+        // Legacy wire lengths are bounded to 39 bytes; all air-time sums
+        // below fit u32. Only the backend's portable lead is unbounded.
         let mut air = air_micros(self.pdu_len);
         if let SetKind::Directed { .. } = self.kind {
             air += RESPONSE_CAPABLE_TAIL_MICROS
@@ -434,72 +439,111 @@ impl Advertiser {
             };
             air += RESPONSE_CAPABLE_TAIL_MICROS + T_IFS_MICROS + exchange;
         }
-        RadioDuration::from_micros(timing.preparation_lead.as_micros() + air)
+        timing
+            .preparation_lead
+            .checked_add(RadioDuration::from_micros(u64::from(air)))
+            .ok_or(error(
+                O::Event,
+                C::ChannelSpacing,
+                TimingError::DurationOverflow,
+            ))
     }
 
-    fn event_duration(&self, timing: RadioTiming) -> RadioDuration {
-        let spacing = self.channel_spacing(timing).as_micros();
-        let channels = self.channels.iter().count() as u32;
-        // The last channel needs no lead after it.
-        RadioDuration::from_micros(spacing * channels - timing.preparation_lead.as_micros())
+    fn event_duration(&self, timing: RadioTiming) -> Result<RadioDuration, PlanningError> {
+        let spacing = self.channel_spacing(timing)?;
+        let channels = self.channels.iter().count() as u64;
+        // The last channel needs no lead after it. Subtract the lead before
+        // multiplication so a representable final duration stays representable.
+        let final_air = spacing.checked_sub(timing.preparation_lead).ok_or(error(
+            O::Event,
+            C::EventDuration,
+            TimingError::DurationOverflow,
+        ))?;
+        spacing
+            .checked_mul(channels - 1)
+            .and_then(|prefix| prefix.checked_add(final_air))
+            .ok_or(error(
+                O::Event,
+                C::EventDuration,
+                TimingError::DurationOverflow,
+            ))
+    }
+
+    pub(crate) fn wants_event(&self) -> bool {
+        self.phase == Phase::Running && self.outstanding.is_none() && !self.expired
     }
 
     /// The next event, when the role needs one.
-    pub(crate) fn proposal(&self, earliest: LeInstant, timing: RadioTiming) -> Option<Proposal> {
-        if self.phase != Phase::Running || self.outstanding.is_some() || self.expired {
-            return None;
+    pub(crate) fn proposal(
+        &self,
+        earliest: LeInstant,
+        timing: RadioTiming,
+        progress: Progress,
+    ) -> Result<Option<Proposal>, PlanningError> {
+        if !self.wants_event() || progress.expired {
+            return Ok(None);
         }
-        let earliest = self
+        let earliest = progress
             .next_anchor
             .map_or(earliest, |anchor| anchor.max(earliest));
-        Some(Proposal {
+        Ok(Some(Proposal {
             earliest,
-            latest: earliest.checked_add(ADVERTISING_DELAY_MAX)?,
-            duration: self.event_duration(timing),
-        })
+            latest: earliest.checked_add(ADVERTISING_DELAY_MAX).ok_or(error(
+                O::Event,
+                C::LatestAnchor,
+                TimingError::BeyondEpoch,
+            ))?,
+            duration: self.event_duration(timing)?,
+        }))
     }
 
-    /// The reservation of the next event at its nominal anchor, which other
-    /// roles leave free. It is known once the previous event is placed.
-    pub(crate) fn planned(&self, timing: RadioTiming) -> Option<LeWindow> {
-        if self.phase != Phase::Running {
-            return None;
+    /// The next nominal reservation. Absence never hides failed geometry.
+    pub(crate) fn planned(
+        &self,
+        timing: RadioTiming,
+        progress: Progress,
+    ) -> Result<Option<LeWindow>, PlanningError> {
+        if self.phase != Phase::Running || progress.expired {
+            return Ok(None);
         }
-        reservation(
-            self.next_anchor?,
-            self.event_duration(timing),
-            timing.preparation_lead,
-        )
+        let Some(anchor) = progress.next_anchor else {
+            return Ok(None);
+        };
+        reservation(anchor, self.event_duration(timing)?, timing)
+            .map(Some)
+            .map_err(|cause| error(O::FutureReservation, C::Reservation, cause))
     }
 
-    /// The reservation of the event in progress.
     pub(crate) fn busy(&self) -> Option<LeWindow> {
         self.outstanding.map(|event| event.reservation)
     }
 
-    /// Build the event placed at `anchor`; `delay` is the advertising delay
-    /// that follows it.
+    /// Validate the whole event and its required successor before committing.
     pub(crate) fn build(
         &mut self,
         id: EventId,
         anchor: LeInstant,
         timing: RadioTiming,
         delay: RadioDuration,
-    ) -> RadioRequest<'static> {
+        progress: Progress,
+    ) -> Result<RadioRequest<'static>, PlanningError> {
+        let channel_spacing = self.channel_spacing(timing)?;
+        let reserved = reservation(anchor, self.event_duration(timing)?, timing)
+            .map_err(|cause| error(O::Event, C::Reservation, cause))?;
+        let continuation = self.continuation(anchor, delay, progress)?;
         self.outstanding = Some(Outstanding {
             id,
-            reservation: reservation(anchor, self.event_duration(timing), timing.preparation_lead)
-                .expect("a placed event has a reservation"),
+            reservation: reserved,
         });
-        self.advance(anchor, delay);
-        RadioRequest::Advertise(AdvertisingEvent {
+        self.commit(continuation);
+        Ok(RadioRequest::Advertise(AdvertisingEvent {
             id,
             set: SET,
             anchor,
             channels: self.channels,
-            channel_spacing: self.channel_spacing(timing),
+            channel_spacing,
             coexistence: coexistence::advertising_level(self.coexistence_period, self.ended),
-        })
+        }))
     }
 
     /// The backend's answer to the event request. A refused event counts as
@@ -514,12 +558,30 @@ impl Advertiser {
     }
 
     /// Skip the event the arbiter could not place.
-    pub(crate) fn skip(&mut self, earliest: LeInstant, delay: RadioDuration) {
-        let anchor = self.next_anchor.unwrap_or(earliest);
-        self.advance(anchor, delay);
+    pub(crate) fn progress(&self) -> Progress {
+        Progress {
+            next_anchor: self.next_anchor,
+            expires: self.expires,
+            expired: self.expired,
+        }
     }
 
-    fn advance(&mut self, anchor: LeInstant, delay: RadioDuration) {
+    pub(crate) fn skip(
+        &self,
+        earliest: LeInstant,
+        delay: RadioDuration,
+        progress: Progress,
+    ) -> Result<Progress, PlanningError> {
+        let anchor = progress.next_anchor.unwrap_or(earliest);
+        self.continuation(anchor, delay, progress)
+    }
+
+    fn continuation(
+        &self,
+        anchor: LeInstant,
+        delay: RadioDuration,
+        progress: Progress,
+    ) -> Result<Progress, PlanningError> {
         let high_duty = matches!(
             self.kind,
             SetKind::Directed {
@@ -527,20 +589,45 @@ impl Advertiser {
                 ..
             }
         );
-        // High duty cycle events follow each other without the delay.
-        let delay = if high_duty { 0 } else { delay.as_micros() };
-        let step = self.interval.as_micros() + delay;
-        self.next_anchor = anchor.checked_add(RadioDuration::from_micros(step));
-        if high_duty {
-            let expires = *self
-                .expires
-                .get_or_insert(anchor.checked_add(HIGH_DUTY_DURATION).unwrap_or(anchor));
-            if self.next_anchor.is_none_or(|next| next >= expires) {
-                self.expired = true;
-                if self.outstanding.is_none() && self.phase == Phase::Running {
-                    self.phase = Phase::Removing { sent: false };
-                }
-            }
+        let step = if high_duty {
+            self.interval
+        } else {
+            self.interval.checked_add(delay).ok_or(error(
+                O::Event,
+                C::Recurrence,
+                TimingError::DurationOverflow,
+            ))?
+        };
+        let next = anchor.checked_add(step).ok_or(error(
+            O::Event,
+            C::Recurrence,
+            TimingError::BeyondEpoch,
+        ))?;
+        let expires = if high_duty {
+            Some(match progress.expires {
+                Some(expires) => expires,
+                None => anchor.checked_add(HIGH_DUTY_DURATION).ok_or(error(
+                    O::Event,
+                    C::Expiry,
+                    TimingError::BeyondEpoch,
+                ))?,
+            })
+        } else {
+            progress.expires
+        };
+        Ok(Progress {
+            next_anchor: Some(next),
+            expires,
+            expired: high_duty && expires.is_some_and(|expires| next >= expires),
+        })
+    }
+
+    pub(crate) fn commit(&mut self, continuation: Progress) {
+        self.next_anchor = continuation.next_anchor;
+        self.expires = continuation.expires;
+        self.expired = continuation.expired;
+        if self.expired && self.outstanding.is_none() && self.phase == Phase::Running {
+            self.phase = Phase::Removing { sent: false };
         }
     }
 
@@ -548,7 +635,7 @@ impl Advertiser {
     pub(crate) fn outcome(&mut self, outcome: RadioOutcome<'_>) {
         match outcome {
             RadioOutcome::Received { id, pdu } if self.owns(id) => {
-                let (Some(at), Phase::Running) = (pdu.captured_at, self.phase) else {
+                let (Ok(Some(at)), Phase::Running) = (pdu.captured_at, self.phase) else {
                     return;
                 };
                 let Ok(request) = LeLegacyConnectionRequest::decode(pdu.pdu) else {
@@ -603,4 +690,15 @@ impl Advertiser {
 /// LE 1M air time of a PDU of `length` octets, header included.
 const fn air_micros(length: usize) -> u32 {
     (length as u32 - 2) * 8 + 80
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Progress {
+    next_anchor: Option<LeInstant>,
+    expires: Option<LeInstant>,
+    expired: bool,
+}
+
+fn error(operation: O, calculation: C, cause: TimingError) -> PlanningError {
+    PlanningError::timing(R::Advertising, operation, calculation, cause)
 }

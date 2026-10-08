@@ -53,3 +53,11 @@ Controller time uses the HAL period's software conversion selector. The
 standalone profile has two raw ticks per microsecond; its hardware divider is
 a separate setting. Scheduler epoch updates retain fractional raw ticks, and
 earlier fractional timestamps round down before deadline projection.
+
+Physical event spans are non-empty and at most the signed raw-counter
+half-range. The duration projection accepts `RadioDuration`, checks the full
+`u64` value and fractional carry, and narrows only after proving the result
+fits. Absolute scheduler timestamps keep their reviewed modular projection;
+that representation does not authorize wrapping a portable radio instant.
+First-receive and recurring waits validate their complete geometry before
+encoding the controller-SRAM fields.

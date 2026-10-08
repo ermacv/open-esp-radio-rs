@@ -157,6 +157,24 @@ impl BluetoothControllerTimeScale {
         }
     }
 
+    /// Project a physical duration without wrapping its tick count. This
+    /// retains the reviewed inverse transform's fractional remainder; the
+    /// accepting hardware owner separately enforces its delta range.
+    pub fn checked_raw_ticks_from_micros(
+        self,
+        micros: u64,
+    ) -> Option<BluetoothRawTickDeltaProjection> {
+        let (ticks, remainder) = match self.period {
+            BluetoothHalInitPeriod::Image500 => (micros / 2, (micros % 2) as u8),
+            BluetoothHalInitPeriod::Image1000 => (micros, 0),
+            BluetoothHalInitPeriod::Image2000 => (micros.checked_mul(2)?, 0),
+        };
+        Some(BluetoothRawTickDeltaProjection {
+            whole_ticks: u32::try_from(ticks).ok()?,
+            remainder_micros: remainder,
+        })
+    }
+
     /// Convert microseconds into raw ticks while retaining discarded time.
     pub const fn raw_ticks_from_micros(self, micros: u32) -> BluetoothRawTickDeltaProjection {
         match self.period {

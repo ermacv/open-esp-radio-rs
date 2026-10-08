@@ -7,7 +7,7 @@
 //! A Link Layer controller core plans radio events and hands each one to a
 //! backend as a [`RadioRequest`]; the backend reports what happened as
 //! [`RadioOutcome`] values. The contract carries physical values only:
-//! monotonic microseconds, channels, air-interface identities and complete
+//! radio-domain microseconds, channels, air-interface identities and complete
 //! Link Layer PDUs. Descriptor images, register fields and controller ticks
 //! stay in the backend.
 //!
@@ -59,7 +59,7 @@ pub type LeInstant = oer_time::RadioInstant<LeRadio>;
 
 /// A window reserved on the LE radio port's clock.
 pub type LeWindow = oer_time::RadioWindow<LeRadio>;
-pub use outcome::{EventResult, RadioFault, RadioOutcome, ReceivedPdu, TestReport};
+pub use outcome::{CaptureError, EventResult, RadioFault, RadioOutcome, ReceivedPdu, TestReport};
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
 pub use port::{LeRadioPort, Never, NoRadio};
 pub use request::{
@@ -67,5 +67,6 @@ pub use request::{
     AdvertisingReception, AdvertisingSetId, CoexistenceLevel, ConnectionAllowances,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit,
     EventId, IdlePriority, RadioRequest, RadioTiming, RequestError, ScanFilterPolicy, ScanType,
-    ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit, TxPower,
+    ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit, TimingError,
+    TxPower,
 };

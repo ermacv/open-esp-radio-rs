@@ -1,4 +1,4 @@
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use std::vec::Vec;
 
 use embassy_futures::{block_on, join::join};
@@ -86,6 +86,8 @@ enum Recorded {
 struct ModelRadio {
     /// The radio epoch's origin.
     started: std::time::Instant,
+    now: Cell<Option<LeInstant>>,
+    capture_failure: Cell<bool>,
     requests: RefCell<Vec<Recorded>>,
     outcomes: Channel<NoopRawMutex, Result<EventId, EventsLost>, 4>,
     refuse: RefCell<Option<RequestError>>,
@@ -98,6 +100,8 @@ impl ModelRadio {
         Self {
             requests: RefCell::new(Vec::new()),
             started: std::time::Instant::now(),
+            now: Cell::new(None),
+            capture_failure: Cell::new(false),
             outcomes: Channel::new(),
             refuse: RefCell::new(None),
             submitted: RefCell::new(0),
@@ -140,7 +144,7 @@ impl PortError for ModelError {
 }
 
 impl LeRadioPort for ModelRadio {
-    type Outcome = EventId;
+    type Outcome = (EventId, bool);
     type Error = ModelError;
 
     fn clock_info(&self) -> ClockInfo {
@@ -158,7 +162,9 @@ impl LeRadioPort for ModelRadio {
 
     async fn clock(&self) -> Result<(LeInstant, RadioTiming), ModelError> {
         Ok((
-            LeInstant::from_micros(self.started.elapsed().as_micros() as u64),
+            self.now.get().unwrap_or_else(|| {
+                LeInstant::from_micros(self.started.elapsed().as_micros() as u64)
+            }),
             RadioTiming {
                 preparation_lead: RadioDuration::from_micros(300),
                 admission_guard: RadioDuration::from_micros(200),
@@ -192,14 +198,26 @@ impl LeRadioPort for ModelRadio {
         Ok(Ok(()))
     }
 
-    async fn next_outcome(&self) -> Result<EventId, EventsLost> {
-        self.outcomes.receive().await
+    async fn next_outcome(&self) -> Result<Self::Outcome, EventsLost> {
+        self.outcomes
+            .receive()
+            .await
+            .map(|id| (id, self.capture_failure.get()))
     }
 
-    fn view(id: &EventId) -> RadioOutcome<'_> {
+    fn view((id, failed): &Self::Outcome) -> RadioOutcome<'_> {
+        use oer_bluetooth_radio::{CaptureError, TimingError};
         RadioOutcome::EventEnded {
             id: *id,
-            result: EventResult::NotExecuted,
+            result: if *failed {
+                EventResult::TimingFailed {
+                    cause: CaptureError::PacketStartCorrection(TimingError::BeforeEpoch),
+                    executed: true,
+                    anchor: Ok(None),
+                }
+            } else {
+                EventResult::NotExecuted
+            },
         }
     }
 
@@ -459,4 +477,68 @@ fn advertising_enable_and_disable_report_the_active_roles() {
         controller.close();
     }));
     assert_eq!(exit, ServeExit::Closed);
+}
+
+#[test]
+fn a_capture_failure_settles_the_operation_and_the_same_service_continues() {
+    let mut resources = resources();
+    let LeControllerHciEndpoints { host, controller } = resources.split();
+    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let clock: VirtualClock = VirtualClock::new();
+    let radio = ModelRadio::new();
+    radio.capture_failure.set(true);
+    let (exit, ()) = block_on(join(serve(&controller, &mut core, &radio, &clock), async {
+        host.write(&Reset::new()).await.unwrap();
+        status(&host).await;
+        host.write(&nonconnectable()).await.unwrap();
+        status(&host).await;
+        host.write(&LeSetAdvEnable::new(true)).await.unwrap();
+        assert_eq!(status(&host).await, 0);
+        radio.until(1).await;
+        let first = radio.advertised()[0];
+        radio.outcomes.send(Ok(first)).await;
+        radio.until(2).await;
+        assert_ne!(radio.advertised()[1], first);
+        controller.close();
+    }));
+    assert_eq!(exit, ServeExit::Closed);
+    assert_eq!(core.fault(), None);
+}
+
+#[test]
+fn required_epoch_exhaustion_exits_with_context_and_retains_the_core() {
+    let mut resources = resources();
+    let LeControllerHciEndpoints { host, controller } = resources.split();
+    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let clock: VirtualClock = VirtualClock::new();
+    let radio = ModelRadio::new();
+    let (exit, ()) = block_on(join(serve(&controller, &mut core, &radio, &clock), async {
+        host.write(&Reset::new()).await.unwrap();
+        status(&host).await;
+        host.write(&nonconnectable()).await.unwrap();
+        status(&host).await;
+        host.write(&LeSetAdvEnable::new(true)).await.unwrap();
+        assert_eq!(status(&host).await, 0);
+        radio.until(1).await;
+        radio.now.set(Some(LeInstant::from_micros(u64::MAX)));
+        radio.outcomes.send(Ok(radio.advertised()[0])).await;
+    }));
+    let ServeExit::Planning(error) = exit else {
+        panic!("required planning must end service: {exit:?}")
+    };
+    assert_eq!(
+        error.role,
+        oer_bluetooth_controller::PlanningRole::Advertising
+    );
+    assert_eq!(
+        error.calculation,
+        oer_bluetooth_controller::PlanningCalculation::Admission
+    );
+    assert_eq!(radio.advertised().len(), 1);
+    assert_ne!(
+        core.activity(),
+        RadioActivity::IDLE,
+        "lifecycle retains the active logical owner"
+    );
+    assert_eq!(core.fault(), None);
 }

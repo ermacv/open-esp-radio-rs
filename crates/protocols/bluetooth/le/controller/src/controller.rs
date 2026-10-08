@@ -33,6 +33,10 @@ use oer_bluetooth_radio::{
     RadioFault, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
+use crate::planning::{
+    PlanningCalculation as C, PlanningError, PlanningOperation as O, PlanningRole as R,
+};
+
 use crate::{
     HciPacket,
     accept_list::AcceptList,
@@ -983,87 +987,118 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         &mut self,
         now: LeInstant,
         timing: RadioTiming,
-    ) -> Option<RadioRequest<'_>> {
+    ) -> Result<Option<RadioRequest<'_>>, PlanningError> {
         if self.in_flight.is_some() {
-            return None;
+            return Ok(None);
         }
-        let earliest = now
-            .checked_add(timing.preparation_lead)?
-            .checked_add(timing.admission_guard)?
-            .checked_add(PLANNING_SLACK)?;
+        // Control work must remain available without any future radio anchor.
         if let Some(request) = self.accept_list.request() {
             self.in_flight = Some(Owner::AcceptList);
-            return Some(request);
+            return Ok(Some(request));
         }
         if self.dtm.is_active() {
             if !self.dtm.wants_radio() {
-                return None;
+                return Ok(None);
             }
-            self.in_flight = Some(Owner::Dtm);
-            return match self.dtm.next_request(now, timing, &mut self.payload) {
-                DtmRadioWork::Request(request) => Some(request),
-                DtmRadioWork::None => {
-                    self.in_flight = None;
-                    None
+            return match self.dtm.next_request(now, timing, &mut self.payload)? {
+                DtmRadioWork::Request(request) => {
+                    self.in_flight = Some(Owner::Dtm);
+                    Ok(Some(request))
                 }
+                DtmRadioWork::None => Ok(None),
             };
         }
         let room = self.has_event_room();
         if self.peripheral.wants_radio(room) {
-            self.in_flight = Some(Owner::Peripheral);
-            let request =
-                self.peripheral
-                    .next_request(&mut self.next_event, now, earliest, timing, room);
-            if request.is_none() {
-                self.in_flight = None;
+            let request = self
+                .peripheral
+                .next_request(&mut self.next_event, now, timing, room)?;
+            if request.is_some() {
+                self.in_flight = Some(Owner::Peripheral)
             }
-            return request;
+            return Ok(request);
         }
         if self.advertiser.has_control_request() {
-            self.in_flight = Some(Owner::AdvertiserControl);
-            return self.advertiser.control_request();
+            let request = self.advertiser.control_request();
+            if request.is_some() {
+                self.in_flight = Some(Owner::AdvertiserControl)
+            }
+            return Ok(request);
         }
         if let Some(request) = self.scanner.control_request() {
             self.in_flight = Some(Owner::ScannerControl);
-            return Some(request);
+            return Ok(Some(request));
         }
-        for _ in 0..PLACEMENT_ATTEMPTS {
-            let Some(proposal) = self.advertiser.proposal(earliest, timing) else {
-                break;
-            };
-            let delay = self.advertising_delay();
-            let busy = [
-                self.scanner.busy(),
-                self.peripheral.busy(),
-                self.peripheral.planned(timing),
-            ];
-            match place(proposal, timing.preparation_lead, &busy) {
-                Some(anchor) => {
-                    let id = self.allocate_event();
-                    self.in_flight = Some(Owner::AdvertiserEvent);
-                    return Some(self.advertiser.build(id, anchor, timing, delay));
+        // Candidate progress and randomness stay local until the complete
+        // plan is valid. Even several bounded conflicts cannot commit partial
+        // continuation state before a later arithmetic error in this call.
+        let mut advertising = self.advertiser.progress();
+        let mut prng = self.prng;
+        if self.advertiser.wants_event() {
+            let earliest = crate::planning::earliest(now, timing, R::Advertising)?;
+            for _ in 0..PLACEMENT_ATTEMPTS {
+                let Some(proposal) = self.advertiser.proposal(earliest, timing, advertising)?
+                else {
+                    break;
+                };
+                let (next_prng, delay) = advertising_delay(prng);
+                let busy = [
+                    self.scanner.busy(),
+                    self.peripheral.busy(),
+                    self.peripheral.planned(timing)?,
+                ];
+                let anchor = place(proposal, timing, &busy).map_err(|cause| {
+                    PlanningError::timing(R::Advertising, O::Event, C::Reservation, cause)
+                })?;
+                match anchor {
+                    Some(anchor) => {
+                        let id = EventId::new(self.next_event);
+                        let request =
+                            self.advertiser
+                                .build(id, anchor, timing, delay, advertising)?;
+                        self.allocate_event();
+                        self.prng = next_prng;
+                        self.in_flight = Some(Owner::AdvertiserEvent);
+                        return Ok(Some(request));
+                    }
+                    None => advertising = self.advertiser.skip(earliest, delay, advertising)?,
                 }
-                None => self.advertiser.skip(earliest, delay),
+                prng = next_prng;
             }
         }
-        for _ in 0..PLACEMENT_ATTEMPTS {
-            if !self.scanner.wants_window() {
-                break;
-            }
-            let id = EventId::new(self.next_event);
-            let busy = [
-                self.advertiser.busy(),
-                self.advertiser.planned(timing),
-                self.peripheral.busy(),
-                self.peripheral.planned(timing),
-            ];
-            if let Some(request) = self.scanner.place(id, earliest, timing, &busy) {
-                self.allocate_event();
-                self.in_flight = Some(Owner::ScannerWindow);
-                return Some(request);
+        let mut scan_anchor = self.scanner.next_anchor();
+        if self.scanner.wants_window() {
+            let earliest = crate::planning::earliest(now, timing, R::Scanning)?;
+            for _ in 0..PLACEMENT_ATTEMPTS {
+                let busy = [
+                    self.advertiser.busy(),
+                    self.advertiser.planned(timing, advertising)?,
+                    self.peripheral.busy(),
+                    self.peripheral.planned(timing)?,
+                ];
+                match self.scanner.place(scan_anchor, earliest, timing, &busy)? {
+                    crate::scanning::Placement::Ready {
+                        window,
+                        reservation,
+                        next_anchor,
+                    } => {
+                        let id = self.allocate_event();
+                        let request = self.scanner.build(id, window, reservation, next_anchor);
+                        self.advertiser.commit(advertising);
+                        self.prng = prng;
+                        self.in_flight = Some(Owner::ScannerWindow);
+                        return Ok(Some(request));
+                    }
+                    crate::scanning::Placement::Skipped { next_anchor } => {
+                        scan_anchor = Some(next_anchor)
+                    }
+                }
             }
         }
-        None
+        self.advertiser.commit(advertising);
+        self.scanner.commit_skip(scan_anchor);
+        self.prng = prng;
+        Ok(None)
     }
 
     /// The backend's answer to the last request.
@@ -1126,17 +1161,6 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
     fn allocate_event(&mut self) -> EventId {
         allocate_event(&mut self.next_event)
     }
-
-    /// Pseudo-random advertising delay in `[0, 10 ms]`.
-    fn advertising_delay(&mut self) -> RadioDuration {
-        // xorshift64*
-        self.prng ^= self.prng >> 12;
-        self.prng ^= self.prng << 25;
-        self.prng ^= self.prng >> 27;
-        let value = self.prng.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 32;
-        let span = u64::from(ADVERTISING_DELAY_MAX.as_micros()) + 1;
-        RadioDuration::from_micros((value % span) as u32)
-    }
 }
 
 /// The next role event identity from `next`.
@@ -1159,4 +1183,14 @@ pub(crate) fn allocate_event(next: &mut u32) -> EventId {
         *next + 1
     };
     id
+}
+
+/// Preview xorshift64* without committing it before a plan is validated.
+fn advertising_delay(mut prng: u64) -> (u64, RadioDuration) {
+    prng ^= prng >> 12;
+    prng ^= prng << 25;
+    prng ^= prng >> 27;
+    let value = prng.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 32;
+    let span = ADVERTISING_DELAY_MAX.as_micros() + 1;
+    (prng, RadioDuration::from_micros(value % span))
 }

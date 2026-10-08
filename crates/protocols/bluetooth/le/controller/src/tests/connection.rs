@@ -54,14 +54,14 @@ impl Harness {
             Some(SUCCESS)
         );
         harness.send(SET_ADV_ENABLE, &[1]);
-        let Some(Request::ConfigureConnectable(adv_ind, scan_rsp)) = harness.step() else {
+        let Some(Request::ConfigureConnectable(adv_ind, scan_rsp)) = harness.step().unwrap() else {
             panic!("a connectable set");
         };
         assert_eq!(adv_ind[0] & 0x0f, 0x00);
         assert_eq!(adv_ind[0] & 0x20, 0x20, "Channel Selection Algorithm #2");
         assert_eq!(scan_rsp[..8], [0x04, 6, 6, 5, 4, 3, 2, 1]);
         assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
-        let Some(Request::Advertise(event)) = harness.step() else {
+        let Some(Request::Advertise(event)) = harness.step().unwrap() else {
             panic!("an advertising event");
         };
         harness.core.outcome(RadioOutcome::Received {
@@ -69,10 +69,10 @@ impl Harness {
             pdu: ReceivedPdu {
                 pdu: &connect_ind(),
                 rssi_dbm: -50,
-                captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
+                captured_at: Ok(Some(LeInstant::from_micros(INDICATION_AT))),
             },
         });
-        let Some(Request::OpenConnection(configuration)) = harness.step() else {
+        let Some(Request::OpenConnection(configuration)) = harness.step().unwrap() else {
             panic!("the connection opens");
         };
         assert_eq!(
@@ -86,7 +86,7 @@ impl Harness {
         assert_eq!(&events[0][..5], &[0x3e, 19, 0x01, SUCCESS, 0]);
 
         // The first event listens across the transmit window.
-        let Some(Request::ConnectionEvent(first)) = harness.step() else {
+        let Some(Request::ConnectionEvent(first)) = harness.step().unwrap() else {
             panic!("the first event");
         };
         let anchor = INDICATION_AT + 352 + 1_250;
@@ -100,9 +100,9 @@ impl Harness {
         );
         assert_eq!(first.priority, 13);
         // Advertising stops: its event is cancelled and the set removed.
-        assert_eq!(harness.step(), Some(Request::Cancel(event.id)));
+        assert_eq!(harness.step().unwrap(), Some(Request::Cancel(event.id)));
         harness.end(event.id);
-        assert_eq!(harness.step(), Some(Request::RemoveAdvertising));
+        assert_eq!(harness.step().unwrap(), Some(Request::RemoveAdvertising));
         assert!(
             harness.drain().is_empty(),
             "advertising ends without an event"
@@ -116,7 +116,7 @@ impl Harness {
             pdu: ReceivedPdu {
                 pdu,
                 rssi_dbm: -40,
-                captured_at: None,
+                captured_at: Ok(None),
             },
         });
     }
@@ -148,13 +148,13 @@ fn a_connection_answers_version_exchange_and_follows_the_received_anchor() {
     let captured = INDICATION_AT + 352 + 1_250 + 700;
     harness.end_at(first, Some(captured));
     assert_eq!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::Transmit(
             DataPduKind::Control,
             std::vec![0x0c, 0x0d, 0xff, 0xff, 0x01, 0x00]
         ))
     );
-    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+    let Some(Request::ConnectionEvent(second)) = harness.step().unwrap() else {
         panic!("the second event");
     };
     // 30 ms after the received anchor, widened by 30 ms at 550 ppm.
@@ -166,13 +166,11 @@ fn a_connection_answers_version_exchange_and_follows_the_received_anchor() {
     assert_eq!(
         second.timing,
         ConnectionEventTiming::Recurring {
-            receive_wait: oer_bluetooth_radio::RadioDuration::from_micros(
-                10 + 2 * widening as u32 + 2
-            ),
-            widening: oer_bluetooth_radio::RadioDuration::from_micros(widening as u32),
+            receive_wait: oer_bluetooth_radio::RadioDuration::from_micros(10 + 2 * widening + 2),
+            widening: oer_bluetooth_radio::RadioDuration::from_micros(widening),
         }
     );
-    assert_eq!(second.interval.as_micros(), INTERVAL as u32);
+    assert_eq!(second.interval.as_micros(), INTERVAL);
     assert_eq!(second.priority, 8);
 }
 
@@ -196,20 +194,20 @@ fn acl_data_flows_both_ways_and_completes_host_packets() {
     );
     harness.core.acl(packet);
     assert!(!harness.core.is_acl_ready());
-    let Some(Request::Transmit(DataPduKind::Start, fragment)) = harness.step() else {
+    let Some(Request::Transmit(DataPduKind::Start, fragment)) = harness.step().unwrap() else {
         panic!("the first fragment");
     };
     assert_eq!(fragment.len(), 27);
-    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+    let Some(Request::ConnectionEvent(second)) = harness.step().unwrap() else {
         panic!("the second event");
     };
     harness.acknowledge();
     harness.end_at(second.id, Some(INDICATION_AT + 2_000 + INTERVAL));
-    let Some(Request::Transmit(DataPduKind::Continuation, rest)) = harness.step() else {
+    let Some(Request::Transmit(DataPduKind::Continuation, rest)) = harness.step().unwrap() else {
         panic!("the continuation");
     };
     assert_eq!(rest, (27..30).collect::<Vec<u8>>());
-    let Some(Request::ConnectionEvent(third)) = harness.step() else {
+    let Some(Request::ConnectionEvent(third)) = harness.step().unwrap() else {
         panic!("the third event");
     };
     harness.acknowledge();
@@ -229,18 +227,18 @@ fn host_disconnect_terminates_after_the_central_acknowledged() {
         "Command Status"
     );
     assert_eq!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::Transmit(
             DataPduKind::Control,
             std::vec![0x02, 0x13]
         ))
     );
-    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+    let Some(Request::ConnectionEvent(second)) = harness.step().unwrap() else {
         panic!("the second event");
     };
     harness.acknowledge();
     harness.end_at(second.id, Some(INDICATION_AT + 2_000 + INTERVAL));
-    assert_eq!(harness.step(), Some(Request::CloseConnection));
+    assert_eq!(harness.step().unwrap(), Some(Request::CloseConnection));
     // Disconnection Complete reports the local Host.
     assert_eq!(harness.drain(), [std::vec![0x05, 4, 0, 0, 0, 0x16]]);
     assert!(!harness.core.wants_radio());
@@ -255,7 +253,7 @@ fn the_central_terminates_the_connection() {
     let (mut harness, first) = Harness::connected();
     harness.receive(first, &[0x03, 2, 0x02, 0x13]);
     harness.end_at(first, Some(INDICATION_AT + 2_000));
-    assert_eq!(harness.step(), Some(Request::CloseConnection));
+    assert_eq!(harness.step().unwrap(), Some(Request::CloseConnection));
     assert_eq!(harness.drain(), [std::vec![0x05, 4, 0, 0, 0, 0x13]]);
 }
 
@@ -264,7 +262,7 @@ fn six_silent_events_fail_the_establishment() {
     let (mut harness, first) = Harness::connected();
     harness.end_at(first, None);
     for _ in 0..5 {
-        let Some(Request::ConnectionEvent(event)) = harness.step() else {
+        let Some(Request::ConnectionEvent(event)) = harness.step().unwrap() else {
             panic!("another event");
         };
         // Before a packet arrives, the transmit window stays uncertain.
@@ -274,7 +272,7 @@ fn six_silent_events_fail_the_establishment() {
         assert!(receive_wait.as_micros() > 2_500);
         harness.end_at(event.id, None);
     }
-    assert_eq!(harness.step(), Some(Request::CloseConnection));
+    assert_eq!(harness.step().unwrap(), Some(Request::CloseConnection));
     assert_eq!(harness.drain(), [std::vec![0x05, 4, 0, 0, 0, 0x3e]]);
 }
 
@@ -285,7 +283,7 @@ fn the_supervision_timeout_ends_a_silent_connection() {
     harness.end_at(first, Some(captured));
     let mut events = 0;
     loop {
-        match harness.step() {
+        match harness.step().unwrap() {
             Some(Request::ConnectionEvent(event)) => {
                 events += 1;
                 harness.end_at(event.id, None);
@@ -309,14 +307,14 @@ fn encryption_start_asks_the_host_for_its_key() {
     request.extend_from_slice(&[7; 4]);
     harness.receive(first, &request);
     harness.end_at(first, Some(INDICATION_AT + 2_000));
-    let Some(Request::Transmit(DataPduKind::Control, response)) = harness.step() else {
+    let Some(Request::Transmit(DataPduKind::Control, response)) = harness.step().unwrap() else {
         panic!("LL_ENC_RSP");
     };
     // SKDs and IVs come from the random source.
     assert_eq!(response[0], 0x04);
     assert_eq!(&response[1..9], &[1, 2, 3, 4, 5, 6, 7, 8]);
     assert_eq!(&response[9..13], &[1, 2, 3, 4]);
-    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+    let Some(Request::ConnectionEvent(second)) = harness.step().unwrap() else {
         panic!("the second event");
     };
     harness.acknowledge();
@@ -332,7 +330,7 @@ fn encryption_start_asks_the_host_for_its_key() {
     assert_eq!(harness.command(LTK_REPLY, &reply), Some(SUCCESS));
     // LL_START_ENC_REQ, still unencrypted.
     assert_eq!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::Transmit(DataPduKind::Control, std::vec![0x05]))
     );
 }
@@ -348,10 +346,10 @@ fn a_mic_failure_exits_at_once_without_a_terminate() {
     harness.receive(first, &request);
     harness.end_at(first, Some(INDICATION_AT + 2_000));
     assert!(matches!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::Transmit(DataPduKind::Control, _))
     ));
-    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+    let Some(Request::ConnectionEvent(second)) = harness.step().unwrap() else {
         panic!("the second event");
     };
     harness.acknowledge();
@@ -361,10 +359,10 @@ fn a_mic_failure_exits_at_once_without_a_terminate() {
     reply.extend_from_slice(&[0x42; 16]);
     assert_eq!(harness.command(LTK_REPLY, &reply), Some(SUCCESS));
     assert_eq!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::Transmit(DataPduKind::Control, std::vec![0x05]))
     );
-    let Some(Request::ConnectionEvent(third)) = harness.step() else {
+    let Some(Request::ConnectionEvent(third)) = harness.step().unwrap() else {
         panic!("the third event");
     };
     harness.acknowledge();
@@ -372,7 +370,7 @@ fn a_mic_failure_exits_at_once_without_a_terminate() {
     harness.receive(third.id, &[0x03, 5, 0x9f, 0xcd, 0xa7, 0xf4, 0x49]);
     harness.end_at(third.id, Some(INDICATION_AT + 2_000 + 2 * INTERVAL));
     // No LL_TERMINATE_IND: the connection closes at once.
-    assert_eq!(harness.step(), Some(Request::CloseConnection));
+    assert_eq!(harness.step().unwrap(), Some(Request::CloseConnection));
     assert_eq!(harness.drain(), [std::vec![0x05, 4, 0, 0, 0, 0x3d]]);
 }
 
@@ -391,14 +389,14 @@ fn a_connection_update_moves_the_anchor_at_its_instant() {
     let captured = INDICATION_AT + 2_000;
     harness.end_at(first, Some(captured));
     // Event 1 keeps the old interval.
-    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+    let Some(Request::ConnectionEvent(second)) = harness.step().unwrap() else {
         panic!("event 1");
     };
     let second_anchor = captured + INTERVAL;
     harness.end_at(second.id, Some(second_anchor));
     // Event 2 is the instant: one old interval plus the new window offset,
     // listening across the new transmit window.
-    let Some(Request::ConnectionEvent(instant)) = harness.step() else {
+    let Some(Request::ConnectionEvent(instant)) = harness.step().unwrap() else {
         panic!("the instant");
     };
     let anchor = second_anchor + INTERVAL + 2 * 1_250;
@@ -411,9 +409,9 @@ fn a_connection_update_moves_the_anchor_at_its_instant() {
         instant.timing,
         ConnectionEventTiming::Recurring {
             receive_wait: oer_bluetooth_radio::RadioDuration::from_micros(
-                10 + 2 * widening as u32 + 1_250 + 2
+                10 + 2 * widening + 1_250 + 2
             ),
-            widening: oer_bluetooth_radio::RadioDuration::from_micros(widening as u32),
+            widening: oer_bluetooth_radio::RadioDuration::from_micros(widening),
         }
     );
     harness.end_at(instant.id, Some(anchor + 300));
@@ -422,7 +420,7 @@ fn a_connection_update_moves_the_anchor_at_its_instant() {
         harness.drain(),
         [std::vec![0x3e, 10, 0x03, 0, 0, 0, 40, 0, 0, 0, 200, 0]]
     );
-    let Some(Request::ConnectionEvent(after)) = harness.step() else {
+    let Some(Request::ConnectionEvent(after)) = harness.step().unwrap() else {
         panic!("the event after the instant");
     };
     assert!(after.window.start().as_micros() > anchor + 300 + 50_000 - 200);
@@ -432,9 +430,9 @@ fn a_connection_update_moves_the_anchor_at_its_instant() {
 fn reset_drops_the_connection_without_disconnection_complete() {
     let (mut harness, first) = Harness::connected();
     assert_eq!(harness.command(super::RESET, &[]), None);
-    assert_eq!(harness.step(), Some(Request::Cancel(first)));
+    assert_eq!(harness.step().unwrap(), Some(Request::Cancel(first)));
     harness.end_at(first, None);
-    assert_eq!(harness.step(), Some(Request::CloseConnection));
+    assert_eq!(harness.step().unwrap(), Some(Request::CloseConnection));
     assert_eq!(harness.status_of(super::RESET), Some(SUCCESS));
     assert!(!harness.core.wants_radio());
 }
@@ -456,11 +454,15 @@ fn host_credits_hold_received_data_and_the_next_event() {
     harness.receive(first, &[0x02, 1, 0xbb]);
     assert_eq!(harness.drain(), [std::vec![0x00, 0x20, 1, 0, 0xaa]]);
     harness.end_at(first, Some(INDICATION_AT + 2_000));
+    harness.now = INDICATION_AT + 2_000;
     // Held data keeps the next event from being planned.
-    assert_eq!(harness.step(), None);
+    assert_eq!(harness.step().unwrap(), None);
     harness.send(HOST_COMPLETED, &[1, 0, 0, 1, 0]);
     assert_eq!(harness.drain(), [std::vec![0x00, 0x20, 1, 0, 0xbb]]);
-    assert!(matches!(harness.step(), Some(Request::ConnectionEvent(_))));
+    assert!(matches!(
+        harness.step().unwrap(),
+        Some(Request::ConnectionEvent(_))
+    ));
 }
 
 #[test]
@@ -482,9 +484,9 @@ fn withheld_host_credits_end_the_connection_at_the_supervision_timeout() {
     // The credit stays withheld: no event is planned, and the connection
     // survives until the supervision timeout has passed.
     harness.now = anchor + TIMEOUT;
-    assert_eq!(harness.step(), None);
+    assert_eq!(harness.step().unwrap(), None);
     harness.now = anchor + TIMEOUT + 1;
-    assert_eq!(harness.step(), Some(Request::CloseConnection));
+    assert_eq!(harness.step().unwrap(), Some(Request::CloseConnection));
     assert_eq!(harness.drain(), [std::vec![0x05, 4, 0, 0, 0, 0x08]]);
 }
 
@@ -516,13 +518,13 @@ fn data_length_update_lengthens_host_data_fragments() {
     );
     harness.end_at(first, Some(INDICATION_AT + 2_000));
     assert_eq!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::Transmit(
             DataPduKind::Control,
             std::vec![0x15, 251, 0, 0x48, 8, 27, 0, 0x48, 1]
         ))
     );
-    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+    let Some(Request::ConnectionEvent(second)) = harness.step().unwrap() else {
         panic!("the second event");
     };
     harness.acknowledge();
@@ -535,13 +537,13 @@ fn data_length_update_lengthens_host_data_fragments() {
         [std::vec![0x0e, 6, 1, 0x22, 0x20, SUCCESS, 0, 0]]
     );
     assert_eq!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::Transmit(
             DataPduKind::Control,
             length_pdu(0x14)[2..].to_vec()
         ))
     );
-    let Some(Request::ConnectionEvent(third)) = harness.step() else {
+    let Some(Request::ConnectionEvent(third)) = harness.step().unwrap() else {
         panic!("the third event");
     };
     harness.acknowledge();
@@ -563,7 +565,7 @@ fn data_length_update_lengthens_host_data_fragments() {
         &data,
     ));
     assert_eq!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::Transmit(DataPduKind::Start, data))
     );
 }
@@ -579,10 +581,10 @@ fn a_peer_without_data_length_update_keeps_the_minimum() {
     harness.send(SET_DATA_LENGTH, &[0, 0, 251, 0, 0x48, 8]);
     harness.drain();
     assert!(matches!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::Transmit(DataPduKind::Control, _))
     ));
-    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+    let Some(Request::ConnectionEvent(second)) = harness.step().unwrap() else {
         panic!("the second event");
     };
     harness.acknowledge();
@@ -597,7 +599,7 @@ fn a_peer_without_data_length_update_keeps_the_minimum() {
         bt_hci::data::AclBroadcastFlag::PointToPoint,
         &data,
     ));
-    let Some(Request::Transmit(DataPduKind::Start, fragment)) = harness.step() else {
+    let Some(Request::Transmit(DataPduKind::Start, fragment)) = harness.step().unwrap() else {
         panic!("the first fragment");
     };
     assert_eq!(fragment.len(), 27);
@@ -613,13 +615,14 @@ fn a_scannable_set_answers_scans_but_ignores_connection_indications() {
         Some(SUCCESS)
     );
     harness.send(SET_ADV_ENABLE, &[1]);
-    let Some(Request::ConfigureConnectable(adv_scan_ind, scan_rsp)) = harness.step() else {
+    let Some(Request::ConfigureConnectable(adv_scan_ind, scan_rsp)) = harness.step().unwrap()
+    else {
         panic!("a response-capable set");
     };
     assert_eq!(adv_scan_ind[..8], [0x06, 6, 6, 5, 4, 3, 2, 1]);
     assert_eq!(scan_rsp[..8], [0x04, 6, 6, 5, 4, 3, 2, 1]);
     assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
-    let Some(Request::Advertise(event)) = harness.step() else {
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
         panic!("an advertising event");
     };
     // The scan exchange fits the channel spacing; a connection indication
@@ -628,18 +631,21 @@ fn a_scannable_set_answers_scans_but_ignores_connection_indications() {
     let scan = air(adv_scan_ind.len() as u32) + 4 + 150 + 176 + 150 + air(scan_rsp.len() as u32);
     assert_eq!(
         event.channel_spacing.as_micros(),
-        super::TIMING.preparation_lead.as_micros() + scan
+        super::TIMING.preparation_lead.as_micros() + u64::from(scan)
     );
     harness.core.outcome(RadioOutcome::Received {
         id: event.id,
         pdu: ReceivedPdu {
             pdu: &connect_ind(),
             rssi_dbm: -50,
-            captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
+            captured_at: Ok(Some(LeInstant::from_micros(INDICATION_AT))),
         },
     });
     harness.end(event.id);
-    assert!(matches!(harness.step(), Some(Request::Advertise(_))));
+    assert!(matches!(
+        harness.step().unwrap(),
+        Some(Request::Advertise(_))
+    ));
     assert!(harness.drain().is_empty());
 }
 
@@ -662,7 +668,7 @@ fn low_duty_directed_advertising_connects_only_its_target() {
         Some(SUCCESS)
     );
     harness.send(SET_ADV_ENABLE, &[1]);
-    let Some(Request::ConfigureDirected(pdu)) = harness.step() else {
+    let Some(Request::ConfigureDirected(pdu)) = harness.step().unwrap() else {
         panic!("a directed set that only receives");
     };
     // ADV_DIRECT_IND with ChSel and a random target: AdvA then TargetA.
@@ -688,7 +694,7 @@ fn low_duty_directed_advertising_connects_only_its_target() {
     assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
 
     // Another initiator is ignored.
-    let Some(Request::Advertise(event)) = harness.step() else {
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
         panic!("an advertising event");
     };
     let mut stranger = connect_ind();
@@ -698,13 +704,13 @@ fn low_duty_directed_advertising_connects_only_its_target() {
         pdu: ReceivedPdu {
             pdu: &stranger,
             rssi_dbm: -50,
-            captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
+            captured_at: Ok(Some(LeInstant::from_micros(INDICATION_AT))),
         },
     });
     harness.end(event.id);
     assert!(harness.drain().is_empty());
 
-    let Some(Request::Advertise(event)) = harness.step() else {
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
         panic!("advertising continues");
     };
     harness.core.outcome(RadioOutcome::Received {
@@ -712,10 +718,13 @@ fn low_duty_directed_advertising_connects_only_its_target() {
         pdu: ReceivedPdu {
             pdu: &connect_ind(),
             rssi_dbm: -50,
-            captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
+            captured_at: Ok(Some(LeInstant::from_micros(INDICATION_AT))),
         },
     });
-    assert!(matches!(harness.step(), Some(Request::OpenConnection(_))));
+    assert!(matches!(
+        harness.step().unwrap(),
+        Some(Request::OpenConnection(_))
+    ));
 }
 
 #[test]
@@ -727,13 +736,13 @@ fn high_duty_directed_advertising_times_out_after_1280_ms() {
     );
     harness.send(SET_ADV_ENABLE, &[1]);
     assert!(matches!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::ConfigureDirected(_))
     ));
     assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
     let mut anchors = Vec::new();
     loop {
-        match harness.step() {
+        match harness.step().unwrap() {
             Some(Request::Advertise(event)) => {
                 anchors.push(event.anchor.as_micros());
                 harness.now = event.anchor.as_micros();
@@ -775,4 +784,187 @@ fn mic_corruption_arms_an_open_connection_before_encryption() {
 fn mic_corruption_is_an_unknown_command_without_the_diagnostic_feature() {
     let (mut harness, _first) = Harness::connected();
     assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[0, 0]), Some(0x01));
+}
+
+#[test]
+fn failed_packet_timing_retains_acl_and_ack_without_a_fabricated_anchor() {
+    use oer_bluetooth_radio::{CaptureError, TimingError};
+    let (mut harness, first) = Harness::connected();
+    let cause = CaptureError::PacketStartCorrection(TimingError::BeforeEpoch);
+    harness.core.outcome(RadioOutcome::Received {
+        id: first,
+        pdu: ReceivedPdu {
+            pdu: &[0x02, 3, 0xaa, 0xbb, 0xcc],
+            rssi_dbm: -40,
+            captured_at: Err(cause),
+        },
+    });
+    assert_eq!(
+        harness.drain(),
+        [std::vec![0, 0x20, 3, 0, 0xaa, 0xbb, 0xcc]]
+    );
+    harness.core.outcome(RadioOutcome::EventEnded {
+        id: first,
+        result: EventResult::TimingFailed {
+            cause,
+            executed: true,
+            anchor: Err(cause),
+        },
+    });
+    let data = [1, 2, 3];
+    harness.core.acl(bt_hci::data::AclPacket::new(
+        bt_hci::param::ConnHandle::new(0),
+        bt_hci::data::AclPacketBoundary::FirstNonFlushable,
+        bt_hci::data::AclBroadcastFlag::PointToPoint,
+        &data,
+    ));
+    assert_eq!(
+        harness.step().unwrap(),
+        Some(Request::Transmit(DataPduKind::Start, data.to_vec()))
+    );
+    let Some(Request::ConnectionEvent(second)) = harness.step().unwrap() else {
+        panic!("connection continues")
+    };
+    // A failed capture cannot replace the first planned connection anchor.
+    let first_anchor = INDICATION_AT + 352 + 1_250;
+    assert!(second.window.start().as_micros() > first_anchor + INTERVAL - 1_000);
+    assert!(second.window.start().as_micros() < first_anchor + INTERVAL);
+    harness.acknowledge();
+    assert_eq!(harness.drain(), [std::vec![0x13, 5, 1, 0, 0, 1, 0]]);
+    harness.core.outcome(RadioOutcome::EventEnded {
+        id: second.id,
+        result: EventResult::TimingFailed {
+            cause,
+            executed: true,
+            anchor: Err(cause),
+        },
+    });
+    assert!(harness.core.is_acl_ready());
+    assert_eq!(harness.core.fault(), None);
+}
+
+#[test]
+fn a_connection_indication_with_failed_timing_does_not_open_a_reference() {
+    use oer_bluetooth_radio::{CaptureError, TimingError};
+    let mut harness = Harness::configured();
+    let mut params = super::nonconnectable_parameters();
+    params[4] = 0;
+    assert_eq!(
+        harness.command(super::SET_ADV_PARAMS, &params),
+        Some(SUCCESS)
+    );
+    harness.send(SET_ADV_ENABLE, &[1]);
+    harness.step().unwrap();
+    harness.drain();
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
+        panic!("advertise")
+    };
+    let cause = CaptureError::PacketStartCorrection(TimingError::BeforeEpoch);
+    harness.core.outcome(RadioOutcome::Received {
+        id: event.id,
+        pdu: ReceivedPdu {
+            pdu: &connect_ind(),
+            rssi_dbm: -40,
+            captured_at: Err(cause),
+        },
+    });
+    harness.core.outcome(RadioOutcome::EventEnded {
+        id: event.id,
+        result: EventResult::TimingFailed {
+            cause,
+            executed: true,
+            anchor: Ok(None),
+        },
+    });
+    assert!(harness.drain().is_empty());
+    assert!(matches!(
+        harness.step().unwrap(),
+        Some(Request::Advertise(_))
+    ));
+}
+
+#[test]
+fn failed_recurring_anchor_restores_the_ll_owner_and_allows_reset_close() {
+    let (mut harness, first) = Harness::connected();
+    harness.end_at(first, Some(u64::MAX - 10_000));
+    let first_error = harness.step().unwrap_err();
+    assert_eq!(first_error.role, crate::PlanningRole::Peripheral);
+    assert_eq!(
+        first_error.calculation,
+        crate::PlanningCalculation::Recurrence
+    );
+    assert_eq!(
+        first_error.cause,
+        crate::PlanningCause::Timing(oer_bluetooth_radio::TimingError::BeyondEpoch)
+    );
+    assert_eq!(harness.step(), Err(first_error));
+    harness.now = u64::MAX;
+    harness.send(super::RESET, &[]);
+    assert_eq!(harness.step().unwrap(), Some(Request::CloseConnection));
+    assert_eq!(harness.status_of(super::RESET), Some(SUCCESS));
+}
+
+#[test]
+fn failed_first_connection_geometry_keeps_the_indication_until_reset() {
+    use crate::{PlanningCalculation, PlanningCause, PlanningOperation, PlanningRole};
+    use oer_bluetooth_radio::{TimingError, WindowError};
+
+    for (captured, calculation, cause) in [
+        (
+            u64::MAX - 100,
+            PlanningCalculation::FirstAnchor,
+            TimingError::BeyondEpoch,
+        ),
+        (
+            u64::MAX - 5_000,
+            PlanningCalculation::WindowGeometry,
+            TimingError::Window(WindowError::Overflow),
+        ),
+    ] {
+        let mut harness = Harness::configured();
+        let mut params = super::nonconnectable_parameters();
+        params[4] = 0;
+        assert_eq!(
+            harness.command(super::SET_ADV_PARAMS, &params),
+            Some(SUCCESS)
+        );
+        harness.send(SET_ADV_ENABLE, &[1]);
+        assert!(matches!(
+            harness.step().unwrap(),
+            Some(Request::ConfigureConnectable(_, _))
+        ));
+        assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
+        let Some(Request::Advertise(event)) = harness.step().unwrap() else {
+            panic!("advertising event");
+        };
+        harness.core.outcome(RadioOutcome::Received {
+            id: event.id,
+            pdu: ReceivedPdu {
+                pdu: &connect_ind(),
+                rssi_dbm: -40,
+                captured_at: Ok(Some(LeInstant::from_micros(captured))),
+            },
+        });
+        let expected = crate::PlanningError {
+            role: PlanningRole::Peripheral,
+            operation: PlanningOperation::ConnectionIndication,
+            calculation,
+            cause: PlanningCause::Timing(cause),
+        };
+        assert_eq!(harness.step(), Err(expected));
+        assert_eq!(harness.step(), Err(expected));
+        assert!(
+            harness.drain().is_empty(),
+            "an invalid first window cannot announce a connection"
+        );
+        // Control teardown requires no future radio coordinate and retains
+        // the already admitted advertising event's exact identity.
+        harness.now = u64::MAX;
+        harness.send(super::RESET, &[]);
+        assert_eq!(harness.step().unwrap(), Some(Request::Cancel(event.id)));
+        harness.end(event.id);
+        assert_eq!(harness.step().unwrap(), Some(Request::RemoveAdvertising));
+        assert_eq!(harness.status_of(super::RESET), Some(SUCCESS));
+        assert!(!harness.core.wants_radio());
+    }
 }

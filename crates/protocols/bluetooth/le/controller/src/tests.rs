@@ -17,7 +17,7 @@ use crate::{LeController, LeControllerConfig, LeVersionInformation, PLANNING_SLA
 mod accept_list;
 mod connection;
 
-const TIMING: RadioTiming = RadioTiming {
+pub(super) const TIMING: RadioTiming = RadioTiming {
     preparation_lead: RadioDuration::from_micros(300),
     admission_guard: RadioDuration::from_micros(200),
     connection: ConnectionAllowances {
@@ -201,21 +201,21 @@ impl Harness {
     }
 
     /// Ask for one request and answer it with `result`.
-    fn step_with(&mut self, result: Result<(), RequestError>) -> Option<Request> {
-        if !self.core.wants_radio() {
-            return None;
-        }
+    fn step_with(
+        &mut self,
+        result: Result<(), RequestError>,
+    ) -> Result<Option<Request>, crate::PlanningError> {
         let request = self
             .core
-            .next_request(LeInstant::from_micros(self.now), TIMING)
+            .next_request(LeInstant::from_micros(self.now), TIMING)?
             .map(Request::from);
         if request.is_some() {
             self.core.request_done(result);
         }
-        request
+        Ok(request)
     }
 
-    fn step(&mut self) -> Option<Request> {
+    fn step(&mut self) -> Result<Option<Request>, crate::PlanningError> {
         self.step_with(Ok(()))
     }
 
@@ -228,11 +228,9 @@ impl Harness {
 
     fn earliest(&self) -> u64 {
         self.now
-            + u64::from(
-                TIMING.preparation_lead.as_micros()
-                    + TIMING.admission_guard.as_micros()
-                    + PLANNING_SLACK.as_micros(),
-            )
+            + (TIMING.preparation_lead.as_micros()
+                + TIMING.admission_guard.as_micros()
+                + PLANNING_SLACK.as_micros())
     }
 
     fn advertise(&mut self, data: &[u8]) {
@@ -242,7 +240,7 @@ impl Harness {
         assert_eq!(self.command(SET_ADV_ENABLE, &[1]), None);
         assert!(!self.core.is_command_ready());
         assert!(matches!(
-            self.step(),
+            self.step().unwrap(),
             Some(Request::ConfigureAdvertising(_))
         ));
         assert_eq!(self.status_of(SET_ADV_ENABLE), Some(SUCCESS));
@@ -287,7 +285,7 @@ impl Harness {
             None
         );
         assert_eq!(
-            self.step(),
+            self.step().unwrap(),
             Some(Request::ConfigureScanner(
                 if active {
                     ScanType::Active
@@ -363,21 +361,21 @@ fn nonconnectable_advertising_places_events_one_interval_plus_delay_apart() {
     let data = [0x02, 0x01, 0x06];
     harness.advertise(&data);
 
-    let Some(Request::Advertise(first)) = harness.step() else {
+    let Some(Request::Advertise(first)) = harness.step().unwrap() else {
         panic!("first advertising event");
     };
     assert_eq!(first.anchor.as_micros(), harness.earliest());
     assert_eq!(first.channels, AdvertisingChannels::ALL);
-    let air = (6 + data.len() as u32) * 8 + 80;
+    let air = (6 + data.len() as u64) * 8 + 80;
     assert_eq!(
         first.channel_spacing.as_micros(),
         TIMING.preparation_lead.as_micros() + air
     );
     // One event at a time.
-    assert_eq!(harness.step(), None);
+    assert_eq!(harness.step().unwrap(), None);
 
     harness.end(first.id);
-    let Some(Request::Advertise(second)) = harness.step() else {
+    let Some(Request::Advertise(second)) = harness.step().unwrap() else {
         panic!("second advertising event");
     };
     let gap = second.anchor.as_micros() - first.anchor.as_micros();
@@ -393,7 +391,7 @@ fn advertising_pdu_carries_the_public_address_and_host_data() {
     harness.command(SET_ADV_PARAMS, &parameters);
     harness.command(SET_ADV_DATA, &adv_data(&[0xaa, 0xbb]));
     harness.send(SET_ADV_ENABLE, &[1]);
-    let Some(Request::ConfigureAdvertising(pdu)) = harness.step() else {
+    let Some(Request::ConfigureAdvertising(pdu)) = harness.step().unwrap() else {
         panic!("configuration");
     };
     assert_eq!(pdu, std::vec![0x02, 8, 6, 5, 4, 3, 2, 1, 0xaa, 0xbb]);
@@ -423,7 +421,7 @@ fn a_refused_configuration_completes_enable_with_hardware_failure() {
     let parameters = nonconnectable_parameters();
     harness.command(SET_ADV_PARAMS, &parameters);
     harness.send(SET_ADV_ENABLE, &[1]);
-    harness.step_with(Err(RequestError::NoInstance));
+    harness.step_with(Err(RequestError::NoInstance)).unwrap();
     assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(HARDWARE_FAILURE));
     assert!(!harness.core.wants_radio());
 }
@@ -432,15 +430,15 @@ fn a_refused_configuration_completes_enable_with_hardware_failure() {
 fn disable_cancels_the_event_then_removes_the_set_before_completing() {
     let mut harness = Harness::configured();
     harness.advertise(&[]);
-    let Some(Request::Advertise(event)) = harness.step() else {
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
         panic!("advertising event");
     };
     assert_eq!(harness.command(SET_ADV_ENABLE, &[0]), None);
-    assert_eq!(harness.step(), Some(Request::Cancel(event.id)));
-    assert_eq!(harness.step(), None);
+    assert_eq!(harness.step().unwrap(), Some(Request::Cancel(event.id)));
+    assert_eq!(harness.step().unwrap(), None);
     assert_eq!(harness.status_of(SET_ADV_ENABLE), None);
     harness.end(event.id);
-    assert_eq!(harness.step(), Some(Request::RemoveAdvertising));
+    assert_eq!(harness.step().unwrap(), Some(Request::RemoveAdvertising));
     assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
     assert!(!harness.core.wants_radio());
     // Disabling again has no effect.
@@ -451,22 +449,25 @@ fn disable_cancels_the_event_then_removes_the_set_before_completing() {
 fn advertising_data_updates_while_advertising_reconfigure_the_set() {
     let mut harness = Harness::configured();
     harness.advertise(&[0x01]);
-    let Some(Request::Advertise(event)) = harness.step() else {
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
         panic!("advertising event");
     };
     assert_eq!(
         harness.command(SET_ADV_DATA, &adv_data(&[0x02, 0x03])),
         None
     );
-    assert_eq!(harness.step(), Some(Request::Cancel(event.id)));
+    assert_eq!(harness.step().unwrap(), Some(Request::Cancel(event.id)));
     harness.end(event.id);
-    assert_eq!(harness.step(), Some(Request::RemoveAdvertising));
-    let Some(Request::ConfigureAdvertising(pdu)) = harness.step() else {
+    assert_eq!(harness.step().unwrap(), Some(Request::RemoveAdvertising));
+    let Some(Request::ConfigureAdvertising(pdu)) = harness.step().unwrap() else {
         panic!("new configuration");
     };
     assert_eq!(&pdu[8..], &[0x02, 0x03]);
     assert_eq!(harness.status_of(SET_ADV_DATA), Some(SUCCESS));
-    assert!(matches!(harness.step(), Some(Request::Advertise(_))));
+    assert!(matches!(
+        harness.step().unwrap(),
+        Some(Request::Advertise(_))
+    ));
 
     // Parameters change only while disabled.
     assert_eq!(
@@ -486,7 +487,7 @@ fn passive_scanning_rotates_channels_and_reports_advertisements() {
     harness.scan(160, 80, false);
     let mut channels = Vec::new();
     for round in 0..4 {
-        let Some(Request::Scan(window)) = harness.step() else {
+        let Some(Request::Scan(window)) = harness.step().unwrap() else {
             panic!("scan window {round}");
         };
         assert_eq!(window.window.duration().as_micros(), 50_000);
@@ -500,7 +501,7 @@ fn passive_scanning_rotates_channels_and_reports_advertisements() {
                     pdu: ReceivedPdu {
                         pdu: &pdu,
                         rssi_dbm: -40,
-                        captured_at: None,
+                        captured_at: Ok(None),
                     },
                 });
             }
@@ -534,7 +535,7 @@ fn only_an_active_scanner_reports_scan_responses() {
     for active in [false, true] {
         let mut harness = Harness::configured();
         harness.scan_as(active, 160, 80, false);
-        let Some(Request::Scan(window)) = harness.step() else {
+        let Some(Request::Scan(window)) = harness.step().unwrap() else {
             panic!("scan window");
         };
         harness.core.outcome(RadioOutcome::Received {
@@ -542,7 +543,7 @@ fn only_an_active_scanner_reports_scan_responses() {
             pdu: ReceivedPdu {
                 pdu: &scan_rsp,
                 rssi_dbm: -30,
-                captured_at: None,
+                captured_at: Ok(None),
             },
         });
         let reports = harness.drain();
@@ -561,7 +562,7 @@ fn only_an_active_scanner_reports_scan_responses() {
 fn duplicate_filtering_and_masked_events_suppress_reports() {
     let mut harness = Harness::configured();
     harness.scan(160, 80, true);
-    let Some(Request::Scan(window)) = harness.step() else {
+    let Some(Request::Scan(window)) = harness.step().unwrap() else {
         panic!("scan window");
     };
     let pdu = advertising_pdu([1, 1, 1, 1, 1, 1], &[0x01]);
@@ -571,7 +572,7 @@ fn duplicate_filtering_and_masked_events_suppress_reports() {
             pdu: ReceivedPdu {
                 pdu,
                 rssi_dbm: -60,
-                captured_at: None,
+                captured_at: Ok(None),
             },
         }
     }
@@ -588,7 +589,7 @@ fn duplicate_filtering_and_masked_events_suppress_reports() {
         pdu: ReceivedPdu {
             pdu: &advertising_pdu([2; 6], &[]),
             rssi_dbm: -60,
-            captured_at: None,
+            captured_at: Ok(None),
         },
     });
     assert!(harness.drain().is_empty());
@@ -597,7 +598,7 @@ fn duplicate_filtering_and_masked_events_suppress_reports() {
     let mut quiet = Harness::new();
     quiet.command(RESET, &[]);
     quiet.scan(160, 80, false);
-    let Some(Request::Scan(window)) = quiet.step() else {
+    let Some(Request::Scan(window)) = quiet.step().unwrap() else {
         panic!("scan window");
     };
     quiet.core.outcome(RadioOutcome::Received {
@@ -605,7 +606,7 @@ fn duplicate_filtering_and_masked_events_suppress_reports() {
         pdu: ReceivedPdu {
             pdu: &pdu,
             rssi_dbm: -60,
-            captured_at: None,
+            captured_at: Ok(None),
         },
     });
     assert!(quiet.drain().is_empty());
@@ -617,31 +618,30 @@ fn scan_windows_leave_room_for_the_next_advertising_event() {
     harness.advertise(&[]);
     // Continuous scanning: window equals interval.
     harness.scan(160, 160, false);
-    let Some(Request::Advertise(event)) = harness.step() else {
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
         panic!("advertising event");
     };
-    let Some(Request::Scan(window)) = harness.step() else {
+    let Some(Request::Scan(window)) = harness.step().unwrap() else {
         panic!("scan window");
     };
     let event_air = TIMING.preparation_lead.as_micros() * 2 + (3 * 80 + 6 * 8 * 3);
-    let event_end = event.anchor.as_micros() + u64::from(event_air);
+    let event_end = event.anchor.as_micros() + event_air;
     assert!(
-        window.window.start().as_micros()
-            >= event_end + u64::from(TIMING.preparation_lead.as_micros()),
+        window.window.start().as_micros() >= event_end + TIMING.preparation_lead.as_micros(),
         "the window starts after the event and its own lead"
     );
     // The window ends before the reservation of the next event, which starts
     // at least one interval after this one.
     let next_reservation = event.anchor.as_micros() + u64::from(ADV_INTERVAL_UNITS) * 625
-        - u64::from(TIMING.preparation_lead.as_micros());
+        - TIMING.preparation_lead.as_micros();
     assert!(window.window.end().as_micros() <= next_reservation + 10_000);
     assert!(window.window.end().as_micros() > event_end);
 
     harness.end(event.id);
-    let Some(Request::Advertise(next)) = harness.step() else {
+    let Some(Request::Advertise(next)) = harness.step().unwrap() else {
         panic!("next advertising event");
     };
-    let next_reservation = next.anchor.as_micros() - u64::from(TIMING.preparation_lead.as_micros());
+    let next_reservation = next.anchor.as_micros() - TIMING.preparation_lead.as_micros();
     assert!(window.window.end().as_micros() <= next_reservation);
 }
 
@@ -652,7 +652,7 @@ fn direct_test_mode_runs_alone_and_test_end_drains_then_releases() {
         harness.command(TRANSMITTER_TEST, &[0, 37, 0]),
         Some(SUCCESS)
     );
-    let Some(Request::TestTransmit(id)) = harness.step() else {
+    let Some(Request::TestTransmit(id)) = harness.step().unwrap() else {
         panic!("test transmit");
     };
     assert_eq!(harness.command(SET_ADV_ENABLE, &[1]), Some(DISALLOWED));
@@ -660,9 +660,9 @@ fn direct_test_mode_runs_alone_and_test_end_drains_then_releases() {
 
     harness.send(TEST_END, &[]);
     assert!(!harness.core.is_command_ready());
-    assert_eq!(harness.step(), Some(Request::Cancel(id)));
+    assert_eq!(harness.step().unwrap(), Some(Request::Cancel(id)));
     harness.end(id);
-    assert_eq!(harness.step(), Some(Request::EndTest));
+    assert_eq!(harness.step().unwrap(), Some(Request::EndTest));
     let packets = harness.drain();
     assert_eq!(packets.len(), 1);
     assert_eq!(&packets[0][3..8], &[0x1f, 0x20, SUCCESS, 0, 0]);
@@ -684,26 +684,26 @@ fn reset_stops_every_role_before_it_completes() {
     let mut harness = Harness::configured();
     harness.advertise(&[]);
     harness.scan(160, 80, false);
-    let Some(Request::Advertise(event)) = harness.step() else {
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
         panic!("advertising event");
     };
-    let Some(Request::Scan(window)) = harness.step() else {
+    let Some(Request::Scan(window)) = harness.step().unwrap() else {
         panic!("scan window");
     };
     assert_eq!(harness.command(RESET, &[]), None);
-    assert_eq!(harness.step(), Some(Request::Cancel(event.id)));
-    assert_eq!(harness.step(), Some(Request::Cancel(window.id)));
+    assert_eq!(harness.step().unwrap(), Some(Request::Cancel(event.id)));
+    assert_eq!(harness.step().unwrap(), Some(Request::Cancel(window.id)));
     harness.end(event.id);
     harness.end(window.id);
-    assert_eq!(harness.step(), Some(Request::RemoveAdvertising));
+    assert_eq!(harness.step().unwrap(), Some(Request::RemoveAdvertising));
     assert_eq!(harness.status_of(RESET), None);
-    assert_eq!(harness.step(), Some(Request::RemoveScanner));
+    assert_eq!(harness.step().unwrap(), Some(Request::RemoveScanner));
     assert_eq!(harness.status_of(RESET), Some(SUCCESS));
     assert!(!harness.core.wants_radio());
     // The configuration returned to its defaults: connectable again.
     assert_eq!(harness.command(SET_ADV_ENABLE, &[1]), None);
     assert!(matches!(
-        harness.step(),
+        harness.step().unwrap(),
         Some(Request::ConfigureConnectable(_, _))
     ));
 }
@@ -744,4 +744,100 @@ fn data_length_commands_report_the_maximum_and_keep_the_suggestion_until_reset()
     );
     assert_eq!(harness.command(RESET, &[]), Some(SUCCESS));
     assert_eq!(suggested(&mut harness), [SUCCESS, 27, 0, 0x48, 1]);
+}
+
+#[test]
+fn inactive_and_control_only_work_do_not_require_a_future_anchor() {
+    let mut harness = Harness::configured();
+    harness.now = u64::MAX;
+    assert_eq!(harness.step(), Ok(None));
+    harness.advertise(&[1]);
+    assert!(matches!(
+        harness.step(),
+        Err(crate::PlanningError {
+            role: crate::PlanningRole::Advertising,
+            calculation: crate::PlanningCalculation::Admission,
+            ..
+        })
+    ));
+    harness.send(SET_ADV_ENABLE, &[0]);
+    assert_eq!(harness.step(), Ok(Some(Request::RemoveAdvertising)));
+    assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
+}
+
+#[test]
+fn failed_advertising_geometry_preserves_identity_randomness_and_continuation() {
+    let mut harness = Harness::configured();
+    harness.advertise(&[1]);
+    harness.now = u64::MAX - 1_000;
+    assert!(matches!(
+        harness.step(),
+        Err(crate::PlanningError {
+            role: crate::PlanningRole::Advertising,
+            calculation: crate::PlanningCalculation::LatestAnchor,
+            ..
+        })
+    ));
+    // Compare the first and second validated plans with an untouched epoch.
+    harness.now = 10_000;
+    let mut reference = Harness::configured();
+    reference.advertise(&[1]);
+    let first = harness.step().unwrap();
+    assert_eq!(first, reference.step().unwrap());
+    let Some(Request::Advertise(event)) = first else {
+        panic!("first event")
+    };
+    harness.end(event.id);
+    reference.end(event.id);
+    assert_eq!(harness.step().unwrap(), reference.step().unwrap());
+}
+
+#[test]
+fn test_end_remains_available_after_fatal_test_planning() {
+    let mut harness = Harness::configured();
+    assert_eq!(
+        harness.command(TRANSMITTER_TEST, &[0, 37, 0]),
+        Some(SUCCESS)
+    );
+    harness.now = u64::MAX;
+    assert!(matches!(
+        harness.step(),
+        Err(crate::PlanningError {
+            role: crate::PlanningRole::DirectTest,
+            cause: crate::PlanningCause::DirectTest(_),
+            ..
+        })
+    ));
+    // No request was admitted, so ending this retained test needs no radio anchor.
+    assert_eq!(harness.command(TEST_END, &[]), Some(SUCCESS));
+    assert_eq!(harness.step(), Ok(None));
+}
+
+#[test]
+fn mixed_role_planning_failure_keeps_the_admitted_identity_and_control_path() {
+    let mut harness = Harness::configured();
+    harness.advertise(&[]);
+    harness.scan(160, 160, false);
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
+        panic!("advertising event")
+    };
+    let Some(Request::Scan(window)) = harness.step().unwrap() else {
+        panic!("scan window")
+    };
+    harness.end(window.id);
+    harness.now = u64::MAX;
+    let failure = harness.step().unwrap_err();
+    assert_eq!(failure.role, crate::PlanningRole::Scanning);
+    assert_eq!(failure.calculation, crate::PlanningCalculation::Admission);
+    assert_eq!(harness.step(), Err(failure));
+    assert!(harness.core.is_command_ready());
+    harness.send(SET_ADV_ENABLE, &[0]);
+    assert_eq!(harness.step().unwrap(), Some(Request::Cancel(event.id)));
+    harness.end(event.id);
+    assert_eq!(harness.step().unwrap(), Some(Request::RemoveAdvertising));
+    assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
+    harness.send(SET_SCAN_ENABLE, &[0, 0]);
+    assert_eq!(harness.step().unwrap(), Some(Request::RemoveScanner));
+    assert_eq!(harness.status_of(SET_SCAN_ENABLE), Some(SUCCESS));
+    assert_eq!(harness.step(), Ok(None));
 }

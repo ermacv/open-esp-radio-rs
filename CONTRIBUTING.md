@@ -16,7 +16,7 @@ Configure the rule's match conditions as follows (the issuer is
 
 ```json
 {
-  "subject_prefix": "repo:ermacv/open-esp-radio-rs:ref:refs/heads/main",
+  "subject_prefix": "repo:ermacv@26526682/open-esp-radio-rs@1312931455:*",
   "audience": "https://api.anthropic.com",
   "claims": {
     "repository_id": "1312931455",
@@ -26,6 +26,13 @@ Configure the rule's match conditions as follows (the issuer is
   }
 }
 ```
+
+This repository uses GitHub's immutable subject format. Confirm the current
+prefix with `gh api repos/ermacv/open-esp-radio-rs/actions/oidc/customization/sub`
+before changing federation trust; a name-only subject does not match its JWTs.
+The trailing wildcard accommodates the subject suffixes of different workflow
+events; the exact `ref` and `workflow_ref` claims still restrict trust to main
+and this review workflow.
 
 Add the resulting IDs as repository **Actions variables**, not secrets:
 `ANTHROPIC_FEDERATION_RULE_ID` (`fdrl_…`), `ANTHROPIC_ORGANIZATION_ID`,
@@ -66,7 +73,10 @@ need a separate CI policy before this workflow can give a merge verdict.
 
 To repeat a review after issue requirements change, use **Actions → Claude
 runtime review → Run workflow**, selecting the default branch and the PR
-number. Each analysis is limited to 20 model calls, 250,000 cumulative input
+number. To verify federation during setup, select `verify_auth` instead; that
+mode exchanges an OIDC token and makes one minimal Messages request (up to 16
+output tokens) without reading or commenting on a PR. Each analysis is limited
+to 20 model calls, 250,000 cumulative input
 tokens and 24,000 output tokens; reaching a limit reports incomplete analysis.
 Large PRs whose context exceeds 180,000 characters also require splitting or
 an explicit limit change. GitHub Actions runner minutes have separate billing.

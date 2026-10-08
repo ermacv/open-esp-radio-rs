@@ -61,6 +61,18 @@ class FakeGitHub:
 
 
 class ReviewTests(unittest.TestCase):
+    def test_auth_probe_calls_messages_without_publishing_or_printing_tokens(self):
+        with patch.object(review, "Claude") as claude, patch("sys.stdout", new_callable=io.StringIO) as output:
+            claude.return_value.request.return_value = {"content": [{"type": "text", "text": "OK"}]}
+            review.verify_auth(review.MODEL)
+            args = claude.return_value.request.call_args.args
+            self.assertEqual(args[0], "messages")
+            self.assertEqual(args[1]["max_tokens"], 16)
+            self.assertIn("OIDC exchange and Messages API succeeded", output.getvalue())
+            claude.return_value.request.return_value = {"content": []}
+            with self.assertRaises(ValueError):
+                review.verify_auth(review.MODEL)
+
     def test_approval_requires_complete_analysis_and_successful_ci(self):
         for ci in (None, False):
             self.assertIn("Проверка неполная", review.render(PR, REPORT, ci, "CI pending"))

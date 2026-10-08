@@ -65,7 +65,8 @@ federation variables are configured, so the setup PR is not blocked by a check
 that cannot run yet. Source analysis
 does not establish hardware readiness or replace qualification/HIL evidence.
 
-The controller is checked out from the trusted base/default branch; it never
+The controller is checked out from the current trusted default branch, including
+when a PR's base snapshot predates this workflow; it never
 checks out or executes the PR's code. Claude can only read repository source
 and return findings. Only the controller publishes the comment. Automatic
 review covers same-repository branches, matching CI's push trigger. Fork PRs
@@ -76,9 +77,12 @@ runtime review → Run workflow**, selecting the default branch and the PR
 number. To verify federation during setup, select `verify_auth` instead; that
 mode exchanges an OIDC token and makes one minimal Messages request (up to 16
 output tokens) without reading or commenting on a PR. Each analysis is limited
-to 20 model calls, 250,000 cumulative input
-tokens and 24,000 output tokens; reaching a limit reports incomplete analysis.
-Large PRs whose context exceeds 180,000 characters also require splitting or
+to 20 model calls, 2,000,000 cumulative input
+tokens and 48,000 output tokens; reaching a limit reports incomplete analysis.
+The larger input budget covers repeated source investigation across large PRs;
+the preflight counts each request before paid inference. Context and linked
+issues are kept complete, and logs show per-step token usage without source or
+credentials. PRs whose context exceeds 1,000,000 characters require splitting or
 an explicit limit change. GitHub Actions runner minutes have separate billing.
 
 Contributors can work on portable Rust protocols, ownership tests, binary

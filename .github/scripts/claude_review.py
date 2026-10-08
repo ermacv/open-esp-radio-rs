@@ -450,19 +450,34 @@ def targets(api, event, event_name):
     raise ValueError("Unsupported workflow event")
 
 
+def verify_auth(model):
+    """Exercise federation and a minimal paid request without touching a PR."""
+    response = Claude(model).request("messages", {
+        "model": model, "max_tokens": 16,
+        "messages": [{"role": "user", "content": "Reply with OK."}]})
+    if not any(block.get("type") == "text" and block.get("text", "").strip()
+               for block in response.get("content", [])):
+        raise ValueError("Claude returned no text during authentication verification")
+    print(f"OIDC exchange and Messages API succeeded with {model}.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["run", "check"])
+    parser.add_argument("command", choices=["run", "check", "verify-auth"])
     args = parser.parse_args()
     if args.command == "check":
         suite = unittest.defaultTestLoader.discover(str(Path(__file__).parent), "test_claude_review.py")
         return int(not unittest.TextTestRunner().run(suite).wasSuccessful())
     if os.environ.get("GITHUB_REPOSITORY") != REPOSITORY:
         raise ValueError("This reviewer operates only on the owner's repository")
+    model = os.environ.get("CLAUDE_REVIEW_MODEL") or MODEL
+    if args.command == "verify-auth":
+        verify_auth(model)
+        return 0
     api = ReviewGitHub(os.environ.get("GITHUB_TOKEN"))
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     for number in targets(api, event, os.environ["GITHUB_EVENT_NAME"]):
-        review_pr(api, number, os.environ.get("CLAUDE_REVIEW_MODEL") or MODEL)
+        review_pr(api, number, model)
     return 0
 
 

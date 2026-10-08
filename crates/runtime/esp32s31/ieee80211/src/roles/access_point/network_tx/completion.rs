@@ -445,6 +445,11 @@ where
         let (engine, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
             AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
         })?;
+        let stamp = radio_stamp(ordinary.timer())?;
+        aggregate
+            .active_mut()
+            .validate_block_ack_request_stamp(stamp)
+            .map_err(AccessPointDatapathError::Aggregate)?;
         let progress = ordinary
             .service(hardware, wake)
             .map_err(|error| AccessPointDatapathError::Aggregate(ApAmpduError::Ordinary(error)))?;
@@ -467,7 +472,6 @@ where
             .is_some_and(|agreement| engine.tx_block_ack_holds(agreement));
         #[cfg(any(feature = "diagnostics", test))]
         let resort_started = self.observer.map(AggregateTxObserver::now_micros);
-        let stamp = radio_stamp(ordinary.timer())?;
         let aggregate_progress = aggregate
             .active_mut()
             .observe_block_ack_request(ordinary, hardware, block_ack, block_ack_operational, stamp)

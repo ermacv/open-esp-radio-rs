@@ -558,6 +558,21 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         )
     }
 
+    /// Validate the radio generation before servicing this aggregate's
+    /// ordinary BlockAckReq. A failure preserves both owners and the answer
+    /// still held by hardware. Use the same stamp when observing that answer.
+    pub fn validate_block_ack_request_stamp(
+        &self,
+        radio_stamp: oer_ieee80211_lower_mac::Ieee80211Stamp,
+    ) -> Result<(), ApAmpduError> {
+        let ApAmpduState::RequestingBlockAck { retry, .. } = &self.state else {
+            return Err(ApAmpduError::Idle);
+        };
+        retry
+            .validate_stamp(radio_stamp)
+            .map_err(ApAmpduError::Retry)
+    }
+
     /// Resort the retained aggregate by the answer to its BlockAckReq: the
     /// BlockAck received, or `None` when the request exhausted its retries.
     pub fn observe_block_ack_request<P, E, T, const ORDINARY_BUFFER_SIZE: usize, H>(
@@ -574,9 +589,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         T: oer_time::Timer,
         H: HtAmpduHardware,
     {
-        if let ApAmpduState::RequestingBlockAck { retry, .. } = &self.state {
-            retry.validate_stamp(radio_stamp)?;
-        }
+        self.validate_block_ack_request_stamp(radio_stamp)?;
         let ApAmpduState::RequestingBlockAck {
             cookie,
             rate,

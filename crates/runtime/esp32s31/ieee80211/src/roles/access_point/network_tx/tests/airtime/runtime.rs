@@ -17,6 +17,8 @@ enum Case {
     RadioGeneration,
     EpochThreshold,
     BlockAckRequest,
+    BlockAckRequestRadioUnavailable,
+    BlockAckRequestRadioGeneration,
     PreparedOrdinary,
     PreparedSleep,
     SelectionCapacity,
@@ -73,6 +75,16 @@ fn aggregate_without_its_agreement_sends_missing_mpdus_individually() {
 #[test]
 fn aggregate_whose_protection_always_fails_requests_its_block_ack() {
     run(Case::BlockAckRequest);
+}
+
+#[test]
+fn block_ack_request_unavailable_radio_clock_preserves_completion_and_airtime_owners() {
+    run(Case::BlockAckRequestRadioUnavailable);
+}
+
+#[test]
+fn block_ack_request_stale_radio_generation_preserves_completion_and_airtime_owners() {
+    run(Case::BlockAckRequestRadioGeneration);
 }
 
 #[test]
@@ -279,6 +291,8 @@ fn run(case: Case) {
             case,
             Case::AggregateRetry
                 | Case::BlockAckRequest
+                | Case::BlockAckRequestRadioUnavailable
+                | Case::BlockAckRequestRadioGeneration
                 | Case::RadioGeneration
                 | Case::EpochThreshold
         ) {
@@ -378,7 +392,12 @@ fn run(case: Case) {
             };
             let mut ht_publications = 1;
             let mut legacy_publications = 0;
-            if case == Case::BlockAckRequest {
+            if matches!(
+                case,
+                Case::BlockAckRequest
+                    | Case::BlockAckRequestRadioUnavailable
+                    | Case::BlockAckRequestRadioGeneration
+            ) {
                 let limit = oer_esp32s31_ieee80211_mac::tx::runtime::VENDOR_SHORT_RETRY_LIMIT;
                 for failure in 1..=limit {
                     hardware.aggregate_completion =
@@ -409,16 +428,16 @@ fn run(case: Case) {
                 ));
             }
             // The BlockAck acknowledges sequence 0 only.
+            hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
+                MacTxCompletionObservation::new_model(0, 0),
+                0,
+                0,
+                1,
+                true,
+            ));
             if case == Case::RadioGeneration {
                 let (_, ordinary) = control.mac.try_aggregate_adapter().unwrap();
                 ordinary.timer().generation.set(2);
-                hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
-                    MacTxCompletionObservation::new_model(0, 0),
-                    0,
-                    0,
-                    1,
-                    true,
-                ));
                 assert!(matches!(owner.service(&mut aggregate, &mut control, &mut hardware, complete),
                     Err(AccessPointDatapathError::Aggregate(
                         oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError::Retry(
@@ -434,13 +453,53 @@ fn run(case: Case) {
                 let (_, ordinary) = control.mac.try_aggregate_adapter().unwrap();
                 ordinary.timer().generation.set(1);
             }
-            hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
-                MacTxCompletionObservation::new_model(0, 0),
-                0,
-                0,
-                1,
-                true,
-            ));
+            if matches!(
+                case,
+                Case::BlockAckRequestRadioUnavailable | Case::BlockAckRequestRadioGeneration
+            ) {
+                let agreement = aggregate.active_mut().published_agreement();
+                let aggregate_work = aggregate.active_mut().work();
+                let ordinary_work = owner.exchange_ordinary_work;
+                let (_, ordinary) = control.mac.try_aggregate_adapter().unwrap();
+                let ordinary_queue = ordinary.queue_state();
+                let expected = if case == Case::BlockAckRequestRadioUnavailable {
+                    ordinary.timer().available.set(false);
+                    oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError::RadioClockUnavailable
+                } else {
+                    ordinary.timer().generation.set(2);
+                    oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError::Retry(
+                        oer_esp32s31_ieee80211_mac::tx::runtime::AmpduRetryError::ClockGenerationChanged {
+                            expected: 1,
+                            observed: 2,
+                        },
+                    )
+                };
+                for _ in 0..2 {
+                    assert_eq!(
+                        owner.service(&mut aggregate, &mut control, &mut hardware, complete),
+                        Err(AccessPointDatapathError::Aggregate(expected))
+                    );
+                    assert!(
+                        hardware.aggregate_completion.is_some(),
+                        "failed timing cannot consume the BlockAckReq's answer"
+                    );
+                }
+                assert_eq!(hardware.ht_publications, ht_publications);
+                assert_eq!(hardware.legacy_publications, legacy_publications);
+                assert!(matches!(
+                    owner.aggregate_phase,
+                    Some(AggregateServicePhase::RequestingBlockAck)
+                ));
+                assert_eq!(aggregate.active_mut().published_agreement(), agreement);
+                assert_eq!(aggregate.active_mut().work(), aggregate_work);
+                assert_eq!(owner.exchange_ordinary_work, ordinary_work);
+                assert_eq!(owner.airtime_balance_micros(peer), Some(0));
+                let (_, ordinary) = control.mac.try_aggregate_adapter().unwrap();
+                assert_eq!(ordinary.queue_state(), ordinary_queue);
+                assert!(ordinary.take_last_outcome().is_none());
+                ordinary.timer().available.set(true);
+                ordinary.timer().generation.set(1);
+            }
             assert_eq!(
                 owner.service(&mut aggregate, &mut control, &mut hardware, complete),
                 Ok(WifiTxProgress::Pending)

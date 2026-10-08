@@ -47,6 +47,13 @@ as an explicit lower-cost choice. The default prioritizes cross-component
 judgment; it is not a claim that a public architecture-specific benchmark
 has established a winner.
 
+For public repositories, configure **Settings → Actions → Policies** with an
+active event policy scoped only to `.github/workflows/claude-review.yml`, allowing
+`pull_request_target`, `workflow_run` and `workflow_dispatch`. Without an
+applicable explicit policy, GitHub's default policy will block
+`pull_request_target` from November 2, 2026. Keep the exception scoped to this
+trusted controller; see [GitHub's event-policy documentation](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target#default-policy-for-pull_request_target).
+
 Opening or updating a non-draft PR from a branch in this repository invalidates
 the previous verdict and waits for its latest `CI` push run. When CI finishes,
 the reviewer reads the complete changed-file list and patches, explicitly
@@ -62,7 +69,12 @@ Source reads return numbered slices; literal search scans one explicit source
 path and declares when its result exceeds 100 matches. Neither tool executes code.
 Cargo.lock patches remain in the initial diff so dependency changes are visible;
 full lock-file reads are excluded from source investigation. Claude reads the
-owning Cargo.toml when it needs dependency context.
+owning Cargo.toml when it needs dependency context. A lockfile finding must
+anchor a line present at the correct revision in its complete provided patch;
+missing or truncated patches cannot satisfy this evidence check. Findings in
+ordinary source files require the anchor line read in that pass. Generated
+publications are excluded from patches and full-file reads; investigate their
+reviewed source inputs instead.
 
 One `github-actions[bot]` comment reports errors, a completed review with
 successful CI, or an incomplete review. It explicitly says **Архитектурное ревью**
@@ -70,6 +82,10 @@ and names the model. A second model conversation verifies the candidate report
 with fresh context and its own source reads, challenging both reported defects
 and a clean verdict. This can reduce false positives; the two passes use the
 same model and can still share blind spots.
+The controller returns rejected report validation as a tool error, so the model
+can read missing evidence and repair the report within the same call/token
+budget. An invalid report never becomes the final verdict; exhausting the
+budget still reports incomplete analysis.
 
 Independent pre-existing defects encountered during the review appear in a
 separate short summary (at most five) for human verification and possible future

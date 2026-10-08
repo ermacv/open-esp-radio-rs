@@ -122,7 +122,9 @@ jobs:
         if: failure() && steps.claude.outputs.execution_file
         env:
           EXECUTION: ${{ steps.claude.outputs.execution_file }}
-        run: jq -r '.[] | select(.type == "result") | .result // .errors // empty' "$EXECUTION"
+        run: |
+          jq -r '.[] | select(.type == "result")
+            | "\(.api_error_status // "no API status"): \(.result // .errors // "no message")"' "$EXECUTION"
 
   publish:
     needs: [target, review]

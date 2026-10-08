@@ -82,7 +82,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: oer_time::Timer,
+        T: oer_time::Timer + crate::mac_clock::MacClockReader,
         H: TxHardware
             + ApRuntimeHardware
             + RxBlockAckHardware
@@ -246,9 +246,10 @@ where
                 .active_mut()
                 .published_agreement()
                 .is_some_and(|agreement| engine.tx_block_ack_holds(agreement));
+            let stamp = radio_stamp(ordinary.timer())?;
             let progress = aggregate
                 .active_mut()
-                .service_completion(ordinary, hardware, block_ack_operational)
+                .service_completion(ordinary, hardware, block_ack_operational, stamp)
                 .map_err(AccessPointDatapathError::Aggregate)?;
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
@@ -438,7 +439,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: oer_time::Timer,
+        T: oer_time::Timer + crate::mac_clock::MacClockReader,
         H: TxHardware + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     {
         let (engine, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
@@ -466,9 +467,10 @@ where
             .is_some_and(|agreement| engine.tx_block_ack_holds(agreement));
         #[cfg(any(feature = "diagnostics", test))]
         let resort_started = self.observer.map(AggregateTxObserver::now_micros);
+        let stamp = radio_stamp(ordinary.timer())?;
         let aggregate_progress = aggregate
             .active_mut()
-            .observe_block_ack_request(ordinary, hardware, block_ack, block_ack_operational)
+            .observe_block_ack_request(ordinary, hardware, block_ack, block_ack_operational, stamp)
             .map_err(AccessPointDatapathError::Aggregate)?;
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer

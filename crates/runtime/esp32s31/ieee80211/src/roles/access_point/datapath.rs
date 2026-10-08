@@ -404,7 +404,7 @@ where
     N: SoftwareTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: oer_time::Timer,
+    T: oer_time::Timer + crate::mac_clock::MacClockReader,
     H: RxDma
         + TxHardware
         + ApRuntimeHardware

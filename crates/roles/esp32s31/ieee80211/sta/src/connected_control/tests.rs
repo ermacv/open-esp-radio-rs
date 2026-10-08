@@ -240,11 +240,11 @@ fn a_twt_wake_plan_is_stale_after_a_station_tsf_jump() {
     let tsf = oer_ieee80211_mac::tsf::TsfInstant::from_micros;
     let mut core = core();
     let mut timer = StationTimer::default();
-    let guard = oer_time::Duration::from_micros(50);
+    let guard = oer_time::RadioDuration::from_micros(50);
     assert_eq!(core.individual_twt_wake_plan(&mut timer, guard), Ok(None));
 
     core.individual_twt = Some(active_requester());
-    core.station_tsf.set(&mut timer, tsf(12_000));
+    core.station_tsf.set(&mut timer, tsf(12_000)).unwrap();
     let plan = core
         .individual_twt_wake_plan(&mut timer, guard)
         .unwrap()
@@ -255,6 +255,6 @@ fn a_twt_wake_plan_is_stale_after_a_station_tsf_jump() {
     assert_eq!(plan.generation, core.station_tsf().generation());
     assert!(plan.is_current(core.station_tsf()));
 
-    core.station_tsf.set(&mut timer, tsf(500_000));
+    core.station_tsf.set(&mut timer, tsf(500_000)).unwrap();
     assert!(!plan.is_current(core.station_tsf()));
 }

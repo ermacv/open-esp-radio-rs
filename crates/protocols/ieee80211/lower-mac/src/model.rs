@@ -646,7 +646,7 @@ impl<O: TxBody> LowerMacModel<O> {
         let Some(until) = self
             .now
             .get()
-            .checked_add(oer_time::RadioDuration::from_micros(u32::from(micros)))
+            .checked_add(oer_time::RadioDuration::from_micros(u64::from(micros)))
         else {
             return;
         };
@@ -1305,10 +1305,14 @@ impl<O: TxBody> LowerMacBeaconTiming for LowerMacModel<O> {
             Some(_) => {
                 let current = &mut state.tsf[usize::from(tsf.vif.0)];
                 let reading = current.at(now);
-                current.relation.set(reading, tsf.at);
-                current.set_to = tsf.at.as_micros();
-                current.set_at = now.as_micros();
-                Ok(())
+                current
+                    .relation
+                    .set(reading, tsf.at)
+                    .map_err(SettingError::TsfTiming)
+                    .map(|_| {
+                        current.set_to = tsf.at.as_micros();
+                        current.set_at = now.as_micros();
+                    })
             }
             None => Err(SettingError::UnknownVif),
         })

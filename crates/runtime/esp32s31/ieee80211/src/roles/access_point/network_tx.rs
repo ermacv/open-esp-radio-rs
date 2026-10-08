@@ -18,6 +18,17 @@ pub use airtime::{
     AccessPointAirtimePeer, AccessPointAirtimeSelection, AccessPointAirtimeStorage,
     AccessPointBlockAckTiming, AirtimeAction, AirtimeObservation,
 };
+fn radio_stamp(
+    timer: &impl crate::mac_clock::MacClockReader,
+) -> Result<oer_ieee80211_lower_mac::Ieee80211Stamp, AccessPointDatapathError> {
+    timer
+        .sample()
+        .map(|sample| sample.stamp())
+        .ok_or(AccessPointDatapathError::Aggregate(
+            ApAmpduError::RadioClockUnavailable,
+        ))
+}
+
 mod completion;
 mod power_save;
 mod queue;
@@ -436,7 +447,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: oer_time::Timer,
+        T: oer_time::Timer + crate::mac_clock::MacClockReader,
         H: TxHardware
             + ApRuntimeHardware
             + RxBlockAckHardware
@@ -665,8 +676,9 @@ where
                 let _ = capacity_limited;
                 #[cfg(any(feature = "diagnostics", test))]
                 let publication_started = self.observer.map(AggregateTxObserver::now_micros);
+                let stamp = radio_stamp(ordinary.timer())?;
                 active
-                    .publish(ordinary, hardware)
+                    .publish(ordinary, hardware, stamp)
                     .map_err(AccessPointDatapathError::Aggregate)?;
                 if let Some(accounting) = self.airtime.as_mut() {
                     accounting.publish_active();
@@ -750,7 +762,7 @@ where
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
-        T: oer_time::Timer,
+        T: oer_time::Timer + crate::mac_clock::MacClockReader,
         H: TxHardware
             + ApRuntimeHardware
             + RxBlockAckHardware
@@ -818,7 +830,8 @@ where
         let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
             AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
         })?;
-        if let Err(error) = aggregate.publish_standby(ordinary, hardware) {
+        let stamp = radio_stamp(ordinary.timer())?;
+        if let Err(error) = aggregate.publish_standby(ordinary, hardware, stamp) {
             return Err(AccessPointDatapathError::Aggregate(error));
         }
         let _batch = self

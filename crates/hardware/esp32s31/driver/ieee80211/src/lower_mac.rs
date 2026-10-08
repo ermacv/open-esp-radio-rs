@@ -1711,7 +1711,9 @@ where
     ) -> Result<(), SettingError> {
         match self.vif(tsf.vif).ok_or(SettingError::UnknownVif)?.role {
             VifRole::Station => {
-                self.station_tsf.set(hardware, tsf.at);
+                self.station_tsf
+                    .set(hardware, tsf.at)
+                    .map_err(SettingError::TsfTiming)?;
             }
             VifRole::AccessPoint if tsf.at.as_micros() == 0 => {
                 self.access_point_tsf.restart(hardware);

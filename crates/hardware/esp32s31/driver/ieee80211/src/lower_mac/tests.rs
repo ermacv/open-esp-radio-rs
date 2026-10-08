@@ -31,7 +31,6 @@ use oer_ieee80211_softmac::{MacRxEvidence, MacRxMetadata};
 use oer_memory::{
     DmaIndexReturn, PinnedDmaTxPool, PinnedDmaTxRadioLease, ReturningStableDmaBacking,
 };
-use oer_time::Duration;
 
 use super::*;
 use crate::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
@@ -1684,7 +1683,7 @@ fn the_station_tbtt_schedule_is_programmed_and_its_events_announce_the_next_tbtt
     let schedule = TbttSchedule {
         next: VifTsf::new(STA, TsfInstant::from_micros(1_000_000)),
         beacon_interval: time_units(100),
-        lead: Duration::from_micros(3_000),
+        lead: oer_time::RadioDuration::from_micros(3_000),
     };
     assert_eq!(core.set_tbtt(&mut hardware, schedule), Ok(()));
     assert_eq!(
@@ -1716,15 +1715,15 @@ fn the_station_tbtt_schedule_is_programmed_and_its_events_announce_the_next_tbtt
 
     for refused in [
         TbttSchedule {
-            beacon_interval: Duration::ZERO,
+            beacon_interval: oer_time::RadioDuration::from_micros(0),
             ..schedule
         },
         TbttSchedule {
-            beacon_interval: Duration::from_micros(u64::from(u32::MAX) + 1),
+            beacon_interval: oer_time::RadioDuration::from_micros(u64::from(u32::MAX) + 1),
             ..schedule
         },
         TbttSchedule {
-            lead: Duration::from_micros(u64::from(u16::MAX)),
+            lead: oer_time::RadioDuration::from_micros(u64::from(u16::MAX)),
             ..schedule
         },
     ] {

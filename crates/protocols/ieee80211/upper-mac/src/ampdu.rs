@@ -155,6 +155,8 @@ impl AmpduRetryDecision {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AmpduRetryError {
     ZeroLifetime,
+    /// The strict aging threshold lies outside this radio epoch.
+    AgingThresholdOutsideEpoch,
     EmptyAggregate,
     TooManySubframes {
         subframes: u8,
@@ -179,7 +181,8 @@ pub struct AmpduRetryState {
     /// Original positions absent from the last observed completion.
     missing_original_indices: u64,
     current_subframes: u8,
-    policy: AmpduRetryPolicy,
+    retry_limit: u8,
+    retain_single_mpdu: bool,
     /// From this instant on the aggregate's MSDUs are aged.
     aged_from: Ieee80211Instant,
     aggregate_attempts: u8,
@@ -210,19 +213,30 @@ impl AmpduRetryState {
         if subframes > MAX_AMPDU_SUBFRAMES {
             return Err(AmpduRetryError::TooManySubframes { subframes });
         }
+        // Aging is strictly after committed + lifetime - margin. Form the
+        // relative offset first so a representable threshold is not rejected
+        // because an unnecessary intermediate endpoint would overflow.
+        let one = RadioDuration::from_micros(1);
+        let aged_from = if let Some(delay) = policy.lifetime.checked_sub(policy.aged_margin) {
+            delay
+                .checked_add(one)
+                .and_then(|delay| committed_at.checked_add(delay))
+        } else {
+            policy
+                .aged_margin
+                .checked_sub(policy.lifetime)
+                .and_then(|advance| advance.checked_sub(one))
+                .and_then(|advance| committed_at.checked_sub(advance))
+        }
+        .ok_or(AmpduRetryError::AgingThresholdOutsideEpoch)?;
         Ok(Self {
             first_sequence,
             pending_original_indices: all_subframes(subframes),
             missing_original_indices: 0,
             current_subframes: subframes,
-            policy,
-            aged_from: Ieee80211Instant::from_micros(
-                committed_at
-                    .as_micros()
-                    .saturating_add(u64::from(policy.lifetime.as_micros()))
-                    .saturating_sub(u64::from(policy.aged_margin.as_micros()))
-                    .saturating_add(1),
-            ),
+            retry_limit: policy.retry_limit,
+            retain_single_mpdu: policy.retain_single_mpdu,
+            aged_from,
             aggregate_attempts: 1,
             acknowledged: 0,
             block_ack_mpdu_attempts: 0,
@@ -260,7 +274,7 @@ impl AmpduRetryState {
                 self.protection_failures = self.protection_failures.saturating_add(1);
                 // No subframe reached the recipient.
                 self.missing_original_indices = self.pending_original_indices;
-                if self.protection_failures < self.policy.retry_limit {
+                if self.protection_failures < self.retry_limit {
                     return Ok(AmpduRetryDecision::RepublishUnchanged { retry_mask: every });
                 }
                 // The exhausted exchange keeps the aggregate and asks for
@@ -275,7 +289,7 @@ impl AmpduRetryState {
                 self.count_mpdu_attempts(observed_subframes);
                 self.ack_timeouts = self.ack_timeouts.saturating_add(1);
                 self.missing_original_indices = self.pending_original_indices;
-                if self.ack_timeouts >= self.policy.retry_limit || self.aged(now) {
+                if self.ack_timeouts >= self.retry_limit || self.aged(now) {
                     return Ok(AmpduRetryDecision::Finish { retry_mask: every });
                 }
                 Ok(self.retain_or_unaggregate(every, observed_subframes, block_ack_operational))
@@ -345,7 +359,7 @@ impl AmpduRetryState {
         missing: u8,
         block_ack_operational: bool,
     ) -> AmpduRetryDecision {
-        if !block_ack_operational || (missing == 1 && !self.policy.retain_single_mpdu) {
+        if !block_ack_operational || (missing == 1 && !self.retain_single_mpdu) {
             return AmpduRetryDecision::Unaggregate { retry_mask };
         }
         self.aggregate_attempts = self.aggregate_attempts.saturating_add(1);
@@ -358,8 +372,8 @@ impl AmpduRetryState {
     }
 
     /// Whether the aggregate's MSDUs are aged at `now`.
-    pub const fn aged(&self, now: Ieee80211Instant) -> bool {
-        now.as_micros() >= self.aged_from.as_micros()
+    pub fn aged(&self, now: Ieee80211Instant) -> bool {
+        now >= self.aged_from
     }
 
     /// The sequence number of the current aggregate's first subframe.

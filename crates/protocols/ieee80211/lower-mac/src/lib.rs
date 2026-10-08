@@ -68,7 +68,8 @@ pub use extensions::{
     AmpduPayload, BeaconTimingCapabilities, LowerMacAirReservation, LowerMacAmpdu,
     LowerMacBeaconTiming, LowerMacCancelPublished, LowerMacLiveRetune, LowerMacMonitor,
     MAX_AIR_RESERVATION, MonitorCapabilities, TSF_DRIFT_PPM, TbttEvent, TbttSchedule,
-    TsfGeneration, TsfProjectionError, TsfRelation, TsfSample, TsfSetKind, TsfVifMismatch, VifTsf,
+    TsfArithmeticError, TsfGeneration, TsfProjectionError, TsfRelation, TsfSample, TsfSetKind,
+    TsfTimingError, TsfVifMismatch, VifTsf,
 };
 pub use oer_radio_port::{
     CancelError, ClockInfo, Correlation, CorrelationIds, EpochError, EventsLost, FailureClass,

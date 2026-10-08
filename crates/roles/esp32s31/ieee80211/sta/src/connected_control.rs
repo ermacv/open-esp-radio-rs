@@ -541,6 +541,7 @@ pub enum ConnectedControlError {
     PowerAgentFailed,
     IndividualTwt(IndividualTwtRequesterError),
     IndividualTwtWake(IndividualTwtWakePlanError),
+    TsfTiming(oer_ieee80211_lower_mac::TsfTimingError),
     IndividualTwtHardware(StationIndividualTwtHardwareError),
     MissingIndividualTwtRequester,
     Ftm(FtmRequesterError),
@@ -844,7 +845,7 @@ impl ConnectedControlCore {
     pub fn individual_twt_wake_plan<H: StationTsfHardware>(
         &self,
         hardware: &mut H,
-        wake_guard: oer_time::Duration,
+        wake_guard: oer_time::RadioDuration,
     ) -> Result<Option<StationTwtWakePlan>, ConnectedControlError> {
         let Some(requester) = self.individual_twt.as_ref() else {
             return Ok(None);
@@ -1327,10 +1328,12 @@ impl ConnectedControlCore {
             // local time, the counter its receive timestamp is a reading of.
             if let Some(stamp) = beacon.stamp {
                 let elapsed = hardware.mac_local_time().wrapping_sub(stamp);
-                self.station_tsf.set(
-                    hardware,
-                    access_point_tsf_after(observation.timestamp_tsf, u64::from(elapsed)),
-                );
+                self.station_tsf
+                    .set(
+                        hardware,
+                        access_point_tsf_after(observation.timestamp_tsf, u64::from(elapsed)),
+                    )
+                    .map_err(ConnectedControlError::TsfTiming)?;
             }
             follow_beacon_protection(tx, observation.protection);
             if let Some(monitor) = &mut self.beacon_monitor {

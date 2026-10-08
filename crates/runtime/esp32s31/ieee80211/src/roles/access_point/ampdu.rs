@@ -66,6 +66,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         &mut self,
         ordinary: &mut oer_esp32s31_ieee80211_ap::tx::ApTx<'_, P, E, T, ORDINARY_BUFFER_SIZE>,
         hardware: &mut H,
+        stamp: oer_ieee80211_lower_mac::Ieee80211Stamp,
     ) -> Result<
         oer_esp32s31_ieee80211_ap::ampdu::ApPreparedAmpdu,
         oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError,
@@ -80,7 +81,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             .arenas
             .standby_mut()
             .ok_or(oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError::Idle)?;
-        let prepared = standby.publish(ordinary, hardware)?;
+        let prepared = standby.publish(ordinary, hardware, stamp)?;
         assert!(
             self.arenas.swap_active_standby(),
             "standby publication preserves the checked arena"

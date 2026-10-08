@@ -41,6 +41,15 @@ vendor:
 [`oer-espressif-ieee80211-policy`](../../espressif/ieee80211/policy/README.md)
 supplies the Espressif values recovered from the vendor stack.
 
+A-MPDU lifetime and aging margin are `RadioDuration`s. Aging uses the
+same radio epoch as the commit instant and starts strictly after
+`commit + lifetime - margin`; the exact first aged instant is checked before
+admission. An unrepresentable threshold is `AgingThresholdOutsideEpoch`.
+The S31 adapter retains the commit stamp's generation and rejects a sample
+from another generation before consuming a completion or changing retry state.
+Its STA/AP runtimes read the existing MAC `ReceptionClock`; monotonic timers
+remain the source for waiting and transmit watchdogs.
+
 ## What stays outside
 
 The planner holds no frame bytes: the caller keeps its encoded MPDUs and

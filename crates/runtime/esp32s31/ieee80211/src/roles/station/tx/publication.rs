@@ -21,8 +21,16 @@ where
     B: MaterializedTxFrame,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
-    T: oer_time::Timer,
+    T: oer_time::Timer + crate::mac_clock::MacClockReader,
 {
+    pub(super) fn radio_stamp(
+        &self,
+    ) -> Result<oer_ieee80211_lower_mac::Ieee80211Stamp, AggregateTxError> {
+        crate::mac_clock::MacClockReader::sample(self.ordinary.timer())
+            .map(|sample| sample.stamp())
+            .ok_or(AggregateTxError::RadioClockUnavailable)
+    }
+
     /// Admit a selected request through its source before the ordinary STA
     /// classifier, BlockAck, retry and DMA ownership transitions.
     ///
@@ -365,7 +373,9 @@ where
             first_sequence,
             aggregate.subframes,
             AmpduRetryPolicy {
-                lifetime_micros: VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
+                lifetime: oer_time::RadioDuration::from_micros(
+                    VENDOR_AMPDU_MSDU_LIFETIME_MICROS as u64,
+                ),
                 // An A-MSDU can exceed the ordinary descriptor's copy
                 // buffer. Retain even one missing A-MSDU in the aggregate
                 // owner so retry preserves its pinned backing, sequence and
@@ -373,7 +383,7 @@ where
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
                     || self.block_ack_amsdu(traffic.tid()),
             },
-            self.ordinary.now().as_micros(),
+            self.radio_stamp()?,
         )?;
         let prepared = AggregatePrepared {
             traffic,
@@ -441,11 +451,13 @@ where
             prepared.first_sequence,
             aggregate.subframes,
             AmpduRetryPolicy {
-                lifetime_micros: VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
+                lifetime: oer_time::RadioDuration::from_micros(
+                    VENDOR_AMPDU_MSDU_LIFETIME_MICROS as u64,
+                ),
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
                     || self.block_ack_amsdu(traffic.tid()),
             },
-            self.ordinary.now().as_micros(),
+            self.radio_stamp()?,
         )?;
         Ok(prepared)
     }
@@ -722,6 +734,9 @@ where
             let tid = prepared.traffic.tid();
             self.cancel_prepared_network()?;
             return Err(AggregateTxError::BlockAckAgreementChanged { tid });
+        }
+        if let Some(prepared) = &self.standby_prepared {
+            prepared.retry.validate_stamp(self.radio_stamp()?)?;
         }
         let Some(prepared) = self.standby_prepared.take() else {
             let first = self
@@ -1096,6 +1111,9 @@ where
         &mut self,
         hardware: &mut H,
     ) -> Result<WifiTxProgress, AggregateTxError> {
+        if let ConnectedTxActive::Aggregate(active) = &self.active {
+            active.retry.validate_stamp(self.radio_stamp()?)?;
+        }
         let active = mem::replace(&mut self.active, ConnectedTxActive::Idle);
         let ConnectedTxActive::Aggregate(mut active) = active else {
             return Err(AggregateTxError::InvalidPublicationState);

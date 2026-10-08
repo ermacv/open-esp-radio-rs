@@ -8,7 +8,7 @@
 //! backend implements [`StationTsfHardware`] but no caller writes the timer
 //! around the owner.
 
-use oer_ieee80211_lower_mac::{TsfGeneration, TsfRelation, TsfSetKind};
+use oer_ieee80211_lower_mac::{TsfGeneration, TsfRelation, TsfSetKind, TsfTimingError};
 use oer_ieee80211_mac::tsf::TsfInstant;
 use oer_time::Duration;
 
@@ -65,11 +65,11 @@ impl StationTsf {
         &mut self,
         hardware: &mut H,
         value: TsfInstant,
-    ) -> TsfSetKind {
+    ) -> Result<TsfSetKind, TsfTimingError> {
         let current = self.read(hardware);
-        let kind = self.relation.set(current, value);
+        let kind = self.relation.set(current, value)?;
         hardware.set_station_tsf(StationTsfWrite { _owner: () }, value.as_micros());
-        kind
+        Ok(kind)
     }
 
     /// Start a new generation without a sample: the station follows another
@@ -105,16 +105,19 @@ mod tests {
         let mut timer = Timer::default();
         let mut owner = StationTsf::new(1);
         let tsf = TsfInstant::from_micros;
-        assert_eq!(owner.set(&mut timer, tsf(1_000_000)), TsfSetKind::Jump);
+        assert_eq!(
+            owner.set(&mut timer, tsf(1_000_000)).unwrap(),
+            TsfSetKind::Jump
+        );
         assert_eq!((timer.tsf, timer.writes), (1_000_000, 1));
         let generation = owner.generation();
         timer.tsf += 1_024_000;
         let corrected = tsf(timer.tsf + 50);
-        assert_eq!(owner.set(&mut timer, corrected), TsfSetKind::Drift);
+        assert_eq!(owner.set(&mut timer, corrected).unwrap(), TsfSetKind::Drift);
         assert_eq!(owner.generation(), generation);
         timer.tsf += 102_400;
         let jumped = tsf(timer.tsf + 50);
-        assert_eq!(owner.set(&mut timer, jumped), TsfSetKind::Jump);
+        assert_eq!(owner.set(&mut timer, jumped).unwrap(), TsfSetKind::Jump);
         assert_ne!(owner.generation(), generation);
         assert_eq!(timer.writes, 3);
     }

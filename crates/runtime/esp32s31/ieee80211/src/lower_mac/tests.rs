@@ -310,7 +310,10 @@ impl WifiTxPowerProfile for Power {
 
 /// The harness owns monotonic time; future watchdogs remain pending.
 #[derive(Default)]
-struct ModelTimer(oer_time_virtual::VirtualClock);
+struct ModelTimer(
+    oer_time_virtual::VirtualClock,
+    TestCell<std::collections::VecDeque<oer_ieee80211_lower_mac::Ieee80211ClockSample>>,
+);
 
 impl oer_time::Clock for ModelTimer {
     fn now(&self) -> oer_time::Instant {
@@ -329,6 +332,9 @@ const MAC_AT_EPOCH: u32 = 5_000;
 
 impl crate::mac_clock::ReceptionClock for ModelTimer {
     fn snapshot(&self) -> Option<crate::mac_clock::MacClockSnapshot> {
+        if let Some(sample) = self.1.borrow_mut().pop_front() {
+            return Some(crate::mac_clock::MacClockSnapshot::for_validation(sample));
+        }
         crate::mac_clock::MacClockStorage::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _, _>::new(&self.0)
             .start(crate::mac_clock::FixedCounter(MAC_AT_EPOCH))
             .snapshot()
@@ -714,7 +720,7 @@ fn station_tbtts_arrive_through_the_power_interrupt() {
             oer_ieee80211_mac::tsf::TsfInstant::from_micros(1_000_000),
         ),
         beacon_interval: oer_ieee80211_mac::tsf::time_units(100),
-        lead: oer_time::Duration::from_micros(3_000),
+        lead: oer_time::RadioDuration::from_micros(3_000),
     };
     assert_eq!(port.set_tbtt(schedule), Ok(Ok(())));
     assert_eq!(
@@ -1364,4 +1370,58 @@ fn attempts_on_different_queues_complete_by_their_identity() {
 fn with_hardware_of<U>(port: &AmpduPort, entry: impl FnOnce(&mut Hardware) -> U) -> U {
     port.installed
         .lock(|installed| entry(&mut installed.borrow_mut().as_mut().unwrap().hardware))
+}
+
+#[test]
+fn tsf_sample_checks_radio_elapsed_and_preserves_both_generations() {
+    let port = Port::new(ModelTimer::default());
+    install(&port, true);
+    let tsf = VifTsf::new(STA, oer_ieee80211_mac::tsf::TsfInstant::from_micros(777));
+    port.set_tsf(tsf).unwrap().unwrap();
+    let sample = |radio, generation| oer_ieee80211_lower_mac::Ieee80211ClockSample {
+        radio: Ieee80211Instant::from_micros(radio),
+        monotonic: oer_time::Instant::from_micros(42),
+        uncertainty: oer_time::Duration::from_micros(0),
+        generation,
+    };
+    port.timer
+        .1
+        .borrow_mut()
+        .extend([sample(10, 7), sample(15, 7)]);
+    let measured = port.tsf_sample(STA).unwrap().unwrap();
+    assert_eq!(measured.tsf, tsf);
+    assert_eq!(measured.local.at, Ieee80211Instant::from_micros(10));
+    assert_eq!(measured.local.generation, 7);
+    assert_eq!(measured.uncertainty, oer_time::Duration::from_micros(6));
+    let tsf_generation = measured.generation;
+
+    for (before, after, expected) in [
+        (
+            sample(15, 7),
+            sample(10, 7),
+            Esp32s31LowerMacError::InvalidSampleTiming,
+        ),
+        (
+            sample(0, 7),
+            sample(u64::MAX, 7),
+            Esp32s31LowerMacError::InvalidSampleTiming,
+        ),
+        (
+            sample(10, 7),
+            sample(15, 8),
+            Esp32s31LowerMacError::StaleClock,
+        ),
+    ] {
+        port.timer.1.borrow_mut().extend([before, after]);
+        assert_eq!(port.tsf_sample(STA), Err(expected));
+        assert_eq!(port.tsf(STA), Ok(Ok(tsf)));
+    }
+    port.timer
+        .1
+        .borrow_mut()
+        .extend([sample(1, 7), sample(u64::MAX, 7)]);
+    let maximum = port.tsf_sample(STA).unwrap().unwrap();
+    assert_eq!(maximum.uncertainty.as_micros(), u64::MAX);
+    assert_eq!(maximum.generation, tsf_generation);
+    assert_eq!(maximum.local.generation, 7);
 }

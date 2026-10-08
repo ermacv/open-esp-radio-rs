@@ -12,7 +12,7 @@ use oer_ieee80211_mac::qos::{
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_espressif_ieee80211_policy::lmac;
-use oer_ieee80211_lower_mac::Ieee80211Instant;
+use oer_ieee80211_lower_mac::Ieee80211Stamp;
 use oer_ieee80211_upper_mac::{
     AmpduAttemptResult, AmpduRetryDecision as UpperAmpduRetryDecision,
     AmpduRetryError as UpperAmpduRetryError, AmpduRetryState as UpperAmpduRetryState,
@@ -656,7 +656,7 @@ pub const VENDOR_AMPDU_MSDU_LIFETIME_MICROS: u32 = lmac::AMPDU_MSDU_LIFETIME_MIC
 pub struct AmpduRetryPolicy {
     /// Time from the aggregate's commit after which its MSDUs are aged and
     /// discarded instead of retried.
-    pub lifetime_micros: u32,
+    pub lifetime: RadioDuration,
     /// Keep one missing MPDU in the aggregate owner.
     ///
     /// The recovered HE path requires this because converting a one-member
@@ -670,10 +670,24 @@ pub struct AmpduRetryPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AmpduRetryError {
     ZeroLifetime,
+    AgingThresholdOutsideEpoch,
+    /// The radio relation changed while this aggregate was retained.
+    ClockGenerationChanged {
+        expected: u32,
+        observed: u32,
+    },
     EmptyAggregate,
-    CapacityExceedsHardwareWindow { capacity: usize },
-    AggregateExceedsCapacity { subframes: u8, capacity: usize },
-    FrameCountChanged { expected: u8, observed: u8 },
+    CapacityExceedsHardwareWindow {
+        capacity: usize,
+    },
+    AggregateExceedsCapacity {
+        subframes: u8,
+        capacity: usize,
+    },
+    FrameCountChanged {
+        expected: u8,
+        observed: u8,
+    },
 }
 
 /// Driver-owned action after one BlockAck completion.
@@ -754,22 +768,21 @@ impl AmpduRetryDecision {
 /// PHY rate.
 pub struct AmpduRetryState<const CAPACITY: usize> {
     state: UpperAmpduRetryState,
+    generation: u32,
 }
 
 impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// Start at the first Sequence Control value already consumed by the
     /// encoded aggregate, whose MSDUs were committed at
-    /// `committed_at_micros`.
-    ///
-    /// Times here count the core's monotonic microseconds, the epoch the
-    /// ESP32-S31 lower MAC publishes as its radio clock.
+    /// `committed_at`. Every later sample must belong to the same MAC clock
+    /// generation; the monotonic timer only owns executor waits.
     pub fn new(
         first_sequence: SequenceNumber,
         subframes: u8,
         policy: AmpduRetryPolicy,
-        committed_at_micros: u64,
+        committed_at: Ieee80211Stamp,
     ) -> Result<Self, AmpduRetryError> {
-        if policy.lifetime_micros == 0 {
+        if policy.lifetime.as_micros() == 0 {
             return Err(AmpduRetryError::ZeroLifetime);
         }
         if CAPACITY > HARDWARE_BLOCK_ACK_WINDOW {
@@ -787,20 +800,20 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         UpperAmpduRetryState::new(
             first_sequence,
             subframes,
-            lmac::ampdu_retry_policy(
-                RadioDuration::from_micros(policy.lifetime_micros),
-                policy.retain_single_mpdu,
-            ),
-            Ieee80211Instant::from_micros(committed_at_micros),
+            lmac::ampdu_retry_policy(policy.lifetime, policy.retain_single_mpdu),
+            committed_at.at,
         )
-        .map(|state| Self { state })
+        .map(|state| Self {
+            state,
+            generation: committed_at.generation,
+        })
         .map_err(Self::error)
     }
 
     /// Apply one completion after the hardware queue has been detached.
     ///
     /// A missing MPDU stays in the aggregate until it is aged at
-    /// `now_micros`; aged MPDUs end the aggregate and are discarded. Once
+    /// `now`; aged MPDUs end the aggregate and are discarded. Once
     /// the TID's BlockAck agreement is no longer `block_ack_operational`,
     /// the live missing MPDUs leave the aggregate for individual retry.
     ///
@@ -818,9 +831,10 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         &mut self,
         completion: HtAmpduTxCompletion,
         observed_subframes: u8,
-        now_micros: u64,
+        now: Ieee80211Stamp,
         block_ack_operational: bool,
     ) -> Result<AmpduRetryDecision, AmpduRetryError> {
+        self.validate_stamp(now)?;
         let result = if completion.tx.completes_vendor_trigger_flow() {
             AmpduAttemptResult::TriggerFlowEnd
         } else if completion.tx.disposition() == TxCompletionDisposition::CtsTimeout {
@@ -835,12 +849,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             )
         };
         self.state
-            .observe(
-                result,
-                observed_subframes,
-                Ieee80211Instant::from_micros(now_micros),
-                block_ack_operational,
-            )
+            .observe(result, observed_subframes, now.at, block_ack_operational)
             .map(Self::decision)
             .map_err(Self::error)
     }
@@ -854,14 +863,27 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     pub fn observe_block_ack_request(
         &mut self,
         block_ack: Option<HtBlockAckObservation>,
-        now_micros: u64,
+        now: Ieee80211Stamp,
         block_ack_operational: bool,
-    ) -> AmpduRetryDecision {
-        Self::decision(self.state.observe_block_ack_request(
+    ) -> Result<AmpduRetryDecision, AmpduRetryError> {
+        self.validate_stamp(now)?;
+        Ok(Self::decision(self.state.observe_block_ack_request(
             block_ack.map(|observation| observation.block_ack.report()),
-            Ieee80211Instant::from_micros(now_micros),
+            now.at,
             block_ack_operational,
-        ))
+        )))
+    }
+
+    /// Validate the radio relation before detaching hardware or changing retry state.
+    pub fn validate_stamp(&self, now: Ieee80211Stamp) -> Result<(), AmpduRetryError> {
+        if now.generation == self.generation {
+            Ok(())
+        } else {
+            Err(AmpduRetryError::ClockGenerationChanged {
+                expected: self.generation,
+                observed: now.generation,
+            })
+        }
     }
 
     const fn decision(decision: UpperAmpduRetryDecision) -> AmpduRetryDecision {
@@ -899,6 +921,9 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
 
     const fn error(error: UpperAmpduRetryError) -> AmpduRetryError {
         match error {
+            UpperAmpduRetryError::AgingThresholdOutsideEpoch => {
+                AmpduRetryError::AgingThresholdOutsideEpoch
+            }
             UpperAmpduRetryError::ZeroLifetime => AmpduRetryError::ZeroLifetime,
             UpperAmpduRetryError::EmptyAggregate => AmpduRetryError::EmptyAggregate,
             UpperAmpduRetryError::TooManySubframes { subframes } => {
@@ -917,10 +942,11 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         self.state.current_subframes()
     }
 
-    /// Whether the aggregate's MSDUs are aged at `now_micros`: less than
+    /// Whether the aggregate's MSDUs are aged at `now`: less than
     /// one lifetime unit remains.
-    pub const fn aged(&self, now_micros: u64) -> bool {
-        self.state.aged(Ieee80211Instant::from_micros(now_micros))
+    pub fn aged(&self, now: Ieee80211Stamp) -> Result<bool, AmpduRetryError> {
+        self.validate_stamp(now)?;
+        Ok(self.state.aged(now.at))
     }
 
     pub const fn current_first_sequence(&self) -> SequenceNumber {

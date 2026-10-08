@@ -151,6 +151,11 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer,
 {
+    /// Borrow the timer adapter, including its separately owned radio clock.
+    pub fn timer(&self) -> &T {
+        &self.ordinary.timer
+    }
+
     /// Submitted ordinary work, read before another exchange starts.
     pub fn work(&self) -> oer_ieee80211_softmac::MacTxWork {
         self.ordinary.work()

@@ -744,7 +744,7 @@ fn beacon_timing_addresses_configured_interfaces_within_its_roles() {
     let schedule = TbttSchedule {
         next: at,
         beacon_interval: time_units(100),
-        lead: oer_time::Duration::from_micros(3_000),
+        lead: oer_time::RadioDuration::from_micros(3_000),
     };
     assert_eq!(model.set_tbtt(schedule), Ok(Ok(())));
     assert_eq!(model.stop_tbtt(STATION), Ok(Ok(())));
@@ -837,19 +837,19 @@ fn tsf_values_of_different_interfaces_do_not_combine() {
     let station = VifTsf::new(STATION, TsfInstant::from_micros(5_000));
     let access_point = VifTsf::new(ACCESS_POINT, TsfInstant::from_micros(1_000));
     assert_eq!(
-        station.saturating_duration_since(access_point),
-        Err(TsfVifMismatch {
+        station.checked_duration_since(access_point),
+        Err(TsfArithmeticError::VifMismatch(TsfVifMismatch {
             left: STATION,
             right: ACCESS_POINT
-        })
+        }))
     );
     let earlier = VifTsf::new(STATION, TsfInstant::from_micros(1_000));
     assert_eq!(
-        station.saturating_duration_since(earlier),
-        Ok(oer_time::Duration::from_micros(4_000))
+        station.checked_duration_since(earlier),
+        Ok(oer_time::RadioDuration::from_micros(4_000))
     );
     assert_eq!(
-        earlier.checked_add(oer_time::Duration::from_micros(4_000)),
+        earlier.checked_add(oer_time::RadioDuration::from_micros(4_000)),
         Some(station)
     );
     assert_eq!(time_units(100).as_micros(), 102_400);
@@ -1062,20 +1062,25 @@ fn a_tsf_relation_keeps_its_generation_through_drift_after_missed_beacons() {
     let mut relation = TsfRelation::new(4, oer_time::Duration::from_micros(1));
     let tsf = TsfInstant::from_micros;
     let interval = 102_400;
-    assert_eq!(relation.set(tsf(0), tsf(1_000_000)), TsfSetKind::Jump);
+    assert_eq!(
+        relation.set(tsf(0), tsf(1_000_000)).unwrap(),
+        TsfSetKind::Jump
+    );
     let generation = relation.generation();
     // Ten missed beacons later the follow corrects ten intervals of drift:
     // more than one interval allows, within what ten allow.
     let ten = relation
-        .tolerance(oer_time::Duration::from_micros(10 * interval))
+        .tolerance(oer_time::RadioDuration::from_micros(10 * interval))
+        .unwrap()
         .as_micros();
     let one = relation
-        .tolerance(oer_time::Duration::from_micros(interval))
+        .tolerance(oer_time::RadioDuration::from_micros(interval))
+        .unwrap()
         .as_micros();
     assert!(ten > one);
     let reading = 1_000_000 + 10 * interval;
     assert_eq!(
-        relation.set(tsf(reading), tsf(reading + ten)),
+        relation.set(tsf(reading), tsf(reading + ten)).unwrap(),
         TsfSetKind::Drift
     );
     assert_eq!(relation.generation(), generation);
@@ -1091,14 +1096,15 @@ fn a_tsf_relation_starts_a_generation_at_a_jump_between_consecutive_beacons() {
     let mut relation = TsfRelation::new(4, oer_time::Duration::from_micros(1));
     let tsf = TsfInstant::from_micros;
     let interval = 102_400;
-    relation.set(tsf(0), tsf(1_000_000));
+    relation.set(tsf(0), tsf(1_000_000)).unwrap();
     let generation = relation.generation();
     let one = relation
-        .tolerance(oer_time::Duration::from_micros(interval))
+        .tolerance(oer_time::RadioDuration::from_micros(interval))
+        .unwrap()
         .as_micros();
     let reading = 1_000_000 + interval;
     assert_eq!(
-        relation.set(tsf(reading), tsf(reading + one + 1)),
+        relation.set(tsf(reading), tsf(reading + one + 1)).unwrap(),
         TsfSetKind::Jump
     );
     assert_ne!(relation.generation(), generation);
@@ -1106,23 +1112,29 @@ fn a_tsf_relation_starts_a_generation_at_a_jump_between_consecutive_beacons() {
     let after_jump = relation.generation();
     relation.break_relation();
     assert_ne!(relation.generation(), after_jump);
-    assert_eq!(relation.set(tsf(reading), tsf(reading)), TsfSetKind::Jump);
+    assert_eq!(
+        relation.set(tsf(reading), tsf(reading)).unwrap(),
+        TsfSetKind::Jump
+    );
 }
 
 #[test]
 fn a_tsf_crossing_2_pow_64_starts_a_generation() {
     let mut relation = TsfRelation::new(5, oer_time::Duration::from_micros(1));
     let tsf = TsfInstant::from_micros;
-    relation.set(tsf(0), tsf(u64::MAX - 100));
+    relation.set(tsf(0), tsf(u64::MAX - 100)).unwrap();
     // A set across 2^64: a few microseconds on the air, a jump in order.
     let before = relation.generation();
-    assert_eq!(relation.set(tsf(u64::MAX - 10), tsf(20)), TsfSetKind::Jump);
+    assert_eq!(
+        relation.set(tsf(u64::MAX - 10), tsf(20)).unwrap(),
+        TsfSetKind::Jump
+    );
     assert_ne!(relation.generation(), before);
     // The counter itself passed 2^64 since the last sample: even a set
     // within the sample uncertainty of the reading is a jump.
-    relation.set(tsf(30), tsf(u64::MAX - 100));
+    relation.set(tsf(30), tsf(u64::MAX - 100)).unwrap();
     let before = relation.generation();
-    assert_eq!(relation.set(tsf(5), tsf(6)), TsfSetKind::Jump);
+    assert_eq!(relation.set(tsf(5), tsf(6)).unwrap(), TsfSetKind::Jump);
     assert_ne!(relation.generation(), before);
 }
 
@@ -1379,4 +1391,47 @@ fn the_air_carries_a_frame_to_the_radio_on_its_channel_which_acknowledges_it() {
     assert!(apart.step());
     assert_eq!(next_completion(&station).status, TxStatus::AckTimeout);
     assert_eq!(elsewhere.queued_events(), 0);
+}
+
+#[test]
+fn tsf_elapsed_preserves_the_full_range_and_refuses_reversal() {
+    let first = VifTsf::new(STATION, TsfInstant::from_micros(0));
+    let last = VifTsf::new(STATION, TsfInstant::from_micros(u64::MAX));
+    assert_eq!(
+        last.checked_duration_since(first),
+        Ok(oer_time::RadioDuration::from_micros(u64::MAX))
+    );
+    assert_eq!(
+        first.checked_duration_since(last),
+        Err(TsfArithmeticError::ReversedTime)
+    );
+    assert_eq!(
+        first.checked_add(oer_time::RadioDuration::from_micros(u64::MAX)),
+        Some(last)
+    );
+    assert_eq!(
+        last.checked_add(oer_time::RadioDuration::from_micros(1)),
+        None
+    );
+}
+
+#[test]
+fn tsf_tolerance_failure_preserves_the_relation() {
+    let mut relation = TsfRelation::new(7, oer_time::Duration::from_micros(u64::MAX));
+    relation
+        .set(TsfInstant::from_micros(0), TsfInstant::from_micros(0))
+        .unwrap();
+    let before = relation;
+    assert_eq!(
+        relation.set(TsfInstant::from_micros(1), TsfInstant::from_micros(2)),
+        Err(TsfTimingError::ToleranceOverflow)
+    );
+    assert_eq!(relation, before);
+    assert_eq!(
+        TsfRelation::new(8, oer_time::Duration::ZERO)
+            .tolerance(oer_time::RadioDuration::from_micros(u64::MAX)),
+        Ok(oer_time::RadioDuration::from_micros(
+            (u128::from(u64::MAX) * u128::from(TSF_DRIFT_PPM)).div_ceil(1_000_000) as u64
+        ))
+    );
 }

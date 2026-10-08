@@ -324,4 +324,6 @@ pub enum SettingError {
     Busy,
     /// A value lies outside the limits the backend's capabilities declare.
     Unsupported,
+    /// Timing validation failed before changing the TSF or its relation.
+    TsfTiming(crate::TsfTimingError),
 }

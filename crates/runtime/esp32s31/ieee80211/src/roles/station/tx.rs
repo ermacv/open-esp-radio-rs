@@ -207,6 +207,7 @@ pub enum AggregateTxError {
     MissingQosSequence(u8),
     BufferSizeOverflow,
     DeadlineOverflow,
+    RadioClockUnavailable,
     DmaPrefixGeometry {
         encoded_offset: usize,
         metadata_size: usize,

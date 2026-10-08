@@ -11,7 +11,6 @@ use crate::{
 use oer_ieee80211_mac::{
     block_ack::encode_block_ack_request, qos::WmmAccessCategory, sequence::SequenceNumber,
 };
-use oer_time::Clock as _;
 
 use oer_memory::StableDmaBacking;
 
@@ -149,6 +148,7 @@ pub enum ApAmpduError {
     Geometry,
     HardwareDidNotDetach,
     DeadlineOverflow,
+    RadioClockUnavailable,
     ConflictingInterruptEvents(u32),
     CompletionInterruptWithoutState,
     NothingToUnaggregate,
@@ -432,6 +432,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         &mut self,
         ordinary: &mut ApTx<'_, P, E, T, ORDINARY_BUFFER_SIZE>,
         hardware: &mut H,
+        radio_stamp: oer_ieee80211_lower_mac::Ieee80211Stamp,
     ) -> Result<ApPreparedAmpdu, ApAmpduError>
     where
         P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
@@ -439,6 +440,23 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         T: oer_time::Timer,
     {
         let prepared = self.prepared()?;
+        let ApAmpduState::Building {
+            cookie, agreement, ..
+        } = self.state
+        else {
+            return Err(ApAmpduError::Idle);
+        };
+        let retry = AmpduRetryState::new(
+            prepared.first_sequence,
+            prepared.subframes,
+            AmpduRetryPolicy {
+                lifetime: oer_time::RadioDuration::from_micros(
+                    VENDOR_AMPDU_MSDU_LIFETIME_MICROS as u64,
+                ),
+                retain_single_mpdu: true,
+            },
+            radio_stamp,
+        )?;
         let config = ordinary
             .ht_ampdu_config(
                 prepared.rate,
@@ -447,12 +465,6 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                 prepared.hardware_key_selector,
             )
             .ok_or(ApAmpduError::Geometry)?;
-        let ApAmpduState::Building {
-            cookie, agreement, ..
-        } = self.state
-        else {
-            return Err(ApAmpduError::Idle);
-        };
         self.inner
             .submit(hardware, cookie, LegacyTxQueue::BestEffort, config)?;
         self.state = ApAmpduState::Hardware {
@@ -460,15 +472,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             rate: prepared.rate,
             hardware_key_selector: prepared.hardware_key_selector,
             agreement,
-            retry: AmpduRetryState::new(
-                prepared.first_sequence,
-                prepared.subframes,
-                AmpduRetryPolicy {
-                    lifetime_micros: VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
-                    retain_single_mpdu: true,
-                },
-                ordinary.now().as_micros(),
-            )?,
+            retry,
         };
         Ok(prepared)
     }
@@ -486,12 +490,16 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         ordinary: &mut ApTx<'_, P, E, T, ORDINARY_BUFFER_SIZE>,
         hardware: &mut H,
         block_ack_operational: bool,
+        radio_stamp: oer_ieee80211_lower_mac::Ieee80211Stamp,
     ) -> Result<ApAmpduProgress, ApAmpduError>
     where
         P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
         E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
         T: oer_time::Timer,
     {
+        if let ApAmpduState::Hardware { retry, .. } = &self.state {
+            retry.validate_stamp(radio_stamp)?;
+        }
         let ApAmpduState::Hardware {
             cookie,
             rate,
@@ -506,7 +514,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             hardware,
             cookie,
             &mut retry,
-            ordinary.now().as_micros(),
+            radio_stamp,
             block_ack_operational,
         )?
         else {
@@ -558,6 +566,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         hardware: &mut H,
         block_ack: Option<HtBlockAckObservation>,
         block_ack_operational: bool,
+        radio_stamp: oer_ieee80211_lower_mac::Ieee80211Stamp,
     ) -> Result<ApAmpduProgress, ApAmpduError>
     where
         P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
@@ -565,6 +574,9 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         T: oer_time::Timer,
         H: HtAmpduHardware,
     {
+        if let ApAmpduState::RequestingBlockAck { retry, .. } = &self.state {
+            retry.validate_stamp(radio_stamp)?;
+        }
         let ApAmpduState::RequestingBlockAck {
             cookie,
             rate,
@@ -577,11 +589,8 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         };
         let first_sequence = retry.current_first_sequence();
         let subframes = retry.current_subframes();
-        let decision = retry.observe_block_ack_request(
-            block_ack,
-            ordinary.now().as_micros(),
-            block_ack_operational,
-        );
+        let decision =
+            retry.observe_block_ack_request(block_ack, radio_stamp, block_ack_operational)?;
         let observation = ApAmpduCompletion {
             tx_status: 0,
             block_ack_received: block_ack.is_some(),

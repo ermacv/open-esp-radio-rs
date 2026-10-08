@@ -89,6 +89,15 @@ Rules a caller relies on:
 - **Limits.** `SubmitError::Unsupported` and `SettingError::Unsupported`
   mean a value outside the declared limits and nothing else.
 
+TSF arithmetic uses `RadioDuration`. `VifTsf::checked_duration_since`
+first checks the interface, then rejects reversed time; checked addition rejects
+an endpoint beyond the TSF epoch. `TsfRelation` validates elapsed time, drift
+uncertainty and the expected TSF before changing its relation or generation.
+The S31 runtime measures TSF-read uncertainty between two MAC radio samples
+of one generation, with one microsecond for counter resolution. A reversed
+sample or an unrepresentable uncertainty is an explicit `InvalidSampleTiming`
+refusal; unavailable or different-generation samples are `StaleClock`.
+
 ## Capability model
 
 Structural optional features are extension traits over the base port. An

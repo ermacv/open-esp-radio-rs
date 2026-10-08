@@ -57,6 +57,15 @@ The normal station path crosses these distinct ownership boundaries:
 | PHY maintenance | The shared radio's periodic tracking is the only maintenance; Wi-Fi roles never pause for it. |
 | Stop and restart | Stop must recover the exact DMA/task owner and IRQ setup token. Only their reunion with the logical owner reconstructs `WifiStopped`; the next role may then be planned. |
 
+The ordinary TX owner carries the existing `ReceptionTimer`: its monotonic
+clock times waits and watchdogs, and its MAC clock supplies generation-bound
+radio samples for A-MPDU lifetime decisions. TX requires only the runtime's
+read-only `MacClockReader`; RF wake notification and receive timestamp
+conversion remain with their existing owners. A new radio start rebinds this
+capability only after the physical lifecycle returned an idle descriptor;
+reconnection retains the same radio epoch. No monotonic reading is relabelled
+as a radio instant.
+
 AP uses the same single physical owner but different role policy and queues.
 Same-channel STA+AP is one combined role epoch, not two independently
 restartable radios.

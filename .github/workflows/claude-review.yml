@@ -28,10 +28,6 @@ permissions:
   statuses: write
   id-token: write
 
-concurrency:
-  group: claude-review-${{ github.event.pull_request.head.ref || github.event.workflow_run.head_branch || format('manual-{0}', inputs.pull_request) }}
-  cancel-in-progress: true
-
 env:
   CARGO_NET_OFFLINE: 'false'
 
@@ -59,7 +55,7 @@ jobs:
           CLAUDE_REVIEW_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL }}
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 .github/scripts/claude_review.py verify-auth
-  review:
+  targets:
     if: >-
       github.repository == 'ermacv/open-esp-radio-rs' &&
       !(github.event_name == 'workflow_dispatch' && inputs.verify_auth) &&
@@ -68,6 +64,35 @@ jobs:
         !github.event.pull_request.draft &&
         github.event.pull_request.head.repo.full_name == github.repository &&
         github.event.pull_request.base.ref == 'main'))
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      pull_requests: ${{ steps.targets.outputs.pull_requests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Resolve PR numbers without Claude access
+        id: targets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 .github/scripts/claude_review.py targets
+  review:
+    needs: targets
+    if: needs.targets.outputs.pull_requests != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        pull_request: ${{ fromJSON(needs.targets.outputs.pull_requests) }}
+    concurrency:
+      group: claude-review-pr-${{ matrix.pull_request }}
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -77,6 +102,7 @@ jobs:
           persist-credentials: false
       - name: Review immutable source snapshots and publish a new report comment
         env:
+          REVIEW_PULL_REQUEST: ${{ matrix.pull_request }}
           GITHUB_TOKEN: ${{ github.token }}
           ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
           ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}

@@ -7,6 +7,7 @@ code, access runner files, write GitHub data or choose a network destination.
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -27,6 +28,12 @@ MODEL = "claude-opus-5-5"
 MAX_CONTEXT = 1_000_000
 MAX_INPUT = 2_000_000
 MAX_OUTPUT = 48_000
+# USD/MTok: input, 5-minute cache write, cache read, output (2026-10-08).
+# https://platform.claude.com/docs/en/about-claude/pricing
+PRICES = {"claude-opus-5-5": (4, 5, 0.20, 20),
+          "claude-sonnet-5-5": (2, 2.50, 0.10, 10)}
+USAGE_FIELDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+COMPLETED = "Review complete: "
 PROMPT = """Perform an ARCHITECTURAL REVIEW of this Rust 2024 no_std ESP32 radio
 project's PR, including concrete runtime regressions. Review component ownership,
 dependency direction, public contracts, end-to-end data/control flow and issue
@@ -216,13 +223,18 @@ class ReviewGitHub(GitHub):
 
 
 class InactiveReview(Exception):
-    """A draft or closed PR no longer permits analysis or publication."""
+    """The PR's eligibility or inputs no longer permit this review."""
+
+
+def pr_identity(pr):
+    return pr["head"]["sha"], pr["base"]["sha"], pr["title"], pr["body"]
 
 
 class Sources:
     def __init__(self, api, pr):
         self.api = api
         self.number = pr["number"]
+        self.identity = pr_identity(pr)
         # Patches use GitHub's three-dot comparison. The before snapshot must
         # be its merge base, not independently changed code on current main.
         self.refs = {"head": pr["head"]["sha"], "base": pr["merge_base_sha"]}
@@ -233,6 +245,8 @@ class Sources:
         live = self.api.request("GET", f"pulls/{self.number}")
         if live["state"] != "open" or live["draft"]:
             raise InactiveReview("PR is draft or closed; review stopped")
+        if pr_identity(live) != self.identity:
+            raise InactiveReview("PR revisions or requirements changed; obsolete review stopped")
 
     def get(self, path, revision):
         path = source_path(path)
@@ -454,9 +468,12 @@ class GitHubOIDC:
 
 class Claude:
     def __init__(self, model, credentials=None):
+        if model not in PRICES:
+            raise ValueError("Нет тарифа для модели ревью; добавьте её явные цены в контроллер")
         self.model = model
         self.credentials = credentials or GitHubOIDC()
         self.opener = build_opener(RepositoryRedirects())
+        self.usage = {phase: dict.fromkeys(USAGE_FIELDS, 0) for phase in ("analysis", "verification")}
 
     def request(self, path, body):
         request = Request(f"https://api.anthropic.com/v1/{path}", method="POST",
@@ -467,18 +484,51 @@ class Claude:
 
     def review(self, text, sources, files):
         self.input_used = self.output_used = 0
-        candidate = self.review_pass(text, sources, files, PROMPT, "analysis")
-        # Give the verifier fresh context, not the analyst's reasoning history.
-        # It must retrieve its own evidence even when immutable blobs are cached.
-        sources.read_ranges.clear()
-        verification = limited({"pull_request": json.loads(text), "candidate_report": candidate}, MAX_CONTEXT + 30_000)
-        return self.review_pass(verification, sources, files, PROMPT + "\n" + VERIFY_PROMPT, "verification")
+        try:
+            candidate = self.review_pass(text, sources, files,
+                                         "Investigate the PR and return a candidate architectural review.", "analysis")
+            # Share primary input, never the analyst's reasoning history.
+            sources.read_ranges.clear()
+            task = VERIFY_PROMPT + "\n" + limited({"candidate_report": candidate}, 30_000)
+            return self.review_pass(text, sources, files, task, "verification")
+        finally:
+            for phase, usage in self.usage.items():
+                self.log_usage(phase, "total", usage)
 
-    def review_pass(self, text, sources, files, prompt, phase):
-        messages = [{"role": "user", "content": text}]
+    def cost(self, usage):
+        return sum(usage[k] * rate for k, rate in zip(USAGE_FIELDS, PRICES[self.model])) / 1_000_000
+
+    def log_usage(self, phase, step, usage, seconds=None):
+        record = {"event": "claude_usage", "model": self.model, "phase": phase, "step": step,
+                  **usage, "estimated_usd": round(self.cost(usage), 8)}
+        if seconds is not None:
+            record["seconds"] = round(seconds, 3)
+        print(json.dumps(record), flush=True)
+
+    def usage_markdown(self):
+        rows = ["### Расход API", "", "| Этап | Обычный вход | Запись кеша | Чтение кеша | Выход | Оценка USD |",
+                "| --- | ---: | ---: | ---: | ---: | ---: |"]
+        total = dict.fromkeys(USAGE_FIELDS, 0)
+        for phase, usage in self.usage.items():
+            for k in USAGE_FIELDS:
+                total[k] += usage[k]
+            rows.append(f"| {phase} | " + " | ".join(str(usage[k]) for k in USAGE_FIELDS)
+                        + f" | {self.cost(usage):.6f} |")
+        rows.extend(["| Итого | " + " | ".join(str(total[k]) for k in USAGE_FIELDS)
+                     + f" | {self.cost(total):.6f} |", "",
+                     "Оценка по тарифам прямого API на 2026-10-08, кеш 5 минут; "
+                     "окончательный расход — в Claude Console. GitHub Actions оплачивается отдельно."])
+        return "\n".join(rows)
+
+    def review_pass(self, text, sources, files, task, phase):
+        # Write the shared prefix before the phase-specific suffix. Automatic
+        # caching additionally advances through each independent conversation.
+        messages = [{"role": "user", "content": [
+            {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": task}]}]
         for step in range(20):
             sources.ensure_active()
-            body = {"model": self.model, "system": prompt, "tools": TOOLS, "messages": messages}
+            body = {"model": self.model, "system": PROMPT, "tools": TOOLS, "messages": messages}
             count = self.request("messages/count_tokens", body)["input_tokens"]
             if self.input_used + count > MAX_INPUT or self.output_used >= MAX_OUTPUT:
                 raise ValueError("Достигнут лимит токенов ревью; анализ не завершён")
@@ -486,13 +536,20 @@ class Claude:
                   f"used {self.input_used}/{MAX_INPUT} input and {self.output_used}/{MAX_OUTPUT} output.",
                   flush=True)
             sources.ensure_active()
+            started = time.monotonic()
             response = self.request("messages", {**body, "max_tokens": min(12000, MAX_OUTPUT - self.output_used),
                                     "output_config": {"effort": "high"},
                                     "cache_control": {"type": "ephemeral"}})
             usage = response["usage"]
-            self.input_used += sum(usage.get(k, 0) for k in
-                                   ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-            self.output_used += usage["output_tokens"]
+            tokens = {k: usage.get(k, 0) for k in USAGE_FIELDS}
+            if (not {"input_tokens", "output_tokens"} <= usage.keys()
+                    or any(type(n) is not int or n < 0 for n in tokens.values())):
+                raise ValueError("API вернул некорректный расход токенов")
+            for k, n in tokens.items():
+                self.usage[phase][k] += n
+            self.input_used += sum(tokens[k] for k in USAGE_FIELDS[:3])
+            self.output_used += tokens["output_tokens"]
+            self.log_usage(phase, step + 1, tokens, time.monotonic() - started)
             sources.ensure_active()
             if self.input_used > MAX_INPUT or self.output_used > MAX_OUTPUT:
                 raise ValueError("Достигнут лимит токенов ревью; анализ не завершён")
@@ -534,11 +591,33 @@ def ci_state(api, sha):
     return runs[0]["conclusion"] == "success", runs[0]["html_url"]
 
 
-def publish(api, pr, body):
+def review_key(text, model):
+    # Complete context covers revisions, issue requirements and project rules.
+    # The controller digest covers prompts, tools, settings and budget policy.
+    digest = hashlib.sha256(Path(__file__).read_bytes())
+    for value in (model, text):
+        digest.update(b"\0")
+        digest.update(value.encode())
+    return digest.hexdigest()
+
+
+def completed_review(api, pr, key):
+    for record in api.list(f"commits/{pr['head']['sha']}/statuses"):
+        creator = record.get("creator") or {}
+        if (record.get("context") == STATUS and record.get("description") == COMPLETED + key
+                and record.get("state") in ("success", "failure")
+                and creator.get("login") == "github-actions[bot]" and creator.get("type") == "Bot"):
+            return record
+    return None
+
+
+def current_pr(api, pr):
     live = api.request("GET", f"pulls/{pr['number']}")
-    if (live["state"] != "open" or live["draft"] or
-            any(live[k] != pr[k] for k in ("title", "body")) or
-            any(live[k]["sha"] != pr[k]["sha"] for k in ("head", "base"))):
+    return live["state"] == "open" and not live["draft"] and pr_identity(live) == pr_identity(pr)
+
+
+def publish(api, pr, body):
+    if not current_pr(api, pr):
         print("PR changed during review; obsolete result not published.")
         return False
     body = f"{MARKER}\n{body}\n\nHead: `{pr['head']['sha']}` · Base: `{pr['base']['sha']}`"
@@ -553,15 +632,17 @@ def publish(api, pr, body):
     return True
 
 
-def status(api, pr, state, description):
+def status(api, pr, state, description, target_url=None):
     data = {"state": state, "context": STATUS, "description": description}
     run_id = os.environ.get("GITHUB_RUN_ID")
-    if run_id:
+    if target_url:
+        data["target_url"] = target_url
+    elif run_id:
         data["target_url"] = f"https://github.com/{REPOSITORY}/actions/runs/{run_id}"
     api.request("POST", f"statuses/{pr['head']['sha']}", data)
 
 
-def render(pr, report, ci_ok, ci, model):
+def render(pr, report, ci_ok, ci, model, usage=""):
     gaps, findings = report["coverage_gaps"], report["findings"]
     if findings:
         title = "⛔ Найдены дефекты архитектуры или выполнения — нужны исправления"
@@ -589,10 +670,12 @@ def render(pr, report, ci_ok, ci, model):
                           f"  Сценарий и последствие: {finding['trigger']} → {finding['impact']}",
                           f"  Почему вне PR: {finding['reason']}"])
     lines.extend(["", f"CI: {ci}", "Ревью статическое; выполнение на ESP32 и HIL этим анализом не подтверждено."])
+    if usage:
+        lines.extend(["", usage])
     return "\n".join(lines)
 
 
-def review_pr(api, number, model):
+def review_pr(api, number, model, force=False):
     pr = api.request("GET", f"pulls/{number}")
     if pr["state"] != "open" or pr["draft"]:
         return
@@ -605,16 +688,32 @@ def review_pr(api, number, model):
         if ci_ok is None:
             print(f"Architectural review waiting: {ci}. Previous verdict is not current.")
             return
+        if ci_ok is not True:
+            status(api, pr, "failure", "CI failed; paid architectural review deferred", ci)
+            print("CI failed; no Claude request or review comment.")
+            return
         text, files, gaps = context(api, pr)
-        report = Claude(model).review(text, Sources(api, pr), files)
+        key = review_key(text, model)
+        previous = None if force else completed_review(api, pr, key)
+        if previous:
+            ci_ok, ci = ci_state(api, pr["head"]["sha"])
+            if current_pr(api, pr):
+                if ci_ok is True:
+                    status(api, pr, previous["state"], COMPLETED + key, previous.get("target_url"))
+                    print(f"Reused completed architectural review {key}; no paid request or new report.")
+                elif ci_ok is False:
+                    status(api, pr, "failure", "CI failed; previous review cannot approve merging", ci)
+            return
+        claude = Claude(model)
+        report = claude.review(text, Sources(api, pr), files)
         report["coverage_gaps"] = list(dict.fromkeys(gaps + report["coverage_gaps"]))
         pr["review_files"] = files
         # CI can be rerun while Claude works. Re-read it before a green verdict.
         ci_ok, ci = ci_state(api, pr["head"]["sha"])
-        if publish(api, pr, render(pr, report, ci_ok, ci, model)):
+        if publish(api, pr, render(pr, report, ci_ok, ci, model, claude.usage_markdown())):
             approved = not report["findings"] and not report["coverage_gaps"] and ci_ok is True
             status(api, pr, "success" if approved else "failure",
-                   "Architectural review passed; CI passed" if approved else "Architectural defects or incomplete verification")
+                   COMPLETED + key if ci_ok is True else "CI changed; architectural verdict is not current")
     except InactiveReview as error:
         print(str(error))
     except Exception as error:
@@ -653,7 +752,7 @@ def verify_auth(model):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["run", "check", "verify-auth"])
+    parser.add_argument("command", choices=["run", "check", "verify-auth", "targets"])
     args = parser.parse_args()
     if args.command == "check":
         suite = unittest.defaultTestLoader.discover(str(Path(__file__).parent), "test_claude_review.py")
@@ -666,8 +765,13 @@ def main():
         return 0
     api = ReviewGitHub(os.environ.get("GITHUB_TOKEN"))
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
-    for number in targets(api, event, os.environ["GITHUB_EVENT_NAME"]):
-        review_pr(api, number, model)
+    event_name = os.environ["GITHUB_EVENT_NAME"]
+    if args.command == "targets":
+        numbers = targets(api, event, event_name)
+        with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
+            output.write(f"pull_requests={json.dumps(numbers)}\n")
+    else:
+        review_pr(api, int(os.environ["REVIEW_PULL_REQUEST"]), model, force=event_name == "workflow_dispatch")
     return 0
 
 

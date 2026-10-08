@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import tempfile
 from copy import deepcopy
 import unittest
 from unittest.mock import patch
@@ -34,12 +35,17 @@ class FakeGitHub:
         self.comments = []
         self.writes = []
         self.runs = []
+        self.status_records = []
+        self.issue_text = "Wake correctly"
         self.files = [{"filename": "src/lib.rs", "status": "modified", "additions": 1,
                        "deletions": 1, "patch": "@@ -8 +8 @@\n-old\n+new"}]
 
     def request(self, method, path, data=None):
         if method != "GET":
             self.writes.append((method, path, deepcopy(data)))
+            if path.startswith("statuses/"):
+                self.status_records.insert(0, {**deepcopy(data),
+                    "creator": {"login": "github-actions[bot]", "type": "Bot"}})
             return {}
         if path == "pulls/7":
             return deepcopy(self.pr)
@@ -57,6 +63,8 @@ class FakeGitHub:
             return deepcopy(self.comments)
         if path == "pulls/7/files":
             return deepcopy(self.files)
+        if path.endswith("/statuses"):
+            return deepcopy(self.status_records)
         if path.startswith("commits/"):
             return [deepcopy(self.pr), {**deepcopy(self.pr), "number": 8,
                                        "head": {"sha": "c" * 40}}]
@@ -66,7 +74,7 @@ class FakeGitHub:
         return {(review.REPOSITORY, 12), (review.REPOSITORY, 13)}
 
     def read_issue(self, repo, number):
-        return {"repository": repo, "number": number, "title": "Wake correctly", "comments": []}
+        return {"repository": repo, "number": number, "title": self.issue_text, "comments": []}
 
 
 class ReviewTests(unittest.TestCase):
@@ -228,8 +236,13 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(result, final)
         self.assertEqual(len(bodies), 3)
         self.assertTrue(all(len(body["messages"]) == 1 for body in bodies[:2]))
-        self.assertIn("candidate_report", bodies[1]["messages"][0]["content"])
-        self.assertIn(review.VERIFY_PROMPT, bodies[1]["system"])
+        first, verifier = [body["messages"][0]["content"] for body in bodies[:2]]
+        self.assertEqual(first[0], verifier[0])
+        self.assertEqual(first[0], {"type": "text", "text": "{}", "cache_control": {"type": "ephemeral"}})
+        self.assertIn("candidate_report", verifier[1]["text"])
+        self.assertIn(review.VERIFY_PROMPT, verifier[1]["text"])
+        self.assertTrue(all(body["system"] == review.PROMPT for body in bodies))
+        self.assertEqual(bodies[0]["tools"], bodies[1]["tools"])
         self.assertTrue(all(body["cache_control"] == {"type": "ephemeral"} for body in bodies))
         self.assertTrue(all(body["output_config"] == {"effort": "high"} for body in bodies))
         self.assertTrue(all(tool["strict"] for tool in review.TOOLS))
@@ -660,6 +673,7 @@ class ReviewTests(unittest.TestCase):
                          "conclusion": "success", "html_url": "https://example/ci"}]
             with patch.object(review, "Claude") as claude:
                 claude.return_value.review.return_value = deepcopy(report)
+                claude.return_value.usage_markdown.return_value = "API usage"
                 review.review_pr(api, 7, review.MODEL)
             self.assertEqual(api.writes[-1][1], f"statuses/{PR['head']['sha']}")
             self.assertEqual(api.writes[-1][2]["state"], expected)
@@ -671,6 +685,192 @@ class ReviewTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "лимит токенов"):
                 claude.review("context", review.Sources(FakeGitHub(), PR), [])
         self.assertEqual([c.args[0] for c in request.call_args_list], ["messages/count_tokens"])
+
+    def test_usage_separates_cache_costs_and_phases_without_logging_context(self):
+        claude = review.Claude(review.MODEL)
+        tokens = dict(zip(review.USAGE_FIELDS, (20, 30, 100, 5)))
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 150}
+            return {"usage": tokens, "stop_reason": "tool_use", "content": [
+                {"type": "tool_use", "id": "finish", "name": "finish_review", "input": REPORT}]}
+        with patch.object(claude, "request", side_effect=request), \
+                patch("sys.stdout", new_callable=io.StringIO) as output:
+            claude.review("PRIVATE_SOURCE_SENTINEL", review.Sources(FakeGitHub(), PR), [])
+        self.assertEqual(claude.usage, {"analysis": tokens, "verification": tokens})
+        self.assertEqual(claude.input_used, 300)
+        self.assertEqual(claude.output_used, 10)
+        records = [json.loads(line) for line in output.getvalue().splitlines() if line.startswith("{")]
+        self.assertEqual(len(records), 4)
+        self.assertEqual([r["phase"] for r in records], ["analysis", "verification", "analysis", "verification"])
+        self.assertAlmostEqual(records[0]["estimated_usd"], 0.00035)
+        self.assertNotIn("PRIVATE_SOURCE_SENTINEL", output.getvalue())
+        usage = claude.usage_markdown()
+        self.assertIn("| Итого | 40 | 60 | 200 | 10 | 0.000700 |", usage)
+        text = review.render(PR, REPORT, True, "CI", review.MODEL, usage)
+        self.assertIn("### Расход API", text)
+        self.assertIn("окончательный расход — в Claude Console", text)
+
+    def test_usage_is_logged_even_when_the_model_cannot_finish(self):
+        claude = review.Claude(review.MODEL)
+        response = {"usage": {"input_tokens": 10, "output_tokens": 4},
+                    "stop_reason": "max_tokens", "content": []}
+        with patch.object(claude, "request", side_effect=[{"input_tokens": 10}, response]), \
+                patch("sys.stdout", new_callable=io.StringIO) as output:
+            with self.assertRaises(ValueError):
+                claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+        records = [json.loads(line) for line in output.getvalue().splitlines() if line.startswith("{")]
+        self.assertEqual(records[-2]["step"], "total")
+        self.assertEqual(records[-2]["output_tokens"], 4)
+        self.assertEqual(records[-1]["output_tokens"], 0)
+
+    def test_unknown_prices_and_invalid_usage_fail_before_a_clean_verdict(self):
+        with self.assertRaisesRegex(ValueError, "тарифа"):
+            review.Claude("unknown-model")
+        for usage in ({"input_tokens": -1, "output_tokens": 1}, {"input_tokens": 10},
+                      {"output_tokens": 1}, {"input_tokens": True, "output_tokens": 1}):
+            with self.subTest(usage=usage):
+                claude = review.Claude(review.MODEL)
+                with patch.object(claude, "request", side_effect=[{"input_tokens": 10}, {"usage": usage}]):
+                    with self.assertRaisesRegex(ValueError, "некорректный расход"):
+                        claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+
+    def test_automatic_repeats_reuse_both_clean_and_blocking_completed_reviews(self):
+        for report, expected in ((REPORT, "success"), ({**REPORT, "coverage_gaps": ["Missing caller"]}, "failure")):
+            with self.subTest(state=expected):
+                api = self.successful_api()
+                with patch.object(review.Claude, "review", return_value=deepcopy(report)) as analysis:
+                    review.review_pr(api, 7, review.MODEL)
+                    original = deepcopy(api.status_records[0])
+                    review.review_pr(api, 7, review.MODEL)
+                analysis.assert_called_once()
+                self.assertEqual(api.status_records[0]["state"], expected)
+                self.assertEqual(api.status_records[0]["description"], original["description"])
+                self.assertEqual(len([w for w in api.writes if w[1] == "issues/7/comments"]), 1)
+
+    def test_manual_repeat_runs_again_and_appends_a_new_report(self):
+        api = self.successful_api()
+        with patch.object(review.Claude, "review", return_value=deepcopy(REPORT)) as analysis:
+            review.review_pr(api, 7, review.MODEL)
+            review.review_pr(api, 7, review.MODEL, force=True)
+        self.assertEqual(analysis.call_count, 2)
+        self.assertEqual(len([w for w in api.writes if w[1] == "issues/7/comments"]), 2)
+
+    def test_changed_requirements_or_source_revisions_invalidate_completed_review(self):
+        for mutation in ("issue", "head", "base", "body", "title", "model"):
+            with self.subTest(mutation=mutation):
+                api = self.successful_api()
+                with patch.object(review.Claude, "review", return_value=deepcopy(REPORT)) as analysis:
+                    review.review_pr(api, 7, review.MODEL)
+                    model = review.MODEL
+                    if mutation == "issue":
+                        api.issue_text = "New acceptance criterion"
+                    elif mutation in ("head", "base"):
+                        api.pr[mutation]["sha"] = "d" * 40
+                    elif mutation == "model":
+                        model = "claude-sonnet-5-5"
+                    else:
+                        api.pr[mutation] += " updated"
+                    review.review_pr(api, 7, model)
+                self.assertEqual(analysis.call_count, 2)
+
+    def test_controller_changes_invalidate_review_key(self):
+        before = review.review_key("context", review.MODEL)
+        with patch.object(Path, "read_bytes", return_value=b"changed controller"):
+            self.assertNotEqual(review.review_key("context", review.MODEL), before)
+
+    def test_completed_review_rejects_untrusted_wrong_and_incomplete_statuses(self):
+        api = FakeGitHub()
+        record = {"context": review.STATUS, "description": review.COMPLETED + "key", "state": "success",
+                  "creator": {"login": "github-actions[bot]", "type": "Bot"}}
+        for mutation in ({"state": "pending"}, {"state": "error"}, {"context": "ci-ok"},
+                         {"description": review.COMPLETED + "other"}, {"creator": None},
+                         {"creator": {"login": "attacker", "type": "User"}},
+                         {"creator": {"login": "github-actions[bot]", "type": "User"}}):
+            api.status_records = [{**record, **mutation}]
+            self.assertIsNone(review.completed_review(api, PR, "key"))
+        api.status_records = [record]
+        self.assertEqual(review.completed_review(api, PR, "key"), record)
+
+    def test_failed_ci_spends_nothing_and_successful_rerun_can_reuse_source_review(self):
+        api = self.successful_api()
+        api.runs[0]["conclusion"] = "failure"
+        with patch.object(review, "Claude") as claude:
+            review.review_pr(api, 7, review.MODEL, force=True)
+        claude.assert_not_called()
+        self.assertEqual(api.status_records[0]["state"], "failure")
+        self.assertFalse(any(w[1] == "issues/7/comments" for w in api.writes))
+        api.runs[0]["conclusion"] = "success"
+        with patch.object(review.Claude, "review", return_value=deepcopy(REPORT)) as analysis:
+            review.review_pr(api, 7, review.MODEL)
+            api.runs[0]["conclusion"] = "failure"
+            review.review_pr(api, 7, review.MODEL)
+            api.runs[0]["conclusion"] = "success"
+            review.review_pr(api, 7, review.MODEL)
+        analysis.assert_called_once()
+        self.assertEqual(api.status_records[0]["state"], "success")
+
+    def test_ci_or_readiness_change_during_cache_lookup_cannot_restore_green(self):
+        for mutation in ("pending", "failure", "draft", "head"):
+            with self.subTest(mutation=mutation):
+                api = self.successful_api()
+                def lookup(*args):
+                    if mutation == "pending":
+                        api.runs[0]["status"] = "in_progress"
+                    elif mutation == "failure":
+                        api.runs[0]["conclusion"] = "failure"
+                    elif mutation == "draft":
+                        api.pr["draft"] = True
+                    else:
+                        api.pr["head"]["sha"] = "d" * 40
+                    return {"state": "success"}
+                with patch.object(review, "completed_review", side_effect=lookup), patch.object(review, "Claude") as claude:
+                    review.review_pr(api, 7, review.MODEL)
+                claude.assert_not_called()
+                self.assertNotIn("success", [r["state"] for r in api.status_records])
+
+    def test_source_or_requirement_changes_stop_before_the_next_paid_request(self):
+        for field in ("head", "base", "title", "body"):
+            api = FakeGitHub()
+            sources = review.Sources(api, api.pr)
+            claude = review.Claude(review.MODEL)
+            def count(*args):
+                if field in ("head", "base"):
+                    api.pr[field]["sha"] = "d" * 40
+                else:
+                    api.pr[field] += " changed"
+                return {"input_tokens": 10}
+            with patch.object(claude, "request", side_effect=count) as request:
+                with self.assertRaises(review.InactiveReview):
+                    claude.review("{}", sources, [])
+            self.assertEqual(request.call_count, 1)
+
+    def test_target_output_and_matrix_execution_preserve_manual_force(self):
+        with tempfile.TemporaryDirectory() as directory:
+            event = Path(directory) / "event.json"
+            output = Path(directory) / "output"
+            event.write_text(json.dumps({"pull_request": {"number": 7}}))
+            env = {"GITHUB_REPOSITORY": review.REPOSITORY, "GITHUB_TOKEN": "test",
+                   "GITHUB_EVENT_PATH": str(event), "GITHUB_OUTPUT": str(output),
+                   "GITHUB_EVENT_NAME": "pull_request_target", "REVIEW_PULL_REQUEST": "7"}
+            with patch.dict(os.environ, env), patch.object(review, "ReviewGitHub", return_value=FakeGitHub()), \
+                    patch("sys.argv", ["review", "targets"]):
+                self.assertEqual(review.main(), 0)
+            self.assertEqual(output.read_text(), "pull_requests=[7]\n")
+            for name, force in (("pull_request_target", False), ("workflow_dispatch", True)):
+                with patch.dict(os.environ, {**env, "GITHUB_EVENT_NAME": name}), \
+                        patch.object(review, "ReviewGitHub", return_value=FakeGitHub()), \
+                        patch.object(review, "review_pr") as run, patch("sys.argv", ["review", "run"]):
+                    review.main()
+                self.assertEqual(run.call_args.args[1:], (7, os.environ.get("CLAUDE_REVIEW_MODEL") or review.MODEL))
+                self.assertEqual(run.call_args.kwargs, {"force": force})
+
+    @staticmethod
+    def successful_api():
+        api = FakeGitHub()
+        api.runs = [{"run_number": 1, "run_attempt": 1, "status": "completed",
+                     "conclusion": "success", "html_url": "https://example/ci"}]
+        return api
 
     def test_oidc_exchange_caches_tokens_and_refreshes_with_a_new_assertion(self):
         credentials = review.GitHubOIDC()

@@ -1,6 +1,6 @@
 # Contributing
 
-## Claude runtime review
+## Claude architectural review
 
 The [review workflow](.github/workflows/claude-review.yml) uses the Claude
 Messages API directly, authenticated through GitHub Actions OIDC and
@@ -42,24 +42,46 @@ the controller fetches a GitHub assertion, exchanges it at `/v1/oauth/token`
 and sends the temporary token as a Bearer credential. Refresh fetches a fresh
 single-use assertion. No persistent Anthropic API key or Claude GitHub App is
 needed. The optional variable `CLAUDE_REVIEW_MODEL` selects the model;
-the default is `claude-sonnet-5-5`.
+the default is `claude-opus-5-5`, with `high` effort. Sonnet 5.5 is available
+as an explicit lower-cost choice. The default prioritizes cross-component
+judgment; it is not a claim that a public architecture-specific benchmark
+has established a winner.
 
 Opening or updating a non-draft PR from a branch in this repository invalidates
 the previous verdict and waits for its latest `CI` push run. When CI finishes,
 the reviewer reads the complete changed-file list and patches, explicitly
-referenced and GitHub-linked closing issues with their discussions, and the
-source files and callers it requests at immutable head/base SHAs. Findings
-cover concrete runtime regressions, with triggers, consequences, fixes and
-links to source lines; style suggestions are outside this review.
+referenced and GitHub-linked closing issues with their discussions and relationship
+(closing commitment or reference-only context), and the
+source files and callers it requests at immutable SHAs. The `base` source tool
+revision means the merge base used by the PR's three-dot diff, so unrelated
+changes already on main are not mistaken for the PR's before state.
+The review checks architectural ownership, dependency direction, contracts,
+data/control flow and concrete runtime regressions, with triggers, consequences,
+fixes and links to source lines. Style preferences are outside this review.
+Source reads return numbered slices; literal search scans one explicit source
+path and declares when its result exceeds 100 matches. Neither tool executes code.
 Cargo.lock patches remain in the initial diff so dependency changes are visible;
 full lock-file reads are excluded from source investigation. Claude reads the
 owning Cargo.toml when it needs dependency context.
 
 One `github-actions[bot]` comment reports errors, a completed review with
-successful CI, or an incomplete review. API failures, missing diffs, unavailable
+successful CI, or an incomplete review. It explicitly says **Архитектурное ревью**
+and names the model. A second model conversation verifies the candidate report
+with fresh context and its own source reads, challenging both reported defects
+and a clean verdict. This can reduce false positives; the two passes use the
+same model and can still share blind spots.
+
+Independent pre-existing defects encountered during the review appear in a
+separate short summary (at most five) for human verification and possible future
+issues. Each needs source evidence read at both the merge base and head, a
+reachable failure scenario and a reason it is outside the PR. These findings
+do not block this PR or create issues. A pre-existing defect made reachable or
+worsened by the PR belongs in the blocking findings instead.
+
+API failures, missing diffs, unavailable
 issues and analysis limits cannot yield approval. The controller rechecks the
 PR revisions and CI before publishing. The controller also sets the commit
-status `claude-runtime-review`: pending while waiting/working, success only
+status `claude-runtime-review` (its branch-protection identifier): pending while waiting/working, success only
 after complete analysis and successful CI, failure for defects or coverage
 gaps, and error when the reviewer fails. Require this status alongside `ci-ok`
 in `main` branch protection to prevent auto-merge from overtaking the reviewer.
@@ -76,14 +98,18 @@ review covers same-repository branches, matching CI's push trigger. Fork PRs
 need a separate CI policy before this workflow can give a merge verdict.
 
 To repeat a review after issue requirements change, use **Actions → Claude
-runtime review → Run workflow**, selecting the default branch and the PR
+architectural review → Run workflow**, selecting the default branch and the PR
 number. To verify federation during setup, select `verify_auth` instead; that
 mode exchanges an OIDC token and makes one minimal Messages request (up to 16
 output tokens) without reading or commenting on a PR. Each analysis is limited
-to 20 model calls, 2,000,000 cumulative input
-tokens and 48,000 output tokens; reaching a limit reports incomplete analysis.
+to 20 model calls per pass, with 2,000,000 cumulative input
+tokens and 48,000 output tokens shared across both passes; reaching a limit
+reports incomplete analysis. The workflow has a 45-minute timeout.
 The larger input budget covers repeated source investigation across large PRs;
-the preflight counts each request before paid inference. Context and linked
+the preflight counts each request before paid inference. Automatic prompt
+caching reuses growing message prefixes within each pass. Input accounting
+includes ordinary tokens, cache writes and cache reads; cached inputs are not
+free and do not bypass the analysis budget. Context and linked
 issues are kept complete, and logs show per-step token usage without source or
 credentials. PRs whose context exceeds 1,000,000 characters require splitting or
 an explicit limit change. GitHub Actions runner minutes have separate billing.

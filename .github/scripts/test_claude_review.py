@@ -14,13 +14,18 @@ import claude_review as review
 
 
 PR = {"number": 7, "state": "open", "draft": False, "title": "Fix polling",
-      "body": "Fixes #12", "head": {"sha": "a" * 40, "repo": {"full_name": review.REPOSITORY}},
+      "body": "Fixes #12; relates to #14", "head": {"sha": "a" * 40, "repo": {"full_name": review.REPOSITORY}},
       "base": {"sha": "b" * 40, "ref": "main"},
+      "merge_base_sha": "c" * 40,
       "changed_files": 1, "review_files": [{"filename": "src/lib.rs", "status": "modified"}]}
-REPORT = {"summary": "Проверены изменения и вызывающий код.", "coverage_gaps": [], "findings": []}
+REPORT = {"summary": "Проверены изменения и вызывающий код.", "coverage_gaps": [],
+          "findings": [], "out_of_scope_findings": []}
 FINDING = {"path": "src/lib.rs", "line": 8, "priority": "P1", "title": "Lost wakeup",
            "trigger": "IRQ fires between the check and registration",
            "impact": "Future remains pending", "fix": "Register before checking the state"}
+UNRELATED = {"path": "src/old.rs", "line": 2, "base_path": "src/old.rs", "base_line": 2,
+             "title": "Старый сбой", "trigger": "Независимый старый путь",
+             "impact": "Потеря события", "reason": "Поведение и достижимость не меняются в PR"}
 
 
 class FakeGitHub:
@@ -38,11 +43,13 @@ class FakeGitHub:
             return {}
         if path == "pulls/7":
             return deepcopy(self.pr)
+        if path.startswith("compare/"):
+            return {"merge_base_commit": {"sha": self.pr["merge_base_sha"]}}
         if path.startswith("actions/workflows/ci.yml/runs?"):
             return {"workflow_runs": deepcopy(self.runs)}
         if path.startswith("contents/"):
             return {"type": "file", "encoding": "base64",
-                    "content": base64.b64encode(b"first\nsecond\nthird\n").decode()}
+                    "content": base64.b64encode(b"first\nsecond\nthird\n4\n5\n6\n7\n8\n9\n10\n").decode()}
         raise AssertionError(path)
 
     def list(self, path):
@@ -56,13 +63,174 @@ class FakeGitHub:
         raise AssertionError(path)
 
     def closing_issues(self, number):
-        return {(review.REPOSITORY, 13)}
+        return {(review.REPOSITORY, 12), (review.REPOSITORY, 13)}
 
     def read_issue(self, repo, number):
         return {"repository": repo, "number": number, "title": "Wake correctly", "comments": []}
 
 
 class ReviewTests(unittest.TestCase):
+    def test_tool_schemas_fit_the_supported_strict_api_subset(self):
+        # The raw API rejects numeric/length/maximum-array constraints.
+        # Their limits live in descriptions and are enforced by the controller.
+        supported = {"type", "description", "properties", "required", "additionalProperties", "items", "enum"}
+        def check(schema):
+            self.assertTrue(set(schema) <= supported, set(schema) - supported)
+            if schema["type"] == "object":
+                self.assertIs(schema["additionalProperties"], False)
+                for field in schema["properties"].values():
+                    check(field)
+            elif schema["type"] == "array":
+                check(schema["items"])
+        for tool in review.TOOLS:
+            self.assertTrue(tool["strict"])
+            check(tool["input_schema"])
+
+    def test_blocking_findings_need_their_actual_source_anchor_in_each_pass(self):
+        sources = review.Sources(FakeGitHub(), PR)
+        report = {**REPORT, "findings": [FINDING]}
+        with self.assertRaisesRegex(ValueError, "anchor source line"):
+            review.validate_report(report, PR["review_files"], sources)
+        sources.read("src/lib.rs", "head", 8, 1)
+        self.assertEqual(review.validate_report(report, PR["review_files"], sources), report)
+        sources.read_ranges.clear()
+        with self.assertRaisesRegex(ValueError, "anchor source line"):
+            review.validate_report(report, PR["review_files"], sources)
+
+    def test_architectural_report_separates_preexisting_defects_without_blocking(self):
+        report = {**REPORT, "out_of_scope_findings": [UNRELATED]}
+        text = review.render(PR, report, True, "CI", review.MODEL)
+        self.assertIn("Архитектурное ревью PR #7", text)
+        self.assertIn(review.MODEL, text)
+        self.assertIn("можно мерджить", text)
+        self.assertIn("Проблемы вне текущего PR", text)
+        self.assertIn("issue автоматически не создаются", text)
+        self.assertIn(f"/blob/{PR['merge_base_sha']}/src/old.rs#L2", text)
+
+    def test_unrelated_findings_need_base_and_head_lines_read_in_this_pass(self):
+        sources = review.Sources(FakeGitHub(), PR)
+        report = {**REPORT, "out_of_scope_findings": [UNRELATED]}
+        for revision in ("head", "base"):
+            with self.assertRaisesRegex(ValueError, "both base and head"):
+                review.validate_report(report, PR["review_files"], sources)
+            sources.read("src/old.rs", revision, 1, 3)
+        self.assertEqual(review.validate_report(report, PR["review_files"], sources), report)
+        for change in ({"reason": ""}, {"path": "../.env"}, {"base_line": 4}):
+            with self.assertRaises(ValueError):
+                review.validate_report({**REPORT, "out_of_scope_findings": [{**UNRELATED, **change}]},
+                                       PR["review_files"], sources)
+        with self.assertRaises(ValueError):
+            review.validate_report({**REPORT, "out_of_scope_findings": [UNRELATED] * 6},
+                                   PR["review_files"], sources)
+
+    def test_before_snapshot_uses_merge_base_when_main_has_moved(self):
+        api = FakeGitHub()
+        text, _, _ = review.context(api, api.pr)
+        self.assertEqual(json.loads(text)["diff_base"], PR["merge_base_sha"])
+        with patch.object(api, "request", wraps=api.request) as request:
+            review.Sources(api, api.pr).read("src/lib.rs", "base", 1, 1)
+        self.assertIn(f"ref={PR['merge_base_sha']}", request.call_args.args[1])
+        self.assertNotIn(f"ref={PR['base']['sha']}", request.call_args.args[1])
+
+    def test_literal_search_is_bounded_cached_and_obeys_source_restrictions(self):
+        api = FakeGitHub()
+        data = {"type": "file", "encoding": "base64", "content":
+                base64.b64encode(("value.foo\n" * 101).encode()).decode()}
+        sources = review.Sources(api, PR)
+        with patch.object(api, "request", return_value=data) as request:
+            result = json.loads(sources.search("src/lib.rs", "head", "."))
+            self.assertEqual(result["total_matches"], 101)
+            self.assertEqual(len(result["matches"]), 100)
+            self.assertTrue(result["truncated"])
+            self.assertEqual(json.loads(sources.search("src/lib.rs", "head", ".*"))["total_matches"], 0)
+            self.assertEqual(request.call_count, 1)
+        for path in ("../.env", "Cargo.lock", "crates/hardware/chip/pac/raw/src/lib.rs"):
+            with self.assertRaises(ValueError):
+                sources.search(path, "head", "value")
+        with self.assertRaises(ValueError):
+            sources.search("src/lib.rs", "head", "")
+
+    def test_verifier_gets_fresh_context_and_can_reject_a_clean_candidate(self):
+        claude = review.Claude(review.MODEL)
+        final = {**REPORT, "findings": [FINDING]}
+        bodies = []
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            bodies.append(deepcopy(body))
+            if len(bodies) == 2:
+                content = [{"type": "tool_use", "id": "read", "name": "read_file",
+                            "input": {"path": "src/lib.rs", "revision": "head", "start": 1, "count": 10}}]
+            else:
+                content = [{"type": "tool_use", "id": "finish", "name": "finish_review",
+                            "input": REPORT if len(bodies) == 1 else final}]
+            return {"usage": {"input_tokens": 10, "output_tokens": 5}, "stop_reason": "tool_use",
+                    "content": content}
+        with patch.object(claude, "request", side_effect=request):
+            result = claude.review("{}", review.Sources(FakeGitHub(), PR), PR["review_files"])
+        self.assertEqual(result, final)
+        self.assertEqual(len(bodies), 3)
+        self.assertTrue(all(len(body["messages"]) == 1 for body in bodies[:2]))
+        self.assertIn("candidate_report", bodies[1]["messages"][0]["content"])
+        self.assertIn(review.VERIFY_PROMPT, bodies[1]["system"])
+        self.assertTrue(all(body["cache_control"] == {"type": "ephemeral"} for body in bodies))
+        self.assertTrue(all(body["output_config"] == {"effort": "high"} for body in bodies))
+        self.assertTrue(all(tool["strict"] for tool in review.TOOLS))
+
+    def test_both_passes_share_budget_including_cache_reads_and_writes(self):
+        claude = review.Claude(review.MODEL)
+        calls = []
+        def request(path, body):
+            calls.append(path)
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            return {"usage": {"input_tokens": 1, "cache_creation_input_tokens": 1,
+                              "cache_read_input_tokens": review.MAX_INPUT - 2, "output_tokens": 1},
+                    "stop_reason": "tool_use", "content": [{"type": "tool_use", "id": "finish",
+                        "name": "finish_review", "input": REPORT}]}
+        with patch.object(claude, "request", side_effect=request):
+            with self.assertRaisesRegex(ValueError, "лимит токенов"):
+                claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+        self.assertEqual(claude.input_used, review.MAX_INPUT)
+        self.assertEqual(calls, ["messages/count_tokens", "messages", "messages/count_tokens"])
+
+    def test_actual_usage_above_preflight_estimate_cannot_finish_green(self):
+        claude = review.Claude(review.MODEL)
+        response = {"usage": {"input_tokens": 1, "cache_read_input_tokens": review.MAX_INPUT,
+                              "output_tokens": 1}, "stop_reason": "tool_use",
+                    "content": [{"type": "tool_use", "id": "finish", "name": "finish_review", "input": REPORT}]}
+        with patch.object(claude, "request", side_effect=[{"input_tokens": 10}, response]) as request:
+            with self.assertRaisesRegex(ValueError, "лимит токенов"):
+                claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+        self.assertEqual(request.call_count, 2)
+
+    def test_verifier_cannot_reuse_analysts_reads_to_classify_unrelated_defects(self):
+        claude = review.Claude(review.MODEL)
+        source_reads = [{"type": "tool_use", "id": rev, "name": "read_file",
+                         "input": {"path": "src/old.rs", "revision": rev, "start": 1, "count": 3}}
+                        for rev in ("head", "base")]
+        finish = [{"type": "tool_use", "id": "finish", "name": "finish_review",
+                   "input": {**REPORT, "out_of_scope_findings": [UNRELATED]}}]
+        responses = iter([source_reads, finish, finish])
+        def request(path, body):
+            if path == "messages/count_tokens":
+                return {"input_tokens": 10}
+            return {"usage": {"input_tokens": 10, "output_tokens": 10}, "stop_reason": "tool_use",
+                    "content": next(responses)}
+        with patch.object(claude, "request", side_effect=request):
+            with self.assertRaisesRegex(ValueError, "both base and head"):
+                claude.review("{}", review.Sources(FakeGitHub(), PR), [])
+
+    def test_verifier_failure_never_publishes_the_analysts_clean_verdict(self):
+        api = FakeGitHub()
+        api.runs = [{"run_number": 1, "run_attempt": 1, "status": "completed",
+                     "conclusion": "success", "html_url": "https://example/ci"}]
+        with patch.object(review.Claude, "review_pass", side_effect=[REPORT, ValueError("Verification failed")]):
+            with self.assertRaisesRegex(ValueError, "Verification failed"):
+                review.review_pr(api, 7, review.MODEL)
+        self.assertEqual(api.writes[-1][2]["state"], "error")
+        self.assertNotIn("success", [w[2]["state"] for w in api.writes if w[1].startswith("statuses/")])
+
     def test_lockfile_changes_remain_in_diff_without_full_lockfile_reads(self):
         api = FakeGitHub()
         api.files[0].update(filename="Cargo.lock", additions=1, deletions=0,
@@ -112,12 +280,12 @@ class ReviewTests(unittest.TestCase):
 
     def test_approval_requires_complete_analysis_and_successful_ci(self):
         for ci in (None, False):
-            self.assertIn("Проверка неполная", review.render(PR, REPORT, ci, "CI pending"))
+            self.assertIn("Проверка неполная", review.render(PR, REPORT, ci, "CI pending", review.MODEL))
         incomplete = {**REPORT, "coverage_gaps": ["Missing issue acceptance criteria"]}
-        self.assertIn("Проверка неполная", review.render(PR, incomplete, True, "CI"))
-        self.assertIn("можно мерджить", review.render(PR, REPORT, True, "CI"))
+        self.assertIn("Проверка неполная", review.render(PR, incomplete, True, "CI", review.MODEL))
+        self.assertIn("можно мерджить", review.render(PR, REPORT, True, "CI", review.MODEL))
         failed = {**REPORT, "findings": [FINDING]}
-        text = review.render(PR, failed, True, "CI")
+        text = review.render(PR, failed, True, "CI", review.MODEL)
         self.assertIn("нужны исправления", text)
         self.assertIn(f"/blob/{PR['head']['sha']}/src/lib.rs#L8", text)
         self.assertNotIn("можно мерджить", text)
@@ -158,6 +326,10 @@ class ReviewTests(unittest.TestCase):
         self.assertIn('"number": 12', text)
         self.assertIn('"number": 13', text)
         self.assertEqual(gaps, [])
+        issues = {issue["number"]: issue for issue in json.loads(text)["linked_issues"]}
+        self.assertEqual(issues[13]["relationship"], "closing")
+        self.assertEqual(issues[12]["relationship"], "closing")
+        self.assertEqual(issues[14]["relationship"], "reference")
 
     def test_missing_diff_is_a_coverage_gap_and_missing_files_fail_closed(self):
         api = FakeGitHub()
@@ -189,7 +361,8 @@ class ReviewTests(unittest.TestCase):
         for bad in [{**FINDING, "path": "unrelated.rs"}, {**FINDING, "line": 0},
                     {**FINDING, "trigger": ""}, {**FINDING, "impact": ""}]:
             with self.assertRaises(ValueError):
-                review.validate_report({**REPORT, "findings": [bad]}, PR["review_files"])
+                review.validate_report({**REPORT, "findings": [bad]}, PR["review_files"],
+                                       review.Sources(FakeGitHub(), PR))
 
     def test_ci_event_does_not_review_stale_or_other_repository_revisions(self):
         event = {"workflow_run": {"head_repository": {"full_name": review.REPOSITORY},
@@ -241,8 +414,9 @@ class ReviewTests(unittest.TestCase):
 
     def test_commit_status_only_succeeds_for_complete_clean_analysis_and_ci(self):
         reports = [REPORT, {**REPORT, "findings": [FINDING]},
-                   {**REPORT, "coverage_gaps": ["Unreadable source"]}]
-        for report, expected in zip(reports, ["success", "failure", "failure"]):
+                   {**REPORT, "coverage_gaps": ["Unreadable source"]},
+                   {**REPORT, "out_of_scope_findings": [UNRELATED]}]
+        for report, expected in zip(reports, ["success", "failure", "failure", "success"]):
             api = FakeGitHub()
             api.runs = [{"run_number": 1, "run_attempt": 1, "status": "completed",
                          "conclusion": "success", "html_url": "https://example/ci"}]

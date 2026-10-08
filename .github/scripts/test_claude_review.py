@@ -434,14 +434,29 @@ class ReviewTests(unittest.TestCase):
             self.assertFalse(review.publish(api, PR, "green"))
             self.assertEqual(api.writes, [])
 
-    def test_one_owned_comment_is_updated_and_forged_markers_are_ignored(self):
+    def test_every_report_appends_a_new_comment_without_editing_existing_reports(self):
         api = FakeGitHub()
-        api.comments = [{"id": 1, "user": {"login": "attacker"}, "body": review.MARKER}]
-        self.assertTrue(review.publish(api, PR, "pending"))
-        self.assertEqual(api.writes[0][0:2], ("POST", "issues/7/comments"))
-        api.comments.append({"id": 2, "user": {"login": "github-actions[bot]"}, "body": review.MARKER})
-        review.publish(api, PR, "complete")
-        self.assertEqual(api.writes[-1][0:2], ("PATCH", "issues/comments/2"))
+        api.comments = [{"id": 1, "user": {"login": "attacker"}, "body": review.MARKER},
+                        {"id": 2, "user": {"login": "github-actions[bot]"},
+                         "body": review.MARKER + "\nPrevious finding"}]
+        previous = deepcopy(api.comments)
+        with patch.object(api, "list", wraps=api.list) as listing:
+            self.assertTrue(review.publish(api, PR, "First report"))
+            self.assertTrue(review.publish(api, PR, "Second report"))
+        listing.assert_not_called()
+        self.assertEqual(api.comments, previous)
+        self.assertEqual([w[:2] for w in api.writes], [("POST", "issues/7/comments")] * 2)
+        self.assertIn("First report", api.writes[0][2]["body"])
+        self.assertIn("Second report", api.writes[1][2]["body"])
+
+    def test_report_identifies_its_commit_and_exact_workflow_attempt(self):
+        api = FakeGitHub()
+        with patch.dict(os.environ, {"GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2"}):
+            review.publish(api, PR, "Report")
+        body = api.writes[0][2]["body"]
+        self.assertIn(f"Head: `{PR['head']['sha']}`", body)
+        self.assertIn(f"Base: `{PR['base']['sha']}`", body)
+        self.assertIn(f"https://github.com/{review.REPOSITORY}/actions/runs/123/attempts/2", body)
 
     def test_local_cross_repository_and_closing_issue_links_are_read(self):
         refs = review.linked_issues("Fixes #12, ermacv/another#5 and https://github.com/x/y/issues/9")
@@ -495,19 +510,22 @@ class ReviewTests(unittest.TestCase):
         event["workflow_run"]["head_repository"]["full_name"] = "x/y"
         self.assertEqual(review.targets(FakeGitHub(), event, "workflow_run"), [])
 
-    def test_waiting_for_ci_posts_pending_without_spending_api_credits(self):
+    def test_waiting_for_ci_sets_pending_without_comments_or_spending_api_credits(self):
         api = FakeGitHub()
         with patch.object(review, "Claude") as claude:
             review.review_pr(api, 7, review.MODEL)
         claude.assert_not_called()
         comments = [w for w in api.writes if w[1] == "issues/7/comments"]
-        self.assertIn("ожидает CI", comments[-1][2]["body"])
+        self.assertEqual(comments, [])
         self.assertEqual([w[2]["state"] for w in api.writes if w[1].startswith("statuses/")], ["pending"])
 
     def test_comment_failure_cannot_leave_an_old_success_status_effective(self):
         api = FakeGitHub()
+        api.runs = [{"run_number": 1, "run_attempt": 1, "status": "completed",
+                     "conclusion": "success", "html_url": "https://example/ci"}]
         review.status(api, PR, "success", "Previous approval")
-        with patch.object(review, "publish", side_effect=RuntimeError("Comment unavailable")):
+        with patch.object(review.Claude, "review", return_value=deepcopy(REPORT)), \
+                patch.object(review, "publish", side_effect=RuntimeError("Comment unavailable")):
             with self.assertRaises(RuntimeError):
                 review.review_pr(api, 7, review.MODEL)
         states = [w[2]["state"] for w in api.writes if w[1].startswith("statuses/")]
@@ -525,15 +543,21 @@ class ReviewTests(unittest.TestCase):
             claude.assert_not_called()
             self.assertEqual(api.writes, [])
 
-    def test_api_failure_replaces_previous_verdict_with_incomplete(self):
+    def test_api_failure_appends_incomplete_report_and_preserves_previous_findings(self):
         api = FakeGitHub()
+        api.comments = [{"id": 2, "user": {"login": "github-actions[bot]"},
+                         "body": review.MARKER + "\nPrevious finding"}]
+        previous = deepcopy(api.comments)
         api.runs = [{"run_number": 1, "run_attempt": 1, "status": "completed",
                      "conclusion": "success", "html_url": "https://example/ci"}]
         with patch.object(review, "Claude", side_effect=ValueError("Federation not configured")):
             with self.assertRaises(ValueError):
                 review.review_pr(api, 7, review.MODEL)
         comments = [w for w in api.writes if w[1] == "issues/7/comments"]
+        self.assertEqual(len(comments), 1)
         self.assertIn("Проверка неполная", comments[-1][2]["body"])
+        self.assertEqual(api.comments, previous)
+        self.assertTrue(all(w[0] == "POST" for w in api.writes))
         self.assertEqual(api.writes[-1][2]["state"], "error")
 
     def test_commit_status_only_succeeds_for_complete_clean_analysis_and_ci(self):
@@ -549,6 +573,7 @@ class ReviewTests(unittest.TestCase):
                 review.review_pr(api, 7, review.MODEL)
             self.assertEqual(api.writes[-1][1], f"statuses/{PR['head']['sha']}")
             self.assertEqual(api.writes[-1][2]["state"], expected)
+            self.assertEqual(len([w for w in api.writes if w[1] == "issues/7/comments"]), 1)
 
     def test_token_budget_stops_before_a_paid_messages_request(self):
         claude = review.Claude(review.MODEL)

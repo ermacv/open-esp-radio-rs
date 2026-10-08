@@ -153,6 +153,10 @@ The fast host `claude-review` check runs the Claude review controller's offline
 regressions. It makes no API requests and spends no credits. Live PR analysis
 belongs to the separate [Claude architectural review workflow](../../.github/workflows/claude-review.yml),
 configured as described in the [contribution guide](../../CONTRIBUTING.md#claude-architectural-review).
+It waits for successful CI and serializes jobs per PR. Identical automatic
+requests reuse a completed verdict, while explicit manual requests run again.
+The two analysis passes share a cached input prefix with separate histories;
+logs and completed comments report cache usage and estimated API cost.
 
 Planning requires a clean checkout so the tree hash describes its source
 files. Repository source inputs must be tracked; external sources are

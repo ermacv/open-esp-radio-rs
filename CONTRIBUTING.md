@@ -43,7 +43,9 @@ and sends the temporary token as a Bearer credential. Refresh fetches a fresh
 single-use assertion. No persistent Anthropic API key or Claude GitHub App is
 needed. The optional variable `CLAUDE_REVIEW_MODEL` selects the model;
 the default is `claude-opus-5-5`, with `high` effort. Sonnet 5.5 is available
-as an explicit lower-cost choice. The default prioritizes cross-component
+as an explicit lower-cost choice (`claude-sonnet-5-5`). Both models have explicit
+prices in the controller; selecting another model requires adding its tariff
+before it can run. The default prioritizes cross-component
 judgment; it is not a claim that a public architecture-specific benchmark
 has established a winner.
 
@@ -58,12 +60,16 @@ Only open PRs marked ready for review are eligible. Draft and closed PRs are
 skipped for PR events, CI completion and manual review requests. Marking a PR
 ready triggers review even when its CI already finished. The controller checks
 the live PR state before each Claude request and after each inference response;
-returning to draft or closing the PR stops subsequent analysis without posting
-a verdict. Publication also rechecks that the PR is still open and non-draft.
+returning to draft, closing the PR or changing its head/base, title or description
+stops obsolete analysis without posting a verdict. Publication also rechecks
+that the PR is still open and non-draft with the same inputs.
 
 Opening, marking ready or updating a non-draft PR from a branch in this
-repository invalidates the previous verdict and waits for its latest `CI` push run. When CI finishes,
-the reviewer reads the complete changed-file list and patches, explicitly
+repository invalidates the previous verdict and waits for its latest `CI` push
+run to succeed. Failed CI blocks merging without any Claude requests or review
+comments; a successful CI rerun can start the analysis. Manual review requests
+also require successful CI. The reviewer then reads the complete changed-file
+list and patches, explicitly
 referenced and GitHub-linked closing issues with their discussions and relationship
 (closing commitment or reference-only context), and the
 source files and callers it requests at immutable SHAs. The `base` source tool
@@ -88,9 +94,21 @@ comment. Previous reports are never edited or replaced, so findings remain
 visible after fixes and subsequent pushes. Each report identifies its head/base
 commits and links to the exact Actions attempt. Waiting for CI and review
 progress use the pending commit status without adding intermediate comments.
+Automatic repeats reuse the latest completed result for identical head/base
+SHAs, PR and issue requirements, model and controller version, without another
+paid analysis or duplicate report. The fingerprint covers the complete initial
+context and controller contents; only completed statuses from
+`github-actions[bot]` are accepted. The required status links to the original
+run, and reuse rechecks current PR eligibility and CI. An explicit manual
+request always starts a new analysis and adds a new report, including when its
+inputs are unchanged. A GitHub rerun of an automatic event remains automatic.
+The routing job has only read permissions. Review jobs share a per-PR concurrency
+group with `queue: max` and no cancellation of the running job, so automatic and
+manual requests cannot spend concurrently on the same PR; GitHub permits up to
+100 pending jobs in that group.
 A completed report explicitly says **Архитектурное ревью** and names the model.
 A second model conversation verifies the candidate report
-with fresh context and its own source reads, challenging both reported defects
+with a separate history and its own source reads, challenging both reported defects
 and a clean verdict. This can reduce false positives; the two passes use the
 same model and can still share blind spots.
 The controller returns rejected report validation as a tool error, so the model
@@ -133,13 +151,24 @@ to 20 model calls per pass, with 2,000,000 cumulative input
 tokens and 48,000 output tokens shared across both passes; reaching a limit
 reports incomplete analysis. The workflow has a 45-minute timeout.
 The larger input budget covers repeated source investigation across large PRs;
-the preflight counts each request before paid inference. Automatic prompt
-caching reuses growing message prefixes within each pass. Input accounting
+the preflight counts each request before paid inference. An explicit 5-minute
+prompt-cache breakpoint covers the identical tools, system instructions and
+initial PR context shared by both passes. Their different tasks and the candidate
+report follow that breakpoint; the verifier never receives the analyst's
+conversation history. Automatic caching additionally reuses growing prefixes
+within each pass. Cache hits depend on the prefix remaining unchanged and its
+TTL; neither a verifier hit nor reuse across separate workflow runs is guaranteed.
+Input accounting
 includes ordinary tokens, cache writes and cache reads; cached inputs are not
 free and do not bypass the analysis budget. Context and linked
-issues are kept complete, and logs show per-step token usage without source or
-credentials. PRs whose context exceeds 1,000,000 characters require splitting or
-an explicit limit change. GitHub Actions runner minutes have separate billing.
+issues are kept complete. JSON log records separate ordinary input, cache writes,
+cache reads, output and estimated USD for each step and each pass's total, even
+when analysis fails, without logging source or credentials. Completed report
+comments include the same usage and cost breakdown. Estimates use the direct
+API tariffs dated in the controller and default 5-minute cache writes; final
+billing is in Claude Console. Token budgets are not dollar spend limits.
+PRs whose context exceeds 1,000,000 characters require splitting or an explicit
+limit change. GitHub Actions runner minutes have separate billing.
 
 Contributors can work on portable Rust protocols, ownership tests, binary
 analysis, documentation and host tools without a radio board. Hardware changes

@@ -80,8 +80,9 @@ A successful build does not prove on-air readiness;
 do not claim you executed tests or ran hardware. CI is evaluated separately by
 the controller. Missing code/evidence or unresolved issue requirements must be
 coverage_gaps; do not approve incomplete analysis. If an issue was not linked,
-say so in the summary rather than inventing requirements. Finish by calling
-finish_review, writing all human-facing fields in Russian. The summary must
+say so in the summary rather than inventing requirements. Use source tools until
+the investigation is complete, then return the final JSON report matching the
+provided output schema, writing all human-facing fields in Russian. The summary must
 identify the architectural contracts and component interactions actually checked.
 """
 VERIFY_PROMPT = """You are the independent verification pass of an architectural
@@ -93,7 +94,7 @@ uncertain relevant analysis in coverage_gaps, never convert uncertainty to a
 clean verdict. Check independent pre-existing candidates separately and omit
 unsupported ones. Also challenge a clean candidate report: examine changed
 cross-component contracts and whether its stated coverage is justified.
-Return your own final report using finish_review. This is static verification,
+Return your own final JSON report matching the output schema. This is static verification,
 not evidence that tests or hardware were run.
 """
 
@@ -116,7 +117,9 @@ TOOLS = [
     tool("search_file", "Find a literal string in one explicit source path; returns numbered matches, not the full file.", {
         "path": {"type": "string"}, "revision": {"type": "string", "enum": ["head", "base"]},
         "query": {"type": "string"}}, ["path", "revision", "query"]),
-    tool("finish_review", "Return the structured architectural review to the controller.", {
+]
+
+REPORT_SCHEMA = {"type": "object", "properties": {
         "summary": {"type": "string"},
         "coverage_gaps": {"type": "array", "items": {"type": "string"}},
         "findings": {"type": "array", "items": {"type": "object", "properties": {
@@ -134,8 +137,8 @@ TOOLS = [
                 "impact": {"type": "string"}, "reason": {"type": "string"}},
                 "required": ["path", "line", "base_path", "base_line", "title", "trigger", "impact", "reason"],
                 "additionalProperties": False}}},
-        ["summary", "coverage_gaps", "findings", "out_of_scope_findings"]),
-]
+    "required": ["summary", "coverage_gaps", "findings", "out_of_scope_findings"],
+    "additionalProperties": False}
 
 
 def source_path(path):
@@ -528,7 +531,8 @@ class Claude:
             {"type": "text", "text": task}]}]
         for step in range(20):
             sources.ensure_active()
-            body = {"model": self.model, "system": PROMPT, "tools": TOOLS, "messages": messages}
+            body = {"model": self.model, "system": PROMPT, "tools": TOOLS, "messages": messages,
+                    "output_config": {"effort": "high", "format": {"type": "json_schema", "schema": REPORT_SCHEMA}}}
             count = self.request("messages/count_tokens", body)["input_tokens"]
             if self.input_used + count > MAX_INPUT or self.output_used >= MAX_OUTPUT:
                 raise ValueError("Достигнут лимит токенов ревью; анализ не завершён")
@@ -537,8 +541,9 @@ class Claude:
                   flush=True)
             sources.ensure_active()
             started = time.monotonic()
-            response = self.request("messages", {**body, "max_tokens": min(12000, MAX_OUTPUT - self.output_used),
-                                    "output_config": {"effort": "high"},
+            # Thinking consumes this cap too; leave room to think and act.
+            max_tokens = min(24000, MAX_OUTPUT - self.output_used)
+            response = self.request("messages", {**body, "max_tokens": max_tokens,
                                     "cache_control": {"type": "ephemeral"}})
             usage = response["usage"]
             tokens = {k: usage.get(k, 0) for k in USAGE_FIELDS}
@@ -550,22 +555,46 @@ class Claude:
             self.input_used += sum(tokens[k] for k in USAGE_FIELDS[:3])
             self.output_used += tokens["output_tokens"]
             self.log_usage(phase, step + 1, tokens, time.monotonic() - started)
+            blocks = response["content"]
+            # Log protocol metadata only: never text, thinking, arguments or signatures.
+            reason = response.get("stop_reason")
+            if reason not in ("end_turn", "tool_use", "max_tokens", "model_context_window_exceeded",
+                              "refusal", "stop_sequence", "pause_turn"):
+                reason = "unknown"
+            types = sorted({b["type"] if b["type"] in ("text", "thinking", "redacted_thinking", "tool_use")
+                            else "unknown" for b in blocks})
+            print(json.dumps({"event": "claude_response", "phase": phase, "step": step + 1,
+                              "stop_reason": reason, "content_types": types,
+                              "max_tokens": max_tokens, "output_tokens": tokens["output_tokens"]}), flush=True)
             sources.ensure_active()
             if self.input_used > MAX_INPUT or self.output_used > MAX_OUTPUT:
                 raise ValueError("Достигнут лимит токенов ревью; анализ не завершён")
-            if response["stop_reason"] != "tool_use":
-                raise ValueError("Claude не завершил структурированное ревью")
-            blocks = response["content"]
+            if reason not in ("tool_use", "end_turn"):
+                raise ValueError(f"Claude {phase}: stop_reason={reason}, output_tokens={tokens['output_tokens']}, "
+                                 f"max_tokens={max_tokens}; завершённый отчёт не получен")
             calls = [b for b in blocks if b["type"] == "tool_use"]
+            if reason == "end_turn":
+                texts = [b["text"] for b in blocks if b["type"] == "text"]
+                if calls or len(texts) != 1:
+                    raise ValueError("Claude end_turn: ожидается один JSON-отчёт без вызовов инструментов")
+                try:
+                    report = json.loads(texts[0])
+                except json.JSONDecodeError:
+                    raise ValueError("Claude end_turn: API вернул некорректный JSON-отчёт") from None
+                try:
+                    return validate_report(report, files, sources)
+                except ValueError as error:
+                    messages.extend([{"role": "assistant", "content": blocks}, {"role": "user", "content":
+                        f"Report rejected by controller: {error}. Read the missing evidence using source tools, "
+                        "then return a corrected complete JSON report matching the output schema."}])
+                    continue
+            if not calls:
+                raise ValueError("Claude tool_use: API не вернул вызовов инструментов")
             results = []
             for call in calls:
                 try:
                     args = call["input"]
-                    if call["name"] == "finish_review":
-                        if len(calls) != 1:
-                            raise ValueError("finish_review must be the only tool call in its turn")
-                        return validate_report(args, files, sources)
-                    elif call["name"] == "read_file":
+                    if call["name"] == "read_file":
                         result = sources.read(args["path"], args["revision"], args["start"], args["count"])
                     elif call["name"] == "list_directory":
                         result = sources.directory(args["path"], args["revision"])

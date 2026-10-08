@@ -1,113 +1,175 @@
-name: Claude architectural review
+name: Claude review
 
-# The controller always comes from the trusted default branch. PR source
-# is read through GitHub APIs and is never checked out or executed with secrets.
+# Reviews a ready same-repository PR into main after each successful CI run,
+# when it opens or becomes ready with CI already green, and on an
+# "@claude review" PR comment. Every event runs this file from
+# main, which the Anthropic federation rule requires. Claude reads the PR head
+# in pr/ with read-only tools and a read-only token, following REVIEW.md;
+# a separate job publishes the review and the required status.
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, edited]
   workflow_run:
     workflows: [CI]
     types: [completed]
-  workflow_dispatch:
-    inputs:
-      pull_request:
-        description: Pull request number to review again
-        required: false
-        type: string
-      verify_auth:
-        description: Verify OIDC and a minimal Claude API request without reviewing a PR
-        required: false
-        default: false
-        type: boolean
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
 
-permissions:
-  contents: read
-  pull-requests: write
-  issues: read
-  actions: read
-  statuses: write
-  id-token: write
+permissions: {}
 
 env:
   CARGO_NET_OFFLINE: 'false'
 
 jobs:
-  verify-auth:
+  target:
     if: >-
       github.repository == 'ermacv/open-esp-radio-rs' &&
-      github.event_name == 'workflow_dispatch' && inputs.verify_auth
-    permissions:
-      contents: read
-      id-token: write
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.conclusion == 'success') ||
+       github.event_name == 'pull_request_target' ||
+       (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+        startsWith(github.event.comment.body, '@claude review') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.pr.outputs.pr }}
+      head: ${{ steps.pr.outputs.head }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-      - name: Verify federated authentication and API billing
+      - name: Find the PR and require green CI on its head
+        id: pr
         env:
-          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
-          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
-          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
-          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
-          CLAUDE_REVIEW_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL }}
-          PYTHONDONTWRITEBYTECODE: '1'
-        run: python3 .github/scripts/claude_review.py verify-auth
-  targets:
-    if: >-
-      github.repository == 'ermacv/open-esp-radio-rs' &&
-      !(github.event_name == 'workflow_dispatch' && inputs.verify_auth) &&
-      (github.event_name != 'pull_request_target' ||
-       (github.event.pull_request.state == 'open' &&
-        !github.event.pull_request.draft &&
-        github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.base.ref == 'main'))
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          if [ -n "$SHA" ]; then
+            pr=$(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq "map(select(.head.sha == \"$SHA\"))[0]")
+          else
+            pr=$(gh api "repos/$GH_REPO/pulls/$NUMBER")
+          fi
+          pr=$(jq -c --arg repo "$GH_REPO" 'select(. != null and .state == "open" and (.draft | not)
+            and .base.ref == "main" and .head.repo.full_name == $repo)' <<<"${pr:-null}")
+          if [ -z "$pr" ]; then
+            echo "No open ready same-repository PR into main; nothing to review."
+            exit 0
+          fi
+          head=$(jq -r .head.sha <<<"$pr")
+          ci=$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?head_sha=$head&event=push" \
+            --jq '.workflow_runs[0].conclusion')
+          if [ "$ci" != success ]; then
+            echo "CI on $head is '$ci'; the review starts after it succeeds."
+            exit 0
+          fi
+          echo "pr=$(jq .number <<<"$pr")" >>"$GITHUB_OUTPUT"
+          echo "head=$head" >>"$GITHUB_OUTPUT"
+
+  review:
+    needs: target
+    if: needs.target.outputs.pr
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    concurrency:
+      group: claude-review-${{ needs.target.outputs.pr }}
+      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: read
+      issues: read
+      id-token: write
+    outputs:
+      result: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      # Trusted main at the workspace root; the PR head is only read, in pr/.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.target.outputs.head }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+      - id: claude
+        uses: anthropics/claude-code-action@2dca132ff0e0c4094ce6048b422c6915a071210b # v1.0.247
+        with:
+          github_token: ${{ github.token }}
+          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          prompt: >-
+            Review pull request #${{ needs.target.outputs.pr }} of ${{ github.repository }}
+            at head ${{ needs.target.outputs.head }}, checked out in pr/,
+            following REVIEW.md.
+          claude_args: >-
+            --model ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-opus-5-5' }}
+            --effort high
+            --max-budget-usd 5
+            --append-system-prompt-file REVIEW.md
+            --tools "Read,Grep,Glob,Agent,Bash"
+            --allowedTools "Read,Grep,Glob,Agent,Bash(git -C pr diff *),Bash(git -C pr log *),Bash(git -C pr show *),Bash(gh pr view *),Bash(gh pr diff *),Bash(gh issue view *)"
+            --json-schema '{"type":"object","additionalProperties":false,"required":["summary","findings"],"properties":{"summary":{"type":"string"},"findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["severity","path","line","title","body"],"properties":{"severity":{"enum":["important","nit","pre-existing"]},"path":{"type":"string"},"line":{"type":"integer","minimum":1},"title":{"type":"string"},"body":{"type":"string"}}}}}}'
+
+  publish:
+    needs: [target, review]
+    if: always() && needs.target.outputs.pr
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    outputs:
-      pull_requests: ${{ steps.targets.outputs.pull_requests }}
+    permissions:
+      pull-requests: write
+      statuses: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-      - name: Resolve PR numbers without Claude access
-        id: targets
+      - name: Post the review and set claude-runtime-review
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PYTHONDONTWRITEBYTECODE: '1'
-        run: python3 .github/scripts/claude_review.py targets
-  review:
-    needs: targets
-    if: needs.targets.outputs.pull_requests != '[]'
-    strategy:
-      fail-fast: false
-      matrix:
-        pull_request: ${{ fromJSON(needs.targets.outputs.pull_requests) }}
-    concurrency:
-      group: claude-review-pr-${{ matrix.pull_request }}
-      cancel-in-progress: false
-      queue: max
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-      - name: Review immutable source snapshots and publish a new report comment
-        env:
-          REVIEW_PULL_REQUEST: ${{ matrix.pull_request }}
-          GITHUB_TOKEN: ${{ github.token }}
-          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
-          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
-          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
-          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
-          CLAUDE_REVIEW_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL }}
-          PYTHONDONTWRITEBYTECODE: '1'
-        run: python3 .github/scripts/claude_review.py run
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ needs.target.outputs.pr }}
+          HEAD: ${{ needs.target.outputs.head }}
+          OUTCOME: ${{ needs.review.result }}
+          RESULT: ${{ needs.review.outputs.result }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          status() {
+            gh api "repos/$GH_REPO/statuses/$HEAD" -f context=claude-runtime-review \
+              -f state="$1" -f description="$2" -f target_url="$RUN" >/dev/null
+          }
+          # A newer review of this PR cancelled this one and sets the status.
+          if [ "$OUTCOME" = cancelled ]; then exit 0; fi
+          if [ "$OUTCOME" != success ] || [ -z "$RESULT" ]; then
+            status error "Review did not complete ($OUTCOME); no verdict"
+            exit 1
+          fi
+          # body DETAILS: the review body, listing each finding with its text
+          # when DETAILS is true (inline comments carry it otherwise).
+          body() {
+            jq -r --argjson details "$1" --arg url "https://github.com/$GH_REPO/blob/$HEAD" \
+              --arg head "$HEAD" --arg run "$RUN" '
+              def mark: {important: "🔴", nit: "🟡", "pre-existing": "🟣"}[.severity];
+              ["## Claude review", "", .summary, ""]
+              + [.findings[] | "- \(mark) **\(.title)**: [`\(.path):\(.line)`](\($url)/\(.path)#L\(.line))"
+                  + if $details then "\n\n  \(.body | gsub("\n"; "\n  "))\n" else "" end]
+              + ["", "Head `\($head)` · [run](\($run))"] | join("\n")' <<<"$RESULT"
+          }
+          comments=$(jq -c '[.findings[] | {path, line, side: "RIGHT",
+            body: ({important: "🔴", nit: "🟡", "pre-existing": "🟣"}[.severity] + " **\(.title)**\n\n\(.body)")}]' <<<"$RESULT")
+          review() {
+            jq -n --arg body "$1" --arg sha "$HEAD" --argjson comments "$2" \
+              '{commit_id: $sha, event: "COMMENT", body: $body, comments: $comments}' |
+              gh api "repos/$GH_REPO/pulls/$PR/reviews" --input - >/dev/null
+          }
+          # GitHub rejects the whole review when a finding's line is outside
+          # the diff; then the body carries every finding in full.
+          review "$(body false)" "$comments" || review "$(body true)" '[]'
+          blocking=$(jq '[.findings[] | select(.severity == "important")] | length' <<<"$RESULT")
+          if [ "$blocking" = 0 ]; then
+            status success "No blocking findings"
+          else
+            status failure "$blocking blocking finding(s)"
+          fi

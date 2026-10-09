@@ -108,9 +108,11 @@ outcomes (with symbols, not colour alone) and buttons that copy the run ID and
 `cargo hil runs why` or `show`. Runs filter by owner, checkout and scenario,
 and repeats of the same result fold into one row. A run's owner and leases
 come from the leases that name it: the runner names its run in its lease
-request, and the holder and its history record keep it; runs of an `ab`
-experiment hold the experiment's lease and show no owner. Recent leases hide a
-released lease of a listed run unless asked and show the time charged and the
+request, and the holder and its history record keep it. A run started inside
+an enclosing lease (`cargo hil ab`, `cargo hil bisect`, `cargo stand lease --
+…`) joins that lease without a request of its own and shows no owner. Links to
+a run land on its row, or on the row its repeats fold into. Recent leases hide a
+released lease of a run the filtered table lists unless asked and show the time charged and the
 balances the grant was decided by. Commands appear without their build-input
 paths (the full line is the tooltip), a running run whose runner died shows as
 abandoned and an `ab` arm is marked. A run links its `report.html`, whose

@@ -469,7 +469,7 @@ function runRow(r, extra = "") {
     copy(r.id, "copy id"),
   ].filter(Boolean).join("");
   return `<tr id="run-${esc(r.id)}"${extra}><td class="num">${at(r.started_millis / 1000)}</td>
-    <td>${r.owner ? esc(r.owner) : '<span class="muted" title="no lease names this run: a run of an older build or an A/B arm">—</span>'}</td>
+    <td>${r.owner ? esc(r.owner) : '<span class="muted" title="no lease names this run: it ran inside an enclosing lease (cargo hil ab, cargo hil bisect, cargo stand lease) or was started by an older build">—</span>'}</td>
     <td>${pill(outcome)}${r.experiment_arm ? ` <span class="pill muted" title="an arm of a cargo hil ab experiment">A/B arm ${esc(r.experiment_arm.toUpperCase())}</span>` : ""}</td>
     <td><div class="scenarios">${runScenarios(r) || '<span class="muted">—</span>'}</div>${progress(r)}</td>
     <td class="num">${esc(r.commit ?? "")}${r.dirty ? ' <span class="warn">dirty</span>' : ""}<div class="small">${esc(r.checkout ?? "")}</div></td>
@@ -481,7 +481,12 @@ function commits(list) {
   return count === 1 ? " on one commit" : ` on ${count} commits`;
 }
 
+// The runs the table lists after its filters, folded ones included: links
+// to a run and the lease list's hiding rest on them.
+let listed = new Set();
+
 function runs(list) {
+  listed = new Set();
   if (!list.length) return '<p class="empty">No runs in the shared store.</p>';
   const owner = $("filter-owner").value, checkout = $("filter-checkout").value;
   const scenario = $("filter-scenario").value.trim().toLowerCase();
@@ -490,6 +495,7 @@ function runs(list) {
     && (!scenario || r.scenarios.some((s) => s.id.toLowerCase().includes(scenario))
       || (r.progress?.scenarios ?? []).some((id) => id.toLowerCase().includes(scenario))));
   if (!shown.length) return '<p class="empty">No run matches the filters.</p>';
+  listed = new Set(shown.map((r) => r.id));
   // Consecutive finished runs of one owner and checkout with the same
   // scenario outcomes fold into one row.
   const groups = [];
@@ -503,7 +509,9 @@ function runs(list) {
     if (g.runs.length === 1) return runRow(g.runs[0]);
     const [first] = g.runs, oldest = g.runs[g.runs.length - 1];
     const open = expanded.has(oldest.id);
-    const head = `<tr class="group"><td class="num">${at(first.started_millis / 1000)}</td>
+    // A folded group carries its runs' anchors, so links to them land on it.
+    const anchors = open ? "" : g.runs.map((r) => `<span id="run-${esc(r.id)}"></span>`).join("");
+    const head = `<tr class="group"><td class="num">${anchors}${at(first.started_millis / 1000)}</td>
       <td>${first.owner ? esc(first.owner) : '<span class="muted">—</span>'}</td>
       <td>${pill(runOutcome(first), "×" + g.runs.length + " " + marked(runOutcome(first)))}</td>
       <td><div class="scenarios">${runScenarios(first)}</div>
@@ -611,7 +619,7 @@ let data = null;
 function draw() {
   if (!data) return;
   learnNames(data);
-  const runIds = new Set(data.runs.map((r) => r.id));
+  const runsTable = runs(data.runs);
   options($("filter-owner"), data.runs.map((r) => r.owner));
   options($("filter-checkout"), data.runs.map((r) => r.checkout));
   render("summary", headline(data));
@@ -622,10 +630,10 @@ function draw() {
   render("stand-service", service);
   $("stand-service").hidden = !service;
   render("balances", balances(data.balances));
-  render("devices", devices(data.devices, data.maintenance, runIds));
+  render("devices", devices(data.devices, data.maintenance, listed));
   render("fixtures", fixtures(data.fixtures, data.holders, data.queue));
-  render("runs", runs(data.runs));
-  render("leases", leases(data.leases, runIds));
+  render("runs", runsTable);
+  render("leases", leases(data.leases, listed));
 }
 
 let last = 0;

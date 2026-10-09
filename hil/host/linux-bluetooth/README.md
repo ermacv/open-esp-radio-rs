@@ -207,7 +207,13 @@ still advertising. Every other failure ends the repetition.
 
 Every attempt lands in the observation's `connection_attempts`, with its phase,
 number, outcome (`established` or `not-established`) and the host-side error,
-so the loss rate stays a measurement (#357).
+so the loss stays visible (#357). Each repetition also publishes the
+measurements `connection-attempts` and `connections-not-established` (lower is
+better), which `cargo hil runs history` and `runs compare` follow. The bound of
+three attempts guards against the environment; it is no acceptance threshold.
+Whether a loss rate is acceptable is qualification's decision: the catalog
+keeps `secure-gatt-connection-establishment-loss-bound-unqualified` open until
+a bound over these measurements exists (#363).
 
 ## Encryption and key-failure modes
 

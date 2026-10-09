@@ -9,6 +9,7 @@
 //! stays visible as a measurement.
 
 use crate::Result;
+use oer_hil_run_bundle_format::run::{Better, Measurement, MeasurementUnit};
 
 /// Attempts per connection, the first included.
 pub(super) const ATTEMPTS: u32 = 3;
@@ -71,6 +72,25 @@ pub(super) fn establish<S, T>(
         }
     }
     Err(format!("{phase}: no connection reached the DUT in {ATTEMPTS} attempts").into())
+}
+
+/// The repetition's connection attempts as measurements: all of them, and
+/// those the DUT never received. HIL records the loss; whether it is
+/// acceptable is qualification's decision.
+pub(super) fn measurements(attempts: &[Attempt]) -> [Measurement; 2] {
+    let lost = attempts
+        .iter()
+        .filter(|attempt| attempt.outcome == Outcome::NotEstablished)
+        .count() as u64;
+    [
+        Measurement::observed(
+            "connection-attempts",
+            attempts.len() as u64,
+            MeasurementUnit::Count,
+        ),
+        Measurement::observed("connections-not-established", lost, MeasurementUnit::Count)
+            .better(Better::Lower),
+    ]
 }
 
 #[cfg(test)]
@@ -149,6 +169,28 @@ mod tests {
         assert_eq!(tries, ATTEMPTS);
         assert_eq!(attempts.len(), ATTEMPTS as usize);
         assert!(error.to_string().contains("no connection reached the DUT"));
+    }
+
+    #[test]
+    fn measurements_count_every_attempt_and_the_lost_ones() {
+        let attempt = |outcome| Attempt {
+            phase: "connect",
+            attempt: 1,
+            outcome,
+            host_error: None,
+        };
+        let [all, lost] = measurements(&[
+            attempt(Outcome::NotEstablished),
+            attempt(Outcome::Established),
+            attempt(Outcome::Established),
+        ]);
+        assert_eq!((all.name.as_str(), all.value), ("connection-attempts", 3));
+        assert_eq!(
+            (lost.name.as_str(), lost.value),
+            ("connections-not-established", 1)
+        );
+        assert_eq!(lost.better, Some(Better::Lower));
+        assert!(all.is_consistent() && lost.is_consistent());
     }
 
     #[test]

@@ -122,6 +122,7 @@ gaps = [
   { axis = "host", id = "smp-att-permissions-bond-restore-and-security-downgrade-regressions-missing" },
   { axis = "hil", id = "secure-gatt-pairing-access-control-bonded-reconnect-and-failure-evidence-incomplete" },
   { axis = "hil", id = "secure-gatt-coordinated-host-controller-retirement-qualified-evidence-missing" },
+  { axis = "hil", id = "secure-gatt-connection-establishment-loss-bound-unqualified" },
   { axis = "async", id = "trouble-host-controller-coordinated-shutdown-and-cancellation-incomplete" },
 ]
 
@@ -134,6 +135,9 @@ source-paths = ["crates/adapters/trouble/bluetooth/gatt/src/security/gatt.rs", "
 
 [capabilities.development]
 knowledge = ["crates/adapters/trouble/bluetooth/gatt/src/security/gatt.rs"]
+gap-work = [
+  { gap = "secure-gatt-connection-establishment-loss-bound-unqualified", kind = "measurement-method", reason = "The GATT workloads retry a connection the DUT never received and publish connections-not-established; no accepted bound on that loss exists yet, and evaluating one over measurements is not supported (#357, #363)." },
+]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"

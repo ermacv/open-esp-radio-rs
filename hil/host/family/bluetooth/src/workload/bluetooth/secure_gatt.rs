@@ -169,6 +169,7 @@ pub fn run(
                 }
             }
         })();
+        context.measurements.record(super::establish::measurements(&attempts));
         // Also retain the terminal high-water measurement when the workload
         // fails. A scan failure is never replaced by the traffic outcome.
         let probe = join(probe, crate::link::require_irq_stack(capture));

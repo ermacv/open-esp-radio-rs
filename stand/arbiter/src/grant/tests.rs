@@ -10,6 +10,28 @@ use oer_stand_journal::BoardEventKind;
 
 use crate::{balance::Balance, state::State};
 
+/// Boards by MAC, as a lease names them: locally administered, so no real
+/// board's device lock is taken. The child that holds a supervised lease
+/// has its own, so it never waits for a test of this process.
+const CHIP_A: &str = "02:00:00:00:31:0A";
+const CHIP_B: &str = "02:00:00:00:31:0B";
+const HUNG: &str = "02:00:00:00:31:0C";
+
+/// An arbiter in `directory` whose stand file has no boards: a whole-stand
+/// lease locks the boards of the stand file, so it needs one to load.
+fn arbiter(directory: &std::path::Path) -> Arbiter {
+    let arbiter = Arbiter::at(directory).unwrap();
+    let stand = arbiter.stand_file();
+    std::fs::write(
+        stand,
+        "schema = 1\n[stand]\nid = \"test\"\nair = \"exclusive\"\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    std::fs::set_permissions(stand, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+    arbiter
+}
+
 fn request(owner: &str, work: &str) -> Request {
     Request {
         owner: owner.into(),
@@ -102,7 +124,7 @@ fn state(arbiter: &Arbiter) -> State {
 #[test]
 fn a_free_stand_is_granted_and_released_into_history() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let grant = arbiter
         .acquire_within(&request("wifi", "run a"), None)
         .unwrap();
@@ -140,31 +162,31 @@ fn a_free_stand_is_granted_and_released_into_history() {
 #[test]
 fn a_nested_command_may_use_only_what_the_enclosing_lease_holds() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let grant = arbiter
-        .acquire_within(&on_board("chip-a", request("phy", "series")), None)
+        .acquire_within(&on_board(CHIP_A, request("phy", "series")), None)
         .unwrap();
     let token = grant.context().unwrap().get(LEASE_KEY).unwrap().to_owned();
-    let inside = on_board("chip-a", request("phy", "run a"));
+    let inside = on_board(CHIP_A, request("phy", "run a"));
     assert!(
         arbiter
             .acquire_within(&inside, Some(token.clone()))
             .unwrap()
             .is_nested()
     );
-    let other_board = on_board("chip-b", request("phy", "run b"));
+    let other_board = on_board(CHIP_B, request("phy", "run b"));
     let error = arbiter
         .acquire_within(&other_board, Some(token))
         .err()
         .unwrap()
         .to_string();
-    assert!(error.contains("board:chip-b"), "{error}");
+    assert!(error.contains(&format!("board:{CHIP_B}")), "{error}");
 }
 
 #[test]
 fn leases_on_different_boards_are_held_at_once() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let (child, identity) = other_process();
     hold(
         &arbiter,
@@ -172,17 +194,17 @@ fn leases_on_different_boards_are_held_at_once() {
             7,
             "wifi",
             identity,
-            vec![Claim::board("chip-a"), Claim::shared(AIR)],
+            vec![Claim::board(CHIP_A), Claim::shared(AIR)],
         ),
     );
     let grant = arbiter
-        .acquire_within(&on_board("chip-b", request("802154", "peer")), None)
+        .acquire_within(&on_board(CHIP_B, request("802154", "peer")), None)
         .unwrap();
     assert_eq!(state(&arbiter).holders.len(), 2);
     drop(grant);
     // Exclusive air waits for every radio user.
     let rf = Request {
-        claims: vec![Claim::board("chip-b"), Claim::exclusive(AIR)],
+        claims: vec![Claim::board(CHIP_B), Claim::exclusive(AIR)],
         ..request("phy", "rf")
     };
     let waiter = {
@@ -202,7 +224,7 @@ fn leases_on_different_boards_are_held_at_once() {
 #[test]
 fn a_waiter_is_granted_when_the_holder_dies() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let (holder, identity) = other_process();
     hold(&arbiter, ticket(7, "phy", identity, vec![]));
     let waiter = {
@@ -225,7 +247,7 @@ fn a_waiter_is_granted_when_the_holder_dies() {
 #[test]
 fn waiting_follows_arrival_order_and_dead_waiters_are_reaped() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let (head, head_identity) = other_process();
     let (dead, dead_identity) = other_process();
     queue(&arbiter, ticket(1, "head", head_identity, vec![]));
@@ -254,7 +276,7 @@ fn waiting_follows_arrival_order_and_dead_waiters_are_reaped() {
 #[test]
 fn a_waiter_with_a_higher_balance_is_served_before_an_earlier_one() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let (head, head_identity) = other_process();
     queue(&arbiter, ticket(1, "head", head_identity, vec![]));
     set_balance(&arbiter, "head", 5);
@@ -286,7 +308,7 @@ fn a_waiter_with_a_higher_balance_is_served_before_an_earlier_one() {
 #[test]
 fn a_lease_is_charged_the_time_it_holds() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let grant = arbiter
         .acquire_within(&request("phy", "run"), None)
         .unwrap();
@@ -301,9 +323,9 @@ fn a_lease_is_charged_the_time_it_holds() {
 #[test]
 fn divisible_work_yields_after_its_slice_to_a_waiter_with_a_higher_balance() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let mut grant = arbiter
-        .acquire_within(&on_board("chip-a", request("phy", "series")), None)
+        .acquire_within(&on_board(CHIP_A, request("phy", "series")), None)
         .unwrap();
     grant.supervise_with(true, Duration::from_secs(1), Duration::from_secs(60));
     let (child, identity) = other_process();
@@ -313,7 +335,7 @@ fn divisible_work_yields_after_its_slice_to_a_waiter_with_a_higher_balance() {
             50,
             "wifi",
             identity,
-            vec![Claim::board("chip-b"), Claim::shared(AIR)],
+            vec![Claim::board(CHIP_B), Claim::shared(AIR)],
         ),
     );
     set_balance(&arbiter, "wifi", 10);
@@ -321,7 +343,7 @@ fn divisible_work_yields_after_its_slice_to_a_waiter_with_a_higher_balance() {
     assert!(!grant.yield_requested(), "a waiter on another board");
     arbiter
         .transaction(|state| {
-            state.queue[0].claims = normalize(&[Claim::board("chip-a")]);
+            state.queue[0].claims = normalize(&[Claim::board(CHIP_A)]);
             Ok(())
         })
         .unwrap();
@@ -339,15 +361,15 @@ fn divisible_work_yields_after_its_slice_to_a_waiter_with_a_higher_balance() {
 #[test]
 fn indivisible_work_runs_on_while_a_waiter_has_a_higher_balance() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let mut grant = arbiter
-        .acquire_within(&on_board("chip-a", request("phy", "flash")), None)
+        .acquire_within(&on_board(CHIP_A, request("phy", "flash")), None)
         .unwrap();
     grant.supervise_with(false, Duration::ZERO, Duration::from_secs(60));
     let (child, identity) = other_process();
     queue(
         &arbiter,
-        ticket(51, "wifi", identity, vec![Claim::board("chip-a")]),
+        ticket(51, "wifi", identity, vec![Claim::board(CHIP_A)]),
     );
     set_balance(&arbiter, "wifi", 30);
     std::thread::sleep(Duration::from_millis(2500));
@@ -360,16 +382,8 @@ fn indivisible_work_runs_on_while_a_waiter_has_a_higher_balance() {
 #[test]
 fn status_and_board_report_the_latest_state() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
     // A stand file without boards: status reports attached ports alone.
-    let stand = arbiter.stand_file().to_owned();
-    std::fs::write(
-        &stand,
-        "schema = 1\n[stand]\nid = \"test\"\nair = \"exclusive\"\n",
-    )
-    .unwrap();
-    #[cfg(unix)]
-    std::fs::set_permissions(&stand, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+    let arbiter = arbiter(directory.path());
     arbiter
         .journal()
         .record(
@@ -424,7 +438,7 @@ fn status_and_board_report_the_latest_state() {
 fn a_newer_state_schema_is_refused() {
     let directory = tempfile::tempdir().unwrap();
     std::fs::write(directory.path().join("state.json"), r#"{"schema":4}"#).unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     assert!(arbiter.status().is_err());
 }
 
@@ -446,6 +460,9 @@ fn supervised_child(
         .unwrap();
     let arbiter = Arbiter::at(directory).unwrap();
     while state(&arbiter).holders.is_empty() {
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!("the child exited before its lease was granted: {status}");
+        }
         std::thread::sleep(Duration::from_millis(20));
     }
     let started = Instant::now();
@@ -463,7 +480,7 @@ fn hold_supervised_lease(directory: std::ffi::OsString) {
     let _signals = oer_process::install_signal_handlers().unwrap();
     let arbiter = Arbiter::at(std::path::PathBuf::from(directory)).unwrap();
     let mut grant = arbiter
-        .acquire_within(&on_board("chip-a", request("phy", "hung")), None)
+        .acquire_within(&on_board(HUNG, request("phy", "hung")), None)
         .unwrap();
     grant.supervise_with(false, MIN_SLICE, Duration::from_secs(1));
     // The ordinary cancellation path releases the lease.
@@ -492,9 +509,9 @@ fn an_older_state_schema_is_refused_without_conversion() {
     let path = directory.path().join("state.json");
     let older = br#"{"schema":2,"next_id":2,"queue":[],"holders":[],"jumped":false}"#;
     std::fs::write(&path, older).unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let error = arbiter
-        .acquire_within(&on_board("chip-b", request("802154", "peer")), None)
+        .acquire_within(&on_board(CHIP_B, request("802154", "peer")), None)
         .err()
         .expect("an older state is refused")
         .to_string();
@@ -527,7 +544,7 @@ fn a_waiting_request_reports_again_only_when_its_position_or_holders_change() {
 #[test]
 fn a_lease_owned_by_no_agent_is_refused() {
     let directory = tempfile::tempdir().unwrap();
-    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let arbiter = arbiter(directory.path());
     let Err(error) = arbiter.acquire_within(&request("Not An Owner", "run a"), None) else {
         panic!("a lease of no agent was granted");
     };
@@ -544,19 +561,31 @@ fn divisible_work_renews_a_lease_after_a_third_of_the_hard_limit() {
 }
 
 #[test]
-fn a_stand_file_that_does_not_load_is_reported_at_the_grant() {
+fn a_whole_stand_lease_without_its_stand_file_is_refused_before_it_queues() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
-    let (stand, warning) = super::boards_to_restore(arbiter.stand(), arbiter.stand_file());
-    assert!(stand.is_none());
-    let warning = warning.unwrap();
+    let Err(error) = arbiter.acquire_within(&request("wifi", "run a"), None) else {
+        panic!("a whole-stand lease was granted without a stand file to lock its boards");
+    };
+    let error = error.to_string();
     assert!(
-        warning.contains("stand.toml does not load, so no hub port is restored"),
-        "{warning}"
+        error.contains("stand.toml does not load, so a whole-stand lease cannot lock its boards"),
+        "{error}"
     );
-    let empty =
-        oer_stand_file::StandFile::parse("schema = 1\n[stand]\nid = \"t\"\nair = \"exclusive\"\n")
-            .unwrap();
-    let (_, none) = super::boards_to_restore(Ok(empty), arbiter.stand_file());
-    assert_eq!(none, None);
+    assert!(state(&arbiter).queue.is_empty() && state(&arbiter).holders.is_empty());
+}
+
+#[test]
+fn a_board_claim_without_a_mac_is_refused_before_it_queues() {
+    let directory = tempfile::tempdir().unwrap();
+    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let Err(error) = arbiter.acquire_within(&on_board("chip-a", request("phy", "run a")), None)
+    else {
+        panic!("a board claim without a MAC was granted with no device lock");
+    };
+    assert!(
+        error.to_string().contains("claim `board:chip-a`"),
+        "{error}"
+    );
+    assert!(state(&arbiter).queue.is_empty() && state(&arbiter).holders.is_empty());
 }

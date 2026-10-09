@@ -21,26 +21,31 @@ use oer_stand_journal::BoardEventKind;
 const ATTACH: Duration = Duration::from_secs(10);
 
 /// The MACs of the boards `claims` reach: each claimed board, or every board
-/// of the stand file for the whole stand.
-pub(crate) fn claimed_boards(claims: &[Claim], stand: Option<&StandFile>) -> Vec<DeviceId> {
+/// of the stand file for the whole stand, which `stand` loads only then.
+///
+/// A lease holds the device lock of every board it reaches, so a board it
+/// cannot name refuses the lease: a stand file that does not load, a board
+/// of it without a MAC, or a board claim that is not one.
+pub(crate) fn claimed_boards(
+    claims: &[Claim],
+    stand: impl FnOnce() -> crate::Result<StandFile>,
+) -> crate::Result<Vec<DeviceId>> {
     if claims
         .iter()
         .any(|claim| claim.resource == oer_stand_claims::STAND)
     {
-        return stand
-            .map(|stand| {
-                stand
-                    .board
-                    .iter()
-                    .filter_map(|board| board.mac().ok())
-                    .collect()
-            })
-            .unwrap_or_default();
+        return stand()?
+            .board
+            .iter()
+            .map(|board| Ok(board.mac()?))
+            .collect();
     }
     claims
         .iter()
         .filter_map(|claim| claim.resource.strip_prefix("board:"))
-        .filter_map(|mac| DeviceId::parse(mac).ok())
+        .map(|mac| {
+            DeviceId::parse(mac).map_err(|cause| format!("claim `board:{mac}`: {cause}").into())
+        })
         .collect()
 }
 
@@ -142,11 +147,33 @@ mod tests {
             Claim::exclusive("board:AA:AA:AA:AA:AA:01"),
             Claim::exclusive(oer_stand_claims::AIR),
         ];
-        assert_eq!(claimed_boards(&claims, Some(&stand)), ["AA:AA:AA:AA:AA:01"]);
+        let unread = || -> crate::Result<StandFile> { panic!("a board claim read the stand") };
         assert_eq!(
-            claimed_boards(&[Claim::exclusive(oer_stand_claims::STAND)], Some(&stand)),
+            claimed_boards(&claims, unread).unwrap(),
+            ["AA:AA:AA:AA:AA:01"]
+        );
+        assert_eq!(
+            claimed_boards(&[Claim::stand()], || Ok(stand.clone())).unwrap(),
             ["AA:AA:AA:AA:AA:01", "AA:AA:AA:AA:AA:02"]
         );
-        assert!(claimed_boards(&[Claim::exclusive(oer_stand_claims::STAND)], None).is_empty());
+    }
+
+    #[test]
+    fn a_board_the_lease_cannot_name_refuses_it() {
+        let missing = claimed_boards(&[Claim::stand()], || Err("no stand.toml".into()));
+        assert_eq!(missing.unwrap_err().to_string(), "no stand.toml");
+        let unnamed = StandFile::parse(
+            "schema = 1\n[stand]\nid = \"t\"\nair = \"exclusive\"\n\
+             [[board]]\nid = \"a\"\nusb-serial = \"not-a-mac\"\nchip = \"chip-b\"\n\
+             radios = [\"ble\"]\nroles = [\"peer\"]\nreset = [\"jtag\"]\n",
+        )
+        .unwrap();
+        let error = claimed_boards(&[Claim::stand()], || Ok(unnamed)).unwrap_err();
+        assert!(error.to_string().contains("board `a`"), "{error}");
+        let error = claimed_boards(&[Claim::board("chip-a")], || unreachable!()).unwrap_err();
+        assert!(
+            error.to_string().contains("claim `board:chip-a`"),
+            "{error}"
+        );
     }
 }

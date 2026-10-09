@@ -825,6 +825,16 @@ mod tests {
     fn a_lease_command_is_terminated_at_the_hard_limit() {
         let directory = tempfile::tempdir().unwrap();
         let arbiter = oer_stand_arbiter::Arbiter::at(directory.path()).unwrap();
+        // A whole-stand lease locks the boards of its stand file: one without
+        // boards.
+        let stand = arbiter.stand_file();
+        std::fs::write(
+            stand,
+            "schema = 1\n[stand]\nid = \"t\"\nair = \"exclusive\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(stand, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+            .unwrap();
         let grant = arbiter
             .acquire(&oer_stand_arbiter::Request {
                 owner: "stand".into(),

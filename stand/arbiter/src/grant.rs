@@ -175,6 +175,8 @@ impl Arbiter {
         oer_stand_owners::Owner::new(&request.owner)?;
         let me = ProcessIdentity::current()?;
         let claims = normalize(&request.claims);
+        // A lease that could not lock its boards is refused before it queues.
+        self.leased_boards(&claims)?;
         if let Some(nested) = self.join_enclosing(me, enclosing, &claims)? {
             return Ok(nested);
         }
@@ -227,7 +229,7 @@ impl Arbiter {
             }
             // A board another process holds outside the arbiter (`cargo fw`,
             // a tool of another stand) is busy until it lets go.
-            let foreign = self.foreign_devices(&claims);
+            let foreign = self.foreign_devices(&claims)?;
             if !foreign.is_empty() {
                 let key = format!("device:{}", foreign.join(","));
                 if reported.as_ref().is_none_or(|(previous, at)| {
@@ -276,11 +278,6 @@ impl Arbiter {
             );
         }
         self.report_board(&request.owner);
-        let (stand, unloaded) = boards_to_restore(self.stand(), self.stand_file());
-        if let Some(warning) = unloaded {
-            eprintln!("{warning}");
-        }
-        let boards = crate::restore::claimed_boards(&claims, stand.as_ref());
         let mut grant = Grant {
             held: Some(Held {
                 arbiter: self.clone(),
@@ -296,7 +293,10 @@ impl Arbiter {
             devices: Vec::new(),
         };
         // The lease's process owns its boards for the whole lease: a board
-        // another process took since the check above is waited for.
+        // another process took since the check above is waited for. The
+        // boards are named again, from the stand file as it is now; one that
+        // cannot be named ends the grant, whose drop releases the hold.
+        let boards = self.leased_boards(&claims)?;
         let command = format!("lease #{id} of {}: {}", request.owner, request.work);
         for mac in &boards {
             grant.devices.push(DeviceAccess::wait(mac, &command)?);
@@ -359,7 +359,7 @@ impl Arbiter {
                 // The enclosing lease's process holds the boards; this one
                 // is its delegate.
                 let mut devices = Vec::new();
-                for mac in self.leased_boards(claims) {
+                for mac in self.leased_boards(claims)? {
                     devices.push(
                         DeviceAccess::acquire(&mac, "inside an enclosing lease").map_err(
                             |busy| format!("{busy}: the enclosing lease does not hold it"),
@@ -483,15 +483,26 @@ impl Arbiter {
         })
     }
 
-    /// The MACs of the boards `claims` reach, through the stand file.
-    pub(crate) fn leased_boards(&self, claims: &[Claim]) -> Vec<DeviceId> {
-        crate::restore::claimed_boards(claims, self.stand().ok().as_ref())
+    /// The MACs of the boards `claims` reach, through the stand file; a
+    /// board that cannot be named is an error, never a board left unlocked.
+    pub(crate) fn leased_boards(&self, claims: &[Claim]) -> crate::Result<Vec<DeviceId>> {
+        crate::restore::claimed_boards(claims, || {
+            self.stand().map_err(|error| {
+                format!(
+                    "the stand file {} does not load, so a whole-stand lease cannot lock \
+                     its boards: {error}",
+                    self.stand_file().display()
+                )
+                .into()
+            })
+        })
     }
 
     /// The boards of `claims` whose device lock a process holds that this
     /// one may not use, each with its holder.
-    pub fn foreign_devices(&self, claims: &[Claim]) -> Vec<String> {
-        self.leased_boards(claims)
+    pub fn foreign_devices(&self, claims: &[Claim]) -> crate::Result<Vec<String>> {
+        Ok(self
+            .leased_boards(claims)?
             .into_iter()
             .filter_map(|mac| match oer_device_lock::foreign_holder(&mac) {
                 Ok(Some(Some(holder))) => Some(format!("board {mac} is held by {holder}")),
@@ -499,7 +510,7 @@ impl Arbiter {
                 Ok(None) => None,
                 Err(error) => Some(format!("board {mac}: device lock unreadable: {error}")),
             })
-            .collect()
+            .collect())
     }
 
     /// Show every board's newest firmware and the flashes other owners made
@@ -883,22 +894,3 @@ fn token() -> crate::Result<String> {
 
 #[cfg(test)]
 mod tests;
-
-/// The stand file for restoration, and the warning when it does not load:
-/// such a grant restores no hub port, and says so rather than restore
-/// nothing in silence.
-pub(crate) fn boards_to_restore(
-    stand: crate::Result<oer_stand_file::StandFile>,
-    stand_file: &std::path::Path,
-) -> (Option<oer_stand_file::StandFile>, Option<String>) {
-    match stand {
-        Ok(stand) => (Some(stand), None),
-        Err(error) => (
-            None,
-            Some(format!(
-                "hil-arbiter: the stand file {} does not load, so no hub port is restored: {error}",
-                stand_file.display()
-            )),
-        ),
-    }
-}

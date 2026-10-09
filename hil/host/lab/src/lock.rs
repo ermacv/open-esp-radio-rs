@@ -205,7 +205,7 @@ impl FixtureLock {
         let keys = resource_keys(lab, required)?;
         let claims = claims(lab, &LeaseRequest::device(required), &keys);
         let arbiter = oer_stand_arbiter::Arbiter::open()?;
-        if let Some(busy) = arbiter.foreign_devices(&claims).into_iter().next() {
+        if let Some(busy) = arbiter.foreign_devices(&claims)?.into_iter().next() {
             return Err(busy.into());
         }
         if let Some(holder) = arbiter

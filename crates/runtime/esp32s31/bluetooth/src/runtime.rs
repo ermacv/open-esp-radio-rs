@@ -855,6 +855,8 @@ impl<
     ) -> PortResult<BluetoothOutcome, EventsLost, BluetoothFault<H::StartError>> {
         loop {
             if let Some(outcome) = self.outcomes.take() {
+                // A freed slot may admit a lifecycle command refused as Busy.
+                self.admission.signal(());
                 return Ok(outcome);
             }
             if let Some(poisoned) = self.poisoned() {
@@ -989,8 +991,9 @@ impl<
     /// An enabled port runs `Quiesce` and waits for `Quiesced`, so every
     /// admitted event ends first; a disabled or quiesced port admits
     /// nothing already and stays as it is. The lifecycle terminals go to the
-    /// port's event consumer. A list transaction in progress finishes
-    /// before the stop.
+    /// port's event consumer, which must keep taking outcomes: a full
+    /// queue refuses `Quiesce` and the final `Enable` as busy until it frees
+    /// a slot. A list transaction in progress finishes before the stop.
     ///
     /// # Errors
     ///
@@ -1035,9 +1038,15 @@ impl<
         let Ok(result) = result else {
             return Err(self.poisoned().expect("the runtime is poisoned"));
         };
+        // Reopen admission. A full queue refuses Enable as Busy until the
+        // consumer takes an outcome; a command another owner ran meanwhile,
+        // or an uninstall, decides the state instead.
         if resume {
-            // A command another owner ran meanwhile decides the state.
-            let _ = self.run_lifecycle(LifecycleCommand::Enable).await?;
+            while let Err(LifecycleError::Busy) =
+                self.run_lifecycle(LifecycleCommand::Enable).await?
+            {
+                self.admission.wait().await;
+            }
         }
         Ok(Ok(result))
     }

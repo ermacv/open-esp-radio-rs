@@ -27,7 +27,8 @@ sets the commit status `claude-runtime-review`: success without 🔴 or 🟡
 findings, failure with them, error when the review did not complete or its
 pre-existing findings could not be filed. A blocked PR stays open until a
 re-review after the fixing push no longer reports them; `cargo xtask
-ci-status`, `check changed`, `push` and the session start hook list such PRs. A failed review's run log
+ci-status`, `check changed`, `push` and the session start hook list such PRs.
+Only the session on the PR's branch fixes it; the others only report it. A failed review's run log
 names the result subtype, API status and error message. Require this status
 alongside `ci-ok` in `main` branch protection so auto-merge cannot overtake
 the reviewer. A newer review of the same PR cancels a running one. Re-reviews

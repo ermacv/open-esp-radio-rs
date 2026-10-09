@@ -43,7 +43,7 @@ impl Claim {
         }
     }
 
-    /// A board, identified by its MAC or, without one, its port.
+    /// A board, identified by its MAC.
     pub fn board(identity: &str) -> Self {
         Self::exclusive(format!("board:{identity}"))
     }

@@ -2,6 +2,7 @@
 **/target/
 crates/composition/**/Cargo.lock
 **/*.swp
+__pycache__/
 **/*.swo
 /_oracles/
 /oracle-regression.json

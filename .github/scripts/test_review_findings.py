@@ -1,6 +1,7 @@
 """Offline regressions for recording pre-existing review findings; no GitHub calls."""
 
 import unittest
+from urllib.error import HTTPError
 
 import issue_labels
 import review_findings as findings
@@ -8,7 +9,7 @@ import review_findings as findings
 
 def finding(severity="pre-existing", title="stale cache", path="a/b.rs", **fields):
     return {"severity": severity, "path": path, "line": 7, "title": title, "body": "why",
-            "area": "area:tooling", "priority": "priority:P2", **fields}
+            "area": "area:tooling", "priority": "priority:P2", "issue": 0, **fields}
 
 
 class FakeGitHub:
@@ -17,7 +18,7 @@ class FakeGitHub:
         self.created = []
 
     def list(self, path):
-        assert path == f"issues?state=all&creator={findings.CREATOR}", path
+        assert path == "issues?state=all", path
         return self.issues
 
     def request(self, method, path, data=None):
@@ -29,7 +30,10 @@ class FakeGitHub:
             self.issues.append(issue)
             return issue
         number = int(path.removeprefix("issues/"))
-        return next(issue for issue in self.issues if issue["number"] == number)
+        issue = next((issue for issue in self.issues if issue["number"] == number), None)
+        if issue is None:
+            raise HTTPError(path, 404, "Not Found", None, None)
+        return issue
 
 
 class Record(unittest.TestCase):
@@ -57,6 +61,17 @@ class Record(unittest.TestCase):
         lines = self.record(api, finding(), finding(line=99, body="reworded"))
         self.assertEqual(len(api.created), 1)
         self.assertEqual(lines, ["- 🟣 **stale cache**: already recorded as #500"] * 2)
+
+    def test_a_finding_the_reviewer_names_as_filed_is_not_filed_again(self):
+        api = FakeGitHub([{"number": 42, "body": "filed by hand", "title": "t", "state": "open"}])
+        lines = self.record(api, finding(title="reworded", issue=42))
+        self.assertEqual(api.created, [])
+        self.assertEqual(lines, ["- 🟣 **reworded**: already recorded as #42"])
+
+    def test_a_named_issue_that_does_not_exist_files_the_finding(self):
+        api = FakeGitHub()
+        self.record(api, finding(issue=9999))
+        self.assertEqual(len(api.created), 1)
 
     def test_another_path_or_title_is_another_finding(self):
         self.assertNotEqual(findings.key(finding()), findings.key(finding(path="a/c.rs")))

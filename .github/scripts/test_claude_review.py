@@ -64,6 +64,13 @@ class Policy(unittest.TestCase):
         finding = review.SCHEMA["properties"]["findings"]["items"]
         self.assertEqual(set(finding["required"]), set(finding["properties"]))
 
+    def test_the_prompt_lists_each_filed_finding_once(self):
+        issue = {"number": 7, "state": "closed", "title": "review: stale cache"}
+        listed = review.filed_findings({"k1": issue, "k2": issue})
+        self.assertEqual(listed, "Pre-existing findings already filed as issues:\n"
+                                 "- #7 (closed): review: stale cache")
+        self.assertIn("yet", review.filed_findings({}))
+
     def test_findings_are_classified_by_the_label_catalog(self):
         finding = review.SCHEMA["properties"]["findings"]["items"]["properties"]
         self.assertIn("area:tooling", finding["area"]["enum"])

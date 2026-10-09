@@ -18,6 +18,9 @@ from pathlib import Path
 import sys
 from urllib.request import Request, urlopen
 
+import issue_labels
+import review_findings
+
 AUDIENCE = "https://api.anthropic.com"
 TOKEN_REFRESH_SECONDS = 240
 MAX_BUDGET_USD = 5.0
@@ -34,7 +37,7 @@ SCHEMA = {
         "summary": {"type": "string"},
         "findings": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
-            "required": ["severity", "path", "line", "title", "body", "area", "priority"],
+            "required": ["severity", "path", "line", "title", "body", "area", "priority", "issue"],
             "properties": {
                 "severity": {"enum": ["important", "nit", "pre-existing"]},
                 "path": {"type": "string"},
@@ -42,7 +45,9 @@ SCHEMA = {
                 "title": {"type": "string"},
                 "body": {"type": "string"},
                 "area": {"enum": [name for name in LABELS if name.startswith("area:")]},
-                "priority": {"enum": [name for name in LABELS if name.startswith("priority:")]}}}}}}
+                "priority": {"enum": [name for name in LABELS if name.startswith("priority:")]},
+                # The issue that already records a pre-existing finding, or 0.
+                "issue": {"type": "integer", "minimum": 0}}}}}}
 
 
 def write_identity_token(path, opener=urlopen):
@@ -104,6 +109,17 @@ async def review(prompt, guidance, model, token_file):
     return result
 
 
+def filed_findings(recorded):
+    """The prompt's list of pre-existing findings already filed as issues, so
+    the review names the issue of one it finds again instead of a new title."""
+    issues = sorted({issue["number"]: issue for issue in recorded.values()}.values(),
+                    key=lambda issue: issue["number"])
+    if not issues:
+        return "No pre-existing finding has been filed as an issue yet."
+    return "Pre-existing findings already filed as issues:\n" + "\n".join(
+        f"- #{issue['number']} ({issue['state']}): {issue['title']}" for issue in issues)
+
+
 def main():
     pr, head = os.environ["REVIEW_PR"], os.environ["REVIEW_HEAD"]
     token_file = Path(os.environ["RUNNER_TEMP"]) / "anthropic-identity-token"
@@ -111,7 +127,8 @@ def main():
     os.environ["ANTHROPIC_IDENTITY_TOKEN_FILE"] = str(token_file)
     guidance = "\n\n".join(Path(name).read_text() for name in ("CLAUDE.md", "REVIEW.md"))
     prompt = (f"Review pull request #{pr} of {os.environ['GITHUB_REPOSITORY']} at head {head}, "
-              "checked out in pr/, following the review instructions.")
+              "checked out in pr/, following the review instructions.\n\n"
+              + filed_findings(review_findings.recorded(issue_labels.GitHub(os.environ["GH_TOKEN"]))))
     result = asyncio.run(review(prompt, guidance, os.environ["CLAUDE_REVIEW_MODEL"], token_file))
     token_file.unlink(missing_ok=True)
     if reason := failure(result):

@@ -31,7 +31,9 @@ Do not report what they enforce, style, refactoring wishes or speculation.
 - **pre-existing**: a defect outside this PR found while tracing it, read at
   both `origin/main` and head. At most five; they never block. The workflow
   files each one as a `kind:bug` issue, so give it a self-contained title and
-  body.
+  body. The prompt lists the pre-existing findings already filed: when yours
+  is one of them (`gh issue view` to compare), set `issue` to its number;
+  otherwise `issue` is 0, as for every other finding.
 
 Classify every finding with the area and priority of the
 [label catalog](.github/labels.json) ([issue management](docs/issues.md)):

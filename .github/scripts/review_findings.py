@@ -3,8 +3,9 @@
 The publish job of the review workflow runs this from trusted main with the
 review's structured result in RESULT. Each 🟣 pre-existing finding becomes one
 `kind:bug` issue with the area and priority the reviewer chose, unless an
-issue already records it: the body carries a key of the finding's path and
-title, so a re-review or a later PR never files it twice. Prints one Markdown
+issue already records it: the reviewer, shown the filed findings, names the
+issue of one it finds again, and the body's key of the finding's path and
+title catches an identical one. Prints one Markdown
 line per finding for the PR comment. Python's standard library only.
 """
 
@@ -12,12 +13,10 @@ import hashlib
 import json
 import os
 import sys
+from urllib.error import HTTPError
 
 import issue_labels
 
-
-# The bot that files these issues; only its issues are searched for keys.
-CREATOR = "github-actions[bot]"
 
 
 def key(finding):
@@ -48,9 +47,12 @@ def body(finding, pr, head, repository):
 
 
 def recorded(api):
-    """The issues this workflow filed, open or closed, by finding key."""
+    """The issues that record a review finding, open or closed, by finding
+    key: those this workflow filed and any other that carries the marker."""
     issues = {}
-    for issue in api.list(f"issues?state=all&creator={CREATOR}"):
+    for issue in api.list("issues?state=all"):
+        if "pull_request" in issue:
+            continue
         for line in (issue.get("body") or "").splitlines():
             if line.startswith("<!-- claude-review-finding: ") and line.endswith(" -->"):
                 issues[line.removeprefix("<!-- claude-review-finding: ").removesuffix(" -->")] = issue
@@ -66,7 +68,16 @@ def record(api, result, pr, head, repository, catalog):
     known = recorded(api)
     lines = []
     for finding in findings:
+        # The reviewer names the issue of a finding it was told is filed;
+        # an identical path and title is caught too.
         issue = known.get(key(finding))
+        if issue is None and finding["issue"]:
+            try:
+                issue = api.request("GET", f"issues/{finding['issue']}")
+            except HTTPError as error:
+                # A number that names no issue files the finding anew.
+                if error.code != 404:
+                    raise
         if issue is None:
             issue = issue_labels.create_issue(
                 api, f"review: {finding['title']}", body(finding, pr, head, repository),

@@ -249,3 +249,12 @@ package = "oer-esp32s31-probe-register-elf"
 [[probe]]
 role = "rust-artifact:bluetooth"
 package = "oer-esp32s31-probe-bluetooth-elf"
+
+# Why the core last reset, which the stand reads through JTAG after a power
+# cycle: the board lost power only if it reads a power-on reset. The field is
+# the platform publication's (registers/esp32s31/publication/platform.toml), with
+# its evidence; cause 1 is the power-on reset of ESP-IDF 4d59230d's
+# `components/soc/esp32s31/register/soc/lp_clkrst_reg.h`.
+[reset-cause]
+field = "LP_AON_CLKRST.HPCORE0_RESET_CAUSE.HPCORE0_RESET_CAUSE"
+power-on = 1

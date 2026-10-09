@@ -1,0 +1,9 @@
+# Register binding index
+
+`oer-register-bindings` is the format of a publication's binding index,
+`registers/<chip>/published/*.bindings.toml`: every register address with its
+fields and, when the publication generates a PAC, the PAC path that reaches it.
+`cargo registers generate` writes it; tools that name addresses and bits, such
+as vendor scenarios and the stand's reset-cause read, read it through
+`BindingIndex` instead of declaring its shape again. It is a foundation data
+format, so every host layer may read it.

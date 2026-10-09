@@ -60,3 +60,7 @@ description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7:
 [[sources]]
 id = "ESP_IDF_4D59230D_C5_INTERRUPT_MATRIX_ZB_MAC_MAP"
 description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7: components/soc/esp32c5/register/soc/interrupt_matrix_reg.h sha256 036f157d297e7b10cdb72cef7d697ec964ebc8f381187588a549415b7d42b341 and interrupt_matrix_struct.h sha256 4758fbff05ac1e4e9014362ed4ee67571b4f39c12165f49d0a7e8595340554c3 (interrupt_core0_zb_mac_intr_map_reg_t). The ZB_MAC_INTR map word at +0x30 holds zb_mac_intr_map in bits 5:0 and zb_mac_intr_pass_in_sec in bit 8; bits 7:6 (reserved_6) and 31:9 (reserved_9) are declared reserved, without a name or meaning."
+
+[[sources]]
+id = "ESP_IDF_4D59230D_C5_LP_CLKRST"
+description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7: components/soc/esp32c5/register/soc/lp_clkrst_reg.h sha256 9f10cfbb4a653e92ec914826d700a54f0e79745471528996b5fda8078e5a7bf4 defines LP_CLKRST_RESET_CAUSE_REG at DR_REG_LP_CLKRST_BASE + 0x10, read-only RESET_CAUSE at bits 4:0 and CORE0_RESET_FLAG at bit 5; components/soc/esp32c5/register/soc/reg_base.h sha256 b71b182aedcd6b4bb4d4878f5387b5541cd4c3ff511a17ad3c2a8e46cb660233 sets DR_REG_LP_CLKRST_BASE to 0x600B0400. The cause codes are the chip's common reset reasons, POWERON_RESET being 1."

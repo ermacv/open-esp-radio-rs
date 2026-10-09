@@ -198,9 +198,10 @@ chip-revisions = ["rev0"]
 artifact-lineages = []
 [outputs]
 svd = "radio.svd"
-pac-raw = "raw.rs"
-pac-api = "api.rs"
 bindings = "bindings.toml"
+[outputs.pac]
+raw = "raw.rs"
+api = "api.rs"
 crate-name = "fixture_pac"
 target = "none"
 edition = "2024"
@@ -228,4 +229,29 @@ edition = "2024"
         &source.replace("chip = \"fixture-chip\"", "chip = \"other-chip\""),
     );
     assert!(oer_register_tool::Publication::load(&root.join("publication.toml")).is_err());
+
+    // A publication read only through its SVD and binding index: no PAC, no
+    // PAC API policy, and a binding index that names no crate.
+    let pac = "api = \"api.toml\"\n";
+    let without_pac = source
+        .replace(pac, "")
+        .replace("svd = \"radio.svd\"", "svd = \"platform.svd\"")
+        .replace(
+            "bindings = \"bindings.toml\"",
+            "bindings = \"platform.bindings.toml\"",
+        );
+    let without_pac = &without_pac[..without_pac.find("[outputs.pac]").unwrap()];
+    write(root, "platform.toml", without_pac);
+    let platform = oer_register_tool::Publication::load(&root.join("platform.toml")).unwrap();
+    platform.generate(false).unwrap();
+    platform.generate(true).unwrap();
+    let index =
+        oer_register_bindings::BindingIndex::load(&root.join("platform.bindings.toml")).unwrap();
+    assert_eq!(index.crate_name, None);
+    assert!(!index.registers.is_empty());
+    // A PAC API policy without a PAC, or a PAC without one, is refused.
+    write(root, "platform.toml", &format!("{pac}{without_pac}"));
+    assert!(oer_register_tool::Publication::load(&root.join("platform.toml")).is_err());
+    write(root, "platform.toml", &source.replace(pac, ""));
+    assert!(oer_register_tool::Publication::load(&root.join("platform.toml")).is_err());
 }

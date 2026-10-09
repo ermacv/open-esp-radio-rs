@@ -263,10 +263,26 @@ end-exclusive = 0x20701004
 permissions = "rw"
 
 [[regions]]
-name = "lp-aon-between-root-clock-and-phy-aux"
+name = "lp-aon-between-root-clock-and-hpcore0-reset-cause"
 address-space = "cpu"
 kind = "mmio"
 start = 0x20701004
+end-exclusive = 0x20701030
+permissions = "rw"
+
+[[regions]]
+name = "lp-aon-hpcore0-reset-cause"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20701030
+end-exclusive = 0x20701034
+permissions = "rw"
+
+[[regions]]
+name = "lp-aon-between-hpcore0-reset-cause-and-phy-aux"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20701034
 end-exclusive = 0x20701068
 permissions = "rw"
 

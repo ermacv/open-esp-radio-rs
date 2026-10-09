@@ -20,6 +20,7 @@ analysis read this model; neither owns a second copy.
 | `published/radio.svd` | Generated portable CMSIS-SVD representation |
 | `published/radio.bindings.toml` | Generated binding index |
 | `publication/registers.toml` | Source-only publication composition |
+| `model/platform/`, `policy/platform-ownership.toml`, `publication/platform.toml` | The platform publication: the reset-cause register the stand reads through JTAG after a power cycle; SVD and `published/platform.bindings.toml` only, no PAC (ESP-HAL owns the block at runtime) |
 
 The generic generator is
 [`tools/registers/model`](../../tools/registers/model/README.md).

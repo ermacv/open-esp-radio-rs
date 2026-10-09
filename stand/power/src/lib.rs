@@ -73,8 +73,8 @@ impl HubPower {
 
     /// Power the port off and on again while watching the board with `mac`
     /// on it. The board must leave once the port is off and come back once
-    /// it is on; its own USB device leaving shows that the board, not only
-    /// the hub, lost power.
+    /// it is on: what the stand's own power cycles (a power-on start, the
+    /// download-mode entry) require, whose outcome then shows on its own.
     pub fn cycle_observed(
         &self,
         mac: &oer_device_mac::DeviceId,
@@ -88,6 +88,26 @@ impl HubPower {
         let returned = wait_until(POWER_RETURN, &|| oer_devices::discovery::is_attached(mac))
             .then(|| started.elapsed());
         Ok(PowerCycle { left, returned })
+    }
+
+    /// [`Self::cycle_observed`], then `reset_cause` once the board returned:
+    /// the proof that the port cuts the board's power. A port that only
+    /// drops the board from the bus keeps it powered, and the board returns
+    /// with its previous reset cause. Only the verification of a port takes
+    /// it: the image a power cycle starts may switch the chip's JTAG off or
+    /// reset again before the cause is read.
+    pub fn prove_power_loss(
+        &self,
+        mac: &oer_device_mac::DeviceId,
+        lifetime: &oer_process::IoLifetime,
+        reset_cause: impl FnOnce() -> crate::Result<ResetCause>,
+    ) -> crate::Result<PowerLoss> {
+        let cycle = self.cycle_observed(mac, lifetime)?;
+        let reset = cycle
+            .returned
+            .is_some()
+            .then(|| reset_cause().map_err(|error| error.to_string()));
+        Ok(PowerLoss { cycle, reset })
     }
 
     fn action(
@@ -127,7 +147,7 @@ pub struct PowerCycle {
 }
 
 impl PowerCycle {
-    /// Whether the board lost its power and came back, or why not.
+    /// Whether the board left USB and came back, or why not.
     pub fn verdict(self) -> std::result::Result<Duration, String> {
         match (self.left, self.returned) {
             (true, Some(after)) => Ok(after),
@@ -139,6 +159,115 @@ impl PowerCycle {
                 POWER_RETURN.as_secs()
             )),
         }
+    }
+}
+
+/// What [`HubPower::prove_power_loss`] showed: the power cycle and why the
+/// board last reset once it returned, or why that could not be read.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PowerLoss {
+    pub cycle: PowerCycle,
+    pub reset: Option<std::result::Result<ResetCause, String>>,
+}
+
+impl PowerLoss {
+    /// Whether the board lost its power and came back, or why not: leaving
+    /// USB and returning is not enough, the board must read a power-on reset.
+    pub fn verdict(self) -> std::result::Result<Duration, String> {
+        let after = self.cycle.verdict()?;
+        match self.reset {
+            Some(Ok(cause)) if cause.power_on() => Ok(after),
+            Some(Ok(cause)) => Err(format!(
+                "the board left USB and returned, but its reset cause is {cause}, not a power-on \
+                 reset: the port does not cut its power"
+            )),
+            Some(Err(error)) => Err(format!(
+                "the board left USB and returned, but its reset cause could not be read: {error}"
+            )),
+            None => Err(String::from(
+                "the board left USB and returned, but its reset cause was not read",
+            )),
+        }
+    }
+}
+
+/// Where a chip holds why it last reset: one field of its platform
+/// publication, resolved through the binding index, and the code of a
+/// power-on reset (the chip profile's `[reset-cause]`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResetCauseField {
+    /// The address of the word holding the field.
+    pub address: u32,
+    pub bit_offset: u32,
+    pub bit_width: u32,
+    pub power_on: u32,
+}
+
+impl ResetCauseField {
+    /// The field `profile` names, from the platform binding index of `chip`
+    /// in the repository at `root`.
+    pub fn resolve(
+        root: &std::path::Path,
+        chip: &str,
+        profile: &oer_chip_profile::ResetCause,
+    ) -> crate::Result<Self> {
+        let path = root.join(format!("registers/{chip}/published/platform.bindings.toml"));
+        let index = oer_register_bindings::BindingIndex::load(&path)?;
+        Self::of(&index, profile).map_err(|error| format!("{}: {error}", path.display()).into())
+    }
+
+    fn of(
+        index: &oer_register_bindings::BindingIndex,
+        profile: &oer_chip_profile::ResetCause,
+    ) -> std::result::Result<Self, String> {
+        let (register, field) = profile
+            .field
+            .rsplit_once('.')
+            .ok_or_else(|| format!("`{}` is not PERIPHERAL.REGISTER.FIELD", profile.field))?;
+        let binding = index
+            .registers
+            .iter()
+            .find(|binding| binding.identity == register)
+            .ok_or_else(|| format!("no register {register}"))?;
+        let field = binding
+            .fields
+            .iter()
+            .find(|candidate| candidate.svd_name == field)
+            .ok_or_else(|| format!("register {register} has no field {field}"))?;
+        Ok(Self {
+            address: binding.address,
+            bit_offset: field.bit_offset,
+            bit_width: field.bit_width,
+            power_on: profile.power_on,
+        })
+    }
+
+    /// The reset cause `word`, read at [`Self::address`], holds.
+    pub fn cause(&self, word: u32) -> ResetCause {
+        let mask = u32::MAX >> (32 - self.bit_width);
+        ResetCause {
+            code: (word >> self.bit_offset) & mask,
+            power_on: self.power_on,
+        }
+    }
+}
+
+/// A chip's reset cause code, with the code of a power-on reset.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ResetCause {
+    pub code: u32,
+    power_on: u32,
+}
+
+impl ResetCause {
+    pub fn power_on(self) -> bool {
+        self.code == self.power_on
+    }
+}
+
+impl std::fmt::Display for ResetCause {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{:#x}", self.code)
     }
 }
 

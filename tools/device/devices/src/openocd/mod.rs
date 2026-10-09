@@ -140,6 +140,48 @@ impl Openocd {
         Ok(values)
     }
 
+    /// The arguments that halt the chip, print the 32-bit word at `address`
+    /// and let it run on, with no reset and no debugger server listening.
+    pub fn word_arguments(&self, chip: &str, mac: &str, address: u32) -> Vec<String> {
+        let mut arguments = vec![
+            String::from("-s"),
+            self.scripts.display().to_string(),
+            String::from("-c"),
+            String::from("gdb_port disabled; telnet_port disabled; tcl_port disabled"),
+        ];
+        arguments.extend(self.board(chip, mac).into_iter().skip(2));
+        arguments.extend([
+            String::from("-c"),
+            format!("init; halt; echo \"{WORD} [mdw {address:#010x}]\"; resume; shutdown"),
+        ]);
+        arguments
+    }
+
+    /// Halt the chip, read the 32-bit word at `address` and let it run on.
+    pub fn read_word(
+        &self,
+        chip: &str,
+        mac: &str,
+        address: u32,
+        timeout: Duration,
+        lifetime: &oer_process::IoLifetime,
+    ) -> crate::Result<u32> {
+        let mut command = oer_process::command(&self.program);
+        command.args(self.word_arguments(chip, mac, address));
+        lifetime.pin(&mut command)?;
+        let output = oer_process::output(&mut command, Some(timeout))?;
+        let log = String::from_utf8_lossy(&output.stderr).into_owned()
+            + &String::from_utf8_lossy(&output.stdout);
+        parse_word(&log, address).ok_or_else(|| {
+            format!(
+                "OpenOCD read no word at {address:#010x} ({}):\n{}",
+                output.status,
+                tail(&log, 12)
+            )
+            .into()
+        })
+    }
+
     /// The arguments that write `files` (flash offset, file), verify each
     /// and reset the CPU after the last.
     pub fn program_arguments(
@@ -219,6 +261,22 @@ fn tail(log: &str, lines: usize) -> String {
     let mut tail = log.lines().rev().take(lines).collect::<Vec<_>>();
     tail.reverse();
     tail.join("\n")
+}
+
+/// The label of the line [`Openocd::word_arguments`] echoes.
+const WORD: &str = "word";
+
+/// The word of the `word 0x20701030: 00000003` line OpenOCD echoed for
+/// `address`.
+fn parse_word(log: &str, address: u32) -> Option<u32> {
+    let line = log
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix(&format!("{WORD} ")))?;
+    let (at, value) = line.split_once(':')?;
+    if u32::from_str_radix(at.trim().strip_prefix("0x")?, 16).ok()? != address {
+        return None;
+    }
+    u32::from_str_radix(value.split_whitespace().next()?, 16).ok()
 }
 
 /// The `NAME name (/32): 0x…` lines OpenOCD echoed for `registers`.
@@ -320,6 +378,24 @@ mod tests {
         // It reads without resetting and leaves the chip running.
         assert!(commands.contains("halt") && commands.ends_with("resume; shutdown"));
         assert!(!commands.contains("reset"));
+    }
+
+    #[test]
+    fn a_word_is_read_without_a_reset_at_its_own_address() {
+        let log = "Info : [esp32s31.cpu0] Target halted, PC=0x2f81f5a2\n\
+                   word 0x20701030: 00000003 \n\
+                   Info : shutdown command invoked\n";
+        assert_eq!(parse_word(log, 0x2070_1030), Some(3));
+        assert_eq!(parse_word(log, 0x2070_1034), None);
+        assert_eq!(
+            parse_word("Error: Target not examined yet\n", 0x2070_1030),
+            None
+        );
+        let arguments = openocd().word_arguments("chip-b", "38:44:BE:AA:25:64", 0x600b_0410);
+        assert!(arguments.contains(&String::from("adapter serial 38:44:BE:AA:25:64")));
+        let commands = arguments.last().unwrap();
+        assert!(commands.contains("mdw 0x600b0410"), "{commands}");
+        assert!(commands.ends_with("resume; shutdown") && !commands.contains("reset"));
     }
 
     #[test]

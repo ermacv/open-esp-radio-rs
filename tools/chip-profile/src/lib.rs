@@ -99,6 +99,22 @@ pub struct Profile {
     /// The staged boot's host contract; a chip with images names it.
     #[serde(default)]
     pub staged: Option<StagedBoot>,
+    /// Where the host reads why the chip last reset; `None` for a chip whose
+    /// stand cannot prove a power loss.
+    #[serde(default)]
+    pub reset_cause: Option<ResetCause>,
+}
+
+/// The `[reset-cause]` table: the field of the chip's platform publication
+/// (`registers/<id>/published/platform.bindings.toml`) that holds why the
+/// core last left reset, which the stand reads through JTAG after a power
+/// cycle, and the code of a power-on reset.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ResetCause {
+    /// `PERIPHERAL.REGISTER.FIELD`, the SVD names.
+    pub field: String,
+    pub power_on: u32,
 }
 
 /// A contiguous address range.

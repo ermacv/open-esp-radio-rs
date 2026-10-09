@@ -36,32 +36,84 @@ fn an_espressif_port_reports_its_mac_and_another_device_none() {
     assert_eq!(other.device, Some((String::from("046d:c52b"), None)));
 }
 
+fn cause(code: u32) -> ResetCause {
+    ResetCauseField {
+        address: 0x2070_1030,
+        bit_offset: 1,
+        bit_width: 6,
+        power_on: 1,
+    }
+    .cause(code << 1 | 1)
+}
+
 #[test]
 fn a_power_cycle_needs_the_board_to_leave_and_return() {
     let after = Duration::from_millis(3100);
-    assert_eq!(
-        PowerCycle {
-            left: true,
-            returned: Some(after)
-        }
-        .verdict(),
-        Ok(after)
-    );
-    let stayed = PowerCycle {
-        left: false,
-        returned: Some(after),
-    };
+    let cycle = |left, returned| PowerCycle { left, returned };
+    assert_eq!(cycle(true, Some(after)).verdict(), Ok(after));
     assert!(
-        stayed
+        cycle(false, Some(after))
             .verdict()
             .unwrap_err()
             .contains("does not cut its power")
     );
-    let gone = PowerCycle {
-        left: true,
-        returned: None,
+    assert!(
+        cycle(true, None)
+            .verdict()
+            .unwrap_err()
+            .contains("did not return")
+    );
+}
+
+#[test]
+fn a_power_loss_also_needs_a_power_on_reset() {
+    let after = Duration::from_millis(3100);
+    let loss = |left, returned, reset| PowerLoss {
+        cycle: PowerCycle { left, returned },
+        reset,
     };
-    assert!(gone.verdict().unwrap_err().contains("did not return"));
+    assert_eq!(
+        loss(true, Some(after), Some(Ok(cause(1)))).verdict(),
+        Ok(after)
+    );
+    assert!(
+        loss(false, Some(after), Some(Ok(cause(1))))
+            .verdict()
+            .is_err()
+    );
+    // Dropped from the bus and back without losing power: the board keeps
+    // the cause of its last reset, a JTAG reset here.
+    let kept_power = loss(true, Some(after), Some(Ok(cause(0x18))))
+        .verdict()
+        .unwrap_err();
+    assert!(
+        kept_power.contains("0x18, not a power-on reset"),
+        "{kept_power}"
+    );
+    let unread = loss(true, Some(after), Some(Err(String::from("no JTAG"))))
+        .verdict()
+        .unwrap_err();
+    assert!(unread.contains("could not be read: no JTAG"), "{unread}");
+    assert!(loss(true, Some(after), None).verdict().is_err());
+}
+
+#[test]
+fn the_reset_cause_is_the_profile_field_of_the_platform_publication() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for (chip, power_on_word) in [("esp32s31", 0x03), ("esp32c5", 0x21)] {
+        let profile = oer_chip_profile::Profile::load(&root, chip).unwrap();
+        let field =
+            ResetCauseField::resolve(&root, chip, profile.reset_cause.as_ref().unwrap()).unwrap();
+        // Words the stand read after a power cycle and after a JTAG reset.
+        assert!(field.cause(power_on_word).power_on(), "{chip}");
+        let jtag = if chip == "esp32s31" { 0x31 } else { 0x38 };
+        assert_eq!(field.cause(jtag).code, 0x18, "{chip}");
+    }
+    let missing = oer_chip_profile::ResetCause {
+        field: String::from("LP_CLKRST.RESET_CAUSE.ABSENT"),
+        power_on: 1,
+    };
+    assert!(ResetCauseField::resolve(&root, "esp32c5", &missing).is_err());
 }
 
 #[test]

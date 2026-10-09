@@ -116,5 +116,13 @@ caller keeps its own copy:
 
 `ChipSources` resolves the files a chip's publication manifest names
 without validating them. The binding index format is
-`oer_register_contracts::bindings::BindingIndex`, which the generator writes
-and every reader (the vendor harness's address naming) parses.
+`oer_register_bindings::BindingIndex` ([`bindings/`](bindings/README.md)), a
+foundation data format the generator writes and every reader (the vendor
+harness's address naming, the stand's reset-cause read) parses.
+
+A chip publication's `[outputs]` name the SVD and the binding index; its
+optional `[outputs.pac]` (`raw`, `api`, `crate-name`, `target`, `edition`)
+adds the raw PAC and its API facade, and a publication has a PAC API policy
+(`api`) exactly when it has that table. A publication without one, a chip's
+`platform.toml`, describes registers the host reads through JTAG and that
+no firmware reaches: its binding index names no crate.

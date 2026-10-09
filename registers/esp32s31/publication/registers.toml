@@ -25,9 +25,11 @@ artifact-lineages = ["esp32s31-radio"]
 
 [outputs]
 svd = "../published/radio.svd"
-pac-raw = "../../../crates/hardware/esp32s31/pac/raw/src/lib.rs"
-pac-api = "../../../crates/hardware/esp32s31/pac/src/generated.rs"
 bindings = "../published/radio.bindings.toml"
+
+[outputs.pac]
+raw = "../../../crates/hardware/esp32s31/pac/raw/src/lib.rs"
+api = "../../../crates/hardware/esp32s31/pac/src/generated.rs"
 crate-name = "oer_esp32s31_pac_raw"
 target = "none"
 edition = "2024"

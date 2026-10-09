@@ -13,7 +13,7 @@ oer-elf = { path = "../../../tools/elf" }
 oer-process = { path = "../../../tools/process" }
 oer-vendor-evidence = { path = "../../../verification/evidence" }
 oer-vendor-evidence-shard = { path = "../../../qualification/evidence-shard" }
-oer-register-contracts = { path = "../../../tools/registers/contracts" }
+oer-register-bindings = { path = "../../../tools/registers/bindings" }
 oer-durable = { path = "../../../tools/durable" }
 oer-repo = { path = "../../../tools/repo" }
 oer-vendor-pins = { path = "../../../tools/vendor-pins" }

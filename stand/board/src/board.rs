@@ -21,7 +21,13 @@ use oer_devices::port::{Port, retrying};
 use oer_devices::reset;
 use oer_devices::reset::{RecoveryStep, ResetPath, Rung};
 
-use oer_stand_power::{HubPower, PowerCycle};
+use oer_stand_power::{HubPower, PowerCycle, PowerLoss, ResetCauseField};
+
+/// How often, how long and how far apart the reset cause is read after a
+/// power cycle.
+const RESET_CAUSE_ATTEMPTS: u32 = 5;
+const RESET_CAUSE_READ: std::time::Duration = std::time::Duration::from_secs(20);
+const RESET_CAUSE_RETRY: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// How long a reset's console is read for the ROM's line.
 const BANNER: Duration = Duration::from_secs(2);
@@ -51,6 +57,8 @@ pub struct Board {
     espflash_chip: String,
     reset: Vec<ResetStep>,
     power: Option<HubPower>,
+    /// Where the chip holds why it last reset, which a power cycle reads.
+    reset_cause: Option<ResetCauseField>,
 }
 
 impl Board {
@@ -63,12 +71,18 @@ impl Board {
         port: PathBuf,
     ) -> crate::Result<Self> {
         let profile = oer_chip_profile::Profile::load(root, &board.chip)?;
+        let reset_cause = profile
+            .reset_cause
+            .as_ref()
+            .map(|field| ResetCauseField::resolve(root, &profile.id, field))
+            .transpose()?;
         Ok(Self {
             reference: board.reference()?,
             port,
             espflash_chip: profile.espflash_chip,
             reset: board.reset.clone(),
             power: stand.hub_port(board).map(HubPower::new),
+            reset_cause,
         })
     }
 
@@ -395,6 +409,42 @@ impl LeasedBoard {
         let _operation = self.access.operation()?;
         self.require_power()?
             .cycle_observed(self.mac(), _operation.lifetime())
+    }
+
+    /// Power the board off and on, watching it leave USB and return, then
+    /// read through its JTAG why it last reset: a power-on reset proves that
+    /// its port cuts its power. The read halts the core for a moment and
+    /// lets it run on; the image in flash must leave the chip's JTAG on and
+    /// not reset again, as the verification of a port arranges.
+    pub fn prove_power_loss(&self) -> crate::Result<PowerLoss> {
+        let _operation = self.access.operation()?;
+        let field = self.board.reset_cause.as_ref().ok_or_else(|| {
+            format!(
+                "the {} profile names no reset cause, so a power cycle cannot be proven",
+                self.chip()
+            )
+        })?;
+        let lifetime = _operation.lifetime();
+        self.require_power()?
+            .prove_power_loss(self.mac(), lifetime, || {
+                let openocd = Openocd::locate()?;
+                let mut last = None;
+                // The USB-JTAG answers a moment after the board's USB returns.
+                for _ in 0..RESET_CAUSE_ATTEMPTS {
+                    match openocd.read_word(
+                        self.chip(),
+                        self.mac().as_ref(),
+                        field.address,
+                        RESET_CAUSE_READ,
+                        lifetime,
+                    ) {
+                        Ok(word) => return Ok(field.cause(word)),
+                        Err(error) => last = Some(error),
+                    }
+                    oer_process::sleep(RESET_CAUSE_RETRY)?;
+                }
+                Err(last.unwrap_or_else(|| "no attempt was made".into()))
+            })
     }
 
     /// Power the board off and on and wait until its port is back and open

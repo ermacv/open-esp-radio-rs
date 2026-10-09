@@ -56,13 +56,15 @@ pub(crate) fn stand(
             ..
         } => {
             // The ROM prints its reset reason before the board's own USB
-            // enumerates, so the board leaving USB and returning is the proof.
+            // enumerates; the board leaving USB, returning and reading a
+            // power-on reset through its JTAG is the proof.
             let stand = StandFile::load(&path)?;
             let after = verify_power(&ctx.root, &stand, &board, owner()?)?
                 .verdict()
                 .map_err(|why| format!("{board}: {why}"))?;
             println!(
-                "{board} lost its power: it left USB and returned {:.1} s after its port's power",
+                "{board} lost its power: it left USB, returned {:.1} s after its port's power \
+                 and read a power-on reset",
                 after.as_secs_f64()
             );
         }
@@ -141,13 +143,13 @@ fn blink<'a>(
 }
 
 /// Cycle the hub port of the board `query` names under `owner`'s lease of
-/// the board, watching the board leave USB and return.
+/// the board, proving the board lost its power.
 fn verify_power(
     root: &std::path::Path,
     stand: &oer_stand_file::StandFile,
     query: &str,
     owner: String,
-) -> Result<oer_stand_power::PowerCycle> {
+) -> Result<oer_stand_power::PowerLoss> {
     let board = oer_stand_board::Board::attached(root, stand, query)?;
     let arbiter = oer_stand_arbiter::Arbiter::open()?;
     // The grant holds the board's device access through the power cycle.
@@ -160,5 +162,5 @@ fn verify_power(
     let access = grant
         .device(board.mac())
         .ok_or("the lease holds no access to the board")?;
-    board.lease(access)?.power_cycle_observed()
+    board.lease(access)?.prove_power_loss()
 }

@@ -1,8 +1,12 @@
 //! The published binding index (`registers/<chip>/published/*.bindings.toml`):
-//! every register address of a publication with the PAC path that reaches
-//! it and its fields. `cargo registers generate` writes it from the release
+//! every register address of a publication with its fields and the svd2rust
+//! path that reaches it. A publication that generates no PAC, such as a
+//! chip's platform registers read by the stand, omits the crate name; the
+//! paths then name what svd2rust would generate. `cargo registers generate` writes it from the release
 //! SVD; tools that name addresses and bits read it through [`BindingIndex`]
 //! instead of declaring its shape again.
+
+#![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
 
@@ -14,8 +18,10 @@ pub const SCHEMA: u32 = 2;
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BindingIndex {
     pub schema: u32,
-    /// The Rust crate identifier of the raw PAC.
-    pub crate_name: String,
+    /// The Rust crate identifier of the raw PAC; absent when the publication
+    /// generates none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crate_name: Option<String>,
     #[serde(default)]
     pub registers: Vec<RegisterBinding>,
 }

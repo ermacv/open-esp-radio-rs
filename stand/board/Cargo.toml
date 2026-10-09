@@ -15,6 +15,7 @@ oer-chip-profile = { path = "../../tools/chip-profile" }
 oer-stand-file = { path = "../file" }
 oer-stand-power = { path = "../power" }
 oer-image-bundle = { path = "../../tools/image/bundle" }
+oer-process = { path = "../../tools/process" }
 
 [dev-dependencies]
 tempfile = "3"
@@ -29,5 +30,10 @@ host-layer = "stand"
 host-app = "stand"
 host-boundary = "library"
 hil = "operation"
-# The tests read the example stand file and the chip profiles.
-inputs = ["stand/stand.example.toml", "platform/*/chip.toml"]
+# The tests read the example stand file, the chip profiles and the platform
+# binding indexes they name.
+inputs = [
+    "stand/stand.example.toml",
+    "platform/*/chip.toml",
+    "registers/*/published/platform.bindings.toml",
+]

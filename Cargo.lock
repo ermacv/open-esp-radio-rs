@@ -4137,19 +4137,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-register-bindings"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "oer-register-contracts"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "toml",
 ]
 
 [[package]]
 name = "oer-register-model"
 version = "0.1.0"
 dependencies = [
+ "oer-register-bindings",
  "oer-register-contracts",
  "oer-register-review",
  "serde",
@@ -4183,6 +4191,7 @@ dependencies = [
  "oer-durable",
  "oer-elf",
  "oer-process",
+ "oer-register-bindings",
  "oer-register-contracts",
  "oer-register-model",
  "oer-register-review",
@@ -4330,6 +4339,7 @@ dependencies = [
  "oer-device-lock",
  "oer-devices",
  "oer-image-bundle",
+ "oer-process",
  "oer-stand-file",
  "oer-stand-power",
  "tempfile",
@@ -4439,9 +4449,11 @@ dependencies = [
 name = "oer-stand-power"
 version = "0.1.0"
 dependencies = [
+ "oer-chip-profile",
  "oer-device-mac",
  "oer-devices",
  "oer-process",
+ "oer-register-bindings",
  "oer-stand-file",
 ]
 

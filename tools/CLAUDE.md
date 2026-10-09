@@ -7,7 +7,7 @@ Repository tooling, grouped by the contract each tool owns: [README](README.md).
 | `xtask/` | The entry command line: the check registry (`check tier`, the gate of `check changed` and `push`, CI's jobs), CI state, locks, worktrees, sweeps and the repository checks ([commands](xtask/README.md)); domain work is called from its owners; `cargo hil` is `hil/host/cli` |
 | `repo/` | `oer-repo`: the one model of the repository — file inventory, manifests, workspaces, chips, typed classification, dependency policy, `owner(path)` and path-package closures |
 | `tidy/` | `oer-tidy`: fast text policy over that model (`cargo tidy check`) |
-| `registers/` | `oer-register-tool`: register model validation and PAC/SVD publication, the PAC, shared-word and inventory checks (the inventory run included) |
+| `registers/` | `oer-register-tool`: register model validation and PAC/SVD publication, the PAC, shared-word and inventory checks (the inventory run included); `bindings/` (`oer-register-bindings`) is the binding index format every host layer reads |
 | `blobray/` | Binary analysis; a separate workspace with its own lock file and target |
 | `elf/` | `oer-elf`: the one ELF/archive view (symbols with aliases, sections, segments, relocations, DWARF `Symbolizer`) and the one RV32 relocation table (`rv32`) |
 | `vendor-provenance/`, `symbol-lineage/`, `phy-archive/` | Verification: the `SOURCE` citation recogniser (tidy uses it), vendor function fingerprints, the provenance registry and check, `vendor-diff`, vendor symbol names across releases and the source-only PHY archive's compiled-symbol audit |

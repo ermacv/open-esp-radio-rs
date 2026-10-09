@@ -1077,12 +1077,18 @@ fn chip_target_builds(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
 }
 
 fn registers(ctx: &Checkout, _: Scope<'_>) -> Result<()> {
-    for chip in oer_repo::chips::Chips::at(&ctx.root)?.ids() {
-        let manifest = ctx
-            .root
-            .join("registers")
-            .join(chip)
-            .join("publication/registers.toml");
+    // A chip's radio publication and, when it has one, its platform
+    // publication: the registers the host reads through JTAG.
+    let chips = oer_repo::chips::Chips::at(&ctx.root)?;
+    for manifest in chips.ids().flat_map(|chip| {
+        ["registers.toml", "platform.toml"].map(|name| {
+            ctx.root
+                .join("registers")
+                .join(chip)
+                .join("publication")
+                .join(name)
+        })
+    }) {
         if !manifest.is_file() {
             continue;
         }

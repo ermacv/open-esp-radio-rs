@@ -349,3 +349,11 @@ kind = "mmio"
 start = 0x600a7c50
 end-exclusive = 0x600a7c54
 permissions = "rw"
+
+[[regions]]
+name = "lp-clkrst-reset-cause"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600B0410
+end-exclusive = 0x600B0414
+permissions = "rw"

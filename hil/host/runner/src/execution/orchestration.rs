@@ -534,11 +534,15 @@ impl SuiteEffects for LiveSuite<'_> {
                 oer_hil_lab::recovery::record_reflash(Some(mac), origin);
                 eprintln!("hil: the board answers its recovery image");
             }
-            AfterReflash::Quarantine(why) => {
-                oer_hil_lab::recovery::quarantine_unrecovered(
-                    &mac,
-                    why,
-                    &session.directory().join("recovery-image"),
+            AfterReflash::ImageFault(why) => {
+                // The board's ROM answered before the reflash: the run's
+                // remaining scenarios of the recovery image are blocked
+                // like those of any other silent image.
+                oer_hil_lab::recovery::mark_image_silent(recovery.id());
+                eprintln!(
+                    "hil: the board's ROM answers, so it is not quarantined; the {} recovery \
+                     image built from this checkout is at fault: {why}",
+                    recovery.id()
                 );
             }
         }
@@ -976,16 +980,16 @@ fn execute_one(
 enum AfterReflash {
     /// The board answers its recovery image: journal the recovery.
     Recovered,
-    /// Nothing the stand can do brought it back: quarantine it, why.
-    Quarantine(String),
+    /// The recovery image did not answer, why. Its ROM answered before the
+    /// reflash, so the image or the checkout that built it is at fault, not
+    /// the board.
+    ImageFault(String),
 }
 
 fn after_reflash(answered: std::result::Result<(), String>) -> AfterReflash {
     match answered {
         Ok(()) => AfterReflash::Recovered,
-        Err(why) => AfterReflash::Quarantine(format!(
-            "its chip's recovery image did not bring it back: {why}"
-        )),
+        Err(why) => AfterReflash::ImageFault(why),
     }
 }
 
@@ -1225,7 +1229,7 @@ fn run_scenario_repetition(
         }
         Ok(()) => {
             let evidence =
-                super::execute_workload(lab, selected, output, &fixtures, images, device);
+                super::execute_workload(lab, selected, output, &fixtures, images, device)?;
             (evidence.outcome(), evidence.failure, evidence.measurements)
         }
     };

@@ -55,6 +55,11 @@ impl BrokerOperation {
 impl LockBroker {
     /// Transfer an exclusive lock to a broker that drains admitted I/O after
     /// this owner drops or dies. No client's drop can unlock another's I/O.
+    ///
+    /// The broker is forked without exec: until it closes every descriptor
+    /// above its inputs, it holds each file this process had open at the fork,
+    /// so another thread's close does not yet release it (a pty master's
+    /// close does not hang up its slave).
     pub fn start(lock: FileLock, token: &str) -> Result<Self> {
         if lock.mode() != Mode::Exclusive {
             return Err("a lifetime broker needs an exclusive lock".into());

@@ -1284,6 +1284,9 @@ pub enum ConnectedRxError {
     Trigger(TriggerParseError),
     Ndpa(HeNdpaError),
     Beacon(StaBeaconError),
+    /// The associated BSS's beacon carries a TSF the station cannot follow
+    /// (`beacon_tsf_followable`); nothing of the beacon is published.
+    UnfollowableBeaconTsf,
     IndividualTwt(TwtWireError),
     EspNow(EspNowReceiveError),
     EspNowV2(EspNowV2ReceiveError),
@@ -1734,6 +1737,10 @@ impl ConnectedRxDispatcher {
                         return rejected(protection, ConnectedRxError::Beacon(error));
                     }
                 };
+                if !crate::connected_control::beacon_tsf_followable(observation.timestamp_tsf) {
+                    trace_beacon(BeaconVerdict::Rejected, None, 0);
+                    return rejected(protection, ConnectedRxError::UnfollowableBeaconTsf);
+                }
                 let Some(metadata) = decode_normalized_rx_metadata(raw) else {
                     trace_beacon(BeaconVerdict::NoMetadata, None, 0);
                     return rejected(protection, ConnectedRxError::Rx(RxError::Metadata));

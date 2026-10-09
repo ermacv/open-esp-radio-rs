@@ -2331,9 +2331,9 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
 }
 
 #[test]
-fn a_tsf_advanced_past_its_range_is_dropped_before_the_hardware_write() {
+fn a_join_tsf_advanced_past_its_range_fails_the_association_before_any_write() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
-    let (mut publisher, receiver) = resources.split();
+    let (_publisher, receiver) = resources.split();
     let link = StationPowerLink::<NoopRawMutex>::new();
     let mut control = ConnectedControl::new(receiver, BSSID, false, tx_block_ack(), 1);
     // A join timestamp 4 µs before the end of the TSF, received 5 ms ago.
@@ -2356,61 +2356,18 @@ fn a_tsf_advanced_past_its_range_is_dropped_before_the_hardware_write() {
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware);
     embassy_futures::block_on(tx.wait_until(oer_time::Instant::from_micros(6_000)));
-    let mut performed = std::vec::Vec::new();
-    settle(
-        &mut control,
-        &link,
-        &mut hardware,
-        &mut tx,
-        DatapathControlContext::IDLE,
-        &mut performed,
-    );
-    assert_eq!((hardware.station_tsf, hardware.station_tsf_writes), (7, 0));
-
-    // A beacon whose advance crosses 2^64 neither writes the TSF nor ends
-    // the association; the next well-formed beacon is followed.
-    hardware.mac_local_time = 12_000;
-    publisher.publish(ConnectedRxEvent::Beacon {
-        observation: StaBeaconObservation {
-            timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(u64::MAX - 1_999),
-            ..idle_beacon()
-        },
-        metadata: MacRxMetadata::unavailable(),
-        stamp: Some(10_000),
-    });
-    assert_eq!(
-        settle(
-            &mut control,
-            &link,
+    let failed = loop {
+        match embassy_futures::block_on(control.service_with_context(
             &mut hardware,
             &mut tx,
             DatapathControlContext::IDLE,
-            &mut performed,
-        ),
-        DatapathControlProgress::Idle
-    );
+        )) {
+            Ok(DatapathControlProgress::More) => {}
+            other => break other,
+        }
+    };
+    assert_eq!(failed, Err(ConnectedControlError::JoinTsfUnrepresentable));
     assert_eq!((hardware.station_tsf, hardware.station_tsf_writes), (7, 0));
-
-    publisher.publish(ConnectedRxEvent::Beacon {
-        observation: StaBeaconObservation {
-            timestamp_tsf: oer_ieee80211_mac::tsf::TsfInstant::from_micros(u64::MAX - 2_000),
-            ..idle_beacon()
-        },
-        metadata: MacRxMetadata::unavailable(),
-        stamp: Some(10_000),
-    });
-    settle(
-        &mut control,
-        &link,
-        &mut hardware,
-        &mut tx,
-        DatapathControlContext::IDLE,
-        &mut performed,
-    );
-    assert_eq!(
-        (hardware.station_tsf, hardware.station_tsf_writes),
-        (u64::MAX, 1)
-    );
 }
 
 #[test]

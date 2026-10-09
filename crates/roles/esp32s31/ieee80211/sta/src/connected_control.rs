@@ -542,6 +542,9 @@ pub enum ConnectedControlError {
     IndividualTwt(IndividualTwtRequesterError),
     IndividualTwtWake(IndividualTwtWakePlanError),
     TsfTiming(oer_ieee80211_lower_mac::TsfTimingError),
+    /// The join beacon's TSF, advanced to the start of power management,
+    /// crosses 2^64: the station cannot follow the access point's TSF.
+    JoinTsfUnrepresentable,
     IndividualTwtHardware(StationIndividualTwtHardwareError),
     MissingIndividualTwtRequester,
     Ftm(FtmRequesterError),
@@ -1326,17 +1329,13 @@ impl ConnectedControlCore {
             //
             // The time since the frame arrived is the difference of the MAC
             // local time, the counter its receive timestamp is a reading of.
-            // A timestamp whose advance crosses 2^64 is malformed: the
-            // station drops its update and keeps the association.
             if let Some(stamp) = beacon.stamp {
                 let elapsed = hardware.mac_local_time().wrapping_sub(stamp);
-                if let Some(tsf) =
-                    access_point_tsf_after(observation.timestamp_tsf, u64::from(elapsed))
-                {
-                    self.station_tsf
-                        .set(hardware, tsf)
-                        .map_err(ConnectedControlError::TsfTiming)?;
-                }
+                let tsf = access_point_tsf_after(observation.timestamp_tsf, u64::from(elapsed))
+                    .expect("connected RX publishes only beacons whose TSF a 32-bit elapsed time advances");
+                self.station_tsf
+                    .set(hardware, tsf)
+                    .map_err(ConnectedControlError::TsfTiming)?;
             }
             follow_beacon_protection(tx, observation.protection);
             if let Some(monitor) = &mut self.beacon_monitor {
@@ -2007,7 +2006,7 @@ fn trace_link(event: LinkEvent) {
 }
 pub use power::{
     ConnectedPowerCommand, JoinBeacon, NetworkTxPowerReport, POWER_COMMAND_CAPACITY,
-    PowerCoexSnapshot, access_point_tsf_after,
+    PowerCoexSnapshot, access_point_tsf_after, beacon_tsf_followable,
 };
 
 #[cfg(test)]

@@ -99,34 +99,55 @@ pub struct JoinBeacon {
 
 impl JoinBeacon {
     /// The access point's TSF at `now`: its timestamp advanced by the time
-    /// since the frame arrived; `None` without a reception time or when the
-    /// sum crosses 2^64, either of which leaves the TSF to the first beacon.
+    /// since the frame arrived; `Ok(None)` without a reception time, which
+    /// leaves the TSF to the first beacon.
+    ///
+    /// # Errors
+    ///
+    /// [`ConnectedControlError::JoinTsfUnrepresentable`] when the sum crosses
+    /// 2^64: the station cannot follow the access point's TSF, so the
+    /// association fails instead of starting power management from it.
     ///
     /// SOURCE: complete pinned `libpp.a[if_hwctrl.o]::ic_update_sta_tsf`
     /// adds the difference of a free-running microsecond counter between now
     /// and the frame's reception to the node's timestamp and passes the sum
     /// to `hal_set_sta_tsf`; `libnet80211.a[ieee80211_sta.o]::
     /// sta_recv_assoc` calls it with the joined node's timestamp.
-    pub fn access_point_tsf_at(self, now: oer_time::Instant) -> Option<TsfInstant> {
-        let received_at = self.received_at?;
+    pub fn access_point_tsf_at(
+        self,
+        now: oer_time::Instant,
+    ) -> Result<Option<TsfInstant>, ConnectedControlError> {
+        let Some(received_at) = self.received_at else {
+            return Ok(None);
+        };
         access_point_tsf_after(
             self.beacon.timestamp_tsf,
             now.saturating_duration_since(received_at).as_micros(),
         )
+        .map(Some)
+        .ok_or(ConnectedControlError::JoinTsfUnrepresentable)
     }
 }
 
 /// The access point TSF `timestamp_tsf` advanced by `elapsed_micros`, the
-/// time since its frame arrived; `None` when the sum crosses 2^64.
-///
-/// The TSF is never modular (`docs/architecture.md`, radio time domains),
-/// so a timestamp this close to the end of its range is a malformed frame
-/// whose update the station drops before any TSF write.
+/// time since its frame arrived; `None` when the sum crosses 2^64, which the
+/// TSF never does (`docs/architecture.md`, radio time domains).
 pub const fn access_point_tsf_after(
     timestamp_tsf: TsfInstant,
     elapsed_micros: u64,
 ) -> Option<TsfInstant> {
     timestamp_tsf.checked_add(oer_time::RadioDuration::from_micros(elapsed_micros))
+}
+
+/// Whether the station can follow a beacon's TSF after any time its 32-bit
+/// MAC local time measures since the frame arrived.
+///
+/// The station advances a beacon's timestamp by that wrapping counter's
+/// difference before it writes the TSF, so a later timestamp crosses 2^64
+/// within one counter period. The receive path drops such a beacon whole:
+/// its TSF, TBTT schedule, TIM and liveness all come from one frame.
+pub const fn beacon_tsf_followable(timestamp_tsf: TsfInstant) -> bool {
+    access_point_tsf_after(timestamp_tsf, u32::MAX as u64).is_some()
 }
 
 /// Power management of one association and the inputs waiting for it.
@@ -437,7 +458,7 @@ impl ConnectedControlCore {
                 // The TBTT schedule is in the access point's TSF, so the
                 // station takes it before power management places its first
                 // TBTT, as the vendor does on the Association Response.
-                if let Some(tsf) = join.access_point_tsf_at(clock.now) {
+                if let Some(tsf) = join.access_point_tsf_at(clock.now)? {
                     self.station_tsf
                         .set(hardware, tsf)
                         .map_err(ConnectedControlError::TsfTiming)?;

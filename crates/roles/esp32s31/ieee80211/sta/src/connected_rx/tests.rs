@@ -494,6 +494,49 @@ fn routes_associated_beacon_and_local_tim_as_owned_control_state() {
 }
 
 #[test]
+fn drops_whole_a_beacon_whose_tsf_a_32_bit_elapsed_time_carries_past_its_range() {
+    const MPDU: usize = 36;
+    const SIGNAL: usize = MPDU + 4;
+    let last_followable = u64::MAX - u64::from(u32::MAX);
+    for (timestamp, published) in [(last_followable, true), (last_followable + 1, false)] {
+        let mut storage = [0_u8; 192];
+        set_tail(&mut storage, SIGNAL);
+        let frame = &mut storage[FRAME_OFFSET..FRAME_OFFSET + MPDU];
+        frame[..2].copy_from_slice(&BEACON_FRAME_CONTROL.to_le_bytes());
+        frame[4..10].fill(0xff);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+        frame[24..32].copy_from_slice(&timestamp.to_le_bytes());
+        frame[32..34].copy_from_slice(&100_u16.to_le_bytes());
+        frame[34..36].copy_from_slice(&0x0431_u16.to_le_bytes());
+
+        let mut dispatcher = ConnectedRxDispatcher::new(config());
+        let mut sink = RecordingSink::default();
+        let mut mpdu = [0_u8; 128];
+        let mut ethernet = [0_u8; 128];
+        let dispatch = dispatcher.dispatch(
+            segment(&storage, SIGNAL),
+            &mut mpdu,
+            &mut ethernet,
+            &mut sink,
+        );
+        if published {
+            assert_eq!(dispatch, ConnectedRxDispatch::Beacon);
+            assert_eq!(sink.beacons.len(), 1);
+        } else {
+            assert!(matches!(
+                dispatch,
+                ConnectedRxDispatch::Rejected {
+                    error: ConnectedRxError::UnfollowableBeaconTsf,
+                    ..
+                }
+            ));
+            assert!(sink.beacons.is_empty());
+        }
+    }
+}
+
+#[test]
 fn routes_only_probe_responses_from_the_associated_bssid() {
     const MPDU: usize = 36;
     const SIGNAL: usize = MPDU + 4;

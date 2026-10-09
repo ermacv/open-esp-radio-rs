@@ -16,6 +16,7 @@ and its schema-2 peripheral fragments. It follows the layout of the
 | `evidence/` | Source identities of the reviewed facts |
 | `published/radio.svd`, `published/radio.bindings.toml` | Generated SVD and binding index |
 | `publication/registers.toml` | Source-only publication composition |
+| `model/platform/`, `policy/platform-ownership.toml`, `publication/platform.toml` | The platform publication: the reset-cause register the stand reads through JTAG after a power cycle; SVD and `published/platform.bindings.toml` only, no PAC (ESP-HAL owns the block at runtime) |
 
 The model publishes, for chip revision v1.0, the IEEE 802.15.4 MAC aperture
 at `0x600A3000` with its interrupt route, the analog I2C master, the shared

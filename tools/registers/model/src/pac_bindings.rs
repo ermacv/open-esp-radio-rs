@@ -2,9 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use oer_register_contracts::bindings::{
-    BindingIndex, FieldBinding, RegisterBinding, SCHEMA, ScopeBinding,
-};
+use oer_register_bindings::{BindingIndex, FieldBinding, RegisterBinding, SCHEMA, ScopeBinding};
 use svd_rs::{Access, MaybeArray, RegisterCluster, RegisterProperties};
 
 use crate::{Error, Result};
@@ -41,9 +39,12 @@ struct ExpandedField {
 
 /// Generate the stable TOML index used to bind observed MMIO addresses to PAC paths.
 ///
-/// `crate_name` is the Rust crate identifier, not the Cargo package name.
-pub fn generate_pac_binding_index(svd: &str, crate_name: &str) -> Result<String> {
-    validate_pac_crate_name(crate_name)?;
+/// `crate_name` is the Rust crate identifier, not the Cargo package name, of
+/// the raw PAC the publication generates, if any.
+pub fn generate_binding_index(svd: &str, crate_name: Option<&str>) -> Result<String> {
+    if let Some(crate_name) = crate_name {
+        validate_pac_crate_name(crate_name)?;
+    }
     let addresses = expanded_register_map(svd)?;
     let mut bindings = Vec::new();
     for (address, registers) in addresses {
@@ -91,7 +92,7 @@ pub fn generate_pac_binding_index(svd: &str, crate_name: &str) -> Result<String>
     }
     let document = toml_edit::ser::to_string_pretty(&BindingIndex {
         schema: SCHEMA,
-        crate_name: crate_name.to_owned(),
+        crate_name: crate_name.map(str::to_owned),
         registers: bindings,
     })?;
     Ok(format!("{BINDING_INDEX_HEADER}{document}"))
@@ -468,7 +469,7 @@ mod tests {
 
     #[test]
     fn emits_a_typed_binding_document_for_the_requested_crate() {
-        let output = generate_pac_binding_index(SIMPLE_SVD, "fixture_pac").unwrap();
+        let output = generate_binding_index(SIMPLE_SVD, Some("fixture_pac")).unwrap();
         assert!(output.starts_with("# @generated "));
         let document = output.parse::<toml_edit::DocumentMut>().unwrap();
 
@@ -506,8 +507,16 @@ mod tests {
     }
 
     #[test]
+    fn a_publication_without_a_pac_names_no_crate() {
+        let output = generate_binding_index(SIMPLE_SVD, None).unwrap();
+        let index = oer_register_bindings::BindingIndex::parse(&output).unwrap();
+        assert_eq!(index.crate_name, None);
+        assert_eq!(index.registers.len(), 1);
+    }
+
+    #[test]
     fn rejects_package_names_in_place_of_rust_crate_identifiers() {
-        assert!(generate_pac_binding_index("", "vendor-pac").is_err());
+        assert!(generate_binding_index("", Some("vendor-pac")).is_err());
         assert!(validate_pac_crate_name("crate").is_err());
     }
 }

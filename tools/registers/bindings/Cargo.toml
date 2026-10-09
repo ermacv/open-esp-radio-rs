@@ -1,19 +1,16 @@
 [package]
-name = "oer-register-contracts"
+name = "oer-register-bindings"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Reviewed knowledge identity and applicability contracts"
+description = "The binding index format of a register publication: addresses, PAC paths and fields"
 
 [dependencies]
 serde = { version = "=1.0.229", features = ["derive"] }
-sha2 = "=0.10.9"
-
-[dev-dependencies]
-serde_json = "=1.0.151"
+toml = "=1.1.4"
 
 [lints]
 workspace = true
@@ -21,6 +18,6 @@ workspace = true
 [package.metadata.open-radio]
 layer = "tool"
 platform = "host"
-host-layer = "verification"
+host-layer = "foundation"
 host-app = "formats"
 host-boundary = "format"

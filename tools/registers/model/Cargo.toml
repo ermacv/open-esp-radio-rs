@@ -9,6 +9,7 @@ publish = false
 description = "Versioned editable register model and clean CMSIS-SVD materialization"
 
 [dependencies]
+oer-register-bindings = { path = "../bindings" }
 oer-register-contracts = { path = "../contracts" }
 oer-register-review = { path = "../review" }
 serde = { version = "=1.0.229", features = ["derive"] }

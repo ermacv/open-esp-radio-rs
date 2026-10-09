@@ -136,3 +136,7 @@ description = "ESP32-S31 rev0 ROM ELF sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b
 [[sources]]
 id = "ESP_IDF_4D59230D_S31_INTERRUPT_ZB_MAC_MAP"
 description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7: components/soc/esp32s31/register/soc/interrupt_core0_reg.h sha256 60785a48a2b2be35670a789bf2e0a82a45f4bd85f110fc18c197de14211f311e (lines 2786-2805), interrupt_core0_struct.h sha256 fff9ca086bd0f10f6f931cdf104c27fe80a8edb58f5898de55b966eaf8318f75 (interrupt_core0_modem_zb_mac_intr_map_reg_t) and interrupt_core1_reg.h sha256 e7966b5cda22b0df047182c6f7758c385b95edb991cdc40d0794127fdfdaf335. The MODEM_ZB_MAC_INTR map word at +0x210 of each core holds modem_zb_mac_intr_map in bits 5:0 and modem_zb_mac_intr_pass_level in bits 9:8; bits 7:6 (reserved_6) and 31:10 (reserved_10) are declared reserved, without a name or meaning."
+
+[[sources]]
+id = "ESP_IDF_4D59230D_S31_LP_CLKRST"
+description = "Official ESP-IDF commit 4d59230ddff16327812782151ef0afef202dc6d7: components/soc/esp32s31/register/soc/lp_clkrst_reg.h sha256 0f545692ddb5bc4fd5fee64752871425cd0012090ee203701978bb654874f211 defines LP_AONCLKRST_HPCORE0_RESET_CAUSE_REG at DR_REG_LP_AONCLKRST_BASE + 0x30, read-only HPCORE0_RESET_FLAG at bit 0 and HPCORE0_RESET_CAUSE at bits 6:1 (6'h1 POR reset); components/soc/esp32s31/register/soc/reg_base.h sha256 24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d sets DR_REG_LP_AONCLKRST_BASE to 0x20701000."

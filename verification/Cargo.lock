@@ -521,18 +521,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-register-bindings"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "oer-register-contracts"
 version = "0.1.0"
 dependencies = [
  "serde",
  "sha2",
- "toml",
 ]
 
 [[package]]
 name = "oer-register-model"
 version = "0.1.0"
 dependencies = [
+ "oer-register-bindings",
  "oer-register-contracts",
  "oer-register-review",
  "serde",
@@ -695,7 +703,7 @@ dependencies = [
  "oer-elf",
  "oer-probe-codegen",
  "oer-process",
- "oer-register-contracts",
+ "oer-register-bindings",
  "oer-repo",
  "oer-riscv-lift",
  "oer-riscv-model",

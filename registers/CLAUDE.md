@@ -8,8 +8,9 @@ production PACs: [README](README.md).
 | `<chip>/model/` | Editable register geometry and semantics (`device.toml`, `peripherals/`, `reviewed.toml`) |
 | `<chip>/policy/` | PAC API transactions (`api.toml`), ownership ranges, lint policy |
 | `<chip>/evidence/` | Source identities and provenance behind each declaration |
-| `<chip>/publication/registers.toml` | The publication: inputs and the four outputs |
-| `<chip>/published/` | Generated `radio.svd` and `radio.bindings.toml` |
+| `<chip>/publication/registers.toml` | The radio publication: inputs and the four outputs |
+| `<chip>/publication/platform.toml` | The platform publication: registers the host reads through JTAG (`model/platform/`), SVD and binding index only |
+| `<chip>/published/` | Generated `radio.*` and `platform.*` SVD and binding indexes |
 | `ieee80211/` | Wi-Fi MAC layouts both chips place at their own base addresses |
 
 Generated outputs also land in `crates/hardware/<chip>/pac/raw/src/lib.rs` and

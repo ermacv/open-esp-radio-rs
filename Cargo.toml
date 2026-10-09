@@ -166,6 +166,7 @@ members = [
     "tools/riscv/program",
     "tools/riscv/stack",
     "tools/registers",
+    "tools/registers/bindings",
     "tools/registers/contracts",
     "tools/registers/model",
     "tools/registers/review",

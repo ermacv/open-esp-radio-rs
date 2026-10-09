@@ -224,8 +224,18 @@ under a lease of the port and of its board, to see which button it is; a
 protected port, which a cascaded hub hangs on, and a port `uhubctl` cannot
 cut are refused. `--verify-power BOARD` cycles the board's port under its
 lease and requires the board's own USB device to leave while the port is off
-and to return once it is on: the ROM prints its power-on reset reason before
-the board's USB enumerates, so the board's own port never shows it.
+and to return once it is on, and then a power-on reset read through the
+chip's JTAG. A port that only drops the board from the bus keeps it powered:
+the board returns with the cause of its previous reset. The ROM prints its
+reset reason before the board's USB enumerates, so the stand reads the
+chip's reset-cause field instead (`[reset-cause]` of its chip profile, a
+field of `registers/<chip>/publication/platform.toml`); the read halts the
+core for a moment and lets it run on. Only the verification of a port takes
+that proof: the stand's own power cycles (the power-on start of a written
+image, the download-mode entry of the reset ladder) require the board to leave
+and return, and their outcome shows on its own, since the image they start may
+switch the chip's JTAG off or reset again before its cause is read. A port
+that has not passed `--verify-power` is not switchable.
 
 `cargo stand doctor` checks the host around the stand file: the file
 (private, valid, every board's chip and radios against its profile), the

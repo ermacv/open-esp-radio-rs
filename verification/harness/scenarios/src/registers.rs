@@ -4,7 +4,7 @@
 //! published model, so a reviewer reads `MAC.TX_CONFIG` and its fields rather
 //! than an upper immediate and a shift. The index is read through the
 //! register publication's own reader ([`BindingIndex`]).
-use oer_register_contracts::bindings::BindingIndex;
+use oer_register_bindings::BindingIndex;
 use std::collections::BTreeMap;
 use std::path::Path;
 

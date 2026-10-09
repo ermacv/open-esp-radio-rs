@@ -25,7 +25,8 @@ struct Manifest {
     reviewed: Vec<PathBuf>,
     memory: PathBuf,
     ownership: PathBuf,
-    api: PathBuf,
+    /// The PAC API policy; exactly a publication with a PAC has one.
+    api: Option<PathBuf>,
     lints: PathBuf,
     evidence: Vec<PathBuf>,
     applicability: Context,
@@ -43,9 +44,16 @@ struct Context {
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct Outputs {
     svd: PathBuf,
-    pac_raw: PathBuf,
-    pac_api: PathBuf,
     bindings: PathBuf,
+    /// The PAC a publication generates; a publication read only through its
+    /// SVD and binding index, such as a chip's platform registers, has none.
+    pac: Option<PacOutputs>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct PacOutputs {
+    raw: PathBuf,
+    api: PathBuf,
     crate_name: String,
     target: String,
     edition: String,
@@ -78,7 +86,7 @@ impl ChipSources {
         let m: Manifest = toml_edit::de::from_str(&fs::read_to_string(path)?)?;
         Ok(Self {
             model: base.join(m.model),
-            api: base.join(m.api),
+            api: base.join(m.api.ok_or("the publication has no PAC API policy")?),
             svd: base.join(m.outputs.svd),
             memory: base.join(m.memory),
             ownership: base.join(m.ownership),
@@ -137,7 +145,7 @@ impl Publication {
 /// Owns validated model, policy and output destinations. Rendering never reloads inputs.
 pub struct ChipPublication {
     model: RegisterModel,
-    api: PacApiPack,
+    api: Option<PacApiPack>,
     outputs: Outputs,
 }
 impl ChipPublication {
@@ -165,7 +173,16 @@ impl ChipPublication {
         let review = oer_register_review::ReviewKnowledge::load_all(&paths(&m.reviewed))?
             .select_for(&context)?;
         model.apply_review_knowledge(&review)?;
-        let api = PacApiPack::load(&base.join(&m.api))?;
+        if m.api.is_some() != m.outputs.pac.is_some() {
+            return Err(
+                "a publication has a PAC API policy exactly when it generates a PAC".into(),
+            );
+        }
+        let api = m
+            .api
+            .as_ref()
+            .map(|api| PacApiPack::load(&base.join(api)))
+            .transpose()?;
         let lints = RegisterLintPack::load(&base.join(&m.lints))?;
         model.validate_lints(&lints)?;
         let evidence = RegisterEvidenceSet::load_all(&paths(&m.evidence))?;
@@ -182,9 +199,11 @@ impl ChipPublication {
                         .flat_map(|a| a.metadata.evidence.iter().map(|e| e.source.as_str())),
                 ),
         )?;
-        evidence.validate_references("PAC API", api.source_ids())?;
+        let api_sources = api.iter().flat_map(PacApiPack::source_ids);
+        evidence.validate_references("PAC API", api_sources)?;
         if let Some(peripheral) = api
-            .operation_peripherals()
+            .iter()
+            .flat_map(PacApiPack::operation_peripherals)
             .into_iter()
             .find(|peripheral| model.shared_peripherals().contains_key(*peripheral))
         {
@@ -201,31 +220,40 @@ impl ChipPublication {
         }
         memory.validate(&model, &ownership.owned_ranges, &evidence)?;
         let (svd, _) = model.render_svd()?;
-        api.validate_against_svd(&svd)?;
-        let mut outputs = m.outputs;
-        if !matches!(outputs.target.as_str(), "none" | "riscv")
-            || !matches!(outputs.edition.as_str(), "2021" | "2024")
-        {
-            return Err("unsupported PAC target or edition".into());
+        if let Some(api) = &api {
+            api.validate_against_svd(&svd)?;
         }
-        oer_register_model::validate_pac_crate_name(&outputs.crate_name)?;
+        let mut outputs = m.outputs;
+        if let Some(pac) = &outputs.pac {
+            if !matches!(pac.target.as_str(), "none" | "riscv")
+                || !matches!(pac.edition.as_str(), "2021" | "2024")
+            {
+                return Err("unsupported PAC target or edition".into());
+            }
+            oer_register_model::validate_pac_crate_name(&pac.crate_name)?;
+        }
         let mut input_paths: BTreeSet<_> = model.loaded_inputs().keys().cloned().collect();
-        for p in m.reviewed.iter().chain(m.evidence.iter()).chain([
-            &m.api,
-            &m.lints,
-            &m.memory,
-            &m.ownership,
-        ]) {
+        for p in m
+            .reviewed
+            .iter()
+            .chain(m.evidence.iter())
+            .chain(m.api.iter())
+            .chain([&m.lints, &m.memory, &m.ownership])
+        {
             input_paths.insert(base.join(p).canonicalize()?);
         }
         input_paths.insert(path.clone());
         let mut destinations = BTreeSet::new();
-        for p in [
-            &mut outputs.svd,
-            &mut outputs.pac_raw,
-            &mut outputs.pac_api,
-            &mut outputs.bindings,
-        ] {
+        let pac = outputs
+            .pac
+            .as_mut()
+            .map(|pac| [&mut pac.raw, &mut pac.api])
+            .into_iter()
+            .flatten();
+        for p in [&mut outputs.svd, &mut outputs.bindings]
+            .into_iter()
+            .chain(pac)
+        {
             *p = host::destination(&base.join(&*p))?;
             if input_paths.contains(p) || !destinations.insert(p.clone()) {
                 return Err("publication output aliases an input or another output".into());
@@ -238,42 +266,55 @@ impl ChipPublication {
         })
     }
 
-    /// Prepare all four outputs before checking or replacing any destination.
+    /// Prepare every output before checking or replacing any destination.
     /// Check is read-only. Each replacement is atomic; a failed batch is reported
     /// as incomplete rather than claiming cross-directory atomicity.
     pub fn generate(&self, check: bool) -> Result<()> {
         let (svd, _) = self.model.render_svd()?;
+        let pac = self.outputs.pac.as_ref();
+        let bindings = oer_register_model::generate_binding_index(
+            &svd,
+            pac.map(|pac| pac.crate_name.as_str()),
+        )?;
+        let mut outputs = vec![(&self.outputs.bindings, bindings)];
+        if let (Some(pac), Some(policy)) = (pac, &self.api) {
+            let (raw, api) = self.render_pac(&svd, pac, policy)?;
+            outputs.extend([(&pac.raw, raw), (&pac.api, api)]);
+        }
+        outputs.push((&self.outputs.svd, svd));
+        host::publish(&outputs, check)
+    }
+
+    /// The raw PAC and its API facade.
+    fn render_pac(
+        &self,
+        svd: &str,
+        pac: &PacOutputs,
+        policy: &PacApiPack,
+    ) -> Result<(String, String)> {
         let mut config = svd2rust::config::Config::default();
-        config.target = if self.outputs.target == "none" {
+        config.target = if pac.target == "none" {
             svd2rust::Target::None
         } else {
             svd2rust::Target::RISCV
         };
-        config.edition = if self.outputs.edition == "2024" {
+        config.edition = if pac.edition == "2024" {
             svd2rust::config::RustEdition::E2024
         } else {
             svd2rust::config::RustEdition::E2021
         };
         config.strict = true;
-        let mut raw = svd2rust::generate(&svd, &config)
+        let mut raw = svd2rust::generate(svd, &config)
             .map_err(|e| e.to_string())?
             .lib_rs;
-        if self.api.options.allow_clippy_empty_docs {
+        if policy.options.allow_clippy_empty_docs {
             raw.insert_str(0, "#![allow(clippy::empty_docs)]\n");
         }
         let mut raw =
             shared_blocks::reexport_library_blocks(&raw, self.model.shared_peripherals())?;
-        raw.push_str(&self.api.render_rust(&svd)?);
-        let raw = host::format(&raw, &self.outputs.edition)?;
-        let api = host::format(&self.api.render_facade_rust()?, &self.outputs.edition)?;
-        let bindings =
-            oer_register_model::generate_pac_binding_index(&svd, &self.outputs.crate_name)?;
-        let outputs = [
-            (&self.outputs.svd, svd),
-            (&self.outputs.pac_raw, raw),
-            (&self.outputs.pac_api, api),
-            (&self.outputs.bindings, bindings),
-        ];
-        host::publish(&outputs, check)
+        raw.push_str(&policy.render_rust(svd)?);
+        let raw = host::format(&raw, &pac.edition)?;
+        let api = host::format(&policy.render_facade_rust()?, &pac.edition)?;
+        Ok((raw, api))
     }
 }

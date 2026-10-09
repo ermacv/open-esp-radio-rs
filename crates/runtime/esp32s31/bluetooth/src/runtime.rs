@@ -1038,17 +1038,29 @@ impl<
         let Ok(result) = result else {
             return Err(self.poisoned().expect("the runtime is poisoned"));
         };
-        // Reopen admission. A full queue refuses Enable as Busy until the
-        // consumer takes an outcome; a command another owner ran meanwhile,
-        // or an uninstall, decides the state instead.
         if resume {
-            while let Err(LifecycleError::Busy) =
-                self.run_lifecycle(LifecycleCommand::Enable).await?
-            {
-                self.admission.wait().await;
-            }
+            self.reopen().await?;
         }
         Ok(Ok(result))
+    }
+
+    /// Enable the port that a quiesce left `Quiesced`. A full queue refuses
+    /// `Enable` as busy until the consumer takes an outcome; the retry stops
+    /// as soon as another owner's command or an uninstall moved the port out
+    /// of `Quiesced`, so it never overrides that command.
+    pub(crate) async fn reopen(&self) -> Result<(), Poisoned<BluetoothFault<H::StartError>>> {
+        while self.outcomes.admission() == Admission::Quiesced {
+            match self.run_lifecycle(LifecycleCommand::Enable).await? {
+                Err(LifecycleError::Busy) => self.admission.wait().await,
+                Ok(())
+                | Err(
+                    LifecycleError::AlreadyInState
+                    | LifecycleError::InvalidState
+                    | LifecycleError::NotInstalled,
+                ) => break,
+            }
+        }
+        Ok(())
     }
 
     /// Stop the scheduler, take the radio and its hardware out of the

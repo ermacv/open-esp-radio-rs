@@ -782,6 +782,41 @@ fn quiesce_on_a_full_queue_proceeds_once_the_consumer_frees_a_slot() {
 }
 
 #[test]
+fn reopening_after_a_quiesce_never_overrides_another_owners_disable() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    // Four unread terminals fill the queue and leave the port Quiesced.
+    for command in [
+        LifecycleCommand::Quiesce,
+        LifecycleCommand::Disable,
+        LifecycleCommand::Enable,
+        LifecycleCommand::Quiesce,
+    ] {
+        assert_eq!(block_on(runtime.run_lifecycle(command)), Ok(Ok(())));
+    }
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    let mut reopen = core::pin::pin!(runtime.reopen());
+    // No slot for Enabled: the reopen waits.
+    assert!(reopen.as_mut().poll(&mut context).is_pending());
+    // Another owner disables the port in the slot the consumer freed.
+    assert!(taken(&runtime).is_some());
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Disable)),
+        Ok(Ok(()))
+    );
+    // A slot is free again, but the port is no longer the quiesce's.
+    assert!(taken(&runtime).is_some());
+    assert_eq!(
+        reopen.as_mut().poll(&mut context),
+        core::task::Poll::Ready(Ok(()))
+    );
+    assert_eq!(
+        block_on(runtime.submit_request(configure())),
+        Ok(Err(RequestError::Disabled))
+    );
+}
+
+#[test]
 fn cancellation_withdraws_an_admitted_event_and_its_end_follows() {
     let model = Model::default();
     let runtime = installed(&model);

@@ -1,4 +1,5 @@
 //! Independent Linux ATT peer for the shared plaintext Trouble application.
+use super::establish::{Attempt, establish};
 use crate::{Result, fixture::bluetooth::att, fixture::bluetooth::model::PeerAddress};
 use oer_hil_link::SerialCapture;
 use oer_hil_protocol::bluetooth::BluetoothGattEvidence as Evidence;
@@ -24,15 +25,16 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
     let result = context.with_capture(output, |capture| {
         let mut samples = Vec::new();
         let mut exchanges = Vec::new();
-        let probe = exercise(capture, &owner, &mut samples, &mut exchanges);
+        let mut attempts = Vec::new();
+        let probe = exercise(capture, &owner, &mut samples, &mut exchanges, &mut attempts);
         let cleanup = oer_process::cleanup(|| -> Result<()> {
             owner.restore()?;
             wait(capture, &mut samples, |e| !e.connected)?;
             Ok(())
         });
         context.results.observe("trouble-gatt", &serde_json::json!({
-            "schema": 1, "security": "plaintext", "connections": 3,
-            "samples": samples, "exchanges": exchanges,
+            "schema": 2, "security": "plaintext", "connections": 3,
+            "samples": samples, "exchanges": exchanges, "connection_attempts": attempts,
             "passed": probe.is_ok() && cleanup.is_ok(),
             "error": probe.as_ref().err().map(ToString::to_string),
             "restored": cleanup.is_ok(), "cleanup_error": cleanup.as_ref().err().map(ToString::to_string),
@@ -127,6 +129,7 @@ fn exercise(
     owner: &att::Owner,
     samples: &mut Vec<Evidence>,
     exchanges: &mut Vec<Exchange>,
+    attempts: &mut Vec<Attempt>,
 ) -> Result<()> {
     if !capture
         .request_image_keys(Duration::from_secs(10))?
@@ -146,7 +149,17 @@ fn exercise(
     let mut previous = 0;
     for (index, written) in [0x31, 0x52, 0x73].into_iter().enumerate() {
         let connection = index as u32 + 1;
-        let peer = owner.connect(PeerAddress(address))?;
+        let peer = establish(
+            "connect",
+            attempts,
+            samples,
+            |_| owner.connect(PeerAddress(address)),
+            |samples| {
+                let evidence = crate::link::gatt(capture)?;
+                samples.push(evidence);
+                Ok(unseen(&evidence, connection))
+            },
+        )?;
         let live = wait(capture, samples, |e| {
             e.connected && e.connections == connection
         })?;
@@ -182,6 +195,12 @@ fn exercise(
         previous = written;
     }
     Ok(())
+}
+
+/// Whether the DUT never saw connection `connection`: it still counts the
+/// previous ones, is not connected and advertises.
+fn unseen(e: &Evidence, connection: u32) -> bool {
+    e.connections == connection - 1 && !e.connected && e.advertising
 }
 
 fn validate_progress(e: &Evidence, connection: u32, value: u8, address: [u8; 6]) -> Result<()> {
@@ -254,6 +273,38 @@ mod tests {
         wrong[7] = 0xf2;
         assert!(characteristic(&wrong, (8, 10)).is_err());
     }
+    #[test]
+    fn only_a_connection_the_dut_never_counted_is_unseen() {
+        let advertising = Evidence {
+            advertising: true,
+            connections: 1,
+            disconnections: 1,
+            ..Evidence::default()
+        };
+        assert!(unseen(&advertising, 2));
+        assert!(!unseen(
+            &Evidence {
+                connections: 2,
+                ..advertising
+            },
+            2
+        ));
+        assert!(!unseen(
+            &Evidence {
+                connected: true,
+                ..advertising
+            },
+            2
+        ));
+        assert!(!unseen(
+            &Evidence {
+                advertising: false,
+                ..advertising
+            },
+            2
+        ));
+    }
+
     #[test]
     fn peer_success_cannot_hide_application_restart_or_missing_delivery() {
         let good = Evidence {

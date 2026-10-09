@@ -3,6 +3,7 @@ mod comparison;
 mod read_failure;
 mod reset_gate;
 mod shutdown;
+use super::establish::{Attempt, establish};
 use crate::scenario::SecureGattShutdown;
 use crate::{
     Result, fixture::bluetooth::att, fixture::bluetooth::model::PeerAddress,
@@ -110,6 +111,7 @@ pub fn run(
         let capture = &observation;
         let mut samples = Vec::new();
         let mut exchanges = Vec::new();
+        let mut attempts: Vec<Attempt> = Vec::new();
         let mut peer = None;
         let probe = (|| -> Result<()> {
             let capabilities = capture.request_image_keys(Duration::from_secs(10))?;
@@ -121,20 +123,23 @@ pub fn run(
             // Reserve the previously absent device record before raw ATT or discovery.
             peer = Some(Owner::acquire(adapter,address)?);
             let peer = peer.as_mut().unwrap();
-            plaintext_denied(&radio,address,&mut exchanges)?;
+            let plaintext = establish("plaintext-connect", &mut attempts, &mut samples, |_| radio.connect(address), |samples| unseen(capture, samples, &initial))?;
+            plaintext_denied(plaintext,&mut exchanges)?;
             let idle = wait(capture,&mut samples,|e| !e.traffic.connected && e.traffic.advertising && e.traffic.disconnections == 1)?;
             if idle.traffic.writes != 0 || idle.traffic.value != 0 || idle.bonds_stored != 0 { return Err("plaintext ATT changed protected state".into()); }
             peer.discover()?;
-            pairing(capture,peer,&mut samples,false, &mut exchanges)?;
+            let before = sample(capture,&mut samples)?;
+            establish("declined-pairing", &mut attempts, &mut samples, |samples| pairing(capture,peer,samples,false, &mut exchanges), |samples| unseen(capture, samples, &before))?;
             peer.disconnect()?;
             let declined = wait(capture,&mut samples,|e| !e.traffic.connected && e.traffic.advertising && e.declined == 1)?;
             if declined.bonds_stored != 0 || declined.accepted != 0 { return Err("declined pairing established application trust".into()); }
-            pairing(capture,peer,&mut samples,true, &mut exchanges)?;
+            let before = sample(capture,&mut samples)?;
+            establish("accepted-pairing", &mut attempts, &mut samples, |samples| pairing(capture,peer,samples,true, &mut exchanges), |samples| unseen(capture, samples, &before))?;
             wait(capture,&mut samples,|e|e.bonds_stored == 1 && e.accepted == 1)?;
             protected_exchange(peer,0,0x41,&mut exchanges)?;
             peer.disconnect()?;
-            wait(capture,&mut samples,|e|!e.traffic.connected && e.traffic.advertising)?;
-            peer.connect()?;
+            let before = wait(capture,&mut samples,|e|!e.traffic.connected && e.traffic.advertising)?;
+            establish("bonded-reconnect", &mut attempts, &mut samples, |_| peer.connect(), |samples| unseen(capture, samples, &before))?;
             protected_exchange(peer,0x41,0x62,&mut exchanges)?;
             let resumed = wait(capture,&mut samples,|e|e.bonds_resumed == 1 && e.notifications_queued == 2)?;
             if resumed.bonds_stored != 1 || resumed.comparisons != 2 || resumed.accepted != 1 || resumed.declined != 1 || resumed.traffic.writes != 2 || resumed.traffic.value != 0x62 { return Err("bonded reconnect silently repaired, downgraded or changed epoch".into()); }
@@ -149,7 +154,7 @@ pub fn run(
             if capture.latest_boot_id() != Some(boot) || restarted.cold_releases != 1 || !restarted.old_hci_closed || restarted.bonds_stored != 1 {
                 return Err("cold restart did not retain the application bond and retire the old HCI epoch".into());
             }
-            peer.connect()?;
+            establish("cold-reconnect", &mut attempts, &mut samples, |_| peer.connect(), |samples| unseen(capture, samples, &restarted))?;
             protected_exchange(peer,0,0x73,&mut exchanges)?;
             let restored = wait(capture,&mut samples,|e|e.bonds_resumed == 2 && e.notifications_queued == 3)?;
             if restored.comparisons != 2 || restored.accepted != 1 || restored.declined != 1 || restored.bonds_stored != 1 {
@@ -173,7 +178,7 @@ pub fn run(
             join(bond,power)
         });
         context.results.observe("trouble-secure-gatt", &serde_json::json!({
-            "schema":6, "pairing":"numeric-comparison-only", "dut_store":"ram", "linux_bond":"temporary", "shutdown":shutdown,
+            "schema":7, "pairing":"numeric-comparison-only", "connection_attempts":attempts, "dut_store":"ram", "linux_bond":"temporary", "shutdown":shutdown,
             "irq_sampling":irq_sampling,
             "confirmation":"automated-hil-number-comparison", "human_presence_verified":false,
             "samples":samples,"peer_exchanges":exchanges,"passed":probe.is_ok() && cleanup.is_ok(),
@@ -270,12 +275,26 @@ fn protected_exchange(
     Ok(())
 }
 
-fn plaintext_denied(
-    radio: &att::Owner,
-    address: PeerAddress,
-    evidence: &mut Vec<serde_json::Value>,
-) -> Result<()> {
-    let peer = radio.connect(address)?;
+/// Whether the DUT never saw the connection an attempt opened after
+/// `before`: it counts no new connection or comparison, is not connected and
+/// advertises.
+fn unseen(
+    capture: &Observation<'_>,
+    samples: &mut Vec<Evidence>,
+    before: &Evidence,
+) -> Result<bool> {
+    let e = sample(capture, samples)?;
+    Ok(never_reached(&e, before))
+}
+
+fn never_reached(e: &Evidence, before: &Evidence) -> bool {
+    e.traffic.connections == before.traffic.connections
+        && e.comparisons == before.comparisons
+        && !e.traffic.connected
+        && e.traffic.advertising
+}
+
+fn plaintext_denied(peer: att::Att, evidence: &mut Vec<serde_json::Value>) -> Result<()> {
     let mut exchange = |request: &[u8]| -> Result<Vec<u8>> {
         peer.send(request)?;
         let response = peer.receive()?;
@@ -349,6 +368,25 @@ mod tests {
             &[1, 18, 17, 0, 5],
         ] {
             assert!(require_denied(&[10, 17, 0], response).is_err());
+        }
+    }
+    #[test]
+    fn only_a_connection_the_dut_never_saw_is_unreached() {
+        let mut before = Evidence::default();
+        before.traffic.connections = 1;
+        before.traffic.advertising = true;
+        before.comparisons = 1;
+        assert!(never_reached(&before, &before));
+        let mut counted = before;
+        counted.traffic.connections = 2;
+        let mut connected = before;
+        connected.traffic.connected = true;
+        let mut silent = before;
+        silent.traffic.advertising = false;
+        let mut compared = before;
+        compared.comparisons = 2;
+        for seen in [counted, connected, silent, compared] {
+            assert!(!never_reached(&seen, &before));
         }
     }
     #[test]

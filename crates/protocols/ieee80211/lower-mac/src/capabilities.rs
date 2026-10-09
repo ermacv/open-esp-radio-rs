@@ -213,7 +213,9 @@ impl HardwareServices {
 /// extension trait ([`LowerMacAmpdu`](crate::LowerMacAmpdu),
 /// [`LowerMacBeaconTiming`](crate::LowerMacBeaconTiming),
 /// [`LowerMacMonitor`](crate::LowerMacMonitor),
-/// [`LowerMacCancelPublished`](crate::LowerMacCancelPublished)), whose own
+/// [`LowerMacCancelPublished`](crate::LowerMacCancelPublished),
+/// [`LowerMacAirReservation`](crate::LowerMacAirReservation),
+/// [`LowerMacLiveRetune`](crate::LowerMacLiveRetune)), whose own
 /// capabilities state that operation's limits.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct LowerMacCapabilities {

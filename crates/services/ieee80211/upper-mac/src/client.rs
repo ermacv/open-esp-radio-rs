@@ -26,8 +26,8 @@ use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_ieee80211_lower_mac::{
     Channel, CoexPriority, EventsLost, FailureClass, Ieee80211LowerMacPort, KeySelector,
     LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAirReservation, LowerMacAmpdu,
-    LowerMacBeaconTiming, LowerMacEvent, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter,
-    RxBuffer, RxMeta, SettingError, TbttEvent, TxCompletion, TxPower, VifConfig, VifId, VifRole,
+    LowerMacBeaconTiming, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter, RxBuffer, RxMeta,
+    SettingError, TbttEvent, TxCompletion, TxPower, VifConfig, VifId, VifRole,
 };
 use oer_ieee80211_mac::{data::EthernetFrameParts, qos::WmmAccessCategory};
 use oer_ieee80211_softmac::BackoffEntropy;
@@ -174,8 +174,6 @@ pub enum PortInput<B> {
 /// What a client dropped at the port boundary.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PortClientCounters {
-    /// Received MPDUs longer than the backend's receive buffer.
-    pub oversized_frames: u32,
     /// Reports of lost port events.
     pub events_lost: u32,
 }
@@ -436,23 +434,14 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         PortInput::EventsLost
     }
 
-    /// A received frame in the port's buffer; `None` for any other event,
-    /// counting a frame the backend could not hold.
+    /// A received frame in the port's buffer; `None` for any other event.
     fn frame(
         &mut self,
         event: <X::Port as Ieee80211LowerMacPort>::Event,
     ) -> Option<PortInput<PortRxBuffer<X>>> {
         match <X::Port as Ieee80211LowerMacPort>::into_received(event) {
             Ok((buffer, meta)) => Some(PortInput::Frame(PortFrame::new(buffer, meta))),
-            Err(event) => {
-                if let LowerMacEvent::RxTooLong { .. } =
-                    <X::Port as Ieee80211LowerMacPort>::view(&event)
-                {
-                    self.counters.oversized_frames =
-                        self.counters.oversized_frames.saturating_add(1);
-                }
-                None
-            }
+            Err(_) => None,
         }
     }
 

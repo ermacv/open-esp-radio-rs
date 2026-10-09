@@ -19,7 +19,7 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 
 ## Port
 
-`Ieee80211LowerMacPort` (`crates/protocols/ieee80211/lower-mac/src/port.rs:111`); optional operations are extension traits `LowerMacAmpdu`, `LowerMacBeaconTiming`, `LowerMacMonitor`, `LowerMacCancelPublished` (`extensions.rs`). The S31 backend is `Esp32s31LowerMac` (`crates/runtime/esp32s31/ieee80211/src/lower_mac.rs`). The S31 station roles use the portable `oer-ieee80211-sta-service` for scan, join and lifecycle.
+`Ieee80211LowerMacPort` (`crates/protocols/ieee80211/lower-mac/src/port.rs`); optional operations are extension traits `LowerMacAmpdu`, `LowerMacBeaconTiming`, `LowerMacMonitor`, `LowerMacCancelPublished`, `LowerMacAirReservation`, `LowerMacLiveRetune` (`extensions.rs`). The S31 backend is `Esp32s31LowerMac` (`crates/runtime/esp32s31/ieee80211/src/lower_mac.rs`). The S31 station roles use the portable `oer-ieee80211-sta-service` for scan, join and lifecycle.
 
 ## Shared contracts (change only with their owners)
 
@@ -29,7 +29,7 @@ Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-depen
 
 - Time follows [clocks, stamps and alarms](../../../docs/architecture.md#clocks-stamps-and-alarms).
 
-- Every port method but `next_event` is synchronous (`port.rs:74`).
+- Every port method but `next_event` is synchronous (`port.rs`, the trait's documentation).
 - `RxEvidence` keeps provenance: never derive a value and report it `HardwareObserved` (`lower-mac/src/rx.rs:13`). `RxMeta.channel` is configuration, not a per-frame observation (`rx.rs:72`).
 - The S31 port's radio clock is the MAC local time, `Affine` to the monotonic clock (`MAC_CLOCK_INFO`, `runtime/esp32s31/ieee80211/src/mac_clock.rs`): convert a port instant or stamp with `clock_sample()`, never by reading its microseconds as monotonic time.
 - A received frame carries `RxTimes { handoff, stamp }` (`hardware/esp32s31/driver/ieee80211/mac/src/rx/pool.rs`): the monotonic executor handoff and the raw MAC local-time receive stamp. The RX path never reads a clock; a consumer that needs the reception time converts the stamp: the station's beacon TSF follow in MAC time (`connected_control.rs`, `mac_local_time() - stamp`), the scan through a `MacClockSnapshot` (`runtime/esp32s31/ieee80211/src/mac_clock.rs`). HE Trigger/NDPA deadlines count from the handoff.

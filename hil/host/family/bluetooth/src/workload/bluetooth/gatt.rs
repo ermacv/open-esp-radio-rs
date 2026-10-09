@@ -1,5 +1,5 @@
 //! Independent Linux ATT peer for the shared plaintext Trouble application.
-use super::establish::{Attempt, establish};
+use super::establish::{Attempt, CONFIRMATION, establish};
 use crate::{Result, fixture::bluetooth::att, fixture::bluetooth::model::PeerAddress};
 use oer_hil_link::SerialCapture;
 use oer_hil_protocol::bluetooth::BluetoothGattEvidence as Evidence;
@@ -59,7 +59,16 @@ fn wait(
     samples: &mut Vec<Evidence>,
     predicate: impl Fn(&Evidence) -> bool,
 ) -> Result<Evidence> {
-    let deadline = Instant::now() + Duration::from_secs(8);
+    wait_within(capture, samples, Duration::from_secs(8), predicate)
+}
+
+fn wait_within(
+    capture: &SerialCapture,
+    samples: &mut Vec<Evidence>,
+    within: Duration,
+    predicate: impl Fn(&Evidence) -> bool,
+) -> Result<Evidence> {
+    let deadline = Instant::now() + within;
     loop {
         let evidence = crate::link::gatt(capture)?;
         samples.push(evidence);
@@ -152,9 +161,18 @@ fn exercise(
         let connection = index as u32 + 1;
         let peer = establish(
             "connect",
+            connection,
             attempts,
             samples,
-            |_| owner.connect(PeerAddress(address)),
+            |samples| {
+                let peer = owner.connect(PeerAddress(address))?;
+                // Dropping an unconfirmed peer closes the host's side.
+                wait_within(capture, samples, CONFIRMATION, |e| {
+                    e.connected && e.connections == connection
+                })
+                .map_err(|_| format!("DUT did not confirm connection {connection}"))?;
+                Ok(peer)
+            },
             |samples| {
                 let evidence = crate::link::gatt(capture)?;
                 samples.push(evidence);

@@ -6,13 +6,21 @@
 //! (0x3E), while the DUT never saw it. A central retries such a connection;
 //! the fixture does the same, but only when the DUT's own observation proves
 //! the connection never reached it, and it records every attempt so the loss
-//! stays visible as a measurement.
+//! stays visible as a measurement. The host's connect alone proves nothing:
+//! the kernel may report the socket connected before the first procedure, so
+//! an attempt succeeds only once the DUT confirms the connection
+//! ([`CONFIRMATION`]).
 
 use crate::Result;
 use oer_hil_run_bundle_format::run::{Better, Measurement, MeasurementUnit};
 
 /// Attempts per connection, the first included.
 pub(super) const ATTEMPTS: u32 = 3;
+
+/// How long the DUT may take to report a connection the host opened. A
+/// connection the DUT never received ends on the host within about six
+/// connection intervals; the DUT reports a received one at once.
+pub(super) const CONFIRMATION: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// The outcome of one connection attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
@@ -29,6 +37,9 @@ pub(super) enum Outcome {
 pub(super) struct Attempt {
     /// What the connection was for.
     pub phase: &'static str,
+    /// The DUT connection number the attempt was for, counted from 1 in
+    /// the DUT's application epoch.
+    pub dut_connection: u32,
     /// 1-based.
     pub attempt: u32,
     pub outcome: Outcome,
@@ -42,6 +53,7 @@ pub(super) struct Attempt {
 /// Both closures share `state`, such as the scenario's sample log.
 pub(super) fn establish<S, T>(
     phase: &'static str,
+    dut_connection: u32,
     attempts: &mut Vec<Attempt>,
     state: &mut S,
     mut connect: impl FnMut(&mut S) -> Result<T>,
@@ -52,6 +64,7 @@ pub(super) fn establish<S, T>(
             Ok(value) => {
                 attempts.push(Attempt {
                     phase,
+                    dut_connection,
                     attempt,
                     outcome: Outcome::Established,
                     host_error: None,
@@ -64,6 +77,7 @@ pub(super) fn establish<S, T>(
                 }
                 attempts.push(Attempt {
                     phase,
+                    dut_connection,
                     attempt,
                     outcome: Outcome::NotEstablished,
                     host_error: Some(error.to_string()),
@@ -103,6 +117,7 @@ mod tests {
         let mut tries = 0;
         let value = establish(
             "connect",
+            1,
             &mut attempts,
             &mut (),
             |_| {
@@ -137,6 +152,7 @@ mod tests {
         let mut tries = 0;
         let error = establish(
             "connect",
+            1,
             &mut attempts,
             &mut (),
             |_| -> Result<()> {
@@ -157,6 +173,7 @@ mod tests {
         let mut tries = 0;
         let error = establish(
             "pairing",
+            1,
             &mut attempts,
             &mut (),
             |_| -> Result<()> {
@@ -175,6 +192,7 @@ mod tests {
     fn measurements_count_every_attempt_and_the_lost_ones() {
         let attempt = |outcome| Attempt {
             phase: "connect",
+            dut_connection: 1,
             attempt: 1,
             outcome,
             host_error: None,
@@ -198,6 +216,7 @@ mod tests {
         let mut attempts = Vec::new();
         let error = establish(
             "connect",
+            1,
             &mut attempts,
             &mut (),
             |_| -> Result<()> { Err("ATT socket disconnected".into()) },

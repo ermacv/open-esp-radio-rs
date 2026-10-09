@@ -7,6 +7,10 @@
 //! there does not block a push; it is printed on every `check changed` and
 //! `push` until a later run of the same workflow passes, so whoever pushed the
 //! failing commit, or anyone who sees it first, fixes it before other work.
+//!
+//! An open pull request whose Claude review reported blocking findings
+//! (`claude-runtime-review` failed) never merges by itself; it is listed the
+//! same way until a re-review after the fixing push passes.
 
 use std::{collections::BTreeSet, path::Path};
 
@@ -218,8 +222,73 @@ fn report_with(ctx: &Checkout, gh: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
+/// The status the Claude review workflow sets on a pull request's head.
+const REVIEW_STATUS: &str = "claude-runtime-review";
+
+/// An open pull request as `gh pr list --json` reports it.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PullRequest {
+    number: u64,
+    url: String,
+    head_ref_name: String,
+    status_check_rollup: Vec<serde_json::Value>,
+}
+
+/// One line per open pull request whose Claude review failed or gave no
+/// verdict, naming its branch: either holds its merge.
+fn review_blocked(pulls: &[PullRequest]) -> Vec<String> {
+    pulls
+        .iter()
+        .filter_map(|pull| {
+            let state = pull
+                .status_check_rollup
+                .iter()
+                .find(|check| check["context"] == REVIEW_STATUS)?["state"]
+                .as_str()?;
+            let why = match state {
+                "FAILURE" => "is blocked by Claude review findings; fix them before other work",
+                "ERROR" => "has no Claude review verdict; comment `@claude review` on it",
+                _ => return None,
+            };
+            Some(format!(
+                "PR #{} ({}) {why}: {}",
+                pull.number, pull.head_ref_name, pull.url
+            ))
+        })
+        .collect()
+}
+
+/// [`review_blocked`] of the repository's open pull requests.
+fn blocked_pulls(ctx: &Checkout) -> Result<Vec<String>, String> {
+    let output = process::capture(ctx.command("gh").args([
+        "pr",
+        "list",
+        "--state",
+        "open",
+        "--limit",
+        "100",
+        "--json",
+        "number,url,headRefName,statusCheckRollup",
+    ]))
+    .map_err(|error| {
+        error
+            .to_string()
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("`gh pr list` failed")
+            .trim()
+            .to_owned()
+    })?;
+    let pulls = serde_json::from_slice::<Vec<PullRequest>>(&output.stdout)
+        .map_err(|error| format!("`gh pr list` printed no pull request list: {error}"))?;
+    Ok(review_blocked(&pulls))
+}
+
 /// Prints [`report`]'s lines, or one warning line when CI's state is
-/// unknown, prefixed with `label`.
+/// unknown, then the pull requests a Claude review blocks, prefixed with
+/// `label`.
 pub fn print(ctx: &Checkout, label: &str) {
     match report(ctx) {
         Ok(failures) if failures.is_empty() => println!("{label}: CI on main is green"),
@@ -229,6 +298,16 @@ pub fn print(ctx: &Checkout, label: &str) {
             }
         }
         Err(reason) => println!("{label}: warning: the state of CI on main is unknown: {reason}"),
+    }
+    match blocked_pulls(ctx) {
+        Ok(blocked) => {
+            for line in blocked {
+                println!("{label}: {line}");
+            }
+        }
+        Err(reason) => {
+            println!("{label}: warning: blocked pull requests are unknown: {reason}");
+        }
     }
 }
 
@@ -382,6 +461,31 @@ esac
         let failures = report_with(&ctx, gh.to_str().unwrap()).unwrap();
         assert_eq!(failures.len(), 1);
         assert!(failures[0].contains("CI failed at bad (host)"));
+    }
+
+    #[test]
+    fn a_pull_request_with_a_failed_or_missing_review_verdict_is_listed() {
+        let pulls: Vec<PullRequest> = serde_json::from_str(
+            r#"[
+            {"number":1,"url":"u1","headRefName":"fix/a","statusCheckRollup":[
+                {"__typename":"CheckRun","name":"ci-ok","conclusion":"SUCCESS"},
+                {"__typename":"StatusContext","context":"claude-runtime-review","state":"FAILURE"}]},
+            {"number":2,"url":"u2","headRefName":"fix/b","statusCheckRollup":[
+                {"__typename":"StatusContext","context":"claude-runtime-review","state":"SUCCESS"}]},
+            {"number":3,"url":"u3","headRefName":"fix/c","statusCheckRollup":[
+                {"__typename":"StatusContext","context":"claude-runtime-review","state":"ERROR"}]},
+            {"number":4,"url":"u4","headRefName":"fix/d","statusCheckRollup":[
+                {"__typename":"CheckRun","name":"claude-runtime-review","conclusion":"FAILURE"}]}
+        ]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            review_blocked(&pulls),
+            [
+                "PR #1 (fix/a) is blocked by Claude review findings; fix them before other work: u1",
+                "PR #3 (fix/c) has no Claude review verdict; comment `@claude review` on it: u3",
+            ]
+        );
     }
 
     #[test]

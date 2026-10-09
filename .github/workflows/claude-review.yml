@@ -6,7 +6,8 @@ name: Claude review
 # main, which the Anthropic federation rule requires. Through the Claude Agent
 # SDK (.github/scripts/claude_review.py), Claude reads the PR head in pr/ with
 # read-only tools and a read-only token, following REVIEW.md; a separate job
-# publishes the review and the required status.
+# publishes the review, files an issue for each pre-existing finding and sets
+# the required status.
 on:
   workflow_run:
     workflows: [CI]
@@ -124,9 +125,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
+      contents: read
+      issues: write
       pull-requests: write
       statuses: write
     steps:
+      # Trusted main: the issue-label policy files the pre-existing findings.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
       - name: Post the review and set claude-runtime-review
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,7 +176,18 @@ jobs:
           # GitHub rejects the whole review when a finding's line is outside
           # the diff; then the body carries every finding in full.
           review "$(body false)" "$comments" || review "$(body true)" '[]'
-          blocking=$(jq '[.findings[] | select(.severity == "important")] | length' <<<"$RESULT")
+          # Pre-existing findings never block; each is filed as an issue
+          # once, and the PR names the issues.
+          if ! recorded=$(PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/review_findings.py); then
+            status error "Pre-existing findings were not recorded as issues; rerun the review"
+            exit 1
+          fi
+          if [ -n "$recorded" ]; then
+            jq -n --arg body "$(printf 'Pre-existing findings, filed as issues:\n\n%s' "$recorded")" '{body: $body}' |
+              gh api "repos/$GH_REPO/issues/$PR/comments" --input - >/dev/null
+          fi
+          # Important and nit findings block until a re-review no longer reports them.
+          blocking=$(jq '[.findings[] | select(.severity == "important" or .severity == "nit")] | length' <<<"$RESULT")
           if [ "$blocking" = 0 ]; then
             status success "No blocking findings"
           else

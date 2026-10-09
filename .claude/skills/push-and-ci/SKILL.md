@@ -53,6 +53,13 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    gate print a red `main`.
    Fixing it comes before other work: `gh run view <id> --log-failed`,
    reproduce the job's command locally, fix it on a branch.
+9. **Review findings.** The Claude review blocks a PR on 🔴 important and 🟡
+   nit findings and files 🟣 pre-existing ones as issues (`REVIEW.md`). The
+   session start and the gate list every open PR a review blocks, with its
+   branch; fixing it comes before other work too: `gh pr view <n> --comments`,
+   fix on that branch (its worktree, or a new one from `origin/<branch>`) and
+   `cargo xtask push` again. A PR without a review verdict gets a
+   `@claude review` comment.
 
 ## Other workspaces and dependencies
 

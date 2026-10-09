@@ -12,7 +12,9 @@ An owner that dies without that cleanup (SIGKILL, an abort) does not leave its
 children running: the first owned spawn forks a small guardian process that
 tracks every owned process group through a close-on-exec pipe, and when the
 pipe closes with the owner it terminates the groups still registered (SIGTERM,
-then SIGKILL after a second). `run_with_timeout` bounds a command's whole
+then SIGKILL after a second). No owned group runs unguarded: a spawn fails,
+stopping its child, when the guardian did not start, no longer reads, or
+already tracks `owned::MAX_LIVE_CHILDREN` (256) live groups. `run_with_timeout` bounds a command's whole
 lifetime, as the push gate does for test runs.
 
 `CommandExt` provides bounded status/output probes and owned background children.

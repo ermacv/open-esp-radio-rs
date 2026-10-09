@@ -201,42 +201,38 @@ fn handle(mut stream: TcpStream, store: &RunStore) -> Result<()> {
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
         body.len()
     )?;
-    stream.write_all(body.as_bytes())?;
+    stream.write_all(&body)?;
     Ok(())
 }
 
-fn respond(path: &str, store: &RunStore) -> (&'static str, &'static str, String) {
+fn respond(path: &str, store: &RunStore) -> (&'static str, &'static str, Vec<u8>) {
     match path.split('?').next().unwrap_or(path) {
-        "/" => ("200 OK", "text/html; charset=utf-8", PAGE.to_owned()),
-        path if path.starts_with("/runs/") => match run_report(store, &path["/runs/".len()..]) {
-            Some(report) => ("200 OK", "text/html; charset=utf-8", report),
+        "/" => ("200 OK", "text/html; charset=utf-8", PAGE.into()),
+        path if path.starts_with("/runs/") => match run_file(store, &path["/runs/".len()..]) {
+            Some((content_type, bytes)) => ("200 OK", content_type, bytes),
             None => (
                 "404 Not Found",
                 "text/plain",
-                String::from("no such run report"),
+                b"no such file in a run of the store".to_vec(),
             ),
         },
         path if path.starts_with("/jobs/") => match job_log(&path["/jobs/".len()..]) {
-            Some(log) => ("200 OK", "text/plain; charset=utf-8", log),
-            None => (
-                "404 Not Found",
-                "text/plain",
-                String::from("no such job log"),
-            ),
+            Some(log) => ("200 OK", "text/plain; charset=utf-8", log.into_bytes()),
+            None => ("404 Not Found", "text/plain", b"no such job log".to_vec()),
         },
         "/status.json" => match snapshot(store) {
             Ok(value) => (
                 "200 OK",
                 "application/json",
-                serde_json::to_string(&value).unwrap_or_default(),
+                serde_json::to_vec(&value).unwrap_or_default(),
             ),
             Err(error) => (
                 "500 Internal Server Error",
                 "application/json",
-                json!({"error": error.to_string()}).to_string(),
+                json!({"error": error.to_string()}).to_string().into_bytes(),
             ),
         },
-        _ => ("404 Not Found", "text/plain", String::from("not found")),
+        _ => ("404 Not Found", "text/plain", b"not found".to_vec()),
     }
 }
 
@@ -249,12 +245,44 @@ fn plain_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 
-/// `/runs/<id>/report.html`: the run's HTML report from the store.
-fn run_report(store: &RunStore, rest: &str) -> Option<String> {
-    let id = rest.strip_suffix("/report.html")?;
-    plain_id(id)
-        .then(|| std::fs::read_to_string(store.run(id).join("report.html")).ok())
-        .flatten()
+/// `/runs/<id>/<path>`: a file of a run of the store, such as its
+/// `report.html` and the artifacts the report links relative to it, with
+/// its content type. Every path component is a plain name, and the file,
+/// with symbolic links resolved, lies inside the run's directory.
+fn run_file(store: &RunStore, rest: &str) -> Option<(&'static str, Vec<u8>)> {
+    let (id, path) = rest.split_once('/')?;
+    let plain = |name: &str| {
+        !name.is_empty()
+            && name != "."
+            && name != ".."
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    };
+    if !plain_id(id) || !path.split('/').all(plain) {
+        return None;
+    }
+    let directory = store.run(id).canonicalize().ok()?;
+    let file = directory.join(path).canonicalize().ok()?;
+    if !file.starts_with(&directory) || !file.is_file() {
+        return None;
+    }
+    Some((content_type(&file), std::fs::read(file).ok()?))
+}
+
+/// The content type a browser shows a run's file by: text inline, anything
+/// unknown as bytes to save.
+fn content_type(file: &Path) -> &'static str {
+    match file.extension().and_then(|extension| extension.to_str()) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("json") => "application/json",
+        Some("xml") => "application/xml",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("csv") => "text/csv; charset=utf-8",
+        Some("jsonl" | "log" | "txt" | "toml" | "md") => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    }
 }
 
 /// Bytes of a job log the page shows: its end, where a failure is.
@@ -352,23 +380,45 @@ mod tests {
     }
 
     #[test]
-    fn a_report_link_reaches_only_a_report_inside_the_store() {
+    fn a_run_link_reaches_only_files_inside_its_run() {
         let directory = tempfile::tempdir().unwrap();
         let store = RunStore::at(directory.path());
-        run(&store, "1790000000000-1f2e");
-        std::fs::write(
-            store.run("1790000000000-1f2e").join("report.html"),
-            "<p>report</p>",
+        let id = "1790000000000-1f2e";
+        run(&store, id);
+        std::fs::write(store.run(id).join("report.html"), "<p>report</p>").unwrap();
+        let artifacts = store.run(id).join("scenarios/a/repetition-001");
+        std::fs::create_dir_all(&artifacts).unwrap();
+        std::fs::write(artifacts.join("uart.log"), "boot").unwrap();
+        std::fs::write(store.runs().join("report.html"), "outside").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            store.runs().join("report.html"),
+            store.run(id).join("escape.html"),
         )
         .unwrap();
-        std::fs::write(store.runs().join("report.html"), "outside").unwrap();
         assert_eq!(
-            run_report(&store, "1790000000000-1f2e/report.html").as_deref(),
-            Some("<p>report</p>")
+            run_file(&store, &format!("{id}/report.html")),
+            Some(("text/html; charset=utf-8", b"<p>report</p>".to_vec()))
         );
-        assert_eq!(run_report(&store, "../report.html"), None);
-        assert_eq!(run_report(&store, "1790000000000-1f2e/manifest.json"), None);
+        // The artifacts a report links relative to itself.
+        assert_eq!(
+            run_file(&store, &format!("{id}/scenarios/a/repetition-001/uart.log")),
+            Some(("text/plain; charset=utf-8", b"boot".to_vec()))
+        );
+        assert_eq!(run_file(&store, "../report.html"), None);
+        assert_eq!(run_file(&store, &format!("{id}/../report.html")), None);
+        assert_eq!(run_file(&store, &format!("{id}/scenarios")), None);
+        assert_eq!(run_file(&store, &format!("{id}/escape.html")), None);
+        assert_eq!(run_file(&store, &format!("{id}/missing.json")), None);
         assert_eq!(job_log("../../etc/passwd.log"), None);
+        let (status, content_type, _) = respond(
+            &format!("/runs/{id}/scenarios/a/repetition-001/uart.log"),
+            &store,
+        );
+        assert_eq!(
+            (status, content_type),
+            ("200 OK", "text/plain; charset=utf-8")
+        );
     }
 
     #[test]
@@ -475,7 +525,7 @@ mod tests {
         let (status, content_type, body) = respond("/", &store);
         assert_eq!(status, "200 OK");
         assert!(content_type.starts_with("text/html"));
-        assert!(body.contains("status.json"));
+        assert!(String::from_utf8(body).unwrap().contains("status.json"));
         assert_eq!(respond("/missing", &store).0, "404 Not Found");
     }
 }

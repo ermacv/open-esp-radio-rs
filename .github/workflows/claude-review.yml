@@ -3,9 +3,10 @@ name: Claude review
 # Reviews a ready same-repository PR into main after each successful CI run,
 # when it opens or becomes ready with CI already green, and on an
 # "@claude review" PR comment. Every event runs this file from
-# main, which the Anthropic federation rule requires. Claude reads the PR head
-# in pr/ with read-only tools and a read-only token, following REVIEW.md;
-# a separate job publishes the review and the required status.
+# main, which the Anthropic federation rule requires. Through the Claude Agent
+# SDK (.github/scripts/claude_review.py), Claude reads the PR head in pr/ with
+# read-only tools and a read-only token, following REVIEW.md; a separate job
+# publishes the review and the required status.
 on:
   workflow_run:
     workflows: [CI]
@@ -84,7 +85,7 @@ jobs:
       issues: read
       id-token: write
     outputs:
-      result: ${{ steps.claude.outputs.structured_output }}
+      result: ${{ steps.claude.outputs.result }}
     steps:
       # Trusted main at the workspace root; the PR head is only read, in pr/.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -96,35 +97,26 @@ jobs:
           path: pr
           fetch-depth: 0
           persist-credentials: false
-      - id: claude
-        uses: anthropics/claude-code-action@2dca132ff0e0c4094ce6048b422c6915a071210b # v1.0.247
-        with:
-          github_token: ${{ github.token }}
-          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
-          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
-          anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
-          anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
-          prompt: >-
-            Review pull request #${{ needs.target.outputs.pr }} of ${{ github.repository }}
-            at head ${{ needs.target.outputs.head }}, checked out in pr/,
-            following REVIEW.md.
-          claude_args: >-
-            --model ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-opus-5-5' }}
-            --effort high
-            --max-budget-usd 5
-            --append-system-prompt-file REVIEW.md
-            --tools "Read,Grep,Glob,Agent,Bash"
-            --allowedTools "Read,Grep,Glob,Agent,Bash(git -C pr diff *),Bash(git -C pr log *),Bash(git -C pr show *),Bash(gh pr view *),Bash(gh pr diff *),Bash(gh issue view *)"
-            --json-schema '{"type":"object","additionalProperties":false,"required":["summary","findings"],"properties":{"summary":{"type":"string"},"findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["severity","path","line","title","body"],"properties":{"severity":{"enum":["important","nit","pre-existing"]},"path":{"type":"string"},"line":{"type":"integer","minimum":1},"title":{"type":"string"},"body":{"type":"string"}}}}}}'
-      # The action hides Claude Code's output; on failure show only its
-      # final result message, which carries the error (API, auth, budget).
-      - name: Show why Claude Code failed
-        if: failure() && steps.claude.outputs.execution_file
-        env:
-          EXECUTION: ${{ steps.claude.outputs.execution_file }}
+      # The Agent SDK, not claude-code-action: the plan's monthly API
+      # credits cover the SDK but not Claude Code GitHub Actions.
+      - name: Install the Claude Agent SDK
         run: |
-          jq -r '.[] | select(.type == "result")
-            | "\(.api_error_status // "no API status"): \(.result // .errors // "no message")"' "$EXECUTION"
+          python3 -m venv "$RUNNER_TEMP/review"
+          "$RUNNER_TEMP/review/bin/pip" install --quiet --only-binary=:all: claude-agent-sdk==0.2.160
+      - id: claude
+        name: Review with read-only tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REVIEW_PR: ${{ needs.target.outputs.pr }}
+          REVIEW_HEAD: ${{ needs.target.outputs.head }}
+          CLAUDE_REVIEW_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-opus-5-5' }}
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: '"$RUNNER_TEMP/review/bin/python" .github/scripts/claude_review.py'
 
   publish:
     needs: [target, review]

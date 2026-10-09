@@ -2,23 +2,28 @@
 
 ## Claude review
 
-The [review workflow](.github/workflows/claude-review.yml) runs
-[Claude Code GitHub Actions](https://code.claude.com/docs/en/github-actions)
-following the repository's [review instructions](REVIEW.md). It reviews each
+The [review workflow](.github/workflows/claude-review.yml) runs Claude Code
+through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview)
+([script](.github/scripts/claude_review.py)) following the repository's
+[review instructions](REVIEW.md). The Agent SDK, unlike Claude Code GitHub
+Actions, is covered by the
+[monthly API credits of Max and Team plans](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers);
+an uncovered request fails with `Credit balance too low`. It reviews each
 open, ready, same-repository pull request into `main` after every successful
 `CI` push run, when the PR opens or is marked ready with CI already green, and when a
 collaborator comments `@claude review` on it. Draft PRs and PRs without green
 CI are not reviewed.
 
 Every event runs the workflow file from `main`. The trusted `main` checkout
-supplies `REVIEW.md` and the `CLAUDE.md` guidance; the PR head is checked out
-in `pr/` and only read. Claude gets read-only tools (file reads and search,
+supplies the script, `REVIEW.md` and the root `CLAUDE.md`, appended to the
+system prompt; repository hooks, permission rules and agents are not loaded.
+The PR head is checked out in `pr/` and only read. Claude gets read-only tools (file reads and search,
 `git diff/log/show` in `pr/`, `gh pr view/diff`, `gh issue view`, subagents)
 and a read-only GitHub token, and returns a structured report. A separate job
 with write access posts it as a PR review with inline comments, and sets the
 commit status `claude-runtime-review`: success without 🔴 findings, failure
-with them, error when the review did not complete. A failed review's run log shows
-Claude Code's final error message; its other output stays hidden. Require this status
+with them, error when the review did not complete. A failed review's run log
+names the result subtype, API status and error message. Require this status
 alongside `ci-ok` in `main` branch protection so auto-merge cannot overtake
 the reviewer. A newer review of the same PR cancels a running one. Re-reviews
 read the previous Claude review and focus on the new commits.
@@ -30,7 +35,10 @@ your API credits, open **Settings → Workload identity → Connect workload →
 GitHub Actions**. Create a service account and federation rule for this
 reviewer, scoped to `workspace:developer` in the workspace that should pay for
 inference. Set a workspace spend limit in Console to control monthly spend;
-each review also stops at an estimated $5 (`--max-budget-usd`).
+each review also stops at an estimated $5 (`max_budget_usd`). The script
+refreshes the GitHub OIDC token file every four minutes, since the CLI re-reads
+it whenever its access token expires. The fast host `claude-review` check runs
+the script's offline regressions.
 
 Configure the rule's match conditions as follows (the issuer is
 `https://token.actions.githubusercontent.com` with discovery-mode JWKS):

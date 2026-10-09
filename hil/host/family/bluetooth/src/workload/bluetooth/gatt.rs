@@ -54,35 +54,52 @@ fn join(first: Result<()>, cleanup: Result<()>) -> Result<()> {
     }
 }
 
+/// One DUT observation, logged; insufficient stack headroom is an error.
+fn sample(capture: &SerialCapture, samples: &mut Vec<Evidence>) -> Result<Evidence> {
+    let evidence = crate::link::gatt(capture)?;
+    samples.push(evidence);
+    if !evidence
+        .cpu0_stack
+        .is_some_and(|stack| stack.has_required_headroom())
+    {
+        return Err("missing or insufficient GATT task-stack headroom".into());
+    }
+    Ok(evidence)
+}
+
 fn wait(
     capture: &SerialCapture,
     samples: &mut Vec<Evidence>,
     predicate: impl Fn(&Evidence) -> bool,
 ) -> Result<Evidence> {
-    wait_within(capture, samples, Duration::from_secs(8), predicate)
-}
-
-fn wait_within(
-    capture: &SerialCapture,
-    samples: &mut Vec<Evidence>,
-    within: Duration,
-    predicate: impl Fn(&Evidence) -> bool,
-) -> Result<Evidence> {
-    let deadline = Instant::now() + within;
+    let deadline = Instant::now() + Duration::from_secs(8);
     loop {
-        let evidence = crate::link::gatt(capture)?;
-        samples.push(evidence);
-        if !evidence
-            .cpu0_stack
-            .is_some_and(|stack| stack.has_required_headroom())
-        {
-            return Err("missing or insufficient GATT task-stack headroom".into());
-        }
+        let evidence = sample(capture, samples)?;
         if predicate(&evidence) {
             return Ok(evidence);
         }
         if Instant::now() >= deadline {
             return Err(format!("GATT transition deadline: {evidence:?}").into());
+        }
+        oer_process::sleep(Duration::from_millis(50))?;
+    }
+}
+
+/// Whether `predicate` holds within `within`; a failed observation is the
+/// error, never a `false`.
+fn holds_within(
+    capture: &SerialCapture,
+    samples: &mut Vec<Evidence>,
+    within: Duration,
+    predicate: impl Fn(&Evidence) -> bool,
+) -> Result<bool> {
+    let deadline = Instant::now() + within;
+    loop {
+        if predicate(&sample(capture, samples)?) {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
         }
         oer_process::sleep(Duration::from_millis(50))?;
     }
@@ -164,20 +181,14 @@ fn exercise(
             connection,
             attempts,
             samples,
-            |samples| {
-                let peer = owner.connect(PeerAddress(address))?;
-                // Dropping an unconfirmed peer closes the host's side.
-                wait_within(capture, samples, CONFIRMATION, |e| {
-                    e.connected && e.connections == connection
-                })
-                .map_err(|_| format!("DUT did not confirm connection {connection}"))?;
-                Ok(peer)
+            |_| owner.connect(PeerAddress(address)),
+            |samples| holds_within(capture, samples, CONFIRMATION, |e| confirms(e, connection)),
+            // Dropping the socket closes the host's side.
+            |_, peer| {
+                drop(peer);
+                Ok(())
             },
-            |samples| {
-                let evidence = crate::link::gatt(capture)?;
-                samples.push(evidence);
-                Ok(unseen(&evidence, connection))
-            },
+            |samples| Ok(unseen(&sample(capture, samples)?, connection)),
         )?;
         let live = wait(capture, samples, |e| {
             e.connected && e.connections == connection
@@ -214,6 +225,11 @@ fn exercise(
         previous = written;
     }
     Ok(())
+}
+
+/// Whether the DUT reports connection `connection` open.
+fn confirms(e: &Evidence, connection: u32) -> bool {
+    e.connected && e.connections == connection
 }
 
 /// Whether the DUT never saw connection `connection`: it still counts the
@@ -319,6 +335,31 @@ mod tests {
             &Evidence {
                 advertising: false,
                 ..advertising
+            },
+            2
+        ));
+    }
+
+    #[test]
+    fn only_the_connection_itself_open_on_the_dut_confirms_it() {
+        let open = Evidence {
+            connected: true,
+            connections: 2,
+            disconnections: 1,
+            ..Evidence::default()
+        };
+        assert!(confirms(&open, 2));
+        assert!(!confirms(
+            &Evidence {
+                connections: 1,
+                ..open
+            },
+            2
+        ));
+        assert!(!confirms(
+            &Evidence {
+                connected: false,
+                ..open
             },
             2
         ));

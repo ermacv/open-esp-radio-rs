@@ -10,12 +10,13 @@
 //!
 //! An open pull request whose Claude review reported blocking findings
 //! (`claude-runtime-review` failed) never merges by itself; it is listed the
-//! same way until a re-review after the fixing push passes.
+//! same way until a re-review after the fixing push passes. Only the session
+//! on its branch fixes it; every other session only reports it.
 
 use std::{collections::BTreeSet, path::Path};
 
-use oer_process as process;
 use oer_process::Checkout;
+use oer_process::{self as process, git};
 use serde::Deserialize;
 
 /// A workflow run as `gh run list --json` reports it.
@@ -236,8 +237,10 @@ struct PullRequest {
 }
 
 /// One line per open pull request whose Claude review failed or gave no
-/// verdict, naming its branch: either holds its merge.
-fn review_blocked(pulls: &[PullRequest]) -> Vec<String> {
+/// verdict, naming its branch: either holds its merge. Only the session on
+/// that branch (`branch`, this checkout's) acts on it; any other session
+/// leaves the branch alone and only reports it.
+fn review_blocked(pulls: &[PullRequest], branch: Option<&str>) -> Vec<String> {
     pulls
         .iter()
         .filter_map(|pull| {
@@ -246,9 +249,22 @@ fn review_blocked(pulls: &[PullRequest]) -> Vec<String> {
                 .iter()
                 .find(|check| check["context"] == REVIEW_STATUS)?["state"]
                 .as_str()?;
-            let why = match state {
-                "FAILURE" => "is blocked by Claude review findings; fix them before other work",
-                "ERROR" => "has no Claude review verdict; comment `@claude review` on it",
+            let mine = branch == Some(pull.head_ref_name.as_str());
+            let why = match (state, mine) {
+                ("FAILURE", true) => {
+                    "of this branch is blocked by Claude review findings; fix them before other work"
+                }
+                ("ERROR", true) => {
+                    "of this branch has no Claude review verdict; comment `@claude review` on it"
+                }
+                ("FAILURE", false) => {
+                    "is blocked by Claude review findings; the session on its branch fixes them, \
+                     others never push to it and only tell the user"
+                }
+                ("ERROR", false) => {
+                    "has no Claude review verdict; the session on its branch asks for one, \
+                     others only tell the user"
+                }
                 _ => return None,
             };
             Some(format!(
@@ -283,7 +299,8 @@ fn blocked_pulls(ctx: &Checkout) -> Result<Vec<String>, String> {
     })?;
     let pulls = serde_json::from_slice::<Vec<PullRequest>>(&output.stdout)
         .map_err(|error| format!("`gh pr list` printed no pull request list: {error}"))?;
-    Ok(review_blocked(&pulls))
+    let branch = git::text(&ctx.root, ["rev-parse", "--abbrev-ref", "HEAD"]).ok();
+    Ok(review_blocked(&pulls, branch.as_deref()))
 }
 
 /// Prints [`report`]'s lines, or one warning line when CI's state is
@@ -480,11 +497,18 @@ esac
         )
         .unwrap();
         assert_eq!(
-            review_blocked(&pulls),
+            review_blocked(&pulls, Some("fix/a")),
             [
-                "PR #1 (fix/a) is blocked by Claude review findings; fix them before other work: u1",
-                "PR #3 (fix/c) has no Claude review verdict; comment `@claude review` on it: u3",
+                "PR #1 (fix/a) of this branch is blocked by Claude review findings; fix them before \
+                 other work: u1",
+                "PR #3 (fix/c) has no Claude review verdict; the session on its branch asks for one, \
+                 others only tell the user: u3",
             ]
+        );
+        // Another session's blocked pull request is only reported.
+        assert!(
+            review_blocked(&pulls, Some("main"))[0]
+                .contains("the session on its branch fixes them, others never push to it")
         );
     }
 

@@ -59,6 +59,6 @@ pub use hci::{
 pub use system::{
     BluetoothFailStop, BluetoothInterruptFault, BluetoothMemoryError, BluetoothParked,
     BluetoothRunnerFault, BluetoothStartError, BluetoothStartFailure, BluetoothStopError,
-    BluetoothStopFailure, BluetoothSystem, BluetoothSystemMemory, BluetoothSystemRuntime, EVENTS,
-    ITEMS, MODEM_TIMER_CAPACITY, start,
+    BluetoothStopFailure, BluetoothSystem, BluetoothSystemFault, BluetoothSystemMemory,
+    BluetoothSystemRuntime, EVENTS, ITEMS, MODEM_TIMER_CAPACITY, start,
 };

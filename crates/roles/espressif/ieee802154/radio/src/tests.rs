@@ -19,7 +19,7 @@ use oer_espressif_ieee802154_engine::{
     },
 };
 use oer_ieee802154::{
-    AppliedSecurity, AutoPendingMode, CSL_IE_TEMPLATE, CcaMode, Channel, CommandError,
+    AppliedSecurity, AutoPendingMode, CSL_IE_TEMPLATE, CancelError, CcaMode, Channel, CommandError,
     Configuration, EnergyScanRequest, FrameAddress, FramePending, FrameView, Ieee802154Instant,
     Interface, InterfaceSetting, MacKeys, PendingTableHalf, RadioCommand, RadioEvent, RadioState,
     RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode, TxRequest,
@@ -106,9 +106,7 @@ impl Ieee802154RadioSink for Sink {
             }
             RadioEvent::ClearChannelAssessmentFailed { .. } => Seen::ClearChannelAssessmentFailed,
             RadioEvent::ScheduledReceiveDone { id } => Seen::ScheduledReceiveDone(id),
-            RadioEvent::Fault { .. } | RadioEvent::Lifecycle(_) | RadioEvent::Poisoned(_) => {
-                Seen::Fault
-            }
+            RadioEvent::Fault { .. } | RadioEvent::Lifecycle(_) => Seen::Fault,
         });
     }
 }
@@ -1646,11 +1644,13 @@ fn the_time_ie_gets_the_network_time_at_the_sfd() {
     assert_eq!(image[1..4], [0x41, 0x88, 0x2a]);
 }
 
-fn cancel(bench: &mut Bench, target: u32) -> Result<(), CommandError> {
-    bench.submit(RadioCommand::Cancel {
-        id: RequestId::new(90),
-        target: RequestId::new(target),
-    })
+fn cancel(bench: &mut Bench, target: u32) -> Result<(), CancelError> {
+    bench.radio.cancel(
+        &mut bench.hw,
+        &bench.clock,
+        RequestId::new(target),
+        &mut bench.sink,
+    )
 }
 
 /// A cancelled transmission stops the MAC, ends aborted and the radio
@@ -1666,12 +1666,7 @@ fn a_cancelled_transmission_ends_aborted_and_receive_resumes() {
         .unwrap();
     bench.transmit(5, &DATA, 15, TxMode::Direct).unwrap();
     assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::TxStart));
-    assert_eq!(
-        cancel(&mut bench, 6),
-        Err(CommandError::NotRunning {
-            target: RequestId::new(6)
-        })
-    );
+    assert_eq!(cancel(&mut bench, 6), Err(CancelError::NotRunning));
     cancel(&mut bench, 5).unwrap();
     assert_eq!(
         bench.seen(),
@@ -1689,12 +1684,29 @@ fn a_cancelled_transmission_ends_aborted_and_receive_resumes() {
     );
     assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::RxStart));
     // The ended transmission is not cancelled twice.
+    assert_eq!(cancel(&mut bench, 5), Err(CancelError::NotRunning));
+}
+
+/// Disabling a radio with a transmission in flight ends the transmission
+/// with its terminal event first, then disables the radio.
+#[test]
+fn disabling_ends_the_transmission_in_flight_first() {
+    let mut bench = Bench::enabled();
+    bench.transmit(5, &DATA, 15, TxMode::Direct).unwrap();
+    bench
+        .radio
+        .disable(&mut bench.hw, &bench.clock, &mut bench.sink)
+        .unwrap();
     assert_eq!(
-        cancel(&mut bench, 5),
-        Err(CommandError::NotRunning {
-            target: RequestId::new(5)
-        })
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(5),
+            status: TxStatus::Aborted,
+            ack_pending: None,
+        }]
     );
+    assert_eq!(bench.radio.state(), RadioState::Disabled);
+    assert_eq!(bench.radio.engine().state(), Ieee802154State::Sleep);
 }
 
 /// A cancellation while the MAC waits for the acknowledgement ends the

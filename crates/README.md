@@ -21,7 +21,7 @@ Cargo package identities are independent of this directory hierarchy.
 | --- | --- |
 | `oer/` | Thin public facade; reexports protocols, chip backends and selected compositions |
 | `radio/` | `wifi/` owns public requests, affine role lifecycle and the executor-free service port |
-| `radio/port/` | The vocabulary every radio port shares (`oer-radio-port`): failure classes and `PortError`, `EventsLost` with its ordering rule, the terminal `Poisoned` event, lifecycle commands, events and refusals, correlation identities with a backend-reserved range, and the clock resolution and epoch relation |
+| `radio/port/` | The base trait and vocabulary every radio port shares (`oer-radio-port`): `RadioPort` (events, clock, cancellation, lifecycle), the nested `PortResult` with typed refusals and the `Poisoned` outer error carrying the backend's cause, `EventsLost` with its ordering rule and terminal-slot reservation, lifecycle commands, events and refusals, correlation identities with a backend-reserved range, and the clock resolution and epoch relation |
 | `radio/coex/` | Portable radio client identity (`RadioClient`) and coexistence priority vocabulary (`CoexPriority`) every protocol and backend shares |
 | `memory/` | Audited stable-memory proofs, affine buffer/queue handoff and statics in zeroed regions (`zeroed_static!` over `bytemuck::Zeroable`) |
 | `trace/` | Typed, reset-retained event trace and snapshot slots; drivers define the events, images place the storage |

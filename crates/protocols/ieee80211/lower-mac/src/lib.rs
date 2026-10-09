@@ -21,9 +21,9 @@
 //! refused as `Unsupported`; why a backend lacks a feature is recorded in
 //! its qualification catalog.
 //!
-//! Failure classes, event loss and poisoning, the lifecycle vocabulary,
-//! correlation identities and the clock relation are the shared ones of
-//! `oer-radio-port`, re-exported here.
+//! The base trait [`RadioPort`] (events, clock, cancellation and lifecycle),
+//! refusals and poisoning, event loss, correlation identities and the clock
+//! relation are the shared ones of `oer-radio-port`, re-exported here.
 //!
 //! The PHY and channel values the port carries ([`Channel`], [`PhyRate`])
 //! are the portable ones of `oer-ieee80211-mac`. This package only declares
@@ -72,8 +72,9 @@ pub use extensions::{
     TsfTimingError, TsfVifMismatch, VifTsf,
 };
 pub use oer_radio_port::{
-    CancelError, ClockInfo, Correlation, CorrelationIds, EpochError, EventsLost, FailureClass,
-    LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, PortError, Projected, RadioEpoch,
+    CancelError, ClockError, ClockInfo, Correlation, CorrelationIds, EpochError, EventsLost,
+    LifecycleCommand, LifecycleError, LifecycleEvent, NotInstalled, Poisoned, PortResult,
+    Projected, RadioEpoch, RadioPort,
 };
 pub use port::{Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};

@@ -76,7 +76,7 @@ use crate::planning::{
 };
 use oer_bluetooth_radio::TimingError;
 
-use crate::{advertising::ConnectionIndication, coexistence};
+use crate::{RadioWork, advertising::ConnectionIndication, coexistence};
 
 /// The connection's identifier at the backend.
 pub(crate) const CONNECTION: ConnectionId = ConnectionId::new(0);
@@ -435,7 +435,7 @@ impl Peripheral {
         now: LeInstant,
         timing: RadioTiming,
         room: bool,
-    ) -> Result<Option<RadioRequest<'_>>, PlanningError> {
+    ) -> Result<Option<RadioWork<'_>>, PlanningError> {
         if let Some((indication, _)) = &self.opening {
             let wire = indication.request.timing();
             let packet_end = indication
@@ -494,7 +494,7 @@ impl Peripheral {
             connection.open_sent = true;
             self.requested = Some(RequestKind::Open);
             let access_address = connection.request.access_address().value().to_le_bytes();
-            return Ok(Some(RadioRequest::OpenConnection(
+            return Ok(Some(RadioWork::Submit(RadioRequest::OpenConnection(
                 ConnectionConfiguration {
                     connection: CONNECTION,
                     access_address: AccessAddress(access_address),
@@ -503,19 +503,21 @@ impl Peripheral {
                     tx_power: TxPower::from_dbm(0),
                     phy: LePhy::Le1M,
                 },
-            )));
+            ))));
         }
         if let Some(closing) = &mut connection.closing {
             return match connection.event {
                 Some(event) if !closing.cancel_sent => {
                     closing.cancel_sent = true;
                     self.requested = Some(RequestKind::Cancel);
-                    Ok(Some(RadioRequest::Cancel(event.id)))
+                    Ok(Some(RadioWork::Cancel(event.id)))
                 }
                 Some(_) => Ok(None),
                 None => {
                     self.requested = Some(RequestKind::Close);
-                    Ok(Some(RadioRequest::CloseConnection(CONNECTION)))
+                    Ok(Some(RadioWork::Submit(RadioRequest::CloseConnection(
+                        CONNECTION,
+                    ))))
                 }
             };
         }
@@ -526,7 +528,9 @@ impl Peripheral {
         if connection.closing.is_some() {
             // The first closing step: no event is in progress.
             self.requested = Some(RequestKind::Close);
-            return Ok(Some(RadioRequest::CloseConnection(CONNECTION)));
+            return Ok(Some(RadioWork::Submit(RadioRequest::CloseConnection(
+                CONNECTION,
+            ))));
         }
         if connection.pending.is_none()
             && let Some((pending, length)) = connection.prepare_transmission()
@@ -538,11 +542,11 @@ impl Peripheral {
             };
             let payload_length = connection.tx_length(pending, length);
             self.requested = Some(RequestKind::Transmit);
-            return Ok(Some(RadioRequest::Transmit {
+            return Ok(Some(RadioWork::Submit(RadioRequest::Transmit {
                 connection: CONNECTION,
                 pdu: DataPdu::new(kind, &connection.tx[..payload_length])
                     .expect("a legacy data PDU fits"),
-            }));
+            })));
         }
         if !room {
             if connection.supervision_lost(now)? {
@@ -551,7 +555,9 @@ impl Peripheral {
                     cancel_sent: false,
                 });
                 self.requested = Some(RequestKind::Close);
-                return Ok(Some(RadioRequest::CloseConnection(CONNECTION)));
+                return Ok(Some(RadioWork::Submit(RadioRequest::CloseConnection(
+                    CONNECTION,
+                ))));
             }
             return Ok(None);
         }
@@ -559,7 +565,9 @@ impl Peripheral {
         let Some((prepared, plan, reservation)) = connection.plan(earliest, timing)? else {
             if connection.closing.is_some() {
                 self.requested = Some(RequestKind::Close);
-                return Ok(Some(RadioRequest::CloseConnection(CONNECTION)));
+                return Ok(Some(RadioWork::Submit(RadioRequest::CloseConnection(
+                    CONNECTION,
+                ))));
             }
             return Ok(None);
         };
@@ -581,16 +589,18 @@ impl Peripheral {
         };
         connection.submitting = Some((prepared, event));
         self.requested = Some(RequestKind::Event);
-        Ok(Some(RadioRequest::ConnectionEvent(ConnectionEvent {
-            id,
-            connection: CONNECTION,
-            channel,
-            window: plan.window,
-            interval,
-            timing: plan.timing,
-            priority: if first { FIRST_PRIORITY } else { PRIORITY },
-            coexistence,
-        })))
+        Ok(Some(RadioWork::Submit(RadioRequest::ConnectionEvent(
+            ConnectionEvent {
+                id,
+                connection: CONNECTION,
+                channel,
+                window: plan.window,
+                interval,
+                timing: plan.timing,
+                priority: if first { FIRST_PRIORITY } else { PRIORITY },
+                coexistence,
+            },
+        ))))
     }
 
     /// The backend's answer to the last request of the connection.

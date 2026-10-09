@@ -9,10 +9,10 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingChannels,
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
-    AdvertisingSetId, CoexistenceLevel, EventId, EventResult, LeInstant, LePhy, LeWindow,
-    RadioDuration, RadioFault, RadioOutcome, RadioRequest, ReceivedPdu, RequestError,
-    ScanFilterPolicy, ScanType, ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive,
-    TxPower,
+    AdvertisingSetId, ClockError, CoexistenceLevel, EventId, EventResult, LeInstant, LePhy,
+    LeWindow, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, RadioDuration,
+    RadioOutcome, RadioRequest, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType,
+    ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -44,8 +44,8 @@ use oer_time::Clock as _;
 use oer_time_virtual::VirtualClock;
 
 use crate::{
-    BluetoothInstallError, BluetoothOutcome, BluetoothRadioHardware, BluetoothRuntime,
-    BluetoothRuntimeError, RxChainPublicationError,
+    BluetoothFault, BluetoothInstallError, BluetoothOutcome, BluetoothRadioHardware,
+    BluetoothRuntime, RxChainPublicationError,
 };
 
 #[derive(Default)]
@@ -313,11 +313,45 @@ fn advertise(id: u32, anchor: u64) -> RadioRequest<'static> {
     })
 }
 
-fn installed(model: &Model) -> Runtime {
-    let runtime = Runtime::new(clock());
+/// A runtime for the model's scheduler policy and sleep clock.
+fn new_runtime() -> Runtime {
+    Runtime::new(clock(), SchedulerSoftwareConfig::reviewed_standalone(), 500)
+}
+
+/// A runtime with the model's radio installed but its port disabled.
+fn installed_disabled(model: &Model) -> Runtime {
+    let runtime = new_runtime();
     block_on(runtime.install(model_memory(), model.clone()))
         .unwrap_or_else(|_| panic!("the first install succeeds"));
     runtime
+}
+
+/// A runtime with the model's radio installed and its port enabled.
+fn installed(model: &Model) -> Runtime {
+    let runtime = installed_disabled(model);
+    enable(&runtime);
+    runtime
+}
+
+fn enable(runtime: &Runtime) {
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Enable)),
+        Ok(Ok(()))
+    );
+    assert_eq!(
+        taken(runtime),
+        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Enabled))
+    );
+}
+
+/// The next outcome already queued, if any.
+fn taken(runtime: &Runtime) -> Option<BluetoothOutcome> {
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    match core::pin::pin!(runtime.wait_event()).poll(&mut context) {
+        core::task::Poll::Ready(Ok(Ok(outcome))) => Some(outcome),
+        core::task::Poll::Ready(other) => panic!("an outcome expected: {other:?}"),
+        core::task::Poll::Pending => None,
+    }
 }
 
 #[test]
@@ -332,8 +366,7 @@ fn install_publishes_the_chains_once() {
 
     let refusing = Model::default();
     refusing.0.borrow_mut().refuse_chains = true;
-    let Err((error, _, _)) = block_on(Runtime::new(clock()).install(model_memory(), refusing))
-    else {
+    let Err((error, _, _)) = block_on(new_runtime().install(model_memory(), refusing)) else {
         panic!("a refused chain publication fails the install")
     };
     assert_eq!(
@@ -347,11 +380,15 @@ fn an_admitted_event_runs_and_ends() {
     let model = Model::default();
     let runtime = installed(&model);
     block_on(async {
-        runtime.request(configure()).await.unwrap();
-        runtime.request(advertise(1, 10_000)).await.unwrap();
-        let outcome = match select(runtime.run(), runtime.next_outcome()).await {
+        runtime.submit_request(configure()).await.unwrap().unwrap();
+        runtime
+            .submit_request(advertise(1, 10_000))
+            .await
+            .unwrap()
+            .unwrap();
+        let outcome = match select(runtime.run(), runtime.wait_event()).await {
             Either::First(fault) => panic!("the runtime faulted: {fault:?}"),
-            Either::Second(outcome) => outcome.unwrap(),
+            Either::Second(outcome) => outcome.unwrap().unwrap(),
         };
         assert_eq!(
             outcome,
@@ -368,7 +405,9 @@ fn an_admitted_event_runs_and_ends() {
 fn an_accepted_scanner_publishes_the_scan_start_once() {
     let model = Model::default();
     let runtime = installed(&model);
-    block_on(runtime.request(configure())).unwrap();
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
     assert_eq!(model.0.borrow().scan_starts, 0);
     let scanner = || {
         RadioRequest::ConfigureScanner(ScannerConfiguration {
@@ -379,10 +418,15 @@ fn an_accepted_scanner_publishes_the_scan_start_once() {
             phy: LePhy::Le1M,
         })
     };
-    block_on(runtime.request(scanner())).unwrap();
+    block_on(runtime.submit_request(scanner()))
+        .unwrap()
+        .unwrap();
     assert_eq!(model.0.borrow().scan_starts, 1);
     // A refused configuration publishes nothing.
-    assert!(block_on(runtime.request(scanner())).is_err());
+    assert!(matches!(
+        block_on(runtime.submit_request(scanner())),
+        Ok(Err(_))
+    ));
     assert_eq!(model.0.borrow().scan_starts, 1);
 }
 
@@ -407,10 +451,11 @@ fn installation_and_every_accepted_list_change_publish_the_device_table() {
     };
     for index in 0..BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY as u8 {
         block_on(
-            runtime.request(RadioRequest::FilterAcceptList(AcceptListChange::Add(
+            runtime.submit_request(RadioRequest::FilterAcceptList(AcceptListChange::Add(
                 device(index),
             ))),
         )
+        .unwrap()
         .unwrap();
     }
     assert_eq!(
@@ -421,20 +466,23 @@ fn installation_and_every_accepted_list_change_publish_the_device_table() {
     // A refused addition publishes nothing.
     assert!(matches!(
         block_on(
-            runtime.request(RadioRequest::FilterAcceptList(AcceptListChange::Add(
+            runtime.submit_request(RadioRequest::FilterAcceptList(AcceptListChange::Add(
                 device(0xff)
             )))
         ),
-        Err(BluetoothRuntimeError::Rejected(RequestError::ListFull))
+        Ok(Err(RequestError::ListFull))
     ));
     assert_eq!(counts().len(), published);
     block_on(
-        runtime.request(RadioRequest::FilterAcceptList(AcceptListChange::Remove(
+        runtime.submit_request(RadioRequest::FilterAcceptList(AcceptListChange::Remove(
             device(0),
         ))),
     )
+    .unwrap()
     .unwrap();
-    block_on(runtime.request(RadioRequest::FilterAcceptList(AcceptListChange::Clear))).unwrap();
+    block_on(runtime.submit_request(RadioRequest::FilterAcceptList(AcceptListChange::Clear)))
+        .unwrap()
+        .unwrap();
     assert_eq!(
         counts()[published..],
         [BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY as u32 - 1, 0]
@@ -453,10 +501,18 @@ fn the_clock_reports_a_fresh_radio_time() {
     let model = Model::default();
     let runtime = installed(&model);
     model.0.borrow_mut().time = 2_000;
-    let (now, timing) = block_on(runtime.clock()).unwrap();
+    let now = block_on(runtime.read_now()).unwrap().unwrap();
     // Two raw ticks per microsecond.
     assert_eq!(now, LeInstant::from_micros(1_000));
-    assert_eq!(timing.admission_guard, RadioDuration::from_micros(40));
+    // The timing is the runtime's own, read before any install.
+    assert_eq!(
+        new_runtime().capabilities().timing.admission_guard,
+        RadioDuration::from_micros(40)
+    );
+    assert_eq!(
+        block_on(new_runtime().read_now()),
+        Ok(Err(ClockError::NotInstalled))
+    );
 }
 
 #[test]
@@ -465,16 +521,16 @@ fn a_refused_request_reports_the_radio_error() {
     model.0.borrow_mut().time = 20_000;
     let runtime = installed(&model);
     block_on(async {
-        runtime.request(configure()).await.unwrap();
+        runtime.submit_request(configure()).await.unwrap().unwrap();
         // The fresh sample places the anchor in the past.
         assert_eq!(
-            runtime.request(advertise(1, 5_000)).await,
-            Err(BluetoothRuntimeError::Rejected(RequestError::TooLate))
+            runtime.submit_request(advertise(1, 5_000)).await,
+            Ok(Err(RequestError::TooLate))
         );
     });
     assert_eq!(
-        block_on(Runtime::new(clock()).request(configure())),
-        Err(BluetoothRuntimeError::NotInstalled)
+        block_on(new_runtime().submit_request(configure())),
+        Ok(Err(RequestError::NotInstalled))
     );
 }
 
@@ -486,42 +542,212 @@ fn maintenance_runs_while_the_scheduler_is_stopped() {
         assert_eq!(proof.client(), RadioClient::Bluetooth);
         proof.span()
     }))
+    .unwrap()
     .unwrap();
     assert_eq!(span, QuiescentSpan::Stopped);
     assert_eq!(model.0.borrow().stops, 1);
+    // Maintenance quiesced the port and enabled it again.
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Quiesced))
+    );
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Enabled))
+    );
     // The radio resumed: it admits new requests.
-    block_on(runtime.request(configure())).unwrap();
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
 }
 
 #[test]
-fn a_listed_event_restarts_after_maintenance() {
+fn maintenance_waits_for_the_admitted_events_to_end() {
     let model = Model::default();
     let runtime = installed(&model);
     block_on(async {
-        runtime.request(configure()).await.unwrap();
-        runtime.request(advertise(1, 10_000)).await.unwrap();
+        runtime.submit_request(configure()).await.unwrap().unwrap();
+        runtime
+            .submit_request(advertise(1, 10_000))
+            .await
+            .unwrap()
+            .unwrap();
     });
-    // The event starts but has not run when maintenance stops the scheduler.
-    model.0.borrow_mut().defer_execution = true;
-    run_for_a_millisecond(&runtime);
-    assert_eq!(model.0.borrow().started.len(), 1);
-    model.0.borrow_mut().defer_execution = false;
-    block_on(runtime.quiesce(|_| ())).unwrap();
-    // Resuming restarts the scheduler at the listed event, which now runs.
-    block_on(async {
-        let outcome = match select(runtime.run(), runtime.next_outcome()).await {
+    // The event runs before the scheduler stops for maintenance.
+    let stops_before = model.0.borrow().stops;
+    let ended_first = block_on(async {
+        match select(
+            runtime.run(),
+            runtime.quiesce(|_| model.0.borrow().started.len()),
+        )
+        .await
+        {
             Either::First(fault) => panic!("the runtime faulted: {fault:?}"),
-            Either::Second(outcome) => outcome.unwrap(),
-        };
-        assert_eq!(
-            outcome,
-            BluetoothOutcome::EventEnded {
-                id: EventId::new(1),
-                result: EventResult::Executed { anchor: None },
-            }
-        );
+            Either::Second(started) => started.unwrap().unwrap(),
+        }
     });
-    assert_eq!(model.0.borrow().started.len(), 2);
+    assert_eq!(ended_first, 1);
+    assert_eq!(model.0.borrow().stops, stops_before + 1);
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::EventEnded {
+            id: EventId::new(1),
+            result: EventResult::Executed { anchor: None },
+        })
+    );
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Quiesced))
+    );
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Enabled))
+    );
+}
+
+#[test]
+fn a_disabled_port_admits_nothing_and_enable_opens_it() {
+    let model = Model::default();
+    let runtime = installed_disabled(&model);
+    assert_eq!(
+        block_on(runtime.submit_request(configure())),
+        Ok(Err(RequestError::Disabled))
+    );
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Quiesce)),
+        Ok(Err(LifecycleError::InvalidState))
+    );
+    enable(&runtime);
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Enable)),
+        Ok(Err(LifecycleError::AlreadyInState))
+    );
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
+}
+
+#[test]
+fn disable_ends_every_admitted_event_before_its_terminal() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(async {
+        runtime.submit_request(configure()).await.unwrap().unwrap();
+        runtime
+            .submit_request(advertise(1, 10_000))
+            .await
+            .unwrap()
+            .unwrap();
+    });
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Disable)),
+        Ok(Ok(()))
+    );
+    // The waiting event ends at once, then the port is disabled.
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::EventEnded {
+            id: EventId::new(1),
+            result: EventResult::NotExecuted,
+        })
+    );
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Disabled))
+    );
+    assert_eq!(
+        block_on(runtime.submit_request(advertise(2, 20_000))),
+        Ok(Err(RequestError::Disabled))
+    );
+}
+
+#[test]
+fn quiesce_reports_quiesced_after_the_last_admitted_event() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(async {
+        runtime.submit_request(configure()).await.unwrap().unwrap();
+        runtime
+            .submit_request(advertise(1, 10_000))
+            .await
+            .unwrap()
+            .unwrap();
+    });
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Quiesce)),
+        Ok(Ok(()))
+    );
+    // Admission is closed while the event is still admitted.
+    assert_eq!(
+        block_on(runtime.submit_request(advertise(2, 20_000))),
+        Ok(Err(RequestError::Disabled))
+    );
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Enable)),
+        Ok(Err(LifecycleError::Busy))
+    );
+    assert_eq!(taken(&runtime), None);
+    run_for_a_millisecond(&runtime);
+    assert!(matches!(
+        taken(&runtime),
+        Some(BluetoothOutcome::EventEnded { .. })
+    ));
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Quiesced))
+    );
+    enable(&runtime);
+}
+
+#[test]
+fn cancellation_withdraws_an_admitted_event_and_its_end_follows() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(async {
+        runtime.submit_request(configure()).await.unwrap().unwrap();
+        runtime
+            .submit_request(advertise(1, 10_000))
+            .await
+            .unwrap()
+            .unwrap();
+    });
+    assert_eq!(
+        block_on(runtime.cancel_event(EventId::new(2))),
+        Ok(Err(oer_bluetooth_radio::CancelError::NotRunning))
+    );
+    assert_eq!(block_on(runtime.cancel_event(EventId::new(1))), Ok(Ok(())));
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::EventEnded {
+            id: EventId::new(1),
+            result: EventResult::NotExecuted,
+        })
+    );
+    assert_eq!(
+        block_on(new_runtime().cancel_event(EventId::new(1))),
+        Ok(Err(oer_bluetooth_radio::CancelError::NotInstalled))
+    );
+}
+
+#[test]
+fn a_runner_fault_poisons_the_port_with_its_cause() {
+    let model = Model::default();
+    model.0.borrow_mut().refuse_start = true;
+    let runtime = installed(&model);
+    block_on(runtime.submit_request(test_receive(4)))
+        .unwrap()
+        .unwrap();
+    let fault = block_on(runtime.run());
+    let poisoned = Poisoned {
+        cause: BluetoothFault::Runner(fault),
+    };
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    assert_eq!(
+        core::pin::pin!(runtime.wait_event()).poll(&mut context),
+        core::task::Poll::Ready(Err(poisoned))
+    );
+    assert_eq!(block_on(runtime.submit_request(configure())), Err(poisoned));
+    assert_eq!(block_on(runtime.read_now()), Err(poisoned));
 }
 
 #[test]
@@ -535,10 +761,8 @@ fn an_oversized_pdu_becomes_a_memory_fault() {
             captured_at: Ok(None),
         },
     });
-    assert_eq!(
-        outcome,
-        BluetoothOutcome::Fault(RadioFault::MemoryInconsistency)
-    );
+    // The runtime's sink takes it as a memory-inconsistency fault.
+    assert_eq!(outcome, None);
     let fits = BluetoothOutcome::copy(RadioOutcome::Received {
         id: EventId::new(1),
         pdu: ReceivedPdu {
@@ -546,7 +770,8 @@ fn an_oversized_pdu_becomes_a_memory_fault() {
             rssi_dbm: -40,
             captured_at: Ok(None),
         },
-    });
+    })
+    .unwrap();
     assert_eq!(fits.portable().clone(), {
         let BluetoothOutcome::Received { pdu, .. } = &fits else {
             panic!("the PDU fits")
@@ -572,14 +797,14 @@ fn as_a_radio_port_a_refusal_answers_and_a_missing_radio_ends_service() {
             Ok(Err(RequestError::TooLate))
         );
     });
-    let empty = Runtime::new(clock());
+    let empty = new_runtime();
     assert_eq!(
         block_on(LeRadioPort::submit(&empty, configure())),
-        Err(BluetoothRuntimeError::NotInstalled)
+        Ok(Err(RequestError::NotInstalled))
     );
     assert_eq!(
-        block_on(LeRadioPort::clock(&empty)),
-        Err(BluetoothRuntimeError::NotInstalled)
+        block_on(oer_bluetooth_radio::RadioPort::now(&empty)),
+        Ok(Err(ClockError::NotInstalled))
     );
 }
 
@@ -628,8 +853,12 @@ fn uninstall_stops_the_scheduler_and_a_reset_radio_installs_again() {
     let model = Model::default();
     let runtime = installed(&model);
     block_on(async {
-        runtime.request(configure()).await.unwrap();
-        runtime.request(advertise(1, 10_000)).await.unwrap();
+        runtime.submit_request(configure()).await.unwrap().unwrap();
+        runtime
+            .submit_request(advertise(1, 10_000))
+            .await
+            .unwrap()
+            .unwrap();
     });
     // The event is listed and running when the epoch ends.
     model.0.borrow_mut().defer_execution = true;
@@ -641,8 +870,8 @@ fn uninstall_stops_the_scheduler_and_a_reset_radio_installs_again() {
         crate::BluetoothRuntimeFault::NotInstalled
     ));
     assert_eq!(
-        block_on(runtime.request(configure())),
-        Err(BluetoothRuntimeError::NotInstalled)
+        block_on(runtime.submit_request(configure())),
+        Ok(Err(RequestError::NotInstalled))
     );
 
     let memory =
@@ -651,7 +880,15 @@ fn uninstall_stops_the_scheduler_and_a_reset_radio_installs_again() {
     block_on(runtime.install(memory, hardware))
         .unwrap_or_else(|_| panic!("the next epoch installs"));
     assert!(model.0.borrow().chains_published);
-    block_on(runtime.request(configure())).unwrap();
+    // The next radio starts disabled.
+    assert_eq!(
+        block_on(runtime.submit_request(configure())),
+        Ok(Err(RequestError::Disabled))
+    );
+    enable(&runtime);
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
 }
 
 fn test_receive(id: u32) -> RadioRequest<'static> {
@@ -683,10 +920,14 @@ fn settle(runtime: &Runtime) {
 fn a_test_session_holds_the_route_until_test_end() {
     let model = Model::default();
     let runtime = installed(&model);
-    block_on(runtime.request(test_receive(4))).unwrap();
+    block_on(runtime.submit_request(test_receive(4)))
+        .unwrap()
+        .unwrap();
     settle(&runtime);
     assert_eq!(routes(&model), (1, 0));
-    block_on(runtime.request(RadioRequest::EndTest)).unwrap();
+    block_on(runtime.submit_request(RadioRequest::EndTest))
+        .unwrap()
+        .unwrap();
     settle(&runtime);
     assert_eq!(routes(&model), (1, 1));
 }
@@ -695,7 +936,9 @@ fn a_test_session_holds_the_route_until_test_end() {
 fn uninstall_restores_the_route_of_an_open_test() {
     let model = Model::default();
     let runtime = installed(&model);
-    block_on(runtime.request(test_receive(4))).unwrap();
+    block_on(runtime.submit_request(test_receive(4)))
+        .unwrap()
+        .unwrap();
     settle(&runtime);
     assert_eq!(routes(&model), (1, 0));
     let _ = block_on(runtime.uninstall()).unwrap();
@@ -707,7 +950,9 @@ fn a_fault_restores_the_route_of_an_open_test() {
     let model = Model::default();
     model.0.borrow_mut().refuse_start = true;
     let runtime = installed(&model);
-    block_on(runtime.request(test_receive(4))).unwrap();
+    block_on(runtime.submit_request(test_receive(4)))
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         block_on(runtime.run()),
         crate::BluetoothRuntimeFault::Start(_)
@@ -726,7 +971,8 @@ fn owned_outcomes_retain_failed_timing_and_correct_pdu_contents() {
             rssi_dbm: -40,
             captured_at: Err(cause),
         },
-    });
+    })
+    .unwrap();
     let BluetoothOutcome::Received { pdu, .. } = &received else {
         panic!("PDU is retained")
     };
@@ -741,7 +987,8 @@ fn owned_outcomes_retain_failed_timing_and_correct_pdu_contents() {
     let ended = BluetoothOutcome::copy(RadioOutcome::EventEnded {
         id: EventId::new(3),
         result,
-    });
+    })
+    .unwrap();
     assert_eq!(
         ended.portable(),
         RadioOutcome::EventEnded {
@@ -757,10 +1004,12 @@ fn stop_drains_the_prior_finished_list_before_capturing_the_final_snapshot() {
     let runtime = installed(&model);
     model.0.borrow_mut().finished =
         BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0]);
-    block_on(runtime.quiesce(|_| ())).unwrap();
+    block_on(runtime.quiesce(|_| ())).unwrap().unwrap();
     assert!(model.0.borrow().finished.is_none());
     assert_eq!(model.0.borrow().stops, 1);
-    block_on(runtime.request(configure())).unwrap();
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
 }
 
 #[test]
@@ -768,21 +1017,25 @@ fn pass_drains_prior_finished_work_before_consuming_the_next_wake() {
     let model = Model::default();
     model.0.borrow_mut().capture_on_start = true;
     let runtime = installed(&model);
-    block_on(runtime.request(configure())).unwrap();
-    block_on(runtime.request(advertise(19, 10_000))).unwrap();
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
+    block_on(runtime.submit_request(advertise(19, 10_000)))
+        .unwrap()
+        .unwrap();
     // A prior captured list and the next interrupt coexist. Draining the
     // prior owner must precede consuming that interrupt's transfer.
     run_for_a_millisecond(&runtime);
     let mut context = core::task::Context::from_waker(core::task::Waker::noop());
     assert_eq!(
-        core::pin::pin!(runtime.next_outcome()).poll(&mut context),
-        core::task::Poll::Ready(Ok(BluetoothOutcome::EventEnded {
+        core::pin::pin!(runtime.wait_event()).poll(&mut context),
+        core::task::Poll::Ready(Ok(Ok(BluetoothOutcome::EventEnded {
             id: EventId::new(19),
             result: EventResult::Executed { anchor: None },
-        }))
+        })))
     );
     assert!(
-        core::pin::pin!(runtime.next_outcome())
+        core::pin::pin!(runtime.wait_event())
             .poll(&mut context)
             .is_pending()
     );

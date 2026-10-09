@@ -24,8 +24,8 @@ use std::{
 use oer_ieee80211_datapath::{SoftwareTxFrame, memory::MemoryTxQueues};
 use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort, KeySelector, LifecycleCommand,
-    LowerMacSetting, ReceiveFilter, RxBeaconPriority, TxPower, VifId,
-    model::{LowerMacModel, ModelOutcome, ModelRxBuffer},
+    LowerMacSetting, RadioPort, ReceiveFilter, RxBeaconPriority, TxPower, VifId,
+    model::{LowerMacModel, ModelOutcome, ModelRxBuffer, ready},
 };
 use oer_ieee80211_mac::{
     ccmp::CcmpPacketNumberStep,
@@ -303,7 +303,9 @@ impl World {
             .apply(LowerMacSetting::Channel(channel(1)))
             .unwrap()
             .unwrap();
-        model.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+        ready(model.lifecycle(LifecycleCommand::Enable))
+            .unwrap()
+            .unwrap();
         // Every published attempt succeeds at once.
         model.respond(core::iter::repeat_n(ModelOutcome::Success, 100_000));
         let model: &'static Model = Box::leak(Box::new(model));
@@ -585,7 +587,10 @@ fn harness_advancement_keeps_radio_and_monotonic_time_together() {
     world.advance_to(2_000);
     world.advance_to(1_500);
     assert_eq!(world.timer.now(), Instant::from_micros(2_000));
-    assert_eq!(world.model.now(), Ok(RadioInstant::from_micros(2_000)));
+    assert_eq!(
+        ready(world.model.now()),
+        Ok(Ok(RadioInstant::from_micros(2_000)))
+    );
 }
 
 #[test]
@@ -1798,31 +1803,26 @@ fn a_receive_loss_is_skipped_and_the_connection_goes_on_body() {
 }
 
 #[test]
-fn a_completion_lost_in_a_gap_fails_the_send_and_the_next_one_goes_out() {
-    on_large_stack(a_completion_lost_in_a_gap_fails_the_send_and_the_next_one_goes_out_body);
+fn a_receive_burst_never_takes_a_send_completion() {
+    on_large_stack(a_receive_burst_never_takes_a_send_completion_body);
 }
 
-fn a_completion_lost_in_a_gap_fails_the_send_and_the_next_one_goes_out_body() {
+fn a_receive_burst_never_takes_a_send_completion_body() {
     let world = World::new();
     let mut ap = ScriptedAp::new(ApSecurity::Open);
     let mut station = connect(&world, &mut ap, world.station(open()));
-    // The model's queue is full when the data frame's completion arrives:
-    // the completion falls into the gap. The station cancels its attempt,
-    // which already ended, and the exchange ends without a report.
+    // The model's queue is full of received frames when the data frame's
+    // completion arrives: the completion holds the slot its attempt
+    // reserved, and the exchange gets its report.
     let frames = (0..5)
         .map(|index| ap.data(None, None, false, IPV4, &[b'a' + index], PEER))
         .collect();
     burst(&world, &mut ap, &mut station, frames);
-    world.send(&ethernet(PEER, IPV4, b"lost"));
+    world.send(&ethernet(PEER, IPV4, b"first"));
     let mut delivered = Vec::new();
     assert_eq!(
         world.run_for(&mut ap, &mut station, 5, &mut delivered),
         None
-    );
-    let counters = station.connection().unwrap().tx_counters();
-    assert_eq!(
-        counters.failed, 1,
-        "the completion in the gap is counted lost"
     );
     world.send(&ethernet(PEER, IPV4, b"next"));
     assert_eq!(
@@ -1830,7 +1830,7 @@ fn a_completion_lost_in_a_gap_fails_the_send_and_the_next_one_goes_out_body() {
         None
     );
     let counters = station.connection().unwrap().tx_counters();
-    assert_eq!((counters.mpdus, counters.acknowledged), (1, 1));
+    assert_eq!((counters.mpdus, counters.acknowledged), (2, 2));
 }
 
 #[test]
@@ -1849,13 +1849,13 @@ fn a_poisoned_port_ends_the_connection_and_every_send_body() {
         .checked_add(Duration::from_millis(5))
         .unwrap();
     let ran = world.drive(&mut ap, station.run_until(deadline, &mut |_| {}));
-    assert!(matches!(ran, Err(PortLinkError::Poisoned)));
-    assert!(world.router.poisoned());
+    assert!(matches!(ran, Err(PortLinkError::Poisoned(_))));
+    assert!(world.router.poisoned().is_some());
     // A frame still queues; sending it ends on the poisoned port.
     world.send(&ethernet(PEER, IPV4, b"late"));
     let ran = world.drive(&mut ap, station.run_until(deadline, &mut |_| {}));
     assert!(
-        matches!(ran, Err(PortLinkError::Poisoned)),
+        matches!(ran, Err(PortLinkError::Poisoned(_))),
         "sending fails on the poisoned port: {ran:?}"
     );
 }

@@ -2,7 +2,7 @@
 
 use core::marker::PhantomData;
 use oer_ieee80211_upper_mac_service::TxMpdu;
-use oer_ieee80211_upper_mac_service::client::PortError;
+use oer_ieee80211_upper_mac_service::client::PortFault;
 
 use oer_ieee80211_lower_mac::{
     KeySelector, LowerMacBeaconTiming, LowerMacSetting, MacAddress, RxBeaconPriority, TbttSchedule,
@@ -134,7 +134,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         &mut self,
         context: &mut PowerContext<'_, '_, X>,
         join_beacon: PmBeacon,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let mut actions = PmActions::new();
         self.modem.start(join_beacon, context.coex(), &mut actions);
         self.perform(context, actions).await
@@ -144,7 +144,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
     pub(crate) async fn stop<X: PortStationEnv<Port = P>>(
         &mut self,
         context: &mut PowerContext<'_, '_, X>,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let mut actions = PmActions::new();
         self.modem.stop(context.coex(), &mut actions);
         self.perform(context, actions).await?;
@@ -156,7 +156,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
     pub(crate) async fn tbtt<X: PortStationEnv<Port = P>>(
         &mut self,
         context: &mut PowerContext<'_, '_, X>,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let mut actions = PmActions::new();
         self.modem.tbtt(
             context.clock(),
@@ -172,14 +172,13 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         &mut self,
         context: &mut PowerContext<'_, '_, X>,
         beacon: &StaBeaconObservation,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let vif = context.link.config().vif;
         // The station TSF follows the access point's.
         let _ = context
             .link
             .port()
-            .set_tsf(VifTsf::new(vif, beacon.timestamp_tsf))
-            .map_err(PortLinkError::Port)?;
+            .set_tsf(VifTsf::new(vif, beacon.timestamp_tsf))?;
         let mut actions = PmActions::new();
         self.modem.beacon(
             PmBeacon {
@@ -206,7 +205,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         context: &mut PowerContext<'_, '_, X>,
         group: bool,
         more_data: bool,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let mut actions = PmActions::new();
         self.modem
             .rx_data(group, more_data, context.coex(), &mut actions);
@@ -218,7 +217,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
     pub(crate) async fn tx_data<X: PortStationEnv<Port = P>>(
         &mut self,
         context: &mut PowerContext<'_, '_, X>,
-    ) -> Result<bool, PortLinkError<PortError<X>>> {
+    ) -> Result<bool, PortLinkError<PortFault<X>>> {
         let mut actions = PmActions::new();
         let wait = self.modem.tx_data(
             true,
@@ -236,7 +235,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         &mut self,
         context: &mut PowerContext<'_, '_, X>,
         acknowledged: bool,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let mut actions = PmActions::new();
         self.modem.tx_data_done(
             acknowledged,
@@ -252,7 +251,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
     pub(crate) async fn expire<X: PortStationEnv<Port = P>>(
         &mut self,
         context: &mut PowerContext<'_, '_, X>,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let now = context.timer.now();
         for timer in TIMERS {
             let index = timer_index(timer);
@@ -292,7 +291,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         &mut self,
         link: &PortLink<'_, X>,
         open: bool,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         link.apply(LowerMacSetting::TxGate { open })?;
         self.gate_open = open;
         Ok(())
@@ -301,7 +300,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
     fn program_tbtt<X: PortStationEnv<Port = P>>(
         &self,
         link: &PortLink<'_, X>,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let vif = link.config().vif;
         let outcome = match self.schedule {
             Some(schedule) => link.port().set_tbtt(TbttSchedule {
@@ -317,9 +316,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
             }),
             None => link.port().stop_tbtt(vif),
         };
-        outcome
-            .map_err(PortLinkError::Port)?
-            .map_err(PortLinkError::Setting)
+        outcome?.map_err(PortLinkError::Setting)
     }
 
     /// Perform the effects of one input in order, and then those the Null
@@ -328,7 +325,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         &mut self,
         context: &mut PowerContext<'_, '_, X>,
         actions: PmActions,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let mut queue: [Option<PmActions>; ACTION_QUEUE] = [None; ACTION_QUEUE];
         queue[0] = Some(actions);
         let mut next = 0;
@@ -355,7 +352,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         &mut self,
         context: &mut PowerContext<'_, '_, X>,
         action: PmAction,
-    ) -> Result<Option<PmActions>, PortLinkError<PortError<X>>> {
+    ) -> Result<Option<PmActions>, PortLinkError<PortFault<X>>> {
         let now = context.timer.now();
         match action {
             PmAction::SendNull { power_save } => {
@@ -447,7 +444,7 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         &mut self,
         context: &mut PowerContext<'_, '_, X>,
         power_save: bool,
-    ) -> Result<TxReport, PortLinkError<PortError<X>>> {
+    ) -> Result<TxReport, PortLinkError<PortFault<X>>> {
         let config = *context.link.config();
         let mut frame = [0_u8; STA_NULL_DATA_FRAME_LEN];
         StaNullDataFrame {

@@ -1,13 +1,73 @@
 //! The runtime as the radio port of the portable Controller service loop.
 
+use core::future::Future;
+
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_radio::{
-    ClockInfo, EventsLost, LeInstant, LeRadioCapabilities, LeRadioPort, RadioActivity, RadioEpoch,
-    RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    CancelError, ClockError, ClockInfo, EventId, EventsLost, LeInstant, LeRadio,
+    LeRadioCapabilities, LeRadioPort, LifecycleCommand, LifecycleError, NotInstalled, PortResult,
+    RadioActivity, RadioEpoch, RadioOutcome, RadioPort, RadioRequest, RequestError,
 };
 use oer_time::Timer;
 
-use crate::{BluetoothOutcome, BluetoothRadioHardware, BluetoothRuntime, BluetoothRuntimeError};
+use crate::{BluetoothFault, BluetoothOutcome, BluetoothRadioHardware, BluetoothRuntime};
+
+impl<
+    M: RawMutex,
+    H: BluetoothRadioHardware,
+    T: Timer,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+    const EVENTS: usize,
+> RadioPort
+    for BluetoothRuntime<
+        M,
+        H,
+        T,
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+        EVENTS,
+    >
+{
+    type Event = BluetoothOutcome;
+    type Id = EventId;
+    type Domain = LeRadio;
+    type Fault = BluetoothFault<H::StartError>;
+
+    fn next_event(
+        &self,
+    ) -> impl Future<Output = PortResult<BluetoothOutcome, EventsLost, Self::Fault>> + '_ {
+        self.wait_event()
+    }
+
+    fn now(&self) -> impl Future<Output = PortResult<LeInstant, ClockError, Self::Fault>> + '_ {
+        self.read_now()
+    }
+
+    fn cancel(
+        &self,
+        id: EventId,
+    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + '_ {
+        self.cancel_event(id)
+    }
+
+    fn lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> impl Future<Output = PortResult<(), LifecycleError, Self::Fault>> + '_ {
+        self.run_lifecycle(command)
+    }
+}
 
 impl<
     M: RawMutex,
@@ -36,10 +96,6 @@ impl<
         EVENTS,
     >
 {
-    type Outcome = BluetoothOutcome;
-    /// Never [`BluetoothRuntimeError::Rejected`]: a refusal is an answer.
-    type Error = BluetoothRuntimeError;
-
     fn capabilities(&self) -> LeRadioCapabilities {
         BluetoothRuntime::capabilities(self)
     }
@@ -54,31 +110,19 @@ impl<
         }
     }
 
-    async fn clock(&self) -> Result<(LeInstant, RadioTiming), BluetoothRuntimeError> {
-        BluetoothRuntime::clock(self).await
-    }
-
-    async fn submit(
+    fn submit(
         &self,
         request: RadioRequest<'_>,
-    ) -> Result<Result<(), RequestError>, BluetoothRuntimeError> {
-        match BluetoothRuntime::request(self, request).await {
-            Ok(()) => Ok(Ok(())),
-            Err(BluetoothRuntimeError::Rejected(error)) => Ok(Err(error)),
-            Err(error) => Err(error),
-        }
-    }
-
-    async fn next_outcome(&self) -> Result<BluetoothOutcome, EventsLost> {
-        BluetoothRuntime::next_outcome(self).await
+    ) -> impl Future<Output = PortResult<(), RequestError, Self::Fault>> {
+        self.submit_request(request)
     }
 
     fn view(outcome: &BluetoothOutcome) -> RadioOutcome<'_> {
         outcome.portable()
     }
 
-    fn activity(&self, activity: RadioActivity) -> Result<(), BluetoothRuntimeError> {
+    fn activity(&self, activity: RadioActivity) -> PortResult<(), NotInstalled, Self::Fault> {
         self.publish_activity(activity);
-        Ok(())
+        Ok(Ok(()))
     }
 }

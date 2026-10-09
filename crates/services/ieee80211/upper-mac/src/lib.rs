@@ -14,10 +14,9 @@
 //! completion to the exchange whose identity it carries, so several
 //! [`UpperMacTx`] (one per access category) run their exchanges
 //! concurrently over one port, and received frames, lifecycle terminals and
-//! extension events go to queues of their own. When the port lost events
-//! before an attempt's completion arrived, the exchange cancels the attempt
-//! by its identity and either gets its completion or learns that it ended
-//! in the gap.
+//! extension events go to queues of their own. The port reserves every
+//! completion's slot when it admits the attempt, so an exchange always gets
+//! its completion, unless the port is poisoned.
 //! Aggregates need the [`LowerMacAmpdu`] extension, which
 //! [`UpperMacTx::send_ampdu`] requires as a bound.
 //!
@@ -41,15 +40,15 @@ pub mod router;
 pub mod rx_hold;
 
 pub use router::{
-    AttachError, Attachment, Awaited, EventRouter, PORT_BACKLOG, PORT_EXCHANGES, PortRouter,
-    ROUTER_VIFS, Registration, RouterFull,
+    AttachError, Attachment, EventRouter, PORT_BACKLOG, PORT_EXCHANGES, PortRouter, ROUTER_VIFS,
+    Registration, RouterFull,
 };
 
 use oer_ieee80211_lower_mac::{
-    AirReservation, AmpduBuffer, AmpduPayload, Backoff, CancelError, CoexPriority,
-    Ieee80211LowerMacPort, KeySelector, LowerMacAirReservation, LowerMacAmpdu, PhyRate, Protection,
-    ReclaimError, Refused, SubmitError, TxAttempt, TxBody as PortTxBody, TxBuffer, TxCompletion,
-    TxId, TxPayload, TxPower, TxResponse, VifId,
+    AirReservation, AmpduBuffer, AmpduPayload, Backoff, ClockError, CoexPriority,
+    Ieee80211LowerMacPort, KeySelector, LowerMacAirReservation, LowerMacAmpdu, NotInstalled,
+    PhyRate, Poisoned, Protection, ReclaimError, Refused, SubmitError, TxAttempt,
+    TxBody as PortTxBody, TxBuffer, TxCompletion, TxId, TxPayload, TxPower, TxResponse, VifId,
 };
 use oer_ieee80211_mac::block_ack::encode_block_ack_request;
 use oer_ieee80211_mac::qos::WmmAccessCategory;
@@ -59,9 +58,9 @@ use oer_ieee80211_upper_mac::{
     TxPlanner, TxReport, TxRequest, TxStep, ampdu::set_retry_bit,
 };
 
-/// Why an exchange ended without a report.
+/// Why an exchange ended without a report; `F` is the port's poison cause.
 #[derive(Debug, Eq, PartialEq)]
-pub enum UpperMacTxError<E> {
+pub enum UpperMacTxError<F> {
     /// The planner refused the request.
     Plan(TxPlanError),
     /// The frames do not match the request: a subframe is missing, or a
@@ -74,15 +73,20 @@ pub enum UpperMacTxError<E> {
     Refused(SubmitError),
     /// Every completion slot of the router is registered.
     RouterFull,
-    /// The port lost the attempt's completion: the attempt ended, its
-    /// outcome is unknown, and the exchange ends without a report.
-    CompletionLost { attempt: TxId },
-    /// The port reported its terminal poisoned event.
-    Poisoned,
+    /// No backend serves the port.
+    NotInstalled,
+    /// The port's radio clock could not be read to plan the next step.
+    Clock(ClockError),
+    /// The port is poisoned.
+    Poisoned(Poisoned<F>),
     /// The port kept the bodies of an attempt that ended.
     BodiesHeld { attempt: TxId },
-    /// The port cannot serve.
-    Port(E),
+}
+
+impl<F> From<Poisoned<F>> for UpperMacTxError<F> {
+    fn from(poisoned: Poisoned<F>) -> Self {
+        Self::Poisoned(poisoned)
+    }
 }
 
 /// One MPDU to send: the `header` a service encoded and, after it, the
@@ -185,7 +189,7 @@ where
         request: TxRequest,
         ladder: &impl RateLadder,
         entropy: &mut impl BackoffEntropy,
-    ) -> Result<TxReport, UpperMacTxError<P::Error>> {
+    ) -> Result<TxReport, UpperMacTxError<P::Fault>> {
         if !matches!(request.body, TxBody::Mpdu(_)) {
             return Err(UpperMacTxError::InvalidFrames);
         }
@@ -193,7 +197,7 @@ where
             .router
             .queue(self.port.capabilities().tx_queue(request.access_category))
             .map_err(|_| UpperMacTxError::RouterFull)?;
-        queue.ready().await.map_err(|_| UpperMacTxError::Poisoned)?;
+        queue.ready().await?;
         let headers = [frame.header];
         let mut bodies = [frame.body];
         let (mut exchange, mut plan) = self
@@ -206,7 +210,10 @@ where
             let completion = self
                 .completion(&registration, &mut bodies, |_| origin)
                 .await?;
-            match self.step(&mut exchange, &completion, ladder, entropy)? {
+            match self
+                .step(&mut exchange, &completion, ladder, entropy)
+                .await?
+            {
                 TxStep::Attempt(next) => plan = next,
                 TxStep::Done(report) => return Ok(report),
             }
@@ -214,14 +221,14 @@ where
     }
 
     /// Plan the next step from a completion, on the port's radio clock.
-    fn step(
+    async fn step(
         &mut self,
         exchange: &mut TxExchange,
         completion: &TxCompletion,
         ladder: &impl RateLadder,
         entropy: &mut impl BackoffEntropy,
-    ) -> Result<TxStep, UpperMacTxError<P::Error>> {
-        let now = self.port.now().map_err(UpperMacTxError::Port)?;
+    ) -> Result<TxStep, UpperMacTxError<P::Fault>> {
+        let now = self.port.now().await?.map_err(UpperMacTxError::Clock)?;
         Ok(self
             .planner
             .complete(exchange, completion, now, ladder, entropy))
@@ -239,7 +246,7 @@ where
         headers: &[&[u8]],
         bodies: &mut [Option<P::TxBody>],
         key: KeySelector,
-    ) -> Result<Submitted<'r, 'p, P, WAITERS, RX>, UpperMacTxError<P::Error>> {
+    ) -> Result<Submitted<'r, 'p, P, WAITERS, RX>, UpperMacTxError<P::Fault>> {
         let request = exchange.request();
         let request_frame: [u8; oer_ieee80211_mac::block_ack::BLOCK_ACK_REQUEST_LEN];
         let (header, origin, set_retry, response, key): (
@@ -300,8 +307,8 @@ where
         let len = mpdu_len(header, body_slot.as_ref().and_then(|body| body.as_ref()));
         let mut buffer = self
             .port
-            .tx_buffer(len)
-            .map_err(UpperMacTxError::Port)?
+            .tx_buffer(len)?
+            .map_err(|NotInstalled| UpperMacTxError::NotInstalled)?
             .ok_or(UpperMacTxError::NoBuffer)?;
         buffer.frame_mut()[..header.len()].copy_from_slice(header);
         if set_retry && !set_retry_bit(buffer.frame_mut()) {
@@ -325,11 +332,7 @@ where
             },
             key,
         );
-        match self
-            .port
-            .submit(attempt)
-            .map_err(|_| UpperMacTxError::Poisoned)?
-        {
+        match self.port.submit(attempt)? {
             Ok(()) => Ok((registration, lent)),
             Err(Refused { error, attempt }) => {
                 // The body comes back with the refused attempt.
@@ -365,44 +368,25 @@ where
 
     /// Await the completion of a registered attempt from the router and take
     /// back the bodies it carried, the attempt's subframe `n` into the
-    /// caller's `origin(n)`. After a loss, cancel the attempt: an admitted
-    /// cancel produces its completion; a refusal proves it ended, and the
-    /// router resolves whether its completion is still queued or was lost.
+    /// caller's `origin(n)`.
     async fn completion(
         &self,
         registration: &Registration<'r, 'p, P, WAITERS, RX>,
         bodies: &mut [Option<P::TxBody>],
         origin: impl Fn(usize) -> Option<usize>,
-    ) -> Result<TxCompletion, UpperMacTxError<P::Error>> {
+    ) -> Result<TxCompletion, UpperMacTxError<P::Fault>> {
         let id = registration.id();
-        let completion = loop {
-            match self.router.completion(id).await {
-                Awaited::Completed(completion) => break Ok(completion),
-                Awaited::Poisoned => return Err(UpperMacTxError::Poisoned),
-                Awaited::Lost => match self.port.cancel(id).map_err(UpperMacTxError::Port)? {
-                    Ok(()) => {}
-                    Err(CancelError::NotRunning) => {
-                        break self
-                            .router
-                            .resolve(id)
-                            .await
-                            .ok_or(UpperMacTxError::CompletionLost { attempt: id });
-                    }
-                },
+        let completion = self.router.completion(id).await?;
+        // The attempt ended: its bodies come back.
+        let reclaimed = self.port.reclaim_tx_bodies(id, |subframe, body| {
+            if let Some(slot) = origin(subframe).and_then(|origin| bodies.get_mut(origin)) {
+                *slot = Some(body);
             }
-        };
-        // The attempt ended either way: its bodies come back.
-        let reclaimed = self
-            .port
-            .reclaim_tx_bodies(id, |subframe, body| {
-                if let Some(slot) = origin(subframe).and_then(|origin| bodies.get_mut(origin)) {
-                    *slot = Some(body);
-                }
-            })
-            .map_err(UpperMacTxError::Port)?;
+        })?;
         match reclaimed {
-            Ok(()) | Err(ReclaimError::Unknown) => completion,
+            Ok(()) | Err(ReclaimError::Unknown) => Ok(completion),
             Err(ReclaimError::Running) => Err(UpperMacTxError::BodiesHeld { attempt: id }),
+            Err(ReclaimError::NotInstalled) => Err(UpperMacTxError::NotInstalled),
         }
     }
 }
@@ -422,12 +406,12 @@ where
         rate: PhyRate,
         power: TxPower,
         coex: CoexPriority,
-    ) -> Result<TxCompletion, UpperMacTxError<P::Error>> {
+    ) -> Result<TxCompletion, UpperMacTxError<P::Fault>> {
         let queue = self
             .router
             .queue(self.port.capabilities().tx_queue(access_category))
             .map_err(|_| UpperMacTxError::RouterFull)?;
-        queue.ready().await.map_err(|_| UpperMacTxError::Poisoned)?;
+        queue.ready().await?;
         let Ok(registration) = self.router.register(self.router.next_id()) else {
             return Err(UpperMacTxError::RouterFull);
         };
@@ -443,11 +427,7 @@ where
             backoff: Backoff::Slots(0),
             coex,
         };
-        if let Err(Refused { error, .. }) = self
-            .port
-            .submit_air_reservation(attempt)
-            .map_err(|_| UpperMacTxError::Poisoned)?
-        {
+        if let Err(Refused { error, .. }) = self.port.submit_air_reservation(attempt)? {
             return Err(UpperMacTxError::Refused(error));
         }
         self.completion(&registration, &mut [], |_| None).await
@@ -468,7 +448,7 @@ where
         request: TxRequest,
         ladder: &impl RateLadder,
         entropy: &mut impl BackoffEntropy,
-    ) -> Result<TxReport, UpperMacTxError<P::Error>> {
+    ) -> Result<TxReport, UpperMacTxError<P::Fault>> {
         let TxBody::Ampdu(ampdu) = request.body else {
             return Err(UpperMacTxError::InvalidFrames);
         };
@@ -485,7 +465,7 @@ where
             .router
             .queue(self.port.capabilities().tx_queue(request.access_category))
             .map_err(|_| UpperMacTxError::RouterFull)?;
-        queue.ready().await.map_err(|_| UpperMacTxError::Poisoned)?;
+        queue.ready().await?;
         let (mut exchange, mut plan) = self
             .planner
             .begin(request, ladder, entropy)
@@ -514,7 +494,10 @@ where
                     self.completion(&registration, bodies, |_| origin).await?
                 }
             };
-            match self.step(&mut exchange, &completion, ladder, entropy)? {
+            match self
+                .step(&mut exchange, &completion, ladder, entropy)
+                .await?
+            {
                 TxStep::Attempt(next) => plan = next,
                 TxStep::Done(report) => return Ok(report),
             }
@@ -533,11 +516,11 @@ where
         selected: u64,
         retry: u64,
         tid: u8,
-    ) -> Result<Registration<'r, 'p, P, WAITERS, RX>, UpperMacTxError<P::Error>> {
+    ) -> Result<Registration<'r, 'p, P, WAITERS, RX>, UpperMacTxError<P::Fault>> {
         let mut buffer = self
             .port
-            .ampdu_buffer()
-            .map_err(UpperMacTxError::Port)?
+            .ampdu_buffer()?
+            .map_err(|NotInstalled| UpperMacTxError::NotInstalled)?
             .ok_or(UpperMacTxError::NoBuffer)?;
         let mut remaining = selected;
         while remaining != 0 {
@@ -577,11 +560,7 @@ where
             },
             key,
         );
-        match self
-            .port
-            .submit_ampdu(attempt)
-            .map_err(|_| UpperMacTxError::Poisoned)?
-        {
+        match self.port.submit_ampdu(attempt)? {
             Ok(()) => Ok(registration),
             Err(Refused { error, attempt }) => {
                 self.port.release_ampdu_buffer(attempt.payload.subframes);

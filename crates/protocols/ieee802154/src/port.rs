@@ -7,12 +7,14 @@
 //! synchronous submission of a [`RadioCommand`] whose refusal is a value,
 //! an asynchronous stream of owned events viewed as [`RadioEvent`] with
 //! reported loss ([`EventsLost`]), the backend's [`Ieee802154Capabilities`],
-//! the lifecycle ([`Ieee802154RadioPort::lifecycle`], whose commands end
-//! with a [`RadioEvent::Lifecycle`] terminal, and `Cancel`, which ends a
-//! running operation through its terminal event), and the radio clock in
-//! the [`Ieee802154Instant`] epoch with its [`ClockInfo`]. Failure classes,
-//! event loss, the terminal [`Poisoned`] event, the lifecycle vocabulary
-//! and the clock relation are the shared ones of `oer-radio-port`. Its
+//! the lifecycle ([`RadioPort::lifecycle`], whose commands end with a
+//! [`RadioEvent::Lifecycle`] terminal, and [`RadioPort::cancel`], which
+//! ends a running operation through its terminal event), and the radio
+//! clock in the [`Ieee802154Instant`](crate::Ieee802154Instant) epoch with
+//! its [`ClockInfo`]. The event stream, the clock, cancellation and the
+//! lifecycle are the shared [`RadioPort`] base of `oer-radio-port`, with
+//! its refusals, poisoning ([`Poisoned`]), event loss and clock relation.
+//! Its
 //! [`RadioSetting`] values carry the state the backend reads from its own
 //! interrupt context (MAC keys and frame counters, the CSL receiver, the
 //! enhanced-ACK generator and armed transmit security); a backend changes
@@ -20,15 +22,14 @@
 //!
 //! This module only declares the port; it never waits on it.
 
-use core::future::Future;
-
 pub use oer_radio_port::{
-    ClockInfo, EventsLost, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, PortError,
+    CancelError, ClockError, ClockInfo, EventsLost, LifecycleCommand, LifecycleError,
+    LifecycleEvent, NotInstalled, Poisoned, PortResult, RadioPort,
 };
 
 use crate::mac::link_metrics::ProbingInitiator;
 use crate::radio::{
-    Ieee802154Instant,
+    Ieee802154Radio, RequestId,
     capabilities::RadioCapabilities,
     command::RadioCommand,
     event::RadioEvent,
@@ -143,6 +144,8 @@ pub enum RadioSetting<'a> {
 /// Why the backend refused a [`RadioSetting`]; nothing changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SettingError {
+    /// The backend is not installed or is paused.
+    NotInstalled,
     /// The setting names an interface the radio does not have.
     UnknownInterface {
         /// The rejected interface.
@@ -163,83 +166,71 @@ pub enum SettingError {
 
 /// An IEEE 802.15.4 radio backend as portable protocol logic drives it.
 ///
-/// Every method but [`Self::next_event`] is synchronous and takes the
-/// backend's lock for its own duration only. `Err(Self::Error)` means the
-/// port cannot serve now; its [`PortError::class`] says whether it is
-/// `Rejected` (no radio installed, or paused: installing or resuming serves
-/// again) or `Poisoned` (only a reset restores it). Refusal of one command
-/// or setting is the inner `Err`, and nothing changed.
+/// Every method of this trait is synchronous and takes the backend's lock
+/// for its own duration only; the [`RadioPort`] base calls return ready
+/// futures. Every call returns a [`PortResult`]: the inner `Err` is a
+/// refusal and nothing changed, a radio that is not installed or is paused
+/// included (installing or resuming it serves again); the outer one is
+/// [`Poisoned`], after which only a reset restores the port.
 ///
 /// # Events
 ///
 /// The port has exactly one consumer of its events. Taking an event only
 /// dequeues it: timed work the backend runs in software (CSMA-CA backoffs,
 /// retry delays) progresses in the backend's own runner, which the
-/// composition polls beside the consumer. A loss is reported as
-/// [`EventsLost`] in place of the first dropped event; the consumer may
-/// continue, and recovers an operation whose terminal event may be lost by
-/// cancelling it ([`RadioCommand::Cancel`]: refused as `NotRunning` when it
-/// already ended). A poisoned backend reports the terminal
-/// [`RadioEvent::Poisoned`] after every earlier event and at every later
-/// call. A [`RadioEvent::Fault`] is recoverable: it leaves the radio
-/// disabled, and `Enable` serves again.
-pub trait Ieee802154RadioPort {
-    /// One owned event.
-    type Event;
-    /// Why the port cannot serve now; its class says whether it will again.
-    type Error: PortError;
-
+/// composition polls beside the consumer. The backend reserves the slot of
+/// an admitted operation's terminal event and of a lifecycle command's
+/// terminal when it admits them, so a terminal event is never lost; a loss
+/// is reported as [`EventsLost`] in place of the first dropped received
+/// frame, and the consumer continues. A [`RadioEvent::Fault`] is
+/// recoverable: it leaves the radio disabled, and `Enable` serves again.
+///
+/// # Lifecycle and cancellation
+///
+/// `Enable` acquires the radio and enters sleep. `Disable` ends the
+/// operation in flight with its terminal event, then releases the radio
+/// and ends with `Disabled`. A backend without a quiesce refuses `Quiesce`
+/// as `InvalidState`. [`RadioPort::cancel`] ends the running transmission,
+/// energy scan, clear-channel assessment or scheduled receive window
+/// through its own terminal event
+/// ([`RadioStateMachine::admit_cancel`](crate::RadioStateMachine::admit_cancel)).
+pub trait Ieee802154RadioPort: RadioPort<Id = RequestId, Domain = Ieee802154Radio> {
     /// The portable view of an owned event.
     fn view(event: &Self::Event) -> RadioEvent<'_>;
 
     /// What the backend supports; read before submission.
     fn capabilities(&self) -> Ieee802154Capabilities;
 
-    /// Start enabling or disabling the radio; the command's terminal
-    /// [`RadioEvent::Lifecycle`] follows through [`Self::next_event`].
-    /// `Enable` acquires the radio and enters sleep, `Disable` releases a
-    /// resting radio (`Busy` while an operation runs). A backend without a
-    /// quiesce refuses `Quiesce` as `InvalidState`.
-    fn lifecycle(
-        &self,
-        command: LifecycleCommand,
-    ) -> Result<Result<(), LifecycleError>, Self::Error>;
-
     /// Admit and start one command. `Ok(Err(_))` when the backend refused
     /// it: nothing changed. An admitted operation reports its terminal
-    /// event through [`Self::next_event`].
+    /// event through [`RadioPort::next_event`].
     fn submit(
         &self,
         command: RadioCommand<'_>,
-    ) -> Result<Result<AcceptedCommand, CommandError>, Self::Error>;
+    ) -> PortResult<AcceptedCommand, CommandError, Self::Fault>;
 
-    /// The next event. Taking it only dequeues it; dropping the future
-    /// loses no event. A queue overflow is reported as [`EventsLost`] in
-    /// place of the first dropped event.
-    fn next_event(&self) -> impl Future<Output = Result<Self::Event, EventsLost>> + '_;
-
-    /// The radio clock in microseconds: the epoch of scheduled operations
-    /// and receive timestamps. A caller that needs it synchronously without
-    /// the port (OpenThread's `otPlatRadioGetNow`) takes the clock the
-    /// composition binds the backend to, which [`Self::clock_info`]
+    /// The resolution of [`RadioPort::now`] and how its epoch relates to
+    /// the image's monotonic time. The port's radio clock is the epoch of
+    /// scheduled operations and receive timestamps. A caller that needs it
+    /// synchronously without the port (OpenThread's `otPlatRadioGetNow`)
+    /// takes the clock the composition binds the backend to, which this
     /// relates to monotonic time.
-    fn now(&self) -> Result<Ieee802154Instant, Self::Error>;
-
-    /// The resolution of [`Self::now`] and how its epoch relates to the
-    /// image's monotonic time.
     fn clock_info(&self) -> ClockInfo;
 
     /// The portable state.
-    fn state(&self) -> Result<RadioState, Self::Error>;
+    fn state(&self) -> PortResult<RadioState, NotInstalled, Self::Fault>;
 
     /// Change one setting. `Ok(Err(_))` when the backend refused it.
-    fn apply(&self, setting: RadioSetting<'_>) -> Result<Result<(), SettingError>, Self::Error>;
+    fn apply(&self, setting: RadioSetting<'_>) -> PortResult<(), SettingError, Self::Fault>;
 
     /// The next frame counter of `interface`; `None` for an interface
     /// without keys or one the radio does not have.
-    fn frame_counter(&self, interface: Interface) -> Result<Option<u32>, Self::Error>;
+    fn frame_counter(
+        &self,
+        interface: Interface,
+    ) -> PortResult<Option<u32>, NotInstalled, Self::Fault>;
 
     /// The live RSSI in dBm of the most recent reception
     /// (`otPlatRadioGetRssi`), whatever the radio's state.
-    fn recent_rssi(&self) -> Result<i8, Self::Error>;
+    fn recent_rssi(&self) -> PortResult<i8, NotInstalled, Self::Fault>;
 }

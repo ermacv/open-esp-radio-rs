@@ -32,10 +32,10 @@ use oer_espressif_ieee802154_engine::{
     types::{Ieee802154CcaMode, Ieee802154MultipanIndex, Ieee802154RxStatus},
 };
 use oer_ieee802154::{
-    AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, CcaMode, Channel,
-    CommandError, Configuration, CsmaCa, ENH_ACK_PROBING_IE_CAPACITY, EnhAckProbing, FcsStatus,
-    FramePending, FrameRetries, FrameType, FrameVersion, FrameView, Ieee802154Instant, Interface,
-    InterfaceSetting, KeyIdMode, MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities,
+    AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, CancelError, CcaMode,
+    Channel, CommandError, Configuration, CsmaCa, ENH_ACK_PROBING_IE_CAPACITY, EnhAckProbing,
+    FcsStatus, FramePending, FrameRetries, FrameType, FrameVersion, FrameView, Ieee802154Instant,
+    Interface, InterfaceSetting, KeyIdMode, MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities,
     RadioCommand, RadioEvent, RadioFault, RadioState, RadioStateMachine, ReceivedFrame, RequestId,
     RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TimeSync, TxMode,
     TxSecurity, TxStatus, csl_phase, generate_enhanced_ack, write_csl_ie,
@@ -61,8 +61,7 @@ pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::
     .union(RadioCapabilities::RECEIVE_TIMESTAMP)
     .union(RadioCapabilities::AUTOMATIC_ACKNOWLEDGEMENT)
     .union(RadioCapabilities::SOURCE_MATCH)
-    .union(RadioCapabilities::TIME_SYNC)
-    .union(RadioCapabilities::CANCEL);
+    .union(RadioCapabilities::TIME_SYNC);
 
 /// Header IE bytes an enhanced ACK carries at most (OpenThread
 /// `OT_ACK_IE_MAX_SIZE`).
@@ -901,12 +900,13 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
         Ok(())
     }
 
-    /// Disable a resting radio: the MAC sleeps and the portable state is
-    /// disabled.
+    /// Disable the radio: an operation in flight ends first with its
+    /// terminal event, as [`Self::cancel`] ends it, then the MAC sleeps and
+    /// the portable state is disabled.
     ///
     /// # Errors
     ///
-    /// The radio is disabled, or an operation owns it; nothing ran.
+    /// The radio is disabled; nothing ran.
     pub fn disable<
         L: Ieee802154LowLevel + ?Sized,
         C: Clock + ?Sized,
@@ -917,6 +917,10 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
         clock: &C,
         sink: &mut S,
     ) -> Result<(), CommandError> {
+        if let Some(running) = self.machine.cancellable() {
+            self.cancel(ll, clock, running, sink)
+                .expect("the state machine names a cancellable operation");
+        }
         let previous = self.machine.disable()?;
         let flushed_on = match previous {
             RadioState::Resting(RestingState::Receiving { channel }) => Some(channel),
@@ -986,9 +990,6 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
             return Err(CommandError::PendingTableFull);
         }
         let accepted = self.machine.admit(command)?;
-        // A cancellation flushes frames on the channel the stopped
-        // operation received on.
-        let cancel_flushed_on = self.backoff_receive_channel();
         let mut collector = Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
         let engine = &mut self.engine;
         match command {
@@ -1101,28 +1102,50 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
                 engine.pib().set_channel(hal_channel(channel));
                 engine.cca(ll, &mut collector);
             }
-            RadioCommand::Cancel { .. } => {
-                // A stopped attempt ends the transmission.
-                if let Some(transmission) = self.transmission.as_mut() {
-                    transmission.cancelled = true;
-                }
-                // `ieee802154_sleep` stops whatever the MAC runs: a stopped
-                // transmission reports its abort, or the outcome it had
-                // already reached; a measurement and a window end silently.
-                engine.sleep(ll, &mut collector);
-            }
         }
-        let flushed_on = match (command, accepted.previous) {
-            (RadioCommand::Cancel { .. }, _) => cancel_flushed_on,
-            (_, RadioState::Resting(RestingState::Receiving { channel })) => Some(channel),
+        let flushed_on = match accepted.previous {
+            RadioState::Resting(RestingState::Receiving { channel }) => Some(channel),
             _ => None,
         };
         let notifications = collector.notifications;
         self.deliver(ll, clock, notifications, Some(flushed_on), sink);
-        if let RadioCommand::Cancel { target, .. } = command {
-            self.end_cancelled(ll, clock, target, sink);
-        }
         Ok(accepted)
+    }
+
+    /// End the running operation `target` before its own end
+    /// ([`RadioStateMachine::admit_cancel`]) and deliver its terminal event.
+    ///
+    /// # Errors
+    ///
+    /// No such operation runs; nothing ran.
+    pub fn cancel<
+        L: Ieee802154LowLevel + ?Sized,
+        C: Clock + ?Sized,
+        S: Ieee802154RadioSink + ?Sized,
+    >(
+        &mut self,
+        ll: &mut L,
+        clock: &C,
+        target: RequestId,
+        sink: &mut S,
+    ) -> Result<(), CancelError> {
+        self.machine.admit_cancel(target)?;
+        // A cancellation flushes frames on the channel the stopped
+        // operation received on.
+        let flushed_on = self.backoff_receive_channel();
+        // A stopped attempt ends the transmission.
+        if let Some(transmission) = self.transmission.as_mut() {
+            transmission.cancelled = true;
+        }
+        let mut collector = Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
+        // `ieee802154_sleep` stops whatever the MAC runs: a stopped
+        // transmission reports its abort, or the outcome it had already
+        // reached; a measurement and a window end silently.
+        self.engine.sleep(ll, &mut collector);
+        let notifications = collector.notifications;
+        self.deliver(ll, clock, notifications, Some(flushed_on), sink);
+        self.end_cancelled(ll, clock, target, sink);
+        Ok(())
     }
 
     /// Report the terminal event of a cancelled operation the stopped

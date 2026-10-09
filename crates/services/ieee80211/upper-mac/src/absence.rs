@@ -13,7 +13,7 @@ use oer_ieee80211_lower_mac::{
 };
 use oer_time::{Instant, Timer};
 
-use crate::client::{PortClient, PortClientEnv, PortClientError, PortError};
+use crate::client::{PortClient, PortClientEnv, PortClientError, PortFault};
 
 /// The owner keeps this state across receive futures. A failed return
 /// home, including during cancellation, prevents clients from resuming
@@ -87,7 +87,7 @@ impl<'s, 'p, P: LowerMacLiveRetune> PortAbsence<'s, 'p, P> {
         window: AbsenceWindow,
         rate: PhyRate,
         coex: CoexPriority,
-    ) -> Result<Option<Self>, AbsenceError<PortError<X>>>
+    ) -> Result<Option<Self>, AbsenceError<PortFault<X>>>
     where
         P: LowerMacAirReservation,
     {
@@ -114,7 +114,7 @@ impl<'s, 'p, P: LowerMacLiveRetune> PortAbsence<'s, 'p, P> {
         }
         let port = client.port();
         port.retune_live(window.channel)
-            .map_err(|error| AbsenceError::Client(PortClientError::Port(error)))?
+            .map_err(|poisoned| AbsenceError::Client(PortClientError::Poisoned(poisoned)))?
             .map_err(|error| AbsenceError::Client(PortClientError::Setting(error)))?;
         Ok(Some(Self {
             port,
@@ -125,12 +125,12 @@ impl<'s, 'p, P: LowerMacLiveRetune> PortAbsence<'s, 'p, P> {
     }
 
     /// Return home before resuming any transmitting client.
-    pub fn finish(mut self) -> Result<(), AbsenceError<P::Error>> {
+    pub fn finish(mut self) -> Result<(), AbsenceError<P::Fault>> {
         self.away = false;
         let restored = self
             .port
             .retune_live(self.home)
-            .map_err(|error| AbsenceError::Client(PortClientError::Port(error)))
+            .map_err(|poisoned| AbsenceError::Client(PortClientError::Poisoned(poisoned)))
             .and_then(|result| {
                 result.map_err(|error| AbsenceError::Client(PortClientError::Setting(error)))
             });

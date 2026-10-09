@@ -23,7 +23,7 @@ use oer_ieee80211_rsn::{
     supplicant::RsnStaKeyInstallRequest,
 };
 use oer_ieee80211_sta::attempt::Wpa2Message4Protection;
-use oer_ieee80211_upper_mac_service::client::{PortError, PortInput};
+use oer_ieee80211_upper_mac_service::client::{PortFault, PortInput};
 
 use super::{
     link::{PortConnectionFrame, PortLink, PortLinkError, PortStationEnv},
@@ -102,7 +102,7 @@ async fn send_eapol<X: PortStationEnv>(
     bssid: MacAddress,
     sequence_number: SequenceNumber,
     eapol: &[u8],
-) -> Result<(), PortLinkError<PortError<X>>> {
+) -> Result<(), PortLinkError<PortFault<X>>> {
     let config = *link.config();
     let mut frame = [0_u8; EAPOL_FRAME_CAPACITY];
     let length = StaDataFrame {
@@ -127,14 +127,14 @@ async fn send_eapol<X: PortStationEnv>(
 }
 
 impl<X: PortStationEnv> RsnHandshakeBackend for PortHandshake<'_, '_, X> {
-    type Error = PortLinkError<PortError<X>>;
+    type Error = PortLinkError<PortFault<X>>;
 
     async fn service_receive(&mut self) -> Result<RsnRxProgress, Self::Error> {
         let mut completed = 0_u32;
         while let Some(input) = self.link.try_input().await {
             let frame = match input {
                 PortInput::Frame(frame) => frame,
-                PortInput::Poisoned => return Err(PortLinkError::Poisoned),
+                PortInput::Poisoned(poisoned) => return Err(PortLinkError::Poisoned(poisoned)),
                 PortInput::Tbtt(_) | PortInput::EventsLost => continue,
             };
             completed = completed.saturating_add(1);
@@ -205,7 +205,7 @@ impl<'a, 'p, X: PortStationEnv> PortKeyInstall<'a, 'p, X> {
         &self,
         key: &RsnKeyInstall,
         scope: KeyScope,
-    ) -> Result<KeyHandle, PortLinkError<PortError<X>>> {
+    ) -> Result<KeyHandle, PortLinkError<PortFault<X>>> {
         self.link
             .port()
             .install_key(KeyInstall {
@@ -213,14 +213,13 @@ impl<'a, 'p, X: PortStationEnv> PortKeyInstall<'a, 'p, X> {
                 cipher: Cipher::Ccmp128,
                 scope,
                 key: key.key().as_bytes(),
-            })
-            .map_err(PortLinkError::Port)?
+            })?
             .map_err(PortLinkError::Setting)
     }
 }
 
 impl<X: PortStationEnv> RsnKeyInstallBackend for PortKeyInstall<'_, '_, X> {
-    type Error = PortLinkError<PortError<X>>;
+    type Error = PortLinkError<PortFault<X>>;
     type InstalledKeys = PortInstalledKeys;
 
     fn install_keys(
@@ -291,7 +290,7 @@ pub(crate) async fn send_protected_eapol<X: PortStationEnv>(
     packet_number: &mut CcmpTxPacketNumber,
     pairwise: KeyHandle,
     eapol: &[u8],
-) -> Result<(), PortLinkError<PortError<X>>> {
+) -> Result<(), PortLinkError<PortFault<X>>> {
     let config = *link.config();
     let ccmp_header = packet_number
         .next_header(CcmpKeyId::new(0).expect("key identifier zero"))

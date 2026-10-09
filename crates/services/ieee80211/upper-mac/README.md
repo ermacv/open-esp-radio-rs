@@ -25,11 +25,11 @@ the backend's runner, takes every event and dispatches it:
   joined a BSS taking what neither proves is the access point's, as it
   scans. A frame no attached interface owns is counted (`unrouted_frames`)
   and dropped;
-- `EventsLost` from the port marks every exchange still waiting; the
-  exchange cancels its attempt by its identity and either receives the
-  completion or, when the cancel is refused as not running, learns from
-  `resolve(id)` whether the completion still came or was lost in the gap;
-- the terminal `Poisoned` event ends `run()` and every wait.
+- `EventsLost` from the port marks the receive and extension queues: the
+  port reserves every completion and lifecycle terminal when it admits the
+  work, so a waiting exchange always receives its completion;
+- `Poisoned` ends `run()` and every wait with the backend's cause, which
+  `poisoned()` keeps.
 
 The router also shares the port's physical TX queues. `send_mpdu`,
 `send_ampdu` and `reserve_air` wait for FIFO ownership of the queue named by

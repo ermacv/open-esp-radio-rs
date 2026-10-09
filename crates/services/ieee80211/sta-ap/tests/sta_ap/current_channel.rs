@@ -1,7 +1,7 @@
 //! An enabled-port channel setting is refused, as on S31. This backend
 //! deliberately implements neither air reservation nor live retuning.
 
-use core::cell::Cell;
+use core::{cell::Cell, future::Future};
 
 use oer_ieee80211_lower_mac::*;
 
@@ -12,9 +12,37 @@ struct DisabledRetune {
     enabled: Cell<bool>,
 }
 
+type Fault = <Model as RadioPort>::Fault;
+
+impl RadioPort for DisabledRetune {
+    type Event = <Model as RadioPort>::Event;
+    type Id = TxId;
+    type Domain = Ieee80211Radio;
+    type Fault = Fault;
+
+    fn next_event(&self) -> impl Future<Output = PortResult<Self::Event, EventsLost, Fault>> + '_ {
+        self.model.next_event()
+    }
+
+    fn now(&self) -> impl Future<Output = PortResult<Ieee80211Instant, ClockError, Fault>> + '_ {
+        self.model.now()
+    }
+
+    fn cancel(&self, id: TxId) -> impl Future<Output = PortResult<(), CancelError, Fault>> + '_ {
+        self.model.cancel(id)
+    }
+
+    async fn lifecycle(&self, command: LifecycleCommand) -> PortResult<(), LifecycleError, Fault> {
+        let result = self.model.lifecycle(command).await;
+        if matches!(&result, Ok(Ok(()))) {
+            self.enabled
+                .set(matches!(command, LifecycleCommand::Enable));
+        }
+        result
+    }
+}
+
 impl Ieee80211LowerMacPort for DisabledRetune {
-    type Event = <Model as Ieee80211LowerMacPort>::Event;
-    type Error = <Model as Ieee80211LowerMacPort>::Error;
     type TxBuffer = <Model as Ieee80211LowerMacPort>::TxBuffer;
     type TxBody = <Model as Ieee80211LowerMacPort>::TxBody;
     type RxBuffer = <Model as Ieee80211LowerMacPort>::RxBuffer;
@@ -35,7 +63,7 @@ impl Ieee80211LowerMacPort for DisabledRetune {
         self.model.clock_info()
     }
 
-    fn tx_buffer(&self, len: usize) -> Result<Option<Self::TxBuffer>, Self::Error> {
+    fn tx_buffer(&self, len: usize) -> PortResult<Option<Self::TxBuffer>, NotInstalled, Fault> {
         self.model.tx_buffer(len)
     }
 
@@ -46,7 +74,7 @@ impl Ieee80211LowerMacPort for DisabledRetune {
     fn submit(
         &self,
         attempt: MpduAttempt<Self::TxBuffer, Self::TxBody>,
-    ) -> SubmitResult<MpduAttempt<Self::TxBuffer, Self::TxBody>> {
+    ) -> SubmitResult<MpduAttempt<Self::TxBuffer, Self::TxBody>, Fault> {
         self.model.submit(attempt)
     }
 
@@ -54,15 +82,11 @@ impl Ieee80211LowerMacPort for DisabledRetune {
         &self,
         id: TxId,
         each: impl FnMut(usize, Self::TxBody),
-    ) -> Result<Result<(), ReclaimError>, Self::Error> {
+    ) -> PortResult<(), ReclaimError, Fault> {
         self.model.reclaim_tx_bodies(id, each)
     }
 
-    fn next_event(&self) -> impl Future<Output = Result<Self::Event, EventsLost>> + '_ {
-        self.model.next_event()
-    }
-
-    fn apply(&self, setting: LowerMacSetting) -> Result<Result<(), SettingError>, Self::Error> {
+    fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, Fault> {
         if matches!(setting, LowerMacSetting::Channel(_)) && self.enabled.get() {
             Ok(Err(SettingError::Busy))
         } else {
@@ -70,34 +94,11 @@ impl Ieee80211LowerMacPort for DisabledRetune {
         }
     }
 
-    fn install_key(
-        &self,
-        key: KeyInstall<'_>,
-    ) -> Result<Result<KeyHandle, SettingError>, Self::Error> {
+    fn install_key(&self, key: KeyInstall<'_>) -> PortResult<KeyHandle, SettingError, Fault> {
         self.model.install_key(key)
     }
 
-    fn lifecycle(
-        &self,
-        command: LifecycleCommand,
-    ) -> Result<Result<(), LifecycleError>, Self::Error> {
-        let result = self.model.lifecycle(command);
-        if matches!(&result, Ok(Ok(()))) {
-            self.enabled
-                .set(matches!(command, LifecycleCommand::Enable));
-        }
-        result
-    }
-
-    fn cancel(&self, id: TxId) -> Result<Result<(), CancelError>, Self::Error> {
-        self.model.cancel(id)
-    }
-
-    fn now(&self) -> Result<Ieee80211Instant, Self::Error> {
-        self.model.now()
-    }
-
-    fn clock_sample(&self) -> Result<Ieee80211ClockSample, Self::Error> {
+    fn clock_sample(&self) -> PortResult<Ieee80211ClockSample, ClockError, Fault> {
         self.model.clock_sample()
     }
 }
@@ -107,23 +108,23 @@ impl LowerMacBeaconTiming for DisabledRetune {
         self.model.beacon_timing_capabilities()
     }
 
-    fn tsf(&self, vif: VifId) -> Result<Result<VifTsf, SettingError>, Self::Error> {
+    fn tsf(&self, vif: VifId) -> PortResult<VifTsf, SettingError, Fault> {
         self.model.tsf(vif)
     }
 
-    fn tsf_sample(&self, vif: VifId) -> Result<Result<TsfSample, SettingError>, Self::Error> {
+    fn tsf_sample(&self, vif: VifId) -> PortResult<TsfSample, SettingError, Fault> {
         self.model.tsf_sample(vif)
     }
 
-    fn set_tsf(&self, tsf: VifTsf) -> Result<Result<(), SettingError>, Self::Error> {
+    fn set_tsf(&self, tsf: VifTsf) -> PortResult<(), SettingError, Fault> {
         self.model.set_tsf(tsf)
     }
 
-    fn set_tbtt(&self, schedule: TbttSchedule) -> Result<Result<(), SettingError>, Self::Error> {
+    fn set_tbtt(&self, schedule: TbttSchedule) -> PortResult<(), SettingError, Fault> {
         self.model.set_tbtt(schedule)
     }
 
-    fn stop_tbtt(&self, vif: VifId) -> Result<Result<(), SettingError>, Self::Error> {
+    fn stop_tbtt(&self, vif: VifId) -> PortResult<(), SettingError, Fault> {
         self.model.stop_tbtt(vif)
     }
 
@@ -137,7 +138,7 @@ impl LowerMacMonitor for DisabledRetune {
         self.model.monitor_capabilities()
     }
 
-    fn set_monitor(&self, enabled: bool) -> Result<Result<(), SettingError>, Self::Error> {
+    fn set_monitor(&self, enabled: bool) -> PortResult<(), SettingError, Fault> {
         self.model.set_monitor(enabled)
     }
 }
@@ -149,7 +150,7 @@ impl LowerMacAmpdu for DisabledRetune {
         self.model.ampdu_capabilities()
     }
 
-    fn ampdu_buffer(&self) -> Result<Option<Self::AmpduBuffer>, Self::Error> {
+    fn ampdu_buffer(&self) -> PortResult<Option<Self::AmpduBuffer>, NotInstalled, Fault> {
         self.model.ampdu_buffer()
     }
 
@@ -160,7 +161,7 @@ impl LowerMacAmpdu for DisabledRetune {
     fn submit_ampdu(
         &self,
         attempt: AmpduAttempt<Self::AmpduBuffer>,
-    ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>> {
+    ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>, Fault> {
         self.model.submit_ampdu(attempt)
     }
 }

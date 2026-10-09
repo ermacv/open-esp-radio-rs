@@ -628,17 +628,9 @@ fn a_time_ie_needs_the_time_sync_capability() {
 /// operation's terminal event, and is refused for anything else.
 #[test]
 fn cancel_admits_only_the_running_operation() {
-    let capabilities = RadioCapabilities::ENERGY_SCAN | RadioCapabilities::CANCEL;
-    let mut machine = enabled(capabilities);
-    let cancel = |target| RadioCommand::Cancel {
-        id: RequestId::new(40),
-        target,
-    };
+    let mut machine = enabled(RadioCapabilities::ENERGY_SCAN);
     // Nothing runs.
-    assert_eq!(
-        machine.admit(cancel(ID)),
-        Err(CommandError::NotRunning { target: ID })
-    );
+    assert_eq!(machine.admit_cancel(ID), Err(CancelError::NotRunning));
     machine
         .admit(RadioCommand::EnergyScan(EnergyScanRequest {
             id: ID,
@@ -648,31 +640,23 @@ fn cancel_admits_only_the_running_operation() {
         .unwrap();
     let scanning = machine.state();
     assert_eq!(
-        machine.admit(cancel(RequestId::new(8))),
-        Err(CommandError::NotRunning {
-            target: RequestId::new(8)
-        })
+        machine.admit_cancel(RequestId::new(8)),
+        Err(CancelError::NotRunning)
     );
-    let accepted = machine.admit(cancel(ID)).unwrap();
-    assert_eq!(accepted.kind, CommandKind::Cancel);
-    assert_eq!((accepted.previous, accepted.current), (scanning, scanning));
+    assert_eq!(machine.admit_cancel(ID), Ok(()));
     assert_eq!(machine.state(), scanning);
     machine
         .observe(RadioEvent::EnergyScanFailed { id: ID })
         .unwrap();
     assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
-    assert_eq!(
-        machine.admit(cancel(ID)),
-        Err(CommandError::NotRunning { target: ID })
-    );
+    assert_eq!(machine.admit_cancel(ID), Err(CancelError::NotRunning));
 }
 
 /// An open scheduled receive window can be cancelled; its end event
 /// completes it.
 #[test]
 fn cancel_ends_a_scheduled_receive_window() {
-    let capabilities = RadioCapabilities::SCHEDULED_RECEIVE | RadioCapabilities::CANCEL;
-    let mut machine = enabled(capabilities);
+    let mut machine = enabled(RadioCapabilities::SCHEDULED_RECEIVE);
     machine
         .admit(RadioCommand::ScheduledReceive(
             crate::ScheduledReceiveRequest {
@@ -683,50 +667,27 @@ fn cancel_ends_a_scheduled_receive_window() {
             },
         ))
         .unwrap();
-    machine
-        .admit(RadioCommand::Cancel {
-            id: RequestId::new(41),
-            target: ID,
-        })
-        .unwrap();
+    assert_eq!(machine.admit_cancel(ID), Ok(()));
     machine
         .observe(RadioEvent::ScheduledReceiveDone { id: ID })
         .unwrap();
     assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
 }
 
-/// Cancellation needs its capability, and an enabled radio.
+/// A disabled radio runs nothing to cancel.
 #[test]
-fn cancel_needs_the_capability_and_an_enabled_radio() {
-    let command = RadioCommand::Cancel {
-        id: RequestId::new(42),
-        target: ID,
-    };
-    let mut disabled = RadioStateMachine::new(RadioCapabilities::CANCEL);
-    assert_eq!(disabled.admit(command), Err(CommandError::Disabled));
-    let mut machine = enabled(RadioCapabilities::NONE);
-    assert_eq!(
-        machine.admit(command),
-        Err(CommandError::Unsupported {
-            command: CommandKind::Cancel,
-            required: RadioCapabilities::CANCEL,
-        })
-    );
+fn a_disabled_radio_has_nothing_to_cancel() {
+    let machine = RadioStateMachine::new(RadioCapabilities::NONE);
+    assert_eq!(machine.admit_cancel(ID), Err(CancelError::NotRunning));
 }
 
-/// A lifecycle terminal confirms a transition the state already took; the
-/// terminal poisoned event leaves the radio disabled.
+/// A lifecycle terminal confirms a transition the state already took.
 #[test]
-fn lifecycle_terminals_keep_the_state_and_poisoning_disables() {
+fn lifecycle_terminals_keep_the_state() {
     let mut machine = enabled(RadioCapabilities::NONE);
     assert_eq!(
         machine.observe(RadioEvent::Lifecycle(crate::LifecycleEvent::Enabled)),
         Ok(())
     );
     assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
-    assert_eq!(
-        machine.observe(RadioEvent::Poisoned(crate::Poisoned)),
-        Ok(())
-    );
-    assert_eq!(machine.state(), RadioState::Disabled);
 }

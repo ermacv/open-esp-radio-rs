@@ -1201,7 +1201,6 @@ fn a_failed_retune_fails_enable_recoverably_and_leaves_the_port_disabled() {
         events.lifecycle,
         [LifecycleEvent::Failed {
             command: LifecycleCommand::Enable,
-            class: oer_ieee80211_lower_mac::FailureClass::Recoverable,
         }]
     );
     assert_eq!(core.state, PortState::Disabled);

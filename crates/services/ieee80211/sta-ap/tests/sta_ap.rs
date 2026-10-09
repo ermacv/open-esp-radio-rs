@@ -22,8 +22,9 @@ use oer_ieee80211_ap_service::port::{
 use oer_ieee80211_datapath::{SoftwareTxFrame, memory::MemoryTxQueues};
 use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort, LifecycleCommand, LowerMacAmpdu,
-    LowerMacBeaconTiming, LowerMacMonitor, LowerMacSetting, MacAddress, TxPower, VifId, VifRole,
-    model::{LowerMacModel, ModelAir},
+    LowerMacBeaconTiming, LowerMacMonitor, LowerMacSetting, MacAddress, RadioPort, TxPower, VifId,
+    VifRole,
+    model::{LowerMacModel, ModelAir, ready},
 };
 use oer_ieee80211_mac::{
     ap::profile::{Advertisement, LegacyRates, WmmParameters},
@@ -261,7 +262,9 @@ fn radio() -> (&'static Model, &'static Router) {
         .apply(LowerMacSetting::Channel(ghz2_4(1)))
         .unwrap()
         .unwrap();
-    model.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    ready(model.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     (model, leak(PortRouter::new(model, 1)))
 }
 
@@ -475,7 +478,7 @@ impl World {
                         .into_iter()
                         .filter_map(|model| {
                             let until = model.nav_until()?;
-                            let sample = model.clock_sample().unwrap();
+                            let sample = model.clock_sample().unwrap().unwrap();
                             model
                                 .clock_info()
                                 .to_monotonic_with(

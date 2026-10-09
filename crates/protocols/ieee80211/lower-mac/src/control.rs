@@ -302,6 +302,8 @@ pub enum RxBeaconPriority {
 /// Why the backend refused a setting; nothing changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SettingError {
+    /// The backend is not installed or is paused.
+    NotInstalled,
     /// The setting names an interface the backend does not have or has not
     /// configured.
     UnknownVif,
@@ -326,4 +328,8 @@ pub enum SettingError {
     Unsupported,
     /// Timing validation failed before changing the TSF or its relation.
     TsfTiming(crate::TsfTimingError),
+    /// The radio clock gave no consistent reading to relate the TSF to (it
+    /// belongs to a replaced radio start, or two readings disagreed); a
+    /// later call may succeed.
+    ClockUnavailable,
 }

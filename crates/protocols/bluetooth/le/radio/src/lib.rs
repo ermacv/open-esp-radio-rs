@@ -18,12 +18,13 @@
 //! caller-chosen identifier in later events.
 //!
 //! [`LeRadioPort`] is the port a Controller service loop drives: it states
-//! the backend's [`LeRadioCapabilities`] (roles, PHYs, data PDU payload and
-//! who runs the [`LinkAcknowledgement`]), reads the radio clock, submits
-//! requests and yields owned outcomes. [`NoRadio`] is the port of a host
-//! without a radio. Failure classes, the outcome loss marker, the terminal
-//! poisoned outcome, correlation identities and the clock relation are the
-//! shared ones of `oer-radio-port`.
+//! the backend's [`LeRadioCapabilities`] (roles, PHYs, data PDU payload,
+//! who runs the [`LinkAcknowledgement`] and the [`RadioTiming`]), submits
+//! requests and, through the shared [`RadioPort`] base, reads the radio
+//! clock, yields owned events, cancels events and runs the lifecycle.
+//! [`NoRadio`] is the port of a host without a radio. Refusals and
+//! poisoning, event loss, correlation identities and the clock relation are
+//! the shared ones of `oer-radio-port`.
 
 #[cfg(test)]
 extern crate std;
@@ -45,8 +46,8 @@ pub use channel::{
 };
 pub use oer_radio_coex::CoexPriority;
 pub use oer_radio_port::{
-    ClockInfo, Correlation, CorrelationIds, EventsLost, FailureClass, Poisoned, PortError,
-    RadioEpoch,
+    CancelError, ClockError, ClockInfo, Correlation, CorrelationIds, EventsLost, LifecycleCommand,
+    LifecycleError, LifecycleEvent, NotInstalled, Poisoned, PortResult, RadioEpoch, RadioPort,
 };
 pub use oer_time::{RadioDuration, WindowError};
 
@@ -59,7 +60,7 @@ pub type LeInstant = oer_time::RadioInstant<LeRadio>;
 
 /// A window reserved on the LE radio port's clock.
 pub type LeWindow = oer_time::RadioWindow<LeRadio>;
-pub use outcome::{CaptureError, EventResult, RadioFault, RadioOutcome, ReceivedPdu, TestReport};
+pub use outcome::{CaptureError, EventResult, RadioOutcome, ReceivedPdu, TestReport};
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
 pub use port::{LeRadioPort, NoRadio};
 pub use request::{

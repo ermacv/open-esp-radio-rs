@@ -35,43 +35,107 @@ fn awaiting_refills_the_budget() {
     });
 }
 
-/// The outcome queue reports a loss once, after the outcomes queued before
-/// it and before those after it.
+/// The outcome queue reports a loss of received PDUs once, after the
+/// outcomes queued before it and before those after it.
 #[test]
-fn an_outcome_loss_is_reported_in_its_place() {
+fn a_received_pdu_loss_is_reported_in_its_place() {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-    use oer_bluetooth_radio::{ConnectionId, EventsLost};
+    use oer_bluetooth_radio::{EventId, EventsLost};
+
+    use super::OutcomeQueue;
+
+    let queue = OutcomeQueue::<NoopRawMutex, 2, 1>::new();
+    let received = |byte| received(EventId::new(1), byte);
+    for byte in 0..4 {
+        queue.push(received(byte));
+    }
+    assert_eq!(queue.take(), Some(Ok(received(0))));
+    assert_eq!(queue.take(), Some(Ok(received(1))));
+    assert_eq!(queue.take(), Some(Err(EventsLost)));
+    assert_eq!(queue.take(), None);
+    queue.push(received(5));
+    assert_eq!(queue.take(), Some(Ok(received(5))));
+}
+
+/// An admitted event's end and the acknowledgement before it hold the
+/// slots the admission reserved: received PDUs never take them.
+#[test]
+fn an_admitted_event_keeps_the_slots_of_its_terminal_outcomes() {
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+    use oer_bluetooth_radio::{ConnectionId, EventId, EventResult, EventsLost};
 
     use super::OutcomeQueue;
     use crate::BluetoothOutcome;
 
-    let queue = OutcomeQueue::<NoopRawMutex, 2>::new();
-    let acknowledged = |id| BluetoothOutcome::TransmitAcknowledged(ConnectionId::new(id));
-    for id in 0..4 {
-        queue.push(acknowledged(id));
+    let queue = OutcomeQueue::<NoopRawMutex, 3, 1>::new();
+    assert!(queue.admit_event(EventId::new(1), 0));
+    // One slot is left beside the two reserved ones.
+    assert!(!queue.admit_event(EventId::new(2), 0));
+    for byte in 0..3 {
+        queue.push(received(EventId::new(1), byte));
     }
-    queue.push(acknowledged(9));
-    assert_eq!(queue.take(), Some(Ok(acknowledged(0))));
-    assert_eq!(queue.take(), Some(Ok(acknowledged(1))));
+    let acknowledged = BluetoothOutcome::TransmitAcknowledged(ConnectionId::new(0));
+    let ended = BluetoothOutcome::EventEnded {
+        id: EventId::new(1),
+        result: EventResult::NotExecuted,
+    };
+    queue.push(acknowledged.clone());
+    queue.push(ended.clone());
+    assert_eq!(queue.take(), Some(Ok(received(EventId::new(1), 0))));
     assert_eq!(queue.take(), Some(Err(EventsLost)));
+    assert_eq!(queue.take(), Some(Ok(acknowledged)));
+    assert_eq!(queue.take(), Some(Ok(ended)));
     assert_eq!(queue.take(), None);
-    queue.push(acknowledged(5));
-    assert_eq!(queue.take(), Some(Ok(acknowledged(5))));
+    // The event's slots are free again.
+    assert!(queue.admit_event(EventId::new(2), 0));
 }
 
+/// A connection event reserves the data PDUs the hardware acknowledges to
+/// the peer: they are never lost, while advertising reports of another
+/// event are dropped when the rest of the queue is full.
 #[test]
-fn not_installed_is_rejected_and_a_fault_poisons() {
-    use oer_bluetooth_radio::{FailureClass, PortError, RequestError};
+fn a_connection_event_keeps_the_slots_of_its_acknowledged_data() {
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+    use oer_bluetooth_radio::{EventId, EventResult, EventsLost};
 
-    use super::BluetoothRuntimeError;
+    use super::OutcomeQueue;
+    use crate::BluetoothOutcome;
 
-    assert_eq!(
-        BluetoothRuntimeError::NotInstalled.class(),
-        FailureClass::Rejected
-    );
-    assert_eq!(
-        BluetoothRuntimeError::Rejected(RequestError::Busy).class(),
-        FailureClass::Rejected
-    );
-    assert!(BluetoothRuntimeError::Faulted.is_poisoned());
+    let queue = OutcomeQueue::<NoopRawMutex, 5, 1>::new();
+    let connection = EventId::new(7);
+    // Its end, the acknowledgement and two data PDUs: four of five slots.
+    assert!(queue.admit_event(connection, 2));
+    // A second connection event has no data slot left.
+    assert!(!queue.admit_event(EventId::new(8), 0));
+    // An advertising report fills the free slot; the next is dropped.
+    queue.push(received(EventId::new(3), 0));
+    queue.push(received(EventId::new(3), 1));
+    // The connection's data still finds its reserved slots.
+    queue.push(received(connection, 10));
+    queue.push(received(connection, 11));
+    let ended = BluetoothOutcome::EventEnded {
+        id: connection,
+        result: EventResult::NotExecuted,
+    };
+    queue.push(ended.clone());
+    assert_eq!(queue.take(), Some(Ok(received(EventId::new(3), 0))));
+    assert_eq!(queue.take(), Some(Err(EventsLost)));
+    assert_eq!(queue.take(), Some(Ok(received(connection, 10))));
+    assert_eq!(queue.take(), Some(Ok(received(connection, 11))));
+    assert_eq!(queue.take(), Some(Ok(ended)));
+    // Every slot is free again, the unused companion slot included.
+    assert!(queue.admit_event(EventId::new(9), 3));
+}
+
+/// A received PDU of `byte` during event `id`.
+fn received(id: oer_bluetooth_radio::EventId, byte: u8) -> crate::BluetoothOutcome {
+    crate::BluetoothOutcome::copy(oer_bluetooth_radio::RadioOutcome::Received {
+        id,
+        pdu: oer_bluetooth_radio::ReceivedPdu {
+            pdu: &[0x02, 1, byte],
+            rssi_dbm: -40,
+            captured_at: Ok(None),
+        },
+    })
+    .expect("the PDU fits")
 }

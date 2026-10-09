@@ -14,7 +14,7 @@ use oer_ieee80211_sta::join::{
     StaJoinBackend, StaJoinRxDirective, StaJoinRxObserver, association::StaAssociationAttempt,
     authentication::StaAuthenticationAttempt, sae::StaSaeTransmission,
 };
-use oer_ieee80211_upper_mac_service::client::{PortError, PortInput};
+use oer_ieee80211_upper_mac_service::client::{PortFault, PortInput};
 
 use super::{
     link::{PortConnectionFrame, PortLink, PortLinkError, PortStationEnv},
@@ -91,7 +91,7 @@ impl<'a, 'p, X: PortStationEnv> PortJoin<'a, 'p, X> {
         self
     }
 
-    async fn send(&mut self, frame: &[u8]) -> Result<(), PortLinkError<PortError<X>>> {
+    async fn send(&mut self, frame: &[u8]) -> Result<(), PortLinkError<PortFault<X>>> {
         let rate = self.link.config().management_rate;
         // The join runner times the response; an unacknowledged request is
         // one the access point did not answer.
@@ -114,7 +114,7 @@ impl<'a, 'p, X: PortStationEnv> PortJoin<'a, 'p, X> {
 }
 
 impl<X: PortStationEnv> StaJoinBackend for PortJoin<'_, '_, X> {
-    type Error = PortLinkError<PortError<X>>;
+    type Error = PortLinkError<PortFault<X>>;
 
     async fn start_receive(&mut self) -> Result<(), Self::Error> {
         self.link
@@ -195,7 +195,7 @@ impl<X: PortStationEnv> StaJoinBackend for PortJoin<'_, '_, X> {
         while let Some(input) = self.link.try_input().await {
             let frame = match input {
                 PortInput::Frame(frame) => frame,
-                PortInput::Poisoned => return Err(PortLinkError::Poisoned),
+                PortInput::Poisoned(poisoned) => return Err(PortLinkError::Poisoned(poisoned)),
                 PortInput::Tbtt(_) | PortInput::EventsLost => continue,
             };
             let bytes = frame.bytes();

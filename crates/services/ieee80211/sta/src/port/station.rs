@@ -4,7 +4,7 @@
 use core::{convert::Infallible, marker::PhantomData};
 use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_ieee80211_upper_mac::rate_control::{RateControl, link_metric};
-use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortError, PortMsdu, PortRxBuffer};
+use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortFault, PortMsdu, PortRxBuffer};
 use oer_ieee80211_upper_mac_service::{aggregate::AmpduSubframes, frame::NetworkBody};
 
 use oer_ieee80211_lower_mac::{
@@ -183,7 +183,7 @@ pub enum PortStationError<E, U> {
 }
 
 /// The error type of an environment's station.
-pub type PortAttemptError<X> = PortStationError<PortError<X>, PortUnwrapError<X>>;
+pub type PortAttemptError<X> = PortStationError<PortFault<X>, PortUnwrapError<X>>;
 
 /// What the phases of the last attempt reported.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -407,7 +407,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         .await
     }
 
-    fn context(&mut self) -> Result<ConnectionParts<'_, 'p, X>, PortLinkError<PortError<X>>> {
+    fn context(&mut self) -> Result<ConnectionParts<'_, 'p, X>, PortLinkError<PortFault<X>>> {
         let Self {
             link,
             timer,
@@ -446,7 +446,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         &mut self,
         deadline: oer_time::Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
-    ) -> Result<Option<PortStationEvent>, PortLinkError<PortError<X>>> {
+    ) -> Result<Option<PortStationEvent>, PortLinkError<PortFault<X>>> {
         let (connection, mut context) = self.context()?;
         let event = connection
             .run_until(&mut context, deadline, deliver)
@@ -462,7 +462,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
     pub fn channel_switched(
         &mut self,
         channel: Channel,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let now = self.timer.now();
         self.connection
             .as_mut()
@@ -480,7 +480,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         &mut self,
         channel: Channel,
         until: oer_time::Instant,
-    ) -> Result<Option<Channel>, PortLinkError<PortError<X>>> {
+    ) -> Result<Option<Channel>, PortLinkError<PortFault<X>>> {
         if self.connection.is_some() {
             return Err(PortLinkError::MissingState);
         }
@@ -530,13 +530,13 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
     pub async fn set_sleep_type(
         &mut self,
         sleep_type: SleepType,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let (connection, mut context) = self.context()?;
         connection.start_power(&mut context, sleep_type).await
     }
 
     /// Leave the association with a Deauthentication.
-    pub async fn disconnect(&mut self) -> Result<(), PortLinkError<PortError<X>>> {
+    pub async fn disconnect(&mut self) -> Result<(), PortLinkError<PortFault<X>>> {
         self.end_connection(true).await
     }
 
@@ -550,7 +550,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
     async fn end_connection(
         &mut self,
         send_deauthentication: bool,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let result = match self.context() {
             Ok((connection, mut context)) => {
                 connection.leave(&mut context, send_deauthentication).await
@@ -1324,7 +1324,7 @@ impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifec
 
 fn connected_failure<'p, X: PortStationEnv>(
     owner: PortStation<'p, X>,
-    error: PortLinkError<PortError<X>>,
+    error: PortLinkError<PortFault<X>>,
 ) -> StaAttemptOutcome<PortStation<'p, X>, PortAttemptError<X>, Infallible> {
     StaAttemptOutcome::Failed {
         owner,

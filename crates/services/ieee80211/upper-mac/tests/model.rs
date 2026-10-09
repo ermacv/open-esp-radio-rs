@@ -8,7 +8,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 use oer_ieee80211_datapath::SoftwareTxFrame;
-use oer_ieee80211_lower_mac::{LowerMacMonitor as _, TxBody as _};
+use oer_ieee80211_lower_mac::{LowerMacMonitor as _, RadioPort as _, TxBody as _};
 use oer_network_interface::NetworkInterfaceId;
 
 use oer_ieee80211_lower_mac::Ieee80211Instant;
@@ -92,9 +92,11 @@ fn enabled_station() -> Model {
         .apply(LowerMacSetting::Channel(channel))
         .unwrap()
         .unwrap();
-    model.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    run(model.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     // Take the Enabled terminal event.
-    run(model.next_event()).unwrap();
+    run(model.next_event()).unwrap().unwrap();
     model
         .apply(LowerMacSetting::Vif {
             vif: STATION,
@@ -328,7 +330,7 @@ fn every_retry_sends_the_same_body_and_the_port_keeps_none_after_the_exchange() 
 }
 
 #[test]
-fn a_body_comes_back_from_an_attempt_whose_completion_was_lost() {
+fn a_receive_burst_never_takes_a_completion_and_its_body_comes_back() {
     let model = enabled_station();
     let router = Router::new(&model, 100);
     let mut tx = driver(&router);
@@ -348,10 +350,11 @@ fn a_body_comes_back_from_an_attempt_whose_completion_was_lost() {
     let mut routing = pin!(router.run());
     assert!(poll_once(send.as_mut()).is_pending());
     assert_eq!(model.bodies_held(), 1);
+    // A receive burst overflows the port's queue while the attempt flies;
+    // the completion holds the slot its attempt reserved.
     for _ in 0..6 {
         receive(&model);
     }
-    // The completion falls into the gap.
     model.complete(0, TxStatus::Success);
     let result = run(poll_fn(|context| {
         if let Poll::Ready(result) = send.as_mut().poll(context) {
@@ -360,11 +363,10 @@ fn a_body_comes_back_from_an_attempt_whose_completion_was_lost() {
         assert!(routing.as_mut().poll(context).is_pending());
         Poll::Pending
     }));
-    assert!(matches!(
-        result,
-        Err(UpperMacTxError::CompletionLost { .. })
-    ));
-    // The cancellation proved the attempt over: its body came back.
+    let Ok(TxReport::Mpdu(status)) = result else {
+        panic!("the exchange gets its completion");
+    };
+    assert_eq!(status.result, MacTxResult::Transmitted);
     assert_eq!(model.bodies_held(), 0);
 }
 
@@ -863,86 +865,6 @@ fn concurrent_exchanges_on_two_access_categories_keep_their_own_completions() {
 }
 
 #[test]
-fn a_loss_is_recovered_by_cancelling_the_attempt_in_flight() {
-    let model = enabled_station();
-    let router = Router::new(&model, 100);
-    // The station's interface takes the frames the port receives.
-    let _station = router.attach(STATION, VifRole::Station, ADDRESS).unwrap();
-    let mut tx = driver(&router);
-    let frame = qos_data(40, [5, 0, 0, 0x20, 0, 0, 0, 0], 40);
-    let mut entropy_3 = Seeded(1);
-    let mut send = pin!(tx.send_mpdu(
-        TxMpdu::whole(&frame),
-        KeySelector::Plaintext,
-        mpdu_request(&frame, 4),
-        &Ladder,
-        &mut entropy_3,
-    ));
-    let mut routing = pin!(router.run());
-    assert!(poll_once(send.as_mut()).is_pending());
-    // A receive burst overflows the port's queue while the attempt flies.
-    for _ in 0..6 {
-        receive(&model);
-    }
-    assert!(poll_once(routing.as_mut()).is_pending());
-    // The exchange learns of the loss and cancels its published attempt,
-    // which ends with its own completion.
-    assert!(poll_once(send.as_mut()).is_pending());
-    model.complete(0, TxStatus::Success);
-    assert!(poll_once(routing.as_mut()).is_pending());
-    let Poll::Ready(Ok(TxReport::Mpdu(status))) = poll_once(send.as_mut()) else {
-        panic!("the exchange recovers its completion");
-    };
-    assert_eq!(status.result, MacTxResult::Transmitted);
-    // The receive queue reports its own loss after the frames it kept.
-    let mut frames = 0;
-    loop {
-        match poll_once(pin!(router.received(STATION))) {
-            Poll::Ready(Some(Ok(_))) => frames += 1,
-            Poll::Ready(Some(Err(_))) => break,
-            other => panic!("unexpected {other:?}", other = other.is_pending()),
-        }
-    }
-    assert_eq!(frames, 4);
-}
-
-#[test]
-fn a_completion_lost_in_the_gap_ends_the_exchange_without_a_report() {
-    let model = enabled_station();
-    let router = Router::new(&model, 100);
-    let mut tx = driver(&router);
-    let frame = qos_data(41, [6, 0, 0, 0x20, 0, 0, 0, 0], 40);
-    let mut entropy_4 = Seeded(1);
-    let mut send = pin!(tx.send_mpdu(
-        TxMpdu::whole(&frame),
-        KeySelector::Plaintext,
-        mpdu_request(&frame, 4),
-        &Ladder,
-        &mut entropy_4,
-    ));
-    let mut routing = pin!(router.run());
-    assert!(poll_once(send.as_mut()).is_pending());
-    for _ in 0..6 {
-        receive(&model);
-    }
-    // The completion falls into the gap.
-    model.complete(0, TxStatus::Success);
-    let result = run(poll_fn(|context| {
-        if let Poll::Ready(result) = send.as_mut().poll(context) {
-            return Poll::Ready(result);
-        }
-        assert!(routing.as_mut().poll(context).is_pending());
-        Poll::Pending
-    }));
-    assert_eq!(
-        result,
-        Err(UpperMacTxError::CompletionLost {
-            attempt: oer_ieee80211_lower_mac::TxId(100)
-        })
-    );
-}
-
-#[test]
 fn a_poisoned_port_ends_every_exchange() {
     let model = enabled_station();
     let router = Router::new(&model, 100);
@@ -960,10 +882,13 @@ fn a_poisoned_port_ends_every_exchange() {
     assert!(poll_once(send.as_mut()).is_pending());
     model.poison();
     assert!(poll_once(routing.as_mut()).is_ready());
-    assert!(router.poisoned());
+    let poisoned = oer_ieee80211_lower_mac::Poisoned {
+        cause: oer_ieee80211_lower_mac::model::ModelFault,
+    };
+    assert_eq!(router.poisoned(), Some(poisoned));
     assert_eq!(
         poll_once(send.as_mut()),
-        Poll::Ready(Err(UpperMacTxError::Poisoned))
+        Poll::Ready(Err(UpperMacTxError::Poisoned(poisoned)))
     );
 }
 

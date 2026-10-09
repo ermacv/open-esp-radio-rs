@@ -5,52 +5,56 @@ use core::{
     future::{Future, pending, ready},
 };
 
-use oer_radio_port::{ClockInfo, EventsLost, PortError, RadioEpoch};
+use oer_radio_port::{
+    CancelError, ClockError, ClockInfo, EventsLost, LifecycleCommand, LifecycleError, NotInstalled,
+    PortResult, RadioEpoch, RadioPort,
+};
 
 use crate::{
-    ConnectionAllowances, LeInstant, LeRadioCapabilities, RadioActivity, RadioDuration,
-    RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    EventId, LeInstant, LeRadio, LeRadioCapabilities, RadioActivity, RadioOutcome, RadioRequest,
+    RequestError,
 };
 
 /// A Bluetooth LE radio backend as a Controller service loop drives it.
 ///
-/// The loop reads [`Self::capabilities`] and [`Self::clock`], submits one
-/// [`RadioRequest`] at a time, takes owned outcomes from
-/// [`Self::next_outcome`] and reads each through [`Self::view`].
+/// The event stream, the radio clock, cancellation and the lifecycle are
+/// the shared [`RadioPort`] base. The loop reads [`Self::capabilities`]
+/// (with the [`RadioTiming`](crate::RadioTiming) a planner keeps
+/// reservations apart by), reads the radio time with [`RadioPort::now`],
+/// submits one [`RadioRequest`] at a time, takes owned events from
+/// [`RadioPort::next_event`] and reads each through [`Self::view`].
 ///
-/// Failures come in the three classes of every radio port
-/// ([`FailureClass`](oer_radio_port::FailureClass)):
-///
-/// - `Rejected`: `Ok(Err(RequestError))` from [`Self::submit`], or an error
-///   of that class (no radio installed); nothing changed. A refusal as
-///   [`RequestError::Unsupported`] is final for that request; other
-///   refusals may succeed later.
-/// - `Recoverable`: admitted work ended without its result (an event that
-///   ended [`EventResult::NotExecuted`](crate::EventResult::NotExecuted), a
-///   time sample the backend could not take).
-/// - `Poisoned`: the backend's state is unknown. It reports
-///   [`RadioOutcome::Fault`] with the cause and then the terminal
-///   [`RadioOutcome::Poisoned`] at every [`Self::next_outcome`], and every
-///   other call returns an error of that class; only a reset restores it.
-///
-/// [`EventsLost`] from [`Self::next_outcome`] takes the place of the first
-/// dropped outcome. The Controller's roles account every event by its end,
-/// so a service loop that cannot recover them ends there.
+/// Every call returns a [`PortResult`]. Its inner `Err` is a refusal and
+/// nothing changed: [`RequestError::NotInstalled`] without a backend,
+/// [`RequestError::Disabled`] while the port is disabled or quiesced, and
+/// [`RequestError::Unsupported`] for a request the capabilities exclude,
+/// which is final for that request; other refusals may succeed later. The
+/// outer [`Poisoned`](oer_radio_port::Poisoned) means the backend's state is
+/// unknown, with its cause: every later call returns it and only a reset
+/// restores the port.
 ///
 /// # Events
 ///
-/// The port has exactly one consumer of its outcomes. Taking an outcome
-/// only dequeues it; the backend's scheduler work runs in its own runner
-/// (the ESP32-S31 `BluetoothRuntime::run`), which the composition polls
-/// beside the consumer.
+/// The port has exactly one consumer of its events. Taking an event only
+/// dequeues it; the backend's scheduler work runs in its own runner (the
+/// ESP32-S31 `BluetoothRuntime::run`), which the composition polls beside
+/// the consumer. The backend reserves the slots of an admitted event's end
+/// ([`RadioOutcome::EventEnded`], with the
+/// [`RadioOutcome::TransmitAcknowledged`] or [`RadioOutcome::TestReport`]
+/// before it), of the data PDUs a connection event receives (the Link Layer
+/// promises the peer reliable delivery of what the hardware acknowledged)
+/// and of a lifecycle terminal when it admits them, so they are never lost;
+/// [`EventsLost`] stands for advertising and scan reports only.
 ///
-/// # Lifecycle
+/// # Lifecycle and cancellation
 ///
-/// The port has no lifecycle commands: a backend is enabled by installing
-/// it with its memory and hardware owners and disabled by uninstalling it,
-/// and a maintenance pause hands a quiescence proof to a closure. Those
-/// owner transfers are not portable values, so they stay the backend's
-/// own operations (the ESP32-S31 `install`, `quiesce` and `uninstall`).
+/// Lifecycle commands act on an installed backend; installing and
+/// uninstalling it move memory and hardware owners and stay the backend's
+/// own operations. `Enable` starts admitting events; `Disable` ends every
+/// admitted event with its end and stops admitting; `Quiesce` stops
+/// admitting and lets the admitted events end, then reports `Quiesced`.
+/// [`RadioPort::cancel`] withdraws one scheduled event, whose end still
+/// follows.
 ///
 /// Submission and the clock are asynchronous because a backend may have to
 /// wait for hardware to admit a request: the ESP32-S31 takes a fresh
@@ -63,57 +67,73 @@ use crate::{
 /// the port carries only LLID and payload, reports
 /// [`RadioOutcome::TransmitAcknowledged`] once the peer acknowledged the
 /// connection's queued PDU and reports only new, non-empty receptions.
-pub trait LeRadioPort {
-    /// One owned outcome.
-    type Outcome;
-    /// Why the port cannot serve; its class says whether it will again.
-    type Error: PortError;
-
+pub trait LeRadioPort: RadioPort<Id = EventId, Domain = LeRadio> {
     /// What the backend serves. It does not change while the port exists.
     fn capabilities(&self) -> LeRadioCapabilities;
 
-    /// The resolution of the radio time [`Self::clock`] reads and how its
+    /// The resolution of the radio time [`RadioPort::now`] reads and how its
     /// epoch relates to the image's monotonic time.
     fn clock_info(&self) -> ClockInfo;
-
-    /// A fresh radio time and the radio's admission timing.
-    fn clock(&self) -> impl Future<Output = Result<(LeInstant, RadioTiming), Self::Error>> + '_;
 
     /// Submit one request: `Ok(Err(_))` when the radio refused it. A request
     /// the capabilities exclude is refused as [`RequestError::Unsupported`].
     fn submit(
         &self,
         request: RadioRequest<'_>,
-    ) -> impl Future<Output = Result<Result<(), RequestError>, Self::Error>>;
+    ) -> impl Future<Output = PortResult<(), RequestError, Self::Fault>>;
 
-    /// The next outcome. Taking it only dequeues it; dropping the future
-    /// loses no outcome. A queue overflow is reported as [`EventsLost`] in
-    /// place of the first dropped outcome.
-    fn next_outcome(&self) -> impl Future<Output = Result<Self::Outcome, EventsLost>> + '_;
-
-    /// The portable view of an owned outcome.
-    fn view(outcome: &Self::Outcome) -> RadioOutcome<'_>;
+    /// The portable view of an owned event.
+    fn view(event: &Self::Event) -> RadioOutcome<'_>;
 
     /// The roles active now. The loop reports every change, starting from
     /// [`RadioActivity::IDLE`], so a radio that shares the antenna can
     /// publish them to its coexistence arbiter.
-    fn activity(&self, activity: RadioActivity) -> Result<(), Self::Error>;
+    fn activity(&self, activity: RadioActivity) -> PortResult<(), NotInstalled, Self::Fault>;
 }
 
 /// A port without a radio: time stands still and every request lies
 /// outside its empty capabilities, so it is refused as
 /// [`RequestError::Unsupported`]. Radio commands then complete with a
-/// failure status.
+/// failure status. It is always enabled and runs nothing to cancel.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoRadio;
 
-const ZERO: RadioDuration = RadioDuration::from_micros(0);
+impl RadioPort for NoRadio {
+    // It never poisons and never produces an event.
+    type Event = Infallible;
+    type Id = EventId;
+    type Domain = LeRadio;
+    type Fault = Infallible;
+
+    fn next_event(
+        &self,
+    ) -> impl Future<Output = PortResult<Infallible, EventsLost, Infallible>> + '_ {
+        pending()
+    }
+
+    fn now(&self) -> impl Future<Output = PortResult<LeInstant, ClockError, Infallible>> + '_ {
+        ready(Ok(Ok(LeInstant::from_micros(0))))
+    }
+
+    fn cancel(
+        &self,
+        _: EventId,
+    ) -> impl Future<Output = PortResult<(), CancelError, Infallible>> + '_ {
+        ready(Ok(Err(CancelError::NotRunning)))
+    }
+
+    fn lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> impl Future<Output = PortResult<(), LifecycleError, Infallible>> + '_ {
+        ready(Ok(Err(match command {
+            LifecycleCommand::Enable => LifecycleError::AlreadyInState,
+            LifecycleCommand::Disable | LifecycleCommand::Quiesce => LifecycleError::InvalidState,
+        })))
+    }
+}
 
 impl LeRadioPort for NoRadio {
-    // It never fails and never produces an outcome.
-    type Outcome = Infallible;
-    type Error = Infallible;
-
     fn capabilities(&self) -> LeRadioCapabilities {
         LeRadioCapabilities::NONE
     }
@@ -125,42 +145,18 @@ impl LeRadioPort for NoRadio {
         }
     }
 
-    fn clock(&self) -> impl Future<Output = Result<(LeInstant, RadioTiming), Infallible>> + '_ {
-        ready(Ok((
-            LeInstant::from_micros(0),
-            RadioTiming {
-                preparation_lead: ZERO,
-                admission_guard: ZERO,
-                connection: ConnectionAllowances {
-                    local_sleep_clock_ppm: 0,
-                    widening_jitter: ZERO,
-                    receive_guard: ZERO,
-                    receive_tail: ZERO,
-                    boundary_guard: ZERO,
-                    first_event_guard: ZERO,
-                    event_length: ZERO,
-                    first_event_length: ZERO,
-                },
-            },
-        )))
-    }
-
     fn submit(
         &self,
         _: RadioRequest<'_>,
-    ) -> impl Future<Output = Result<Result<(), RequestError>, Infallible>> {
+    ) -> impl Future<Output = PortResult<(), RequestError, Infallible>> {
         ready(Ok(Err(RequestError::Unsupported)))
     }
 
-    fn next_outcome(&self) -> impl Future<Output = Result<Infallible, EventsLost>> + '_ {
-        pending()
+    fn view(event: &Infallible) -> RadioOutcome<'_> {
+        match *event {}
     }
 
-    fn view(outcome: &Infallible) -> RadioOutcome<'_> {
-        match *outcome {}
-    }
-
-    fn activity(&self, _: RadioActivity) -> Result<(), Infallible> {
-        Ok(())
+    fn activity(&self, _: RadioActivity) -> PortResult<(), NotInstalled, Infallible> {
+        Ok(Ok(()))
     }
 }

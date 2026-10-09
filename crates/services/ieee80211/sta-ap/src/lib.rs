@@ -49,7 +49,7 @@ use oer_ieee80211_sta_service::port::{
 use oer_ieee80211_upper_mac_service::absence::{
     AbsenceError, AbsenceState, AbsenceWindow, PortAbsence,
 };
-use oer_ieee80211_upper_mac_service::client::{PortError, PortMsdu, PortRxBuffer};
+use oer_ieee80211_upper_mac_service::client::{PortFault, PortMsdu, PortRxBuffer};
 use oer_time::{Instant, Timer};
 
 /// Why [`PortStaAp::run_until`] returned before its deadline.
@@ -63,11 +63,11 @@ pub enum PortStaApEvent {
 
 /// Why an operation of the pair failed.
 pub enum PortStaApError<S: PortStationEnv, A: PortApEnv> {
-    Station(PortLinkError<PortError<S>>),
+    Station(PortLinkError<PortFault<S>>),
     /// The station's join failed; the station is kept for the next one.
     Join(PortAttemptError<S>),
-    AccessPoint(PortApError<PortError<A>>),
-    Absence(AbsenceError<PortError<S>>),
+    AccessPoint(PortApError<PortFault<A>>),
+    Absence(AbsenceError<PortFault<S>>),
     /// The station is not connected.
     NoStation,
     /// A connected station must leave before another attempt.
@@ -84,10 +84,10 @@ pub enum PortStaApError<S: PortStationEnv, A: PortApEnv> {
 
 impl<S: PortStationEnv, A: PortApEnv> core::fmt::Debug for PortStaApError<S, A>
 where
-    PortLinkError<PortError<S>>: core::fmt::Debug,
+    PortLinkError<PortFault<S>>: core::fmt::Debug,
     PortAttemptError<S>: core::fmt::Debug,
-    PortApError<PortError<A>>: core::fmt::Debug,
-    AbsenceError<PortError<S>>: core::fmt::Debug,
+    PortApError<PortFault<A>>: core::fmt::Debug,
+    AbsenceError<PortFault<S>>: core::fmt::Debug,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {

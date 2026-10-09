@@ -1,7 +1,7 @@
 //! Owned copies of the portable outcomes.
 
 use oer_bluetooth_radio::{
-    CaptureError, ConnectionId, EventId, EventResult, LeInstant, RadioFault, RadioOutcome,
+    CaptureError, ConnectionId, EventId, EventResult, LeInstant, LifecycleEvent, RadioOutcome,
     ReceivedPdu, TestReport,
 };
 use oer_esp32s31_bluetooth_memory::BLUETOOTH_LE_RX_PAYLOAD_CAPACITY;
@@ -83,30 +83,27 @@ pub enum BluetoothOutcome {
         /// The result.
         report: TestReport,
     },
-    /// The backend faulted.
-    Fault(RadioFault),
-    /// The terminal outcome of a poisoned runtime.
-    Poisoned,
+    /// The terminal event of a lifecycle command.
+    Lifecycle(LifecycleEvent),
 }
 
 impl BluetoothOutcome {
-    /// Copy `outcome`. A PDU longer than any Link Layer PDU becomes a
-    /// memory-inconsistency fault.
+    /// Copy `outcome`; `None` for a PDU longer than any Link Layer PDU,
+    /// which the runtime takes as a memory-inconsistency fault.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn copy(outcome: RadioOutcome<'_>) -> Self {
-        match outcome {
-            RadioOutcome::Received { id, pdu } => match BluetoothReceivedPdu::copy(pdu) {
-                Some(pdu) => Self::Received { id, pdu },
-                None => Self::Fault(RadioFault::MemoryInconsistency),
+    pub(crate) fn copy(outcome: RadioOutcome<'_>) -> Option<Self> {
+        Some(match outcome {
+            RadioOutcome::Received { id, pdu } => Self::Received {
+                id,
+                pdu: BluetoothReceivedPdu::copy(pdu)?,
             },
             RadioOutcome::EventEnded { id, result } => Self::EventEnded { id, result },
             RadioOutcome::TransmitAcknowledged(connection) => {
                 Self::TransmitAcknowledged(connection)
             }
             RadioOutcome::TestReport { id, report } => Self::TestReport { id, report },
-            RadioOutcome::Fault(fault) => Self::Fault(fault),
-            RadioOutcome::Poisoned(_) => Self::Poisoned,
-        }
+            RadioOutcome::Lifecycle(event) => Self::Lifecycle(event),
+        })
     }
 
     /// Lend the outcome as a portable value.
@@ -127,8 +124,7 @@ impl BluetoothOutcome {
                 id: *id,
                 report: *report,
             },
-            Self::Fault(fault) => RadioOutcome::Fault(*fault),
-            Self::Poisoned => RadioOutcome::Poisoned(oer_bluetooth_radio::Poisoned),
+            Self::Lifecycle(event) => RadioOutcome::Lifecycle(*event),
         }
     }
 }

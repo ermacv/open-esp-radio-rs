@@ -33,27 +33,6 @@ fn a_caller_allocator_never_yields_a_backend_identity() {
     assert_eq!(ids.next::<Id>(), Id(0));
 }
 
-#[derive(Debug)]
-enum Error {
-    NotInstalled,
-    Faulted,
-}
-
-impl PortError for Error {
-    fn class(&self) -> FailureClass {
-        match self {
-            Self::NotInstalled => FailureClass::Rejected,
-            Self::Faulted => FailureClass::Poisoned,
-        }
-    }
-}
-
-#[test]
-fn only_a_poisoned_class_needs_a_reset() {
-    assert!(!Error::NotInstalled.is_poisoned());
-    assert!(Error::Faulted.is_poisoned());
-}
-
 #[test]
 fn the_monotonic_clock_counts_microseconds_of_the_image_clock() {
     assert_eq!(ClockInfo::MONOTONIC_MICROS.epoch, RadioEpoch::Monotonic);

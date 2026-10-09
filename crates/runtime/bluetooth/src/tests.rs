@@ -1,6 +1,7 @@
 use core::cell::{Cell, RefCell};
 use std::vec::Vec;
 
+use core::{convert::Infallible, future::Future};
 use embassy_futures::{block_on, join::join};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
 use oer_bluetooth_controller::{LeController, LeControllerConfig};
@@ -17,10 +18,12 @@ use oer_bluetooth_hci::{BluetoothPublicDeviceAddress, LeControllerBootstrapConfi
 use oer_bluetooth_hci_transport::{
     InProcessHciHostTransport, LeControllerHciEndpoints, LeControllerHciResources,
 };
+
 use oer_bluetooth_radio::{
-    ClockInfo, ConnectionAllowances, EventId, EventResult, EventsLost, FailureClass, LeInstant,
-    LePhys, LeRadioCapabilities, LeRadioPort, NoRadio, PortError, RadioActivity, RadioDuration,
-    RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    CancelError, ClockError, ClockInfo, ConnectionAllowances, EventId, EventResult, EventsLost,
+    LeInstant, LePhys, LeRadio, LeRadioCapabilities, LeRadioPort, LifecycleCommand, LifecycleError,
+    LifecycleEvent, NoRadio, NotInstalled, Poisoned, PortResult, RadioActivity, RadioDuration,
+    RadioOutcome, RadioPort, RadioRequest, RadioTiming, RequestError,
 };
 
 use oer_time::Duration;
@@ -78,7 +81,16 @@ fn nonconnectable() -> LeSetAdvParams {
 enum Recorded {
     ConfigureAdvertising,
     Advertise(EventId),
+    Cancel(EventId),
     Other,
+}
+
+/// An owned event of the model radio.
+#[derive(Clone, Copy, Debug)]
+enum ModelEvent {
+    /// The event ended, with a failed capture when `true`.
+    Ended(EventId, bool),
+    Lifecycle(LifecycleEvent),
 }
 
 /// A radio that takes every request, unless told to refuse, and reports the
@@ -90,6 +102,7 @@ struct ModelRadio {
     capture_failure: Cell<bool>,
     requests: RefCell<Vec<Recorded>>,
     outcomes: Channel<NoopRawMutex, Result<EventId, EventsLost>, 4>,
+    lifecycle: Channel<NoopRawMutex, LifecycleEvent, 2>,
     refuse: RefCell<Option<RequestError>>,
     submitted: RefCell<usize>,
     activity: RefCell<Vec<RadioActivity>>,
@@ -103,6 +116,7 @@ impl ModelRadio {
             now: Cell::new(None),
             capture_failure: Cell::new(false),
             outcomes: Channel::new(),
+            lifecycle: Channel::new(),
             refuse: RefCell::new(None),
             submitted: RefCell::new(0),
             activity: RefCell::new(Vec::new()),
@@ -133,20 +147,67 @@ impl ModelRadio {
     }
 }
 
-/// The model never fails as a whole.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ModelError;
+/// The timing the model admits events with.
+const TIMING: RadioTiming = RadioTiming {
+    preparation_lead: RadioDuration::from_micros(300),
+    admission_guard: RadioDuration::from_micros(200),
+    connection: ConnectionAllowances {
+        local_sleep_clock_ppm: 500,
+        widening_jitter: RadioDuration::from_micros(63),
+        receive_guard: RadioDuration::from_micros(10),
+        receive_tail: RadioDuration::from_micros(2),
+        boundary_guard: RadioDuration::from_micros(1),
+        first_event_guard: RadioDuration::from_micros(16),
+        event_length: RadioDuration::from_micros(5047),
+        first_event_length: RadioDuration::from_micros(5155),
+    },
+};
 
-impl PortError for ModelError {
-    fn class(&self) -> FailureClass {
-        FailureClass::Rejected
+/// The model never poisons.
+impl RadioPort for ModelRadio {
+    type Event = ModelEvent;
+    type Id = EventId;
+    type Domain = LeRadio;
+    type Fault = Infallible;
+
+    async fn next_event(&self) -> PortResult<ModelEvent, EventsLost, Infallible> {
+        if let Ok(event) = self.lifecycle.try_receive() {
+            return Ok(Ok(ModelEvent::Lifecycle(event)));
+        }
+        Ok(self
+            .outcomes
+            .receive()
+            .await
+            .map(|id| ModelEvent::Ended(id, self.capture_failure.get())))
+    }
+
+    async fn now(&self) -> PortResult<LeInstant, ClockError, Infallible> {
+        Ok(Ok(self.now.get().unwrap_or_else(|| {
+            LeInstant::from_micros(self.started.elapsed().as_micros() as u64)
+        })))
+    }
+
+    /// The event's end follows from the test.
+    async fn cancel(&self, id: EventId) -> PortResult<(), CancelError, Infallible> {
+        self.requests.borrow_mut().push(Recorded::Cancel(id));
+        Ok(Ok(()))
+    }
+
+    async fn lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> PortResult<(), LifecycleError, Infallible> {
+        let terminal = match command {
+            LifecycleCommand::Enable => LifecycleEvent::Enabled,
+            LifecycleCommand::Disable => LifecycleEvent::Disabled,
+            LifecycleCommand::Quiesce => LifecycleEvent::Quiesced,
+        };
+        self.lifecycle.send(terminal).await;
+        Ok(Ok(()))
     }
 }
 
 impl LeRadioPort for ModelRadio {
-    type Outcome = (EventId, bool);
-    type Error = ModelError;
-
     fn clock_info(&self) -> ClockInfo {
         ClockInfo::MONOTONIC_MICROS
     }
@@ -156,36 +217,12 @@ impl LeRadioPort for ModelRadio {
         LeRadioCapabilities {
             legacy_advertising: true,
             phys: LePhys::LE_1M,
+            timing: TIMING,
             ..LeRadioCapabilities::NONE
         }
     }
 
-    async fn clock(&self) -> Result<(LeInstant, RadioTiming), ModelError> {
-        Ok((
-            self.now.get().unwrap_or_else(|| {
-                LeInstant::from_micros(self.started.elapsed().as_micros() as u64)
-            }),
-            RadioTiming {
-                preparation_lead: RadioDuration::from_micros(300),
-                admission_guard: RadioDuration::from_micros(200),
-                connection: ConnectionAllowances {
-                    local_sleep_clock_ppm: 500,
-                    widening_jitter: RadioDuration::from_micros(63),
-                    receive_guard: RadioDuration::from_micros(10),
-                    receive_tail: RadioDuration::from_micros(2),
-                    boundary_guard: RadioDuration::from_micros(1),
-                    first_event_guard: RadioDuration::from_micros(16),
-                    event_length: RadioDuration::from_micros(5047),
-                    first_event_length: RadioDuration::from_micros(5155),
-                },
-            },
-        ))
-    }
-
-    async fn submit(
-        &self,
-        request: RadioRequest<'_>,
-    ) -> Result<Result<(), RequestError>, ModelError> {
+    async fn submit(&self, request: RadioRequest<'_>) -> PortResult<(), RequestError, Infallible> {
         *self.submitted.borrow_mut() += 1;
         if let Some(error) = *self.refuse.borrow() {
             return Ok(Err(error));
@@ -198,32 +235,28 @@ impl LeRadioPort for ModelRadio {
         Ok(Ok(()))
     }
 
-    async fn next_outcome(&self) -> Result<Self::Outcome, EventsLost> {
-        self.outcomes
-            .receive()
-            .await
-            .map(|id| (id, self.capture_failure.get()))
-    }
-
-    fn view((id, failed): &Self::Outcome) -> RadioOutcome<'_> {
+    fn view(event: &ModelEvent) -> RadioOutcome<'_> {
         use oer_bluetooth_radio::{CaptureError, TimingError};
-        RadioOutcome::EventEnded {
-            id: *id,
-            result: if *failed {
-                EventResult::TimingFailed {
-                    cause: CaptureError::PacketStartCorrection(TimingError::BeforeEpoch),
-                    executed: true,
-                    anchor: Ok(None),
-                }
-            } else {
-                EventResult::NotExecuted
+        match *event {
+            ModelEvent::Lifecycle(event) => RadioOutcome::Lifecycle(event),
+            ModelEvent::Ended(id, failed) => RadioOutcome::EventEnded {
+                id,
+                result: if failed {
+                    EventResult::TimingFailed {
+                        cause: CaptureError::PacketStartCorrection(TimingError::BeforeEpoch),
+                        executed: true,
+                        anchor: Ok(None),
+                    }
+                } else {
+                    EventResult::NotExecuted
+                },
             },
         }
     }
 
-    fn activity(&self, activity: RadioActivity) -> Result<(), ModelError> {
+    fn activity(&self, activity: RadioActivity) -> PortResult<(), NotInstalled, Infallible> {
         self.activity.borrow_mut().push(activity);
-        Ok(())
+        Ok(Ok(()))
     }
 }
 
@@ -295,9 +328,15 @@ fn advertising_events_follow_their_outcomes() {
         radio.until(2).await;
         assert_ne!(radio.advertised()[1], first);
 
+        // A loss holds received PDUs only: the service goes on, and the
+        // second event's end still plans the third.
         radio.outcomes.send(Err(EventsLost)).await;
+        let second = radio.advertised()[1];
+        radio.outcomes.send(Ok(second)).await;
+        radio.until(3).await;
+        controller.close();
     }));
-    assert_eq!(exit, ServeExit::EventsLost(EventsLost));
+    assert_eq!(exit, ServeExit::Closed);
 }
 
 #[test]
@@ -364,13 +403,47 @@ fn an_unsupported_request_is_not_retried_on_a_timer() {
     assert_eq!(exit, ServeExit::Closed);
 }
 
-/// A model whose outcome stream reports the terminal poisoned outcome.
+/// The cause of the poisoned model.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ModelFault;
+
+const POISONED: Poisoned<ModelFault> = Poisoned { cause: ModelFault };
+
+/// A model whose backend's state is unknown: every call is poisoned.
 struct PoisonedRadio;
 
-impl LeRadioPort for PoisonedRadio {
-    type Outcome = ();
-    type Error = ModelError;
+impl RadioPort for PoisonedRadio {
+    type Event = Infallible;
+    type Id = EventId;
+    type Domain = LeRadio;
+    type Fault = ModelFault;
 
+    fn next_event(
+        &self,
+    ) -> impl Future<Output = PortResult<Infallible, EventsLost, ModelFault>> + '_ {
+        core::future::ready(Err(POISONED))
+    }
+
+    fn now(&self) -> impl Future<Output = PortResult<LeInstant, ClockError, ModelFault>> + '_ {
+        core::future::ready(Err(POISONED))
+    }
+
+    fn cancel(
+        &self,
+        _: EventId,
+    ) -> impl Future<Output = PortResult<(), CancelError, ModelFault>> + '_ {
+        core::future::ready(Err(POISONED))
+    }
+
+    fn lifecycle(
+        &self,
+        _: LifecycleCommand,
+    ) -> impl Future<Output = PortResult<(), LifecycleError, ModelFault>> + '_ {
+        core::future::ready(Err(POISONED))
+    }
+}
+
+impl LeRadioPort for PoisonedRadio {
     fn capabilities(&self) -> LeRadioCapabilities {
         LeRadioCapabilities::NONE
     }
@@ -379,36 +452,31 @@ impl LeRadioPort for PoisonedRadio {
         NoRadio.clock_info()
     }
 
-    async fn clock(&self) -> Result<(LeInstant, RadioTiming), ModelError> {
-        Err(ModelError)
+    fn submit(
+        &self,
+        _: RadioRequest<'_>,
+    ) -> impl Future<Output = PortResult<(), RequestError, ModelFault>> {
+        core::future::ready(Err(POISONED))
     }
 
-    async fn submit(&self, _: RadioRequest<'_>) -> Result<Result<(), RequestError>, ModelError> {
-        Err(ModelError)
+    fn view(event: &Infallible) -> RadioOutcome<'_> {
+        match *event {}
     }
 
-    async fn next_outcome(&self) -> Result<(), EventsLost> {
-        Ok(())
-    }
-
-    fn view((): &()) -> RadioOutcome<'_> {
-        RadioOutcome::Poisoned(oer_bluetooth_radio::Poisoned)
-    }
-
-    fn activity(&self, _: RadioActivity) -> Result<(), ModelError> {
-        Ok(())
+    fn activity(&self, _: RadioActivity) -> PortResult<(), NotInstalled, ModelFault> {
+        Err(POISONED)
     }
 }
 
 #[test]
-fn the_terminal_poisoned_outcome_ends_the_service() {
+fn a_poisoned_port_ends_the_service_with_its_cause() {
     let mut resources = resources();
     let LeControllerHciEndpoints { controller, .. } = resources.split();
     let mut core = LeController::<'_, 12>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     assert_eq!(
         block_on(serve(&controller, &mut core, &PoisonedRadio, &clock)),
-        ServeExit::Poisoned
+        ServeExit::Poisoned(POISONED)
     );
 }
 
@@ -463,14 +531,15 @@ fn advertising_enable_and_disable_report_the_active_roles() {
         radio.until(1).await;
         assert_eq!(*radio.activity.borrow(), [advertising]);
 
-        // The disable cancels the event in flight and completes once it
-        // has ended; advertising stays active until then.
+        // The disable cancels the event in flight through the port's
+        // cancellation and completes once it has ended; advertising stays
+        // active until then.
         host.write(&LeSetAdvEnable::new(false)).await.unwrap();
-        while !radio.requests.borrow().contains(&Recorded::Other) {
+        let last = *radio.advertised().last().expect("an event was requested");
+        while !radio.requests.borrow().contains(&Recorded::Cancel(last)) {
             embassy_futures::yield_now().await;
         }
         assert_eq!(*radio.activity.borrow(), [advertising]);
-        let last = *radio.advertised().last().expect("an event was requested");
         radio.outcomes.send(Ok(last)).await;
         assert_eq!(status(&host).await, 0x00);
         assert_eq!(*radio.activity.borrow(), [advertising, RadioActivity::IDLE]);
@@ -502,7 +571,6 @@ fn a_capture_failure_settles_the_operation_and_the_same_service_continues() {
         controller.close();
     }));
     assert_eq!(exit, ServeExit::Closed);
-    assert_eq!(core.fault(), None);
 }
 
 #[test]
@@ -540,5 +608,4 @@ fn required_epoch_exhaustion_exits_with_context_and_retains_the_core() {
         RadioActivity::IDLE,
         "lifecycle retains the active logical owner"
     );
-    assert_eq!(core.fault(), None);
 }

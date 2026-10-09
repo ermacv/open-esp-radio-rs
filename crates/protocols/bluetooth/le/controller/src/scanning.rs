@@ -28,6 +28,7 @@ use oer_bluetooth_radio::{
     ScannerId, TxPower,
 };
 
+use crate::RadioWork;
 use crate::planning::{
     PlanningCalculation as C, PlanningError, PlanningOperation as O, PlanningRole as R,
 };
@@ -131,26 +132,28 @@ impl Scanner {
         };
     }
 
-    pub(crate) fn control_request(&mut self) -> Option<RadioRequest<'static>> {
+    pub(crate) fn control_request(&mut self) -> Option<RadioWork<'static>> {
         match &mut self.phase {
             Phase::Configuring { sent: sent @ false } => {
                 *sent = true;
-                Some(RadioRequest::ConfigureScanner(ScannerConfiguration {
-                    scanner: SCANNER,
-                    scan_type: self.scan_type,
-                    filter_policy: self.filter_policy,
-                    tx_power: TxPower::from_dbm(0),
-                    phy: LePhy::Le1M,
-                }))
+                Some(RadioWork::Submit(RadioRequest::ConfigureScanner(
+                    ScannerConfiguration {
+                        scanner: SCANNER,
+                        scan_type: self.scan_type,
+                        filter_policy: self.filter_policy,
+                        tx_power: TxPower::from_dbm(0),
+                        phy: LePhy::Le1M,
+                    },
+                )))
             }
             Phase::Cancelling { sent: sent @ false } => {
                 *sent = true;
                 let id = self.outstanding.expect("a window is cancelled").id;
-                Some(RadioRequest::Cancel(id))
+                Some(RadioWork::Cancel(id))
             }
             Phase::Removing { sent: sent @ false } => {
                 *sent = true;
-                Some(RadioRequest::RemoveScanner(SCANNER))
+                Some(RadioWork::Submit(RadioRequest::RemoveScanner(SCANNER)))
             }
             _ => None,
         }
@@ -471,7 +474,7 @@ mod tests {
         scanner.disable();
         assert!(matches!(
             scanner.control_request(),
-            Some(RadioRequest::RemoveScanner(_))
+            Some(RadioWork::Submit(RadioRequest::RemoveScanner(_)))
         ));
     }
 }

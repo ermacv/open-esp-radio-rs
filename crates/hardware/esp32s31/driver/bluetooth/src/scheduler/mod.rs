@@ -38,7 +38,7 @@ pub const DIAGNOSTIC_READ_BUDGET: BluetoothDiagnosticReadBudget =
 #[cfg(target_arch = "riscv32")]
 pub trait SchedulerRunInterruptStorage {
     /// Exact reason the stable owner could not prepare scheduler interrupts.
-    type Error;
+    type Error: Copy + ::core::fmt::Debug;
 
     /// Clear stale dynamic sources and enable the scheduler-run groups.
     fn prepare_scheduler_run_interrupts(

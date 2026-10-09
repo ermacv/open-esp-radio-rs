@@ -2309,6 +2309,7 @@ version = "0.1.0"
 dependencies = [
  "heapless 0.9.3",
  "oer-ieee802154",
+ "oer-time",
  "openthread-radio",
 ]
 

@@ -1,6 +1,6 @@
 //! What a backend serves, stated before any request.
 
-use crate::{DataPdu, RadioRequest, ScanFilterPolicy, ScanType, TestPhy};
+use crate::{DataPdu, RadioRequest, RadioTiming, ScanFilterPolicy, ScanType, TestPhy};
 
 /// One LE PHY.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -112,6 +112,9 @@ pub struct LeRadioCapabilities {
     pub phys: LePhys,
     /// PHYs of Direct Test Mode events.
     pub test_phys: LePhys,
+    /// How the backend keeps reservations apart and admits events, which
+    /// the planner uses.
+    pub timing: RadioTiming,
 }
 
 impl LeRadioCapabilities {
@@ -125,6 +128,7 @@ impl LeRadioCapabilities {
         direct_test_mode: false,
         phys: LePhys::NONE,
         test_phys: LePhys::NONE,
+        timing: RadioTiming::ZERO,
     };
 
     /// Whether these capabilities include `request`.
@@ -162,7 +166,6 @@ impl LeRadioCapabilities {
                 self.direct_test_mode && self.test_phys.contains(test.phy.phy())
             }
             RadioRequest::EndTest => self.direct_test_mode,
-            RadioRequest::Cancel(_) => true,
             RadioRequest::FilterAcceptList(_) => self.filter_accept_list,
         }
     }

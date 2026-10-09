@@ -28,7 +28,7 @@ submission per attempt.
 
 | Item | Port it implements | Over the lower-MAC port |
 | --- | --- | --- |
-| `PortLink` | The station's `PortClient` (`oer-ieee80211-upper-mac-service::client`) over the port's `PortRouter` | The client's input, transmission, settings and lifecycle, with the station's coexistence schedule (connection frames at `Elevated`) and rate-control configuration; a loss is a `PortInput::EventsLost` input, the terminal poisoned event ends every phase with `PortLinkError::Poisoned` |
+| `PortLink` | The station's `PortClient` (`oer-ieee80211-upper-mac-service::client`) over the port's `PortRouter` | The client's input, transmission, settings and lifecycle, with the station's coexistence schedule (connection frames at `Elevated`) and rate-control configuration; a loss is a `PortInput::EventsLost` input, and a poisoned port ends every phase with `PortLinkError::Poisoned`, which carries the backend's cause |
 | `PortScan` | `StaScanPort` | `LowerMacSetting::Channel` (a backend that retunes only while disabled answers `Busy` and is disabled, tuned and enabled again), the station filter `OTHER_BSS_MANAGEMENT` (or `LowerMacMonitor` through `with_monitor` when the filters lack it), a Probe Request per channel, beacons and Probe Responses into a `ScanTable` |
 | `PortJoin` | `StaJoinBackend` | Open System and SAE Authentication and Association Requests; receive is the station filter `BSS_MEMBER` with the access point's BSSID |
 | `PortHandshake`, `PortKeyInstall` | `RsnHandshakeBackend`, `RsnKeyInstallBackend` | EAPOL in data MPDUs; the pairwise and group CCMP-128 keys through `install_key` (`PortKeys`), removed again on a failed install; Message 4 in the clear or under the pairwise key |
@@ -54,11 +54,10 @@ The port's one event consumer is its `PortRouter`, the `EventRouter` of
 one station runs in one task that owns its `PortLink`; the router hands
 every completion to the exchange that registered its identity and queues
 received frames (up to `PORT_BACKLOG`) and TBTTs until a phase reads them.
-After a loss, an exchange whose completion may be in the gap cancels its
-attempt and either receives the completion or ends with
-`UpperMacTxError::CompletionLost`; a lifecycle command whose terminal may be
-in the gap ends with `PortLinkError::LifecycleLost`. Received frames in the
-gap are gone and the connection goes on.
+The port reserves every completion and lifecycle terminal when it admits
+the work, so a loss holds only received frames and TBTTs: they are gone and
+the connection goes on. A lifecycle command whose terminal the router's own
+bounded queue dropped ends with `PortLinkError::LifecycleLost`.
 
 The composition places the station's memory: `PortStation::new` borrows a
 `PortStationStorage` (the scan table and the `PortConnectionBuffers`: the

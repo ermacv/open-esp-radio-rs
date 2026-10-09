@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Vocabulary every radio port shares: failure classes, event loss and poisoning, lifecycle, correlation identities and clock relation"
+description = "The base trait and vocabulary every radio port shares: refusals and poisoning, event loss, lifecycle, cancellation, correlation identities and clock relation"
 readme = "README.md"
 
 [dependencies]

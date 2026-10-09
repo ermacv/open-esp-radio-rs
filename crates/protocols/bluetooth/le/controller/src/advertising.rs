@@ -40,6 +40,7 @@ use oer_bluetooth_radio::{
 };
 
 use crate::{
+    RadioWork,
     arbiter::{Proposal, reservation},
     coexistence,
     planning::{
@@ -342,11 +343,11 @@ impl Advertiser {
     }
 
     /// A configuration request the role needs now.
-    pub(crate) fn control_request(&mut self) -> Option<RadioRequest<'_>> {
+    pub(crate) fn control_request(&mut self) -> Option<RadioWork<'_>> {
         match &mut self.phase {
             Phase::Configuring { sent: sent @ false } => {
                 *sent = true;
-                Some(RadioRequest::ConfigureAdvertising(
+                Some(RadioWork::Submit(RadioRequest::ConfigureAdvertising(
                     AdvertisingConfiguration {
                         set: SET,
                         pdu: AdvertisingPdu::new(&self.pdu[..self.pdu_len])
@@ -362,16 +363,16 @@ impl Advertiser {
                         tx_power: TxPower::from_dbm(0),
                         phy: LePhy::Le1M,
                     },
-                ))
+                )))
             }
             Phase::Cancelling { sent: sent @ false } => {
                 *sent = true;
                 let id = self.outstanding.expect("an event is cancelled").id;
-                Some(RadioRequest::Cancel(id))
+                Some(RadioWork::Cancel(id))
             }
             Phase::Removing { sent: sent @ false } => {
                 *sent = true;
-                Some(RadioRequest::RemoveAdvertising(SET))
+                Some(RadioWork::Submit(RadioRequest::RemoveAdvertising(SET)))
             }
             _ => None,
         }

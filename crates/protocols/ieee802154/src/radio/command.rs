@@ -10,7 +10,7 @@ use crate::mac::time_sync::TimeSync;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 ///
 /// Enabling and disabling the radio are the port's lifecycle commands
-/// ([`Ieee802154RadioPort::lifecycle`](crate::Ieee802154RadioPort::lifecycle)),
+/// ([`RadioPort::lifecycle`](crate::RadioPort::lifecycle)),
 /// not submissions.
 pub enum RadioCommand<'frame> {
     /// Leave receive mode and enter sleep.
@@ -47,26 +47,6 @@ pub enum RadioCommand<'frame> {
     },
     /// Sleep, then receive in a window that opens at a monotonic radio time.
     ScheduledReceive(ScheduledReceiveRequest),
-    /// End the running transmission, energy scan, clear-channel assessment
-    /// or scheduled receive window `target` before its own end
-    /// ([`RadioCapabilities::CANCEL`](crate::RadioCapabilities::CANCEL)).
-    ///
-    /// Admission leaves the state unchanged; the backend stops the
-    /// operation and reports its terminal event, after which the radio
-    /// rests as the operation would have left it: a transmission ends with
-    /// [`TxStatus::Aborted`](crate::TxStatus::Aborted) (or with the outcome
-    /// the hardware had already reached), an energy scan with
-    /// [`RadioEvent::EnergyScanFailed`](crate::RadioEvent::EnergyScanFailed),
-    /// an assessment with
-    /// [`RadioEvent::ClearChannelAssessmentFailed`](crate::RadioEvent::ClearChannelAssessmentFailed)
-    /// and a window with
-    /// [`RadioEvent::ScheduledReceiveDone`](crate::RadioEvent::ScheduledReceiveDone).
-    Cancel {
-        /// Caller-owned correlation identifier of the cancellation.
-        id: RequestId,
-        /// The operation to end.
-        target: RequestId,
-    },
 }
 
 impl RadioCommand<'_> {
@@ -76,8 +56,7 @@ impl RadioCommand<'_> {
             Self::Sleep { id }
             | Self::Receive { id, .. }
             | Self::Configure { id, .. }
-            | Self::ClearChannelAssessment { id, .. }
-            | Self::Cancel { id, .. } => id,
+            | Self::ClearChannelAssessment { id, .. } => id,
             Self::Transmit(request) => request.id,
             Self::EnergyScan(request) => request.id,
             Self::ScheduledReceive(request) => request.id,
@@ -94,7 +73,6 @@ impl RadioCommand<'_> {
             Self::EnergyScan(_) => CommandKind::EnergyScan,
             Self::ClearChannelAssessment { .. } => CommandKind::ClearChannelAssessment,
             Self::ScheduledReceive(_) => CommandKind::ScheduledReceive,
-            Self::Cancel { .. } => CommandKind::Cancel,
         }
     }
 }
@@ -116,8 +94,6 @@ pub enum CommandKind {
     ClearChannelAssessment,
     /// Scheduled receive window.
     ScheduledReceive,
-    /// Cancellation of a running operation.
-    Cancel,
 }
 
 /// How one transmit request should acquire the channel.

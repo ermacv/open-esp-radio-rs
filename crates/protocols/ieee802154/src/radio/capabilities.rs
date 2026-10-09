@@ -55,12 +55,9 @@ impl RadioCapabilities {
     /// Network time written into a transmitted frame's Time IE at its SFD
     /// ([`TxRequest::time_sync`](crate::TxRequest::time_sync)).
     pub const TIME_SYNC: Self = Self(1 << 14);
-    /// Cancellation of a running operation with its terminal event
-    /// ([`RadioCommand::Cancel`](crate::RadioCommand::Cancel)).
-    pub const CANCEL: Self = Self(1 << 15);
 
     /// The bits this contract publishes; the image has room for more.
-    const KNOWN: u32 = (1 << 16) - 1;
+    const KNOWN: u32 = (1 << 15) - 1;
 
     /// Validate a serialized capability image.
     pub const fn from_bits(bits: u32) -> Result<Self, CapabilityBitsError> {

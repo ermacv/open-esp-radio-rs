@@ -17,7 +17,7 @@ use oer_ieee80211_upper_mac::{AmpduRequest, TxReport, TxRequest};
 
 use crate::{
     AmpduFrames,
-    client::{PortBody, PortClient, PortClientEnv, PortClientError, PortError},
+    client::{PortBody, PortClient, PortClientEnv, PortClientError, PortFault},
     frame::PORT_MPDU_HEADER_CAPACITY,
 };
 
@@ -38,7 +38,7 @@ pub trait PortAggregation<X: PortClientEnv + ?Sized> {
         client: &mut PortClient<'_, X, EXCHANGES, RX>,
         frames: AmpduFrames<'_, PortBody<X>>,
         request: TxRequest,
-    ) -> impl Future<Output = Result<TxReport, PortClientError<PortError<X>>>>
+    ) -> impl Future<Output = Result<TxReport, PortClientError<PortFault<X>>>>
     where
         X: Sized;
 }
@@ -56,7 +56,7 @@ impl<X: PortClientEnv + ?Sized> PortAggregation<X> for NoAggregation {
         _client: &mut PortClient<'_, X, EXCHANGES, RX>,
         _frames: AmpduFrames<'_, PortBody<X>>,
         _request: TxRequest,
-    ) -> Result<TxReport, PortClientError<PortError<X>>>
+    ) -> Result<TxReport, PortClientError<PortFault<X>>>
     where
         X: Sized,
     {
@@ -80,7 +80,7 @@ where
         client: &mut PortClient<'_, X, EXCHANGES, RX>,
         frames: AmpduFrames<'_, PortBody<X>>,
         request: TxRequest,
-    ) -> Result<TxReport, PortClientError<PortError<X>>>
+    ) -> Result<TxReport, PortClientError<PortFault<X>>>
     where
         X: Sized,
     {

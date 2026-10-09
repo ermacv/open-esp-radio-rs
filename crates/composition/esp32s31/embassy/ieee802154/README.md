@@ -133,8 +133,8 @@ consumer of the port's events for as long as the client runs; `next_event`
 only takes events. The random words come from the hardware generator.
 The port's clock (`now`) is the runtime's `embassy-time` clock, running
 whether or not a radio is installed; synchronous callers such as OpenThread
-read it, and the live RSSI, through the port itself (the OpenThread
-adapter's `PortClock` and `PortRssi`).
+read it through `Ieee802154Runtime::clock` (the OpenThread adapter's
+`MonotonicRadioClock`) and the live RSSI through the port (`PortRssi`).
 
 Source matching is part of the portable contract: `Configuration` sets the
 pending mode and adds, removes or resets the sources of interface zero's
@@ -156,7 +156,7 @@ modem ETM, after a CCA when it asks for one (`esp_ieee802154_transmit_at`).
 `ScheduledReceiveDone` reports its end - at its end, with its first
 received frame as the vendor receive path ends it, or at once for a window
 that had already ended. Another operation replaces the window, after which
-the radio sleeps. `RadioCommand::Cancel` ends a running transmission
+the radio sleeps. The port's `cancel(id)` ends a running transmission
 (`TxStatus::Aborted`, or the outcome the MAC had already reached), energy
 scan, CCA or scheduled window with its terminal event, stopping the MAC as
 `esp_ieee802154_sleep` does and resuming receive mode when the radio was

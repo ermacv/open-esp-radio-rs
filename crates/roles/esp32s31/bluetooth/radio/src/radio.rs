@@ -5,10 +5,10 @@ use core::convert::Infallible;
 use crate::coexistence::{self, CoexistenceProfile};
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingConfiguration,
-    AdvertisingEvent, AdvertisingReception, AdvertisingSetId, CaptureError, ConnectionAllowances,
-    ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
-    EventId, EventResult, LeConnectionCapabilities, LeInstant, LePhys, LeRadioCapabilities,
-    LeWindow, LinkAcknowledgement, RadioDuration, RadioFault, RadioOutcome, RadioRequest,
+    AdvertisingEvent, AdvertisingReception, AdvertisingSetId, CancelError, CaptureError,
+    ConnectionAllowances, ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming,
+    ConnectionId, DataPduKind, EventId, EventResult, LeConnectionCapabilities, LeInstant, LePhys,
+    LeRadioCapabilities, LeWindow, LinkAcknowledgement, RadioDuration, RadioOutcome, RadioRequest,
     RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
     ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TimingError,
     TxPower,
@@ -87,6 +87,21 @@ pub struct BluetoothRadioMemory<
 pub trait BluetoothRadioSink {
     /// Deliver one outcome.
     fn outcome(&mut self, outcome: RadioOutcome<'_>);
+
+    /// The radio faulted for `fault` and schedules nothing until a
+    /// Controller reset: its port is poisoned with this cause.
+    fn fault(&mut self, fault: RadioFault);
+}
+
+/// Why the radio stopped scheduling: the cause its port is poisoned with.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RadioFault {
+    /// Hardware reported a result the radio cannot interpret.
+    UnsupportedHardwareResult,
+    /// A receive or transmit structure was found inconsistent.
+    MemoryInconsistency,
+    /// Hardware executed events out of their scheduled order.
+    OutOfOrderCompletion,
 }
 
 /// Hardware work the caller performs next.
@@ -391,23 +406,43 @@ impl<
     /// until the peer acknowledges it and answers with empty PDUs, so the
     /// connection's acknowledgement is [`LinkAcknowledgement::Hardware`]. A
     /// data PDU payload, MIC included, fills at most one receive allocation.
-    pub const CAPABILITIES: LeRadioCapabilities = LeRadioCapabilities {
-        legacy_advertising: LEGACY + CONNECTABLE > 0,
-        passive_scanning: SCANNERS > 0,
-        active_scanning: SCANNERS > 0,
-        filter_accept_list: true,
-        peripheral_connection: if CONNECTIONS > 0 {
-            Some(LeConnectionCapabilities {
-                max_data_payload: BLUETOOTH_LE_RX_PAYLOAD_CAPACITY as u8,
-                link_acknowledgement: LinkAcknowledgement::Hardware,
-            })
-        } else {
-            None
-        },
-        direct_test_mode: true,
-        phys: LePhys::LE_1M,
-        test_phys: LePhys::ALL,
-    };
+    /// `timing` is [`Self::radio_timing`] of the epoch's scheduler policy.
+    pub const fn capabilities(timing: RadioTiming) -> LeRadioCapabilities {
+        LeRadioCapabilities {
+            legacy_advertising: LEGACY + CONNECTABLE > 0,
+            passive_scanning: SCANNERS > 0,
+            active_scanning: SCANNERS > 0,
+            filter_accept_list: true,
+            peripheral_connection: if CONNECTIONS > 0 {
+                Some(LeConnectionCapabilities {
+                    max_data_payload: BLUETOOTH_LE_RX_PAYLOAD_CAPACITY as u8,
+                    link_acknowledgement: LinkAcknowledgement::Hardware,
+                })
+            } else {
+                None
+            },
+            direct_test_mode: true,
+            phys: LePhys::LE_1M,
+            test_phys: LePhys::ALL,
+            timing,
+        }
+    }
+
+    /// The timing a planner keeps reservations apart by, for the scheduler
+    /// policy `config` and a sleep clock of `local_sleep_clock_ppm`.
+    pub const fn radio_timing(
+        config: SchedulerSoftwareConfig,
+        local_sleep_clock_ppm: u16,
+    ) -> RadioTiming {
+        RadioTiming {
+            preparation_lead: RadioDuration::from_micros(config.preparation_lead_micros() as u64),
+            admission_guard: RadioDuration::from_micros(config.late_start_guard_micros() as u64),
+            connection: connection_allowances(
+                config.preparation_lead_micros(),
+                local_sleep_clock_ppm,
+            ),
+        }
+    }
 
     /// Take the memory of an initialized scheduler epoch. `sample` is the
     /// first live controller-time sample of the epoch and
@@ -442,18 +477,7 @@ impl<
                 now: u64::from(epoch.project_without_reanchor(sample)),
                 epoch,
             },
-            timing: RadioTiming {
-                preparation_lead: RadioDuration::from_micros(u64::from(
-                    config.preparation_lead_micros(),
-                )),
-                admission_guard: RadioDuration::from_micros(u64::from(
-                    config.late_start_guard_micros(),
-                )),
-                connection: connection_allowances(
-                    config.preparation_lead_micros(),
-                    local_sleep_clock_ppm,
-                ),
-            },
+            timing: Self::radio_timing(config, local_sleep_clock_ppm),
             policy: SchedulerTimingPolicy::from_scheduler_config(config, scale),
             faulted: false,
             deferred_completion: false,
@@ -518,9 +542,8 @@ impl<
         memory
     }
 
-    /// Whether a fault stopped the radio: it reported
-    /// [`RadioOutcome::Fault`] and schedules nothing until a Controller
-    /// reset. The runtime refuses requests to a faulted radio as poisoned
+    /// Whether a fault stopped the radio: it reported a [`RadioFault`] to
+    /// its sink and schedules nothing until a Controller reset. The runtime refuses requests to a faulted radio as poisoned
     /// before it asks [`Self::request`].
     pub const fn is_faulted(&self) -> bool {
         self.faulted
@@ -528,15 +551,11 @@ impl<
 
     /// Admit one request. A faulted radio ([`Self::is_faulted`]) admits
     /// nothing and answers `Busy`; its port reports it as poisoned.
-    pub fn request(
-        &mut self,
-        request: RadioRequest<'_>,
-        sink: &mut impl BluetoothRadioSink,
-    ) -> Result<(), RequestError> {
+    pub fn request(&mut self, request: RadioRequest<'_>) -> Result<(), RequestError> {
         if self.faulted {
             return Err(RequestError::Busy);
         }
-        if !Self::CAPABILITIES.supports(&request) {
+        if !Self::capabilities(self.timing).supports(&request) {
             return Err(RequestError::Unsupported);
         }
         // A test session owns the Link Layer: no other role schedules air
@@ -578,7 +597,6 @@ impl<
             RadioRequest::TestTransmit(test) => self.test_transmit(test),
             RadioRequest::TestReceive(test) => self.test_receive(test),
             RadioRequest::EndTest => self.end_test(),
-            RadioRequest::Cancel(id) => self.cancel(id, sink),
             RadioRequest::FilterAcceptList(change) => self.change_accept_list(change),
         }
     }
@@ -832,7 +850,7 @@ impl<
 
     fn fault(&mut self, fault: RadioFault, sink: &mut impl BluetoothRadioSink) {
         self.faulted = true;
-        sink.outcome(RadioOutcome::Fault(fault));
+        sink.fault(fault);
     }
 
     /// Keep the items of cancelled events that left the executor without
@@ -1806,11 +1824,20 @@ impl<
         }
     }
 
-    fn cancel(
+    /// Withdraw the scheduled event `id`; its end follows, as the port's
+    /// cancellation states. A faulted radio runs nothing.
+    ///
+    /// # Errors
+    ///
+    /// No event with this identifier is scheduled.
+    pub fn cancel(
         &mut self,
         id: EventId,
         sink: &mut impl BluetoothRadioSink,
-    ) -> Result<(), RequestError> {
+    ) -> Result<(), CancelError> {
+        if self.faulted {
+            return Err(CancelError::NotRunning);
+        }
         // Items waiting for insertion leave the queue at once.
         let mut found = None;
         for index in 0..ITEMS {
@@ -1826,7 +1853,7 @@ impl<
             None => self.listed_item_of(id),
         };
         let Some(owner) = owner else {
-            return Err(RequestError::UnknownEvent);
+            return Err(CancelError::NotRunning);
         };
         // The vendor ends a test by stopping the scheduler rather than
         // cancelling its running event (`sym_dtm_NsbldBIeGraE2wg0AVy7`).
@@ -1860,6 +1887,41 @@ impl<
             event.cancel = true;
         }
         Ok(())
+    }
+
+    /// Withdraw every scheduled event, as a port's `Disable` does; each
+    /// one's end follows.
+    pub fn cancel_all(&mut self, sink: &mut impl BluetoothRadioSink) {
+        while let Some(id) = self.next_uncancelled() {
+            // An event in a slot has items with the executor or waiting
+            // for insertion, so its cancellation is admitted.
+            if self.cancel(id, sink).is_err() {
+                debug_assert!(false, "a scheduled event without items");
+                return;
+            }
+        }
+    }
+
+    /// A scheduled event no cancellation withdrew yet.
+    fn next_uncancelled(&self) -> Option<EventId> {
+        let events = self
+            .legacy
+            .iter()
+            .chain(&self.connectable)
+            .flatten()
+            .map(|slot| slot.event)
+            .chain(self.scanners.iter().flatten().map(|slot| slot.event))
+            .chain(
+                self.connections
+                    .iter()
+                    .flatten()
+                    .map(|(slot, _)| slot.event),
+            )
+            .chain(self.dtm.iter().map(|slot| slot.event));
+        events
+            .flatten()
+            .find(|event| !event.cancel)
+            .map(|event| event.id)
     }
 
     fn listed_item_of(&self, id: EventId) -> Option<SchedulerItemId> {
@@ -1998,7 +2060,7 @@ impl<
                         Ok(None) => break,
                         Err(_) => {
                             self.faulted = true;
-                            sink.outcome(RadioOutcome::Fault(RadioFault::MemoryInconsistency));
+                            sink.fault(RadioFault::MemoryInconsistency);
                             break;
                         }
                     }
@@ -2029,7 +2091,7 @@ impl<
                     }
                     Err(_) => {
                         self.faulted = true;
-                        sink.outcome(RadioOutcome::Fault(RadioFault::MemoryInconsistency));
+                        sink.fault(RadioFault::MemoryInconsistency);
                     }
                 }
                 slot.event = None;
@@ -2092,7 +2154,7 @@ fn accounted<S, E, F>(
 ) -> Option<S> {
     if source.is_err() || finished.is_err() {
         *faulted = true;
-        sink.outcome(RadioOutcome::Fault(RadioFault::MemoryInconsistency));
+        sink.fault(RadioFault::MemoryInconsistency);
     }
     source.ok()
 }
@@ -2128,7 +2190,7 @@ fn drain_chain<const PACKETS: usize>(
             Ok(None) => return,
             Err(_) => {
                 *faulted = true;
-                sink.outcome(RadioOutcome::Fault(RadioFault::MemoryInconsistency));
+                sink.fault(RadioFault::MemoryInconsistency);
                 return;
             }
         }

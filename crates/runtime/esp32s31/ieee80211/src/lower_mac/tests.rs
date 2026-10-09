@@ -42,7 +42,7 @@ use oer_esp32s31_ieee80211_mac::{
 };
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduPayload, Backoff, BlockAckReport, Channel, ChannelWidth, CoexPriority,
-    FailureClass, KeySelector, MacAddress, PhyFormatSet, PhyRate, Poisoned, PortError, Protection,
+    KeySelector, MacAddress, PhyFormatSet, PhyRate, Poisoned, PortResult, Protection, RadioPort,
     ReceiveFilter, ReclaimError, SubmitError, TxAttempt, TxBody, TxBuffer, TxId, TxPayload,
     TxPower, TxResponse, TxStatus, VifConfig, VifRole,
 };
@@ -451,7 +451,7 @@ fn install_core(
 fn take<P: Ieee80211LowerMacPort>(
     port: &P,
     run: impl Future<Output = Infallible>,
-) -> Result<P::Event, EventsLost> {
+) -> PortResult<P::Event, EventsLost, P::Fault> {
     match block_on(embassy_futures::select::select(port.next_event(), run)) {
         embassy_futures::select::Either::First(event) => event,
         embassy_futures::select::Either::Second(never) => match never {},
@@ -460,7 +460,9 @@ fn take<P: Ieee80211LowerMacPort>(
 
 fn next_owned(port: &Port) -> Result<&'static Esp32s31LowerMacEvent<TestRxUnit>, EventsLost> {
     // Views borrow the owned event; tests compare leaked copies.
-    take(port, port.run()).map(|event| &*std::boxed::Box::leak(std::boxed::Box::new(event)))
+    take(port, port.run())
+        .expect("the port is not poisoned")
+        .map(|event| &*std::boxed::Box::leak(std::boxed::Box::new(event)))
 }
 
 /// A receive unit of the tests: an MPDU after `prefix` bytes of hardware
@@ -563,6 +565,7 @@ fn attempt(port: &Port, id: u32, frame: &[u8]) -> Esp32s31MpduAttempt<'static, 5
     let mut buffer = port
         .tx_buffer(frame.len())
         .ok()
+        .and_then(Result::ok)
         .flatten()
         .expect("a spare slot");
     buffer.frame_mut().copy_from_slice(frame);
@@ -588,7 +591,7 @@ fn attempt(port: &Port, id: u32, frame: &[u8]) -> Esp32s31MpduAttempt<'static, 5
 fn submit(
     port: &Port,
     attempt: Esp32s31MpduAttempt<'static, 512>,
-) -> Result<Result<(), SubmitError>, Poisoned> {
+) -> PortResult<(), SubmitError, LowerMacFault> {
     Ok(port.submit(attempt)?.map_err(|refused| {
         port.release_tx_buffer(refused.attempt.payload.frame);
         refused.error
@@ -611,7 +614,10 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
         submit(&port, attempt(&port, 1, &frame)),
         Ok(Err(SubmitError::Disabled))
     );
-    assert_eq!(port.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
+    assert_eq!(
+        block_on(port.lifecycle(LifecycleCommand::Enable)),
+        Ok(Ok(()))
+    );
     assert_eq!(
         next(&port),
         Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
@@ -620,7 +626,7 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
     // A NoAck completion is reported, not retried.
     assert_eq!(submit(&port, attempt(&port, 1, &frame)), Ok(Ok(())));
     // The one spare slot is published until the attempt completes.
-    assert!(matches!(port.tx_buffer(frame.len()), Ok(None)));
+    assert!(matches!(port.tx_buffer(frame.len()), Ok(Ok(None))));
     with_hardware(&port, |hardware| {
         hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(5, 0));
     });
@@ -631,7 +637,7 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
     assert_eq!(completion.id, TxId(1));
     assert_eq!(completion.status, TxStatus::AckTimeout);
     assert_eq!(with_hardware(&port, |hardware| hardware.legacy.len()), 1);
-    let spare = port.tx_buffer(frame.len()).unwrap().unwrap();
+    let spare = port.tx_buffer(frame.len()).unwrap().unwrap().unwrap();
     port.release_tx_buffer(spare);
 
     let seven = VifTsf::new(STA, oer_ieee80211_mac::tsf::TsfInstant::from_micros(7));
@@ -639,14 +645,14 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
     assert_eq!(port.tsf(STA), Ok(Ok(seven)));
     // The port's radio clock is the MAC local time.
     assert_eq!(
-        port.now(),
-        Ok(Ieee80211Instant::from_micros(u64::from(MAC_AT_EPOCH)))
+        block_on(port.now()),
+        Ok(Ok(Ieee80211Instant::from_micros(u64::from(MAC_AT_EPOCH))))
     );
     assert!(matches!(
         port.clock_info().epoch,
         oer_ieee80211_lower_mac::RadioEpoch::Affine { .. }
     ));
-    let sample = port.clock_sample().unwrap();
+    let sample = port.clock_sample().unwrap().unwrap();
     assert_eq!(
         sample.radio,
         Ieee80211Instant::from_micros(u64::from(MAC_AT_EPOCH))
@@ -670,7 +676,9 @@ fn enable_after_a_channel_change_retunes_in_the_runner() {
     ))
     .unwrap()
     .unwrap();
-    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     assert_eq!(
         next(&port),
         Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
@@ -687,12 +695,13 @@ fn a_refused_retune_fails_enable_recoverably() {
     ))
     .unwrap()
     .unwrap();
-    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     assert_eq!(
         next(&port),
         Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Failed {
             command: LifecycleCommand::Enable,
-            class: FailureClass::Recoverable,
         }))
     );
     // The port is usable and disabled.
@@ -700,7 +709,10 @@ fn a_refused_retune_fails_enable_recoverably() {
         submit(&port, attempt(&port, 1, &data_frame())),
         Ok(Err(SubmitError::Disabled))
     );
-    assert_eq!(port.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
+    assert_eq!(
+        block_on(port.lifecycle(LifecycleCommand::Enable)),
+        Ok(Ok(()))
+    );
 }
 
 #[test]
@@ -752,7 +764,9 @@ fn station_tbtts_arrive_through_the_power_interrupt() {
 fn a_unit_without_room_comes_back_and_nothing_is_lost() {
     let port = Port::new(ModelTimer::default());
     install(&port, true);
-    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     assert_eq!(
         next(&port),
         Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
@@ -800,7 +814,9 @@ fn a_unit_without_room_comes_back_and_nothing_is_lost() {
 fn received_frames_are_copied_and_overflow_is_reported_once() {
     let port = Port::new(ModelTimer::default());
     install(&port, true);
-    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     assert_eq!(
         next(&port),
         Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
@@ -832,7 +848,7 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
         );
         stamps.push(meta.timestamp);
     }
-    let sample = port.clock_sample().unwrap();
+    let sample = port.clock_sample().unwrap().unwrap();
     let RxEvidence::HardwareObserved(stamp) = stamps[0] else {
         panic!("the receive stamp is a hardware observation");
     };
@@ -855,7 +871,9 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
 fn a_received_frame_is_its_unit_until_the_consumer_drops_it() {
     let port = Port::new(ModelTimer::default());
     install(&port, true);
-    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     assert_eq!(
         next(&port),
         Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
@@ -868,7 +886,7 @@ fn a_received_frame_is_its_unit_until_the_consumer_drops_it() {
 
     // The MPDU after a hardware prefix: the port lends it in place.
     assert_eq!(port.on_received(TestRxUnit::prefixed(mpdu, live)), Ok(()));
-    let event = take(&port, port.run()).unwrap();
+    let event = take(&port, port.run()).unwrap().unwrap();
     let Ok((buffer, _)) = Port::into_received(event) else {
         panic!("a received frame");
     };
@@ -896,7 +914,9 @@ fn a_received_frame_is_its_unit_until_the_consumer_drops_it() {
 fn a_receive_overflow_does_not_drop_completions() {
     let port = Port::new(ModelTimer::default());
     install(&port, true);
-    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     assert_eq!(
         next(&port),
         Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
@@ -923,35 +943,40 @@ fn a_receive_overflow_does_not_drop_completions() {
 
 /// Poison the port through the locked entry, as a core fault does.
 fn poison(port: &Port) {
-    assert!(matches!(
+    assert_eq!(
         port.with_core(|_, _, _| Err::<(), _>(LowerMacFault::RxBlockAckReadback)),
-        Err(Esp32s31LowerMacError::Poisoned(_))
-    ));
+        Err(Poisoned {
+            cause: LowerMacFault::RxBlockAckReadback
+        })
+    );
 }
 
 #[test]
 fn a_poisoned_port_reports_queued_events_then_its_terminal_event() {
     let port = Port::new(ModelTimer::default());
     assert_eq!(
-        port.lifecycle(LifecycleCommand::Enable)
-            .unwrap_err()
-            .class(),
-        FailureClass::Rejected
+        block_on(port.lifecycle(LifecycleCommand::Enable)),
+        Ok(Err(LifecycleError::NotInstalled))
     );
     install(&port, true);
-    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     poison(&port);
     // The terminal event of the command admitted before the fault first.
     assert_eq!(
         next(&port),
         Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
     );
+    let poisoned = Poisoned {
+        cause: LowerMacFault::RxBlockAckReadback,
+    };
     for _ in 0..2 {
-        assert_eq!(next(&port), Ok(LowerMacEvent::Poisoned(Poisoned)));
+        assert!(matches!(take(&port, port.run()), Err(cause) if cause == poisoned));
     }
-    let error = port.tx_buffer(26).unwrap_err();
-    assert_eq!(error.class(), FailureClass::Poisoned);
-    assert!(port.cancel(TxId(1)).unwrap_err().is_poisoned());
+    assert_eq!(port.tx_buffer(26).unwrap_err(), poisoned);
+    assert_eq!(block_on(port.cancel(TxId(1))), Err(poisoned));
+    assert_eq!(block_on(port.now()), Err(poisoned));
 }
 
 /// The runner of a poisoned port with an expired publication deadline
@@ -963,7 +988,9 @@ fn the_runner_of_a_poisoned_port_does_not_spin_on_an_expired_deadline() {
         let port: &'static Port =
             std::boxed::Box::leak(std::boxed::Box::new(Port::new(ModelTimer::default())));
         install_with_timeout(port, oer_time::Duration::from_micros(0));
-        port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+        block_on(port.lifecycle(LifecycleCommand::Enable))
+            .unwrap()
+            .unwrap();
         let _ = next(port);
         assert_eq!(submit(port, attempt(port, 1, &data_frame())), Ok(Ok(())));
         poison(port);
@@ -992,7 +1019,9 @@ fn the_runner_services_a_kept_deadline_once_per_wake() {
         let port: &'static Port =
             std::boxed::Box::leak(std::boxed::Box::new(Port::new(ModelTimer::default())));
         install_with_timeout(port, oer_time::Duration::from_micros(0));
-        port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+        block_on(port.lifecycle(LifecycleCommand::Enable))
+            .unwrap()
+            .unwrap();
         let _ = next(port);
         assert_eq!(submit(port, attempt(port, 1, &data_frame())), Ok(Ok(())));
         let mut run = core::pin::pin!(port.run());
@@ -1015,7 +1044,9 @@ fn the_runner_services_a_kept_deadline_once_per_wake() {
 fn uninstall_keeps_the_loss_of_discarded_and_owed_events() {
     let port = Port::new(ModelTimer::default());
     install(&port, true);
-    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     assert!(port.uninstall().is_some());
     install(&port, true);
     // The Enabled terminal was discarded: the consumer learns of the gap.
@@ -1146,18 +1177,21 @@ fn install_ampdu(port: &AmpduPort) -> &'static Backings {
     })
     .unwrap()
     .unwrap();
-    port.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     assert_eq!(
-        take(port, port.run())
-            .map(|event| event.portable() == LowerMacEvent::Lifecycle(LifecycleEvent::Enabled)),
-        Ok(true)
+        take(port, port.run()).map(|event| event.map(|event| {
+            event.portable() == LowerMacEvent::Lifecycle(LifecycleEvent::Enabled)
+        })),
+        Ok(Ok(true))
     );
     backings
 }
 
 fn next_completion(port: &AmpduPort) -> TxCompletion {
     match take(port, port.run()) {
-        Ok(Esp32s31LowerMacEvent::TxCompleted(completion)) => completion,
+        Ok(Ok(Esp32s31LowerMacEvent::TxCompleted(completion))) => completion,
         _ => panic!("a completion"),
     }
 }
@@ -1166,9 +1200,9 @@ fn next_completion(port: &AmpduPort) -> TxCompletion {
 fn a_port_without_its_backend_hands_every_attempt_and_body_back() {
     let port = AmpduPort::new(ModelTimer::default());
     install_ampdu(&port);
-    let mut buffer = port.tx_buffer(26 + 4).unwrap().unwrap();
+    let mut buffer = port.tx_buffer(26 + 4).unwrap().unwrap().unwrap();
     buffer.frame_mut()[..26].copy_from_slice(&data_frame());
-    let mut aggregate = port.ampdu_buffer().unwrap().unwrap();
+    let mut aggregate = port.ampdu_buffer().unwrap().unwrap().unwrap();
     let mpdu = aggregate
         .push_mpdu(26 + 6, Some(TestBody(std::vec![0xcd; 6])))
         .unwrap();
@@ -1235,7 +1269,7 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     );
 
     // An MPDU on the voice queue, with a body after its header.
-    let mut buffer = port.tx_buffer(26 + 4).unwrap().unwrap();
+    let mut buffer = port.tx_buffer(26 + 4).unwrap().unwrap().unwrap();
     buffer.frame_mut()[..26].copy_from_slice(&data_frame());
     let mpdu = TxAttempt {
         id: TxId(1),
@@ -1256,8 +1290,8 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     assert!(matches!(port.submit(mpdu), Ok(Ok(()))));
 
     // An aggregate of two MPDUs on the best-effort queue.
-    let mut aggregate = port.ampdu_buffer().unwrap().unwrap();
-    assert!(matches!(port.ampdu_buffer(), Ok(None)));
+    let mut aggregate = port.ampdu_buffer().unwrap().unwrap().unwrap();
+    assert!(matches!(port.ampdu_buffer(), Ok(Ok(None))));
     // The second subframe ends with a body the port holds.
     for (sequence, body) in [(100_u16, None), (101, Some(TestBody(std::vec![0xcd; 6])))] {
         let len = 26 + body.as_ref().map_or(0, |body: &TestBody| body.0.len());
@@ -1341,7 +1375,7 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     );
 
     // The aggregate owner is lent again; a refused aggregate comes back.
-    let empty = port.ampdu_buffer().unwrap().unwrap();
+    let empty = port.ampdu_buffer().unwrap().unwrap().unwrap();
     let Ok(Err(refused)) = port.submit_ampdu(TxAttempt {
         id: TxId(3),
         vif: STA,
@@ -1364,7 +1398,7 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     };
     assert_eq!(refused.error, SubmitError::InvalidLength);
     port.release_ampdu_buffer(refused.attempt.payload.subframes);
-    assert!(matches!(port.ampdu_buffer(), Ok(Some(_))));
+    assert!(matches!(port.ampdu_buffer(), Ok(Ok(Some(_)))));
 }
 
 fn with_hardware_of<U>(port: &AmpduPort, entry: impl FnOnce(&mut Hardware) -> U) -> U {
@@ -1395,25 +1429,18 @@ fn tsf_sample_checks_radio_elapsed_and_preserves_both_generations() {
     assert_eq!(measured.uncertainty, oer_time::Duration::from_micros(6));
     let tsf_generation = measured.generation;
 
-    for (before, after, expected) in [
-        (
-            sample(15, 7),
-            sample(10, 7),
-            Esp32s31LowerMacError::InvalidSampleTiming,
-        ),
-        (
-            sample(0, 7),
-            sample(u64::MAX, 7),
-            Esp32s31LowerMacError::InvalidSampleTiming,
-        ),
-        (
-            sample(10, 7),
-            sample(15, 8),
-            Esp32s31LowerMacError::StaleClock,
-        ),
+    // Reversed readings, an overflowing uncertainty and readings of two
+    // generations give no sample.
+    for (before, after) in [
+        (sample(15, 7), sample(10, 7)),
+        (sample(0, 7), sample(u64::MAX, 7)),
+        (sample(10, 7), sample(15, 8)),
     ] {
         port.timer.1.borrow_mut().extend([before, after]);
-        assert_eq!(port.tsf_sample(STA), Err(expected));
+        assert_eq!(
+            port.tsf_sample(STA),
+            Ok(Err(SettingError::ClockUnavailable))
+        );
         assert_eq!(port.tsf(STA), Ok(Ok(tsf)));
     }
     port.timer

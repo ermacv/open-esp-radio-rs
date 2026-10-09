@@ -23,10 +23,11 @@ use log::{error, info};
 use oer::systems::esp32s31::embassy::ieee802154::{
     self as ieee802154, EspHalRadioPlatform, IEEE802154_DEFAULT_TX_POWER_DBM,
     IEEE802154_RECEIVE_SENSITIVITY_DBM, Ieee802154CoexConfig, Ieee802154CoexLevel,
-    Ieee802154Parked, Ieee802154PibDefaults, Ieee802154System, Ieee802154SystemRuntime,
+    Ieee802154Parked, Ieee802154PibDefaults, Ieee802154System, Ieee802154SystemClock,
+    Ieee802154SystemRuntime,
     openthread::{
-        OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults, PortClock,
-        PortRssi,
+        MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio,
+        OpenThreadRadioDefaults, PortRssi,
         frames::{RoleCoexPriority, role_txrx_priority},
     },
     start,
@@ -76,7 +77,8 @@ static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
 static OT_UDP: StaticCell<OtUdpResources<UDP_SOCKETS, UDP_BUFFER>> = StaticCell::new();
 static OT_SETTINGS_BUFFER: ConstStaticCell<[u8; 1024]> = ConstStaticCell::new([0; 1024]);
 static OT_SETTINGS: StaticCell<SimpleRamSettings> = StaticCell::new();
-static RADIO_CLOCK: StaticCell<PortClock<'static, Ieee802154SystemRuntime>> = StaticCell::new();
+static RADIO_CLOCK: StaticCell<MonotonicRadioClock<&'static Ieee802154SystemClock>> =
+    StaticCell::new();
 static RADIO_RSSI: StaticCell<PortRssi<'static, Ieee802154SystemRuntime>> = StaticCell::new();
 static UDP_RECEIVE: ConstStaticCell<[u8; UDP_BUFFER]> = ConstStaticCell::new([0; UDP_BUFFER]);
 
@@ -179,7 +181,7 @@ async fn thread_task(
         TRNG.init(trng),
         ot_settings,
         // OpenThread reads the port's own clock and live RSSI.
-        RADIO_CLOCK.init(PortClock::new(system.runtime())),
+        RADIO_CLOCK.init(MonotonicRadioClock::new(system.runtime().clock())),
         Some(RADIO_RSSI.init(PortRssi::new(system.runtime()))),
         ot_resources,
         OT_UDP.init(OtUdpResources::new()),

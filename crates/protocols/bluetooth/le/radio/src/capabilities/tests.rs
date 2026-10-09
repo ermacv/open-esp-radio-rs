@@ -20,6 +20,7 @@ fn le_1m_peripheral() -> LeRadioCapabilities {
         direct_test_mode: true,
         phys: LePhys::LE_1M,
         test_phys: LePhys::LE_1M.with(LePhy::Le2M),
+        timing: crate::RadioTiming::ZERO,
     }
 }
 
@@ -81,7 +82,6 @@ fn role_configuration_needs_its_role_and_phy() {
         ScanType::Passive,
         ScanFilterPolicy::AcceptListOnly
     )));
-    assert!(capabilities.supports(&RadioRequest::Cancel(EventId::new(3))));
 }
 
 #[test]

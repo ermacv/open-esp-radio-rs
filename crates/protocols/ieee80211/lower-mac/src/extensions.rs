@@ -8,7 +8,7 @@
 //! lacks a feature is recorded in its qualification catalog, not in code.
 
 use oer_ieee80211_mac::tsf::TsfInstant;
-use oer_radio_port::CancelError;
+use oer_radio_port::{CancelError, NotInstalled, PortResult};
 use oer_time::{Duration, RadioDuration};
 
 use crate::{
@@ -89,8 +89,8 @@ pub trait LowerMacAmpdu: Ieee80211LowerMacPort {
 
     fn ampdu_capabilities(&self) -> AmpduCapabilities;
 
-    /// Lend an aggregate buffer; `Ok(None)` when every one is in use.
-    fn ampdu_buffer(&self) -> Result<Option<Self::AmpduBuffer>, Self::Error>;
+    /// Lend an aggregate buffer; `Ok(Ok(None))` when every one is in use.
+    fn ampdu_buffer(&self) -> PortResult<Option<Self::AmpduBuffer>, NotInstalled, Self::Fault>;
 
     /// Take back an aggregate buffer the caller will not submit.
     fn release_ampdu_buffer(&self, buffer: Self::AmpduBuffer);
@@ -103,7 +103,7 @@ pub trait LowerMacAmpdu: Ieee80211LowerMacPort {
     fn submit_ampdu(
         &self,
         attempt: AmpduAttempt<Self::AmpduBuffer>,
-    ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>>;
+    ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>, Self::Fault>;
 }
 
 /// The air an interface reserves for itself: the backend sends a CTS
@@ -132,7 +132,7 @@ pub trait LowerMacAirReservation: Ieee80211LowerMacPort {
     fn submit_air_reservation(
         &self,
         attempt: AirReservationAttempt,
-    ) -> SubmitResult<AirReservationAttempt>;
+    ) -> SubmitResult<AirReservationAttempt, Self::Fault>;
 }
 
 /// Temporary channel changes without a port lifecycle transition.
@@ -154,7 +154,7 @@ pub trait LowerMacLiveRetune: Ieee80211LowerMacPort {
     /// Do not hide Disable/Enable, aborted attempts or a TSF restart.
     /// The operation is synchronous and must not wait indefinitely; its
     /// settling latency must be qualified for the owner's window budget.
-    fn retune_live(&self, channel: Channel) -> Result<Result<(), SettingError>, Self::Error>;
+    fn retune_live(&self, channel: Channel) -> PortResult<(), SettingError, Self::Fault>;
 }
 
 /// A value of one interface's TSF. Two interfaces count different TSFs (a
@@ -498,21 +498,21 @@ pub trait LowerMacBeaconTiming: Ieee80211LowerMacPort {
     fn beacon_timing_capabilities(&self) -> BeaconTimingCapabilities;
 
     /// The TSF of a configured interface.
-    fn tsf(&self, vif: VifId) -> Result<Result<VifTsf, SettingError>, Self::Error>;
+    fn tsf(&self, vif: VifId) -> PortResult<VifTsf, SettingError, Self::Fault>;
 
     /// The TSF of a configured interface and the port's radio clock read
     /// back to back, in the current generation of their relation.
-    fn tsf_sample(&self, vif: VifId) -> Result<Result<TsfSample, SettingError>, Self::Error>;
+    fn tsf_sample(&self, vif: VifId) -> PortResult<TsfSample, SettingError, Self::Fault>;
 
     /// Set the TSF of the interface `tsf` names.
-    fn set_tsf(&self, tsf: VifTsf) -> Result<Result<(), SettingError>, Self::Error>;
+    fn set_tsf(&self, tsf: VifTsf) -> PortResult<(), SettingError, Self::Fault>;
 
     /// Report the target beacon transmission times of the schedule's
     /// interface as events.
-    fn set_tbtt(&self, schedule: TbttSchedule) -> Result<Result<(), SettingError>, Self::Error>;
+    fn set_tbtt(&self, schedule: TbttSchedule) -> PortResult<(), SettingError, Self::Fault>;
 
     /// Stop reporting an interface's target beacon transmission times.
-    fn stop_tbtt(&self, vif: VifId) -> Result<Result<(), SettingError>, Self::Error>;
+    fn stop_tbtt(&self, vif: VifId) -> PortResult<(), SettingError, Self::Fault>;
 
     /// The TBTT an event reports; `None` for another event. Its base view
     /// is [`LowerMacEvent::Extension`](crate::LowerMacEvent::Extension).
@@ -534,7 +534,7 @@ pub trait LowerMacMonitor: Ieee80211LowerMacPort {
     fn monitor_capabilities(&self) -> MonitorCapabilities;
 
     /// Start or stop monitor reception.
-    fn set_monitor(&self, enabled: bool) -> Result<Result<(), SettingError>, Self::Error>;
+    fn set_monitor(&self, enabled: bool) -> PortResult<(), SettingError, Self::Fault>;
 }
 
 /// Ending a published attempt on the air.
@@ -543,5 +543,5 @@ pub trait LowerMacCancelPublished: Ieee80211LowerMacPort {
     /// Its terminal event is its completion,
     /// [`TxStatus::Aborted`](crate::TxStatus::Aborted) unless it had already
     /// completed; the medium may have carried part of it.
-    fn cancel_published(&self, id: TxId) -> Result<Result<(), CancelError>, Self::Error>;
+    fn cancel_published(&self, id: TxId) -> PortResult<(), CancelError, Self::Fault>;
 }

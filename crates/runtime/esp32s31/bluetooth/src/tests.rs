@@ -730,6 +730,58 @@ fn quiesce_returns_the_poison_instead_of_waiting_for_an_end_that_never_comes() {
 }
 
 #[test]
+fn quiesce_on_a_full_queue_proceeds_once_the_consumer_frees_a_slot() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    // Two unread lifecycle terminals and an admitted event's two reserved
+    // slots fill the four-entry queue: Quiesce has no slot for its terminal.
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Disable)),
+        Ok(Ok(()))
+    );
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Enable)),
+        Ok(Ok(()))
+    );
+    block_on(async {
+        runtime.submit_request(configure()).await.unwrap().unwrap();
+        runtime
+            .submit_request(advertise(1, 10_000))
+            .await
+            .unwrap()
+            .unwrap();
+    });
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Quiesce)),
+        Ok(Err(LifecycleError::Busy))
+    );
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    let mut quiesce = core::pin::pin!(runtime.quiesce(|_| ()));
+    assert!(quiesce.as_mut().poll(&mut context).is_pending());
+    // The consumer takes an outcome: the freed slot admits the quiesce.
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Disabled))
+    );
+    assert!(quiesce.as_mut().poll(&mut context).is_pending());
+    run_for_a_millisecond(&runtime);
+    let mut done = None;
+    for _ in 0..8 {
+        if let core::task::Poll::Ready(result) = quiesce.as_mut().poll(&mut context) {
+            done = Some(result);
+            break;
+        }
+        let _ = taken(&runtime);
+    }
+    assert_eq!(done, Some(Ok(Ok(()))));
+    // The port is enabled again once the consumer has read its outcomes.
+    while taken(&runtime).is_some() {}
+    block_on(runtime.submit_request(advertise(2, 30_000)))
+        .unwrap()
+        .unwrap();
+}
+
+#[test]
 fn cancellation_withdraws_an_admitted_event_and_its_end_follows() {
     let model = Model::default();
     let runtime = installed(&model);

@@ -1326,14 +1326,17 @@ impl ConnectedControlCore {
             //
             // The time since the frame arrived is the difference of the MAC
             // local time, the counter its receive timestamp is a reading of.
+            // A timestamp whose advance crosses 2^64 is malformed: the
+            // station drops its update and keeps the association.
             if let Some(stamp) = beacon.stamp {
                 let elapsed = hardware.mac_local_time().wrapping_sub(stamp);
-                self.station_tsf
-                    .set(
-                        hardware,
-                        access_point_tsf_after(observation.timestamp_tsf, u64::from(elapsed)),
-                    )
-                    .map_err(ConnectedControlError::TsfTiming)?;
+                if let Some(tsf) =
+                    access_point_tsf_after(observation.timestamp_tsf, u64::from(elapsed))
+                {
+                    self.station_tsf
+                        .set(hardware, tsf)
+                        .map_err(ConnectedControlError::TsfTiming)?;
+                }
             }
             follow_beacon_protection(tx, observation.protection);
             if let Some(monitor) = &mut self.beacon_monitor {

@@ -99,8 +99,8 @@ pub struct JoinBeacon {
 
 impl JoinBeacon {
     /// The access point's TSF at `now`: its timestamp advanced by the time
-    /// since the frame arrived; `None` without a reception time, which
-    /// leaves the TSF to the first beacon.
+    /// since the frame arrived; `None` without a reception time or when the
+    /// sum crosses 2^64, either of which leaves the TSF to the first beacon.
     ///
     /// SOURCE: complete pinned `libpp.a[if_hwctrl.o]::ic_update_sta_tsf`
     /// adds the difference of a free-running microsecond counter between now
@@ -109,17 +109,24 @@ impl JoinBeacon {
     /// sta_recv_assoc` calls it with the joined node's timestamp.
     pub fn access_point_tsf_at(self, now: oer_time::Instant) -> Option<TsfInstant> {
         let received_at = self.received_at?;
-        Some(access_point_tsf_after(
+        access_point_tsf_after(
             self.beacon.timestamp_tsf,
             now.saturating_duration_since(received_at).as_micros(),
-        ))
+        )
     }
 }
 
 /// The access point TSF `timestamp_tsf` advanced by `elapsed_micros`, the
-/// time since its frame arrived.
-pub const fn access_point_tsf_after(timestamp_tsf: TsfInstant, elapsed_micros: u64) -> TsfInstant {
-    TsfInstant::from_micros(timestamp_tsf.as_micros().wrapping_add(elapsed_micros))
+/// time since its frame arrived; `None` when the sum crosses 2^64.
+///
+/// The TSF is never modular (`docs/architecture.md`, radio time domains),
+/// so a timestamp this close to the end of its range is a malformed frame
+/// whose update the station drops before any TSF write.
+pub const fn access_point_tsf_after(
+    timestamp_tsf: TsfInstant,
+    elapsed_micros: u64,
+) -> Option<TsfInstant> {
+    timestamp_tsf.checked_add(oer_time::RadioDuration::from_micros(elapsed_micros))
 }
 
 /// Power management of one association and the inputs waiting for it.

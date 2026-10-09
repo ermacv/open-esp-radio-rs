@@ -1905,16 +1905,17 @@ impl<
             SchedulerRoleKind::LegacyAdvertising => {
                 let slot =
                     find_mut(&mut self.legacy, id.instance()).expect("the set is configured");
-                let _ = self.memory.legacy.finish_event(&slot.instance);
+                let finished = self.memory.legacy.finish_event(&slot.instance);
                 slot.event = None;
+                accounted(Ok::<(), ()>(()), finished, &mut self.faulted, sink);
             }
             SchedulerRoleKind::ConnectableAdvertising => {
                 let slot =
                     find_mut(&mut self.connectable, id.instance()).expect("the set is configured");
                 let source = self.memory.connectable.receive_source(&slot.instance);
-                let _ = self.memory.connectable.finish_event(&slot.instance);
+                let finished = self.memory.connectable.finish_event(&slot.instance);
                 slot.event = None;
-                if let Ok(source) = source {
+                if let Some(source) = accounted(source, finished, &mut self.faulted, sink) {
                     drain_chain(
                         &mut self.memory.non_scanning,
                         source,
@@ -1933,9 +1934,9 @@ impl<
                     .memory
                     .scanners
                     .receive_source(&slot.instance, usize::from(event.item));
-                let _ = self.memory.scanners.finish_event(&slot.instance);
+                let finished = self.memory.scanners.finish_event(&slot.instance);
                 slot.event = None;
-                if let Ok(source) = source {
+                if let Some(source) = accounted(source, finished, &mut self.faulted, sink) {
                     drain_chain(
                         &mut self.memory.scanning,
                         source,
@@ -1955,7 +1956,9 @@ impl<
                     .find(|(slot, _)| slot.instance.index() == id.instance())
                     .expect("the connection is open");
                 let pool = &mut self.memory.connections;
-                if let Ok(result) = pool.finish_event(&slot.instance) {
+                let finished = pool.finish_event(&slot.instance);
+                if let Some(result) = accounted(finished, Ok::<(), ()>(()), &mut self.faulted, sink)
+                {
                     if let PeripheralConnectionCapturedAnchorAvailability::Available(captured) =
                         result.capture
                     {
@@ -2075,6 +2078,23 @@ fn space<
         .with(&memory.scanners)
         .with(&memory.connections)
         .with(&memory.dtm)
+}
+
+/// The receive source of an ending event, when its pool both named it and
+/// finished the event. A refusal of either is an ownership inconsistency:
+/// the event's receptions cannot be accounted, so the role faults instead of
+/// dropping them silently.
+fn accounted<S, E, F>(
+    source: Result<S, E>,
+    finished: Result<(), F>,
+    faulted: &mut bool,
+    sink: &mut impl BluetoothRadioSink,
+) -> Option<S> {
+    if source.is_err() || finished.is_err() {
+        *faulted = true;
+        sink.outcome(RadioOutcome::Fault(RadioFault::MemoryInconsistency));
+    }
+    source.ok()
 }
 
 fn drain_chain<const PACKETS: usize>(

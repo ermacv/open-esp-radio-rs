@@ -203,11 +203,16 @@ Established" (0x3E), while the DUT never saw it. Like any central, the
 GATT and secure GATT workloads retry such a connection, up to three attempts
 in all. They retry only when the DUT's own observation proves that the
 connection never reached it: no new connection or comparison, not connected,
-still advertising. Every other failure ends the repetition.
+still advertising. Every other failure ends the repetition. The host's
+connect alone proves nothing, because the kernel may report the socket
+connected before the first procedure. An attempt therefore succeeds only once
+the DUT reports that connection within two seconds; otherwise the host closes
+its side and the attempt is judged as above (#385).
 
 Every attempt lands in the observation's `connection_attempts`, with its phase,
-number, outcome (`established` or `not-established`) and the host-side error,
-so the loss stays visible (#357). Each repetition also publishes the
+the DUT connection number it was for, its attempt number, outcome
+(`established` or `not-established`) and the host-side error, so the loss
+stays visible (#357). Each repetition also publishes the
 measurements `connection-attempts` and `connections-not-established` (lower is
 better), which `cargo hil runs history` and `runs compare` follow. The bound of
 three attempts guards against the environment; it is no acceptance threshold.

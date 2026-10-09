@@ -117,6 +117,11 @@ new `Connected` edge in the next link epoch. A connected edge includes the
 actually negotiated association width and security from the production station
 status snapshot. Missing metadata cannot establish HT40/WPA2-Personal.
 
+A `Faulted` edge ends the station lifecycle of the boot: the station role
+faulted with a non-reusable owner, in the phase and for the cause of the
+portable station fault reason. No readiness follows it, and the host fails a
+station readiness wait with that reason instead of a timeout.
+
 The lifecycle scenarios require fresh station `network::Ready` after each
 reconnection, then a bounded bidirectional UDP application session before and
 after each radio cycle. Its optional `SessionFlowConfig.payload_identity`

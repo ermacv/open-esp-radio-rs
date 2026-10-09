@@ -17,7 +17,9 @@ pub use oer_ieee80211_softmac::{
     MonitorChannelSequenceError, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
     MonitorFrameTypeMask, MonitorPublishOutcome, MonitorSink,
 };
-pub use oer_ieee80211_sta::station::{StaLifecycleStage, StaReconnectPolicy};
+pub use oer_ieee80211_sta::station::{
+    StaFaultCause, StaFaultPhase, StaFaultReason, StaLifecycleStage, StaReconnectPolicy,
+};
 pub use requests::{
     AccessPointBeaconInterval, AccessPointBeaconIntervalError, AccessPointClientLimit,
     AccessPointClientLimitError, AccessPointDtimPeriod, AccessPointDtimPeriodError,

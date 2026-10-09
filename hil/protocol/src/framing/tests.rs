@@ -961,6 +961,26 @@ fn station_retry_exhaustion_round_trips_without_text_markers() {
 }
 
 #[test]
+fn station_fault_round_trips_with_its_portable_reason() {
+    let expected = Envelope::new(
+        7,
+        4,
+        0,
+        0,
+        crate::wifi::StationLifecycle(StationLifecycleEvent::Faulted {
+            generation: 2,
+            phase: crate::wifi::StationFaultPhase::Teardown,
+            cause: crate::wifi::StationFaultCause::Security,
+        }),
+    );
+    let mut encoder = FrameEncoder::new();
+    let frame = encoder.encode(&expected).unwrap();
+    let mut decoder = FrameDecoder::new();
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
 fn explicit_wifi_role_transition_round_trips_with_request_identity() {
     let expected = Envelope::new(
         7,

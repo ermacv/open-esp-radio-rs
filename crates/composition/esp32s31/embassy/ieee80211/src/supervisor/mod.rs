@@ -159,8 +159,8 @@ use oer_ieee80211_runtime::await_stack_boundary;
 use oer_ieee80211_softmac::interface::BoundVirtualInterface;
 
 use oer_ieee80211_sta::station::{
-    StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition,
-    StaNextCandidate,
+    StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition, StaFault,
+    StaFaultCause, StaFaultPhase, StaFaultReason, StaNextCandidate,
 };
 
 use oer_ieee80211_rsn::frames::RsnGtk;
@@ -388,6 +388,12 @@ type ProductionStationOwner<'state, 'security> =
 struct ProductionStationFault<'state, 'security> {
     _connected: ConnectedStationFault<'state, 'security>,
     _station: StaAttemptStation,
+}
+
+impl StaFault for ProductionStationFault<'_, '_> {
+    fn reason(&self) -> StaFaultReason {
+        self._connected.reason()
+    }
 }
 
 type ProductionStationStorage = StationStorageResources<
@@ -753,6 +759,39 @@ enum ProductionWifiFault {
         _access_point: ProductionAccessPointResources,
         _monitor: ProductionMonitorResources,
     },
+}
+
+impl ProductionWifiFault {
+    /// The portable reason of a fault that ends the station role, whether it
+    /// ran alone or beside the access point; `None` for a fault of another
+    /// role. Every faulted role epoch passes here before its owners are
+    /// quarantined, so this is the one place the station link learns it.
+    fn station_fault_reason(&self) -> Option<StaFaultReason> {
+        use StaFaultCause::{Configuration, Hardware, Resources, Security};
+        use StaFaultPhase::{Connected, Start, Teardown};
+        let (phase, cause) = match self {
+            Self::Station { _fault: fault, .. } => return Some(fault.reason()),
+            Self::PairedConnected { _fault: fault, .. } => return Some(fault.reason()),
+            Self::TaskPreparation { .. } => (Start, Resources),
+            Self::InitialRx { .. } | Self::Resume { .. } | Self::PairedStationPhase { .. } => {
+                (Start, Hardware)
+            }
+            Self::PairedChannelMismatch { .. } => (Start, Configuration),
+            Self::PairedSecurityMismatch { .. } => (Start, Security),
+            Self::PairedStopped { .. } => (Connected, Hardware),
+            Self::Reclaim { .. } | Self::PairedReclaim { .. } => (Teardown, Hardware),
+            Self::StoppedOwner { .. } => (Teardown, Resources),
+            Self::StandaloneScanInitialRx { .. }
+            | Self::StandaloneScanReturn { .. }
+            | Self::AccessPointPreparation { .. }
+            | Self::AccessPointRuntime { .. }
+            | Self::AccessPointTeardown { .. }
+            | Self::MonitorBuild { .. }
+            | Self::MonitorChannel { .. }
+            | Self::MonitorRuntime { .. } => return None,
+        };
+        Some(StaFaultReason::new(phase, cause))
+    }
 }
 
 enum ProductionStandaloneScanReturnFault {

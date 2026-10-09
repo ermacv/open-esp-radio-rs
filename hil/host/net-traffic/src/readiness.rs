@@ -77,6 +77,13 @@ pub(crate) fn wait_for_services(
     loop {
         let cursor = capture.event_cursor();
         capture.check_link()?;
+        // A faulted station never becomes ready: report its reason instead
+        // of a readiness timeout.
+        if interface == WifiNetworkInterface::Station
+            && let Some(fault) = capture.observed_station_fault()
+        {
+            return Err(format!("station faulted before network readiness: {fault:?}").into());
+        }
         if let Some(address) = capture.observed_protocol_ipv4(interface)
             && services.iter().all(|&(transport, direction, port)| {
                 observed_service(capture, interface, transport, direction, port)

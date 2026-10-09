@@ -865,6 +865,16 @@ impl SerialCapture {
             .map(|(_, oer_hil_protocol::wifi::StationLifecycle(event))| event))
     }
 
+    /// The current boot's station fault; see [`station_fault_in`].
+    pub fn observed_station_fault(&self) -> Option<StationLifecycleEvent> {
+        let state = self
+            .protocol
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        station_fault_in(&state.messages)
+    }
+
     pub fn latest_boot_id(&self) -> Option<u64> {
         let state = self
             .protocol
@@ -1006,6 +1016,22 @@ impl SerialCapture {
 }
 
 /// The boot of the newest Hello among `messages`: the boot they belong to now.
+/// The current boot's station fault, if the station role faulted: its
+/// terminal lifecycle edge, after which no readiness can follow.
+pub fn station_fault_in(messages: &[Received]) -> Option<StationLifecycleEvent> {
+    let boot_id = latest_boot_id_in(messages)?;
+    messages
+        .iter()
+        .rev()
+        .filter(|message| message.boot_id == boot_id)
+        .find_map(|message| match message.decode() {
+            Some(oer_hil_protocol::wifi::StationLifecycle(
+                event @ StationLifecycleEvent::Faulted { .. },
+            )) if message.session_id == 0 && message.request_id == 0 => Some(event),
+            _ => None,
+        })
+}
+
 pub fn latest_boot_id_in(messages: &[Received]) -> Option<u64> {
     messages.iter().rev().find_map(|message| {
         message

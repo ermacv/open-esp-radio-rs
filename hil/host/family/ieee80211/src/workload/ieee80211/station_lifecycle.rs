@@ -147,6 +147,12 @@ fn wait_for_connected_generation(
             )
             .into());
         }
+        if matches!(event, StationLifecycleEvent::Faulted { .. }) {
+            return Err(format!(
+                "station faulted before connected generation {expected_generation}: {event:?}"
+            )
+            .into());
+        }
     }
 }
 

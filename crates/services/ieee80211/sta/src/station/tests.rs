@@ -5,7 +5,9 @@ use core::{
 };
 use std::{collections::VecDeque, vec::Vec};
 
-use oer_ieee80211_sta::station::{StaAttemptFailure, StaLifecycleStage};
+use oer_ieee80211_sta::station::{
+    StaAttemptFailure, StaFaultCause, StaFaultPhase, StaFaultReason, StaLifecycleStage,
+};
 
 use super::*;
 
@@ -15,7 +17,20 @@ enum Planned {
     Disconnected(StaNextCandidate),
     Stopped,
     Failed(StaLifecycleStage, StaFailureDisposition, u8),
-    Faulted(u64),
+    Faulted(Fault),
+}
+
+/// A planned fault frontier naming its portable reason.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Fault {
+    frontier: u64,
+    reason: StaFaultReason,
+}
+
+impl StaFault for Fault {
+    fn reason(&self) -> StaFaultReason {
+        self.reason
+    }
 }
 
 struct Backend {
@@ -28,7 +43,7 @@ struct Backend {
 impl StaLifecycleBackend for Backend {
     type Owner = u32;
     type Error = u8;
-    type Fault = u64;
+    type Fault = Fault;
 
     async fn run_attempt(
         &mut self,
@@ -287,13 +302,18 @@ fn terminal_failure_and_backoff_stop_both_return_hardware_ownership() {
 
 #[test]
 fn faulted_frontier_is_returned_without_retry_or_backoff() {
-    let backend = backend([Planned::Faulted(0xfeed_beef)]);
+    let fault = Fault {
+        frontier: 0xfeed_beef,
+        reason: StaFaultReason::new(StaFaultPhase::Teardown, StaFaultCause::Security),
+    };
+    let backend = backend([Planned::Faulted(fault)]);
     let mut service = StaLifecycleService::new(backend, policy(3));
 
     assert_eq!(
         block_on(service.run(40)),
         StaLifecycleExit::Faulted {
-            fault: 0xfeed_beef,
+            fault,
+            reason: StaFaultReason::new(StaFaultPhase::Teardown, StaFaultCause::Security),
             progress: StaLifecycleProgress {
                 connected_epochs: 0,
                 attempts_started: 1,
@@ -302,6 +322,7 @@ fn faulted_frontier_is_returned_without_retry_or_backoff() {
             },
         }
     );
+    assert_eq!(fault.frontier, 0xfeed_beef);
     assert!(service.backend().backoffs.is_empty());
     assert_eq!(service.backend().contexts.len(), 1);
 }

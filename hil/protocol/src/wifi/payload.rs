@@ -673,6 +673,29 @@ pub enum StationAttemptFailureReason {
     ContractViolation,
 }
 
+/// Station phase whose transition faulted: the portable
+/// `oer_ieee80211_sta::station::StaFaultPhase`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub enum StationFaultPhase {
+    /// Bringing up the connected epoch.
+    Start,
+    /// The running connected epoch.
+    Connected,
+    /// Returning the connected epoch's owners.
+    Teardown,
+}
+
+/// What a faulted station transition could not prove: the portable
+/// `oer_ieee80211_sta::station::StaFaultCause`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub enum StationFaultCause {
+    Hardware,
+    Security,
+    Configuration,
+    Resources,
+    RfState,
+}
+
 /// Reliable target-observed station lifecycle edge.
 ///
 /// Generation zero is the initial connection. The outer lifecycle increments
@@ -705,6 +728,13 @@ pub enum StationLifecycleEvent {
         attempts: u16,
         stage: StationFailureStage,
         reason: StationAttemptFailureReason,
+    },
+    /// The station role faulted and retains a non-reusable owner: no further
+    /// lifecycle edge follows, and later Wi-Fi commands fail.
+    Faulted {
+        generation: u32,
+        phase: StationFaultPhase,
+        cause: StationFaultCause,
     },
 }
 

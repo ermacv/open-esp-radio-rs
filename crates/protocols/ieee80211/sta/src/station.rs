@@ -57,6 +57,60 @@ impl<E> StaAttemptFailure<E> {
     }
 }
 
+/// Station phase whose transition faulted.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaFaultPhase {
+    /// Bringing up the connected epoch: its policy, driver, interrupts,
+    /// static resources, transmit owner and security installation.
+    Start,
+    /// The running connected epoch.
+    Connected,
+    /// Returning the connected epoch's owners to the disconnected station.
+    Teardown,
+}
+
+/// What a faulted transition could not prove.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaFaultCause {
+    /// A hardware owner or a bounded hardware transaction.
+    Hardware,
+    /// Ownership of keys, packet numbers or replay state.
+    Security,
+    /// The connected policy derived from the association.
+    Configuration,
+    /// Static memory, queues or interrupt routes the phase needs.
+    Resources,
+    /// The radio's RF power state.
+    RfState,
+}
+
+/// Portable reason of a station fault: the backend's own fault type names
+/// it, so every backend reports the same vocabulary to the application.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaFaultReason {
+    pub phase: StaFaultPhase,
+    pub cause: StaFaultCause,
+}
+
+impl StaFaultReason {
+    pub const fn new(phase: StaFaultPhase, cause: StaFaultCause) -> Self {
+        Self { phase, cause }
+    }
+}
+
+/// A non-reusable owner returned by a faulted backend transition, which
+/// names its portable reason.
+pub trait StaFault {
+    fn reason(&self) -> StaFaultReason;
+}
+
+/// A backend that cannot fault.
+impl StaFault for core::convert::Infallible {
+    fn reason(&self) -> StaFaultReason {
+        match *self {}
+    }
+}
+
 /// Facts supplied to one backend-owned scan/join/WPA2/connected attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaAttemptContext {
@@ -126,7 +180,7 @@ pub enum StaBackoffOutcome<O> {
 pub trait StaLifecycleBackend {
     type Owner;
     type Error;
-    type Fault;
+    type Fault: StaFault;
 
     fn run_attempt(
         &mut self,
@@ -236,9 +290,11 @@ pub enum StaLifecycleExit<O, E, F = core::convert::Infallible> {
         progress: StaLifecycleProgress,
         failure: StaAttemptFailure<E>,
     },
-    /// Exact non-reusable owner returned by a faulted backend transition.
+    /// Exact non-reusable owner returned by a faulted backend transition,
+    /// with the portable reason it names.
     Faulted {
         fault: F,
+        reason: StaFaultReason,
         progress: StaLifecycleProgress,
     },
 }

@@ -32,7 +32,7 @@ use oer_ieee80211_sta::{
     request::StationDiscovery,
     station::{
         StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffReason,
-        StaFailureDisposition, StaLifecycleStage,
+        StaFailureDisposition, StaFault, StaLifecycleStage,
     },
 };
 
@@ -431,7 +431,7 @@ pub trait StationEnginePort<'security, M: RawMutex> {
     type Error;
     /// Exact non-reusable owner returned when a phase cannot prove the normal
     /// station frontier reusable. This is data, not a request to reset.
-    type Fault;
+    type Fault: StaFault;
     /// The image's monotonic clock, on which station backoff waits.
     type Timer: oer_time::Timer;
 

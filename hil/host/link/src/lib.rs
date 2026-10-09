@@ -377,7 +377,7 @@ pub use capture::test_support;
 pub mod error;
 use error::LinkError;
 mod protocol;
-pub use protocol::latest_boot_id_in;
+pub use protocol::{latest_boot_id_in, station_fault_in};
 #[cfg(test)]
 mod tests;
 

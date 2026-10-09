@@ -369,8 +369,17 @@ impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
                 }
                 // The command checked its room.
                 Ieee802154RadioEvent::Lifecycle(_) => false,
+                // The first fault of an enabled period holds its reserved
+                // slot, and a fault of the admitted operation the operation's.
+                // A further fault, as a disabled radio may still report, is
+                // not promised: it takes a free slot or is lost.
                 Ieee802154RadioEvent::Fault { .. } => {
-                    owed.fault = false;
+                    if owed.fault {
+                        owed.fault = false;
+                    } else if !owed.operation && !self.has_room(owed, 1) {
+                        owed.lost = true;
+                        return false;
+                    }
                     true
                 }
                 _ => true,

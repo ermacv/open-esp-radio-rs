@@ -461,6 +461,7 @@ impl<M: RawMutex, E: Copy, const EVENTS: usize, const CONNECTIONS: usize> Blueto
             }
         });
         self.changed.signal(());
+        self.admission.signal(());
     }
 }
 
@@ -662,6 +663,7 @@ impl<
         });
         drop(installed);
         self.outcomes.reset();
+        self.admission.signal(());
         self.fault.lock(|fault| fault.set(None));
         self.work.signal(());
         Ok(())
@@ -819,7 +821,11 @@ impl<
                 }
             }
         };
-        self.admission.signal(());
+        // Only a command that started moves admission; a refused one must
+        // not wake the waiters it refused, or they would retry at once.
+        if started.is_ok() {
+            self.admission.signal(());
+        }
         self.changed.signal(());
         self.work.signal(());
         Ok(started)
@@ -871,6 +877,8 @@ impl<
             }
         });
         self.changed.signal(());
+        // A lifecycle waiter must observe the poison: no end follows.
+        self.admission.signal(());
     }
 
     /// Follow whether another radio shares the antenna. The installed radio
@@ -1001,7 +1009,14 @@ impl<
                 Err(LifecycleError::Busy) => self.admission.wait().await,
             }
         };
+        // The last end, a poison or an uninstall moves admission on.
         while self.outcomes.admission() == Admission::Quiescing {
+            if let Some(poisoned) = self.poisoned() {
+                return Err(poisoned);
+            }
+            if self.installed.lock().await.is_none() {
+                return Ok(Err(NotInstalled));
+            }
             self.admission.wait().await;
         }
         let result = {
@@ -1091,6 +1106,7 @@ impl<
         } = slot.take().expect("the radio is installed");
         drop(slot);
         self.outcomes.reset();
+        self.admission.signal(());
         self.work.signal(());
         Ok((radio, hardware))
     }

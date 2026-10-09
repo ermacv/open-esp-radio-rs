@@ -1113,3 +1113,25 @@ fn enhanced_ack_settings_need_the_generator() {
         Ok(true)
     );
 }
+
+/// Only the first fault of an enabled period holds a reserved slot; a
+/// further one, as a disabled radio may still report, takes a free slot or
+/// is lost instead of overrunning the queue.
+#[test]
+fn a_fault_beyond_the_reserved_one_never_overruns_the_queue() {
+    use oer_ieee802154::RadioFault;
+    let queue = super::EventQueue::<NoopRawMutex, 2>::new();
+    queue.owed(|owed| owed.fault = true);
+    let fault = || Ieee802154RadioEvent::Fault {
+        id: None,
+        fault: RadioFault::InvalidEventSequence,
+    };
+    assert!(queue.push(fault()));
+    assert!(queue.push(fault()));
+    // Both slots are taken: the third fault is lost, not a panic.
+    assert!(!queue.push(fault()));
+    assert_eq!(queue.take(), Some(Ok(fault())));
+    assert_eq!(queue.take(), Some(Ok(fault())));
+    assert_eq!(queue.take(), Some(Err(oer_ieee802154::EventsLost)));
+    assert_eq!(queue.take(), None);
+}

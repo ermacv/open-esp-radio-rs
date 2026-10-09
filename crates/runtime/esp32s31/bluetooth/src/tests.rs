@@ -700,6 +700,36 @@ fn quiesce_reports_quiesced_after_the_last_admitted_event() {
 }
 
 #[test]
+fn quiesce_returns_the_poison_instead_of_waiting_for_an_end_that_never_comes() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(async {
+        runtime.submit_request(configure()).await.unwrap().unwrap();
+        runtime
+            .submit_request(advertise(1, 10_000))
+            .await
+            .unwrap()
+            .unwrap();
+    });
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    let mut quiesce = core::pin::pin!(runtime.quiesce(|_| ()));
+    // The admitted event keeps the port quiescing.
+    assert!(quiesce.as_mut().poll(&mut context).is_pending());
+    // The runner then faults: the event's end never comes.
+    model.0.borrow_mut().refuse_start = true;
+    let fault = block_on(runtime.run());
+    let core::task::Poll::Ready(result) = quiesce.as_mut().poll(&mut context) else {
+        panic!("a poisoned port ends the wait")
+    };
+    assert_eq!(
+        result,
+        Err(Poisoned {
+            cause: BluetoothFault::Runner(fault),
+        })
+    );
+}
+
+#[test]
 fn cancellation_withdraws_an_admitted_event_and_its_end_follows() {
     let model = Model::default();
     let runtime = installed(&model);

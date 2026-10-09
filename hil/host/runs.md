@@ -145,8 +145,15 @@ not, the failure names a firmware or host fault: the stand can reflash the
 board, so it goes on serving. Once that scenario ends, the runner flashes the
 chip's recovery image, `boot-smoke` built from the run's sources, checks that
 it answers as itself and journals a `Reflash` recovery, so the board is left
-working, once per image class and run; a board that does not answer even its
-recovery image is quarantined, since nothing else the stand can do remains. The run then records its remaining repetitions of that
+working, once per image class and run. The flash proved its ROM answers, so a
+recovery image that does not build or does not answer is the fault of that
+image or the checkout that built it, never the board's: the board is not
+quarantined, and the run's remaining `boot-smoke` repetitions are recorded
+as `blocked`. A recovery image that does not flash proves nothing of the ROM,
+so the board climbs its reset ladder, which quarantines it only if its ROM
+stays silent. A quarantine the arbiter does not record ends the run with an
+error, since the board would otherwise serve its remaining repetitions and the
+next lease broken. The run then records its remaining repetitions of that
 image class as `blocked` without touching the board, so a broken image frees
 the lease within about a minute instead of repeating the wait. Only a board whose ROM stays silent after every
 step of its ladder, the download entry included, which no script can bring

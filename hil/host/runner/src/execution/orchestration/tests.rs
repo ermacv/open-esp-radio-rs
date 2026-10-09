@@ -554,10 +554,33 @@ fn a_silent_image_on_a_loadable_board_gets_the_recovery_image_once() {
 
 #[test]
 fn a_recovery_image_that_does_not_answer_is_the_images_fault_not_the_boards() {
-    assert_eq!(super::after_reflash(Ok(())), super::AfterReflash::Recovered);
-    // The board's ROM answered before the reflash: it is never quarantined.
+    use oer_hil_run_bundle_format::run::{Failure, FailureKind};
+    let unreached = || -> std::result::Result<(), String> { panic!("not flashed") };
     assert_eq!(
-        super::after_reflash(Err(String::from("no boot-smoke pass line"))),
+        super::after_reflash(None, || Ok(())),
+        super::AfterReflash::Recovered
+    );
+    // The flash proved the ROM answers: never the board's fault.
+    assert_eq!(
+        super::after_reflash(None, || Err(String::from("no boot-smoke pass line"))),
         super::AfterReflash::ImageFault(String::from("no boot-smoke pass line"))
+    );
+    assert_eq!(
+        super::after_reflash(
+            Some(Failure::new(FailureKind::ImageBuild, "does not compile")),
+            unreached
+        ),
+        super::AfterReflash::ImageFault(String::from("does not compile"))
+    );
+    // A flash that failed proves nothing of the ROM: the ladder judges it.
+    assert_eq!(
+        super::after_reflash(
+            Some(Failure::new(
+                FailureKind::ImageFlash,
+                "no answer from the ROM"
+            )),
+            unreached
+        ),
+        super::AfterReflash::FlashFailed(String::from("no answer from the ROM"))
     );
 }

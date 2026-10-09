@@ -194,6 +194,21 @@ re-registration interval after clearing rfkill has a bounded setup retry.
 Cleanup results are saved with the ordinary sealed HIL run. No helper reinstall
 is required for this path.
 
+### Connections the DUT never received
+
+A CONNECT_IND can collide in the air with another device's response to the
+same `ADV_IND`, for example a nearby active scanner's `SCAN_REQ`. The adapter
+then reports the connection created and closes it as "Connection Failed to be
+Established" (0x3E), while the DUT never saw it. Like any central, the
+GATT and secure GATT workloads retry such a connection, up to three attempts
+in all. They retry only when the DUT's own observation proves that the
+connection never reached it: no new connection or comparison, not connected,
+still advertising. Every other failure ends the repetition.
+
+Every attempt lands in the observation's `connection_attempts`, with its phase,
+number, outcome (`established` or `not-established`) and the host-side error,
+so the loss rate stays a measurement (#357).
+
 ## Encryption and key-failure modes
 
 No catalog scenario uses the `connect-reset` encryption modes or the

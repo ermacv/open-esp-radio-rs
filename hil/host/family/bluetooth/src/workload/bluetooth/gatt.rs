@@ -27,6 +27,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
         let mut exchanges = Vec::new();
         let mut attempts = Vec::new();
         let probe = exercise(capture, &owner, &mut samples, &mut exchanges, &mut attempts);
+        context.measurements.record(super::establish::measurements(&attempts));
         let cleanup = oer_process::cleanup(|| -> Result<()> {
             owner.restore()?;
             wait(capture, &mut samples, |e| !e.connected)?;

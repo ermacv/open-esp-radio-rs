@@ -466,6 +466,25 @@ fn a_connectable_set_receives_its_requests() {
 }
 
 #[test]
+fn an_event_whose_receptions_cannot_be_accounted_faults_instead_of_dropping_them() {
+    let mut faulted = false;
+    let mut sink = Sink::default();
+    assert_eq!(
+        super::accounted(Ok::<u8, ()>(7), Ok::<(), ()>(()), &mut faulted, &mut sink),
+        Some(7)
+    );
+    assert!(!faulted && sink.0.is_empty());
+    for (source, finished) in [(Err(()), Ok(())), (Ok(7), Err(())), (Err(()), Err(()))] {
+        let mut faulted = false;
+        let mut sink = Sink::default();
+        let drained = super::accounted::<u8, (), ()>(source, finished, &mut faulted, &mut sink);
+        assert_eq!(drained, source.ok());
+        assert!(faulted);
+        assert_eq!(sink.0, [Seen::Fault]);
+    }
+}
+
+#[test]
 fn captures_become_the_on_air_packet_start() {
     let radio = radio();
     let delay = BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros();

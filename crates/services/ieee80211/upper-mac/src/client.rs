@@ -10,10 +10,10 @@
 //! that owns the client; the composition polls [`EventRouter::run`] beside
 //! it.
 //!
-//! A loss the router reports is a [`PortInput::EventsLost`]; an exchange
-//! whose completion fell into the gap cancels its attempt, as the router
-//! contract states. The terminal poisoned event ends every operation with
-//! [`PortClientError::Poisoned`] or [`PortInput::Poisoned`].
+//! A loss the router reports is a [`PortInput::EventsLost`]: received
+//! frames or TBTTs are gone, never a completion or a lifecycle terminal.
+//! A poisoned port ends every operation with [`PortClientError::Poisoned`],
+//! which carries the backend's cause, or [`PortInput::Poisoned`].
 
 use core::{
     future::{Future, poll_fn},
@@ -24,9 +24,9 @@ use core::{
 
 use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_ieee80211_lower_mac::{
-    Channel, CoexPriority, EventsLost, FailureClass, Ieee80211LowerMacPort, KeySelector,
-    LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAirReservation, LowerMacAmpdu,
-    LowerMacBeaconTiming, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter, RxBuffer, RxMeta,
+    Channel, CoexPriority, EventsLost, Ieee80211LowerMacPort, KeySelector, LifecycleCommand,
+    LifecycleError, LifecycleEvent, LowerMacAirReservation, LowerMacAmpdu, LowerMacBeaconTiming,
+    LowerMacSetting, MacAddress, PhyRate, Poisoned, RadioPort, ReceiveFilter, RxBuffer, RxMeta,
     SettingError, TbttEvent, TxCompletion, TxPower, VifConfig, VifId, VifRole,
 };
 use oer_ieee80211_mac::{data::EthernetFrameParts, qos::WmmAccessCategory};
@@ -71,8 +71,8 @@ pub trait PortClientEnv {
     type Aggregation: PortAggregation<Self>;
 }
 
-/// The port error type of an environment.
-pub type PortError<X> = <<X as PortClientEnv>::Port as Ieee80211LowerMacPort>::Error;
+/// The poison cause of an environment's port.
+pub type PortFault<X> = <<X as PortClientEnv>::Port as RadioPort>::Fault;
 
 /// The receive buffer of an environment's port.
 pub type PortRxBuffer<X> = <<X as PortClientEnv>::Port as Ieee80211LowerMacPort>::RxBuffer;
@@ -158,8 +158,8 @@ impl<B: RxBuffer> PortMsdu<'_, B> {
 }
 
 /// One input of the port a client consumes; a frame is the port's own
-/// buffer, never a copy.
-pub enum PortInput<B> {
+/// buffer, never a copy. `F` is the port's poison cause.
+pub enum PortInput<B, F> {
     Frame(PortFrame<B>),
     /// A TBTT of an interface's schedule, reported through
     /// [`LowerMacBeaconTiming`].
@@ -167,8 +167,8 @@ pub enum PortInput<B> {
     /// The port lost events: received frames or TBTTs in the gap are gone.
     /// The service goes on; an exchange recovers its own completion.
     EventsLost,
-    /// The port reported its terminal poisoned event: the service stops.
-    Poisoned,
+    /// The port is poisoned: the service stops.
+    Poisoned(Poisoned<F>),
 }
 
 /// What a client dropped at the port boundary.
@@ -178,29 +178,43 @@ pub struct PortClientCounters {
     pub events_lost: u32,
 }
 
-/// Why a client operation over the port failed.
+/// Why a client operation over the port failed; `F` is the port's poison
+/// cause.
 #[derive(Debug, Eq, PartialEq)]
-pub enum PortClientError<E> {
+pub enum PortClientError<F> {
     /// The port is poisoned.
-    Port(E),
+    Poisoned(Poisoned<F>),
     /// An exchange ended without a report.
-    Tx(UpperMacTxError<E>),
+    Tx(UpperMacTxError<F>),
     /// The port refused a setting or a key.
     Setting(SettingError),
     /// The port refused a lifecycle command.
     Lifecycle(LifecycleError),
-    /// A lifecycle command failed.
-    LifecycleFailed(FailureClass),
-    /// The port lost events while a lifecycle command ran, its terminal
-    /// event possibly among them.
+    /// A lifecycle command failed and left the port as it was.
+    LifecycleFailed,
+    /// The router's lifecycle queue overflowed while a lifecycle command
+    /// ran, its terminal event possibly among the dropped ones.
     LifecycleLost,
-    /// The port reported its terminal poisoned event.
-    Poisoned,
     /// A frame to send is shorter than its first address.
     FrameTooShort,
     /// An A-MPDU went to a port that sends none
     /// ([`NoAggregation`](crate::aggregate::NoAggregation)).
     AggregationUnsupported,
+}
+
+impl<F> From<Poisoned<F>> for PortClientError<F> {
+    fn from(poisoned: Poisoned<F>) -> Self {
+        Self::Poisoned(poisoned)
+    }
+}
+
+impl<F> From<UpperMacTxError<F>> for PortClientError<F> {
+    fn from(error: UpperMacTxError<F>) -> Self {
+        match error {
+            UpperMacTxError::Poisoned(poisoned) => Self::Poisoned(poisoned),
+            error => Self::Tx(error),
+        }
+    }
 }
 
 /// One interface's client of the port: see the [module](self).
@@ -270,7 +284,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         access_category: WmmAccessCategory,
         rate: PhyRate,
         coex: CoexPriority,
-    ) -> Result<TxReport, PortClientError<PortError<X>>> {
+    ) -> Result<TxReport, PortClientError<PortFault<X>>> {
         let address1: [u8; 6] = frame
             .header
             .get(4..10)
@@ -311,8 +325,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         } = self;
         match tx.send_mpdu(frame, key, request, ladder, entropy).await {
             Ok(report) => Ok(report),
-            Err(UpperMacTxError::Poisoned) => Err(PortClientError::Poisoned),
-            Err(error) => Err(PortClientError::Tx(error)),
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -321,7 +334,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         &mut self,
         frames: AmpduFrames<'_, PortBody<X>>,
         request: TxRequest,
-    ) -> Result<TxReport, PortClientError<PortError<X>>>
+    ) -> Result<TxReport, PortClientError<PortFault<X>>>
     where
         X::Port: LowerMacAmpdu,
     {
@@ -333,8 +346,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         } = self;
         match tx.send_ampdu(frames, request, ladder, entropy).await {
             Ok(report) => Ok(report),
-            Err(UpperMacTxError::Poisoned) => Err(PortClientError::Poisoned),
-            Err(error) => Err(PortClientError::Tx(error)),
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -345,7 +357,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         duration: oer_time::Duration,
         rate: PhyRate,
         coex: CoexPriority,
-    ) -> Result<TxCompletion, PortClientError<PortError<X>>>
+    ) -> Result<TxCompletion, PortClientError<PortFault<X>>>
     where
         X::Port: LowerMacAirReservation,
     {
@@ -361,14 +373,13 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
             .await
         {
             Ok(completion) => Ok(completion),
-            Err(UpperMacTxError::Poisoned) => Err(PortClientError::Poisoned),
-            Err(error) => Err(PortClientError::Tx(error)),
+            Err(error) => Err(error.into()),
         }
     }
 
     /// The next input the router already holds: a TBTT first, then a
     /// received frame. It never waits.
-    pub async fn try_input(&mut self) -> Option<PortInput<PortRxBuffer<X>>> {
+    pub async fn try_input(&mut self) -> Option<PortInput<PortRxBuffer<X>, PortFault<X>>> {
         poll_fn(|context| match self.poll_input(context) {
             Poll::Ready(input) => Poll::Ready(input),
             Poll::Pending => Poll::Ready(None),
@@ -381,7 +392,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         &mut self,
         timer: &T,
         deadline: Instant,
-    ) -> Option<PortInput<PortRxBuffer<X>>> {
+    ) -> Option<PortInput<PortRxBuffer<X>, PortFault<X>>> {
         let mut wait = pin!(timer.wait_until(deadline));
         poll_fn(|context| {
             if let Poll::Ready(input) = self.poll_input(context) {
@@ -400,7 +411,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     fn poll_input(
         &mut self,
         context: &mut core::task::Context<'_>,
-    ) -> Poll<Option<PortInput<PortRxBuffer<X>>>> {
+    ) -> Poll<Option<PortInput<PortRxBuffer<X>, PortFault<X>>>> {
         loop {
             let router = self.router;
             let vif = self.config.vif;
@@ -414,7 +425,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
                 Poll::Ready(Some(Err(EventsLost))) => {
                     return Poll::Ready(Some(self.lost()));
                 }
-                Poll::Ready(None) => return Poll::Ready(Some(PortInput::Poisoned)),
+                Poll::Ready(None) => return Poll::Ready(Some(self.poisoned())),
                 Poll::Pending => {}
             }
             return match pin!(router.received(vif)).poll(context) {
@@ -423,13 +434,22 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
                     None => continue,
                 },
                 Poll::Ready(Some(Err(EventsLost))) => Poll::Ready(Some(self.lost())),
-                Poll::Ready(None) => Poll::Ready(Some(PortInput::Poisoned)),
+                Poll::Ready(None) => Poll::Ready(Some(self.poisoned())),
                 Poll::Pending => Poll::Pending,
             };
         }
     }
 
-    fn lost(&mut self) -> PortInput<PortRxBuffer<X>> {
+    /// The input of a router whose queues ended on poisoning.
+    fn poisoned(&self) -> PortInput<PortRxBuffer<X>, PortFault<X>> {
+        PortInput::Poisoned(
+            self.router
+                .poisoned()
+                .expect("the router ends its queues only on poisoning"),
+        )
+    }
+
+    fn lost(&mut self) -> PortInput<PortRxBuffer<X>, PortFault<X>> {
         self.counters.events_lost = self.counters.events_lost.saturating_add(1);
         PortInput::EventsLost
     }
@@ -437,8 +457,8 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     /// A received frame in the port's buffer; `None` for any other event.
     fn frame(
         &mut self,
-        event: <X::Port as Ieee80211LowerMacPort>::Event,
-    ) -> Option<PortInput<PortRxBuffer<X>>> {
+        event: <X::Port as RadioPort>::Event,
+    ) -> Option<PortInput<PortRxBuffer<X>, PortFault<X>>> {
         match <X::Port as Ieee80211LowerMacPort>::into_received(event) {
             Ok((buffer, meta)) => Some(PortInput::Frame(PortFrame::new(buffer, meta))),
             Err(_) => None,
@@ -449,17 +469,16 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     /// not see an earlier phase's frames does.
     pub async fn discard_backlog(&mut self) {
         while let Some(input) = self.try_input().await {
-            if let PortInput::Poisoned = input {
+            if let PortInput::Poisoned(_) = input {
                 return;
             }
         }
     }
 
     /// Apply one setting.
-    pub fn apply(&self, setting: LowerMacSetting) -> Result<(), PortClientError<PortError<X>>> {
+    pub fn apply(&self, setting: LowerMacSetting) -> Result<(), PortClientError<PortFault<X>>> {
         self.port()
-            .apply(setting)
-            .map_err(PortClientError::Port)?
+            .apply(setting)?
             .map_err(PortClientError::Setting)
     }
 
@@ -469,7 +488,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     pub fn install_edca(
         &mut self,
         parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
-    ) -> Result<(), PortClientError<PortError<X>>> {
+    ) -> Result<(), PortClientError<PortFault<X>>> {
         self.apply(LowerMacSetting::Edca(parameters))?;
         for category in [
             WmmAccessCategory::BestEffort,
@@ -492,7 +511,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         &self,
         bssid: Option<MacAddress>,
         receive: ReceiveFilter,
-    ) -> Result<(), PortClientError<PortError<X>>> {
+    ) -> Result<(), PortClientError<PortFault<X>>> {
         self.apply(LowerMacSetting::Vif {
             vif: self.config.vif,
             config: Some(VifConfig {
@@ -510,7 +529,7 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     /// Tune to `channel`. A backend that retunes only while disabled
     /// refuses the setting as `Busy`; the client then disables the port,
     /// tunes and enables it again.
-    pub async fn retune(&mut self, channel: Channel) -> Result<(), PortClientError<PortError<X>>> {
+    pub async fn retune(&mut self, channel: Channel) -> Result<(), PortClientError<PortFault<X>>> {
         match self.apply(LowerMacSetting::Channel(channel)) {
             Err(PortClientError::Setting(SettingError::Busy)) => {
                 self.lifecycle(LifecycleCommand::Disable).await?;
@@ -526,23 +545,25 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     pub async fn lifecycle(
         &mut self,
         command: LifecycleCommand,
-    ) -> Result<(), PortClientError<PortError<X>>> {
+    ) -> Result<(), PortClientError<PortFault<X>>> {
         self.port()
             .lifecycle(command)
-            .map_err(PortClientError::Port)?
+            .await?
             .map_err(PortClientError::Lifecycle)?;
         match self.router.lifecycle().await {
-            Some(Ok(LifecycleEvent::Failed { class, .. })) => {
-                Err(PortClientError::LifecycleFailed(class))
-            }
+            Some(Ok(LifecycleEvent::Failed { .. })) => Err(PortClientError::LifecycleFailed),
             Some(Ok(_)) => Ok(()),
-            // A lifecycle command has no identity to cancel: its terminal
-            // may be in the gap.
+            // The router's own queue overflowed: its terminal may be among
+            // the dropped entries.
             Some(Err(EventsLost)) => {
                 self.counters.events_lost = self.counters.events_lost.saturating_add(1);
                 Err(PortClientError::LifecycleLost)
             }
-            None => Err(PortClientError::Poisoned),
+            None => Err(PortClientError::Poisoned(
+                self.router
+                    .poisoned()
+                    .expect("the router ended its queue on poisoning"),
+            )),
         }
     }
 }

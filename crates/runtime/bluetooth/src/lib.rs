@@ -17,15 +17,20 @@
 //! core's [`RadioActivity`] changes, the loop reports it to the port before
 //! doing anything else.
 //!
+//! The loop enables the port when it starts, and cancels a scheduled event
+//! through the port's cancellation when the core asks for it.
+//!
 //! The loop owns no memory of its own beyond one command buffer and spawns
 //! nothing; the caller polls it on a task of its choice, beside the radio
-//! backend's own runner. It is the port's one outcome consumer. It ends
-//! when the transport closes or fails, when the radio port fails or
-//! reports a fault and its terminal poisoned outcome, or when the port
-//! loses outcomes: the core's roles account every event by its end and
-//! cannot recover one lost in the gap, so the service ends there through
-//! the shared [`EventsLost`]. Host ACL data enters the core while it has room for a packet;
-//! until then commands pass queued data.
+//! backend's own runner. It is the port's one event consumer. It ends when
+//! the transport closes or fails, when the radio backend is not installed
+//! or its clock cannot be read, or when the port is poisoned
+//! ([`ServeExit::Poisoned`] with the backend's cause). The port reserves
+//! every event's end and a connection event's data when it admits the
+//! event, so an [`EventsLost`] stands for advertising and scan reports only
+//! and the loop goes on: the core's roles still account every event by its
+//! end. Host ACL data enters the core while it
+//! has room for a packet; until then commands pass queued data.
 //!
 //! A required schedule outside the current radio epoch ends through
 //! [`ServeExit::Planning`] before another submission or retry. The caller keeps
@@ -39,34 +44,41 @@ extern crate std;
 
 use embassy_futures::select::{Either4, select4};
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use oer_bluetooth_controller::{LeController, PlanningError};
+use oer_bluetooth_controller::{LeController, PlanningError, RadioWork};
 use oer_bluetooth_hci::HostToControllerFrame;
 use oer_bluetooth_hci_transport::{HciChannelError, InProcessHciControllerTransport};
 use oer_bluetooth_radio::{
-    EventsLost, LeRadioPort, RadioActivity, RadioFault, RadioOutcome, RequestError,
+    CancelError, ClockError, EventsLost, LeRadioPort, LifecycleCommand, LifecycleError, Poisoned,
+    RadioActivity, RequestError,
 };
 use oer_time::{Duration, Instant, Timer};
 
 /// Delay before asking the core again after the radio refused a request.
 pub const REFUSED_RETRY_DELAY: Duration = Duration::from_millis(1);
 
-/// Why [`serve`] ended.
+/// Why [`serve`] ended; `F` is the port's poison cause.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ServeExit<E> {
+pub enum ServeExit<F> {
     /// The transport closed.
     Closed,
     /// A required radio continuation failed; retained owners require managed stop.
     Planning(PlanningError),
     /// The transport refused a packet.
     Transport(HciChannelError),
-    /// The radio port failed.
-    Radio(E),
-    /// The radio reported a fault.
-    Fault(RadioFault),
-    /// The radio reported its terminal poisoned outcome.
-    Poisoned,
-    /// The radio dropped outcomes.
-    EventsLost(EventsLost),
+    /// No radio backend is installed.
+    NotInstalled,
+    /// The port refused to enable.
+    Lifecycle(LifecycleError),
+    /// The radio clock could not be read.
+    Clock(ClockError),
+    /// The port is poisoned.
+    Poisoned(Poisoned<F>),
+}
+
+impl<F> From<Poisoned<F>> for ServeExit<F> {
+    fn from(poisoned: Poisoned<F>) -> Self {
+        Self::Poisoned(poisoned)
+    }
 }
 
 /// Serve the Host through `transport` with `core` over `radio` until the
@@ -84,11 +96,18 @@ pub async fn serve<
     core: &mut LeController<'_, OUTPUT>,
     radio: &P,
     timer: &impl Timer,
-) -> ServeExit<P::Error>
+) -> ServeExit<P::Fault>
 where
     M: RawMutex,
     P: LeRadioPort,
 {
+    match radio.lifecycle(LifecycleCommand::Enable).await {
+        Ok(Ok(()) | Err(LifecycleError::AlreadyInState)) => {}
+        Ok(Err(LifecycleError::NotInstalled)) => return ServeExit::NotInstalled,
+        Ok(Err(error)) => return ServeExit::Lifecycle(error),
+        Err(poisoned) => return poisoned.into(),
+    }
+    let timing = radio.capabilities().timing;
     let mut buffer = [0; PACKET];
     let mut retry_at: Option<Instant> = None;
     // The last request was refused as unsupported: ask again only after
@@ -99,8 +118,10 @@ where
         // Report a change of the active roles first.
         let activity = core.activity();
         if activity != reported {
-            if let Err(error) = radio.activity(activity) {
-                return ServeExit::Radio(error);
+            match radio.activity(activity) {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => return ServeExit::NotInstalled,
+                Err(poisoned) => return poisoned.into(),
             }
             reported = activity;
         }
@@ -114,33 +135,45 @@ where
                 Err(error) => return ServeExit::Transport(error),
             }
         }
-        if let Some(fault) = core.fault() {
-            return ServeExit::Fault(fault);
-        }
 
         // Submit the next radio request.
         if core.wants_radio() && !unsupported && retry_at.is_none_or(|at| timer.now() >= at) {
             retry_at = None;
-            let (now, timing) = match radio.clock().await {
-                Ok(clock) => clock,
-                Err(error) => return ServeExit::Radio(error),
+            let now = match radio.now().await {
+                Ok(Ok(now)) => now,
+                Ok(Err(ClockError::NotInstalled)) => return ServeExit::NotInstalled,
+                Ok(Err(error)) => return ServeExit::Clock(error),
+                Err(poisoned) => return poisoned.into(),
             };
-            let request = match core.next_request(now, timing) {
-                Ok(request) => request,
+            let work = match core.next_request(now, timing) {
+                Ok(work) => work,
                 Err(error) => return ServeExit::Planning(error),
             };
-            if let Some(request) = request {
-                let result = match radio.submit(request).await {
-                    Ok(result) => result,
-                    Err(error) => return ServeExit::Radio(error),
-                };
-                match result {
-                    Ok(()) => {}
-                    Err(RequestError::Unsupported) => unsupported = true,
-                    Err(_) => retry_at = Some(retry_after_refusal(timer)),
+            match work {
+                Some(RadioWork::Submit(request)) => {
+                    let result = match radio.submit(request).await {
+                        Ok(Err(RequestError::NotInstalled)) => return ServeExit::NotInstalled,
+                        Ok(result) => result,
+                        Err(poisoned) => return poisoned.into(),
+                    };
+                    match result {
+                        Ok(()) => {}
+                        Err(RequestError::Unsupported) => unsupported = true,
+                        Err(_) => retry_at = Some(retry_after_refusal(timer)),
+                    }
+                    core.request_done(result);
+                    continue;
                 }
-                core.request_done(result);
-                continue;
+                Some(RadioWork::Cancel(id)) => {
+                    let result = match radio.cancel(id).await {
+                        Ok(Err(CancelError::NotInstalled)) => return ServeExit::NotInstalled,
+                        Ok(result) => result,
+                        Err(poisoned) => return poisoned.into(),
+                    };
+                    core.cancel_done(result);
+                    continue;
+                }
+                None => {}
             }
             // Nothing could be placed now; ask again shortly.
             retry_at = Some(retry_after_refusal(timer));
@@ -174,7 +207,7 @@ where
         let publishing = core.front().is_some();
         let retry = retry_at.filter(|_| core.wants_radio() && !unsupported);
         let event = select4(
-            radio.next_outcome(),
+            radio.next_event(),
             async {
                 if command_ready {
                     transport.wait_receive_admitted(acl_ready).await;
@@ -198,16 +231,15 @@ where
         )
         .await;
         match event {
-            Either4::First(Ok(outcome)) => {
-                let view = P::view(&outcome);
-                if let RadioOutcome::Poisoned(_) = view {
-                    return ServeExit::Poisoned;
-                }
+            Either4::First(Ok(Ok(event))) => {
                 retry_at = None;
                 unsupported = false;
-                core.outcome(view);
+                core.outcome(P::view(&event));
             }
-            Either4::First(Err(lost)) => return ServeExit::EventsLost(lost),
+            // Advertising and scan reports are gone; every event's end and
+            // the connection's data still follow.
+            Either4::First(Ok(Err(EventsLost))) => {}
+            Either4::First(Err(poisoned)) => return poisoned.into(),
             Either4::Second(()) | Either4::Third(()) => {}
             Either4::Fourth(()) => retry_at = None,
         }

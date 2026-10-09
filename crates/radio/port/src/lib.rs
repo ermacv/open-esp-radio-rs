@@ -7,18 +7,19 @@
 //! A radio port (`docs/architecture.md`, "Radio ports") is the contract
 //! between the portable logic of one radio protocol and the backend that
 //! executes it. The IEEE 802.11 lower-MAC port, the IEEE 802.15.4 radio port
-//! and the Bluetooth LE radio port each declare their own requests and
-//! events; this package declares what they have in common, so a caller
-//! handles any protocol's failures, losses and lifecycle alike:
+//! and the Bluetooth LE radio port each extend [`RadioPort`] with their own
+//! requests, events and capabilities; this package declares what they have
+//! in common, so a caller handles any protocol's refusals, losses, poisoning
+//! and lifecycle alike:
 //!
-//! - [`FailureClass`] and [`PortError`]: every port error is `Rejected`,
-//!   `Recoverable` or `Poisoned`.
+//! - [`RadioPort`]: the base trait, with the event stream, the radio clock,
+//!   cancellation and the lifecycle.
+//! - [`Poisoned`] and [`PortResult`]: the only outer error of a port call,
+//!   carrying the backend's cause; every refusal is the inner `Err`.
 //! - [`EventsLost`]: the one loss marker, with its ordering rule.
-//! - [`Poisoned`]: the terminal event of a port whose backend state is
-//!   unknown.
-//! - [`LifecycleCommand`], [`LifecycleEvent`], [`LifecycleError`] and
-//!   [`CancelError`]: enable, disable and quiesce with terminal events, and
-//!   the refusal of a cancellation.
+//! - [`LifecycleCommand`], [`LifecycleEvent`], [`LifecycleError`],
+//!   [`CancelError`], [`ClockError`] and [`NotInstalled`]: enable, disable
+//!   and quiesce with terminal events, and the shared refusals.
 //! - [`Correlation`] and [`CorrelationIds`]: caller-chosen identities with
 //!   one backend-reserved range.
 //! - [`ClockInfo`] and [`RadioEpoch`]: the resolution of a port's radio
@@ -27,11 +28,11 @@
 //! # Event model
 //!
 //! Every port has exactly one consumer of its events: one task owns the
-//! port's `next_event` (or `next_outcome`) and dispatches what it takes. A
-//! second task that awaited the same stream would take events the first one
-//! waits for; several exchanges share one port through a router that owns
-//! the stream and hands each terminal event to the exchange whose identity
-//! it carries.
+//! port's [`RadioPort::next_event`] and dispatches what it takes. A second
+//! task that awaited the same stream would take events the first one waits
+//! for; several exchanges share one port through a router that owns the
+//! stream and hands each terminal event to the exchange whose identity it
+//! carries.
 //!
 //! Taking an event only dequeues it. Timed work a backend runs in software
 //! (backoffs, retry delays, watchdogs, retunes) progresses in the backend's
@@ -40,42 +41,76 @@
 //!
 //! This package owns no state and never waits.
 
-use core::ops::RangeInclusive;
+use core::{fmt::Debug, future::Future, ops::RangeInclusive};
 
 use oer_time::{Duration, Instant, RadioInstant};
 
-/// How a failure left the port.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum FailureClass {
-    /// The request was not admitted and nothing changed; the port stays
-    /// usable. A port that is not installed, paused or disabled refuses
-    /// work in this class: installing, resuming or enabling it serves again.
-    Rejected,
-    /// Admitted work ended without its result; the port stays usable in the
-    /// state the terminal event names.
-    Recoverable,
-    /// The backend's state is unknown. The port reports [`Poisoned`] and
-    /// refuses every later call until a reset restores it.
-    Poisoned,
+/// The base of every radio port: its event stream, its radio clock,
+/// cancellation of admitted work and its lifecycle.
+///
+/// Each protocol's port extends it with its submission, the portable view
+/// of its events and its capabilities. Every call returns a
+/// [`PortResult`]: the inner `Err` is a refusal (nothing changed, the port
+/// serves on), the outer one is [`Poisoned`] (the backend's state is
+/// unknown and only a reset restores it). A backend that is not installed
+/// or is paused refuses through the inner `Err`, never the outer one.
+///
+/// The calls are asynchronous because a backend may need a bounded wait for
+/// its hardware to answer (a fresh clock latch, a radio its runner holds
+/// across a stop sequence); the wait never depends on another call or on an
+/// event being taken. A backend that decides at once returns a ready
+/// future.
+///
+/// A backend reserves the slot of every event whose loss would break a
+/// guarantee: an admitted operation's terminal event, and data its protocol
+/// promises the peer to deliver once the hardware acknowledged it (Bluetooth
+/// LE connection data). It reserves them when it admits the work, so they
+/// are never lost: an [`EventsLost`] only ever stands for data the protocol
+/// does not promise to deliver (received frames, advertising reports), and
+/// a consumer continues after it.
+pub trait RadioPort {
+    /// One owned event.
+    type Event;
+    /// The correlation identity of the port's admitted work.
+    type Id: Correlation;
+    /// The clock domain of the port's radio instants.
+    type Domain;
+    /// The cause a poisoned backend reports.
+    type Fault: Copy + Debug;
+
+    /// The next event. Taking it only dequeues it; dropping the future
+    /// loses no event. `Ok(Err(EventsLost))` takes the place of the first
+    /// dropped event. A poisoned backend returns [`Poisoned`] after every
+    /// event it produced before the fault, and again at every later call.
+    fn next_event(
+        &self,
+    ) -> impl Future<Output = PortResult<Self::Event, EventsLost, Self::Fault>> + '_;
+
+    /// The radio clock: the epoch of the port's scheduled work and receive
+    /// timestamps, at the resolution its [`ClockInfo`] states.
+    fn now(
+        &self,
+    ) -> impl Future<Output = PortResult<RadioInstant<Self::Domain>, ClockError, Self::Fault>> + '_;
+
+    /// End one admitted operation. Its terminal event is the operation's
+    /// own, which may be its natural end. A refusal as
+    /// [`CancelError::NotRunning`] proves that the operation already ended.
+    fn cancel(
+        &self,
+        id: Self::Id,
+    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + '_;
+
+    /// Start one lifecycle command; its terminal [`LifecycleEvent`] follows
+    /// through [`Self::next_event`].
+    fn lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> impl Future<Output = PortResult<(), LifecycleError, Self::Fault>> + '_;
 }
 
-/// An error a port returns, with the class that tells the caller whether the
-/// port still serves.
-pub trait PortError {
-    /// The failure class of this error.
-    fn class(&self) -> FailureClass;
-
-    /// Whether only a reset restores the port.
-    fn is_poisoned(&self) -> bool {
-        self.class() == FailureClass::Poisoned
-    }
-}
-
-impl PortError for core::convert::Infallible {
-    fn class(&self) -> FailureClass {
-        match *self {}
-    }
-}
+/// The result of a port call: `Ok(Ok(_))` served, `Ok(Err(refusal))`
+/// refused with nothing changed, `Err(Poisoned)` a poisoned backend.
+pub type PortResult<T, R, C> = Result<Result<T, R>, Poisoned<C>>;
 
 /// The backend dropped events it could not hold.
 ///
@@ -85,24 +120,41 @@ impl PortError for core::convert::Infallible {
 /// gap, and never silently discarded, not even across an uninstall and a
 /// later install of the backend.
 ///
-/// A consumer may continue after it. Received data in the gap is gone; work
-/// whose terminal event may have been lost is recovered by cancelling it by
-/// its identity: the cancellation either produces the work's terminal event
-/// again or is refused as [`CancelError::NotRunning`], which proves the work
-/// already ended.
+/// A backend reserves the slot of every terminal event, and of data its
+/// protocol promises to deliver, when it admits the work, so the gap holds
+/// only data the protocol does not promise (received frames, advertising
+/// reports), which is gone; the consumer continues after it.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct EventsLost;
 
-/// The terminal event of a poisoned port: the backend's state is unknown
-/// and only a reset restores it.
+/// A poisoned backend: its state is unknown and only a reset restores it.
 ///
-/// A backend reports it after every event produced before the fault, and
-/// from then on every call that takes an event returns it again, so a
-/// consumer that awaits events learns of the fault. Every other call
-/// returns the port's error, whose [`PortError::class`] is
-/// [`FailureClass::Poisoned`].
+/// It is the only outer error of a port call. [`RadioPort::next_event`]
+/// returns it after every event produced before the fault and again at
+/// every later call, so a consumer that awaits events learns of the fault;
+/// every other call returns it at once. `cause` is the backend's own
+/// account of the fault, which portable code passes on without
+/// interpreting it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Poisoned<C> {
+    /// Why the backend's state is unknown.
+    pub cause: C,
+}
+
+/// The backend is not installed or is paused: the call did nothing, and
+/// installing or resuming the backend serves again.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub struct Poisoned;
+pub struct NotInstalled;
+
+/// Why the radio clock could not be read; nothing changed.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ClockError {
+    /// The backend is not installed or is paused.
+    NotInstalled,
+    /// The backend could not take a reading now (a latch failed, the clock
+    /// belongs to a replaced radio start); a later call may succeed.
+    Unavailable,
+}
 
 /// A lifecycle command; each admitted one ends with one [`LifecycleEvent`].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -129,35 +181,36 @@ pub enum LifecycleEvent {
     Disabled,
     /// [`LifecycleCommand::Quiesce`] completed.
     Quiesced,
-    /// An admitted command failed. A [`FailureClass::Recoverable`] failure
-    /// leaves the port in the state it was in before the command; a
-    /// [`FailureClass::Poisoned`] one is followed by [`Poisoned`].
+    /// An admitted command failed and left the port in the state it was in
+    /// before the command. A failure that leaves the backend's state
+    /// unknown is not reported here: [`Poisoned`] follows instead.
     Failed {
         /// The command that failed.
         command: LifecycleCommand,
-        /// How it left the port.
-        class: FailureClass,
     },
 }
 
 /// Why a lifecycle command was refused; nothing changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LifecycleError {
+    /// The backend is not installed or is paused.
+    NotInstalled,
     /// The port is already in the requested state.
     AlreadyInState,
     /// The command does not apply in the port's current state, or the
     /// backend does not implement it.
     InvalidState,
-    /// Another lifecycle command or an operation that owns the radio has
-    /// not ended yet.
+    /// Another lifecycle command has not ended yet.
     Busy,
 }
 
 /// Why a cancellation was refused; nothing changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CancelError {
-    /// No admitted work has this identity: it already ended, and its
-    /// terminal event was reported or lost, or it never ran.
+    /// The backend is not installed or is paused.
+    NotInstalled,
+    /// No admitted work has this identity: it already ended and its terminal
+    /// event was reported, or it never ran.
     NotRunning,
 }
 

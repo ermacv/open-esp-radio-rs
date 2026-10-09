@@ -18,10 +18,10 @@
 //! a frame dropped with an overflow returns it at once. Completions are
 //! taken first, then lifecycle terminals, TBTTs and received frames; the
 //! loss ordering rule holds within each queue. A fault poisons the port:
-//! the queued events are still reported, then [`LowerMacEvent::Poisoned`]
-//! at every call.
+//! the queued events are still reported, then [`Poisoned`] with the
+//! [`LowerMacFault`] at every call.
 //!
-//! [`Ieee80211LowerMacPort::next_event`] only takes events. The two waits
+//! [`RadioPort::next_event`] only takes events. The two waits
 //! the core cannot run itself are in [`Esp32s31LowerMac::run`], the runner
 //! the composition polls for as long as the port exists: the publication
 //! watchdog of the attempts in flight, which it turns into a deadline edge
@@ -50,6 +50,7 @@
 use core::{
     cell::{Cell, RefCell},
     convert::Infallible,
+    future::{Future, ready},
     ops::Range,
 };
 
@@ -101,12 +102,13 @@ impl oer_esp32s31_ieee80211::lower_mac::RadioCoexPriorities for RadioCoex<'_> {
 }
 
 use oer_ieee80211_lower_mac::{
-    AmpduAttempt, AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockInfo, EventsLost,
-    FailureClass, Ieee80211LowerMacPort, Ieee80211Stamp, KeyHandle, KeyInstall, LifecycleCommand,
-    LifecycleError, LifecycleEvent, LowerMacAmpdu, LowerMacBeaconTiming, LowerMacCapabilities,
-    LowerMacEvent, LowerMacMonitor, LowerMacSetting, MonitorCapabilities, Poisoned, PortError,
-    Refused, RxBuffer, RxEvidence, RxMeta, SettingError, SubmitError, SubmitResult, TbttEvent,
-    TbttSchedule, TsfSample, TxCompletion, TxId, VifId, VifTsf,
+    AmpduAttempt, AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockError, ClockInfo,
+    EventsLost, Ieee80211LowerMacPort, Ieee80211Radio, Ieee80211Stamp, KeyHandle, KeyInstall,
+    LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu, LowerMacBeaconTiming,
+    LowerMacCapabilities, LowerMacEvent, LowerMacMonitor, LowerMacSetting, MonitorCapabilities,
+    NotInstalled, Poisoned, PortResult, RadioPort, Refused, RxBuffer, RxEvidence, RxMeta,
+    SettingError, SubmitError, SubmitResult, TbttEvent, TbttSchedule, TsfSample, TxCompletion,
+    TxId, VifId, VifTsf,
 };
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduPayload, MpduAttempt, ReclaimError, TxBody, TxBuffer, TxPayload,
@@ -210,8 +212,6 @@ pub enum Esp32s31LowerMacEvent<U> {
     Lifecycle(LifecycleEvent),
     /// A station TBTT, viewed through [`LowerMacBeaconTiming::tbtt`].
     Tbtt(TbttEvent),
-    /// The terminal event of a poisoned port.
-    Poisoned,
 }
 
 impl<U: LowerMacRxUnit> Esp32s31LowerMacEvent<U> {
@@ -225,33 +225,6 @@ impl<U: LowerMacRxUnit> Esp32s31LowerMacEvent<U> {
             Self::TxCompleted(completion) => LowerMacEvent::TxCompleted(*completion),
             Self::Lifecycle(event) => LowerMacEvent::Lifecycle(*event),
             Self::Tbtt(_) => LowerMacEvent::Extension,
-            Self::Poisoned => LowerMacEvent::Poisoned(Poisoned),
-        }
-    }
-}
-
-/// Why the port cannot serve.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Esp32s31LowerMacError {
-    /// No backend is installed: a [`FailureClass::Rejected`] state that an
-    /// install ends.
-    NotInstalled,
-    /// The backend's state is unknown; only a radio reset restores it.
-    Poisoned(LowerMacFault),
-    /// The port's MAC clock belongs to a radio start a later one replaced:
-    /// a [`FailureClass::Rejected`] state of a port that outlived its start.
-    StaleClock,
-    /// The same-generation sample readings reversed or their uncertainty overflowed.
-    InvalidSampleTiming,
-}
-
-impl PortError for Esp32s31LowerMacError {
-    fn class(&self) -> FailureClass {
-        match self {
-            Self::NotInstalled | Self::StaleClock | Self::InvalidSampleTiming => {
-                FailureClass::Rejected
-            }
-            Self::Poisoned(_) => FailureClass::Poisoned,
         }
     }
 }
@@ -858,29 +831,30 @@ where
             &mut H,
             &mut QueueSink<'_, M, EVENTS, U>,
         ) -> Result<V, LowerMacFault>,
-    ) -> Result<V, Esp32s31LowerMacError> {
-        if let Some(fault) = self.fault.lock(Cell::get) {
-            return Err(Esp32s31LowerMacError::Poisoned(fault));
+    ) -> PortResult<V, NotInstalled, LowerMacFault> {
+        if let Some(cause) = self.fault.lock(Cell::get) {
+            return Err(Poisoned { cause });
         }
         let result = self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
-            let installed = installed
-                .as_mut()
-                .ok_or(Esp32s31LowerMacError::NotInstalled)?;
+            let Some(installed) = installed.as_mut() else {
+                return Ok(Err(NotInstalled));
+            };
             let mut sink = QueueSink {
                 queues: &self.queues,
             };
-            entry(&mut installed.core, &mut installed.hardware, &mut sink)
-                .map_err(Esp32s31LowerMacError::Poisoned)
+            entry(&mut installed.core, &mut installed.hardware, &mut sink).map(Ok)
         });
-        if let Err(Esp32s31LowerMacError::Poisoned(fault)) = result {
-            self.fault.lock(|poisoned| poisoned.set(Some(fault)));
-            // The consumer learns of it after the queued events; the runner
-            // parks.
-            self.queues.changed.signal(());
-            self.wake.signal(());
-        }
-        result
+        result.map_err(|cause| self.poison(cause))
+    }
+
+    /// Record `cause`: the consumer learns of it after the queued events,
+    /// and the runner parks.
+    fn poison(&self, cause: LowerMacFault) -> Poisoned<LowerMacFault> {
+        self.fault.lock(|poisoned| poisoned.set(Some(cause)));
+        self.queues.changed.signal(());
+        self.wake.signal(());
+        Poisoned { cause }
     }
 
     /// Run one admission under the lock with `input`, which comes back when
@@ -903,9 +877,9 @@ where
             &mut H,
             I,
         ) -> Result<V, LowerMacFault>,
-    ) -> Result<Result<V, I>, Poisoned> {
-        if self.poisoned() {
-            return Err(Poisoned);
+    ) -> PortResult<V, I, LowerMacFault> {
+        if let Some(cause) = self.fault.lock(Cell::get) {
+            return Err(Poisoned { cause });
         }
         let result = self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
@@ -914,14 +888,7 @@ where
             };
             entry(&mut installed.core, &mut installed.hardware, input).map(Ok)
         });
-        result.map_err(|fault| {
-            self.fault.lock(|poisoned| poisoned.set(Some(fault)));
-            // The consumer learns of it after the queued events; the runner
-            // parks.
-            self.queues.changed.signal(());
-            self.wake.signal(());
-            Poisoned
-        })
+        result.map_err(|cause| self.poison(cause))
     }
 
     fn poisoned(&self) -> bool {
@@ -995,7 +962,7 @@ where
                 (frame.mpdu_offset..frame.mpdu_offset + bytes.len(), meta)
             }))
         });
-        let Ok(Some((mpdu, meta))) = received else {
+        let Ok(Ok(Some((mpdu, meta)))) = received else {
             return Ok(Ok(()));
         };
         let event = Esp32s31LowerMacEvent::Received {
@@ -1023,7 +990,7 @@ where
     /// flight and the PHY retune of an admitted `Enable`.
     ///
     /// Poll it for as long as the port exists, beside the consumer of
-    /// [`Ieee80211LowerMacPort::next_event`]; it never ends. Dropping it
+    /// [`RadioPort::next_event`]; it never ends. Dropping it
     /// keeps both for the next runner. While the port is poisoned it only
     /// waits for an install, so an expired deadline of the poisoned core is
     /// never serviced again; a deadline the core kept after servicing it
@@ -1087,18 +1054,26 @@ where
     }
 
     /// Take the next event: the queued ones in their order, then the
-    /// terminal [`Esp32s31LowerMacEvent::Poisoned`] of a poisoned port.
-    async fn wait_event(&self) -> Result<Esp32s31LowerMacEvent<U>, EventsLost> {
+    /// [`Poisoned`] of a poisoned port.
+    async fn wait_event(&self) -> PortResult<Esp32s31LowerMacEvent<U>, EventsLost, LowerMacFault> {
         loop {
             if let Some(event) = self.queues.take() {
-                return event;
+                return Ok(event);
             }
-            if self.poisoned() {
-                return Ok(Esp32s31LowerMacEvent::Poisoned);
+            if let Some(cause) = self.fault.lock(Cell::get) {
+                return Err(Poisoned { cause });
             }
             self.queues.wait().await;
         }
     }
+}
+
+/// A setting's answer, with a backend that is not installed refused as
+/// [`SettingError::NotInstalled`].
+fn setting_answer<V>(
+    answer: PortResult<Result<V, SettingError>, NotInstalled, LowerMacFault>,
+) -> PortResult<V, SettingError, LowerMacFault> {
+    answer.map(|answer| answer.unwrap_or(Err(SettingError::NotInstalled)))
 }
 
 /// Returns the retune to its slot, and the channel to the pending retune
@@ -1159,7 +1134,7 @@ impl<
     const AMPDU_SLOTS: usize,
     const AMPDU_BUFFERS: usize,
     O: TxBody,
-> Ieee80211LowerMacPort
+> RadioPort
     for Esp32s31LowerMac<
         'slot,
         M,
@@ -1186,7 +1161,160 @@ where
     S: AmpduBacking,
 {
     type Event = Esp32s31LowerMacEvent<U>;
-    type Error = Esp32s31LowerMacError;
+    type Id = TxId;
+    type Domain = Ieee80211Radio;
+    type Fault = LowerMacFault;
+
+    fn next_event(
+        &self,
+    ) -> impl Future<Output = PortResult<Esp32s31LowerMacEvent<U>, EventsLost, LowerMacFault>> + '_
+    {
+        self.wait_event()
+    }
+
+    fn now(
+        &self,
+    ) -> impl Future<Output = PortResult<Ieee80211Instant, ClockError, LowerMacFault>> + '_ {
+        ready(
+            self.clock_sample()
+                .map(|sample| sample.map(|sample| sample.radio)),
+        )
+    }
+
+    fn cancel(
+        &self,
+        id: TxId,
+    ) -> impl Future<Output = PortResult<(), CancelError, LowerMacFault>> + '_ {
+        ready(
+            self.with_core(|core, _, sink| Ok(core.cancel(id, sink)))
+                .map(|cancelled| cancelled.unwrap_or(Err(CancelError::NotInstalled))),
+        )
+    }
+
+    fn lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> impl Future<Output = PortResult<(), LifecycleError, LowerMacFault>> + '_ {
+        ready(self.start_lifecycle(command))
+    }
+}
+
+impl<
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    S,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const EVENTS: usize,
+    U: LowerMacRxUnit,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+    O: TxBody,
+>
+    Esp32s31LowerMac<
+        'slot,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        U,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+        O,
+    >
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer + ReceptionClock,
+    H: LowerMacHardware,
+    R: LowerMacRetune,
+    S: AmpduBacking,
+{
+    /// Start one lifecycle command; its terminal event is owed from here.
+    fn start_lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> PortResult<(), LifecycleError, LowerMacFault> {
+        let queues = &self.queues;
+        let started = self.with_core(|core, _, sink| {
+            Ok(queues.owed_lifecycle.lock(|owed| {
+                // Admit only a command whose terminal event has room.
+                if owed.get() == LIFECYCLE_CAPACITY {
+                    return Err(LifecycleError::Busy);
+                }
+                let started = core.lifecycle(command, sink);
+                if started.is_ok() {
+                    owed.set(owed.get() + 1);
+                }
+                started
+            }))
+        })?;
+        match started.unwrap_or(Err(LifecycleError::NotInstalled)) {
+            Ok(LifecycleStart::Admitted) => Ok(Ok(())),
+            Ok(LifecycleStart::Retune(channel)) => {
+                self.pending_retune
+                    .lock(|pending| pending.set(Some(channel)));
+                self.wake.signal(());
+                Ok(Ok(()))
+            }
+            Err(error) => Ok(Err(error)),
+        }
+    }
+}
+
+impl<
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    S,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const EVENTS: usize,
+    U: LowerMacRxUnit,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+    O: TxBody,
+> Ieee80211LowerMacPort
+    for Esp32s31LowerMac<
+        'slot,
+        M,
+        P,
+        E,
+        T,
+        H,
+        R,
+        BUFFER_SIZE,
+        TX_BUFFERS,
+        EVENTS,
+        U,
+        S,
+        AMPDU_SLOTS,
+        AMPDU_BUFFERS,
+        O,
+    >
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer + ReceptionClock,
+    H: LowerMacHardware,
+    R: LowerMacRetune,
+    S: AmpduBacking,
+{
     type TxBuffer = Esp32s31TxBuffer<'slot, BUFFER_SIZE>;
     type TxBody = O;
     type RxBuffer = Esp32s31RxBuffer<U>;
@@ -1217,7 +1345,7 @@ where
     fn tx_buffer(
         &self,
         len: usize,
-    ) -> Result<Option<Esp32s31TxBuffer<'slot, BUFFER_SIZE>>, Esp32s31LowerMacError> {
+    ) -> PortResult<Option<Esp32s31TxBuffer<'slot, BUFFER_SIZE>>, NotInstalled, LowerMacFault> {
         self.with_core(|core, _, _| Ok(core.tx_buffer(len)))
     }
 
@@ -1237,7 +1365,7 @@ where
     fn submit(
         &self,
         mut attempt: MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>, O>,
-    ) -> SubmitResult<MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>, O>> {
+    ) -> SubmitResult<MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>, O>, LowerMacFault> {
         let Some(header) = attempt.payload.header_len() else {
             return Ok(Err(Refused {
                 error: SubmitError::InvalidLength,
@@ -1298,9 +1426,11 @@ where
         &self,
         id: TxId,
         mut each: impl FnMut(usize, O),
-    ) -> Result<Result<(), ReclaimError>, Esp32s31LowerMacError> {
-        if self.with_core(|core, _, _| Ok(core.running(id)))? {
-            return Ok(Err(ReclaimError::Running));
+    ) -> PortResult<(), ReclaimError, LowerMacFault> {
+        match self.with_core(|core, _, _| Ok(core.running(id)))? {
+            Err(NotInstalled) => return Ok(Err(ReclaimError::NotInstalled)),
+            Ok(true) => return Ok(Err(ReclaimError::Running)),
+            Ok(false) => {}
         }
         let held = self.bodies.lock(|bodies| {
             bodies
@@ -1323,73 +1453,30 @@ where
         Ok(Ok(()))
     }
 
-    async fn next_event(&self) -> Result<Esp32s31LowerMacEvent<U>, EventsLost> {
-        self.wait_event().await
-    }
-
-    fn apply(
-        &self,
-        setting: LowerMacSetting,
-    ) -> Result<Result<(), SettingError>, Esp32s31LowerMacError> {
-        let applied = self.with_core(|core, hardware, _| core.apply(hardware, setting))?;
+    fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, LowerMacFault> {
+        let applied =
+            setting_answer(self.with_core(|core, hardware, _| core.apply(hardware, setting)));
         // Opening the transmit gate publishes a held attempt.
         self.wake.signal(());
-        Ok(applied)
+        applied
     }
 
     fn install_key(
         &self,
         key: KeyInstall<'_>,
-    ) -> Result<Result<KeyHandle, SettingError>, Esp32s31LowerMacError> {
-        self.with_core(|core, hardware, _| Ok(core.install_key(hardware, key)))
-    }
-
-    fn lifecycle(
-        &self,
-        command: LifecycleCommand,
-    ) -> Result<Result<(), LifecycleError>, Esp32s31LowerMacError> {
-        let queues = &self.queues;
-        let started = self.with_core(|core, _, sink| {
-            Ok(queues.owed_lifecycle.lock(|owed| {
-                // Admit only a command whose terminal event has room.
-                if owed.get() == LIFECYCLE_CAPACITY {
-                    return Err(LifecycleError::Busy);
-                }
-                let started = core.lifecycle(command, sink);
-                if started.is_ok() {
-                    owed.set(owed.get() + 1);
-                }
-                started
-            }))
-        })?;
-        match started {
-            Ok(LifecycleStart::Admitted) => Ok(Ok(())),
-            Ok(LifecycleStart::Retune(channel)) => {
-                self.pending_retune
-                    .lock(|pending| pending.set(Some(channel)));
-                self.wake.signal(());
-                Ok(Ok(()))
-            }
-            Err(error) => Ok(Err(error)),
-        }
-    }
-
-    fn cancel(&self, id: TxId) -> Result<Result<(), CancelError>, Esp32s31LowerMacError> {
-        self.with_core(|core, _, sink| Ok(core.cancel(id, sink)))
-    }
-
-    fn now(&self) -> Result<Ieee80211Instant, Esp32s31LowerMacError> {
-        self.with_core(|_, _, _| Ok(self.timer.snapshot()))?
-            .map(|snapshot| snapshot.sample().radio)
-            .ok_or(Esp32s31LowerMacError::StaleClock)
+    ) -> PortResult<KeyHandle, SettingError, LowerMacFault> {
+        setting_answer(self.with_core(|core, hardware, _| Ok(core.install_key(hardware, key))))
     }
 
     /// The MAC local time and the monotonic time read back to back, in the
     /// current generation of the MAC clock.
-    fn clock_sample(&self) -> Result<Ieee80211ClockSample, Esp32s31LowerMacError> {
-        self.with_core(|_, _, _| Ok(self.timer.snapshot()))?
-            .map(|snapshot| snapshot.sample())
-            .ok_or(Esp32s31LowerMacError::StaleClock)
+    fn clock_sample(&self) -> PortResult<Ieee80211ClockSample, ClockError, LowerMacFault> {
+        Ok(match self.with_core(|_, _, _| Ok(self.timer.snapshot()))? {
+            Err(NotInstalled) => Err(ClockError::NotInstalled),
+            Ok(snapshot) => snapshot
+                .map(|snapshot| snapshot.sample())
+                .ok_or(ClockError::Unavailable),
+        })
     }
 }
 
@@ -1438,32 +1525,39 @@ where
         ESP32S31_BEACON_TIMING_CAPABILITIES
     }
 
-    fn tsf(&self, vif: VifId) -> Result<Result<VifTsf, SettingError>, Esp32s31LowerMacError> {
-        self.with_core(|core, hardware, _| Ok(core.tsf(hardware, vif)))
+    fn tsf(&self, vif: VifId) -> PortResult<VifTsf, SettingError, LowerMacFault> {
+        setting_answer(self.with_core(|core, hardware, _| Ok(core.tsf(hardware, vif))))
     }
 
     /// The TSF read between two MAC-clock readings of one generation: the
     /// sample's radio stamp is the first, its uncertainty the distance to
     /// the second plus the counter's microsecond.
-    fn tsf_sample(
-        &self,
-        vif: VifId,
-    ) -> Result<Result<TsfSample, SettingError>, Esp32s31LowerMacError> {
-        let (before, reading, after) = self.with_core(|core, hardware, _| {
+    fn tsf_sample(&self, vif: VifId) -> PortResult<TsfSample, SettingError, LowerMacFault> {
+        let Ok((before, reading, after)) = self.with_core(|core, hardware, _| {
             let before = self.timer.snapshot();
             let reading = core.tsf_reading(hardware, vif);
             Ok((before, reading, self.timer.snapshot()))
-        })?;
-        let (before, after) = before
+        })?
+        else {
+            return Ok(Err(SettingError::NotInstalled));
+        };
+        // Two readings of one generation, in order, or no sample.
+        let Some((before, uncertainty)) = before
             .zip(after)
             .map(|(before, after)| (before.sample(), after.sample()))
             .filter(|(before, after)| before.generation == after.generation)
-            .ok_or(Esp32s31LowerMacError::StaleClock)?;
-        let uncertainty = after
-            .radio
-            .checked_duration_since(before.radio)
-            .and_then(|elapsed| elapsed.checked_add(oer_time::RadioDuration::from_micros(1)))
-            .ok_or(Esp32s31LowerMacError::InvalidSampleTiming)?;
+            .and_then(|(before, after)| {
+                after
+                    .radio
+                    .checked_duration_since(before.radio)
+                    .and_then(|elapsed| {
+                        elapsed.checked_add(oer_time::RadioDuration::from_micros(1))
+                    })
+                    .map(|uncertainty| (before, uncertainty))
+            })
+        else {
+            return Ok(Err(SettingError::ClockUnavailable));
+        };
         Ok(reading.map(|(tsf, generation)| TsfSample {
             tsf,
             local: Ieee80211Stamp {
@@ -1477,19 +1571,16 @@ where
         }))
     }
 
-    fn set_tsf(&self, tsf: VifTsf) -> Result<Result<(), SettingError>, Esp32s31LowerMacError> {
-        self.with_core(|core, hardware, _| Ok(core.set_tsf(hardware, tsf)))
+    fn set_tsf(&self, tsf: VifTsf) -> PortResult<(), SettingError, LowerMacFault> {
+        setting_answer(self.with_core(|core, hardware, _| Ok(core.set_tsf(hardware, tsf))))
     }
 
-    fn set_tbtt(
-        &self,
-        schedule: TbttSchedule,
-    ) -> Result<Result<(), SettingError>, Esp32s31LowerMacError> {
-        self.with_core(|core, hardware, _| Ok(core.set_tbtt(hardware, schedule)))
+    fn set_tbtt(&self, schedule: TbttSchedule) -> PortResult<(), SettingError, LowerMacFault> {
+        setting_answer(self.with_core(|core, hardware, _| Ok(core.set_tbtt(hardware, schedule))))
     }
 
-    fn stop_tbtt(&self, vif: VifId) -> Result<Result<(), SettingError>, Esp32s31LowerMacError> {
-        self.with_core(|core, hardware, _| Ok(core.stop_tbtt(hardware, vif)))
+    fn stop_tbtt(&self, vif: VifId) -> PortResult<(), SettingError, LowerMacFault> {
+        setting_answer(self.with_core(|core, hardware, _| Ok(core.stop_tbtt(hardware, vif))))
     }
 
     fn tbtt(event: &Esp32s31LowerMacEvent<U>) -> Option<TbttEvent> {
@@ -1545,11 +1636,8 @@ where
         ESP32S31_MONITOR_CAPABILITIES
     }
 
-    fn set_monitor(
-        &self,
-        enabled: bool,
-    ) -> Result<Result<(), SettingError>, Esp32s31LowerMacError> {
-        self.with_core(|core, hardware, _| Ok(core.set_monitor(hardware, enabled)))
+    fn set_monitor(&self, enabled: bool) -> PortResult<(), SettingError, LowerMacFault> {
+        setting_answer(self.with_core(|core, hardware, _| Ok(core.set_monitor(hardware, enabled))))
     }
 }
 
@@ -1603,12 +1691,17 @@ where
 
     fn ampdu_buffer(
         &self,
-    ) -> Result<Option<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>, Esp32s31LowerMacError>
-    {
+    ) -> PortResult<
+        Option<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>,
+        NotInstalled,
+        LowerMacFault,
+    > {
         let inner = self.with_core(|core, _, _| Ok(core.ampdu_buffer()))?;
-        Ok(inner.map(|inner| Esp32s31PortAmpduBuffer {
-            inner,
-            bodies: [const { None }; AMPDU_SLOTS],
+        Ok(inner.map(|inner| {
+            inner.map(|inner| Esp32s31PortAmpduBuffer {
+                inner,
+                bodies: [const { None }; AMPDU_SLOTS],
+            })
         }))
     }
 
@@ -1625,7 +1718,8 @@ where
     fn submit_ampdu(
         &self,
         attempt: AmpduAttempt<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>,
-    ) -> SubmitResult<AmpduAttempt<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>> {
+    ) -> SubmitResult<AmpduAttempt<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>, LowerMacFault>
+    {
         let id = attempt.id;
         let carries = attempt.payload.subframes.bodies.iter().any(Option::is_some);
         let mut attempt = attempt;

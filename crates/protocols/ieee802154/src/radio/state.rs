@@ -1,6 +1,8 @@
 //! The single finite owner that admits commands and validates backend events.
 //! Validation errors and admission results describe this owner without retaining frames.
 
+use oer_radio_port::CancelError;
+
 use super::{
     RequestId,
     capabilities::RadioCapabilities,
@@ -82,6 +84,15 @@ pub struct AcceptedCommand {
 /// A command cannot be admitted in the current finite state/capability set.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CommandError {
+    /// The backend is not installed or is paused: no state machine runs.
+    NotInstalled,
+    /// The backend's admission of operations is quiesced
+    /// ([`LifecycleCommand::Quiesce`](crate::LifecycleCommand::Quiesce));
+    /// `Enable` opens it again.
+    Quiesced,
+    /// The backend's event queue has no free slot to reserve for the
+    /// operation's terminal event; taking events frees one.
+    EventQueueFull,
     /// The controller is disabled: only enabling it is accepted.
     Disabled,
     /// Enabling was requested for an already enabled controller.
@@ -99,12 +110,6 @@ pub enum CommandError {
         interface: Interface,
         /// The radio's interface count.
         interfaces: u8,
-    },
-    /// A cancellation named no running operation: the operation already
-    /// ended, or never ran.
-    NotRunning {
-        /// The operation the cancellation named.
-        target: RequestId,
     },
     /// The controller did not publish the required capability.
     Unsupported {
@@ -250,6 +255,35 @@ impl RadioStateMachine {
         }
     }
 
+    /// The operation [`Self::admit_cancel`] would end now: the active
+    /// operation or the open scheduled receive window.
+    pub const fn cancellable(&self) -> Option<RequestId> {
+        cancellable_id(self.state)
+    }
+
+    /// Admit the cancellation of `target`, the running transmission, energy
+    /// scan, clear-channel assessment or scheduled receive window. The state
+    /// does not change: the backend stops the operation and its terminal
+    /// event, observed as usual, ends it, after which the radio rests as the
+    /// operation would have left it. A transmission ends with
+    /// [`TxStatus::Aborted`] (or with the outcome
+    /// the hardware had already reached), an energy scan with
+    /// [`RadioEvent::EnergyScanFailed`], an assessment with
+    /// [`RadioEvent::ClearChannelAssessmentFailed`] and a window with
+    /// [`RadioEvent::ScheduledReceiveDone`].
+    ///
+    /// # Errors
+    ///
+    /// [`CancelError::NotRunning`] when no such operation runs: it already
+    /// ended, or never ran.
+    pub fn admit_cancel(&self, target: RequestId) -> Result<(), CancelError> {
+        if cancellable_id(self.state) == Some(target) {
+            Ok(())
+        } else {
+            Err(CancelError::NotRunning)
+        }
+    }
+
     /// Validate and admit one command, advancing state exactly once.
     ///
     /// A backend must retain any borrowed transmit bytes before this call
@@ -379,14 +413,6 @@ impl RadioStateMachine {
                     resume,
                 }
             }
-            // The operation's terminal event, observed as usual, ends it.
-            RadioCommand::Cancel { target, .. } => {
-                require_capability(self.capabilities, kind, RadioCapabilities::CANCEL)?;
-                if cancellable_id(previous) != Some(target) {
-                    return Err(CommandError::NotRunning { target });
-                }
-                previous
-            }
         };
 
         self.state = current;
@@ -489,7 +515,6 @@ impl RadioStateMachine {
             }
             // The terminal of a lifecycle command the state already took.
             (state, RadioEvent::Lifecycle(_)) => state,
-            (_, RadioEvent::Poisoned(_)) => RadioState::Disabled,
             (state, _) => return Err(EventError::Unexpected { state }),
         };
         self.state = next;

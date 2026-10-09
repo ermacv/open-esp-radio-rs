@@ -19,7 +19,7 @@ use oer_hil_protocol::{
 use oer_ieee802154::{
     AutoPendingMode, Channel, Configuration, EnergyScanRequest, EnhancedAckGeneration, EventsLost,
     FrameAddress, FrameView, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleEvent,
-    RadioCommand, RadioSetting, RequestId, TxMode, TxRequest, TxSecurity,
+    RadioCommand, RadioPort, RadioSetting, RequestId, TxMode, TxRequest, TxSecurity,
 };
 
 use super::super::client::tx_outcome;
@@ -122,7 +122,7 @@ impl Session {
         command: LifecycleCommand,
         terminal: LifecycleEvent,
     ) -> Result<(), Ieee802154SessionResult> {
-        let Ok(Ok(())) = self.runtime.lifecycle(command) else {
+        let Ok(Ok(())) = self.runtime.lifecycle(command).await else {
             return Err(Ieee802154SessionResult::CommandRejected);
         };
         match self.terminal_event(ASSESS_TIMEOUT).await? {
@@ -137,6 +137,12 @@ impl Session {
         self.submit(RadioCommand::Sleep { id })?;
         self.lifecycle(LifecycleCommand::Disable, LifecycleEvent::Disabled)
             .await
+    }
+
+    /// The runtime's next event; the runtime never poisons.
+    pub(super) async fn taken(&self) -> Result<Ieee802154RadioEvent, EventsLost> {
+        let Ok(event) = self.runtime.next_event().await;
+        event
     }
 
     /// Take one runtime event; received frames are recorded.
@@ -205,7 +211,7 @@ impl Session {
             return evidence;
         }
         loop {
-            let Ok(event) = with_timeout(TRANSMIT_TIMEOUT, self.runtime.next_event()).await else {
+            let Ok(event) = with_timeout(TRANSMIT_TIMEOUT, self.taken()).await else {
                 evidence.result = Ieee802154SessionResult::EventTimeout;
                 return evidence;
             };
@@ -243,7 +249,7 @@ impl Session {
         timeout: Duration,
     ) -> Result<Ieee802154RadioEvent, Ieee802154SessionResult> {
         loop {
-            let Ok(event) = with_timeout(timeout, self.runtime.next_event()).await else {
+            let Ok(event) = with_timeout(timeout, self.taken()).await else {
                 return Err(Ieee802154SessionResult::EventTimeout);
             };
             if let Some(event) = self.observe(event) {
@@ -328,11 +334,11 @@ impl Session {
     /// The live RSSI of the most recent baseband reception.
     pub(super) fn recent_rssi(&self) -> Ieee802154SessionRecentRssi {
         match self.runtime.recent_rssi() {
-            Ok(rssi_dbm) => Ieee802154SessionRecentRssi {
+            Ok(Ok(rssi_dbm)) => Ieee802154SessionRecentRssi {
                 result: Ieee802154SessionResult::Done,
                 rssi_dbm,
             },
-            Err(_) => Ieee802154SessionRecentRssi {
+            Ok(Err(_)) => Ieee802154SessionRecentRssi {
                 result: Ieee802154SessionResult::CommandRejected,
                 rssi_dbm: 0,
             },

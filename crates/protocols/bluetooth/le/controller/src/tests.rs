@@ -12,7 +12,7 @@ use oer_bluetooth_radio::{
     RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
 };
 
-use crate::{LeController, LeControllerConfig, LeVersionInformation, PLANNING_SLACK};
+use crate::{LeController, LeControllerConfig, LeVersionInformation, PLANNING_SLACK, RadioWork};
 
 mod accept_list;
 mod connection;
@@ -99,8 +99,12 @@ enum Request {
     Cancel(EventId),
 }
 
-impl From<RadioRequest<'_>> for Request {
-    fn from(request: RadioRequest<'_>) -> Self {
+impl From<RadioWork<'_>> for Request {
+    fn from(work: RadioWork<'_>) -> Self {
+        let request = match work {
+            RadioWork::Submit(request) => request,
+            RadioWork::Cancel(id) => return Self::Cancel(id),
+        };
         match request {
             RadioRequest::ConfigureAdvertising(configuration) => match configuration.reception {
                 AdvertisingReception::ScanResponse(response) => Self::ConfigureConnectable(
@@ -131,7 +135,6 @@ impl From<RadioRequest<'_>> for Request {
             RadioRequest::TestTransmit(test) => Self::TestTransmit(test.id),
             RadioRequest::TestReceive(test) => Self::TestReceive(test.id),
             RadioRequest::EndTest => Self::EndTest,
-            RadioRequest::Cancel(id) => Self::Cancel(id),
         }
     }
 }
@@ -209,8 +212,12 @@ impl Harness {
             .core
             .next_request(LeInstant::from_micros(self.now), TIMING)?
             .map(Request::from);
-        if request.is_some() {
-            self.core.request_done(result);
+        match request {
+            Some(Request::Cancel(_)) => self
+                .core
+                .cancel_done(result.map_err(|_| oer_bluetooth_radio::CancelError::NotRunning)),
+            Some(_) => self.core.request_done(result),
+            None => {}
         }
         Ok(request)
     }

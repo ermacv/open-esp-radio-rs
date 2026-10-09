@@ -840,7 +840,6 @@ fn failed_packet_timing_retains_acl_and_ack_without_a_fabricated_anchor() {
         },
     });
     assert!(harness.core.is_acl_ready());
-    assert_eq!(harness.core.fault(), None);
 }
 
 #[test]

@@ -56,9 +56,9 @@ use oer_ieee80211_ap::{
 };
 use oer_ieee80211_datapath::{DestinationTxQueues, SoftwareTxFrame};
 use oer_ieee80211_lower_mac::{
-    Channel, Cipher, CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyInstall, KeyScope,
-    KeySelector, LowerMacBeaconTiming, LowerMacSetting, PhyRate, ReceiveFilter, RxCryptoStatus,
-    RxEvidence, RxMeta, SettingError, VifTsf,
+    Channel, Cipher, ClockError, CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyInstall,
+    KeyScope, KeySelector, LowerMacBeaconTiming, LowerMacSetting, PhyRate, Poisoned, RadioPort,
+    ReceiveFilter, RxCryptoStatus, RxEvidence, RxMeta, SettingError, VifTsf,
 };
 use oer_ieee80211_mac::{
     ap::{
@@ -100,7 +100,7 @@ use oer_ieee80211_upper_mac_service::{
     PORT_BACKLOG, PORT_EXCHANGES, TxMpdu,
     aggregate::{AmpduSubframes, PORT_AMPDU_SUBFRAMES, PortAggregation},
     client::{
-        PortClient, PortClientEnv, PortClientError, PortError, PortFrame, PortInput, PortMsdu,
+        PortClient, PortClientEnv, PortClientError, PortFault, PortFrame, PortInput, PortMsdu,
         PortRxBuffer,
     },
     frame::{NetworkBody, PORT_MPDU_HEADER_CAPACITY, split_ethernet},
@@ -248,8 +248,8 @@ impl<R: ApSaeRandom> PortApSae for InlineSae<R> {
     clippy::large_enum_variant,
     reason = "no_std without an allocator: one SAE output moves by value, once"
 )]
-enum Wake<B> {
-    Input(Option<PortInput<B>>),
+enum Wake<B, F> {
+    Input(Option<PortInput<B, F>>),
     Sae([u8; 6], ApSaeOutput),
     /// The network queued a frame.
     Frames,
@@ -531,6 +531,8 @@ pub enum PortApError<E> {
     /// An action lacks its category or action code.
     InvalidManagementBody,
     Client(PortClientError<E>),
+    /// The port's radio clock could not be read.
+    Clock(ClockError),
     /// The beacon template could not be stamped or protected.
     Beacon,
     Tim(TimBitmapError),
@@ -585,6 +587,12 @@ impl<E> From<ApWpa2Error> for PortApError<E> {
 impl<E> From<ApDataFrameError> for PortApError<E> {
     fn from(error: ApDataFrameError) -> Self {
         Self::Data(error)
+    }
+}
+
+impl<E> From<Poisoned<E>> for PortApError<E> {
+    fn from(poisoned: Poisoned<E>) -> Self {
+        Self::Client(PortClientError::Poisoned(poisoned))
     }
 }
 
@@ -737,7 +745,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// interface receives the BSS and the Probe Requests the access point
     /// answers, its TSF restarts and, in a protected BSS, the group key is
     /// installed. The access point never tunes the port itself.
-    pub fn start(&mut self, channel: Channel) -> Result<(), PortApError<PortError<X>>> {
+    pub fn start(&mut self, channel: Channel) -> Result<(), PortApError<PortFault<X>>> {
         let advertisement = serving(&self.profile, channel)
             .ok_or(PortApError::UnsupportedChannel(channel))?
             .advertisement;
@@ -768,8 +776,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .set_tsf(VifTsf {
                 vif,
                 at: TsfInstant::from_micros(0),
-            })
-            .map_err(PortClientError::Port)?
+            })?
             .map_err(PortApError::Tsf)?;
         if self.service.link_protection() == LinkProtection::Ccmp && self.group_key.is_none() {
             let gtk = self.service.gtk()?;
@@ -784,7 +791,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// leaves) and is forgotten with its key, the group key goes, the
     /// interface receives nothing and no beacon goes out until the next
     /// [`Self::start`].
-    pub async fn stop(&mut self) -> Result<(), PortApError<PortError<X>>> {
+    pub async fn stop(&mut self) -> Result<(), PortApError<PortFault<X>>> {
         let mut peers = [None; AP_MAX_CLIENTS];
         for (slot, peer) in peers.iter_mut().zip(self.service.peers()) {
             *slot = Some(peer.address);
@@ -825,7 +832,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &self,
         scope: KeyScope,
         key: &[u8],
-    ) -> Result<KeyHandle, PortApError<PortError<X>>> {
+    ) -> Result<KeyHandle, PortApError<PortFault<X>>> {
         self.client
             .port()
             .install_key(KeyInstall {
@@ -833,8 +840,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 cipher: Cipher::Ccmp128,
                 scope,
                 key,
-            })
-            .map_err(PortClientError::Port)?
+            })?
             .map_err(PortApError::Key)
     }
 
@@ -852,7 +858,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         peer: [u8; 6],
         ht: Option<HtPeerCapabilities>,
         link_metric: Option<i8>,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         // The peer's HT width is the BSS's where it supports 40 MHz.
         let phy = match ht {
             None => PhyMode::Legacy,
@@ -886,7 +892,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     }
 
     /// Close `peer`'s link, removing its pairwise key from the port.
-    fn close_link(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
+    fn close_link(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortFault<X>>> {
         let Some(slot) = self
             .links
             .iter_mut()
@@ -910,7 +916,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
 
     /// Forget a peer: its link and pairwise key, its SAE session, the frames
     /// held for it, then its state.
-    fn remove_peer(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
+    fn remove_peer(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortFault<X>>> {
         self.close_link(peer)?;
         self.buffered.drop_for(peer);
         self.stop_rx_agreements(peer)?;
@@ -933,7 +939,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         target: Channel,
         mode: ChannelSwitchMode,
         count: u8,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         if serving(&self.profile, target).is_none() {
             return Err(PortApError::UnsupportedChannel(target));
         }
@@ -951,7 +957,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
 
     /// The port's owner moved the port to the target of the switch that
     /// was due: the BSS operates there, and its beacon names it.
-    pub fn channel_switched(&mut self) -> Result<(), PortApError<PortError<X>>> {
+    pub fn channel_switched(&mut self) -> Result<(), PortApError<PortFault<X>>> {
         let target = self
             .channel_switch_target()
             .ok_or(PortApError::NoChannelSwitch)?;
@@ -1016,7 +1022,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         deadline: Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
-    ) -> Result<Option<PortApEvent>, PortApError<PortError<X>>> {
+    ) -> Result<Option<PortApEvent>, PortApError<PortFault<X>>> {
         if !self.running {
             return Err(PortApError::NotStarted);
         }
@@ -1102,8 +1108,8 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 Wake::Input(Some(PortInput::Frame(frame))) => {
                     self.receive(frame, now, deliver).await?;
                 }
-                Wake::Input(Some(PortInput::Poisoned)) => {
-                    return Err(PortApError::Client(PortClientError::Poisoned));
+                Wake::Input(Some(PortInput::Poisoned(poisoned))) => {
+                    return Err(PortApError::Client(PortClientError::Poisoned(poisoned)));
                 }
                 Wake::Input(Some(PortInput::Tbtt(_) | PortInput::EventsLost) | None) => {}
             }
@@ -1118,7 +1124,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
 
     /// Carry the protection the peers require in the beacon template, which
     /// probe responses repeat.
-    fn advertise_current_protection(&mut self) -> Result<(), PortApError<PortError<X>>> {
+    fn advertise_current_protection(&mut self) -> Result<(), PortApError<PortFault<X>>> {
         let required = self.required_protection();
         if required != self.advertised {
             self.beacon
@@ -1131,7 +1137,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
 
     /// Send one management frame to a peer, acknowledged, on the voice
     /// queue at the management rate.
-    async fn send_management(&mut self, frame: &[u8]) -> Result<(), PortApError<PortError<X>>> {
+    async fn send_management(&mut self, frame: &[u8]) -> Result<(), PortApError<PortFault<X>>> {
         self.client
             .transmit(
                 TxMpdu::whole(frame),
@@ -1146,7 +1152,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
 
     /// Stamp the beacon and send it once, unacknowledged, on the voice
     /// queue.
-    async fn publish_beacon(&mut self, now: Instant) -> Result<(), PortApError<PortError<X>>> {
+    async fn publish_beacon(&mut self, now: Instant) -> Result<(), PortApError<PortFault<X>>> {
         self.advertise_current_protection()?;
         let management_rate = self.band().management_rate;
         let sequence = self.service.next_management_sequence();
@@ -1185,7 +1191,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
 
     /// Send every group frame held for this DTIM, oldest first, More Data
     /// set on all but the last.
-    async fn release_group(&mut self) -> Result<(), PortApError<PortError<X>>> {
+    async fn release_group(&mut self) -> Result<(), PortApError<PortFault<X>>> {
         while let Some(release) = self.service.begin_buffered_group_release()? {
             let Some(held) = self.buffered.take_oldest(HeldFrame::is_group) else {
                 self.service
@@ -1206,7 +1212,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         peer: [u8; 6],
         mut count: Option<usize>,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let Some(identity) = self
             .service
             .peer_status(peer)
@@ -1229,7 +1235,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         peer: [u8; 6],
         release: ApBufferedUnicastRelease,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let Some(held) = self.buffered.take_oldest(|held| held.destination() == peer) else {
             self.service
                 .complete_buffered_unicast_release(release, false)?;
@@ -1254,7 +1260,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// A-MPDU where one applies, or hold it for a dozing peer or for the next
     /// DTIM while any authorized peer dozes. A frame for no authorized
     /// destination is dropped, its owner returned to the network.
-    async fn dispatch(&mut self, frame: PortApFrame<X>) -> Result<(), PortApError<PortError<X>>> {
+    async fn dispatch(&mut self, frame: PortApFrame<X>) -> Result<(), PortApError<PortFault<X>>> {
         let Some(destination) = destination(frame.ethernet()) else {
             self.counters.data_dropped = self.counters.data_dropped.saturating_add(1);
             return Ok(());
@@ -1309,7 +1315,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         observation: ApPowerSaveObservation,
         now: Instant,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         match self.service.observe_power_save(observation, now) {
             Ok(ApPowerSaveAction::StateChanged {
                 peer,
@@ -1328,7 +1334,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         received: PortFrame<PortRxBuffer<X>>,
         now: Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let meta = received.meta();
         // A router can retain frames heard during the owner's absence.
         // They must not solicit AP transmissions after returning home.
@@ -1530,7 +1536,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
 
     /// Answer a Probe Request for the BSS's SSID, or any SSID, with the
     /// current advertisement, at most once per [`PROBE_RESPONSE_INTERVAL`].
-    async fn probe(&mut self, peer: [u8; 6], ssid: &[u8]) -> Result<(), PortApError<PortError<X>>> {
+    async fn probe(&mut self, peer: [u8; 6], ssid: &[u8]) -> Result<(), PortApError<PortFault<X>>> {
         let now = self.timer.now();
         if !probe::matches_ssid(self.beacon.advertisement(), ssid) || now < self.next_probe_response
         {
@@ -1563,7 +1569,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         peer: [u8; 6],
         output: ApSaeOutput,
         now: Instant,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         match output.result {
             ApSaeResult::Accepted { pmk, pmkid } => {
                 if self.service.peer_status(peer).is_some() {
@@ -1610,7 +1616,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         peer: [u8; 6],
         retry: bool,
         now: Instant,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let repeated = retry
             && self
                 .service
@@ -1655,7 +1661,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         capabilities: ApAssociationCapabilities,
         link_metric: Option<i8>,
         now: Instant,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let Some(status) = self.service.peer_status(peer) else {
             return Ok(());
         };
@@ -1729,7 +1735,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         peer: [u8; 6],
         frame: &EapolFrame,
         retransmission: bool,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let mut mpdu = [0; RSN_HANDSHAKE_EAPOL_CAPACITY + 64];
         let sequence_number = self.service.current_data_sequence();
         let length = ApDataFrame {
@@ -1768,7 +1774,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         frame: PortApFrame<X>,
         more_data: bool,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let Some(destination) = frame
             .ethernet()
             .get(..6)
@@ -1858,7 +1864,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         more_data: bool,
         ethernet: &[u8],
         mpdu: &mut [u8],
-    ) -> Result<(usize, KeyHandle, SequenceNumber), PortApError<PortError<X>>> {
+    ) -> Result<(usize, KeyHandle, SequenceNumber), PortApError<PortFault<X>>> {
         let sequence_number = if peer_qos {
             self.service
                 .current_qos_sequence(destination, AP_TX_BLOCK_ACK_TID)
@@ -1956,7 +1962,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         destination: [u8; 6],
         head: PortApFrame<X>,
         mut run: AmpduRun,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let spacing = self
             .service
             .peer_status(destination)
@@ -2011,7 +2017,8 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             .client
             .port()
             .now()
-            .map_err(|error| PortApError::Client(PortClientError::Port(error)))?;
+            .await?
+            .map_err(PortApError::Clock)?;
         let ampdu = self
             .subframes
             .request(AP_TX_BLOCK_ACK_TID, first_sequence, committed_at)
@@ -2067,7 +2074,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         received: PortFrame<PortRxBuffer<X>>,
         now: Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<X>>),
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let bytes = received.bytes();
         let Some(peer) = bytes
             .get(10..16)
@@ -2318,7 +2325,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         peer: [u8; 6],
         action: BlockAckAction,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         match action {
             BlockAckAction::AddbaRequest {
                 dialog_token,
@@ -2393,7 +2400,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         peer: [u8; 6],
         body: &[u8],
-    ) -> Result<bool, PortApError<PortError<X>>> {
+    ) -> Result<bool, PortApError<PortFault<X>>> {
         if !self.running {
             return Err(PortApError::NotStarted);
         }
@@ -2412,7 +2419,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         peer: [u8; 6],
         subtype: ApManagementSubtype,
         body: &[u8],
-    ) -> Result<bool, PortApError<PortError<X>>> {
+    ) -> Result<bool, PortApError<PortFault<X>>> {
         let sequence_number = self.service.next_management_sequence();
         let mut frame = [0_u8; AP_BEACON_CAPACITY];
         let protection = self.service.management_tx_protection(peer, subtype, body);
@@ -2475,7 +2482,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         peer: [u8; 6],
         now: Instant,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         if self
             .service
             .queue_tx_block_ack(peer, self.profile.tx_block_ack_retry)?
@@ -2492,7 +2499,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         peer: [u8; 6],
         now: Instant,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let Some(request) = self.service.take_tx_block_ack_offer(peer, now)? else {
             return Ok(());
         };
@@ -2522,7 +2529,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         peer: [u8; 6],
         tid: u8,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         if self.reorder.stop(peer, tid) {
             let vif: VifId = self.client.config().vif;
             self.client
@@ -2532,7 +2539,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     }
 
     /// End every receive agreement of `peer`.
-    fn stop_rx_agreements(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortError<X>>> {
+    fn stop_rx_agreements(&mut self, peer: [u8; 6]) -> Result<(), PortApError<PortFault<X>>> {
         let mut tids = [None; 16];
         for (slot, tid) in tids.iter_mut().zip(self.reorder.agreements(peer)) {
             *slot = Some(tid);
@@ -2573,7 +2580,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         &mut self,
         mpdu: &[u8],
         now: Instant,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let header = if mpdu[0] & 0x80 != 0 {
             IEEE80211_QOS_DATA_HEADER_LEN
         } else {
@@ -2626,7 +2633,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
     /// Install the verified handshake's pairwise key in the port, on the
     /// link the peer's association opened, then open the peer's controlled
     /// port.
-    fn authorize(&mut self, peer: [u8; 6], now: Instant) -> Result<(), PortApError<PortError<X>>> {
+    fn authorize(&mut self, peer: [u8; 6], now: Instant) -> Result<(), PortApError<PortFault<X>>> {
         if self.link_mut(peer).is_none() {
             return Err(PortApError::Service(ApServiceError::UnknownPeer));
         }
@@ -2642,7 +2649,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
 
     /// Close a peer the service began closing: a Disassociation when it was
     /// associated, then a Deauthentication, then its removal.
-    async fn close_peer(&mut self, close: ApPeerClose) -> Result<(), PortApError<PortError<X>>> {
+    async fn close_peer(&mut self, close: ApPeerClose) -> Result<(), PortApError<PortFault<X>>> {
         if close.was_associated {
             let reason = if close.kind == ApPeerCloseKind::InactivityTimeout {
                 REASON_INACTIVITY
@@ -2668,7 +2675,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         peer: [u8; 6],
         kind: ApPeerDisconnectKind,
         reason: u16,
-    ) -> Result<(), PortApError<PortError<X>>> {
+    ) -> Result<(), PortApError<PortFault<X>>> {
         let subtype = match kind {
             ApPeerDisconnectKind::Disassociation => ApManagementSubtype::Disassociation,
             ApPeerDisconnectKind::Deauthentication => ApManagementSubtype::Deauthentication,

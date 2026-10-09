@@ -39,7 +39,7 @@ use oer_espressif_ieee802154_engine::{
     pib::Ieee802154PibDefaults,
 };
 use oer_espressif_ieee802154_runtime::{
-    Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
+    Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts, NotInstalled,
 };
 use oer_time_embassy::EmbassyClock;
 
@@ -49,6 +49,11 @@ use crate::maintenance::{
 
 /// Events the runtime queues before the consumer takes them.
 pub const IEEE802154_EVENT_CAPACITY: usize = 16;
+
+/// The image's monotonic clock the runtime reads: its radio clock, which a
+/// synchronous reader such as OpenThread takes through
+/// `Ieee802154Runtime::clock`.
+pub type Ieee802154SystemClock = EmbassyClock;
 
 /// The process-wide IEEE 802.15.4 runtime.
 pub type Ieee802154SystemRuntime = Ieee802154Runtime<
@@ -553,7 +558,7 @@ impl Ieee802154System {
         &mut self,
         radio: &RadioSystem<P, C, EmbassyClock>,
         config: Ieee802154CoexConfig,
-    ) -> Result<(), Ieee802154RuntimeError> {
+    ) -> Result<(), NotInstalled> {
         let mut guard = radio.lock().await;
         RUNTIME.set_coexistence(coexistence(guard.lease(), config))?;
         self.coex_config = config;

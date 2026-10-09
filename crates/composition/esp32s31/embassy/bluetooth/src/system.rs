@@ -24,6 +24,7 @@ use oer_esp32s31_bluetooth::{
     modem_timer::{ControllerModemTimerTask, ModemLpTimerInterruptDispatchStorage},
     phy::{ControllerPhyJoinFailure, ControllerPhyJoined},
     runtime_resources::{ControllerEventCells, ControllerRuntimeResources},
+    scheduler::{SchedulerRunInterruptStorage, SchedulerSoftwareConfig},
     shutdown::{
         ControllerRetired, ControllerShutDown, ControllerShutdownError, ControllerShutdownFailure,
         retire,
@@ -41,8 +42,8 @@ use oer_esp32s31_bluetooth_memory::{
 };
 use oer_esp32s31_bluetooth_radio::{BluetoothRadio, BluetoothRadioMemory};
 use oer_esp32s31_bluetooth_runtime::{
-    BluetoothInstallError, BluetoothRuntime, BluetoothRuntimeFault, LiveBluetoothHardware,
-    ModemTimerFault, run_modem_timer, settle_modem_timer,
+    BluetoothFault, BluetoothInstallError, BluetoothRuntime, BluetoothRuntimeFault,
+    LiveBluetoothHardware, ModemTimerFault, run_modem_timer, settle_modem_timer,
 };
 use oer_esp32s31_coex::{CoexError, CoexStatusType};
 use oer_esp32s31_hal::{
@@ -118,6 +119,9 @@ pub type BluetoothSystemRuntime = BluetoothRuntime<
     EVENTS,
 >;
 
+/// Why this composition's radio port is poisoned.
+pub type BluetoothSystemFault = BluetoothFault<<Storage as SchedulerRunInterruptStorage>::Error>;
+
 /// The radio memory of this composition.
 pub type BluetoothSystemMemory =
     BluetoothRadioMemory<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS>;
@@ -164,7 +168,11 @@ controller_memory!(NON_SCANNING_CHAIN: LeRxChainStorage<RX_PACKETS> = LeRxChainS
 
 static CELLS: ControllerEventCells = ControllerEventCells::new();
 static PUBLISHED: StaticCell<Storage> = StaticCell::new();
-static RUNTIME: BluetoothSystemRuntime = BluetoothRuntime::new(EmbassyClock);
+static RUNTIME: BluetoothSystemRuntime = BluetoothRuntime::new(
+    EmbassyClock,
+    SchedulerSoftwareConfig::reviewed_standalone(),
+    LOCAL_SLEEP_CLOCK_PPM,
+);
 static MODEM_TIMER_WAKE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static INTERRUPT_FAULT: Signal<CriticalSectionRawMutex, BluetoothInterruptFault> = Signal::new();
 static DISPATCH: Mutex<Cell<Option<Dispatch>>> = Mutex::new(Cell::new(None));

@@ -14,14 +14,16 @@
 //!   finished events, inserts admitted events, starts the idle scheduler and
 //!   carries list transactions through their hardware waits. A scheduler
 //!   interrupt, a request or a short recheck delay resumes it.
-//! - [`BluetoothRuntime::request`] admits one request against a fresh
-//!   controller-time sample.
-//! - [`BluetoothRuntime::quiesce`] stops the scheduler, lends the Bluetooth
-//!   quiescence proof to shared-PHY maintenance and resumes it.
+//! - The port's submission admits one request against a fresh
+//!   controller-time sample while its lifecycle enables it.
+//! - [`BluetoothRuntime::quiesce`] quiesces the port, stops the scheduler,
+//!   lends the Bluetooth quiescence proof to shared-PHY maintenance, resumes
+//!   the scheduler and enables the port again.
 //!
 //! The runtime is the [`oer_bluetooth_radio::LeRadioPort`] of the portable
 //! Controller service loop: a refused request is an answer to the Controller
-//! core, while a missing radio, a fault or a failed time sample ends the loop.
+//! core, a missing radio ends the loop, and a fault poisons the port with
+//! its [`BluetoothFault`].
 //! Submission and the clock stay asynchronous because each takes a fresh
 //! controller-time latch, which completes only after the hardware latched
 //! the time, and shares the lock the runner holds across scheduler stops.
@@ -30,7 +32,8 @@
 //! answers with empty PDUs.
 //!
 //! Outcomes leave the lock as owned values through a bounded queue that any
-//! executor may await with [`BluetoothRuntime::next_outcome`]. The platform
+//! executor may await through the port's event stream; each admitted event
+//! reserves the slots of its terminal outcomes. The platform
 //! calls [`BluetoothRuntime::on_scheduler_wake`] when its scheduler interrupt
 //! publishes a wake for the worker.
 //!
@@ -61,7 +64,7 @@ pub use modem_timer::{ModemTimerFault, run_modem_timer, settle_modem_timer};
 pub use outcome::{BluetoothOutcome, BluetoothReceivedPdu, MAX_PDU_BYTES};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use runtime::{
-    BluetoothInstallError, BluetoothRuntime, BluetoothRuntimeError, BluetoothRuntimeFault,
+    BluetoothFault, BluetoothInstallError, BluetoothRuntime, BluetoothRuntimeFault,
     BluetoothTimeError, HARDWARE_RECHECK, TIME_REFRESH,
 };
 

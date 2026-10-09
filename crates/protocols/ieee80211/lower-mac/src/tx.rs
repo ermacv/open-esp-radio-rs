@@ -319,6 +319,8 @@ pub enum SubmitError {
 /// Why the bodies of an attempt cannot be reclaimed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReclaimError {
+    /// The backend is not installed or is paused.
+    NotInstalled,
     /// The attempt has not ended: no completion was reported and no
     /// cancellation proved it over.
     Running,

@@ -1,6 +1,6 @@
 //! Backend-to-caller observations, completion categories and receive metadata.
 
-use oer_radio_port::{LifecycleEvent, Poisoned};
+use oer_radio_port::LifecycleEvent;
 
 use super::{Ieee802154Instant, RequestId, channel::Channel, interface::Interface};
 use crate::mac::frame::FrameView;
@@ -61,11 +61,8 @@ pub enum RadioEvent<'frame> {
         fault: RadioFault,
     },
     /// The terminal event of a port lifecycle command
-    /// ([`Ieee802154RadioPort::lifecycle`](crate::Ieee802154RadioPort::lifecycle)).
+    /// ([`RadioPort::lifecycle`](crate::RadioPort::lifecycle)).
     Lifecycle(LifecycleEvent),
-    /// The backend's state is unknown: the terminal event of a poisoned
-    /// port, reported after every earlier event and at every later call.
-    Poisoned(Poisoned),
 }
 
 /// How a backend validated the received frame check sequence.

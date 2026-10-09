@@ -14,7 +14,7 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154SessionMaintenanceCounts, ieee802154::Ieee802154SessionMaintenancePolicy,
     ieee802154::Ieee802154SessionPhyMaintenance, ieee802154::Ieee802154SessionResult,
 };
-use oer_ieee802154::{Ieee802154RadioPort, RadioCommand};
+use oer_ieee802154::RadioCommand;
 
 use super::super::client::Client;
 use crate::console::{
@@ -46,12 +46,7 @@ async fn serve(
     restartable: bool,
 ) -> Served {
     loop {
-        let command = match select(
-            receive_ieee802154_session_command(),
-            session.runtime.next_event(),
-        )
-        .await
-        {
+        let command = match select(receive_ieee802154_session_command(), session.taken()).await {
             Either::First(command) => command,
             Either::Second(event) => {
                 // An unsolicited terminal event outside a command is dropped.

@@ -16,14 +16,15 @@ use oer_espressif_ieee802154_engine::{
 use oer_espressif_ieee802154_runtime::{
     Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts,
 };
-use oer_ieee802154::{Ieee802154RadioPort, Interface};
+use oer_ieee802154::{Ieee802154RadioPort, Interface, RadioPort};
 use openthread_radio::{
     Config, CslConfig, FrameCounterUpdate, MacCapabilities, MacKeys, Radio, RadioClock as _,
     RadioErrorKind, RadioRssi as _, SrcMatchConfig, TxFrame,
 };
 
 use super::{
-    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults, PortClock, PortRssi,
+    MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
+    PortRssi,
 };
 use crate::frames::{
     CSL_ACCURACY_PPM, CSL_UNCERTAINTY, extended_pending_address, short_pending_address,
@@ -136,20 +137,29 @@ fn init_enables_the_radio_and_reports_the_port_capabilities() {
     assert_eq!(caps.receive_sensitivity, -104);
     assert_eq!(caps.csl_accuracy, CSL_ACCURACY_PPM);
     assert_eq!(caps.csl_uncertainty, CSL_UNCERTAINTY);
-    assert_eq!(runtime.frame_counter(Interface::PRIMARY), Ok(Some(0)));
+    assert_eq!(runtime.frame_counter(Interface::PRIMARY), Ok(Ok(Some(0))));
     // A second init finds the radio enabled.
     assert!(block_on(radio.init()).is_ok());
 }
 
-/// OpenThread's `otPlatRadioGetNow` and `otPlatRadioGetRssi` read the
-/// port itself: its clock and its live RSSI, not a second path to them.
+/// OpenThread's `otPlatRadioGetNow` reads the monotonic clock the port
+/// counts in, and `otPlatRadioGetRssi` the port's live RSSI.
 #[test]
-fn openthread_reads_the_port_clock_and_live_rssi() {
+fn openthread_reads_the_port_epoch_and_live_rssi() {
     let (runtime, _) = radio();
-    assert_eq!(PortClock::new(runtime).now_micros(), NOW_MICROS);
+    assert_eq!(
+        MonotonicRadioClock::new(runtime.clock()).now_micros(),
+        NOW_MICROS
+    );
+    assert_eq!(
+        block_on(runtime.now()),
+        Ok(Ok(oer_ieee802154::Ieee802154Instant::from_micros(
+            NOW_MICROS
+        )))
+    );
     assert_eq!(
         PortRssi::new(runtime).rssi(),
-        runtime.recent_rssi().ok(),
+        runtime.recent_rssi().ok().and_then(Result::ok),
         "the live read is the port's"
     );
 }
@@ -366,7 +376,13 @@ fn the_frame_counter_follows_openthread() {
     let (runtime, mut radio) = initialized();
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::Set(10))).unwrap();
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::SetIfLarger(5))).unwrap();
-    let counter = |runtime: &Runtime| runtime.frame_counter(Interface::PRIMARY).unwrap().unwrap();
+    let counter = |runtime: &Runtime| {
+        runtime
+            .frame_counter(Interface::PRIMARY)
+            .unwrap()
+            .unwrap()
+            .unwrap()
+    };
     assert_eq!(counter(runtime), 10);
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::SetIfLarger(12))).unwrap();
     assert_eq!(counter(runtime), 12);
@@ -426,7 +442,13 @@ fn the_radio_secures_frames_with_openthread_keys() {
     }))
     .unwrap();
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::Set(10))).unwrap();
-    let counter = |runtime: &Runtime| runtime.frame_counter(Interface::PRIMARY).unwrap().unwrap();
+    let counter = |runtime: &Runtime| {
+        runtime
+            .frame_counter(Interface::PRIMARY)
+            .unwrap()
+            .unwrap()
+            .unwrap()
+    };
 
     let mut psdu = SECURED_PSDU;
     assert!(secured_transmission(runtime, &mut radio, &mut psdu, false));

@@ -26,9 +26,9 @@ use oer_ieee80211_ap_service::port::{
 };
 use oer_ieee80211_lower_mac::{
     CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyScope, KeySelector, LifecycleCommand,
-    LowerMacBeaconTiming, MacAddress, PhyRate, ReceiveFilter, RxCryptoStatus, RxEvidence, RxMeta,
-    TxPower, VifId, VifRole,
-    model::{LowerMacModel, ModelOutcome},
+    LowerMacBeaconTiming, MacAddress, PhyRate, RadioPort, ReceiveFilter, RxCryptoStatus,
+    RxEvidence, RxMeta, TxPower, VifId, VifRole,
+    model::{LowerMacModel, ModelOutcome, ready},
 };
 use oer_ieee80211_mac::{
     ap::profile::{Advertisement, LegacyRates, WmmParameters},
@@ -245,7 +245,9 @@ fn model() -> Model {
         ))
         .unwrap()
         .unwrap();
-    model.lifecycle(LifecycleCommand::Enable).unwrap().unwrap();
+    ready(model.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
     // Take the Enabled terminal event.
     {
         let mut next = pin!(model.next_event());

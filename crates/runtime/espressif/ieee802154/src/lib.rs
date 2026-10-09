@@ -19,15 +19,20 @@
 //! CSMA-CA backoffs and the delays before retries run on the runtime's
 //! [`oer_time::Timer`] in [`Ieee802154Runtime::run`], the runner the composition polls for as long
 //! as the radio is installed, as ESP-IDF's OpenThread `SubMac` runs them on
-//! its tasklet timer; [`Ieee802154RadioPort::next_event`] only takes
-//! events. Overflow of the bounded event queue is reported as
-//! [`EventsLost`] in place of the first dropped event, and an uninstall
-//! that discards events leaves that loss pending for the consumer.
+//! its tasklet timer; [`RadioPort::next_event`] only takes events.
 //!
-//! The runtime never poisons: a broken event sequence ends in a
-//! recoverable [`RadioEvent::Fault`] that leaves the radio disabled, and
-//! [`Ieee802154RuntimeError::NotInstalled`], also while paused, is a
-//! [`FailureClass::Rejected`] state.
+//! The bounded event queue reserves a slot for every terminal event it
+//! owes when the work is admitted: the admitted operation's end, the fault
+//! that may end an enabled period, and a lifecycle command's terminal. A
+//! terminal event is therefore never lost; an operation or a lifecycle
+//! command whose terminal could not be held is refused. Only received
+//! frames are dropped when the queue is full, reported as [`EventsLost`] in
+//! place of the first dropped frame.
+//!
+//! The runtime never poisons (its fault type is [`Infallible`]): a broken
+//! event sequence ends in a recoverable [`RadioEvent::Fault`] that leaves
+//! the radio disabled. A radio that is not installed, also while paused,
+//! refuses every call as not installed.
 
 #[cfg(test)]
 extern crate std;
@@ -39,6 +44,7 @@ use core::{
     convert::Infallible,
 };
 
+use core::future::{Future, ready};
 use embassy_futures::select::{Either, select};
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::RawMutex},
@@ -59,11 +65,13 @@ use oer_espressif_ieee802154_engine::{
 use oer_espressif_ieee802154_radio::{
     Ieee802154Csl, Ieee802154EnhancedAckGenerator, Ieee802154Radio, Ieee802154RadioSink,
 };
+
+pub use oer_ieee802154::NotInstalled;
 use oer_ieee802154::{
-    AcceptedCommand, AppliedSecurity, AutoPendingMode, ClockInfo, CommandError, EventsLost,
-    FailureClass, Frame, FrameCounterUpdate, Ieee802154Capabilities, Ieee802154Instant,
+    AcceptedCommand, AppliedSecurity, AutoPendingMode, CancelError, ClockError, ClockInfo,
+    CommandError, EventsLost, Frame, FrameCounterUpdate, Ieee802154Capabilities, Ieee802154Instant,
     Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError, LifecycleEvent, MacKeys,
-    PendingTable, Poisoned, PortError, RadioCommand, RadioEvent, RadioFault, RadioSetting,
+    PendingTable, PortResult, RadioCommand, RadioEvent, RadioFault, RadioPort, RadioSetting,
     RadioState, ReceivedFrame, RequestId, RestingState, RxMetadata, SettingError, TxStatus,
 };
 use oer_ieee802154_trace::{Lease, PauseRefusal};
@@ -155,9 +163,6 @@ pub enum Ieee802154RadioEvent {
     },
     /// The terminal event of a port lifecycle command.
     Lifecycle(LifecycleEvent),
-    /// The terminal event of a poisoned port; this runtime never reports
-    /// it, but the portable event set has it.
-    Poisoned,
 }
 
 impl Ieee802154RadioEvent {
@@ -188,7 +193,6 @@ impl Ieee802154RadioEvent {
             RadioEvent::ScheduledReceiveDone { id } => Self::ScheduledReceiveDone { id },
             RadioEvent::Fault { id, fault } => Self::Fault { id, fault },
             RadioEvent::Lifecycle(event) => Self::Lifecycle(event),
-            RadioEvent::Poisoned(_) => Self::Poisoned,
         }
     }
 
@@ -227,23 +231,6 @@ impl Ieee802154RadioEvent {
                 fault: *fault,
             },
             Self::Lifecycle(event) => RadioEvent::Lifecycle(*event),
-            Self::Poisoned => RadioEvent::Poisoned(Poisoned),
-        }
-    }
-}
-
-/// Why the runtime cannot serve: the port's error.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Ieee802154RuntimeError {
-    /// No radio is installed, or it is paused: installing or resuming it
-    /// serves again.
-    NotInstalled,
-}
-
-impl PortError for Ieee802154RuntimeError {
-    fn class(&self) -> FailureClass {
-        match self {
-            Self::NotInstalled => FailureClass::Rejected,
         }
     }
 }
@@ -299,12 +286,43 @@ impl<H, R> Ieee802154RuntimePaused<'_, H, R> {
 /// mode, in the backend-reserved range; neither produces an event.
 const PAUSE_REQUEST: RequestId = RequestId::new(0xFFFF_FF00);
 
-/// The bounded event queue: overflow is reported in its order, a loss
-/// marker taking the place of the first dropped event.
+/// What the event queue owes the consumer: the slots it reserved for
+/// terminal events, a loss not reported yet and the progress of a quiesce.
+#[derive(Default)]
+struct Owed {
+    /// A received frame was dropped: the next event reports the loss first.
+    lost: bool,
+    /// The admitted operation's terminal event.
+    operation: bool,
+    /// The fault that may end the enabled period; `Disable` takes its slot.
+    fault: bool,
+    /// A quiesce waits for the operation's terminal event to report
+    /// `Quiesced`.
+    quiescing: bool,
+    /// Admission of operations is closed until `Enable`.
+    quiesced: bool,
+    /// An event taken after the loss it reported.
+    held: Option<Ieee802154RadioEvent>,
+}
+
+impl Owed {
+    fn reserved(&self) -> usize {
+        usize::from(self.operation) + usize::from(self.fault) + usize::from(self.quiescing)
+    }
+}
+
+/// One queued event, with whether a loss precedes it.
+struct Entry {
+    lost_before: bool,
+    event: Ieee802154RadioEvent,
+}
+
+/// The bounded event queue: terminal events hold the slots reserved for
+/// them, and the loss of received frames is reported in its order, in
+/// place of the first dropped frame.
 struct EventQueue<M: RawMutex, const EVENTS: usize> {
-    entries: Channel<M, Result<Ieee802154RadioEvent, EventsLost>, EVENTS>,
-    /// An event was dropped and its marker is not queued yet.
-    lost: Mutex<M, Cell<bool>>,
+    entries: Channel<M, Entry, EVENTS>,
+    owed: Mutex<M, RefCell<Owed>>,
     /// Raised when a loss is pending without a queued entry.
     changed: Signal<M, ()>,
 }
@@ -313,47 +331,92 @@ impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
     const fn new() -> Self {
         Self {
             entries: Channel::new(),
-            lost: Mutex::new(Cell::new(false)),
+            owed: Mutex::new(RefCell::new(Owed {
+                lost: false,
+                operation: false,
+                fault: false,
+                quiescing: false,
+                quiesced: false,
+                held: None,
+            })),
             changed: Signal::new(),
         }
     }
 
-    /// Queue `event` behind a pending marker; `false` when it was dropped.
+    /// Run `entry` on what the queue owes.
+    fn owed<O>(&self, entry: impl FnOnce(&mut Owed) -> O) -> O {
+        self.owed.lock(|owed| entry(&mut owed.borrow_mut()))
+    }
+
+    /// Whether `slots` more terminal events fit beside the queued and
+    /// reserved ones.
+    fn has_room(&self, owed: &Owed, slots: usize) -> bool {
+        self.entries.len() + owed.reserved() + slots <= EVENTS
+    }
+
+    /// Queue `event`: a terminal event in the slot reserved for it, a
+    /// received frame when a slot is free; `false` when the frame was
+    /// dropped.
     fn push(&self, event: Ieee802154RadioEvent) -> bool {
-        self.lost.lock(|lost| {
-            if lost.get() {
-                if self.entries.try_send(Err(EventsLost)).is_err() {
-                    return false;
+        self.owed(|owed| {
+            let ends_operation = match &event {
+                Ieee802154RadioEvent::Received(_) => {
+                    if !self.has_room(owed, 1) {
+                        owed.lost = true;
+                        return false;
+                    }
+                    false
                 }
-                lost.set(false);
+                // The command checked its room.
+                Ieee802154RadioEvent::Lifecycle(_) => false,
+                Ieee802154RadioEvent::Fault { .. } => {
+                    owed.fault = false;
+                    true
+                }
+                _ => true,
+            };
+            if ends_operation {
+                owed.operation = false;
             }
-            if self.entries.try_send(Ok(event)).is_err() {
-                lost.set(true);
-                return false;
+            self.send(owed, event);
+            // A quiesce ends after the operation's terminal event.
+            if ends_operation && owed.quiescing {
+                owed.quiescing = false;
+                owed.quiesced = true;
+                self.send(
+                    owed,
+                    Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced),
+                );
             }
             true
         })
     }
 
-    fn take(&self) -> Option<Result<Ieee802154RadioEvent, EventsLost>> {
-        self.lost.lock(|lost| match self.entries.try_receive() {
-            Ok(entry) => Some(entry),
-            Err(_) if lost.replace(false) => Some(Err(EventsLost)),
-            Err(_) => None,
-        })
+    /// Queue `event` in a slot known to be free.
+    fn send(&self, owed: &mut Owed, event: Ieee802154RadioEvent) {
+        let lost_before = core::mem::take(&mut owed.lost);
+        let sent = self.entries.try_send(Entry { lost_before, event });
+        assert!(sent.is_ok(), "a terminal event holds a reserved slot");
     }
 
-    /// Discard every queued event, leaving one pending loss when anything
-    /// was discarded or a loss was pending.
-    fn discard(&self) {
-        self.lost.lock(|lost| {
-            let mut discarded = lost.get();
-            while self.entries.try_receive().is_ok() {
-                discarded = true;
+    fn take(&self) -> Option<Result<Ieee802154RadioEvent, EventsLost>> {
+        self.owed(|owed| {
+            if let Some(event) = owed.held.take() {
+                return Some(Ok(event));
             }
-            lost.set(discarded);
-        });
-        self.changed.signal(());
+            match self.entries.try_receive() {
+                Ok(Entry {
+                    lost_before: true,
+                    event,
+                }) => {
+                    owed.held = Some(event);
+                    Some(Err(EventsLost))
+                }
+                Ok(Entry { event, .. }) => Some(Ok(event)),
+                Err(_) if core::mem::take(&mut owed.lost) => Some(Err(EventsLost)),
+                Err(_) => None,
+            }
+        })
     }
 }
 
@@ -381,9 +444,11 @@ impl<M: RawMutex, const EVENTS: usize> Ieee802154RadioSink for QueueSink<'_, M, 
 
 /// The radio role, its hardware and the event queue.
 ///
-/// `EVENTS` bounds the events waiting for the consumer, a loss marker
-/// included. Overflow drops the newest event and reports [`EventsLost`] once
-/// in its place. `T` is the image's monotonic time the delays wait on.
+/// `EVENTS` bounds the events waiting for the consumer, the reserved
+/// terminal slots included; it is at least three (an operation's end, a
+/// fault and a lifecycle terminal). A full queue drops the newest received
+/// frame and reports [`EventsLost`] once in its place. `T` is the image's
+/// monotonic time the delays wait on.
 // CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154Runtime<'storage, M: RawMutex, H, T, R, const EVENTS: usize> {
     timer: T,
@@ -421,6 +486,10 @@ impl<
     /// An empty runtime whose delays wait on `timer`, suitable for a
     /// `static`.
     pub const fn new(timer: T) -> Self {
+        assert!(
+            EVENTS >= 3,
+            "the queue holds an operation's end, a fault and a lifecycle terminal"
+        );
         Self {
             timer,
             installed: Mutex::new(RefCell::new(None)),
@@ -428,6 +497,13 @@ impl<
             backoff_until: Mutex::new(Cell::new(None)),
             backoff_started: Signal::new(),
         }
+    }
+
+    /// The image's monotonic clock the runtime reads: its radio clock
+    /// ([`ClockInfo::MONOTONIC_MICROS`]), for a synchronous reader such as
+    /// OpenThread's `otPlatRadioGetNow`.
+    pub const fn clock(&self) -> &T {
+        &self.timer
     }
 
     /// Start the timer of a transmission's backoff or retry delay, if one is
@@ -484,25 +560,33 @@ impl<
     }
 
     /// `esp_ieee802154_disable` after the platform CPU route is disabled:
-    /// return the MAC's coexistence PTIs to the disabled foundation image,
-    /// disable and return the engine and hardware, and discard queued
-    /// events. Discarded events are reported as [`EventsLost`] to the
-    /// consumer, also across a later install.
+    /// end the operation in flight with its terminal event, return the
+    /// MAC's coexistence PTIs to the disabled foundation image, and disable
+    /// and return the engine and hardware. Queued events stay with the
+    /// consumer.
     pub fn uninstall(&self) -> Option<Ieee802154RuntimeParts<'storage, H>> {
         let parts = self.installed.lock(|installed| {
             installed.borrow_mut().take().map(|installed| {
                 let Installed {
-                    radio,
+                    mut radio,
                     mut hardware,
                     ..
                 } = installed;
+                let mut sink = QueueSink {
+                    events: &self.events,
+                };
+                // A disabled radio has nothing in flight.
+                let _ = radio.disable(&mut hardware, &self.timer, &mut sink);
                 let mut engine = radio.into_engine();
                 engine.mac_deinit(&mut hardware);
                 engine.disable();
                 Ieee802154RuntimeParts { engine, hardware }
             })
         });
-        self.events.discard();
+        self.events.owed(|owed| {
+            owed.fault = false;
+            owed.quiesced = false;
+        });
         self.backoff_until.lock(|backoff| backoff.set(None));
         parts
     }
@@ -652,12 +736,10 @@ impl<
             &mut H,
             &mut QueueSink<'_, M, EVENTS>,
         ) -> O,
-    ) -> Result<O, Ieee802154RuntimeError> {
+    ) -> Result<O, NotInstalled> {
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
-            let installed = installed
-                .as_mut()
-                .ok_or(Ieee802154RuntimeError::NotInstalled)?;
+            let installed = installed.as_mut().ok_or(NotInstalled)?;
             let mut sink = QueueSink {
                 events: &self.events,
             };
@@ -687,7 +769,7 @@ impl<
     /// # Errors
     ///
     /// No radio is installed.
-    pub fn set_txrx_statistics(&self, collect: bool) -> Result<(), Ieee802154RuntimeError> {
+    pub fn set_txrx_statistics(&self, collect: bool) -> Result<(), NotInstalled> {
         self.with_radio(|radio, _, _| radio.engine().set_txrx_statistics(collect))
     }
 
@@ -697,9 +779,7 @@ impl<
     /// # Errors
     ///
     /// No radio is installed.
-    pub fn txrx_statistics(
-        &self,
-    ) -> Result<Option<Ieee802154TxRxStatistics>, Ieee802154RuntimeError> {
+    pub fn txrx_statistics(&self) -> Result<Option<Ieee802154TxRxStatistics>, NotInstalled> {
         self.with_radio(|radio, _, _| radio.engine().txrx_statistics())
     }
 
@@ -708,20 +788,39 @@ impl<
     /// # Errors
     ///
     /// No radio is installed.
-    pub fn clear_txrx_statistics(&self) -> Result<(), Ieee802154RuntimeError> {
+    pub fn clear_txrx_statistics(&self) -> Result<(), NotInstalled> {
         self.with_radio(|radio, _, _| radio.engine().clear_txrx_statistics())
     }
 
-    /// Admit and start one portable command.
-    fn submit_locked(
-        &self,
-        command: RadioCommand<'_>,
-    ) -> Result<Result<AcceptedCommand, CommandError>, Ieee802154RuntimeError> {
+    /// Admit and start one portable command. An operation reserves its
+    /// terminal event's slot first, and is refused while admission is
+    /// quiesced or no slot is free.
+    fn submit_locked(&self, command: RadioCommand<'_>) -> Result<AcceptedCommand, CommandError> {
+        let operation = matches!(
+            command,
+            RadioCommand::Transmit(_)
+                | RadioCommand::EnergyScan(_)
+                | RadioCommand::ClearChannelAssessment { .. }
+                | RadioCommand::ScheduledReceive(_)
+        );
         let submitted = self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
-            let installed = installed
-                .as_mut()
-                .ok_or(Ieee802154RuntimeError::NotInstalled)?;
+            let installed = installed.as_mut().ok_or(CommandError::NotInstalled)?;
+            // A second operation is the state machine's to refuse.
+            let reserved = operation
+                && self.events.owed(|owed| {
+                    if owed.quiescing || owed.quiesced {
+                        return Err(CommandError::Quiesced);
+                    }
+                    if owed.operation {
+                        return Ok(false);
+                    }
+                    if !self.events.has_room(owed, 1) {
+                        return Err(CommandError::EventQueueFull);
+                    }
+                    owed.operation = true;
+                    Ok(true)
+                })?;
             let mut sink = QueueSink {
                 events: &self.events,
             };
@@ -729,18 +828,111 @@ impl<
                 installed
                     .radio
                     .submit(&mut installed.hardware, &self.timer, command, &mut sink);
+            if accepted.is_err() && reserved {
+                self.events.owed(|owed| owed.operation = false);
+            }
             Ok((accepted, installed.radio.take_delay()))
         });
         let (accepted, backoff) = submitted?;
         self.start_backoff(backoff);
-        Ok(accepted)
+        accepted
+    }
+
+    /// End the running operation `target` through its terminal event.
+    fn cancel_locked(&self, target: RequestId) -> Result<(), CancelError> {
+        let cancelled = self.with_radio(|radio, hardware, sink| {
+            let cancelled = radio.cancel(hardware, &self.timer, target, sink);
+            (cancelled, radio.take_delay())
+        });
+        let Ok((cancelled, backoff)) = cancelled else {
+            return Err(CancelError::NotInstalled);
+        };
+        self.start_backoff(backoff);
+        cancelled
+    }
+
+    /// Start one lifecycle command; its terminal event is queued in a slot
+    /// it found free or reserved.
+    ///
+    /// - `Enable` enables a disabled radio, reserving the slot of the fault
+    ///   that may end its enabled period, or reopens a quiesced one.
+    /// - `Disable` ends the operation in flight with its terminal event,
+    ///   then disables the radio; its terminal takes the fault's slot.
+    /// - `Quiesce` closes admission of operations and ends with `Quiesced`
+    ///   after the terminal event of the operation in flight.
+    fn lifecycle_locked(&self, command: LifecycleCommand) -> Result<(), LifecycleError> {
+        let started = self.with_radio(|radio, hardware, sink| {
+            let enabled = radio.state() != RadioState::Disabled;
+            let (quiescing, quiesced) = self.events.owed(|owed| (owed.quiescing, owed.quiesced));
+            if quiescing {
+                return Err(LifecycleError::Busy);
+            }
+            match command {
+                LifecycleCommand::Enable if enabled && !quiesced => {
+                    Err(LifecycleError::AlreadyInState)
+                }
+                LifecycleCommand::Enable if enabled => {
+                    if !self.events.owed(|owed| self.events.has_room(owed, 1)) {
+                        return Err(LifecycleError::Busy);
+                    }
+                    self.events.owed(|owed| owed.quiesced = false);
+                    sink.event(RadioEvent::Lifecycle(LifecycleEvent::Enabled));
+                    Ok(())
+                }
+                LifecycleCommand::Enable => {
+                    // The terminal and the fault slot of the enabled period.
+                    if !self.events.owed(|owed| self.events.has_room(owed, 2)) {
+                        return Err(LifecycleError::Busy);
+                    }
+                    radio
+                        .enable(hardware, &self.timer, sink)
+                        .map_err(|_| LifecycleError::InvalidState)?;
+                    self.events.owed(|owed| owed.quiesced = false);
+                    sink.event(RadioEvent::Lifecycle(LifecycleEvent::Enabled));
+                    self.events.owed(|owed| owed.fault = true);
+                    Ok(())
+                }
+                LifecycleCommand::Disable if !enabled => Err(LifecycleError::AlreadyInState),
+                LifecycleCommand::Disable => {
+                    radio
+                        .disable(hardware, &self.timer, sink)
+                        .map_err(|_| LifecycleError::InvalidState)?;
+                    self.events.owed(|owed| {
+                        owed.fault = false;
+                        owed.quiesced = false;
+                    });
+                    sink.event(RadioEvent::Lifecycle(LifecycleEvent::Disabled));
+                    Ok(())
+                }
+                LifecycleCommand::Quiesce if !enabled => Err(LifecycleError::InvalidState),
+                LifecycleCommand::Quiesce if quiesced => Err(LifecycleError::AlreadyInState),
+                LifecycleCommand::Quiesce => {
+                    let running = self.events.owed(|owed| {
+                        if !self.events.has_room(owed, 1) {
+                            return Err(LifecycleError::Busy);
+                        }
+                        if owed.operation {
+                            owed.quiescing = true;
+                        } else {
+                            owed.quiesced = true;
+                        }
+                        Ok(owed.operation)
+                    })?;
+                    if !running {
+                        sink.event(RadioEvent::Lifecycle(LifecycleEvent::Quiesced));
+                    }
+                    Ok(())
+                }
+            }
+        });
+        started.unwrap_or(Err(LifecycleError::NotInstalled))
     }
 
     /// The radio's runner: a transmission's CSMA-CA backoff or retry delay,
     /// after which the transmission goes on.
     ///
     /// Poll it for as long as the runtime is used, beside the consumer of
-    /// [`Ieee802154RadioPort::next_event`]; it never ends. Dropping it keeps
+    /// [`RadioPort::next_event`]; it never ends. Dropping it keeps
     /// the delay for the next runner.
     pub async fn run(&self) -> Infallible {
         loop {
@@ -768,10 +960,10 @@ impl<
     }
 
     /// Take the next event; nothing else progresses here.
-    async fn wait_event(&self) -> Result<Ieee802154RadioEvent, EventsLost> {
+    async fn wait_event(&self) -> PortResult<Ieee802154RadioEvent, EventsLost, Infallible> {
         loop {
             if let Some(event) = self.events.take() {
-                return event;
+                return Ok(event);
             }
             select(
                 self.events.entries.ready_to_receive(),
@@ -789,7 +981,7 @@ impl<
     pub fn with_pending_table<O>(
         &self,
         change: impl FnOnce(&mut PendingTable<PENDING_TABLE_SIZE>) -> O,
-    ) -> Result<O, Ieee802154RuntimeError> {
+    ) -> Result<O, NotInstalled> {
         self.with_radio(|radio, _, _| change(radio.engine().pending_table()))
     }
 
@@ -799,7 +991,7 @@ impl<
     /// # Errors
     ///
     /// No radio is installed.
-    pub fn set_pending_mode(&self, mode: AutoPendingMode) -> Result<(), Ieee802154RuntimeError> {
+    pub fn set_pending_mode(&self, mode: AutoPendingMode) -> Result<(), NotInstalled> {
         self.with_radio(|radio, _, _| {
             radio
                 .engine()
@@ -814,10 +1006,7 @@ impl<
     /// # Errors
     ///
     /// No radio is installed.
-    pub fn set_coexistence(
-        &self,
-        coexistence: Ieee802154Coexistence,
-    ) -> Result<(), Ieee802154RuntimeError> {
+    pub fn set_coexistence(&self, coexistence: Ieee802154Coexistence) -> Result<(), NotInstalled> {
         self.with_radio(|radio, _, _| radio.engine().set_coexistence(coexistence))
     }
 }
@@ -898,14 +1087,54 @@ fn apply_setting<L: Ieee802154LowLevel + ?Sized, R: Ieee802154Random>(
     Ok(())
 }
 
-impl<M: RawMutex, H, T: Timer, R: Ieee802154Random, const EVENTS: usize> Ieee802154RadioPort
+impl<M: RawMutex, H, T: Timer, R: Ieee802154Random, const EVENTS: usize> RadioPort
     for Ieee802154Runtime<'_, M, H, T, R, EVENTS>
 where
     H: Ieee802154LowLevel + Ieee802154RecentRssi,
 {
     type Event = Ieee802154RadioEvent;
-    type Error = Ieee802154RuntimeError;
+    type Id = RequestId;
+    type Domain = oer_ieee802154::Ieee802154Radio;
+    /// The runtime never poisons.
+    type Fault = Infallible;
 
+    fn next_event(
+        &self,
+    ) -> impl Future<Output = PortResult<Ieee802154RadioEvent, EventsLost, Infallible>> + '_ {
+        self.wait_event()
+    }
+
+    /// The radio clock (`otPlatRadioGetNow`): the runtime's own clock, the
+    /// one its engine reads at every event. It runs whether or not a radio
+    /// is installed.
+    fn now(
+        &self,
+    ) -> impl Future<Output = PortResult<Ieee802154Instant, ClockError, Infallible>> + '_ {
+        ready(Ok(Ok(Ieee802154Instant::from_micros(
+            self.timer.now().as_micros(),
+        ))))
+    }
+
+    fn cancel(
+        &self,
+        id: RequestId,
+    ) -> impl Future<Output = PortResult<(), CancelError, Infallible>> + '_ {
+        ready(Ok(self.cancel_locked(id)))
+    }
+
+    fn lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> impl Future<Output = PortResult<(), LifecycleError, Infallible>> + '_ {
+        ready(Ok(self.lifecycle_locked(command)))
+    }
+}
+
+impl<M: RawMutex, H, T: Timer, R: Ieee802154Random, const EVENTS: usize> Ieee802154RadioPort
+    for Ieee802154Runtime<'_, M, H, T, R, EVENTS>
+where
+    H: Ieee802154LowLevel + Ieee802154RecentRssi,
+{
     fn view(event: &Ieee802154RadioEvent) -> RadioEvent<'_> {
         event.portable()
     }
@@ -927,54 +1156,11 @@ where
         })
     }
 
-    /// `Enable` and `Disable` enable or disable the radio role and report
-    /// their terminal event; the radio has no quiesce.
-    fn lifecycle(
-        &self,
-        command: LifecycleCommand,
-    ) -> Result<Result<(), LifecycleError>, Ieee802154RuntimeError> {
-        let terminal = match command {
-            LifecycleCommand::Enable => LifecycleEvent::Enabled,
-            LifecycleCommand::Disable => LifecycleEvent::Disabled,
-            LifecycleCommand::Quiesce => return Ok(Err(LifecycleError::InvalidState)),
-        };
-        self.with_radio(|radio, hardware, sink| {
-            let done = match command {
-                LifecycleCommand::Enable => radio.enable(hardware, &self.timer, sink),
-                _ => radio.disable(hardware, &self.timer, sink),
-            };
-            match done {
-                Ok(()) => {
-                    sink.event(RadioEvent::Lifecycle(terminal));
-                    Ok(())
-                }
-                Err(CommandError::AlreadyEnabled) => Err(LifecycleError::AlreadyInState),
-                Err(CommandError::Disabled) => match command {
-                    LifecycleCommand::Disable => Err(LifecycleError::AlreadyInState),
-                    _ => Err(LifecycleError::InvalidState),
-                },
-                Err(CommandError::Busy { .. }) => Err(LifecycleError::Busy),
-                Err(_) => Err(LifecycleError::InvalidState),
-            }
-        })
-    }
-
     fn submit(
         &self,
         command: RadioCommand<'_>,
-    ) -> Result<Result<AcceptedCommand, CommandError>, Ieee802154RuntimeError> {
-        self.submit_locked(command)
-    }
-
-    async fn next_event(&self) -> Result<Ieee802154RadioEvent, EventsLost> {
-        self.wait_event().await
-    }
-
-    /// The radio clock (`otPlatRadioGetNow`): the runtime's own clock, the
-    /// one its engine reads at every event. It runs whether or not a radio
-    /// is installed.
-    fn now(&self) -> Result<Ieee802154Instant, Ieee802154RuntimeError> {
-        Ok(Ieee802154Instant::from_micros(self.timer.now().as_micros()))
+    ) -> PortResult<AcceptedCommand, CommandError, Infallible> {
+        Ok(self.submit_locked(command))
     }
 
     /// The radio clock is the runtime's clock (`esp_timer_get_time` in
@@ -984,30 +1170,32 @@ where
         ClockInfo::MONOTONIC_MICROS
     }
 
-    fn state(&self) -> Result<RadioState, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| radio.state())
+    fn state(&self) -> PortResult<RadioState, NotInstalled, Infallible> {
+        Ok(self.with_radio(|radio, _, _| radio.state()))
     }
 
-    fn apply(
+    fn apply(&self, setting: RadioSetting<'_>) -> PortResult<(), SettingError, Infallible> {
+        Ok(self
+            .with_radio(|radio, hardware, _| apply_setting(radio, hardware, setting))
+            .unwrap_or(Err(SettingError::NotInstalled)))
+    }
+
+    fn frame_counter(
         &self,
-        setting: RadioSetting<'_>,
-    ) -> Result<Result<(), SettingError>, Ieee802154RuntimeError> {
-        self.with_radio(|radio, hardware, _| apply_setting(radio, hardware, setting))
-    }
-
-    fn frame_counter(&self, interface: Interface) -> Result<Option<u32>, Ieee802154RuntimeError> {
-        self.with_radio(|radio, _, _| {
+        interface: Interface,
+    ) -> PortResult<Option<u32>, NotInstalled, Infallible> {
+        Ok(self.with_radio(|radio, _, _| {
             radio
                 .interface_mac_keys(interface)
                 .and_then(|keys| keys.as_ref().map(MacKeys::frame_counter))
-        })
+        }))
     }
 
     /// The live RSSI (`esp_ieee802154_get_recent_rssi`), read from the
     /// hardware whatever the radio's state, as the vendor reads it.
     // CAPABILITY: ieee802154-phy-and-rf-rssi
-    fn recent_rssi(&self) -> Result<i8, Ieee802154RuntimeError> {
-        self.with_radio(|_, hardware, _| hardware.recent_rssi())
+    fn recent_rssi(&self) -> PortResult<i8, NotInstalled, Infallible> {
+        Ok(self.with_radio(|_, hardware, _| hardware.recent_rssi()))
     }
 }
 
@@ -1059,7 +1247,7 @@ impl<M: RawMutex, T: Timer, R: Ieee802154Random, const EVENTS: usize>
     pub fn with_model<O>(
         &self,
         entry: impl FnOnce(&mut oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel) -> O,
-    ) -> Result<O, Ieee802154RuntimeError> {
+    ) -> Result<O, NotInstalled> {
         self.with_radio(|_, hardware, _| entry(hardware))
     }
 }

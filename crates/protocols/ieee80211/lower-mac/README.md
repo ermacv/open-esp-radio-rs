@@ -16,23 +16,24 @@ unless the backend reports them in its `HardwareServices`.
 
 | Part | Items |
 | --- | --- |
-| Submission | `tx_buffer(len)` lends a `TxBuffer` for an MPDU of `len` octets (`Ok(None)` when none is free, `Err` when the port cannot serve); the caller writes the MPDU up to its body and submits `TxAttempt<TxPayload<TxBuffer, TxBody>>`: caller `TxId`, `VifId`, `WmmAccessCategory`, the buffer, the body by ownership (`TxBody`, the composition's type, such as a network frame whose payload the caller does not copy) and the `TxResponse`, `PhyRate`, `Protection` (none, RTS/CTS, CTS-to-self), `KeySelector`, `TxPower`, `Backoff` and the attempt's `CoexPriority`. A refusal is `Refused { error: SubmitError, attempt }`: nothing is sent and the attempt comes back with its buffer and body, for every reason, a backend that is not installed (`NotInstalled`) included; a submission's outer `Err` is only `Poisoned` (`SubmitResult`), after which the backend keeps the attempt until its reset. An unsubmitted buffer goes back through `release_tx_buffer`. The backend holds an admitted attempt's bodies until `reclaim_tx_bodies(id, each)` hands them back by subframe once the attempt ended (its completion reported, or a cancellation proved it over), so an event lost to a queue overflow loses no body and a retransmission sends the same owners; whether a backend sends a body from its owner's memory or copies it is its own choice |
-| Events | `next_event` yields owned events viewed as `LowerMacEvent`: `Received { frame, RxMeta }`, whose frame `into_received` takes out as the backend's `RxBuffer` (dropping it returns the memory, so a consumer that keeps a frame longer than one step copies it), `TxCompleted(TxCompletion)` with `TxStatus`, ACK RSSI and SNR and the `BlockAckReport` (starting sequence, bitmap) of a BlockAckReq or A-MPDU, lifecycle terminals, `Extension` for an event an extension trait views, and the terminal `Poisoned`. A loss is reported once as `EventsLost`, in place of the first dropped event |
+| Submission | `tx_buffer(len)` lends a `TxBuffer` for an MPDU of `len` octets (`Ok(Ok(None))` when none is free, `Ok(Err(NotInstalled))` without a backend); the caller writes the MPDU up to its body and submits `TxAttempt<TxPayload<TxBuffer, TxBody>>`: caller `TxId`, `VifId`, `WmmAccessCategory`, the buffer, the body by ownership (`TxBody`, the composition's type, such as a network frame whose payload the caller does not copy) and the `TxResponse`, `PhyRate`, `Protection` (none, RTS/CTS, CTS-to-self), `KeySelector`, `TxPower`, `Backoff` and the attempt's `CoexPriority`. A refusal is `Refused { error: SubmitError, attempt }`: nothing is sent and the attempt comes back with its buffer and body, for every reason, a backend that is not installed (`NotInstalled`) included; a submission's outer `Err` is only `Poisoned` with the backend's cause (`SubmitResult`), after which the backend keeps the attempt until its reset. An unsubmitted buffer goes back through `release_tx_buffer`. The backend holds an admitted attempt's bodies until `reclaim_tx_bodies(id, each)` hands them back by subframe once the attempt ended (its completion reported), and a retransmission sends the same owners; whether a backend sends a body from its owner's memory or copies it is its own choice |
+| Events | `next_event` yields owned events viewed as `LowerMacEvent`: `Received { frame, RxMeta }`, whose frame `into_received` takes out as the backend's `RxBuffer` (dropping it returns the memory, so a consumer that keeps a frame longer than one step copies it), `TxCompleted(TxCompletion)` with `TxStatus`, ACK RSSI and SNR and the `BlockAckReport` (starting sequence, bitmap) of a BlockAckReq or A-MPDU, lifecycle terminals, and `Extension` for an event an extension trait views. The backend reserves each admitted attempt's completion and each lifecycle terminal, so only received frames and TBTTs are dropped, reported once as `EventsLost` in place of the first dropped event; a poisoned backend returns `Poisoned` with its cause after every earlier event |
 | Controls | `apply(LowerMacSetting)`: `Channel`, interface configuration (`VifConfig`: address, `VifRole`, BSSID, `ReceiveFilter`, whose `PROBE_REQUESTS` rule admits the Probe Requests an access point answers, wildcard ones included), key removal, receive Block Ack agreements, the `Edca` parameter set, the global `TxGate`, the beacon receive priority (`RxBeaconPriority`) and an interface's HE BSS color (`HeBssColor`). `install_key` returns the `KeyHandle` attempts select |
 | Capabilities | `LowerMacCapabilities`, the parametric limits: bands, widths, rates, `HardwareServices`, interfaces, transmit queues, longest MPDU, largest backoff, lowest power ceiling, coexistence levels, the PPDU formats of unicast no-ACK frames, each role's receive rules, key slots and receive Block Ack limits |
-| Lifecycle | `lifecycle(Enable / Disable / Quiesce)`, each with a terminal `LifecycleEvent`, and `cancel(TxId)`, whose terminal event is the attempt's completion; a failed command ends with `LifecycleEvent::Failed { command, class: FailureClass }` |
-| Clock | `now()` is the `Ieee80211Instant` (`oer_time::RadioInstant` of the port's `Ieee80211Radio` domain) of receive timestamps; `clock_info()` states its resolution and `RadioEpoch` and converts to monotonic time; `clock_sample()` reads both clocks back to back in the current generation, and `RxMeta::timestamp` is an `Ieee80211Stamp` that converts with a sample of its generation |
+| Lifecycle | `lifecycle(Enable / Disable / Quiesce)`, each with a terminal `LifecycleEvent`, and `cancel(TxId)`, whose terminal event is the attempt's completion; a failed command ends with `LifecycleEvent::Failed { command }` and leaves the port as it was |
+| Clock | `now()` (a ready future) is the `Ieee80211Instant` (`oer_time::RadioInstant` of the port's `Ieee80211Radio` domain) of receive timestamps; `clock_info()` states its resolution and `RadioEpoch` and converts to monotonic time; `clock_sample()` reads both clocks back to back in the current generation, and `RxMeta::timestamp` is an `Ieee80211Stamp` that converts with a sample of its generation |
 
-Every call but `next_event` is synchronous. The failure classes, `EventsLost`,
-`Poisoned`, the lifecycle vocabulary, `CancelError`, the `Correlation` trait
-`TxId` implements and `ClockInfo` are the shared ones of
-[`oer-radio-port`](../../../radio/port/README.md), re-exported here.
-Failures are `Rejected` (the inner `Err` of a call, or a `PortError` of that
-class, such as a backend that is not installed; a submission is refused only
-through its inner `Err`), `Recoverable`
-(`TxStatus::Aborted`, `TxStatus::Fault` or a `Recoverable` lifecycle
-failure) or `Poisoned` (`LowerMacEvent::Poisoned` after every earlier event,
-and an error of that class from every later call).
+The port extends the `RadioPort` base trait of
+[`oer-radio-port`](../../../radio/port/README.md) (`next_event`, `now`,
+`cancel`, `lifecycle`), whose calls return ready futures here; every other
+call is synchronous. `EventsLost`, `Poisoned`, the refusals, the lifecycle
+vocabulary, `CancelError`, the `Correlation` trait `TxId` implements and
+`ClockInfo` are the shared ones, re-exported here. Every call returns a
+`PortResult`: its inner `Err` is a refusal and nothing changed (a backend
+that is not installed included; a submission hands its attempt back); work
+that ends without its result ends as `TxStatus::Aborted`, `TxStatus::Fault`
+or a lifecycle `Failed`; the outer `Err` is only `Poisoned` with the
+backend's cause, returned by every call once the backend's state is unknown.
 
 Rules a caller relies on:
 
@@ -40,9 +41,9 @@ Rules a caller relies on:
   exchanges share it through `oer-ieee80211-upper-mac-service`'s
   `EventRouter`. Taking an event only dequeues it; a backend's timed work
   runs in its own runner, which the composition polls beside the consumer.
-- **Loss.** After `EventsLost`, an attempt whose completion has not arrived
-  is recovered by `cancel(id)`: an admitted cancel produces its completion,
-  a refusal as `CancelError::NotRunning` proves that it ended.
+- **Loss.** `EventsLost` stands for received frames and TBTTs only: every
+  admitted attempt still reports its completion. `cancel(id)` ends an
+  attempt; a refusal as `CancelError::NotRunning` proves that it ended.
 - **Queues.** Each of `tx_queues` transmit queues holds one attempt in flight;
   another attempt for the same queue is `Busy`. With four queues, queue `n`
   serves the access category of ACI `n`; with one, every category shares it

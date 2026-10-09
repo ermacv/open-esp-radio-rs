@@ -39,6 +39,7 @@ pub(crate) struct DtmRole {
 /// What the DTM role asks of the radio.
 pub(crate) enum DtmRadioWork<'s> {
     Request(RadioRequest<'s>),
+    Cancel(oer_bluetooth_radio::EventId),
     None,
 }
 
@@ -186,7 +187,7 @@ impl DtmRole {
                     DtmRadioWork::None
                 } else {
                     *cancelled = true;
-                    DtmRadioWork::Request(RadioRequest::Cancel(*id))
+                    DtmRadioWork::Cancel(*id)
                 }
             }
             Phase::Releasing(..) => DtmRadioWork::Request(RadioRequest::EndTest),

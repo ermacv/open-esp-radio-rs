@@ -5,10 +5,11 @@ use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, CorrelationIds, CslReceiver,
     EnergyScanRequest, EnhancedAckGeneration, EventsLost, FrameCounterUpdate, FrameView,
     Ieee802154Instant, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError,
-    LifecycleEvent, LinkMetrics, PendingTableHalf, ProbingInitiator, RadioCommand, RadioEvent,
-    RadioSetting, RadioState, ReceivedFrame, RequestId, ScheduledReceiveRequest, SettingError,
+    LifecycleEvent, LinkMetrics, PendingTableHalf, ProbingInitiator, RadioCommand, RadioEpoch,
+    RadioEvent, RadioSetting, ReceivedFrame, RequestId, ScheduledReceiveRequest, SettingError,
     TimeSync, TxMode, TxRequest, TxSecurity,
 };
+use oer_time::Clock;
 use openthread_radio::{
     AckSecurity, Capabilities, Config, CslConfig, ENH_ACK_PROBING_CAPACITY, EnhAckProbingConfig,
     MacCapabilities, MacKeys, PsduMeta, Radio, RadioCaps, RadioClock, RadioErrorKind, RadioRssi,
@@ -71,10 +72,9 @@ impl OpenThreadRadioDefaults {
 /// finishes in the backend; the next operation first waits for its end.
 ///
 /// The adapter is the port's one event consumer; the composition polls the
-/// backend's runner beside it. When the port reports [`EventsLost`], an
-/// operation whose terminal event may be in the gap is cancelled by its
-/// identity (or, without cancellation, judged by the radio's state), and a
-/// receive reports the lost frames to OpenThread as `RxFailed`.
+/// backend's runner beside it. The port never loses a terminal event, so
+/// [`EventsLost`] stands only for received frames: a receive reports them to
+/// OpenThread as `RxFailed`. A poisoned port fails every later operation.
 // CAPABILITY: ieee802154-product-stacks-thread
 pub struct OpenThreadRadio<'r, P: Ieee802154RadioPort, const QUEUE: usize> {
     port: &'r P,
@@ -116,14 +116,15 @@ struct Outgoing<'a> {
 enum Terminal<E> {
     Transmitted(E),
     Scanned(Option<i8>),
-    /// The event was lost with an overflow, or the radio faulted.
+    /// The radio faulted, or the port is poisoned.
     Lost,
 }
 
 impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEUE> {
     /// Drive `port`, which the composition started. OpenThread reads the
-    /// port's clock and live RSSI through [`PortClock`] and [`PortRssi`],
-    /// which the composition passes to its constructor.
+    /// radio clock through [`MonotonicRadioClock`] over the monotonic clock
+    /// the composition binds the port to, and the live RSSI through
+    /// [`PortRssi`]; the composition passes both to its constructor.
     pub const fn new(port: &'r P, defaults: OpenThreadRadioDefaults) -> Self {
         Self {
             port,
@@ -161,8 +162,14 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
     }
 
     /// The full radio-clock instant of a 32-bit OpenThread radio time.
-    fn radio_timestamp(&self, low: u32) -> Ieee802154Instant {
-        Ieee802154Instant::from_micros(radio_time(PortClock::new(self.port).now_micros(), low))
+    async fn radio_timestamp(&self, low: u32) -> Result<Ieee802154Instant, RadioErrorKind> {
+        match self.port.now().await {
+            Ok(Ok(now)) => Ok(Ieee802154Instant::from_micros(radio_time(
+                now.as_micros(),
+                low,
+            ))),
+            _ => Err(RadioErrorKind::Other),
+        }
     }
 
     /// A request identifier outside the backend-reserved range (the
@@ -171,44 +178,23 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
         self.ids.next()
     }
 
-    /// Whether the operation `id`, whose terminal event may have been lost,
-    /// still runs: a cancellation either ends it through its terminal event
-    /// or is refused because it already ended. A port without cancellation
-    /// is judged by its state.
-    fn still_running(&mut self, id: RequestId) -> bool {
-        let cancel = self.id();
-        match self.port.submit(RadioCommand::Cancel {
-            id: cancel,
-            target: id,
-        }) {
-            Ok(Ok(_)) => true,
-            Ok(Err(CommandError::Unsupported { .. })) => !matches!(
-                self.port.state(),
-                Ok(RadioState::Resting(_) | RadioState::Disabled) | Err(_)
-            ),
-            _ => false,
-        }
-    }
-
     /// Enable the radio through the port's lifecycle and wait for its
     /// terminal event, queueing frames meanwhile.
     async fn enable(&mut self) -> Result<(), RadioErrorKind> {
-        match self.port.lifecycle(LifecycleCommand::Enable) {
+        match self.port.lifecycle(LifecycleCommand::Enable).await {
             Ok(Ok(())) => {}
             Ok(Err(LifecycleError::AlreadyInState)) => return Ok(()),
             _ => return Err(RadioErrorKind::Other),
         }
         loop {
             let event = match self.port.next_event().await {
-                Ok(event) => event,
-                // The terminal may be in the gap: the state tells.
-                Err(EventsLost) => {
+                Ok(Ok(event)) => event,
+                // Only frames are lost; the terminal follows.
+                Ok(Err(EventsLost)) => {
                     self.receive_lost = true;
-                    return match self.port.state() {
-                        Ok(RadioState::Disabled) | Err(_) => Err(RadioErrorKind::Other),
-                        Ok(_) => Ok(()),
-                    };
+                    continue;
                 }
+                Err(_) => return Err(RadioErrorKind::Other),
             };
             match P::view(&event) {
                 RadioEvent::Received(_) => {
@@ -217,7 +203,7 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
                     }
                 }
                 RadioEvent::Lifecycle(LifecycleEvent::Enabled) => return Ok(()),
-                RadioEvent::Lifecycle(LifecycleEvent::Failed { .. }) | RadioEvent::Poisoned(_) => {
+                RadioEvent::Lifecycle(LifecycleEvent::Failed { .. }) => {
                     return Err(RadioErrorKind::Other);
                 }
                 _ => {}
@@ -244,16 +230,13 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
     async fn terminal(&mut self, id: RequestId) -> Terminal<P::Event> {
         loop {
             let event = match self.port.next_event().await {
-                Ok(event) => event,
-                // The terminal event may have been lost with the overflow:
-                // recover the operation by its identity.
-                Err(EventsLost) => {
+                Ok(Ok(event)) => event,
+                // Only frames are lost; the terminal follows.
+                Ok(Err(EventsLost)) => {
                     self.receive_lost = true;
-                    if self.still_running(id) {
-                        continue;
-                    }
-                    return Terminal::Lost;
+                    continue;
                 }
+                Err(_) => return Terminal::Lost,
             };
             match P::view(&event) {
                 RadioEvent::Received(_) => {
@@ -271,7 +254,7 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
                 RadioEvent::EnergyScanFailed { id: done } if done == id => {
                     return Terminal::Scanned(None);
                 }
-                RadioEvent::Fault { .. } | RadioEvent::Poisoned(_) => return Terminal::Lost,
+                RadioEvent::Fault { .. } => return Terminal::Lost,
                 // The end of an operation OpenThread abandoned earlier.
                 _ => {}
             }
@@ -327,9 +310,9 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
         // The threshold's presence asks for a CCA.
         // A delayed frame starts at its time (`esp_ieee802154_transmit_at`).
         let mode = match (tx_at, cca_threshold.is_some()) {
-            (Some(at), cca) => TxMode::Scheduled {
-                at: self.radio_timestamp(at),
-                cca,
+            (Some(at), cca) => match self.radio_timestamp(at).await {
+                Ok(at) => TxMode::Scheduled { at, cca },
+                Err(error) => return (Err(error), None),
             },
             (None, true) => TxMode::ClearChannelAssessment,
             (None, false) => TxMode::Direct,
@@ -397,6 +380,12 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
     type Error = RadioErrorKind;
 
     async fn init(&mut self) -> Result<RadioCaps, Self::Error> {
+        // OpenThread reads the radio time from the image's monotonic clock
+        // (`MonotonicRadioClock`), which is the port's only for a port in
+        // that epoch.
+        if self.port.clock_info().epoch != RadioEpoch::Monotonic {
+            return Err(RadioErrorKind::Other);
+        }
         self.settle().await;
         self.enable().await?;
         // The radio secures frames and enhanced ACKs with OpenThread's keys,
@@ -567,7 +556,7 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
         self.settle().await;
         let channel = channel(number)?;
         let id = self.id();
-        let start = self.radio_timestamp(start);
+        let start = self.radio_timestamp(start).await?;
         self.submit(RadioCommand::ScheduledReceive(ScheduledReceiveRequest {
             id,
             channel,
@@ -650,9 +639,8 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
                 return Err(RadioErrorKind::RxFailed);
             }
             match self.port.next_event().await {
-                Ok(event) => match P::view(&event) {
+                Ok(Ok(event)) => match P::view(&event) {
                     RadioEvent::Received(_) => break event,
-                    RadioEvent::Poisoned(_) => return Err(RadioErrorKind::Other),
                     // The end of an abandoned operation.
                     view => {
                         if let Some(id) = self.pending
@@ -662,16 +650,9 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
                         }
                     }
                 },
-                // Frames, and perhaps the end of an abandoned operation,
-                // are in the gap.
-                Err(EventsLost) => {
-                    if let Some(id) = self.pending
-                        && !self.still_running(id)
-                    {
-                        self.pending = None;
-                    }
-                    return Err(RadioErrorKind::RxFailed);
-                }
+                // Only frames are in the gap.
+                Ok(Err(EventsLost)) => return Err(RadioErrorKind::RxFailed),
+                Err(_) => return Err(RadioErrorKind::Other),
             }
         };
         match P::view(&event) {
@@ -715,37 +696,33 @@ fn terminal_of(event: RadioEvent<'_>) -> Option<RequestId> {
         | RadioEvent::ClearChannelAssessmentFailed { id }
         | RadioEvent::ScheduledReceiveDone { id } => Some(id),
         RadioEvent::Fault { id, .. } => id,
-        RadioEvent::Received(_) | RadioEvent::Lifecycle(_) | RadioEvent::Poisoned(_) => None,
+        RadioEvent::Received(_) | RadioEvent::Lifecycle(_) => None,
     }
 }
 
 #[cfg(test)]
 mod tests;
 
-/// The clock of an IEEE 802.15.4 radio port for OpenThread's synchronous
-/// `otPlatRadioGetNow` and `otPlatTimeGet`: the port's
-/// [`Ieee802154RadioPort::now`], the epoch of its scheduled operations and
-/// receive timestamps. Pass it to the OpenThread constructor with the port
+/// The radio clock for OpenThread's synchronous `otPlatRadioGetNow` and
+/// `otPlatTimeGet`: the monotonic clock the composition binds the port to.
+///
+/// [`OpenThreadRadio`]'s `init` refuses a port whose clock is not the
+/// image's monotonic clock ([`RadioEpoch::Monotonic`]), so this clock reads
+/// the port's radio time: the epoch of its scheduled operations and receive
+/// timestamps. Pass it to the OpenThread constructor with the port
 /// [`OpenThreadRadio`] drives.
-pub struct PortClock<'r, P>(&'r P);
+pub struct MonotonicRadioClock<C>(C);
 
-impl<'r, P: Ieee802154RadioPort> PortClock<'r, P> {
-    /// The clock of `port`.
-    pub const fn new(port: &'r P) -> Self {
-        Self(port)
+impl<C: Clock> MonotonicRadioClock<C> {
+    /// The radio time of a port whose epoch is `clock`'s.
+    pub const fn new(clock: C) -> Self {
+        Self(clock)
     }
 }
 
-impl<P: Ieee802154RadioPort> RadioClock for PortClock<'_, P> {
-    /// # Panics
-    ///
-    /// When the port's clock fails: a poisoned port is terminal, and
-    /// OpenThread has no way to hear of it, so no time is invented.
+impl<C: Clock> RadioClock for MonotonicRadioClock<C> {
     fn now_micros(&self) -> u64 {
-        match self.0.now() {
-            Ok(now) => now.as_micros(),
-            Err(_) => panic!("the IEEE 802.15.4 radio port's clock failed: the port is terminal"),
-        }
+        self.0.now().as_micros()
     }
 }
 
@@ -763,6 +740,6 @@ impl<'r, P: Ieee802154RadioPort> PortRssi<'r, P> {
 
 impl<P: Ieee802154RadioPort> RadioRssi for PortRssi<'_, P> {
     fn rssi(&self) -> Option<i8> {
-        self.0.recent_rssi().ok()
+        self.0.recent_rssi().ok().and_then(Result::ok)
     }
 }

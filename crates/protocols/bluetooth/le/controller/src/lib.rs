@@ -69,7 +69,7 @@ mod peripheral;
 mod planning;
 mod scanning;
 
-pub use controller::{ControllerBusy, LeController, LeControllerConfig, PLANNING_SLACK};
+pub use controller::{ControllerBusy, LeController, LeControllerConfig, PLANNING_SLACK, RadioWork};
 pub use oer_bluetooth_ll::control::LeVersionInformation;
 pub use output::{HCI_PACKET_CAPACITY, HciPacket};
 pub use planning::{

@@ -5,7 +5,7 @@ use oer_esp32s31_bluetooth_memory::BlePhyLe1MPacketStartCalibration;
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AccessAddress, AdvertisingChannel, AdvertisingChannels,
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
-    AdvertisingSetId, CoexistenceLevel, ConnectionConfiguration, ConnectionEvent,
+    AdvertisingSetId, CancelError, CoexistenceLevel, ConnectionConfiguration, ConnectionEvent,
     ConnectionEventTiming, ConnectionId, CrcInit, DataChannel, DataPdu, DataPduKind, EventId,
     EventResult, LeInstant, LePhy, LeWindow, RadioDuration, RadioOutcome, RadioRequest,
     RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration, ScannerId,
@@ -24,7 +24,7 @@ use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerExecutionModifyDisposition,
 };
 
-use super::{BluetoothRadio, BluetoothRadioSink, RadioStep};
+use super::{BluetoothRadio, BluetoothRadioSink, RadioFault, RadioStep};
 
 type Radio = BluetoothRadio<1, 1, 1, 1, 2, 3, 8>;
 
@@ -79,8 +79,12 @@ impl BluetoothRadioSink for Sink {
             }
             RadioOutcome::TransmitAcknowledged(connection) => Seen::Acknowledged(connection),
             RadioOutcome::TestReport { id, report } => Seen::Test(id, report),
-            RadioOutcome::Fault(_) | RadioOutcome::Poisoned(_) => Seen::Fault,
+            RadioOutcome::Lifecycle(_) => unreachable!("the radio reports no lifecycle terminal"),
         });
+    }
+
+    fn fault(&mut self, _: RadioFault) {
+        self.0.push(Seen::Fault);
     }
 }
 
@@ -113,18 +117,17 @@ const NONCONN: [u8; 8] = [0x02, 6, 1, 2, 3, 4, 5, 6];
 const ADV_IND: [u8; 8] = [0x00, 6, 1, 2, 3, 4, 5, 6];
 const SCAN_RSP: [u8; 8] = [0x04, 6, 1, 2, 3, 4, 5, 6];
 
-fn configure_legacy(radio: &mut Radio, sink: &mut Sink) {
+fn configure_legacy(radio: &mut Radio) {
     radio
-        .request(
-            RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+        .request(RadioRequest::ConfigureAdvertising(
+            AdvertisingConfiguration {
                 set: AdvertisingSetId::new(0),
                 pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
                 reception: AdvertisingReception::None,
                 tx_power: TxPower::from_dbm(0),
                 phy: LePhy::Le1M,
-            }),
-            sink,
-        )
+            },
+        ))
         .unwrap();
 }
 
@@ -168,12 +171,12 @@ fn the_timing_follows_the_scheduler_policy() {
 fn an_idle_scheduler_starts_at_the_first_channel_and_ends_the_event_once() {
     let mut radio = radio();
     let mut sink = Sink::default();
-    configure_legacy(&mut radio, &mut sink);
+    configure_legacy(&mut radio);
     radio
-        .request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink)
+        .request(advertise(1, 10_000, AdvertisingChannels::ALL))
         .unwrap();
     assert_eq!(
-        radio.request(advertise(2, 20_000, AdvertisingChannels::ALL), &mut sink),
+        radio.request(advertise(2, 20_000, AdvertisingChannels::ALL)),
         Err(RequestError::Busy)
     );
 
@@ -195,38 +198,34 @@ fn an_idle_scheduler_starts_at_the_first_channel_and_ends_the_event_once() {
     assert_eq!(sink.0, [Seen::Ended(EventId::new(1), true)]);
     // The set advertises again.
     radio
-        .request(advertise(2, 20_000, AdvertisingChannels::ALL), &mut sink)
+        .request(advertise(2, 20_000, AdvertisingChannels::ALL))
         .unwrap();
 }
 
 #[test]
 fn reservations_are_admitted_in_time_and_apart() {
     let mut radio = radio();
-    let mut sink = Sink::default();
-    configure_legacy(&mut radio, &mut sink);
+    configure_legacy(&mut radio);
     // The preparation lead and the admission guard do not fit before 100.
     assert_eq!(
-        radio.request(advertise(1, 100, AdvertisingChannels::ALL), &mut sink),
+        radio.request(advertise(1, 100, AdvertisingChannels::ALL)),
         Err(RequestError::TooLate)
     );
     assert_eq!(
-        radio.request(advertise(1, 1 << 31, AdvertisingChannels::ALL), &mut sink),
+        radio.request(advertise(1, 1 << 31, AdvertisingChannels::ALL)),
         Err(RequestError::TooFar)
     );
     radio
-        .request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink)
+        .request(advertise(1, 10_000, AdvertisingChannels::ALL))
         .unwrap();
     radio
-        .request(
-            RadioRequest::ConfigureScanner(ScannerConfiguration {
-                scan_type: ScanType::Passive,
-                filter_policy: ScanFilterPolicy::AcceptAll,
-                scanner: ScannerId::new(0),
-                tx_power: TxPower::from_dbm(0),
-                phy: LePhy::Le1M,
-            }),
-            &mut sink,
-        )
+        .request(RadioRequest::ConfigureScanner(ScannerConfiguration {
+            scan_type: ScanType::Passive,
+            filter_policy: ScanFilterPolicy::AcceptAll,
+            scanner: ScannerId::new(0),
+            tx_power: TxPower::from_dbm(0),
+            phy: LePhy::Le1M,
+        }))
         .unwrap();
     let scan = |start| {
         RadioRequest::Scan(ScanWindow {
@@ -236,13 +235,10 @@ fn reservations_are_admitted_in_time_and_apart() {
             window: window(start, 500),
         })
     };
+    assert_eq!(radio.request(scan(11_000)), Err(RequestError::Overlap));
+    radio.request(scan(13_200)).unwrap();
     assert_eq!(
-        radio.request(scan(11_000), &mut sink),
-        Err(RequestError::Overlap)
-    );
-    radio.request(scan(13_200), &mut sink).unwrap();
-    assert_eq!(
-        radio.request(RadioRequest::RemoveScanner(ScannerId::new(0)), &mut sink),
+        radio.request(RadioRequest::RemoveScanner(ScannerId::new(0))),
         Err(RequestError::Busy)
     );
 }
@@ -251,16 +247,13 @@ fn reservations_are_admitted_in_time_and_apart() {
 fn a_running_scheduler_inserts_one_item_per_transaction() {
     let mut radio = radio();
     let mut sink = Sink::default();
-    configure_legacy(&mut radio, &mut sink);
+    configure_legacy(&mut radio);
     radio
-        .request(
-            advertise(
-                1,
-                10_000,
-                AdvertisingChannels::new(true, true, false).unwrap(),
-            ),
-            &mut sink,
-        )
+        .request(advertise(
+            1,
+            10_000,
+            AdvertisingChannels::new(true, true, false).unwrap(),
+        ))
         .unwrap();
     for _ in 0..2 {
         let RadioStep::Transaction(step) = radio.drive(view(true), &mut sink) else {
@@ -343,16 +336,13 @@ fn finish_insertion(
 fn a_completion_observed_during_a_transaction_settles_when_it_finishes() {
     let mut radio = radio();
     let mut sink = Sink::default();
-    configure_legacy(&mut radio, &mut sink);
+    configure_legacy(&mut radio);
     radio
-        .request(
-            advertise(
-                1,
-                10_000,
-                AdvertisingChannels::new(true, true, false).unwrap(),
-            ),
-            &mut sink,
-        )
+        .request(advertise(
+            1,
+            10_000,
+            AdvertisingChannels::new(true, true, false).unwrap(),
+        ))
         .unwrap();
     let RadioStep::Transaction(first) = radio.drive(view(true), &mut sink) else {
         panic!("a running scheduler needs a live insertion")
@@ -375,17 +365,33 @@ fn a_completion_observed_during_a_transaction_settles_when_it_finishes() {
     );
 }
 
+/// Cancelling every scheduled event, as a port's `Disable` does, ends a
+/// waiting event at once and marks a listed one for its removal.
+#[test]
+fn cancel_all_withdraws_every_scheduled_event() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    configure_legacy(&mut radio);
+    radio
+        .request(advertise(1, 10_000, AdvertisingChannels::ALL))
+        .unwrap();
+    radio.cancel_all(&mut sink);
+    assert_eq!(sink.0, [Seen::Ended(EventId::new(1), false)]);
+    // Nothing is left to withdraw.
+    radio.cancel_all(&mut sink);
+    assert_eq!(sink.0.len(), 1);
+    assert_eq!(radio.next_uncancelled(), None);
+}
+
 #[test]
 fn a_waiting_event_is_cancelled_at_once_and_a_listed_one_on_the_next_drive() {
     let mut radio = radio();
     let mut sink = Sink::default();
-    configure_legacy(&mut radio, &mut sink);
+    configure_legacy(&mut radio);
     radio
-        .request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink)
+        .request(advertise(1, 10_000, AdvertisingChannels::ALL))
         .unwrap();
-    radio
-        .request(RadioRequest::Cancel(EventId::new(1)), &mut sink)
-        .unwrap();
+    radio.cancel(EventId::new(1), &mut sink).unwrap();
     assert_eq!(sink.0, [Seen::Ended(EventId::new(1), false)]);
     assert!(matches!(
         radio.drive(view(false), &mut sink),
@@ -393,17 +399,15 @@ fn a_waiting_event_is_cancelled_at_once_and_a_listed_one_on_the_next_drive() {
     ));
 
     radio
-        .request(advertise(2, 20_000, AdvertisingChannels::ALL), &mut sink)
+        .request(advertise(2, 20_000, AdvertisingChannels::ALL))
         .unwrap();
     let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
         panic!("the event starts")
     };
-    radio
-        .request(RadioRequest::Cancel(EventId::new(2)), &mut sink)
-        .unwrap();
+    radio.cancel(EventId::new(2), &mut sink).unwrap();
     assert_eq!(
-        radio.request(RadioRequest::Cancel(EventId::new(9)), &mut sink),
-        Err(RequestError::UnknownEvent)
+        radio.cancel(EventId::new(9), &mut sink),
+        Err(CancelError::NotRunning)
     );
     // The scheduler has stopped by now: the idle path republishes the head.
     let RadioStep::Transaction(step) = radio.drive(view(false), &mut sink) else {
@@ -422,18 +426,17 @@ fn a_directed_set_receives_without_a_scan_response() {
     // ADV_DIRECT_IND from a public advertiser to a random target.
     const ADV_DIRECT_IND: [u8; 14] = [0xa1, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0xcc];
     let mut radio = radio();
-    let mut sink = Sink::default();
+
     radio
-        .request(
-            RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+        .request(RadioRequest::ConfigureAdvertising(
+            AdvertisingConfiguration {
                 set: AdvertisingSetId::new(4),
                 pdu: AdvertisingPdu::new(&ADV_DIRECT_IND).unwrap(),
                 reception: AdvertisingReception::Report,
                 tx_power: TxPower::from_dbm(0),
                 phy: LePhy::Le1M,
-            }),
-            &mut sink,
-        )
+            },
+        ))
         .unwrap();
     let slot = &radio.connectable[0]
         .as_ref()
@@ -452,8 +455,8 @@ fn a_connectable_set_receives_its_requests() {
     let mut radio = radio();
     let mut sink = Sink::default();
     radio
-        .request(
-            RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+        .request(RadioRequest::ConfigureAdvertising(
+            AdvertisingConfiguration {
                 set: AdvertisingSetId::new(3),
                 pdu: AdvertisingPdu::new(&ADV_IND).unwrap(),
                 reception: AdvertisingReception::ScanResponse(
@@ -461,9 +464,8 @@ fn a_connectable_set_receives_its_requests() {
                 ),
                 tx_power: TxPower::from_dbm(0),
                 phy: LePhy::Le1M,
-            }),
-            &mut sink,
-        )
+            },
+        ))
         .unwrap();
     let event = |channels| {
         RadioRequest::Advertise(AdvertisingEvent {
@@ -478,8 +480,8 @@ fn a_connectable_set_receives_its_requests() {
     // Every primary channel gets its own item.
     {
         let mut all = self::radio();
-        all.request(
-            RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+        all.request(RadioRequest::ConfigureAdvertising(
+            AdvertisingConfiguration {
                 set: AdvertisingSetId::new(3),
                 pdu: AdvertisingPdu::new(&ADV_IND).unwrap(),
                 reception: AdvertisingReception::ScanResponse(
@@ -487,23 +489,20 @@ fn a_connectable_set_receives_its_requests() {
                 ),
                 tx_power: TxPower::from_dbm(0),
                 phy: LePhy::Le1M,
-            }),
-            &mut sink,
-        )
+            },
+        ))
         .unwrap();
-        all.request(event(AdvertisingChannels::ALL), &mut sink)
-            .unwrap();
+        all.request(event(AdvertisingChannels::ALL)).unwrap();
         assert_eq!(all.pending.iter().flatten().count(), 3);
         assert_eq!(
-            all.request(event(AdvertisingChannels::ALL), &mut sink),
+            all.request(event(AdvertisingChannels::ALL)),
             Err(RequestError::Busy)
         );
     }
     radio
-        .request(
-            event(AdvertisingChannels::single(AdvertisingChannel::Channel38)),
-            &mut sink,
-        )
+        .request(event(AdvertisingChannels::single(
+            AdvertisingChannel::Channel38,
+        )))
         .unwrap();
     let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
         panic!("the event starts")
@@ -570,17 +569,14 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
     let mut sink = Sink::default();
     let connection = ConnectionId::new(0);
     radio
-        .request(
-            RadioRequest::OpenConnection(ConnectionConfiguration {
-                connection,
-                access_address: AccessAddress([0xd4, 0xc3, 0xb2, 0xa1]),
-                crc_init: CrcInit([0x33, 0x22, 0x11]),
-                created_at: LeInstant::from_micros(1_000),
-                tx_power: TxPower::from_dbm(0),
-                phy: LePhy::Le1M,
-            }),
-            &mut sink,
-        )
+        .request(RadioRequest::OpenConnection(ConnectionConfiguration {
+            connection,
+            access_address: AccessAddress([0xd4, 0xc3, 0xb2, 0xa1]),
+            crc_init: CrcInit([0x33, 0x22, 0x11]),
+            created_at: LeInstant::from_micros(1_000),
+            tx_power: TxPower::from_dbm(0),
+            phy: LePhy::Le1M,
+        }))
         .unwrap();
     let event = |id, start, timing| {
         RadioRequest::ConnectionEvent(ConnectionEvent {
@@ -595,35 +591,26 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
         })
     };
     radio
-        .request(
-            RadioRequest::Transmit {
-                connection,
-                pdu: DataPdu::new(DataPduKind::Control, &[0x0c, 1]).unwrap(),
-            },
-            &mut sink,
-        )
+        .request(RadioRequest::Transmit {
+            connection,
+            pdu: DataPdu::new(DataPduKind::Control, &[0x0c, 1]).unwrap(),
+        })
         .unwrap();
     radio
-        .request(
-            event(
-                1,
-                10_000,
-                ConnectionEventTiming::First {
-                    transmit_window: RadioDuration::from_micros(1_250),
-                    timing_guard: RadioDuration::from_micros(50),
-                },
-            ),
-            &mut sink,
-        )
+        .request(event(
+            1,
+            10_000,
+            ConnectionEventTiming::First {
+                transmit_window: RadioDuration::from_micros(1_250),
+                timing_guard: RadioDuration::from_micros(50),
+            },
+        ))
         .unwrap();
     assert_eq!(
-        radio.request(
-            RadioRequest::Transmit {
-                connection,
-                pdu: DataPdu::new(DataPduKind::Start, &[1]).unwrap(),
-            },
-            &mut sink,
-        ),
+        radio.request(RadioRequest::Transmit {
+            connection,
+            pdu: DataPdu::new(DataPduKind::Start, &[1]).unwrap(),
+        }),
         Err(RequestError::Busy)
     );
     // Prepare the model capture before handing the item to hardware.
@@ -650,17 +637,14 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
         1_000
     ));
     radio
-        .request(
-            event(
-                2,
-                30_000,
-                ConnectionEventTiming::Recurring {
-                    receive_wait: RadioDuration::from_micros(500),
-                    widening: RadioDuration::from_micros(40),
-                },
-            ),
-            &mut sink,
-        )
+        .request(event(
+            2,
+            30_000,
+            ConnectionEventTiming::Recurring {
+                receive_wait: RadioDuration::from_micros(500),
+                widening: RadioDuration::from_micros(40),
+            },
+        ))
         .unwrap();
     let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
         panic!("the event starts")
@@ -675,7 +659,7 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
         ]
     );
     assert_eq!(
-        radio.request(RadioRequest::CloseConnection(connection), &mut sink),
+        radio.request(RadioRequest::CloseConnection(connection)),
         Ok(())
     );
 }
@@ -720,20 +704,17 @@ fn a_test_receiver_reports_before_its_end() {
     let mut radio = radio();
     let mut sink = Sink::default();
     radio
-        .request(
-            RadioRequest::TestReceive(TestReceive {
-                id: EventId::new(4),
-                channel: TestChannel::new(19).unwrap(),
-                phy: TestPhy::Le1M,
-                window: window(10_000, 1_000),
-                recurring: false,
-                tx_power: TxPower::from_dbm(0),
-            }),
-            &mut sink,
-        )
+        .request(RadioRequest::TestReceive(TestReceive {
+            id: EventId::new(4),
+            channel: TestChannel::new(19).unwrap(),
+            phy: TestPhy::Le1M,
+            window: window(10_000, 1_000),
+            recurring: false,
+            tx_power: TxPower::from_dbm(0),
+        }))
         .unwrap();
     assert_eq!(
-        radio.request(RadioRequest::EndTest, &mut sink),
+        radio.request(RadioRequest::EndTest),
         Err(RequestError::Busy)
     );
     let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
@@ -748,9 +729,9 @@ fn a_test_receiver_reports_before_its_end() {
             Seen::Ended(EventId::new(4), true)
         ]
     );
-    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+    radio.request(RadioRequest::EndTest).unwrap();
     assert_eq!(
-        radio.request(RadioRequest::EndTest, &mut sink),
+        radio.request(RadioRequest::EndTest),
         Err(RequestError::Unknown)
     );
 }
@@ -760,24 +741,19 @@ fn cancelling_a_running_test_stops_the_scheduler_instead_of_skipping_it() {
     let mut radio = radio();
     let mut sink = Sink::default();
     radio
-        .request(
-            RadioRequest::TestReceive(TestReceive {
-                id: EventId::new(4),
-                channel: TestChannel::new(19).unwrap(),
-                phy: TestPhy::Le1M,
-                window: window(10_000, 1_000),
-                recurring: true,
-                tx_power: TxPower::from_dbm(0),
-            }),
-            &mut sink,
-        )
+        .request(RadioRequest::TestReceive(TestReceive {
+            id: EventId::new(4),
+            channel: TestChannel::new(19).unwrap(),
+            phy: TestPhy::Le1M,
+            window: window(10_000, 1_000),
+            recurring: true,
+            tx_power: TxPower::from_dbm(0),
+        }))
         .unwrap();
     let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
         panic!("the test starts")
     };
-    radio
-        .request(RadioRequest::Cancel(EventId::new(4)), &mut sink)
-        .unwrap();
+    radio.cancel(EventId::new(4), &mut sink).unwrap();
     // While hardware runs the test, no cancellation hold starts: the
     // scheduler stops first, however often the radio is driven.
     for _ in 0..2 {
@@ -802,7 +778,7 @@ fn cancelling_a_running_test_stops_the_scheduler_instead_of_skipping_it() {
         [SchedulerAction::PublishHead(None)]
     );
     assert_eq!(sink.0, [Seen::Ended(EventId::new(4), false)]);
-    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+    radio.request(RadioRequest::EndTest).unwrap();
 }
 
 #[test]
@@ -810,17 +786,14 @@ fn a_test_disables_the_phy_route_and_its_end_restores_it() {
     let mut radio = radio();
     let mut sink = Sink::default();
     radio
-        .request(
-            RadioRequest::TestReceive(TestReceive {
-                id: EventId::new(4),
-                channel: TestChannel::new(19).unwrap(),
-                phy: TestPhy::Le1M,
-                window: window(10_000, 1_000),
-                recurring: false,
-                tx_power: TxPower::from_dbm(0),
-            }),
-            &mut sink,
-        )
+        .request(RadioRequest::TestReceive(TestReceive {
+            id: EventId::new(4),
+            channel: TestChannel::new(19).unwrap(),
+            phy: TestPhy::Le1M,
+            window: window(10_000, 1_000),
+            recurring: false,
+            tx_power: TxPower::from_dbm(0),
+        }))
         .unwrap();
     let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
         panic!("a test event starts with the route disabled")
@@ -832,7 +805,7 @@ fn a_test_disables_the_phy_route_and_its_end_restores_it() {
         radio.drive(view(false), &mut sink),
         RadioStep::Idle
     ));
-    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+    radio.request(RadioRequest::EndTest).unwrap();
     assert!(matches!(
         radio.drive(view(false), &mut sink),
         RadioStep::LeaveTest
@@ -848,17 +821,14 @@ fn a_test_event_stops_a_busy_scheduler_and_starts_as_the_list_head() {
     let mut radio = radio();
     let mut sink = Sink::default();
     radio
-        .request(
-            RadioRequest::TestReceive(TestReceive {
-                id: EventId::new(4),
-                channel: TestChannel::new(19).unwrap(),
-                phy: TestPhy::Le1M,
-                window: window(10_000, 1_000),
-                recurring: false,
-                tx_power: TxPower::from_dbm(0),
-            }),
-            &mut sink,
-        )
+        .request(RadioRequest::TestReceive(TestReceive {
+            id: EventId::new(4),
+            channel: TestChannel::new(19).unwrap(),
+            phy: TestPhy::Le1M,
+            window: window(10_000, 1_000),
+            recurring: false,
+            tx_power: TxPower::from_dbm(0),
+        }))
         .unwrap();
     // A busy scheduler takes no live insertion of a test event.
     assert!(matches!(
@@ -880,44 +850,39 @@ fn a_test_event_stops_a_busy_scheduler_and_starts_as_the_list_head() {
 #[test]
 fn configuration_errors_leave_the_radio_unchanged() {
     let mut radio = radio();
-    let mut sink = Sink::default();
-    configure_legacy(&mut radio, &mut sink);
+    let sink = Sink::default();
+    configure_legacy(&mut radio);
     assert_eq!(
-        radio.request(
-            RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+        radio.request(RadioRequest::ConfigureAdvertising(
+            AdvertisingConfiguration {
                 set: AdvertisingSetId::new(0),
                 pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
                 reception: AdvertisingReception::None,
                 tx_power: TxPower::from_dbm(0),
                 phy: LePhy::Le1M,
-            }),
-            &mut sink,
-        ),
+            }
+        )),
         Err(RequestError::AlreadyConfigured)
     );
     // The only legacy instance is taken.
     assert_eq!(
-        radio.request(
-            RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+        radio.request(RadioRequest::ConfigureAdvertising(
+            AdvertisingConfiguration {
                 set: AdvertisingSetId::new(1),
                 pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
                 reception: AdvertisingReception::None,
                 tx_power: TxPower::from_dbm(0),
                 phy: LePhy::Le1M,
-            }),
-            &mut sink,
-        ),
+            }
+        )),
         Err(RequestError::NoInstance)
     );
     assert_eq!(
-        radio.request(RadioRequest::RemoveScanner(ScannerId::new(0)), &mut sink),
+        radio.request(RadioRequest::RemoveScanner(ScannerId::new(0))),
         Err(RequestError::Unknown)
     );
     radio
-        .request(
-            RadioRequest::RemoveAdvertising(AdvertisingSetId::new(0)),
-            &mut sink,
-        )
+        .request(RadioRequest::RemoveAdvertising(AdvertisingSetId::new(0)))
         .unwrap();
     assert!(sink.0.is_empty());
     assert!(!sink.0.contains(&Seen::Fault));
@@ -926,32 +891,26 @@ fn configuration_errors_leave_the_radio_unchanged() {
 #[test]
 fn a_power_below_the_provider_table_is_refused_before_any_instance() {
     let mut radio = radio();
-    let mut sink = Sink::default();
+    let sink = Sink::default();
     assert_eq!(
-        radio.request(
-            RadioRequest::ConfigureScanner(ScannerConfiguration {
-                scan_type: ScanType::Passive,
-                filter_policy: ScanFilterPolicy::AcceptAll,
-                scanner: ScannerId::new(0),
-                tx_power: TxPower::from_dbm(-25),
-                phy: LePhy::Le1M,
-            }),
-            &mut sink,
-        ),
+        radio.request(RadioRequest::ConfigureScanner(ScannerConfiguration {
+            scan_type: ScanType::Passive,
+            filter_policy: ScanFilterPolicy::AcceptAll,
+            scanner: ScannerId::new(0),
+            tx_power: TxPower::from_dbm(-25),
+            phy: LePhy::Le1M,
+        })),
         Err(RequestError::Unsupported)
     );
     // The refusal took no scanner instance.
     radio
-        .request(
-            RadioRequest::ConfigureScanner(ScannerConfiguration {
-                scan_type: ScanType::Passive,
-                filter_policy: ScanFilterPolicy::AcceptAll,
-                scanner: ScannerId::new(0),
-                tx_power: TxPower::from_dbm(-24),
-                phy: LePhy::Le1M,
-            }),
-            &mut sink,
-        )
+        .request(RadioRequest::ConfigureScanner(ScannerConfiguration {
+            scan_type: ScanType::Passive,
+            filter_policy: ScanFilterPolicy::AcceptAll,
+            scanner: ScannerId::new(0),
+            tx_power: TxPower::from_dbm(-24),
+            phy: LePhy::Le1M,
+        }))
         .unwrap();
     assert!(sink.0.is_empty());
 }
@@ -988,11 +947,9 @@ fn a_stopped_scheduler_yields_the_bluetooth_quiescence_proof() {
 fn resuming_cancels_passed_events_and_restarts_the_rest() {
     let mut radio = radio();
     let mut sink = Sink::default();
-    configure_legacy(&mut radio, &mut sink);
+    configure_legacy(&mut radio);
     let single = AdvertisingChannels::single(AdvertisingChannel::Channel37);
-    radio
-        .request(advertise(1, 10_000, single), &mut sink)
-        .unwrap();
+    radio.request(advertise(1, 10_000, single)).unwrap();
     let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
         panic!("the event starts")
     };
@@ -1017,9 +974,7 @@ fn resuming_cancels_passed_events_and_restarts_the_rest() {
     );
     assert_eq!(sink.0.last(), Some(&Seen::Ended(EventId::new(1), false)));
 
-    radio
-        .request(advertise(2, 100_000, single), &mut sink)
-        .unwrap();
+    radio.request(advertise(2, 100_000, single)).unwrap();
     let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
         panic!("the event starts")
     };
@@ -1039,9 +994,9 @@ fn resuming_cancels_passed_events_and_restarts_the_rest() {
 fn a_reset_controller_returns_pools_free_for_the_next_epoch() {
     let mut radio = radio();
     let mut sink = Sink::default();
-    configure_legacy(&mut radio, &mut sink);
+    configure_legacy(&mut radio);
     radio
-        .request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink)
+        .request(advertise(1, 10_000, AdvertisingChannels::ALL))
         .unwrap();
     let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
         panic!("an idle scheduler starts at once")
@@ -1057,8 +1012,8 @@ fn a_reset_controller_returns_pools_free_for_the_next_epoch() {
         &ControllerTimeSample::for_validation(0),
         500,
     );
-    configure_legacy(&mut next, &mut sink);
-    next.request(advertise(2, 10_000, AdvertisingChannels::ALL), &mut sink)
+    configure_legacy(&mut next);
+    next.request(advertise(2, 10_000, AdvertisingChannels::ALL))
         .unwrap();
     let RadioStep::Start(_) = next.drive(view(false), &mut sink) else {
         panic!("the next epoch starts from free pools")
@@ -1081,10 +1036,10 @@ fn test_receive(id: u32, recurring: bool) -> RadioRequest<'static> {
 fn a_test_session_owns_the_link_layer_until_test_end() {
     let mut radio = radio();
     let mut sink = Sink::default();
-    configure_legacy(&mut radio, &mut sink);
-    radio.request(test_receive(4, false), &mut sink).unwrap();
+    configure_legacy(&mut radio);
+    radio.request(test_receive(4, false)).unwrap();
     assert_eq!(
-        radio.request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink),
+        radio.request(advertise(1, 10_000, AdvertisingChannels::ALL)),
         Err(RequestError::Busy)
     );
     let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
@@ -1092,10 +1047,10 @@ fn a_test_session_owns_the_link_layer_until_test_end() {
     };
     execute_all(&radio, 0);
     radio.complete(&mut sink);
-    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+    radio.request(RadioRequest::EndTest).unwrap();
     // Until the route is restored the session still owns the Link Layer.
     assert_eq!(
-        radio.request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink),
+        radio.request(advertise(1, 10_000, AdvertisingChannels::ALL)),
         Err(RequestError::Busy)
     );
     assert!(matches!(
@@ -1103,7 +1058,7 @@ fn a_test_session_owns_the_link_layer_until_test_end() {
         RadioStep::LeaveTest
     ));
     radio
-        .request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink)
+        .request(advertise(1, 10_000, AdvertisingChannels::ALL))
         .unwrap();
 }
 
@@ -1111,19 +1066,19 @@ fn a_test_session_owns_the_link_layer_until_test_end() {
 fn only_the_first_event_of_a_session_disables_the_route() {
     let mut radio = radio();
     let mut sink = Sink::default();
-    radio.request(test_receive(4, false), &mut sink).unwrap();
+    radio.request(test_receive(4, false)).unwrap();
     let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
         panic!("the first test event disables the route")
     };
     execute_all(&radio, 0);
     radio.complete(&mut sink);
-    radio.request(test_receive(5, true), &mut sink).unwrap();
+    radio.request(test_receive(5, true)).unwrap();
     let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
         panic!("a recurring test event keeps the disabled route")
     };
     execute_all(&radio, 0);
     radio.complete(&mut sink);
-    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+    radio.request(RadioRequest::EndTest).unwrap();
     assert!(matches!(
         radio.drive(view(false), &mut sink),
         RadioStep::LeaveTest
@@ -1134,11 +1089,9 @@ fn only_the_first_event_of_a_session_disables_the_route() {
 fn a_session_without_a_published_event_has_no_route_to_restore() {
     let mut radio = radio();
     let mut sink = Sink::default();
-    radio.request(test_receive(4, false), &mut sink).unwrap();
-    radio
-        .request(RadioRequest::Cancel(EventId::new(4)), &mut sink)
-        .unwrap();
-    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+    radio.request(test_receive(4, false)).unwrap();
+    radio.cancel(EventId::new(4), &mut sink).unwrap();
+    radio.request(RadioRequest::EndTest).unwrap();
     assert!(matches!(
         radio.drive(view(false), &mut sink),
         RadioStep::Idle
@@ -1148,14 +1101,12 @@ fn a_session_without_a_published_event_has_no_route_to_restore() {
 #[test]
 fn list_changes_edit_the_device_table_up_to_its_capacity() {
     let mut radio = radio();
-    let mut sink = Sink::default();
+    let sink = Sink::default();
     let device = |index: u8| AcceptListDevice {
         random: index.is_multiple_of(2),
         address: [index, 1, 2, 3, 4, 5],
     };
-    let mut change = |radio: &mut Radio, change| {
-        radio.request(RadioRequest::FilterAcceptList(change), &mut sink)
-    };
+    let change = |radio: &mut Radio, change| radio.request(RadioRequest::FilterAcceptList(change));
     for index in 0..12 {
         change(&mut radio, AcceptListChange::Add(device(index))).unwrap();
     }
@@ -1213,8 +1164,8 @@ fn a_failed_capture_preserves_the_pdu_and_settles_only_its_event() {
     let mut radio = radio();
     let mut sink = Sink::default();
     radio
-        .request(
-            RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+        .request(RadioRequest::ConfigureAdvertising(
+            AdvertisingConfiguration {
                 set: AdvertisingSetId::new(0),
                 pdu: AdvertisingPdu::new(&ADV_IND).unwrap(),
                 reception: AdvertisingReception::ScanResponse(
@@ -1222,14 +1173,11 @@ fn a_failed_capture_preserves_the_pdu_and_settles_only_its_event() {
                 ),
                 tx_power: TxPower::from_dbm(0),
                 phy: LePhy::Le1M,
-            }),
-            &mut sink,
-        )
+            },
+        ))
         .unwrap();
     let channels = AdvertisingChannels::single(AdvertisingChannel::Channel37);
-    radio
-        .request(advertise(7, 10_000, channels), &mut sink)
-        .unwrap();
+    radio.request(advertise(7, 10_000, channels)).unwrap();
     assert!(matches!(
         radio.drive(view(false), &mut sink),
         RadioStep::Start(_)
@@ -1264,9 +1212,7 @@ fn a_failed_capture_preserves_the_pdu_and_settles_only_its_event() {
         2,
         "terminal and receive resources settle once"
     );
-    radio
-        .request(advertise(8, 20_000, channels), &mut sink)
-        .unwrap();
+    radio.request(advertise(8, 20_000, channels)).unwrap();
     assert!(matches!(
         radio.drive(view(false), &mut sink),
         RadioStep::Start(_)

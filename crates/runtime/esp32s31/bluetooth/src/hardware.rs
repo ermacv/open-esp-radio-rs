@@ -35,7 +35,7 @@ pub enum RxChainPublicationError {
 /// finite operation; the runtime arranges every wait between them.
 pub trait BluetoothRadioHardware {
     /// Why the platform could not prepare the scheduler-run interrupts.
-    type StartError;
+    type StartError: Copy + core::fmt::Debug;
 
     /// Scheduler policy of this epoch.
     fn scheduler_config(&self) -> SchedulerSoftwareConfig;

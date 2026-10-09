@@ -9,12 +9,13 @@
 //! [`LowerMacModel::complete_with`] end the published attempt of a queue,
 //! and outcomes queued with [`LowerMacModel::respond`] end each attempt as
 //! soon as it is published, so a driver that awaits
-//! [`Ieee80211LowerMacPort::next_event`] runs without the test in between.
+//! [`RadioPort::next_event`] runs without the test in between.
 //! [`LowerMacModel::submitted`] records what each admitted attempt carried,
 //! each MPDU whole: the model copies a body after its header as it admits
 //! the attempt, and keeps the body's owner until the caller reclaims it.
 //! [`LowerMacModel::poison`] makes the backend's state unknown: the port
-//! reports its terminal event and refuses every later call.
+//! reports [`Poisoned`] with the cause [`ModelFault`] after its queued
+//! events and from every later call.
 //!
 //! Built for the crate's own tests and, with the `model` feature, for the
 //! tests of packages that drive the port. [`ModelAir`] joins several models
@@ -23,7 +24,7 @@
 use alloc::{collections::VecDeque, rc::Rc, vec, vec::Vec};
 use core::{
     cell::{Cell, RefCell},
-    future::Future,
+    future::{self, Future},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -41,7 +42,10 @@ use crate::*;
 mod air;
 pub use air::ModelAir;
 
-/// Events the model's queue holds before it reports a loss.
+/// Non-terminal events (received frames, TBTTs) the model's queue holds
+/// before it reports a loss. A terminal event (a completion, a lifecycle
+/// terminal) holds the slot its work reserved at admission and is never
+/// dropped.
 pub const MODEL_EVENT_CAPACITY: usize = 4;
 /// MPDU buffers the model lends at once.
 pub const MODEL_TX_BUFFERS: usize = 3;
@@ -100,8 +104,13 @@ pub enum ModelEvent {
     Tx(TxCompletion),
     Tbtt(TbttEvent),
     Lifecycle(LifecycleEvent),
-    /// The terminal event of a poisoned model.
-    Poisoned,
+}
+
+impl ModelEvent {
+    /// Whether the event ends admitted work, whose slot was reserved.
+    fn is_terminal(&self) -> bool {
+        matches!(self, Self::Tx(_) | Self::Lifecycle(_))
+    }
 }
 
 /// A received frame the model lends: the bytes the test queued. The model
@@ -317,7 +326,7 @@ struct State {
     /// Events in order, with a loss marker in place of the first event a
     /// full queue dropped.
     events: VecDeque<Result<ModelEvent, EventsLost>>,
-    /// Events the queue holds, loss markers apart.
+    /// Non-terminal events the queue holds.
     queued: usize,
     poisoned: bool,
     responses: VecDeque<ModelOutcome>,
@@ -326,7 +335,9 @@ struct State {
 
 impl State {
     fn push(&mut self, event: ModelEvent) {
-        if self.queued < MODEL_EVENT_CAPACITY {
+        if event.is_terminal() {
+            self.events.push_back(Ok(event));
+        } else if self.queued < MODEL_EVENT_CAPACITY {
             self.queued += 1;
             self.events.push_back(Ok(event));
         } else if !matches!(self.events.back(), Some(Err(EventsLost))) {
@@ -336,7 +347,7 @@ impl State {
 
     fn pop(&mut self) -> Option<Result<ModelEvent, EventsLost>> {
         let event = self.events.pop_front()?;
-        if event.is_ok() {
+        if event.as_ref().is_ok_and(|event| !event.is_terminal()) {
             self.queued -= 1;
         }
         Some(event)
@@ -405,15 +416,30 @@ impl<O: TxBody> Default for LowerMacModel<O> {
     }
 }
 
-/// The model was poisoned with [`LowerMacModel::poison`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ModelPoisoned;
-
-impl PortError for ModelPoisoned {
-    fn class(&self) -> FailureClass {
-        FailureClass::Poisoned
+/// The output of a model call that decides at once, as every
+/// [`RadioPort`] call of the model but [`RadioPort::next_event`] does.
+///
+/// # Panics
+///
+/// When the future is pending: the caller awaited an event the model has
+/// not produced.
+pub fn ready<F: Future>(future: F) -> F::Output {
+    let mut future = core::pin::pin!(future);
+    match future
+        .as_mut()
+        .poll(&mut Context::from_waker(core::task::Waker::noop()))
+    {
+        Poll::Ready(output) => output,
+        Poll::Pending => panic!("the model decides at once"),
     }
 }
+
+/// The cause of a poisoned model: [`LowerMacModel::poison`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModelFault;
+
+/// What every call of a poisoned model returns.
+const POISONED: Poisoned<ModelFault> = Poisoned { cause: ModelFault };
 
 impl<O: TxBody> LowerMacModel<O> {
     /// A model whose radio clock stands at the epoch.
@@ -457,8 +483,8 @@ impl<O: TxBody> LowerMacModel<O> {
     }
 
     /// Make the backend's state unknown: the events queued so far are still
-    /// reported, then the terminal [`LowerMacEvent::Poisoned`] at every
-    /// [`Ieee80211LowerMacPort::next_event`], and every other call fails.
+    /// reported, then [`Poisoned`] at every [`RadioPort::next_event`], and
+    /// every other call returns it at once.
     pub fn poison(&self) {
         self.state.borrow_mut().poisoned = true;
     }
@@ -478,10 +504,10 @@ impl<O: TxBody> LowerMacModel<O> {
 
     /// Whether a submission may be admitted: `Err` once poisoned, a refusal
     /// while uninstalled.
-    fn admitting(&self) -> Result<Option<SubmitError>, Poisoned> {
+    fn admitting(&self) -> Result<Option<SubmitError>, Poisoned<ModelFault>> {
         let state = self.state.borrow();
         if state.poisoned {
-            Err(Poisoned)
+            Err(POISONED)
         } else if state.uninstalled {
             Ok(Some(SubmitError::NotInstalled))
         } else {
@@ -489,11 +515,11 @@ impl<O: TxBody> LowerMacModel<O> {
         }
     }
 
-    /// Fail with [`ModelPoisoned`] once poisoned.
-    fn serving(&self) -> Result<core::cell::RefMut<'_, State>, ModelPoisoned> {
+    /// Fail with [`Poisoned`] once poisoned.
+    fn serving(&self) -> Result<core::cell::RefMut<'_, State>, Poisoned<ModelFault>> {
         let state = self.state.borrow_mut();
         if state.poisoned {
-            Err(ModelPoisoned)
+            Err(POISONED)
         } else {
             Ok(state)
         }
@@ -514,7 +540,7 @@ impl<O: TxBody> LowerMacModel<O> {
 
     /// Whether `vif` is configured with a role whose TBTT schedule the
     /// model programs.
-    fn tbtt_role(&self, vif: VifId) -> Result<Result<(), SettingError>, ModelPoisoned> {
+    fn tbtt_role(&self, vif: VifId) -> PortResult<(), SettingError, ModelFault> {
         let capabilities = self.beacon_timing_capabilities();
         Ok(match self.serving()?.vif(vif) {
             Some(config) if capabilities.tbtt.contains(config.role) => Ok(()),
@@ -776,28 +802,115 @@ impl<O: TxBody> LowerMacModel<O> {
     }
 }
 
-/// The future of [`LowerMacModel::next_event`]: ready while an event or a
-/// loss is queued. It registers no waker; a driver polls it again after the
+impl<O: TxBody> LowerMacModel<O> {
+    fn lifecycle_now(
+        &self,
+        command: LifecycleCommand,
+    ) -> PortResult<(), LifecycleError, ModelFault> {
+        let mut state = self.serving()?;
+        state.lifecycle_requests += 1;
+        Ok(match command {
+            LifecycleCommand::Enable if state.enabled => Err(LifecycleError::AlreadyInState),
+            LifecycleCommand::Enable if state.channel.is_none() => {
+                // Nothing to tune to: the command fails and the port stays
+                // disabled.
+                state.push(ModelEvent::Lifecycle(LifecycleEvent::Failed { command }));
+                Ok(())
+            }
+            LifecycleCommand::Enable => {
+                state.enabled = true;
+                state.push(ModelEvent::Lifecycle(LifecycleEvent::Enabled));
+                Ok(())
+            }
+            LifecycleCommand::Disable | LifecycleCommand::Quiesce if !state.enabled => {
+                Err(LifecycleError::AlreadyInState)
+            }
+            LifecycleCommand::Disable | LifecycleCommand::Quiesce => {
+                state.enabled = false;
+                while !state.in_flight.is_empty() {
+                    state.finish(0, ModelOutcome::Fail(TxStatus::Aborted));
+                }
+                state.push(ModelEvent::Lifecycle(
+                    if matches!(command, LifecycleCommand::Disable) {
+                        LifecycleEvent::Disabled
+                    } else {
+                        LifecycleEvent::Quiesced
+                    },
+                ));
+                Ok(())
+            }
+        })
+    }
+
+    fn cancel_now(&self, id: TxId) -> PortResult<(), CancelError, ModelFault> {
+        let mut state = self.serving()?;
+        Ok(
+            match state.in_flight.iter().position(|attempt| attempt.id == id) {
+                // A published attempt ends with its own completion.
+                Some(index) if state.in_flight[index].phase == Phase::Published => Ok(()),
+                Some(index) => {
+                    state.finish(index, ModelOutcome::Fail(TxStatus::Aborted));
+                    Ok(())
+                }
+                None => Err(CancelError::NotRunning),
+            },
+        )
+    }
+}
+
+/// The future of the model's [`RadioPort::next_event`]: ready while an
+/// event or a loss is queued, or once poisoned. It registers no waker; a driver polls it again after the
 /// test changed the model.
 pub struct NextModelEvent<'a, O>(&'a LowerMacModel<O>);
 
 impl<O> Future for NextModelEvent<'_, O> {
-    type Output = Result<ModelEvent, EventsLost>;
+    type Output = PortResult<ModelEvent, EventsLost, ModelFault>;
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
         let mut state = self.0.state.borrow_mut();
         match state.pop() {
-            Some(event) => Poll::Ready(event),
-            None if state.poisoned => Poll::Ready(Ok(ModelEvent::Poisoned)),
+            Some(event) => Poll::Ready(Ok(event)),
+            None if state.poisoned => Poll::Ready(Err(POISONED)),
             None => Poll::Pending,
         }
     }
 }
 
-impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
+impl<O: TxBody> RadioPort for LowerMacModel<O> {
     type Event = ModelEvent;
+    type Id = TxId;
+    type Domain = Ieee80211Radio;
+    type Fault = ModelFault;
+
+    fn next_event(
+        &self,
+    ) -> impl Future<Output = PortResult<ModelEvent, EventsLost, ModelFault>> + '_ {
+        NextModelEvent(self)
+    }
+
+    fn now(
+        &self,
+    ) -> impl Future<Output = PortResult<Ieee80211Instant, ClockError, ModelFault>> + '_ {
+        future::ready(self.serving().map(|_| Ok(self.now.get())))
+    }
+
+    fn cancel(
+        &self,
+        id: TxId,
+    ) -> impl Future<Output = PortResult<(), CancelError, ModelFault>> + '_ {
+        future::ready(self.cancel_now(id))
+    }
+
+    fn lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> impl Future<Output = PortResult<(), LifecycleError, ModelFault>> + '_ {
+        future::ready(self.lifecycle_now(command))
+    }
+}
+
+impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
     type RxBuffer = ModelRxBuffer;
-    type Error = ModelPoisoned;
     type TxBuffer = ModelBuffer;
     type TxBody = O;
 
@@ -817,7 +930,6 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
             ModelEvent::Tx(completion) => LowerMacEvent::TxCompleted(*completion),
             ModelEvent::Tbtt(_) => LowerMacEvent::Extension,
             ModelEvent::Lifecycle(event) => LowerMacEvent::Lifecycle(*event),
-            ModelEvent::Poisoned => LowerMacEvent::Poisoned(Poisoned),
         }
     }
 
@@ -831,15 +943,15 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
         ClockInfo::MONOTONIC_MICROS
     }
 
-    fn tx_buffer(&self, len: usize) -> Result<Option<ModelBuffer>, ModelPoisoned> {
+    fn tx_buffer(&self, len: usize) -> PortResult<Option<ModelBuffer>, NotInstalled, ModelFault> {
         let mut state = self.serving()?;
         if len > usize::from(MODEL_CAPABILITIES.max_mpdu_length)
             || state.buffers_lent == MODEL_TX_BUFFERS
         {
-            return Ok(None);
+            return Ok(Ok(None));
         }
         state.buffers_lent += 1;
-        Ok(Some(ModelBuffer(vec![0; len])))
+        Ok(Ok(Some(ModelBuffer(vec![0; len]))))
     }
 
     fn release_tx_buffer(&self, _buffer: ModelBuffer) {
@@ -849,7 +961,7 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
     fn submit(
         &self,
         mut attempt: MpduAttempt<ModelBuffer, O>,
-    ) -> SubmitResult<MpduAttempt<ModelBuffer, O>> {
+    ) -> SubmitResult<MpduAttempt<ModelBuffer, O>, ModelFault> {
         if let Some(refused) = self.admitting()? {
             return Ok(Err(Refused {
                 error: refused,
@@ -891,7 +1003,7 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
         &self,
         id: TxId,
         mut each: impl FnMut(usize, O),
-    ) -> Result<Result<(), ReclaimError>, ModelPoisoned> {
+    ) -> PortResult<(), ReclaimError, ModelFault> {
         let state = self.serving()?;
         if state.in_flight.iter().any(|attempt| attempt.id == id) {
             return Ok(Err(ReclaimError::Running));
@@ -913,11 +1025,7 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
         Ok(Ok(()))
     }
 
-    fn next_event(&self) -> impl Future<Output = Result<ModelEvent, EventsLost>> + '_ {
-        NextModelEvent(self)
-    }
-
-    fn apply(&self, setting: LowerMacSetting) -> Result<Result<(), SettingError>, ModelPoisoned> {
+    fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, ModelFault> {
         let mut state = self.serving()?;
         Ok(match setting {
             LowerMacSetting::Channel(channel) if MODEL_CAPABILITIES.supports_channel(channel) => {
@@ -1036,10 +1144,7 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
         })
     }
 
-    fn install_key(
-        &self,
-        key: KeyInstall<'_>,
-    ) -> Result<Result<KeyHandle, SettingError>, ModelPoisoned> {
+    fn install_key(&self, key: KeyInstall<'_>) -> PortResult<KeyHandle, SettingError, ModelFault> {
         let mut state = self.serving()?;
         if state.vif(key.vif).is_none() {
             return Ok(Err(SettingError::UnknownVif));
@@ -1054,83 +1159,22 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
         Ok(Ok(KeyHandle(slot as u8)))
     }
 
-    fn lifecycle(
-        &self,
-        command: LifecycleCommand,
-    ) -> Result<Result<(), LifecycleError>, ModelPoisoned> {
-        let mut state = self.serving()?;
-        state.lifecycle_requests += 1;
-        Ok(match command {
-            LifecycleCommand::Enable if state.enabled => Err(LifecycleError::AlreadyInState),
-            LifecycleCommand::Enable if state.channel.is_none() => {
-                // Nothing to tune to: the command fails and the port stays
-                // disabled.
-                state.push(ModelEvent::Lifecycle(LifecycleEvent::Failed {
-                    command,
-                    class: FailureClass::Recoverable,
-                }));
-                Ok(())
-            }
-            LifecycleCommand::Enable => {
-                state.enabled = true;
-                state.push(ModelEvent::Lifecycle(LifecycleEvent::Enabled));
-                Ok(())
-            }
-            LifecycleCommand::Disable | LifecycleCommand::Quiesce if !state.enabled => {
-                Err(LifecycleError::AlreadyInState)
-            }
-            LifecycleCommand::Disable | LifecycleCommand::Quiesce => {
-                state.enabled = false;
-                while !state.in_flight.is_empty() {
-                    state.finish(0, ModelOutcome::Fail(TxStatus::Aborted));
-                }
-                state.push(ModelEvent::Lifecycle(
-                    if matches!(command, LifecycleCommand::Disable) {
-                        LifecycleEvent::Disabled
-                    } else {
-                        LifecycleEvent::Quiesced
-                    },
-                ));
-                Ok(())
-            }
-        })
-    }
-
-    fn cancel(&self, id: TxId) -> Result<Result<(), CancelError>, ModelPoisoned> {
-        let mut state = self.serving()?;
-        Ok(
-            match state.in_flight.iter().position(|attempt| attempt.id == id) {
-                // A published attempt ends with its own completion.
-                Some(index) if state.in_flight[index].phase == Phase::Published => Ok(()),
-                Some(index) => {
-                    state.finish(index, ModelOutcome::Fail(TxStatus::Aborted));
-                    Ok(())
-                }
-                None => Err(CancelError::NotRunning),
-            },
-        )
-    }
-
-    fn now(&self) -> Result<Ieee80211Instant, ModelPoisoned> {
-        self.serving()?;
-        Ok(self.now.get())
-    }
-
     /// The model's clock is the monotonic clock: one reading is both, in
     /// the one generation the model has.
-    fn clock_sample(&self) -> Result<Ieee80211ClockSample, ModelPoisoned> {
-        let radio = self.now()?;
-        Ok(Ieee80211ClockSample {
+    fn clock_sample(&self) -> PortResult<Ieee80211ClockSample, ClockError, ModelFault> {
+        self.serving()?;
+        let radio = self.now.get();
+        Ok(Ok(Ieee80211ClockSample {
             radio,
             monotonic: oer_time::Instant::from_micros(radio.as_micros()),
             uncertainty: oer_time::Duration::ZERO,
             generation: 0,
-        })
+        }))
     }
 }
 
 impl<O: TxBody> LowerMacLiveRetune for LowerMacModel<O> {
-    fn retune_live(&self, channel: Channel) -> Result<Result<(), SettingError>, ModelPoisoned> {
+    fn retune_live(&self, channel: Channel) -> PortResult<(), SettingError, ModelFault> {
         {
             let state = self.serving()?;
             if !state.enabled || !state.in_flight.is_empty() {
@@ -1147,7 +1191,7 @@ impl<O: TxBody> LowerMacAirReservation for LowerMacModel<O> {
     fn submit_air_reservation(
         &self,
         attempt: AirReservationAttempt,
-    ) -> SubmitResult<AirReservationAttempt> {
+    ) -> SubmitResult<AirReservationAttempt, ModelFault> {
         if let Some(refused) = self.admitting()? {
             return Ok(Err(Refused {
                 error: refused,
@@ -1183,13 +1227,13 @@ impl<O: TxBody> LowerMacAmpdu for LowerMacModel<O> {
         MODEL_AMPDU
     }
 
-    fn ampdu_buffer(&self) -> Result<Option<ModelAmpdu<O>>, ModelPoisoned> {
+    fn ampdu_buffer(&self) -> PortResult<Option<ModelAmpdu<O>>, NotInstalled, ModelFault> {
         let mut state = self.serving()?;
         if state.ampdu_lent == MODEL_AMPDU_BUFFERS {
-            return Ok(None);
+            return Ok(Ok(None));
         }
         state.ampdu_lent += 1;
-        Ok(Some(ModelAmpdu::default()))
+        Ok(Ok(Some(ModelAmpdu::default())))
     }
 
     fn release_ampdu_buffer(&self, _buffer: ModelAmpdu<O>) {
@@ -1199,7 +1243,7 @@ impl<O: TxBody> LowerMacAmpdu for LowerMacModel<O> {
     fn submit_ampdu(
         &self,
         mut attempt: AmpduAttempt<ModelAmpdu<O>>,
-    ) -> SubmitResult<AmpduAttempt<ModelAmpdu<O>>> {
+    ) -> SubmitResult<AmpduAttempt<ModelAmpdu<O>>, ModelFault> {
         if let Some(refused) = self.admitting()? {
             return Ok(Err(Refused {
                 error: refused,
@@ -1266,7 +1310,7 @@ impl<O: TxBody> LowerMacBeaconTiming for LowerMacModel<O> {
         }
     }
 
-    fn tsf(&self, vif: VifId) -> Result<Result<VifTsf, SettingError>, ModelPoisoned> {
+    fn tsf(&self, vif: VifId) -> PortResult<VifTsf, SettingError, ModelFault> {
         let now = self.now.get();
         let state = self.serving()?;
         Ok(match state.vif(vif) {
@@ -1278,7 +1322,7 @@ impl<O: TxBody> LowerMacBeaconTiming for LowerMacModel<O> {
     /// The model's radio clock is the monotonic clock of one generation;
     /// the TSF relation's generation advances with every jump
     /// ([`TsfRelation`]).
-    fn tsf_sample(&self, vif: VifId) -> Result<Result<TsfSample, SettingError>, ModelPoisoned> {
+    fn tsf_sample(&self, vif: VifId) -> PortResult<TsfSample, SettingError, ModelFault> {
         let now = self.now.get();
         let state = self.serving()?;
         Ok(match state.vif(vif) {
@@ -1298,7 +1342,7 @@ impl<O: TxBody> LowerMacBeaconTiming for LowerMacModel<O> {
         })
     }
 
-    fn set_tsf(&self, tsf: VifTsf) -> Result<Result<(), SettingError>, ModelPoisoned> {
+    fn set_tsf(&self, tsf: VifTsf) -> PortResult<(), SettingError, ModelFault> {
         let now = self.now.get();
         let mut state = self.serving()?;
         Ok(match state.vif(tsf.vif) {
@@ -1318,11 +1362,11 @@ impl<O: TxBody> LowerMacBeaconTiming for LowerMacModel<O> {
         })
     }
 
-    fn set_tbtt(&self, schedule: TbttSchedule) -> Result<Result<(), SettingError>, ModelPoisoned> {
+    fn set_tbtt(&self, schedule: TbttSchedule) -> PortResult<(), SettingError, ModelFault> {
         self.tbtt_role(schedule.next.vif)
     }
 
-    fn stop_tbtt(&self, vif: VifId) -> Result<Result<(), SettingError>, ModelPoisoned> {
+    fn stop_tbtt(&self, vif: VifId) -> PortResult<(), SettingError, ModelFault> {
         self.tbtt_role(vif)
     }
 
@@ -1341,14 +1385,14 @@ impl<O: TxBody> LowerMacMonitor for LowerMacModel<O> {
         }
     }
 
-    fn set_monitor(&self, enabled: bool) -> Result<Result<(), SettingError>, ModelPoisoned> {
+    fn set_monitor(&self, enabled: bool) -> PortResult<(), SettingError, ModelFault> {
         self.serving()?.monitor = enabled;
         Ok(Ok(()))
     }
 }
 
 impl<O: TxBody> LowerMacCancelPublished for LowerMacModel<O> {
-    fn cancel_published(&self, id: TxId) -> Result<Result<(), CancelError>, ModelPoisoned> {
+    fn cancel_published(&self, id: TxId) -> PortResult<(), CancelError, ModelFault> {
         let mut state = self.serving()?;
         Ok(
             match state.in_flight.iter().position(|attempt| attempt.id == id) {

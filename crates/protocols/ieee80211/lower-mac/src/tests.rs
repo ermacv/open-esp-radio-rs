@@ -24,7 +24,7 @@ use oer_ieee80211_mac::{
 use crate::{
     model::{
         LowerMacModel, MODEL_CAPABILITIES as CAPABILITIES, MODEL_EVENT_CAPACITY as EVENT_CAPACITY,
-        MODEL_MAX_MPDU as MAX_MPDU, MODEL_TX_BUFFERS as BUFFERS, ModelBody, ModelBuffer,
+        MODEL_MAX_MPDU as MAX_MPDU, MODEL_TX_BUFFERS as BUFFERS, ModelBody, ModelBuffer, ready,
     },
     *,
 };
@@ -32,21 +32,28 @@ use crate::{
 /// The model with bodies a test owns.
 type Model = LowerMacModel<ModelBody>;
 
-/// Take the next event without an executor; `None` when none is ready.
-fn poll_event<P: Ieee80211LowerMacPort>(port: &P) -> Option<Result<P::Event, EventsLost>> {
-    let mut future = pin!(port.next_event());
-    match future
+/// Poll `future` once without an executor; `None` when it is pending.
+fn poll_once<F: Future>(future: F) -> Option<F::Output> {
+    match pin!(future)
         .as_mut()
         .poll(&mut Context::from_waker(Waker::noop()))
     {
-        Poll::Ready(event) => Some(event),
+        Poll::Ready(output) => Some(output),
         Poll::Pending => None,
     }
+}
+
+/// Take the next event without an executor; `None` when none is ready.
+fn poll_event<P: Ieee80211LowerMacPort>(
+    port: &P,
+) -> Option<PortResult<P::Event, EventsLost, P::Fault>> {
+    poll_once(port.next_event())
 }
 
 fn next<P: Ieee80211LowerMacPort>(port: &P) -> P::Event {
     poll_event(port)
         .expect("an event is ready")
+        .expect("the port is not poisoned")
         .expect("no event was lost")
 }
 
@@ -82,7 +89,7 @@ fn enabled_station() -> Model {
         model.apply(LowerMacSetting::Channel(channel_six())),
         Ok(Ok(()))
     );
-    assert_eq!(model.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
+    assert_eq!(ready(model.lifecycle(LifecycleCommand::Enable)), Ok(Ok(())));
     assert_eq!(
         Model::view(&next(&model)),
         LowerMacEvent::Lifecycle(LifecycleEvent::Enabled)
@@ -114,6 +121,7 @@ fn buffer<P: Ieee80211LowerMacPort>(port: &P, frame: &[u8]) -> P::TxBuffer {
     let mut buffer = port
         .tx_buffer(frame.len())
         .ok()
+        .and_then(Result::ok)
         .flatten()
         .expect("a free buffer");
     buffer.frame_mut().copy_from_slice(frame);
@@ -171,15 +179,15 @@ fn one_admitted_attempt_reports_exactly_one_completion_and_releases_its_buffer()
 #[test]
 fn buffers_are_bounded_and_an_unsubmitted_one_is_released() {
     let model = enabled_station();
-    assert_eq!(model.tx_buffer(MAX_MPDU + 1), Ok(None));
+    assert_eq!(model.tx_buffer(MAX_MPDU + 1), Ok(Ok(None)));
     let held: Vec<_> = (0..BUFFERS)
-        .map(|_| model.tx_buffer(24).unwrap().unwrap())
+        .map(|_| model.tx_buffer(24).unwrap().unwrap().unwrap())
         .collect();
-    assert_eq!(model.tx_buffer(24), Ok(None));
+    assert_eq!(model.tx_buffer(24), Ok(Ok(None)));
     for buffer in held {
         model.release_tx_buffer(buffer);
     }
-    assert!(model.tx_buffer(24).unwrap().is_some());
+    assert!(model.tx_buffer(24).unwrap().unwrap().is_some());
 }
 
 #[test]
@@ -207,7 +215,12 @@ fn a_port_without_its_backend_refuses_and_hands_the_attempt_and_body_back() {
         ..mpdu(&model, 2, 2)
     };
     model.poison();
-    assert_eq!(model.submit(late), Err(Poisoned));
+    assert_eq!(
+        model.submit(late),
+        Err(Poisoned {
+            cause: model::ModelFault
+        })
+    );
 }
 
 #[test]
@@ -302,8 +315,8 @@ fn values_outside_the_limits_are_refused_as_unsupported() {
 #[test]
 fn an_ampdu_completion_carries_the_block_ack() {
     let model = enabled_station();
-    let mut aggregate = model.ampdu_buffer().unwrap().unwrap();
-    assert_eq!(model.ampdu_buffer(), Ok(None));
+    let mut aggregate = model.ampdu_buffer().unwrap().unwrap().unwrap();
+    assert_eq!(model.ampdu_buffer(), Ok(Ok(None)));
     for sequence in [100, 101] {
         aggregate
             .push_mpdu(24, None)
@@ -329,14 +342,14 @@ fn an_ampdu_completion_carries_the_block_ack() {
             bitmap: 0b11,
         })
     );
-    assert!(model.ampdu_buffer().unwrap().is_some());
+    assert!(model.ampdu_buffer().unwrap().unwrap().is_some());
 }
 
 #[test]
 fn an_empty_aggregate_is_refused() {
     let model = enabled_station();
     let payload = AmpduPayload {
-        subframes: model.ampdu_buffer().unwrap().unwrap(),
+        subframes: model.ampdu_buffer().unwrap().unwrap().unwrap(),
         tid: 0,
         min_mpdu_start_spacing: 0,
     };
@@ -471,7 +484,7 @@ fn a_closed_gate_holds_attempts_and_cancel_ends_a_held_one() {
     assert_eq!(model.submit(voice), Ok(Ok(())));
     assert!(poll_event(&model).is_none());
 
-    assert_eq!(model.cancel(TxId(1)), Ok(Ok(())));
+    assert_eq!(ready(model.cancel(TxId(1))), Ok(Ok(())));
     let cancelled = next_completion(&model);
     assert_eq!(
         (cancelled.id, cancelled.status),
@@ -487,14 +500,17 @@ fn a_closed_gate_holds_attempts_and_cancel_ends_a_held_one() {
     );
     let released = next_completion(&model);
     assert_eq!((released.id, released.status), (TxId(2), TxStatus::Success));
-    assert_eq!(model.cancel(TxId(2)), Ok(Err(CancelError::NotRunning)));
+    assert_eq!(
+        ready(model.cancel(TxId(2))),
+        Ok(Err(CancelError::NotRunning))
+    );
 }
 
 #[test]
 fn cancel_of_a_published_attempt_ends_with_its_own_completion() {
     let model = enabled_station();
     assert_eq!(model.submit(mpdu(&model, 1, 1)), Ok(Ok(())));
-    assert_eq!(model.cancel(TxId(1)), Ok(Ok(())));
+    assert_eq!(ready(model.cancel(TxId(1))), Ok(Ok(())));
     assert!(poll_event(&model).is_none());
     model.complete(0, TxStatus::Success);
     assert_eq!(next_completion(&model).status, TxStatus::Success);
@@ -512,7 +528,10 @@ fn cancel_of_a_published_attempt_ends_with_its_own_completion() {
 #[test]
 fn quiesce_ends_with_its_terminal_event_and_stops_admission() {
     let model = enabled_station();
-    assert_eq!(model.lifecycle(LifecycleCommand::Quiesce), Ok(Ok(())));
+    assert_eq!(
+        ready(model.lifecycle(LifecycleCommand::Quiesce)),
+        Ok(Ok(()))
+    );
     assert_eq!(
         Model::view(&next(&model)),
         LowerMacEvent::Lifecycle(LifecycleEvent::Quiesced)
@@ -526,12 +545,11 @@ fn quiesce_ends_with_its_terminal_event_and_stops_admission() {
 #[test]
 fn a_failed_enable_is_a_recoverable_terminal_event() {
     let model = Model::new();
-    assert_eq!(model.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
+    assert_eq!(ready(model.lifecycle(LifecycleCommand::Enable)), Ok(Ok(())));
     assert_eq!(
         Model::view(&next(&model)),
         LowerMacEvent::Lifecycle(LifecycleEvent::Failed {
             command: LifecycleCommand::Enable,
-            class: FailureClass::Recoverable,
         })
     );
     // The port stayed disabled and can be enabled once it can tune.
@@ -539,7 +557,7 @@ fn a_failed_enable_is_a_recoverable_terminal_event() {
         .apply(LowerMacSetting::Channel(channel_six()))
         .unwrap()
         .unwrap();
-    assert_eq!(model.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
+    assert_eq!(ready(model.lifecycle(LifecycleCommand::Enable)), Ok(Ok(())));
     assert_eq!(
         Model::view(&next(&model)),
         LowerMacEvent::Lifecycle(LifecycleEvent::Enabled)
@@ -686,11 +704,29 @@ fn loss_is_reported_once_in_place_of_the_first_dropped_event() {
             })
         );
     }
-    assert!(matches!(poll_event(&model), Some(Err(EventsLost))));
+    assert!(matches!(poll_event(&model), Some(Ok(Err(EventsLost)))));
     assert!(poll_event(&model).is_none());
     // Events after the gap follow the marker.
     model.fire_tbtt(STATION);
     assert_eq!(Model::view(&next(&model)), LowerMacEvent::Extension);
+}
+
+#[test]
+fn a_completion_holds_the_slot_its_attempt_reserved_and_is_never_lost() {
+    let model = enabled_station();
+    assert_eq!(model.submit(mpdu(&model, 1, 1)), Ok(Ok(())));
+    // Non-terminal events fill the queue and overflow it.
+    for _ in 0..EVENT_CAPACITY + 1 {
+        model.fire_tbtt(STATION);
+    }
+    model.complete(0, TxStatus::Success);
+    for _ in 0..EVENT_CAPACITY {
+        assert_eq!(Model::view(&next(&model)), LowerMacEvent::Extension);
+    }
+    // The loss covers only the TBTT; the completion follows it.
+    assert!(matches!(poll_event(&model), Some(Ok(Err(EventsLost)))));
+    assert_eq!(next_completion(&model).id, TxId(1));
+    assert!(poll_event(&model).is_none());
 }
 
 #[test]
@@ -701,20 +737,20 @@ fn a_poisoned_port_reports_its_terminal_event_after_the_earlier_ones() {
     model.poison();
     // The completion produced before the fault is still reported.
     assert_eq!(next_completion(&model).id, TxId(1));
-    // Then the terminal event, at every call.
+    // Then the poisoning with its cause, at every call.
+    let poisoned = Poisoned {
+        cause: model::ModelFault,
+    };
     for _ in 0..2 {
-        assert_eq!(
-            Model::view(&next(&model)),
-            LowerMacEvent::Poisoned(Poisoned)
-        );
+        assert!(matches!(poll_event(&model), Some(Err(cause)) if cause == poisoned));
     }
-    let refused = model.tx_buffer(24).unwrap_err();
-    assert_eq!(refused.class(), FailureClass::Poisoned);
+    assert_eq!(model.tx_buffer(24).unwrap_err(), poisoned);
     assert_eq!(
-        model.lifecycle(LifecycleCommand::Disable),
-        Err(model::ModelPoisoned)
+        ready(model.lifecycle(LifecycleCommand::Disable)),
+        Err(poisoned)
     );
-    assert_eq!(model.cancel(TxId(1)), Err(model::ModelPoisoned));
+    assert_eq!(ready(model.cancel(TxId(1))), Err(poisoned));
+    assert_eq!(ready(model.now()), Err(poisoned));
 }
 
 #[test]
@@ -722,7 +758,7 @@ fn the_model_clock_is_monotonic_and_samples_one_reading() {
     let model = Model::new();
     assert_eq!(model.clock_info().epoch, RadioEpoch::Monotonic);
     model.set_now(Ieee80211Instant::from_micros(1_234));
-    let sample = model.clock_sample().unwrap();
+    let sample = model.clock_sample().unwrap().unwrap();
     assert_eq!(sample.radio, Ieee80211Instant::from_micros(1_234));
     assert_eq!(sample.monotonic.as_micros(), 1_234);
     assert_eq!(
@@ -782,12 +818,15 @@ fn beacon_timing_addresses_configured_interfaces_within_its_roles() {
 #[test]
 fn the_radio_clock_reads_the_time_the_test_sets() {
     let model = Model::new();
-    assert_eq!(model.now(), Ok(Ieee80211Instant::from_micros(0)));
+    assert_eq!(ready(model.now()), Ok(Ok(Ieee80211Instant::from_micros(0))));
     model.set_now(Ieee80211Instant::from_micros(250));
-    assert_eq!(model.now(), Ok(Ieee80211Instant::from_micros(250)));
     assert_eq!(
-        model.now(),
-        Ok(Ieee80211Instant::from_micros(250)),
+        ready(model.now()),
+        Ok(Ok(Ieee80211Instant::from_micros(250)))
+    );
+    assert_eq!(
+        ready(model.now()),
+        Ok(Ok(Ieee80211Instant::from_micros(250))),
         "time stands still until the test moves it"
     );
 }
@@ -976,7 +1015,7 @@ fn live_retuning_preserves_both_tsfs_configuration_and_completed_tx_ownership() 
         model.tsf_sample(STATION).unwrap().unwrap(),
         model.tsf_sample(ACCESS_POINT).unwrap().unwrap(),
     ];
-    let clock = model.clock_sample().unwrap();
+    let clock = model.clock_sample().unwrap().unwrap();
     let agreement = RxBlockAckAgreement {
         vif: STATION,
         peer: PEER,
@@ -1000,7 +1039,11 @@ fn live_retuning_preserves_both_tsfs_configuration_and_completed_tx_ownership() 
     let body = ModelBody(b"retained across the visit".to_vec());
     let mut outgoing = mpdu(&model, 1, 1);
     outgoing.key = KeySelector::Key(handle);
-    let mut frame = model.tx_buffer(24 + body.0.len()).unwrap().unwrap();
+    let mut frame = model
+        .tx_buffer(24 + body.0.len())
+        .unwrap()
+        .unwrap()
+        .unwrap();
     frame.frame_mut()[..24].copy_from_slice(&header(1));
     model.release_tx_buffer(outgoing.payload.frame);
     outgoing.payload.frame = frame;
@@ -1022,7 +1065,10 @@ fn live_retuning_preserves_both_tsfs_configuration_and_completed_tx_ownership() 
         assert_eq!(after.generation, before.generation);
         assert_eq!(after.tsf.at.as_micros(), before.tsf.at.as_micros() + 500);
     }
-    assert_eq!(model.clock_sample().unwrap().generation, clock.generation);
+    assert_eq!(
+        model.clock_sample().unwrap().unwrap().generation,
+        clock.generation
+    );
     assert_eq!(model.vif_config(STATION), Some(station_config()));
     assert_eq!(model.vif_config(ACCESS_POINT), Some(ap));
     assert_eq!(model.installed_keys(), [KeyScope::Pairwise { peer: PEER }]);
@@ -1052,7 +1098,9 @@ fn live_retuning_refuses_an_admitted_tx_or_a_disabled_port_without_changing_chan
     assert_eq!(model.in_flight(), 1);
     model.complete(0, TxStatus::Success);
     assert_eq!(next_completion(&model).status, TxStatus::Success);
-    model.lifecycle(LifecycleCommand::Disable).unwrap().unwrap();
+    ready(model.lifecycle(LifecycleCommand::Disable))
+        .unwrap()
+        .unwrap();
     assert_eq!(model.retune_live(away), Ok(Err(SettingError::Busy)));
     assert_eq!(model.channel(), Some(channel_six()));
 }
@@ -1194,7 +1242,10 @@ fn a_received_frame_is_the_backend_s_buffer_until_it_is_dropped() {
     assert_eq!(model.rx_buffers_lent(), 0);
 
     // Any other event comes back unchanged.
-    assert_eq!(model.lifecycle(LifecycleCommand::Disable), Ok(Ok(())));
+    assert_eq!(
+        ready(model.lifecycle(LifecycleCommand::Disable)),
+        Ok(Ok(()))
+    );
     let Err(event) = Model::into_received(next(&model)) else {
         panic!("a lifecycle event lends no frame");
     };
@@ -1229,7 +1280,7 @@ fn an_access_point_receives_the_probe_requests_it_answers() {
 fn a_body_travels_by_ownership_and_comes_back_once_its_attempt_ended() {
     let model = enabled_station();
     let body = ModelBody(b"payload".to_vec());
-    let mut frame = model.tx_buffer(24 + 7).unwrap().unwrap();
+    let mut frame = model.tx_buffer(24 + 7).unwrap().unwrap().unwrap();
     frame.frame_mut()[..24].copy_from_slice(&header(7));
     let payload = TxPayload {
         frame,
@@ -1268,7 +1319,7 @@ fn a_body_travels_by_ownership_and_comes_back_once_its_attempt_ended() {
 #[test]
 fn a_refused_attempt_keeps_its_body() {
     let model = enabled_station();
-    let mut frame = model.tx_buffer(30).unwrap().unwrap();
+    let mut frame = model.tx_buffer(30).unwrap().unwrap().unwrap();
     frame.frame_mut()[..24].copy_from_slice(&header(7));
     // A body longer than the MPDU leaves no header.
     let payload = TxPayload {
@@ -1288,7 +1339,7 @@ fn a_refused_attempt_keeps_its_body() {
 #[test]
 fn an_aggregate_s_bodies_come_back_by_subframe() {
     let model = enabled_station();
-    let mut aggregate = model.ampdu_buffer().unwrap().unwrap();
+    let mut aggregate = model.ampdu_buffer().unwrap().unwrap().unwrap();
     // A subframe without a body, then two with one.
     aggregate
         .push_mpdu(24, None)
@@ -1331,7 +1382,7 @@ fn an_aggregate_s_bodies_come_back_by_subframe() {
 fn access_point_on(channel: Channel) -> Model {
     let model = Model::new();
     assert_eq!(model.apply(LowerMacSetting::Channel(channel)), Ok(Ok(())));
-    assert_eq!(model.lifecycle(LifecycleCommand::Enable), Ok(Ok(())));
+    assert_eq!(ready(model.lifecycle(LifecycleCommand::Enable)), Ok(Ok(())));
     assert_eq!(
         Model::view(&next(&model)),
         LowerMacEvent::Lifecycle(LifecycleEvent::Enabled)

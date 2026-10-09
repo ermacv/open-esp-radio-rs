@@ -5,9 +5,9 @@ use core::future::Future;
 
 use oer_ieee80211_datapath::DestinationTxQueues;
 use oer_ieee80211_lower_mac::{
-    AmpduCapabilities, Channel, CoexPriority, FailureClass, KeySelector, LifecycleCommand,
-    LifecycleError, LowerMacSetting, MacAddress, PhyRate, ReceiveFilter, SettingError, TxPower,
-    VifId, VifRole,
+    AmpduCapabilities, Channel, ClockError, CoexPriority, KeySelector, LifecycleCommand,
+    LifecycleError, LowerMacSetting, MacAddress, PhyRate, Poisoned, ReceiveFilter, SettingError,
+    TxPower, VifId, VifRole,
 };
 use oer_ieee80211_mac::{
     ccmp::CcmpTxPacketNumberError,
@@ -22,7 +22,7 @@ use oer_ieee80211_upper_mac_service::{
     aggregate::PortAggregation,
     client::{
         PortBody, PortClient, PortClientConfig, PortClientCounters, PortClientEnv, PortClientError,
-        PortError, PortInput, PortRxBuffer,
+        PortFault, PortInput, PortRxBuffer,
     },
 };
 pub use oer_ieee80211_upper_mac_service::{EventRouter, PORT_BACKLOG, PORT_EXCHANGES};
@@ -131,24 +131,25 @@ pub struct PortStationConfig {
     pub retry_limit: u8,
 }
 
-/// Why a station operation over the port failed.
+/// Why a station operation over the port failed; `F` is the port's poison
+/// cause.
 #[derive(Debug, Eq, PartialEq)]
-pub enum PortLinkError<E> {
+pub enum PortLinkError<F> {
     /// The port is poisoned.
-    Port(E),
+    Poisoned(Poisoned<F>),
     /// An exchange ended without a report.
-    Tx(UpperMacTxError<E>),
+    Tx(UpperMacTxError<F>),
     /// The port refused a setting or a key.
     Setting(SettingError),
     /// The port refused a lifecycle command.
     Lifecycle(LifecycleError),
-    /// A lifecycle command failed.
-    LifecycleFailed(FailureClass),
-    /// The port lost events while a lifecycle command ran, its terminal
-    /// event possibly among them.
+    /// A lifecycle command failed and left the port as it was.
+    LifecycleFailed,
+    /// The router's lifecycle queue overflowed while a lifecycle command
+    /// ran, its terminal event possibly among the dropped ones.
     LifecycleLost,
-    /// The port reported its terminal poisoned event.
-    Poisoned,
+    /// The port's radio clock could not be read.
+    Clock(ClockError),
     /// A frame did not encode.
     Frame(StationFrameError),
     /// An Association Request did not encode.
@@ -164,16 +165,21 @@ pub enum PortLinkError<E> {
     Coexistence,
 }
 
-impl<E> From<PortClientError<E>> for PortLinkError<E> {
-    fn from(error: PortClientError<E>) -> Self {
+impl<F> From<Poisoned<F>> for PortLinkError<F> {
+    fn from(poisoned: Poisoned<F>) -> Self {
+        Self::Poisoned(poisoned)
+    }
+}
+
+impl<F> From<PortClientError<F>> for PortLinkError<F> {
+    fn from(error: PortClientError<F>) -> Self {
         match error {
-            PortClientError::Port(error) => Self::Port(error),
+            PortClientError::Poisoned(poisoned) => Self::Poisoned(poisoned),
             PortClientError::Tx(error) => Self::Tx(error),
             PortClientError::Setting(error) => Self::Setting(error),
             PortClientError::Lifecycle(error) => Self::Lifecycle(error),
-            PortClientError::LifecycleFailed(class) => Self::LifecycleFailed(class),
+            PortClientError::LifecycleFailed => Self::LifecycleFailed,
             PortClientError::LifecycleLost => Self::LifecycleLost,
-            PortClientError::Poisoned => Self::Poisoned,
             PortClientError::FrameTooShort => {
                 Self::Frame(StationFrameError::OutputTooSmall { required: 10 })
             }
@@ -269,7 +275,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         key: KeySelector,
         access_category: WmmAccessCategory,
         rate: PhyRate,
-    ) -> Result<TxReport, PortLinkError<PortError<X>>> {
+    ) -> Result<TxReport, PortLinkError<PortFault<X>>> {
         let coex = self.config.coex;
         Ok(self
             .client
@@ -287,7 +293,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         key: KeySelector,
         access_category: WmmAccessCategory,
         rate: PhyRate,
-    ) -> Result<TxReport, PortLinkError<PortError<X>>> {
+    ) -> Result<TxReport, PortLinkError<PortFault<X>>> {
         let coex = if self.coex.connection_frame(connection).await {
             CoexPriority::Elevated
         } else {
@@ -310,13 +316,13 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         &mut self,
         frames: AmpduFrames<'_, PortBody<X>>,
         request: TxRequest,
-    ) -> Result<TxReport, PortLinkError<PortError<X>>> {
+    ) -> Result<TxReport, PortLinkError<PortFault<X>>> {
         Ok(<X::Aggregation as PortAggregation<X>>::send(&mut self.client, frames, request).await?)
     }
 
     /// The next input the router already holds: a TBTT first, then a
     /// received frame. It never waits.
-    pub async fn try_input(&mut self) -> Option<PortInput<PortRxBuffer<X>>> {
+    pub async fn try_input(&mut self) -> Option<PortInput<PortRxBuffer<X>, PortFault<X>>> {
         self.client.try_input().await
     }
 
@@ -325,7 +331,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         &mut self,
         timer: &T,
         deadline: Instant,
-    ) -> Option<PortInput<PortRxBuffer<X>>> {
+    ) -> Option<PortInput<PortRxBuffer<X>, PortFault<X>>> {
         self.client.next_input(timer, deadline).await
     }
 
@@ -336,7 +342,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     }
 
     /// Apply one setting.
-    pub fn apply(&self, setting: LowerMacSetting) -> Result<(), PortLinkError<PortError<X>>> {
+    pub fn apply(&self, setting: LowerMacSetting) -> Result<(), PortLinkError<PortFault<X>>> {
         Ok(self.client.apply(setting)?)
     }
 
@@ -346,7 +352,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     pub fn install_edca(
         &mut self,
         parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         Ok(self.client.install_edca(parameters)?)
     }
 
@@ -355,13 +361,13 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         &self,
         bssid: Option<MacAddress>,
         receive: ReceiveFilter,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         Ok(self.client.configure(bssid, receive)?)
     }
 
     /// Tune to `channel`, disabling the port around it where the backend
     /// retunes only while disabled.
-    pub async fn retune(&mut self, channel: Channel) -> Result<(), PortLinkError<PortError<X>>> {
+    pub async fn retune(&mut self, channel: Channel) -> Result<(), PortLinkError<PortFault<X>>> {
         Ok(self.client.retune(channel).await?)
     }
 
@@ -369,7 +375,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     pub async fn lifecycle(
         &mut self,
         command: LifecycleCommand,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         Ok(self.client.lifecycle(command).await?)
     }
 }

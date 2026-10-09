@@ -70,5 +70,5 @@ pub use oer_esp32s31_ieee802154_esp_hal::{
 pub use system::{
     IEEE802154_EVENT_CAPACITY, Ieee802154FailStop, Ieee802154MaintenanceError, Ieee802154Parked,
     Ieee802154StartError, Ieee802154StartFailure, Ieee802154StopError, Ieee802154StopFailure,
-    Ieee802154System, Ieee802154SystemRuntime, ieee802154_interrupt, start,
+    Ieee802154System, Ieee802154SystemClock, Ieee802154SystemRuntime, ieee802154_interrupt, start,
 };

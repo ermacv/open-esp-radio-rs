@@ -4,22 +4,24 @@
 //! completes each operation at once and records the settings it received.
 
 use core::cell::RefCell;
+use core::convert::Infallible;
+use core::future::{Future, ready};
 use core::task::Poll;
 use std::{collections::VecDeque, vec, vec::Vec};
 
 use embassy_futures::block_on;
 use oer_ieee802154::{
-    AcceptedCommand, ClockInfo, CommandError, Configuration, CslReceiver, EnhancedAckGeneration,
-    EventsLost, FailureClass, FcsStatus, Frame, FrameCounterUpdate, FramePending,
-    Ieee802154Capabilities, Ieee802154Instant, Ieee802154RadioPort, Interface, LifecycleCommand,
-    LifecycleError, LifecycleEvent, LinkMetrics, MacKeys, PortError, ProbingInitiator,
-    RadioCapabilities, RadioCommand, RadioEvent, RadioSetting, RadioState, RadioStateMachine,
-    ReceivedFrame, RxMetadata, SecurityStatus, SentAcknowledgement, SettingError, TxSecurity,
-    TxStatus,
+    AcceptedCommand, CancelError, ClockError, ClockInfo, CommandError, Configuration, CslReceiver,
+    EnhancedAckGeneration, EventsLost, FcsStatus, Frame, FrameCounterUpdate, FramePending,
+    Ieee802154Capabilities, Ieee802154Instant, Ieee802154Radio, Ieee802154RadioPort, Interface,
+    LifecycleCommand, LifecycleError, LifecycleEvent, LinkMetrics, MacKeys, NotInstalled,
+    PortResult, ProbingInitiator, RadioCapabilities, RadioCommand, RadioEpoch, RadioEvent,
+    RadioPort, RadioSetting, RadioState, RadioStateMachine, ReceivedFrame, RequestId, RxMetadata,
+    SecurityStatus, SentAcknowledgement, SettingError, TxSecurity, TxStatus,
 };
 use openthread_radio::{
     CslConfig, EnhAckProbingConfig, EnhAckProbingInitiator, FrameCounterUpdate as OtCounter,
-    MacKeys as OtKeys, Radio, RadioClock as _, TxFrame,
+    MacKeys as OtKeys, Radio, RadioErrorKind, TxFrame,
 };
 
 use super::super::{OpenThreadRadio, OpenThreadRadioDefaults};
@@ -46,22 +48,14 @@ struct Recorded {
 
 struct Model {
     machine: RadioStateMachine,
+    /// The epoch the model's clock counts in.
+    epoch: RadioEpoch,
     events: VecDeque<Result<ModelEvent, EventsLost>>,
     recorded: Recorded,
 }
 
 /// A radio port without hardware.
 struct ModelPort(RefCell<Model>);
-
-/// The model never fails as a whole.
-#[derive(Debug)]
-struct Never;
-
-impl PortError for Never {
-    fn class(&self) -> FailureClass {
-        FailureClass::Rejected
-    }
-}
 
 const CAPABILITIES: RadioCapabilities = RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT
     .union(RadioCapabilities::ENERGY_SCAN)
@@ -77,6 +71,7 @@ impl ModelPort {
     fn new() -> Self {
         Self(RefCell::new(Model {
             machine: RadioStateMachine::new(CAPABILITIES),
+            epoch: RadioEpoch::Monotonic,
             events: VecDeque::new(),
             recorded: Recorded::default(),
         }))
@@ -91,7 +86,8 @@ impl ModelPort {
         model.events.push_back(Ok(ModelEvent::Other(event)));
     }
 
-    /// The port drops events: a loss marker follows the queued ones.
+    /// The port drops received frames: a loss marker follows the queued
+    /// events.
     fn lose(&self) {
         self.0.borrow_mut().events.push_back(Err(EventsLost));
     }
@@ -124,10 +120,70 @@ impl ModelPort {
     }
 }
 
-impl Ieee802154RadioPort for ModelPort {
-    type Event = ModelEvent;
-    type Error = Never;
+impl ModelPort {
+    fn start_lifecycle(&self, command: LifecycleCommand) -> Result<(), LifecycleError> {
+        let mut model = self.0.borrow_mut();
+        let (done, terminal) = match command {
+            LifecycleCommand::Enable => (model.machine.enable(), LifecycleEvent::Enabled),
+            LifecycleCommand::Disable => (
+                model.machine.disable().map(|_| ()),
+                LifecycleEvent::Disabled,
+            ),
+            LifecycleCommand::Quiesce => return Err(LifecycleError::InvalidState),
+        };
+        match done {
+            Ok(()) => {
+                model.recorded.lifecycle.push(command);
+                model
+                    .events
+                    .push_back(Ok(ModelEvent::Other(RadioEvent::Lifecycle(terminal))));
+                Ok(())
+            }
+            Err(CommandError::AlreadyEnabled) => Err(LifecycleError::AlreadyInState),
+            Err(_) => Err(LifecycleError::InvalidState),
+        }
+    }
+}
 
+/// The model never poisons.
+impl RadioPort for ModelPort {
+    type Event = ModelEvent;
+    type Id = RequestId;
+    type Domain = Ieee802154Radio;
+    type Fault = Infallible;
+
+    fn next_event(
+        &self,
+    ) -> impl Future<Output = PortResult<ModelEvent, EventsLost, Infallible>> + '_ {
+        core::future::poll_fn(|_| match self.0.borrow_mut().events.pop_front() {
+            Some(event) => Poll::Ready(Ok(event)),
+            None => Poll::Pending,
+        })
+    }
+
+    fn now(
+        &self,
+    ) -> impl Future<Output = PortResult<Ieee802154Instant, ClockError, Infallible>> + '_ {
+        ready(Ok(Ok(Ieee802154Instant::from_micros(1_000))))
+    }
+
+    /// Every operation completes at its admission.
+    fn cancel(
+        &self,
+        _: RequestId,
+    ) -> impl Future<Output = PortResult<(), CancelError, Infallible>> + '_ {
+        ready(Ok(Err(CancelError::NotRunning)))
+    }
+
+    fn lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> impl Future<Output = PortResult<(), LifecycleError, Infallible>> + '_ {
+        ready(Ok(self.start_lifecycle(command)))
+    }
+}
+
+impl Ieee802154RadioPort for ModelPort {
     fn view(event: &ModelEvent) -> RadioEvent<'_> {
         match event {
             ModelEvent::Received(frame, metadata) => RadioEvent::Received(ReceivedFrame {
@@ -145,33 +201,10 @@ impl Ieee802154RadioPort for ModelPort {
         }
     }
 
-    fn lifecycle(&self, command: LifecycleCommand) -> Result<Result<(), LifecycleError>, Never> {
-        let mut model = self.0.borrow_mut();
-        let (done, terminal) = match command {
-            LifecycleCommand::Enable => (model.machine.enable(), LifecycleEvent::Enabled),
-            LifecycleCommand::Disable => (
-                model.machine.disable().map(|_| ()),
-                LifecycleEvent::Disabled,
-            ),
-            LifecycleCommand::Quiesce => return Ok(Err(LifecycleError::InvalidState)),
-        };
-        Ok(match done {
-            Ok(()) => {
-                model.recorded.lifecycle.push(command);
-                model
-                    .events
-                    .push_back(Ok(ModelEvent::Other(RadioEvent::Lifecycle(terminal))));
-                Ok(())
-            }
-            Err(CommandError::AlreadyEnabled) => Err(LifecycleError::AlreadyInState),
-            Err(_) => Err(LifecycleError::InvalidState),
-        })
-    }
-
     fn submit(
         &self,
         command: RadioCommand<'_>,
-    ) -> Result<Result<AcceptedCommand, CommandError>, Never> {
+    ) -> PortResult<AcceptedCommand, CommandError, Infallible> {
         let mut model = self.0.borrow_mut();
         let accepted = match model.machine.admit(command) {
             Ok(accepted) => accepted,
@@ -219,27 +252,18 @@ impl Ieee802154RadioPort for ModelPort {
         Ok(Ok(accepted))
     }
 
-    async fn next_event(&self) -> Result<ModelEvent, EventsLost> {
-        core::future::poll_fn(|_| match self.0.borrow_mut().events.pop_front() {
-            Some(event) => Poll::Ready(event),
-            None => Poll::Pending,
-        })
-        .await
-    }
-
-    fn now(&self) -> Result<Ieee802154Instant, Never> {
-        Ok(Ieee802154Instant::from_micros(1_000))
-    }
-
     fn clock_info(&self) -> ClockInfo {
-        ClockInfo::MONOTONIC_MICROS
+        ClockInfo {
+            epoch: self.0.borrow().epoch,
+            ..ClockInfo::MONOTONIC_MICROS
+        }
     }
 
-    fn state(&self) -> Result<RadioState, Never> {
-        Ok(self.0.borrow().machine.state())
+    fn state(&self) -> PortResult<RadioState, NotInstalled, Infallible> {
+        Ok(Ok(self.0.borrow().machine.state()))
     }
 
-    fn apply(&self, setting: RadioSetting<'_>) -> Result<Result<(), SettingError>, Never> {
+    fn apply(&self, setting: RadioSetting<'_>) -> PortResult<(), SettingError, Infallible> {
         let recorded = &mut self.0.borrow_mut().recorded;
         match setting {
             RadioSetting::MacKeys {
@@ -271,17 +295,17 @@ impl Ieee802154RadioPort for ModelPort {
         Ok(Ok(()))
     }
 
-    fn frame_counter(&self, _: Interface) -> Result<Option<u32>, Never> {
-        Ok(self
+    fn frame_counter(&self, _: Interface) -> PortResult<Option<u32>, NotInstalled, Infallible> {
+        Ok(Ok(self
             .0
             .borrow()
             .recorded
             .keys
-            .map(|keys| keys.frame_counter()))
+            .map(|keys| keys.frame_counter())))
     }
 
-    fn recent_rssi(&self) -> Result<i8, Never> {
-        Ok(-71)
+    fn recent_rssi(&self) -> PortResult<i8, NotInstalled, Infallible> {
+        Ok(Ok(-71))
     }
 }
 
@@ -328,7 +352,6 @@ fn the_adapter_drives_a_host_model_port() {
             }
         )));
     }
-    assert_eq!(super::super::PortClock::new(&port).now_micros(), 1_000);
 
     block_on(radio.set_csl(CslConfig {
         period: 0x1_0005,
@@ -430,6 +453,17 @@ fn a_port_refusal_is_an_openthread_error() {
     );
     block_on(radio.init()).unwrap();
     assert_eq!(block_on(radio.set_receive(15)), Ok(()));
+}
+
+/// OpenThread reads the radio time from the image's monotonic clock, so a
+/// port whose clock counts in another epoch is refused.
+#[test]
+fn a_port_outside_the_monotonic_epoch_is_refused() {
+    let port = ModelPort::new();
+    port.0.borrow_mut().epoch = RadioEpoch::Unrelated;
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
+    assert_eq!(block_on(radio.init()), Err(RadioErrorKind::Other));
+    assert!(port.0.borrow().recorded.lifecycle.is_empty());
 }
 
 /// A loss of events reaches OpenThread as one failed reception after the

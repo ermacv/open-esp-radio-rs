@@ -35,10 +35,13 @@ Link Metrics subject (`Radio::set_enh_ack_probing`), and, with its
 
 ## Use
 
-Start the IEEE 802.15.4 composition, pass `PortClock::new(port)` and
-`PortRssi::new(port)` to the `OpenThread` constructor, which reads the
-port's own clock (`otPlatRadioGetNow`, `otPlatTimeGet`) and live RSSI
-(`otPlatRadioGetRssi`) through them, then hand the port to
+Start the IEEE 802.15.4 composition, pass
+`MonotonicRadioClock::new(clock)` over the monotonic clock the port counts
+in (the Espressif runtime's `Ieee802154Runtime::clock`) and
+`PortRssi::new(port)` to the `OpenThread` constructor, which reads the radio
+time (`otPlatRadioGetNow`, `otPlatTimeGet`) and the port's live RSSI
+(`otPlatRadioGetRssi`) through them; `init` refuses a port whose clock is
+not the image's monotonic clock (`RadioEpoch::Monotonic`), then hand the port to
 `OpenThreadRadio::new` with the transmit power, CCA threshold and receive
 sensitivity to report, and give the radio to the `openthread` crate. Poll
 the runtime's runner (`Ieee802154System::run`) beside it: the adapter is the

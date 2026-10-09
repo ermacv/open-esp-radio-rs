@@ -1,6 +1,7 @@
 //! The one consumer of a lower-MAC port's events.
 //!
-//! A port has exactly one consumer of [`Ieee80211LowerMacPort::next_event`].
+//! A port has exactly one consumer of its
+//! [`RadioPort::next_event`](oer_ieee80211_lower_mac::RadioPort::next_event).
 //! [`EventRouter::run`] is that consumer: it takes every event and
 //! dispatches it to the owner that waits for it, so several exchanges, a
 //! receive path and a lifecycle owner share one port:
@@ -16,10 +17,10 @@
 //!   ([`classify_sta_ap_rx`]);
 //! - lifecycle terminals go to a queue of their own, which the port's owner
 //!   reads ([`EventRouter::lifecycle`]);
-//! - [`EventsLost`] marks every registered exchange whose completion has not
-//!   arrived, which recovers by cancelling its attempt, and is reported in
-//!   order by each queue;
-//! - the terminal [`Poisoned`] event ends the router and every wait.
+//! - [`EventsLost`] is reported in order by every receive and extension
+//!   queue: the port reserves the slot of every completion and lifecycle
+//!   terminal, so only received frames and TBTTs are in a gap;
+//! - [`Poisoned`] ends the router and every wait.
 //!
 //! A bounded queue that overflows reports its own [`EventsLost`] in place of
 //! the first dropped entry. A completion no exchange registered, and a frame
@@ -32,29 +33,15 @@
 
 use core::{
     cell::RefCell,
-    future::{Future, poll_fn},
-    pin::pin,
+    future::poll_fn,
     task::{Poll, Waker},
 };
 
 use oer_ieee80211_lower_mac::{
     CorrelationIds, EventsLost, Ieee80211LowerMacPort, LifecycleEvent, LowerMacEvent, MacAddress,
-    Poisoned, TxCompletion, TxId, VifId, VifRole,
+    Poisoned, PortResult, TxCompletion, TxId, VifId, VifRole,
 };
 use oer_ieee80211_mac::vif::{StaApRxAddresses, StaApRxRoute, StaApVif, classify_sta_ap_rx};
-
-/// How a wait for an attempt's completion ended.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Awaited {
-    /// The attempt completed.
-    Completed(TxCompletion),
-    /// Events were lost before the completion arrived: the attempt may have
-    /// ended in the gap. Cancel it by its identity, then wait again or
-    /// [`EventRouter::resolve`] it.
-    Lost,
-    /// The port is poisoned.
-    Poisoned,
-}
 
 /// Every completion slot is registered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -133,7 +120,6 @@ fn route(routes: &[Option<Route>; ROUTER_VIFS], frame: &[u8]) -> Option<usize> {
 struct Waiter {
     id: TxId,
     completion: Option<TxCompletion>,
-    lost: bool,
     waker: Option<Waker>,
 }
 
@@ -216,7 +202,7 @@ impl<T, const N: usize> Ring<T, N> {
 /// Lifecycle terminals and extension events the router holds.
 const SMALL_QUEUE: usize = 4;
 
-struct State<E, const WAITERS: usize, const RX: usize> {
+struct State<E, F, const WAITERS: usize, const RX: usize> {
     waiters: [Option<Waiter>; WAITERS],
     queues: [Option<QueueWaiter>; WAITERS],
     routes: [Option<Route>; ROUTER_VIFS],
@@ -225,11 +211,7 @@ struct State<E, const WAITERS: usize, const RX: usize> {
     extension: [Ring<E, SMALL_QUEUE>; ROUTER_VIFS],
     /// Received frames no attached interface owns.
     unrouted: u32,
-    poisoned: bool,
-    /// How often the router found the port's queue empty.
-    idle: u32,
-    /// Waits that need the router to look at the port again.
-    router: Option<Waker>,
+    poisoned: Option<Poisoned<F>>,
     ids: CorrelationIds,
     unclaimed: u32,
 }
@@ -239,7 +221,7 @@ struct State<E, const WAITERS: usize, const RX: usize> {
 /// and `RX` the received frames waiting for the receive path.
 pub struct EventRouter<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> {
     port: &'p P,
-    state: RefCell<State<P::Event, WAITERS, RX>>,
+    state: RefCell<State<P::Event, P::Fault, WAITERS, RX>>,
 }
 
 impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
@@ -258,9 +240,7 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                 lifecycle: Ring::new(),
                 extension: core::array::from_fn(|_| Ring::new()),
                 unrouted: 0,
-                poisoned: false,
-                idle: 0,
-                router: None,
+                poisoned: None,
                 ids: CorrelationIds::starting_at(first_id),
                 unclaimed: 0,
             }),
@@ -308,8 +288,8 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
         self.state.borrow_mut().ids.next()
     }
 
-    /// Whether the port reported its terminal [`Poisoned`] event.
-    pub fn poisoned(&self) -> bool {
+    /// The port's [`Poisoned`], once it reported it.
+    pub fn poisoned(&self) -> Option<Poisoned<P::Fault>> {
         self.state.borrow().poisoned
     }
 
@@ -348,61 +328,54 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
         Ok(Attachment { router: self, vif })
     }
 
-    /// Take and dispatch the port's events until it reports its terminal
-    /// [`Poisoned`] event. Poll it for as long as the port is used, beside
-    /// the exchanges and the backend's own runner.
-    pub async fn run(&self) -> Poisoned {
+    /// Take and dispatch the port's events until it reports [`Poisoned`].
+    /// Poll it for as long as the port is used, beside the exchanges and
+    /// the backend's own runner.
+    pub async fn run(&self) -> Poisoned<P::Fault> {
         loop {
-            let event = {
-                let mut next = pin!(self.port.next_event());
-                poll_fn(|context| match next.as_mut().poll(context) {
-                    Poll::Ready(event) => Poll::Ready(event),
-                    Poll::Pending => {
-                        self.idle(context.waker());
-                        Poll::Pending
-                    }
-                })
-                .await
-            };
-            if self.dispatch(event).is_err() {
-                return Poisoned;
+            if let Err(poisoned) = self.dispatch(self.port.next_event().await) {
+                return poisoned;
             }
         }
     }
 
-    /// The port has nothing queued: every event produced so far is routed.
-    fn idle(&self, waker: &Waker) {
-        let mut state = self.state.borrow_mut();
-        state.idle = state.idle.wrapping_add(1);
-        state.router = Some(waker.clone());
-        for waiter in state.waiters.iter_mut().flatten() {
-            if let Some(waker) = waiter.waker.take() {
-                waker.wake();
-            }
-        }
-    }
-
-    fn dispatch(&self, event: Result<P::Event, EventsLost>) -> Result<(), Poisoned> {
+    fn dispatch(
+        &self,
+        event: PortResult<P::Event, EventsLost, P::Fault>,
+    ) -> Result<(), Poisoned<P::Fault>> {
         let mut state = self.state.borrow_mut();
         let event = match event {
-            Ok(event) => event,
-            Err(EventsLost) => {
-                for waiter in state.waiters.iter_mut().flatten() {
-                    if waiter.completion.is_none() {
-                        waiter.lost = true;
-                        if let Some(waker) = waiter.waker.take() {
-                            waker.wake();
-                        }
-                    }
-                }
+            Ok(Ok(event)) => event,
+            // Only received frames and TBTTs are in the gap.
+            Ok(Err(EventsLost)) => {
                 for queue in &mut state.received {
                     queue.mark_lost();
                 }
-                state.lifecycle.mark_lost();
                 for queue in &mut state.extension {
                     queue.mark_lost();
                 }
                 return Ok(());
+            }
+            Err(poisoned) => {
+                state.poisoned = Some(poisoned);
+                for waiter in state.queues.iter_mut().flatten() {
+                    if let Some(waker) = waiter.waker.take() {
+                        waker.wake();
+                    }
+                }
+                for waiter in state.waiters.iter_mut().flatten() {
+                    if let Some(waker) = waiter.waker.take() {
+                        waker.wake();
+                    }
+                }
+                for queue in &mut state.received {
+                    queue.wake();
+                }
+                state.lifecycle.wake();
+                for queue in &mut state.extension {
+                    queue.wake();
+                }
+                return Err(poisoned);
             }
         };
         match P::view(&event) {
@@ -432,27 +405,6 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                 Some(index) => state.extension[index].push(event),
                 None => state.unrouted = state.unrouted.saturating_add(1),
             },
-            LowerMacEvent::Poisoned(Poisoned) => {
-                state.poisoned = true;
-                for waiter in state.queues.iter_mut().flatten() {
-                    if let Some(waker) = waiter.waker.take() {
-                        waker.wake();
-                    }
-                }
-                for waiter in state.waiters.iter_mut().flatten() {
-                    if let Some(waker) = waiter.waker.take() {
-                        waker.wake();
-                    }
-                }
-                for queue in &mut state.received {
-                    queue.wake();
-                }
-                state.lifecycle.wake();
-                for queue in &mut state.extension {
-                    queue.wake();
-                }
-                return Err(Poisoned);
-            }
         }
         Ok(())
     }
@@ -470,74 +422,35 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
         *slot = Some(Waiter {
             id,
             completion: None,
-            lost: false,
             waker: None,
         });
         Ok(Registration { router: self, id })
     }
 
-    /// Wait for the completion of a registered attempt. [`Awaited::Lost`]
-    /// is reported once per loss.
-    pub async fn completion(&self, id: TxId) -> Awaited {
+    /// Wait for the completion of a registered attempt; [`Poisoned`] once
+    /// the port is. The port reserves the completion's slot when it admits
+    /// the attempt, so it is never lost.
+    ///
+    /// # Panics
+    ///
+    /// When `id` is not registered.
+    pub async fn completion(&self, id: TxId) -> Result<TxCompletion, Poisoned<P::Fault>> {
         poll_fn(|context| {
             let mut state = self.state.borrow_mut();
             let poisoned = state.poisoned;
-            let Some(waiter) = state
+            let waiter = state
                 .waiters
                 .iter_mut()
                 .flatten()
                 .find(|waiter| waiter.id == id)
-            else {
-                return Poll::Ready(Awaited::Lost);
-            };
+                .expect("a registered attempt");
             if let Some(completion) = waiter.completion.take() {
-                return Poll::Ready(Awaited::Completed(completion));
+                return Poll::Ready(Ok(completion));
             }
-            if poisoned {
-                return Poll::Ready(Awaited::Poisoned);
-            }
-            if core::mem::take(&mut waiter.lost) {
-                return Poll::Ready(Awaited::Lost);
+            if let Some(poisoned) = poisoned {
+                return Poll::Ready(Err(poisoned));
             }
             waiter.waker = Some(context.waker().clone());
-            Poll::Pending
-        })
-        .await
-    }
-
-    /// Decide an attempt whose cancellation was refused as not running
-    /// after a loss: its completion, if the router still takes it from the
-    /// port, or `None` once the port's queue was empty without it.
-    pub async fn resolve(&self, id: TxId) -> Option<TxCompletion> {
-        let start = {
-            let mut state = self.state.borrow_mut();
-            // Make the router look at the port again.
-            if let Some(router) = state.router.take() {
-                router.wake();
-            }
-            state.idle
-        };
-        poll_fn(|context| {
-            let mut state = self.state.borrow_mut();
-            let idle = state.idle;
-            let Some(waiter) = state
-                .waiters
-                .iter_mut()
-                .flatten()
-                .find(|waiter| waiter.id == id)
-            else {
-                return Poll::Ready(None);
-            };
-            if let Some(completion) = waiter.completion.take() {
-                return Poll::Ready(Some(completion));
-            }
-            if idle != start {
-                return Poll::Ready(None);
-            }
-            waiter.waker = Some(context.waker().clone());
-            if let Some(router) = state.router.take() {
-                router.wake();
-            }
             Poll::Pending
         })
         .await
@@ -550,7 +463,7 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
     pub async fn received(&self, vif: VifId) -> Option<Result<P::Event, EventsLost>> {
         poll_fn(|context| {
             let mut state = self.state.borrow_mut();
-            let poisoned = state.poisoned;
+            let poisoned = state.poisoned.is_some();
             let Some(queue) = state.received.get_mut(usize::from(vif.0)) else {
                 return Poll::Ready(None);
             };
@@ -571,7 +484,7 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
     pub async fn lifecycle(&self) -> Option<Result<LifecycleEvent, EventsLost>> {
         poll_fn(|context| {
             let mut state = self.state.borrow_mut();
-            let poisoned = state.poisoned;
+            let poisoned = state.poisoned.is_some();
             let queue = &mut state.lifecycle;
             match queue.take() {
                 Some(entry) => Poll::Ready(Some(entry)),
@@ -591,7 +504,7 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
     pub async fn extension(&self, vif: VifId) -> Option<Result<P::Event, EventsLost>> {
         poll_fn(|context| {
             let mut state = self.state.borrow_mut();
-            let poisoned = state.poisoned;
+            let poisoned = state.poisoned.is_some();
             let Some(queue) = state.extension.get_mut(usize::from(vif.0)) else {
                 return Poll::Ready(None);
             };
@@ -625,11 +538,11 @@ pub(crate) struct TxQueueLease<
 impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
     TxQueueLease<'_, '_, P, WAITERS, RX>
 {
-    pub(crate) async fn ready(&self) -> Result<(), Poisoned> {
+    pub(crate) async fn ready(&self) -> Result<(), Poisoned<P::Fault>> {
         poll_fn(|context| {
             let mut state = self.router.state.borrow_mut();
-            if state.poisoned {
-                return Poll::Ready(Err(Poisoned));
+            if let Some(poisoned) = state.poisoned {
+                return Poll::Ready(Err(poisoned));
             }
             let waiter = state.queues[self.slot]
                 .as_mut()
@@ -670,7 +583,7 @@ impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
     }
 }
 
-impl<E, const WAITERS: usize, const RX: usize> State<E, WAITERS, RX> {
+impl<E, F, const WAITERS: usize, const RX: usize> State<E, F, WAITERS, RX> {
     /// The station interface attached, or the only interface.
     fn station(&self) -> Option<usize> {
         let mut attached = self
@@ -766,7 +679,7 @@ impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::task::Context;
+    use core::{future::Future, pin::pin, task::Context};
     use oer_ieee80211_lower_mac::model::LowerMacModel;
     use std::{
         sync::{
@@ -830,7 +743,11 @@ mod tests {
         assert!(poll(waiting.ready()).is_pending());
         assert!(matches!(router.queue(1), Err(RouterFull)));
         model.poison();
-        assert_eq!(poll(router.run()), Poll::Ready(Poisoned));
-        assert_eq!(poll(waiting.ready()), Poll::Ready(Err(Poisoned)));
+        let poisoned = Poisoned {
+            cause: oer_ieee80211_lower_mac::model::ModelFault,
+        };
+        assert_eq!(poll(router.run()), Poll::Ready(poisoned));
+        assert_eq!(poll(waiting.ready()), Poll::Ready(Err(poisoned)));
+        assert_eq!(router.poisoned(), Some(poisoned));
     }
 }

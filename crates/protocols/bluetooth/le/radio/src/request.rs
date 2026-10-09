@@ -406,7 +406,7 @@ pub enum TestPhy {
 /// A backend reserves `[anchor - preparation_lead, window end)` for every
 /// event and refuses an event whose reservation starts less than
 /// `admission_guard` after the current time.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RadioTiming {
     /// Time the backend prepares the radio before an anchor.
     pub preparation_lead: RadioDuration,
@@ -415,6 +415,27 @@ pub struct RadioTiming {
     /// How the backend listens around connection anchors.
     pub connection: ConnectionAllowances,
 }
+
+impl RadioTiming {
+    /// No lead, guard or allowance: the timing of a backend that schedules
+    /// nothing.
+    pub const ZERO: Self = Self {
+        preparation_lead: ZERO,
+        admission_guard: ZERO,
+        connection: ConnectionAllowances {
+            local_sleep_clock_ppm: 0,
+            widening_jitter: ZERO,
+            receive_guard: ZERO,
+            receive_tail: ZERO,
+            boundary_guard: ZERO,
+            first_event_guard: ZERO,
+            event_length: ZERO,
+            first_event_length: ZERO,
+        },
+    };
+}
+
+const ZERO: RadioDuration = RadioDuration::from_micros(0);
 
 /// The backend's allowances around a connection anchor, which the planner
 /// adds to the Link Layer's own window widening.
@@ -427,7 +448,7 @@ pub struct RadioTiming {
 /// The first event listens across `T` widened by `first_event_guard` on each
 /// side and occupies the air from `A - first_event_guard - boundary_guard`
 /// to `A + T + first_event_length`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ConnectionAllowances {
     /// Worst-case accuracy of the local sleep clock, in parts per million.
     pub local_sleep_clock_ppm: u16,
@@ -511,8 +532,6 @@ pub enum RadioRequest<'data> {
     TestReceive(TestReceive),
     /// End Direct Test Mode after its last event ended.
     EndTest,
-    /// Withdraw a scheduled event. Its outcome still follows.
-    Cancel(EventId),
     /// Change the filter accept list.
     FilterAcceptList(AcceptListChange),
 }
@@ -520,6 +539,13 @@ pub enum RadioRequest<'data> {
 /// Why the backend refused a request. Nothing changed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RequestError {
+    /// No backend is installed.
+    NotInstalled,
+    /// The port is disabled or quiesced: it admits no work until `Enable`.
+    Disabled,
+    /// The backend could not read its clock to admit the request; a later
+    /// request may succeed.
+    ClockUnavailable,
     /// No instance of the role is free.
     NoInstance,
     /// The set, scanner or connection is not configured.
@@ -536,8 +562,6 @@ pub enum RequestError {
     TooFar,
     /// The backend does not implement this form of the request.
     Unsupported,
-    /// No event with this identifier is scheduled.
-    UnknownEvent,
     /// The filter accept list has no free entry.
     ListFull,
     /// The filter accept list does not hold the device to remove.

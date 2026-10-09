@@ -27,10 +27,15 @@ use oer_hil_protocol::{
     ieee802154::Ieee802154ThreadSendRequest, ieee802154::Ieee802154ThreadStartRequest,
     ieee802154::Ieee802154ThreadState,
 };
-use oer_ieee802154::{Ieee802154RadioPort, LifecycleCommand, RadioCommand, RequestId};
-use oer_ieee802154_openthread::{
-    OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults, PortClock, PortRssi,
+use oer_ieee802154::{
+    Ieee802154RadioPort, LifecycleCommand, LifecycleEvent, RadioCommand, RadioEvent, RadioPort,
+    RequestId,
 };
+use oer_ieee802154_openthread::{
+    MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
+    PortRssi,
+};
+use oer_time_embassy::EmbassyClock;
 use openthread::{
     DeviceRole, OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket,
 };
@@ -59,7 +64,7 @@ static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
 static OT_UDP: StaticCell<OtUdpResources<UDP_SOCKETS, UDP_BUFFER>> = StaticCell::new();
 static OT_SETTINGS_BUFFER: ConstStaticCell<[u8; 1024]> = ConstStaticCell::new([0; 1024]);
 static OT_SETTINGS: StaticCell<SimpleRamSettings> = StaticCell::new();
-static RADIO_CLOCK: StaticCell<PortClock<'static, Ieee802154SystemRuntime>> = StaticCell::new();
+static RADIO_CLOCK: StaticCell<MonotonicRadioClock<&'static EmbassyClock>> = StaticCell::new();
 static RADIO_RSSI: StaticCell<PortRssi<'static, Ieee802154SystemRuntime>> = StaticCell::new();
 static UDP_RECEIVE: ConstStaticCell<[u8; UDP_BUFFER]> = ConstStaticCell::new([0; UDP_BUFFER]);
 
@@ -228,7 +233,7 @@ fn start_openthread(
         ieee_eui64(),
         TRNG.init(trng),
         OT_SETTINGS.init(SimpleRamSettings::new(OT_SETTINGS_BUFFER.take())),
-        RADIO_CLOCK.init(PortClock::new(runtime)),
+        RADIO_CLOCK.init(MonotonicRadioClock::new(runtime.clock())),
         Some(RADIO_RSSI.init(PortRssi::new(runtime))),
         ot_resources,
         OT_UDP.init(OtUdpResources::new()),
@@ -318,11 +323,22 @@ pub(in crate::product_hil) async fn run_thread(
     let _ = ot.enable_thread(false);
     let _ = ot.enable_ipv6(false);
     // The stack has stopped: the image leaves receive mode and disables
-    // the radio itself before the client stops. Their terminal events are
-    // not read; the stop discards the runtime with its queue.
+    // the radio itself before the client stops, taking the events up to
+    // the terminal of `Disable`, so the runtime's queue starts empty for
+    // the next session.
     let runtime = system.runtime();
     let _ = runtime.submit(RadioCommand::Sleep { id: STOP_SLEEP });
-    let _ = runtime.lifecycle(LifecycleCommand::Disable);
+    if let Ok(Ok(())) = runtime.lifecycle(LifecycleCommand::Disable).await {
+        loop {
+            let Ok(event) = runtime.next_event().await;
+            if let Ok(event) = event
+                && let RadioEvent::Lifecycle(LifecycleEvent::Disabled) =
+                    Ieee802154SystemRuntime::view(&event)
+            {
+                break;
+            }
+        }
+    }
     let stopped = {
         let stopped = core::pin::pin!(client.stop(system));
         stopped.await

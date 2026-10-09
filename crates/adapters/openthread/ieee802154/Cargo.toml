@@ -10,6 +10,7 @@ description = "OpenThread radio over any IEEE 802.15.4 radio port"
 [dependencies]
 heapless = "0.9.3"
 oer-ieee802154 = { path = "../../../protocols/ieee802154" }
+oer-time = { path = "../../../time" }
 # The fork's radio trait, without the OpenThread C library.
 openthread-radio = { git = "https://github.com/ermacv/openthread", rev = "5173f96654a2f317e29fb7d8e69fb8a887607f6d", default-features = false }
 
@@ -18,7 +19,6 @@ embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 oer-espressif-ieee802154-runtime = { path = "../../../runtime/espressif/ieee802154", features = ["model"] }
 oer-espressif-ieee802154-engine = { path = "../../../hardware/espressif/ieee802154/engine", features = ["model"] }
-oer-time = { path = "../../../time" }
 oer-time-virtual = { path = "../../../adapters/virtual/time" }
 
 [lints]

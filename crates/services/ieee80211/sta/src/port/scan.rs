@@ -1,8 +1,8 @@
 //! Candidate scan over the lower-MAC port.
 
 use oer_ieee80211_lower_mac::{
-    Channel, Ieee80211LowerMacPort, Ieee80211Stamp, KeySelector, LowerMacMonitor, ReceiveFilter,
-    RxEvidence, SettingError, VifRole,
+    Channel, Ieee80211LowerMacPort, Ieee80211Stamp, KeySelector, LowerMacMonitor, PortResult,
+    RadioPort, ReceiveFilter, RxEvidence, SettingError, VifRole,
 };
 use oer_ieee80211_mac::{
     management::{BROADCAST_ADDRESS, ProbeRequest, ProbeRequestError},
@@ -13,7 +13,7 @@ use oer_ieee80211_mac::{
 };
 use oer_ieee80211_sta::scan::{ActiveProbeOutcome, StaScanChannelContext, StaScanPort};
 use oer_ieee80211_upper_mac_service::UpperMacTxError;
-use oer_ieee80211_upper_mac_service::client::{PortError, PortFrame, PortInput, PortRxBuffer};
+use oer_ieee80211_upper_mac_service::client::{PortFault, PortFrame, PortInput, PortRxBuffer};
 use oer_time::{Clock, Duration, Instant};
 
 use super::link::{PortConnectionFrame, PortLink, PortLinkError, PortStationEnv};
@@ -37,8 +37,7 @@ pub struct PortScanTarget<'a> {
     pub probe: Option<PortProbe<'a>>,
 }
 
-type SetMonitor<P> =
-    fn(&P, bool) -> Result<Result<(), SettingError>, <P as Ieee80211LowerMacPort>::Error>;
+type SetMonitor<P> = fn(&P, bool) -> PortResult<(), SettingError, <P as RadioPort>::Fault>;
 
 /// Received signal strength of a frame whose backend reports none.
 const UNKNOWN_RSSI_DBM: i8 = -100;
@@ -127,7 +126,7 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
         &mut self,
         channel: Channel,
         until: Instant,
-    ) -> Result<Option<ScanRecord>, PortLinkError<PortError<X>>> {
+    ) -> Result<Option<ScanRecord>, PortLinkError<PortFault<X>>> {
         if self.fixed_channel != Some(channel) {
             return Err(PortLinkError::MissingState);
         }
@@ -145,7 +144,7 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
                             return Ok(Some(candidate));
                         }
                     }
-                    PortInput::Poisoned => return Err(PortLinkError::Poisoned),
+                    PortInput::Poisoned(poisoned) => return Err(PortLinkError::Poisoned(poisoned)),
                     PortInput::Frame(_) | PortInput::Tbtt(_) | PortInput::EventsLost => {}
                 }
             }
@@ -177,18 +176,16 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
             RxEvidence::Unavailable => return None,
         };
         let port = self.link.port();
-        let sample = port.clock_sample().ok()?;
+        let sample = port.clock_sample().ok()?.ok()?;
         port.clock_info()
             .to_monotonic_with(stamp, &sample)
             .ok()
             .map(|projected| projected.at)
     }
 
-    fn set_monitor(&self, enabled: bool) -> Result<(), PortLinkError<PortError<X>>> {
+    fn set_monitor(&self, enabled: bool) -> Result<(), PortLinkError<PortFault<X>>> {
         match self.set_monitor {
-            Some(set) => set(self.link.port(), enabled)
-                .map_err(PortLinkError::Port)?
-                .map_err(PortLinkError::Setting),
+            Some(set) => set(self.link.port(), enabled)?.map_err(PortLinkError::Setting),
             None => Ok(()),
         }
     }
@@ -197,7 +194,7 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
 impl<X: PortStationEnv, const N: usize> StaScanPort for PortScan<'_, '_, X, N> {
     type Channel = Channel;
     type Candidate = ScanRecord;
-    type Error = PortLinkError<PortError<X>>;
+    type Error = PortLinkError<PortFault<X>>;
 
     async fn begin_scan(&mut self) -> Result<(), Self::Error> {
         self.table.clear();
@@ -311,7 +308,7 @@ impl<X: PortStationEnv, const N: usize> StaScanPort for PortScan<'_, '_, X, N> {
         while let Some(input) = self.link.next_input(self.timer, deadline).await {
             match input {
                 PortInput::Frame(frame) => self.observe(&frame),
-                PortInput::Poisoned => return Err(PortLinkError::Poisoned),
+                PortInput::Poisoned(poisoned) => return Err(PortLinkError::Poisoned(poisoned)),
                 PortInput::Tbtt(_) | PortInput::EventsLost => {}
             }
         }

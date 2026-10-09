@@ -29,8 +29,8 @@ use oer_bluetooth_ll::{
     dtm::DTM_MAX_PAYLOAD,
 };
 use oer_bluetooth_radio::{
-    AcceptListChange, AcceptListDevice, EventId, LeInstant, RadioActivity, RadioDuration,
-    RadioFault, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    AcceptListChange, AcceptListDevice, CancelError, EventId, LeInstant, RadioActivity,
+    RadioDuration, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
 use crate::planning::{
@@ -137,8 +137,17 @@ pub struct LeController<'r, const OUTPUT: usize> {
     in_flight: Option<Owner>,
     next_event: u32,
     prng: u64,
-    fault: Option<RadioFault>,
     payload: [u8; DTM_MAX_PAYLOAD],
+}
+
+/// One unit of radio work the core asks its port for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RadioWork<'a> {
+    /// Submit a request.
+    Submit(RadioRequest<'a>),
+    /// Withdraw a scheduled event through the port's cancellation; its end
+    /// still follows.
+    Cancel(EventId),
 }
 
 impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
@@ -178,7 +187,6 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             in_flight: None,
             next_event: 1,
             prng: seed | 1,
-            fault: None,
             payload: [0; DTM_MAX_PAYLOAD],
         }
     }
@@ -201,12 +209,6 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
     /// LE Advertising Reports dropped for lack of output space.
     pub const fn dropped_events(&self) -> u32 {
         self.output.dropped()
-    }
-
-    /// The first fault the backend reported. The Controller keeps serving
-    /// commands; recovery belongs to its owner.
-    pub const fn fault(&self) -> Option<RadioFault> {
-        self.fault
     }
 
     /// The oldest packet waiting for the Host.
@@ -980,21 +982,22 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             .acl(packet, self.bootstrap.config().le_acl_data_packet_length());
     }
 
-    /// The next radio request. `now` is a fresh backend time and `timing` its
-    /// admission rule. The caller submits it and reports the answer to
-    /// [`Self::request_done`] before asking again.
+    /// The next radio work. `now` is a fresh backend time and `timing` its
+    /// admission rule. The caller submits a request and reports the answer
+    /// to [`Self::request_done`], or cancels an event and reports the answer
+    /// to [`Self::cancel_done`], before asking again.
     pub fn next_request(
         &mut self,
         now: LeInstant,
         timing: RadioTiming,
-    ) -> Result<Option<RadioRequest<'_>>, PlanningError> {
+    ) -> Result<Option<RadioWork<'_>>, PlanningError> {
         if self.in_flight.is_some() {
             return Ok(None);
         }
         // Control work must remain available without any future radio anchor.
         if let Some(request) = self.accept_list.request() {
             self.in_flight = Some(Owner::AcceptList);
-            return Ok(Some(request));
+            return Ok(Some(RadioWork::Submit(request)));
         }
         if self.dtm.is_active() {
             if !self.dtm.wants_radio() {
@@ -1003,7 +1006,11 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             return match self.dtm.next_request(now, timing, &mut self.payload)? {
                 DtmRadioWork::Request(request) => {
                     self.in_flight = Some(Owner::Dtm);
-                    Ok(Some(request))
+                    Ok(Some(RadioWork::Submit(request)))
+                }
+                DtmRadioWork::Cancel(id) => {
+                    self.in_flight = Some(Owner::Dtm);
+                    Ok(Some(RadioWork::Cancel(id)))
                 }
                 DtmRadioWork::None => Ok(None),
             };
@@ -1059,7 +1066,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                         self.allocate_event();
                         self.prng = next_prng;
                         self.in_flight = Some(Owner::AdvertiserEvent);
-                        return Ok(Some(request));
+                        return Ok(Some(RadioWork::Submit(request)));
                     }
                     None => advertising = self.advertiser.skip(earliest, delay, advertising)?,
                 }
@@ -1087,7 +1094,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                         self.advertiser.commit(advertising);
                         self.prng = prng;
                         self.in_flight = Some(Owner::ScannerWindow);
-                        return Ok(Some(request));
+                        return Ok(Some(RadioWork::Submit(request)));
                     }
                     crate::scanning::Placement::Skipped { next_anchor } => {
                         scan_anchor = Some(next_anchor)
@@ -1103,7 +1110,18 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
 
     /// The backend's answer to the last request.
     pub fn request_done(&mut self, result: Result<(), RequestError>) {
-        let accepted = result.is_ok();
+        self.work_done(result.is_ok(), result);
+    }
+
+    /// The backend's answer to the last cancellation. A refused one names an
+    /// event that already ended, whose end the role takes as usual.
+    pub fn cancel_done(&mut self, result: Result<(), CancelError>) {
+        self.work_done(result.is_ok(), Ok(()));
+    }
+
+    /// Hand the answer to the role whose work was in flight; `result` is a
+    /// request's own answer, which the accept list reads.
+    fn work_done(&mut self, accepted: bool, result: Result<(), RequestError>) {
         match self.in_flight.take() {
             Some(Owner::AcceptList) => self.accept_list.request_done(result),
             Some(Owner::Dtm) => self.dtm.request_done(accepted),
@@ -1133,13 +1151,9 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
 
     /// Account one backend observation.
     pub fn outcome(&mut self, outcome: RadioOutcome<'_>) {
-        if let RadioOutcome::Fault(fault) = outcome {
-            self.fault.get_or_insert(fault);
-            return;
-        }
-        // The service loop ends on the port's terminal outcome; the roles
-        // have nothing to account.
-        if let RadioOutcome::Poisoned(_) = outcome {
+        // The port's lifecycle is the service loop's; the roles have
+        // nothing to account.
+        if let RadioOutcome::Lifecycle(_) = outcome {
             return;
         }
         self.dtm.outcome(outcome);

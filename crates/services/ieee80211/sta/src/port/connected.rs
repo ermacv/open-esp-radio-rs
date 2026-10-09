@@ -54,9 +54,8 @@ use oer_ieee80211_upper_mac::{
     rate_control::RateControl,
 };
 use oer_ieee80211_upper_mac_service::TxMpdu;
-use oer_ieee80211_upper_mac_service::UpperMacTxError;
 use oer_ieee80211_upper_mac_service::aggregate::{AmpduSubframes, PORT_AMPDU_SUBFRAMES};
-use oer_ieee80211_upper_mac_service::client::{PortError, PortFrame, PortInput, PortMsdu};
+use oer_ieee80211_upper_mac_service::client::{PortFault, PortFrame, PortInput, PortMsdu};
 use oer_ieee80211_upper_mac_service::frame::{
     NetworkBody, PORT_MPDU_HEADER_CAPACITY, split_ethernet,
 };
@@ -213,8 +212,6 @@ pub struct PortTxCounters {
     pub subframes: u32,
     /// Frames the access point acknowledged, alone or in a BlockAck.
     pub acknowledged: u32,
-    /// Frames whose exchange ended without a report.
-    pub failed: u32,
 }
 
 /// The buffers of a connection: its receive reordering windows and the
@@ -580,7 +577,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         sleep_type: SleepType,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         if let Some(mut power) = self.power.take() {
             let traffic = Self::traffic(context);
             power
@@ -616,7 +613,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
     async fn drain<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         if let Some(power) = &mut self.power {
             power.take_release();
         }
@@ -681,10 +678,6 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                     self.tx_counters.acknowledged =
                         self.tx_counters.acknowledged.saturating_add(delivered);
                     acknowledged(&report)
-                }
-                Err(PortLinkError::Tx(UpperMacTxError::CompletionLost { .. })) => {
-                    self.tx_counters.failed = self.tx_counters.failed.saturating_add(1);
-                    false
                 }
                 Err(error) => return Err(error),
             };
@@ -774,7 +767,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         priority: WmmUserPriority,
         head: PortStationFrame<X>,
         mut run: AmpduRun,
-    ) -> Result<(TxReport, usize), PortLinkError<PortError<X>>> {
+    ) -> Result<(TxReport, usize), PortLinkError<PortFault<X>>> {
         let tid = priority.value();
         let destination = destination(head.ethernet()).ok_or(PortLinkError::MissingState)?;
         let mut first_sequence = None;
@@ -830,7 +823,12 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         }
         let run = context.subframes.len();
         let first_sequence = first_sequence.ok_or(PortLinkError::MissingState)?;
-        let committed_at = context.link.port().now().map_err(PortLinkError::Port)?;
+        let committed_at = context
+            .link
+            .port()
+            .now()
+            .await?
+            .map_err(PortLinkError::Clock)?;
         let ampdu = context
             .subframes
             .request(tid, first_sequence, committed_at)
@@ -863,7 +861,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         context: &mut ConnectionContext<'_, '_, X>,
         owner: PortStationFrame<X>,
         priority: WmmUserPriority,
-    ) -> Result<TxReport, PortLinkError<PortError<X>>> {
+    ) -> Result<TxReport, PortLinkError<PortFault<X>>> {
         let sequence_number = if self.config.peer_qos {
             context
                 .sequences
@@ -907,7 +905,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         priority: WmmUserPriority,
         sequence_number: SequenceNumber,
         frame: &mut [u8],
-    ) -> Result<(usize, KeySelector), PortLinkError<PortError<X>>> {
+    ) -> Result<(usize, KeySelector), PortLinkError<PortFault<X>>> {
         let config = *context.link.config();
         let destination: [u8; 6] = ethernet[..6].try_into().expect("six octets");
         let ether_type = u16::from_be_bytes([ethernet[12], ethernet[13]]);
@@ -957,7 +955,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         context: &mut ConnectionContext<'_, '_, X>,
         deadline: Instant,
         deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
-    ) -> Result<Option<PortStationEvent>, PortLinkError<PortError<X>>> {
+    ) -> Result<Option<PortStationEvent>, PortLinkError<PortFault<X>>> {
         loop {
             if let Some(disconnect) = self.expire(context).await? {
                 return Ok(Some(PortStationEvent::Ended(disconnect)));
@@ -987,7 +985,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
     async fn expire<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
-    ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
+    ) -> Result<Option<PortDisconnect>, PortLinkError<PortFault<X>>> {
         let now = context.timer.now();
         match self.sa_query.step(now) {
             SaQueryStep::Idle => {}
@@ -1028,7 +1026,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         now: Instant,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let silenced = self.silenced();
         let Some(originator) = self.tx_block_ack.as_mut() else {
             return Ok(());
@@ -1061,9 +1059,9 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
     async fn input<X: PortStationEnv<Port = P, RateControl = R>>(
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
-        input: PortInput<P::RxBuffer>,
+        input: PortInput<P::RxBuffer, P::Fault>,
         deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
-    ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
+    ) -> Result<Option<PortDisconnect>, PortLinkError<PortFault<X>>> {
         let frame = match input {
             PortInput::Frame(frame) => frame,
             PortInput::Tbtt(_) => {
@@ -1082,7 +1080,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             // Frames in the gap are gone; a waiting exchange recovers its
             // own completion through the router.
             PortInput::EventsLost => return Ok(None),
-            PortInput::Poisoned => return Err(PortLinkError::Poisoned),
+            PortInput::Poisoned(poisoned) => return Err(PortLinkError::Poisoned(poisoned)),
         };
         let bytes = frame.bytes();
         if wire::address2(bytes) != Some(self.config.bssid) {
@@ -1105,7 +1103,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         frame: &PortFrame<P::RxBuffer>,
-    ) -> Result<Option<PortDisconnect>, PortLinkError<PortError<X>>> {
+    ) -> Result<Option<PortDisconnect>, PortLinkError<PortFault<X>>> {
         let bytes = frame.bytes();
         let address = context.link.config().address;
         let protected = wire::is_protected(bytes);
@@ -1248,7 +1246,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         body: &[u8],
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         match parse_block_ack_action(body) {
             Some(BlockAckAction::AddbaRequest {
                 dialog_token,
@@ -1355,7 +1353,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         context: &mut ConnectionContext<'_, '_, X>,
         frame: PortFrame<P::RxBuffer>,
         deliver: &mut impl FnMut(PortMsdu<'_, P::RxBuffer>),
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let bytes = frame.bytes();
         let Some(receiver) = wire::address1(bytes) else {
             return Ok(());
@@ -1414,7 +1412,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         eapol: OwnedEapolFrame<RSN_HANDSHAKE_EAPOL_CAPACITY>,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let (Some(supplicant), Some(keys)) = (context.supplicant.as_deref_mut(), self.keys) else {
             self.counters.eapol_rejected = self.counters.eapol_rejected.saturating_add(1);
             return Ok(());
@@ -1448,7 +1446,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                 };
                 let completed = supplicant.complete_group_key_install(request, group.is_some());
                 let group = match (installed, completed) {
-                    (Err(error), _) => return Err(PortLinkError::Port(error)),
+                    (Err(poisoned), _) => return Err(PortLinkError::Poisoned(poisoned)),
                     (Ok(Ok(group)), Ok(response)) => (group, response),
                     _ => {
                         self.counters.eapol_rejected =
@@ -1706,7 +1704,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         directed: bool,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let config = *context.link.config();
         let destination = if directed {
             self.config.bssid
@@ -1742,7 +1740,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         query: SaQuery,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         self.send_action(context, &query.encode()).await
     }
 
@@ -1751,7 +1749,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         body: &[u8],
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         self.send_management(context, StaManagementSubtype::Action, body)
             .await
             .map(|_| ())
@@ -1762,7 +1760,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         context: &mut ConnectionContext<'_, '_, X>,
         subtype: StaManagementSubtype,
         body: &[u8],
-    ) -> Result<TxReport, PortLinkError<PortError<X>>> {
+    ) -> Result<TxReport, PortLinkError<PortFault<X>>> {
         let config = *context.link.config();
         let sequence_number = context.sequences.take_non_qos();
         let mut frame = [0_u8; MANAGEMENT_HEADER_LEN + CCMP_HEADER_LEN + 64];
@@ -1821,7 +1819,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         &mut self,
         context: &mut ConnectionContext<'_, '_, X>,
         send_deauthentication: bool,
-    ) -> Result<(), PortLinkError<PortError<X>>> {
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
         let traffic = Self::traffic(context);
         if let Some(mut power) = self.power.take() {
             power

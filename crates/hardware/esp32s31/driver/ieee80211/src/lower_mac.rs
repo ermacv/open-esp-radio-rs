@@ -109,13 +109,13 @@ use oer_esp32s31_ieee80211_mac::{
 };
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduCapabilities, Backoff, BandSet, BeaconTimingCapabilities, BlockAckReport,
-    CancelError, Channel, Cipher, CoexPriority, CoexPrioritySet, FailureClass, KeyHandle,
-    KeyInstall, KeyScope, KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent,
-    LowerMacCapabilities, LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt,
-    PhyFormatSet, PhyRate, Protection, RateSupport, ReceiveFilter, Refused, RxBeaconPriority,
-    RxBlockAckAgreement, RxEvidence, RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule,
-    TxBuffer, TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig,
-    VifId, VifRole, VifRoleSet, VifTsf, WidthSet,
+    CancelError, Channel, Cipher, CoexPriority, CoexPrioritySet, KeyHandle, KeyInstall, KeyScope,
+    KeySelector, LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacCapabilities,
+    LowerMacSetting, MacAddress, MonitorCapabilities, MpduAttempt, PhyFormatSet, PhyRate,
+    Protection, RateSupport, ReceiveFilter, Refused, RxBeaconPriority, RxBlockAckAgreement,
+    RxEvidence, RxMeta, SettingError, SubmitError, TbttEvent, TbttSchedule, TxBuffer, TxCompletion,
+    TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole, VifRoleSet,
+    VifTsf, WidthSet,
 };
 use oer_ieee80211_mac::{
     channel::{Band, WifiChannel},
@@ -1268,7 +1268,6 @@ where
             self.state = PortState::Disabled;
             sink.lifecycle(LifecycleEvent::Failed {
                 command: LifecycleCommand::Enable,
-                class: FailureClass::Recoverable,
             });
             return;
         }

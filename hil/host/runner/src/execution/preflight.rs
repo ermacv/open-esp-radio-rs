@@ -57,7 +57,7 @@ pub(crate) fn validate_flashed_image(
             let directory = output.join(format!("image-preflight-retry-{attempt}"));
             answered = image_keys_of(lab, &directory).ok();
             answered.is_some()
-        });
+        })?;
     match answered {
         Some(image_keys) => {
             eprintln!(

@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use crate::Result;
 use crate::scenario::Scenario;
 use oer_hil_run_bundle_format::run::Failure;
 use oer_hil_run_bundle_format::run::FailureKind;
@@ -49,7 +50,7 @@ pub(crate) fn execute_workload(
     fixtures: &oer_hil_workload::fixture::Fixtures,
     images: Option<&dyn oer_hil_workload::context::BoardImages>,
     device: Option<&oer_device_lock::DeviceAccess>,
-) -> ExecutionEvidence {
+) -> Result<ExecutionEvidence> {
     // The board's MAC outlives its port name, which a reset can change.
     let mac = lab.dut.mac.as_str();
     let context = oer_hil_workload::context::Context::new(lab, selected.plan().settings, output)
@@ -102,10 +103,11 @@ pub(crate) fn execute_workload(
                 }
                 Err(error) => {
                     eprintln!("hil: the board {mac} cannot be recovered: {error}");
-                    None
+                    Ok(None)
                 }
             }
         })
+        .transpose()?
         .flatten();
     if let Some(oer_hil_lab::recovery::Recovery::Recovered { finding, .. }) = &recovery {
         post_mortem = Some((**finding).clone());
@@ -153,7 +155,7 @@ pub(crate) fn execute_workload(
             Failure::new(FailureKind::Infrastructure, "run cancelled by signal")
         });
     }
-    evidence
+    Ok(evidence)
 }
 
 /// Hold each hart's observed interrupt-stack use of a repetition to the

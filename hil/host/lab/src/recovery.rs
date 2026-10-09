@@ -16,7 +16,12 @@
 //! the board, however bad its firmware; such a board is never quarantined.
 //! A quarantined board serves nobody until a person resets or power-cycles
 //! it. What the stand saw is kept in the repetition's `post-mortem/`, which
-//! the quarantine names.
+//! the quarantine names; a quarantine the arbiter does not record is an
+//! error of the run, since the board would serve the next lease broken.
+//!
+//! The chip's recovery image is flashed only to a board whose ROM answered,
+//! so a recovery image that does not answer is a fault of that image or the
+//! checkout that built it, never a reason to quarantine the board.
 
 use std::{
     path::{Path, PathBuf},
@@ -97,12 +102,12 @@ pub fn recover(
     output: &Path,
     elf: Option<&Path>,
     origin: &str,
-) -> Option<Recovery> {
+) -> crate::Result<Option<Recovery>> {
     // A cancelled run stops rather than judges the board it leaves.
     if !judges_board(oer_process::cancellation_requested()) {
-        return None;
+        return Ok(None);
     }
-    let arbiter = Arbiter::open().ok()?;
+    let arbiter = Arbiter::open()?;
     let mac = board.mac().to_string();
     let port = board.port();
     let evidence = output.join("post-mortem");
@@ -126,7 +131,9 @@ pub fn recover(
     );
     let _ = std::fs::create_dir_all(&evidence);
     let _ = oer_durable::atomic_json(&evidence.join(RECOVERY_FILE), &ladder);
-    let last = ladder.steps.last()?;
+    let Some(last) = ladder.steps.last() else {
+        return Ok(None);
+    };
     let reset_line = last.outcome.clone().ok().flatten();
     match (ladder.end.clone(), finding.into_inner()) {
         (LadderEnd::Cleared, Some(finding)) => {
@@ -154,26 +161,26 @@ pub fn recover(
                     origin: origin.to_owned(),
                 },
             );
-            Some(Recovery::Recovered {
+            Ok(Some(Recovery::Recovered {
                 step: last.step,
                 hardware,
                 reset_line,
                 core0,
                 finding: Box::new(finding),
-            })
+            }))
         }
         _ if !judges_board(oer_process::cancellation_requested()) => {
             eprintln!(
                 "hil: the run was cancelled while the board was recovering; it is not \
                  quarantined"
             );
-            None
+            Ok(None)
         }
         // A ROM that answers can be reflashed: only a silent one needs a person.
-        (LadderEnd::Loadable { reset_line }, _) => Some(Recovery::BootedSilent {
+        (LadderEnd::Loadable { reset_line }, _) => Ok(Some(Recovery::BootedSilent {
             step: last.step,
             reset_line,
-        }),
+        })),
         _ => quarantine(
             &arbiter,
             &mac,
@@ -183,7 +190,8 @@ pub fn recover(
                 describe_steps(&ladder)
             ),
             &evidence,
-        ),
+        )
+        .map(Some),
     }
 }
 
@@ -205,19 +213,6 @@ pub fn record_reflash(mac: Option<String>, origin: String) {
     if let Err(error) = recorded {
         eprintln!("hil-arbiter: cannot record the reflash: {error}");
     }
-}
-
-/// Quarantine the board with `mac` when even its chip's recovery image did
-/// not bring it back: that was the last step the stand can take itself.
-pub fn quarantine_unrecovered(mac: &str, why: String, evidence: &Path) -> Option<Recovery> {
-    let arbiter = match Arbiter::open() {
-        Ok(arbiter) => arbiter,
-        Err(error) => {
-            eprintln!("hil-arbiter: cannot quarantine {mac}: {error}");
-            return None;
-        }
-    };
-    quarantine(&arbiter, mac, QuarantineTrigger::Unreachable, why, evidence)
 }
 
 /// The file a recovery records its ladder in, in the repetition's
@@ -297,7 +292,7 @@ pub fn escalate_boot_loop(
     output: &Path,
     origin: &str,
     mut boots: impl FnMut() -> bool,
-) -> ResetEscalation {
+) -> crate::Result<ResetEscalation> {
     let rungs = board.rungs();
     let download_entry = board.download_entry_if_powered();
     let ladder = oer_devices::reset::climb(
@@ -318,38 +313,37 @@ pub fn escalate_boot_loop(
     };
     let _ = oer_durable::atomic_json(&output.join(RESET_ESCALATION_FILE), &escalation);
     let mac = board.mac();
-    if let Ok(arbiter) = &Arbiter::open() {
-        match (&escalation.ladder.end, escalation.ladder.steps.last()) {
-            (LadderEnd::Cleared, Some(step)) => {
-                let _ = arbiter.journal().record_by(
-                    String::from("stand"),
-                    Some(mac.to_string()),
-                    oer_stand_journal::BoardEventKind::Recovered {
-                        step: step.step,
-                        hardware: true,
-                        reset_line: step.outcome.clone().ok().flatten(),
-                        origin: origin.to_owned(),
-                    },
-                );
-            }
-            // A ROM that answers can be reflashed.
-            (LadderEnd::Loadable { .. }, _) => {}
-            _ => {
-                let _ = quarantine(
-                    arbiter,
-                    mac,
-                    QuarantineTrigger::BootLoop,
-                    format!(
-                        "its bootloader resets in a loop ({}) that {} did not clear, and its ROM stays silent",
-                        escalation.boot_loop.reset_line,
-                        describe_steps(&escalation.ladder)
-                    ),
-                    output,
-                );
-            }
+    let arbiter = &Arbiter::open()?;
+    match (&escalation.ladder.end, escalation.ladder.steps.last()) {
+        (LadderEnd::Cleared, Some(step)) => {
+            let _ = arbiter.journal().record_by(
+                String::from("stand"),
+                Some(mac.to_string()),
+                oer_stand_journal::BoardEventKind::Recovered {
+                    step: step.step,
+                    hardware: true,
+                    reset_line: step.outcome.clone().ok().flatten(),
+                    origin: origin.to_owned(),
+                },
+            );
+        }
+        // A ROM that answers can be reflashed.
+        (LadderEnd::Loadable { .. }, _) => {}
+        _ => {
+            quarantine(
+                arbiter,
+                mac,
+                QuarantineTrigger::BootLoop,
+                format!(
+                    "its bootloader resets in a loop ({}) that {} did not clear, and its ROM stays silent",
+                    escalation.boot_loop.reset_line,
+                    describe_steps(&escalation.ladder)
+                ),
+                output,
+            )?;
         }
     }
-    escalation
+    Ok(escalation)
 }
 
 /// Whether an unanswered query after a reset judges the board. A cancelled
@@ -394,7 +388,7 @@ fn quarantine(
     trigger: QuarantineTrigger,
     reason: String,
     evidence: &Path,
-) -> Option<Recovery> {
+) -> crate::Result<Recovery> {
     arbiter
         .quarantine(
             mac,
@@ -402,9 +396,11 @@ fn quarantine(
             reason.clone(),
             Some(evidence.display().to_string()),
         )
-        .ok()?;
+        .map_err(|error| {
+            format!("the board {mac} needs a person, but its quarantine was not recorded: {error}")
+        })?;
     QUARANTINED.store(true, std::sync::atomic::Ordering::Relaxed);
-    Some(Recovery::Quarantined { trigger, reason })
+    Ok(Recovery::Quarantined { trigger, reason })
 }
 
 /// Whether the repetition's console ended in the ROM waiting for a download.
@@ -444,6 +440,59 @@ mod tests {
         mark_image_silent("test-silent-image");
         assert!(image_silent("test-silent-image"));
         assert!(!image_silent("test-other-image"));
+    }
+
+    /// Set in the child copy of the test binary, which runs with desktop
+    /// notifications off: a quarantine notifies the user.
+    const QUARANTINE_CHILD: &str = "OER_HIL_LAB_TEST_QUARANTINE_CHILD";
+
+    #[test]
+    fn an_unrecorded_quarantine_is_an_error_and_a_recorded_one_holds() {
+        const TEST: &str =
+            "recovery::tests::an_unrecorded_quarantine_is_an_error_and_a_recorded_one_holds";
+        if std::env::var_os(QUARANTINE_CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", TEST, "--test-threads=1"])
+                .env(QUARANTINE_CHILD, "1")
+                .env("OER_STAND_NOTIFY", "0")
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = Arbiter::at(directory.path()).unwrap();
+        let evidence = directory.path().join("post-mortem");
+        // The maintenance record cannot be written.
+        std::fs::create_dir(directory.path().join("maintenance.json")).unwrap();
+        let error = quarantine(
+            &arbiter,
+            "02:00:00:00:31:7A",
+            QuarantineTrigger::Unreachable,
+            String::from("its ROM stays silent"),
+            &evidence,
+        )
+        .err()
+        .expect("an unrecorded quarantine is an error");
+        assert!(
+            error
+                .to_string()
+                .contains("its quarantine was not recorded"),
+            "{error}"
+        );
+        assert!(!device_quarantined());
+        std::fs::remove_dir(directory.path().join("maintenance.json")).unwrap();
+        let recorded = quarantine(
+            &arbiter,
+            "02:00:00:00:31:7A",
+            QuarantineTrigger::Unreachable,
+            String::from("its ROM stays silent"),
+            &evidence,
+        )
+        .unwrap();
+        assert!(recorded.quarantined());
+        assert!(arbiter.is_quarantined("02:00:00:00:31:7A").unwrap());
+        assert!(device_quarantined());
     }
 
     #[test]

@@ -553,12 +553,11 @@ fn a_silent_image_on_a_loadable_board_gets_the_recovery_image_once() {
 }
 
 #[test]
-fn a_recovery_image_that_does_not_answer_quarantines_the_board() {
+fn a_recovery_image_that_does_not_answer_is_the_images_fault_not_the_boards() {
     assert_eq!(super::after_reflash(Ok(())), super::AfterReflash::Recovered);
-    let super::AfterReflash::Quarantine(why) =
-        super::after_reflash(Err(String::from("no boot-smoke pass line")))
-    else {
-        panic!("a failed reflash must quarantine");
-    };
-    assert!(why.contains("recovery image") && why.contains("no boot-smoke pass line"));
+    // The board's ROM answered before the reflash: it is never quarantined.
+    assert_eq!(
+        super::after_reflash(Err(String::from("no boot-smoke pass line"))),
+        super::AfterReflash::ImageFault(String::from("no boot-smoke pass line"))
+    );
 }

@@ -12,7 +12,7 @@ Coding agents do almost all the work; the owner sets the tasks.
 - **zsh.** An unquoted `$VAR` holding several words stays one argument: pass lists of scenarios or paths literally or as an array.
 - **Tests.** Every behavioral change gets a focused regression test, beside its module (`#[cfg(test)]`) or in the crate's `tests/`. See [testing rules](crates/CLAUDE.md#tests).
 - **MMIO and unsafe.** Handwritten code reaches MMIO only through typed PAC accessors; publish a missing field in the SVD/PAC instead of a local mask or shift. Keep `unsafe` narrow and documented ([crates/UNSAFE.md](crates/UNSAFE.md)). Lint policy lives in `[lints]` tables and crate-root attributes, not tool flags.
-- **Generated files.** Never read the raw PACs, `pac/src/generated.rs`, published SVD/bindings or `verification/*/facts` TOML: grep them with an explicit path (tree-wide searches skip them through `.ignore`). Regenerate, never hand-edit.
+- **Generated files.** Never read the raw PACs, `pac/src/generated.rs`, published SVD/bindings or `verification/*/facts` TOML: grep them with an explicit path (tree-wide searches skip them through `.ignore`). Regenerate, never hand-edit; the pre-tool hook refuses such reads and edits.
 - **Own GitHub account only.** Never act on GitHub outside the owner's account: no pushes, pull requests, issues, comments, reviews or any other message in another project, upstream included (`esp-rs/*` and every other third-party repository). Fixes to a dependency go to the owner's fork (for esp-hal, `ermacv/esp-hal` `oer/main`, see its `UPSTREAM.md`); reading other projects is fine.
 - **Decisions.** An owner decision is only what the repository owner said or approved, recorded with a link; the owner may revise it at any time. Never record your own choice as an "owner decision": propose options and ask. See [decisions and approval](docs/issues.md#decisions-and-approval).
 - **Issue creation.** Before creating any issue through a plugin, API or CLI, validate its explicit labels with `python3 .github/scripts/issue_labels.py validate`: exactly one `kind:*`, at least one `area:*`, and exactly one `priority:*` for an executable issue (tracking may omit priority). Supply that complete set in the creation request and verify the returned labels; never defer them to triage or report creation complete while classification is invalid. See [issue management](docs/issues.md#creation-and-automatic-control).
@@ -31,7 +31,7 @@ Claude Code and Codex share instructions and skills through relative symlinks:
 | `.claude/skills/` | `.agents/skills`, linking to `../.claude/skills` |
 
 Edit the canonical sources; keep an `AGENTS.md` link beside any new scoped
-`CLAUDE.md`. The skills directory link includes new skills automatically and
+`CLAUDE.md` (`cargo tidy check` holds the links and skill frontmatter). The skills directory link includes new skills automatically and
 preserves their relative references. In Codex, invoke `$block-wifi` to load
 the same block guide that the Claude Code `block-wifi` agent starts with.
 

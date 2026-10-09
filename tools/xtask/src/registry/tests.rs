@@ -246,6 +246,20 @@ fn review_script_changes_run_its_offline_regressions() {
 }
 
 #[test]
+fn claude_hook_changes_run_its_offline_regressions() {
+    for path in [
+        ".claude/hooks/pre_tool_use.py",
+        ".claude/hooks/test_pre_tool_use.py",
+        ".claude/hooks/heavy-commands.json",
+        ".claude/settings.json",
+    ] {
+        let selected = ids(of_change(&change(&[path], Tier::Fast)));
+        assert!(selected.contains(&"claude-hooks"), "{path}: {selected:?}");
+    }
+    assert!(ids(of_job(Tier::Full, "host")).contains(&"claude-hooks"));
+}
+
+#[test]
 fn chip_code_type_checks_images_and_full_adds_the_chip_audits() {
     let fast = ids(of_change(&change(
         &["crates/driver/src/lib.rs"],

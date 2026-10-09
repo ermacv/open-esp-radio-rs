@@ -117,7 +117,10 @@ builds, the conformance check (it needs clang and the Sail model), Blobray's
 whole workspace and its standalone extraction (both need GNU RISC-V ld 2.47),
 the probes and the host stands. The session start hook
 reads CI's state through `ci-status`, and the pre-tool hook reads its
-heavy-command list from `cargo xtask hooks`.
+heavy-command list from `cargo xtask hooks`. The fast host `claude-hooks`
+check runs the hook's offline regressions
+(`.claude/hooks/test_pre_tool_use.py`) when `.claude/hooks/` or
+`.claude/settings.json` changes.
 
 ## CI input reuse
 

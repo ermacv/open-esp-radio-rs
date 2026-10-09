@@ -64,6 +64,12 @@ class Policy(unittest.TestCase):
         finding = review.SCHEMA["properties"]["findings"]["items"]
         self.assertEqual(set(finding["required"]), set(finding["properties"]))
 
+    def test_findings_are_classified_by_the_label_catalog(self):
+        finding = review.SCHEMA["properties"]["findings"]["items"]["properties"]
+        self.assertIn("area:tooling", finding["area"]["enum"])
+        self.assertEqual(finding["priority"]["enum"],
+                         ["priority:P0", "priority:P1", "priority:P2", "priority:P3"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -237,6 +237,8 @@ fn review_script_changes_run_its_offline_regressions() {
     for path in [
         ".github/scripts/claude_review.py",
         ".github/scripts/test_claude_review.py",
+        ".github/scripts/review_findings.py",
+        ".github/scripts/test_review_findings.py",
         ".github/workflows/claude-review.yml",
     ] {
         let selected = ids(of_change(&change(&[path], Tier::Fast)));

@@ -20,9 +20,14 @@ system prompt; repository hooks, permission rules and agents are not loaded.
 The PR head is checked out in `pr/` and only read. Claude gets read-only tools (file reads and search,
 `git diff/log/show` in `pr/`, `gh pr view/diff`, `gh issue view`, subagents)
 and a read-only GitHub token, and returns a structured report. A separate job
-with write access posts it as a PR review with inline comments, and sets the
-commit status `claude-runtime-review`: success without 🔴 findings, failure
-with them, error when the review did not complete. A failed review's run log
+with write access posts it as a PR review with inline comments, files each
+🟣 pre-existing finding as a `kind:bug` issue with the area and priority the
+reviewer chose (once: a re-review or later PR names the existing issue) and
+sets the commit status `claude-runtime-review`: success without 🔴 or 🟡
+findings, failure with them, error when the review did not complete or its
+pre-existing findings could not be filed. A blocked PR stays open until a
+re-review after the fixing push no longer reports them; `cargo xtask
+ci-status`, `check changed`, `push` and the session start hook list such PRs. A failed review's run log
 names the result subtype, API status and error message. Require this status
 alongside `ci-ok` in `main` branch protection so auto-merge cannot overtake
 the reviewer. A newer review of the same PR cancels a running one. Re-reviews

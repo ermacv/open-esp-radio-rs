@@ -25,19 +25,24 @@ TOOLS = ["Read", "Grep", "Glob", "Agent", "Bash"]
 ALLOWED_TOOLS = ["Read", "Grep", "Glob", "Agent",
                  "Bash(git -C pr diff *)", "Bash(git -C pr log *)", "Bash(git -C pr show *)",
                  "Bash(gh pr view *)", "Bash(gh pr diff *)", "Bash(gh issue view *)"]
+# The classification an issue of a pre-existing finding is filed with
+# (review_findings.py); the label catalog is the one vocabulary.
+LABELS = [label["name"] for label in json.loads((Path(__file__).parents[1] / "labels.json").read_text())]
 SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["summary", "findings"],
     "properties": {
         "summary": {"type": "string"},
         "findings": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
-            "required": ["severity", "path", "line", "title", "body"],
+            "required": ["severity", "path", "line", "title", "body", "area", "priority"],
             "properties": {
                 "severity": {"enum": ["important", "nit", "pre-existing"]},
                 "path": {"type": "string"},
                 "line": {"type": "integer", "minimum": 1},
                 "title": {"type": "string"},
-                "body": {"type": "string"}}}}}}
+                "body": {"type": "string"},
+                "area": {"enum": [name for name in LABELS if name.startswith("area:")]},
+                "priority": {"enum": [name for name in LABELS if name.startswith("priority:")]}}}}}}
 
 
 def write_identity_token(path, opener=urlopen):

@@ -24,10 +24,19 @@ Do not report what they enforce, style, refactoring wishes or speculation.
 ## Severity
 
 - **important**: a reachable failure or a violated contract, with the concrete
-  trigger. Only these block merging.
-- **nit**: a real but minor defect. At most five; summarize the rest as a count.
+  trigger. Blocks merging.
+- **nit**: a real but minor defect this PR introduces or touches. Blocks
+  merging too: the PR fixes it before it merges. Report every nit; none is
+  summarized as a count.
 - **pre-existing**: a defect outside this PR found while tracing it, read at
-  both `origin/main` and head. At most five; they never block.
+  both `origin/main` and head. At most five; they never block. The workflow
+  files each one as a `kind:bug` issue, so give it a self-contained title and
+  body.
+
+Classify every finding with the area and priority of the
+[label catalog](.github/labels.json) ([issue management](docs/issues.md)):
+the area of the code that owns the defect and the priority its consequence
+earns. A pre-existing finding's issue carries them.
 
 ## Evidence bar
 
@@ -51,8 +60,9 @@ you cannot confirm; never report a guess as a defect.
 
 When the PR already has a Claude review, read it (`gh pr view --comments`).
 Focus on commits since the reviewed head and on whether earlier findings are
-fixed. Report every still-open important finding again, since the verdict is
-recomputed from this review alone; do not repeat nits.
+fixed. Report every still-open important and nit finding again, since the
+verdict is recomputed from this review alone. A pre-existing finding already
+reported needs no repeat; one reported again is not filed twice.
 
 ## Output
 

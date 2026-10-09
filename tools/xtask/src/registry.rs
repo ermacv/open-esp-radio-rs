@@ -145,7 +145,7 @@ pub const CHECKS: &[Check] = &[
         id: "claude-review",
         tier: Tier::Fast,
         job: "host",
-        summary: "offline Claude review script regressions",
+        summary: "offline Claude review and finding-issue script regressions",
         trigger: Some(|change| {
             touches(
                 change,
@@ -157,7 +157,7 @@ pub const CHECKS: &[Check] = &[
                 ctx.command("python3")
                     .env("PYTHONDONTWRITEBYTECODE", "1")
                     .args(["-m", "unittest", "discover", "-s", ".github/scripts"])
-                    .args(["-p", "test_claude_review.py"]),
+                    .args(["-p", "test_*review*.py"]),
             )
         },
     },

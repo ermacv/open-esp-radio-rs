@@ -40,6 +40,8 @@ you cannot confirm; never report a guess as a defect.
 ## Scope
 
 - Diff against the merge base: `git -C pr diff origin/main...HEAD`.
+- The root `CLAUDE.md` is in your instructions; read the `CLAUDE.md` and
+  owning README of each changed component under `pr/` before judging it.
 - Read generated publications only through their reviewed inputs: never the
   raw PACs, `pac/src/generated.rs`, published SVD/bindings or
   `verification/*/facts`. Read `Cargo.lock` only in the diff.

@@ -293,8 +293,6 @@ fn next(before: &Evidence) -> u32 {
     before.traffic.connections + 1
 }
 
-/// Wait until the DUT reports the connection an attempt after `before`
-/// opened; the host's connect alone does not prove it reached the DUT.
 /// Whether the DUT reports, within [`CONFIRMATION`], the connection an
 /// attempt after `before` opened. A failed observation is the error, never
 /// a `false`.

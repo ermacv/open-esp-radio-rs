@@ -101,6 +101,9 @@ pub enum ConnectedDisconnectReason {
     /// The access point did not answer the SA Query that an unprotected
     /// disconnect started, so the association no longer holds.
     SaQueryTimeout,
+    /// The join beacon's TSF, advanced to the start of power management,
+    /// crosses 2^64: the station cannot follow the access point's TSF.
+    JoinTsfUnrepresentable,
 }
 
 impl From<ConnectedDisconnectReason> for ExitReason {
@@ -117,6 +120,7 @@ impl From<ConnectedDisconnectReason> for ExitReason {
             ConnectedDisconnectReason::ActiveStateRestoreFailed => Self::ActiveStateRestoreFailed,
             ConnectedDisconnectReason::GroupKeyHandshakeFailed => Self::GroupKeyHandshakeFailed,
             ConnectedDisconnectReason::SaQueryTimeout => Self::SaQueryTimeout,
+            ConnectedDisconnectReason::JoinTsfUnrepresentable => Self::JoinTsfUnrepresentable,
         }
     }
 }
@@ -542,9 +546,6 @@ pub enum ConnectedControlError {
     IndividualTwt(IndividualTwtRequesterError),
     IndividualTwtWake(IndividualTwtWakePlanError),
     TsfTiming(oer_ieee80211_lower_mac::TsfTimingError),
-    /// The join beacon's TSF, advanced to the start of power management,
-    /// crosses 2^64: the station cannot follow the access point's TSF.
-    JoinTsfUnrepresentable,
     IndividualTwtHardware(StationIndividualTwtHardwareError),
     MissingIndividualTwtRequester,
     Ftm(FtmRequesterError),
@@ -2005,8 +2006,8 @@ fn trace_link(event: LinkEvent) {
     oer_trace::emit(&LinkControlTrace { event });
 }
 pub use power::{
-    ConnectedPowerCommand, JoinBeacon, NetworkTxPowerReport, POWER_COMMAND_CAPACITY,
-    PowerCoexSnapshot, access_point_tsf_after, beacon_tsf_followable,
+    ConnectedPowerCommand, JoinBeacon, JoinTsfUnrepresentable, NetworkTxPowerReport,
+    POWER_COMMAND_CAPACITY, PowerCoexSnapshot, access_point_tsf_after, beacon_tsf_followable,
 };
 
 #[cfg(test)]

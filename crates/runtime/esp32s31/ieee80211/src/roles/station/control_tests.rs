@@ -2331,7 +2331,7 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
 }
 
 #[test]
-fn a_join_tsf_advanced_past_its_range_fails_the_association_before_any_write() {
+fn a_join_tsf_advanced_past_its_range_ends_the_association_before_any_write() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (_publisher, receiver) = resources.split();
     let link = StationPowerLink::<NoopRawMutex>::new();
@@ -2356,7 +2356,7 @@ fn a_join_tsf_advanced_past_its_range_fails_the_association_before_any_write() {
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware);
     embassy_futures::block_on(tx.wait_until(oer_time::Instant::from_micros(6_000)));
-    let failed = loop {
+    let ended = loop {
         match embassy_futures::block_on(control.service_with_context(
             &mut hardware,
             &mut tx,
@@ -2366,7 +2366,14 @@ fn a_join_tsf_advanced_past_its_range_fails_the_association_before_any_write() {
             other => break other,
         }
     };
-    assert_eq!(failed, Err(ConnectedControlError::JoinTsfUnrepresentable));
+    // A disconnect, which refreshes the candidate, not a control failure,
+    // which would stop the station.
+    assert_eq!(
+        ended,
+        Ok(DatapathControlProgress::Exit(
+            ConnectedDisconnectReason::JoinTsfUnrepresentable
+        ))
+    );
     assert_eq!((hardware.station_tsf, hardware.station_tsf_writes), (7, 0));
 }
 

@@ -644,6 +644,9 @@ pub enum StationDisconnectReason {
     /// The access point did not answer the SA Query an unprotected
     /// disconnect started under management frame protection.
     SaQueryTimeout,
+    /// The join beacon's TSF could not be advanced to the start of power
+    /// management without crossing 2^64.
+    JoinTsfUnrepresentable,
 }
 
 /// Stable station stage vocabulary used by HIL lifecycle evidence.

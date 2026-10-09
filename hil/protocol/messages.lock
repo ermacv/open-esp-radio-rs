@@ -205,7 +205,7 @@ wifi/station-epoch-control 2be4ec938d7449c8 property
 wifi/station-lifecycle-events c3a1976b57a6f76d property
 wifi/station/epoch/completed d3b39806204e44a2 topic
 wifi/station/epoch/cycle f93465935d9839c1 endpoint
-wifi/station/lifecycle e462dcf80d80a657 topic
+wifi/station/lifecycle 81fc6bbc4b7fef64 topic
 wifi/station/start f7577d9aafde3569 endpoint
 wifi/station/stop 82add8a7b5f872f9 endpoint
 wifi/tx-architecture-probe 9e611d3cba8f896d property

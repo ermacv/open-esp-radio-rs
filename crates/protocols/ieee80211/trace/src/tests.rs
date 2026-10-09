@@ -52,6 +52,7 @@ fn every_station_event_decodes_to_what_it_encoded() {
         ExitReason::ActiveStateRestoreFailed,
         ExitReason::GroupKeyHandshakeFailed,
         ExitReason::SaQueryTimeout,
+        ExitReason::JoinTsfUnrepresentable,
     ] {
         round_trip(ControlExit { reason });
     }
@@ -106,7 +107,8 @@ fn words_no_station_event_encodes_fail_to_decode() {
     assert_eq!(BeaconMonitorTrace::decode([4, 0]), None);
     assert_eq!(ControlExit::decode([0, 1]), None);
     assert_eq!(ControlExit::decode([1, 0x1_0000]), None);
-    assert_eq!(ControlExit::decode([7, 0]), None);
+    assert_eq!(ControlExit::decode([7, 1]), None);
+    assert_eq!(ControlExit::decode([8, 0]), None);
     assert_eq!(RxSlotTrace::decode([3, 0]), None);
     assert_eq!(RxSlotTrace::decode([2 | (4 << 8), 0]), None);
     assert_eq!(RxSlotTrace::decode([1 << 16, 0]), None);

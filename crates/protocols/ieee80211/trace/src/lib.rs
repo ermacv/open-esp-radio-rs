@@ -368,6 +368,7 @@ pub enum ExitReason {
     ActiveStateRestoreFailed,
     GroupKeyHandshakeFailed,
     SaQueryTimeout,
+    JoinTsfUnrepresentable,
 }
 
 /// A connected epoch ended; recording freezes a window after it.
@@ -395,6 +396,7 @@ impl Event for ControlExit {
             Reason::ActiveStateRestoreFailed => [4, 0],
             Reason::GroupKeyHandshakeFailed => [5, 0],
             Reason::SaQueryTimeout => [6, 0],
+            Reason::JoinTsfUnrepresentable => [7, 0],
         }
     }
 
@@ -409,6 +411,7 @@ impl Event for ControlExit {
             (4, 0) => Reason::ActiveStateRestoreFailed,
             (5, 0) => Reason::GroupKeyHandshakeFailed,
             (6, 0) => Reason::SaQueryTimeout,
+            (7, 0) => Reason::JoinTsfUnrepresentable,
             _ => return None,
         };
         Some(Self { reason })

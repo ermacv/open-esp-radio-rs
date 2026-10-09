@@ -104,9 +104,10 @@ impl JoinBeacon {
     ///
     /// # Errors
     ///
-    /// [`ConnectedControlError::JoinTsfUnrepresentable`] when the sum crosses
-    /// 2^64: the station cannot follow the access point's TSF, so the
-    /// association fails instead of starting power management from it.
+    /// [`JoinTsfUnrepresentable`] when the sum crosses 2^64: the station
+    /// cannot follow the access point's TSF, so the association ends
+    /// ([`ConnectedDisconnectReason::JoinTsfUnrepresentable`]) instead of
+    /// starting power management from it.
     ///
     /// SOURCE: complete pinned `libpp.a[if_hwctrl.o]::ic_update_sta_tsf`
     /// adds the difference of a free-running microsecond counter between now
@@ -116,7 +117,7 @@ impl JoinBeacon {
     pub fn access_point_tsf_at(
         self,
         now: oer_time::Instant,
-    ) -> Result<Option<TsfInstant>, ConnectedControlError> {
+    ) -> Result<Option<TsfInstant>, JoinTsfUnrepresentable> {
         let Some(received_at) = self.received_at else {
             return Ok(None);
         };
@@ -125,9 +126,14 @@ impl JoinBeacon {
             now.saturating_duration_since(received_at).as_micros(),
         )
         .map(Some)
-        .ok_or(ConnectedControlError::JoinTsfUnrepresentable)
+        .ok_or(JoinTsfUnrepresentable)
     }
 }
+
+/// A join beacon's TSF advanced to the start of power management crosses
+/// 2^64.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JoinTsfUnrepresentable;
 
 /// The access point TSF `timestamp_tsf` advanced by `elapsed_micros`, the
 /// time since its frame arrived; `None` when the sum crosses 2^64, which the
@@ -458,7 +464,12 @@ impl ConnectedControlCore {
                 // The TBTT schedule is in the access point's TSF, so the
                 // station takes it before power management places its first
                 // TBTT, as the vendor does on the Association Response.
-                if let Some(tsf) = join.access_point_tsf_at(clock.now)? {
+                let Ok(join_tsf) = join.access_point_tsf_at(clock.now) else {
+                    return Ok(Some(DatapathControlProgress::Exit(
+                        ConnectedDisconnectReason::JoinTsfUnrepresentable,
+                    )));
+                };
+                if let Some(tsf) = join_tsf {
                     self.station_tsf
                         .set(hardware, tsf)
                         .map_err(ConnectedControlError::TsfTiming)?;

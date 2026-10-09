@@ -1517,6 +1517,9 @@ fn station_status_edge(state: StationLinkState) -> Option<StationLinkEdge> {
                 ConnectedDisconnectReason::SaQueryTimeout => {
                     StationDisconnectReason::SaQueryTimeout
                 }
+                ConnectedDisconnectReason::JoinTsfUnrepresentable => {
+                    StationDisconnectReason::JoinTsfUnrepresentable
+                }
             }))
         }
         StationLinkState::Disconnected(None) => None,

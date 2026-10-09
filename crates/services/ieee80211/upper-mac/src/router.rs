@@ -7,7 +7,7 @@
 //!
 //! - an attempt completion goes to the exchange that registered its
 //!   [`TxId`] ([`EventRouter::completion`]);
-//! - received frames and oversize-drop reports go to the bounded receive
+//! - received frames go to the bounded receive
 //!   queue of the interface they belong to ([`EventRouter::received`]), and
 //!   extension events (a TBTT) to the station's ([`EventRouter::extension`]):
 //!   every client of the port attaches its interface
@@ -426,12 +426,6 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                 Some(index) => state.received[index].push(event),
                 None => state.unrouted = state.unrouted.saturating_add(1),
             },
-            // An oversize report names no interface: the station's, which
-            // counts it, or the only one attached.
-            LowerMacEvent::RxTooLong { .. } => match state.station() {
-                Some(index) => state.received[index].push(event),
-                None => state.unrouted = state.unrouted.saturating_add(1),
-            },
             LowerMacEvent::Lifecycle(lifecycle) => state.lifecycle.push(lifecycle),
             // A TBTT is the station's.
             LowerMacEvent::Extension => match state.station() {
@@ -549,7 +543,7 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
         .await
     }
 
-    /// The next received frame or oversize-drop report of interface `vif`,
+    /// The next received frame of interface `vif`,
     /// viewed through the port; [`EventsLost`] when frames were dropped.
     /// `None` once the port is poisoned and the queue is empty, and for an
     /// interface beyond [`ROUTER_VIFS`].

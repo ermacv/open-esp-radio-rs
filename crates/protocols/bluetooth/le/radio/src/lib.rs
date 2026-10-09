@@ -61,7 +61,7 @@ pub type LeInstant = oer_time::RadioInstant<LeRadio>;
 pub type LeWindow = oer_time::RadioWindow<LeRadio>;
 pub use outcome::{CaptureError, EventResult, RadioFault, RadioOutcome, ReceivedPdu, TestReport};
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
-pub use port::{LeRadioPort, Never, NoRadio};
+pub use port::{LeRadioPort, NoRadio};
 pub use request::{
     AcceptListChange, AcceptListDevice, AccessAddress, AdvertisingConfiguration, AdvertisingEvent,
     AdvertisingReception, AdvertisingSetId, CoexistenceLevel, ConnectionAllowances,

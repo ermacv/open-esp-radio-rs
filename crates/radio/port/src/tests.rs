@@ -33,14 +33,6 @@ fn a_caller_allocator_never_yields_a_backend_identity() {
     assert_eq!(ids.next::<Id>(), Id(0));
 }
 
-#[test]
-fn backend_identities_lie_in_the_reserved_range() {
-    let pause: Id = backend_reserved(0).unwrap();
-    assert!(pause.is_backend_reserved());
-    assert_eq!(backend_reserved::<Id>(255), Some(Id(u32::MAX)));
-    assert!(!Id(0).is_backend_reserved());
-}
-
 #[derive(Debug)]
 enum Error {
     NotInstalled,
@@ -77,28 +69,49 @@ enum Port {}
 #[test]
 fn a_monotonic_radio_clock_converts_exactly_both_ways() {
     let clock = ClockInfo::MONOTONIC_MICROS;
-    let radio = RadioInstant::<Port>::from_micros(1_234);
-    assert_eq!(clock.to_monotonic(radio), Ok(Instant::from_micros(1_234)));
-    assert_eq!(clock.from_monotonic(Instant::from_micros(1_234)), Ok(radio));
+    // A monotonic clock ignores the sample.
+    let sample = ClockSample::<Port> {
+        radio: RadioInstant::from_micros(1),
+        monotonic: Instant::from_micros(9),
+        uncertainty: Duration::from_micros(5),
+        generation: 2,
+    };
+    assert_eq!(
+        clock.to_monotonic_with(stamp(1_234, 2), &sample),
+        Ok(Projected {
+            at: Instant::from_micros(1_234),
+            uncertainty: Duration::ZERO,
+        })
+    );
+    assert_eq!(
+        clock.from_monotonic_with(Instant::from_micros(1_234), &sample),
+        Ok(Projected {
+            at: stamp(1_234, 2),
+            uncertainty: Duration::ZERO,
+        })
+    );
 }
 
 #[test]
-fn unrelated_and_affine_radio_clocks_never_pretend_to_convert() {
-    let radio = RadioInstant::<Port>::from_micros(1_234);
+fn unrelated_radio_clocks_never_pretend_to_convert() {
     let unrelated = ClockInfo {
         epoch: RadioEpoch::Unrelated,
         ..ClockInfo::MONOTONIC_MICROS
     };
-    assert_eq!(unrelated.to_monotonic(radio), Err(EpochError::Unrelated));
+    let sample = ClockSample::<Port> {
+        radio: RadioInstant::from_micros(1),
+        monotonic: Instant::from_micros(1),
+        uncertainty: Duration::ZERO,
+        generation: 0,
+    };
     assert_eq!(
-        unrelated.from_monotonic::<Port>(Instant::from_micros(1)),
+        unrelated.to_monotonic_with(stamp(1_234, 0), &sample),
         Err(EpochError::Unrelated)
     );
-    let affine = ClockInfo {
-        epoch: RadioEpoch::Affine { drift_ppm: 20 },
-        ..ClockInfo::MONOTONIC_MICROS
-    };
-    assert_eq!(affine.to_monotonic(radio), Err(EpochError::NeedsSample));
+    assert_eq!(
+        unrelated.from_monotonic_with(Instant::from_micros(1), &sample),
+        Err(EpochError::Unrelated)
+    );
 }
 
 fn stamp(micros: u64, generation: u32) -> RadioStamp<Port> {

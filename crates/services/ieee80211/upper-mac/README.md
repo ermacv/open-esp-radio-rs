@@ -13,7 +13,7 @@ the backend's runner, takes every event and dispatches it:
 - a completion goes to the exchange that registered its `TxId`
   (`register(id)` before the submission, `completion(id)`), so exchanges on
   different access categories run concurrently over one port;
-- received frames and `RxTooLong` reports go to the bounded receive queue
+- received frames go to the bounded receive queue
   of the interface they belong to (`received(vif)`), extension events such
   as TBTTs to the station's (`extension(vif)`), and lifecycle terminals to
   `lifecycle()`, each reporting its own `EventsLost` in place of the first

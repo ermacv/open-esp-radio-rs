@@ -1,8 +1,11 @@
 //! The radio port a Controller service loop drives.
 
-use core::future::{Future, pending, ready};
+use core::{
+    convert::Infallible,
+    future::{Future, pending, ready},
+};
 
-use oer_radio_port::{ClockInfo, EventsLost, FailureClass, PortError, RadioEpoch};
+use oer_radio_port::{ClockInfo, EventsLost, PortError, RadioEpoch};
 
 use crate::{
     ConnectionAllowances, LeInstant, LeRadioCapabilities, RadioActivity, RadioDuration,
@@ -16,7 +19,7 @@ use crate::{
 /// [`Self::next_outcome`] and reads each through [`Self::view`].
 ///
 /// Failures come in the three classes of every radio port
-/// ([`FailureClass`]):
+/// ([`FailureClass`](oer_radio_port::FailureClass)):
 ///
 /// - `Rejected`: `Ok(Err(RequestError))` from [`Self::submit`], or an error
 ///   of that class (no radio installed); nothing changed. A refusal as
@@ -104,21 +107,12 @@ pub trait LeRadioPort {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoRadio;
 
-/// [`NoRadio`] never fails and never produces an outcome.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Never {}
-
-impl PortError for Never {
-    fn class(&self) -> FailureClass {
-        match *self {}
-    }
-}
-
 const ZERO: RadioDuration = RadioDuration::from_micros(0);
 
 impl LeRadioPort for NoRadio {
-    type Outcome = Never;
-    type Error = Never;
+    // It never fails and never produces an outcome.
+    type Outcome = Infallible;
+    type Error = Infallible;
 
     fn capabilities(&self) -> LeRadioCapabilities {
         LeRadioCapabilities::NONE
@@ -131,7 +125,7 @@ impl LeRadioPort for NoRadio {
         }
     }
 
-    fn clock(&self) -> impl Future<Output = Result<(LeInstant, RadioTiming), Never>> + '_ {
+    fn clock(&self) -> impl Future<Output = Result<(LeInstant, RadioTiming), Infallible>> + '_ {
         ready(Ok((
             LeInstant::from_micros(0),
             RadioTiming {
@@ -154,19 +148,19 @@ impl LeRadioPort for NoRadio {
     fn submit(
         &self,
         _: RadioRequest<'_>,
-    ) -> impl Future<Output = Result<Result<(), RequestError>, Never>> {
+    ) -> impl Future<Output = Result<Result<(), RequestError>, Infallible>> {
         ready(Ok(Err(RequestError::Unsupported)))
     }
 
-    fn next_outcome(&self) -> impl Future<Output = Result<Never, EventsLost>> + '_ {
+    fn next_outcome(&self) -> impl Future<Output = Result<Infallible, EventsLost>> + '_ {
         pending()
     }
 
-    fn view(outcome: &Never) -> RadioOutcome<'_> {
+    fn view(outcome: &Infallible) -> RadioOutcome<'_> {
         match *outcome {}
     }
 
-    fn activity(&self, _: RadioActivity) -> Result<(), Never> {
+    fn activity(&self, _: RadioActivity) -> Result<(), Infallible> {
         Ok(())
     }
 }

@@ -21,10 +21,6 @@ pub enum LowerMacEvent<'a> {
     /// One received MPDU, from its header to the end of its body, without
     /// the FCS.
     Received { frame: &'a [u8], meta: RxMeta },
-    /// A received MPDU of `length` bytes was longer than the backend's
-    /// receive buffer and was dropped. It is not a queue loss: no other
-    /// event is missing.
-    RxTooLong { length: usize },
     /// The terminal event of one attempt. Its buffer is released.
     TxCompleted(TxCompletion),
     /// The terminal event of a lifecycle command.

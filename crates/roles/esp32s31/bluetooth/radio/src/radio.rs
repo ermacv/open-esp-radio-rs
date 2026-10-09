@@ -316,6 +316,9 @@ pub struct BluetoothRadio<
     timing: RadioTiming,
     policy: SchedulerTimingPolicy,
     faulted: bool,
+    /// A finished list zero was observed while a list transaction refused
+    /// the completion pass; the pass runs when the transaction finishes.
+    deferred_completion: bool,
     coexistence: CoexistenceProfile,
 }
 
@@ -453,6 +456,7 @@ impl<
             },
             policy: SchedulerTimingPolicy::from_scheduler_config(config, scale),
             faulted: false,
+            deferred_completion: false,
             coexistence: CoexistenceProfile::Standalone,
         }
     }
@@ -729,11 +733,16 @@ impl<
     }
 
     /// Take the items that hardware finished and end their events.
+    ///
+    /// A list transaction in progress defers the pass to its end: the
+    /// finished-list observation that called it raises no second wake.
     pub fn complete(&mut self, sink: &mut impl BluetoothRadioSink) {
         let mut items = space(&self.memory);
         let Ok(completion) = self.executor.take_completed(&mut items) else {
+            self.deferred_completion = true;
             return;
         };
+        self.deferred_completion = false;
         let out_of_order = completion.out_of_order();
         for (id, status) in completion.iter() {
             self.settle(id, Some(status), sink);
@@ -810,6 +819,13 @@ impl<
         }
         for (id, status) in step.released().iter() {
             self.settle(id, status, sink);
+        }
+        if matches!(
+            step.next(),
+            oer_esp32s31_bluetooth::scheduler::SchedulerNext::Finished
+        ) && self.deferred_completion
+        {
+            self.complete(sink);
         }
         RadioStep::Transaction(step)
     }

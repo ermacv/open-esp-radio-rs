@@ -15,9 +15,10 @@ use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
     scheduler::{
         SchedulerAction, SchedulerHardwareView, SchedulerNext, SchedulerObservation,
-        SchedulerSoftwareConfig,
+        SchedulerSoftwareConfig, SchedulerStep,
     },
 };
+use oer_esp32s31_bluetooth_memory::SchedulerItemId;
 use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerHalInitConfig, BluetoothSchedulerBusyObservation,
     BluetoothSchedulerExecutionModifyDisposition,
@@ -305,6 +306,73 @@ fn a_running_scheduler_inserts_one_item_per_transaction() {
         radio.drive(view(true), &mut sink),
         RadioStep::Idle
     ));
+}
+
+/// Finish the live insertion `step` began.
+fn finish_insertion(
+    radio: &mut Radio,
+    sink: &mut Sink,
+    mut step: SchedulerStep<SchedulerItemId, 8>,
+) {
+    loop {
+        let observation = match step.next() {
+            SchedulerNext::Finished => return,
+            SchedulerNext::Await(_) => {
+                if step
+                    .actions()
+                    .any(|action| matches!(action, SchedulerAction::PublishExecutionLock(_)))
+                {
+                    SchedulerObservation::ExecutionLock(
+                        oer_esp32s31_hal::bluetooth::BluetoothSchedulerExecutionLockDisposition::ReconcileCurrentHead,
+                    )
+                } else {
+                    SchedulerObservation::ExecutionModify(
+                        BluetoothSchedulerExecutionModifyDisposition::Ready,
+                    )
+                }
+            }
+        };
+        let RadioStep::Transaction(next) = radio.advance(observation, sink).unwrap() else {
+            panic!("an insertion continues as a transaction")
+        };
+        step = next;
+    }
+}
+
+#[test]
+fn a_completion_observed_during_a_transaction_settles_when_it_finishes() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    configure_legacy(&mut radio, &mut sink);
+    radio
+        .request(
+            advertise(
+                1,
+                10_000,
+                AdvertisingChannels::new(true, true, false).unwrap(),
+            ),
+            &mut sink,
+        )
+        .unwrap();
+    let RadioStep::Transaction(first) = radio.drive(view(true), &mut sink) else {
+        panic!("a running scheduler needs a live insertion")
+    };
+    finish_insertion(&mut radio, &mut sink, first);
+    let RadioStep::Transaction(second) = radio.drive(view(true), &mut sink) else {
+        panic!("the second channel needs its own insertion")
+    };
+    // Hardware executes every listed item while the second insertion runs;
+    // the finished-list wake calls the completion pass in the middle of it.
+    execute_all(&radio, 0);
+    radio.complete(&mut sink);
+    assert!(sink.0.is_empty());
+    // The transaction's end runs the deferred pass: no second wake comes.
+    finish_insertion(&mut radio, &mut sink, second);
+    execute_all(&radio, 0);
+    assert!(
+        radio.executor.list().len() < 2,
+        "the item that completed during the transaction was taken"
+    );
 }
 
 #[test]

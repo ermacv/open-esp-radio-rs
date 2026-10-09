@@ -789,3 +789,19 @@ fn pass_drains_prior_finished_work_before_consuming_the_next_wake() {
     assert!(model.0.borrow().finished.is_none());
     assert!(model.0.borrow().wake.take().is_none());
 }
+
+#[test]
+fn a_wait_past_the_timer_range_is_an_error_not_a_forever_wait() {
+    let clock: VirtualClock =
+        VirtualClock::starting_at(oer_time::Instant::from_micros(u64::MAX - 5));
+    assert_eq!(
+        block_on(crate::runtime::wait_for(&clock, crate::HARDWARE_RECHECK)),
+        Err(crate::BluetoothTimeError::Deadline)
+    );
+    let clock: VirtualClock = VirtualClock::new();
+    let wait = crate::runtime::wait_for(&clock, crate::HARDWARE_RECHECK);
+    let mut wait = core::pin::pin!(wait);
+    assert!(embassy_futures::poll_once(wait.as_mut()).is_pending());
+    clock.advance(crate::HARDWARE_RECHECK).unwrap();
+    assert_eq!(block_on(wait), Ok(()));
+}

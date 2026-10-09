@@ -118,3 +118,31 @@ fn a_stream_ends_without_failure_only_after_an_expected_detach() {
         "the reply received before it still counts"
     );
 }
+
+#[test]
+fn a_station_fault_belongs_to_the_boot_that_published_it() {
+    use oer_hil_protocol::wifi::{
+        StationFaultCause, StationFaultPhase, StationLifecycle, StationLifecycleEvent,
+    };
+    let fault = StationLifecycleEvent::Faulted {
+        generation: 1,
+        phase: StationFaultPhase::Start,
+        cause: StationFaultCause::Hardware,
+    };
+    let mut messages = vec![hello(7, 0), event(7, 1, 0, 0, StationLifecycle(fault))];
+    assert_eq!(super::station_fault_in(&messages), Some(fault));
+
+    messages.push(hello(8, 0));
+    messages.push(event(
+        8,
+        1,
+        0,
+        0,
+        StationLifecycle(StationLifecycleEvent::Connected {
+            generation: 0,
+            association_bandwidth_mhz: None,
+            security: None,
+        }),
+    ));
+    assert_eq!(super::station_fault_in(&messages), None);
+}

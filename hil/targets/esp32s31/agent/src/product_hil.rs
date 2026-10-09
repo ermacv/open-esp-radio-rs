@@ -72,8 +72,8 @@ use oer_hil_esp32s31_telemetry::{
 
 use oer_hil_protocol::{
     phy::StartupArtifactDisposition, wifi::NetworkCredentials, wifi::NetworkIpv4Configuration,
-    wifi::StationDisconnectReason, wifi::StationEpochEvidence,
-    wifi::WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, wifi::WifiAccessPointEvidence,
+    wifi::StationDisconnectReason, wifi::StationEpochEvidence, wifi::StationFaultCause,
+    wifi::StationFaultPhase, wifi::WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, wifi::WifiAccessPointEvidence,
     wifi::WifiAccessPointSecurity as HilWifiAccessPointSecurity,
     wifi::WifiChannelWidth as HilWifiChannelWidth, wifi::WifiDataPlanePlacement,
     wifi::WifiMonitorCaptureRequest, wifi::WifiMonitorEvidence, wifi::WifiMonitorEvidenceSource,
@@ -778,6 +778,7 @@ fn access_point_evidence(
 enum StationLinkEdge {
     Connected,
     Disconnected(StationDisconnectReason),
+    Faulted(oer::wifi::StaFaultReason),
     #[cfg(feature = "station-exit-evidence")]
     AttemptFailed {
         attempt: u16,
@@ -1435,6 +1436,16 @@ async fn station_lifecycle_task(mut status: StationStatus) {
                     connected = false;
                 }
             }
+            StationLinkEdge::Faulted(reason) => {
+                log_connected_exit_evidence();
+                publish_station_lifecycle(StationLifecycleEvent::Faulted {
+                    generation,
+                    phase: hil_fault_phase(reason.phase),
+                    cause: hil_fault_cause(reason.cause),
+                })
+                .await;
+                connected = false;
+            }
             #[cfg(feature = "station-exit-evidence")]
             StationLinkEdge::AttemptFailed { attempt, stage } => {
                 publish_station_lifecycle(StationLifecycleEvent::AttemptFailed {
@@ -1523,6 +1534,27 @@ fn station_status_edge(state: StationLinkState) -> Option<StationLinkEdge> {
             }))
         }
         StationLinkState::Disconnected(None) => None,
+        StationLinkState::Faulted(reason) => Some(StationLinkEdge::Faulted(reason)),
+    }
+}
+
+const fn hil_fault_phase(phase: oer::wifi::StaFaultPhase) -> StationFaultPhase {
+    use oer::wifi::StaFaultPhase as DriverPhase;
+    match phase {
+        DriverPhase::Start => StationFaultPhase::Start,
+        DriverPhase::Connected => StationFaultPhase::Connected,
+        DriverPhase::Teardown => StationFaultPhase::Teardown,
+    }
+}
+
+const fn hil_fault_cause(cause: oer::wifi::StaFaultCause) -> StationFaultCause {
+    use oer::wifi::StaFaultCause as DriverCause;
+    match cause {
+        DriverCause::Hardware => StationFaultCause::Hardware,
+        DriverCause::Security => StationFaultCause::Security,
+        DriverCause::Configuration => StationFaultCause::Configuration,
+        DriverCause::Resources => StationFaultCause::Resources,
+        DriverCause::RfState => StationFaultCause::RfState,
     }
 }
 

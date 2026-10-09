@@ -324,7 +324,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
         generation: oer_radio::wifi::RadioSubsystemGeneration,
     ) -> impl Future<Output = EmbassyWifiRoleEpochOutcome<Self::Stopped, Self::Faulted>> + 'a {
         async move {
-            match service {
+            let outcome = match service {
                 WifiServiceRequest::StandaloneScan { request, .. } => {
                     await_stack_boundary!(
                         self.run_standalone_scan(endpoint, stopped, request, generation)
@@ -495,7 +495,13 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         )
                     )
                 }
+            };
+            if let EmbassyWifiRoleEpochOutcome::Faulted(faulted) = &outcome
+                && let Some(reason) = faulted.station_fault_reason()
+            {
+                crate::status::publish_station_faulted(reason);
             }
+            outcome
         }
     }
 

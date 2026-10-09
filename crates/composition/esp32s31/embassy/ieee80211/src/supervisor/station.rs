@@ -104,6 +104,7 @@ use oer_esp32s31_ieee80211_sta::{
 };
 
 use oer_ieee80211_mac::station::StaTxSequenceCounters;
+use oer_ieee80211_sta::station::{StaFault, StaFaultCause, StaFaultPhase, StaFaultReason};
 
 use oer_ieee80211_runtime::{await_stack_boundary, station_network::RunningStationNetwork};
 
@@ -1241,6 +1242,30 @@ pub enum ConnectedStationFault<'state, 'security> {
         _returned_control: ControlTx,
         _material: StaAttemptSecurityMaterial,
     },
+}
+
+/// The one map from the ESP32-S31 connected faults to the portable reason
+/// the application and HIL see; a new variant does not build until it is
+/// classified here.
+impl StaFault for ConnectedStationFault<'_, '_> {
+    fn reason(&self) -> StaFaultReason {
+        use StaFaultCause::{Configuration, Hardware, Resources, RfState, Security};
+        use StaFaultPhase::{Start, Teardown};
+        let (phase, cause) = match self {
+            Self::InvalidConnectedPolicy { .. } => (Start, Configuration),
+            Self::InterruptActivation { .. } | Self::InitialStaticResourcesUnavailable { .. } => {
+                (Start, Resources)
+            }
+            Self::EpochStart { .. }
+            | Self::OrdinaryTxUnavailable { .. }
+            | Self::DriverAssembly { .. } => (Start, Hardware),
+            Self::ReplaySetup { .. } | Self::SecurityOwnershipMismatch { .. } => (Start, Security),
+            Self::DriverTeardown { .. } | Self::TxRestore { .. } => (Teardown, Hardware),
+            Self::SecurityTeardownMismatch { .. } => (Teardown, Security),
+            Self::RfAsleep { .. } => (Teardown, RfState),
+        };
+        StaFaultReason::new(phase, cause)
+    }
 }
 
 pub enum ConnectedStationRunExit<'state, 'security> {

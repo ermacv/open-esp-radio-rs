@@ -9,11 +9,16 @@ use embassy_sync::{
 
 use oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
 use oer_ieee80211_mac::security::LinkProtection;
+use oer_ieee80211_sta::station::StaFaultReason;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationLinkState {
     Disconnected(Option<ConnectedDisconnectReason>),
     Connected,
+    /// The station faulted and retains a non-reusable owner: no further
+    /// link edge follows, and every later Wi-Fi command fails with
+    /// `RadioError::HardwareFault`.
+    Faulted(StaFaultReason),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -168,6 +173,11 @@ pub(crate) fn publish_station_connected(
 
 pub(crate) fn publish_station_disconnected(reason: ConnectedDisconnectReason) {
     STATION_STATUS.publish_link(StationLinkState::Disconnected(Some(reason)), None);
+}
+
+/// Publish the terminal fault of the station role, whatever phase it was in.
+pub(crate) fn publish_station_faulted(reason: StaFaultReason) {
+    STATION_STATUS.publish_link(StationLinkState::Faulted(reason), None);
 }
 
 pub(crate) fn publish_station_tx_block_ack(tid: u8, operational: bool) {

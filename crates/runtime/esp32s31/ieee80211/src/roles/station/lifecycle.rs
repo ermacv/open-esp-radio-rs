@@ -10,7 +10,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_ieee80211_runtime::await_stack_boundary;
 
 use oer_ieee80211_sta::station::{
-    StaAttemptFailure, StaLifecycleExit, StaLifecycleProgress, StaReconnectPolicy,
+    StaAttemptFailure, StaFaultReason, StaLifecycleExit, StaLifecycleProgress, StaReconnectPolicy,
 };
 use oer_ieee80211_sta_service::station::StaLifecycleService;
 
@@ -147,6 +147,7 @@ pub enum StationExit<O, R, E, F = core::convert::Infallible> {
     /// or integration capabilities needed to diagnose the fault.
     Faulted {
         fault: F,
+        reason: StaFaultReason,
         runner: R,
         progress: StaLifecycleProgress,
     },
@@ -270,9 +271,14 @@ where
                 },
                 StationCompletion::Ended,
             ),
-            StaLifecycleExit::Faulted { fault, progress } => (
+            StaLifecycleExit::Faulted {
+                fault,
+                reason,
+                progress,
+            } => (
                 StationExit::Faulted {
                     fault,
+                    reason,
                     runner,
                     progress,
                 },

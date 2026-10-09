@@ -11,7 +11,7 @@ use core::{
 
 use oer_ieee80211_sta::station::{
     StaAttemptContext, StaAttemptOutcome, StaBackoffOutcome, StaBackoffReason,
-    StaFailureDisposition, StaLifecycleBackend, StaLifecycleExit, StaLifecycleProgress,
+    StaFailureDisposition, StaFault, StaLifecycleBackend, StaLifecycleExit, StaLifecycleProgress,
     StaNextCandidate, StaReconnectPolicy,
 };
 
@@ -158,7 +158,12 @@ where
                         break;
                     }
                     StaAttemptOutcome::Faulted { fault } => {
-                        return StaLifecycleExit::Faulted { fault, progress };
+                        let reason = fault.reason();
+                        return StaLifecycleExit::Faulted {
+                            fault,
+                            reason,
+                            progress,
+                        };
                     }
                 }
             }

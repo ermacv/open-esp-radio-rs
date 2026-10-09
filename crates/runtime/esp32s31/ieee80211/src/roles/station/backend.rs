@@ -16,7 +16,8 @@ use oer_time::Duration;
 use oer_ieee80211_runtime::await_stack_boundary;
 
 use oer_ieee80211_sta::station::{
-    StaAttemptContext, StaAttemptOutcome, StaBackoffOutcome, StaBackoffReason, StaLifecycleBackend,
+    StaAttemptContext, StaAttemptOutcome, StaBackoffOutcome, StaBackoffReason, StaFault,
+    StaLifecycleBackend,
 };
 
 use super::{StationCommand, StationCommandReceiver};
@@ -45,7 +46,7 @@ use super::{StationCommand, StationCommandReceiver};
 pub trait StationAttemptRunner<M: RawMutex> {
     type Owner;
     type Error;
-    type Fault;
+    type Fault: StaFault;
 
     fn run_attempt<'a>(
         &'a mut self,

@@ -87,6 +87,14 @@ reports whether RF was closed and woken or kept open by another client.
   request and idle control capability. Errors after owner movement retain the
   physical frontier, either in `Faulted` or through terminal system escalation;
   neither returns a restartable role.
+- A fault that ends the station role, alone or beside the access point and in
+  any phase (start, the connected epoch, teardown after a stop), reaches the
+  application on its link stream: `StationStatus` publishes the terminal
+  `StationLinkState::Faulted` with the portable `StaFaultReason` of
+  `oer-ieee80211-sta`. Every faulted role epoch passes the one classification,
+  `ProductionWifiFault::station_fault_reason`; the connected faults are
+  classified by `ConnectedStationFault`'s `StaFault`. Later Wi-Fi commands
+  still fail with `RadioError::HardwareFault`.
 - Lifecycle failures request system reset for an unconfirmed MAC/RX stop, an
   ambiguous RF close or wake, a started PHY registration that failed, a
   partially completed Wi-Fi release and failed initial tracking or channel

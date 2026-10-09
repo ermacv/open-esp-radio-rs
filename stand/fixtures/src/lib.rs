@@ -28,6 +28,9 @@ pub struct Fixture {
     pub detail: Option<String>,
     pub interfaces: Vec<Interface>,
     pub error: Option<String>,
+    /// Its probed radio switch blocks it: it answers no command until
+    /// unblocked. Only the Bluetooth adapter's switch is probed.
+    pub blocked: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -205,7 +208,7 @@ fn interfaces(text: &str) -> Vec<Interface> {
         {
             // `iw dev info`'s channel, not a survey's `channel ... time:`.
             if let Some(interface) = interfaces.last_mut() {
-                interface.channel = Some(channel.to_owned());
+                interface.channel = Some(short_channel(channel));
             }
         } else if line.starts_with("frequency:") {
             if in_use {
@@ -279,11 +282,25 @@ fn local_radios() -> Vec<Fixture> {
                     }),
                 interfaces: probed,
                 error: None,
+                blocked: false,
             }
         })
         .collect::<Vec<_>>();
     radios.sort_by(|a, b| a.name.cmp(&b.name));
     radios
+}
+
+/// `iw`'s channel line in short form, `13 (2472 MHz), width: 40 MHz,
+/// center1: 2462 MHz` as `13 · 2472 MHz · 40 MHz wide`; a line of another
+/// shape stays whole.
+fn short_channel(line: &str) -> String {
+    let short = || {
+        let (number, rest) = line.split_once(" (")?;
+        let (frequency, rest) = rest.split_once(')')?;
+        let width = rest.split_once("width: ")?.1.split(',').next()?.trim();
+        Some(format!("{number} · {frequency} · {width} wide"))
+    };
+    short().unwrap_or_else(|| line.to_owned())
 }
 
 fn interfaces_or_names(text: &str, names: &[String]) -> Vec<Interface> {
@@ -298,6 +315,15 @@ fn interfaces_or_names(text: &str, names: &[String]) -> Vec<Interface> {
             .collect()
     } else {
         parsed
+    }
+}
+
+/// A radio switch's state as the fixture's detail, and whether it blocks.
+fn radio_switch(hard: bool, soft: bool) -> (&'static str, bool) {
+    match (hard, soft) {
+        (true, _) => ("radio hard-blocked", true),
+        (false, true) => ("radio soft-blocked", true),
+        (false, false) => ("radio unblocked", false),
     }
 }
 
@@ -320,15 +346,12 @@ fn bluetooth(adapter: Option<String>) -> Option<Fixture> {
                 std::fs::read_to_string(entry.path().join(kind))
                     .is_ok_and(|state| state.trim() == "1")
             };
-            match (blocked("hard"), blocked("soft")) {
-                (true, _) => "radio hard-blocked",
-                (false, true) => "radio soft-blocked",
-                (false, false) => "radio unblocked",
-            }
+            radio_switch(blocked("hard"), blocked("soft"))
         });
     Some(Fixture {
         role: String::from("host Bluetooth"),
-        detail: rfkill.map(str::to_owned),
+        blocked: rfkill.is_some_and(|(_, blocked)| blocked),
+        detail: rfkill.map(|(state, _)| state.to_owned()),
         reachable: key.is_some(),
         error: key
             .is_none()
@@ -362,15 +385,20 @@ type monitor";
         let interfaces = interfaces(text);
         assert_eq!(interfaces.len(), 2);
         assert_eq!(interfaces[0].kind.as_deref(), Some("AP"));
-        assert!(
-            interfaces[0]
-                .channel
-                .as_deref()
-                .unwrap()
-                .starts_with("13 (2472 MHz)")
+        assert_eq!(
+            interfaces[0].channel.as_deref(),
+            Some("13 · 2472 MHz · 40 MHz wide")
         );
         assert_eq!(interfaces[0].cca_busy_percent, Some(25.0));
         assert_eq!(interfaces[1].kind.as_deref(), Some("monitor"));
         assert_eq!(interfaces[1].cca_busy_percent, None);
+        assert_eq!(short_channel("36 (5180 MHz)"), "36 (5180 MHz)");
+    }
+
+    #[test]
+    fn a_soft_or_hard_blocked_radio_blocks_its_fixture() {
+        assert_eq!(radio_switch(false, true), ("radio soft-blocked", true));
+        assert_eq!(radio_switch(true, false), ("radio hard-blocked", true));
+        assert_eq!(radio_switch(false, false), ("radio unblocked", false));
     }
 }

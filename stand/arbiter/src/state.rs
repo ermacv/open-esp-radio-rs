@@ -61,6 +61,9 @@ pub(crate) struct Ticket {
     /// ([`crate::jobs::JOB_KEY`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) job: Option<String>,
+    /// The HIL run the lease executes, when a runner requested it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) run: Option<String>,
     /// Fields a newer build wrote, kept when this build rewrites the record.
     #[serde(flatten)]
     pub(crate) unknown: crate::Unknown,

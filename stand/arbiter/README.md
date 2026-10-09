@@ -100,8 +100,8 @@ Every change happens under `arbiter.lock`:
 
 | File | Content |
 | --- | --- |
-| `state.json` | Schema 3: queue tickets and holders with their claims and job, each with PID and kernel start time, every recently active owner's balance and the time they were last advanced. Another schema is refused, never converted: a newer one asks for a newer checkout; for an older one, let its holders and waiters finish and remove the file |
-| `history.jsonl` | Completed leases: owner, work, scenarios, duration, the time charged, the owner's balance at release, the grant's reason and `released`, `yielded-to-balance`, `hard-limit`, `preempted-on-request` (with who preempted it and why) or `abandoned` |
+| `state.json` | Schema 3: queue tickets and holders with their claims, job and the HIL run a runner requested them for, each with PID and kernel start time, every recently active owner's balance and the time they were last advanced. Another schema is refused, never converted: a newer one asks for a newer checkout; for an older one, let its holders and waiters finish and remove the file |
+| `history.jsonl` | Completed leases: owner, work, scenarios, the HIL run, duration, the time charged, the owner's balance at release, the grant's reason and `released`, `yielded-to-balance`, `hard-limit`, `preempted-on-request` (with who preempted it and why) or `abandoned` |
 | `board.jsonl` | Flashes, startup-artifact uploads and writes, automatic recoveries, quarantine releases and soaks, with owner, checkout and board MAC |
 | `owners.json` | Schema 1: checkout directory to registered owner; the innermost registered directory decides |
 | `maintenance.json` | Schema 1: boards out of service, each with its owner or quarantine, reason, trigger and evidence path |

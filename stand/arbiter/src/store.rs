@@ -177,6 +177,7 @@ impl Arbiter {
                     reason: holder.reason.clone(),
                     preempted: holder.preempted.clone(),
                     scenarios: Vec::new(),
+                    run: holder.ticket.run.clone(),
                     unknown: Default::default(),
                 },
             )?;

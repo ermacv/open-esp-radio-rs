@@ -174,6 +174,7 @@ mod tests {
             claims,
             priority: Default::default(),
             job: None,
+            run: None,
             unknown: Default::default(),
         }
     }

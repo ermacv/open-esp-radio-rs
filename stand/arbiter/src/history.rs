@@ -59,6 +59,9 @@ pub struct LeaseRecord {
     /// HIL scenarios the lease executed, when its holder named them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scenarios: Vec<String>,
+    /// The HIL run the lease executed, when a runner requested it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
     /// Fields a newer build wrote, kept when this build rewrites the record.
     #[serde(flatten)]
     pub unknown: crate::Unknown,
@@ -131,6 +134,7 @@ mod tests {
             reason: None,
             preempted: None,
             scenarios: Vec::new(),
+            run: None,
             unknown: Default::default(),
         };
         append(&path, &record).unwrap();

@@ -56,6 +56,7 @@ pub(crate) fn peer(
         owner,
         work: format!("peer send {board} {line}"),
         scenarios: Vec::new(),
+        run: None,
         claims: vec![
             oer_stand_claims::Claim::board(target.mac()),
             oer_stand_claims::Claim::shared(oer_stand_claims::AIR),

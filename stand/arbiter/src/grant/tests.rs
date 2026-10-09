@@ -37,6 +37,7 @@ fn request(owner: &str, work: &str) -> Request {
         owner: owner.into(),
         work: work.into(),
         scenarios: Vec::new(),
+        run: None,
         claims: Vec::new(),
     }
 }
@@ -71,6 +72,7 @@ fn ticket(id: u64, owner: &str, process: ProcessIdentity, claims: Vec<Claim>) ->
         claims: normalize(&claims),
         priority: Default::default(),
         job: None,
+        run: None,
         unknown: Default::default(),
     }
 }
@@ -157,6 +159,27 @@ fn a_free_stand_is_granted_and_released_into_history() {
             .acquire_within(&request("wifi", "late"), Some(token))
             .is_err()
     );
+}
+
+#[test]
+fn a_run_is_named_by_its_holder_and_its_history_record() {
+    let directory = tempfile::tempdir().unwrap();
+    let arbiter = arbiter(directory.path());
+    let grant = arbiter
+        .acquire_within(
+            &Request {
+                run: Some(String::from("1000-a")),
+                ..request("wifi", "run a")
+            },
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        arbiter.status().unwrap().holders[0].run.as_deref(),
+        Some("1000-a")
+    );
+    drop(grant);
+    assert_eq!(arbiter.history().unwrap()[0].run.as_deref(), Some("1000-a"));
 }
 
 #[test]

@@ -258,6 +258,7 @@ pub fn run(checkout: &Path, owner: &str, runner: &Runner, spec: &Spec) -> Result
                 owner: owner.to_owned(),
                 work: work.clone(),
                 scenarios: spec.scenarios.clone(),
+                run: None,
                 claims: vec![oer_stand_claims::Claim::stand()],
             })?;
             for arm in round.order.arms() {

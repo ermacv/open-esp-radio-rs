@@ -2,9 +2,10 @@
 //!
 //! A single-threaded HTTP server bound to the loopback interface serves one
 //! page and `status.json`: the arbiter's holders, queue, boards and recent
-//! leases, plus the newest runs of the shared run store. The page polls the
-//! JSON, so it reflects the stand without reloading. The server only reads
-//! the arbiter's state and the run manifests.
+//! leases, plus the newest runs of the shared run store, each with the owner
+//! and leases of the leases that name it. The page polls the JSON, so it
+//! reflects the stand without reloading. The server only reads the arbiter's
+//! state and the run manifests.
 //!
 //! One dashboard serves the host. It names itself in `dashboard.json` of the
 //! arbiter directory: a second start of the same build prints the running
@@ -282,10 +283,13 @@ fn snapshot(store: &RunStore) -> Result<Value> {
     let status = arbiter.status()?;
     let jobs = arbiter.jobs().unfinished();
     let mut history = arbiter.history()?;
+    let mut runs = oer_hil_analysis::dashboard::newest_runs(store, RECENT_RUNS);
+    link_runs(&mut runs, &status.holders, &history);
     history.reverse();
     history.truncate(RECENT_LEASES);
     Ok(json!({
         "generated_unix": oer_durable::unix_seconds(),
+        "hard_limit_secs": oer_stand_arbiter::HARD_LIMIT.as_secs(),
         "holders": status.holders,
         "queue": status.queue,
         "balances": status.balances,
@@ -296,8 +300,41 @@ fn snapshot(store: &RunStore) -> Result<Value> {
         "maintenance": status.maintenance,
         "jobs": oer_stand_arbiter::jobs::views(&jobs, &status),
         "leases": history,
-        "runs": oer_hil_analysis::dashboard::newest_runs(store, RECENT_RUNS),
+        "runs": runs,
     }))
+}
+
+/// Name each run's owner and stand leases from the leases that name the run:
+/// `owner`, `leases` (every lease ID, oldest first) and `holding` (the lease
+/// it holds now). A run no lease names keeps a null owner.
+fn link_runs(
+    runs: &mut [Value],
+    holders: &[oer_stand_arbiter::HolderStatus],
+    history: &[oer_stand_arbiter::LeaseRecord],
+) {
+    for run in runs {
+        let Some(id) = run["id"].as_str().map(str::to_owned) else {
+            continue;
+        };
+        let held = holders
+            .iter()
+            .find(|holder| holder.run.as_deref() == Some(id.as_str()));
+        let past = history
+            .iter()
+            .filter(|record| record.run.as_deref() == Some(id.as_str()))
+            .collect::<Vec<_>>();
+        let owner = held
+            .map(|holder| holder.owner.as_str())
+            .or_else(|| past.last().map(|record| record.owner.as_str()));
+        let leases = past
+            .iter()
+            .map(|record| record.id)
+            .chain(held.map(|holder| holder.id))
+            .collect::<Vec<_>>();
+        run["owner"] = json!(owner);
+        run["leases"] = json!(leases);
+        run["holding"] = json!(held.map(|holder| holder.id));
+    }
 }
 
 #[cfg(test)]
@@ -367,6 +404,56 @@ mod tests {
         me.write(&record).unwrap();
         me.withdraw(&record);
         assert!(!record.exists());
+    }
+
+    #[test]
+    fn a_run_is_linked_to_the_leases_that_name_it() {
+        let record = |id: u64, owner: &str, run: Option<&str>| oer_stand_arbiter::LeaseRecord {
+            id,
+            owner: owner.to_owned(),
+            work: String::from("run a"),
+            granted_unix: 1,
+            released_unix: 2,
+            outcome: oer_stand_arbiter::LeaseOutcome::Released,
+            charged_ms: 0,
+            balance_after_ms: 0,
+            reason: None,
+            preempted: None,
+            scenarios: Vec::new(),
+            run: run.map(str::to_owned),
+            unknown: Default::default(),
+        };
+        let history = [
+            record(1, "ble", Some("2-yielded")),
+            record(2, "wifi", None),
+            record(3, "ble", Some("1-done")),
+        ];
+        let holders = [oer_stand_arbiter::HolderStatus {
+            id: 4,
+            owner: String::from("ble"),
+            work: String::from("run a"),
+            pid: 1,
+            elapsed_secs: 0,
+            estimate_secs: 0,
+            balance_ms: 0,
+            claims: String::new(),
+            job: None,
+            run: Some(String::from("2-yielded")),
+        }];
+        let mut runs = [
+            json!({"id": "2-yielded"}),
+            json!({"id": "1-done"}),
+            json!({"id": "0-unnamed"}),
+        ];
+        link_runs(&mut runs, &holders, &history);
+        assert_eq!(
+            runs,
+            [
+                json!({"id": "2-yielded", "owner": "ble", "leases": [1, 4], "holding": 4}),
+                json!({"id": "1-done", "owner": "ble", "leases": [3], "holding": null}),
+                json!({"id": "0-unnamed", "owner": null, "leases": [], "holding": null}),
+            ]
+        );
     }
 
     #[test]

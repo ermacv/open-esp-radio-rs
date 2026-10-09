@@ -169,6 +169,7 @@ mod tests {
             claims: vec![Claim::board("AA")],
             priority: Default::default(),
             job: None,
+            run: None,
             unknown: Default::default(),
         }
     }

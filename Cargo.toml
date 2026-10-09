@@ -49,7 +49,7 @@ members = [
     "crates/runtime/bluetooth",
     "crates/runtime/ieee80211",
     "crates/runtime/interrupt-table",
-    "crates/adapters/embassy/radio",
+    "crates/runtime/radio/supervisor",
     "crates/adapters/embassy/time",
     "crates/adapters/virtual/time",
     "crates/runtime/*/bluetooth",

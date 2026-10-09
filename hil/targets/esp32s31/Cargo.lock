@@ -2060,7 +2060,7 @@ dependencies = [
  "oer-memory",
  "oer-network-interface",
  "oer-radio",
- "oer-radio-embassy",
+ "oer-radio-supervisor",
  "oer-time",
  "oer-time-embassy",
  "riscv",
@@ -2579,20 +2579,20 @@ name = "oer-radio-coex"
 version = "0.1.0"
 
 [[package]]
-name = "oer-radio-embassy"
+name = "oer-radio-port"
+version = "0.1.0"
+dependencies = [
+ "oer-time",
+]
+
+[[package]]
+name = "oer-radio-supervisor"
 version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "oer-ieee80211-runtime",
  "oer-radio",
-]
-
-[[package]]
-name = "oer-radio-port"
-version = "0.1.0"
-dependencies = [
- "oer-time",
 ]
 
 [[package]]

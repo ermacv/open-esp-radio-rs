@@ -5,12 +5,12 @@ use crate::{WifiDevice, WifiDevices, monitor::MonitorFrames};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use oer_radio::wifi::{WifiIdle, WifiServicePlanningError};
-use oer_radio_embassy::{EmbassyWifiStartKind, EmbassyWifiSupervisorPort};
+use oer_radio_supervisor::{WifiStartKind, WifiSupervisorMailbox};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RadioError {
     Planning(WifiServicePlanningError),
-    RoleActive(EmbassyWifiStartKind),
+    RoleActive(WifiStartKind),
     HardwareFault,
 }
 
@@ -31,7 +31,7 @@ pub enum NewError {
 
 /// Hardware-free Wi-Fi typestate root for the sole ESP32-S31 radio runner.
 pub type WifiControl =
-    WifiIdle<EmbassyWifiSupervisorPort<'static, CriticalSectionRawMutex, RadioError>>;
+    WifiIdle<WifiSupervisorMailbox<'static, CriticalSectionRawMutex, RadioError>>;
 
 /// Materialized Wi-Fi application resources. The network device and monitor
 /// capture stream are independent consumers of the same supervised radio.

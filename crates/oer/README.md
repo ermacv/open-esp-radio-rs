@@ -23,7 +23,7 @@ Chip selection and protocol backends are separate:
 | `esp32s31` | `chips::esp32s31::hal`; no Wi-Fi STA/AP or Bluetooth driver selection |
 | `esp32s31-wifi` | Wi-Fi protocols and `chips::esp32s31::driver::ieee80211::{mac,sta,ap}` |
 | `esp32s31-bluetooth` | Bluetooth protocols and `chips::esp32s31::driver::bluetooth`: the hardware engine |
-| `owned-xarxa` | Wi-Fi backend, `embassy::radio` service mailbox, `systems::esp32s31::embassy::radio` (the shared radio's one-call start) and `systems::esp32s31::embassy::wifi` with the owned Xarxa/Embassy network stack |
+| `owned-xarxa` | Wi-Fi backend, `runtime::radio` service supervisor mailbox, `systems::esp32s31::embassy::radio` (the shared radio's one-call start) and `systems::esp32s31::embassy::wifi` with the owned Xarxa/Embassy network stack |
 | `esp32s31-ieee802154` | IEEE 802.15.4 contracts and `chips::esp32s31::driver::ieee802154`: the MAC engine |
 | `embassy-ieee802154` | The engine, `systems::esp32s31::embassy::radio` and `systems::esp32s31::embassy::ieee802154`: the IEEE 802.15.4 client of the shared radio with its construction inputs |
 | `openthread` | The client and `systems::esp32s31::embassy::ieee802154::openthread`: the OpenThread radio adapter |

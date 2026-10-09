@@ -637,64 +637,64 @@ impl ProductionWifiEpochRunner {
 }
 
 pub(super) async fn wait_for_active_wifi_role_stop(
-    endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
+    endpoint: &mut WifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
 ) {
     loop {
         match endpoint.receive().await {
-            EmbassyWifiSupervisorCommand::Stop => return,
-            EmbassyWifiSupervisorCommand::RestartRadio => {
+            WifiSupervisorCommand::Stop => return,
+            WifiSupervisorCommand::RestartRadio => {
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::RestartRadio(Err(
-                        RadioError::RoleActive(EmbassyWifiStartKind::WholeRadioRestart),
+                    .respond(WifiSupervisorResponse::RestartRadio(Err(
+                        RadioError::RoleActive(WifiStartKind::WholeRadioRestart),
                     )))
                     .await;
             }
-            EmbassyWifiSupervisorCommand::Scan(request) => {
+            WifiSupervisorCommand::Scan(request) => {
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                    .respond(WifiSupervisorResponse::Scan(Err(
                         WifiScanFailure::Rejected {
                             request,
-                            error: RadioError::RoleActive(EmbassyWifiStartKind::StandaloneScan),
+                            error: RadioError::RoleActive(WifiStartKind::StandaloneScan),
                         },
                     )))
                     .await;
             }
-            EmbassyWifiSupervisorCommand::StartStation(request) => {
+            WifiSupervisorCommand::StartStation(request) => {
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::Station(Err(
+                    .respond(WifiSupervisorResponse::Station(Err(
                         WifiStartFailure::rejected(
                             request,
-                            RadioError::RoleActive(EmbassyWifiStartKind::Station),
+                            RadioError::RoleActive(WifiStartKind::Station),
                         ),
                     )))
                     .await;
             }
-            EmbassyWifiSupervisorCommand::StartAccessPoint(request) => {
+            WifiSupervisorCommand::StartAccessPoint(request) => {
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::AccessPoint(Err(
+                    .respond(WifiSupervisorResponse::AccessPoint(Err(
                         WifiStartFailure::rejected(
                             request,
-                            RadioError::RoleActive(EmbassyWifiStartKind::AccessPoint),
+                            RadioError::RoleActive(WifiStartKind::AccessPoint),
                         ),
                     )))
                     .await;
             }
-            EmbassyWifiSupervisorCommand::StartStationAccessPoint(request) => {
+            WifiSupervisorCommand::StartStationAccessPoint(request) => {
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                    .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                         WifiStartFailure::rejected(
                             request,
-                            RadioError::RoleActive(EmbassyWifiStartKind::StationAccessPoint),
+                            RadioError::RoleActive(WifiStartKind::StationAccessPoint),
                         ),
                     )))
                     .await;
             }
-            EmbassyWifiSupervisorCommand::StartMonitor(request) => {
+            WifiSupervisorCommand::StartMonitor(request) => {
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::Monitor(Err(
+                    .respond(WifiSupervisorResponse::Monitor(Err(
                         WifiStartFailure::rejected(
                             request,
-                            RadioError::RoleActive(EmbassyWifiStartKind::StandaloneMonitor),
+                            RadioError::RoleActive(WifiStartKind::StandaloneMonitor),
                         ),
                     )))
                     .await;
@@ -705,11 +705,11 @@ pub(super) async fn wait_for_active_wifi_role_stop(
 impl ProductionWifiEpochRunner {
     pub(super) async fn run_access_point_service(
         &mut self,
-        endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
+        endpoint: &mut WifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
         stopped: ProductionSupervisorStopped,
         request: AccessPointRequest,
         generation: oer_radio::wifi::RadioSubsystemGeneration,
-    ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
+    ) -> WifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
         let (wifi, physical, station, access_point, monitor) = stopped.into_parts();
         let mut task = match await_stack_boundary!(self.prepare_access_point_task(
             wifi,
@@ -723,11 +723,11 @@ impl ProductionWifiEpochRunner {
             Err(fault) => {
                 let faulted = ProductionWifiFault::AccessPointPreparation { _fault: fault };
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::AccessPoint(Err(
+                    .respond(WifiSupervisorResponse::AccessPoint(Err(
                         WifiStartFailure::faulted(self.fault_error(&faulted)),
                     )))
                     .await;
-                return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                return WifiRoleEpochOutcome::Faulted(faulted);
             }
         };
         // Only a successfully prepared fresh role reaches this edge. A failed
@@ -804,7 +804,7 @@ impl ProductionWifiEpochRunner {
                     || async {
                         // The runtime constructs this future only after RX IRQ
                         // activation and the first beacon publication succeed.
-                        endpoint.respond(EmbassyWifiSupervisorResponse::AccessPoint(Ok(
+                        endpoint.respond(WifiSupervisorResponse::AccessPoint(Ok(
                             WifiStartReport::new(generation),
                         ))).await;
                         started = true;
@@ -1049,12 +1049,12 @@ impl ProductionWifiEpochRunner {
             let faulted = ProductionWifiFault::AccessPointRuntime { _task: task };
             let error = self.fault_error(&faulted);
             let response = if started {
-                EmbassyWifiSupervisorResponse::Stop(Err(error))
+                WifiSupervisorResponse::Stop(Err(error))
             } else {
-                EmbassyWifiSupervisorResponse::AccessPoint(Err(WifiStartFailure::faulted(error)))
+                WifiSupervisorResponse::AccessPoint(Err(WifiStartFailure::faulted(error)))
             };
             endpoint.respond(response).await;
-            return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+            return WifiRoleEpochOutcome::Faulted(faulted);
         }
         #[cfg(feature = "diagnostics")]
         let diagnostic_destination = (task.parked.station.board.diagnostics, task.channel);
@@ -1062,11 +1062,11 @@ impl ProductionWifiEpochRunner {
             Ok(stopped) => stopped,
             Err(faulted) => {
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::Stop(Err(
-                        self.fault_error(&faulted)
-                    )))
+                    .respond(WifiSupervisorResponse::Stop(
+                        Err(self.fault_error(&faulted)),
+                    ))
                     .await;
-                return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                return WifiRoleEpochOutcome::Faulted(faulted);
             }
         };
         #[cfg(feature = "diagnostics")]
@@ -1078,10 +1078,10 @@ impl ProductionWifiEpochRunner {
             publish_stored_access_point_observation(hooks.access_point, channel);
         }
         endpoint
-            .respond(EmbassyWifiSupervisorResponse::Stop(Ok(
-                WifiStopReport::new(generation),
-            )))
+            .respond(WifiSupervisorResponse::Stop(Ok(WifiStopReport::new(
+                generation,
+            ))))
             .await;
-        EmbassyWifiRoleEpochOutcome::Stopped(stopped)
+        WifiRoleEpochOutcome::Stopped(stopped)
     }
 }

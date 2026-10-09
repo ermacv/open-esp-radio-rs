@@ -11,13 +11,12 @@ use oer_radio::wifi::{
     RadioController, RadioSubsystemGeneration, StationRequest, WifiStartFailure, WifiStartReport,
     WifiSupervisorConfiguration,
 };
-use oer_radio_embassy::{
-    EmbassyWifiActiveRoleControl, EmbassyWifiActiveRoleExit, EmbassyWifiRoleEpochOutcome,
-    EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier, EmbassyWifiStartKind,
-    EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
-    EmbassyWifiSupervisorPort, EmbassyWifiSupervisorPrepareFailure, EmbassyWifiSupervisorResponse,
-    EmbassyWifiSupervisorTask, drive_embassy_wifi_active_role_pinned,
-    finish_embassy_wifi_active_role, prepare_embassy_wifi_supervisor,
+use oer_radio_supervisor::{
+    WifiActiveRoleControl, WifiActiveRoleExit, WifiRoleEpochOutcome, WifiRoleEpochRunner,
+    WifiRoleFrontier, WifiStartKind, WifiSupervisorControlResources, WifiSupervisorEndpoint,
+    WifiSupervisorMailbox, WifiSupervisorPrepareFailure, WifiSupervisorResponse,
+    WifiSupervisorTask, drive_wifi_active_role_pinned, finish_wifi_active_role,
+    prepare_wifi_supervisor,
 };
 
 use oer_esp32s31_hal::owner::MacInterruptSetup;
@@ -37,31 +36,31 @@ use oer_ieee80211_softmac::{MonitorChannelPolicy, MonitorSink};
 
 /// Application-facing ESP32-S31 radio actor. Internal supervisor endpoints
 /// never escape this value.
-pub type RadioSupervisorTask<'resources, M, R> = EmbassyWifiSupervisorTask<'resources, M, R>;
+pub type RadioSupervisorTask<'resources, M, R> = WifiSupervisorTask<'resources, M, R>;
 
 /// Failed ESP32-S31 actor preparation with its runner and stopped owner
 /// retained for explicit board-level handling.
-pub type RadioSupervisorPrepareFailure<R, S> = EmbassyWifiSupervisorPrepareFailure<R, S>;
+pub type RadioSupervisorPrepareFailure<R, S> = WifiSupervisorPrepareFailure<R, S>;
 
 /// Prepare the hardware-free controller and sole owner-holding ESP32-S31
 /// radio actor together.
 pub fn prepare_esp32s31_radio_supervisor<'resources, M, R>(
-    control: &'resources EmbassyWifiSupervisorControlResources<M, R::Error>,
+    control: &'resources WifiSupervisorControlResources<M, R::Error>,
     configuration: WifiSupervisorConfiguration,
     runner: R,
     stopped: R::Stopped,
 ) -> Result<
     (
-        RadioController<EmbassyWifiSupervisorPort<'resources, M, R::Error>>,
+        RadioController<WifiSupervisorMailbox<'resources, M, R::Error>>,
         RadioSupervisorTask<'resources, M, R>,
     ),
     RadioSupervisorPrepareFailure<R, R::Stopped>,
 >
 where
     M: RawMutex,
-    R: EmbassyWifiRoleEpochRunner<M>,
+    R: WifiRoleEpochRunner<M>,
 {
-    prepare_embassy_wifi_supervisor(control, configuration, runner, stopped)
+    prepare_wifi_supervisor(control, configuration, runner, stopped)
 }
 
 /// Role-neutral stopped Wi-Fi plus independently reusable role resources.
@@ -104,7 +103,7 @@ struct StationActiveRoleControl<'borrow, 'control, M: RawMutex> {
     inner: &'borrow mut StationController<'control, M>,
 }
 
-impl<M: RawMutex> EmbassyWifiActiveRoleControl for StationActiveRoleControl<'_, '_, M> {
+impl<M: RawMutex> WifiActiveRoleControl for StationActiveRoleControl<'_, '_, M> {
     fn request_stop(&mut self) {
         self.inner.request_stop();
     }
@@ -114,7 +113,7 @@ struct MonitorActiveRoleControl<'borrow, 'control, M: RawMutex> {
     inner: &'borrow mut MonitorController<'control, M>,
 }
 
-impl<M: RawMutex> EmbassyWifiActiveRoleControl for MonitorActiveRoleControl<'_, '_, M> {
+impl<M: RawMutex> WifiActiveRoleControl for MonitorActiveRoleControl<'_, '_, M> {
     fn request_stop(&mut self) {
         self.inner.request_stop();
     }
@@ -128,21 +127,21 @@ impl<M: RawMutex> EmbassyWifiActiveRoleControl for MonitorActiveRoleControl<'_, 
 /// the exact hardware frontier and must be classified before a pending stop is
 /// acknowledged.
 pub async fn drive_esp32s31_station_role<'control, M, R, E, Reject>(
-    endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
+    endpoint: &mut WifiSupervisorEndpoint<'_, M, E>,
     controller: &mut StationController<'control, M>,
     task: StationTask<'control, M, R>,
     reject_while_active: Reject,
-) -> EmbassyWifiActiveRoleExit<StationExit<R::Owner, R, R::Error, R::Fault>>
+) -> WifiActiveRoleExit<StationExit<R::Owner, R, R::Error, R::Fault>>
 where
     M: RawMutex + 'control,
     R: StationAttemptRunner<M>,
-    Reject: FnMut(EmbassyWifiStartKind) -> E,
+    Reject: FnMut(WifiStartKind) -> E,
 {
     let mut task = task;
     let role = task.run();
     let mut role = core::pin::pin!(role);
     let mut control = StationActiveRoleControl { inner: controller };
-    await_stack_boundary!(drive_embassy_wifi_active_role_pinned(
+    await_stack_boundary!(drive_wifi_active_role_pinned(
         endpoint,
         &mut control,
         role.as_mut(),
@@ -207,11 +206,11 @@ pub async fn run_esp32s31_station_supervisor_epoch<
     RejectActive,
     FaultError,
 >(
-    endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
+    endpoint: &mut WifiSupervisorEndpoint<'_, M, E>,
     epoch: StationSupervisorEpoch<S>,
     prepare: Prepare,
     hooks: StationSupervisorHooks<Classify, RejectActive, FaultError>,
-) -> EmbassyWifiRoleEpochOutcome<S, F>
+) -> WifiRoleEpochOutcome<S, F>
 where
     M: RawMutex + 'control,
     R: StationAttemptRunner<M> + 'control,
@@ -220,8 +219,8 @@ where
         StationRequest,
     )
         -> Result<(StationController<'control, M>, StationTask<'control, M, R>), F>,
-    Classify: FnOnce(StationExit<R::Owner, R, R::Error, R::Fault>) -> EmbassyWifiRoleFrontier<S, F>,
-    RejectActive: FnMut(EmbassyWifiStartKind) -> E,
+    Classify: FnOnce(StationExit<R::Owner, R, R::Error, R::Fault>) -> WifiRoleFrontier<S, F>,
+    RejectActive: FnMut(WifiStartKind) -> E,
     FaultError: FnMut(&F) -> E,
 {
     let StationSupervisorEpoch {
@@ -240,17 +239,17 @@ where
         Err(faulted) => {
             let error = fault_error(&faulted);
             endpoint
-                .respond(EmbassyWifiSupervisorResponse::Station(Err(
+                .respond(WifiSupervisorResponse::Station(Err(
                     WifiStartFailure::faulted(error),
                 )))
                 .await;
-            return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+            return WifiRoleEpochOutcome::Faulted(faulted);
         }
     };
     endpoint
-        .respond(EmbassyWifiSupervisorResponse::Station(Ok(
-            WifiStartReport::new(generation),
-        )))
+        .respond(WifiSupervisorResponse::Station(Ok(WifiStartReport::new(
+            generation,
+        ))))
         .await;
 
     let exit = await_stack_boundary!(drive_esp32s31_station_role(
@@ -259,15 +258,15 @@ where
         task,
         reject_while_active,
     ));
-    match await_stack_boundary!(finish_embassy_wifi_active_role(
+    match await_stack_boundary!(finish_wifi_active_role(
         endpoint,
         generation,
         exit,
         classify,
         fault_error,
     )) {
-        EmbassyWifiRoleFrontier::Stopped(stopped) => EmbassyWifiRoleEpochOutcome::Stopped(stopped),
-        EmbassyWifiRoleFrontier::Faulted(faulted) => EmbassyWifiRoleEpochOutcome::Faulted(faulted),
+        WifiRoleFrontier::Stopped(stopped) => WifiRoleEpochOutcome::Stopped(stopped),
+        WifiRoleFrontier::Faulted(faulted) => WifiRoleEpochOutcome::Faulted(faulted),
     }
 }
 
@@ -294,14 +293,14 @@ pub async fn drive_esp32s31_monitor_role<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 >(
-    endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
+    endpoint: &mut WifiSupervisorEndpoint<'_, M, E>,
     controller: &mut MonitorController<'runtime, M>,
     radio: &oer_esp32s31_radio_runtime::RadioSystem<RP, RC, D>,
     task: MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     channel_policy: MonitorChannelPolicy,
     observer: &mut O,
     reject_while_active: Reject,
-) -> EmbassyWifiActiveRoleExit<
+) -> WifiActiveRoleExit<
     MonitorTaskExit<
         MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
@@ -313,7 +312,7 @@ where
     R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
     M: RawMutex,
     S: MonitorSink<RxPhyInfo>,
-    Reject: FnMut(EmbassyWifiStartKind) -> E,
+    Reject: FnMut(WifiStartKind) -> E,
     D: oer_time::Timer,
     O: PhyTargetObserver,
     RC: oer_esp32s31_hal::shared_radio::PlatformClockProvider,
@@ -321,7 +320,7 @@ where
     let role = task.run_channel_policy_to_exit::<D, O, RP, RC>(radio, channel_policy, observer);
     let mut role = core::pin::pin!(role);
     let mut control = MonitorActiveRoleControl { inner: controller };
-    await_stack_boundary!(drive_embassy_wifi_active_role_pinned(
+    await_stack_boundary!(drive_wifi_active_role_pinned(
         endpoint,
         &mut control,
         role.as_mut(),

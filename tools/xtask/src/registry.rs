@@ -162,6 +162,21 @@ pub const CHECKS: &[Check] = &[
         },
     },
     Check {
+        id: "claude-hooks",
+        tier: Tier::Fast,
+        job: "host",
+        summary: "offline Claude Code hook regressions",
+        trigger: Some(|change| touches(change, &[".claude/hooks/", ".claude/settings.json"])),
+        run: |ctx, _| {
+            process::run(
+                ctx.command("python3")
+                    .env("PYTHONDONTWRITEBYTECODE", "1")
+                    .args(["-m", "unittest", "discover", "-s", ".claude/hooks"])
+                    .args(["-p", "test_pre_tool_use.py"]),
+            )
+        },
+    },
+    Check {
         id: "lock",
         tier: Tier::Fast,
         job: "host",

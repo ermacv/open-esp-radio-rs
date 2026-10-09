@@ -18,13 +18,17 @@
 //!   and role rules of [`oer_repo::policy`];
 //! - [`spawns`]: only entry crates run `cargo hil` or `cargo xtask`;
 //! - [`layouts`]: code relying on a foreign type's layout names the release
-//!   it was reviewed at, and its workspace still locks that release.
+//!   it was reviewed at, and its workspace still locks that release;
+//! - [`agents`]: every `CLAUDE.md` has its `AGENTS.md` link, skills and
+//!   agent profiles have consistent frontmatter, and agent guidance cites no
+//!   line numbers.
 //!
 //! The checks are text policy over the repository model of `oer-repo`,
 //! which also answers the `workspaces` and `chips` commands.
 //!
 //! Each check returns its problems; an empty report is a pass.
 
+pub mod agents;
 pub mod allowlist;
 pub mod applications;
 pub mod classification;
@@ -138,6 +142,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "reviewed layouts",
             problems: layouts::check(&context)?,
+        },
+        Outcome {
+            check: "agent guidance",
+            problems: agents::check(context.repo),
         },
     ])
 }

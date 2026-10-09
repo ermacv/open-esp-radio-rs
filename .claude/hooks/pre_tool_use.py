@@ -5,7 +5,10 @@ Reads the hook input JSON on stdin and blocks (exit 2, one line on stderr):
 
 - a Read of a large generated file (raw PAC, PAC API catalog, published SVD
   or binding index, vendor fact registries): grep it with an explicit path;
-- a Bash command that reads such a file whole (cat, head, sed, ...);
+- a Bash command that reads such a file, or a HIL observer JSON, whole
+  (cat, head, sed, ...);
+- an Edit or Write of a generated file (those above, vendor scenario evidence
+  shards, heavy-commands.json): regenerate it with its owner's command;
 - a foreground Bash build, test, check or HIL run: rerun it with
   run_in_background (which commands those are is xtask's export in
   heavy-commands.json, written by `cargo xtask hooks`);
@@ -37,6 +40,30 @@ GENERATED_HINT = (
     "is a large generated file: grep it with an explicit path "
     "(Grep with path=<file> and -C context) instead of reading it"
 )
+
+# HIL observer JSON: megabytes on one line.
+OBSERVER = re.compile(r"(?:^|/)observers/[^/]*\.json$")
+OBSERVER_HINT = (
+    "is a HIL observer JSON, megabytes on one line: `cargo hil runs why RUN` "
+    "and `cargo hil runs show RUN` name the artifacts to read"
+)
+
+# Generated files and the command that writes each; never edited by hand.
+REGENERATED = [
+    (re.compile(r"(?:^|/)(?:crates/hardware/[^/]+/pac/raw/src/lib\.rs"
+                r"|crates/hardware/[^/]+/pac/src/generated\.rs"
+                r"|registers/[^/]+/published/[^/]+\.(?:svd|bindings\.toml))$"),
+     "`cargo registers generate --manifest registers/<chip>/publication/<publication>.toml` "
+     "after editing the register model or policy"),
+    (re.compile(r"(?:^|/)verification/[^/]+/facts/provenance\.toml$"),
+     "`cargo verification provenance --chip <chip> --accept NAME` after review"),
+    (re.compile(r"(?:^|/)verification/[^/]+/facts/names/[^/]+\.toml$"),
+     "the `oer-symbol-lineage` command in tools/symbol-lineage/README.md"),
+    (re.compile(r"(?:^|/)verification/[^/]+/evidence/scenarios/"),
+     "`cargo verification evidence --chip <chip>`, by the check's owner in a commit of its own"),
+    (re.compile(r"(?:^|/)\.claude/hooks/heavy-commands\.json$"),
+     "`cargo xtask hooks` after changing oer_xtask::hooks"),
+]
 
 # Commands that print a file's contents when it is named as an argument.
 READERS = {
@@ -236,7 +263,9 @@ def reads_generated(words):
         candidates = [w.split(":", 1)[-1] for w in words[2:]]
     for word in candidates:
         if GENERATED.search(word.lstrip("<")):
-            return word
+            return word, GENERATED_HINT
+        if OBSERVER.search(word.lstrip("<")):
+            return word, OBSERVER_HINT
     return None
 
 
@@ -256,9 +285,9 @@ def check_bash(tool_input):
                 block("a hub port is switched only by `cargo stand board reset BOARD "
                       "--via power`, a power cycle under the board's lease; "
                       "`uhubctl` without an action only reads the hub")
-            path = reads_generated(words)
-            if path:
-                block(f"`{path}` {GENERATED_HINT}")
+            read = reads_generated(words)
+            if read:
+                block(f"`{read[0]}` {read[1]}")
             heavy = heavy_command(words)
             if heavy and not background:
                 block(f"`{heavy}` in the foreground: {BACKGROUND_HINT}")
@@ -268,6 +297,14 @@ def check_read(tool_input):
     path = tool_input.get("file_path") or ""
     if GENERATED.search(path.replace("\\", "/")):
         block(f"`{path}` {GENERATED_HINT}")
+
+
+def check_edit(tool_input):
+    path = (tool_input.get("file_path") or "").replace("\\", "/")
+    for pattern, command in REGENERATED:
+        if pattern.search(path):
+            block(f"`{path}` is generated; never edit it by hand, regenerate it "
+                  f"with {command} (CLAUDE.md, Generated files)")
 
 
 def main():
@@ -281,6 +318,8 @@ def main():
         check_bash(tool_input)
     elif tool == "Read":
         check_read(tool_input)
+    elif tool in {"Edit", "Write"}:
+        check_edit(tool_input)
     return 0
 
 

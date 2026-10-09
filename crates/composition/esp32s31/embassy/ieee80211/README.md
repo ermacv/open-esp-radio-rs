@@ -95,6 +95,11 @@ reports whether RF was closed and woken or kept open by another client.
   `ProductionWifiFault::station_fault_reason`; the connected faults are
   classified by `ConnectedStationFault`'s `StaFault`. Later Wi-Fi commands
   still fail with `RadioError::HardwareFault`.
+- The composition never drops a polled station task: the active-role driver
+  (`drive_embassy_wifi_active_role_pinned`) borrows the pinned role future
+  until it returns, and a stop command only asks the role to stop. A
+  cancelled `StationTask` is therefore not a station fault and has no
+  `StaFaultReason`; its fail-closed `Drop` only guards against misuse.
 - Lifecycle failures request system reset for an unconfirmed MAC/RX stop, an
   ambiguous RF close or wake, a started PHY registration that failed, a
   partially completed Wi-Fi release and failed initial tracking or channel

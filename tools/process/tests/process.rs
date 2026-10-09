@@ -53,6 +53,22 @@ fn wait_for_pids(marker: &Path) -> Vec<u32> {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+/// The live processes named `name` whose parent is `parent`.
+fn children_of(parent: u32, name: &str) -> Vec<u32> {
+    fs::read_dir("/proc")
+        .unwrap()
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse::<u32>().ok())
+        .filter(|pid| {
+            fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+                let mut fields = stat.rsplit_once(") ").unwrap().1.split(' ');
+                let state = fields.next().unwrap();
+                state != "Z" && fields.next().unwrap().parse::<u32>().unwrap() == parent
+            }) && fs::read_to_string(format!("/proc/{pid}/comm"))
+                .is_ok_and(|comm| comm.trim_end() == name)
+        })
+        .collect()
+}
+
 fn assert_stopped(pids: &[u32]) {
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
@@ -157,6 +173,60 @@ fn a_killed_owner_takes_its_child_groups_with_it() {
         .unwrap();
     let pids = wait_for_pids(&marker);
     // SIGKILL leaves the owner no chance to clean up: its guardian must.
+    harness.kill().unwrap();
+    harness.wait().unwrap();
+    assert_stopped(&pids);
+}
+
+/// Holds as many owned children as the guardian tracks, marks the moment
+/// one more was refused, and waits to be killed.
+#[test]
+fn guardian_capacity_harness() {
+    let Some(marker) = std::env::var_os("OER_PROCESS_TEST_CAPACITY_MARKER") else {
+        return;
+    };
+    let sleeper = || {
+        let mut command = Command::new("sleep");
+        command.arg("600");
+        command
+    };
+    let children: Vec<_> = (0..owned::MAX_LIVE_CHILDREN)
+        .map(|_| owned::Child::spawn(&mut sleeper()).unwrap())
+        .collect();
+    let Err(error) = owned::Child::spawn(&mut sleeper()) else {
+        panic!("a child beyond the guardian's capacity was spawned unguarded");
+    };
+    assert!(
+        error.to_string().contains("would outlive a lost owner"),
+        "{error}"
+    );
+    fs::write(&marker, "refused").unwrap();
+    std::thread::sleep(Duration::from_secs(600));
+    drop(children);
+}
+
+#[test]
+fn a_child_beyond_the_guardians_capacity_is_refused_and_the_rest_are_guarded() {
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("pids");
+    let mut harness = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "guardian_capacity_harness", "--nocapture"])
+        .env("OER_PROCESS_TEST_CAPACITY_MARKER", &marker)
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !marker.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "the harness did not reach capacity"
+        );
+        assert!(harness.try_wait().unwrap().is_none(), "the harness failed");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // The refused child was stopped and reaped: only the guarded ones remain
+    // beside the guardian, which the harness forked too.
+    let pids = children_of(harness.id(), "sleep");
+    assert_eq!(pids.len(), owned::MAX_LIVE_CHILDREN);
     harness.kill().unwrap();
     harness.wait().unwrap();
     assert_stopped(&pids);

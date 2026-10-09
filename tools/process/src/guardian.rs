@@ -14,76 +14,116 @@
 //! still registered, first with SIGTERM, a second later with SIGKILL.
 //!
 //! The guardian runs only async-signal-safe system calls after the fork:
-//! no allocation, no locks, no Rust standard I/O.
+//! no allocation, no locks, no Rust standard I/O. It therefore tracks a
+//! fixed number of groups. The owner mirrors the registered set, so a group
+//! the guardian could not track is refused before its record is sent, and
+//! a guardian that could not start or no longer reads refuses every group:
+//! no group runs unguarded.
 
 use std::{
+    collections::HashSet,
     fs::File,
     io::Write,
     os::fd::FromRawFd,
     sync::{Mutex, OnceLock},
 };
 
-/// Process groups one guardian tracks at once; further groups go unguarded
-/// rather than failing their spawn.
-const CAPACITY: usize = 256;
+/// Process groups one guardian tracks at once.
+pub(crate) const CAPACITY: usize = 256;
 
 /// One registration record: an operation and a process group id.
 const ADD: i32 = 1;
 const REMOVE: i32 = 2;
 
-fn writer() -> Option<&'static Mutex<File>> {
-    static WRITER: OnceLock<Option<Mutex<File>>> = OnceLock::new();
-    WRITER.get_or_init(start).as_ref()
+/// The owner's end: the registration pipe and the groups the guardian
+/// tracks, in the order its records were sent.
+struct Registry {
+    pipe: File,
+    groups: HashSet<i32>,
 }
 
-/// Registers `group` with the guardian.
-pub(crate) fn register(group: i32) {
-    send(ADD, group);
+fn registry() -> crate::Result<&'static Mutex<Registry>> {
+    static REGISTRY: OnceLock<Result<Mutex<Registry>, String>> = OnceLock::new();
+    REGISTRY
+        .get_or_init(|| {
+            start()
+                .map(|pipe| {
+                    Mutex::new(Registry {
+                        pipe,
+                        groups: HashSet::new(),
+                    })
+                })
+                .map_err(|error| format!("the process guardian did not start: {error}"))
+        })
+        .as_ref()
+        .map_err(|error| error.clone().into())
+}
+
+/// Registers `group` with the guardian; an error when the guardian cannot
+/// take it, and the caller must not leave the group running.
+pub(crate) fn register(group: i32) -> crate::Result<()> {
+    let mut registry = registry()?
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if registry.groups.len() >= CAPACITY {
+        return Err(format!(
+            "the process guardian already tracks {CAPACITY} process groups, so group \
+             {group} would outlive a lost owner"
+        )
+        .into());
+    }
+    send(&mut registry.pipe, ADD, group)
+        .map_err(|error| format!("the process guardian does not read: {error}"))?;
+    registry.groups.insert(group);
+    Ok(())
 }
 
 /// Unregisters `group` once the owner itself has terminated it.
 pub(crate) fn unregister(group: i32) {
-    send(REMOVE, group);
+    let Ok(registry) = registry() else { return };
+    let mut registry = registry
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if registry.groups.remove(&group) {
+        // A guardian that no longer reads has nothing to forget.
+        let _ = send(&mut registry.pipe, REMOVE, group);
+    }
 }
 
-fn send(operation: i32, group: i32) {
-    let Some(writer) = writer() else { return };
+fn send(pipe: &mut File, operation: i32, group: i32) -> std::io::Result<()> {
     let mut record = [0_u8; 8];
     record[..4].copy_from_slice(&operation.to_ne_bytes());
     record[4..].copy_from_slice(&group.to_ne_bytes());
     // Eight bytes are below PIPE_BUF: the write is atomic.
-    let mut writer = writer
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let _ = writer.write_all(&record);
+    pipe.write_all(&record)
 }
 
-/// Forks the guardian; `None` when the host refuses, which leaves groups
-/// to the owner's own cleanup.
-fn start() -> Option<Mutex<File>> {
+/// Forks the guardian and returns the write end of its registration pipe.
+fn start() -> std::io::Result<File> {
     let mut fds = [0; 2];
     // SAFETY: `fds` is a valid two-element array for pipe2 to fill.
     if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
-        return None;
+        return Err(std::io::Error::last_os_error());
     }
     let [read, write] = fds;
     // SAFETY: the child runs only async-signal-safe calls in `guard`, which
     // never returns; the parent continues normally.
     match unsafe { libc::fork() } {
         -1 => {
+            let error = std::io::Error::last_os_error();
             // SAFETY: both descriptors were just created by pipe2.
             unsafe {
                 libc::close(read);
                 libc::close(write);
             }
-            None
+            Err(error)
         }
         0 => guard(read),
         _ => {
             // SAFETY: `read` belongs to this process and is not used again.
             unsafe { libc::close(read) };
             // SAFETY: `write` is an open descriptor this process owns alone.
-            Some(Mutex::new(unsafe { File::from_raw_fd(write) }))
+            Ok(unsafe { File::from_raw_fd(write) })
         }
     }
 }
@@ -136,6 +176,8 @@ fn guard(read: i32) -> ! {
             if group <= 1 {
                 continue;
             }
+            // The owner refuses a group beyond CAPACITY before sending it,
+            // so an ADD always finds a free slot.
             if operation == ADD {
                 if let Some(slot) = groups.iter_mut().find(|slot| **slot == 0) {
                     *slot = group;

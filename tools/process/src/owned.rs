@@ -9,6 +9,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Owned children one process keeps alive at once: [`Child::spawn`] fails
+/// beyond this, since the guardian that stops them after a lost owner tracks
+/// no more.
+#[cfg(unix)]
+pub const MAX_LIVE_CHILDREN: usize = super::guardian::CAPACITY;
+
 pub struct Child {
     child: std::process::Child,
     pub stdin: Option<ChildStdin>,
@@ -36,8 +42,8 @@ impl Child {
             command.process_group(0);
             let mut child = command.spawn()?;
             let group = i32::try_from(child.id()).expect("Unix PID fits pid_t");
-            super::guardian::register(group);
-            Ok(Self {
+            let registered = super::guardian::register(group);
+            let owned = Self {
                 stdin: child.stdin.take(),
                 stdout: child.stdout.take(),
                 stderr: child.stderr.take(),
@@ -47,7 +53,10 @@ impl Child {
                 group,
                 finished: false,
                 shutdown_grace,
-            })
+            };
+            // A group the guardian does not track would outlive a lost
+            // owner: dropping `owned` stops it before the error returns.
+            registered.map(|()| owned)
         }
         #[cfg(not(unix))]
         {

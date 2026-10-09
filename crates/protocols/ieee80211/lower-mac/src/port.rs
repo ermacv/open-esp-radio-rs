@@ -42,9 +42,11 @@ pub enum LowerMacEvent<'a> {
 /// buffer `B` and its body, if any, the owner `O`.
 pub type MpduAttempt<B, O> = TxAttempt<TxPayload<B, O>>;
 
-/// The result of a submission: admitted, refused with the attempt handed
-/// back, or the port's error.
-pub type SubmitResult<A, E> = Result<Result<(), Refused<A>>, E>;
+/// The result of a submission: admitted, or refused with the attempt, its
+/// buffer and body handed back. Every refusal is the inner one, a port that
+/// is not installed included; the outer error is only [`Poisoned`], after
+/// which the backend keeps the attempt until its reset.
+pub type SubmitResult<A> = Result<Result<(), Refused<A>>, Poisoned>;
 
 /// An IEEE 802.11 lower-MAC backend as portable MAC logic drives it.
 ///
@@ -104,7 +106,8 @@ pub type SubmitResult<A, E> = Result<Result<(), Refused<A>>, E>;
 ///
 /// - `Rejected`: the inner `Err` of a submission, setting or command, and a
 ///   [`PortError`] of that class (a backend that is not installed); nothing
-///   changed.
+///   changed. A submission is refused only through its inner `Err`, which
+///   hands the attempt back.
 /// - `Recoverable`: an admitted attempt ended as
 ///   [`TxStatus::Aborted`](crate::TxStatus::Aborted) or
 ///   [`TxStatus::Fault`](crate::TxStatus::Fault), or a lifecycle command
@@ -150,15 +153,17 @@ pub trait Ieee80211LowerMacPort {
     /// keeps it until the reset.
     fn release_tx_buffer(&self, buffer: Self::TxBuffer);
 
-    /// Admit one attempt. `Ok(Err(_))` when the backend refused it: nothing
-    /// was sent and the attempt comes back with its buffer and body. An
+    /// Admit one attempt. `Ok(Err(_))` when the backend refused it, for any
+    /// reason including [`SubmitError::NotInstalled`](crate::SubmitError::NotInstalled):
+    /// nothing was sent and the attempt comes back with its buffer and body.
+    /// `Err` only when the port is poisoned. An
     /// admitted attempt reports exactly one [`LowerMacEvent::TxCompleted`]
     /// with its identity, and its buffer is released then; its body stays
     /// with the backend until [`Self::reclaim_tx_bodies`].
     fn submit(
         &self,
         attempt: MpduAttempt<Self::TxBuffer, Self::TxBody>,
-    ) -> SubmitResult<MpduAttempt<Self::TxBuffer, Self::TxBody>, Self::Error>;
+    ) -> SubmitResult<MpduAttempt<Self::TxBuffer, Self::TxBody>>;
 
     /// Hand the bodies of attempt `id` to `each`, with their subframe index
     /// (0 for a single MPDU), once the attempt ended: its completion was

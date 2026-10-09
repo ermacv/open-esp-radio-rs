@@ -699,41 +699,46 @@ where
         }
     }
 
-    /// Reserve the entry of attempt `id`'s bodies; `false` when the table
-    /// holds one for it already or is full.
-    fn reserve_bodies(&self, id: TxId) -> bool {
+    /// Hold attempt `id`'s bodies before the attempt is published, so a
+    /// completion and reclaim that follow the publication at once find them;
+    /// the bodies come back when a slot is free for no attempt, or one of
+    /// the same identity already holds bodies.
+    #[allow(
+        clippy::type_complexity,
+        reason = "the refused bodies come back in the shape they were given"
+    )]
+    fn hold_bodies(
+        &self,
+        id: TxId,
+        mpdu: Option<O>,
+        subframes: [Option<O>; AMPDU_SLOTS],
+    ) -> Result<(), (Option<O>, [Option<O>; AMPDU_SLOTS])> {
         self.bodies.lock(|bodies| {
             let mut bodies = bodies.borrow_mut();
             if bodies.iter().flatten().any(|held| held.id == id) {
-                return false;
+                return Err((mpdu, subframes));
             }
             let Some(free) = bodies.iter_mut().find(|held| held.is_none()) else {
-                return false;
+                return Err((mpdu, subframes));
             };
             *free = Some(HeldBodies {
                 id,
-                mpdu: None,
-                subframes: [const { None }; AMPDU_SLOTS],
+                mpdu,
+                subframes,
             });
-            true
+            Ok(())
         })
     }
 
-    /// Fill or drop the entry of attempt `id`'s bodies.
-    fn settle_bodies(&self, id: TxId, fill: Option<impl FnOnce(&mut HeldBodies<O, AMPDU_SLOTS>)>) {
+    /// Take back the bodies of attempt `id`, which the backend did not admit.
+    fn unhold_bodies(&self, id: TxId) -> Option<HeldBodies<O, AMPDU_SLOTS>> {
         self.bodies.lock(|bodies| {
-            let mut bodies = bodies.borrow_mut();
-            let Some(entry) = bodies
+            bodies
+                .borrow_mut()
                 .iter_mut()
                 .find(|held| held.as_ref().is_some_and(|held| held.id == id))
-            else {
-                return;
-            };
-            match (fill, entry.as_mut()) {
-                (Some(fill), Some(held)) => fill(held),
-                _ => *entry = None,
-            }
-        });
+                .and_then(Option::take)
+        })
     }
 
     /// Install a disabled core with its register owner and retune. A loss
@@ -872,6 +877,47 @@ where
             self.wake.signal(());
         }
         result
+    }
+
+    /// Run one admission under the lock with `input`, which comes back when
+    /// no backend is installed; a fault poisons the port.
+    fn admit_with_core<I, V>(
+        &self,
+        input: I,
+        entry: impl FnOnce(
+            &mut LowerMacCore<
+                'slot,
+                P,
+                E,
+                T,
+                BUFFER_SIZE,
+                TX_BUFFERS,
+                S,
+                AMPDU_SLOTS,
+                AMPDU_BUFFERS,
+            >,
+            &mut H,
+            I,
+        ) -> Result<V, LowerMacFault>,
+    ) -> Result<Result<V, I>, Poisoned> {
+        if self.poisoned() {
+            return Err(Poisoned);
+        }
+        let result = self.installed.lock(|installed| {
+            let mut installed = installed.borrow_mut();
+            let Some(installed) = installed.as_mut() else {
+                return Ok(Err(input));
+            };
+            entry(&mut installed.core, &mut installed.hardware, input).map(Ok)
+        });
+        result.map_err(|fault| {
+            self.fault.lock(|poisoned| poisoned.set(Some(fault)));
+            // The consumer learns of it after the queued events; the runner
+            // parks.
+            self.queues.changed.signal(());
+            self.wake.signal(());
+            Poisoned
+        })
     }
 
     fn poisoned(&self) -> bool {
@@ -1182,12 +1228,12 @@ where
 
     /// The body's octets are copied after the header into the lent slot,
     /// which the core sends from; the body waits in the port until it is
-    /// reclaimed.
+    /// reclaimed. The port holds it before the core publishes the attempt,
+    /// so a completion and reclaim right after the publication find it.
     fn submit(
         &self,
         mut attempt: MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>, O>,
-    ) -> SubmitResult<MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>, O>, Esp32s31LowerMacError>
-    {
+    ) -> SubmitResult<MpduAttempt<Esp32s31TxBuffer<'slot, BUFFER_SIZE>, O>> {
         let Some(header) = attempt.payload.header_len() else {
             return Ok(Err(Refused {
                 error: SubmitError::InvalidLength,
@@ -1195,15 +1241,17 @@ where
             }));
         };
         let id = attempt.id;
-        if attempt.payload.body.is_some() && !self.reserve_bodies(id) {
+        let body = attempt.payload.body.take();
+        if let Some(body) = &body {
+            attempt.payload.frame.frame_mut()[header..].copy_from_slice(body.bytes());
+        }
+        let holds = body.is_some();
+        if holds && let Err((body, _)) = self.hold_bodies(id, body, [const { None }; AMPDU_SLOTS]) {
+            attempt.payload.body = body;
             return Ok(Err(Refused {
                 error: SubmitError::Busy,
                 attempt,
             }));
-        }
-        let body = attempt.payload.body.take();
-        if let Some(body) = &body {
-            attempt.payload.frame.frame_mut()[header..].copy_from_slice(body.bytes());
         }
         let attempt: Esp32s31MpduAttempt<'slot, BUFFER_SIZE> =
             attempt.map_payload(|payload| TxPayload {
@@ -1212,37 +1260,31 @@ where
                 response: payload.response,
             });
         let queues = &self.queues;
-        let admitted = self.with_core(|core, hardware, _| {
-            owe_completion(queues, attempt, |attempt| core.submit(hardware, attempt))
-        });
-        let admitted = match admitted {
-            Ok(Ok(())) => {
-                if let Some(body) = body {
-                    self.settle_bodies(
-                        id,
-                        Some(|held: &mut HeldBodies<O, AMPDU_SLOTS>| {
-                            held.mpdu = Some(body);
-                        }),
-                    );
-                }
-                Ok(())
-            }
-            Ok(Err(Refused { error, attempt })) => {
-                self.settle_bodies(id, None::<fn(&mut HeldBodies<O, AMPDU_SLOTS>)>);
+        // A poisoned backend keeps the held body until its reset.
+        let admitted = self
+            .admit_with_core(attempt, |core, hardware, attempt| {
+                owe_completion(queues, attempt, |attempt| core.submit(hardware, attempt))
+            })?
+            .unwrap_or_else(|attempt| {
                 Err(Refused {
+                    error: SubmitError::NotInstalled,
+                    attempt,
+                })
+            })
+            .map_err(|Refused { error, attempt }| {
+                let body = holds
+                    .then(|| self.unhold_bodies(id))
+                    .flatten()
+                    .and_then(|held| held.mpdu);
+                Refused {
                     error,
                     attempt: attempt.map_payload(|payload| TxPayload {
                         frame: payload.frame,
                         body,
                         response: payload.response,
                     }),
-                })
-            }
-            Err(error) => {
-                self.settle_bodies(id, None::<fn(&mut HeldBodies<O, AMPDU_SLOTS>)>);
-                return Err(error);
-            }
-        };
+                }
+            });
         // A publication starts its watchdog.
         self.wake.signal(());
         Ok(admitted)
@@ -1577,49 +1619,49 @@ where
     fn submit_ampdu(
         &self,
         attempt: AmpduAttempt<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>,
-    ) -> SubmitResult<
-        AmpduAttempt<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>,
-        Esp32s31LowerMacError,
-    > {
+    ) -> SubmitResult<AmpduAttempt<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>> {
         let id = attempt.id;
         let carries = attempt.payload.subframes.bodies.iter().any(Option::is_some);
-        if carries && !self.reserve_bodies(id) {
-            return Ok(Err(Refused {
-                error: SubmitError::Busy,
-                attempt,
-            }));
+        let mut attempt = attempt;
+        if carries {
+            let bodies = core::mem::replace(
+                &mut attempt.payload.subframes.bodies,
+                [const { None }; AMPDU_SLOTS],
+            );
+            if let Err((_, bodies)) = self.hold_bodies(id, None, bodies) {
+                attempt.payload.subframes.bodies = bodies;
+                return Ok(Err(Refused {
+                    error: SubmitError::Busy,
+                    attempt,
+                }));
+            }
         }
-        let mut bodies = None;
-        let attempt: Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS> = attempt.map_payload(|payload| {
-            bodies = Some(payload.subframes.bodies);
-            AmpduPayload {
+        let attempt: Esp32s31AmpduAttempt<'slot, S, AMPDU_SLOTS> =
+            attempt.map_payload(|payload| AmpduPayload {
                 subframes: payload.subframes.inner,
                 tid: payload.tid,
                 min_mpdu_start_spacing: payload.min_mpdu_start_spacing,
-            }
-        });
-        let bodies = bodies.unwrap_or([const { None }; AMPDU_SLOTS]);
+            });
         let queues = &self.queues;
-        let admitted = self.with_core(|core, hardware, _| {
-            owe_completion(queues, attempt, |attempt| {
-                core.submit_ampdu(hardware, attempt)
-            })
-        });
-        let admitted = match admitted {
-            Ok(Ok(())) => {
-                if carries {
-                    self.settle_bodies(
-                        id,
-                        Some(|held: &mut HeldBodies<O, AMPDU_SLOTS>| {
-                            held.subframes = bodies;
-                        }),
-                    );
-                }
-                Ok(())
-            }
-            Ok(Err(Refused { error, attempt })) => {
-                self.settle_bodies(id, None::<fn(&mut HeldBodies<O, AMPDU_SLOTS>)>);
+        // A poisoned backend keeps the held bodies until its reset.
+        let admitted = self
+            .admit_with_core(attempt, |core, hardware, attempt| {
+                owe_completion(queues, attempt, |attempt| {
+                    core.submit_ampdu(hardware, attempt)
+                })
+            })?
+            .unwrap_or_else(|attempt| {
                 Err(Refused {
+                    error: SubmitError::NotInstalled,
+                    attempt,
+                })
+            })
+            .map_err(|Refused { error, attempt }| {
+                let bodies = carries
+                    .then(|| self.unhold_bodies(id))
+                    .flatten()
+                    .map_or([const { None }; AMPDU_SLOTS], |held| held.subframes);
+                Refused {
                     error,
                     attempt: attempt.map_payload(|payload| AmpduPayload {
                         subframes: Esp32s31PortAmpduBuffer {
@@ -1629,13 +1671,8 @@ where
                         tid: payload.tid,
                         min_mpdu_start_spacing: payload.min_mpdu_start_spacing,
                     }),
-                })
-            }
-            Err(error) => {
-                self.settle_bodies(id, None::<fn(&mut HeldBodies<O, AMPDU_SLOTS>)>);
-                return Err(error);
-            }
-        };
+                }
+            });
         // A publication starts its watchdog.
         self.wake.signal(());
         Ok(admitted)

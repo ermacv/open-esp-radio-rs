@@ -103,7 +103,7 @@ pub trait LowerMacAmpdu: Ieee80211LowerMacPort {
     fn submit_ampdu(
         &self,
         attempt: AmpduAttempt<Self::AmpduBuffer>,
-    ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>, Self::Error>;
+    ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>>;
 }
 
 /// The air an interface reserves for itself: the backend sends a CTS
@@ -132,7 +132,7 @@ pub trait LowerMacAirReservation: Ieee80211LowerMacPort {
     fn submit_air_reservation(
         &self,
         attempt: AirReservationAttempt,
-    ) -> SubmitResult<AirReservationAttempt, Self::Error>;
+    ) -> SubmitResult<AirReservationAttempt>;
 }
 
 /// Temporary channel changes without a port lifecycle transition.

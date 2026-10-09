@@ -292,6 +292,8 @@ impl ModelTsf {
 #[derive(Default)]
 struct State {
     enabled: bool,
+    /// [`LowerMacModel::uninstall`] took the backend away.
+    uninstalled: bool,
     channel: Option<Channel>,
     channel_updates: usize,
     lifecycle_requests: usize,
@@ -459,6 +461,32 @@ impl<O: TxBody> LowerMacModel<O> {
     /// [`Ieee80211LowerMacPort::next_event`], and every other call fails.
     pub fn poison(&self) {
         self.state.borrow_mut().poisoned = true;
+    }
+
+    /// Take the backend away, as an S31 port whose backend is not
+    /// installed: every submission is refused as
+    /// [`SubmitError::NotInstalled`] and comes back, until
+    /// [`Self::install`].
+    pub fn uninstall(&self) {
+        self.state.borrow_mut().uninstalled = true;
+    }
+
+    /// Serve submissions again after [`Self::uninstall`].
+    pub fn install(&self) {
+        self.state.borrow_mut().uninstalled = false;
+    }
+
+    /// Whether a submission may be admitted: `Err` once poisoned, a refusal
+    /// while uninstalled.
+    fn admitting(&self) -> Result<Option<SubmitError>, Poisoned> {
+        let state = self.state.borrow();
+        if state.poisoned {
+            Err(Poisoned)
+        } else if state.uninstalled {
+            Ok(Some(SubmitError::NotInstalled))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Fail with [`ModelPoisoned`] once poisoned.
@@ -821,8 +849,13 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
     fn submit(
         &self,
         mut attempt: MpduAttempt<ModelBuffer, O>,
-    ) -> SubmitResult<MpduAttempt<ModelBuffer, O>, ModelPoisoned> {
-        drop(self.serving()?);
+    ) -> SubmitResult<MpduAttempt<ModelBuffer, O>> {
+        if let Some(refused) = self.admitting()? {
+            return Ok(Err(Refused {
+                error: refused,
+                attempt,
+            }));
+        }
         let header = attempt.payload.header_len();
         let frame = &attempt.payload.frame.0;
         let individual = frame.get(4).is_some_and(|byte| byte & 1 == 0);
@@ -1114,8 +1147,14 @@ impl<O: TxBody> LowerMacAirReservation for LowerMacModel<O> {
     fn submit_air_reservation(
         &self,
         attempt: AirReservationAttempt,
-    ) -> SubmitResult<AirReservationAttempt, ModelPoisoned> {
-        let state = self.serving()?;
+    ) -> SubmitResult<AirReservationAttempt> {
+        if let Some(refused) = self.admitting()? {
+            return Ok(Err(Refused {
+                error: refused,
+                attempt,
+            }));
+        }
+        let state = self.state.borrow();
         let address = state.vif(attempt.vif).map(|vif| vif.address);
         drop(state);
         let refused = match (address, attempt.payload.duration.as_micros()) {
@@ -1160,8 +1199,13 @@ impl<O: TxBody> LowerMacAmpdu for LowerMacModel<O> {
     fn submit_ampdu(
         &self,
         mut attempt: AmpduAttempt<ModelAmpdu<O>>,
-    ) -> SubmitResult<AmpduAttempt<ModelAmpdu<O>>, ModelPoisoned> {
-        drop(self.serving()?);
+    ) -> SubmitResult<AmpduAttempt<ModelAmpdu<O>>> {
+        if let Some(refused) = self.admitting()? {
+            return Ok(Err(Refused {
+                error: refused,
+                attempt,
+            }));
+        }
         let subframes = &attempt.payload.subframes.mpdus;
         let refused = match subframes.first().and_then(|first| first.get(22..24)) {
             None => Err(SubmitError::InvalidLength),

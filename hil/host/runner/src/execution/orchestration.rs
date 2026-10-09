@@ -519,17 +519,13 @@ impl SuiteEffects for LiveSuite<'_> {
         let failure =
             firmware::prepare_image(self.lab, self.device_lock()?, recovery, build, session)?;
         self.flashed = failure.is_none().then_some((recovery, None));
-        let answered = match failure {
-            Some(failure) => Err(failure.message),
-            None => crate::execution::preflight::answers_as(
-                self.lab,
-                recovery,
-                &session.directory().join("recovery-image"),
-            ),
-        };
+        let output = session.directory().join("recovery-image");
+        let outcome = after_reflash(failure, || {
+            crate::execution::preflight::answers_as(self.lab, recovery, &output)
+        });
         let mac = self.lab.dut.mac.clone();
         let origin = format!("run {}", session.id());
-        match after_reflash(answered) {
+        match outcome {
             AfterReflash::Recovered => {
                 oer_hil_lab::recovery::record_reflash(Some(mac), origin);
                 eprintln!("hil: the board answers its recovery image");
@@ -544,6 +540,26 @@ impl SuiteEffects for LiveSuite<'_> {
                      image built from this checkout is at fault: {why}",
                     recovery.id()
                 );
+            }
+            AfterReflash::FlashFailed(why) => {
+                // The flash needs the ROM, which may have gone silent since:
+                // the board's own ladder decides, and quarantines it only if
+                // its ROM stays silent.
+                eprintln!(
+                    "hil: the {} recovery image did not flash ({why}); climbing the board's \
+                     reset ladder",
+                    recovery.id()
+                );
+                let board = self.lab.dut_board()?.lease(self.device_lock()?)?;
+                match oer_hil_lab::recovery::recover(&board, &output, None, &origin)? {
+                    Some(judged) => {
+                        if !judged.quarantined() {
+                            oer_hil_lab::recovery::mark_image_silent(recovery.id());
+                        }
+                        eprintln!("hil: {}", judged.describe());
+                    }
+                    None => eprintln!("hil: the board was not judged"),
+                }
             }
         }
         Ok(())
@@ -980,16 +996,30 @@ fn execute_one(
 enum AfterReflash {
     /// The board answers its recovery image: journal the recovery.
     Recovered,
-    /// The recovery image did not answer, why. Its ROM answered before the
-    /// reflash, so the image or the checkout that built it is at fault, not
-    /// the board.
+    /// The recovery image did not build, or was flashed and did not answer,
+    /// why. The flash proved the ROM answers, so the image or the checkout
+    /// that built it is at fault, not the board.
     ImageFault(String),
+    /// The recovery image did not flash, why: the ROM it needs may have gone
+    /// silent since it last answered, so the board's ladder judges it.
+    FlashFailed(String),
 }
 
-fn after_reflash(answered: std::result::Result<(), String>) -> AfterReflash {
-    match answered {
-        Ok(()) => AfterReflash::Recovered,
-        Err(why) => AfterReflash::ImageFault(why),
+/// What the reflash of the recovery image showed: its preparation's
+/// `failure`, or else whether the flashed image `answered`.
+fn after_reflash(
+    failure: Option<Failure>,
+    answered: impl FnOnce() -> std::result::Result<(), String>,
+) -> AfterReflash {
+    match failure {
+        Some(failure) if failure.kind == FailureKind::ImageFlash => {
+            AfterReflash::FlashFailed(failure.message)
+        }
+        Some(failure) => AfterReflash::ImageFault(failure.message),
+        None => match answered() {
+            Ok(()) => AfterReflash::Recovered,
+            Err(why) => AfterReflash::ImageFault(why),
+        },
     }
 }
 
@@ -1214,6 +1244,11 @@ fn run_scenario_repetition(
         })
         .and_then(|()| preflight::validate_flashed_image(lab, selected, output, device))
     {
+        // A board that needs a person must not serve the run's remaining
+        // repetitions or the next lease: the run stops.
+        Err(error) if error.is::<oer_hil_lab::recovery::UnrecordedQuarantine>() => {
+            return Err(error);
+        }
         Err(error) => {
             let mut failure = super::classify(&*error);
             let outcome =

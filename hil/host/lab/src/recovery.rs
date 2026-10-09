@@ -313,25 +313,31 @@ pub fn escalate_boot_loop(
     };
     let _ = oer_durable::atomic_json(&output.join(RESET_ESCALATION_FILE), &escalation);
     let mac = board.mac();
-    let arbiter = &Arbiter::open()?;
     match (&escalation.ladder.end, escalation.ladder.steps.last()) {
         (LadderEnd::Cleared, Some(step)) => {
-            let _ = arbiter.journal().record_by(
-                String::from("stand"),
-                Some(mac.to_string()),
-                oer_stand_journal::BoardEventKind::Recovered {
-                    step: step.step,
-                    hardware: true,
-                    reset_line: step.outcome.clone().ok().flatten(),
-                    origin: origin.to_owned(),
-                },
-            );
+            // A recovery the journal misses changes no board's service.
+            if let Ok(arbiter) = Arbiter::open() {
+                let _ = arbiter.journal().record_by(
+                    String::from("stand"),
+                    Some(mac.to_string()),
+                    oer_stand_journal::BoardEventKind::Recovered {
+                        step: step.step,
+                        hardware: true,
+                        reset_line: step.outcome.clone().ok().flatten(),
+                        origin: origin.to_owned(),
+                    },
+                );
+            }
         }
         // A ROM that answers can be reflashed.
         (LadderEnd::Loadable { .. }, _) => {}
         _ => {
+            let arbiter = Arbiter::open().map_err(|error| UnrecordedQuarantine {
+                mac: mac.to_string(),
+                cause: error.to_string(),
+            })?;
             quarantine(
-                arbiter,
+                &arbiter,
                 mac,
                 QuarantineTrigger::BootLoop,
                 format!(
@@ -396,12 +402,34 @@ fn quarantine(
             reason.clone(),
             Some(evidence.display().to_string()),
         )
-        .map_err(|error| {
-            format!("the board {mac} needs a person, but its quarantine was not recorded: {error}")
+        .map_err(|error| UnrecordedQuarantine {
+            mac: mac.to_owned(),
+            cause: error.to_string(),
         })?;
     QUARANTINED.store(true, std::sync::atomic::Ordering::Relaxed);
     Ok(Recovery::Quarantined { trigger, reason })
 }
+
+/// A board needs a person, but the arbiter did not record its quarantine:
+/// the run must stop, since the board would otherwise serve its remaining
+/// repetitions and the next lease broken.
+#[derive(Debug)]
+pub struct UnrecordedQuarantine {
+    pub mac: String,
+    pub cause: String,
+}
+
+impl std::fmt::Display for UnrecordedQuarantine {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "the board {} needs a person, but its quarantine was not recorded: {}",
+            self.mac, self.cause
+        )
+    }
+}
+
+impl std::error::Error for UnrecordedQuarantine {}
 
 /// Whether the repetition's console ended in the ROM waiting for a download.
 fn console_waits_for_download(output: &Path) -> bool {
@@ -474,6 +502,7 @@ mod tests {
         )
         .err()
         .expect("an unrecorded quarantine is an error");
+        assert!(error.is::<UnrecordedQuarantine>(), "{error}");
         assert!(
             error
                 .to_string()

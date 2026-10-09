@@ -29,7 +29,7 @@ conflicting kinds or priorities violate the invariant.
 | --- | --- |
 | `kind:bug` | Expected behavior is restored; the cause or remaining uncertainty and the regression check are stated |
 | `kind:research` | A scoped question is answered with applicable evidence, including negative, partial or inconclusive outcomes |
-| `kind:decision` | The owner selects a contract or policy and records its rationale and consequences for callers |
+| `kind:decision` | The repository owner selects a contract or policy; its rationale and consequences for callers are recorded |
 | `kind:feature` | A named API or scenario works in the stated scope |
 | `kind:refactor` | A named ownership or structural invariant holds, consumers are migrated and behavior is checked |
 | `kind:validation` | A method and predeclared acceptance criteria produce evidence for the named subject; qualification evaluates readiness |
@@ -46,6 +46,20 @@ across packages, select the primary accepting package's layer and name the
 other owners in the body. For non-package data or documentation, identify the
 accepting code owner and its layer. A register investigation or HIL experiment
 is a work stage, not a new architecture layer.
+
+## Decisions and approval
+
+Two owners appear in this repository. A **code owner** is the package or
+path that accepts a result. The **repository owner** is the human who
+decides. "Owner decision" always means the repository owner's decision.
+
+An owner decision is what the repository owner said or approved, recorded
+with a link to where they did. A comment, an issue body or a `kind:decision`
+label written by an agent is a proposal, not a decision. The owner may
+revise or withdraw a decision at any time; the record then says what
+changed and when, and the superseded wording is not kept as current.
+Agents propose options, ask, and never write "owner decision" for anything
+the owner did not say.
 
 ## Creation and automatic control
 

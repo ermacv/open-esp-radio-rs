@@ -4,11 +4,18 @@ A Rust 2024 radio stack for the ESP32-S31 and ESP32-C5 (Wi-Fi, Bluetooth LE,
 IEEE 802.15.4) with its HIL stand, vendor verification and qualification.
 Coding agents do almost all the work; the owner sets the tasks.
 
+**Chips.** ESP32-S31 is the production target: every layer, the
+qualification catalogs and programs, and the examples. ESP32-C5 has
+investigation inputs only: its register model and PAC, HAL, platform,
+esp-hal SoC adapter, HIL target and vendor verification; it has no radio
+driver, role, runtime, composition, qualification catalog or example yet.
+Commands written with `<chip>` take either chip where that input exists.
+
 ## Rules
 
 - **Ask, never fall back.** When a requirement or rule admits materially different readings that change the implementation, drop required data, add a fallback or leave work unfinished, explain the ambiguity and ask the user; continue only independent work until they answer. Never silently pick a conservative reading, older behavior, approximation or omission. An explicit user decision stays authoritative: do not ask it again.
 - **No compatibility layers.** Change an interface together with every caller: no deprecated aliases, re-export shims, legacy readers or fallback paths for an old shape.
-- **Background work.** Builds, tests, checks and HIL runs (`cargo build|test|clippy|check|doc`, `cargo xtask check`, `cargo xtask push`, `cargo fw build`, `cargo hil run`, `cargo hil wait`) run asynchronously ([client options](#agent-entry-points)); act on completion and keep answering meanwhile. Greps and reads stay in the foreground. No foreground `sleep` polling. Never wait for or signal processes by name (`pgrep -f`, `pkill -f`): the pattern matches the waiting shell too. Chain dependent steps in one command or wait on a PID. Claude Code's pre-tool hook enforces this.
+- **Background work.** Builds, tests, checks and HIL runs (`cargo build|test|clippy|check|doc`, `cargo xtask check`, `cargo xtask push`, `cargo fw build`, `cargo hil run`, `cargo hil wait`) run asynchronously (`run_in_background: true`); act on completion and keep answering meanwhile. Greps and reads stay in the foreground. No foreground `sleep` polling. Never wait for or signal processes by name (`pgrep -f`, `pkill -f`): the pattern matches the waiting shell too. Chain dependent steps in one command or wait on a PID. Claude Code's pre-tool hook enforces this.
 - **zsh.** An unquoted `$VAR` holding several words stays one argument: pass lists of scenarios or paths literally or as an array.
 - **Tests.** Every behavioral change gets a focused regression test, beside its module (`#[cfg(test)]`) or in the crate's `tests/`. See [testing rules](crates/CLAUDE.md#tests).
 - **MMIO and unsafe.** Handwritten code reaches MMIO only through typed PAC accessors; publish a missing field in the SVD/PAC instead of a local mask or shift. Keep `unsafe` narrow and documented ([crates/UNSAFE.md](crates/UNSAFE.md)). Lint policy lives in `[lints]` tables and crate-root attributes, not tool flags.
@@ -23,31 +30,13 @@ Coding agents do almost all the work; the owner sets the tasks.
 
 ## Agent entry points
 
-Claude Code and Codex share instructions and skills through relative symlinks:
-
-| Canonical source | Codex entry point |
-| --- | --- |
-| Root and directory `CLAUDE.md` | `AGENTS.md` beside each source file, linking to `CLAUDE.md` |
-| `.claude/skills/` | `.agents/skills`, linking to `../.claude/skills` |
-
-Edit the canonical sources; keep an `AGENTS.md` link beside any new scoped
-`CLAUDE.md` (`cargo tidy check` holds the links and skill frontmatter). The skills directory link includes new skills automatically and
-preserves their relative references. In Codex, invoke `$block-wifi` to load
-the same block guide that the Claude Code `block-wifi` agent starts with.
-
+`AGENTS.md` beside each `CLAUDE.md` and `.agents/skills` are relative
+symlinks to the canonical `CLAUDE.md` and `.claude/skills/`: edit only the
+canonical files, and keep an `AGENTS.md` link beside any new scoped
+`CLAUDE.md` (`cargo tidy check` holds the links and skill frontmatter).
 HIL source snapshots exclude `AGENTS.md` and `.agents/` from their inputs
-([source capture](hil/host/README.md#build-and-run)); agent guidance does
-not change firmware or HIL observations.
-
-In shared checklists, `run_in_background: true` is Claude Code's option.
-Codex runs a long command with `exec_command` and a short `yield_time_ms`,
-keeps the returned `session_id`, and collects completion with `write_stdin`
-while continuing other work.
-
-`.claude/settings.json` registers Claude Code permissions and hooks;
-`.claude/hooks/` and `.claude/agents/` have runtime-specific contracts.
-These symlinks do not register them as Codex permissions, hooks or custom
-agents.
+([source capture](hil/host/README.md#build-and-run)). `.claude/settings.json`
+registers the permissions and the hooks in `.claude/hooks/`.
 
 ## Gate, push, commit
 

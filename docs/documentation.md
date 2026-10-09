@@ -22,7 +22,7 @@ changes.
 | Root and directory `CLAUDE.md` | Agent rules and navigation: always-relevant rules at the root; a directory's layout, local rules and commands; links to the owner documents instead of restating them |
 | Root and directory `AGENTS.md` | Relative symlinks to the colocated `CLAUDE.md`, exposing the same scoped instructions to Codex without a second copy |
 | `.claude/` | Claude Code task skills (checklists that link to owner sections), block guide skills (a block's packages, shared contracts, traps and checks), frontmatter-only agent profiles in `agents/` that start a session with a block guide, shared permissions and the hooks that enforce agent rules. Guidance cites code by path and item, not line number; `cargo tidy check` holds the links, skill and profile frontmatter and that rule |
-| `.agents/skills` | Relative symlink to `.claude/skills`, exposing all task and block guide skills to Codex; [agent entry points](../CLAUDE.md#agent-entry-points) define the client-specific options and limits |
+| `.agents/skills` | Relative symlink to `.claude/skills`, exposing all task and block guide skills to Codex; [agent entry points](../CLAUDE.md#agent-entry-points) name the links to keep |
 
 The documentation tree follows code ownership. A subsystem's detailed contract
 has one canonical location; other documents link to it. Root navigation does

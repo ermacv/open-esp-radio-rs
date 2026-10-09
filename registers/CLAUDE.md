@@ -29,8 +29,11 @@ Generated outputs also land in `crates/hardware/<chip>/pac/raw/src/lib.rs` and
 
 ## Commands (in the background)
 
-- `cargo registers validate --manifest registers/esp32s31/publication/registers.toml`
-- `cargo registers generate --manifest registers/esp32s31/publication/registers.toml` (`--check` only compares)
+`<chip>` is `esp32s31` or `esp32c5`; each has a `registers.toml` and a
+`platform.toml` publication.
+
+- `cargo registers validate --manifest registers/<chip>/publication/registers.toml`
+- `cargo registers generate --manifest registers/<chip>/publication/registers.toml` (`--check` only compares)
 - `cargo xtask check architecture` after PAC API changes.
 
 Workflow: the `driver-or-hardware-change` skill.

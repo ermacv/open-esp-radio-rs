@@ -40,12 +40,15 @@ Known silicon problems: [hardware errata](../../../docs/hardware-errata.md).
 
 ```console
 cargo test -p <package>
-cargo registers validate --manifest registers/esp32s31/publication/registers.toml
-cargo registers generate --manifest registers/esp32s31/publication/registers.toml
+cargo registers validate --manifest registers/<chip>/publication/registers.toml
+cargo registers generate --manifest registers/<chip>/publication/registers.toml
 cargo xtask check architecture
 cargo hil images check --class performance --type-check
-cargo verification check provenance --chip esp32s31   # after SOURCE citations change
+cargo verification check provenance --chip <chip>   # after SOURCE citations change
 cargo xtask check changed
 ```
+
+`<chip>` is `esp32s31` or `esp32c5`. ESP32-C5 has a PAC, HAL and SoC
+adapter but no radio driver, role or runtime yet.
 
 A PR calls out every generated SVD/PAC change.

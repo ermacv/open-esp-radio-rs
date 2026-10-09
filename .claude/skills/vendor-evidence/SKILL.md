@@ -54,9 +54,13 @@ Scenario authors also read the
 ## Commands (all `run_in_background: true`)
 
 ```console
-cargo verification fetch esp32s31
-cargo verification check provenance --chip esp32s31
+cargo verification fetch <chip>
+cargo verification check provenance --chip <chip>
 cargo verification scenario <scenario>
-cargo verification evidence --chip esp32s31 --check --changed-since origin/main
+cargo verification evidence --chip <chip> --check --changed-since origin/main
 cargo hil plan phy-vendor-calibration
 ```
+
+`<chip>` is `esp32s31` or `esp32c5`; each has its own pins, provenance
+facts, probes and scenarios. The HIL vendor calibration cross-check is
+ESP32-S31 only.

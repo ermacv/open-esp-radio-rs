@@ -35,8 +35,11 @@ chip calibration relations and comparisons live in `../hil/phy/<chip>/`.
 
 ## Commands (in the background)
 
-- `cargo verification fetch esp32s31` downloads and verifies the pins into `target/vendor/`.
-- `cargo verification check provenance --chip esp32s31` after touching a `SOURCE:` citation or a pin.
-- `cargo verification diff --chip esp32s31 --old A --new B` after a pin change.
+`<chip>` is `esp32s31` or `esp32c5`; both have pins, provenance facts,
+probes and scenarios.
+
+- `cargo verification fetch <chip>` downloads and verifies the pins into `target/vendor/`.
+- `cargo verification check provenance --chip <chip>` after touching a `SOURCE:` citation or a pin.
+- `cargo verification diff --chip <chip> --old A --new B` after a pin change.
 
 Workflow: the `vendor-evidence` skill.

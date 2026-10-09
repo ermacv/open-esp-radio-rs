@@ -9,7 +9,7 @@ body:
     id: decision
     attributes:
       label: "Decision needed"
-      description: "What must the owner choose, and what work consumes the choice?"
+      description: "What must the repository owner choose, and what work consumes the choice?"
     validations:
       required: true
   - type: dropdown
@@ -40,14 +40,14 @@ body:
     id: options
     attributes:
       label: "Options and evidence"
-      description: "Alternatives, obligations, tradeoffs, known constraints and uncertainties. Identify the owner who decides."
+      description: "Alternatives, obligations, tradeoffs, known constraints and uncertainties. The repository owner decides."
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
       label: "Decision record"
-      description: "Accepted option, rationale, scope, consequences for callers and superseded decisions. Fill when decided."
+      description: "Accepted option, rationale, scope, consequences for callers and superseded decisions. Fill when the repository owner decides, with a link to where they did."
     validations:
       required: false
   - type: textarea

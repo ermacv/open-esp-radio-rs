@@ -81,15 +81,7 @@ fn wait(
     samples: &mut Vec<Evidence>,
     predicate: impl Fn(&Evidence) -> bool,
 ) -> Result<Evidence> {
-    wait_within(capture, samples, Duration::from_secs(10), predicate)
-}
-fn wait_within(
-    capture: &Observation<'_>,
-    samples: &mut Vec<Evidence>,
-    within: Duration,
-    predicate: impl Fn(&Evidence) -> bool,
-) -> Result<Evidence> {
-    let deadline = Instant::now() + within;
+    let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let e = sample(capture, samples)?;
         if predicate(&e) {
@@ -131,23 +123,23 @@ pub fn run(
             // Reserve the previously absent device record before raw ATT or discovery.
             peer = Some(Owner::acquire(adapter,address)?);
             let peer = peer.as_mut().unwrap();
-            let plaintext = establish("plaintext-connect", next(&initial), &mut attempts, &mut samples, |samples| { let att = radio.connect(address)?; confirmed(capture, samples, &initial)?; Ok(att) }, |samples| unseen(capture, samples, &initial))?;
+            let plaintext = establish("plaintext-connect", next(&initial), &mut attempts, &mut samples, |_| radio.connect(address), |samples| confirmed(capture, samples, &initial), |_, att| { drop(att); Ok(()) }, |samples| unseen(capture, samples, &initial))?;
             plaintext_denied(plaintext,&mut exchanges)?;
             let idle = wait(capture,&mut samples,|e| !e.traffic.connected && e.traffic.advertising && e.traffic.disconnections == 1)?;
             if idle.traffic.writes != 0 || idle.traffic.value != 0 || idle.bonds_stored != 0 { return Err("plaintext ATT changed protected state".into()); }
             peer.discover()?;
             let before = sample(capture,&mut samples)?;
-            establish("declined-pairing", next(&before), &mut attempts, &mut samples, |samples| pairing(capture,peer,samples,false, &mut exchanges), |samples| unseen(capture, samples, &before))?;
+            establish("declined-pairing", next(&before), &mut attempts, &mut samples, |samples| pairing(capture,peer,samples,false, &mut exchanges), |_| Ok(true), |_, ()| Ok(()), |samples| unseen(capture, samples, &before))?;
             peer.disconnect()?;
             let declined = wait(capture,&mut samples,|e| !e.traffic.connected && e.traffic.advertising && e.declined == 1)?;
             if declined.bonds_stored != 0 || declined.accepted != 0 { return Err("declined pairing established application trust".into()); }
             let before = sample(capture,&mut samples)?;
-            establish("accepted-pairing", next(&before), &mut attempts, &mut samples, |samples| pairing(capture,peer,samples,true, &mut exchanges), |samples| unseen(capture, samples, &before))?;
+            establish("accepted-pairing", next(&before), &mut attempts, &mut samples, |samples| pairing(capture,peer,samples,true, &mut exchanges), |_| Ok(true), |_, ()| Ok(()), |samples| unseen(capture, samples, &before))?;
             wait(capture,&mut samples,|e|e.bonds_stored == 1 && e.accepted == 1)?;
             protected_exchange(peer,0,0x41,&mut exchanges)?;
             peer.disconnect()?;
             let before = wait(capture,&mut samples,|e|!e.traffic.connected && e.traffic.advertising)?;
-            establish("bonded-reconnect", next(&before), &mut attempts, &mut samples, |samples| { peer.connect()?; confirmed(capture, samples, &before) }, |samples| unseen(capture, samples, &before))?;
+            establish("bonded-reconnect", next(&before), &mut attempts, &mut samples, |_| peer.connect(), |samples| confirmed(capture, samples, &before), |_, ()| peer.disconnect(), |samples| unseen(capture, samples, &before))?;
             protected_exchange(peer,0x41,0x62,&mut exchanges)?;
             let resumed = wait(capture,&mut samples,|e|e.bonds_resumed == 1 && e.notifications_queued == 2)?;
             if resumed.bonds_stored != 1 || resumed.comparisons != 2 || resumed.accepted != 1 || resumed.declined != 1 || resumed.traffic.writes != 2 || resumed.traffic.value != 0x62 { return Err("bonded reconnect silently repaired, downgraded or changed epoch".into()); }
@@ -162,7 +154,7 @@ pub fn run(
             if capture.latest_boot_id() != Some(boot) || restarted.cold_releases != 1 || !restarted.old_hci_closed || restarted.bonds_stored != 1 {
                 return Err("cold restart did not retain the application bond and retire the old HCI epoch".into());
             }
-            establish("cold-reconnect", next(&restarted), &mut attempts, &mut samples, |samples| { peer.connect()?; confirmed(capture, samples, &restarted) }, |samples| unseen(capture, samples, &restarted))?;
+            establish("cold-reconnect", next(&restarted), &mut attempts, &mut samples, |_| peer.connect(), |samples| confirmed(capture, samples, &restarted), |_, ()| peer.disconnect(), |samples| unseen(capture, samples, &restarted))?;
             protected_exchange(peer,0,0x73,&mut exchanges)?;
             let restored = wait(capture,&mut samples,|e|e.bonds_resumed == 2 && e.notifications_queued == 3)?;
             if restored.comparisons != 2 || restored.accepted != 1 || restored.declined != 1 || restored.bonds_stored != 1 {
@@ -303,16 +295,30 @@ fn next(before: &Evidence) -> u32 {
 
 /// Wait until the DUT reports the connection an attempt after `before`
 /// opened; the host's connect alone does not prove it reached the DUT.
+/// Whether the DUT reports, within [`CONFIRMATION`], the connection an
+/// attempt after `before` opened. A failed observation is the error, never
+/// a `false`.
 fn confirmed(
     capture: &Observation<'_>,
     samples: &mut Vec<Evidence>,
     before: &Evidence,
-) -> Result<()> {
-    wait_within(capture, samples, CONFIRMATION, |e| {
-        e.traffic.connected && e.traffic.connections == next(before)
-    })
-    .map(drop)
-    .map_err(|_| format!("DUT did not confirm connection {}", next(before)).into())
+) -> Result<bool> {
+    let deadline = Instant::now() + CONFIRMATION;
+    loop {
+        if confirms(&sample(capture, samples)?, before) {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        oer_process::sleep(Duration::from_millis(50))?;
+    }
+}
+
+/// Whether the DUT reports open the connection an attempt after `before`
+/// opened.
+fn confirms(e: &Evidence, before: &Evidence) -> bool {
+    e.traffic.connected && e.traffic.connections == next(before)
 }
 
 fn never_reached(e: &Evidence, before: &Evidence) -> bool {
@@ -398,6 +404,22 @@ mod tests {
             assert!(require_denied(&[10, 17, 0], response).is_err());
         }
     }
+    #[test]
+    fn only_the_attempted_connection_open_on_the_dut_confirms_it() {
+        let mut before = Evidence::default();
+        before.traffic.connections = 2;
+        let mut open = before;
+        open.traffic.connections = 3;
+        open.traffic.connected = true;
+        assert!(confirms(&open, &before));
+        let mut earlier = open;
+        earlier.traffic.connections = 2;
+        let mut closed = open;
+        closed.traffic.connected = false;
+        assert!(!confirms(&earlier, &before));
+        assert!(!confirms(&closed, &before));
+    }
+
     #[test]
     fn an_attempt_is_for_the_dut_connection_after_the_last_counted() {
         let mut before = Evidence::default();

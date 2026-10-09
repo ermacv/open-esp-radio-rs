@@ -47,43 +47,55 @@ pub(super) struct Attempt {
     pub host_error: Option<String>,
 }
 
-/// Run `connect` until it succeeds, retrying a failure while `unseen`
-/// confirms that the DUT never saw that connection, at most [`ATTEMPTS`]
-/// times. Any other failure, or one `unseen` does not confirm, ends at once.
-/// Both closures share `state`, such as the scenario's sample log.
+/// Open the connection `dut_connection` until the DUT confirms it.
+///
+/// One attempt runs `connect` on the host, then `confirm`, which tells
+/// whether the DUT reported the connection within [`CONFIRMATION`]. A
+/// connection the DUT did not confirm is closed on the host with `release`.
+/// A failed attempt is retried, at most [`ATTEMPTS`] times in all, only
+/// while `unseen` proves that the DUT never saw it; any other failure ends at
+/// once with its host-side error. An error of `confirm`, `release` or
+/// `unseen` is a failure of the observation itself and ends at once with its
+/// own cause. The closures share `state`, such as the scenario's sample log.
+#[allow(clippy::too_many_arguments, reason = "one attempt's four steps")]
 pub(super) fn establish<S, T>(
     phase: &'static str,
     dut_connection: u32,
     attempts: &mut Vec<Attempt>,
     state: &mut S,
     mut connect: impl FnMut(&mut S) -> Result<T>,
+    mut confirm: impl FnMut(&mut S) -> Result<bool>,
+    mut release: impl FnMut(&mut S, T) -> Result<()>,
     mut unseen: impl FnMut(&mut S) -> Result<bool>,
 ) -> Result<T> {
     for attempt in 1..=ATTEMPTS {
-        match connect(state) {
-            Ok(value) => {
-                attempts.push(Attempt {
-                    phase,
-                    dut_connection,
-                    attempt,
-                    outcome: Outcome::Established,
-                    host_error: None,
-                });
-                return Ok(value);
-            }
-            Err(error) => {
-                if !unseen(state)? {
-                    return Err(error);
+        let host_error = match connect(state) {
+            Ok(peer) => {
+                if confirm(state)? {
+                    attempts.push(Attempt {
+                        phase,
+                        dut_connection,
+                        attempt,
+                        outcome: Outcome::Established,
+                        host_error: None,
+                    });
+                    return Ok(peer);
                 }
-                attempts.push(Attempt {
-                    phase,
-                    dut_connection,
-                    attempt,
-                    outcome: Outcome::NotEstablished,
-                    host_error: Some(error.to_string()),
-                });
+                release(state, peer)?;
+                format!("DUT did not confirm connection {dut_connection}")
             }
+            Err(error) => error.to_string(),
+        };
+        if !unseen(state)? {
+            return Err(host_error.into());
         }
+        attempts.push(Attempt {
+            phase,
+            dut_connection,
+            attempt,
+            outcome: Outcome::NotEstablished,
+            host_error: Some(host_error),
+        });
     }
     Err(format!("{phase}: no connection reached the DUT in {ATTEMPTS} attempts").into())
 }
@@ -111,79 +123,110 @@ pub(super) fn measurements(attempts: &[Attempt]) -> [Measurement; 2] {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_connection_the_dut_never_saw_is_retried_and_recorded() {
-        let mut attempts = Vec::new();
-        let mut tries = 0;
-        let value = establish(
+    /// A scripted host and DUT: each attempt's host result and whether the
+    /// DUT confirmed and saw it.
+    #[derive(Default)]
+    struct Script {
+        host: Vec<Result<u8>>,
+        confirmed: Vec<bool>,
+        seen: Vec<bool>,
+        released: Vec<u8>,
+    }
+
+    fn run(script: &mut Script, attempts: &mut Vec<Attempt>) -> Result<u8> {
+        establish(
             "connect",
-            1,
-            &mut attempts,
-            &mut (),
-            |_| {
-                tries += 1;
-                if tries < 3 {
-                    Err("ATT socket disconnected".into())
-                } else {
-                    Ok(7)
-                }
+            2,
+            attempts,
+            script,
+            |s| s.host.remove(0),
+            |s| Ok(s.confirmed.remove(0)),
+            |s, peer| {
+                s.released.push(peer);
+                Ok(())
             },
-            |_| Ok(true),
+            |s| Ok(!s.seen.remove(0)),
         )
-        .unwrap();
-        assert_eq!(value, 7);
+    }
+
+    #[test]
+    fn a_host_failure_the_dut_never_saw_is_retried_and_recorded() {
+        let mut script = Script {
+            host: vec![Err("ATT socket disconnected".into()), Ok(7)],
+            confirmed: vec![true],
+            seen: vec![false],
+            ..Script::default()
+        };
+        let mut attempts = Vec::new();
+        assert_eq!(run(&mut script, &mut attempts).unwrap(), 7);
         assert_eq!(
             attempts.iter().map(|a| a.outcome).collect::<Vec<_>>(),
-            [
-                Outcome::NotEstablished,
-                Outcome::NotEstablished,
-                Outcome::Established
-            ]
+            [Outcome::NotEstablished, Outcome::Established]
         );
         assert_eq!(
             attempts[0].host_error.as_deref(),
             Some("ATT socket disconnected")
         );
+        assert!(attempts.iter().all(|a| a.dut_connection == 2));
     }
 
     #[test]
-    fn a_failure_the_dut_saw_ends_at_once() {
+    fn a_host_connection_the_dut_never_confirmed_is_released_and_retried() {
+        let mut script = Script {
+            host: vec![Ok(1), Ok(2)],
+            confirmed: vec![false, true],
+            seen: vec![false],
+            ..Script::default()
+        };
         let mut attempts = Vec::new();
-        let mut tries = 0;
-        let error = establish(
-            "connect",
-            1,
-            &mut attempts,
-            &mut (),
-            |_| -> Result<()> {
-                tries += 1;
-                Err("ATT socket disconnected".into())
-            },
-            |_| Ok(false),
-        )
-        .unwrap_err();
+        assert_eq!(run(&mut script, &mut attempts).unwrap(), 2);
+        assert_eq!(script.released, [1]);
+        assert_eq!(
+            attempts[0].host_error.as_deref(),
+            Some("DUT did not confirm connection 2")
+        );
+        assert_eq!(attempts[1].outcome, Outcome::Established);
+    }
+
+    #[test]
+    fn an_unconfirmed_connection_the_dut_saw_is_released_and_fails_at_once() {
+        let mut script = Script {
+            host: vec![Ok(1)],
+            confirmed: vec![false],
+            seen: vec![true],
+            ..Script::default()
+        };
+        let mut attempts = Vec::new();
+        let error = run(&mut script, &mut attempts).unwrap_err();
+        assert_eq!(error.to_string(), "DUT did not confirm connection 2");
+        assert_eq!(script.released, [1]);
+        assert!(attempts.is_empty());
+    }
+
+    #[test]
+    fn a_host_failure_the_dut_saw_ends_at_once() {
+        let mut script = Script {
+            host: vec![Err("ATT socket disconnected".into())],
+            seen: vec![true],
+            ..Script::default()
+        };
+        let mut attempts = Vec::new();
+        let error = run(&mut script, &mut attempts).unwrap_err();
         assert_eq!(error.to_string(), "ATT socket disconnected");
-        assert_eq!(tries, 1);
         assert!(attempts.is_empty());
     }
 
     #[test]
     fn retries_are_bounded() {
+        let mut script = Script {
+            host: (0..ATTEMPTS)
+                .map(|_| Err("le-connection-abort-by-local".into()))
+                .collect(),
+            seen: vec![false; ATTEMPTS as usize],
+            ..Script::default()
+        };
         let mut attempts = Vec::new();
-        let mut tries = 0;
-        let error = establish(
-            "pairing",
-            1,
-            &mut attempts,
-            &mut (),
-            |_| -> Result<()> {
-                tries += 1;
-                Err("le-connection-abort-by-local".into())
-            },
-            |_| Ok(true),
-        )
-        .unwrap_err();
-        assert_eq!(tries, ATTEMPTS);
+        let error = run(&mut script, &mut attempts).unwrap_err();
         assert_eq!(attempts.len(), ATTEMPTS as usize);
         assert!(error.to_string().contains("no connection reached the DUT"));
     }
@@ -214,15 +257,33 @@ mod tests {
     #[test]
     fn a_failed_observation_of_the_dut_is_the_error() {
         let mut attempts = Vec::new();
-        let error = establish(
+        let confirm = establish(
             "connect",
             1,
             &mut attempts,
             &mut (),
-            |_| -> Result<()> { Err("ATT socket disconnected".into()) },
+            |_| Ok(1u8),
+            |_| Err("missing or insufficient GATT task-stack headroom".into()),
+            |_, _| Ok(()),
+            |_| Ok(true),
+        )
+        .unwrap_err();
+        assert_eq!(
+            confirm.to_string(),
+            "missing or insufficient GATT task-stack headroom"
+        );
+        let unseen = establish(
+            "connect",
+            1,
+            &mut attempts,
+            &mut (),
+            |_| -> Result<u8> { Err("ATT socket disconnected".into()) },
+            |_| Ok(true),
+            |_, _| Ok(()),
             |_| Err("serial link lost".into()),
         )
         .unwrap_err();
-        assert_eq!(error.to_string(), "serial link lost");
+        assert_eq!(unseen.to_string(), "serial link lost");
+        assert!(attempts.is_empty());
     }
 }

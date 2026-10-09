@@ -96,7 +96,7 @@ reports whether RF was closed and woken or kept open by another client.
   classified by `ConnectedStationFault`'s `StaFault`. Later Wi-Fi commands
   still fail with `RadioError::HardwareFault`.
 - The composition never drops a polled station task: the active-role driver
-  (`drive_embassy_wifi_active_role_pinned`) borrows the pinned role future
+  (`drive_wifi_active_role_pinned`) borrows the pinned role future
   until it returns, and a stop command only asks the role to stop. A
   cancelled `StationTask` is therefore not a station fault and has no
   `StaFaultReason`; its fail-closed `Drop` only guards against misuse.
@@ -121,7 +121,7 @@ reports whether RF was closed and woken or kept open by another client.
 - Once polled, bring-up, release and RF close must reach a terminal result;
   dropping them can strand a partially changed shared radio.
 
-The item-level contracts are in `oer-radio-embassy`,
+The item-level contracts are in `oer-radio-supervisor`,
 `oer-esp32s31-ieee80211::runtime`, and the concrete role modules in this crate's
 source. `FEATURES.md` is navigation for scope and limitations; the generated
 qualification view remains the readiness authority.

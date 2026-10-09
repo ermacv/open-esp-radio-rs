@@ -62,10 +62,11 @@ pub mod chips {
     }
 }
 
-/// Executor bindings of the portable service contracts.
+/// Executor-independent runtime of the portable service contracts.
 #[cfg(feature = "owned-xarxa")]
-pub mod embassy {
-    pub use radio_embassy as radio;
+pub mod runtime {
+    /// The radio service's supervisor mailbox and role-epoch actor.
+    pub use radio_supervisor as radio;
 }
 
 #[cfg(any(feature = "owned-xarxa", feature = "embassy-ieee802154"))]

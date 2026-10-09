@@ -8,10 +8,8 @@ use oer_ieee80211_runtime::stack_boundary::stack_poll;
 
 use oer_radio::wifi::{WifiScanFailure, WifiStartFailure, WifiStopReport};
 
-use super::message::{
-    EmbassyWifiStartKind, EmbassyWifiSupervisorCommand, EmbassyWifiSupervisorResponse,
-};
-use super::transport::EmbassyWifiSupervisorEndpoint;
+use super::message::{WifiStartKind, WifiSupervisorCommand, WifiSupervisorResponse};
+use super::transport::WifiSupervisorEndpoint;
 
 /// Role-local control retained beside an active owner future by the physical
 /// supervisor actor.
@@ -19,7 +17,7 @@ use super::transport::EmbassyWifiSupervisorEndpoint;
 /// Request publication is deliberately synchronous. Waiting for completion
 /// here would deadlock because the same actor must continue polling the role
 /// future which performs DMA/IRQ quiescence.
-pub trait EmbassyWifiActiveRoleControl {
+pub trait WifiActiveRoleControl {
     fn request_stop(&mut self);
 }
 
@@ -29,12 +27,12 @@ pub trait EmbassyWifiActiveRoleControl {
 /// `Stop` response. It does not classify `output` as quiescent: the concrete
 /// supervisor must first inspect that owner-bearing output and reconstruct a
 /// stopped or faulted frontier.
-pub struct EmbassyWifiActiveRoleExit<O> {
+pub struct WifiActiveRoleExit<O> {
     output: O,
     stop_requested: bool,
 }
 
-impl<O> EmbassyWifiActiveRoleExit<O> {
+impl<O> WifiActiveRoleExit<O> {
     pub fn into_parts(self) -> (O, bool) {
         (self.output, self.stop_requested)
     }
@@ -53,7 +51,7 @@ impl<O> EmbassyWifiActiveRoleExit<O> {
 ///
 /// Only `Stopped` is reusable. `Faulted` intentionally keeps the exact
 /// quarantined owner instead of erasing it into an error code.
-pub enum EmbassyWifiRoleFrontier<S, F> {
+pub enum WifiRoleFrontier<S, F> {
     Stopped(S),
     Faulted(F),
 }
@@ -71,95 +69,94 @@ pub enum EmbassyWifiRoleFrontier<S, F> {
 /// their untouched request. `active_start_error` only constructs the service
 /// error, so a caller cannot accidentally return a station response to a
 /// monitor command or otherwise violate the mailbox protocol.
-pub async fn drive_embassy_wifi_active_role<M, E, C, F, R>(
-    endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
+pub async fn drive_wifi_active_role<M, E, C, F, R>(
+    endpoint: &mut WifiSupervisorEndpoint<'_, M, E>,
     control: &mut C,
     role: F,
     active_start_error: R,
-) -> EmbassyWifiActiveRoleExit<F::Output>
+) -> WifiActiveRoleExit<F::Output>
 where
     M: RawMutex,
-    C: EmbassyWifiActiveRoleControl,
+    C: WifiActiveRoleControl,
     F: Future,
-    R: FnMut(EmbassyWifiStartKind) -> E,
+    R: FnMut(WifiStartKind) -> E,
 {
     let mut role = core::pin::pin!(role);
-    drive_embassy_wifi_active_role_pinned(endpoint, control, role.as_mut(), active_start_error)
-        .await
+    drive_wifi_active_role_pinned(endpoint, control, role.as_mut(), active_start_error).await
 }
 
 /// Borrowed variant for callers which already store a large role future in
 /// their own async state. This avoids moving that future through another
 /// owner future solely to service the supervisor mailbox.
-pub async fn drive_embassy_wifi_active_role_pinned<M, E, C, F, R>(
-    endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
+pub async fn drive_wifi_active_role_pinned<M, E, C, F, R>(
+    endpoint: &mut WifiSupervisorEndpoint<'_, M, E>,
     control: &mut C,
     mut role: core::pin::Pin<&mut F>,
     mut active_start_error: R,
-) -> EmbassyWifiActiveRoleExit<F::Output>
+) -> WifiActiveRoleExit<F::Output>
 where
     M: RawMutex,
-    C: EmbassyWifiActiveRoleControl,
+    C: WifiActiveRoleControl,
     F: Future,
-    R: FnMut(EmbassyWifiStartKind) -> E,
+    R: FnMut(WifiStartKind) -> E,
 {
     let mut stop_requested = false;
     loop {
         match select(stack_poll(role.as_mut()), endpoint.receive()).await {
             Either::First(output) => {
-                return EmbassyWifiActiveRoleExit {
+                return WifiActiveRoleExit {
                     output,
                     stop_requested,
                 };
             }
-            Either::Second(EmbassyWifiSupervisorCommand::Stop) => {
+            Either::Second(WifiSupervisorCommand::Stop) => {
                 if !stop_requested {
                     control.request_stop();
                     stop_requested = true;
                 }
             }
-            Either::Second(EmbassyWifiSupervisorCommand::RestartRadio) => {
-                let error = active_start_error(EmbassyWifiStartKind::WholeRadioRestart);
+            Either::Second(WifiSupervisorCommand::RestartRadio) => {
+                let error = active_start_error(WifiStartKind::WholeRadioRestart);
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::RestartRadio(Err(error)))
+                    .respond(WifiSupervisorResponse::RestartRadio(Err(error)))
                     .await;
             }
-            Either::Second(EmbassyWifiSupervisorCommand::Scan(request)) => {
-                let error = active_start_error(EmbassyWifiStartKind::StandaloneScan);
+            Either::Second(WifiSupervisorCommand::Scan(request)) => {
+                let error = active_start_error(WifiStartKind::StandaloneScan);
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                    .respond(WifiSupervisorResponse::Scan(Err(
                         WifiScanFailure::Rejected { request, error },
                     )))
                     .await;
             }
-            Either::Second(EmbassyWifiSupervisorCommand::StartStation(request)) => {
-                let error = active_start_error(EmbassyWifiStartKind::Station);
+            Either::Second(WifiSupervisorCommand::StartStation(request)) => {
+                let error = active_start_error(WifiStartKind::Station);
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::Station(Err(
+                    .respond(WifiSupervisorResponse::Station(Err(
                         WifiStartFailure::rejected(request, error),
                     )))
                     .await;
             }
-            Either::Second(EmbassyWifiSupervisorCommand::StartAccessPoint(request)) => {
-                let error = active_start_error(EmbassyWifiStartKind::AccessPoint);
+            Either::Second(WifiSupervisorCommand::StartAccessPoint(request)) => {
+                let error = active_start_error(WifiStartKind::AccessPoint);
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::AccessPoint(Err(
+                    .respond(WifiSupervisorResponse::AccessPoint(Err(
                         WifiStartFailure::rejected(request, error),
                     )))
                     .await;
             }
-            Either::Second(EmbassyWifiSupervisorCommand::StartStationAccessPoint(request)) => {
-                let error = active_start_error(EmbassyWifiStartKind::StationAccessPoint);
+            Either::Second(WifiSupervisorCommand::StartStationAccessPoint(request)) => {
+                let error = active_start_error(WifiStartKind::StationAccessPoint);
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                    .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                         WifiStartFailure::rejected(request, error),
                     )))
                     .await;
             }
-            Either::Second(EmbassyWifiSupervisorCommand::StartMonitor(request)) => {
-                let error = active_start_error(EmbassyWifiStartKind::StandaloneMonitor);
+            Either::Second(WifiSupervisorCommand::StartMonitor(request)) => {
+                let error = active_start_error(WifiStartKind::StandaloneMonitor);
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::Monitor(Err(
+                    .respond(WifiSupervisorResponse::Monitor(Err(
                         WifiStartFailure::rejected(request, error),
                     )))
                     .await;
@@ -174,28 +171,26 @@ where
 /// Classification happens first. A reusable frontier produces `Ok`, while a
 /// faulted frontier remains owned by the caller and produces a service error
 /// derived without consuming that owner.
-pub async fn finish_embassy_wifi_active_role<M, E, O, S, F, Classify, FaultError>(
-    endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
+pub async fn finish_wifi_active_role<M, E, O, S, F, Classify, FaultError>(
+    endpoint: &mut WifiSupervisorEndpoint<'_, M, E>,
     generation: oer_radio::wifi::RadioSubsystemGeneration,
-    exit: EmbassyWifiActiveRoleExit<O>,
+    exit: WifiActiveRoleExit<O>,
     classify: Classify,
     fault_error: FaultError,
-) -> EmbassyWifiRoleFrontier<S, F>
+) -> WifiRoleFrontier<S, F>
 where
     M: RawMutex,
-    Classify: FnOnce(O) -> EmbassyWifiRoleFrontier<S, F>,
+    Classify: FnOnce(O) -> WifiRoleFrontier<S, F>,
     FaultError: FnOnce(&F) -> E,
 {
     let (output, stop_requested) = exit.into_parts();
     let frontier = classify(output);
     if stop_requested {
         let result = match &frontier {
-            EmbassyWifiRoleFrontier::Stopped(_) => Ok(WifiStopReport::new(generation)),
-            EmbassyWifiRoleFrontier::Faulted(faulted) => Err(fault_error(faulted)),
+            WifiRoleFrontier::Stopped(_) => Ok(WifiStopReport::new(generation)),
+            WifiRoleFrontier::Faulted(faulted) => Err(fault_error(faulted)),
         };
-        endpoint
-            .respond(EmbassyWifiSupervisorResponse::Stop(result))
-            .await;
+        endpoint.respond(WifiSupervisorResponse::Stop(result)).await;
     }
     frontier
 }

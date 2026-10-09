@@ -196,11 +196,11 @@ impl ProductionWifiEpochRunner {
     /// not a shadow composition.
     pub(super) async fn run_station_access_point_service(
         &mut self,
-        endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
+        endpoint: &mut WifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
         stopped: ProductionSupervisorStopped,
         request: StationAccessPointRequest,
         generation: oer_radio::wifi::RadioSubsystemGeneration,
-    ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
+    ) -> WifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
         let (station_request, access_point_request) = request.into_parts();
         let station_request =
             constrain_station_to_paired_channel(station_request, access_point_request.channel());
@@ -210,11 +210,11 @@ impl ProductionWifiEpochRunner {
             Ok(frontier) => frontier,
             Err(faulted) => {
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                    .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                         WifiStartFailure::faulted(self.fault_error(&faulted)),
                     )))
                     .await;
-                return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                return WifiRoleEpochOutcome::Faulted(faulted);
             }
         };
         let ProductionPairedStationFrontier::Connected {
@@ -228,12 +228,12 @@ impl ProductionWifiEpochRunner {
                 unreachable!("paired station frontier has two exhaustive states")
             };
             endpoint
-                .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                     WifiStartFailure::faulted(RadioError::HardwareFault),
                 )))
                 .await;
             diagnostics_event!("open-radio: paired cutover failed before connected frontier");
-            return EmbassyWifiRoleEpochOutcome::NotStarted(stopped);
+            return WifiRoleEpochOutcome::NotStarted(stopped);
         };
 
         let parts = resources.into_parts();
@@ -261,7 +261,7 @@ impl ProductionWifiEpochRunner {
                 // produce the connected frontier. A contradiction here is a
                 // non-reusable software invariant, not a recoverable request.
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                    .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                         WifiStartFailure::faulted(RadioError::HardwareFault),
                     )))
                     .await;
@@ -270,7 +270,7 @@ impl ProductionWifiEpochRunner {
                     failure.error
                 );
                 let error = failure.error;
-                return EmbassyWifiRoleEpochOutcome::Faulted(
+                return WifiRoleEpochOutcome::Faulted(
                     ProductionWifiFault::PairedConnected {
                         _fault: ConnectedStationFault::InvalidConnectedPolicy {
                             _resources: failure.into_resources(),
@@ -294,7 +294,7 @@ impl ProductionWifiEpochRunner {
         );
         if station_channel != access_point_request.channel() {
             endpoint
-                .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                     WifiStartFailure::faulted(RadioError::Planning(
                         WifiServicePlanningError::Request(
                             oer_radio::wifi::WifiServiceRequestError::StationAccessPointChannelMismatch,
@@ -303,14 +303,12 @@ impl ProductionWifiEpochRunner {
                 )))
                 .await;
             diagnostics_event!("open-radio: paired cutover channel mismatch");
-            return EmbassyWifiRoleEpochOutcome::Faulted(
-                ProductionWifiFault::PairedChannelMismatch {
-                    _started: started,
-                    _station: station,
-                    _access_point: access_point,
-                    _monitor: monitor,
-                },
-            );
+            return WifiRoleEpochOutcome::Faulted(ProductionWifiFault::PairedChannelMismatch {
+                _started: started,
+                _station: station,
+                _access_point: access_point,
+                _monitor: monitor,
+            });
         }
         let activation = {
             let (runtime, epoch) = started.runtime_and_epoch_mut();
@@ -349,11 +347,11 @@ impl ProductionWifiEpochRunner {
         };
         if activation.is_err() {
             endpoint
-                .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                     WifiStartFailure::faulted(RadioError::HardwareFault),
                 )))
                 .await;
-            return EmbassyWifiRoleEpochOutcome::Faulted(ProductionWifiFault::PairedConnected {
+            return WifiRoleEpochOutcome::Faulted(ProductionWifiFault::PairedConnected {
                 _fault: ConnectedStationFault::InterruptActivation { _started: started },
                 _station: station,
                 _access_point: access_point,
@@ -379,7 +377,7 @@ impl ProductionWifiEpochRunner {
     /// while the long-running dual-interface DATAPATH graph is active.
     async fn run_station_access_point_active(
         &mut self,
-        endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
+        endpoint: &mut WifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
         started: crate::supervisor::station::ConnectedNetworkStarted<'static, 'static>,
         station: StaAttemptStation,
         access_point: ProductionAccessPointResources,
@@ -387,23 +385,21 @@ impl ProductionWifiEpochRunner {
         access_point_request: AccessPointRequest,
         station_channel: oer_ieee80211_mac::channel::WifiChannel,
         generation: oer_radio::wifi::RadioSubsystemGeneration,
-    ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
+    ) -> WifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
         let (installed_mode, material_mode) = started.security_modes();
         if installed_mode != material_mode {
             endpoint
-                .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                     WifiStartFailure::faulted(RadioError::HardwareFault),
                 )))
                 .await;
-            return EmbassyWifiRoleEpochOutcome::Faulted(
-                ProductionWifiFault::PairedSecurityMismatch {
-                    _started: started,
-                    _station: station,
-                    _access_point: access_point,
-                    _monitor: monitor,
-                    _access_point_request: access_point_request,
-                },
-            );
+            return WifiRoleEpochOutcome::Faulted(ProductionWifiFault::PairedSecurityMismatch {
+                _started: started,
+                _station: station,
+                _access_point: access_point,
+                _monitor: monitor,
+                _access_point_request: access_point_request,
+            });
         }
         let ConnectedNetworkStartedParts {
             runtime,
@@ -456,36 +452,34 @@ impl ProductionWifiEpochRunner {
             Ok(started) => started,
             Err(failure) => {
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                    .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                         WifiStartFailure::faulted(RadioError::HardwareFault),
                     )))
                     .await;
-                return EmbassyWifiRoleEpochOutcome::Faulted(
-                    ProductionWifiFault::PairedConnected {
-                        _fault: ConnectedStationFault::EpochStart {
-                            _runtime: production_station_runtime(
-                                role,
-                                interrupt_epoch,
-                                dma,
-                                tx_storage,
-                                scan_table,
-                                frame,
-                                ethernet,
-                                board,
-                            ),
-                            _failure: failure,
-                            _stack: (),
-                            _network: network_runner,
-                            _initial_network_task: initial_network_task,
-                            _plan: plan,
-                            _installed_security: installed_security,
-                            _security: security,
-                        },
-                        _station: station,
-                        _access_point: access_point,
-                        _monitor: monitor,
+                return WifiRoleEpochOutcome::Faulted(ProductionWifiFault::PairedConnected {
+                    _fault: ConnectedStationFault::EpochStart {
+                        _runtime: production_station_runtime(
+                            role,
+                            interrupt_epoch,
+                            dma,
+                            tx_storage,
+                            scan_table,
+                            frame,
+                            ethernet,
+                            board,
+                        ),
+                        _failure: failure,
+                        _stack: (),
+                        _network: network_runner,
+                        _initial_network_task: initial_network_task,
+                        _plan: plan,
+                        _installed_security: installed_security,
+                        _security: security,
                     },
-                );
+                    _station: station,
+                    _access_point: access_point,
+                    _monitor: monitor,
+                });
             }
         };
         let standalone_receiver = standalone_receiver.unwrap_or_else(|| {
@@ -518,11 +512,11 @@ impl ProductionWifiEpochRunner {
                     Ok(endpoints) => endpoints,
                     Err(failure) => {
                         endpoint
-                            .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                            .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                                 WifiStartFailure::faulted(RadioError::HardwareFault),
                             )))
                             .await;
-                        return EmbassyWifiRoleEpochOutcome::Faulted(
+                        return WifiRoleEpochOutcome::Faulted(
                             ProductionWifiFault::PairedConnected {
                                 _fault: ConnectedStationFault::ReplaySetup {
                                     _runtime: production_station_runtime(
@@ -571,47 +565,45 @@ impl ProductionWifiEpochRunner {
                 };
                 if let Err(failure) = plan.enable_ccmp_rx_replay(replay_rx) {
                     endpoint
-                        .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                        .respond(WifiSupervisorResponse::StationAccessPoint(Err(
                             WifiStartFailure::faulted(RadioError::HardwareFault),
                         )))
                         .await;
-                    return EmbassyWifiRoleEpochOutcome::Faulted(
-                        ProductionWifiFault::PairedConnected {
-                            _fault: ConnectedStationFault::ReplaySetup {
-                                _runtime: production_station_runtime(
-                                    role,
-                                    interrupt_epoch,
-                                    dma,
-                                    tx_storage,
-                                    scan_table,
-                                    frame,
-                                    ethernet,
-                                    board,
-                                ),
-                                _started: ConnectedEpochStarted {
-                                    hardware,
-                                    rx,
-                                    aggregate_tx: aggregate,
-                                    control: control_resources,
-                                },
-                                _stack: (),
-                                _network: network_runner,
-                                _initial_network_task: initial_network_task,
-                                _plan: plan,
-                                _failure: ConnectedStationReplaySetupFailure::Plan {
-                                    _failure: failure,
-                                    _tx_security: tx_security,
-                                    _group_security: group_security,
-                                },
-                                _sequences: sequences,
-                                _material: station_security_material,
-                                _control_tx: control_tx,
+                    return WifiRoleEpochOutcome::Faulted(ProductionWifiFault::PairedConnected {
+                        _fault: ConnectedStationFault::ReplaySetup {
+                            _runtime: production_station_runtime(
+                                role,
+                                interrupt_epoch,
+                                dma,
+                                tx_storage,
+                                scan_table,
+                                frame,
+                                ethernet,
+                                board,
+                            ),
+                            _started: ConnectedEpochStarted {
+                                hardware,
+                                rx,
+                                aggregate_tx: aggregate,
+                                control: control_resources,
                             },
-                            _station: station,
-                            _access_point: access_point,
-                            _monitor: monitor,
+                            _stack: (),
+                            _network: network_runner,
+                            _initial_network_task: initial_network_task,
+                            _plan: plan,
+                            _failure: ConnectedStationReplaySetupFailure::Plan {
+                                _failure: failure,
+                                _tx_security: tx_security,
+                                _group_security: group_security,
+                            },
+                            _sequences: sequences,
+                            _material: station_security_material,
+                            _control_tx: control_tx,
                         },
-                    );
+                        _station: station,
+                        _access_point: access_point,
+                        _monitor: monitor,
+                    });
                 }
                 (tx_security, Some(group_security))
             }
@@ -919,7 +911,7 @@ impl ProductionWifiEpochRunner {
             });
         }
         endpoint
-            .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Ok(
+            .respond(WifiSupervisorResponse::StationAccessPoint(Ok(
                 WifiStartReport::new(generation),
             )))
             .await;
@@ -1192,7 +1184,7 @@ impl ProductionWifiEpochRunner {
             let stopped = match try_reclaim_production_station(station_owner) {
                 Ok(stopped) => stopped,
                 Err(failure) => {
-                    return Err(EmbassyWifiRoleEpochOutcome::Faulted(
+                    return Err(WifiRoleEpochOutcome::Faulted(
                         ProductionWifiFault::PairedReclaim {
                             _station: failure,
                             _access_point: access_point,
@@ -1205,7 +1197,7 @@ impl ProductionWifiEpochRunner {
             let (physical, station) = match try_split_wifi_stopped_resources(resources) {
                 Ok(resources) => resources,
                 Err(resources) => {
-                    return Err(EmbassyWifiRoleEpochOutcome::Faulted(
+                    return Err(WifiRoleEpochOutcome::Faulted(
                         ProductionWifiFault::StoppedOwner {
                             _wifi: stopped.wifi,
                             _resources: resources,
@@ -1227,17 +1219,17 @@ impl ProductionWifiEpochRunner {
             Err(outcome) => return outcome,
         };
         if active_fault {
-            return EmbassyWifiRoleEpochOutcome::Faulted(ProductionWifiFault::PairedStopped {
+            return WifiRoleEpochOutcome::Faulted(ProductionWifiFault::PairedStopped {
                 _stopped: stopped,
             });
         }
         if stop_requested {
             endpoint
-                .respond(EmbassyWifiSupervisorResponse::Stop(Ok(
-                    WifiStopReport::new(generation),
-                )))
+                .respond(WifiSupervisorResponse::Stop(Ok(WifiStopReport::new(
+                    generation,
+                ))))
                 .await;
         }
-        EmbassyWifiRoleEpochOutcome::Stopped(stopped)
+        WifiRoleEpochOutcome::Stopped(stopped)
     }
 }

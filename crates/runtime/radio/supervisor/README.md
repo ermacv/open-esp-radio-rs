@@ -1,7 +1,10 @@
-# Embassy radio service adapter
+# Radio service supervisor
 
-`oer-radio-embassy` binds the portable [radio service](../../../radio/README.md)
-to Embassy. It transports commands and drives the complete local role epoch.
+`oer-radio-supervisor` runs the portable [radio service](../../../radio/README.md):
+it transports commands through a one-slot mailbox and drives the complete
+local role epoch. It is executor-independent: it uses `embassy-sync`
+primitives over a caller-chosen raw mutex and returns futures any executor
+polls; the composition binds it to an executor.
 A controlled child must return its exact owner before stop completion; failure
 retains the faulted owner.
 
@@ -16,9 +19,9 @@ The actor retains stopped, active-faulted and lifecycle-faulted owners
 separately, and acknowledges cooperative Stop only after classifying the
 returned owner frontier.
 
-The service crate does not depend on this adapter or on any executor. Chip
+The service crate does not depend on this runtime or on any executor. Chip
 compositions use both crates; applications reach these types through the
-[public facade](../../../oer/README.md) as `oer::embassy::radio`.
+[public facade](../../../oer/README.md) as `oer::runtime::radio`.
 
 Tests use the synthetic portable service profiles that `oer-radio` exposes
 with its `test-support` feature; they do not depend on a concrete chip profile.

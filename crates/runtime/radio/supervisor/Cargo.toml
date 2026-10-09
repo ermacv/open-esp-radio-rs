@@ -1,11 +1,11 @@
 [package]
-name = "oer-radio-embassy"
+name = "oer-radio-supervisor"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Embassy mailbox and role-epoch actor for the portable radio service"
+description = "Executor-independent mailbox and role-epoch actor of the portable radio service"
 readme = "README.md"
 
 [dependencies]
@@ -23,5 +23,5 @@ oer-ieee80211-sta = { path = "../../../protocols/ieee80211/sta" }
 workspace = true
 
 [package.metadata.open-radio]
-layer = "adapter"
+layer = "runtime"
 platform = "portable"

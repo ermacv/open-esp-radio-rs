@@ -32,7 +32,7 @@ esp32s31-bluetooth = ["esp32s31", "bluetooth", "dep:chip-bluetooth"]
 esp32s31-ieee802154 = ["esp32s31", "ieee802154", "dep:chip-ieee802154"]
 embassy-ieee802154 = ["esp32s31-ieee802154", "dep:ieee802154-composition", "dep:radio-system"]
 openthread = ["embassy-ieee802154", "dep:ieee802154-openthread"]
-owned-xarxa = ["esp32s31-wifi", "dep:radio-embassy", "dep:radio-system", "dep:wifi-composition", "wifi-composition/owned-network"]
+owned-xarxa = ["esp32s31-wifi", "dep:radio-supervisor", "dep:radio-system", "dep:wifi-composition", "wifi-composition/owned-network"]
 
 [package.metadata.open-radio]
 layer = "facade"
@@ -56,7 +56,7 @@ supported-feature-profiles = [
 
 [dependencies]
 radio = { package = "oer-radio", path = "../radio", default-features = false }
-radio-embassy = { package = "oer-radio-embassy", path = "../adapters/embassy/radio", optional = true }
+radio-supervisor = { package = "oer-radio-supervisor", path = "../runtime/radio/supervisor", optional = true }
 memory = { package = "oer-memory", path = "../memory" }
 network = { package = "oer-network-interface", path = "../network/interface" }
 mac = { package = "oer-ieee80211-mac", path = "../protocols/ieee80211/mac", optional = true }

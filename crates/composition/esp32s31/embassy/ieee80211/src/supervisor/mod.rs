@@ -62,10 +62,10 @@ use oer_radio::wifi::{
     WifiServicePlanningError, WifiServiceRequest, WifiStartFailure, WifiStartReport,
     WifiStationConfig, WifiStopReport, WifiSupervisorConfiguration,
 };
-use oer_radio_embassy::{
-    EmbassyWifiRoleEpochOutcome, EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier,
-    EmbassyWifiStartKind, EmbassyWifiSupervisorCommand, EmbassyWifiSupervisorControlResources,
-    EmbassyWifiSupervisorEndpoint, EmbassyWifiSupervisorResponse, finish_embassy_wifi_active_role,
+use oer_radio_supervisor::{
+    WifiRoleEpochOutcome, WifiRoleEpochRunner, WifiRoleFrontier, WifiStartKind,
+    WifiSupervisorCommand, WifiSupervisorControlResources, WifiSupervisorEndpoint,
+    WifiSupervisorResponse, finish_wifi_active_role,
 };
 
 use oer_esp32s31_phy::{NoopPhyTargetObserver, PhyTxTargetPowerProfile};
@@ -600,10 +600,10 @@ type ProductionSupervisorStopped = WifiSupervisorStopped<
     ProductionMonitorResources,
 >;
 
-static RADIO_SUPERVISOR_CONTROL: EmbassyWifiSupervisorControlResources<
+static RADIO_SUPERVISOR_CONTROL: WifiSupervisorControlResources<
     CriticalSectionRawMutex,
     RadioError,
-> = EmbassyWifiSupervisorControlResources::new();
+> = WifiSupervisorControlResources::new();
 
 struct ProductionWifiEpochRunner {
     radio: &'static SharedRadio,

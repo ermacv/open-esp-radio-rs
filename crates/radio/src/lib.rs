@@ -14,7 +14,7 @@
 //! the idle capability, and only a successful stop returns a reusable one.
 //! Rejected preparation returns the unchanged request and idle capability;
 //! a fault after materialization does not. Executor bindings live in adapter
-//! crates; `oer-radio-embassy` supplies the one-command mailbox used by the
+//! crates; `oer-radio-supervisor` supplies the one-command mailbox used by the
 //! concrete ESP32-S31 runner. This crate depends on no executor or adapter.
 //!
 //! # Command and data planes

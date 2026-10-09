@@ -53,12 +53,12 @@ Cargo package identities are independent of this directory hierarchy.
 | `hardware/radio/clock/` | Chip-neutral shared modem clock reference-count planner of ESP-IDF `modem_clock.c`, over the dependency table and edge executor each chip's HAL supplies |
 | `hardware/esp32s31/driver/{bluetooth,coex}/` | Chip radio drivers; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler) and its `memory/` holds its lower ownership boundary; `coex/` binds the Espressif coexistence policy to the radio arbiter; `ieee802154/` keeps only the ESP32-S31 IEEE 802.15.4 capability page |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
-| `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
 | `adapters/openthread/ieee802154/` | Portable OpenThread `Radio` over any `Ieee802154RadioPort` |
 | `adapters/trouble/bluetooth/gatt/` | Portable GATT application over the Trouble Host (plaintext profile; `secure` adds Numeric Comparison pairing, bonds and encrypted access) that the Bluetooth HIL agents compose |
 | `adapters/embassy/espressif/executor/` | Scheduler-free Embassy executor and time driver of the staged-boot chips |
 | `adapters/esp-hal/espressif/interrupt-table/` | The image's interrupt table on an Espressif interrupt matrix, through esp-hal |
 | `adapters/virtual/time/` | Per-instance virtual monotonic time for host tests and simulations: a `VirtualClock` its owner advances and a `SkipClock` whose waits skip to their deadline |
+| `runtime/radio/supervisor/` | Executor-independent supervisor of the `radio` service port: the one-command mailbox and the role-epoch actor that owns physical role frontiers |
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
 | `runtime/interrupt-table/` | Each image's static table of peripheral interrupt sources (handler, level, core) with unique tokens that enable and disable them |
 | `runtime/bluetooth/` | Portable service loop joining the in-process HCI transport, the LE Controller core and a radio port |

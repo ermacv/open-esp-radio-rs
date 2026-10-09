@@ -4,10 +4,10 @@
 lifecycle through `wifi`. Its contracts do not acquire PAC, DMA or interrupt
 owners. Concrete integration supplies the service profile and owns hardware.
 
-The crate depends on no executor or adapter. The Embassy binding — the
-command mailbox and the role-epoch actor that owns physical role frontiers —
-lives in the [Embassy radio adapter](../adapters/embassy/radio/README.md),
-which depends on these contracts. Applications use the separate
+The crate depends on no executor or adapter. The command mailbox and the
+role-epoch actor that owns physical role frontiers live in the
+[radio supervisor](../runtime/radio/supervisor/README.md), an
+executor-independent runtime that depends on these contracts. Applications use the separate
 [public facade](../oer/README.md), which exposes these same types without
 owning or duplicating their state.
 

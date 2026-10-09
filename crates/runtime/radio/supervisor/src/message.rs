@@ -7,7 +7,7 @@ use oer_radio::wifi::{
 };
 
 /// Request transported to the sole owner-holding radio-supervisor task.
-pub enum EmbassyWifiSupervisorCommand {
+pub enum WifiSupervisorCommand {
     Scan(WifiScanRequest),
     StartStation(StationRequest),
     StartAccessPoint(AccessPointRequest),
@@ -19,7 +19,7 @@ pub enum EmbassyWifiSupervisorCommand {
 
 /// Role requested while another Wi-Fi role graph is already active.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EmbassyWifiStartKind {
+pub enum WifiStartKind {
     StandaloneScan,
     Station,
     AccessPoint,
@@ -33,7 +33,7 @@ pub enum EmbassyWifiStartKind {
     clippy::large_enum_variant,
     reason = "the statically allocated single-response mailbox retains the complete bounded scan report"
 )]
-pub enum EmbassyWifiSupervisorResponse<E> {
+pub enum WifiSupervisorResponse<E> {
     Scan(Result<WifiScanReport, WifiScanFailure<WifiScanRequest, E>>),
     Station(WifiStartResult<StationRequest, E>),
     AccessPoint(WifiStartResult<AccessPointRequest, E>),
@@ -46,7 +46,7 @@ pub enum EmbassyWifiSupervisorResponse<E> {
 
 /// Control transport failure distinct from a backend service error.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EmbassyWifiSupervisorError<E> {
+pub enum WifiSupervisorError<E> {
     SupervisorUnavailable,
     ResponseMismatch,
     Service(E),

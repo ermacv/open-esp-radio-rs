@@ -33,11 +33,11 @@ fn standalone_scan_report(
 impl ProductionWifiEpochRunner {
     async fn run_standalone_scan(
         &mut self,
-        endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
+        endpoint: &mut WifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
         stopped: ProductionSupervisorStopped,
         request: WifiScanRequest,
         generation: oer_radio::wifi::RadioSubsystemGeneration,
-    ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
+    ) -> WifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
         let (wifi, physical, mut station, access_point, monitor) = stopped.into_parts();
         let mut materialized = materialize_production_wifi(wifi, physical);
         let (dma, rx_ring, tx, aggregate_tx) = materialized.resources.into_parts();
@@ -70,13 +70,13 @@ impl ProductionWifiEpochRunner {
                         _error: error,
                     };
                     endpoint
-                        .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                        .respond(WifiSupervisorResponse::Scan(Err(
                             WifiScanFailure::Faulted {
                                 error: self.fault_error(&faulted),
                             },
                         )))
                         .await;
-                    return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                    return WifiRoleEpochOutcome::Faulted(faulted);
                 }
             },
         };
@@ -152,13 +152,13 @@ impl ProductionWifiEpochRunner {
                 },
             };
             endpoint
-                .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                .respond(WifiSupervisorResponse::Scan(Err(
                     WifiScanFailure::Faulted {
                         error: self.fault_error(&faulted),
                     },
                 )))
                 .await;
-            return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+            return WifiRoleEpochOutcome::Faulted(faulted);
         }
         let ring = match receive.into_live() {
             Ok(ring) => ring,
@@ -178,13 +178,13 @@ impl ProductionWifiEpochRunner {
                     },
                 };
                 endpoint
-                    .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                    .respond(WifiSupervisorResponse::Scan(Err(
                         WifiScanFailure::Faulted {
                             error: self.fault_error(&faulted),
                         },
                     )))
                     .await;
-                return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                return WifiRoleEpochOutcome::Faulted(faulted);
             }
         };
         let report = standalone_scan_report(station.scan_table(), generation);
@@ -210,18 +210,18 @@ impl ProductionWifiEpochRunner {
             })
         };
         endpoint
-            .respond(EmbassyWifiSupervisorResponse::Scan(response))
+            .respond(WifiSupervisorResponse::Scan(response))
             .await;
-        EmbassyWifiRoleEpochOutcome::Stopped(stopped)
+        WifiRoleEpochOutcome::Stopped(stopped)
     }
 
     async fn run_station_service(
         &self,
-        endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
+        endpoint: &mut WifiSupervisorEndpoint<'_, CriticalSectionRawMutex, RadioError>,
         stopped: ProductionSupervisorStopped,
         request: StationRequest,
         generation: oer_radio::wifi::RadioSubsystemGeneration,
-    ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
+    ) -> WifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
         await_stack_boundary!(run_esp32s31_station_supervisor_epoch(
             endpoint,
             StationSupervisorEpoch::new(stopped, request, generation),
@@ -277,17 +277,15 @@ impl ProductionWifiEpochRunner {
                             resources
                         }
                         StationExit::Faulted { fault, runner, .. } => {
-                            return EmbassyWifiRoleFrontier::Faulted(
-                                ProductionWifiFault::Station {
-                                    _fault: fault,
-                                    _runner: runner,
-                                },
-                            );
+                            return WifiRoleFrontier::Faulted(ProductionWifiFault::Station {
+                                _fault: fault,
+                                _runner: runner,
+                            });
                         }
                     };
                     match restore_production_station_frontier(resources) {
-                        Ok(stopped) => EmbassyWifiRoleFrontier::Stopped(stopped),
-                        Err(faulted) => EmbassyWifiRoleFrontier::Faulted(faulted),
+                        Ok(stopped) => WifiRoleFrontier::Stopped(stopped),
+                        Err(faulted) => WifiRoleFrontier::Faulted(faulted),
                     }
                 },
                 RadioError::RoleActive,
@@ -296,7 +294,7 @@ impl ProductionWifiEpochRunner {
         ))
     }
 }
-impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner {
+impl WifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner {
     type Stopped = ProductionSupervisorStopped;
     type Faulted = ProductionWifiFault;
     type LifecycleFaulted = &'static mut ProductionRadioLifecycleFault;
@@ -318,11 +316,11 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
 
     fn run_epoch<'a>(
         &'a mut self,
-        endpoint: &'a mut EmbassyWifiSupervisorEndpoint<'_, CriticalSectionRawMutex, Self::Error>,
+        endpoint: &'a mut WifiSupervisorEndpoint<'_, CriticalSectionRawMutex, Self::Error>,
         stopped: Self::Stopped,
         service: WifiServiceRequest,
         generation: oer_radio::wifi::RadioSubsystemGeneration,
-    ) -> impl Future<Output = EmbassyWifiRoleEpochOutcome<Self::Stopped, Self::Faulted>> + 'a {
+    ) -> impl Future<Output = WifiRoleEpochOutcome<Self::Stopped, Self::Faulted>> + 'a {
         async move {
             let outcome = match service {
                 WifiServiceRequest::StandaloneScan { request, .. } => {
@@ -333,7 +331,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 WifiServiceRequest::StandaloneMonitor { plan, request } => {
                     let Some(monitor_plan) = plan.standalone_monitor() else {
                         endpoint
-                            .respond(EmbassyWifiSupervisorResponse::Monitor(Err(
+                            .respond(WifiSupervisorResponse::Monitor(Err(
                                 WifiStartFailure::rejected(
                                     request,
                                     RadioError::Planning(
@@ -344,7 +342,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                                 ),
                             )))
                             .await;
-                        return EmbassyWifiRoleEpochOutcome::NotStarted(stopped);
+                        return WifiRoleEpochOutcome::NotStarted(stopped);
                     };
                     let channel_policy = request.channel_policy();
                     let channel = channel_policy.initial_channel();
@@ -378,11 +376,11 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                                 _station: station_resources,
                             };
                             endpoint
-                                .respond(EmbassyWifiSupervisorResponse::Monitor(Err(
+                                .respond(WifiSupervisorResponse::Monitor(Err(
                                     WifiStartFailure::faulted(self.fault_error(&faulted)),
                                 )))
                                 .await;
-                            return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                            return WifiRoleEpochOutcome::Faulted(faulted);
                         }
                     };
                     let mut observer = NoopPhyTargetObserver;
@@ -400,16 +398,16 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                             _station: station_resources,
                         };
                         endpoint
-                            .respond(EmbassyWifiSupervisorResponse::Monitor(Err(
+                            .respond(WifiSupervisorResponse::Monitor(Err(
                                 WifiStartFailure::faulted(self.fault_error(&faulted)),
                             )))
                             .await;
-                        return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                        return WifiRoleEpochOutcome::Faulted(faulted);
                     }
                     endpoint
-                        .respond(EmbassyWifiSupervisorResponse::Monitor(Ok(
-                            WifiStartReport::new(generation),
-                        )))
+                        .respond(WifiSupervisorResponse::Monitor(Ok(WifiStartReport::new(
+                            generation,
+                        ))))
                         .await;
                     let exit = await_stack_boundary!(drive_esp32s31_monitor_role::<
                         _,
@@ -434,7 +432,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         &mut observer,
                         RadioError::RoleActive,
                     ));
-                    let frontier = await_stack_boundary!(finish_embassy_wifi_active_role(
+                    let frontier = await_stack_boundary!(finish_wifi_active_role(
                         endpoint,
                         generation,
                         exit,
@@ -445,7 +443,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                                 let (monitor, rx_ring) =
                                     ProductionMonitorResources::from_stopped(stopped.resources);
                                 let radio = stopped.radio;
-                                EmbassyWifiRoleFrontier::Stopped(WifiSupervisorStopped::new(
+                                WifiRoleFrontier::Stopped(WifiSupervisorStopped::new(
                                     ProductionWifiOwner::Live {
                                         owner: radio.owner,
                                         registers: radio.registers,
@@ -458,23 +456,21 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                                 ))
                             }
                             MonitorTaskExit::Faulted { task, .. } => {
-                                EmbassyWifiRoleFrontier::Faulted(
-                                    ProductionWifiFault::MonitorRuntime {
-                                        _task: task,
-                                        _physical: physical_resources,
-                                        _station: station_resources,
-                                    },
-                                )
+                                WifiRoleFrontier::Faulted(ProductionWifiFault::MonitorRuntime {
+                                    _task: task,
+                                    _physical: physical_resources,
+                                    _station: station_resources,
+                                })
                             }
                         },
                         |_faulted| RadioError::HardwareFault,
                     ));
                     match frontier {
-                        EmbassyWifiRoleFrontier::Stopped(stopped) => {
-                            EmbassyWifiRoleEpochOutcome::Stopped(stopped)
+                        WifiRoleFrontier::Stopped(stopped) => {
+                            WifiRoleEpochOutcome::Stopped(stopped)
                         }
-                        EmbassyWifiRoleFrontier::Faulted(faulted) => {
-                            EmbassyWifiRoleEpochOutcome::Faulted(faulted)
+                        WifiRoleFrontier::Faulted(faulted) => {
+                            WifiRoleEpochOutcome::Faulted(faulted)
                         }
                     }
                 }
@@ -496,7 +492,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                     )
                 }
             };
-            if let EmbassyWifiRoleEpochOutcome::Faulted(faulted) = &outcome
+            if let WifiRoleEpochOutcome::Faulted(faulted) = &outcome
                 && let Some(reason) = faulted.station_fault_reason()
             {
                 crate::status::publish_station_faulted(reason);

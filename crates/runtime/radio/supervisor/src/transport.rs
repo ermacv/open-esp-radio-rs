@@ -13,9 +13,7 @@ use oer_radio::wifi::{
     WifiStartFailure, WifiStartResult, WifiStopReport, WifiSupervisorPort,
 };
 
-use super::message::{
-    EmbassyWifiSupervisorCommand, EmbassyWifiSupervisorError, EmbassyWifiSupervisorResponse,
-};
+use super::message::{WifiSupervisorCommand, WifiSupervisorError, WifiSupervisorResponse};
 
 /// One outstanding controller command and one bounded completion.
 const MAILBOX_CAPACITY: usize = 1;
@@ -24,19 +22,19 @@ const MAILBOX_CAPACITY: usize = 1;
 ///
 /// It contains only owned requests, value reports and wake state. PAC, DMA,
 /// IRQ and protocol owners never enter this object.
-pub struct EmbassyWifiSupervisorControlResources<M: RawMutex, E> {
+pub struct WifiSupervisorControlResources<M: RawMutex, E> {
     split: AtomicBool,
     supervisor_alive: AtomicBool,
-    commands: Channel<M, EmbassyWifiSupervisorCommand, MAILBOX_CAPACITY>,
-    responses: Channel<M, EmbassyWifiSupervisorResponse<E>, MAILBOX_CAPACITY>,
+    commands: Channel<M, WifiSupervisorCommand, MAILBOX_CAPACITY>,
+    responses: Channel<M, WifiSupervisorResponse<E>, MAILBOX_CAPACITY>,
 }
 
-pub type EmbassyWifiSupervisorEndpoints<'resources, M, E> = (
-    RadioController<EmbassyWifiSupervisorPort<'resources, M, E>>,
-    EmbassyWifiSupervisorEndpoint<'resources, M, E>,
+pub type WifiSupervisorEndpoints<'resources, M, E> = (
+    RadioController<WifiSupervisorMailbox<'resources, M, E>>,
+    WifiSupervisorEndpoint<'resources, M, E>,
 );
 
-impl<M: RawMutex, E> EmbassyWifiSupervisorControlResources<M, E> {
+impl<M: RawMutex, E> WifiSupervisorControlResources<M, E> {
     pub const fn new() -> Self {
         Self {
             split: AtomicBool::new(false),
@@ -51,24 +49,22 @@ impl<M: RawMutex, E> EmbassyWifiSupervisorControlResources<M, E> {
     /// Recreating endpoints after either side disappears could consume stale
     /// requests or completions, so a second split is rejected until physical
     /// radio reset also reconstructs this storage.
-    pub fn split(
-        &self,
-    ) -> Result<EmbassyWifiSupervisorEndpoints<'_, M, E>, EmbassyWifiSupervisorControlError> {
+    pub fn split(&self) -> Result<WifiSupervisorEndpoints<'_, M, E>, WifiSupervisorControlError> {
         if self
             .split
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
-            return Err(EmbassyWifiSupervisorControlError::InUse);
+            return Err(WifiSupervisorControlError::InUse);
         }
         self.supervisor_alive.store(true, Ordering::Release);
-        let port = EmbassyWifiSupervisorPort {
+        let port = WifiSupervisorMailbox {
             commands: self.commands.sender(),
             responses: self.responses.receiver(),
             supervisor_alive: &self.supervisor_alive,
             completion_pending: false,
         };
-        let endpoint = EmbassyWifiSupervisorEndpoint {
+        let endpoint = WifiSupervisorEndpoint {
             commands: self.commands.receiver(),
             responses: self.responses.sender(),
             supervisor_alive: &self.supervisor_alive,
@@ -82,27 +78,27 @@ impl<M: RawMutex, E> EmbassyWifiSupervisorControlResources<M, E> {
     }
 }
 
-impl<M: RawMutex, E> Default for EmbassyWifiSupervisorControlResources<M, E> {
+impl<M: RawMutex, E> Default for WifiSupervisorControlResources<M, E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EmbassyWifiSupervisorControlError {
+pub enum WifiSupervisorControlError {
     InUse,
 }
 
 /// Application-side mailbox transport. It owns no hardware capability.
-pub struct EmbassyWifiSupervisorPort<'resources, M: RawMutex, E> {
-    commands: Sender<'resources, M, EmbassyWifiSupervisorCommand, MAILBOX_CAPACITY>,
-    responses: Receiver<'resources, M, EmbassyWifiSupervisorResponse<E>, MAILBOX_CAPACITY>,
+pub struct WifiSupervisorMailbox<'resources, M: RawMutex, E> {
+    commands: Sender<'resources, M, WifiSupervisorCommand, MAILBOX_CAPACITY>,
+    responses: Receiver<'resources, M, WifiSupervisorResponse<E>, MAILBOX_CAPACITY>,
     supervisor_alive: &'resources AtomicBool,
     completion_pending: bool,
 }
 
-impl<M: RawMutex, E> EmbassyWifiSupervisorPort<'_, M, E> {
-    async fn response(&mut self) -> EmbassyWifiSupervisorResponse<E> {
+impl<M: RawMutex, E> WifiSupervisorMailbox<'_, M, E> {
+    async fn response(&mut self) -> WifiSupervisorResponse<E> {
         self.responses.receive().await
     }
 
@@ -125,8 +121,8 @@ impl<M: RawMutex, E> EmbassyWifiSupervisorPort<'_, M, E> {
 
     async fn publish(
         &mut self,
-        command: EmbassyWifiSupervisorCommand,
-    ) -> Result<(), EmbassyWifiSupervisorCommand> {
+        command: WifiSupervisorCommand,
+    ) -> Result<(), WifiSupervisorCommand> {
         self.reconcile_cancelled_command().await;
         // Reconciliation may have waited while the sole endpoint disappeared.
         // In that case its terminal response belongs to the cancelled command,
@@ -139,15 +135,15 @@ impl<M: RawMutex, E> EmbassyWifiSupervisorPort<'_, M, E> {
         Ok(())
     }
 
-    async fn completion(&mut self) -> EmbassyWifiSupervisorResponse<E> {
+    async fn completion(&mut self) -> WifiSupervisorResponse<E> {
         let response = self.response().await;
         self.completion_pending = false;
         response
     }
 }
 
-impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> {
-    type Error = EmbassyWifiSupervisorError<E>;
+impl<M: RawMutex, E> WifiSupervisorPort for WifiSupervisorMailbox<'_, M, E> {
+    type Error = WifiSupervisorError<E>;
 
     async fn scan(
         &mut self,
@@ -156,25 +152,24 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
         if !self.supervisor_available() {
             return Err(WifiScanFailure::Rejected {
                 request,
-                error: EmbassyWifiSupervisorError::SupervisorUnavailable,
+                error: WifiSupervisorError::SupervisorUnavailable,
             });
         }
-        if let Err(EmbassyWifiSupervisorCommand::Scan(request)) = self
-            .publish(EmbassyWifiSupervisorCommand::Scan(request))
-            .await
+        if let Err(WifiSupervisorCommand::Scan(request)) =
+            self.publish(WifiSupervisorCommand::Scan(request)).await
         {
             return Err(WifiScanFailure::Rejected {
                 request,
-                error: EmbassyWifiSupervisorError::SupervisorUnavailable,
+                error: WifiSupervisorError::SupervisorUnavailable,
             });
         }
         match self.completion().await {
-            EmbassyWifiSupervisorResponse::Scan(result) => result.map_err(map_scan_failure),
-            EmbassyWifiSupervisorResponse::SupervisorUnavailable => Err(WifiScanFailure::Faulted {
-                error: EmbassyWifiSupervisorError::SupervisorUnavailable,
+            WifiSupervisorResponse::Scan(result) => result.map_err(map_scan_failure),
+            WifiSupervisorResponse::SupervisorUnavailable => Err(WifiScanFailure::Faulted {
+                error: WifiSupervisorError::SupervisorUnavailable,
             }),
             _ => Err(WifiScanFailure::Faulted {
-                error: EmbassyWifiSupervisorError::ResponseMismatch,
+                error: WifiSupervisorError::ResponseMismatch,
             }),
         }
     }
@@ -186,25 +181,25 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
         if !self.supervisor_available() {
             return Err(WifiStartFailure::rejected(
                 request,
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+                WifiSupervisorError::SupervisorUnavailable,
             ));
         }
-        if let Err(EmbassyWifiSupervisorCommand::StartStation(request)) = self
-            .publish(EmbassyWifiSupervisorCommand::StartStation(request))
+        if let Err(WifiSupervisorCommand::StartStation(request)) = self
+            .publish(WifiSupervisorCommand::StartStation(request))
             .await
         {
             return Err(WifiStartFailure::rejected(
                 request,
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+                WifiSupervisorError::SupervisorUnavailable,
             ));
         }
         match self.completion().await {
-            EmbassyWifiSupervisorResponse::Station(result) => result.map_err(map_start_failure),
-            EmbassyWifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+            WifiSupervisorResponse::Station(result) => result.map_err(map_start_failure),
+            WifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
+                WifiSupervisorError::SupervisorUnavailable,
             )),
             _ => Err(WifiStartFailure::faulted(
-                EmbassyWifiSupervisorError::ResponseMismatch,
+                WifiSupervisorError::ResponseMismatch,
             )),
         }
     }
@@ -216,25 +211,25 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
         if !self.supervisor_available() {
             return Err(WifiStartFailure::rejected(
                 request,
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+                WifiSupervisorError::SupervisorUnavailable,
             ));
         }
-        if let Err(EmbassyWifiSupervisorCommand::StartAccessPoint(request)) = self
-            .publish(EmbassyWifiSupervisorCommand::StartAccessPoint(request))
+        if let Err(WifiSupervisorCommand::StartAccessPoint(request)) = self
+            .publish(WifiSupervisorCommand::StartAccessPoint(request))
             .await
         {
             return Err(WifiStartFailure::rejected(
                 request,
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+                WifiSupervisorError::SupervisorUnavailable,
             ));
         }
         match self.completion().await {
-            EmbassyWifiSupervisorResponse::AccessPoint(result) => result.map_err(map_start_failure),
-            EmbassyWifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+            WifiSupervisorResponse::AccessPoint(result) => result.map_err(map_start_failure),
+            WifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
+                WifiSupervisorError::SupervisorUnavailable,
             )),
             _ => Err(WifiStartFailure::faulted(
-                EmbassyWifiSupervisorError::ResponseMismatch,
+                WifiSupervisorError::ResponseMismatch,
             )),
         }
     }
@@ -246,29 +241,25 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
         if !self.supervisor_available() {
             return Err(WifiStartFailure::rejected(
                 request,
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+                WifiSupervisorError::SupervisorUnavailable,
             ));
         }
-        if let Err(EmbassyWifiSupervisorCommand::StartStationAccessPoint(request)) = self
-            .publish(EmbassyWifiSupervisorCommand::StartStationAccessPoint(
-                request,
-            ))
+        if let Err(WifiSupervisorCommand::StartStationAccessPoint(request)) = self
+            .publish(WifiSupervisorCommand::StartStationAccessPoint(request))
             .await
         {
             return Err(WifiStartFailure::rejected(
                 request,
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+                WifiSupervisorError::SupervisorUnavailable,
             ));
         }
         match self.completion().await {
-            EmbassyWifiSupervisorResponse::StationAccessPoint(result) => {
-                result.map_err(map_start_failure)
-            }
-            EmbassyWifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+            WifiSupervisorResponse::StationAccessPoint(result) => result.map_err(map_start_failure),
+            WifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
+                WifiSupervisorError::SupervisorUnavailable,
             )),
             _ => Err(WifiStartFailure::faulted(
-                EmbassyWifiSupervisorError::ResponseMismatch,
+                WifiSupervisorError::ResponseMismatch,
             )),
         }
     }
@@ -280,128 +271,122 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
         if !self.supervisor_available() {
             return Err(WifiStartFailure::rejected(
                 request,
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+                WifiSupervisorError::SupervisorUnavailable,
             ));
         }
-        if let Err(EmbassyWifiSupervisorCommand::StartMonitor(request)) = self
-            .publish(EmbassyWifiSupervisorCommand::StartMonitor(request))
+        if let Err(WifiSupervisorCommand::StartMonitor(request)) = self
+            .publish(WifiSupervisorCommand::StartMonitor(request))
             .await
         {
             return Err(WifiStartFailure::rejected(
                 request,
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+                WifiSupervisorError::SupervisorUnavailable,
             ));
         }
         match self.completion().await {
-            EmbassyWifiSupervisorResponse::Monitor(result) => result.map_err(map_start_failure),
-            EmbassyWifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
-                EmbassyWifiSupervisorError::SupervisorUnavailable,
+            WifiSupervisorResponse::Monitor(result) => result.map_err(map_start_failure),
+            WifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
+                WifiSupervisorError::SupervisorUnavailable,
             )),
             _ => Err(WifiStartFailure::faulted(
-                EmbassyWifiSupervisorError::ResponseMismatch,
+                WifiSupervisorError::ResponseMismatch,
             )),
         }
     }
 
     async fn stop(&mut self) -> Result<WifiStopReport, Self::Error> {
         if !self.supervisor_available() {
-            return Err(EmbassyWifiSupervisorError::SupervisorUnavailable);
+            return Err(WifiSupervisorError::SupervisorUnavailable);
         }
-        if self
-            .publish(EmbassyWifiSupervisorCommand::Stop)
-            .await
-            .is_err()
-        {
-            return Err(EmbassyWifiSupervisorError::SupervisorUnavailable);
+        if self.publish(WifiSupervisorCommand::Stop).await.is_err() {
+            return Err(WifiSupervisorError::SupervisorUnavailable);
         }
         match self.completion().await {
-            EmbassyWifiSupervisorResponse::Stop(result) => {
-                result.map_err(EmbassyWifiSupervisorError::Service)
+            WifiSupervisorResponse::Stop(result) => result.map_err(WifiSupervisorError::Service),
+            WifiSupervisorResponse::SupervisorUnavailable => {
+                Err(WifiSupervisorError::SupervisorUnavailable)
             }
-            EmbassyWifiSupervisorResponse::SupervisorUnavailable => {
-                Err(EmbassyWifiSupervisorError::SupervisorUnavailable)
-            }
-            _ => Err(EmbassyWifiSupervisorError::ResponseMismatch),
+            _ => Err(WifiSupervisorError::ResponseMismatch),
         }
     }
 
     async fn restart_radio(&mut self) -> Result<WifiRadioRestartReport, Self::Error> {
         if !self.supervisor_available() {
-            return Err(EmbassyWifiSupervisorError::SupervisorUnavailable);
+            return Err(WifiSupervisorError::SupervisorUnavailable);
         }
         if self
-            .publish(EmbassyWifiSupervisorCommand::RestartRadio)
+            .publish(WifiSupervisorCommand::RestartRadio)
             .await
             .is_err()
         {
-            return Err(EmbassyWifiSupervisorError::SupervisorUnavailable);
+            return Err(WifiSupervisorError::SupervisorUnavailable);
         }
         match self.completion().await {
-            EmbassyWifiSupervisorResponse::RestartRadio(result) => {
-                result.map_err(EmbassyWifiSupervisorError::Service)
+            WifiSupervisorResponse::RestartRadio(result) => {
+                result.map_err(WifiSupervisorError::Service)
             }
-            EmbassyWifiSupervisorResponse::SupervisorUnavailable => {
-                Err(EmbassyWifiSupervisorError::SupervisorUnavailable)
+            WifiSupervisorResponse::SupervisorUnavailable => {
+                Err(WifiSupervisorError::SupervisorUnavailable)
             }
-            _ => Err(EmbassyWifiSupervisorError::ResponseMismatch),
+            _ => Err(WifiSupervisorError::ResponseMismatch),
         }
     }
 }
 
 fn map_start_failure<R, E>(
     failure: WifiStartFailure<R, E>,
-) -> WifiStartFailure<R, EmbassyWifiSupervisorError<E>> {
+) -> WifiStartFailure<R, WifiSupervisorError<E>> {
     match failure {
         WifiStartFailure::Rejected { request, error } => {
-            WifiStartFailure::rejected(request, EmbassyWifiSupervisorError::Service(error))
+            WifiStartFailure::rejected(request, WifiSupervisorError::Service(error))
         }
         WifiStartFailure::Faulted { error } => {
-            WifiStartFailure::faulted(EmbassyWifiSupervisorError::Service(error))
+            WifiStartFailure::faulted(WifiSupervisorError::Service(error))
         }
     }
 }
 
 fn map_scan_failure<R, E>(
     failure: WifiScanFailure<R, E>,
-) -> WifiScanFailure<R, EmbassyWifiSupervisorError<E>> {
+) -> WifiScanFailure<R, WifiSupervisorError<E>> {
     match failure {
         WifiScanFailure::Rejected { request, error } => WifiScanFailure::Rejected {
             request,
-            error: EmbassyWifiSupervisorError::Service(error),
+            error: WifiSupervisorError::Service(error),
         },
         WifiScanFailure::Returned { request, error } => WifiScanFailure::Returned {
             request,
-            error: EmbassyWifiSupervisorError::Service(error),
+            error: WifiSupervisorError::Service(error),
         },
         WifiScanFailure::Faulted { error } => WifiScanFailure::Faulted {
-            error: EmbassyWifiSupervisorError::Service(error),
+            error: WifiSupervisorError::Service(error),
         },
     }
 }
 
 /// Sole command endpoint held by the task which owns the radio state machine.
-pub struct EmbassyWifiSupervisorEndpoint<'resources, M: RawMutex, E> {
-    commands: Receiver<'resources, M, EmbassyWifiSupervisorCommand, MAILBOX_CAPACITY>,
-    responses: Sender<'resources, M, EmbassyWifiSupervisorResponse<E>, MAILBOX_CAPACITY>,
+pub struct WifiSupervisorEndpoint<'resources, M: RawMutex, E> {
+    commands: Receiver<'resources, M, WifiSupervisorCommand, MAILBOX_CAPACITY>,
+    responses: Sender<'resources, M, WifiSupervisorResponse<E>, MAILBOX_CAPACITY>,
     supervisor_alive: &'resources AtomicBool,
 }
 
-impl<M: RawMutex, E> EmbassyWifiSupervisorEndpoint<'_, M, E> {
-    pub async fn receive(&mut self) -> EmbassyWifiSupervisorCommand {
+impl<M: RawMutex, E> WifiSupervisorEndpoint<'_, M, E> {
+    pub async fn receive(&mut self) -> WifiSupervisorCommand {
         self.commands.receive().await
     }
 
-    pub async fn respond(&mut self, response: EmbassyWifiSupervisorResponse<E>) {
+    pub async fn respond(&mut self, response: WifiSupervisorResponse<E>) {
         self.responses.send(response).await;
     }
 }
 
-impl<M: RawMutex, E> Drop for EmbassyWifiSupervisorEndpoint<'_, M, E> {
+impl<M: RawMutex, E> Drop for WifiSupervisorEndpoint<'_, M, E> {
     fn drop(&mut self) {
         self.supervisor_alive.store(false, Ordering::Release);
         if let Err(TrySendError::Full(_)) = self
             .responses
-            .try_send(EmbassyWifiSupervisorResponse::SupervisorUnavailable)
+            .try_send(WifiSupervisorResponse::SupervisorUnavailable)
         {
             // One prior completion already wakes the only controller waiter.
             // Its next operation observes `supervisor_alive == false` before

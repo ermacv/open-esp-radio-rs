@@ -46,7 +46,7 @@ impl Ieee80211LowerMacPort for DisabledRetune {
     fn submit(
         &self,
         attempt: MpduAttempt<Self::TxBuffer, Self::TxBody>,
-    ) -> SubmitResult<MpduAttempt<Self::TxBuffer, Self::TxBody>, Self::Error> {
+    ) -> SubmitResult<MpduAttempt<Self::TxBuffer, Self::TxBody>> {
         self.model.submit(attempt)
     }
 
@@ -160,7 +160,7 @@ impl LowerMacAmpdu for DisabledRetune {
     fn submit_ampdu(
         &self,
         attempt: AmpduAttempt<Self::AmpduBuffer>,
-    ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>, Self::Error> {
+    ) -> SubmitResult<AmpduAttempt<Self::AmpduBuffer>> {
         self.model.submit_ampdu(attempt)
     }
 }

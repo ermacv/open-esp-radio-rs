@@ -42,7 +42,7 @@ use oer_esp32s31_ieee80211_mac::{
 };
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduPayload, Backoff, BlockAckReport, Channel, ChannelWidth, CoexPriority,
-    FailureClass, KeySelector, MacAddress, PhyFormatSet, PhyRate, PortError, Protection,
+    FailureClass, KeySelector, MacAddress, PhyFormatSet, PhyRate, Poisoned, PortError, Protection,
     ReceiveFilter, ReclaimError, SubmitError, TxAttempt, TxBody, TxBuffer, TxId, TxPayload,
     TxPower, TxResponse, TxStatus, VifConfig, VifRole,
 };
@@ -582,7 +582,7 @@ fn attempt(port: &Port, id: u32, frame: &[u8]) -> Esp32s31MpduAttempt<'static, 5
 fn submit(
     port: &Port,
     attempt: Esp32s31MpduAttempt<'static, 512>,
-) -> Result<Result<(), SubmitError>, Esp32s31LowerMacError> {
+) -> Result<Result<(), SubmitError>, Poisoned> {
     Ok(port.submit(attempt)?.map_err(|refused| {
         port.release_tx_buffer(refused.attempt.payload.frame);
         refused.error
@@ -1154,6 +1154,66 @@ fn next_completion(port: &AmpduPort) -> TxCompletion {
         Ok(Esp32s31LowerMacEvent::TxCompleted(completion)) => completion,
         _ => panic!("a completion"),
     }
+}
+
+#[test]
+fn a_port_without_its_backend_hands_every_attempt_and_body_back() {
+    let port = AmpduPort::new(ModelTimer::default());
+    install_ampdu(&port);
+    let mut buffer = port.tx_buffer(26 + 4).unwrap().unwrap();
+    buffer.frame_mut()[..26].copy_from_slice(&data_frame());
+    let mut aggregate = port.ampdu_buffer().unwrap().unwrap();
+    let mpdu = aggregate
+        .push_mpdu(26 + 6, Some(TestBody(std::vec![0xcd; 6])))
+        .unwrap();
+    mpdu.copy_from_slice(&data_frame());
+    // The backend goes away while the caller holds its buffers.
+    let parts = port.uninstall().unwrap();
+    let common = |id| TxAttempt {
+        id: TxId(id),
+        vif: STA,
+        access_category: WmmAccessCategory::BestEffort,
+        payload: (),
+        rate: PhyRate::Ht(
+            HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, false).unwrap(),
+        ),
+        protection: Protection::None,
+        key: KeySelector::Plaintext,
+        power: TxPower::Calibrated,
+        backoff: Backoff::Slots(3),
+        coex: CoexPriority::Normal,
+    };
+    let Ok(Err(refused)) = port.submit(common(1).map_payload(|()| TxPayload {
+        frame: buffer,
+        body: Some(TestBody(std::vec![0xab; 4])),
+        response: TxResponse::Ack,
+    })) else {
+        panic!("a port without its backend refuses the attempt");
+    };
+    assert_eq!(refused.error, SubmitError::NotInstalled);
+    assert_eq!(
+        refused.attempt.payload.body,
+        Some(TestBody(std::vec![0xab; 4]))
+    );
+    let Ok(Err(refused_ampdu)) = port.submit_ampdu(common(2).map_payload(|()| AmpduPayload {
+        subframes: aggregate,
+        tid: 0,
+        min_mpdu_start_spacing: 0,
+    })) else {
+        panic!("a port without its backend refuses the aggregate");
+    };
+    assert_eq!(refused_ampdu.error, SubmitError::NotInstalled);
+    assert_eq!(
+        refused_ampdu.attempt.payload.subframes.bodies[0],
+        Some(TestBody(std::vec![0xcd; 6]))
+    );
+    // Nothing of either attempt stays with the port.
+    assert_eq!(
+        port.bodies
+            .lock(|bodies| bodies.borrow().iter().flatten().count()),
+        0
+    );
+    drop((refused, refused_ampdu, parts));
 }
 
 #[test]

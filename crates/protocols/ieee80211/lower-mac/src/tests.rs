@@ -183,6 +183,34 @@ fn buffers_are_bounded_and_an_unsubmitted_one_is_released() {
 }
 
 #[test]
+fn a_port_without_its_backend_refuses_and_hands_the_attempt_and_body_back() {
+    let model = enabled_station();
+    model.uninstall();
+    let mut with_body = mpdu(&model, 1, 1);
+    with_body.payload.body = Some(ModelBody(b"kept by the caller".to_vec()));
+    let Ok(Err(refused)) = model.submit(with_body) else {
+        panic!("a port without its backend refuses the attempt");
+    };
+    assert_eq!(refused.error, SubmitError::NotInstalled);
+    assert_eq!(
+        refused.attempt.payload.body,
+        Some(ModelBody(b"kept by the caller".to_vec()))
+    );
+    assert_eq!(model.bodies_held(), 0);
+    model.release_tx_buffer(refused.attempt.payload.frame);
+    // Installed again, the port admits.
+    model.install();
+    assert_eq!(model.submit(mpdu(&model, 1, 1)), Ok(Ok(())));
+    // Only a poisoned port fails outside the refusal.
+    let late = TxAttempt {
+        access_category: WmmAccessCategory::Voice,
+        ..mpdu(&model, 2, 2)
+    };
+    model.poison();
+    assert_eq!(model.submit(late), Err(Poisoned));
+}
+
+#[test]
 fn each_queue_holds_one_attempt_and_completions_correlate_by_identity() {
     let model = enabled_station();
     assert_eq!(model.submit(mpdu(&model, 1, 1)), Ok(Ok(())));

@@ -325,7 +325,11 @@ where
             },
             key,
         );
-        match self.port.submit(attempt).map_err(UpperMacTxError::Port)? {
+        match self
+            .port
+            .submit(attempt)
+            .map_err(|_| UpperMacTxError::Poisoned)?
+        {
             Ok(()) => Ok((registration, lent)),
             Err(Refused { error, attempt }) => {
                 // The body comes back with the refused attempt.
@@ -442,7 +446,7 @@ where
         if let Err(Refused { error, .. }) = self
             .port
             .submit_air_reservation(attempt)
-            .map_err(UpperMacTxError::Port)?
+            .map_err(|_| UpperMacTxError::Poisoned)?
         {
             return Err(UpperMacTxError::Refused(error));
         }
@@ -576,7 +580,7 @@ where
         match self
             .port
             .submit_ampdu(attempt)
-            .map_err(UpperMacTxError::Port)?
+            .map_err(|_| UpperMacTxError::Poisoned)?
         {
             Ok(()) => Ok(registration),
             Err(Refused { error, attempt }) => {

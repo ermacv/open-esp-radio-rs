@@ -113,9 +113,10 @@ experiment hold the experiment's lease and show no owner. Recent leases hide a
 released lease of a listed run unless asked and show the time charged and the
 balances the grant was decided by. Commands appear without their build-input
 paths (the full line is the tooltip), a running run whose runner died shows as
-abandoned and an `ab` arm is marked. A run links its `report.html`, and an
-enqueued job links the end of its log. It only reads the arbiter's state, run
-manifests, reports and job logs; Ctrl+C stops it. One dashboard serves the
+abandoned and an `ab` arm is marked. A run links its `report.html`, whose
+artifact links the dashboard serves from the run's directory, and an enqueued
+job links the end of its log. It only reads the arbiter's state, run
+bundles and job logs; Ctrl+C stops it. One dashboard serves the
 host and names itself in `dashboard.json` of the arbiter directory: starting
 the same build again prints the running one's address, and another build
 stops it and takes over. A dashboard exits once another replaced it or once

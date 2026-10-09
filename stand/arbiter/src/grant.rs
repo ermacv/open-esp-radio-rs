@@ -51,6 +51,9 @@ pub struct Request {
     pub work: String,
     /// HIL scenarios the lease executes, recorded for per-scenario estimates.
     pub scenarios: Vec<String>,
+    /// The HIL run the lease executes, when a runner requests it; the lease
+    /// and its history record name it.
+    pub run: Option<String>,
     /// Resources the lease needs; none claims the whole stand.
     pub claims: Vec<Claim>,
 }
@@ -62,6 +65,7 @@ impl Request {
             owner: oer_stand_owners::from_environment()?.to_string(),
             work: work.into(),
             scenarios: Vec::new(),
+            run: None,
             claims: Vec::new(),
         })
     }
@@ -210,6 +214,7 @@ impl Arbiter {
                 claims: claims.clone(),
                 priority,
                 job: crate::jobs::current()?,
+                run: request.run.clone(),
                 unknown: Default::default(),
             });
             Ok(id)
@@ -865,6 +870,7 @@ impl Drop for Grant {
                     reason: holder.reason,
                     preempted: holder.preempted,
                     scenarios: held.scenarios.clone(),
+                    run: holder.ticket.run,
                     unknown: Default::default(),
                 },
             )?;

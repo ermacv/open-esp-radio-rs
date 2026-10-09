@@ -147,6 +147,7 @@ mod tests {
             reason: None,
             preempted: None,
             scenarios: Vec::new(),
+            run: None,
             unknown: Default::default(),
         }
     }

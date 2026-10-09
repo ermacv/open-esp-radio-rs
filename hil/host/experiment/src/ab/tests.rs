@@ -42,6 +42,7 @@ fn enclosing_lease_reaches_preparation_and_replay() {
                     owner: "experiment-test".into(),
                     work: "replay".into(),
                     scenarios: Vec::new(),
+                    run: None,
                     claims: vec![oer_stand_claims::Claim::stand()],
                 })
                 .unwrap();

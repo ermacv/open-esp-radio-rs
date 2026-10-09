@@ -48,12 +48,20 @@ pub fn newest_runs(store: &RunStore, count: usize) -> Vec<Value> {
         .collect()
 }
 
-/// Where a running run is: its latest step, the scenario it is in, and how
-/// many of its planned scenarios finished. `None` when its events or plan
-/// cannot be read or use a vocabulary this build does not know.
+/// Where a running run is: its latest step, the scenario it is in, how many
+/// of its planned scenarios finished, the planned scenarios in plan order and
+/// the latest outcome of each finished one (`blocked` for a blocked one).
+/// `None` when its events or plan cannot be read or use a vocabulary this
+/// build does not know.
 pub fn progress(bundle: &RunBundle) -> Option<Value> {
     let events = bundle.events().ok()?;
     let plan = bundle.plan().ok()??;
+    let mut scenarios = Vec::new();
+    for entry in &plan.entries {
+        if entry.disposition == PlanDisposition::Selected && !scenarios.contains(&entry.scenario) {
+            scenarios.push(entry.scenario.clone());
+        }
+    }
     let planned = plan
         .entries
         .iter()
@@ -68,6 +76,20 @@ pub fn progress(bundle: &RunBundle) -> Option<Value> {
             )
         })
         .count();
+    let mut outcomes = serde_json::Map::new();
+    for event in &events {
+        let outcome = match event.kind {
+            RunEventKind::ScenarioFinished => match event.outcome {
+                Some(outcome) => json!(outcome),
+                None => continue,
+            },
+            RunEventKind::ScenarioBlocked => json!("blocked"),
+            _ => continue,
+        };
+        if let Some(scenario) = &event.scenario {
+            outcomes.insert(scenario.clone(), outcome);
+        }
+    }
     let latest = events.last()?;
     let current = events
         .iter()
@@ -87,6 +109,8 @@ pub fn progress(bundle: &RunBundle) -> Option<Value> {
         "scenario": current,
         "finished": finished,
         "planned": planned,
+        "scenarios": scenarios,
+        "outcomes": outcomes,
     }))
 }
 

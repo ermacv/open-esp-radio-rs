@@ -34,6 +34,7 @@ fn ticket(id: u64, owner: &str, process: ProcessIdentity) -> Ticket {
         claims: vec![Claim::board("AA")],
         priority: Default::default(),
         job: None,
+        run: None,
         unknown: Default::default(),
     }
 }

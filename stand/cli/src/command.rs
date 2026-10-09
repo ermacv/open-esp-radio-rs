@@ -403,6 +403,7 @@ pub(crate) fn lease(
         owner: options.owner(ctx)?,
         work,
         scenarios: Vec::new(),
+        run: None,
         claims: lease_claims(&cli.boards, cli.air, cli.stand, &arbiter.stand()?)?,
     };
     let grant = arbiter.acquire(&request)?;
@@ -840,6 +841,7 @@ mod tests {
                 owner: "stand".into(),
                 work: "sleep".into(),
                 scenarios: Vec::new(),
+                run: None,
                 claims: Vec::new(),
             })
             .unwrap();

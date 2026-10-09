@@ -120,6 +120,7 @@ fn lease(
         owner,
         work,
         scenarios: Vec::new(),
+        run: None,
         claims: vec![oer_stand_claims::Claim::board(target.board.mac())],
     })?;
     let access = grant

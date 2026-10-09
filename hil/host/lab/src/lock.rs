@@ -47,6 +47,8 @@ pub struct LeaseRequest {
     pub divisible: bool,
     /// Whether the lease includes the device under test.
     pub device: bool,
+    /// The HIL run the lease executes, named in the lease.
+    pub run: Option<String>,
 }
 
 impl LeaseRequest {
@@ -61,6 +63,7 @@ impl LeaseRequest {
             )],
             divisible: false,
             device: true,
+            run: None,
         }
     }
 }
@@ -103,6 +106,7 @@ impl FixtureLock {
             &oer_stand_arbiter::Arbiter::open()?.with_stand_file(lab.path().to_owned()),
             claims(lab, &request, &keys),
             &request.scenarios,
+            request.run.as_deref(),
             request.divisible,
         )?;
         let mut owner = oer_stand_resource_lock::wait_while_busy(|| Self::lock_now(&keys))?;
@@ -316,11 +320,13 @@ pub fn acquire_stand(
     arbiter: &oer_stand_arbiter::Arbiter,
     claims: Vec<oer_stand_claims::Claim>,
     scenarios: &[String],
+    run: Option<&str>,
     divisible: bool,
 ) -> Result<oer_stand_arbiter::Grant> {
     let work = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
     let mut request = oer_stand_arbiter::Request::from_environment(work)?;
     request.scenarios = scenarios.to_vec();
+    request.run = run.map(str::to_owned);
     request.claims = claims;
     let mut grant = arbiter.acquire(&request)?;
     grant.supervise_self(divisible);
@@ -436,6 +442,7 @@ pub fn acquire_bluetooth(
             oer_stand_claims::Claim::shared(oer_stand_claims::AIR),
         ],
         &[],
+        None,
         false,
     )?;
     Ok(BluetoothLease {

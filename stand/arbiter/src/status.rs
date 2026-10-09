@@ -55,6 +55,8 @@ pub struct HolderStatus {
     pub claims: String,
     /// The `cargo hil` job the lease belongs to.
     pub job: Option<String>,
+    /// The HIL run the lease executes, when a runner requested it.
+    pub run: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -208,6 +210,7 @@ impl Arbiter {
                     owner: holder.ticket.owner,
                     claims: crate::grant::describe_claims(&holder.ticket.claims),
                     job: holder.ticket.job,
+                    run: holder.ticket.run,
                 })
                 .collect(),
             queue,

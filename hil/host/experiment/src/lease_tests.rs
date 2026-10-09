@@ -127,6 +127,7 @@ fn request(owner: &str) -> Request {
         owner: owner.into(),
         work: "nested experiment".into(),
         scenarios: Vec::new(),
+        run: None,
         claims: vec![Claim::stand()],
     }
 }

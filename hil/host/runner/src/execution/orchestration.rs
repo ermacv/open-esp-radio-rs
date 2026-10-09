@@ -347,6 +347,7 @@ pub(crate) fn lease_request(
         air,
         divisible: selected.len() > 1,
         device: true,
+        run: None,
     }
 }
 
@@ -357,7 +358,10 @@ fn lease_stand(
     selected: &[&Scenario],
 ) -> Result<oer_hil_lab::lock::FixtureLock> {
     session.record_event(RunEventKind::StandLeaseRequested, None, None, None)?;
-    let request = lease_request(lab, selected);
+    let request = oer_hil_lab::lock::LeaseRequest {
+        run: Some(session.id().to_owned()),
+        ..lease_request(lab, selected)
+    };
     let fixture = oer_hil_lab::lock::FixtureLock::lease(lab, request.clone())?;
     session.record_event(RunEventKind::StandLeaseGranted, None, None, None)?;
     oer_durable::atomic_json(

@@ -117,6 +117,7 @@ fn blink<'a>(
         owner,
         work: format!("stand discover --blink {}:{port}", hub.id),
         scenarios: Vec::new(),
+        run: None,
         claims,
     })?;
     let operation = stand
@@ -157,6 +158,7 @@ fn verify_power(
         owner,
         work: format!("stand discover --verify-power {query}"),
         scenarios: Vec::new(),
+        run: None,
         claims: vec![oer_stand_claims::Claim::board(board.mac())],
     })?;
     let access = grant

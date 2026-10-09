@@ -459,6 +459,7 @@ impl Bisection<'_> {
             owner: self.owner.to_owned(),
             work: format!("bisect {} with the revision's runner", self.spec.scenario),
             scenarios: vec![self.spec.scenario.clone()],
+            run: None,
             claims: vec![oer_stand_claims::Claim::stand()],
         })?;
         // The revision's runner records its runs in the shared store, and

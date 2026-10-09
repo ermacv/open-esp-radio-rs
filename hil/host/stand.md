@@ -94,13 +94,27 @@ cargo fw flash --device <MAC|PORT> --monitor target/firmware/<chip>-<example>/bu
 ```
 
 `dashboard` serves a page on the loopback interface (`--port` changes the
-port) that refreshes every two seconds: holders with their time held, the
-queue in service order with every owner's balance and expected starts, every board's port and last flash, the newest runs
-of the shared store and recent leases with their outcomes. Commands appear
-without their build-input paths (the full line is the tooltip), claims name
-boards and fixtures, a running run whose runner died shows as abandoned and
-an `ab` arm is marked. A run's ID links its `report.html`, and an enqueued
-job links the end of its log. It only reads the arbiter's state, run
+port) that refreshes every two seconds without disturbing a selection, an
+open tooltip or a scroll position. A summary line says whether the stand is
+held or free, the queue, board and fixture health and the last run's outcome;
+when the dashboard stops answering, a banner says so and the page dims. Holders
+show their time held against the estimate and the one-hour hard limit, their
+run's scenarios and progress and their claims as boards, fixtures and air
+ranges; the queue comes in service order with expected starts, then every
+owner's balance on a scale around zero, every board's port and last flash
+(linked to the run that flashed it), the host fixtures (a blocked radio is a
+warning) and the newest runs of the shared store with their owner, scenario
+outcomes (with symbols, not colour alone) and buttons that copy the run ID and
+`cargo hil runs why` or `show`. Runs filter by owner, checkout and scenario,
+and repeats of the same result fold into one row. A run's owner and leases
+come from the leases that name it: the runner names its run in its lease
+request, and the holder and its history record keep it; runs of an `ab`
+experiment hold the experiment's lease and show no owner. Recent leases hide a
+released lease of a listed run unless asked and show the time charged and the
+balances the grant was decided by. Commands appear without their build-input
+paths (the full line is the tooltip), a running run whose runner died shows as
+abandoned and an `ab` arm is marked. A run links its `report.html`, and an
+enqueued job links the end of its log. It only reads the arbiter's state, run
 manifests, reports and job logs; Ctrl+C stops it. One dashboard serves the
 host and names itself in `dashboard.json` of the arbiter directory: starting
 the same build again prints the running one's address, and another build
@@ -395,6 +409,8 @@ waits for such a process to finish.
 this host's Wi-Fi radios and Bluetooth adapter and the OpenWrt station fixture
 and air observer over SSH. It prints each one's lease key (the claim a run
 takes it by), whether it answers, its model and firmware, and each
-interface's type, channel and CCA busy share (busy over active time of the
-frequency in use, from the radio's survey). The dashboard's Fixtures section
-shows the same, refreshed every minute, with the lease holding each fixture.
+interface's type, channel (number, frequency and width) and CCA busy share
+(busy over active time of the frequency in use, from the radio's survey). A
+Bluetooth adapter whose radio switch is soft- or hard-blocked answers no HCI
+command and is reported as blocked. The dashboard's Fixtures section shows the
+same, refreshed every minute, with the lease holding each fixture.

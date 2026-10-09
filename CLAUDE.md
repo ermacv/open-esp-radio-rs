@@ -66,7 +66,8 @@ Task workflows live in `.claude/skills/`: `protocol-change`,
 `driver-or-hardware-change`, `new-package`, `qualification-entry`,
 `vendor-evidence`, `hil-run` and `push-and-ci`.
 
-One task is one session and one PR. A block guide skill (`block-wifi`) maps
+One task is one session and one PR. A block guide skill (`block-wifi`,
+`block-bluetooth`, `block-ieee802154`) maps
 a block's packages across layers, its shared contracts, traps and checks; the
 agent profile of the same name in `.claude/agents/` starts a session with it
 (`@block-wifi` in agent view, `claude --agent block-wifi`). A shared

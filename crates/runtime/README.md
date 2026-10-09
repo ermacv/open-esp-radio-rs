@@ -1,7 +1,8 @@
 # Radio execution
 
-`esp32s31/{ieee80211,ieee802154,bluetooth}` (`oer-esp32s31-ieee80211-runtime`,
-`oer-espressif-ieee802154-runtime`, `oer-esp32s31-bluetooth-runtime`) contains
+`esp32s31/{ieee80211,bluetooth}` (`oer-esp32s31-ieee80211-runtime`,
+`oer-esp32s31-bluetooth-runtime`) and `espressif/ieee802154`
+(`oer-espressif-ieee802154-runtime`) contain
 concrete radio execution as executor-independent `async` code; `ieee80211` (`oer-ieee80211-runtime`) holds the
 chip-independent Wi-Fi execution primitives they share, and `bluetooth`
 (`oer-bluetooth-runtime`) the service loop that joins the in-process HCI

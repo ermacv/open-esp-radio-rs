@@ -22,6 +22,8 @@ pub enum ModemTimerFault<TakeError, RestoreError> {
     Take(TakeError),
     /// Interrupt storage refused the rearmed owner, which the task retains.
     Restore(RestoreError),
+    /// The timer cannot express a recheck deadline.
+    Deadline,
 }
 
 /// Drive the source-127 task until interrupt storage refuses an exchange.
@@ -49,8 +51,10 @@ pub async fn run_modem_timer<
                 }
             }
             ControllerModemTimerReadinessClass::Step => {
-                if let ControllerModemTimerStep::Recheck = task.step() {
-                    wait_for(timer, HARDWARE_RECHECK).await;
+                if let ControllerModemTimerStep::Recheck = task.step()
+                    && wait_for(timer, HARDWARE_RECHECK).await.is_err()
+                {
+                    return ModemTimerFault::Deadline;
                 }
             }
             ControllerModemTimerReadinessClass::EventCapacity => {
@@ -90,8 +94,10 @@ pub async fn settle_modem_timer<S: ModemLpTimerSoftwareOwnerStorage, const CAPAC
                 }
             }
             ControllerModemTimerReadinessClass::Step => {
-                if let ControllerModemTimerStep::Recheck = task.step() {
-                    wait_for(timer, HARDWARE_RECHECK).await;
+                if let ControllerModemTimerStep::Recheck = task.step()
+                    && wait_for(timer, HARDWARE_RECHECK).await.is_err()
+                {
+                    return Err(ModemTimerFault::Deadline);
                 }
             }
             ControllerModemTimerReadinessClass::EventCapacity => {

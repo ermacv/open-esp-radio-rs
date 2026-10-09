@@ -5,7 +5,7 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use embassy_futures::select::select;
+use embassy_futures::select::{Either, select};
 use embassy_sync::{
     blocking_mutex::{Mutex as BlockingMutex, raw::RawMutex},
     channel::Channel,
@@ -63,6 +63,8 @@ pub enum BluetoothTimeError {
     Event(ControllerTimeEventError),
     /// The latch reported no request in flight.
     Lost,
+    /// The runtime's timer cannot express a wait's deadline.
+    Deadline,
 }
 
 /// Why a runtime operation did not run.
@@ -599,10 +601,16 @@ impl<
                 let Some(installed) = installed.as_mut() else {
                     return BluetoothRuntimeFault::NotInstalled;
                 };
-                if !installed.faulted
-                    && let Ok(sample) = sample_time(&self.timer, &mut installed.hardware).await
-                {
-                    installed.radio.observe_time(&sample);
+                if !installed.faulted {
+                    match sample_time(&self.timer, &mut installed.hardware).await {
+                        Ok(sample) => installed.radio.observe_time(&sample),
+                        Err(BluetoothTimeError::Deadline) => {
+                            installed.fault();
+                            self.poison();
+                            return BluetoothRuntimeFault::Time(BluetoothTimeError::Deadline);
+                        }
+                        Err(_) => {}
+                    }
                 }
                 match self.pass(installed, &mut self.sink()) {
                     // A test event is published only on an idle scheduler, and
@@ -624,16 +632,23 @@ impl<
                     }
                 }
             };
-            match pass {
-                Pass::Stop | Pass::Continue => budget.spend().await,
-                Pass::Recheck => {
-                    budget.refill();
-                    select(self.work.wait(), wait_for(&self.timer, HARDWARE_RECHECK)).await;
+            let wait = match pass {
+                Pass::Stop | Pass::Continue => {
+                    budget.spend().await;
+                    continue;
                 }
-                Pass::Idle => {
-                    budget.refill();
-                    select(self.work.wait(), wait_for(&self.timer, TIME_REFRESH)).await;
+                Pass::Recheck => HARDWARE_RECHECK,
+                Pass::Idle => TIME_REFRESH,
+            };
+            budget.refill();
+            if let Either::Second(Err(error)) =
+                select(self.work.wait(), wait_for(&self.timer, wait)).await
+            {
+                if let Some(installed) = self.installed.lock().await.as_mut() {
+                    installed.fault();
                 }
+                self.poison();
+                return BluetoothRuntimeFault::Time(error);
             }
         }
     }
@@ -708,7 +723,11 @@ impl<
         loop {
             match installed.hardware.drain_time() {
                 Ok(ControllerTimeEventStep::Waiting) => {
-                    wait_for(&self.timer, HARDWARE_RECHECK).await
+                    if let Err(error) = wait_for(&self.timer, HARDWARE_RECHECK).await {
+                        installed.fault();
+                        self.poison();
+                        return Err(BluetoothRuntimeFault::Time(error));
+                    }
                 }
                 Ok(_) => break,
                 Err(error) => {
@@ -779,7 +798,9 @@ impl<
     ) -> Result<(), BluetoothRuntimeFault<H::StartError>> {
         while installed.awaiting.is_some() {
             if let Pass::Recheck = self.pass(installed, sink)? {
-                wait_for(&self.timer, HARDWARE_RECHECK).await;
+                wait_for(&self.timer, HARDWARE_RECHECK)
+                    .await
+                    .map_err(BluetoothRuntimeFault::Time)?;
             }
         }
         let mut stop = BluetoothSchedulerStop::default();
@@ -788,7 +809,9 @@ impl<
                 Ok(BluetoothSchedulerStopStep::Stopped(stopped)) => break stopped,
                 Ok(BluetoothSchedulerStopStep::Pending(pending)) => {
                     stop = pending;
-                    wait_for(&self.timer, HARDWARE_RECHECK).await;
+                    wait_for(&self.timer, HARDWARE_RECHECK)
+                        .await
+                        .map_err(BluetoothRuntimeFault::Time)?;
                 }
                 Err(error) => return Err(BluetoothRuntimeFault::StopSequence(error)),
             }
@@ -987,10 +1010,20 @@ impl ContinueBudget {
 
 /// Wait for `duration` on `timer`; a deadline past the timer's range never
 /// ends.
-pub(crate) async fn wait_for(timer: &impl Timer, duration: Duration) {
-    if timer.wait_for(duration).await.is_err() {
-        core::future::pending::<()>().await;
-    }
+/// Wait `duration` on `timer`.
+///
+/// # Errors
+///
+/// [`BluetoothTimeError::Deadline`] when the timer cannot express the
+/// deadline; the caller faults instead of waiting forever.
+pub(crate) async fn wait_for(
+    timer: &impl Timer,
+    duration: Duration,
+) -> Result<(), BluetoothTimeError> {
+    timer
+        .wait_for(duration)
+        .await
+        .map_err(|_| BluetoothTimeError::Deadline)
 }
 
 async fn sample_time(
@@ -1003,7 +1036,7 @@ async fn sample_time(
             while let ControllerTimeEventStep::Waiting =
                 hardware.drain_time().map_err(BluetoothTimeError::Event)?
             {
-                wait_for(timer, HARDWARE_RECHECK).await;
+                wait_for(timer, HARDWARE_RECHECK).await?;
             }
             hardware
                 .request_time()
@@ -1017,7 +1050,7 @@ async fn sample_time(
             .map_err(BluetoothTimeError::Event)?
         {
             ControllerTimeEventStep::Sample { sample, .. } => return Ok(sample),
-            ControllerTimeEventStep::Waiting => wait_for(timer, HARDWARE_RECHECK).await,
+            ControllerTimeEventStep::Waiting => wait_for(timer, HARDWARE_RECHECK).await?,
             ControllerTimeEventStep::Idle | ControllerTimeEventStep::OrphanDrained => {
                 return Err(BluetoothTimeError::Lost);
             }

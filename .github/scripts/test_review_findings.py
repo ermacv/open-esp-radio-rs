@@ -85,11 +85,24 @@ class Record(unittest.TestCase):
         self.assertIn("after #42 was closed as fixed", api.created[0]["body"])
         self.assertEqual(lines, ["- 🟡 **stale cache**: recorded as #500"])
 
-    def test_a_finding_dismissed_as_not_planned_stays_dismissed(self):
-        api = FakeGitHub([filed(42, state="closed", state_reason="not_planned")])
-        lines = self.record(api, finding(severity="important"))
-        self.assertEqual(api.created, [])
-        self.assertEqual(lines, ["- 🔴 **stale cache**: already recorded as #42"])
+    def test_a_refiled_finding_is_recorded_by_its_open_issue_and_not_filed_again(self):
+        api = FakeGitHub([filed(42, state="closed", state_reason="completed")])
+        self.record(api, finding(severity="nit", title="reworded", issue=42))
+        # GitHub lists the newest first; the refiled issue keeps the key.
+        api.issues.reverse()
+        self.assertIn(findings.marker(finding()), api.created[0]["body"])
+        self.assertEqual(findings.recorded(api)[findings.key(finding())]["number"], 500)
+        for named in (42, 500, 0):
+            lines = self.record(api, finding(severity="nit", issue=named))
+            self.assertEqual(lines, ["- 🟡 **stale cache**: already recorded as #500"])
+        self.assertEqual(len(api.created), 1)
+
+    def test_a_finding_dismissed_as_not_planned_or_duplicate_stays_dismissed(self):
+        for reason in ("not_planned", "duplicate"):
+            api = FakeGitHub([filed(42, state="closed", state_reason=reason)])
+            lines = self.record(api, finding(severity="important"))
+            self.assertEqual(api.created, [])
+            self.assertEqual(lines, ["- 🔴 **stale cache**: already recorded as #42"])
 
     def test_a_named_number_the_reviewer_was_not_shown_files_the_finding(self):
         api = FakeGitHub([

@@ -163,8 +163,11 @@ reads, so a branch skips only the checks of `registry::SCOPED_IN_CI`, which
 were audited to read nothing beyond what their trigger names: chip-target
 Clippy of the production profiles (`architecture-clippy`, triggered by the
 packages it compiles as the model classifies them, `platform/`,
-`registers/` and any workspace's build configuration) and the API
-documentation (`doc`). The cheap whole-tree policies of the `architecture`
+`registers/` and any workspace's build configuration), the API
+documentation (`doc`) and the vendor evidence index (`vendor-evidence`,
+triggered by `verification/`, `platform/`, `registers/`, `.cargo/` and the
+path closure of the verification workspaces' packages, which holds the
+production crates their probes compile and the Blobray engine). The cheap whole-tree policies of the `architecture`
 check and job (zeroed sections in every `.rs`, interrupt features of every
 manifest, the HIL agent's composition) always run; the Clippy has the
 `architecture-clippy` job to itself. Each

@@ -305,14 +305,14 @@ fn a_change_never_runs_a_whole_tier_check_or_one_above_its_tier() {
 #[test]
 fn a_job_runs_its_checks_up_to_its_tier() {
     let full: Vec<&str> = ids(of_job(Tier::Full, "verification"));
-    assert_eq!(full, ["provenance"]);
+    assert_eq!(full, ["provenance", "vendor-evidence"]);
     let nightly: Vec<&str> = ids(of_job(Tier::Nightly, "verification"));
     assert_eq!(
         nightly,
         [
             "provenance",
             "vendor-probes",
-            "vendor-scenarios",
+            "vendor-evidence",
             "host-stands",
             "verification"
         ]
@@ -331,13 +331,15 @@ fn a_branch_run_skips_only_an_audited_check_its_change_does_not_reach() {
     assert!(docs.contains(&"docs") && docs.contains(&"capabilities"));
     // Every check outside the audited list runs, whatever its trigger says:
     // the `architecture` policies read every `.rs` and manifest of the tree.
-    for job in ["images", "firmware", "verification"] {
+    for job in ["images", "firmware"] {
         assert_eq!(
             ids(of_job_for(&target, job)),
             ids(of_job(Tier::Full, job)),
             "{job}"
         );
     }
+    // A HIL target file reaches nothing the vendor evidence index reads.
+    assert_eq!(ids(of_job_for(&target, "verification")), ["provenance"]);
     assert!(ids(of_job_for(&target, "architecture")).contains(&"architecture"));
     assert!(ids(of_job_for(&target, "architecture-clippy")).is_empty());
     let driver = change(&["crates/driver/src/lib.rs"], Tier::Full);
@@ -351,6 +353,59 @@ fn a_branch_run_skips_only_an_audited_check_its_change_does_not_reach() {
             "{check}"
         );
     }
+}
+
+#[test]
+fn the_vendor_evidence_index_runs_for_what_it_is_computed_from() {
+    // A verification workspace whose probe compiles `crates/driver` by path.
+    let directory = tempfile::tempdir().unwrap();
+    for (path, text) in [
+        (
+            "Cargo.toml",
+            "[workspace]\nmembers = [\"crates/driver\", \"crates/other\"]\n",
+        ),
+        (
+            "crates/driver/Cargo.toml",
+            "[package]\nname = \"driver\"\n[package.metadata.open-radio]\nlayer = \"hardware\"\nplatform = \"chip\"\nchip = \"chip-a\"\n",
+        ),
+        (
+            "crates/other/Cargo.toml",
+            "[package]\nname = \"other\"\n[package.metadata.open-radio]\nlayer = \"hardware\"\nplatform = \"chip\"\nchip = \"chip-a\"\n",
+        ),
+        (
+            "verification/probes/Cargo.toml",
+            "[workspace]\nmembers = [\"probe\"]\n",
+        ),
+        (
+            "verification/probes/probe/Cargo.toml",
+            "[package]\nname = \"probe\"\n[dependencies]\ndriver = { path = \"../../../crates/driver\" }\n[package.metadata.open-radio]\nlayer = \"verification\"\nplatform = \"chip\"\nchip = \"chip-a\"\n",
+        ),
+    ] {
+        let path = directory.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let tree = gate::Tree::of(
+        oer_repo::Model::load(&oer_repo::Repo::from_dir(directory.path()).unwrap()).unwrap(),
+    );
+    let of = |files: &[&str]| {
+        let files: Vec<String> = files.iter().map(|file| (*file).to_owned()).collect();
+        let selection = gate::select(&tree, &files);
+        let affected = gate::affected(&tree, &selection);
+        reaches_vendor_evidence(&Change {
+            files,
+            tree: tree.clone(),
+            selection,
+            affected,
+            tier: Tier::Full,
+        })
+    };
+    // A production line a reviewed decision may name, through the probe's closure.
+    assert!(of(&["crates/driver/src/lib.rs"]));
+    assert!(of(&["verification/esp32s31/scenarios/src/decisions/observation.rs"]));
+    assert!(of(&["registers/chip-a/model/radio.toml"]));
+    assert!(!of(&["crates/other/src/lib.rs"]));
+    assert!(!of(&["hil/targets/chip-a/agent/src/main.rs"]));
 }
 
 #[test]

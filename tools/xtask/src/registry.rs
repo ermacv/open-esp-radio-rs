@@ -539,11 +539,11 @@ pub const CHECKS: &[Check] = &[
         run: |ctx, _| verification(ctx, &["check", "probes"]),
     },
     Check {
-        id: "vendor-scenarios",
-        tier: Tier::Nightly,
+        id: "vendor-evidence",
+        tier: Tier::Full,
         job: "verification",
-        summary: "each verified chip's vendor scenarios against the pinned vendor code, their firmware inputs built from the tracked recipes",
-        trigger: None,
+        summary: "every verified chip's vendor evidence index, its firmware inputs built from the tracked recipes: fails on a DIFF or a stale reviewed decision",
+        trigger: Some(reaches_vendor_evidence),
         run: |ctx, _| verification(ctx, &["evidence"]),
     },
     Check {
@@ -646,7 +646,47 @@ pub const SCOPED_IN_CI: &[&str] = &[
     // sources and manifests select them, and what else it reads (the root
     // lock, the toolchain) runs everything.
     "doc",
+    // The vendor evidence index: it is computed from what its trigger names
+    // ([`reaches_vendor_evidence`]), the pinned vendor artifacts included.
+    "vendor-evidence",
 ];
+
+/// Whether `change` reaches what the vendor evidence index is computed from:
+/// any file below `verification/` (pins, scenarios, reviewed decisions,
+/// probes, the firmware recipes), the chip profiles that configure the probe
+/// builds (`platform/`), the register models the scenarios read
+/// (`registers/`), the workspaces' build configuration (`.cargo/`), or any
+/// package in the path closure of the verification workspaces' packages: the
+/// production crates their probes compile and the Blobray engine their
+/// scenarios run. A reviewed decision names production lines, so rewriting
+/// one stales it and fails the index; this catches it on the change.
+pub fn reaches_vendor_evidence(change: &Change) -> bool {
+    if touches(change, &["verification/", "platform/", "registers/", ".cargo/"]) {
+        return true;
+    }
+    let model = &change.tree.model;
+    let roots: Vec<_> = change
+        .tree
+        .workspaces
+        .iter()
+        .filter(|workspace| workspace.starts_with("verification/"))
+        .flat_map(|workspace| model.members(workspace))
+        .collect();
+    let Ok(closure) = model.closure(
+        &roots,
+        oer_repo::closure::Edges::Build,
+        None,
+        &oer_repo::closure::Features::All,
+    ) else {
+        // A closure the model cannot resolve is no reason to skip the index.
+        return true;
+    };
+    change.files.iter().any(|file| {
+        closure.iter().any(|package| {
+            package.directory.is_empty() || file.starts_with(&format!("{}/", package.directory))
+        })
+    })
+}
 
 /// Whether `change` reaches what `architecture-clippy` compiles: a
 /// production package that builds for a chip target, itself or through a

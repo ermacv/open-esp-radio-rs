@@ -39,12 +39,11 @@ pub(super) struct ObservationSubject {
 /// A stored observer record: a reference naming the observer's build by
 /// digest, and the store holding that build.
 ///
-/// The build carries the observer's resolved Cargo graph unrolled into a
-/// tree, hundreds of megabytes of JSON and several times that once parsed,
-/// and the store keeps one per observer the runs ever used. An observation
-/// therefore holds only this reference: the build is checked to be present
-/// and to hash to its name when the reference is resolved, and parsed by
-/// [`Self::proof`] only while a decision needs it, never kept.
+/// The store keeps one build per observer the runs ever used, and a build of
+/// an older schema can be hundreds of megabytes. An observation therefore
+/// holds only this reference: the build is checked to be present and to hash
+/// to its name when the reference is resolved, and parsed by [`Self::proof`]
+/// only while a decision needs it, never kept.
 #[derive(Clone, Debug)]
 pub(super) struct ObserverReference {
     record: serde_json::Value,

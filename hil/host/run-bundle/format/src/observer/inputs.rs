@@ -8,68 +8,118 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const RUNNER: &str = "oer-hil-runner";
 
+/// The packages of a resolved graph ([`super::BUILD_SCHEMA`]), the runner
+/// first.
+pub fn graph(resolved: &Value) -> Result<&Vec<Value>> {
+    resolved["packages"]
+        .as_array()
+        .filter(|packages| !packages.is_empty())
+        .ok_or_else(|| "observer resolved graph missing".into())
+}
+
+/// The indices of the packages `node` depends on, each within a graph of
+/// `len` packages.
+fn edges_of(node: &Value, len: usize) -> Result<Vec<usize>> {
+    node["edges"]
+        .as_array()
+        .ok_or("observer graph edges missing")?
+        .iter()
+        .map(|edge| {
+            edge.as_u64()
+                .and_then(|edge| usize::try_from(edge).ok())
+                .filter(|edge| *edge > 0 && *edge < len)
+                .ok_or_else(|| "invalid observer graph edge".into())
+        })
+        .collect()
+}
+
 /// Project Cargo's resolved normal/build graph, retaining shared feature unification.
 /// The registry assigns direct dependencies to the mechanisms that use them.
 pub fn projection(resolved: &Value, dependencies: &BTreeSet<String>) -> Result<Value> {
-    let nodes = resolved["nodes"]
-        .as_array()
-        .ok_or("observer resolved graph missing")?;
-    let mut packages = BTreeMap::<String, Value>::new();
-    let mut stack = Vec::<String>::new();
-    let mut active = true;
-    for node in nodes {
-        let depth = node["depth"]
-            .as_u64()
-            .ok_or("invalid observer graph depth")? as usize;
-        let name = node["package"]["name"]
-            .as_str()
-            .ok_or("missing observer package name")?;
-        if depth == 1 {
-            active = dependencies.contains(name);
+    let graph = graph(resolved)?;
+    let keys = graph
+        .iter()
+        .map(|node| {
+            let package = &node["package"];
+            Ok(format!(
+                "{} {}{}",
+                package["name"]
+                    .as_str()
+                    .ok_or("missing observer package name")?,
+                package["version"]
+                    .as_str()
+                    .ok_or("missing package version")?,
+                package["source"]
+                    .as_str()
+                    .map(|s| format!(" ({s})"))
+                    .unwrap_or_default()
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    // The runner and every package reachable from its selected direct
+    // dependencies. A package Cargo lists as several nodes (a normal and a
+    // build dependency with different features) is one package with the
+    // edges of every node reached. Visiting each node once in pre-order
+    // lists edges in the order of their first appearance in Cargo's tree.
+    fn visit(
+        graph: &[Value],
+        keys: &[String],
+        dependencies: &BTreeSet<String>,
+        index: usize,
+        visited: &mut [bool],
+        packages: &mut BTreeMap<String, Value>,
+    ) -> Result<()> {
+        if visited[index] {
+            return Ok(());
         }
-        if depth > 0 && !active {
-            continue;
-        }
-        stack.truncate(depth);
-        let package = &node["package"];
-        let key = format!(
-            "{} {}{}",
-            name,
-            package["version"]
-                .as_str()
-                .ok_or("missing package version")?,
-            package["source"]
-                .as_str()
-                .map(|s| format!(" ({s})"))
-                .unwrap_or_default()
-        );
-        if let Some(parent) = stack.last() {
-            let edges = packages
-                .get_mut(parent)
-                .ok_or("observer graph parent missing")?["dependencies"]
-                .as_array_mut()
-                .ok_or("missing dependencies")?;
-            if !edges.contains(&json!(key)) {
-                edges.push(json!(key));
-            }
-        }
-        packages.entry(key.clone()).or_insert_with(|| {
-            let mut package = package.clone();
+        visited[index] = true;
+        let node = &graph[index];
+        packages.entry(keys[index].clone()).or_insert_with(|| {
+            let mut package = node["package"].clone();
             package["dependencies"] = json!([]);
             package["features"] = node["features"].clone();
             package["script_flags"] = node["script_flags"].clone();
-            package["unit_profiles"] = serde_json::json!(
+            package["unit_profiles"] = json!(
                 node["units"]
                     .as_array()
                     .into_iter()
                     .flatten()
-                    .map(|u| serde_json::json!({"kind":u["kind"],"profile":u["profile"]}))
+                    .map(|u| json!({"kind":u["kind"],"profile":u["profile"]}))
                     .collect::<Vec<_>>()
             );
             package
         });
-        stack.push(key);
+        for edge in edges_of(node, graph.len())? {
+            if index == 0
+                && !dependencies.contains(
+                    graph[edge]["package"]["name"]
+                        .as_str()
+                        .ok_or("missing observer package name")?,
+                )
+            {
+                continue;
+            }
+            let edges = packages
+                .get_mut(&keys[index])
+                .ok_or("observer graph parent missing")?["dependencies"]
+                .as_array_mut()
+                .ok_or("missing dependencies")?;
+            if !edges.contains(&json!(keys[edge])) {
+                edges.push(json!(keys[edge]));
+            }
+            visit(graph, keys, dependencies, edge, visited, packages)?;
+        }
+        Ok(())
     }
+    let mut packages = BTreeMap::<String, Value>::new();
+    visit(
+        graph,
+        &keys,
+        dependencies,
+        0,
+        &mut vec![false; graph.len()],
+        &mut packages,
+    )?;
     let mut manifests: BTreeMap<PathBuf, Value> =
         serde_json::from_value(resolved["manifests"].clone())?;
     let runner = manifests
@@ -183,22 +233,11 @@ pub fn validate_registry(resolved: &Value, registry: &Value) -> Result<()> {
         .flat_map(|v| v.as_array().into_iter().flatten())
         .filter_map(Value::as_str)
         .collect::<BTreeSet<_>>();
-    for node in resolved["nodes"]
-        .as_array()
-        .ok_or("observer graph missing")?
-    {
-        if node["depth"] == 1
-            && !assigned.contains(
-                node["package"]["name"]
-                    .as_str()
-                    .ok_or("package name missing")?,
-            )
-        {
-            return Err(format!(
-                "observer dependency {} has no registered scope",
-                node["package"]["name"]
-            )
-            .into());
+    let graph = graph(resolved)?;
+    for edge in edges_of(&graph[0], graph.len())? {
+        let name = &graph[edge]["package"]["name"];
+        if !assigned.contains(name.as_str().ok_or("package name missing")?) {
+            return Err(format!("observer dependency {name} has no registered scope").into());
         }
     }
     Ok(())
@@ -283,14 +322,59 @@ mod tests {
     }
 
     fn fixture() -> Value {
-        json!({"nodes":[
-            {"depth":0,"package":{"name":RUNNER,"version":"1"},"features":[]},
-            {"depth":1,"package":{"name":"wire","version":"1","source":"registry+test","checksum":"a"},"features":["std"]},
-            {"depth":1,"package":{"name":"ble","version":"1","source":"registry+test","checksum":"b"},"features":[]}
+        json!({"packages":[
+            {"package":{"name":RUNNER,"version":"1"},"features":[],"edges":[1,2]},
+            {"package":{"name":"wire","version":"1","source":"registry+test","checksum":"a"},"features":["std"],"edges":[]},
+            {"package":{"name":"ble","version":"1","source":"registry+test","checksum":"b"},"features":[],"edges":[]}
         ],"manifests":{
             "Cargo.toml":{"workspace":{"members":["hil/host/runner"]}},
             "hil/host/runner/Cargo.toml":{"package":{"name":RUNNER,"version":"1"},"dependencies":{"wire":{"version":"1","features":["std"]},"ble":"1"},"dev-dependencies":{"test-only":"1"}}
         }})
+    }
+
+    /// A package shared by a selected and an unselected direct dependency is
+    /// projected once with its own edges; one only an unselected dependency
+    /// reaches is not projected; an edge outside the graph is an error.
+    #[test]
+    fn the_graph_projects_what_the_selected_dependencies_reach() {
+        let mut resolved = fixture();
+        resolved["packages"] = json!([
+            {"package":{"name":RUNNER,"version":"1"},"features":[],"edges":[1,2]},
+            {"package":{"name":"wire","version":"1","source":"registry+test","checksum":"a"},"features":["std"],"edges":[3]},
+            {"package":{"name":"ble","version":"1","source":"registry+test","checksum":"b"},"features":[],"edges":[3,4,5]},
+            {"package":{"name":"shared","version":"1","source":"registry+test","checksum":"c"},"features":["alloc"],"edges":[]},
+            {"package":{"name":"ble-only","version":"1","source":"registry+test","checksum":"d"},"features":[],"edges":[]},
+            // The same package as another of Cargo's nodes, with other
+            // features and its own dependency.
+            {"package":{"name":"shared","version":"1","source":"registry+test","checksum":"c"},"features":["alloc","std"],"edges":[6]},
+            {"package":{"name":"std-only","version":"1","source":"registry+test","checksum":"e"},"features":[],"edges":[]}
+        ]);
+        let wire = projection(&resolved, &BTreeSet::from(["wire".into()]))
+            .unwrap()
+            .to_string();
+        assert!(wire.contains("shared 1 (registry+test)"), "{wire}");
+        assert!(!wire.contains("ble-only"), "{wire}");
+        assert!(!wire.contains("std-only"), "{wire}");
+        let both = projection(&resolved, &BTreeSet::from(["wire".into(), "ble".into()]))
+            .unwrap()
+            .to_string();
+        assert!(both.contains("ble-only 1 (registry+test)"), "{both}");
+        // Both of `shared`'s nodes are reached: one package with the edges
+        // of both.
+        assert!(both.contains("std-only 1 (registry+test)"), "{both}");
+        assert_eq!(both.matches("\"name\":\"shared\"").count(), 1, "{both}");
+        validate_registry(
+            &resolved,
+            &json!({"dependencies": {"common": ["wire", "ble"]}}),
+        )
+        .unwrap();
+        assert!(
+            validate_registry(&resolved, &json!({"dependencies": {"common": ["wire"]}})).is_err()
+        );
+        resolved["packages"][1]["edges"] = json!([9]);
+        assert!(projection(&resolved, &BTreeSet::from(["wire".into()])).is_err());
+        resolved["packages"][1]["edges"] = json!([0]);
+        assert!(projection(&resolved, &BTreeSet::from(["wire".into()])).is_err());
     }
 
     #[test]
@@ -298,14 +382,14 @@ mod tests {
         let mut resolved = fixture();
         let scope = BTreeSet::from(["wire".into()]);
         let expected = projection(&resolved, &scope).unwrap();
-        resolved["nodes"][2]["package"]["checksum"] = json!("new BLE package");
+        resolved["packages"][2]["package"]["checksum"] = json!("new BLE package");
         resolved["manifests"]["hil/host/runner/Cargo.toml"]["dependencies"]["ble"] = json!("2");
         resolved["manifests"]["hil/host/runner/Cargo.toml"]["dev-dependencies"]["test-only"] =
             json!("2");
         assert_eq!(expected, projection(&resolved, &scope).unwrap());
-        resolved["nodes"][1]["features"] = json!(["std", "shared-feature-enabled-by-ble"]);
+        resolved["packages"][1]["features"] = json!(["std", "shared-feature-enabled-by-ble"]);
         assert_ne!(expected, projection(&resolved, &scope).unwrap());
-        resolved["nodes"][1]["features"] = json!(["std"]);
+        resolved["packages"][1]["features"] = json!(["std"]);
         resolved["manifests"]["hil/host/runner/Cargo.toml"]["dependencies"]["wire"]["features"] =
             json!(["other"]);
         assert_ne!(expected, projection(&resolved, &scope).unwrap());

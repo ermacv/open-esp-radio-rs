@@ -8,8 +8,7 @@ use serde_json::{Value, json};
 ///
 /// Everything an assessment needs of the current observer depends on the
 /// workload alone, never on the observation: it is computed once per
-/// evaluation, and the prepared graph itself, hundreds of megabytes once
-/// parsed, is not kept.
+/// evaluation, and the prepared graph itself is not kept.
 #[derive(Debug, Default)]
 pub(super) struct Current {
     prepared: Option<Prepared>,
@@ -102,12 +101,12 @@ impl Current {
         let path = oer_hil_run_bundle_format::observer::receipt::selected(root);
         let mut receipt: Value = read_json(&path).map_err(|error| format!(
             "current observer configuration unavailable ({}): {error}; prepare with cargo hil observer", path.display()))?;
-        // The graph is hundreds of megabytes once parsed: it is taken out of
-        // the receipt and turned into the live graph in place, never copied.
+        // The graph is taken out of the receipt and turned into the live
+        // graph in place, never copied.
         let mut build = receipt["build"].take();
         drop(receipt);
         let mut resolved = build["resolved"].take();
-        if build["schema"] != 2
+        if build["schema"] != oer_hil_run_bundle_format::observer::BUILD_SCHEMA
             || resolved["compilation"] != "cargo-compiler-artifacts-v1"
             || resolved["selected_profile"].as_str().is_none()
         {
@@ -189,7 +188,7 @@ impl Current {
         live["manifests"] = Value::Object(manifests);
         let lock: Value = toml_edit::de::from_str(&fs::read_to_string(root.join("Cargo.lock"))?)?;
         let packages = lock["package"].as_array().ok_or("lock packages missing")?;
-        for node in live["nodes"]
+        for node in live["packages"]
             .as_array_mut()
             .ok_or("observer graph missing")?
         {
@@ -281,7 +280,7 @@ impl Current {
 /// is not cannot identify the current observer for any workload.
 pub(super) fn identified(proof: &Value) -> Result<bool> {
     Ok(proof["schema"] == 1
-        && proof["build"]["schema"] == 2
+        && proof["build"]["schema"] == oer_hil_run_bundle_format::observer::BUILD_SCHEMA
         && proof["build"]["resolved"]["compilation"] == "cargo-compiler-artifacts-v1"
         && proof["build"]["resolved"]["selected_profile"]
             .as_str()
@@ -357,7 +356,7 @@ fn lock_dependencies(resolved: &Value) -> Result<Value> {
         .as_object()
         .ok_or("observer manifests missing")?;
     let mut packages = BTreeMap::new();
-    for node in resolved["nodes"]
+    for node in resolved["packages"]
         .as_array()
         .ok_or("observer nodes missing")?
     {
@@ -557,15 +556,15 @@ mod tests {
 
     #[test]
     fn lock_reselection_cannot_reuse_an_old_node_retained_for_another_consumer() {
-        let mut resolved = json!({"manifests":{"Cargo.toml":{},"local/Cargo.toml":{"package":{"name":"local"},"dependencies":{"dep":"1"},"dev-dependencies":{"test-only":"1"}}},"nodes":[
+        let mut resolved = json!({"manifests":{"Cargo.toml":{},"local/Cargo.toml":{"package":{"name":"local"},"dependencies":{"dep":"1"},"dev-dependencies":{"test-only":"1"}}},"packages":[
             {"package":{"name":"local","version":"1","dependencies":["dep 1","test-only 1"]}},
             {"package":{"name":"dep","version":"1","source":"registry+test","dependencies":["transitive 1"]}},
             {"package":{"name":"transitive","version":"1","source":"registry+test"}}
         ]});
         let before = lock_dependencies(&resolved).unwrap();
-        resolved["nodes"][0]["package"]["dependencies"] = json!(["dep 1", "test-only 2"]);
+        resolved["packages"][0]["package"]["dependencies"] = json!(["dep 1", "test-only 2"]);
         assert_eq!(before, lock_dependencies(&resolved).unwrap());
-        resolved["nodes"][1]["package"]["dependencies"] = json!(["transitive 2"]);
+        resolved["packages"][1]["package"]["dependencies"] = json!(["transitive 2"]);
         assert_ne!(before, lock_dependencies(&resolved).unwrap());
     }
 

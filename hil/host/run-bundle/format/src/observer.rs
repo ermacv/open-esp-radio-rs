@@ -11,6 +11,16 @@
 //! resolving its graph and preparing its receipt is `oer-hil-observer`'s;
 //! evaluators read the prepared descriptors here.
 
+/// Version of an observer build (`build.schema`).
+///
+/// Schema 3 records the runner's resolved Cargo graph as a package graph:
+/// `resolved.packages` holds each package once, the runner first, with the
+/// indices of the packages it depends on in `edges`. Schema 2 recorded the
+/// graph as a tree with a node per path to a package, hundreds of megabytes;
+/// no reader for it remains, so an observation recorded with it is not this
+/// observer's.
+pub const BUILD_SCHEMA: u64 = 3;
+
 pub mod artifacts;
 pub mod cargo_inputs;
 pub mod inputs;

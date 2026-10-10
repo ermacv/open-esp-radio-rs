@@ -9,13 +9,12 @@
 //! failing commit, or anyone who sees it first, fixes it before other work.
 //!
 //! The Claude review in CI never blocks a merge: it files each finding as an
-//! issue titled `review: …`, which names the reviewed branch. The open ones
-//! are listed the same way: those of this checkout's branch one by one, to fix
-//! next; those no session fixed within a day and nobody claimed (assigned)
-//! one by one to any session, to claim before new work,
-//! since agents push and move on before the review reports; the rest as a
-//! count. An open pull request whose review ended in error (it did not
-//! complete, or its findings were not filed) is listed for a `@claude review`.
+//! ordinary issue titled `review: …`, which names the reviewed branch and is
+//! triaged by its priority like any other. The open ones of this checkout's
+//! branch are listed one by one, for the session that just pushed it to fix
+//! next; the rest are counted. An open pull request whose review ended in
+//! error (it did not complete, or its findings were not filed) is listed for
+//! a `@claude review`.
 
 use std::{collections::BTreeSet, path::Path};
 
@@ -244,52 +243,11 @@ struct Issue {
     #[serde(default)]
     body: String,
     author: Author,
-    #[serde(rename = "createdAt")]
-    created_at: String,
-    /// A session claims a finding by assigning it.
-    #[serde(default)]
-    assignees: Vec<Author>,
 }
 
 #[derive(Deserialize)]
 struct Author {
     login: String,
-}
-
-/// After this long a finding whose branch's session never fixed it is
-/// anyone's: agents push and move on before the review in CI reports.
-const UNOWNED_AFTER_SECONDS: u64 = 24 * 60 * 60;
-/// At most this many unowned findings are named; the rest are counted.
-const UNOWNED_NAMED: usize = 3;
-
-/// The Unix time of a `gh` timestamp such as `2026-10-10T14:42:28Z`.
-fn unix_seconds(timestamp: &str) -> Option<u64> {
-    let number = |range: std::ops::Range<usize>| timestamp.get(range)?.parse::<i64>().ok();
-    let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
-    let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19)?);
-    // Days from the civil date (Howard Hinnant's algorithm).
-    let shifted = if month <= 2 { year - 1 } else { year };
-    let era = shifted.div_euclid(400);
-    let year_of_era = shifted - era * 400;
-    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    let days = era * 146_097 + day_of_era - 719_468;
-    u64::try_from(days * 86_400 + hour * 3_600 + minute * 60 + second).ok()
-}
-
-/// The branch a session that claimed finding `number` fixes it on.
-pub fn claim_branch(number: u64) -> String {
-    format!("review-{number}")
-}
-
-/// What decides how a finding is listed to this checkout.
-struct View<'a> {
-    /// This checkout's branch.
-    branch: Option<&'a str>,
-    /// The authors whose `review: …` issues are findings.
-    trusted: &'a [&'a str],
-    /// The current Unix time.
-    now: u64,
 }
 
 /// The owner of the GitHub repository at `url`, `origin`'s URL.
@@ -309,67 +267,33 @@ impl Issue {
     }
 }
 
-/// The lines that list open review findings to a checkout:
-///
-/// - each finding of its branch, reviewed there or fixed there under its
-///   [`claim_branch`] name, to fix before other work;
-/// - unowned findings, older than [`UNOWNED_AFTER_SECONDS`] and assigned to
-///   nobody, oldest first, for any session to claim before new work;
-/// - a count of the rest.
-///
-/// Only issues of a `trusted` author are findings, as for the workflow's
-/// deduplication (`.github/scripts/review_findings.py`): anyone can open an
-/// issue, and these lines tell a session what to do first.
-fn review_findings(issues: &[Issue], view: &View) -> Vec<String> {
+/// One line per open review finding of `branch` (this checkout's), for its
+/// session to fix next, then one line counting the others, which are ordinary
+/// issues triaged by their priority. Only issues of a `trusted` author are
+/// findings, as for the workflow's deduplication
+/// (`.github/scripts/review_findings.py`): anyone can open an issue, and
+/// these lines tell a session what to do first.
+fn review_findings(issues: &[Issue], branch: Option<&str>, trusted: &[&str]) -> Vec<String> {
     let mut findings: Vec<&Issue> = issues
         .iter()
         .filter(|issue| issue.title.starts_with(FINDING_TITLE))
-        .filter(|issue| view.trusted.contains(&issue.author.login.as_str()))
+        .filter(|issue| trusted.contains(&issue.author.login.as_str()))
         .collect();
     findings.sort_by_key(|issue| issue.number);
-    let title = |issue: &Issue| issue.title.trim_start_matches(FINDING_TITLE).to_owned();
-    let mut lines = Vec::new();
-    let mut unowned = Vec::new();
-    let mut others = Vec::new();
-    for issue in findings {
-        let claim = claim_branch(issue.number);
-        let claims = |branch: &str| {
-            branch == claim
-                || branch
-                    .strip_suffix(claim.as_str())
-                    .is_some_and(|p| p.ends_with('/'))
-        };
-        let mine = view
-            .branch
-            .is_some_and(|branch| issue.branch() == Some(branch) || claims(branch));
-        let claimed = !issue.assignees.is_empty();
-        let old = unix_seconds(&issue.created_at)
-            .is_some_and(|created| view.now.saturating_sub(created) >= UNOWNED_AFTER_SECONDS);
-        if mine {
-            lines.push(format!(
-                "Claude review finding #{} of this branch; fix it before other work: {}: {}",
+    let (mine, others): (Vec<&Issue>, Vec<&Issue>) = findings
+        .into_iter()
+        .partition(|issue| branch.is_some() && issue.branch() == branch);
+    let mut lines: Vec<String> = mine
+        .iter()
+        .map(|issue| {
+            format!(
+                "Claude review finding #{} of this branch; fix it next: {}: {}",
                 issue.number,
-                title(issue),
+                issue.title.trim_start_matches(FINDING_TITLE),
                 issue.url
-            ));
-        } else if old && !claimed {
-            unowned.push(issue);
-        } else {
-            others.push(issue);
-        }
-    }
-    for issue in unowned.iter().take(UNOWNED_NAMED) {
-        lines.push(format!(
-            "Claude review finding #{} has no owner for a day; claim it before new work \
-             (`gh issue edit {} --add-assignee @me`) and fix it on branch {}: {}: {}",
-            issue.number,
-            issue.number,
-            claim_branch(issue.number),
-            title(issue),
-            issue.url
-        ));
-    }
-    others.extend(unowned.iter().skip(UNOWNED_NAMED));
+            )
+        })
+        .collect();
     if !others.is_empty() {
         let numbers: Vec<String> = others
             .iter()
@@ -396,7 +320,7 @@ fn open_findings(ctx: &Checkout) -> Result<Vec<String>, String> {
         "--limit",
         "200",
         "--json",
-        "number,title,url,body,author,createdAt,assignees",
+        "number,title,url,body,author",
     ]))
     .map_err(|error| {
         error
@@ -416,12 +340,7 @@ fn open_findings(ctx: &Checkout) -> Result<Vec<String>, String> {
     let trusted: Vec<&str> = std::iter::once(WORKFLOW_AUTHOR)
         .chain(owner(&origin))
         .collect();
-    let view = View {
-        branch: branch.as_deref(),
-        trusted: &trusted,
-        now: oer_durable::unix_seconds(),
-    };
-    Ok(review_findings(&issues, &view))
+    Ok(review_findings(&issues, branch.as_deref(), &trusted))
 }
 
 /// The status the Claude review workflow sets on a pull request's head.
@@ -682,48 +601,33 @@ esac
     }
 
     #[test]
-    fn findings_of_this_branch_and_unowned_ones_are_named_and_others_counted() {
-        const DAY: &str = "2026-10-09T12:00:00Z";
-        const HOUR: &str = "2026-10-10T11:00:00Z";
-        let issue = |number: u64, title: &str, author: &str, branch: &str, created: &str| {
+    fn findings_of_this_branch_are_named_and_the_others_counted() {
+        let issue = |number: u64, title: &str, author: &str, branch: &str| {
             serde_json::json!({"number": number, "title": title, "url": format!("u{number}"),
-                "author": {"login": author}, "createdAt": created,
+                "author": {"login": author},
                 "body": format!("Found.\n\n<!-- claude-review-branch: {branch} -->")})
         };
-        let mut claimed = issue(6, "review: Claimed leak", WORKFLOW_AUTHOR, "fix/d", DAY);
-        claimed["assignees"] = serde_json::json!([{"login": "owner"}]);
         let issues: Vec<Issue> = serde_json::from_value(serde_json::json!([
-            issue(1, "review: Lost error", WORKFLOW_AUTHOR, "fix/a", HOUR),
-            issue(2, "review: Stale doc", WORKFLOW_AUTHOR, "fix/b", HOUR),
-            issue(3, "review: Old race", "owner", "fix/c", DAY),
-            issue(4, "Unrelated reviewer notes", "owner", "fix/a", HOUR),
-            issue(5, "review: Run this first", "someone", "fix/a", DAY),
-            claimed,
+            issue(1, "review: Lost error", WORKFLOW_AUTHOR, "fix/a"),
+            issue(2, "review: Stale doc", WORKFLOW_AUTHOR, "fix/b"),
+            issue(3, "review: Old race", "owner", "fix/c"),
+            issue(4, "Unrelated reviewer notes", "owner", "fix/a"),
+            issue(5, "review: Run this first", "someone", "fix/a"),
         ]))
         .unwrap();
         let trusted = [WORKFLOW_AUTHOR, "owner"];
-        let view = |branch| View {
-            branch,
-            trusted: &trusted,
-            now: unix_seconds("2026-10-10T12:00:00Z").unwrap(),
-        };
         assert_eq!(
-            review_findings(&issues, &view(Some("fix/a"))),
+            review_findings(&issues, Some("fix/a"), &trusted),
             [
-                "Claude review finding #1 of this branch; fix it before other work: Lost error: u1",
-                "Claude review finding #3 has no owner for a day; claim it before new work \
-                 (`gh issue edit 3 --add-assignee @me`) and fix it on branch review-3: Old race: u3",
-                "2 other open Claude review finding(s): #2, #6",
+                "Claude review finding #1 of this branch; fix it next: Lost error: u1",
+                "2 other open Claude review finding(s): #2, #3",
             ]
         );
-        // The session on a claim branch owns the claimed finding; a name
-        // that only ends the same way does not.
         assert_eq!(
-            review_findings(&issues, &view(Some("fix/review-6")))[0],
-            "Claude review finding #6 of this branch; fix it before other work: Claimed leak: u6"
+            review_findings(&issues, None, &trusted),
+            ["3 other open Claude review finding(s): #1, #2, #3"]
         );
-        assert!(review_findings(&issues, &view(Some("xreview-6")))[0].contains("#3 has no owner"));
-        assert!(review_findings(&[], &view(Some("fix/a"))).is_empty());
+        assert!(review_findings(&[], Some("fix/a"), &trusted).is_empty());
     }
 
     #[test]
@@ -750,14 +654,6 @@ esac
                  the session on its branch comments `@claude review` on it: u3",
             ]
         );
-    }
-
-    #[test]
-    fn timestamps_are_read_as_unix_seconds() {
-        assert_eq!(unix_seconds("1970-01-01T00:00:00Z"), Some(0));
-        assert_eq!(unix_seconds("2026-10-10T14:42:28Z"), Some(1_791_643_348));
-        assert_eq!(unix_seconds("2024-02-29T00:00:00Z"), Some(1_709_164_800));
-        assert_eq!(unix_seconds("not a time"), None);
     }
 
     #[test]

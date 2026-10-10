@@ -63,13 +63,11 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    branch (`REVIEW.md`). The session start and the gate list the open findings
    of this checkout's branch; for its session fixing them comes before other
    work: on the same branch while the PR is open, in a follow-up PR once it
-   merged, with `Fixes #<issue>`. A finding no session fixed within a day is
-   listed to every session as having no owner: claim it before new work
-   with `gh issue edit <n> --add-assignee @me`, which hides it from the
-   others, and fix it on a branch named `review-<n>`. Fix the defect, not the cited line: search
+   merged, with `Fixes #<issue>`. Fix the defect, not the cited line: search
    the diff for every place with the same mistake and fix them together,
-   since the next review reports the ones left. Younger findings of other
-   branches are only counted; leave them to their sessions.
+   since the next review reports the ones left. Findings of other branches
+   are only counted: they are ordinary issues, taken up by their priority
+   like any other.
 
 ## Other workspaces and dependencies
 

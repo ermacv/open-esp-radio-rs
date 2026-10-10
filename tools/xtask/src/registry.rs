@@ -605,11 +605,14 @@ pub fn of_change(change: &Change) -> Vec<&'static Check> {
 /// backstop, and most do not name every input their check reads; only these
 /// were audited to read nothing outside what their trigger names, given that
 /// a change to the workflows, the toolchain, the root workspace manifest or
-/// lock, or the checks' own tooling runs everything.
+/// lock, or the checks' own tooling runs everything. `architecture` is not
+/// one: besides chip-target Clippy it holds whole-tree policies (zeroed
+/// sections in every `.rs`, interrupt features of every manifest, the HIL
+/// agent's composition). Declared inputs per check (#467) generalize this.
 pub const SCOPED_IN_CI: &[&str] = &[
-    // chip-target Clippy of `crates/`, `platform/` and `registers/`
-    "architecture",
-    // API documentation of the root packages a change reaches
+    // API documentation of the root packages a change reaches; their
+    // sources and manifests select them, and what else it reads (the root
+    // lock, the toolchain) runs everything.
     "doc",
 ];
 

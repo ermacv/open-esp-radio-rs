@@ -99,9 +99,9 @@ and every package depending on them, and the tests of the changed packages.
 
 The [CI workflow](.github/workflows/ci.yml) runs on every push to any branch,
 in a few jobs that each run a sequence of checks over one build cache: each
-job is `cargo xtask check tier full --job <job>`, on a branch without
-chip-target Clippy and API docs when its change does not reach them (`main`
-runs every check), and the check registry
+job is `cargo xtask check tier full --job <job>`, on a branch without the
+API documentation of root packages its change does not reach (`main` runs
+every check), and the check registry
 (`cargo xtask check tier --list`, the [tooling reference](tools/xtask/README.md#the-check-registry))
 decides what it runs — formatting of every workspace, Clippy and the tests
 of the root workspace, the policy and architecture checks, type checks of the

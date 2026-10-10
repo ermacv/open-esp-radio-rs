@@ -38,9 +38,9 @@ env:
 jobs:
   # The registry computes input identities; only successful matching push
   # runs can cover a job. API/retention misses cause execution. A branch
-  # push skips the audited checks (`registry::SCOPED_IN_CI`: chip-target
-  # Clippy, API docs) its change from the merge base with main does not
-  # reach, and a job left with none; main and manual runs check everything.
+  # push skips the audited checks (`registry::SCOPED_IN_CI`) its change from
+  # the merge base with main does not reach, and a job left with none; main
+  # and manual runs check everything.
   prepare:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

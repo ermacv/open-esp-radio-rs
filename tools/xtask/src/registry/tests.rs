@@ -321,18 +321,22 @@ fn a_job_runs_its_checks_up_to_its_tier() {
 
 #[test]
 fn a_branch_run_skips_only_an_audited_check_its_change_does_not_reach() {
-    let tool = change(&["tools/tool/src/lib.rs"], Tier::Full);
-    let architecture = ids(of_job_for(&tool, "architecture"));
-    assert!(!architecture.contains(&"architecture"));
-    // Every check outside the audited list runs, whatever its trigger says.
-    assert_eq!(
-        ids(of_job_for(&tool, "images")),
-        ids(of_job(Tier::Full, "images"))
-    );
-    let docs = ids(of_job_for(&tool, "docs"));
+    // A HIL target file reaches no root package, so no API documentation.
+    let target = change(&["hil/targets/esp32s31/agent/src/main.rs"], Tier::Full);
+    let docs = ids(of_job_for(&target, "docs"));
+    assert!(!docs.contains(&"doc"));
     assert!(docs.contains(&"docs") && docs.contains(&"capabilities"));
-    let platform = change(&["platform/esp32s31/chip.toml"], Tier::Full);
-    assert!(ids(of_job_for(&platform, "architecture")).contains(&"architecture"));
+    // Every check outside the audited list runs, whatever its trigger says:
+    // `architecture` reads every `.rs` and manifest of the tree.
+    for job in ["architecture", "images", "firmware", "verification"] {
+        assert_eq!(
+            ids(of_job_for(&target, job)),
+            ids(of_job(Tier::Full, job)),
+            "{job}"
+        );
+    }
+    let driver = change(&["crates/driver/src/lib.rs"], Tier::Full);
+    assert!(ids(of_job_for(&driver, "docs")).contains(&"doc"));
     for check in SCOPED_IN_CI {
         assert!(
             CHECKS

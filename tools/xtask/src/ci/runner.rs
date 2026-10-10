@@ -62,19 +62,26 @@ fn load_proofs(api: &GitHub, workflow: Workflow) -> Result<Vec<Proof>> {
 /// The branch `main`, which every run checks whole.
 const MAIN: &str = "refs/heads/main";
 
-/// The checks of each job of `workflow` that the change from the merge base
-/// of `commit` with `main` to the checkout reaches. The checkout is shallow,
-/// so GitHub names the merge base and only that commit is fetched.
+/// The root workspace's manifest and lock: its lint policy
+/// (`[workspace.lints]`), `[patch]` pins and shared dependencies reach chip
+/// code that only path triggers select.
+const ROOT_WORKSPACE: &[&str] = &["Cargo.toml", "Cargo.lock"];
+
 /// A changed file no check's trigger can answer for: the workflows, whose
-/// job setup (caches, tools, versions) every check runs under, and the
-/// toolchain and lint configuration every build reads. A change to one runs
-/// every check.
+/// job setup (caches, tools, versions) every check runs under, the toolchain
+/// and lint configuration every build reads, and the root workspace's
+/// manifest and lock. A change to one runs every check.
 fn unscopable(files: &[String]) -> Option<&String> {
     files.iter().find(|file| {
-        file.starts_with(".github/workflows/") || crate::gate::GLOBAL.contains(&file.as_str())
+        file.starts_with(".github/workflows/")
+            || crate::gate::GLOBAL.contains(&file.as_str())
+            || ROOT_WORKSPACE.contains(&file.as_str())
     })
 }
 
+/// The checks of each job of `workflow` that the change from the merge base
+/// of the run's commit with `main` to the checkout reaches. The checkout is
+/// shallow, so GitHub names the merge base and only that commit is fetched.
 fn change_scope(root: &Path, api: &GitHub, workflow: Workflow) -> Result<Scope> {
     #[derive(serde::Deserialize)]
     struct Commit {
@@ -325,11 +332,19 @@ mod tests {
                 .map(|path| (*path).to_owned())
                 .collect::<Vec<_>>()
         };
-        assert!(unscopable(&files(&["tools/xtask/src/ci.rs", "docs/index.md"])).is_none());
+        // Another workspace's manifest selects its packages, so it scopes.
+        let scoped = files(&[
+            "tools/xtask/src/ci.rs",
+            "docs/index.md",
+            "tools/blobray/Cargo.toml",
+        ]);
+        assert!(unscopable(&scoped).is_none());
         for path in [
             ".github/workflows/ci.yml",
             "rust-toolchain.toml",
             "clippy.toml",
+            "Cargo.toml",
+            "Cargo.lock",
         ] {
             assert_eq!(
                 unscopable(&files(&["hil/a.rs", path])).map(String::as_str),

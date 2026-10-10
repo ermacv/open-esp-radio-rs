@@ -34,7 +34,7 @@ The gate every change passes before it reaches `main`; see [the push gate](#the-
 | Command | Contract |
 | --- | --- |
 | `cargo xtask check changed [--base REV] [--full]` | The push gate over what this checkout changed against the merge base with `REV` (default `origin/main`), committed, uncommitted or untracked: every fast check of [the registry](#the-check-registry) the change selects ([selection](#the-push-gate)). `--full` adds the full-tier checks it selects, as CI runs them on every push: among them the tests of every dependent package, `check docs`, root-workspace Clippy, API documentation of the affected root packages, the HIL image classes whose last build read a changed file, the examples, the PHY, network, architecture, register, qualification and provenance checks for their inputs |
-| `cargo xtask check tier TIER --job JOB` | Run every check of the registry that CI job `JOB` has up to `TIER` (`fast`, `full` or `nightly`) over the whole tree, as that job does; a failing check does not stop the others. Each CI job is one such call |
+| `cargo xtask check tier TIER --job JOB [--checks IDS]` | Run every check of the registry that CI job `JOB` has up to `TIER` (`fast`, `full` or `nightly`), or only the comma-separated `IDS` of them (default `all`), over the whole tree, as that job does; a failing check does not stop the others. Each CI job is one such call, on a branch with the checks its change reaches ([CI input reuse](#ci-input-reuse)) |
 | `cargo xtask check tier --list` | Print the registry: each check's id, tier, CI job and what it checks; a check marked whole-tier-only never runs for a change |
 | `cargo xtask ci-status` | Print each workflow whose newest finished run on `main` failed, naming its failed jobs, or that `main` is green, then the open Claude review findings (`review: …` issues of the workflow or the repository owner): those of the checkout's branch, or of the finding its `review-<n>` branch fixes, one by one; up to three a day old and assigned to nobody, for any session to claim by assigning it; and a count of the rest; then every open pull request whose `claude-runtime-review` ended in error, to review again with `@claude review`; the session start hook runs it |
 | `cargo xtask hooks [--check]` | Write `.claude/hooks/heavy-commands.json`, the commands the Claude Code pre-tool hook keeps out of the foreground, from `oer_xtask::hooks`; `--check` only fails when it is stale (a test checks it too) |
@@ -111,7 +111,8 @@ runs:
 Every runner works over a change's reach or over the whole tree. Each CI job
 (`.github/workflows/ci.yml`, `docs.yml`, `nightly.yml`) prepares its runner
 (caches, a toolchain component, clang, GNU ld) and runs `cargo xtask check
-tier TIER --job JOB`; a test holds the workflows to the registry, so no
+tier TIER --job JOB`, on a branch with `--checks` naming what its change
+reaches; a test holds the workflows to the registry, so no
 workflow lists checks of its own. A check without a trigger runs only with
 its whole tier: the final image builds, every image class, the examples'
 builds, the conformance check (it needs clang and the Sail model), Blobray's

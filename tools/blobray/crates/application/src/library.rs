@@ -94,18 +94,27 @@ pub fn analyze_library(
 }
 
 /// The sections and function symbols of one object.
-#[derive(Default)]
-struct Selection {
+struct Selection<'m> {
     /// Indices of nonempty executable sections, sorted.
     executable: Vec<u32>,
     functions: Vec<SymbolRecord>,
     diagnostics: Vec<Diagnostic>,
     /// Symbols and data relocations that prove jump-table entries.
-    tables: crate::jump_tables::TableFacts,
+    tables: crate::jump_tables::TableFacts<'m>,
 }
-impl ElfSink for Selection {
+impl<'m> Selection<'m> {
+    fn new(memory: &'m WorkingMemory) -> Self {
+        Self {
+            executable: Vec::new(),
+            functions: Vec::new(),
+            diagnostics: Vec::new(),
+            tables: crate::jump_tables::TableFacts::new(memory),
+        }
+    }
+}
+impl ElfSink for Selection<'_> {
     fn section(&mut self, r: &SectionRecord, c: &mut dyn RunControl) -> Result<()> {
-        self.tables.section(r);
+        self.tables.section(r, c)?;
         if r.flags & 4 != 0 && r.size != 0 {
             match self.executable.binary_search(&r.index) {
                 Ok(_) => return Err(Error::new(ErrorCode::Integrity, "duplicate section index")),
@@ -114,7 +123,7 @@ impl ElfSink for Selection {
         }
         c.checkpoint(1)
     }
-    fn symbol(&mut self, r: &SymbolRecord, _: &mut dyn RunControl) -> Result<()> {
+    fn symbol(&mut self, r: &SymbolRecord, c: &mut dyn RunControl) -> Result<()> {
         // STT_FUNC in a section already known to be executable.
         let section = if r.raw_section == 0xffff {
             r.extended_section
@@ -123,16 +132,15 @@ impl ElfSink for Selection {
         } else {
             None
         };
-        self.tables.symbol(r, section);
+        self.tables.symbol(r, section, c)?;
         if r.symbol_type == 2 && section.is_some_and(|s| self.executable.binary_search(&s).is_ok())
         {
             self.functions.push(r.clone());
         }
         Ok(())
     }
-    fn relocation(&mut self, r: &RelocationRecord, _: &mut dyn RunControl) -> Result<()> {
-        self.tables.relocation(r);
-        Ok(())
+    fn relocation(&mut self, r: &RelocationRecord, c: &mut dyn RunControl) -> Result<()> {
+        self.tables.relocation(r, c)
     }
     fn diagnostic(&mut self, r: &Diagnostic, _: &mut dyn RunControl) -> Result<()> {
         self.diagnostics.push(r.clone());
@@ -151,12 +159,15 @@ fn research_function<'m>(
     input: u64,
     payload: &ArtifactId,
     abi: Option<oer_riscv_model::CallAbi>,
-    tables: &crate::jump_tables::TableFacts,
+    tables: &crate::jump_tables::TableFacts<'_>,
     decoder: &dyn FunctionSemantics,
     memory: &'m WorkingMemory,
     control: &mut dyn RunControl,
     sink: &mut dyn FunctionSink,
-) -> Result<(oer_riscv_analysis::AnalysisSummary, Vec<JumpTable>)> {
+) -> Result<(
+    oer_riscv_analysis::AnalysisSummary,
+    crate::jump_tables::FoundTables<'m>,
+)> {
     let mut position = RunPosition {
         phase: RunPhase::AnalyzeFunction,
         input: Some(input),
@@ -210,14 +221,22 @@ fn research_function<'m>(
         // proven, the function is analyzed again following them.
         let mut first = RecordBuffer::new(memory);
         let summary = research(&[], control, &mut Records(&mut first))?;
-        let tables = crate::jump_tables::jump_tables(&first, view.section, view.extent, tables);
-        if tables.is_empty() {
+        let found = crate::jump_tables::jump_tables(
+            &first,
+            view.section,
+            view.extent,
+            tables,
+            memory,
+            control,
+        )?;
+        if found.tables.is_empty() {
             for record in first.iter() {
                 sink.record(record, control)?;
             }
-            return Ok((summary, tables));
+            return Ok((summary, found));
         }
-        let jumps: Vec<_> = tables
+        let jumps: Vec<_> = found
+            .tables
             .iter()
             .map(|table| {
                 let mut targets = table.entries.clone();
@@ -229,7 +248,7 @@ fn research_function<'m>(
                 }
             })
             .collect();
-        Ok((research(&jumps, control, sink)?, tables))
+        Ok((research(&jumps, control, sink)?, found))
     })
 }
 
@@ -253,7 +272,7 @@ fn analyze_object(
     visit: &mut Visit<'_>,
 ) -> Result<()> {
     let object = member.id;
-    let mut selection = Selection::default();
+    let mut selection = Selection::new(memory);
     let (bytes, payload, elf) = match member.bytes {
         Ok(bytes) => {
             let (payload, elf) = inspect_source(bytes, &object, memory, control, &mut selection)?;
@@ -302,7 +321,8 @@ fn analyze_object(
     let (Some(bytes), Some(payload)) = (bytes, payload) else {
         return Ok(());
     };
-    let tables = std::mem::take(&mut selection.tables);
+    selection.tables.finish(control)?;
+    let tables = selection.tables;
     let functions: Vec<LibraryFunction> = selection
         .functions
         .into_iter()
@@ -336,13 +356,13 @@ fn analyze_object(
                     &mut Records(&mut records),
                 );
                 match researched {
-                    Ok((summary, jump_tables)) => visit(
+                    Ok((summary, found)) => visit(
                         LibraryOutcome::Analyzed(AnalyzedFunction {
                             function,
                             records: &records,
                             coverage: summary.coverage,
                             semantics: summary.semantics,
-                            jump_tables: &jump_tables,
+                            jump_tables: &found.tables,
                         }),
                         c,
                     )?,

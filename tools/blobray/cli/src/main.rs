@@ -479,6 +479,13 @@ fn function_records(
     } else {
         ExitCode::FAILURE
     };
+    let images = match format {
+        Format::Human => executables
+            .iter()
+            .map(|executable| image_symbols(executable, &memory, &mut control))
+            .collect::<Result<Vec<_>>>()?,
+        Format::Json => Vec::new(),
+    };
     let mut out = std::io::BufWriter::new(std::io::stdout().lock());
     match format {
         Format::Json => {
@@ -518,9 +525,12 @@ fn function_records(
                         if *complete { "complete" } else { "incomplete" }
                     )
                     .and_then(|()| {
-                        blobray_cli::listing::listing(records)
-                            .iter()
-                            .try_for_each(|line| writeln!(out, "{line}"))
+                        blobray_cli::listing::listing(
+                            records,
+                            images.get(function.input as usize).and_then(Option::as_ref),
+                        )
+                        .iter()
+                        .try_for_each(|line| writeln!(out, "{line}"))
                     }),
                     blobray_cli::wire::NamedFunction::Blocked { function, error } => writeln!(
                         out,
@@ -538,6 +548,37 @@ fn function_records(
     }
     out.flush().map_err(io_error)?;
     Ok(status)
+}
+
+/// The sized function symbols of `executable` when it is one executable
+/// image (ET_EXEC), whose transfers carry no relocations to name them.
+fn image_symbols(
+    executable: &app::in_process::Executable,
+    memory: &oer_riscv_model::WorkingMemory,
+    control: &mut app::in_process::Limits,
+) -> Result<Option<blobray_cli::listing::ImageSymbols>> {
+    const ET_EXEC: u16 = 2;
+    const STT_FUNC: u8 = 2;
+    let inventory = app::captured::inventory(executable, memory, control)?;
+    let [object] = inventory.objects.as_slice() else {
+        return Ok(None);
+    };
+    let Some(elf) = object.elf.as_ref().filter(|elf| elf.object_type == ET_EXEC) else {
+        return Ok(None);
+    };
+    Ok(Some(blobray_cli::listing::ImageSymbols::new(
+        elf.symbols
+            .iter()
+            .filter(|symbol| symbol.symbol_type & 0xf == STT_FUNC)
+            .filter_map(|symbol| {
+                let name = symbol.name.as_deref()?;
+                Some((
+                    symbol.value,
+                    symbol.size,
+                    String::from_utf8_lossy(name).into_owned(),
+                ))
+            }),
+    )))
 }
 
 fn io_error(e: std::io::Error) -> Error {

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use oer_riscv_model::{
-    AbstractValue, ArtifactId, DecodedOp, FunctionRecord, FunctionRelocation, InstructionFlow,
-    MemoryKind, ObjectId, ObjectLocation, ReferenceKind, ReferenceTarget, SymbolDefinition,
-    SymbolId, SymbolTableKind, ValueAlternative, ValueAlternatives,
+    AbstractValue, ArtifactId, DecodedOp, EdgeKind, FunctionRecord, FunctionRelocation,
+    InstructionFlow, MemoryKind, ObjectId, ObjectLocation, ReferenceKind, ReferenceTarget,
+    SymbolDefinition, SymbolId, SymbolTableKind, ValueAlternative, ValueAlternatives,
 };
 
-use super::{SymbolReference, listing, references_to};
+use super::{ImageSymbols, SymbolReference, listing, references_to};
 
 fn reference(offset: u64, name: &str, addend: i64, kind: ReferenceKind) -> FunctionRecord {
     let target = Arc::new(ReferenceTarget {
@@ -68,7 +68,7 @@ fn records() -> Vec<FunctionRecord> {
 #[test]
 fn the_listing_names_each_instructions_relocated_symbols() {
     assert_eq!(
-        listing(&records()),
+        listing(&records(), None),
         [
             format!("{:6x}  {:<40} g_pm+52", 0, "lui a5, 0"),
             format!("{:6x}  {:<40} pm_scale_listen_interval", 4, "auipc ra, 0"),
@@ -159,7 +159,7 @@ fn the_listing_annotates_exact_values_and_addresses_in_hexadecimal() {
         ),
     ];
     assert_eq!(
-        listing(&records),
+        listing(&records, None),
         [
             format!("{:6x}  {:<40}  # a4=0x20109000", 0, "lui a4, 131337"),
             format!("{:6x}  {:<40}  # [0x20109004]", 4, "lw a5, 4(a4)"),
@@ -192,7 +192,7 @@ fn a_symbol_value_is_named_with_its_addend() {
         ),
     ];
     assert_eq!(
-        listing(&records),
+        listing(&records, None),
         [format!(
             "{:6x}  {:<40} phy_param  # s0=phy_param+0xef",
             0, "lui s0, 0"
@@ -245,11 +245,82 @@ fn a_pcrel_low_value_is_named_by_its_high_target_not_the_label() {
         ),
     ];
     assert_eq!(
-        listing(&records)[1],
+        listing(&records, None)[1],
         format!(
             "{:6x}  {:<40} .Lpcrel_hi0  # a5=phy_param+0x10",
             4, "addi a5, a5, 0"
         ),
         "the relocation column keeps its own label; the value names the HI20 target"
+    );
+}
+
+#[test]
+fn image_transfers_and_branches_are_named_from_the_function_symbols() {
+    let image = ImageSymbols::new([
+        (0x2f82_6024, 0xe, "phy_get_data_sat".to_string()),
+        (0x2f82_6242, 0x108, "phy_rc_cal".to_string()),
+        (
+            0x2f82_6242,
+            0x108,
+            "phy_rc_cal_alias_with_longer_name".to_string(),
+        ),
+        (0x2f82_7000, 0, "unsized".to_string()),
+    ]);
+    let records = vec![
+        instruction(0x2f82_62ac, "jal ra, -648"),
+        FunctionRecord::Transfer {
+            offset: 0x2f82_62ac,
+            target: AbstractValue::ImageAddress {
+                address: 0x2f82_6024,
+            },
+            call: true,
+        },
+        instruction(0x2f82_6264, "blt a4, zero, 210"),
+        FunctionRecord::Edge {
+            from: 0x2f82_6264,
+            target: Some(0x2f82_6336),
+            relation: EdgeKind::Taken,
+            external: false,
+        },
+        FunctionRecord::Edge {
+            from: 0x2f82_6264,
+            target: Some(0x2f82_6268),
+            relation: EdgeKind::Fallthrough,
+            external: false,
+        },
+        instruction(0x2f82_6300, "jal ra, 3326"),
+        FunctionRecord::Transfer {
+            offset: 0x2f82_6300,
+            target: AbstractValue::ImageAddress {
+                address: 0x2f82_7000,
+            },
+            call: true,
+        },
+    ];
+    assert_eq!(
+        listing(&records, Some(&image)),
+        [
+            format!(
+                "{:6x}  {:<40}  # -> phy_get_data_sat",
+                0x2f82_62ac_u64, "jal ra, -648"
+            ),
+            format!(
+                "{:6x}  {:<40}  # -> phy_rc_cal+0xf4",
+                0x2f82_6264_u64, "blt a4, zero, 210"
+            ),
+            format!(
+                "{:6x}  {:<40}  # -> 0x2f827000",
+                0x2f82_6300_u64, "jal ra, 3326"
+            ),
+        ]
+    );
+    assert_eq!(
+        listing(&records, None),
+        [
+            format!("{:6x}  jal ra, -648", 0x2f82_62ac_u64),
+            format!("{:6x}  blt a4, zero, 210", 0x2f82_6264_u64),
+            format!("{:6x}  jal ra, 3326", 0x2f82_6300_u64),
+        ],
+        "without an image the relocations remain the only names"
     );
 }

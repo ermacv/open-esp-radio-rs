@@ -37,7 +37,9 @@ use crate::{
 };
 
 mod workflows;
-pub use workflows::{JobSpec, Program, Workflow, WorkflowSpec, validate_workflows};
+pub use workflows::{
+    JobSpec, PUBLISHED_ON_MAIN, Program, Workflow, WorkflowSpec, validate_workflows,
+};
 
 /// When a check runs.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -544,7 +546,7 @@ pub const CHECKS: &[Check] = &[
         job: "verification",
         summary: "every verified chip's vendor evidence index, its firmware inputs built from the tracked recipes: fails on a DIFF or a stale reviewed decision",
         trigger: Some(reaches_vendor_evidence),
-        run: |ctx, _| verification(ctx, &["evidence"]),
+        run: |ctx, _| verification(ctx, &["evidence", "--compare", VENDOR_EVIDENCE_BASE]),
     },
     Check {
         id: "host-stands",
@@ -651,6 +653,11 @@ pub const SCOPED_IN_CI: &[&str] = &[
     "vendor-evidence",
 ];
 
+/// Where CI puts the vendor evidence index `main` computed at a branch's
+/// merge base (the `vendor-evidence-<commit>` artifact of its run), which
+/// `vendor-evidence` compares the branch's index with.
+pub const VENDOR_EVIDENCE_BASE: &str = "target/vendor-evidence-base";
+
 /// Whether `change` reaches what the vendor evidence index is computed from:
 /// any file below `verification/` (pins, scenarios, reviewed decisions,
 /// probes, the firmware recipes), the chip profiles that configure the probe
@@ -661,7 +668,10 @@ pub const SCOPED_IN_CI: &[&str] = &[
 /// scenarios run. A reviewed decision names production lines, so rewriting
 /// one stales it and fails the index; this catches it on the change.
 pub fn reaches_vendor_evidence(change: &Change) -> bool {
-    if touches(change, &["verification/", "platform/", "registers/", ".cargo/"]) {
+    if touches(
+        change,
+        &["verification/", "platform/", "registers/", ".cargo/"],
+    ) {
         return true;
     }
     let model = &change.tree.model;

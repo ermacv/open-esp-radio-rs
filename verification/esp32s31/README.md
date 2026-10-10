@@ -49,11 +49,16 @@ production, probe, scenario or Blobray change it depends on qualification
 counts no evidence from it, and reports it stale, until it is computed again. See
 [vendor verification](../../docs/verification-and-qualification.md#vendor-verification-path).
 
+`LLD` below is the pinned Rust toolchain's linker, which
+`cargo verification evidence` picks by default; Ubuntu's LLD 18 fails these
+RV32 links:
+
 ```console
+LLD="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/gcc-ld/ld.lld"
 cargo verification scenario --chip esp32s31 all \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --bluetooth-production target/verification/esp32s31-bluetooth-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-bluetooth-elf \
-  --linker /usr/bin/ld.lld --output target/blobray-research/all \
+  --linker "$LLD" --output target/blobray-research/all \
   --index target/verification/esp32s31/evidence
 ```
 
@@ -72,7 +77,7 @@ packed-command responses; neither model claims physical timing or RF behavior.
 cargo verification probes --chip esp32s31
 cargo verification scenario --chip esp32s31 i2c \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
-  --linker /usr/bin/ld.lld --output target/blobray-phy-i2c
+  --linker "$LLD" --output target/blobray-phy-i2c
 ```
 
 Besides the command-memory, transport and call-boundary comparisons, the SDK
@@ -267,7 +272,7 @@ repository root; `xtask` builds the scenarios:
 ```console
 cargo verification scenario --chip esp32s31 gain \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
-  --linker /usr/bin/ld.lld \
+  --linker "$LLD" \
   --output target/blobray-research/gain
 ```
 
@@ -418,7 +423,7 @@ name them too.
 ```console
 cargo verification scenario --chip esp32s31 coex \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
-  --linker /usr/bin/ld.lld --output target/blobray-research/coex
+  --linker "$LLD" --output target/blobray-research/coex
 ```
 
 ## BLE PHY register initialization

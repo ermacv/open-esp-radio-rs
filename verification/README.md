@@ -64,7 +64,19 @@ follows from the checkout's sources and pins, so nothing tracks it.
 firmware inputs from their recipes first, and fails when a scenario does not
 match; without `--chip` it computes every verified chip's index, as the
 `vendor-evidence` check of the full tier runs it on `main`, nightly and for
-every change that reaches what the index is computed from. Qualification reads it from there; an index a source or reviewed
+every change that reaches what the index is computed from. `main` publishes
+its index as the CI artifact `vendor-evidence-<commit>`, and on a branch
+`--compare <directory>` sets the index main published nearest the merge
+base (the merge base's, or while its run has not published, the latest
+earlier commit's) beside the branch's: the check fails when a vendor root the base index
+claims is claimed by no shard of the branch's (a claim exists only with a
+MATCH), and reports every other difference (a root's production entry or
+scenario, cases, coverage, observation, state, untriaged locations) without
+failing, since refactors and analyzer improvements move those. A root
+stopped on purpose is retired with its reason in
+`verification/<chip>/decisions/retired.toml`; retiring one the index still
+claims is an error, and a retirement may go once `main` no longer claims
+its root. Qualification reads it from there; an index a source or reviewed
 coverage decision changed since holds no evidence, never partly trusted
 evidence, and its report names it stale until it is computed again. The [ESP32-S31 project](esp32s31/README.md)
 describes the scenarios, their inputs and their reviewed decisions; the

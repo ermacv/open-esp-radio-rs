@@ -202,7 +202,11 @@ The repository variable `CI_REUSE_MODE` controls push runs:
 | `full` | Execute every job without looking for previous results |
 
 Manual runs always use `full`. Nightly retains its independent complete
-checks. Review `observe` summaries and validate equal-tree pushes, GitHub
+checks. On `main` the jobs that publish what they compute for later
+branches (`registry::PUBLISHED_ON_MAIN`: `verification` and its vendor
+evidence index) always execute, so every `main` commit whose run starts
+publishes its artifact; a branch compares with the one nearest its merge
+base, since GitHub cancels a run queued behind a newer merge. Review `observe` summaries and validate equal-tree pushes, GitHub
 [reruns](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs)
 of all jobs, one job and failed jobs before enabling `reuse`. The gate
 must reject failures, cancellations and unexpected skips, and reuse chains

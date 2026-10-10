@@ -235,6 +235,134 @@ pub fn run(
     Ok(ExitCode::SUCCESS)
 }
 
+/// Compare `chip`'s computed index with `base`, the index `main` computed at
+/// the change's merge base: print what each scenario's shard says
+/// differently, then every vendor root the base claims and the index no
+/// longer does ([`crate::diff::lost_roots`]); whether any is lost. A root the
+/// chip's reviewed retirements name ([`Retired`]) is accepted, and one the
+/// index still claims is an error.
+pub fn compare(ctx: &Checkout, chip: &str, base: &Path) -> Result<bool> {
+    let directory = ctx.root.join(directory(&ctx.root, chip)?);
+    let mut names = store::names(base)?;
+    names.extend(store::names(&directory)?);
+    names.sort();
+    names.dedup();
+    for name in &names {
+        let (old, new) = (store::read(base, name), store::read(&directory, name));
+        let changed = match (&old, &new) {
+            (Some(old), Some(new)) => !crate::diff::differences(old, new).is_empty(),
+            _ => old.is_some() != new.is_some(),
+        };
+        if changed {
+            print!("{}", summary(name, old.as_ref(), new.as_ref()));
+        }
+    }
+    let (old, new) = (claimed_roots(base)?, claimed_roots(&directory)?);
+    let retired = Retired::load(&ctx.root, chip)?;
+    retired.check(chip, &new)?;
+    let lost = crate::diff::lost_roots(&old, &new, &retired.roots);
+    for (source, symbol) in &lost {
+        println!(
+            "{chip}: vendor root {source}::{symbol} is no longer claimed; if that is intended, retire it in {}",
+            retired.path
+        );
+    }
+    Ok(!lost.is_empty())
+}
+
+/// The vendor roots every shard of the index `directory` claims, read from
+/// each entry's `source` and `symbol` only: an index an earlier format wrote
+/// still names its roots, so a change of the shard format stays comparable.
+/// A file without them makes the comparison impossible rather than an index
+/// that claims nothing.
+fn claimed_roots(directory: &Path) -> Result<std::collections::BTreeSet<crate::diff::Root>> {
+    #[derive(serde::Deserialize)]
+    struct Shard {
+        entries: Vec<Entry>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Entry {
+        source: String,
+        symbol: String,
+    }
+    let mut roots = std::collections::BTreeSet::new();
+    for name in store::names(directory)? {
+        let path = store::path(directory, &name);
+        let shard: Shard = serde_json::from_slice(&std::fs::read(&path)?).map_err(|error| {
+            format!(
+                "{}: names no claimed vendor roots ({error}); the indexes cannot be compared",
+                path.display()
+            )
+        })?;
+        roots.extend(shard.entries.into_iter().map(|e| (e.source, e.symbol)));
+    }
+    Ok(roots)
+}
+
+/// A chip's reviewed retirements of vendor roots its index stopped claiming
+/// on purpose, each with its reason.
+#[derive(Debug)]
+struct Retired {
+    path: String,
+    roots: std::collections::BTreeSet<crate::diff::Root>,
+}
+
+impl Retired {
+    /// The retirements of `chip`'s project below `root`; none without the file.
+    fn load(root: &Path, chip: &str) -> Result<Self> {
+        let path = oer_vendor_artifacts::project::Project::new(root, chip)?.retired_roots();
+        match std::fs::read_to_string(root.join(&path)) {
+            Ok(text) => Self::parse(path, &text),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self {
+                path,
+                roots: Default::default(),
+            }),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn parse(path: String, text: &str) -> Result<Self> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct File {
+            #[serde(default)]
+            retired: Vec<Retirement>,
+        }
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Retirement {
+            source: String,
+            symbol: String,
+            reason: String,
+        }
+        let file: File = toml::from_str(text).map_err(|e| format!("{path}: {e}"))?;
+        let mut roots = std::collections::BTreeSet::new();
+        for retirement in file.retired {
+            if retirement.reason.trim().is_empty() {
+                return Err(format!("{path}: every retirement gives its reason").into());
+            }
+            roots.insert((retirement.source, retirement.symbol));
+        }
+        Ok(Self { path, roots })
+    }
+
+    /// An error when a retired root is still claimed: the retirement is wrong.
+    fn check(
+        &self,
+        chip: &str,
+        claimed: &std::collections::BTreeSet<crate::diff::Root>,
+    ) -> Result<()> {
+        match self.roots.iter().find(|root| claimed.contains(*root)) {
+            Some((source, symbol)) => Err(format!(
+                "{chip}: the retired vendor root {source}::{symbol} is still claimed; remove its retirement from {}",
+                self.path
+            )
+            .into()),
+            None => Ok(()),
+        }
+    }
+}
+
 /// Print the chip-wide untriaged vendor locations of `chip`'s derived
 /// evidence index, one per line.
 pub fn untriaged(ctx: &Checkout, chip: &str) -> Result<ExitCode> {
@@ -296,4 +424,52 @@ fn resolve(program: &Path) -> Result<PathBuf> {
         .map(|directory| directory.join(program))
         .find(|candidate| candidate.is_file())
         .ok_or_else(|| format!("{} is not on PATH", program.display()).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn retired(text: &str) -> Result<Retired> {
+        Retired::parse("decisions/retired.toml".into(), text)
+    }
+
+    #[test]
+    fn a_retirement_names_its_root_and_reason_and_no_more() {
+        let parsed =
+            retired("[[retired]]\nsource = \"archive\"\nsymbol = \"old\"\nreason = \"replaced\"\n")
+                .unwrap();
+        let root = ("archive".to_owned(), "old".to_owned());
+        assert!(parsed.roots.contains(&root));
+        assert!(retired("").unwrap().roots.is_empty());
+        let unreasoned = "[[retired]]\nsource = \"archive\"\nsymbol = \"old\"\nreason = \" \"\n";
+        assert!(
+            retired(unreasoned)
+                .unwrap_err()
+                .to_string()
+                .contains("reason")
+        );
+        let unknown = "[[retired]]\nsource = \"a\"\nsymbol = \"b\"\nreason = \"c\"\nwhy = 1\n";
+        assert!(retired(unknown).is_err());
+        // A retired root the index still claims is a wrong retirement.
+        let claimed = std::collections::BTreeSet::from([root]);
+        let error = parsed.check("chip", &claimed).unwrap_err().to_string();
+        assert!(error.contains("archive::old is still claimed"), "{error}");
+        assert!(parsed.check("chip", &Default::default()).is_ok());
+    }
+
+    #[test]
+    fn a_base_shard_of_another_format_still_names_its_roots() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(claimed_roots(directory.path()).unwrap().is_empty());
+        // An earlier format: another schema, a field this one no longer has.
+        let earlier = r#"{"schema": 1, "gone": true, "entries": [
+            {"source": "archive", "symbol": "set_chan", "gone": 0}]}"#;
+        std::fs::write(store::path(directory.path(), "radio"), earlier).unwrap();
+        let roots = claimed_roots(directory.path()).unwrap();
+        assert_eq!(roots, [("archive".into(), "set_chan".into())].into());
+        std::fs::write(store::path(directory.path(), "radio"), r#"{"schema": 1}"#).unwrap();
+        let error = claimed_roots(directory.path()).unwrap_err().to_string();
+        assert!(error.contains("cannot be compared"), "{error}");
+    }
 }

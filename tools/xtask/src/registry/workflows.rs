@@ -136,6 +136,11 @@ const fn tree_job(id: &'static str) -> JobSpec {
     JobSpec { id, programs: &[] }
 }
 
+/// The CI jobs whose run on `main` publishes what it computed for later
+/// branches, so `main` never reuses them: `verification` publishes the vendor
+/// evidence index a branch compares its own with.
+pub const PUBLISHED_ON_MAIN: &[&str] = &["verification"];
+
 const CI: WorkflowSpec = WorkflowSpec {
     workflow: Workflow::Ci,
     preparation: "prepare",

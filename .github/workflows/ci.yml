@@ -67,6 +67,7 @@ jobs:
       checks_architecture_clippy: ${{ steps.plan.outputs.checks_architecture_clippy }}
       run_host_lint: ${{ steps.plan.outputs.run_host_lint }}
       checks_host_lint: ${{ steps.plan.outputs.checks_host_lint }}
+      merge_base: ${{ steps.plan.outputs.merge_base }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -387,7 +388,11 @@ jobs:
       - run: cargo xtask --verbose check tier full --job example-link --checks "${{ needs.prepare.outputs.checks_example_link }}"
 
   # The provenance of every cited vendor function against the pinned vendor
-  # artifacts, which the check fetches.
+  # artifacts, which the check fetches, and the vendor evidence index of every
+  # verified chip (`vendor-evidence`): ESP-IDF prepared, the firmware inputs
+  # built from their recipes, the probes built and every vendor scenario and
+  # host stand run, compared on a branch with the index main computed at its
+  # merge base.
   verification:
     needs: prepare
     if: needs.prepare.outputs.run_verification == 'true'
@@ -407,13 +412,54 @@ jobs:
             target/*
             !target/vendor-firmware
             !target/blobray-research
+            !target/vendor-evidence-base
           key: verification-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'verification/*/artifacts.toml') }}
           restore-keys: verification-${{ runner.os }}-
       - name: Fetch every workspace
         run: cargo tidy fetch
       - id: environment
         run: cargo xtask ci check-environment --workflow ci --job verification
+      # A branch's `vendor-evidence` compares its index with the one `main`
+      # published nearest its merge base (registry::VENDOR_EVIDENCE_BASE):
+      # the index of the merge base or, while that run is queued, running or
+      # was cancelled, of the latest earlier `main` commit that has one, each
+      # of whose changes passed the same comparison. Nothing waits for main.
+      # Without an index among the 30 commits up to the merge base the
+      # comparison is skipped and says so. The directory never outlives one
+      # run, so no other base is compared.
+      - name: Fetch the merge base's vendor evidence index
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ needs.prepare.outputs.merge_base }}
+          CHECKS: ${{ needs.prepare.outputs.checks_verification }}
+        run: |
+          rm -rf target/vendor-evidence-base
+          [ -n "$BASE" ] || exit 0
+          case ",$CHECKS," in
+            ,all, | *,vendor-evidence,*) ;;
+            *) exit 0 ;;
+          esac
+          commits=$(gh api "repos/$GITHUB_REPOSITORY/commits?sha=$BASE&per_page=30" --jq '.[].sha')
+          for commit in $commits; do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=vendor-evidence-$commit" --jq '
+              [.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == "main")][0]
+              | .workflow_run.id // empty')
+            [ -n "$run" ] || continue
+            gh run download "$run" --name "vendor-evidence-$commit" --dir target/vendor-evidence-base
+            echo "the vendor evidence index main published at $commit is the comparison base of $BASE"
+            exit 0
+          done
+          echo "main published no vendor evidence index among the 30 commits up to $BASE: the comparison is skipped"
       - run: cargo xtask --verbose check tier full --job verification --checks "${{ needs.prepare.outputs.checks_verification }}"
+      # `main` publishes its index as the comparison base of later branches.
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: vendor-evidence-${{ github.sha }}
+          path: target/verification/*/evidence
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
 
   # Every planned job passed or has explicit successful input coverage.
   ci-ok:

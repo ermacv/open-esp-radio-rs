@@ -21,9 +21,10 @@ type Observer<'a> = dyn FnMut(Candidate<'_>, &mut dyn RunControl) -> Result<()> 
 /// Every candidate address the analyzed function `records` access: memory
 /// accesses with the bits a read-modify-write replaces, and masked reads.
 /// A resolved address outside every range of nonempty `ranges` is skipped.
-pub(crate) fn observe(
+pub(crate) fn observe<'m>(
     records: &[FunctionRecord],
-    facts: &Facts<'_, '_>,
+    facts: &Facts<'_, 'm>,
+    memory: &'m WorkingMemory,
     ranges: &[ImageRegion],
     c: &mut dyn RunControl,
     emit: &mut Observer<'_>,
@@ -59,7 +60,7 @@ pub(crate) fn observe(
             )
         })
     };
-    let mut evaluator = blobray_analysis::registers::StoredBitsEvaluator::new(facts);
+    let mut evaluator = blobray_analysis::registers::StoredBitsEvaluator::new(facts, memory);
     facts.accesses(c, &mut |access, c| {
         let mask = access.value.and_then(|v| {
             blobray_analysis::registers::write_mask(facts, access.address, access.width, v)

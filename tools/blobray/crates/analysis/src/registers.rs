@@ -199,20 +199,22 @@ fn shift_left(bits: [Bit<'_>; 32], by: u32) -> [Bit<'_>; 32] {
 /// Bit-level sources of stored values over one function's expressions.
 ///
 /// Expressions form a DAG whose shared nodes the analysis consolidates, so each
-/// node is evaluated once per function and memoized by its id; every newly
-/// evaluated node is charged one work unit, so the walk stays inside the
-/// caller's budget and deadline.
+/// node is evaluated once per function and memoized by its dense id; every
+/// newly evaluated node is charged one work unit and the memo reserves its
+/// capacity in working memory before it grows, so the walk stays inside the
+/// caller's work budget, deadline and memory.
 pub struct StoredBitsEvaluator<'f, 'a, 'm> {
     facts: &'f Facts<'a, 'm>,
-    /// Each expression's bits with the depth budget they were computed under.
-    memo: std::collections::BTreeMap<u32, (u8, [Bit<'a>; 32])>,
+    /// Each expression's bits with the depth budget they were computed
+    /// under, by expression id.
+    memo: AdmittedVec<'m, Option<(u8, [Bit<'a>; 32])>>,
 }
 
 impl<'f, 'a, 'm> StoredBitsEvaluator<'f, 'a, 'm> {
-    pub fn new(facts: &'f Facts<'a, 'm>) -> Self {
+    pub fn new(facts: &'f Facts<'a, 'm>, memory: &'m WorkingMemory) -> Self {
         Self {
             facts,
-            memo: std::collections::BTreeMap::new(),
+            memo: AdmittedVec::new(memory),
         }
     }
 
@@ -237,7 +239,7 @@ impl<'f, 'a, 'm> StoredBitsEvaluator<'f, 'a, 'm> {
         };
         // A result computed with at least this much depth is reused: it is
         // never less exact than a fresh, shallower evaluation.
-        if let Some((computed, bits)) = self.memo.get(&id)
+        if let Some(Some((computed, bits))) = self.memo.get(id as usize)
             && *computed >= depth
         {
             return Ok(*bits);
@@ -300,7 +302,10 @@ impl<'f, 'a, 'm> StoredBitsEvaluator<'f, 'a, 'm> {
             }
             Expression::CallResult { .. } => [Bit::Unknown; 32],
         };
-        self.memo.insert(id, (depth, result));
+        while self.memo.len() <= id as usize {
+            self.memo.push(None, c.position())?;
+        }
+        self.memo[id as usize] = Some((depth, result));
         Ok(result)
     }
 }
@@ -499,7 +504,7 @@ mod tests {
         let (field, fixed, product, sum, small) =
             (value(5), value(6), value(7), value(9), number(0x1ff));
         let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
-        let mut evaluator = StoredBitsEvaluator::new(&facts);
+        let mut evaluator = StoredBitsEvaluator::new(&facts, &memory);
         macro_rules! stored_bits {
             ($address:expr, $width:expr, $value:expr) => {
                 super::stored_bits(&mut evaluator, $address, $width, $value, &mut || Ok(()))
@@ -594,7 +599,7 @@ mod tests {
         };
         let visits = |records: &[FunctionRecord], top: &AbstractValue| {
             let facts = Facts::new(records, &memory, &mut || Ok(())).unwrap();
-            let mut evaluator = StoredBitsEvaluator::new(&facts);
+            let mut evaluator = StoredBitsEvaluator::new(&facts, &memory);
             let mut visits = 0_u32;
             let runs = stored_bits(&mut evaluator, &number(0x2010_702c), 4, top, &mut || {
                 visits += 1;
@@ -625,7 +630,7 @@ mod tests {
             "a chain deeper than the bound stops there"
         );
         let facts = Facts::new(&long, &memory, &mut || Ok(())).unwrap();
-        let mut evaluator = StoredBitsEvaluator::new(&facts);
+        let mut evaluator = StoredBitsEvaluator::new(&facts, &memory);
         let mut exhausted = || Err(Error::new(ErrorCode::ResourceLimited, "work budget"));
         assert!(
             stored_bits(
@@ -638,5 +643,32 @@ mod tests {
             .is_err(),
             "the walk stops when the budget does"
         );
+    }
+    #[test]
+    fn the_memo_reserves_working_memory_before_it_grows() {
+        let records = records(vec![
+            Expression::EntryRegister { register: 10 },
+            Expression::Integer {
+                op: IntegerOp::Add,
+                left: value(0),
+                right: value(0),
+            },
+        ]);
+        let top = value(1);
+        // Enough for the expression index, not for eight memo entries of
+        // thirty-two bit sources each.
+        let memo_bytes = 8 * std::mem::size_of::<Option<(u8, [Bit<'_>; 32])>>() as u64;
+        let memory = WorkingMemory::new(memo_bytes - 1).unwrap();
+        let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
+        let mut evaluator = StoredBitsEvaluator::new(&facts, &memory);
+        let error = stored_bits(
+            &mut evaluator,
+            &number(0x2010_702c),
+            4,
+            &top,
+            &mut || Ok(()),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
     }
 }

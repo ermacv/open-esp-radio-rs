@@ -370,22 +370,29 @@ pub fn register_accesses(
                 summary.partial_functions += u64::from(!analyzed.complete());
                 c.phase(RunPhase::AnalyzeValues)?;
                 let facts = Facts::new(analyzed.records, memory, c)?;
-                crate::registers::observe(analyzed.records, &facts, ranges, c, &mut |o, c| {
-                    summary.observations += 1;
-                    summary.unresolved_addresses += u64::from(o.address.is_none());
-                    emit(
-                        &RegisterAccess::Observation {
-                            function: analyzed.function.clone(),
-                            record: o.record,
-                            fact: Box::new(o.fact.clone()),
-                            address: o.address,
-                            alternative: o.alternative,
-                            mask: o.mask,
-                            stored: o.stored,
-                        },
-                        c,
-                    )
-                })
+                crate::registers::observe(
+                    analyzed.records,
+                    &facts,
+                    memory,
+                    ranges,
+                    c,
+                    &mut |o, c| {
+                        summary.observations += 1;
+                        summary.unresolved_addresses += u64::from(o.address.is_none());
+                        emit(
+                            &RegisterAccess::Observation {
+                                function: analyzed.function.clone(),
+                                record: o.record,
+                                fact: Box::new(o.fact.clone()),
+                                address: o.address,
+                                alternative: o.alternative,
+                                mask: o.mask,
+                                stored: o.stored,
+                            },
+                            c,
+                        )
+                    },
+                )
             }
             LibraryOutcome::Blocked { function, error } => {
                 summary.blocked_functions += 1;

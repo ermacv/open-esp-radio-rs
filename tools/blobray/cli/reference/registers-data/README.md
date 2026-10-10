@@ -91,8 +91,10 @@ for the stored word itself, the bits a read-modify-write keeps) or unknown.
 Each bit follows the analysis' expressions through bitwise logic, constant
 shifts and additions that cannot carry; anything else is unknown, never
 guessed. Each expression node is evaluated once per function, memoized
-and charged one unit of the work budget, so shared subexpressions cost no
-repeated walk and the deadline and `--max-work-units` bound the evaluation. The human groups print them high bits first, for example
+in working memory reserved before it grows and charged one unit of the work
+budget, so shared subexpressions cost no repeated walk and
+`--working-memory-mib`, `--max-work-units` and the deadline bound the
+evaluation. The human groups print them high bits first, for example
 `[31:25]=kept [24:18]=arg0[6:0] [17:0]=kept`, and another word's bits with
 their load width (`load 1B 0xa[7:0]`); entries with different sources stay
 apart, keyed by the sources themselves.

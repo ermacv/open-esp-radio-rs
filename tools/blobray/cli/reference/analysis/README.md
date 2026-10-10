@@ -33,7 +33,14 @@ Each `--input ROLE=PATH` is an archive or ELF; repeat `--function NAME` for
 several functions, and every function of that name in any input is reported.
 `--format human` prints each function's record count and completeness, then
 its instruction listing: offset, decoded instruction and the symbols its
-relocations name (`name+addend`). The JSON document is
+relocations name (`name+addend`). After `#` each line shows the exact values
+the analysis derived at that instruction, in hexadecimal: every register write
+other than `zero`, `ra` and `sp` as `reg=value`, and every memory access outside the
+entry stack frame as `[address]`, a store with `<- value`. A finite alternative
+set is `one-of{a | b}`, a symbol `name+addend`, a section-relative value
+`section<index>+offset` and an entry-stack value `sp-offset`. Unknown values and
+expressions are omitted, so a missing annotation is no claim either way; the
+decoded text itself keeps the disassembler's spelling. The JSON document is
 `{"schema":2,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,

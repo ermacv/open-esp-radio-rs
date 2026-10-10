@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use oer_riscv_model::{
-    ArtifactId, DecodedOp, FunctionRecord, FunctionRelocation, InstructionFlow, ObjectId,
-    ObjectLocation, ReferenceKind, ReferenceTarget, SymbolDefinition, SymbolId, SymbolTableKind,
+    AbstractValue, ArtifactId, DecodedOp, FunctionRecord, FunctionRelocation, InstructionFlow,
+    MemoryKind, ObjectId, ObjectLocation, ReferenceKind, ReferenceTarget, SymbolDefinition,
+    SymbolId, SymbolTableKind, ValueAlternative, ValueAlternatives,
 };
 
 use super::{SymbolReference, listing, references_to};
@@ -88,4 +89,113 @@ fn references_to_select_the_named_targets_with_their_kind() {
         }]
     );
     assert!(references_to(&records(), &["pm_start".into()]).is_empty());
+}
+
+fn value(offset: u64, register: u8, value: AbstractValue) -> FunctionRecord {
+    FunctionRecord::Value {
+        offset,
+        register,
+        value,
+        relocation: None,
+    }
+}
+
+fn access(
+    offset: u64,
+    access: MemoryKind,
+    address: AbstractValue,
+    stored: Option<AbstractValue>,
+) -> FunctionRecord {
+    FunctionRecord::MemoryAccess {
+        offset,
+        access,
+        width: 4,
+        address,
+        value: stored,
+        relocation: None,
+    }
+}
+
+#[test]
+fn the_listing_annotates_exact_values_and_addresses_in_hexadecimal() {
+    let constant = |value| AbstractValue::Constant { value };
+    let records = vec![
+        instruction(0, "lui a4, 131337"),
+        value(0, 14, constant(0x2010_9000)),
+        instruction(4, "lw a5, 4(a4)"),
+        access(4, MemoryKind::Load, constant(0x2010_9004), None),
+        value(4, 15, AbstractValue::Unknown),
+        instruction(8, "sw a3, 24(a4)"),
+        access(
+            8,
+            MemoryKind::Store,
+            constant(0x2010_9018),
+            Some(constant(0x1b)),
+        ),
+        instruction(12, "sw ra, 60(sp)"),
+        access(
+            12,
+            MemoryKind::Store,
+            AbstractValue::EntryStack { offset: -4 },
+            None,
+        ),
+        instruction(14, "ret"),
+        value(14, 0, constant(0)),
+        instruction(16, "addi sp, sp, -64"),
+        value(16, 2, AbstractValue::EntryStack { offset: -64 }),
+        instruction(20, "addi a0, sp, 12"),
+        value(20, 10, AbstractValue::EntryStack { offset: -52 }),
+        instruction(24, "mv a1, a2"),
+        value(
+            24,
+            11,
+            AbstractValue::Alternatives {
+                values: ValueAlternatives::new(vec![
+                    ValueAlternative::Constant { value: 2 },
+                    ValueAlternative::Constant { value: 0x40 },
+                ])
+                .unwrap(),
+            },
+        ),
+    ];
+    assert_eq!(
+        listing(&records),
+        [
+            format!("{:6x}  {:<40}  # a4=0x20109000", 0, "lui a4, 131337"),
+            format!("{:6x}  {:<40}  # [0x20109004]", 4, "lw a5, 4(a4)"),
+            format!("{:6x}  {:<40}  # [0x20109018] <- 0x1b", 8, "sw a3, 24(a4)"),
+            format!("{:6x}  sw ra, 60(sp)", 12),
+            format!("{:6x}  ret", 14),
+            format!("{:6x}  addi sp, sp, -64", 16),
+            format!("{:6x}  {:<40}  # a0=sp-0x34", 20, "addi a0, sp, 12"),
+            format!("{:6x}  {:<40}  # a1=one-of{{0x2 | 0x40}}", 24, "mv a1, a2"),
+        ]
+    );
+}
+
+#[test]
+fn a_symbol_value_is_named_with_its_addend() {
+    let symbol = match reference(0, "phy_param", 0, ReferenceKind::Address) {
+        FunctionRecord::Reference { target, .. } => target.symbol.clone(),
+        _ => unreachable!(),
+    };
+    let records = vec![
+        instruction(0, "lui s0, 0"),
+        reference(0, "phy_param", 0, ReferenceKind::Address),
+        value(
+            0,
+            8,
+            AbstractValue::Symbol {
+                symbol,
+                addend: 239,
+            },
+        ),
+    ];
+    assert_eq!(
+        listing(&records),
+        [format!(
+            "{:6x}  {:<40} phy_param  # s0=phy_param+0xef",
+            0, "lui s0, 0"
+        )]
+    );
 }

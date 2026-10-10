@@ -31,7 +31,7 @@ use crate::{Result, registry::Tier};
 use oer_process::Checkout;
 
 /// Files every build of every workspace reads.
-const GLOBAL: &[&str] = &[
+pub const GLOBAL: &[&str] = &[
     "rust-toolchain.toml",
     ".cargo/config.toml",
     "clippy.toml",
@@ -158,7 +158,9 @@ pub fn select(tree: &Tree, changed: &[String]) -> Selection {
     for path in changed {
         let name = path.rsplit('/').next().unwrap_or(path);
         let extension = name.rsplit_once('.').map_or("", |(_, extension)| extension);
-        if extension == "md" || path.starts_with("qualification/") {
+        // Markdown and every input of the mdBook guides under `docs/`
+        // (`book.toml`, theme and scripts).
+        if extension == "md" || path.starts_with("qualification/") || path.starts_with("docs/") {
             selection.docs = true;
         }
         if extension == "rs" || path.starts_with("qualification/catalog/") {
@@ -419,16 +421,20 @@ pub fn merge_base(ctx: &Checkout, base: &str) -> Result<String> {
     oer_process::git::text(&ctx.root, ["merge-base", "HEAD", base])
 }
 
-/// The files `HEAD` changed against `merge_base`.
+/// The files `HEAD` changed against `merge_base`; a renamed file counts at
+/// both paths, since whatever read the old one is affected too.
 pub fn committed(ctx: &Checkout, merge_base: &str) -> Result<Vec<String>> {
-    oer_process::git::lines(&ctx.root, ["diff", "--name-only", merge_base, "HEAD"])
+    oer_process::git::lines(
+        &ctx.root,
+        ["diff", "--name-only", "--no-renames", merge_base, "HEAD"],
+    )
 }
 
 /// The files of the working tree that differ from `HEAD`: modified, staged
 /// and untracked but not ignored.
 pub fn uncommitted(ctx: &Checkout) -> Result<Vec<String>> {
     let mut files: BTreeSet<String> =
-        oer_process::git::lines(&ctx.root, ["diff", "--name-only", "HEAD"])?
+        oer_process::git::lines(&ctx.root, ["diff", "--name-only", "--no-renames", "HEAD"])?
             .into_iter()
             .collect();
     files.extend(oer_process::git::lines(

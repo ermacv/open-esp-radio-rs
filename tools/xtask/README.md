@@ -162,7 +162,10 @@ only runs over the whole tree (`registry::of_job_for`), passed as
 `check tier full --job JOB --checks …`; a job the change reaches no check of
 is skipped. `verify` accepts such a skip only in a change-scoped plan, and a
 partial run proves no reusable coverage. `main` and manual runs are never
-scoped, and when the change cannot be told every check runs. A check whose
+scoped, nor is a change to `.github/workflows/` or the toolchain and lint
+configuration every check runs under, and when the change cannot be told
+every check runs. A renamed file counts at both paths. Everything under
+`docs/` selects the documentation checks and guides. A check whose
 trigger misses an input it reads is therefore caught by `main`'s run after
 the merge, not on the branch. The documentation workflow builds the guides
 only when its `docs` check runs and assembles the site only for a manual

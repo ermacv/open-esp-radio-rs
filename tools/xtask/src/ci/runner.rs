@@ -65,6 +65,16 @@ const MAIN: &str = "refs/heads/main";
 /// The checks of each job of `workflow` that the change from the merge base
 /// of `commit` with `main` to the checkout reaches. The checkout is shallow,
 /// so GitHub names the merge base and only that commit is fetched.
+/// A changed file no check's trigger can answer for: the workflows, whose
+/// job setup (caches, tools, versions) every check runs under, and the
+/// toolchain and lint configuration every build reads. A change to one runs
+/// every check.
+fn unscopable(files: &[String]) -> Option<&String> {
+    files.iter().find(|file| {
+        file.starts_with(".github/workflows/") || crate::gate::GLOBAL.contains(&file.as_str())
+    })
+}
+
 fn change_scope(root: &Path, api: &GitHub, workflow: Workflow) -> Result<Scope> {
     #[derive(serde::Deserialize)]
     struct Commit {
@@ -91,6 +101,9 @@ fn change_scope(root: &Path, api: &GitHub, workflow: Workflow) -> Result<Scope> 
     )?;
     let ctx = oer_process::Checkout::new(root)?;
     let files = crate::gate::committed(&ctx, &base)?;
+    if let Some(file) = unscopable(&files) {
+        return Err(format!("{file} changes how CI itself runs").into());
+    }
     let change = crate::gate::Change::of(&ctx, files, &base, Some("HEAD"), registry::Tier::Full)?;
     let checks = workflow
         .spec()
@@ -107,6 +120,26 @@ fn change_scope(root: &Path, api: &GitHub, workflow: Workflow) -> Result<Scope> 
     Ok(Scope { base, checks })
 }
 
+/// What a job does, as the run summary says it: which checks it runs when
+/// a change selects some, and whether it could have reused coverage.
+fn decision(action: &Action, mode: Mode) -> String {
+    if action.unaffected() {
+        return "skip (change reaches no check)".to_owned();
+    }
+    if !action.run {
+        return "reuse".to_owned();
+    }
+    let run = match &action.checks {
+        Some(checks) => format!("run {}", checks.join(", ")),
+        None => "run".to_owned(),
+    };
+    if action.source.is_some() && mode == Mode::Observe {
+        format!("{run} (would reuse)")
+    } else {
+        run
+    }
+}
+
 fn summary(plan: &Plan, repository: &str) -> String {
     let mut text = format!(
         "## CI coverage\n\nMode: `{:?}`; tree: `{}`; {}.\n\n| Job | Action | Successful verification |\n| --- | --- | --- |\n",
@@ -118,15 +151,7 @@ fn summary(plan: &Plan, repository: &str) -> String {
         )
     );
     for (job, action) in &plan.actions {
-        let decision = match (action.run, action.source.is_some(), plan.mode) {
-            _ if action.unaffected() => "skip (change reaches no check)".to_owned(),
-            (true, true, Mode::Observe) => "run (would reuse)".to_owned(),
-            (true, _, _) => match &action.checks {
-                Some(checks) => format!("run {}", checks.join(", ")),
-                None => "run".to_owned(),
-            },
-            _ => "reuse".to_owned(),
-        };
+        let decision = decision(action, plan.mode);
         let source = action.source.as_ref().map_or_else(
             || "none".to_owned(),
             |source| {
@@ -291,6 +316,73 @@ pub fn check_environment(root: &Path, workflow: Workflow, job: &str) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_change_to_ci_or_the_toolchain_runs_every_check() {
+        let files = |paths: &[&str]| {
+            paths
+                .iter()
+                .map(|path| (*path).to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert!(unscopable(&files(&["tools/xtask/src/ci.rs", "docs/index.md"])).is_none());
+        for path in [
+            ".github/workflows/ci.yml",
+            "rust-toolchain.toml",
+            "clippy.toml",
+        ] {
+            assert_eq!(
+                unscopable(&files(&["hil/a.rs", path])).map(String::as_str),
+                Some(path)
+            );
+        }
+    }
+
+    #[test]
+    fn the_summary_names_the_checks_a_change_runs_in_every_mode() {
+        let record = Record {
+            inputs: Job {
+                key: "k".into(),
+                checks: vec!["a".into(), "b".into()],
+                inputs: 1,
+            },
+            verified_at: 1,
+            run_id: 1,
+        };
+        let action = |source: Option<Record>, checks: Option<Vec<String>>| Action {
+            run: true,
+            source,
+            checks,
+        };
+        let subset = Some(vec!["b".to_owned()]);
+        assert_eq!(
+            decision(&action(None, subset.clone()), Mode::Reuse),
+            "run b"
+        );
+        assert_eq!(
+            decision(&action(Some(record.clone()), subset), Mode::Observe),
+            "run b (would reuse)"
+        );
+        assert_eq!(
+            decision(&action(Some(record.clone()), None), Mode::Observe),
+            "run (would reuse)"
+        );
+        let skipped = Action {
+            run: false,
+            source: None,
+            checks: Some(Vec::new()),
+        };
+        assert_eq!(
+            decision(&skipped, Mode::Observe),
+            "skip (change reaches no check)"
+        );
+        let reused = Action {
+            run: false,
+            source: Some(record),
+            checks: None,
+        };
+        assert_eq!(decision(&reused, Mode::Reuse), "reuse");
+    }
 
     #[test]
     fn only_explicit_job_outputs_qualify_new_coverage() {

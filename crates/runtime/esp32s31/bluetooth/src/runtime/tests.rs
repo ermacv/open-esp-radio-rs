@@ -134,7 +134,7 @@ fn received(id: oer_bluetooth_radio::EventId, byte: u8) -> crate::BluetoothOutco
         pdu: oer_bluetooth_radio::ReceivedPdu {
             pdu: &[0x02, 1, byte],
             rssi_dbm: -40,
-            captured_at: Ok(None),
+            captured_at: None,
         },
     })
     .expect("the PDU fits")

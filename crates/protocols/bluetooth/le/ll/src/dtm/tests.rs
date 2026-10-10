@@ -322,8 +322,7 @@ fn failed_reservation_changes_neither_receiver_recurrence_nor_history() {
 }
 
 #[test]
-fn timing_failure_accounts_actual_execution_and_allows_the_next_test_event() {
-    use oer_bluetooth_radio::{CaptureError, TimingError};
+fn an_aborted_event_is_counted_apart_and_the_next_test_event_follows() {
     let mut session = DtmSession::new(TxPower::from_dbm(0), 1);
     session
         .start(DtmTest::Receive {
@@ -339,16 +338,9 @@ fn timing_failure_accounts_actual_execution_and_allows_the_next_test_event() {
     else {
         panic!("receiver event")
     };
-    ended(
-        &mut session,
-        first.id,
-        EventResult::TimingFailed {
-            cause: CaptureError::PacketStartCorrection(TimingError::BeforeEpoch),
-            executed: true,
-            anchor: Ok(None),
-        },
-    );
-    assert_eq!(session.counters.executed, 1);
+    ended(&mut session, first.id, EventResult::Aborted);
+    assert_eq!(session.counters.aborted, 1);
+    assert_eq!(session.counters.executed, 0);
     assert_eq!(session.counters.not_executed, 0);
     assert!(
         session

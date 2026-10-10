@@ -9,10 +9,10 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingChannels,
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
-    AdvertisingSetId, CoexistenceLevel, EventId, EventResult, LeInstant, LePhy, LeWindow,
-    LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, RadioDuration, RadioOutcome,
-    RadioRequest, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScannerConfiguration,
-    ScannerId, TestChannel, TestPhy, TestReceive, TxPower,
+    AdvertisingSetId, ClockError, CoexistenceLevel, EventId, EventResult, LeInstant, LePhy,
+    LeWindow, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, RadioDuration,
+    RadioOutcome, RadioRequest, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType,
+    ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -302,11 +302,19 @@ fn configure() -> RadioRequest<'static> {
     })
 }
 
+/// The radio's first instant: its epoch starts 2^32 us above zero.
+const EPOCH_START: u64 = 1 << 32;
+
+/// The instant `micros` after the radio epoch's start.
+fn at(micros: u64) -> LeInstant {
+    LeInstant::from_micros(EPOCH_START + micros)
+}
+
 fn advertise(id: u32, anchor: u64) -> RadioRequest<'static> {
     RadioRequest::Advertise(AdvertisingEvent {
         id: EventId::new(id),
         set: AdvertisingSetId::new(0),
-        anchor: LeInstant::from_micros(anchor),
+        anchor: at(anchor),
         channels: AdvertisingChannels::single(AdvertisingChannel::Channel37),
         channel_spacing: RadioDuration::from_micros(1_000),
         coexistence: CoexistenceLevel::Baseline,
@@ -505,13 +513,54 @@ fn installation_and_every_accepted_list_change_publish_the_device_table() {
 }
 
 #[test]
+fn an_exhausted_epoch_admits_nothing_and_still_settles_admitted_work() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    assert_eq!(block_on(runtime.submit_request(configure())), Ok(Ok(())));
+    assert_eq!(
+        block_on(runtime.submit_request(advertise(1, 10_000))),
+        Ok(Ok(()))
+    );
+    block_on(runtime.with_radio(|radio| radio.reach_epoch_end_for_validation()));
+    model.0.borrow_mut().time = 2_000;
+    assert_eq!(
+        block_on(runtime.read_now()),
+        Ok(Err(ClockError::EpochExhausted))
+    );
+    // It stays exhausted, whatever the next sample.
+    model.0.borrow_mut().time = 0;
+    assert_eq!(
+        block_on(runtime.read_now()),
+        Ok(Err(ClockError::EpochExhausted))
+    );
+    assert_eq!(
+        block_on(runtime.submit_request(advertise(2, 20_000))),
+        Ok(Err(RequestError::EpochExhausted))
+    );
+    // Disable still settles the admitted event.
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Disable)),
+        Ok(Ok(()))
+    );
+    settle(&runtime);
+    assert!(matches!(
+        taken(&runtime),
+        Some(BluetoothOutcome::EventEnded { id, .. }) if id == EventId::new(1)
+    ));
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Disabled))
+    );
+}
+
+#[test]
 fn the_clock_reports_a_fresh_radio_time() {
     let model = Model::default();
     let runtime = installed(&model);
     model.0.borrow_mut().time = 2_000;
     let now = block_on(runtime.read_now()).unwrap().unwrap();
     // Two raw ticks per microsecond.
-    assert_eq!(now, LeInstant::from_micros(1_000));
+    assert_eq!(now, at(1_000));
     // The timing is the runtime's own, read before any install.
     assert_eq!(
         new_runtime().capabilities().timing.admission_guard,
@@ -901,7 +950,7 @@ fn an_oversized_pdu_becomes_a_memory_fault() {
         pdu: ReceivedPdu {
             pdu: &pdu,
             rssi_dbm: -40,
-            captured_at: Ok(None),
+            captured_at: None,
         },
     });
     // The runtime's sink takes it as a memory-inconsistency fault.
@@ -911,7 +960,7 @@ fn an_oversized_pdu_becomes_a_memory_fault() {
         pdu: ReceivedPdu {
             pdu: &NONCONN,
             rssi_dbm: -40,
-            captured_at: Ok(None),
+            captured_at: None,
         },
     })
     .unwrap();
@@ -1028,11 +1077,7 @@ fn test_receive(id: u32) -> RadioRequest<'static> {
         id: EventId::new(id),
         channel: TestChannel::new(19).unwrap(),
         phy: TestPhy::Le1M,
-        window: LeWindow::new(
-            LeInstant::from_micros(10_000),
-            RadioDuration::from_micros(1_000),
-        )
-        .unwrap(),
+        window: LeWindow::new(at(10_000), RadioDuration::from_micros(1_000)).unwrap(),
         recurring: false,
         tx_power: TxPower::from_dbm(0),
     })
@@ -1093,15 +1138,14 @@ fn a_fault_restores_the_route_of_an_open_test() {
 }
 
 #[test]
-fn owned_outcomes_retain_failed_timing_and_correct_pdu_contents() {
-    use oer_bluetooth_radio::{CaptureError, TimingError};
-    let cause = CaptureError::PacketStartCorrection(TimingError::BeforeEpoch);
+fn owned_outcomes_keep_the_pdu_its_stamp_and_an_aborted_end() {
+    let captured_at = Some(at(0));
     let received = BluetoothOutcome::copy(RadioOutcome::Received {
         id: EventId::new(3),
         pdu: ReceivedPdu {
             pdu: &NONCONN,
             rssi_dbm: -40,
-            captured_at: Err(cause),
+            captured_at,
         },
     })
     .unwrap();
@@ -1109,23 +1153,17 @@ fn owned_outcomes_retain_failed_timing_and_correct_pdu_contents() {
         panic!("PDU is retained")
     };
     assert_eq!(pdu.pdu(), &NONCONN);
-    assert_eq!(pdu.captured_at, Err(cause));
-    assert_eq!(pdu.portable().captured_at, Err(cause));
-    let result = EventResult::TimingFailed {
-        cause,
-        executed: true,
-        anchor: Err(cause),
-    };
+    assert_eq!(pdu.portable().captured_at, captured_at);
     let ended = BluetoothOutcome::copy(RadioOutcome::EventEnded {
         id: EventId::new(3),
-        result,
+        result: EventResult::Aborted,
     })
     .unwrap();
     assert_eq!(
         ended.portable(),
         RadioOutcome::EventEnded {
             id: EventId::new(3),
-            result
+            result: EventResult::Aborted
         }
     );
 }

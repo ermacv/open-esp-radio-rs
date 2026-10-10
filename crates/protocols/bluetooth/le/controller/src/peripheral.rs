@@ -704,10 +704,6 @@ impl Peripheral {
                 let activity = match result {
                     EventResult::Executed {
                         anchor: Some(anchor),
-                    }
-                    | EventResult::TimingFailed {
-                        anchor: Ok(Some(anchor)),
-                        ..
                     } => {
                         connection.phase = timing::Phase {
                             anchor,
@@ -717,17 +713,10 @@ impl Peripheral {
                         connection.last_activity = Some(anchor);
                         LePeripheralConnectionEventPeerActivity::Observed
                     }
-                    // Hardware captured a peer packet, but its timestamp is
-                    // invalid. Account peer activity without inventing a time
-                    // reference or renewing timestamp-based supervision.
-                    EventResult::TimingFailed { anchor: Err(_), .. } => {
-                        LePeripheralConnectionEventPeerActivity::Observed
-                    }
+                    // An aborted event proves no peer packet.
                     EventResult::Executed { anchor: None }
                     | EventResult::NotExecuted
-                    | EventResult::TimingFailed {
-                        anchor: Ok(None), ..
-                    } => LePeripheralConnectionEventPeerActivity::Missed,
+                    | EventResult::Aborted => LePeripheralConnectionEventPeerActivity::Missed,
                 };
                 connection.link = Link::Completed(in_flight.complete(activity));
                 connection.after_event(&mut self.events);

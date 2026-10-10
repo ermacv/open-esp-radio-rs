@@ -29,8 +29,8 @@ use oer_esp32s31_bluetooth::{
     },
 };
 use oer_esp32s31_bluetooth_radio::{
-    BluetoothRadio, BluetoothRadioMemory, BluetoothRadioSink, CoexistenceProfile, RadioFault,
-    RadioStep,
+    BluetoothRadio, BluetoothRadioMemory, BluetoothRadioSink, CoexistenceProfile, EpochExhausted,
+    RadioFault, RadioStep,
 };
 use oer_esp32s31_hal::{
     bluetooth::{
@@ -556,6 +556,9 @@ pub struct BluetoothRuntime<
     activity: Signal<M, RadioActivity>,
     /// Whether another radio shares the antenna.
     shared: AtomicBool,
+    /// Whether a controller-time sample passed the last instant of the radio
+    /// epoch; a new install clears it.
+    exhausted: AtomicBool,
     /// The image's monotonic time the runner's rechecks wait on.
     timer: T,
 }
@@ -607,6 +610,7 @@ impl<
             work: Signal::new(),
             activity: Signal::new(),
             shared: AtomicBool::new(false),
+            exhausted: AtomicBool::new(false),
         }
     }
 
@@ -687,9 +691,46 @@ impl<
         drop(installed);
         self.outcomes.reset();
         self.admission.signal(());
+        self.exhausted.store(false, Ordering::Release);
         self.fault.lock(|fault| fault.set(None));
         self.work.signal(());
         Ok((BluetoothPort::new(self), BluetoothControl::new(self)))
+    }
+
+    /// Advance the radio time with `sample`, remembering an exhausted radio
+    /// epoch: from then on the clock reports it and nothing is admitted.
+    fn observe(
+        &self,
+        radio: &mut Radio<
+            LEGACY,
+            CONNECTABLE,
+            SCANNERS,
+            CONNECTIONS,
+            SCAN_PACKETS,
+            RX_PACKETS,
+            ITEMS,
+        >,
+        sample: &ControllerTimeSample,
+    ) -> Result<(), EpochExhausted> {
+        if self.exhausted.load(Ordering::Acquire) {
+            return Err(EpochExhausted);
+        }
+        let observed = radio.observe_time(sample);
+        if observed.is_err() {
+            self.exhausted.store(true, Ordering::Release);
+        }
+        observed
+    }
+
+    /// Run `entry` on the installed radio; for host tests.
+    #[cfg(test)]
+    pub(crate) async fn with_radio<R>(
+        &self,
+        entry: impl FnOnce(
+            &mut Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
+        ) -> R,
+    ) -> R {
+        entry(&mut self.installed.lock().await.as_mut().expect(INSTALLED).radio)
     }
 
     /// The port's [`Poisoned`] once the radio or the runner faulted.
@@ -715,7 +756,9 @@ impl<
         let Ok(sample) = sample_time(&self.timer, &mut installed.hardware).await else {
             return Ok(Err(RequestError::ClockUnavailable));
         };
-        installed.radio.observe_time(&sample);
+        if self.observe(&mut installed.radio, &sample).is_err() {
+            return Ok(Err(RequestError::EpochExhausted));
+        }
         // An event reserves its terminal outcomes; a connection event also
         // every data PDU its receive chain holds, which the hardware
         // acknowledges to the peer.
@@ -763,7 +806,9 @@ impl<
         let Ok(sample) = sample_time(&self.timer, &mut installed.hardware).await else {
             return Ok(Err(ClockError::Unavailable));
         };
-        installed.radio.observe_time(&sample);
+        if self.observe(&mut installed.radio, &sample).is_err() {
+            return Ok(Err(ClockError::EpochExhausted));
+        }
         Ok(Ok(installed.radio.now()))
     }
 
@@ -956,7 +1001,11 @@ impl<
                 };
                 if !installed.faulted {
                     match sample_time(&self.timer, &mut installed.hardware).await {
-                        Ok(sample) => installed.radio.observe_time(&sample),
+                        // Exhaustion admits nothing new; the runner still
+                        // settles the admitted work.
+                        Ok(sample) => {
+                            let _exhausted = self.observe(&mut installed.radio, &sample);
+                        }
                         Err(BluetoothTimeError::Deadline) => {
                             let fault = BluetoothRuntimeFault::Time(BluetoothTimeError::Deadline);
                             installed.fault();
@@ -1193,6 +1242,9 @@ impl<
         let sample = sample_time(&self.timer, &mut installed.hardware)
             .await
             .map_err(BluetoothRuntimeFault::Time)?;
+        // Exhaustion admits nothing new; the scheduler still resumes to
+        // settle the admitted work.
+        let _exhausted = self.observe(&mut installed.radio, &sample);
         installed
             .radio
             .resume(&sample)

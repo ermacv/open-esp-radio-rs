@@ -5,13 +5,12 @@ use core::convert::Infallible;
 use crate::coexistence::{self, CoexistenceProfile};
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingConfiguration,
-    AdvertisingEvent, AdvertisingReception, AdvertisingSetId, CancelError, CaptureError,
-    ConnectionAllowances, ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming,
-    ConnectionId, DataPduKind, EventId, EventResult, LeConnectionCapabilities, LeInstant, LePhys,
-    LeRadioCapabilities, LeWindow, LinkAcknowledgement, RadioDuration, RadioOutcome, RadioRequest,
-    RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
-    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TimingError,
-    TxPower,
+    AdvertisingEvent, AdvertisingReception, AdvertisingSetId, CancelError, ConnectionAllowances,
+    ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
+    EventId, EventResult, LeConnectionCapabilities, LeInstant, LePhys, LeRadioCapabilities,
+    LeWindow, LinkAcknowledgement, RadioDuration, RadioOutcome, RadioRequest, RadioTiming,
+    ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
+    ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
@@ -92,6 +91,10 @@ pub trait BluetoothRadioSink {
     /// Controller reset: its port is poisoned with this cause.
     fn fault(&mut self, fault: RadioFault);
 }
+
+/// The radio epoch has no later instant.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct EpochExhausted;
 
 /// Why the radio stopped scheduling: the cause its port is poisoned with.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -245,20 +248,53 @@ const fn connection_allowances(
     }
 }
 
+/// Portable microseconds the radio epoch keeps free at each end: one full
+/// range of the 32-bit controller-time projection.
+///
+/// A capture lies within the signed half range of the 2^31-microsecond raw
+/// counter around the latest controller-time sample, so with this margin
+/// below the first instant and above the last one every capture and its
+/// packet-start correction are representable.
+/// Being a multiple of 2^32, it keeps an instant's low word equal to the
+/// controller microseconds it projects.
+const EPOCH_MARGIN: u64 = 1 << 32;
+
+/// The last instant of the radio epoch.
+const EPOCH_END: u64 = u64::MAX - EPOCH_MARGIN;
+
 /// The monotonic radio epoch over the controller scheduler epoch.
+///
+/// Invariant: `EPOCH_MARGIN <= now <= EPOCH_END`. The epoch starts
+/// [`EPOCH_MARGIN`] above zero, and an observation that would pass
+/// [`EPOCH_END`] is refused as exhausted.
 struct RadioClock {
     epoch: ControllerSchedulerEpoch,
     now: u64,
 }
 
 impl RadioClock {
-    fn observe(&mut self, sample: &ControllerTimeSample) {
+    fn new(epoch: ControllerSchedulerEpoch, sample: &ControllerTimeSample) -> Self {
+        Self {
+            now: EPOCH_MARGIN + u64::from(epoch.project_without_reanchor(sample)),
+            epoch,
+        }
+    }
+
+    /// Advance to `sample`; an instant past [`EPOCH_END`] leaves the clock
+    /// unchanged and reports the epoch exhausted.
+    fn observe(&mut self, sample: &ControllerTimeSample) -> Result<(), EpochExhausted> {
         let micros = self.epoch.project_without_reanchor(sample);
         let delta = micros.wrapping_sub(self.now as u32) as i32;
         if delta > 0 {
-            self.now += delta as u64;
+            // `now <= EPOCH_END` leaves room for any 32-bit step.
+            let now = self.now + delta as u64;
+            if now > EPOCH_END {
+                return Err(EpochExhausted);
+            }
+            self.now = now;
         }
         self.epoch = self.epoch.reanchor(sample);
+        Ok(())
     }
 
     fn raw(&self, micros: u64) -> u32 {
@@ -278,30 +314,24 @@ impl RadioClock {
             .map_err(|_| RequestError::TooFar)
     }
 
-    fn instant(&self, raw_capture: u32) -> Result<LeInstant, CaptureError> {
-        // Only the raw-counter relation is modular. Place its signed
-        // half-range delta with checked portable epoch arithmetic.
+    /// The instant of a capture, placed by its signed half-range distance
+    /// from the latest sample. The epoch margins keep it representable.
+    fn instant(&self, raw_capture: u32) -> LeInstant {
         let micros = self.epoch.project_capture(raw_capture);
         let delta = micros.wrapping_sub(self.now as u32) as i32;
-        let now = LeInstant::from_micros(self.now);
-        if delta >= 0 {
-            now.checked_add(RadioDuration::from_micros(delta as u64))
-                .ok_or(CaptureError::EpochProjection(TimingError::BeyondEpoch))
+        let distance = u64::from(delta.unsigned_abs());
+        LeInstant::from_micros(if delta >= 0 {
+            self.now + distance
         } else {
-            now.checked_sub(RadioDuration::from_micros(u64::from(delta.unsigned_abs())))
-                .ok_or(CaptureError::EpochProjection(TimingError::BeforeEpoch))
-        }
+            self.now - distance
+        })
     }
 
     /// The on-air start of an LE 1M packet from its receive timestamp.
-    fn packet_start(&self, raw_capture: u32) -> Result<LeInstant, CaptureError> {
-        let captured = self.instant(raw_capture)?;
+    fn packet_start(&self, raw_capture: u32) -> LeInstant {
         let delay = BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros();
-        captured
-            .checked_sub(RadioDuration::from_micros(u64::from(delay)))
-            .ok_or(CaptureError::PacketStartCorrection(
-                TimingError::BeforeEpoch,
-            ))
+        // A capture lies at least `EPOCH_MARGIN / 2` above zero.
+        LeInstant::from_micros(self.instant(raw_capture).as_micros() - u64::from(delay))
     }
 }
 
@@ -473,10 +503,7 @@ impl<
             connections: [const { None }; CONNECTIONS],
             dtm: None,
             mode: SchedulerMode::Shared,
-            clock: RadioClock {
-                now: u64::from(epoch.project_without_reanchor(sample)),
-                epoch,
-            },
+            clock: RadioClock::new(epoch, sample),
             timing: Self::radio_timing(config, local_sleep_clock_ppm),
             policy: SchedulerTimingPolicy::from_scheduler_config(config, scale),
             faulted: false,
@@ -503,8 +530,22 @@ impl<
     }
 
     /// Advance the radio time with one live controller-time sample.
-    pub fn observe_time(&mut self, sample: &ControllerTimeSample) {
-        self.clock.observe(sample);
+    ///
+    /// # Errors
+    ///
+    /// The sample lies past the last instant of the radio epoch; the radio
+    /// time stays where it was. Nothing timed may be admitted any more, and
+    /// the work already admitted still settles.
+    pub fn observe_time(&mut self, sample: &ControllerTimeSample) -> Result<(), EpochExhausted> {
+        self.clock.observe(sample)
+    }
+
+    /// Place the radio time at the last instant of its epoch, so that the
+    /// next advancing sample exhausts it; for host models only.
+    #[cfg(any(test, all(feature = "test-support", not(target_arch = "riscv32"))))]
+    #[doc(hidden)]
+    pub fn reach_epoch_end_for_validation(&mut self) {
+        self.clock.now = EPOCH_END;
     }
 
     /// The pools and chains, for publication by the lifecycle owner.
@@ -800,9 +841,15 @@ impl<
     ///
     /// Listed events whose start no longer passes the late-start guard are
     /// cancelled and end as not executed. The next [`Self::drive`] restarts
-    /// the idle scheduler at the first remaining event.
+    /// the idle scheduler at the first remaining event. The caller observes
+    /// `sample` first ([`Self::observe_time`]); the late-start guard reads the
+    /// raw sample, so an exhausted radio epoch does not keep the scheduler
+    /// stopped.
+    ///
+    /// # Errors
+    ///
+    /// The radio holds no stopped receipt.
     pub fn resume(&mut self, sample: &ControllerTimeSample) -> Result<(), SchedulerNotStopped> {
-        self.observe_time(sample);
         let items = space(&self.memory);
         self.executor.resume(&items)?;
         let mut passed = [None; ITEMS];
@@ -1961,8 +2008,7 @@ impl<
     }
 
     fn finish(&mut self, id: SchedulerItemId, event: Event, sink: &mut impl BluetoothRadioSink) {
-        let mut anchor = Ok(None);
-        let mut capture_error = None;
+        let mut anchor = None;
         match id.kind() {
             SchedulerRoleKind::LegacyAdvertising => {
                 let slot =
@@ -1985,7 +2031,6 @@ impl<
                         event.id,
                         sink,
                         &mut self.faulted,
-                        &mut capture_error,
                     );
                 }
             }
@@ -2006,7 +2051,6 @@ impl<
                         event.id,
                         sink,
                         &mut self.faulted,
-                        &mut capture_error,
                     );
                 }
             }
@@ -2024,29 +2068,23 @@ impl<
                     if let PeripheralConnectionCapturedAnchorAvailability::Available(captured) =
                         result.capture
                     {
-                        anchor = self
-                            .clock
-                            .packet_start(captured.wrapping_controller_ticks())
-                            .map(Some);
+                        anchor = Some(
+                            self.clock
+                                .packet_start(captured.wrapping_controller_ticks()),
+                        );
                     }
                     if result.status == PeripheralConnectionSchedulerItemCompletionStatus::Aborted {
-                        anchor = Ok(None);
-                    }
-                    if let Err(error) = anchor {
-                        capture_error.get_or_insert(error);
+                        anchor = None;
                     }
                 }
                 slot.event = None;
                 loop {
                     match pool.receive(&slot.instance) {
                         Ok(Some(LeRxOutcome::Received(pdu))) => {
-                            let captured_at = self
-                                .clock
-                                .packet_start(pdu.captured_time().wrapping_controller_ticks())
-                                .map(Some);
-                            if let Err(error) = captured_at {
-                                capture_error.get_or_insert(error);
-                            }
+                            let captured_at = Some(
+                                self.clock
+                                    .packet_start(pdu.captured_time().wrapping_controller_ticks()),
+                            );
                             sink.outcome(RadioOutcome::Received {
                                 id: event.id,
                                 pdu: ReceivedPdu {
@@ -2097,16 +2135,8 @@ impl<
                 slot.event = None;
             }
         }
-        let result = if let Some(cause) = capture_error {
-            EventResult::TimingFailed {
-                cause,
-                executed: event.executed,
-                anchor,
-            }
-        } else if event.executed {
-            EventResult::Executed {
-                anchor: anchor.expect("every failed capture has a terminal cause"),
-            }
+        let result = if event.executed {
+            EventResult::Executed { anchor }
         } else {
             EventResult::NotExecuted
         };
@@ -2166,17 +2196,12 @@ fn drain_chain<const PACKETS: usize>(
     id: EventId,
     sink: &mut impl BluetoothRadioSink,
     faulted: &mut bool,
-    capture_error: &mut Option<CaptureError>,
 ) {
     loop {
         match chain.take(source) {
             Ok(Some(LeRxOutcome::Received(pdu))) => {
-                let captured_at = clock
-                    .packet_start(pdu.captured_time().wrapping_controller_ticks())
-                    .map(Some);
-                if let Err(error) = captured_at {
-                    capture_error.get_or_insert(error);
-                }
+                let captured_at =
+                    Some(clock.packet_start(pdu.captured_time().wrapping_controller_ticks()));
                 sink.outcome(RadioOutcome::Received {
                     id,
                     pdu: ReceivedPdu {

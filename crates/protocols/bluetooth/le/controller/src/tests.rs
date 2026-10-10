@@ -508,7 +508,7 @@ fn passive_scanning_rotates_channels_and_reports_advertisements() {
                     pdu: ReceivedPdu {
                         pdu: &pdu,
                         rssi_dbm: -40,
-                        captured_at: Ok(None),
+                        captured_at: None,
                     },
                 });
             }
@@ -550,7 +550,7 @@ fn only_an_active_scanner_reports_scan_responses() {
             pdu: ReceivedPdu {
                 pdu: &scan_rsp,
                 rssi_dbm: -30,
-                captured_at: Ok(None),
+                captured_at: None,
             },
         });
         let reports = harness.drain();
@@ -579,7 +579,7 @@ fn duplicate_filtering_and_masked_events_suppress_reports() {
             pdu: ReceivedPdu {
                 pdu,
                 rssi_dbm: -60,
-                captured_at: Ok(None),
+                captured_at: None,
             },
         }
     }
@@ -596,7 +596,7 @@ fn duplicate_filtering_and_masked_events_suppress_reports() {
         pdu: ReceivedPdu {
             pdu: &advertising_pdu([2; 6], &[]),
             rssi_dbm: -60,
-            captured_at: Ok(None),
+            captured_at: None,
         },
     });
     assert!(harness.drain().is_empty());
@@ -613,7 +613,7 @@ fn duplicate_filtering_and_masked_events_suppress_reports() {
         pdu: ReceivedPdu {
             pdu: &pdu,
             rssi_dbm: -60,
-            captured_at: Ok(None),
+            captured_at: None,
         },
     });
     assert!(quiet.drain().is_empty());

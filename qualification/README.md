@@ -716,8 +716,9 @@ Closing it by hand accepts the drop, and the next night's base is the
 previous night's reports again. When the issue's base reports expired, its
 marker becomes `expired-base-run`: the issue stays open, uncompared, and
 the previous night's reports are the base. Only a complete evaluation is
-published or reported; a base that fails to download fails the step
-rather than being replaced.
+reported, and the night's reports are published as a later base only
+after their drop is recorded; a base that fails to download fails the
+step rather than being replaced.
 
 ### Host observer identity
 

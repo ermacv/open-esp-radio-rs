@@ -44,12 +44,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          EVENT: ${{ github.event_name }}
         run: |
           pr=$(gh api "repos/$GH_REPO/pulls/$NUMBER")
-          pr=$(jq -c --arg repo "$GH_REPO" 'select(. != null and .state == "open" and (.draft | not)
-            and .base.ref == "main" and .head.repo.full_name == $repo)' <<<"${pr:-null}")
+          # A requested review also covers a merged PR: the review runs in
+          # parallel with CI, so a failed one may be noticed after the merge.
+          pr=$(jq -c --arg repo "$GH_REPO" --arg event "$EVENT" 'select(. != null
+            and (.state == "open" or (.merged_at != null and $event == "issue_comment"))
+            and (.draft | not) and .base.ref == "main" and .head.repo.full_name == $repo)' <<<"${pr:-null}")
           if [ -z "$pr" ]; then
-            echo "No open ready same-repository PR into main; nothing to review."
+            echo "No open (or, on request, merged) ready same-repository PR into main; nothing to review."
             exit 0
           fi
           echo "pr=$(jq .number <<<"$pr")" >>"$GITHUB_OUTPUT"
@@ -134,11 +138,23 @@ jobs:
             gh api "repos/$GH_REPO/statuses/$HEAD" -f context=claude-runtime-review \
               -f state="$1" -f description="$2" -f target_url="$RUN" >/dev/null
           }
+          # failed DESCRIPTION: the review's findings reach no session, so
+          # besides the status, which only an open PR's head shows, file a
+          # `review: …` issue naming the branch that `cargo xtask ci-status`
+          # lists even after the merge.
+          failed() {
+            status error "$1"
+            gh issue create --title "review: Claude review of #$PR did not complete" \
+              --label kind:bug --label area:tooling --label priority:P1 \
+              --body "$(printf '%s\n\nThe Claude review of #%s at `%s` ([run](%s)) failed: %s. Its findings reached no session. Comment `@claude review` on #%s (a merged PR too) to review it again, then close this issue.\n\n<!-- claude-review-branch: %s -->' \
+                "The review of a pull request did not record its findings." "$PR" "$HEAD" "$RUN" "$1" "$PR" "$BRANCH")" \
+              >/dev/null || echo "::warning::The failure issue was not filed either"
+            exit 1
+          }
           # A newer review of this PR cancelled this one and sets the status.
           if [ "$OUTCOME" = cancelled ]; then exit 0; fi
           if [ "$OUTCOME" != success ] || [ -z "$RESULT" ]; then
-            status error "Review did not complete ($OUTCOME); no verdict"
-            exit 1
+            failed "Review did not complete ($OUTCOME); no verdict"
           fi
           # body DETAILS: the review body, listing each finding with its text
           # when DETAILS is true (inline comments carry it otherwise).
@@ -164,8 +180,7 @@ jobs:
           # No finding blocks: each is filed as an issue once, naming the
           # branch, and the PR names the issues.
           if ! recorded=$(PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/review_findings.py); then
-            status error "Findings were not recorded as issues; rerun the review"
-            exit 1
+            failed "Findings were not recorded as issues"
           fi
           if [ -n "$recorded" ]; then
             jq -n --arg body "$(printf 'Findings, filed as issues; the session on this branch fixes them next:\n\n%s' "$recorded")" '{body: $body}' |

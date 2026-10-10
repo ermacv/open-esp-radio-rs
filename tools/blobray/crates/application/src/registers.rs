@@ -253,4 +253,113 @@ mod tests {
             "an included store's value is walked, one checkpoint per node"
         );
     }
+
+    /// The `(address, indexed)` of every candidate `observe` emits for a
+    /// store to `(a0 & mask) << 4 + base` (no mask: `a0 << 4 + base`) and a
+    /// store to the constant 0x20000, with `ranges`.
+    fn indexed_candidates(
+        mask: Option<u32>,
+        base: u32,
+        ranges: &[ImageRegion],
+    ) -> Vec<(Option<u32>, Option<IndexedAddress>)> {
+        let mut expressions = vec![Expression::EntryRegister { register: 10 }];
+        if let Some(mask) = mask {
+            expressions.push(Expression::Integer {
+                op: IntegerOp::And,
+                left: AbstractValue::Expression { id: 0 },
+                right: AbstractValue::Constant { value: mask },
+            });
+        }
+        let index = expressions.len() as u32 - 1;
+        expressions.push(Expression::Integer {
+            op: IntegerOp::Shl,
+            left: AbstractValue::Expression { id: index },
+            right: AbstractValue::Constant { value: 4 },
+        });
+        expressions.push(Expression::Integer {
+            op: IntegerOp::Add,
+            left: AbstractValue::Expression { id: index + 1 },
+            right: AbstractValue::Constant { value: base },
+        });
+        let address = AbstractValue::Expression { id: index + 2 };
+        let mut records: Vec<FunctionRecord> = expressions
+            .into_iter()
+            .enumerate()
+            .map(|(id, expression)| FunctionRecord::Expression {
+                id: id as u32,
+                offset: 0,
+                expression,
+            })
+            .collect();
+        for address in [address, AbstractValue::Constant { value: 0x20000 }] {
+            records.push(FunctionRecord::MemoryAccess {
+                offset: 4,
+                access: MemoryKind::Store,
+                width: 4,
+                address,
+                value: Some(AbstractValue::Constant { value: 1 }),
+                relocation: None,
+            });
+        }
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
+        let mut candidates = Vec::new();
+        observe(
+            &records,
+            &facts,
+            &memory,
+            ranges,
+            &mut || Ok(()),
+            &mut |c, _| {
+                candidates.push((c.address, c.indexed));
+                Ok(())
+            },
+        )
+        .unwrap();
+        candidates
+    }
+
+    #[test]
+    fn ranges_keep_a_progression_that_may_reach_them_and_never_drop_its_access() {
+        let element_one = [ImageRegion {
+            start: 0x2010_f410,
+            length: 4,
+        }];
+        let progression = |count| IndexedAddress {
+            base: 0x2010_f400,
+            stride: 0x10,
+            count,
+        };
+        // A bounded index reaches the range at index one though its base
+        // lies outside; the constant store outside the range is skipped.
+        assert_eq!(
+            indexed_candidates(Some(7), 0x2010_f400, &element_one),
+            [(None, Some(progression(Some(8))))]
+        );
+        // An unbounded index is judged by its base: outside, the access stays
+        // a plain unresolved one.
+        assert_eq!(
+            indexed_candidates(None, 0x2010_f400, &element_one),
+            [(None, None)]
+        );
+        let base = [ImageRegion {
+            start: 0x2010_f400,
+            length: 4,
+        }];
+        assert_eq!(
+            indexed_candidates(None, 0x2010_f400, &base),
+            [(None, Some(progression(None)))]
+        );
+        // A bound beyond the checked indices is judged by its base too.
+        assert_eq!(
+            indexed_candidates(Some(0x1fff), 0x2010_f400, &element_one),
+            [(None, None)]
+        );
+        // Without ranges every progression is kept; a resolved address never
+        // carries one.
+        assert_eq!(
+            indexed_candidates(Some(7), 0x2010_f400, &[]),
+            [(None, Some(progression(Some(8)))), (Some(0x20000), None)]
+        );
+    }
 }

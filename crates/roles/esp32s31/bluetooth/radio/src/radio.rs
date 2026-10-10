@@ -1,6 +1,6 @@
 //! Lowering of radio requests into the role pools and the executor.
 
-use core::convert::Infallible;
+use core::{convert::Infallible, num::NonZeroU64};
 
 use crate::coexistence::{self, CoexistenceProfile};
 use oer_bluetooth_radio::{
@@ -8,9 +8,9 @@ use oer_bluetooth_radio::{
     AdvertisingEvent, AdvertisingReception, AdvertisingSetId, CancelError, ConnectionAllowances,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
     EventId, EventResult, LeConnectionCapabilities, LeInstant, LePhys, LeRadioCapabilities,
-    LeWindow, LinkAcknowledgement, RadioDuration, RadioOutcome, RadioRequest, RadioTiming,
-    ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
-    ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
+    LeWindow, LinkAcknowledgement, NonZeroRadioDuration, OutsideEpoch, RadioDuration, RadioOutcome,
+    RadioRequest, RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
+    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
@@ -92,10 +92,6 @@ pub trait BluetoothRadioSink {
     fn fault(&mut self, fault: RadioFault);
 }
 
-/// The radio epoch has no later instant.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct EpochExhausted;
-
 /// Why the radio stopped scheduling: the cause its port is poisoned with.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RadioFault {
@@ -141,6 +137,9 @@ struct Event {
     /// Items waiting for insertion.
     pending: u8,
     executed: bool,
+    /// An item was released after a scheduler stop without a completion
+    /// status, though its start had passed: the hardware may have run it.
+    unconfirmed: bool,
     cancel: bool,
     /// DTM receiver event.
     receiver: bool,
@@ -155,6 +154,7 @@ impl Event {
             listed: 0,
             pending: items,
             executed: false,
+            unconfirmed: false,
             cancel: false,
             receiver: false,
             item: 0,
@@ -236,7 +236,9 @@ const fn connection_allowances(
         widening_jitter: RadioDuration::from_micros(WIDENING_JITTER_MICROS as u64),
         receive_guard: RadioDuration::from_micros(RECEIVE_GUARD_MICROS as u64),
         receive_tail: RadioDuration::from_micros(RECEIVE_TAIL_MICROS as u64),
-        boundary_guard: RadioDuration::from_micros(BOUNDARY_GUARD_MICROS as u64),
+        boundary_guard: NonZeroRadioDuration::from_micros(
+            NonZeroU64::new(BOUNDARY_GUARD_MICROS as u64).unwrap(),
+        ),
         first_event_guard: RadioDuration::from_micros(FIRST_EVENT_GUARD_MICROS as u64),
         event_length: RadioDuration::from_micros(
             // The only constructible scheduler profile has a 137-us lead, below 1074 us.
@@ -258,6 +260,10 @@ const fn connection_allowances(
 /// Being a multiple of 2^32, it keeps an instant's low word equal to the
 /// controller microseconds it projects.
 const EPOCH_MARGIN: u64 = 1 << 32;
+
+// The margin covers the half range of a capture around a sample, and keeps
+// an instant's low word equal to the controller microseconds it projects.
+const _: () = assert!(EPOCH_MARGIN >= 1 << 31 && EPOCH_MARGIN.is_multiple_of(1 << 32));
 
 /// The last instant of the radio epoch.
 const EPOCH_END: u64 = u64::MAX - EPOCH_MARGIN;
@@ -282,14 +288,14 @@ impl RadioClock {
 
     /// Advance to `sample`; an instant past [`EPOCH_END`] leaves the clock
     /// unchanged and reports the epoch exhausted.
-    fn observe(&mut self, sample: &ControllerTimeSample) -> Result<(), EpochExhausted> {
+    fn observe(&mut self, sample: &ControllerTimeSample) -> Result<(), OutsideEpoch> {
         let micros = self.epoch.project_without_reanchor(sample);
         let delta = micros.wrapping_sub(self.now as u32) as i32;
         if delta > 0 {
             // `now <= EPOCH_END` leaves room for any 32-bit step.
             let now = self.now + delta as u64;
             if now > EPOCH_END {
-                return Err(EpochExhausted);
+                return Err(OutsideEpoch);
             }
             self.now = now;
         }
@@ -536,7 +542,7 @@ impl<
     /// The sample lies past the last instant of the radio epoch; the radio
     /// time stays where it was. Nothing timed may be admitted any more, and
     /// the work already admitted still settles.
-    pub fn observe_time(&mut self, sample: &ControllerTimeSample) -> Result<(), EpochExhausted> {
+    pub fn observe_time(&mut self, sample: &ControllerTimeSample) -> Result<(), OutsideEpoch> {
         self.clock.observe(sample)
     }
 
@@ -564,9 +570,10 @@ impl<
     /// Take the pools and chains back after the Controller of this epoch was
     /// reset.
     ///
-    /// Every operation ends without an outcome. The pools, withheld items
-    /// included, and the receive chains return to their allocation-time
-    /// image, ready for the next epoch.
+    /// The owner ends every admitted event first
+    /// ([`Self::cancel_all_stopped`]); configured roles hold no event then.
+    /// The pools, withheld items included, and the receive chains return to
+    /// their allocation-time image, ready for the next epoch.
     pub fn into_memory(
         self,
         reset: &BluetoothControllerReset,
@@ -1071,10 +1078,11 @@ impl<
     ) -> Result<SchedulerRawWindow, RequestError> {
         let now = LeInstant::from_micros(self.clock.now);
         let air = LeWindow::new(anchor, duration).map_err(|_| RequestError::TooFar)?;
-        let reservation = self.timing.reservation(air).map_err(|cause| match cause {
-            oer_bluetooth_radio::TimingError::BeforeEpoch => RequestError::TooLate,
-            _ => RequestError::TooFar,
-        })?;
+        // A valid air window keeps its end, so only an early start fails.
+        let reservation = self
+            .timing
+            .reservation(air)
+            .map_err(|OutsideEpoch| RequestError::TooLate)?;
         let guarded_now = now
             .checked_add(self.timing.admission_guard)
             .ok_or(RequestError::TooFar)?;
@@ -1906,6 +1914,7 @@ impl<
         // cancelling its running event (`sym_dtm_NsbldBIeGraE2wg0AVy7`).
         if found.is_none()
             && owner.kind() == SchedulerRoleKind::DirectTestMode
+            && self.executor.stopped().is_none()
             && let SchedulerMode::Test(phase) = self.mode
         {
             self.mode = SchedulerMode::Test(TestPhase::Stopping(phase.resume()));
@@ -1947,6 +1956,47 @@ impl<
                 return;
             }
         }
+    }
+
+    /// Withdraw every scheduled event of a stopped scheduler, as a port's
+    /// `Disable` does; each one's end follows.
+    ///
+    /// The stopped receipt proves that the hardware no longer runs any item,
+    /// so each listed item leaves with what it recorded: an event with a
+    /// completion status ends with it, and one whose start lay ahead of
+    /// `sample`, taken after the stop, ends as not executed. An item without
+    /// a status whose start had passed may have run before the stop: its
+    /// event ends [`EventResult::Aborted`].
+    ///
+    /// # Errors
+    ///
+    /// The radio holds no stopped receipt; nothing changed.
+    pub fn cancel_all_stopped(
+        &mut self,
+        sample: &ControllerTimeSample,
+        sink: &mut impl BluetoothRadioSink,
+    ) -> Result<(), SchedulerNotStopped> {
+        if self.executor.stopped().is_none() {
+            return Err(SchedulerNotStopped);
+        }
+        let items = space(&self.memory);
+        let mut passed = [None; ITEMS];
+        let mut count = 0;
+        for (id, window) in self.executor.list().iter() {
+            if items.completion_status(id).is_none()
+                && !self.policy.initial_deadline_is_open(sample, window.start())
+            {
+                passed[count] = Some(id);
+                count += 1;
+            }
+        }
+        for id in passed.into_iter().flatten() {
+            if let Some(event) = self.event_mut(id) {
+                event.unconfirmed = true;
+            }
+        }
+        self.cancel_all(sink);
+        Ok(())
     }
 
     /// A scheduled event no cancellation withdrew yet.
@@ -2137,6 +2187,8 @@ impl<
         }
         let result = if event.executed {
             EventResult::Executed { anchor }
+        } else if event.unconfirmed {
+            EventResult::Aborted
         } else {
             EventResult::NotExecuted
         };

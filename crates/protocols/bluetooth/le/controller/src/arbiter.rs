@@ -6,23 +6,27 @@
 //! reservation. A proposal that cannot start by its latest start is not
 //! placed, and the role skips that event.
 
-use oer_bluetooth_radio::{LeInstant, LeWindow, RadioDuration, RadioTiming, TimingError};
+use oer_bluetooth_radio::{LeInstant, LeWindow, NonZeroRadioDuration, OutsideEpoch, RadioTiming};
 
 /// One event a role wants to schedule.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Proposal {
     pub(crate) earliest: LeInstant,
     pub(crate) latest: LeInstant,
-    pub(crate) duration: RadioDuration,
+    pub(crate) duration: NonZeroRadioDuration,
 }
 
 /// The earliest start in `[earliest, latest]` whose reservation
 /// `[start - lead, start + duration)` overlaps no busy reservation.
+///
+/// # Errors
+///
+/// A reservation the placement needs lies outside the radio epoch.
 pub(crate) fn place(
     proposal: Proposal,
     timing: RadioTiming,
     busy: &[Option<LeWindow>],
-) -> Result<Option<LeInstant>, TimingError> {
+) -> Result<Option<LeInstant>, OutsideEpoch> {
     let mut start = proposal.earliest;
     if start > proposal.latest {
         return Ok(None);
@@ -51,7 +55,7 @@ pub(crate) fn place(
                 }
                 start = end
                     .checked_add(timing.preparation_lead)
-                    .ok_or(TimingError::BeyondEpoch)?;
+                    .ok_or(OutsideEpoch)?;
             }
         }
     }
@@ -59,18 +63,26 @@ pub(crate) fn place(
 }
 
 /// The reservation of an air window starting at `start`.
+///
+/// # Errors
+///
+/// The window or its reservation lies outside the radio epoch.
 pub(crate) fn reservation(
     start: LeInstant,
-    duration: RadioDuration,
+    duration: NonZeroRadioDuration,
     timing: RadioTiming,
-) -> Result<LeWindow, TimingError> {
-    let window = LeWindow::new(start, duration).map_err(TimingError::Window)?;
+) -> Result<LeWindow, OutsideEpoch> {
+    let window = LeWindow::nonempty(start, duration).ok_or(OutsideEpoch)?;
     timing.reservation(window)
 }
 
 #[cfg(test)]
 mod tests {
-    use oer_bluetooth_radio::{LeInstant, LeWindow, RadioDuration, RadioTiming, TimingError};
+    use core::num::NonZeroU64;
+
+    use oer_bluetooth_radio::{
+        LeInstant, LeWindow, NonZeroRadioDuration, OutsideEpoch, RadioDuration, RadioTiming,
+    };
 
     use super::{Proposal, place, reservation};
 
@@ -82,7 +94,7 @@ mod tests {
             widening_jitter: RadioDuration::from_micros(0),
             receive_guard: RadioDuration::from_micros(0),
             receive_tail: RadioDuration::from_micros(0),
-            boundary_guard: RadioDuration::from_micros(0),
+            boundary_guard: NonZeroRadioDuration::from_micros(NonZeroU64::MIN),
             first_event_guard: RadioDuration::from_micros(0),
             event_length: RadioDuration::from_micros(0),
             first_event_length: RadioDuration::from_micros(0),
@@ -93,17 +105,16 @@ mod tests {
         Proposal {
             earliest: LeInstant::from_micros(earliest),
             latest: LeInstant::from_micros(latest),
-            duration: RadioDuration::from_micros(duration),
+            duration: micros(duration),
         }
     }
 
+    fn micros(micros: u64) -> NonZeroRadioDuration {
+        NonZeroRadioDuration::from_micros(NonZeroU64::new(micros).unwrap())
+    }
+
     fn busy(start: u64, duration: u64) -> Option<LeWindow> {
-        reservation(
-            LeInstant::from_micros(start),
-            RadioDuration::from_micros(duration),
-            TIMING,
-        )
-        .ok()
+        reservation(LeInstant::from_micros(start), micros(duration), TIMING).ok()
     }
 
     #[test]
@@ -129,12 +140,12 @@ mod tests {
         assert_eq!(place(proposal(1_000, 1_800, 200), TIMING, &busy), Ok(None));
     }
     #[test]
-    fn a_conflict_is_no_work_but_invalid_geometry_is_an_error() {
+    fn a_conflict_is_no_work_but_geometry_outside_the_epoch_is_an_error() {
+        assert_eq!(place(proposal(1, 2, 1), TIMING, &[]), Err(OutsideEpoch));
         assert_eq!(
-            place(proposal(1, 2, 1), TIMING, &[]),
-            Err(TimingError::BeforeEpoch)
+            place(proposal(u64::MAX - 1, u64::MAX - 1, 2), TIMING, &[]),
+            Err(OutsideEpoch)
         );
-        assert!(place(proposal(u64::MAX - 1, u64::MAX - 1, 2), TIMING, &[]).is_err());
         assert_eq!(
             place(proposal(1_000, 1_200, 100), TIMING, &[busy(1_000, 500)]),
             Ok(None)

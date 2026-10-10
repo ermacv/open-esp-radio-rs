@@ -27,7 +27,7 @@ impl Harness {
         opcode: Opcode,
         parameters: &[u8],
         result: Result<(), RequestError>,
-    ) -> Result<(Option<Request>, Option<u8>), crate::PlanningError> {
+    ) -> Result<(Option<Request>, Option<u8>), crate::EpochExhausted> {
         assert_eq!(self.command(opcode, parameters), None);
         assert!(!self.core.is_command_ready());
         let request = self.step_with(result)?;

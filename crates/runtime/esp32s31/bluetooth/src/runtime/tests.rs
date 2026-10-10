@@ -103,7 +103,8 @@ fn a_connection_event_keeps_the_slots_of_its_acknowledged_data() {
 
     let queue = OutcomeQueue::<NoopRawMutex, 5, 1>::new();
     let connection = EventId::new(7);
-    // Its end, the acknowledgement and two data PDUs: four of five slots.
+    // Its end, the acknowledgement and two data PDUs: four of five slots,
+    // the fifth kept for a lifecycle terminal.
     assert!(queue.admit_event(connection, 2));
     // A second connection event has no data slot left.
     assert!(!queue.admit_event(EventId::new(8), 0));
@@ -123,8 +124,10 @@ fn a_connection_event_keeps_the_slots_of_its_acknowledged_data() {
     assert_eq!(queue.take(), Some(Ok(received(connection, 10))));
     assert_eq!(queue.take(), Some(Ok(received(connection, 11))));
     assert_eq!(queue.take(), Some(Ok(ended)));
-    // Every slot is free again, the unused companion slot included.
-    assert!(queue.admit_event(EventId::new(9), 3));
+    // Every slot is free again, the unused companion slot included; the
+    // last one stays with a lifecycle terminal.
+    assert!(!queue.admit_event(EventId::new(9), 3));
+    assert!(queue.admit_event(EventId::new(9), 2));
 }
 
 /// A received PDU of `byte` during event `id`.

@@ -15,7 +15,9 @@ const TIMING: RadioTiming = RadioTiming {
         widening_jitter: RadioDuration::from_micros(63),
         receive_guard: RadioDuration::from_micros(10),
         receive_tail: RadioDuration::from_micros(2),
-        boundary_guard: RadioDuration::from_micros(1),
+        boundary_guard: oer_bluetooth_radio::NonZeroRadioDuration::from_micros(
+            core::num::NonZeroU64::MIN,
+        ),
         first_event_guard: RadioDuration::from_micros(16),
         event_length: RadioDuration::from_micros(5047),
         first_event_length: RadioDuration::from_micros(5155),
@@ -245,8 +247,7 @@ fn coded_transmitters_are_refused_and_refusals_replan() {
 
 #[test]
 fn planning_failure_retains_the_test_history_payload_and_identity() {
-    use super::{DtmCalculation, DtmPlanningError};
-    use oer_bluetooth_radio::TimingError;
+    use super::{DtmCalculation, DtmEpochExhausted};
     let mut session = DtmSession::new(TxPower::from_dbm(0), 42);
     session.start(transmit()).unwrap();
     let last = oer_bluetooth_radio::LeWindow::new(
@@ -259,9 +260,8 @@ fn planning_failure_retains_the_test_history_payload_and_identity() {
     let mut payload = [0xa5; DTM_MAX_PAYLOAD];
     assert!(matches!(
         session.next_request(LeInstant::from_micros(0), TIMING, &mut payload),
-        Err(DtmPlanningError {
+        Err(DtmEpochExhausted {
             calculation: DtmCalculation::NextAnchor,
-            cause: TimingError::BeyondEpoch
         })
     ));
     assert_eq!(payload, [0xa5; DTM_MAX_PAYLOAD]);

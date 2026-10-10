@@ -69,7 +69,7 @@ impl Harness {
             pdu: ReceivedPdu {
                 pdu: &connect_ind(),
                 rssi_dbm: -50,
-                captured_at: (Some(LeInstant::from_micros(INDICATION_AT))),
+                captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
             },
         });
         let Some(Request::OpenConnection(configuration)) = harness.step().unwrap() else {
@@ -427,6 +427,29 @@ fn a_connection_update_moves_the_anchor_at_its_instant() {
 }
 
 #[test]
+fn supervision_follows_the_timeout_a_connection_update_sets() {
+    let (mut harness, first) = Harness::connected();
+    // LL_CONNECTION_UPDATE_IND: WinSize 1, WinOffset 0, the same 30 ms
+    // interval, Latency 0, Timeout 300 (3 s, up from 1 s), Instant 2.
+    let mut update = std::vec![0x03, 12, 0x00, 1];
+    update.extend_from_slice(&0_u16.to_le_bytes());
+    update.extend_from_slice(&24_u16.to_le_bytes());
+    update.extend_from_slice(&0_u16.to_le_bytes());
+    update.extend_from_slice(&300_u16.to_le_bytes());
+    update.extend_from_slice(&2_u16.to_le_bytes());
+    harness.receive(first, &update);
+    harness.end_at(first, Some(INDICATION_AT + 2_000));
+    // 1.5 s of missed events: past the old timeout, within the new one.
+    let missed = 3 * TIMEOUT / (2 * INTERVAL);
+    for _ in 0..missed {
+        match harness.step().unwrap() {
+            Some(Request::ConnectionEvent(event)) => harness.end_at(event.id, None),
+            other => panic!("the connection is still supervised: {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn reset_drops_the_connection_without_disconnection_complete() {
     let (mut harness, first) = Harness::connected();
     assert_eq!(harness.command(super::RESET, &[]), None);
@@ -638,7 +661,7 @@ fn a_scannable_set_answers_scans_but_ignores_connection_indications() {
         pdu: ReceivedPdu {
             pdu: &connect_ind(),
             rssi_dbm: -50,
-            captured_at: (Some(LeInstant::from_micros(INDICATION_AT))),
+            captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
         },
     });
     harness.end(event.id);
@@ -704,7 +727,7 @@ fn low_duty_directed_advertising_connects_only_its_target() {
         pdu: ReceivedPdu {
             pdu: &stranger,
             rssi_dbm: -50,
-            captured_at: (Some(LeInstant::from_micros(INDICATION_AT))),
+            captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
         },
     });
     harness.end(event.id);
@@ -718,7 +741,7 @@ fn low_duty_directed_advertising_connects_only_its_target() {
         pdu: ReceivedPdu {
             pdu: &connect_ind(),
             rssi_dbm: -50,
-            captured_at: (Some(LeInstant::from_micros(INDICATION_AT))),
+            captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
         },
     });
     assert!(matches!(
@@ -869,10 +892,6 @@ fn failed_recurring_anchor_restores_the_ll_owner_and_allows_reset_close() {
         first_error.calculation,
         crate::PlanningCalculation::Recurrence
     );
-    assert_eq!(
-        first_error.cause,
-        crate::PlanningCause::Timing(oer_bluetooth_radio::TimingError::BeyondEpoch)
-    );
     assert_eq!(harness.step(), Err(first_error));
     harness.now = u64::MAX;
     harness.send(super::RESET, &[]);
@@ -882,20 +901,11 @@ fn failed_recurring_anchor_restores_the_ll_owner_and_allows_reset_close() {
 
 #[test]
 fn failed_first_connection_geometry_keeps_the_indication_until_reset() {
-    use crate::{PlanningCalculation, PlanningCause, PlanningOperation, PlanningRole};
-    use oer_bluetooth_radio::{TimingError, WindowError};
+    use crate::{PlanningCalculation, PlanningOperation, PlanningRole};
 
-    for (captured, calculation, cause) in [
-        (
-            u64::MAX - 100,
-            PlanningCalculation::FirstAnchor,
-            TimingError::BeyondEpoch,
-        ),
-        (
-            u64::MAX - 5_000,
-            PlanningCalculation::WindowGeometry,
-            TimingError::Window(WindowError::Overflow),
-        ),
+    for (captured, calculation) in [
+        (u64::MAX - 100, PlanningCalculation::FirstAnchor),
+        (u64::MAX - 5_000, PlanningCalculation::WindowGeometry),
     ] {
         let mut harness = Harness::configured();
         let mut params = super::nonconnectable_parameters();
@@ -918,14 +928,13 @@ fn failed_first_connection_geometry_keeps_the_indication_until_reset() {
             pdu: ReceivedPdu {
                 pdu: &connect_ind(),
                 rssi_dbm: -40,
-                captured_at: (Some(LeInstant::from_micros(captured))),
+                captured_at: Some(LeInstant::from_micros(captured)),
             },
         });
-        let expected = crate::PlanningError {
+        let expected = crate::EpochExhausted {
             role: PlanningRole::Peripheral,
             operation: PlanningOperation::ConnectionIndication,
             calculation,
-            cause: PlanningCause::Timing(cause),
         };
         assert_eq!(harness.step(), Err(expected));
         assert_eq!(harness.step(), Err(expected));

@@ -1,10 +1,12 @@
 //! Caller requests and long-lived role configuration.
 
+use core::num::NonZeroU64;
+
 use oer_radio_coex::CoexPriority;
 
 use crate::{
     AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, LeInstant, LePhy, LeWindow,
-    RadioDuration, TestChannel, TestPayloadType, channel::AdvertisingChannel,
+    NonZeroRadioDuration, RadioDuration, TestChannel, TestPayloadType, channel::AdvertisingChannel,
 };
 
 /// Caller-assigned identifier correlating one event with its outcomes.
@@ -201,23 +203,25 @@ pub struct AdvertisingEvent {
 
 impl AdvertisingEvent {
     /// The channel and its anchor at `position` in channel order. An absent
-    /// position is `Ok(None)`; invalid spacing or anchor arithmetic is an error.
+    /// position is `Ok(None)`.
+    ///
+    /// # Errors
+    ///
+    /// The anchor lies past the radio epoch.
     pub fn channel_anchor(
         &self,
         position: usize,
-    ) -> Result<Option<(AdvertisingChannel, LeInstant)>, TimingError> {
+    ) -> Result<Option<(AdvertisingChannel, LeInstant)>, OutsideEpoch> {
         let Some(channel) = self.channels.iter().nth(position) else {
             return Ok(None);
         };
-        // A present position is at most two in the three-channel wire set.
-        let offset = self
+        // A present position is at most two in the three-channel wire set;
+        // an offset past `u64::MAX` cannot lie in the epoch either.
+        let anchor = self
             .channel_spacing
             .checked_mul(position as u64)
-            .ok_or(TimingError::DurationOverflow)?;
-        let anchor = self
-            .anchor
-            .checked_add(offset)
-            .ok_or(TimingError::BeyondEpoch)?;
+            .and_then(|offset| self.anchor.checked_add(offset))
+            .ok_or(OutsideEpoch)?;
         Ok(Some((channel, anchor)))
     }
 }
@@ -417,9 +421,10 @@ pub struct RadioTiming {
 }
 
 impl RadioTiming {
-    /// No lead, guard or allowance: the timing of a backend that schedules
+    /// No lead, guard or allowance beyond the one-microsecond boundary guard
+    /// every connection event keeps: the timing of a backend that schedules
     /// nothing.
-    pub const ZERO: Self = Self {
+    pub const MINIMAL: Self = Self {
         preparation_lead: ZERO,
         admission_guard: ZERO,
         connection: ConnectionAllowances {
@@ -427,7 +432,7 @@ impl RadioTiming {
             widening_jitter: ZERO,
             receive_guard: ZERO,
             receive_tail: ZERO,
-            boundary_guard: ZERO,
+            boundary_guard: NonZeroRadioDuration::from_micros(NonZeroU64::MIN),
             first_event_guard: ZERO,
             event_length: ZERO,
             first_event_length: ZERO,
@@ -458,8 +463,9 @@ pub struct ConnectionAllowances {
     pub receive_guard: RadioDuration,
     /// Listening kept after the widened receive window.
     pub receive_tail: RadioDuration,
-    /// Guard before an event's air window.
-    pub boundary_guard: RadioDuration,
+    /// Guard before an event's air window. Every event window includes it,
+    /// so none is empty.
+    pub boundary_guard: NonZeroRadioDuration,
     /// Uncertainty on each side of the first event's transmit window.
     pub first_event_guard: RadioDuration,
     /// Air time a recurring event keeps after its widened anchor window.
@@ -468,33 +474,24 @@ pub struct ConnectionAllowances {
     pub first_event_length: RadioDuration,
 }
 
-/// Why physical radio geometry cannot be represented in the current epoch.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TimingError {
-    /// An endpoint precedes the beginning of the epoch.
-    BeforeEpoch,
-    /// An endpoint exceeds the end of the epoch.
-    BeyondEpoch,
-    /// A duration sum or product exceeds the portable duration range.
-    DurationOverflow,
-    /// An elapsed span was requested in reverse order.
-    ReversedTime,
-    /// The resulting window is empty or exceeds the epoch.
-    Window(crate::WindowError),
-}
+/// An instant, window or span radio geometry needs lies outside the radio
+/// epoch: before its first instant or past its last one. A span longer than
+/// the whole epoch cannot lie in it either.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct OutsideEpoch;
 
 impl RadioTiming {
-    /// Add the preparation lead to a checked air window's reservation.
-    pub fn reservation(&self, window: LeWindow) -> Result<LeWindow, TimingError> {
-        let start = window
-            .start()
-            .checked_sub(self.preparation_lead)
-            .ok_or(TimingError::BeforeEpoch)?;
-        let duration = window
-            .duration()
-            .checked_add(self.preparation_lead)
-            .ok_or(TimingError::DurationOverflow)?;
-        LeWindow::new(start, duration).map_err(TimingError::Window)
+    /// The reservation of a checked air window: the window, starting the
+    /// preparation lead earlier.
+    ///
+    /// # Errors
+    ///
+    /// The reservation would start before the radio epoch.
+    pub const fn reservation(&self, window: LeWindow) -> Result<LeWindow, OutsideEpoch> {
+        match window.extended_before(self.preparation_lead) {
+            Some(reservation) => Ok(reservation),
+            None => Err(OutsideEpoch),
+        }
     }
 }
 
@@ -577,7 +574,11 @@ mod tests {
         AdvertisingEvent, AdvertisingSetId, CoexPriority, CoexistenceLevel, ConnectionAllowances,
         EventId, IdlePriority, RadioTiming,
     };
-    use crate::{AdvertisingChannel, AdvertisingChannels, LeInstant, LeWindow, RadioDuration};
+    use crate::{
+        AdvertisingChannel, AdvertisingChannels, LeInstant, LeWindow, NonZeroRadioDuration,
+        RadioDuration,
+    };
+    use core::num::NonZeroU64;
 
     /// Every level keeps its order as a portable priority and returns from
     /// it; the idle priority has no event level.
@@ -631,7 +632,7 @@ mod tests {
                 widening_jitter: RadioDuration::from_micros(0),
                 receive_guard: RadioDuration::from_micros(0),
                 receive_tail: RadioDuration::from_micros(0),
-                boundary_guard: RadioDuration::from_micros(0),
+                boundary_guard: NonZeroRadioDuration::from_micros(NonZeroU64::MIN),
                 first_event_guard: RadioDuration::from_micros(0),
                 event_length: RadioDuration::from_micros(0),
                 first_event_length: RadioDuration::from_micros(0),
@@ -647,9 +648,6 @@ mod tests {
         assert_eq!(reserved.end(), LeInstant::from_micros(1_050));
         let early =
             LeWindow::new(LeInstant::from_micros(10), RadioDuration::from_micros(5)).unwrap();
-        assert_eq!(
-            timing.reservation(early),
-            Err(super::TimingError::BeforeEpoch)
-        );
+        assert_eq!(timing.reservation(early), Err(super::OutsideEpoch));
     }
 }

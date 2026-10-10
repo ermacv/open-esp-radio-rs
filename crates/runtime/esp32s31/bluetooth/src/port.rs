@@ -15,7 +15,7 @@ use oer_time::Timer;
 use crate::runtime::Radio;
 use crate::{
     BluetoothFault, BluetoothOutcome, BluetoothRadioHardware, BluetoothRuntime,
-    BluetoothRuntimeFault,
+    BluetoothUninstallError,
 };
 
 /// The radio port of an installed [`BluetoothRuntime`], for the protocol's
@@ -231,9 +231,10 @@ impl<
         self.runtime.quiesce(maintenance).await
     }
 
-    /// Stop the scheduler and take the radio and its hardware out of the
-    /// runtime, consuming both handles of the installed radio. Events still
-    /// listed never end; the next radio starts disabled.
+    /// Take the radio and its hardware out of the runtime, consuming both
+    /// handles of the installed radio. The port must be disabled with every
+    /// outcome up to its `Disabled` taken, so every admitted event has ended;
+    /// the next radio starts disabled.
     ///
     /// # Panics
     ///
@@ -241,8 +242,9 @@ impl<
     ///
     /// # Errors
     ///
-    /// The scheduler could not be stopped: the radio stays installed and
-    /// faulted, and both handles are returned with the fault.
+    /// The port is not disabled, or the scheduler could not be stopped (the
+    /// radio then stays installed and faulted): both handles are returned
+    /// with the error.
     #[allow(
         clippy::type_complexity,
         clippy::result_large_err,
@@ -272,7 +274,7 @@ impl<
             H,
         ),
         (
-            BluetoothRuntimeFault<H::StartError>,
+            BluetoothUninstallError<H::StartError>,
             Self,
             BluetoothPort<
                 'p,

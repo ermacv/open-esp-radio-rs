@@ -128,7 +128,7 @@ impl LeRadioCapabilities {
         direct_test_mode: false,
         phys: LePhys::NONE,
         test_phys: LePhys::NONE,
-        timing: RadioTiming::ZERO,
+        timing: RadioTiming::MINIMAL,
     };
 
     /// Whether these capabilities include `request`.

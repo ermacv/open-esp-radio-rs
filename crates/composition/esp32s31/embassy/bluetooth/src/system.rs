@@ -43,8 +43,8 @@ use oer_esp32s31_bluetooth_memory::{
 use oer_esp32s31_bluetooth_radio::{BluetoothRadio, BluetoothRadioMemory};
 use oer_esp32s31_bluetooth_runtime::{
     BluetoothControl, BluetoothFault, BluetoothInstallError, BluetoothPort, BluetoothRuntime,
-    BluetoothRuntimeFault, LiveBluetoothHardware, ModemTimerFault, run_modem_timer,
-    settle_modem_timer,
+    BluetoothRuntimeFault, BluetoothUninstallError, LiveBluetoothHardware, ModemTimerFault,
+    run_modem_timer, settle_modem_timer,
 };
 use oer_esp32s31_coex::{CoexError, CoexStatusType};
 use oer_esp32s31_hal::{
@@ -423,8 +423,9 @@ pub struct BluetoothStartFailure {
 /// Why teardown stopped.
 #[derive(Debug)]
 pub enum BluetoothStopError {
-    /// The runtime could not stop the scheduler.
-    Runtime(BluetoothRuntimeFault<EspHalBluetoothSchedulerRunInterruptError>),
+    /// The runtime refused the uninstall: the port is not disabled, or its
+    /// scheduler could not be stopped.
+    Runtime(BluetoothUninstallError<EspHalBluetoothSchedulerRunInterruptError>),
     /// The source-127 task could not return its owner to storage.
     ModemTimer(
         ModemTimerFault<
@@ -551,8 +552,10 @@ impl BluetoothSystem {
 
     /// Stop the Controller and leave the shared radio.
     ///
-    /// `port` is the one [`start`] returned. The steps reverse [`start`]:
-    /// stop the scheduler and take the radio out of the runtime, settle the source-127 task, remove the CPU routes
+    /// `port` is the one [`start`] returned, disabled by the HCI service's
+    /// managed stop with every outcome taken, so every admitted event has
+    /// ended. The steps reverse [`start`]: take the radio out of the
+    /// runtime, settle the source-127 task, remove the CPU routes
     /// and recover both interrupt owners, release the Controller output and
     /// leave the shared PHY domain and BTBB (the radio system closes RF after
     /// the last PHY client), reset the Controller, release the clocks and

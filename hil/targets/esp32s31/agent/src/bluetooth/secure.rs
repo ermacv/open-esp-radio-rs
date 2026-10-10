@@ -7,10 +7,19 @@
 //! old Host end stays closed and starts the next Controller epoch, whose Host
 //! restores the retained bonds. A failed application closes the Controller
 //! without restarting; an unconfirmed Reset retains every owner as it is.
+//!
+//! The HCI service is the port's one outcome consumer for the whole epoch.
+//! When the Host ends, the service is asked to stop and disables the port,
+//! accounting every admitted event, while the radio runner keeps running.
+//! When the service ends first (the radio epoch is exhausted, the transport
+//! failed), its managed stop has run already: the Host is dropped, its epoch
+//! closes for good, the Controller stops and the image reports why, without
+//! a restart. A failed managed stop keeps every owner as it is.
 
 use core::{convert::Infallible, future::pending, pin::pin};
 
-use embassy_futures::select::{Either, select};
+use embassy_futures::select::{Either, Either3, select, select3};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use oer_bluetooth_gatt_trouble::security::{
     bonds::RamBondStore,
     epoch::{self, ShutdownAction},
@@ -24,7 +33,7 @@ use oer_bluetooth_hci::{
 };
 use oer_esp32s31_bluetooth_system::{
     BluetoothHci, BluetoothHciService, BluetoothHostTransport, BluetoothSystem,
-    BluetoothSystemPort, start,
+    BluetoothSystemFault, BluetoothSystemPort, ServeExit, Served, start,
 };
 use oer_hil_agent::bluetooth_gatt::secure::{
     reset_gate::{self, GatedController},
@@ -49,6 +58,14 @@ type Controller = ExternalController<BluetoothHostTransport, COMMAND_SLOTS>;
 type Gated = GatedController<'static, Controller>;
 type Resources = HostResources<DefaultPacketPool, 1, 3>;
 type HostExit = epoch::Exit<Gated, store::InjectedBondLoadFailure>;
+
+/// How one Host epoch ended.
+enum EpochEnd {
+    /// The Host ended first; the service then stopped the port.
+    Host(HostExit, Served<BluetoothSystemFault>),
+    /// The service ended first, with its managed stop; the Host was dropped.
+    Service(Served<BluetoothSystemFault>),
+}
 
 static RESOURCES: StaticCell<Resources> = StaticCell::new();
 static STATE: StaticCell<State> = StaticCell::new();
@@ -163,7 +180,7 @@ async fn lifecycle(
                 }
             },
         };
-        let exit = {
+        let end = {
             let mut epoch = pin!(run_epoch(
                 radio,
                 &mut system,
@@ -175,6 +192,42 @@ async fn lifecycle(
                 state,
             ));
             epoch.as_mut().await
+        };
+        let exit = match end {
+            EpochEnd::Host(exit, Served::Stopped(_)) => exit,
+            EpochEnd::Host(exit, Served::StopFailed { .. } | Served::Poisoned(_)) => {
+                state.stopped();
+                retain((exit, system, port, service)).await
+            }
+            EpochEnd::Service(Served::Stopped(served)) => {
+                // The service ended on its own: no restart follows.
+                state.stopped();
+                service.close();
+                let stopped = {
+                    let mut stop = pin!(system.stop(port, radio));
+                    stop.as_mut().await
+                };
+                let Ok(_parked) = stopped else {
+                    crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n")
+                };
+                match served {
+                    ServeExit::EpochExhausted(_) => crate::fail(
+                        c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-epoch-exhausted\r\n",
+                    ),
+                    ServeExit::Stopped
+                    | ServeExit::Closed
+                    | ServeExit::Transport(_)
+                    | ServeExit::Lifecycle(_)
+                    | ServeExit::Clock(_) => {
+                        crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n")
+                    }
+                }
+            }
+            // The report diverges with every owner alive.
+            EpochEnd::Service(Served::StopFailed { .. } | Served::Poisoned(_)) => {
+                state.stopped();
+                crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n")
+            }
         };
         record_shutdown(state, &exit);
         let action = exit.action();
@@ -222,7 +275,8 @@ async fn lifecycle(
     }
 }
 
-/// Run one Host epoch beside the radio runner and the HCI service.
+/// Run one Host epoch beside the radio runner and the HCI service, until the
+/// service has stopped the port.
 async fn run_epoch(
     radio: &'static Radio,
     system: &mut BluetoothSystem,
@@ -232,7 +286,7 @@ async fn run_epoch(
     resources: &mut Resources,
     bonds: &mut RamBondStore<1>,
     state: &'static State,
-) -> HostExit {
+) -> EpochEnd {
     let stack = build(
         GatedController {
             inner: Controller::new(transport),
@@ -241,21 +295,30 @@ async fn run_epoch(
         resources,
     );
     let mut store = Store { ram: bonds, state };
-    let host = pin!(epoch::run(
+    // The Host's end asks the service to stop the port.
+    let ended = Signal::<CriticalSectionRawMutex, ()>::new();
+    let mut host = pin!(epoch::run(
         stack,
         &mut store,
         &state.comparison,
         state.restart.wait(),
         |event| state.observe(event),
     ));
-    let hardware = pin!(select(system.run(radio), service.run(port)));
-    match select(host, hardware).await {
-        Either::First(exit) => exit,
-        Either::Second(Either::First(_)) => {
-            crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n")
+    let mut serving = pin!(service.run(port, ended.wait()));
+    let mut runner = pin!(system.run(radio));
+    match select3(host.as_mut(), serving.as_mut(), runner.as_mut()).await {
+        Either3::First(exit) => {
+            ended.signal(());
+            match select(serving, runner).await {
+                Either::First(served) => EpochEnd::Host(exit, served),
+                Either::Second(_) => {
+                    crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n")
+                }
+            }
         }
-        Either::Second(Either::Second(_)) => {
-            crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n")
+        Either3::Second(served) => EpochEnd::Service(served),
+        Either3::Third(_) => {
+            crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n")
         }
     }
 }

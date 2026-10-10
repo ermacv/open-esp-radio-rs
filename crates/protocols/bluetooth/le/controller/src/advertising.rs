@@ -21,6 +21,7 @@
 //! ignores connection indications.
 
 use bt_hci::param::{Error as HciError, Status};
+use core::num::{NonZeroU32, NonZeroU64};
 use oer_bluetooth_hci::{LeLegacyAdvertisingAddress, LeLegacyAdvertisingEnableRequest};
 use oer_bluetooth_ll::{
     LeDeviceAddress, LeDeviceAddressKind,
@@ -33,10 +34,12 @@ use oer_bluetooth_ll::{
     },
     connection::{LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeLegacyConnectionRequest},
 };
+
 use oer_bluetooth_radio::{
     AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu,
-    AdvertisingReception, AdvertisingSetId, EventId, LeInstant, LePhy, LeWindow, RadioDuration,
-    RadioOutcome, RadioRequest, RadioTiming, TimingError, TxPower,
+    AdvertisingReception, AdvertisingSetId, EventId, LeInstant, LePhy, LeWindow,
+    NonZeroRadioDuration, OutsideEpoch, RadioDuration, RadioOutcome, RadioRequest, RadioTiming,
+    TxPower,
 };
 
 use crate::{
@@ -44,7 +47,7 @@ use crate::{
     arbiter::{Proposal, reservation},
     coexistence,
     planning::{
-        PlanningCalculation as C, PlanningError, PlanningOperation as O, PlanningRole as R,
+        EpochExhausted, PlanningCalculation as C, PlanningOperation as O, PlanningRole as R,
     },
 };
 
@@ -422,52 +425,44 @@ impl Advertiser {
         }
     }
 
-    /// Air time of one channel of the event and its responses, plus the
-    /// lead.
-    fn channel_spacing(&self, timing: RadioTiming) -> Result<RadioDuration, PlanningError> {
-        // Legacy wire lengths are bounded to 39 bytes; all air-time sums
-        // below fit u32. Only the backend's portable lead is unbounded.
-        let mut air = air_micros(self.pdu_len);
-        if let SetKind::Directed { .. } = self.kind {
-            air += RESPONSE_CAPABLE_TAIL_MICROS
-                + T_IFS_MICROS
-                + LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS;
+    /// Air time of one channel's packet and the responses it awaits.
+    fn channel_air(&self) -> NonZeroRadioDuration {
+        // Legacy wire lengths are bounded to 39 bytes, so every sum below
+        // stays under 10,000 us: none saturates.
+        let air = air_micros(self.pdu_len);
+        let responses = if let SetKind::Directed { .. } = self.kind {
+            RESPONSE_CAPABLE_TAIL_MICROS + T_IFS_MICROS + LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS
         } else if let Some(response) = self.scan_response_len {
-            let scan = SCAN_REQ_AIR_MICROS + T_IFS_MICROS + air_micros(response);
+            let scan = SCAN_REQ_AIR_MICROS + T_IFS_MICROS + air_micros(response).get();
             let exchange = match self.kind {
                 SetKind::Connectable => scan.max(LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS),
                 SetKind::Nonconnectable | SetKind::Scannable | SetKind::Directed { .. } => scan,
             };
-            air += RESPONSE_CAPABLE_TAIL_MICROS + T_IFS_MICROS + exchange;
-        }
-        timing
-            .preparation_lead
-            .checked_add(RadioDuration::from_micros(u64::from(air)))
-            .ok_or(error(
-                O::Event,
-                C::ChannelSpacing,
-                TimingError::DurationOverflow,
-            ))
+            RESPONSE_CAPABLE_TAIL_MICROS + T_IFS_MICROS + exchange
+        } else {
+            0
+        };
+        NonZeroRadioDuration::from_micros(NonZeroU64::from(air.saturating_add(responses)))
     }
 
-    fn event_duration(&self, timing: RadioTiming) -> Result<RadioDuration, PlanningError> {
+    /// Air time of one channel of the event and its responses, plus the
+    /// lead.
+    fn channel_spacing(&self, timing: RadioTiming) -> Result<RadioDuration, EpochExhausted> {
+        // A spacing past `u64::MAX` cannot lie in the epoch.
+        self.channel_air()
+            .get()
+            .checked_add(timing.preparation_lead)
+            .ok_or(error(O::Event, C::ChannelSpacing))
+    }
+
+    fn event_duration(&self, timing: RadioTiming) -> Result<NonZeroRadioDuration, EpochExhausted> {
         let spacing = self.channel_spacing(timing)?;
         let channels = self.channels.iter().count() as u64;
-        // The last channel needs no lead after it. Subtract the lead before
-        // multiplication so a representable final duration stays representable.
-        let final_air = spacing.checked_sub(timing.preparation_lead).ok_or(error(
-            O::Event,
-            C::EventDuration,
-            TimingError::DurationOverflow,
-        ))?;
+        // The last channel needs no lead after it.
         spacing
             .checked_mul(channels - 1)
-            .and_then(|prefix| prefix.checked_add(final_air))
-            .ok_or(error(
-                O::Event,
-                C::EventDuration,
-                TimingError::DurationOverflow,
-            ))
+            .and_then(|prefix| self.channel_air().checked_add(prefix))
+            .ok_or(error(O::Event, C::EventDuration))
     }
 
     pub(crate) fn wants_event(&self) -> bool {
@@ -480,7 +475,7 @@ impl Advertiser {
         earliest: LeInstant,
         timing: RadioTiming,
         progress: Progress,
-    ) -> Result<Option<Proposal>, PlanningError> {
+    ) -> Result<Option<Proposal>, EpochExhausted> {
         if !self.wants_event() || progress.expired {
             return Ok(None);
         }
@@ -489,11 +484,9 @@ impl Advertiser {
             .map_or(earliest, |anchor| anchor.max(earliest));
         Ok(Some(Proposal {
             earliest,
-            latest: earliest.checked_add(ADVERTISING_DELAY_MAX).ok_or(error(
-                O::Event,
-                C::LatestAnchor,
-                TimingError::BeyondEpoch,
-            ))?,
+            latest: earliest
+                .checked_add(ADVERTISING_DELAY_MAX)
+                .ok_or(error(O::Event, C::LatestAnchor))?,
             duration: self.event_duration(timing)?,
         }))
     }
@@ -503,7 +496,7 @@ impl Advertiser {
         &self,
         timing: RadioTiming,
         progress: Progress,
-    ) -> Result<Option<LeWindow>, PlanningError> {
+    ) -> Result<Option<LeWindow>, EpochExhausted> {
         if self.phase != Phase::Running || progress.expired {
             return Ok(None);
         }
@@ -512,7 +505,7 @@ impl Advertiser {
         };
         reservation(anchor, self.event_duration(timing)?, timing)
             .map(Some)
-            .map_err(|cause| error(O::FutureReservation, C::Reservation, cause))
+            .map_err(|OutsideEpoch| error(O::FutureReservation, C::Reservation))
     }
 
     pub(crate) fn busy(&self) -> Option<LeWindow> {
@@ -527,10 +520,10 @@ impl Advertiser {
         timing: RadioTiming,
         delay: RadioDuration,
         progress: Progress,
-    ) -> Result<RadioRequest<'static>, PlanningError> {
+    ) -> Result<RadioRequest<'static>, EpochExhausted> {
         let channel_spacing = self.channel_spacing(timing)?;
         let reserved = reservation(anchor, self.event_duration(timing)?, timing)
-            .map_err(|cause| error(O::Event, C::Reservation, cause))?;
+            .map_err(|OutsideEpoch| error(O::Event, C::Reservation))?;
         let continuation = self.continuation(anchor, delay, progress)?;
         self.outstanding = Some(Outstanding {
             id,
@@ -572,7 +565,7 @@ impl Advertiser {
         earliest: LeInstant,
         delay: RadioDuration,
         progress: Progress,
-    ) -> Result<Progress, PlanningError> {
+    ) -> Result<Progress, EpochExhausted> {
         let anchor = progress.next_anchor.unwrap_or(earliest);
         self.continuation(anchor, delay, progress)
     }
@@ -582,7 +575,7 @@ impl Advertiser {
         anchor: LeInstant,
         delay: RadioDuration,
         progress: Progress,
-    ) -> Result<Progress, PlanningError> {
+    ) -> Result<Progress, EpochExhausted> {
         let high_duty = matches!(
             self.kind,
             SetKind::Directed {
@@ -593,25 +586,20 @@ impl Advertiser {
         let step = if high_duty {
             self.interval
         } else {
-            self.interval.checked_add(delay).ok_or(error(
-                O::Event,
-                C::Recurrence,
-                TimingError::DurationOverflow,
-            ))?
+            // A step past `u64::MAX` cannot lie in the epoch.
+            self.interval
+                .checked_add(delay)
+                .ok_or(error(O::Event, C::Recurrence))?
         };
-        let next = anchor.checked_add(step).ok_or(error(
-            O::Event,
-            C::Recurrence,
-            TimingError::BeyondEpoch,
-        ))?;
+        let next = anchor
+            .checked_add(step)
+            .ok_or(error(O::Event, C::Recurrence))?;
         let expires = if high_duty {
             Some(match progress.expires {
                 Some(expires) => expires,
-                None => anchor.checked_add(HIGH_DUTY_DURATION).ok_or(error(
-                    O::Event,
-                    C::Expiry,
-                    TimingError::BeyondEpoch,
-                ))?,
+                None => anchor
+                    .checked_add(HIGH_DUTY_DURATION)
+                    .ok_or(error(O::Event, C::Expiry))?,
             })
         } else {
             progress.expires
@@ -688,9 +676,12 @@ impl Advertiser {
     }
 }
 
-/// LE 1M air time of a PDU of `length` octets, header included.
-const fn air_micros(length: usize) -> u32 {
-    (length as u32 - 2) * 8 + 80
+/// LE 1M air time of a legacy PDU of `length` bytes, header included.
+const fn air_micros(length: usize) -> NonZeroU32 {
+    // Preamble, access address, header and CRC.
+    const OVERHEAD: NonZeroU32 = NonZeroU32::new((1 + 4 + 2 + 3) * 8).unwrap();
+    // Legacy PDUs carry at most 37 payload bytes: it never saturates.
+    OVERHEAD.saturating_add((length as u32 - 2) * 8)
 }
 
 #[derive(Clone, Copy)]
@@ -700,6 +691,6 @@ pub(crate) struct Progress {
     expired: bool,
 }
 
-fn error(operation: O, calculation: C, cause: TimingError) -> PlanningError {
-    PlanningError::timing(R::Advertising, operation, calculation, cause)
+fn error(operation: O, calculation: C) -> EpochExhausted {
+    EpochExhausted::at(R::Advertising, operation, calculation)
 }

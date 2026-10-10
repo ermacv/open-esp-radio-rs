@@ -25,7 +25,9 @@ pub(super) const TIMING: RadioTiming = RadioTiming {
         widening_jitter: RadioDuration::from_micros(63),
         receive_guard: RadioDuration::from_micros(10),
         receive_tail: RadioDuration::from_micros(2),
-        boundary_guard: RadioDuration::from_micros(1),
+        boundary_guard: oer_bluetooth_radio::NonZeroRadioDuration::from_micros(
+            core::num::NonZeroU64::MIN,
+        ),
         first_event_guard: RadioDuration::from_micros(16),
         event_length: RadioDuration::from_micros(5047),
         first_event_length: RadioDuration::from_micros(5155),
@@ -207,7 +209,7 @@ impl Harness {
     fn step_with(
         &mut self,
         result: Result<(), RequestError>,
-    ) -> Result<Option<Request>, crate::PlanningError> {
+    ) -> Result<Option<Request>, crate::EpochExhausted> {
         let request = self
             .core
             .next_request(LeInstant::from_micros(self.now), TIMING)?
@@ -222,7 +224,7 @@ impl Harness {
         Ok(request)
     }
 
-    fn step(&mut self) -> Result<Option<Request>, crate::PlanningError> {
+    fn step(&mut self) -> Result<Option<Request>, crate::EpochExhausted> {
         self.step_with(Ok(()))
     }
 
@@ -761,7 +763,7 @@ fn inactive_and_control_only_work_do_not_require_a_future_anchor() {
     harness.advertise(&[1]);
     assert!(matches!(
         harness.step(),
-        Err(crate::PlanningError {
+        Err(crate::EpochExhausted {
             role: crate::PlanningRole::Advertising,
             calculation: crate::PlanningCalculation::Admission,
             ..
@@ -779,7 +781,7 @@ fn failed_advertising_geometry_preserves_identity_randomness_and_continuation() 
     harness.now = u64::MAX - 1_000;
     assert!(matches!(
         harness.step(),
-        Err(crate::PlanningError {
+        Err(crate::EpochExhausted {
             role: crate::PlanningRole::Advertising,
             calculation: crate::PlanningCalculation::LatestAnchor,
             ..
@@ -809,9 +811,8 @@ fn test_end_remains_available_after_fatal_test_planning() {
     harness.now = u64::MAX;
     assert!(matches!(
         harness.step(),
-        Err(crate::PlanningError {
+        Err(crate::EpochExhausted {
             role: crate::PlanningRole::DirectTest,
-            cause: crate::PlanningCause::DirectTest(_),
             ..
         })
     ));

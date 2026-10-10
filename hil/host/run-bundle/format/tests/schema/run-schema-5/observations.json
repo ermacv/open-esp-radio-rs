@@ -1,5 +1,11 @@
 {
   "schema": 1,
+  "claim": {
+    "result": "connects and exchanges",
+    "not_proven": [
+      "throughput"
+    ]
+  },
   "observations": [
     {
       "name": "trouble-gatt",

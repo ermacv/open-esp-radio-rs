@@ -69,7 +69,23 @@
       "id": "fixture-experiment",
       "arm": "b",
       "variant": {
-        "commit": "0123456789abcdef0123456789abcdef01234567"
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "overrides": [
+          {
+            "dependency": "esp-hal",
+            "path": "../esp-hal",
+            "commit": "3333333333333333333333333333333333333333",
+            "dirty": false
+          }
+        ],
+        "features": {
+          "add": [
+            "probe"
+          ],
+          "remove": [
+            "trace"
+          ]
+        }
       },
       "round": {
         "layout_seed": 7,
@@ -132,9 +148,12 @@
                 "value": 2,
                 "unit": "count",
                 "semantics": 1,
-                "better": null,
-                "threshold": null,
-                "verdict": null
+                "better": "lower",
+                "threshold": {
+                  "comparison": "at-most",
+                  "value": 5
+                },
+                "verdict": "passed"
               },
               {
                 "name": "connections-not-established",
@@ -147,8 +166,8 @@
               }
             ],
             "failure": {
-              "kind": "scenario",
-              "message": "GATT transition deadline: BluetoothGattEvidence { address: Some([209, 246, 243, 160, 237, 48]), advertising: true, connected: false, advertising_starts: 2, connections: 1, disconnections: 1, reads: 2, writes: 1, value: 49, last_disconnect_reason: Some(19), cpu0_stack: Some(StackWatermark { capacity_bytes: 196608, free_bytes: 171640, used_bytes: 24968, minimum_free_bytes: 16384 }) }"
+              "kind": "unexpected-reset",
+              "message": "panic after cycle 3"
             }
           },
           {
@@ -198,7 +217,10 @@
             }
           }
         ],
-        "failure": null
+        "failure": {
+          "kind": "scenario",
+          "message": "one repetition failed"
+        }
       }
     ]
   },

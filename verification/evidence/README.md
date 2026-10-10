@@ -13,7 +13,7 @@ producer orchestration. Qualification reads the format directly.
 | Module | Owns |
 | --- | --- |
 | `index` (re-exported at the root) | The shard format `Index` (schema, producer `command`, claims, coverage, observation, state, untriaged locations), `validate`, `is_current` against the recorded source digests and coverage decisions, `digest_source`, `Evidence` (a whole derived directory, where a stale shard, one binding a source gone since and one of another format schema in `other_schema` are staleness rather than errors) and `untriaged` (locations no scenario covers) |
-| `store` | The one reader and writer of shard files: `write`, `read`, `names`, `shards`, `stale` and `records_any` (whether a change touches a shard) |
+| `store` | The one reader and writer of shard files: `path`, `write`, `read`, `names` and `shards` |
 | `policy` | The verdict source policy: `closure` (the path packages a shard may record, report packages apart), `report_packages`, `check_verdict_sources` and `reject_report_sources` for the shards of an index |
 | `diff` | What two versions of one shard say differently: claims line by line, recorded sources counted |
 | `producer` | The `Producer` contract and the host stands: `host_stand::stands` (a package below `verification/<chip>/host/` owns the shard `<directory>-host`) and `host_stand::shard`, the shard a stand writes from its own `shard` command |

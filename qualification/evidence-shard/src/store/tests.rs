@@ -56,13 +56,11 @@ fn a_host_stand_shard_is_accepted_and_an_unknown_producer_is_not() {
 }
 
 #[test]
-fn unreadable_and_changed_shards_are_stale() {
+fn a_shard_is_current_until_a_recorded_source_changes() {
     let root = tempfile::tempdir().unwrap();
     let root = root.path();
     std::fs::create_dir_all(root.join("sources")).unwrap();
     std::fs::write(root.join("sources/lib.rs"), "one").unwrap();
-    let directory = Path::new("shards");
-    std::fs::create_dir_all(root.join(directory)).unwrap();
     let shard = |scenario: &str| crate::Index {
         schema: crate::SCHEMA,
         command: crate::BLOBRAY.into(),
@@ -81,18 +79,10 @@ fn unreadable_and_changed_shards_are_stale() {
         observed: vec![],
         unprojected: vec![],
     };
-    let write = |name: &str, text: String| {
-        std::fs::write(root.join(directory).join(format!("{name}.json")), text).unwrap();
-    };
-    write("current", serde_json::to_string(&shard("current")).unwrap());
-    write("renamed", serde_json::to_string(&shard("other")).unwrap());
-    write("conflicted", "<<<<<<< HEAD\n{}\n".into());
-    assert_eq!(stale(root, directory).unwrap(), ["conflicted", "renamed"]);
+    let current = shard("current");
+    assert!(current.is_current(root));
     std::fs::write(root.join("sources/lib.rs"), "two").unwrap();
-    assert_eq!(
-        stale(root, directory).unwrap(),
-        ["conflicted", "current", "renamed"]
-    );
+    assert!(!current.is_current(root));
 }
 
 #[test]
@@ -102,8 +92,6 @@ fn a_shard_tracking_executed_files_stays_current_when_another_file_changes() {
     std::fs::create_dir_all(root.join("crates/hal/src")).unwrap();
     std::fs::write(root.join("crates/hal/src/executed.rs"), "one").unwrap();
     std::fs::write(root.join("crates/hal/src/other.rs"), "one").unwrap();
-    let directory = Path::new("shards");
-    std::fs::create_dir_all(root.join(directory)).unwrap();
     let executed = PathBuf::from("crates/hal/src/executed.rs");
     let shard = crate::Index {
         schema: crate::SCHEMA,
@@ -123,15 +111,10 @@ fn a_shard_tracking_executed_files_stays_current_when_another_file_changes() {
         observed: vec![],
         unprojected: vec![],
     };
-    std::fs::write(
-        root.join(directory).join("leaf.json"),
-        serde_json::to_string(&shard).unwrap(),
-    )
-    .unwrap();
     std::fs::write(root.join("crates/hal/src/other.rs"), "two").unwrap();
-    assert!(stale(root, directory).unwrap().is_empty());
+    assert!(shard.is_current(root));
     std::fs::write(root.join(&executed), "two").unwrap();
-    assert_eq!(stale(root, directory).unwrap(), ["leaf"]);
+    assert!(!shard.is_current(root));
 }
 
 #[test]
@@ -140,44 +123,6 @@ fn a_shard_of_the_previous_schema_is_rejected() {
         "inputs":{},"sources":[],"entries":[],"untriaged":[],"functions":[],"unobserved":[],
         "observed":[],"unprojected":[]}"#;
     assert!(serde_json::from_str::<crate::Index>(text).is_err());
-}
-
-#[test]
-fn a_shard_records_a_changed_file_or_one_below_a_recorded_directory() {
-    let shard = crate::Index {
-        schema: crate::SCHEMA,
-        command: crate::BLOBRAY.into(),
-        target: "chip-a".into(),
-        scenario: "i2c".into(),
-        inputs: Default::default(),
-        sources: ["crates/phy/src/lib.rs", "verification/evidence"]
-            .map(|path| crate::SourceDigest {
-                path: PathBuf::from(path),
-                sha256: String::new(),
-            })
-            .to_vec(),
-        dependence: crate::Dependence::whole_closure("test"),
-        entries: vec![],
-        untriaged: vec![],
-        functions: vec![],
-        unobserved: vec![],
-        observed: vec![],
-        unprojected: vec![],
-    };
-    let records = |paths: &[&str]| {
-        records_any(
-            Path::new("."),
-            &shard,
-            &paths.iter().map(PathBuf::from).collect::<Vec<_>>(),
-        )
-    };
-    assert!(records(&["crates/phy/src/lib.rs"]));
-    assert!(records(&[
-        "hil/README.md",
-        "verification/evidence/src/index.rs"
-    ]));
-    assert!(!records(&["crates/phy/src/lib.rs.orig", "hil/README.md"]));
-    assert!(!records(&[]));
 }
 
 #[test]
@@ -240,8 +185,6 @@ fn only_a_decision_that_applies_to_a_shard_makes_it_stale() {
     let digest = crate::CoverageDecisions::read(root, &decisions)
         .unwrap()
         .applicable_digest(&functions);
-    let directory = Path::new("shards");
-    std::fs::create_dir_all(root.join(directory)).unwrap();
     let mut dependence = crate::Dependence::whole_closure("test");
     dependence.coverage_decisions = Some(crate::DecisionDigest {
         path: decisions.clone(),
@@ -266,23 +209,15 @@ fn only_a_decision_that_applies_to_a_shard_makes_it_stale() {
         unprojected: vec![],
     };
     shard.validate("chip-a").unwrap();
-    std::fs::write(
-        root.join(directory).join("leaf.json"),
-        serde_json::to_string(&shard).unwrap(),
-    )
-    .unwrap();
-    let changed = [decisions.clone()];
     file("applied", "edited");
-    assert!(stale(root, directory).unwrap().is_empty());
-    assert!(!records_any(root, &shard, &changed));
+    assert!(shard.is_current(root));
     file("edited", "edited");
-    assert_eq!(stale(root, directory).unwrap(), ["leaf"]);
-    assert!(records_any(root, &shard, &changed));
+    assert!(!shard.is_current(root));
     std::fs::write(
         root.join(&decisions),
         "[[decision]]\nreason = \"no place\"\nplace = []\n",
     )
     .unwrap();
     assert!(crate::CoverageDecisions::read(root, &decisions).is_err());
-    assert_eq!(stale(root, directory).unwrap(), ["leaf"]);
+    assert!(!shard.is_current(root));
 }

@@ -19,7 +19,7 @@ use core::fmt;
 mod extensions;
 mod float;
 
-pub use extensions::{A0, A1, CsrOp, Extension, RA, list_registers};
+pub use extensions::{A0, A1, CsrOp, Extension, RA, list_registers, register_name};
 pub use float::{Float, Register};
 pub use rv_asm::{AmoOp, AmoOrdering, Fence, FenceSet, Imm, Inst, Reg};
 

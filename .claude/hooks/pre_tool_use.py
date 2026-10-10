@@ -59,8 +59,6 @@ REGENERATED = [
      "`cargo verification provenance --chip <chip> --accept NAME` after review"),
     (re.compile(r"(?:^|/)verification/[^/]+/facts/names/[^/]+\.toml$"),
      "the `oer-symbol-lineage` command in tools/symbol-lineage/README.md"),
-    (re.compile(r"(?:^|/)verification/[^/]+/evidence/scenarios/"),
-     "`cargo verification evidence --chip <chip>`, by the check's owner in a commit of its own"),
     (re.compile(r"(?:^|/)\.claude/hooks/heavy-commands\.json$"),
      "`cargo xtask hooks` after changing oer_xtask::hooks"),
 ]

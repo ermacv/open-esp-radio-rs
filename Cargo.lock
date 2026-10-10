@@ -4077,6 +4077,7 @@ dependencies = [
  "oer-markers",
  "oer-process",
  "oer-repo",
+ "oer-vendor-artifacts",
  "oer-vendor-evidence-shard",
  "serde",
  "serde_json",

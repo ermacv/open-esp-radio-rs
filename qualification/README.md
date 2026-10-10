@@ -135,7 +135,7 @@ Capability declarations live below `catalog/`. A qualification program names
 one or more catalog files with `catalogs` and selects stable IDs with
 `catalog-capabilities`; both are required, and a program declares no
 capability itself. Resolution adds the selected declarations and their
-catalog-owned dependency closure to the program before the schema-4 evaluator
+catalog-owned dependency closure to the program before the evaluator
 runs.
 
 ### Imports and required sets
@@ -365,10 +365,13 @@ Every capability has five independent axes:
 - `host` is the reviewed declaration `covered` or `incomplete`. The evaluator
   checks consistency with declared gaps; it does not find or run Rust tests.
   Workspace testing remains a separate repository check;
-- `vendor` is derived from the vendor evidence shards. It qualifies only when
-  every declared root has an evidence reference with a MATCH entry in a current
-  shard (one whose recorded sources match the checkout) and no source-only
-  anchor remains;
+- `vendor` is derived from the vendor evidence index of the program's chip,
+  derived data in `target/verification/<chip>/evidence` that
+  `cargo verification evidence --chip <chip>` computes for the checkout. It
+  qualifies only when every declared root has an evidence reference with a
+  MATCH entry in that index and no source-only anchor remains. One stale
+  shard (a recorded source changed or gone, or another format schema) voids
+  the whole index;
 - `hil` is derived from sealed schema-2 HIL run bundles and the tracked HIL
   evidence shards recorded from them. Every required scenario
   must pass with enough repetitions in an independently sealed attempt or run
@@ -675,12 +678,14 @@ per-obligation decisions still enforce checks, repetitions and failures.
 `hil-current-source-producer` / `hil.current_source_producer` counts direct
 source bindings independently of dirty state.
 
-A declared evidence directory that does not exist (the vendor evidence index,
-the HIL evidence directory, or the checkout's `target/hil/runs` link
-before its first run) holds no evidence: the evaluator prints
+An evidence directory that does not exist (the vendor evidence index, the
+HIL evidence directory, or the checkout's `target/hil/runs` link before its
+first run) holds no evidence: the evaluator prints
 `EVIDENCE-DIR absent kind=… path=… shards=0` (`bundles=0` for runs), and
-every obligation it would serve stays `missing`. A path that an existing
-record names and that does not exist remains an error.
+every obligation it would serve stays `missing`. A vendor evidence index
+stale for the checkout holds none either and prints
+`EVIDENCE-DIR stale kind=vendor-evidence path=… shards=0`. A path that an
+existing tracked record names and that does not exist remains an error.
 
 See the canonical
 [verification and qualification contract](../docs/verification-and-qualification.md)

@@ -21,11 +21,12 @@ oer-image-policy = { path = "../../tools/image/policy", optional = true }
 oer-probe-codegen = { path = "../harness/codegen", optional = true }
 oer-toolchain = { path = "../../tools/toolchain", optional = true }
 oer-vendor-artifacts = { path = "../../tools/vendor-artifacts", optional = true }
+oer-image = { path = "../../tools/image/pipeline", optional = true }
 
 [features]
 # The producers' orchestration (`run`): probe builds, the Blobray scenario
 # runs and shard regeneration. Off for the Blobray workspace and the stands.
-producers = ["dep:oer-chip-profile", "dep:oer-image-policy", "dep:oer-probe-codegen", "dep:oer-toolchain", "dep:oer-vendor-artifacts"]
+producers = ["dep:oer-chip-profile", "dep:oer-image", "dep:oer-image-policy", "dep:oer-probe-codegen", "dep:oer-toolchain", "dep:oer-vendor-artifacts"]
 
 [dev-dependencies]
 tempfile = "=3.27.0"

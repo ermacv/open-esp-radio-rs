@@ -2,7 +2,7 @@
 
 use super::{
     BTreeMap, BTreeSet, CapabilityDocument, HilConfig, ManifestDocument, Path, PathBuf,
-    QUALIFICATION_SCHEMA, Result, ScenarioCatalog, StaticContext, VerificationConfig, fs, slug,
+    QUALIFICATION_SCHEMA, Result, ScenarioCatalog, StaticContext, fs, slug,
     validate_capability_declaration, validate_relative_path,
 };
 use serde::{Deserialize, Serialize};
@@ -10,12 +10,10 @@ use serde::{Deserialize, Serialize};
 mod imports;
 mod workspace;
 
-pub(crate) const CAPABILITY_CATALOG_SCHEMA: u16 = 3;
+pub(crate) const CAPABILITY_CATALOG_SCHEMA: u16 = 4;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CatalogView {
-    /// Scenario evidence indexes the catalogs validate against.
-    pub(crate) evidence_indexes: BTreeSet<PathBuf>,
     pub(crate) sources: Vec<SourceIdentity>,
     pub(crate) capabilities: BTreeMap<String, CapabilityDocument>,
     pub(crate) scopes: BTreeMap<String, CapabilityScope>,
@@ -218,7 +216,6 @@ struct InventoryItemDocument {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct CatalogValidation {
-    evidence_index: PathBuf,
     hil_catalog: PathBuf,
 }
 
@@ -265,7 +262,7 @@ impl CatalogView {
     fn load_with_program(
         root: &Path,
         paths: &[PathBuf],
-        fallback: Option<(&VerificationConfig, &HilConfig)>,
+        fallback: Option<&HilConfig>,
     ) -> Result<Self> {
         if paths.is_empty() {
             return Err("no capability catalogs were selected".into());
@@ -292,15 +289,13 @@ impl CatalogView {
             {
                 return Err(format!("capability catalog {catalog_id} is empty").into());
             }
-            let (evidence_index, hil_catalog) = match (document.validation.take(), fallback) {
-                (Some(validation), _) => (validation.evidence_index, validation.hil_catalog),
-                (None, Some((verification, hil))) => (verification.evidence_index.clone(), hil.catalog.clone()),
+            let hil_catalog = match (document.validation.take(), fallback) {
+                (Some(validation), _) => validation.hil_catalog,
+                (None, Some(hil)) => hil.catalog.clone(),
                 (None, None) => return Err(format!(
                     "capability catalog {catalog_id} needs [validation] for standalone static checking"
                 ).into()),
             };
-            validate_relative_path(&evidence_index)?;
-            view.evidence_indexes.insert(evidence_index);
             validate_relative_path(&hil_catalog)?;
             view.sources.push(SourceIdentity {
                 id: catalog_id.clone(),
@@ -575,11 +570,7 @@ impl ManifestDocument {
             sha256: oer_durable::sha256_bytes(program_input.as_bytes()),
         });
         let mut origins = BTreeMap::new();
-        let view = CatalogView::load_with_program(
-            root,
-            &self.catalogs,
-            Some((&self.verification, &self.hil)),
-        )?;
+        let view = CatalogView::load_with_program(root, &self.catalogs, Some(&self.hil))?;
         let mut selected = BTreeSet::new();
         for id in &self.catalog_capabilities {
             let id = slug(id, "catalog capability reference")?;

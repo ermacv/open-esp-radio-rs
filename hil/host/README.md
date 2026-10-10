@@ -321,7 +321,7 @@ of comparable firmware or fixture conditions. Verify the structure and content d
 `cargo hil report verify <run-id>`, or omit the ID to verify all bundles. This
 also runs without a DUT or private stand file.
 
-Qualification v4 independently reads the sealed bundles instead of trusting a
+Qualification independently reads the sealed bundles instead of trusting a
 handwritten HIL status. A capability is HIL-qualified only when its declared
 scenario and repetition requirement is satisfied by a completed bundle or a
 separately sealed attempt bound to the current source composition. A verified snapshot matching the current

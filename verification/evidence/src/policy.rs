@@ -5,7 +5,7 @@
 //! verdict, so no shard may record one of their files: an edit to report
 //! code must never stale evidence. Producers compute what a shard may record
 //! through [`closure`] and check it with [`check_verdict_sources`];
-//! [`reject_report_sources`] catches a committed shard that bypassed them.
+//! [`reject_report_sources`] catches a shard of an index that bypassed them.
 use crate::Result;
 use oer_repo::closure::{Edges, Features, Target};
 use oer_vendor_evidence_shard::store;

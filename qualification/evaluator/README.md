@@ -33,7 +33,7 @@ interoperability; readers retain separate validation logic.
 Unit tests live beside their private modules. No source-name regex is used to
 turn Rust symbol spelling into an ownership or execution proof.
 
-Capability catalog schema 3 stores schema-4 qualification declarations and a
+Capability catalog schema 4 stores schema-5 qualification declarations and a
 wider source-owned domain inventory. Static validation rejects unsafe/symlink
 paths, unsupported schemas, duplicate declarations, invalid unselected
 records, missing dependencies, cycles, inconsistent axes, invalid source

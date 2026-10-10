@@ -1,4 +1,4 @@
-schema = 3
+schema = 4
 id = "esp32s31-bluetooth"
 imports = [
   "qualification/catalog/esp32s31/wifi-phy.toml",
@@ -6,7 +6,6 @@ imports = [
 ]
 
 [validation]
-evidence-index = "verification/esp32s31/evidence/scenarios"
 hil-catalog = "hil/scenarios"
 
 [[capabilities]]

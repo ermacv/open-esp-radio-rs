@@ -35,9 +35,11 @@ Scenario authors also read the
    function and the compiled production probe in one Blobray session and
    fails closed: `MATCH`, `DIFF` or `INCOMPLETE`. Never compare against a
    shadow implementation or a duplicated fixture table.
-6. **Shards.** `evidence/scenarios` shards are regenerated only by the
-   check's owner (`cargo verification evidence --chip <chip>`), in commits of their
-   own; never edit, rebase-resolve or hand-merge them. The format, the one
+6. **Shards.** The evidence index is derived data, never committed:
+   `cargo verification evidence --chip <chip>` computes it for the checkout
+   into `target/verification/<chip>/evidence`, and qualification reads it
+   there; a stale index holds no evidence (`EVIDENCE-DIR stale`) until
+   it is computed again. The format, the one
    writer and the source policy are `oer-vendor-evidence`
    (`verification/evidence`); its producers are the Blobray scenario engine
    and the host stands (`verification/<chip>/host/<name>`, shard
@@ -47,7 +49,8 @@ Scenario authors also read the
    phy-vendor-calibration` (and its `-restart`, `-ieee802154` points) flashes
    the vendor firmware and production alternately and records the
    comparison of `oer-esp32s31-phy-vendor-calibration` as the run bundle's
-   typed result. Nothing is written to `verification/<chip>/evidence/`.
+   typed result. Nothing is written to the vendor evidence index
+   `target/verification/<chip>/evidence`.
 8. **Commits.** A production change the comparison needs lands in its own
    product-scoped commit, never inside a `blobray` or verification commit.
 
@@ -57,7 +60,7 @@ Scenario authors also read the
 cargo verification fetch <chip>
 cargo verification check provenance --chip <chip>
 cargo verification scenario <scenario>
-cargo verification evidence --chip <chip> --check --changed-since origin/main
+cargo verification evidence --chip <chip>
 cargo hil plan phy-vendor-calibration
 ```
 

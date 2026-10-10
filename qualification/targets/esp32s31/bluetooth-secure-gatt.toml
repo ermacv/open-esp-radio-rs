@@ -1,11 +1,8 @@
-schema = 4
+schema = 5
 target = "esp32s31-bluetooth-secure-gatt"
 required-capabilities-from = "catalog-closure"
 catalogs = ["qualification/catalog/esp32s31/bluetooth-products.toml"]
 catalog-capabilities = ["secure-peripheral-gatt"]
-
-[verification]
-evidence-index = "verification/esp32s31/evidence/scenarios"
 
 [hil]
 target = "esp32s31"

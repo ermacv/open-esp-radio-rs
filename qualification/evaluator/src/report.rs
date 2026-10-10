@@ -181,13 +181,15 @@ fn report(qualification: &Qualification) -> Report<'_> {
     }
 }
 
-/// One line per declared evidence directory that does not exist.
+/// One line per declared evidence directory that does not exist, and for a
+/// vendor evidence index stale for the checkout: neither holds evidence.
 pub(crate) fn absent_lines(absent: &[crate::model::AbsentDirectory]) -> Vec<String> {
     absent
         .iter()
         .map(|directory| {
             format!(
-                "EVIDENCE-DIR\tabsent\tkind={}\tpath={}\t{}=0",
+                "EVIDENCE-DIR\t{}\tkind={}\tpath={}\t{}=0",
+                directory.state,
                 directory.kind,
                 directory.path.display(),
                 if directory.kind == "hil-runs" {

@@ -23,7 +23,7 @@ pub(crate) use catalog::{
 pub(crate) use development::{Development, WorkKind};
 pub(crate) use source_contract::SourceContract;
 
-pub(crate) const QUALIFICATION_SCHEMA: u16 = 4;
+pub(crate) const QUALIFICATION_SCHEMA: u16 = 5;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(rename_all = "kebab-case")]
@@ -245,6 +245,9 @@ pub(crate) struct AbsentDirectory {
     /// `vendor-evidence`, `hil-evidence` or `hil-runs`.
     pub(crate) kind: &'static str,
     pub(crate) path: PathBuf,
+    /// `absent`, or `stale` for a derived vendor evidence index computed
+    /// for other sources than the checkout's.
+    pub(crate) state: &'static str,
 }
 
 /// Which of `declared` (kind, repository path) do not exist below `root`;
@@ -260,6 +263,7 @@ pub(crate) fn absent_directories(
         .map(|(kind, path)| AbsentDirectory {
             kind,
             path: path.to_path_buf(),
+            state: "absent",
         })
         .collect()
 }
@@ -313,7 +317,6 @@ struct ManifestDocument {
     catalogs: Vec<PathBuf>,
     #[serde(default)]
     catalog_capabilities: Vec<String>,
-    verification: VerificationConfig,
     hil: HilConfig,
     /// The selected catalog capabilities and their dependency closure.
     #[serde(skip)]
@@ -341,12 +344,6 @@ enum RequiredCapabilitiesFrom {
 
 pub(super) struct ValidatedProgram {
     document: ManifestDocument,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct VerificationConfig {
-    evidence_index: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -477,7 +474,6 @@ impl ManifestDocument {
     fn validate_program_structure(&self, root: &Path) -> Result<()> {
         let target = slug(&self.target, "qualification target")?;
         slug(&self.hil.target, "HIL target")?;
-        validate_relative_path(&self.verification.evidence_index)?;
         validate_relative_path(&self.hil.catalog)?;
         validate_relative_path(&self.hil.runs)?;
 
@@ -672,8 +668,11 @@ impl ValidatedProgram {
         let target = slug(&document.target, "qualification target")?;
         let hil_target = slug(&document.hil.target, "HIL target")?;
         let repository = RepositoryState::read(root)?;
-        let evidence =
-            NativeEvidence::load(root, &document.verification.evidence_index, &hil_target)?;
+        // The vendor evidence index is derived from the checkout: its one
+        // location is the chip's verification project.
+        let vendor_evidence_index =
+            PathBuf::from(oer_vendor_artifacts::project::evidence_shards(&hil_target));
+        let evidence = NativeEvidence::load(root, &vendor_evidence_index, &hil_target)?;
         let scenario_catalog = ScenarioCatalog::load(root, &document.hil.catalog)?;
         let hil_index = HilEvidenceIndex::load(
             root,
@@ -682,17 +681,17 @@ impl ValidatedProgram {
             &hil_target,
             &repository,
         )?;
-        let evidence_inputs = EvidenceInputs {
+        let mut evidence_inputs = EvidenceInputs {
             verification_entries: evidence.entries(),
             verification_current_release_entries: evidence.current_entries(),
             hil: hil_index.summary().clone(),
-            vendor_evidence_index: document.verification.evidence_index.clone(),
+            vendor_evidence_index: vendor_evidence_index.clone(),
             hil_catalog: document.hil.catalog.clone(),
             hil_runs: document.hil.runs.clone(),
             absent: absent_directories(
                 root,
                 &[
-                    ("vendor-evidence", &document.verification.evidence_index),
+                    ("vendor-evidence", &vendor_evidence_index),
                     (
                         "hil-evidence",
                         document.hil.evidence.as_deref().unwrap_or(Path::new("")),
@@ -701,6 +700,13 @@ impl ValidatedProgram {
                 ],
             ),
         };
+        if !evidence.stale.is_empty() {
+            evidence_inputs.absent.push(AbsentDirectory {
+                kind: "vendor-evidence",
+                path: vendor_evidence_index.clone(),
+                state: "stale",
+            });
+        }
         let declarations = document
             .capabilities
             .iter()
@@ -1309,14 +1315,33 @@ fn validate_dependencies(capabilities: &BTreeMap<String, Capability>) -> Result<
 /// sources are current. A missing index directory supports no claim.
 pub(crate) struct NativeEvidence {
     pub(crate) shards: Vec<(oer_vendor_evidence_shard::Index, bool)>,
+    /// Scenarios whose shard is stale for the checkout; when any is, the
+    /// index holds no evidence.
+    pub(crate) stale: Vec<String>,
 }
 
 impl NativeEvidence {
+    /// The derived index at `path`. It is computed whole for one checkout,
+    /// never reviewed, so a stale shard voids the whole index: it then holds
+    /// no evidence and names the stale scenarios, which the report shows as a
+    /// stale evidence directory to recompute.
     fn load(root: &Path, path: &Path, target: &str) -> Result<Self> {
         let evidence = oer_vendor_evidence_shard::Evidence::load(root, path, target)
             .map_err(|error| format!("scenario evidence index {}: {error}", path.display()))?;
+        let stale: Vec<String> = evidence
+            .shards
+            .iter()
+            .filter(|(_, current)| !current)
+            .map(|(shard, _)| shard.scenario.clone())
+            .chain(evidence.other_schema)
+            .collect();
         Ok(Self {
-            shards: evidence.shards,
+            shards: if stale.is_empty() {
+                evidence.shards
+            } else {
+                Vec::new()
+            },
+            stale,
         })
     }
 

@@ -1,8 +1,7 @@
 //! Repository paths named by tracked qualification and evidence records.
 //!
 //! The keys mirror the record schemas of the qualification evaluator
-//! (`qualification/evaluator/src/model*`, `hil/shard.rs`) and
-//! the vendor evidence index (`oer-vendor-evidence`, `verification/evidence`):
+//! (`qualification/evaluator/src/model*`, `hil/shard.rs`):
 //!
 //! - program manifests (`qualification/targets/**.toml`): `catalogs`, and
 //!   `[hil] catalog`;
@@ -11,12 +10,12 @@
 //!   `source-document`, `documents`, `source-paths`,
 //!   `[development] knowledge` and host-test `manifest`/`source`; every
 //!   `packages` entry names a package of the repository;
-//! - evidence shards (`verification/*/evidence/**.json` and each directory a
-//!   program names as its vendor `evidence-index` or HIL `evidence`):
-//!   `sources[].path`.
+//! - HIL evidence shards (each directory a program names as its HIL
+//!   `evidence`): `sources[].path`.
 //!
-//! Output directories (`evidence-index`, `[hil] evidence`, `[hil] runs`) are
-//! where tools write and need not exist.
+//! Output directories (`[hil] evidence`, `[hil] runs`) are where tools write
+//! and need not exist. Vendor evidence shards are derived data below
+//! `target/` that nothing tracks.
 
 use std::collections::BTreeSet;
 
@@ -48,8 +47,7 @@ const SCOPED_PATH_KEYS: &[(&str, &str)] = &[
 ];
 
 /// Output directory keys a program names, holding evidence shards.
-const EVIDENCE_DIRECTORIES: &[(&str, &str)] =
-    &[("verification", "evidence-index"), ("hil", "evidence")];
+const EVIDENCE_DIRECTORIES: &[(&str, &str)] = &[("hil", "evidence")];
 
 struct Walk<'a> {
     context: &'a Context<'a>,
@@ -114,14 +112,7 @@ pub fn check(context: &Context<'_>) -> Result<Vec<String>> {
         .iter()
         .map(|package| package.name.as_str())
         .collect();
-    let mut evidence: BTreeSet<String> = context
-        .repo
-        .files()
-        .filter(|file| file.starts_with("verification/"))
-        .filter(|file| file.split('/').nth(2) == Some("evidence"))
-        .filter(|file| file.ends_with(".json"))
-        .map(str::to_owned)
-        .collect();
+    let mut evidence = BTreeSet::new();
     let mut problems = vec![];
     for file in context.repo.files().filter(|file| is_record(file)) {
         let table: Table = context
@@ -199,7 +190,7 @@ mod tests {
             ),
             (
                 "qualification/targets/t.toml",
-                "catalogs = [\"qualification/catalog/c.toml\"]\n[verification]\nevidence-index = \"not/yet/written\"\n[hil]\ncatalog = \"docs\"\nruns = \"target/runs\"\n",
+                "catalogs = [\"qualification/catalog/c.toml\"]\n[hil]\ncatalog = \"docs\"\nruns = \"target/runs\"\n",
             ),
         ]);
         assert!(found.is_empty(), "{found:?}");
@@ -228,7 +219,6 @@ mod tests {
             r#"{"sources": [{"path": "a.rs", "sha256": "0"}, {"path": "gone.rs", "sha256": "0"}]}"#;
         let found = run(&[
             ("a.rs", ""),
-            ("verification/chip/evidence/scenarios/s.json", shard),
             ("hil/evidence/chip/h.json", shard),
             (
                 "qualification/targets/t.toml",
@@ -237,10 +227,7 @@ mod tests {
         ]);
         assert_eq!(
             found,
-            [
-                "hil/evidence/chip/h.json: source gone.rs does not exist",
-                "verification/chip/evidence/scenarios/s.json: source gone.rs does not exist",
-            ]
+            ["hil/evidence/chip/h.json: source gone.rs does not exist",]
         );
     }
 }

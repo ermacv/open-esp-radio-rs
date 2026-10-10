@@ -9,7 +9,6 @@ private vendor artifacts live here.
 | `<chip>/artifacts.toml` | The single pin (repository, revision, SHA-256) of every vendor archive, ROM ELF and SDK firmware |
 | `<chip>/facts/` | Cited-function fingerprints (`provenance.toml`) and recovered name maps |
 | `<chip>/probes/`, `<chip>/scenarios/` | Compiled production entries (built with the chip's image compiler, in the shared firmware cache) and typed Blobray comparisons (the verdict library; `scenarios/cli` its binary) |
-| `<chip>/evidence/` | Generated scenario shards (`evidence/scenarios`, written only through `oer-vendor-evidence`); hardware cross-checks are HIL run bundles |
 | `<chip>/hil-vendor/`, `<chip>/hardware/` | Vendor firmware and isolated firmware probes of board state |
 | `harness/` | Probe generation and the chip-neutral scenario engine |
 | `evidence/` | `oer-vendor-evidence`: evidence producers, orchestration, the verdict source policy and the `Producer` contract; re-exports the shared shard format |
@@ -28,8 +27,9 @@ chip calibration relations and comparisons live in `../hil/phy/<chip>/`.
   they are not pins.
 - A comparison fails closed with `MATCH`, `DIFF` or `INCOMPLETE` and exercises
   compiled production code, never a shadow implementation.
-- Only the check's owner regenerates `evidence/scenarios` shards, in commits
-  of their own; never edit or merge them by hand.
+- The vendor evidence index is derived data, never tracked:
+  `cargo verification evidence --chip <chip>` computes it into
+  `target/verification/<chip>/evidence` for the checkout.
 - `facts/*.toml` are large and partly generated: grep them by explicit path.
 - Production behavior never moves into a probe.
 

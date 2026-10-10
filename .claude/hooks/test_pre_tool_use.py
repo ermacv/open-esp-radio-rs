@@ -36,7 +36,6 @@ class Edits(unittest.TestCase):
             ("Edit", "registers/esp32s31/published/platform.bindings.toml", "cargo registers generate"),
             ("Edit", "/w/verification/esp32s31/facts/provenance.toml", "--accept"),
             ("Write", "verification/esp32s31/facts/names/libble_app.toml", "oer-symbol-lineage"),
-            ("Write", "/w/verification/esp32s31/evidence/scenarios/rx.toml", "cargo verification evidence"),
             ("Edit", "/w/.claude/hooks/heavy-commands.json", "cargo xtask hooks"),
         ]:
             self.assert_blocked(tool, path, command)

@@ -1,15 +1,13 @@
-//! Regenerate the vendor evidence shards whose recorded sources changed.
+//! Compute a chip's derived vendor evidence index for the checkout.
 //!
 //! Each shard records the digests of the sources its verdicts depend on, so a
-//! shard is stale exactly when one of them changed. A shard that no longer
-//! parses, such as one git left from a conflicting merge, is stale too: the
-//! repository's attributes merge shards as binary files, and this task
-//! rewrites them from the scenarios instead of by hand.
+//! shard is stale exactly when one of them changed; the index is untracked
+//! derived data, computed whole or for named scenarios.
 //!
-//! This module decides which producer reruns which shard: the Blobray
+//! This module decides which producer computes which shard: the Blobray
 //! scenario engine ([`super::scenario`]) or a host stand below
-//! `verification/<chip>/host/` (its own `shard` command); `cargo xtask
-//! evidence` calls it.
+//! `verification/<chip>/host/` (its own `shard` command);
+//! `cargo verification evidence` calls it.
 use crate::Result;
 use crate::producer::{Producer, host_stand};
 use oer_process::Checkout;
@@ -31,7 +29,7 @@ fn probes(chip: &str) -> (String, String) {
     )
 }
 
-/// Fail when a committed shard of `directory` records a file of a report
+/// Fail when a shard of the index `directory` records a file of a report
 /// package.
 fn reject_report_sources(ctx: &Checkout, directory: &Path) -> Result<()> {
     let model = oer_repo::Model::load(&oer_repo::Repo::from_git(&ctx.root)?)?;
@@ -176,7 +174,10 @@ fn regenerate(
     Ok(())
 }
 
-/// Rewrite the named shards, or every stale shard when none is named.
+/// Compute `chip`'s derived evidence index ([`directory`]) for the checkout:
+/// every shard when no scenario is named, after fetching the pins and
+/// building the firmware inputs from their catalog recipes, else only the
+/// named shards. Fails when a scenario does not match.
 pub fn run(
     ctx: &Checkout,
     chip: &str,
@@ -186,32 +187,51 @@ pub fn run(
 ) -> Result<ExitCode> {
     let relative = directory(&ctx.root, chip)?;
     let directory = ctx.root.join(&relative);
-    reject_report_sources(ctx, &directory)?;
-    let selected = if scenarios.is_empty() {
-        store::stale(&ctx.root, Path::new(&relative))?
+    if scenarios.is_empty() {
+        oer_vendor_artifacts::fetch_vendor_sources(&ctx.root, chip)?;
+        for image in oer_vendor_artifacts::firmware_images(&ctx.root, chip)? {
+            oer_image::esp_idf::catalog::build(&ctx.root, &image)?;
+        }
+        if directory.exists() {
+            std::fs::remove_dir_all(&directory)?;
+        }
+        std::fs::create_dir_all(&directory)?;
+        let mut every = host_stand::stands(
+            &oer_repo::Model::load(&oer_repo::Repo::from_git(&ctx.root)?)?,
+            chip,
+        )?
+        .into_keys()
+        .collect::<Vec<_>>();
+        // The Blobray producer runs every one of its scenarios as `all`.
+        every.push("all".into());
+        println!("computing the evidence index of {chip} into {relative}");
+        regenerate(ctx, chip, every, &directory, &linker, &output)?;
+        for name in store::names(&directory)? {
+            print!(
+                "{}",
+                summary(&name, None, store::read(&directory, &name).as_ref())
+            );
+        }
     } else {
-        scenarios
-    };
-    if selected.is_empty() {
-        println!("every evidence shard is current");
-        return Ok(ExitCode::SUCCESS);
+        std::fs::create_dir_all(&directory)?;
+        let before: Vec<(String, Option<Index>)> = scenarios
+            .iter()
+            .map(|name| (name.clone(), store::read(&directory, name)))
+            .collect();
+        println!("regenerating evidence shards: {}", scenarios.join(", "));
+        regenerate(ctx, chip, scenarios, &directory, &linker, &output)?;
+        for (name, old) in before {
+            let new = store::read(&directory, &name);
+            print!("{}", summary(&name, old.as_ref(), new.as_ref()));
+        }
     }
-    let before: Vec<(String, Option<Index>)> = selected
-        .iter()
-        .map(|name| (name.clone(), store::read(&directory, name)))
-        .collect();
-    println!("regenerating evidence shards: {}", selected.join(", "));
-    regenerate(ctx, chip, selected, &directory, &linker, &output)?;
-    for (name, old) in before {
-        let new = store::read(&directory, &name);
-        print!("{}", summary(&name, old.as_ref(), new.as_ref()));
-    }
+    reject_report_sources(ctx, &directory)?;
     print!("{}", render_untriaged(&directory, false)?);
     Ok(ExitCode::SUCCESS)
 }
 
-/// Print the chip-wide untriaged vendor locations of `chip`'s committed
-/// shards, one per line.
+/// Print the chip-wide untriaged vendor locations of `chip`'s derived
+/// evidence index, one per line.
 pub fn untriaged(ctx: &Checkout, chip: &str) -> Result<ExitCode> {
     let directory = ctx.root.join(directory(&ctx.root, chip)?);
     print!("{}", render_untriaged(&directory, true)?);
@@ -249,30 +269,6 @@ fn render_untriaged(directory: &Path, all: bool) -> Result<String> {
     Ok(text)
 }
 
-/// Repository files that differ between `revision` and the worktree.
-fn changed_files(ctx: &Checkout, revision: &str) -> Result<Vec<PathBuf>> {
-    let output = oer_process::capture(oer_process::git::command(&ctx.root).args([
-        "diff",
-        "--name-only",
-        "-z",
-        revision,
-        "--",
-    ]))?;
-    let untracked = oer_process::capture(oer_process::git::command(&ctx.root).args([
-        "ls-files",
-        "--others",
-        "--exclude-standard",
-        "-z",
-    ]))?;
-    Ok(output
-        .stdout
-        .split(|b| *b == 0)
-        .chain(untracked.stdout.split(|b| *b == 0))
-        .filter(|path| !path.is_empty())
-        .map(|path| PathBuf::from(String::from_utf8_lossy(path).into_owned()))
-        .collect())
-}
-
 /// What changed between two versions of shard `name`: its claims first,
 /// then the recorded sources.
 fn summary(name: &str, old: Option<&Index>, new: Option<&Index>) -> String {
@@ -282,102 +278,6 @@ fn summary(name: &str, old: Option<&Index>, new: Option<&Index>) -> String {
         (_, None) => format!("{name}:\n  no readable shard\n"),
     }
 }
-
-/// Rerun every Blobray scenario shard of `chip` into `output` and fail
-/// unless each equals the committed shard. Host stand shards compile vendor
-/// source the check does not fetch and are not rerun.
-pub fn check(
-    ctx: &Checkout,
-    chip: &str,
-    scenarios: Vec<String>,
-    changed_since: Option<String>,
-    linker: PathBuf,
-    output: PathBuf,
-) -> Result<ExitCode> {
-    let directory = ctx.root.join(directory(&ctx.root, chip)?);
-    reject_report_sources(ctx, &directory)?;
-    // An unreadable shard counts as a Blobray shard: checking it fails closed.
-    let mut committed: Vec<String> = store::names(&directory)?
-        .into_iter()
-        .filter(|name| {
-            store::read(&directory, name)
-                .is_none_or(|shard| shard.command == oer_vendor_evidence_shard::BLOBRAY)
-        })
-        .collect();
-    // Named scenarios narrow the check; each must have a committed shard.
-    if !scenarios.is_empty() {
-        if let Some(unknown) = scenarios.iter().find(|s| !committed.contains(s)) {
-            return Err(
-                format!("{unknown} has no committed Blobray evidence shard for {chip}").into(),
-            );
-        }
-        committed.retain(|name| scenarios.contains(name));
-    }
-    if let Some(revision) = &changed_since {
-        let changed = changed_files(ctx, revision)?;
-        let (touched, skipped): (Vec<String>, Vec<String>) =
-            committed
-                .into_iter()
-                .partition(|name| match store::read(&directory, name) {
-                    // An unreadable shard is checked: skipping fails closed.
-                    None => true,
-                    Some(shard) => store::records_any(&ctx.root, &shard, &changed),
-                });
-        for name in &skipped {
-            println!(
-                "{name}: skipped, no recorded source changed in {revision}..HEAD or the worktree"
-            );
-        }
-        committed = touched;
-        if committed.is_empty() {
-            println!("every evidence shard skipped: no recorded source changed");
-            return Ok(ExitCode::SUCCESS);
-        }
-    }
-    if committed.is_empty() {
-        println!("no committed Blobray evidence shard of {chip} to rerun");
-        return Ok(ExitCode::SUCCESS);
-    }
-    // Per chip, so checks of different chips keep their reruns apart.
-    let rerun = ctx.root.join(&output).join(CHECK_INDEX).join(chip);
-    if rerun.exists() {
-        std::fs::remove_dir_all(&rerun)?;
-    }
-    std::fs::create_dir_all(&rerun)?;
-    Blobray {
-        ctx,
-        chip,
-        linker: resolve(&linker)?,
-        output: &output,
-    }
-    .produce(&committed, &rerun)?;
-    let differing: Vec<&String> = committed
-        .iter()
-        .filter(|name| {
-            let (old, new) = (store::read(&directory, name), store::read(&rerun, name));
-            let differs = !matches!((&old, &new), (Some(a), Some(b)) if a == b);
-            if differs {
-                eprint!("{}", summary(name, old.as_ref(), new.as_ref()));
-            }
-            differs
-        })
-        .collect();
-    if differing.is_empty() {
-        println!("every rerun evidence shard equals its committed shard");
-        Ok(ExitCode::SUCCESS)
-    } else {
-        let names: Vec<&str> = differing.iter().map(|s| s.as_str()).collect();
-        eprintln!(
-            "evidence shards differ from their rerun: {}; regenerate them with `cargo verification evidence --chip {chip} {}`",
-            names.join(", "),
-            names.join(" ")
-        );
-        Ok(ExitCode::FAILURE)
-    }
-}
-
-/// Directory below the output root a check reruns each chip's shards into.
-const CHECK_INDEX: &str = "check-index";
 
 /// `program` itself when it names a path, otherwise its first match on
 /// `PATH`.

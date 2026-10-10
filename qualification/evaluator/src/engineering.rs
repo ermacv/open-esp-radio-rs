@@ -209,7 +209,14 @@ impl ProjectMap {
                     sha256: s.sha256.clone(),
                 })
                 .collect(),
-            evidence_indexes: catalog.evidence_indexes.clone(),
+            // The derived index of every chip the catalogs scope.
+            evidence_indexes: catalog
+                .scopes
+                .values()
+                .map(|scope| {
+                    PathBuf::from(oer_vendor_artifacts::project::evidence_shards(&scope.chip))
+                })
+                .collect(),
             entries: Vec::new(),
             next: Vec::new(),
         };

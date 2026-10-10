@@ -1,11 +1,8 @@
-schema = 4
+schema = 5
 target = "esp32s31-wifi-ap-availability"
 required-capabilities = ["station-ap-loss-recovery", "station-initial-ap-absence"]
 catalogs = ["qualification/catalog/esp32s31/wifi-phy.toml"]
 catalog-capabilities = ["station-ap-loss-recovery", "station-initial-ap-absence"]
-
-[verification]
-evidence-index = "verification/esp32s31/evidence/scenarios"
 
 [hil]
 target = "esp32s31"

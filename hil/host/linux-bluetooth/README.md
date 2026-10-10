@@ -210,9 +210,12 @@ the DUT reports that connection within two seconds; otherwise the host closes
 its side and the attempt is judged as above (#385).
 
 Every attempt lands in the observation's `connection_attempts`, with its phase,
-the DUT connection number it was for, its attempt number, outcome
-(`established` or `not-established`) and the host-side error, so the loss
-stays visible (#357). Each repetition also publishes the
+the DUT connection number it was for, its attempt number, outcome and the
+host-side error, so the loss stays visible (#357). The outcome is
+`established`, `not-established` (retried), `failed` (the DUT saw the
+connection) or `unobserved` (the DUT's own observation failed). A failed
+observation reports its own cause together with the attempt's host-side
+error, and exhausted attempts report the last host-side error. Each repetition also publishes the
 measurements `connection-attempts` and `connections-not-established` (lower is
 better), which `cargo hil runs history` and `runs compare` follow. The bound of
 three attempts guards against the environment; it is no acceptance threshold.

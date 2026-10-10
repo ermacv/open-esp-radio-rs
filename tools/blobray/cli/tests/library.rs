@@ -750,3 +750,174 @@ fn a_pcrel_pair_shows_the_text_at_its_high_addend_on_both_instructions() {
         "{listing}"
     );
 }
+
+/// `dispatch(a0)`: `li a5, 2; bltu a5, a0, default; lui/addi a5, .Ltable;
+/// slli a4, a0, 2; add; lw a5; jalr zero, 0(a5)` with three cases and a
+/// default, the table in `.rodata` relocated by `.rela.rodata`. `bounded`
+/// keeps the check (a `nop` replaces it otherwise); `relocated` entries of
+/// the three carry their `R_RISCV_32`.
+fn switch_object(bounded: bool, relocated: u64) -> Vec<u8> {
+    use object::write::{Object, Relocation, Symbol, SymbolSection};
+    use object::{
+        Architecture, BinaryFormat, Endianness, RelocationFlags, SectionKind, SymbolFlags,
+        SymbolKind, SymbolScope,
+    };
+    let words: [u32; 16] = [
+        0x0020_0793,                                     // 0x00 addi a5, zero, 2
+        if bounded { 0x02a7_ea63 } else { 0x0000_0013 }, // 0x04 bltu a5, a0, 0x38
+        0x0000_07b7,                                     // 0x08 lui a5, %hi(.Ltable)
+        0x0007_8793,                                     // 0x0c addi a5, a5, %lo(.Ltable)
+        0x0025_1713,                                     // 0x10 slli a4, a0, 2
+        0x00f7_0733,                                     // 0x14 add a4, a4, a5
+        0x0007_2783,                                     // 0x18 lw a5, 0(a4)
+        0x0007_8067,                                     // 0x1c jalr zero, 0(a5)
+        0x00a0_0513,
+        0x0000_8067, // 0x20 case 0
+        0x00b0_0513,
+        0x0000_8067, // 0x28 case 1
+        0x00c0_0513,
+        0x0000_8067, // 0x30 case 2
+        0x0000_0513,
+        0x0000_8067, // 0x38 default
+    ];
+    let code: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    object.append_section_data(text, &code, 4);
+    let rodata = object.add_section(Vec::new(), b".rodata".to_vec(), SectionKind::ReadOnlyData);
+    object.append_section_data(rodata, &[0; 12], 4);
+    object.add_symbol(Symbol {
+        name: b"dispatch".to_vec(),
+        value: 0,
+        size: code.len() as u64,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Linkage,
+        weak: false,
+        section: SymbolSection::Section(text),
+        flags: SymbolFlags::None,
+    });
+    let table = object.add_symbol(Symbol {
+        name: b".Ltable".to_vec(),
+        value: 0,
+        size: 0,
+        kind: SymbolKind::Data,
+        scope: SymbolScope::Compilation,
+        weak: false,
+        section: SymbolSection::Section(rodata),
+        flags: SymbolFlags::None,
+    });
+    let text_symbol = object.section_symbol(text);
+    let relocate = |object: &mut Object, section, offset, symbol, addend, r_type| {
+        object
+            .add_relocation(
+                section,
+                Relocation {
+                    offset,
+                    symbol,
+                    addend,
+                    flags: RelocationFlags::Elf { r_type },
+                },
+            )
+            .unwrap();
+    };
+    relocate(&mut object, text, 0x08, table, 0, object::elf::R_RISCV_HI20);
+    relocate(
+        &mut object,
+        text,
+        0x0c,
+        table,
+        0,
+        object::elf::R_RISCV_LO12_I,
+    );
+    for (entry, case) in [0x20_i64, 0x28, 0x30]
+        .into_iter()
+        .enumerate()
+        .take(relocated as usize)
+    {
+        relocate(
+            &mut object,
+            rodata,
+            4 * entry as u64,
+            text_symbol,
+            case,
+            object::elf::R_RISCV_32,
+        );
+    }
+    object.write().unwrap()
+}
+
+#[test]
+fn a_bounded_relocated_switch_is_followed_and_any_other_stays_a_gap() {
+    let dir = tempfile::tempdir().unwrap();
+    let records = |name: &str, object: Vec<u8>| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, support::archive(&[(b"switch.o", &object)], false)).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+            .args([
+                "--format",
+                "json",
+                "function-records",
+                "--function",
+                "dispatch",
+                "--input",
+            ])
+            .arg(format!("code={}", path.display()))
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let document: blobray_cli::wire::FunctionRecordsDocument =
+            serde_json::from_slice(&output.stdout).unwrap();
+        match document.functions.into_iter().next().unwrap() {
+            blobray_cli::wire::NamedFunction::Analyzed {
+                coverage,
+                records,
+                jump_tables,
+                ..
+            } => (coverage.control_flow, records, jump_tables),
+            other => panic!("{other:?}"),
+        }
+    };
+    let jumps = |records: &[FunctionRecord]| {
+        let mut targets: Vec<_> = records
+            .iter()
+            .filter_map(|record| match record {
+                FunctionRecord::Edge {
+                    from: 0x1c,
+                    target,
+                    relation,
+                    ..
+                } => Some((*relation, *target)),
+                _ => None,
+            })
+            .collect();
+        targets.sort_by_key(|(_, target)| *target);
+        targets
+    };
+    let (complete, followed, tables) = records("bounded.a", switch_object(true, 3));
+    assert!(complete, "every case is reached");
+    assert_eq!(
+        tables,
+        [blobray_domain::JumpTable {
+            site: 0x1c,
+            first_case: 0,
+            entries: vec![0x20, 0x28, 0x30],
+        }]
+    );
+    assert_eq!(
+        jumps(&followed),
+        [
+            (EdgeKind::Jump, Some(0x20)),
+            (EdgeKind::Jump, Some(0x28)),
+            (EdgeKind::Jump, Some(0x30)),
+        ]
+    );
+    for (name, object) in [
+        ("unbounded.a", switch_object(false, 3)),
+        ("unrelocated.a", switch_object(true, 2)),
+    ] {
+        let (complete, gap, tables) = records(name, object);
+        assert!(!complete, "{name}: the dispatch stays a gap");
+        assert!(tables.is_empty(), "{name}");
+        assert_eq!(jumps(&gap), [(EdgeKind::Indirect, None)], "{name}");
+    }
+}

@@ -19,20 +19,34 @@ fn table_symbol() -> SymbolId {
     }
 }
 
-/// `bltu 2, a1` (when `bounded`); `a5 = load4[(a1 << 2) + .Ltable]`;
-/// `jalr zero, 0(a5)` at 0x14 in a block from 0 to 0x18.
+/// `bltu 2, a1` at 4 (when `bounded`), whose fall-through is the only way
+/// into the dispatch block 8..0x18; there `a5 = load4[(a1 << 2) + .Ltable]`
+/// and `jalr zero, 0(a5)` at 0x14.
 fn records(bounded: bool) -> Vec<FunctionRecord> {
     let expression = |id, expression| FunctionRecord::Expression {
         id,
         offset: 0,
         expression,
     };
+    let edge = |from, target, relation| FunctionRecord::Edge {
+        from,
+        target: Some(target),
+        relation,
+        external: false,
+    };
     let mut records = vec![
         FunctionRecord::Block {
             id: 0,
             start: 0,
+            end: 8,
+        },
+        FunctionRecord::Block {
+            id: 1,
+            start: 8,
             end: 0x18,
         },
+        edge(4, 8, EdgeKind::Fallthrough),
+        edge(4, 0x3c, EdgeKind::Taken),
         expression(0, Expression::EntryRegister { register: 11 }),
         expression(
             1,
@@ -128,6 +142,7 @@ fn a_bounded_relocated_table_yields_its_cases_in_index_order() {
         tables,
         [JumpTable {
             site: 0x14,
+            first_case: 0,
             entries: vec![0x20, 0x30, 0x38],
         }],
         "`bltu 2, a1` admits indices 0..=2"
@@ -147,4 +162,62 @@ fn a_selected_entry_without_its_relocation_stays_an_indirect_gap() {
 #[test]
 fn an_entry_outside_the_function_stays_an_indirect_gap() {
     assert!(jump_tables(&records(true), TEXT, EXTENT, &facts(3, 0x80)).is_empty());
+}
+
+#[test]
+fn a_check_that_does_not_guard_the_dispatch_states_no_bound() {
+    // The same comparison, but its in-range edge is not the only way in.
+    let mut second_way_in = records(true);
+    second_way_in.push(FunctionRecord::Edge {
+        from: 0x2c,
+        target: Some(8),
+        relation: EdgeKind::Jump,
+        external: false,
+    });
+    assert!(jump_tables(&second_way_in, TEXT, EXTENT, &facts(3, 0x38)).is_empty());
+    // The comparison's taken edge, not its fall-through, enters the block.
+    let mut wrong_side = records(true);
+    for record in &mut wrong_side {
+        if let FunctionRecord::Edge {
+            relation, target, ..
+        } = record
+        {
+            *relation = match *target {
+                Some(8) => EdgeKind::Taken,
+                _ => EdgeKind::Fallthrough,
+            };
+        }
+    }
+    assert!(jump_tables(&wrong_side, TEXT, EXTENT, &facts(3, 0x38)).is_empty());
+}
+
+#[test]
+fn a_rebased_switch_value_reports_its_first_case() {
+    let mut rebased = records(true);
+    // index = entry a1 + (-8): `switch (x) { case 8: … }`.
+    rebased.push(FunctionRecord::Expression {
+        id: 4,
+        offset: 0,
+        expression: Expression::Integer {
+            op: IntegerOp::Add,
+            left: AbstractValue::Expression { id: 0 },
+            right: AbstractValue::Constant {
+                value: (-8_i32) as u32,
+            },
+        },
+    });
+    for record in &mut rebased {
+        match record {
+            FunctionRecord::Expression {
+                id: 1,
+                expression: Expression::Integer { left, .. },
+                ..
+            } => *left = AbstractValue::Expression { id: 4 },
+            FunctionRecord::Condition { right, .. } => *right = AbstractValue::Expression { id: 4 },
+            _ => {}
+        }
+    }
+    let tables = jump_tables(&rebased, TEXT, EXTENT, &facts(3, 0x38));
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].first_case, 8);
 }

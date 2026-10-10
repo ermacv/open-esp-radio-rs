@@ -56,7 +56,10 @@ pub enum StoredBitsSource {
 pub struct JumpTable {
     /// The dispatching `jalr`'s offset.
     pub site: u64,
-    /// The case targets in index order: entry `i` is case `i`.
+    /// The case value of entry zero: GCC subtracts the smallest case from
+    /// the switch value before indexing.
+    pub first_case: i64,
+    /// The case targets in index order: entry `i` is case `first_case + i`.
     pub entries: Vec<u64>,
 }
 

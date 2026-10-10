@@ -539,8 +539,6 @@ pub enum RadioRequest<'data> {
 /// Why the backend refused a request. Nothing changed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RequestError {
-    /// No backend is installed.
-    NotInstalled,
     /// The port is disabled or quiesced: it admits no work until `Enable`.
     Disabled,
     /// The backend could not read its clock to admit the request; a later

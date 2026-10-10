@@ -129,7 +129,6 @@ fn buffer<P: Ieee80211LowerMacPort>(port: &P, frame: &[u8]) -> P::TxBuffer {
     let mut buffer = port
         .tx_buffer(frame.len())
         .ok()
-        .and_then(Result::ok)
         .flatten()
         .expect("a free buffer");
     buffer.frame_mut().copy_from_slice(frame);
@@ -187,36 +186,39 @@ fn one_admitted_attempt_reports_exactly_one_completion_and_releases_its_buffer()
 #[test]
 fn buffers_are_bounded_and_an_unsubmitted_one_is_released() {
     let model = enabled_station();
-    assert_eq!(model.tx_buffer(MAX_MPDU + 1), Ok(Ok(None)));
+    assert_eq!(model.tx_buffer(MAX_MPDU + 1), Ok(None));
     let held: Vec<_> = (0..BUFFERS)
-        .map(|_| model.tx_buffer(24).unwrap().unwrap().unwrap())
+        .map(|_| model.tx_buffer(24).unwrap().unwrap())
         .collect();
-    assert_eq!(model.tx_buffer(24), Ok(Ok(None)));
+    assert_eq!(model.tx_buffer(24), Ok(None));
     for buffer in held {
         model.release_tx_buffer(buffer);
     }
-    assert!(model.tx_buffer(24).unwrap().unwrap().is_some());
+    assert!(model.tx_buffer(24).unwrap().is_some());
 }
 
 #[test]
-fn a_port_without_its_backend_refuses_and_hands_the_attempt_and_body_back() {
+fn a_refused_attempt_comes_back_with_its_buffer_and_body() {
     let model = enabled_station();
-    model.uninstall();
-    let mut with_body = mpdu(&model, 1, 1);
-    with_body.payload.body = Some(ModelBody(b"kept by the caller".to_vec()));
+    assert_eq!(model.submit(mpdu(&model, 1, 1)), Ok(Ok(())));
+    // The best-effort queue is busy: the attempt comes back whole.
+    let body = ModelBody(b"kept by the caller".to_vec());
+    let mut with_body = mpdu(&model, 3, 3);
+    let mut frame = model.tx_buffer(24 + body.0.len()).unwrap().unwrap();
+    frame.frame_mut()[..24].copy_from_slice(&header(3));
+    model.release_tx_buffer(with_body.payload.frame);
+    with_body.payload.frame = frame;
+    with_body.payload.body = Some(body);
     let Ok(Err(refused)) = model.submit(with_body) else {
-        panic!("a port without its backend refuses the attempt");
+        panic!("a busy queue refuses the attempt");
     };
-    assert_eq!(refused.error, SubmitError::NotInstalled);
+    assert_eq!(refused.error, SubmitError::Busy);
     assert_eq!(
         refused.attempt.payload.body,
         Some(ModelBody(b"kept by the caller".to_vec()))
     );
     assert_eq!(model.bodies_held(), 0);
     model.release_tx_buffer(refused.attempt.payload.frame);
-    // Installed again, the port admits.
-    model.install();
-    assert_eq!(model.submit(mpdu(&model, 1, 1)), Ok(Ok(())));
     // Only a poisoned port fails outside the refusal.
     let late = TxAttempt {
         access_category: WmmAccessCategory::Voice,
@@ -323,8 +325,8 @@ fn values_outside_the_limits_are_refused_as_unsupported() {
 #[test]
 fn an_ampdu_completion_carries_the_block_ack() {
     let model = enabled_station();
-    let mut aggregate = model.ampdu_buffer().unwrap().unwrap().unwrap();
-    assert_eq!(model.ampdu_buffer(), Ok(Ok(None)));
+    let mut aggregate = model.ampdu_buffer().unwrap().unwrap();
+    assert_eq!(model.ampdu_buffer(), Ok(None));
     for sequence in [100, 101] {
         aggregate
             .push_mpdu(24, None)
@@ -350,14 +352,14 @@ fn an_ampdu_completion_carries_the_block_ack() {
             bitmap: 0b11,
         })
     );
-    assert!(model.ampdu_buffer().unwrap().unwrap().is_some());
+    assert!(model.ampdu_buffer().unwrap().is_some());
 }
 
 #[test]
 fn an_empty_aggregate_is_refused() {
     let model = enabled_station();
     let payload = AmpduPayload {
-        subframes: model.ampdu_buffer().unwrap().unwrap().unwrap(),
+        subframes: model.ampdu_buffer().unwrap().unwrap(),
         tid: 0,
         min_mpdu_start_spacing: 0,
     };
@@ -1047,11 +1049,7 @@ fn live_retuning_preserves_both_tsfs_configuration_and_completed_tx_ownership() 
     let body = ModelBody(b"retained across the visit".to_vec());
     let mut outgoing = mpdu(&model, 1, 1);
     outgoing.key = KeySelector::Key(handle);
-    let mut frame = model
-        .tx_buffer(24 + body.0.len())
-        .unwrap()
-        .unwrap()
-        .unwrap();
+    let mut frame = model.tx_buffer(24 + body.0.len()).unwrap().unwrap();
     frame.frame_mut()[..24].copy_from_slice(&header(1));
     model.release_tx_buffer(outgoing.payload.frame);
     outgoing.payload.frame = frame;
@@ -1281,7 +1279,7 @@ fn an_access_point_receives_the_probe_requests_it_answers() {
 fn a_body_travels_by_ownership_and_comes_back_once_its_attempt_ended() {
     let model = enabled_station();
     let body = ModelBody(b"payload".to_vec());
-    let mut frame = model.tx_buffer(24 + 7).unwrap().unwrap().unwrap();
+    let mut frame = model.tx_buffer(24 + 7).unwrap().unwrap();
     frame.frame_mut()[..24].copy_from_slice(&header(7));
     let payload = TxPayload {
         frame,
@@ -1329,7 +1327,7 @@ fn a_completion_without_a_body_carries_none_and_other_events_come_back() {
 /// An attempt `id` whose MPDU carries `body`.
 fn with_body(model: &Model, id: u32, body: &ModelBody) -> MpduAttempt<ModelBuffer, ModelBody> {
     let len = body.0.len();
-    let mut frame = model.tx_buffer(24 + len).unwrap().unwrap().unwrap();
+    let mut frame = model.tx_buffer(24 + len).unwrap().unwrap();
     frame.frame_mut()[..24].copy_from_slice(&header(7));
     attempt(
         id,
@@ -1375,7 +1373,7 @@ fn a_failed_or_cancelled_attempt_s_completion_carries_its_body_back() {
 #[test]
 fn a_refused_attempt_keeps_its_body() {
     let model = enabled_station();
-    let mut frame = model.tx_buffer(30).unwrap().unwrap().unwrap();
+    let mut frame = model.tx_buffer(30).unwrap().unwrap();
     frame.frame_mut()[..24].copy_from_slice(&header(7));
     // A body longer than the MPDU leaves no header.
     let payload = TxPayload {
@@ -1395,7 +1393,7 @@ fn a_refused_attempt_keeps_its_body() {
 #[test]
 fn an_aggregate_s_bodies_come_back_by_subframe() {
     let model = enabled_station();
-    let mut aggregate = model.ampdu_buffer().unwrap().unwrap().unwrap();
+    let mut aggregate = model.ampdu_buffer().unwrap().unwrap();
     // A subframe without a body, then two with one.
     aggregate
         .push_mpdu(24, None)

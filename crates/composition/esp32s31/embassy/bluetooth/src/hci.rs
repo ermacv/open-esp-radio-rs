@@ -22,7 +22,7 @@ use oer_esp32s31_soc_esp_hal::entropy::Entropy;
 use oer_time_embassy::EmbassyClock;
 use static_cell::StaticCell;
 
-use crate::system::{BluetoothSystemFault, BluetoothSystemRuntime};
+use crate::system::{BluetoothSystemFault, BluetoothSystemPort};
 
 /// Host-to-Controller packet slots; they also bound the Host's ACL credits.
 pub const HOST_TO_CONTROLLER: usize = 4;
@@ -87,11 +87,10 @@ pub struct BluetoothHci {
     pub service: BluetoothHciService,
 }
 
-/// Serves the Host over the radio runtime.
+/// Serves the Host over the radio port of the running client.
 pub struct BluetoothHciService {
     transport: ControllerTransport,
     core: &'static mut LeController<'static, OUTPUT>,
-    runtime: &'static BluetoothSystemRuntime,
     config: LeControllerConfig,
     random: &'static (dyn LeRandomSource + 'static),
     retired: Option<HciRetired<'static>>,
@@ -107,12 +106,14 @@ pub enum BluetoothHciRestartError {
 }
 
 impl BluetoothHciService {
-    /// Serve until the transport closes or the radio fails.
+    /// Serve over `port`, the radio port of the running client, until the
+    /// transport closes or the radio fails. The service is the port's one
+    /// outcome consumer while it runs.
     ///
     /// Cancelling it leaves the core mid-request; only [`Self::restart`]
     /// makes the core serve again, after the Host epoch was retired.
-    pub async fn run(&mut self) -> ServeExit<BluetoothSystemFault> {
-        serve(&self.transport, self.core, self.runtime, &EmbassyClock).await
+    pub async fn run(&mut self, port: &BluetoothSystemPort) -> ServeExit<BluetoothSystemFault> {
+        serve(&self.transport, self.core, port, &EmbassyClock).await
     }
 
     /// Wait until the Host and the service drained both directions of the
@@ -173,7 +174,7 @@ fn reset_core(
     *core = LeController::new(config, Some(random));
 }
 
-/// Create the HCI Controller of `runtime` once per boot. `public_address` is the
+/// Create the HCI Controller once per boot. `public_address` is the
 /// device's public address, `version` its Link Layer identity and `random`
 /// the entropy for LE Rand and encryption.
 ///
@@ -187,7 +188,6 @@ fn reset_core(
 )]
 // CAPABILITY: bluetooth-trouble-host-integration, trouble-host-integration
 pub fn start_bluetooth_hci(
-    runtime: &'static BluetoothSystemRuntime,
     public_address: BluetoothPublicDeviceAddress,
     version: Option<LeVersionInformation>,
     random: &'static (dyn LeRandomSource + 'static),
@@ -205,7 +205,6 @@ pub fn start_bluetooth_hci(
         service: BluetoothHciService {
             transport: controller,
             core,
-            runtime,
             config,
             random,
             retired: None,

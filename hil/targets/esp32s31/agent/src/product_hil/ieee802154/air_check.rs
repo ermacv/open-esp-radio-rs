@@ -9,7 +9,7 @@
 //! target-monotonic times; the host judges them.
 
 use embassy_time::{Duration, Timer, with_timeout};
-use oer_esp32s31_ieee802154_system::{Ieee802154System, Ieee802154SystemRuntime};
+use oer_esp32s31_ieee802154_system::Ieee802154SystemPort;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_espressif_ieee802154_runtime::Ieee802154RadioEvent;
 use oer_hil_protocol::{
@@ -57,13 +57,13 @@ pub(in crate::product_hil) async fn run_air_check(
             let started = core::pin::pin!(client.start(parked));
             started.await
         };
-        let Some(system) = started else {
+        let Some((system, port)) = started else {
             evidence.stop = Ieee802154AirCheckStop::StartFailed;
             return evidence;
         };
         // The runtime's runner progresses backoffs beside the cycle.
         let outcome = match embassy_futures::select::select(
-            run_cycle(&system, channel, request, &mut evidence.cycles[index]),
+            run_cycle(&port, channel, request, &mut evidence.cycles[index]),
             system.run(),
         )
         .await
@@ -72,7 +72,7 @@ pub(in crate::product_hil) async fn run_air_check(
             embassy_futures::select::Either::Second(never) => match never {},
         };
         let stopped = {
-            let stopped = core::pin::pin!(client.stop(system));
+            let stopped = core::pin::pin!(client.stop(system, port));
             stopped.await
         };
         let Some(stopped) = stopped else {
@@ -91,29 +91,28 @@ pub(in crate::product_hil) async fn run_air_check(
 }
 
 async fn run_cycle(
-    system: &Ieee802154System,
+    port: &Ieee802154SystemPort,
     channel: Channel,
     request: Ieee802154AirCheckRequest,
     cycle: &mut Ieee802154AirCycle,
 ) -> Result<(), Stop> {
-    let runtime = system.runtime();
     let mut next_id = 0;
     let mut id = || {
         next_id += 1;
         RequestId::new(next_id)
     };
-    let submit = |command| match runtime.submit(command) {
+    let submit = |command| match port.submit(command) {
         Ok(Ok(_)) => Ok(()),
         _ => Err(Stop(Ieee802154AirCheckStop::CommandRejected)),
     };
-    lifecycle(system, LifecycleCommand::Enable, LifecycleEvent::Enabled).await?;
+    lifecycle(port, LifecycleCommand::Enable, LifecycleEvent::Enabled).await?;
 
     submit(RadioCommand::EnergyScan(EnergyScanRequest {
         id: id(),
         channel,
         duration_us: request.energy_scan_micros,
     }))?;
-    cycle.energy = match next_event(system).await? {
+    cycle.energy = match next_event(port).await? {
         Ieee802154RadioEvent::EnergyScanDone { energy_dbm, .. } => {
             Ieee802154AirEnergyOutcome::Energy(energy_dbm)
         }
@@ -122,7 +121,7 @@ async fn run_cycle(
     };
 
     submit(RadioCommand::ClearChannelAssessment { id: id(), channel })?;
-    cycle.cca = match next_event(system).await? {
+    cycle.cca = match next_event(port).await? {
         Ieee802154RadioEvent::ClearChannelAssessmentDone { idle: true, .. } => {
             Ieee802154AirCcaOutcome::Clear
         }
@@ -149,7 +148,7 @@ async fn run_cycle(
         interface: Interface::PRIMARY,
         time_sync: None,
     }))?;
-    cycle.direct = transmitted(system, requested_at_micros).await?;
+    cycle.direct = transmitted(port, requested_at_micros).await?;
 
     for scheduled in &mut cycle.scheduled {
         let at = now_micros() + u64::from(request.scheduled_lead_micros);
@@ -167,7 +166,7 @@ async fn run_cycle(
             interface: Interface::PRIMARY,
             time_sync: None,
         }))?;
-        *scheduled = transmitted(system, at).await?;
+        *scheduled = transmitted(port, at).await?;
     }
 
     submit(RadioCommand::Configure {
@@ -180,7 +179,7 @@ async fn run_cycle(
     )));
     let mut window = core::pin::pin!(window);
     loop {
-        match embassy_futures::select::select(window.as_mut(), taken(runtime)).await {
+        match embassy_futures::select::select(window.as_mut(), taken(port)).await {
             embassy_futures::select::Either::First(()) => break,
             embassy_futures::select::Either::Second(Ok(Ieee802154RadioEvent::Received(frame))) => {
                 cycle.received_frames = cycle.received_frames.saturating_add(1);
@@ -202,7 +201,7 @@ async fn run_cycle(
     // window's.
     submit(RadioCommand::Sleep { id: id() })?;
     loop {
-        match with_timeout(Duration::from_millis(1), taken(runtime)).await {
+        match with_timeout(Duration::from_millis(1), taken(port)).await {
             Ok(Ok(Ieee802154RadioEvent::Received(_))) => {}
             Ok(Ok(_)) => return Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent)),
             Ok(Err(_)) => return Err(Stop(Ieee802154AirCheckStop::EventsLost)),
@@ -229,7 +228,7 @@ async fn run_cycle(
     let window_end = Timer::after(bound);
     let mut window_end = core::pin::pin!(window_end);
     loop {
-        match embassy_futures::select::select(window_end.as_mut(), taken(runtime)).await {
+        match embassy_futures::select::select(window_end.as_mut(), taken(port)).await {
             embassy_futures::select::Either::First(()) => {
                 return Err(Stop(Ieee802154AirCheckStop::EventTimeout));
             }
@@ -255,32 +254,32 @@ async fn run_cycle(
             }
         }
     }
-    lifecycle(system, LifecycleCommand::Disable, LifecycleEvent::Disabled).await
+    lifecycle(port, LifecycleCommand::Disable, LifecycleEvent::Disabled).await
 }
 
 /// Run one lifecycle command and take its terminal event.
 async fn lifecycle(
-    system: &Ieee802154System,
+    port: &Ieee802154SystemPort,
     command: LifecycleCommand,
     terminal: LifecycleEvent,
 ) -> Result<(), Stop> {
-    let Ok(Ok(())) = system.runtime().lifecycle(command).await else {
+    let Ok(Ok(())) = port.lifecycle(command).await else {
         return Err(Stop(Ieee802154AirCheckStop::CommandRejected));
     };
-    match next_event(system).await? {
+    match next_event(port).await? {
         Ieee802154RadioEvent::Lifecycle(event) if event == terminal => Ok(()),
         _ => Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent)),
     }
 }
 
-/// The runtime's next event; the runtime never poisons.
-async fn taken(runtime: &Ieee802154SystemRuntime) -> Result<Ieee802154RadioEvent, EventsLost> {
-    let Ok(event) = runtime.next_event().await;
+/// The port's next event; the port never poisons.
+async fn taken(port: &Ieee802154SystemPort) -> Result<Ieee802154RadioEvent, EventsLost> {
+    let Ok(event) = port.next_event().await;
     event
 }
 
-async fn next_event(system: &Ieee802154System) -> Result<Ieee802154RadioEvent, Stop> {
-    match with_timeout(EVENT_TIMEOUT, taken(system.runtime())).await {
+async fn next_event(port: &Ieee802154SystemPort) -> Result<Ieee802154RadioEvent, Stop> {
+    match with_timeout(EVENT_TIMEOUT, taken(port)).await {
         Ok(Ok(event)) => Ok(event),
         Ok(Err(_)) => Err(Stop(Ieee802154AirCheckStop::EventsLost)),
         Err(_) => Err(Stop(Ieee802154AirCheckStop::EventTimeout)),
@@ -288,10 +287,10 @@ async fn next_event(system: &Ieee802154System) -> Result<Ieee802154RadioEvent, S
 }
 
 async fn transmitted(
-    system: &Ieee802154System,
+    port: &Ieee802154SystemPort,
     requested_at_micros: u64,
 ) -> Result<Ieee802154AirTransmit, Stop> {
-    let Ieee802154RadioEvent::TransmitDone { status, .. } = next_event(system).await? else {
+    let Ieee802154RadioEvent::TransmitDone { status, .. } = next_event(port).await? else {
         return Err(Stop(Ieee802154AirCheckStop::UnexpectedEvent));
     };
     Ok(Ieee802154AirTransmit {

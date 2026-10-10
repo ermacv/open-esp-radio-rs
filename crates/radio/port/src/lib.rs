@@ -18,12 +18,22 @@
 //!   carrying the backend's cause; every refusal is the inner `Err`.
 //! - [`EventsLost`]: the one loss marker, with its ordering rule.
 //! - [`LifecycleCommand`], [`LifecycleEvent`], [`LifecycleError`],
-//!   [`CancelError`], [`ClockError`] and [`NotInstalled`]: enable, disable
-//!   and quiesce with terminal events, and the shared refusals.
+//!   [`CancelError`] and [`ClockError`]: enable, disable and quiesce with
+//!   terminal events, and the shared refusals.
 //! - [`Correlation`] and [`CorrelationIds`]: caller-chosen identities with
 //!   one backend-reserved range.
 //! - [`ClockInfo`] and [`RadioEpoch`]: the resolution of a port's radio
 //!   clock and how its epoch relates to the image's monotonic time.
+//!
+//! # A port exists only while its backend is installed
+//!
+//! A backend's `install` returns its port value, for the protocol's one
+//! event consumer, and a control, for the composition; the control's
+//! `uninstall` consumes both, so no call reaches a backend that is not
+//! installed: there is no "not installed" refusal. Install and uninstall are a port's birth
+//! and death; [`LifecycleCommand`] states live inside an installed port.
+//! Maintenance that must stop the radio, such as shared PHY tracking, is a
+//! layer over [`LifecycleCommand::Quiesce`], not a removal of the backend.
 //!
 //! # Event model
 //!
@@ -52,8 +62,8 @@ use oer_time::{Duration, Instant, RadioInstant};
 /// of its events and its capabilities. Every call returns a
 /// [`PortResult`]: the inner `Err` is a refusal (nothing changed, the port
 /// serves on), the outer one is [`Poisoned`] (the backend's state is
-/// unknown and only a reset restores it). A backend that is not installed
-/// or is paused refuses through the inner `Err`, never the outer one.
+/// unknown and only a reset restores it). The port value exists only while
+/// its backend is installed, so no call is refused as not installed.
 ///
 /// The calls are asynchronous because a backend may need a bounded wait for
 /// its hardware to answer (a fresh clock latch, a radio its runner holds
@@ -141,16 +151,9 @@ pub struct Poisoned<C> {
     pub cause: C,
 }
 
-/// The backend is not installed or is paused: the call did nothing, and
-/// installing or resuming the backend serves again.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub struct NotInstalled;
-
 /// Why the radio clock could not be read; nothing changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ClockError {
-    /// The backend is not installed or is paused.
-    NotInstalled,
     /// The backend could not take a reading now (a latch failed, the clock
     /// belongs to a replaced radio start); a later call may succeed.
     Unavailable,
@@ -193,8 +196,6 @@ pub enum LifecycleEvent {
 /// Why a lifecycle command was refused; nothing changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LifecycleError {
-    /// The backend is not installed or is paused.
-    NotInstalled,
     /// The port is already in the requested state.
     AlreadyInState,
     /// The command does not apply in the port's current state, or the
@@ -207,8 +208,6 @@ pub enum LifecycleError {
 /// Why a cancellation was refused; nothing changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CancelError {
-    /// The backend is not installed or is paused.
-    NotInstalled,
     /// No admitted work has this identity: it already ended and its terminal
     /// event was reported, or it never ran.
     NotRunning,

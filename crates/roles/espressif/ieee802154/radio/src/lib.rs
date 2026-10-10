@@ -660,29 +660,121 @@ const fn multipan_index(interface: Interface) -> Option<Ieee802154MultipanIndex>
 
 /// Apply one interface setting (`esp_ieee802154_set_multipan_*`,
 /// `esp_ieee802154_multipan_*`).
-fn configure_interface<L: Ieee802154LowLevel + ?Sized>(
+/// Whether admitting `command` writes the MAC registers at once: every
+/// command but a configuration of the PIB or the frame-pending table, which
+/// the next operation publishes.
+pub fn writes_registers(command: &RadioCommand<'_>) -> bool {
+    match command {
+        RadioCommand::Configure { configuration, .. } => match configuration {
+            Configuration::PanId(_)
+            | Configuration::ShortAddress(_)
+            | Configuration::ExtendedAddress(_) => true,
+            Configuration::Interface { setting, .. } => matches!(
+                setting,
+                InterfaceSetting::PanId(_)
+                    | InterfaceSetting::ShortAddress(_)
+                    | InterfaceSetting::ExtendedAddress(_)
+                    | InterfaceSetting::Enabled(_)
+            ),
+            _ => false,
+        },
+        _ => true,
+    }
+}
+
+/// Apply a configuration that writes the MAC registers.
+fn configure_registers<L: Ieee802154LowLevel + ?Sized>(
     engine: &mut Ieee802154Engine<'_>,
     ll: &mut L,
+    configuration: Configuration,
+) {
+    match configuration {
+        Configuration::PanId(panid) => engine.set_panid(ll, panid),
+        Configuration::ShortAddress(address) => engine.set_short_address(ll, address),
+        Configuration::ExtendedAddress(address) => engine.set_extended_address(ll, address),
+        Configuration::Interface { interface, setting } => {
+            let index = multipan_index(interface)
+                .expect("the state machine admits only the engine's interfaces");
+            match setting {
+                InterfaceSetting::PanId(panid) => engine.set_multipan_panid(ll, index, panid),
+                InterfaceSetting::ShortAddress(address) => {
+                    engine.set_multipan_short_address(ll, index, address);
+                }
+                InterfaceSetting::ExtendedAddress(address) => {
+                    engine.set_multipan_extended_address(ll, index, address);
+                }
+                InterfaceSetting::Enabled(enabled) => {
+                    let enable = engine.multipan_enable(ll);
+                    let enable = if enabled {
+                        enable.with(index)
+                    } else {
+                        enable.without(index)
+                    };
+                    engine.set_multipan_enable(ll, enable);
+                }
+                _ => unreachable!("a software configuration writes no register"),
+            }
+        }
+        _ => unreachable!("a software configuration writes no register"),
+    }
+}
+
+/// Apply a configuration of the PIB or the frame-pending table.
+fn configure_software(engine: &mut Ieee802154Engine<'_>, configuration: Configuration) {
+    match configuration {
+        Configuration::Promiscuous(enable) => engine.pib().set_promiscuous(enable),
+        Configuration::AutomaticAcknowledgement(enable) => {
+            engine.pib().set_auto_ack_tx(enable);
+        }
+        Configuration::TransmitPowerDbm(power) => {
+            engine.pib().set_power_table([power; 16]);
+        }
+        Configuration::ChannelTransmitPowerDbm { channel, power_dbm } => {
+            engine
+                .pib()
+                .set_power_for_channel(hal_channel(channel), power_dbm);
+        }
+        Configuration::CcaThresholdDbm(threshold) => {
+            engine.pib().set_cca_threshold(threshold);
+        }
+        Configuration::CcaMode(mode) => engine.pib().set_cca_mode(hal_cca_mode(mode)),
+        Configuration::PanCoordinator(enable) => engine.pib().set_coordinator(enable),
+        Configuration::PendingMode(mode) => engine
+            .pib()
+            .set_pending_mode(Ieee802154MultipanIndex::CONTEXT0, mode),
+        Configuration::AddPendingAddress(address) => {
+            // Room was checked before admission.
+            let _ = engine.pending_table().add(address);
+        }
+        Configuration::RemovePendingAddress(address) => {
+            engine.pending_table().clear(address);
+        }
+        Configuration::ResetPendingTable(PendingTableHalf::Short) => {
+            engine.pending_table().reset_short();
+        }
+        Configuration::ResetPendingTable(PendingTableHalf::Extended) => {
+            engine.pending_table().reset_extended();
+        }
+        Configuration::Interface { interface, setting } => {
+            let index = multipan_index(interface)
+                .expect("the state machine admits only the engine's interfaces");
+            configure_interface_software(engine, index, setting);
+        }
+        Configuration::PanId(_)
+        | Configuration::ShortAddress(_)
+        | Configuration::ExtendedAddress(_) => {
+            unreachable!("a register configuration needs the hardware")
+        }
+    }
+}
+
+/// Apply an interface setting of the PIB or the frame-pending table.
+fn configure_interface_software(
+    engine: &mut Ieee802154Engine<'_>,
     index: Ieee802154MultipanIndex,
     setting: InterfaceSetting,
 ) {
     match setting {
-        InterfaceSetting::PanId(panid) => engine.set_multipan_panid(ll, index, panid),
-        InterfaceSetting::ShortAddress(address) => {
-            engine.set_multipan_short_address(ll, index, address);
-        }
-        InterfaceSetting::ExtendedAddress(address) => {
-            engine.set_multipan_extended_address(ll, index, address);
-        }
-        InterfaceSetting::Enabled(enabled) => {
-            let enable = engine.multipan_enable(ll);
-            let enable = if enabled {
-                enable.with(index)
-            } else {
-                enable.without(index)
-            };
-            engine.set_multipan_enable(ll, enable);
-        }
         InterfaceSetting::PendingMode(mode) => engine.pib().set_pending_mode(index, mode),
         InterfaceSetting::AddPendingAddress(address) => {
             // Room was checked before admission.
@@ -696,6 +788,12 @@ fn configure_interface<L: Ieee802154LowLevel + ?Sized>(
         }
         InterfaceSetting::ResetPendingTable(PendingTableHalf::Extended) => {
             engine.pending_table_for(index).reset_extended();
+        }
+        InterfaceSetting::PanId(_)
+        | InterfaceSetting::ShortAddress(_)
+        | InterfaceSetting::ExtendedAddress(_)
+        | InterfaceSetting::Enabled(_) => {
+            unreachable!("a register configuration needs the hardware")
         }
     }
 }
@@ -966,29 +1064,7 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
         command: RadioCommand<'_>,
         sink: &mut S,
     ) -> Result<AcceptedCommand, CommandError> {
-        // The pending table's room is the backend's to judge, after the
-        // capability and interface the state machine checks.
-        if let RadioCommand::Configure { configuration, .. } = command
-            && let Some((index, address)) = match configuration {
-                Configuration::AddPendingAddress(address) => {
-                    Some((Ieee802154MultipanIndex::CONTEXT0, address))
-                }
-                Configuration::Interface {
-                    interface,
-                    setting: InterfaceSetting::AddPendingAddress(address),
-                } if interface.index() < self.machine.interfaces() => {
-                    multipan_index(interface).map(|index| (index, address))
-                }
-                _ => None,
-            }
-            && self
-                .machine
-                .capabilities()
-                .contains(RadioCapabilities::SOURCE_MATCH)
-            && !self.engine.pending_table_for(index).has_room(address)
-        {
-            return Err(CommandError::PendingTableFull);
-        }
+        self.check_pending_room(command)?;
         let accepted = self.machine.admit(command)?;
         let mut collector = Collector::new(clock, &mut self.enhanced_ack, &mut self.security);
         let engine = &mut self.engine;
@@ -1002,51 +1078,13 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
                 engine.pib().set_rx_when_idle(true);
                 engine.receive(ll, &mut collector);
             }
-            RadioCommand::Configure { configuration, .. } => match configuration {
-                Configuration::PanId(panid) => engine.set_panid(ll, panid),
-                Configuration::ShortAddress(address) => engine.set_short_address(ll, address),
-                Configuration::ExtendedAddress(address) => {
-                    engine.set_extended_address(ll, address);
+            RadioCommand::Configure { configuration, .. } => {
+                if writes_registers(&command) {
+                    configure_registers(engine, ll, configuration);
+                } else {
+                    configure_software(engine, configuration);
                 }
-                Configuration::Promiscuous(enable) => engine.pib().set_promiscuous(enable),
-                Configuration::AutomaticAcknowledgement(enable) => {
-                    engine.pib().set_auto_ack_tx(enable);
-                }
-                Configuration::TransmitPowerDbm(power) => {
-                    engine.pib().set_power_table([power; 16]);
-                }
-                Configuration::ChannelTransmitPowerDbm { channel, power_dbm } => {
-                    engine
-                        .pib()
-                        .set_power_for_channel(hal_channel(channel), power_dbm);
-                }
-                Configuration::CcaThresholdDbm(threshold) => {
-                    engine.pib().set_cca_threshold(threshold);
-                }
-                Configuration::CcaMode(mode) => engine.pib().set_cca_mode(hal_cca_mode(mode)),
-                Configuration::PanCoordinator(enable) => engine.pib().set_coordinator(enable),
-                Configuration::PendingMode(mode) => engine
-                    .pib()
-                    .set_pending_mode(Ieee802154MultipanIndex::CONTEXT0, mode),
-                Configuration::AddPendingAddress(address) => {
-                    // Room was checked before admission.
-                    let _ = engine.pending_table().add(address);
-                }
-                Configuration::RemovePendingAddress(address) => {
-                    engine.pending_table().clear(address);
-                }
-                Configuration::ResetPendingTable(PendingTableHalf::Short) => {
-                    engine.pending_table().reset_short();
-                }
-                Configuration::ResetPendingTable(PendingTableHalf::Extended) => {
-                    engine.pending_table().reset_extended();
-                }
-                Configuration::Interface { interface, setting } => {
-                    let index = multipan_index(interface)
-                        .expect("the state machine admits only the engine's interfaces");
-                    configure_interface(engine, ll, index, setting);
-                }
-            },
+            }
             RadioCommand::Transmit(request) => {
                 let channel = hal_channel(request.channel);
                 engine.pib().set_channel(channel);
@@ -1110,6 +1148,64 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
         let notifications = collector.notifications;
         self.deliver(ll, clock, notifications, Some(flushed_on), sink);
         Ok(accepted)
+    }
+
+    /// Admit a configuration that writes no MAC register
+    /// ([`writes_registers`]): a change of the PIB or of the frame-pending
+    /// table, which the next operation publishes, so it needs no hardware
+    /// and no event follows.
+    ///
+    /// # Errors
+    ///
+    /// The portable state machine rejected the command, or the pending
+    /// table has no room; nothing changed.
+    ///
+    /// # Panics
+    ///
+    /// `command` is no configuration, or one that writes a register.
+    pub fn submit_software_configuration(
+        &mut self,
+        command: RadioCommand<'_>,
+    ) -> Result<AcceptedCommand, CommandError> {
+        let RadioCommand::Configure { configuration, .. } = command else {
+            panic!("only a configuration applies without hardware");
+        };
+        assert!(
+            !writes_registers(&command),
+            "a register configuration needs the hardware"
+        );
+        self.check_pending_room(command)?;
+        let accepted = self.machine.admit(command)?;
+        configure_software(&mut self.engine, configuration);
+        Ok(accepted)
+    }
+
+    /// Refuse an added pending source the table has no room for.
+    fn check_pending_room(&mut self, command: RadioCommand<'_>) -> Result<(), CommandError> {
+        // The pending table's room is the backend's to judge, after the
+        // capability and interface the state machine checks.
+        if let RadioCommand::Configure { configuration, .. } = command
+            && let Some((index, address)) = match configuration {
+                Configuration::AddPendingAddress(address) => {
+                    Some((Ieee802154MultipanIndex::CONTEXT0, address))
+                }
+                Configuration::Interface {
+                    interface,
+                    setting: InterfaceSetting::AddPendingAddress(address),
+                } if interface.index() < self.machine.interfaces() => {
+                    multipan_index(interface).map(|index| (index, address))
+                }
+                _ => None,
+            }
+            && self
+                .machine
+                .capabilities()
+                .contains(RadioCapabilities::SOURCE_MATCH)
+            && !self.engine.pending_table_for(index).has_room(address)
+        {
+            return Err(CommandError::PendingTableFull);
+        }
+        Ok(())
     }
 
     /// End the running operation `target` before its own end

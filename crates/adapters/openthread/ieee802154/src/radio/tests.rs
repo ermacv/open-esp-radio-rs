@@ -14,7 +14,7 @@ use oer_espressif_ieee802154_engine::{
     types::Ieee802154Event,
 };
 use oer_espressif_ieee802154_runtime::{
-    Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts,
+    Ieee802154Control, Ieee802154Port, Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts,
 };
 use oer_ieee802154::{Ieee802154RadioPort, Interface, RadioPort};
 use openthread_radio::{
@@ -36,7 +36,25 @@ use oer_time_virtual::SkipClock;
 
 type Runtime =
     Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, SkipClock, FixedRandom, 16>;
-type Thread = OpenThreadRadio<'static, Runtime, 4>;
+type Port = Ieee802154Port<'static, Runtime>;
+type Thread = OpenThreadRadio<'static, Port, 4>;
+
+/// An installed runtime with its radio's two handles; it reaches the
+/// runtime's own operations, the port drives OpenThread's radio and the
+/// control stands for the composition.
+struct Bench {
+    runtime: &'static Runtime,
+    port: Port,
+    control: core::cell::RefCell<Ieee802154Control<'static, Runtime>>,
+}
+
+impl core::ops::Deref for Bench {
+    type Target = Runtime;
+
+    fn deref(&self) -> &Runtime {
+        self.runtime
+    }
+}
 
 static LEVELS: [i8; 3] = [-24, 0, 21];
 
@@ -84,8 +102,8 @@ const RECEIVED_IMAGE: [u8; 12] = [
     180,
 ];
 
-/// An installed runtime, and the OpenThread radio over it.
-fn radio() -> (&'static Runtime, Thread) {
+/// An installed runtime, and the OpenThread radio over its port.
+fn radio() -> (&'static Bench, Thread) {
     let runtime: &'static Runtime = Box::leak(Box::new(Runtime::new(SkipClock::starting_at(
         oer_time::Instant::from_micros(NOW_MICROS),
     ))));
@@ -95,16 +113,20 @@ fn radio() -> (&'static Runtime, Thread) {
         engine: Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default()),
         hardware: Ieee802154LlModel::default(),
     };
-    assert!(
-        runtime
-            .install(parts, FixedRandom, Ieee802154PibDefaults::default())
-            .is_ok()
-    );
-    (runtime, OpenThreadRadio::new(runtime, DEFAULTS))
+    let Ok((port, control)) = runtime.install(parts, FixedRandom, Ieee802154PibDefaults::default())
+    else {
+        panic!("the first install succeeds");
+    };
+    let bench: &'static Bench = Box::leak(Box::new(Bench {
+        runtime,
+        port,
+        control: core::cell::RefCell::new(control),
+    }));
+    (bench, OpenThreadRadio::new(&bench.port, DEFAULTS))
 }
 
 /// A radio OpenThread has initialized.
-fn initialized() -> (&'static Runtime, Thread) {
+fn initialized() -> (&'static Bench, Thread) {
     let (runtime, mut radio) = radio();
     block_on(radio.init()).unwrap();
     (runtime, radio)
@@ -137,7 +159,7 @@ fn init_enables_the_radio_and_reports_the_port_capabilities() {
     assert_eq!(caps.receive_sensitivity, -104);
     assert_eq!(caps.csl_accuracy, CSL_ACCURACY_PPM);
     assert_eq!(caps.csl_uncertainty, CSL_UNCERTAINTY);
-    assert_eq!(runtime.frame_counter(Interface::PRIMARY), Ok(Ok(Some(0))));
+    assert_eq!(runtime.port.frame_counter(Interface::PRIMARY), Ok(Some(0)));
     // A second init finds the radio enabled.
     assert!(block_on(radio.init()).is_ok());
 }
@@ -152,14 +174,14 @@ fn openthread_reads_the_port_epoch_and_live_rssi() {
         NOW_MICROS
     );
     assert_eq!(
-        block_on(runtime.now()),
+        block_on(runtime.port.now()),
         Ok(Ok(oer_ieee802154::Ieee802154Instant::from_micros(
             NOW_MICROS
         )))
     );
     assert_eq!(
-        PortRssi::new(runtime).rssi(),
-        runtime.recent_rssi().ok().and_then(Result::ok),
+        PortRssi::new(&runtime.port).rssi(),
+        runtime.port.recent_rssi().ok(),
         "the live read is the port's"
     );
 }
@@ -174,23 +196,21 @@ fn set_config_programs_the_identity() {
     config.ext_addr = Some(0x0102_0304_0506_0708);
     config.promiscuous = true;
     block_on(radio.set_config(&config)).unwrap();
-    let (panid, short, extended) = runtime
-        .with_model(|model| {
-            (
-                model.panid[0],
-                model.short_address[0],
-                model.extended_address[0],
-            )
-        })
-        .unwrap();
+    let (panid, short, extended) = runtime.with_model(|model| {
+        (
+            model.panid[0],
+            model.short_address[0],
+            model.extended_address[0],
+        )
+    });
     assert_eq!(panid, 0x1234);
     assert_eq!(short, 0x5678);
     assert_eq!(extended, [8, 7, 6, 5, 4, 3, 2, 1]);
     // Promiscuous mode is PIB state the next operation publishes, as in
     // the vendor driver.
-    assert_eq!(runtime.with_model(|model| model.promiscuous), Ok(false));
+    assert!(!runtime.with_model(|model| model.promiscuous));
     block_on(radio.set_receive(15)).unwrap();
-    assert_eq!(runtime.with_model(|model| model.promiscuous), Ok(true));
+    assert!(runtime.with_model(|model| model.promiscuous));
 }
 
 /// A frame requesting an ACK completes with the ACK's PSDU, RSSI and LQI.
@@ -285,7 +305,7 @@ fn a_cca_threshold_selects_cca_before_transmission() {
             },
             async {
                 yield_now().await;
-                assert_eq!(runtime.with_model(|model| model.command), Ok(Some(command)));
+                assert_eq!(runtime.with_model(|model| model.command), Some(command));
                 runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
             },
         ));
@@ -315,7 +335,7 @@ fn an_abandoned_transmission_ends_before_the_next_operation() {
     assert_eq!(result, Ok(()));
     assert_eq!(
         runtime.with_model(|model| model.command),
-        Ok(Some(Ieee802154LlCommand::RxStart))
+        Some(Ieee802154LlCommand::RxStart)
     );
 }
 
@@ -336,7 +356,7 @@ fn csl_reaches_the_runtime() {
 #[test]
 fn an_energy_scan_reports_the_energy() {
     let (runtime, mut radio) = initialized();
-    runtime.with_model(|model| model.ed_rss = -63).unwrap();
+    runtime.with_model(|model| model.ed_rss = -63);
     let (energy, ()) = block_on(join(radio.energy_scan(20, 2), async {
         yield_now().await;
         runtime.model_interrupt(None, &[Ieee802154Event::EdDone]);
@@ -354,15 +374,13 @@ fn source_matching_edits_the_pending_table() {
     config.short_addrs.push(0x1111).unwrap();
     config.ext_addrs.push(0x0102_0304_0506_0708).unwrap();
     block_on(radio.set_src_match_config(&config)).unwrap();
-    let holds = |runtime: &Runtime| {
-        runtime
-            .with_pending_table(|table| {
-                (
-                    table.contains(short_pending_address(0x1111)),
-                    table.contains(extended_pending_address(0x0102_0304_0506_0708)),
-                )
-            })
-            .unwrap()
+    let holds = |runtime: &Bench| {
+        runtime.control.borrow().with_pending_table(|table| {
+            (
+                table.contains(short_pending_address(0x1111)),
+                table.contains(extended_pending_address(0x0102_0304_0506_0708)),
+            )
+        })
     };
     assert_eq!(holds(runtime), (true, true));
     config.short_addrs.clear();
@@ -376,10 +394,10 @@ fn the_frame_counter_follows_openthread() {
     let (runtime, mut radio) = initialized();
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::Set(10))).unwrap();
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::SetIfLarger(5))).unwrap();
-    let counter = |runtime: &Runtime| {
+    let counter = |runtime: &Bench| {
         runtime
+            .port
             .frame_counter(Interface::PRIMARY)
-            .unwrap()
             .unwrap()
             .unwrap()
     };
@@ -401,7 +419,7 @@ const SECURED_PSDU: [u8; 23] = [
 
 /// Transmit `psdu` and acknowledge it; returns the frame's header update.
 fn secured_transmission(
-    runtime: &'static Runtime,
+    runtime: &'static Bench,
     radio: &mut Thread,
     psdu: &mut [u8],
     retransmission: bool,
@@ -442,10 +460,10 @@ fn the_radio_secures_frames_with_openthread_keys() {
     }))
     .unwrap();
     block_on(radio.set_mac_frame_counter(FrameCounterUpdate::Set(10))).unwrap();
-    let counter = |runtime: &Runtime| {
+    let counter = |runtime: &Bench| {
         runtime
+            .port
             .frame_counter(Interface::PRIMARY)
-            .unwrap()
             .unwrap()
             .unwrap()
     };
@@ -460,4 +478,27 @@ fn the_radio_secures_frames_with_openthread_keys() {
     assert!(!secured_transmission(runtime, &mut radio, &mut psdu, true));
     assert_eq!(&psdu[10..15], &[10, 0, 0, 0, 3]);
     assert_eq!(counter(runtime), 11);
+}
+
+/// Shared PHY maintenance quiesces the port and holds the hardware: a
+/// command OpenThread issues meanwhile waits for the port's `Enabled` and
+/// is admitted then, so OpenThread never sees the window.
+#[test]
+fn a_command_waits_out_shared_phy_maintenance() {
+    let (runtime, mut radio) = initialized();
+    let mut paused = runtime.control.borrow_mut().pause().unwrap();
+    let (result, ()) = block_on(join(radio.set_receive(15), async {
+        yield_now().await;
+        // The refused command waits; nothing reached the lent hardware.
+        assert_ne!(
+            paused.hardware_mut().command,
+            Some(Ieee802154LlCommand::RxStart)
+        );
+        runtime.control.borrow_mut().resume(paused);
+    }));
+    assert_eq!(result, Ok(()));
+    assert_eq!(
+        runtime.with_model(|model| model.command),
+        Some(Ieee802154LlCommand::RxStart)
+    );
 }

@@ -24,7 +24,7 @@
 
 pub use oer_radio_port::{
     CancelError, ClockError, ClockInfo, EventsLost, LifecycleCommand, LifecycleError,
-    LifecycleEvent, NotInstalled, Poisoned, PortResult, RadioPort,
+    LifecycleEvent, Poisoned, PortResult, RadioPort,
 };
 
 use crate::mac::link_metrics::ProbingInitiator;
@@ -144,8 +144,10 @@ pub enum RadioSetting<'a> {
 /// Why the backend refused a [`RadioSetting`]; nothing changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SettingError {
-    /// The backend is not installed or is paused.
-    NotInstalled,
+    /// The quiesced port holds the radio still
+    /// ([`LifecycleCommand::Quiesce`]): a setting that writes the hardware
+    /// waits for the port's `Enabled`.
+    Quiesced,
     /// The setting names an interface the radio does not have.
     UnknownInterface {
         /// The rejected interface.
@@ -168,10 +170,12 @@ pub enum SettingError {
 ///
 /// Every method of this trait is synchronous and takes the backend's lock
 /// for its own duration only; the [`RadioPort`] base calls return ready
-/// futures. Every call returns a [`PortResult`]: the inner `Err` is a
-/// refusal and nothing changed, a radio that is not installed or is paused
-/// included (installing or resuming it serves again); the outer one is
-/// [`Poisoned`], after which only a reset restores the port.
+/// futures. A call that can be refused returns a [`PortResult`]: the inner
+/// `Err` is a refusal and nothing changed; the outer one is [`Poisoned`],
+/// after which only a reset restores the port. The other calls return only
+/// the poison. The port value exists only while its backend is installed,
+/// so no call is refused as not installed; shared PHY maintenance is a
+/// layer over [`LifecycleCommand::Quiesce`].
 ///
 /// # Events
 ///
@@ -189,8 +193,20 @@ pub enum SettingError {
 ///
 /// `Enable` acquires the radio and enters sleep. `Disable` ends the
 /// operation in flight with its terminal event, then releases the radio
-/// and ends with `Disabled`. A backend without a quiesce refuses `Quiesce`
-/// as `InvalidState`. [`RadioPort::cancel`] ends the running transmission,
+/// and ends with `Disabled`. `Quiesce` holds the radio still: once the
+/// operation in flight ended it reports `Quiesced`, and until `Enabled` the
+/// port refuses every command that writes the hardware (operations,
+/// receive and sleep, addresses and PAN identifiers) as
+/// [`CommandError::Quiesced`] and a setting that writes it as
+/// [`SettingError::Quiesced`]. A configuration the next operation publishes
+/// (pending mode and table, CCA, transmit power, promiscuity), the state,
+/// frame counters, recent RSSI and software settings stay available. Shared PHY
+/// maintenance is this state too: the backend quiesces the port, holds its
+/// hardware and enables it again, refusing lifecycle commands as `Busy`
+/// meanwhile; a disabled port gets neither event, keeps refusing commands
+/// as [`CommandError::Disabled`] and refuses a hardware setting as
+/// [`SettingError::Quiesced`] until the maintenance ends. A backend without a quiesce refuses `Quiesce` as
+/// `InvalidState`. [`RadioPort::cancel`] ends the running transmission,
 /// energy scan, clear-channel assessment or scheduled receive window
 /// through its own terminal event
 /// ([`RadioStateMachine::admit_cancel`](crate::RadioStateMachine::admit_cancel)).
@@ -218,19 +234,16 @@ pub trait Ieee802154RadioPort: RadioPort<Id = RequestId, Domain = Ieee802154Radi
     fn clock_info(&self) -> ClockInfo;
 
     /// The portable state.
-    fn state(&self) -> PortResult<RadioState, NotInstalled, Self::Fault>;
+    fn state(&self) -> Result<RadioState, Poisoned<Self::Fault>>;
 
     /// Change one setting. `Ok(Err(_))` when the backend refused it.
     fn apply(&self, setting: RadioSetting<'_>) -> PortResult<(), SettingError, Self::Fault>;
 
     /// The next frame counter of `interface`; `None` for an interface
     /// without keys or one the radio does not have.
-    fn frame_counter(
-        &self,
-        interface: Interface,
-    ) -> PortResult<Option<u32>, NotInstalled, Self::Fault>;
+    fn frame_counter(&self, interface: Interface) -> Result<Option<u32>, Poisoned<Self::Fault>>;
 
     /// The live RSSI in dBm of the most recent reception
     /// (`otPlatRadioGetRssi`), whatever the radio's state.
-    fn recent_rssi(&self) -> PortResult<i8, NotInstalled, Self::Fault>;
+    fn recent_rssi(&self) -> Result<i8, Poisoned<Self::Fault>>;
 }

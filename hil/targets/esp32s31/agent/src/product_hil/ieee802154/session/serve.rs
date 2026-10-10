@@ -72,6 +72,7 @@ async fn serve(
                 let channel = session.channel;
                 let reply = session
                     .submit(RadioCommand::Receive { id, channel })
+                    .await
                     .map(|()| oer_hil_protocol::base::Accepted)
                     .map_err(|_| RejectReason::InvalidState);
                 respond(0, request_id, reply).await;
@@ -92,7 +93,7 @@ async fn serve(
                 request_id,
                 request,
             } => {
-                let reply = if session.pending(request) {
+                let reply = if session.pending(request).await {
                     Ok(oer_hil_protocol::base::Accepted)
                 } else {
                     Err(RejectReason::InvalidConfiguration)

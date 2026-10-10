@@ -21,15 +21,15 @@ use oer_espressif_ieee802154_engine::{
 use oer_ieee802154::{
     CancelError, Channel, CommandError, CslReceiver, EnhancedAckGeneration, EventsLost,
     FrameCounterUpdate, FrameView, Ieee802154RadioPort, Interface, LifecycleCommand,
-    LifecycleError, LifecycleEvent, NotInstalled, RadioCapabilities, RadioCommand, RadioPort,
-    RadioSetting, RadioState, RequestId, RestingState, SettingError, TxMode, TxRequest, TxStatus,
+    LifecycleError, LifecycleEvent, RadioCapabilities, RadioCommand, RadioPort, RadioSetting,
+    RadioState, RequestId, RestingState, SettingError, TxMode, TxRequest, TxStatus,
 };
 use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
 
 use super::{
-    IEEE802154_RADIO_CAPABILITIES, Ieee802154RadioEvent, Ieee802154Random, Ieee802154Runtime,
-    Ieee802154RuntimeParts, Ieee802154TxRxStatistics,
+    IEEE802154_RADIO_CAPABILITIES, Ieee802154Control, Ieee802154Port, Ieee802154RadioEvent,
+    Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts, Ieee802154TxRxStatistics,
 };
 
 static LEVELS: [i8; 1] = [0];
@@ -63,18 +63,60 @@ fn channel(number: u8) -> Channel {
 type Runtime<const EVENTS: usize> =
     Ieee802154Runtime<'static, NoopRawMutex, Ieee802154LlModel, VirtualClock, FixedRandom, EVENTS>;
 
+/// A runtime with its radio installed and the radio's two handles; it
+/// reaches the runtime's own operations, and the port calls go through
+/// `port`.
+struct Radio<const EVENTS: usize> {
+    runtime: &'static Runtime<EVENTS>,
+    port: Ieee802154Port<'static, Runtime<EVENTS>>,
+    control: Ieee802154Control<'static, Runtime<EVENTS>>,
+}
+
+impl<const EVENTS: usize> core::ops::Deref for Radio<EVENTS> {
+    type Target = Runtime<EVENTS>;
+
+    fn deref(&self) -> &Runtime<EVENTS> {
+        self.runtime
+    }
+}
+
+impl<const EVENTS: usize> Radio<EVENTS> {
+    /// Uninstall through the control, consuming both handles.
+    fn uninstall(self) -> Ieee802154RuntimeParts<'static, Ieee802154LlModel> {
+        self.control.uninstall(self.port)
+    }
+}
+
+/// Install `parts` in a new runtime, its radio disabled.
+fn installed_with<const EVENTS: usize>(
+    parts: Ieee802154RuntimeParts<'static, Ieee802154LlModel>,
+) -> Radio<EVENTS> {
+    let runtime: &'static Runtime<EVENTS> = Box::leak(Box::new(Runtime::new(VirtualClock::new())));
+    let Ok((port, control)) = runtime.install(parts, FixedRandom, Ieee802154PibDefaults::default())
+    else {
+        panic!("the first install succeeds");
+    };
+    Radio {
+        runtime,
+        port,
+        control,
+    }
+}
+
+fn installed<const EVENTS: usize>() -> Radio<EVENTS> {
+    installed_with(parts())
+}
+
 /// Take the next event; the runtime never poisons.
-fn next<const EVENTS: usize>(
-    runtime: &Runtime<EVENTS>,
-) -> Result<Ieee802154RadioEvent, EventsLost> {
-    match block_on(runtime.next_event()) {
+fn next<const EVENTS: usize>(radio: &Radio<EVENTS>) -> Result<Ieee802154RadioEvent, EventsLost> {
+    match block_on(radio.port.next_event()) {
         Ok(event) => event,
     }
 }
 
 /// The portable state; the runtime never poisons.
-fn state<const EVENTS: usize>(runtime: &Runtime<EVENTS>) -> Result<RadioState, NotInstalled> {
-    match runtime.state() {
+fn state<const EVENTS: usize>(radio: &Radio<EVENTS>) -> RadioState {
+    match radio.port.state() {
         Ok(state) => state,
     }
 }
@@ -97,14 +139,9 @@ fn parts() -> Ieee802154RuntimeParts<'static, Ieee802154LlModel> {
     }
 }
 
-fn enabled<const EVENTS: usize>() -> Runtime<EVENTS> {
-    let runtime = Runtime::new(VirtualClock::new());
-    assert!(
-        runtime
-            .install(parts(), FixedRandom, Ieee802154PibDefaults::default())
-            .is_ok()
-    );
-    block_on(runtime.lifecycle(LifecycleCommand::Enable))
+fn enabled<const EVENTS: usize>() -> Radio<EVENTS> {
+    let runtime = installed();
+    block_on(runtime.port.lifecycle(LifecycleCommand::Enable))
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -116,47 +153,34 @@ fn enabled<const EVENTS: usize>() -> Runtime<EVENTS> {
 
 #[test]
 fn install_admits_commands_only_after_enable() {
-    let runtime = Runtime::<4>::new(VirtualClock::new());
-    assert_eq!(
-        runtime.submit(RadioCommand::Sleep {
-            id: RequestId::new(1)
-        }),
-        Ok(Err(CommandError::NotInstalled))
-    );
-    assert!(
-        runtime
-            .install(parts(), FixedRandom, Ieee802154PibDefaults::default())
-            .is_ok()
-    );
+    let runtime = installed::<4>();
     assert!(
         runtime
             .install(parts(), FixedRandom, Ieee802154PibDefaults::default())
             .is_err()
     );
-    assert_eq!(state(&runtime), Ok(RadioState::Disabled));
+    assert_eq!(state(&runtime), RadioState::Disabled);
     assert_eq!(
-        runtime.submit(RadioCommand::Sleep {
+        runtime.port.submit(RadioCommand::Sleep {
             id: RequestId::new(2)
         }),
         Ok(Err(CommandError::Disabled))
     );
-    block_on(runtime.lifecycle(LifecycleCommand::Enable))
+    block_on(runtime.port.lifecycle(LifecycleCommand::Enable))
         .unwrap()
         .unwrap();
     assert_eq!(
         next(&runtime),
         Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
     );
-    assert_eq!(
-        state(&runtime),
-        Ok(RadioState::Resting(RestingState::Sleeping))
-    );
+    assert_eq!(state(&runtime), RadioState::Resting(RestingState::Sleeping));
 }
 
 #[test]
 fn a_received_frame_arrives_as_an_owned_portable_event() {
     let runtime = enabled::<4>();
     runtime
+        .port
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(15),
@@ -177,6 +201,7 @@ fn a_received_frame_arrives_as_an_owned_portable_event() {
 fn a_transmission_completes_through_the_event_queue() {
     let runtime = enabled::<4>();
     runtime
+        .port
         .submit(RadioCommand::Transmit(TxRequest {
             id: RequestId::new(5),
             frame: FrameView::new(&MAC).unwrap(),
@@ -200,10 +225,7 @@ fn a_transmission_completes_through_the_event_queue() {
             security: Default::default(),
         })
     );
-    assert_eq!(
-        state(&runtime),
-        Ok(RadioState::Resting(RestingState::Sleeping))
-    );
+    assert_eq!(state(&runtime), RadioState::Resting(RestingState::Sleeping));
 }
 
 /// Overflow reports the loss once, after the event queued before it.
@@ -213,6 +235,7 @@ fn an_overflowing_queue_reports_the_loss_once() {
     // period.
     let runtime = enabled::<3>();
     runtime
+        .port
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(11),
@@ -241,6 +264,7 @@ fn an_overflowing_queue_reports_the_loss_once() {
 fn uninstall_returns_the_parts_and_keeps_queued_events() {
     let runtime = enabled::<4>();
     runtime
+        .port
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(11),
@@ -248,14 +272,18 @@ fn uninstall_returns_the_parts_and_keeps_queued_events() {
         .unwrap()
         .unwrap();
     runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
-    assert!(runtime.uninstall().is_some());
-    assert_eq!(state(&runtime), Err(NotInstalled));
+    let empty = runtime.runtime;
+    let parts = runtime.uninstall();
     // The queued frame stays with the consumer, across a new install.
-    assert!(
-        runtime
-            .install(parts(), FixedRandom, Ieee802154PibDefaults::default())
-            .is_ok()
-    );
+    let Ok((port, control)) = empty.install(parts, FixedRandom, Ieee802154PibDefaults::default())
+    else {
+        panic!("the uninstalled runtime installs again");
+    };
+    let runtime = Radio {
+        runtime: empty,
+        port,
+        control,
+    };
     assert!(matches!(
         next(&runtime),
         Ok(Ieee802154RadioEvent::Received(_))
@@ -267,10 +295,14 @@ fn uninstall_returns_the_parts_and_keeps_queued_events() {
 #[test]
 fn uninstall_ends_the_operation_in_flight() {
     let runtime = enabled::<4>();
-    runtime.submit(transmit(5)).unwrap().unwrap();
-    assert!(runtime.uninstall().is_some());
-    assert_eq!(next(&runtime), Ok(aborted(5)));
-    assert!(runtime.events.take().is_none());
+    runtime.port.submit(transmit(5)).unwrap().unwrap();
+    let empty = runtime.runtime;
+    let _parts = runtime.uninstall();
+    assert_eq!(
+        empty.events.take().map(|event| event.ok()),
+        Some(Some(aborted(5)))
+    );
+    assert!(empty.events.take().is_none());
 }
 
 fn transmit(id: u32) -> RadioCommand<'static> {
@@ -299,18 +331,13 @@ fn aborted(id: u32) -> Ieee802154RadioEvent {
 /// The port's lifecycle ends each command with a terminal event.
 #[test]
 fn lifecycle_commands_end_with_terminal_events() {
-    let runtime = Runtime::<4>::new(VirtualClock::new());
-    assert!(
-        runtime
-            .install(parts(), FixedRandom, Ieee802154PibDefaults::default())
-            .is_ok()
-    );
+    let runtime = installed::<4>();
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Quiesce)),
+        block_on(runtime.port.lifecycle(LifecycleCommand::Quiesce)),
         Ok(Err(LifecycleError::InvalidState))
     );
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Enable)),
+        block_on(runtime.port.lifecycle(LifecycleCommand::Enable)),
         Ok(Ok(()))
     );
     assert_eq!(
@@ -318,20 +345,20 @@ fn lifecycle_commands_end_with_terminal_events() {
         Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
     );
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Enable)),
+        block_on(runtime.port.lifecycle(LifecycleCommand::Enable)),
         Ok(Err(LifecycleError::AlreadyInState))
     );
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Disable)),
+        block_on(runtime.port.lifecycle(LifecycleCommand::Disable)),
         Ok(Ok(()))
     );
     assert_eq!(
         next(&runtime),
         Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Disabled))
     );
-    assert_eq!(state(&runtime), Ok(RadioState::Disabled));
+    assert_eq!(state(&runtime), RadioState::Disabled);
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Disable)),
+        block_on(runtime.port.lifecycle(LifecycleCommand::Disable)),
         Ok(Err(LifecycleError::AlreadyInState))
     );
     // The runtime's own identities lie in the backend-reserved range.
@@ -345,9 +372,9 @@ fn lifecycle_commands_end_with_terminal_events() {
 #[test]
 fn disable_ends_the_operation_in_flight() {
     let runtime = enabled::<4>();
-    runtime.submit(transmit(5)).unwrap().unwrap();
+    runtime.port.submit(transmit(5)).unwrap().unwrap();
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Disable)),
+        block_on(runtime.port.lifecycle(LifecycleCommand::Disable)),
         Ok(Ok(()))
     );
     assert_eq!(next(&runtime), Ok(aborted(5)));
@@ -355,7 +382,7 @@ fn disable_ends_the_operation_in_flight() {
         next(&runtime),
         Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Disabled))
     );
-    assert_eq!(state(&runtime), Ok(RadioState::Disabled));
+    assert_eq!(state(&runtime), RadioState::Disabled);
 }
 
 /// `Quiesce` closes admission of operations, ends after the operation in
@@ -363,14 +390,14 @@ fn disable_ends_the_operation_in_flight() {
 #[test]
 fn quiesce_lets_the_operation_in_flight_end_and_enable_resumes() {
     let runtime = enabled::<4>();
-    runtime.submit(transmit(5)).unwrap().unwrap();
+    runtime.port.submit(transmit(5)).unwrap().unwrap();
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Quiesce)),
+        block_on(runtime.port.lifecycle(LifecycleCommand::Quiesce)),
         Ok(Ok(()))
     );
     // Another lifecycle command waits for the quiesce to end.
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Enable)),
+        block_on(runtime.port.lifecycle(LifecycleCommand::Enable)),
         Ok(Err(LifecycleError::Busy))
     );
     runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
@@ -385,20 +412,23 @@ fn quiesce_lets_the_operation_in_flight_end_and_enable_resumes() {
         next(&runtime),
         Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced))
     );
-    assert_eq!(runtime.submit(transmit(6)), Ok(Err(CommandError::Quiesced)));
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Quiesce)),
+        runtime.port.submit(transmit(6)),
+        Ok(Err(CommandError::Quiesced))
+    );
+    assert_eq!(
+        block_on(runtime.port.lifecycle(LifecycleCommand::Quiesce)),
         Ok(Err(LifecycleError::AlreadyInState))
     );
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Enable)),
+        block_on(runtime.port.lifecycle(LifecycleCommand::Enable)),
         Ok(Ok(()))
     );
     assert_eq!(
         next(&runtime),
         Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
     );
-    runtime.submit(transmit(6)).unwrap().unwrap();
+    runtime.port.submit(transmit(6)).unwrap().unwrap();
 }
 
 /// A resting radio quiesces at once.
@@ -406,7 +436,7 @@ fn quiesce_lets_the_operation_in_flight_end_and_enable_resumes() {
 fn a_resting_radio_quiesces_at_once() {
     let runtime = enabled::<4>();
     assert_eq!(
-        block_on(runtime.lifecycle(LifecycleCommand::Quiesce)),
+        block_on(runtime.port.lifecycle(LifecycleCommand::Quiesce)),
         Ok(Ok(()))
     );
     assert_eq!(
@@ -415,12 +445,93 @@ fn a_resting_radio_quiesces_at_once() {
     );
 }
 
+/// A quiesced port holds the radio still: resting-state changes, register
+/// configuration and a hardware setting wait for `Enabled`; the state,
+/// software configuration and software settings stay available.
+#[test]
+fn a_quiesced_port_holds_the_radio_still() {
+    let runtime = enabled::<4>();
+    runtime
+        .port
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(20),
+        })
+        .unwrap()
+        .unwrap();
+    block_on(runtime.port.lifecycle(LifecycleCommand::Quiesce))
+        .unwrap()
+        .unwrap();
+    for command in [
+        RadioCommand::Sleep {
+            id: RequestId::new(3),
+        },
+        RadioCommand::Receive {
+            id: RequestId::new(4),
+            channel: channel(11),
+        },
+        RadioCommand::Configure {
+            id: RequestId::new(5),
+            configuration: oer_ieee802154::Configuration::PanId(0x1234),
+        },
+    ] {
+        assert_eq!(
+            runtime.port.submit(command),
+            Ok(Err(CommandError::Quiesced))
+        );
+    }
+    // A configuration the next operation publishes needs no hardware.
+    assert!(matches!(
+        runtime.port.submit(RadioCommand::Configure {
+            id: RequestId::new(7),
+            configuration: oer_ieee802154::Configuration::PendingMode(
+                oer_ieee802154::AutoPendingMode::Enhanced,
+            ),
+        }),
+        Ok(Ok(_))
+    ));
+    assert_eq!(
+        runtime.port.apply(RadioSetting::TransmitSecurity(
+            oer_ieee802154::TransmitSecurityArming {
+                frame: &received_image()[..11],
+                key: [0; 16],
+                address: [0; 8],
+            }
+        )),
+        Ok(Err(SettingError::Quiesced))
+    );
+    assert_eq!(
+        runtime.port.apply(RadioSetting::Csl(CslReceiver {
+            period: 100,
+            sample_time: 5_000,
+        })),
+        Ok(Ok(()))
+    );
+    assert_eq!(
+        state(&runtime),
+        RadioState::Resting(RestingState::Receiving {
+            channel: channel(20)
+        })
+    );
+    block_on(runtime.port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
+    runtime
+        .port
+        .submit(RadioCommand::Sleep {
+            id: RequestId::new(6),
+        })
+        .unwrap()
+        .unwrap();
+}
+
 /// An operation reserves its terminal event's slot: received frames never
 /// take it, and an operation without a free slot is refused.
 #[test]
 fn an_operation_reserves_its_terminal_slot() {
     let runtime = enabled::<3>();
     runtime
+        .port
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(20),
@@ -433,14 +544,14 @@ fn an_operation_reserves_its_terminal_slot() {
         runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     }
     assert_eq!(
-        runtime.submit(transmit(5)),
+        runtime.port.submit(transmit(5)),
         Ok(Err(CommandError::EventQueueFull))
     );
     assert!(matches!(
         next(&runtime),
         Ok(Ieee802154RadioEvent::Received(_))
     ));
-    runtime.submit(transmit(5)).unwrap().unwrap();
+    runtime.port.submit(transmit(5)).unwrap().unwrap();
     // The transmission holds the freed slot; its completion follows the
     // loss.
     runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
@@ -470,27 +581,18 @@ fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
             Ieee802154CoexConfig::VENDOR,
             &CoexPtiTable::VENDOR,
         )));
-    let runtime = Runtime::<4>::new(VirtualClock::new());
-    assert!(
-        runtime
-            .install(parts, FixedRandom, Ieee802154PibDefaults::default())
-            .is_ok()
-    );
-    runtime.installed.lock(|installed| {
-        let installed = installed.borrow();
-        let hardware = &installed.as_ref().unwrap().hardware;
-        assert_eq!((hardware.txrx_pti, hardware.ack_pti), (1, 8));
-    });
+    let runtime = installed_with::<4>(parts);
+    runtime.with_model(|hardware| assert_eq!((hardware.txrx_pti, hardware.ack_pti), (1, 8)));
     // A new table snapshot reaches the next scene switch.
     let mut table = CoexPtiTable::VENDOR;
     table.set(CoexEventId::new(43).unwrap(), CoexPti::new(6).unwrap());
     runtime
+        .control
         .set_coexistence(Ieee802154Coexistence::Software(resolve_priorities(
             Ieee802154CoexConfig::VENDOR,
             &table,
-        )))
-        .unwrap();
-    block_on(runtime.lifecycle(LifecycleCommand::Enable))
+        )));
+    block_on(runtime.port.lifecycle(LifecycleCommand::Enable))
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -498,37 +600,26 @@ fn uninstall_returns_the_coexistence_ptis_to_the_foundation_image() {
         Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
     );
     runtime
+        .port
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(11),
         })
         .unwrap()
         .unwrap();
-    runtime.installed.lock(|installed| {
-        let installed = installed.borrow();
-        assert_eq!(installed.as_ref().unwrap().hardware.txrx_pti, 6);
-    });
-    let parts = runtime.uninstall().unwrap();
+    assert_eq!(runtime.with_model(|hardware| hardware.txrx_pti), 6);
+    let parts = runtime.uninstall();
     assert_eq!((parts.hardware.txrx_pti, parts.hardware.ack_pti), (3, 3));
 }
 
 #[test]
 fn the_pending_mode_reaches_the_pib_of_the_installed_radio() {
-    let runtime = Runtime::<4>::new(VirtualClock::new());
-    assert_eq!(
-        runtime.set_pending_mode(oer_ieee802154::AutoPendingMode::Enable),
-        Err(NotInstalled)
-    );
     let runtime = enabled::<4>();
     runtime
-        .set_pending_mode(oer_ieee802154::AutoPendingMode::Enhanced)
-        .unwrap();
-    let mode = runtime.installed.lock(|installed| {
-        installed
-            .borrow_mut()
-            .as_mut()
-            .unwrap()
-            .radio
+        .control
+        .set_pending_mode(oer_ieee802154::AutoPendingMode::Enhanced);
+    let mode = runtime.with_installed(|radio, _, _| {
+        radio
             .engine()
             .pib()
             .pending_mode(oer_espressif_ieee802154_engine::types::Ieee802154MultipanIndex::CONTEXT0)
@@ -536,94 +627,186 @@ fn the_pending_mode_reaches_the_pib_of_the_installed_radio() {
     assert_eq!(mode, oer_ieee802154::AutoPendingMode::Enhanced);
 }
 
+/// A pause is a layer over the port's lifecycle: it quiesces the enabled
+/// port, leaves receive mode and lends the hardware out; meanwhile the port
+/// refuses commands as quiesced, lifecycle commands as busy and a hardware
+/// setting as quiesced, and the resume enters receive mode again and
+/// enables the port.
 #[test]
 fn pausing_leaves_receive_mode_and_resuming_enters_it_again() {
-    let runtime = enabled::<4>();
+    let mut runtime = enabled::<4>();
     runtime
+        .port
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(15),
         })
         .unwrap()
         .unwrap();
-    let mut paused = runtime.pause().unwrap();
+    runtime.with_model(|hardware| hardware.recent_rssi = -61);
+    let mut paused = runtime.control.pause().unwrap();
     assert_eq!(paused.receiving(), Some(channel(15)));
-    assert_eq!(
-        paused.installed.radio.state(),
-        RadioState::Resting(RestingState::Sleeping)
-    );
+    assert_eq!(state(&runtime), RadioState::Resting(RestingState::Sleeping));
     let _hardware: &mut Ieee802154LlModel = paused.hardware_mut();
-    // Nothing reaches the paused radio.
-    assert_eq!(state(&runtime), Err(NotInstalled));
     assert_eq!(
-        runtime.submit(RadioCommand::Sleep {
+        next(&runtime),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced))
+    );
+    // Nothing reaches the lent hardware.
+    assert_eq!(
+        runtime.port.submit(RadioCommand::Sleep {
             id: RequestId::new(3)
         }),
-        Ok(Err(CommandError::NotInstalled))
+        Ok(Err(CommandError::Quiesced))
     );
+    // A configuration the next operation publishes needs no hardware.
+    assert!(matches!(
+        runtime.port.submit(RadioCommand::Configure {
+            id: RequestId::new(8),
+            configuration: oer_ieee802154::Configuration::PendingMode(
+                oer_ieee802154::AutoPendingMode::Enhanced,
+            ),
+        }),
+        Ok(Ok(_))
+    ));
+    assert_eq!(
+        block_on(runtime.port.lifecycle(LifecycleCommand::Disable)),
+        Ok(Err(LifecycleError::Busy))
+    );
+    assert_eq!(
+        block_on(runtime.port.cancel(RequestId::new(2))),
+        Ok(Err(CancelError::NotRunning))
+    );
+    assert_eq!(
+        runtime.port.apply(RadioSetting::TransmitSecurity(
+            oer_ieee802154::TransmitSecurityArming {
+                frame: &received_image()[..11],
+                key: [0; 16],
+                address: [0; 8],
+            }
+        )),
+        Ok(Err(SettingError::Quiesced))
+    );
+    // A software setting, the state and the RSSI it read stay available.
+    assert_eq!(
+        runtime.port.apply(RadioSetting::Csl(CslReceiver {
+            period: 100,
+            sample_time: 5_000,
+        })),
+        Ok(Ok(()))
+    );
+    assert_eq!(runtime.port.recent_rssi(), Ok(-61));
     runtime.on_interrupt();
 
-    runtime
-        .resume(paused)
-        .unwrap_or_else(|_| panic!("the runtime is empty"));
+    runtime.control.resume(paused);
     assert_eq!(
         state(&runtime),
-        Ok(RadioState::Resting(RestingState::Receiving {
+        RadioState::Resting(RestingState::Receiving {
             channel: channel(15)
-        }))
+        })
     );
-    assert!(runtime.events.take().is_none(), "pausing emits no event");
+    assert_eq!(
+        next(&runtime),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
+    assert!(runtime.events.take().is_none());
+    // Admission is open again.
+    runtime.port.submit(transmit(4)).unwrap().unwrap();
 }
 
 #[test]
 fn a_sleeping_radio_resumes_asleep() {
-    let runtime = enabled::<4>();
-    let paused = runtime.pause().unwrap();
+    let mut runtime = enabled::<4>();
+    let paused = runtime.control.pause().unwrap();
     assert_eq!(paused.receiving(), None);
-    runtime
-        .resume(paused)
-        .unwrap_or_else(|_| panic!("the runtime is empty"));
+    runtime.control.resume(paused);
+    assert_eq!(state(&runtime), RadioState::Resting(RestingState::Sleeping));
     assert_eq!(
-        state(&runtime),
-        Ok(RadioState::Resting(RestingState::Sleeping))
+        next(&runtime),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced))
+    );
+    assert_eq!(
+        next(&runtime),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
     );
 }
 
+/// A port the consumer quiesced or disabled stays so: the pause and the
+/// resume report nothing.
 #[test]
-fn a_running_operation_or_a_missing_radio_refuses_the_pause() {
-    use super::Ieee802154PauseError;
-    assert_eq!(
-        Runtime::<4>::new(VirtualClock::new()).pause().err(),
-        Some(Ieee802154PauseError::NotInstalled)
-    );
-    let runtime = enabled::<4>();
-    runtime
-        .submit(RadioCommand::Transmit(TxRequest {
-            id: RequestId::new(5),
-            frame: FrameView::new(&MAC).unwrap(),
-            channel: channel(20),
-            mode: TxMode::Direct,
-            transmit_power_dbm: None,
-            max_frame_retries: 0,
-            security: Default::default(),
-            interface: Interface::PRIMARY,
-            time_sync: None,
-        }))
+fn a_quiesced_or_disabled_port_pauses_without_events() {
+    let mut runtime = enabled::<4>();
+    block_on(runtime.port.lifecycle(LifecycleCommand::Quiesce))
         .unwrap()
         .unwrap();
-    assert_eq!(runtime.pause().err(), Some(Ieee802154PauseError::Busy));
-    assert!(matches!(
-        state(&runtime),
-        Ok(RadioState::Transmitting { .. })
-    ));
+    assert_eq!(
+        next(&runtime),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced))
+    );
+    let paused = runtime.control.pause().unwrap();
+    runtime.control.resume(paused);
+    assert!(runtime.events.take().is_none());
+    assert_eq!(
+        runtime.port.submit(transmit(4)),
+        Ok(Err(CommandError::Quiesced))
+    );
+
+    // A disabled radio gets no event that would end the window: its
+    // commands stay refused as disabled.
+    let mut runtime = installed::<4>();
+    let paused = runtime.control.pause().unwrap();
+    assert_eq!(
+        runtime.port.submit(RadioCommand::Sleep {
+            id: RequestId::new(5)
+        }),
+        Ok(Err(CommandError::Disabled))
+    );
+    runtime.control.resume(paused);
+    assert!(runtime.events.take().is_none());
+    assert_eq!(state(&runtime), RadioState::Disabled);
 }
 
 #[test]
-fn resuming_over_an_installed_radio_returns_the_paused_one() {
-    let first = enabled::<4>();
-    let paused = first.pause().unwrap();
-    let occupied = enabled::<4>();
-    assert!(occupied.resume(paused).is_err());
+fn a_running_operation_or_a_full_queue_refuses_the_pause() {
+    use super::Ieee802154PauseError;
+    let mut runtime = enabled::<4>();
+    runtime.port.submit(transmit(5)).unwrap().unwrap();
+    assert_eq!(
+        runtime.control.pause().err(),
+        Some(Ieee802154PauseError::Busy)
+    );
+    assert!(matches!(state(&runtime), RadioState::Transmitting { .. }));
+
+    // The fault slot and two free ones; a queued frame leaves one.
+    let mut runtime = enabled::<3>();
+    runtime
+        .port
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(11),
+        })
+        .unwrap()
+        .unwrap();
+    runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
+    assert_eq!(
+        runtime.control.pause().err(),
+        Some(Ieee802154PauseError::EventQueueFull)
+    );
+    // Nothing changed: the radio still receives.
+    assert_eq!(
+        state(&runtime),
+        RadioState::Resting(RestingState::Receiving {
+            channel: channel(11)
+        })
+    );
+    assert!(matches!(
+        next(&runtime),
+        Ok(Ieee802154RadioEvent::Received(_))
+    ));
+    assert!(runtime.control.pause().is_ok_and(|paused| {
+        runtime.control.resume(paused);
+        true
+    }));
 }
 
 /// An installed generator answers a 2015 frame with an enhanced ACK; the
@@ -631,14 +814,10 @@ fn resuming_over_an_installed_radio_returns_the_paused_one() {
 #[test]
 fn an_installed_enhanced_ack_generator_answers_2015_frames() {
     let generation = RadioSetting::EnhancedAck(Some(EnhancedAckGeneration { noise_floor_dbm: 0 }));
-    let runtime = Runtime::<4>::new(VirtualClock::new());
-    assert_eq!(
-        runtime.apply(generation),
-        Ok(Err(SettingError::NotInstalled))
-    );
     let runtime = enabled::<4>();
-    assert_eq!(runtime.apply(generation), Ok(Ok(())));
+    assert_eq!(runtime.port.apply(generation), Ok(Ok(())));
     runtime
+        .port
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(11),
@@ -669,6 +848,7 @@ fn an_installed_enhanced_ack_generator_answers_2015_frames() {
 fn the_runner_runs_csma_ca_backoffs() {
     let runtime = enabled::<4>();
     runtime
+        .port
         .submit(RadioCommand::Transmit(TxRequest {
             id: RequestId::new(5),
             frame: FrameView::new(&MAC).unwrap(),
@@ -682,14 +862,10 @@ fn the_runner_runs_csma_ca_backoffs() {
         }))
         .unwrap()
         .unwrap();
-    let command = || {
-        runtime
-            .installed
-            .lock(|installed| installed.borrow().as_ref().unwrap().hardware.command)
-    };
+    let command = || runtime.with_model(|hardware| hardware.command);
     assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
     // Taking events only dequeues them.
-    assert!(poll_once(core::pin::pin!(runtime.next_event())).is_pending());
+    assert!(poll_once(core::pin::pin!(runtime.port.next_event())).is_pending());
     assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
     // The backoff (21 % 8 unit periods, 1.6 ms) ends only once its time has
     // passed.
@@ -702,8 +878,8 @@ fn the_runner_runs_csma_ca_backoffs() {
     assert!(poll_once(run.as_mut()).is_pending());
     assert_eq!(command(), Some(Ieee802154LlCommand::CcaTxStart));
 
-    runtime.installed.lock(|installed| {
-        installed.borrow_mut().as_mut().unwrap().hardware.tx_abort =
+    runtime.with_model(|hardware| {
+        hardware.tx_abort =
             Ieee802154TxAbortReasonObservation::Named(Ieee802154TxAbortReason::CcaBusy);
     });
     runtime.model_interrupt(None, &[Ieee802154Event::TxAbort]);
@@ -733,6 +909,7 @@ fn the_runner_runs_retry_delays() {
     let mut acknowledged = MAC;
     acknowledged[0] |= 0x20;
     runtime
+        .port
         .submit(RadioCommand::Transmit(TxRequest {
             id: RequestId::new(5),
             frame: FrameView::new(&acknowledged).unwrap(),
@@ -747,21 +924,11 @@ fn the_runner_runs_retry_delays() {
         .unwrap()
         .unwrap();
     // The last MAC command, cleared once read.
-    let take_command = || {
-        runtime.installed.lock(|installed| {
-            installed
-                .borrow_mut()
-                .as_mut()
-                .unwrap()
-                .hardware
-                .command
-                .take()
-        })
-    };
+    let take_command = || runtime.with_model(|hardware| hardware.command.take());
     let no_ack = || {
         runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
-        runtime.installed.lock(|installed| {
-            installed.borrow_mut().as_mut().unwrap().hardware.tx_abort =
+        runtime.with_model(|hardware| {
+            hardware.tx_abort =
                 Ieee802154TxAbortReasonObservation::Named(Ieee802154TxAbortReason::RxAckTimeout);
         });
         runtime.model_interrupt(None, &[Ieee802154Event::TxAbort]);
@@ -786,77 +953,61 @@ fn the_runner_runs_retry_delays() {
     );
 }
 
-/// The runtime reads the radio clock and the CSL state of the installed
-/// radio, and neither without one; the clock is the platform's monotonic
-/// clock.
+/// The port reads the radio clock, the platform's monotonic clock, and the
+/// CSL state of the installed radio.
 #[test]
 fn the_clock_and_csl_state_belong_to_the_installed_radio() {
-    let runtime = Runtime::<4>::new(VirtualClock::new());
-    assert_eq!(
-        block_on(runtime.now()).map(|now| now.map(oer_ieee802154::Ieee802154Instant::as_micros)),
-        Ok(Ok(0)),
-        "the clock runs before a radio is installed"
-    );
-    assert_eq!(
-        runtime.clock_info().epoch,
-        oer_ieee802154::RadioEpoch::Monotonic
-    );
     let runtime = enabled::<4>();
     assert_eq!(
-        block_on(runtime.now()).map(|now| now.map(oer_ieee802154::Ieee802154Instant::as_micros)),
+        runtime.port.clock_info().epoch,
+        oer_ieee802154::RadioEpoch::Monotonic
+    );
+    assert_eq!(
+        block_on(runtime.port.now())
+            .map(|now| now.map(oer_ieee802154::Ieee802154Instant::as_micros)),
         Ok(Ok(0)),
         "the radio clock is the runtime's virtual clock, at its epoch"
     );
     assert_eq!(
-        runtime.apply(RadioSetting::Csl(CslReceiver {
+        runtime.port.apply(RadioSetting::Csl(CslReceiver {
             period: 100,
             sample_time: 5_000,
         })),
         Ok(Ok(()))
     );
     assert_eq!(
-        runtime.with_radio(|radio, _, _| (radio.csl().period, radio.csl().sample_time)),
-        Ok((100, 5_000))
+        runtime.with_installed(|radio, _, _| (radio.csl().period, radio.csl().sample_time)),
+        (100, 5_000)
     );
 }
 
-/// The runtime reads the hardware's live RSSI in any radio state, and only
-/// while a radio is installed.
+/// The port reads the hardware's live RSSI in any radio state.
 #[test]
 fn recent_rssi_reads_the_hardware_live() {
-    let runtime = Runtime::<4>::new(VirtualClock::new());
-    assert_eq!(runtime.recent_rssi(), Ok(Err(NotInstalled)));
     let runtime = enabled::<4>();
-    let set = |rssi: i8| {
-        runtime.installed.lock(|installed| {
-            installed
-                .borrow_mut()
-                .as_mut()
-                .unwrap()
-                .hardware
-                .recent_rssi = rssi;
-        });
-    };
+    let set = |rssi: i8| runtime.with_model(|hardware| hardware.recent_rssi = rssi);
     set(-42);
-    assert_eq!(runtime.recent_rssi(), Ok(Ok(-42)));
+    assert_eq!(runtime.port.recent_rssi(), Ok(-42));
     set(-87);
-    assert_eq!(runtime.recent_rssi(), Ok(Ok(-87)));
+    assert_eq!(runtime.port.recent_rssi(), Ok(-87));
     runtime
+        .port
         .submit(RadioCommand::Sleep {
             id: RequestId::new(2),
         })
         .unwrap()
         .unwrap();
-    assert_eq!(runtime.recent_rssi(), Ok(Ok(-87)));
+    assert_eq!(runtime.port.recent_rssi(), Ok(-87));
 }
 
 /// The runtime collects, lends and clears the engine's TX/RX statistics.
 #[test]
 fn txrx_statistics_are_collected_on_request() {
     let runtime = enabled::<4>();
-    assert_eq!(runtime.txrx_statistics(), Ok(None));
-    runtime.set_txrx_statistics(true).unwrap();
+    assert_eq!(runtime.control.txrx_statistics(), None);
+    runtime.control.set_txrx_statistics(true);
     runtime
+        .port
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(15),
@@ -864,12 +1015,12 @@ fn txrx_statistics_are_collected_on_request() {
         .unwrap()
         .unwrap();
     runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
-    let statistics = runtime.txrx_statistics().unwrap().unwrap();
+    let statistics = runtime.control.txrx_statistics().unwrap();
     assert_eq!(statistics.rx.done_nums, 1);
-    runtime.clear_txrx_statistics().unwrap();
+    runtime.control.clear_txrx_statistics();
     assert_eq!(
-        runtime.txrx_statistics(),
-        Ok(Some(Ieee802154TxRxStatistics::default()))
+        runtime.control.txrx_statistics(),
+        Some(Ieee802154TxRxStatistics::default())
     );
 }
 
@@ -878,9 +1029,9 @@ fn txrx_statistics_are_collected_on_request() {
 #[test]
 fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
     let single = enabled::<4>();
-    assert_eq!(single.capabilities().interfaces, 1);
+    assert_eq!(single.port.capabilities().interfaces, 1);
     assert_eq!(
-        single.apply(RadioSetting::RemoveMacKeys {
+        single.port.apply(RadioSetting::RemoveMacKeys {
             interface: Interface::new(1)
         }),
         Ok(Err(SettingError::UnknownInterface {
@@ -888,7 +1039,7 @@ fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
             interfaces: 1,
         }))
     );
-    assert_eq!(single.frame_counter(Interface::new(1)), Ok(Ok(None)));
+    assert_eq!(single.port.frame_counter(Interface::new(1)), Ok(None));
 
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
@@ -901,15 +1052,11 @@ fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
         ),
         hardware: Ieee802154LlModel::default(),
     };
-    let runtime = Runtime::<4>::new(VirtualClock::new());
+    let runtime = installed_with::<4>(parts);
+    assert_eq!(runtime.port.capabilities().interfaces, 2);
     assert!(
         runtime
-            .install(parts, FixedRandom, Ieee802154PibDefaults::default())
-            .is_ok()
-    );
-    assert_eq!(runtime.capabilities().interfaces, 2);
-    assert!(
-        runtime
+            .port
             .capabilities()
             .operations
             .contains(RadioCapabilities::MULTI_PAN)
@@ -924,35 +1071,37 @@ fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
         current: [2; 16],
         next: [3; 16],
     };
-    assert_eq!(runtime.apply(keys), Ok(Ok(())));
-    assert_eq!(runtime.frame_counter(second), Ok(Ok(Some(0))));
+    assert_eq!(runtime.port.apply(keys), Ok(Ok(())));
+    assert_eq!(runtime.port.frame_counter(second), Ok(Some(0)));
     for update in [
         FrameCounterUpdate::Set(9),
         FrameCounterUpdate::SetIfLarger(5),
     ] {
         assert_eq!(
-            runtime.apply(RadioSetting::FrameCounter {
+            runtime.port.apply(RadioSetting::FrameCounter {
                 interface: second,
                 update,
             }),
             Ok(Ok(()))
         );
     }
-    assert_eq!(runtime.frame_counter(second), Ok(Ok(Some(9))));
-    assert_eq!(runtime.frame_counter(Interface::PRIMARY), Ok(Ok(None)));
-    let installed = runtime.with_radio(|radio, _, _| {
+    assert_eq!(runtime.port.frame_counter(second), Ok(Some(9)));
+    assert_eq!(runtime.port.frame_counter(Interface::PRIMARY), Ok(None));
+    let installed = runtime.with_installed(|radio, _, _| {
         radio
             .interface_mac_keys(second)
             .and_then(|keys| *keys)
             .map(|mut keys| keys.transmit_security(false))
     });
-    let security = installed.unwrap().unwrap();
+    let security = installed.unwrap();
     assert_eq!((security.key_id, security.key), (Some(1), [2; 16]));
     assert_eq!(
-        runtime.apply(RadioSetting::RemoveMacKeys { interface: second }),
+        runtime
+            .port
+            .apply(RadioSetting::RemoveMacKeys { interface: second }),
         Ok(Ok(()))
     );
-    assert_eq!(runtime.frame_counter(second), Ok(Ok(None)));
+    assert_eq!(runtime.port.frame_counter(second), Ok(None));
 }
 
 /// Pausing and resuming record the lease with the receive channel, and a
@@ -968,8 +1117,9 @@ fn the_lease_and_a_dropped_frame_are_traced() {
     };
 
     // The fault slot and two free ones.
-    let runtime = enabled::<3>();
+    let mut runtime = enabled::<3>();
     runtime
+        .port
         .submit(RadioCommand::Receive {
             id: RequestId::new(2),
             channel: channel(15),
@@ -977,13 +1127,11 @@ fn the_lease_and_a_dropped_frame_are_traced() {
         .unwrap()
         .unwrap();
     leases();
-    let paused = runtime.pause().unwrap();
-    runtime
-        .resume(paused)
-        .unwrap_or_else(|_| panic!("the runtime is empty"));
-    assert!(Runtime::<3>::new(VirtualClock::new()).pause().is_err());
-    let paused = enabled::<3>().pause().unwrap();
-    assert!(runtime.resume(paused).is_err());
+    let paused = runtime.control.pause().unwrap();
+    runtime.control.resume(paused);
+    let mut busy = enabled::<3>();
+    busy.port.submit(transmit(5)).unwrap().unwrap();
+    assert!(busy.control.pause().is_err());
     assert_eq!(
         leases(),
         [
@@ -993,11 +1141,11 @@ fn the_lease_and_a_dropped_frame_are_traced() {
             Lease::Resumed {
                 receiving: Some(15)
             },
-            Lease::PauseRefused(PauseRefusal::NotInstalled),
-            Lease::Paused { receiving: None },
-            Lease::ResumeRefused,
+            Lease::PauseRefused(PauseRefusal::Busy),
         ]
     );
+    // The consumer takes the pause's `Quiesced` and `Enabled`.
+    while runtime.events.take().is_some() {}
 
     for _ in 0..3 {
         runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
@@ -1016,16 +1164,11 @@ fn the_lease_and_a_dropped_frame_are_traced() {
     );
 }
 
-/// The port reports the role's capabilities before and after installation.
+/// The port reports the role's capabilities.
 #[test]
 fn the_port_reports_the_role_capabilities() {
-    let runtime = Runtime::<4>::new(VirtualClock::new());
     assert_eq!(
-        runtime.capabilities().operations,
-        IEEE802154_RADIO_CAPABILITIES
-    );
-    assert_eq!(
-        enabled::<4>().capabilities().operations,
+        enabled::<4>().port.capabilities().operations,
         IEEE802154_RADIO_CAPABILITIES
     );
 }
@@ -1035,6 +1178,7 @@ fn the_port_reports_the_role_capabilities() {
 fn a_cancellation_ends_the_transmission_through_the_queue() {
     let runtime = enabled::<4>();
     runtime
+        .port
         .submit(RadioCommand::Transmit(TxRequest {
             id: RequestId::new(5),
             frame: FrameView::new(&MAC).unwrap(),
@@ -1049,10 +1193,10 @@ fn a_cancellation_ends_the_transmission_through_the_queue() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        block_on(runtime.cancel(RequestId::new(6))),
+        block_on(runtime.port.cancel(RequestId::new(6))),
         Ok(Err(CancelError::NotRunning))
     );
-    assert_eq!(block_on(runtime.cancel(RequestId::new(5))), Ok(Ok(())));
+    assert_eq!(block_on(runtime.port.cancel(RequestId::new(5))), Ok(Ok(())));
     assert_eq!(
         next(&runtime),
         Ok(Ieee802154RadioEvent::TransmitDone {
@@ -1062,10 +1206,7 @@ fn a_cancellation_ends_the_transmission_through_the_queue() {
             security: None,
         })
     );
-    assert_eq!(
-        state(&runtime),
-        Ok(RadioState::Resting(RestingState::Sleeping))
-    );
+    assert_eq!(state(&runtime), RadioState::Resting(RestingState::Sleeping));
 }
 
 /// Enhanced-ACK settings need a generator; header IEs are bounded.
@@ -1073,45 +1214,48 @@ fn a_cancellation_ends_the_transmission_through_the_queue() {
 fn enhanced_ack_settings_need_the_generator() {
     let runtime = enabled::<4>();
     assert_eq!(
-        runtime.apply(RadioSetting::EnhancedAckHeaderIes(&[1, 2])),
+        runtime
+            .port
+            .apply(RadioSetting::EnhancedAckHeaderIes(&[1, 2])),
         Ok(Err(SettingError::EnhancedAckDisabled))
     );
     assert_eq!(
-        runtime.apply(RadioSetting::EnhancedAckProbing(&[])),
+        runtime.port.apply(RadioSetting::EnhancedAckProbing(&[])),
         Ok(Err(SettingError::EnhancedAckDisabled))
     );
     runtime
+        .port
         .apply(RadioSetting::EnhancedAck(Some(EnhancedAckGeneration {
             noise_floor_dbm: -100,
         })))
         .unwrap()
         .unwrap();
     assert_eq!(
-        runtime.apply(RadioSetting::EnhancedAckHeaderIes(&[0; 17])),
+        runtime
+            .port
+            .apply(RadioSetting::EnhancedAckHeaderIes(&[0; 17])),
         Ok(Err(SettingError::HeaderIesTooLong { capacity: 16 }))
     );
     assert_eq!(
-        runtime.apply(RadioSetting::EnhancedAckHeaderIes(&[1, 2])),
+        runtime
+            .port
+            .apply(RadioSetting::EnhancedAckHeaderIes(&[1, 2])),
         Ok(Ok(()))
     );
-    let (ies, floor) = runtime
-        .with_radio(|radio, _, _| {
-            let generator = radio.enhanced_ack().as_mut().unwrap();
-            (
-                generator.header_ies().to_vec(),
-                generator.probing().noise_floor(),
-            )
-        })
-        .unwrap();
+    let (ies, floor) = runtime.with_installed(|radio, _, _| {
+        let generator = radio.enhanced_ack().as_mut().unwrap();
+        (
+            generator.header_ies().to_vec(),
+            generator.probing().noise_floor(),
+        )
+    });
     assert_eq!((ies.as_slice(), floor), (&[1, 2][..], -100));
     runtime
+        .port
         .apply(RadioSetting::EnhancedAck(None))
         .unwrap()
         .unwrap();
-    assert_eq!(
-        runtime.with_radio(|radio, _, _| radio.enhanced_ack().is_none()),
-        Ok(true)
-    );
+    assert!(runtime.with_installed(|radio, _, _| radio.enhanced_ack().is_none()));
 }
 
 /// Only the first fault of an enabled period holds a reserved slot; a

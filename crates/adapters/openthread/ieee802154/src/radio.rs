@@ -153,9 +153,10 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
 
     /// Give the radio OpenThread's CCA threshold, as the port's
     /// `otPlatRadioSetCcaEnergyDetectThreshold` does, when it changed.
-    fn apply_cca_threshold(&mut self, threshold: i8) -> Result<(), RadioErrorKind> {
+    async fn apply_cca_threshold(&mut self, threshold: i8) -> Result<(), RadioErrorKind> {
         if self.cca_threshold != Some(threshold) {
-            self.configure(Configuration::CcaThresholdDbm(threshold))?;
+            self.configure(Configuration::CcaThresholdDbm(threshold))
+                .await?;
             self.cca_threshold = Some(threshold);
         }
         Ok(())
@@ -211,10 +212,51 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
         }
     }
 
-    fn submit(&mut self, command: RadioCommand<'_>) -> Result<(), RadioErrorKind> {
-        match self.port.submit(command) {
-            Ok(Ok(_)) => Ok(()),
-            _ => Err(RadioErrorKind::Other),
+    /// Admit `command`. A port quiesced for shared PHY maintenance refuses
+    /// a command that writes the hardware until its `Enabled`: wait for it
+    /// and admit the command again, so OpenThread never sees the window.
+    async fn submit(&mut self, command: RadioCommand<'_>) -> Result<(), RadioErrorKind> {
+        loop {
+            match self.port.submit(command) {
+                Ok(Ok(_)) => return Ok(()),
+                Ok(Err(CommandError::Quiesced)) => self.wait_enabled().await?,
+                _ => return Err(RadioErrorKind::Other),
+            }
+        }
+    }
+
+    /// Wait for the `Enabled` that ends a maintenance window, queueing
+    /// frames and taking an abandoned operation's terminal meanwhile. The
+    /// adapter never quiesces the port itself, so only maintenance holds it.
+    async fn wait_enabled(&mut self) -> Result<(), RadioErrorKind> {
+        loop {
+            let event = match self.port.next_event().await {
+                Ok(Ok(event)) => event,
+                // Only frames are lost.
+                Ok(Err(EventsLost)) => {
+                    self.receive_lost = true;
+                    continue;
+                }
+                Err(_) => return Err(RadioErrorKind::Other),
+            };
+            match P::view(&event) {
+                RadioEvent::Received(_) => {
+                    if self.received.push_back(event).is_err() {
+                        self.receive_lost = true;
+                    }
+                }
+                RadioEvent::Lifecycle(LifecycleEvent::Enabled) => return Ok(()),
+                // A disabled radio ends no window.
+                RadioEvent::Lifecycle(LifecycleEvent::Disabled | LifecycleEvent::Failed { .. })
+                | RadioEvent::Fault { .. } => return Err(RadioErrorKind::Other),
+                view => {
+                    if let Some(id) = self.pending
+                        && terminal_of(view) == Some(id)
+                    {
+                        self.pending = None;
+                    }
+                }
+            }
         }
     }
 
@@ -269,9 +311,10 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
         }
     }
 
-    fn configure(&mut self, configuration: Configuration) -> Result<(), RadioErrorKind> {
+    async fn configure(&mut self, configuration: Configuration) -> Result<(), RadioErrorKind> {
         let id = self.id();
         self.submit(RadioCommand::Configure { id, configuration })
+            .await
     }
 
     /// Transmit `psdu` under `security`; also report the security header
@@ -302,7 +345,7 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
             return (Err(RadioErrorKind::TxInvalid), None);
         };
         if let Some(threshold) = cca_threshold
-            && let Err(error) = self.apply_cca_threshold(threshold)
+            && let Err(error) = self.apply_cca_threshold(threshold).await
         {
             return (Err(error), None);
         }
@@ -317,17 +360,20 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
             (None, true) => TxMode::ClearChannelAssessment,
             (None, false) => TxMode::Direct,
         };
-        if let Err(error) = self.submit(RadioCommand::Transmit(TxRequest {
-            id,
-            frame,
-            channel,
-            mode,
-            transmit_power_dbm: Some(power),
-            max_frame_retries: 0,
-            security,
-            interface: Interface::PRIMARY,
-            time_sync,
-        })) {
+        if let Err(error) = self
+            .submit(RadioCommand::Transmit(TxRequest {
+                id,
+                frame,
+                channel,
+                mode,
+                transmit_power_dbm: Some(power),
+                max_frame_retries: 0,
+                security,
+                interface: Interface::PRIMARY,
+                time_sync,
+            }))
+            .await
+        {
             return (Err(error), None);
         }
         self.pending = Some(id);
@@ -402,7 +448,8 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
         })))?;
         // The radio holds the threshold OpenThread starts from.
         self.cca_threshold = None;
-        self.apply_cca_threshold(self.defaults.cca_threshold_dbm)?;
+        self.apply_cca_threshold(self.defaults.cca_threshold_dbm)
+            .await?;
         // And the empty source-match table it starts from: every poll is
         // answered with frame pending.
         self.src_match = SrcMatchConfig::new();
@@ -411,7 +458,7 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
             Configuration::ResetPendingTable(PendingTableHalf::Extended),
             Configuration::PendingMode(pending_mode(false)),
         ] {
-            self.configure(configuration)?;
+            self.configure(configuration).await?;
         }
         Ok(RadioCaps {
             phy: OPEN_THREAD_RADIO_CAPABILITIES,
@@ -427,21 +474,24 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
     async fn set_config(&mut self, config: &Config) -> Result<(), Self::Error> {
         self.settle().await;
         if let Some(pan_id) = config.pan_id {
-            self.configure(Configuration::PanId(pan_id))?;
+            self.configure(Configuration::PanId(pan_id)).await?;
         }
         if let Some(short) = config.short_addr {
-            self.configure(Configuration::ShortAddress(short))?;
+            self.configure(Configuration::ShortAddress(short)).await?;
         }
         if let Some(extended) = config.ext_addr {
-            self.configure(Configuration::ExtendedAddress(extended_address(extended)))?;
+            self.configure(Configuration::ExtendedAddress(extended_address(extended)))
+                .await?;
         }
         self.configure(Configuration::Promiscuous(config.promiscuous))
+            .await
     }
 
     async fn set_src_match_config(&mut self, config: &SrcMatchConfig) -> Result<(), Self::Error> {
         self.settle().await;
         if config.enabled != self.src_match.enabled {
-            self.configure(Configuration::PendingMode(pending_mode(config.enabled)))?;
+            self.configure(Configuration::PendingMode(pending_mode(config.enabled)))
+                .await?;
         }
         let old = core::mem::replace(&mut self.src_match, config.clone());
         let mut result = Ok(());
@@ -468,13 +518,13 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
         self.settle().await;
         let channel = channel(number)?;
         let id = self.id();
-        self.submit(RadioCommand::Receive { id, channel })
+        self.submit(RadioCommand::Receive { id, channel }).await
     }
 
     async fn set_sleep(&mut self) -> Result<(), Self::Error> {
         self.settle().await;
         let id = self.id();
-        self.submit(RadioCommand::Sleep { id })
+        self.submit(RadioCommand::Sleep { id }).await
     }
 
     async fn energy_scan(&mut self, number: u8, duration_millis: u16) -> Result<i8, Self::Error> {
@@ -485,7 +535,8 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
             id,
             channel,
             duration_us: scan_micros(duration_millis),
-        }))?;
+        }))
+        .await?;
         self.pending = Some(id);
         let terminal = self.terminal(id).await;
         self.pending = None;
@@ -563,6 +614,7 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
             start,
             duration_us: duration,
         }))
+        .await
     }
 
     async fn set_csl(&mut self, csl: CslConfig) -> Result<(), Self::Error> {
@@ -728,7 +780,7 @@ impl<C: Clock> RadioClock for MonotonicRadioClock<C> {
 
 /// The live RSSI of an IEEE 802.15.4 radio port for OpenThread's synchronous
 /// `otPlatRadioGetRssi`: the port's [`Ieee802154RadioPort::recent_rssi`],
-/// `None` while the port cannot read it.
+/// `None` once the port is poisoned.
 pub struct PortRssi<'r, P>(&'r P);
 
 impl<'r, P: Ieee802154RadioPort> PortRssi<'r, P> {
@@ -740,6 +792,6 @@ impl<'r, P: Ieee802154RadioPort> PortRssi<'r, P> {
 
 impl<P: Ieee802154RadioPort> RadioRssi for PortRssi<'_, P> {
     fn rssi(&self) -> Option<i8> {
-        self.0.recent_rssi().ok().and_then(Result::ok)
+        self.0.recent_rssi().ok()
     }
 }

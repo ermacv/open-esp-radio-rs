@@ -302,8 +302,6 @@ pub enum RxBeaconPriority {
 /// Why the backend refused a setting; nothing changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SettingError {
-    /// The backend is not installed or is paused.
-    NotInstalled,
     /// The setting names an interface the backend does not have or has not
     /// configured.
     UnknownVif,

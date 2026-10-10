@@ -68,7 +68,7 @@ impl Ieee80211LowerMacPort for DisabledRetune {
         self.model.clock_info()
     }
 
-    fn tx_buffer(&self, len: usize) -> PortResult<Option<Self::TxBuffer>, NotInstalled, Fault> {
+    fn tx_buffer(&self, len: usize) -> Result<Option<Self::TxBuffer>, Poisoned<Fault>> {
         self.model.tx_buffer(len)
     }
 
@@ -147,7 +147,7 @@ impl LowerMacAmpdu for DisabledRetune {
         self.model.ampdu_capabilities()
     }
 
-    fn ampdu_buffer(&self) -> PortResult<Option<Self::AmpduBuffer>, NotInstalled, Fault> {
+    fn ampdu_buffer(&self) -> Result<Option<Self::AmpduBuffer>, Poisoned<Fault>> {
         self.model.ampdu_buffer()
     }
 

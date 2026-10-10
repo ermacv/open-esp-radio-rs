@@ -48,9 +48,9 @@ use router::TxQueueLease;
 
 use oer_ieee80211_lower_mac::{
     AirReservation, AmpduBuffer, AmpduPayload, Backoff, ClockError, CoexPriority,
-    Ieee80211LowerMacPort, KeySelector, LowerMacAirReservation, LowerMacAmpdu, NotInstalled,
-    PhyRate, Poisoned, Protection, Refused, SubmitError, TxAttempt, TxBody as PortTxBody, TxBuffer,
-    TxCompletion, TxId, TxPayload, TxPower, TxResponse, VifId,
+    Ieee80211LowerMacPort, KeySelector, LowerMacAirReservation, LowerMacAmpdu, PhyRate, Poisoned,
+    Protection, Refused, SubmitError, TxAttempt, TxBody as PortTxBody, TxBuffer, TxCompletion,
+    TxId, TxPayload, TxPower, TxResponse, VifId,
 };
 use oer_ieee80211_mac::block_ack::encode_block_ack_request;
 use oer_ieee80211_mac::qos::WmmAccessCategory;
@@ -75,8 +75,6 @@ pub enum UpperMacTxError<F> {
     Refused(SubmitError),
     /// Every completion slot of the router is registered.
     RouterFull,
-    /// No backend serves the port.
-    NotInstalled,
     /// The port's radio clock could not be read to plan the next step.
     Clock(ClockError),
     /// The port is poisoned.
@@ -304,11 +302,7 @@ where
             None => None,
         };
         let len = mpdu_len(header, body_slot.as_ref().and_then(|body| body.as_ref()));
-        let mut buffer = self
-            .port
-            .tx_buffer(len)?
-            .map_err(|NotInstalled| UpperMacTxError::NotInstalled)?
-            .ok_or(UpperMacTxError::NoBuffer)?;
+        let mut buffer = self.port.tx_buffer(len)?.ok_or(UpperMacTxError::NoBuffer)?;
         buffer.frame_mut()[..header.len()].copy_from_slice(header);
         if set_retry && !set_retry_bit(buffer.frame_mut()) {
             self.port.release_tx_buffer(buffer);
@@ -518,11 +512,7 @@ where
         retry: u64,
         tid: u8,
     ) -> Result<Registration<'r, 'p, P, WAITERS, RX>, UpperMacTxError<P::Fault>> {
-        let mut buffer = self
-            .port
-            .ampdu_buffer()?
-            .map_err(|NotInstalled| UpperMacTxError::NotInstalled)?
-            .ok_or(UpperMacTxError::NoBuffer)?;
+        let mut buffer = self.port.ampdu_buffer()?.ok_or(UpperMacTxError::NoBuffer)?;
         let mut remaining = selected;
         while remaining != 0 {
             let index = remaining.trailing_zeros() as usize;

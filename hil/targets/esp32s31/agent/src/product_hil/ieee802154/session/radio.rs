@@ -2,7 +2,7 @@
 //! the frames received between collections.
 
 use embassy_time::{Duration, with_timeout};
-use oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime;
+use oer_esp32s31_ieee802154_system::Ieee802154SystemPort;
 use oer_espressif_ieee802154_runtime::{Ieee802154OwnedFrame, Ieee802154RadioEvent};
 use oer_hil_protocol::{
     ieee802154::IEEE802154_SESSION_RECORDED_FRAMES, ieee802154::Ieee802154AirCcaOutcome,
@@ -17,9 +17,10 @@ use oer_hil_protocol::{
     ieee802154::ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
-    AutoPendingMode, Channel, Configuration, EnergyScanRequest, EnhancedAckGeneration, EventsLost,
-    FrameAddress, FrameView, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleEvent,
-    RadioCommand, RadioPort, RadioSetting, RequestId, TxMode, TxRequest, TxSecurity,
+    AutoPendingMode, Channel, CommandError, Configuration, EnergyScanRequest,
+    EnhancedAckGeneration, EventsLost, FrameAddress, FrameView, Ieee802154RadioPort, Interface,
+    LifecycleCommand, LifecycleEvent, RadioCommand, RadioPort, RadioSetting, RequestId, TxMode,
+    TxRequest, TxSecurity,
 };
 
 use super::super::client::tx_outcome;
@@ -60,8 +61,16 @@ impl Received {
     }
 }
 
+/// Bound on a shared PHY maintenance window a refused command waits out.
+const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(1);
+
 pub(super) struct Session {
-    pub(super) runtime: &'static Ieee802154SystemRuntime,
+    /// The radio's port; the session gives it back only across a restart.
+    pub(super) port: Option<Ieee802154SystemPort>,
+    /// Shared PHY maintenance quiesced the port and has not enabled it yet.
+    pub(super) maintained: bool,
+    /// Maintenance windows that ended, so a waiting command sees its own.
+    pub(super) maintenance_ends: u32,
     pub(super) channel: Channel,
     pub(super) next_id: u32,
     pub(super) received: Received,
@@ -74,14 +83,40 @@ impl Session {
         RequestId::new(self.next_id)
     }
 
-    pub(super) fn submit(
+    /// The radio's port.
+    pub(super) fn port(&self) -> &Ieee802154SystemPort {
+        self.port
+            .as_ref()
+            .expect("the session holds its port outside a restart")
+    }
+
+    /// Admit `command`. Shared PHY maintenance quiesces the port and refuses
+    /// a command that writes the hardware until its `Enabled`: the command
+    /// waits out the window and is admitted then.
+    pub(super) async fn submit(
         &mut self,
         command: RadioCommand<'_>,
     ) -> Result<(), Ieee802154SessionResult> {
-        match self.runtime.submit(command) {
-            Ok(Ok(_)) => Ok(()),
-            _ => Err(Ieee802154SessionResult::CommandRejected),
+        loop {
+            match self.port().submit(command) {
+                Ok(Ok(_)) => return Ok(()),
+                Ok(Err(CommandError::Quiesced)) => self.wait_maintenance().await?,
+                _ => return Err(Ieee802154SessionResult::CommandRejected),
+            }
         }
+    }
+
+    /// Take events until a maintenance window ends; received frames are
+    /// recorded and other events dropped, as between commands.
+    async fn wait_maintenance(&mut self) -> Result<(), Ieee802154SessionResult> {
+        let ends = self.maintenance_ends;
+        while self.maintenance_ends == ends {
+            let Ok(event) = with_timeout(MAINTENANCE_TIMEOUT, self.taken()).await else {
+                return Err(Ieee802154SessionResult::EventTimeout);
+            };
+            let _ = self.observe(event);
+        }
+        Ok(())
     }
 
     /// Apply the host's identity and filter to an enabled radio, and
@@ -96,7 +131,7 @@ impl Session {
             .enhanced_ack
             .then_some(EnhancedAckGeneration { noise_floor_dbm: 0 });
         if !matches!(
-            self.runtime.apply(RadioSetting::EnhancedAck(generation)),
+            self.port().apply(RadioSetting::EnhancedAck(generation)),
             Ok(Ok(()))
         ) {
             return Err(Ieee802154SessionResult::StartFailed);
@@ -110,7 +145,8 @@ impl Session {
             Configuration::Promiscuous(config.promiscuous),
         ] {
             let id = self.id();
-            self.submit(RadioCommand::Configure { id, configuration })?;
+            self.submit(RadioCommand::Configure { id, configuration })
+                .await?;
         }
         Ok(())
     }
@@ -122,7 +158,7 @@ impl Session {
         command: LifecycleCommand,
         terminal: LifecycleEvent,
     ) -> Result<(), Ieee802154SessionResult> {
-        let Ok(Ok(())) = self.runtime.lifecycle(command).await else {
+        let Ok(Ok(())) = self.port().lifecycle(command).await else {
             return Err(Ieee802154SessionResult::CommandRejected);
         };
         match self.terminal_event(ASSESS_TIMEOUT).await? {
@@ -134,14 +170,14 @@ impl Session {
     /// Leave receive mode and disable the radio before its client stops.
     pub(super) async fn rest_disabled(&mut self) -> Result<(), Ieee802154SessionResult> {
         let id = self.id();
-        self.submit(RadioCommand::Sleep { id })?;
+        self.submit(RadioCommand::Sleep { id }).await?;
         self.lifecycle(LifecycleCommand::Disable, LifecycleEvent::Disabled)
             .await
     }
 
-    /// The runtime's next event; the runtime never poisons.
+    /// The port's next event; the runtime never poisons.
     pub(super) async fn taken(&self) -> Result<Ieee802154RadioEvent, EventsLost> {
-        let Ok(event) = self.runtime.next_event().await;
+        let Ok(event) = self.port().next_event().await;
         event
     }
 
@@ -155,29 +191,23 @@ impl Session {
                 self.received.record(&frame);
                 None
             }
+            // The session never quiesces the port: `Quiesced` opens a shared
+            // PHY maintenance window and the next `Enabled` closes it.
+            Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced)) => {
+                self.maintained = true;
+                None
+            }
+            Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled)) if self.maintained => {
+                self.maintained = false;
+                self.maintenance_ends = self.maintenance_ends.wrapping_add(1);
+                None
+            }
             Ok(event) => Some(event),
             Err(_) => {
                 self.lost = true;
                 None
             }
         }
-    }
-
-    /// Print the MAC power-sequencing words once per boot, before the first
-    /// transmission, pausing the resting radio for the read.
-    fn report_power_sequence_once(&self) {
-        static REPORTED: core::sync::atomic::AtomicBool =
-            core::sync::atomic::AtomicBool::new(false);
-        if REPORTED.swap(true, core::sync::atomic::Ordering::Relaxed) {
-            return;
-        }
-        let Ok(mut paused) = self.runtime.pause() else {
-            return;
-        };
-        let sequence = paused.hardware_mut().power_sequence();
-        // A paused radio always resumes into the runtime it came from.
-        let _ = self.runtime.resume(paused);
-        crate::console::ieee802154_power_sequence_report(sequence);
     }
 
     pub(super) async fn transmit(
@@ -189,24 +219,26 @@ impl Session {
             evidence.result = Ieee802154SessionResult::CommandRejected;
             return evidence;
         };
-        self.report_power_sequence_once();
         let id = self.id();
         let mode = match request.mode {
             Ieee802154SessionTxMode::Direct => TxMode::Direct,
             Ieee802154SessionTxMode::ClearChannelAssessment => TxMode::ClearChannelAssessment,
             Ieee802154SessionTxMode::CsmaCa { max_backoffs } => TxMode::CsmaCa { max_backoffs },
         };
-        if let Err(result) = self.submit(RadioCommand::Transmit(TxRequest {
-            id,
-            frame,
-            channel: self.channel,
-            mode,
-            transmit_power_dbm: None,
-            max_frame_retries: request.max_frame_retries,
-            security: TxSecurity::Radio,
-            interface: Interface::PRIMARY,
-            time_sync: None,
-        })) {
+        if let Err(result) = self
+            .submit(RadioCommand::Transmit(TxRequest {
+                id,
+                frame,
+                channel: self.channel,
+                mode,
+                transmit_power_dbm: None,
+                max_frame_retries: request.max_frame_retries,
+                security: TxSecurity::Radio,
+                interface: Interface::PRIMARY,
+                time_sync: None,
+            }))
+            .await
+        {
             evidence.result = result;
             return evidence;
         }
@@ -270,11 +302,14 @@ impl Session {
             return assessment;
         };
         let id = self.id();
-        if let Err(result) = self.submit(RadioCommand::EnergyScan(EnergyScanRequest {
-            id,
-            channel,
-            duration_us: request.energy_scan_micros,
-        })) {
+        if let Err(result) = self
+            .submit(RadioCommand::EnergyScan(EnergyScanRequest {
+                id,
+                channel,
+                duration_us: request.energy_scan_micros,
+            }))
+            .await
+        {
             assessment.result = result;
             return assessment;
         }
@@ -299,7 +334,10 @@ impl Session {
             }
         };
         let id = self.id();
-        if let Err(result) = self.submit(RadioCommand::ClearChannelAssessment { id, channel }) {
+        if let Err(result) = self
+            .submit(RadioCommand::ClearChannelAssessment { id, channel })
+            .await
+        {
             assessment.result = result;
             return assessment;
         }
@@ -333,36 +371,47 @@ impl Session {
 
     /// The live RSSI of the most recent baseband reception.
     pub(super) fn recent_rssi(&self) -> Ieee802154SessionRecentRssi {
-        match self.runtime.recent_rssi() {
-            Ok(Ok(rssi_dbm)) => Ieee802154SessionRecentRssi {
-                result: Ieee802154SessionResult::Done,
-                rssi_dbm,
-            },
-            Ok(Err(_)) => Ieee802154SessionRecentRssi {
-                result: Ieee802154SessionResult::CommandRejected,
-                rssi_dbm: 0,
-            },
+        let Ok(rssi_dbm) = self.port().recent_rssi();
+        Ieee802154SessionRecentRssi {
+            result: Ieee802154SessionResult::Done,
+            rssi_dbm,
         }
     }
 
-    pub(super) fn pending(&mut self, request: Ieee802154SessionPendingRequest) -> bool {
+    /// Set the pending mode and add the host's source through the port; the
+    /// pending table is software the next operation publishes, so a
+    /// maintenance window does not refuse either.
+    pub(super) async fn pending(&mut self, request: Ieee802154SessionPendingRequest) -> bool {
         let mode = match request.mode {
             Ieee802154SessionPendingMode::Disabled => AutoPendingMode::Disable,
             Ieee802154SessionPendingMode::Enabled => AutoPendingMode::Enable,
             Ieee802154SessionPendingMode::Enhanced => AutoPendingMode::Enhanced,
             Ieee802154SessionPendingMode::Zigbee => AutoPendingMode::Zigbee,
         };
-        let runtime = self.runtime;
-        if runtime.set_pending_mode(mode).is_err() {
+        let id = self.id();
+        if self
+            .submit(RadioCommand::Configure {
+                id,
+                configuration: Configuration::PendingMode(mode),
+            })
+            .await
+            .is_err()
+        {
             return false;
         }
         match request.short_address {
             None => true,
-            Some(short) => runtime
-                .with_pending_table(|table| {
-                    table.add(FrameAddress::Short(short.to_le_bytes())).is_ok()
+            Some(short) => {
+                let id = self.id();
+                self.submit(RadioCommand::Configure {
+                    id,
+                    configuration: Configuration::AddPendingAddress(FrameAddress::Short(
+                        short.to_le_bytes(),
+                    )),
                 })
-                .unwrap_or(false),
+                .await
+                .is_ok()
+            }
         }
     }
 }

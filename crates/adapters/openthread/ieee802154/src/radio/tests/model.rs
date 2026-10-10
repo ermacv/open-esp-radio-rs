@@ -14,9 +14,9 @@ use oer_ieee802154::{
     AcceptedCommand, CancelError, ClockError, ClockInfo, CommandError, Configuration, CslReceiver,
     EnhancedAckGeneration, EventsLost, FcsStatus, Frame, FrameCounterUpdate, FramePending,
     Ieee802154Capabilities, Ieee802154Instant, Ieee802154Radio, Ieee802154RadioPort, Interface,
-    LifecycleCommand, LifecycleError, LifecycleEvent, LinkMetrics, MacKeys, NotInstalled,
-    PortResult, ProbingInitiator, RadioCapabilities, RadioCommand, RadioEpoch, RadioEvent,
-    RadioPort, RadioSetting, RadioState, RadioStateMachine, ReceivedFrame, RequestId, RxMetadata,
+    LifecycleCommand, LifecycleError, LifecycleEvent, LinkMetrics, MacKeys, Poisoned, PortResult,
+    ProbingInitiator, RadioCapabilities, RadioCommand, RadioEpoch, RadioEvent, RadioPort,
+    RadioSetting, RadioState, RadioStateMachine, ReceivedFrame, RequestId, RxMetadata,
     SecurityStatus, SentAcknowledgement, SettingError, TxSecurity, TxStatus,
 };
 use openthread_radio::{
@@ -259,8 +259,8 @@ impl Ieee802154RadioPort for ModelPort {
         }
     }
 
-    fn state(&self) -> PortResult<RadioState, NotInstalled, Infallible> {
-        Ok(Ok(self.0.borrow().machine.state()))
+    fn state(&self) -> Result<RadioState, Poisoned<Infallible>> {
+        Ok(self.0.borrow().machine.state())
     }
 
     fn apply(&self, setting: RadioSetting<'_>) -> PortResult<(), SettingError, Infallible> {
@@ -295,17 +295,17 @@ impl Ieee802154RadioPort for ModelPort {
         Ok(Ok(()))
     }
 
-    fn frame_counter(&self, _: Interface) -> PortResult<Option<u32>, NotInstalled, Infallible> {
-        Ok(Ok(self
+    fn frame_counter(&self, _: Interface) -> Result<Option<u32>, Poisoned<Infallible>> {
+        Ok(self
             .0
             .borrow()
             .recorded
             .keys
-            .map(|keys| keys.frame_counter())))
+            .map(|keys| keys.frame_counter()))
     }
 
-    fn recent_rssi(&self) -> PortResult<i8, NotInstalled, Infallible> {
-        Ok(Ok(-71))
+    fn recent_rssi(&self) -> Result<i8, Poisoned<Infallible>> {
+        Ok(-71)
     }
 }
 

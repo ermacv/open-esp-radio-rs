@@ -1,7 +1,7 @@
 //! The lower-MAC port trait and its events.
 
 use crate::{Ieee80211ClockSample, Ieee80211Radio};
-use oer_radio_port::{ClockError, ClockInfo, LifecycleEvent, NotInstalled, PortResult, RadioPort};
+use oer_radio_port::{ClockError, ClockInfo, LifecycleEvent, Poisoned, PortResult, RadioPort};
 
 use crate::{
     capabilities::LowerMacCapabilities,
@@ -34,7 +34,7 @@ pub type MpduAttempt<B, O> = TxAttempt<TxPayload<B, O>>;
 /// The result of a submission: admitted, or refused with the attempt, its
 /// buffer and body handed back. Every refusal is the inner one, a port that
 /// is not installed included; the outer error is only
-/// [`Poisoned`](oer_radio_port::Poisoned) with the backend's cause `F`,
+/// [`Poisoned`] with the backend's cause `F`,
 /// after which the backend keeps the attempt until its reset.
 pub type SubmitResult<A, F> = PortResult<(), Refused<A>, F>;
 
@@ -118,7 +118,7 @@ pub type SubmitResult<A, F> = PortResult<(), Refused<A>, F>;
 /// [`TxStatus::Aborted`](crate::TxStatus::Aborted) or
 /// [`TxStatus::Fault`](crate::TxStatus::Fault), and a lifecycle command
 /// as [`LifecycleEvent::Failed`]; the port stays usable. The outer
-/// [`Poisoned`](oer_radio_port::Poisoned) means the backend's state is
+/// [`Poisoned`] means the backend's state is
 /// unknown: [`RadioPort::next_event`] reports it after every earlier event,
 /// every later call returns it, and only a reset restores the port.
 pub trait Ieee80211LowerMacPort: RadioPort<Id = TxId, Domain = Ieee80211Radio> {
@@ -153,21 +153,17 @@ pub trait Ieee80211LowerMacPort: RadioPort<Id = TxId, Domain = Ieee80211Radio> {
     /// image's monotonic time.
     fn clock_info(&self) -> ClockInfo;
 
-    /// Lend a buffer for an MPDU of `len` bytes. `Ok(Ok(None))` when every
+    /// Lend a buffer for an MPDU of `len` bytes. `Ok(None)` when every
     /// buffer is in use or `len` exceeds
     /// [`LowerMacCapabilities::max_mpdu_length`].
-    fn tx_buffer(
-        &self,
-        len: usize,
-    ) -> PortResult<Option<Self::TxBuffer>, NotInstalled, Self::Fault>;
+    fn tx_buffer(&self, len: usize) -> Result<Option<Self::TxBuffer>, Poisoned<Self::Fault>>;
 
     /// Take back a buffer the caller will not submit. A poisoned backend
     /// keeps it until the reset.
     fn release_tx_buffer(&self, buffer: Self::TxBuffer);
 
     /// Admit one attempt. `Ok(Err(_))` when the backend refused it, for any
-    /// reason including [`SubmitError::NotInstalled`](crate::SubmitError::NotInstalled):
-    /// nothing was sent and the attempt comes back with its buffer and body.
+    /// reason: nothing was sent and the attempt comes back with its buffer and body.
     /// An admitted attempt reports exactly one [`LowerMacEvent::TxCompleted`]
     /// with its identity, and its buffer is released then; its body stays
     /// with the backend until that event carries it back

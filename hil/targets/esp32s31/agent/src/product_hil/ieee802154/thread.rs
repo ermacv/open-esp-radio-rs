@@ -17,7 +17,8 @@ use embassy_futures::{
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use esp_hal::{efuse, rng::Trng};
 use oer_esp32s31_ieee802154_system::{
-    IEEE802154_DEFAULT_TX_POWER_DBM, IEEE802154_RECEIVE_SENSITIVITY_DBM, Ieee802154SystemRuntime,
+    IEEE802154_DEFAULT_TX_POWER_DBM, IEEE802154_RECEIVE_SENSITIVITY_DBM, Ieee802154SystemPort,
+    Ieee802154SystemRuntime,
 };
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_hil_protocol::{
@@ -57,7 +58,7 @@ const RX_QUEUE: usize = 8;
 const UDP_SOCKETS: usize = 1;
 const UDP_BUFFER: usize = 1280;
 
-type ThreadRadio = OpenThreadRadio<'static, Ieee802154SystemRuntime, RX_QUEUE>;
+type ThreadRadio<'p> = OpenThreadRadio<'p, Ieee802154SystemPort, RX_QUEUE>;
 
 static TRNG: StaticCell<Trng> = StaticCell::new();
 static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
@@ -65,7 +66,6 @@ static OT_UDP: StaticCell<OtUdpResources<UDP_SOCKETS, UDP_BUFFER>> = StaticCell:
 static OT_SETTINGS_BUFFER: ConstStaticCell<[u8; 1024]> = ConstStaticCell::new([0; 1024]);
 static OT_SETTINGS: StaticCell<SimpleRamSettings> = StaticCell::new();
 static RADIO_CLOCK: StaticCell<MonotonicRadioClock<&'static EmbassyClock>> = StaticCell::new();
-static RADIO_RSSI: StaticCell<PortRssi<'static, Ieee802154SystemRuntime>> = StaticCell::new();
 static UDP_RECEIVE: ConstStaticCell<[u8; UDP_BUFFER]> = ConstStaticCell::new([0; UDP_BUFFER]);
 
 /// The IEEE 802.15.4 EUI-64 as ESP-IDF derives it
@@ -218,13 +218,16 @@ async fn serve(ot: &OpenThread<'_>, socket: &UdpSocket<'_>) -> u32 {
     }
 }
 
-/// Build OpenThread over `runtime`, apply the dataset and link mode, start
-/// Thread and bind the socket.
-fn start_openthread(
+/// Build OpenThread over the runtime's clock and the port's live RSSI
+/// (`rssi`), apply the dataset and link mode, start Thread and bind the
+/// socket. OpenThread borrows the port for the session, which gives it back
+/// to the client's stop.
+fn start_openthread<'p>(
     request: &Ieee802154ThreadStartRequest,
     trng: Trng,
     runtime: &'static Ieee802154SystemRuntime,
-) -> Option<(OpenThread<'static>, UdpSocket<'static>)> {
+    rssi: &'p PortRssi<'p, Ieee802154SystemPort>,
+) -> Option<(OpenThread<'p>, UdpSocket<'p>)> {
     let ot_resources = OT_RESOURCES.init(OtResources::new());
     // OpenThread's `SubMac` reads the radio capabilities when the instance
     // is built: transmit security then stays with the radio.
@@ -234,7 +237,7 @@ fn start_openthread(
         TRNG.init(trng),
         OT_SETTINGS.init(SimpleRamSettings::new(OT_SETTINGS_BUFFER.take())),
         RADIO_CLOCK.init(MonotonicRadioClock::new(runtime.clock())),
-        Some(RADIO_RSSI.init(PortRssi::new(runtime))),
+        Some(rssi),
         ot_resources,
         OT_UDP.init(OtUdpResources::new()),
     )
@@ -273,23 +276,27 @@ pub(in crate::product_hil) async fn run_thread(
         let started = core::pin::pin!(client.start(parked));
         started.await
     };
-    let Some(system) = system else {
+    let Some((system, port)) = system else {
         publish_event_reliably(0, request_id, started(Ieee802154SessionResult::StartFailed)).await;
         return;
     };
+    let rssi = PortRssi::new(&port);
     let joined = Trng::try_new()
         .ok()
-        .and_then(|trng| start_openthread(&request, trng, system.runtime()));
-    let Some((ot, socket)) = joined else {
+        .and_then(|trng| start_openthread(&request, trng, system.runtime(), &rssi));
+    if joined.is_none() {
+        // Nothing borrows the port any more.
+        drop(joined);
         publish_event_reliably(0, request_id, started(Ieee802154SessionResult::StartFailed)).await;
-        let stopped = core::pin::pin!(client.stop(system));
+        let stopped = core::pin::pin!(client.stop(system, port));
         let _ = stopped.await;
         return;
-    };
+    }
+    let (ot, socket) = joined.expect("the stack started");
     publish_event_reliably(0, request_id, started(Ieee802154SessionResult::Done)).await;
 
-    let radio: ThreadRadio = OpenThreadRadio::new(
-        system.runtime(),
+    let radio: ThreadRadio<'_> = OpenThreadRadio::new(
+        &port,
         OpenThreadRadioDefaults::esp_idf(
             IEEE802154_DEFAULT_TX_POWER_DBM,
             IEEE802154_RECEIVE_SENSITIVITY_DBM,
@@ -322,25 +329,27 @@ pub(in crate::product_hil) async fn run_thread(
 
     let _ = ot.enable_thread(false);
     let _ = ot.enable_ipv6(false);
+    // OpenThread gives the port back.
+    drop(socket);
+    drop(ot);
     // The stack has stopped: the image leaves receive mode and disables
     // the radio itself before the client stops, taking the events up to
     // the terminal of `Disable`, so the runtime's queue starts empty for
     // the next session.
-    let runtime = system.runtime();
-    let _ = runtime.submit(RadioCommand::Sleep { id: STOP_SLEEP });
-    if let Ok(Ok(())) = runtime.lifecycle(LifecycleCommand::Disable).await {
+    let _ = port.submit(RadioCommand::Sleep { id: STOP_SLEEP });
+    if let Ok(Ok(())) = port.lifecycle(LifecycleCommand::Disable).await {
         loop {
-            let Ok(event) = runtime.next_event().await;
+            let Ok(event) = port.next_event().await;
             if let Ok(event) = event
                 && let RadioEvent::Lifecycle(LifecycleEvent::Disabled) =
-                    Ieee802154SystemRuntime::view(&event)
+                    Ieee802154SystemPort::view(&event)
             {
                 break;
             }
         }
     }
     let stopped = {
-        let stopped = core::pin::pin!(client.stop(system));
+        let stopped = core::pin::pin!(client.stop(system, port));
         stopped.await
     };
     let result = match stopped {

@@ -24,8 +24,10 @@ the [runtime](../../../../runtime/espressif/ieee802154/src/lib.rs) and the
    the adapter once at boot (`install_interrupt_route` with an
    `Ieee802154InterruptSource` from its token).
 
-`Ieee802154System::stop` reverses the steps: quiesce the route, take the MAC
-owners out of the runtime, prove the foundation again, leave the domain and
+`start` returns the running client and the radio's port, which goes to its
+one event consumer. `Ieee802154System::stop` takes the port back and
+reverses the steps: quiesce the route, take the MAC owners out of the
+runtime (consuming the port and the control the client keeps), prove the foundation again, leave the domain and
 BTBB (the radio system closes RF after the last PHY client), release the
 clocks and leave
 common power. It returns the partition and the engine for a later start.
@@ -35,10 +37,13 @@ Periodic shared PHY tracking belongs to the radio system
 `esp_phy`. `Ieee802154System::maintain_phy` runs one tracking attempt on
 demand. Under the default vendor admission it is one tracking tick with IEEE
 802.15.4 receiving. Under the stricter quiesced admission, when IEEE
-802.15.4 is the only active client, the call pauses the runtime (leaving
-receive mode), closes the CPU route, issues the client's quiescence proof,
-tracks within that window, then resumes receive mode and binds the route
-again; `maintain_phy_until` repeats it once per tracking period. With
+802.15.4 is the only active client, the call pauses the radio as a layer
+over the port's lifecycle (the consumer takes `Quiesced`; receive mode is
+left), closes the CPU route, issues the client's quiescence proof, tracks
+within that window, then resumes receive mode, enables the port (`Enabled`)
+and binds the route again. Meanwhile the quiesced port refuses commands
+that write the hardware as `Quiesced`; the OpenThread adapter waits for
+`Enabled` and admits them then; `maintain_phy_until` repeats it once per tracking period. With
 another client active it reports `AwaitingOtherClients`; a running
 transmission, scan or CCA reports `Busy`.
 
@@ -66,8 +71,8 @@ power level every channel starts at, and `IEEE802154_RX_SENSITIVITY`), and
 is at `ieee802154::openthread`; the
 [Thread example](../../../../../examples/esp32s31/thread/) uses only this path.
 
-The runtime is a process singleton. After `start`, `Ieee802154System::runtime`
-is the client's `Ieee802154RadioPort`: it accepts portable `RadioCommand`s,
+The runtime is a process singleton. The port `start` returns
+(`Ieee802154SystemPort`) is the client's `Ieee802154RadioPort`: it accepts portable `RadioCommand`s,
 yields `Ieee802154RadioEvent`s and applies `RadioSetting`s. The
 engine resolves transmit power through the recovered ESP32-S31 BTBB level set.
 Enhanced ACKs follow ESP-IDF's OpenThread port: `start` installs no

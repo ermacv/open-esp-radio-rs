@@ -9,10 +9,10 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingChannels,
     AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu, AdvertisingReception,
-    AdvertisingSetId, ClockError, CoexistenceLevel, EventId, EventResult, LeInstant, LePhy,
-    LeWindow, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, RadioDuration,
-    RadioOutcome, RadioRequest, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType,
-    ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive, TxPower,
+    AdvertisingSetId, CoexistenceLevel, EventId, EventResult, LeInstant, LePhy, LeWindow,
+    LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, RadioDuration, RadioOutcome,
+    RadioRequest, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScannerConfiguration,
+    ScannerId, TestChannel, TestPhy, TestReceive, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -321,9 +321,17 @@ fn new_runtime() -> Runtime {
 /// A runtime with the model's radio installed but its port disabled.
 fn installed_disabled(model: &Model) -> Runtime {
     let runtime = new_runtime();
-    block_on(runtime.install(model_memory(), model.clone()))
+    let handles = block_on(runtime.install(model_memory(), model.clone()))
         .unwrap_or_else(|_| panic!("the first install succeeds"));
+    // The tests reach the runtime's own operations; the port is rebuilt
+    // where a test goes through the port traits.
+    drop(handles);
     runtime
+}
+
+/// The port of an installed `runtime`.
+fn port(runtime: &Runtime) -> crate::BluetoothPort<'_, Runtime> {
+    crate::BluetoothPort::new(runtime)
 }
 
 /// A runtime with the model's radio installed and its port enabled.
@@ -509,10 +517,6 @@ fn the_clock_reports_a_fresh_radio_time() {
         new_runtime().capabilities().timing.admission_guard,
         RadioDuration::from_micros(40)
     );
-    assert_eq!(
-        block_on(new_runtime().read_now()),
-        Ok(Err(ClockError::NotInstalled))
-    );
 }
 
 #[test]
@@ -528,10 +532,6 @@ fn a_refused_request_reports_the_radio_error() {
             Ok(Err(RequestError::TooLate))
         );
     });
-    assert_eq!(
-        block_on(new_runtime().submit_request(configure())),
-        Ok(Err(RequestError::NotInstalled))
-    );
 }
 
 #[test]
@@ -542,7 +542,6 @@ fn maintenance_runs_while_the_scheduler_is_stopped() {
         assert_eq!(proof.client(), RadioClient::Bluetooth);
         proof.span()
     }))
-    .unwrap()
     .unwrap();
     assert_eq!(span, QuiescentSpan::Stopped);
     assert_eq!(model.0.borrow().stops, 1);
@@ -583,7 +582,7 @@ fn maintenance_waits_for_the_admitted_events_to_end() {
         .await
         {
             Either::First(fault) => panic!("the runtime faulted: {fault:?}"),
-            Either::Second(started) => started.unwrap().unwrap(),
+            Either::Second(started) => started.unwrap(),
         }
     });
     assert_eq!(ended_first, 1);
@@ -773,7 +772,7 @@ fn quiesce_on_a_full_queue_proceeds_once_the_consumer_frees_a_slot() {
         }
         let _ = taken(&runtime);
     }
-    assert_eq!(done, Some(Ok(Ok(()))));
+    assert_eq!(done, Some(Ok(())));
     // The port is enabled again once the consumer has read its outcomes.
     while taken(&runtime).is_some() {}
     block_on(runtime.submit_request(advertise(2, 30_000)))
@@ -871,10 +870,6 @@ fn cancellation_withdraws_an_admitted_event_and_its_end_follows() {
             result: EventResult::NotExecuted,
         })
     );
-    assert_eq!(
-        block_on(new_runtime().cancel_event(EventId::new(1))),
-        Ok(Err(oer_bluetooth_radio::CancelError::NotInstalled))
-    );
 }
 
 #[test]
@@ -939,21 +934,15 @@ fn as_a_radio_port_a_refusal_answers_and_a_missing_radio_ends_service() {
     model.0.borrow_mut().time = 20_000;
     let runtime = installed(&model);
     block_on(async {
-        assert_eq!(LeRadioPort::submit(&runtime, configure()).await, Ok(Ok(())));
         assert_eq!(
-            LeRadioPort::submit(&runtime, advertise(1, 5_000)).await,
+            LeRadioPort::submit(&port(&runtime), configure()).await,
+            Ok(Ok(()))
+        );
+        assert_eq!(
+            LeRadioPort::submit(&port(&runtime), advertise(1, 5_000)).await,
             Ok(Err(RequestError::TooLate))
         );
     });
-    let empty = new_runtime();
-    assert_eq!(
-        block_on(LeRadioPort::submit(&empty, configure())),
-        Ok(Err(RequestError::NotInstalled))
-    );
-    assert_eq!(
-        block_on(oer_bluetooth_radio::RadioPort::now(&empty)),
-        Ok(Err(ClockError::NotInstalled))
-    );
 }
 
 #[test]
@@ -962,7 +951,7 @@ fn as_a_radio_port_it_states_le_1m_and_hardware_acknowledgement() {
 
     let model = Model::default();
     let runtime = installed(&model);
-    let capabilities = LeRadioPort::capabilities(&runtime);
+    let capabilities = LeRadioPort::capabilities(&port(&runtime));
     assert!(capabilities.legacy_advertising && capabilities.active_scanning);
     assert!(capabilities.phys.contains(LePhy::Le1M));
     assert!(!capabilities.phys.contains(LePhy::Le2M));
@@ -987,11 +976,11 @@ fn as_a_radio_port_it_states_le_1m_and_hardware_acknowledgement() {
         ..configuration
     });
     assert_eq!(
-        block_on(LeRadioPort::submit(&runtime, le_2m)),
+        block_on(LeRadioPort::submit(&port(&runtime), le_2m)),
         Ok(Err(RequestError::Unsupported))
     );
     assert_eq!(
-        block_on(LeRadioPort::submit(&runtime, configure())),
+        block_on(LeRadioPort::submit(&port(&runtime), configure())),
         Ok(Ok(()))
     );
 }
@@ -1017,15 +1006,10 @@ fn uninstall_stops_the_scheduler_and_a_reset_radio_installs_again() {
         block_on(runtime.run()),
         crate::BluetoothRuntimeFault::NotInstalled
     ));
-    assert_eq!(
-        block_on(runtime.submit_request(configure())),
-        Ok(Err(RequestError::NotInstalled))
-    );
-
     let memory =
         radio.into_memory(&oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation());
     model.0.borrow_mut().chains_published = false;
-    block_on(runtime.install(memory, hardware))
+    let _handles = block_on(runtime.install(memory, hardware))
         .unwrap_or_else(|_| panic!("the next epoch installs"));
     assert!(model.0.borrow().chains_published);
     // The next radio starts disabled.
@@ -1152,7 +1136,7 @@ fn stop_drains_the_prior_finished_list_before_capturing_the_final_snapshot() {
     let runtime = installed(&model);
     model.0.borrow_mut().finished =
         BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0]);
-    block_on(runtime.quiesce(|_| ())).unwrap().unwrap();
+    block_on(runtime.quiesce(|_| ())).unwrap();
     assert!(model.0.borrow().finished.is_none());
     assert_eq!(model.0.borrow().stops, 1);
     block_on(runtime.submit_request(configure()))
@@ -1205,4 +1189,41 @@ fn a_wait_past_the_timer_range_is_an_error_not_a_forever_wait() {
     assert!(embassy_futures::poll_once(wait.as_mut()).is_pending());
     clock.advance(crate::HARDWARE_RECHECK).unwrap();
     assert_eq!(block_on(wait), Ok(()));
+}
+
+/// Install returns the radio's two handles: the consumer serves through the
+/// port, the composition maintains through the control, and the control's
+/// uninstall consumes both and returns the owners for the next install.
+#[test]
+fn install_returns_the_port_and_the_control_whose_uninstall_takes_both() {
+    use oer_bluetooth_radio::{LeRadioPort, RadioPort};
+
+    let model = Model::default();
+    let runtime = new_runtime();
+    let (port, control) = block_on(runtime.install(model_memory(), model.clone()))
+        .unwrap_or_else(|_| panic!("the first install succeeds"));
+    block_on(async {
+        // The consumer borrows the port while it serves.
+        assert_eq!(port.lifecycle(LifecycleCommand::Enable).await, Ok(Ok(())));
+        assert_eq!(port.submit(configure()).await, Ok(Ok(())));
+    });
+    // The control's maintenance quiesces and reopens the port.
+    assert_eq!(
+        block_on(control.quiesce(|proof| proof.client())),
+        Ok(RadioClient::Bluetooth)
+    );
+    // The control's uninstall consumes both handles; the owners install
+    // again.
+    let Ok((radio, hardware)) = block_on(control.uninstall(port)) else {
+        panic!("the idle radio uninstalls")
+    };
+    let memory =
+        radio.into_memory(&oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation());
+    let (port, _control) = block_on(runtime.install(memory, hardware))
+        .unwrap_or_else(|_| panic!("the next epoch installs"));
+    // The next radio starts disabled.
+    assert_eq!(
+        block_on(port.submit(configure())),
+        Ok(Err(RequestError::Disabled))
+    );
 }

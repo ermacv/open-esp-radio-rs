@@ -14,8 +14,8 @@ use embassy_sync::{
 };
 use oer_bluetooth_radio::{
     CancelError, ClockError, EventId, EventsLost, LeInstant, LeRadioCapabilities, LifecycleCommand,
-    LifecycleError, LifecycleEvent, NotInstalled, Poisoned, PortResult, RadioActivity,
-    RadioOutcome, RadioRequest, RequestError,
+    LifecycleError, LifecycleEvent, Poisoned, PortResult, RadioActivity, RadioOutcome,
+    RadioRequest, RequestError,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -40,6 +40,7 @@ use oer_esp32s31_hal::{
 };
 use oer_time::{Duration, Timer};
 
+use crate::port::{BluetoothControl, BluetoothPort};
 use crate::{
     BluetoothOutcome,
     hardware::{BluetoothRadioHardware, RxChainPublicationError},
@@ -50,6 +51,10 @@ use crate::{
 /// Scheduler commands, the stop sequence and the controller-time latch
 /// settle within microseconds; a scheduler interrupt also ends the delay.
 pub const HARDWARE_RECHECK: Duration = Duration::from_micros(20);
+
+/// The invariant of every port call: the port exists only while its radio
+/// is installed.
+const INSTALLED: &str = "the port exists only while its radio is installed";
 
 /// Longest time without a controller-time sample while the runtime is idle.
 ///
@@ -112,7 +117,7 @@ pub enum BluetoothInstallError {
     TimingMismatch,
 }
 
-type Radio<
+pub(crate) type Radio<
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -601,7 +606,8 @@ impl<
     }
 
     /// Publish the receive chains of `memory`, take the first controller-time
-    /// sample and install the radio.
+    /// sample and install the radio; its port and its control are returned,
+    /// and [`BluetoothControl::uninstall`] takes the radio out again.
     ///
     /// This runs once per powered epoch, after the interrupt owner is
     /// published and before the first scheduler RUN.
@@ -627,7 +633,7 @@ impl<
         >,
         mut hardware: H,
     ) -> Result<
-        (),
+        (BluetoothPort<'_, Self>, BluetoothControl<'_, Self>),
         (
             BluetoothInstallError,
             BluetoothRadioMemory<
@@ -678,7 +684,7 @@ impl<
         self.admission.signal(());
         self.fault.lock(|fault| fault.set(None));
         self.work.signal(());
-        Ok(())
+        Ok((BluetoothPort::new(self), BluetoothControl::new(self)))
     }
 
     /// The port's [`Poisoned`] once the radio or the runner faulted.
@@ -697,9 +703,7 @@ impl<
         if let Some(poisoned) = self.poisoned() {
             return Err(poisoned);
         }
-        let Some(installed) = installed.as_mut() else {
-            return Ok(Err(RequestError::NotInstalled));
-        };
+        let installed = installed.as_mut().expect(INSTALLED);
         if self.outcomes.admission() != Admission::Enabled {
             return Ok(Err(RequestError::Disabled));
         }
@@ -750,9 +754,7 @@ impl<
         if let Some(poisoned) = self.poisoned() {
             return Err(poisoned);
         }
-        let Some(installed) = installed.as_mut() else {
-            return Ok(Err(ClockError::NotInstalled));
-        };
+        let installed = installed.as_mut().expect(INSTALLED);
         let Ok(sample) = sample_time(&self.timer, &mut installed.hardware).await else {
             return Ok(Err(ClockError::Unavailable));
         };
@@ -769,9 +771,7 @@ impl<
         if let Some(poisoned) = self.poisoned() {
             return Err(poisoned);
         }
-        let Some(installed) = installed.as_mut() else {
-            return Ok(Err(CancelError::NotInstalled));
-        };
+        let installed = installed.as_mut().expect(INSTALLED);
         let cancelled = installed.radio.cancel(id, &mut self.sink());
         self.work.signal(());
         Ok(cancelled)
@@ -804,9 +804,7 @@ impl<
         if let Some(poisoned) = self.poisoned() {
             return Err(poisoned);
         }
-        let Some(installed) = installed.as_mut() else {
-            return Ok(Err(LifecycleError::NotInstalled));
-        };
+        let installed = installed.as_mut().expect(INSTALLED);
         let queue = &self.outcomes;
         let started = match (command, queue.admission()) {
             (_, Admission::Disabling | Admission::Quiescing) => Err(LifecycleError::Busy),
@@ -1018,36 +1016,29 @@ impl<
     ///
     /// # Errors
     ///
-    /// `Ok(Err(NotInstalled))` without a radio; [`Poisoned`] when a hardware
-    /// fault stopped the runtime.
-    pub async fn quiesce<R>(
+    /// [`Poisoned`] when a hardware fault stopped the runtime.
+    pub(crate) async fn quiesce<R>(
         &self,
         maintenance: impl FnOnce(ClientQuiescence<'_>) -> R,
-    ) -> PortResult<R, NotInstalled, BluetoothFault<H::StartError>> {
+    ) -> Result<R, Poisoned<BluetoothFault<H::StartError>>> {
         let resume = loop {
             match self.start_lifecycle(LifecycleCommand::Quiesce).await? {
                 Ok(generation) => break Some(generation),
                 Err(LifecycleError::AlreadyInState | LifecycleError::InvalidState) => break None,
-                Err(LifecycleError::NotInstalled) => return Ok(Err(NotInstalled)),
                 // Another command closes admission: wait for its end.
                 Err(LifecycleError::Busy) => self.admission.wait().await,
             }
         };
-        // The last end, a poison or an uninstall moves admission on.
+        // The last end or a poison moves admission on.
         while self.outcomes.admission() == Admission::Quiescing {
             if let Some(poisoned) = self.poisoned() {
                 return Err(poisoned);
-            }
-            if self.installed.lock().await.is_none() {
-                return Ok(Err(NotInstalled));
             }
             self.admission.wait().await;
         }
         let result = {
             let mut installed = self.installed.lock().await;
-            let Some(installed) = installed.as_mut() else {
-                return Ok(Err(NotInstalled));
-            };
+            let installed = installed.as_mut().expect(INSTALLED);
             let result = self.quiesce_installed(installed, maintenance).await;
             if let Err(fault) = result {
                 installed.fault();
@@ -1062,15 +1053,15 @@ impl<
         if let Some(generation) = resume {
             self.reopen(generation).await?;
         }
-        Ok(Ok(result))
+        Ok(result)
     }
 
     /// Enable the port that the quiesce of `generation` left `Quiesced`.
     ///
     /// The decision and the transition happen under one lock: the port is
     /// enabled only while it is still in that quiesce's `Quiesced`. Another
-    /// owner's later command, even one that ended in `Quiesced` again, or an
-    /// uninstall decides the state instead. A full queue defers `Enabled`
+    /// owner's later command, even one that ended in `Quiesced` again,
+    /// decides the state instead. A full queue defers `Enabled`
     /// until the consumer takes an outcome.
     pub(crate) async fn reopen(
         &self,
@@ -1078,13 +1069,13 @@ impl<
     ) -> Result<(), Poisoned<BluetoothFault<H::StartError>>> {
         loop {
             {
-                let installed = self.installed.lock().await;
+                // The lock orders the decision with every other lifecycle
+                // command.
+                let _installed = self.installed.lock().await;
                 if let Some(poisoned) = self.poisoned() {
                     return Err(poisoned);
                 }
-                if installed.is_none()
-                    || self.outcomes.lifecycle_state() != (Admission::Quiesced, generation)
-                {
+                if self.outcomes.lifecycle_state() != (Admission::Quiesced, generation) {
                     return Ok(());
                 }
                 if self
@@ -1115,13 +1106,13 @@ impl<
     ///
     /// # Errors
     ///
-    /// No radio is installed, or the scheduler could not be stopped; the
-    /// radio then stays installed and faulted.
+    /// The scheduler could not be stopped; the radio then stays installed
+    /// and faulted.
     #[allow(
         clippy::type_complexity,
         reason = "the role's pool capacities stay visible in the returned radio"
     )]
-    pub async fn uninstall(
+    pub(crate) async fn uninstall(
         &self,
     ) -> Result<
         (
@@ -1131,7 +1122,7 @@ impl<
         BluetoothRuntimeFault<H::StartError>,
     > {
         let mut slot = self.installed.lock().await;
-        let installed = slot.as_mut().ok_or(BluetoothRuntimeFault::NotInstalled)?;
+        let installed = slot.as_mut().expect(INSTALLED);
         if let Err(fault) = self.stop_scheduler(installed, &mut self.sink()).await {
             installed.fault();
             self.poison(fault);

@@ -1150,7 +1150,7 @@ fn a_completion_nobody_registered_ends_its_body_with_it() {
     let model = enabled_station();
     let router = Router::new(&model, 100);
     let frame = qos_data(40, [1, 0, 0, 0x20, 0, 0, 0, 0], 40);
-    let mut buffer = model.tx_buffer(frame.len()).unwrap().unwrap().unwrap();
+    let mut buffer = model.tx_buffer(frame.len()).unwrap().unwrap();
     buffer.frame_mut()[..26].copy_from_slice(&frame[..26]);
     let attempt = oer_ieee80211_lower_mac::TxAttempt {
         id: oer_ieee80211_lower_mac::TxId(7),

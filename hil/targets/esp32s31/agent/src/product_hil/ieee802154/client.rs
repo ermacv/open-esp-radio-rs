@@ -3,7 +3,9 @@
 use core::pin::pin;
 
 use esp_hal::time::Instant;
-use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
+use oer_esp32s31_ieee802154_system::{
+    Ieee802154Parked, Ieee802154System, Ieee802154SystemPort, start,
+};
 use oer_esp32s31_phy::concurrent::MaintenancePolicy;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_espressif_ieee802154_engine::pib::Ieee802154PibDefaults;
@@ -47,7 +49,10 @@ impl Client {
 
     /// Start the client. Bring-up holds the PHY registration future, so it
     /// is pinned in place.
-    pub(super) async fn start(&mut self, parked: Ieee802154Parked) -> Option<Ieee802154System> {
+    pub(super) async fn start(
+        &mut self,
+        parked: Ieee802154Parked,
+    ) -> Option<(Ieee802154System, Ieee802154SystemPort)> {
         let started = pin!(start(self.radio, parked, self.defaults));
         started.await.ok()
     }
@@ -64,9 +69,14 @@ impl Client {
             });
     }
 
-    /// Stop the client. Teardown holds the RF close future, pinned in place.
-    pub(super) async fn stop(&mut self, system: Ieee802154System) -> Option<Ieee802154Parked> {
-        let stopped = pin!(system.stop(self.radio));
+    /// Stop the client and take its port back. Teardown holds the RF close
+    /// future, pinned in place.
+    pub(super) async fn stop(
+        &mut self,
+        system: Ieee802154System,
+        port: Ieee802154SystemPort,
+    ) -> Option<Ieee802154Parked> {
+        let stopped = pin!(system.stop(port, self.radio));
         stopped.await.ok()
     }
 }

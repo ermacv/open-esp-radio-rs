@@ -665,22 +665,23 @@ fn referenced_strings(
                         entry.insert(app::captured::inventory(executable, memory, control)?)
                     }
                 };
-                let read_only = inventory
+                let record = inventory
                     .objects
                     .iter()
                     .find(|candidate| &candidate.id == object)
                     .and_then(|candidate| candidate.elf.as_ref())
-                    .is_some_and(|elf| blobray_cli::symbols::is_string_section(elf, section));
-                let bytes = if read_only {
-                    Some(section_bytes(
+                    .filter(|elf| blobray_cli::symbols::is_string_section(elf, section))
+                    .and_then(|elf| elf.sections.iter().find(|record| record.index == section))
+                    .cloned();
+                let bytes = match record {
+                    Some(record) => Some(section_bytes(
                         object,
-                        section,
+                        &record,
                         executables,
                         memory,
                         control,
-                    )?)
-                } else {
-                    None
+                    )?),
+                    None => None,
                 };
                 sections.insert(key.clone(), bytes);
             }
@@ -706,37 +707,22 @@ fn referenced_strings(
     Ok(texts)
 }
 
-/// The complete bytes of section `section` of `object`.
+/// The complete bytes of `section` of `object`, as its inventory record
+/// sizes it, without another inventory pass.
 fn section_bytes(
     object: &oer_riscv_model::ObjectId,
-    section: u32,
+    section: &blobray_domain::SectionRecord,
     executables: &[app::in_process::Executable],
     memory: &oer_riscv_model::WorkingMemory,
     control: &mut app::in_process::Limits,
 ) -> Result<Vec<u8>> {
-    let inventory = executables
-        .iter()
-        .find(|executable| executable.id() == &object.artifact)
-        .map(|executable| app::captured::inventory(executable, memory, control))
-        .transpose()?;
-    let length = inventory
-        .as_ref()
-        .and_then(|inventory| {
-            inventory
-                .objects
-                .iter()
-                .find(|candidate| &candidate.id == object)
-        })
-        .and_then(|candidate| candidate.elf.as_ref())
-        .and_then(|elf| elf.sections.iter().find(|record| record.index == section))
-        .map_or(0, |record| record.size);
     let request = blobray_domain::DataRequest {
         object: object.clone(),
         symbol: None,
         ranges: vec![blobray_domain::DataSelector::Section {
-            section,
+            section: section.index,
             offset: 0,
-            length,
+            length: section.size,
         }],
     };
     Ok(app::data::export(&request, executables, memory, control)?.bytes)
@@ -842,13 +828,8 @@ fn strings(
             }
             let Some(elf) = &object.elf else { continue };
             for section in blobray_cli::symbols::read_only_data(elf) {
-                let bytes = section_bytes(
-                    &object.id,
-                    section.index,
-                    &executables,
-                    &memory,
-                    &mut control,
-                )?;
+                let bytes =
+                    section_bytes(&object.id, section, &executables, &memory, &mut control)?;
                 for (offset, text) in blobray_cli::symbols::strings(&bytes, minimum) {
                     rows.push(blobray_cli::wire::StringRow {
                         input: index as u64,

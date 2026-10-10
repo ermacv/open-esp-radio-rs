@@ -66,6 +66,15 @@ mod tests {
     use std::path::Path;
 
     #[test]
+    fn only_fetched_pins_are_shard_input_identities() {
+        super::install();
+        assert!(crate::artifacts::is_fetched_pin(sha256("libphy").unwrap()));
+        assert!(crate::artifacts::is_fetched_pin(sha256("rom").unwrap()));
+        // A host build's digest, such as a probe's, is no pin.
+        assert!(!crate::artifacts::is_fetched_pin(&"0".repeat(64)));
+    }
+
+    #[test]
     fn a_firmware_input_has_the_digest_of_its_current_build_or_none() {
         super::install();
         // Any input path, explicit or default, must have this digest: the

@@ -155,12 +155,13 @@ file. Each shard records:
   no reviewed decision covers, coalesced by data symbol and offset; a byte
   outside every sized data symbol is named by the address of the nearest
   symbol below it;
-- SHA-256 identities of every input the scenario captured, including the
-  production probe ELF;
+- SHA-256 identities of every input the scenario captured that a fetched pin
+  identifies; the production probe ELF and firmware outputs are built on the
+  host, so their recipes stand for them among the sources instead;
 - directory digests of every source the verdicts depend on: the resolved
   path-dependency closure of the probe ELF the scenario compared (production
-  crates and probes), the scenario package, the shared schema and the Blobray
-  engine.
+  crates and probes), the firmware catalog projects, the scenario package,
+  the shared schema and the Blobray engine.
 
 Two views span scenarios and are derived from all shards together: a location
 is untriaged when some scenario lists it and every scenario whose closures

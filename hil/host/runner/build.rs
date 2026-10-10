@@ -134,7 +134,7 @@ fn main() {
         )
         .expect("validate observer dependency scope");
     }
-    let build = serde_json::json!({"schema":2,"inputs":inputs,"compiler":String::from_utf8(compiler.stdout).unwrap(),"environment":environment,"resolved":resolved});
+    let build = serde_json::json!({"schema":oer_hil_run_bundle_format::observer::BUILD_SCHEMA,"inputs":inputs,"compiler":String::from_utf8(compiler.stdout).unwrap(),"environment":environment,"resolved":resolved});
     fs::write(
         PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("runner-build.json"),
         serde_json::to_vec(&build).unwrap(),

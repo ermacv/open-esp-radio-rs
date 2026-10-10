@@ -2,9 +2,10 @@
 use serde_json::{Value, json};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// Tree output supplies edges only. Features and unit profiles come from Cargo artifacts.
+/// The resolved graph supplies edges only. Features and unit profiles come
+/// from Cargo artifacts.
 pub fn apply(resolved: &mut Value, artifacts: &[Value]) -> Result<()> {
-    for node in resolved["nodes"]
+    for node in resolved["packages"]
         .as_array_mut()
         .ok_or("observer graph missing")?
     {
@@ -84,7 +85,7 @@ mod tests {
     use super::*;
     #[test]
     fn actual_units_replace_tree_features_without_unifying_build_and_normal_units() {
-        let mut graph = json!({"nodes":[{"package":{"name":"dep","version":"1","source":"registry+index"},"features":["tree-approximation"]}]});
+        let mut graph = json!({"packages":[{"package":{"name":"dep","version":"1","source":"registry+index"},"features":["tree-approximation"]}]});
         let units = vec![
             json!({"package_id":"registry+index#dep@1","target":{"kind":["lib"]},"features":["actual"],"profile":{"test":false}}),
             json!({"package_id":"registry+index#dep@1","target":{"kind":["custom-build"]},"features":["build-only"],"profile":{"test":false}}),
@@ -93,10 +94,10 @@ mod tests {
         units.push(json!({"reason":"build-script-executed","package_id":"registry+index#dep@1","out_dir":"/build/one","cfgs":["counter"],"env":[["TABLE","/build/one/table"]],"linked_libs":[],"linked_paths":[]}));
         apply(&mut graph, &units).unwrap();
         assert_eq!(
-            graph["nodes"][0]["script_flags"][0]["env"][0][1],
+            graph["packages"][0]["script_flags"][0]["env"][0][1],
             "$OUT_DIR/table"
         );
-        assert_eq!(graph["nodes"][0]["units"].as_array().unwrap().len(), 2);
+        assert_eq!(graph["packages"][0]["units"].as_array().unwrap().len(), 2);
         assert!(!graph.to_string().contains("tree-approximation"));
         assert!(apply(&mut graph, &[]).is_err());
     }

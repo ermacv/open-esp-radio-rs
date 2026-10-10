@@ -1,8 +1,8 @@
 //! Content-addressed observer builds.
 //!
-//! The runner's observer record names the build it was compiled from. That
-//! build is hundreds of megabytes and nearly every run shares one, so a record
-//! refers to it by digest instead of embedding it: the build lives once in
+//! The runner's observer record names the build it was compiled from. Nearly
+//! every run shares one build, so a record refers to it by digest instead of
+//! embedding it: the build lives once in
 //! `observers/<build_sha256>.json` beside the runs, or beside the evidence
 //! shards, as the exact bytes of `serde_json::to_vec(&build)`. The digest
 //! the record names is the SHA-256 of those bytes, so the file's name is its

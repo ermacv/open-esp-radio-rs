@@ -25,7 +25,7 @@ it never decides readiness. Routes for every task: [README](README.md#choose-a-r
 - Runs write only below `target/hil/` and the shared run store, never tracked
   files. Recording evidence is optional; stale evidence is information, and
   qualification runs on a baseline the user chooses.
-- Never read observer JSON (`observers/*.json`, megabytes on one line) or run
+- Never read observer JSON (`observers/*.json`, one long line) or run
   bundles whole: `cargo hil runs show <run-id>` and `cargo hil runs why <run-id>`
   point at the artifacts that matter ([runs guide](host/runs.md#find-and-compare-runs)).
 - A hardware-facing change runs the scenarios it needs to be trusted.

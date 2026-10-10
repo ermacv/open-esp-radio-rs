@@ -562,13 +562,16 @@ the store's `runs` directory, as the exact bytes the digest is computed over.
 A shard does the same with `observers/` next to it in the evidence directory.
 The evaluator fails closed when a named build is missing or its bytes do not
 hash to its name. A stored record that embeds its build instead is an error.
-A build holds the observer's resolved Cargo graph unrolled into a tree, a few
-hundred megabytes of JSON and several times that once parsed, and the store
-keeps one per observer its runs used. An observation therefore keeps only the
-reference: the evaluator parses each build once per evaluation, for every
-observation naming it together, and drops it before the next, while the
-current observer's side (its projection per workload and the digests of that
-workload's inputs) is computed once. Memory follows one build, not the store.
+A build holds the observer's resolved Cargo graph, each of Cargo's nodes (a
+package with its features) once with its edges: under a megabyte. Builds of
+schema 2 recorded the graph as a tree with a node per path, a few hundred
+megabytes; they are not read, so their observations are not this observer's
+(`observer-identity-not-established`). The store keeps one build per observer
+its runs used, so an observation keeps only the reference: the evaluator
+parses each build once per evaluation, for every observation naming it
+together, and drops it before the next, while the current observer's side
+(its projection per workload and the digests of that workload's inputs) is
+computed once.
 Digests of sealed files are remembered in the user's cache per file identity
 and status-change time (`OER_QUALIFICATION_HASH_CACHE=0` disables it). `cargo qualification hil-evidence (--manifest PATH |
 --hil-target TARGET)` records

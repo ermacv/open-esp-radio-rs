@@ -619,7 +619,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
     )
     .unwrap();
     let resolved = prepare_observer(root);
-    let build = json!({"schema":2,"inputs":{
+    let build = json!({"schema":oer_hil_run_bundle_format::observer::BUILD_SCHEMA,"inputs":{
         "observer.rs":crate::digests().sha256_file(&root.join("observer.rs")).unwrap(),
         "hil/host/runner/src/main.rs":crate::digests().sha256_file(&root.join("hil/host/runner/src/main.rs")).unwrap(),
     },"compiler":configuration["compiler"],"environment":configuration["environment"],"resolved":resolved});
@@ -697,14 +697,14 @@ pub(super) fn prepare_observer(root: &Path) -> serde_json::Value {
         configuration["environment"]["TARGET"].as_str().unwrap(),
     )
     .unwrap();
-    for node in resolved["nodes"].as_array_mut().unwrap() {
+    for node in resolved["packages"].as_array_mut().unwrap() {
         node["units"] = json!([{"kind":["lib"],"profile":{"opt_level":"0"}}]);
     }
     resolved["compilation"] = json!("cargo-compiler-artifacts-v1");
     resolved["selected_profile"] = json!("dev");
     resolved["configuration"] = configuration.clone();
     fs::create_dir_all(root.join("target/hil")).unwrap();
-    fs::write(root.join("target/hil/current-observer.json"), serde_json::to_vec(&json!({"build":{"schema":2,"resolved":resolved,"compiler":configuration["compiler"],"environment":configuration["environment"]}})).unwrap()).unwrap();
+    fs::write(root.join("target/hil/current-observer.json"), serde_json::to_vec(&json!({"build":{"schema":oer_hil_run_bundle_format::observer::BUILD_SCHEMA,"resolved":resolved,"compiler":configuration["compiler"],"environment":configuration["environment"]}})).unwrap()).unwrap();
     resolved
 }
 

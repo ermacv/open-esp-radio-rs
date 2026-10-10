@@ -77,6 +77,7 @@ pub(crate) fn run_all(
             peer_image: None,
             peer_flash: None,
             recovered: Vec::new(),
+            recovery_silent: false,
         };
         execute_selected(&mut session, &mut operations, selected)?
     };
@@ -120,6 +121,7 @@ pub(crate) fn run_one(
             peer_image: None,
             peer_flash: None,
             recovered: Vec::new(),
+            recovery_silent: false,
         };
         let results = execute_one(&mut session, &mut operations, selected)?;
         operations.run_then(then.as_deref(), &mut session)?;
@@ -164,6 +166,7 @@ pub(crate) fn run_many(
             peer_image: None,
             peer_flash: None,
             recovered: Vec::new(),
+            recovery_silent: false,
         };
         let results = execute_selected(&mut session, &mut operations, selected)?;
         operations.run_then(then.as_deref(), &mut session)?;
@@ -395,6 +398,10 @@ struct LiveSuite<'a> {
     /// The image classes whose silence this run already answered with the
     /// recovery image.
     recovered: Vec<ImageClass>,
+    /// Whether this run's own recovery attempt found the recovery image
+    /// silent: flashing it again would only repeat that attempt and
+    /// overwrite its evidence.
+    recovery_silent: bool,
 }
 
 trait SuiteEffects {
@@ -498,11 +505,22 @@ impl SuiteEffects for LiveSuite<'_> {
 
     fn after_scenario(&mut self, scenario: &Scenario, session: &mut RunSession) -> Result<()> {
         let class = scenario.image();
+        let recovery = ImageClass::BootSmoke;
+        let silent = oer_hil_lab::recovery::image_silent(class.id());
         if !needs_recovery_image(
-            oer_hil_lab::recovery::image_silent(class.id()),
+            silent,
             oer_hil_lab::recovery::device_quarantined(),
             self.recovered.contains(&class),
+            self.recovery_silent,
         ) {
+            if silent && self.recovery_silent {
+                eprintln!(
+                    "hil: the {} image went silent after booting; the {} recovery image \
+                     already proved silent in this run, so it is not flashed again",
+                    class.id(),
+                    recovery.id()
+                );
+            }
             return Ok(());
         }
         self.recovered.push(class);
@@ -514,7 +532,6 @@ impl SuiteEffects for LiveSuite<'_> {
                 features: Default::default(),
             },
         };
-        let recovery = ImageClass::BootSmoke;
         eprintln!(
             "hil: the {} image went silent after booting; flashing the {} recovery image",
             class.id(),
@@ -539,6 +556,7 @@ impl SuiteEffects for LiveSuite<'_> {
                 // remaining scenarios of the recovery image are blocked
                 // like those of any other silent image.
                 oer_hil_lab::recovery::mark_image_silent(recovery.id());
+                self.recovery_silent = true;
                 eprintln!(
                     "hil: the board's ROM answers, so it is not quarantined; the {} recovery \
                      image built from this checkout is at fault: {why}",
@@ -559,6 +577,7 @@ impl SuiteEffects for LiveSuite<'_> {
                     Some(judged) => {
                         if !judged.quarantined() {
                             oer_hil_lab::recovery::mark_image_silent(recovery.id());
+                            self.recovery_silent = true;
                         }
                         eprintln!("hil: {}", judged.describe());
                     }
@@ -1029,9 +1048,15 @@ fn after_reflash(
 
 /// Whether a scenario's end calls for the chip's recovery image: its image
 /// went silent after booting, the board can still be loaded (not
-/// quarantined), and the run has not yet answered that image's silence.
-fn needs_recovery_image(image_silent: bool, quarantined: bool, already: bool) -> bool {
-    image_silent && !quarantined && !already
+/// quarantined), the run has not yet answered that image's silence, and its
+/// own earlier recovery attempt did not find the recovery image silent.
+fn needs_recovery_image(
+    image_silent: bool,
+    quarantined: bool,
+    already: bool,
+    recovery_silent: bool,
+) -> bool {
+    image_silent && !quarantined && !already && !recovery_silent
 }
 
 /// The image classes `selected` runs on, in the order runs build them.

@@ -537,18 +537,22 @@ fn a_run_takes_the_named_chip_or_the_only_one_that_builds_its_images() {
 
 #[test]
 fn a_silent_image_on_a_loadable_board_gets_the_recovery_image_once() {
-    assert!(super::needs_recovery_image(true, false, false));
+    assert!(super::needs_recovery_image(true, false, false, false));
     assert!(
-        !super::needs_recovery_image(false, false, false),
+        !super::needs_recovery_image(false, false, false, false),
         "the image answers"
     );
     assert!(
-        !super::needs_recovery_image(true, true, false),
+        !super::needs_recovery_image(true, true, false, false),
         "a quarantined board waits for a person"
     );
     assert!(
-        !super::needs_recovery_image(true, false, true),
+        !super::needs_recovery_image(true, false, true, false),
         "once per image class and run"
+    );
+    assert!(
+        !super::needs_recovery_image(true, false, false, true),
+        "a recovery image this run found silent is not flashed again"
     );
 }
 

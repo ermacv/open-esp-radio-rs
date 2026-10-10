@@ -151,7 +151,9 @@ image or the checkout that built it, never the board's: the board is not
 quarantined, and the run's remaining `boot-smoke` repetitions are recorded
 as `blocked`. A recovery image that does not flash proves nothing of the ROM,
 so the board climbs its reset ladder, which quarantines it only if its ROM
-stays silent. A quarantine the arbiter does not record ends the run with an
+stays silent. Once the recovery image itself proved silent, the run does not
+flash it again for another image class, so the first attempt's evidence in
+`session/recovery-image` stays. A quarantine the arbiter does not record ends the run with an
 error, since the board would otherwise serve its remaining repetitions and the
 next lease broken. The run then records its remaining repetitions of that
 image class as `blocked` without touching the board, so a broken image frees

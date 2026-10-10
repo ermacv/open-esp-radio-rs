@@ -652,6 +652,12 @@ fn capture_roots_once(
         {
             return Err("existing source snapshot has conflicting or corrupted content".into());
         }
+        // A capture taken again is in use again: collection keeps a capture
+        // for a while after its record was last written or reused.
+        fs::File::options()
+            .append(true)
+            .open(snapshot.directory.join("snapshot.json"))?
+            .set_modified(std::time::SystemTime::now())?;
     } else {
         let parent = capture_directory(output);
         fs::create_dir_all(&parent)?;

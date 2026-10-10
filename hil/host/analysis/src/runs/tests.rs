@@ -503,21 +503,44 @@ fn source_objects_no_run_names_are_collected_after_the_grace() {
             .set_modified(old)
             .unwrap();
     }
-    // A capture that no run names yet keeps its objects too.
-    let (captured, captured_path) = put(b"captured");
+    // Captures no run names yet: a recent one and one a queued job holds
+    // keep their objects; a stale one nobody holds goes, and so do the
+    // objects only it named.
     let captures = directory.path().join("captures");
-    let capture = captures.join("schema-2/0123");
-    fs::create_dir_all(&capture).unwrap();
-    fs::write(
-        capture.join("manifest.json"),
-        serde_json::to_vec(&serde_json::json!({"schema": 1, "sources": [{
-            "name": "repository", "commit": "abc", "dirty": false,
-            "files": [{"path": "b.rs", "size_bytes": 8, "sha256": captured, "mode": 0o644}],
-        }]}))
-        .unwrap(),
-    )
-    .unwrap();
-    for path in [&named_path, &old_path, &captured_path] {
+    let capture = |id: &str, bytes: &[u8], age: Option<std::time::SystemTime>| {
+        let (sha256, path) = put(bytes);
+        let capture = captures.join("schema-2").join(id);
+        fs::create_dir_all(&capture).unwrap();
+        fs::write(
+            capture.join("manifest.json"),
+            serde_json::to_vec(&serde_json::json!({"schema": 1, "sources": [{
+                "name": "repository", "commit": "abc", "dirty": false,
+                "files": [{"path": "b.rs", "size_bytes": bytes.len(), "sha256": sha256, "mode": 0o644}],
+            }]}))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(capture.join("snapshot.json"), b"{}").unwrap();
+        if let Some(age) = age {
+            fs::File::options()
+                .append(true)
+                .open(capture.join("snapshot.json"))
+                .unwrap()
+                .set_modified(age)
+                .unwrap();
+        }
+        (capture, path)
+    };
+    let (recent, recent_object) = capture("recent", b"recent", None);
+    let (queued, queued_object) = capture("queued", b"queued", Some(old));
+    let (stale, stale_object) = capture("stale", b"stale!", Some(old));
+    for path in [
+        &named_path,
+        &old_path,
+        &recent_object,
+        &queued_object,
+        &stale_object,
+    ] {
         fs::File::options()
             .append(true)
             .open(path)
@@ -525,7 +548,24 @@ fn source_objects_no_run_names_are_collected_after_the_grace() {
             .set_modified(old)
             .unwrap();
     }
-    assert_eq!(collect_sources(&store, &[captures]).unwrap(), (1, 6));
-    assert!(named_path.is_file() && young_path.is_file() && captured_path.is_file());
-    assert!(!old_path.exists());
+    let collected = collect_sources(
+        &store,
+        &Captures {
+            stores: vec![captures],
+            held: vec![queued.join("snapshot.json")],
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        collected,
+        CollectedSources {
+            objects: 2,
+            bytes: 12,
+            captures: 1,
+        }
+    );
+    assert!(named_path.is_file() && young_path.is_file());
+    assert!(recent.is_dir() && recent_object.is_file());
+    assert!(queued.is_dir() && queued_object.is_file());
+    assert!(!stale.exists() && !stale_object.exists() && !old_path.exists());
 }

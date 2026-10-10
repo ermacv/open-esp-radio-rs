@@ -191,7 +191,7 @@ For an explicit source snapshot, use:
 
 ```console
 cargo hil image snapshot --source-include crates/path/to/new.rs
-cargo hil image build performance --source-snapshot ~/.cache/open-esp-radio/build/source-snapshots/<snapshot-id>
+cargo hil image build performance --source-snapshot ~/.cache/open-esp-radio/build/source-snapshots/schema-2/<snapshot-id>
 ```
 
 `image build` takes several classes; from one source snapshot they share one
@@ -231,8 +231,9 @@ snapshots name it. A run archives only the manifest and record. Subsequent
 capture does not overwrite an existing identity, rewrites an object whose bytes
 no longer hash to its name, and every reader checks each object's digest; a
 missing or corrupt object is rejected. `cargo hil runs prune --apply` and the
-automatic rule delete the objects that no run and no capture in the capture
-store names once a day old; a queued job's snapshot is such a capture. Builds with
+automatic rule delete a capture no queued or running job holds once its record
+was last written or reused a day ago, then the objects that no run and no
+remaining capture names once a day old. Builds with
 `--source-snapshot` validate and materialize these inputs in one of the host's
 build slots, `~/.cache/open-esp-radio/build/<chip>/source-build-<n>/`
 (`OER_BUILD_ROOT` replaces `~/.cache/open-esp-radio/build`; a set

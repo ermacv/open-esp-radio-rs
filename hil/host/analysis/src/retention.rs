@@ -142,9 +142,8 @@ pub struct Pruned {
     pub total: usize,
     /// How many observer builds no kept run names were deleted.
     pub observers: usize,
-    /// How many source objects no kept run names were deleted, and their
-    /// bytes.
-    pub sources: (usize, u64),
+    /// The source objects and captures that were deleted.
+    pub sources: crate::runs::CollectedSources,
     /// The deleted runs this build cannot read, with the bytes only they
     /// held: those of an older schema, and with `unreadable` those of the
     /// current one.
@@ -185,7 +184,7 @@ pub fn prune(
     budget: Option<u64>,
     apply: bool,
     unreadable: bool,
-    captures: &[std::path::PathBuf],
+    captures: &crate::runs::Captures,
 ) -> Result<Pruned> {
     let all = Run::all(store)?;
     let now = oer_durable::unix_millis();

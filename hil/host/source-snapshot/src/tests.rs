@@ -664,3 +664,24 @@ fn a_capture_of_an_earlier_schema_does_not_block_a_new_one() {
     );
     assert_eq!(fs::read(earlier.join("sources.tar")).unwrap(), b"archive");
 }
+
+/// Capturing a tree again marks its capture as in use again, so collection
+/// keeps it a while longer.
+#[test]
+fn capturing_again_refreshes_the_capture_record() {
+    let root = repository();
+    let output = tempfile::tempdir().unwrap();
+    let roots = vec![("repository".into(), root.path().to_owned())];
+    let first = capture_roots(&roots, &[], &[], output.path(), &objects(output.path())).unwrap();
+    let record = first.directory().join("snapshot.json");
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(7 * 24 * 3600);
+    fs::File::options()
+        .append(true)
+        .open(&record)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    capture_roots(&roots, &[], &[], output.path(), &objects(output.path())).unwrap();
+    let modified = fs::metadata(&record).unwrap().modified().unwrap();
+    assert!(modified.elapsed().unwrap() < std::time::Duration::from_secs(3600));
+}

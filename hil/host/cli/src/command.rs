@@ -649,7 +649,7 @@ fn runs(
                 None,
                 apply,
                 unreadable,
-                &[oer_hil_image::source_snapshot_store()?],
+                &captures()?,
             )?;
             for (run, bytes) in &pruned.removed_unreadable {
                 let schema = run
@@ -680,11 +680,12 @@ fn runs(
                         pruned.observers
                     );
                 }
-                if pruned.sources.0 > 0 {
+                if pruned.sources.objects > 0 || pruned.sources.captures > 0 {
                     println!(
-                        "deleted {} source objects no kept run names ({} MiB)",
-                        pruned.sources.0,
-                        pruned.sources.1 >> 20
+                        "deleted {} source objects ({} MiB) and {} captures nothing uses",
+                        pruned.sources.objects,
+                        pruned.sources.bytes >> 20,
+                        pruned.sources.captures
                     );
                 }
                 let objects = collect_objects(ctx);
@@ -780,6 +781,15 @@ fn run_store_budget() -> Result<u64> {
 const RUN_STORE_BUDGET_ENV: &str = "OER_HIL_RUN_STORE_BUDGET_GIB";
 const RUN_STORE_BUDGET_GIB: u64 = 40;
 
+/// The captures source collection weighs: the host's capture store and what
+/// queued or running jobs hold.
+fn captures() -> Result<oer_hil_analysis::runs::Captures> {
+    Ok(oer_hil_analysis::runs::Captures {
+        stores: vec![oer_hil_image::source_snapshot_store()?],
+        held: crate::sweep::held_by_jobs()?,
+    })
+}
+
 fn prune_automatically(ctx: &Checkout, store: &oer_hil_run_bundle::RunStore) -> Result<()> {
     let marker = store.root().join("last-prune");
     if std::fs::metadata(&marker)
@@ -801,7 +811,7 @@ fn prune_automatically(ctx: &Checkout, store: &oer_hil_run_bundle::RunStore) -> 
         Some(run_store_budget()?),
         true,
         false,
-        &[oer_hil_image::source_snapshot_store()?],
+        &captures()?,
     )?;
     let objects = collect_objects(ctx);
     if objects.objects > 0 {

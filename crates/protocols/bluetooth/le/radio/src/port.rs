@@ -6,7 +6,7 @@ use core::{
 };
 
 use oer_radio_port::{
-    CancelError, ClockError, ClockInfo, EventsLost, LifecycleCommand, LifecycleError, NotInstalled,
+    CancelError, ClockError, ClockInfo, EventsLost, LifecycleCommand, LifecycleError, Poisoned,
     PortResult, RadioEpoch, RadioPort,
 };
 
@@ -24,9 +24,9 @@ use crate::{
 /// submits one [`RadioRequest`] at a time, takes owned events from
 /// [`RadioPort::next_event`] and reads each through [`Self::view`].
 ///
-/// Every call returns a [`PortResult`]. Its inner `Err` is a refusal and
-/// nothing changed: [`RequestError::NotInstalled`] without a backend,
-/// [`RequestError::Disabled`] while the port is disabled or quiesced, and
+/// Every call but [`Self::activity`], which cannot be refused, returns a
+/// [`PortResult`]. Its inner `Err` is a refusal and
+/// nothing changed: [`RequestError::Disabled`] while the port is disabled or quiesced, and
 /// [`RequestError::Unsupported`] for a request the capabilities exclude,
 /// which is final for that request; other refusals may succeed later. The
 /// outer [`Poisoned`](oer_radio_port::Poisoned) means the backend's state is
@@ -48,9 +48,10 @@ use crate::{
 ///
 /// # Lifecycle and cancellation
 ///
-/// Lifecycle commands act on an installed backend; installing and
-/// uninstalling it move memory and hardware owners and stay the backend's
-/// own operations. `Enable` starts admitting events; `Disable` ends every
+/// The port value exists only while its backend is installed: the
+/// backend's install returns it and its uninstall consumes it, moving the
+/// memory and hardware owners, so no call is refused as not installed.
+/// `Enable` starts admitting events; `Disable` ends every
 /// admitted event with its end and stops admitting; `Quiesce` stops
 /// admitting and lets the admitted events end, then reports `Quiesced`.
 /// [`RadioPort::cancel`] withdraws one scheduled event, whose end still
@@ -88,7 +89,7 @@ pub trait LeRadioPort: RadioPort<Id = EventId, Domain = LeRadio> {
     /// The roles active now. The loop reports every change, starting from
     /// [`RadioActivity::IDLE`], so a radio that shares the antenna can
     /// publish them to its coexistence arbiter.
-    fn activity(&self, activity: RadioActivity) -> PortResult<(), NotInstalled, Self::Fault>;
+    fn activity(&self, activity: RadioActivity) -> Result<(), Poisoned<Self::Fault>>;
 }
 
 /// A port without a radio: time stands still and every request lies
@@ -156,7 +157,7 @@ impl LeRadioPort for NoRadio {
         match *event {}
     }
 
-    fn activity(&self, _: RadioActivity) -> PortResult<(), NotInstalled, Infallible> {
-        Ok(Ok(()))
+    fn activity(&self, _: RadioActivity) -> Result<(), Poisoned<Infallible>> {
+        Ok(())
     }
 }

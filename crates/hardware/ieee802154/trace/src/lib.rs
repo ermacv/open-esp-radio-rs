@@ -802,35 +802,31 @@ impl fmt::Display for Timer {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum PauseRefusal {
-    NotInstalled = 0,
     /// A transmission, energy scan or CCA was running.
     Busy = 1,
+    /// The event queue had no room for the `Quiesced` and `Enabled` the
+    /// pause owes the consumer.
+    EventQueueFull = 2,
 }
 
 impl PauseRefusal {
     const fn from_raw(raw: u32) -> Option<Self> {
         Some(match raw {
-            0 => Self::NotInstalled,
             1 => Self::Busy,
+            2 => Self::EventQueueFull,
             _ => return None,
         })
     }
 }
 
-/// The runtime lent the MAC owners out or took them back, as around shared
+/// The runtime lent the MAC hardware out or took it back, around shared
 /// PHY maintenance. `receiving` is the channel receive mode left or
 /// re-entered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Lease {
-    Paused {
-        receiving: Option<u8>,
-    },
+    Paused { receiving: Option<u8> },
     PauseRefused(PauseRefusal),
-    Resumed {
-        receiving: Option<u8>,
-    },
-    /// Another radio was installed; the paused one stayed out.
-    ResumeRefused,
+    Resumed { receiving: Option<u8> },
 }
 
 impl Event for Lease {
@@ -844,7 +840,6 @@ impl Event for Lease {
             Self::Paused { receiving } => [0, channel(receiving)],
             Self::PauseRefused(refusal) => [1, refusal as u32],
             Self::Resumed { receiving } => [2, channel(receiving)],
-            Self::ResumeRefused => [3, 0],
         }
     }
 
@@ -862,7 +857,6 @@ impl Event for Lease {
             [2, word] => Self::Resumed {
                 receiving: channel(word)?,
             },
-            [3, 0] => Self::ResumeRefused,
             _ => return None,
         })
     }
@@ -874,7 +868,6 @@ impl fmt::Display for Lease {
             Self::Paused { receiving } => write!(f, "ieee802154 paused, receiving {receiving:?}"),
             Self::PauseRefused(refusal) => write!(f, "ieee802154 pause refused {refusal:?}"),
             Self::Resumed { receiving } => write!(f, "ieee802154 resumed, receiving {receiving:?}"),
-            Self::ResumeRefused => f.write_str("ieee802154 resume refused"),
         }
     }
 }

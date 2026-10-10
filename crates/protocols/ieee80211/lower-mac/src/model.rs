@@ -312,8 +312,6 @@ impl ModelTsf {
 #[derive(Default)]
 struct State {
     enabled: bool,
-    /// [`LowerMacModel::uninstall`] took the backend away.
-    uninstalled: bool,
     channel: Option<Channel>,
     channel_updates: usize,
     lifecycle_requests: usize,
@@ -500,29 +498,12 @@ impl<O: TxBody> LowerMacModel<O> {
         self.state.borrow_mut().poisoned = true;
     }
 
-    /// Take the backend away, as an S31 port whose backend is not
-    /// installed: every submission is refused as
-    /// [`SubmitError::NotInstalled`] and comes back, until
-    /// [`Self::install`].
-    pub fn uninstall(&self) {
-        self.state.borrow_mut().uninstalled = true;
-    }
-
-    /// Serve submissions again after [`Self::uninstall`].
-    pub fn install(&self) {
-        self.state.borrow_mut().uninstalled = false;
-    }
-
-    /// Whether a submission may be admitted: `Err` once poisoned, a refusal
-    /// while uninstalled.
-    fn admitting(&self) -> Result<Option<SubmitError>, Poisoned<ModelFault>> {
-        let state = self.state.borrow();
-        if state.poisoned {
+    /// Whether a submission may be admitted: `Err` once poisoned.
+    fn admitting(&self) -> Result<(), Poisoned<ModelFault>> {
+        if self.state.borrow().poisoned {
             Err(POISONED)
-        } else if state.uninstalled {
-            Ok(Some(SubmitError::NotInstalled))
         } else {
-            Ok(None)
+            Ok(())
         }
     }
 
@@ -988,15 +969,15 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
         ClockInfo::MONOTONIC_MICROS
     }
 
-    fn tx_buffer(&self, len: usize) -> PortResult<Option<ModelBuffer>, NotInstalled, ModelFault> {
+    fn tx_buffer(&self, len: usize) -> Result<Option<ModelBuffer>, Poisoned<ModelFault>> {
         let mut state = self.serving()?;
         if len > usize::from(MODEL_CAPABILITIES.max_mpdu_length)
             || state.buffers_lent == MODEL_TX_BUFFERS
         {
-            return Ok(Ok(None));
+            return Ok(None);
         }
         state.buffers_lent += 1;
-        Ok(Ok(Some(ModelBuffer(vec![0; len]))))
+        Ok(Some(ModelBuffer(vec![0; len])))
     }
 
     fn release_tx_buffer(&self, _buffer: ModelBuffer) {
@@ -1007,12 +988,7 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
         &self,
         mut attempt: MpduAttempt<ModelBuffer, O>,
     ) -> SubmitResult<MpduAttempt<ModelBuffer, O>, ModelFault> {
-        if let Some(refused) = self.admitting()? {
-            return Ok(Err(Refused {
-                error: refused,
-                attempt,
-            }));
-        }
+        self.admitting()?;
         let header = attempt.payload.header_len();
         let frame = &attempt.payload.frame.0;
         let individual = frame.get(4).is_some_and(|byte| byte & 1 == 0);
@@ -1211,12 +1187,7 @@ impl<O: TxBody> LowerMacAirReservation for LowerMacModel<O> {
         &self,
         attempt: AirReservationAttempt,
     ) -> SubmitResult<AirReservationAttempt, ModelFault> {
-        if let Some(refused) = self.admitting()? {
-            return Ok(Err(Refused {
-                error: refused,
-                attempt,
-            }));
-        }
+        self.admitting()?;
         let state = self.state.borrow();
         let address = state.vif(attempt.vif).map(|vif| vif.address);
         drop(state);
@@ -1246,13 +1217,13 @@ impl<O: TxBody> LowerMacAmpdu for LowerMacModel<O> {
         MODEL_AMPDU
     }
 
-    fn ampdu_buffer(&self) -> PortResult<Option<ModelAmpdu<O>>, NotInstalled, ModelFault> {
+    fn ampdu_buffer(&self) -> Result<Option<ModelAmpdu<O>>, Poisoned<ModelFault>> {
         let mut state = self.serving()?;
         if state.ampdu_lent == MODEL_AMPDU_BUFFERS {
-            return Ok(Ok(None));
+            return Ok(None);
         }
         state.ampdu_lent += 1;
-        Ok(Ok(Some(ModelAmpdu::default())))
+        Ok(Some(ModelAmpdu::default()))
     }
 
     fn release_ampdu_buffer(&self, _buffer: ModelAmpdu<O>) {
@@ -1263,12 +1234,7 @@ impl<O: TxBody> LowerMacAmpdu for LowerMacModel<O> {
         &self,
         mut attempt: AmpduAttempt<ModelAmpdu<O>>,
     ) -> SubmitResult<AmpduAttempt<ModelAmpdu<O>>, ModelFault> {
-        if let Some(refused) = self.admitting()? {
-            return Ok(Err(Refused {
-                error: refused,
-                attempt,
-            }));
-        }
+        self.admitting()?;
         let subframes = &attempt.payload.subframes.mpdus;
         let refused = match subframes.first().and_then(|first| first.get(22..24)) {
             None => Err(SubmitError::InvalidLength),

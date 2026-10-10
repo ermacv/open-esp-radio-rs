@@ -20,6 +20,9 @@
 //!    interrupt owners and binds the three CPU routes to one dispatcher;
 //! 6. installs the radio role in the runtime.
 //!
+//! It returns the running client, which keeps the radio's control, and the
+//! radio's port ([`BluetoothSystemPort`]) for its one outcome consumer.
+//!
 //! The dispatcher services source 124, 127 and 133 and forwards the scheduler
 //! and source-127 worker wakes. [`BluetoothSystem::run`] drives the radio
 //! runtime and the source-127 timer task until a fault stops either, and
@@ -27,15 +30,16 @@
 //! radio system's coexistence schedule. Each epoch enables coexistence for
 //! Bluetooth when it starts and disables it when it stops, after withdrawing
 //! every status bit.
-//! [`BluetoothSystem::stop`] reverses the epoch and returns the parked
+//! [`BluetoothSystem::stop`] takes the port back, reverses the epoch and
+//! returns the parked
 //! partition with the controller memory back at its allocation-time image,
 //! ready for the next [`start`]. Periodic PHY tracking belongs to the radio
 //! system (`RadioSystem::run_tracking`).
 //!
-//! [`start_bluetooth_hci`] then creates the HCI Controller over that runtime
-//! once per boot: the in-process transport, whose Host end goes to the Host
-//! stack, and the service that runs the portable Controller core with the
-//! runtime as its radio. Between Controller epochs the service retires the
+//! [`start_bluetooth_hci`] creates the HCI Controller once per boot: the
+//! in-process transport, whose Host end goes to the Host stack, and the
+//! service that runs the portable Controller core over the port it borrows
+//! for each run. Between Controller epochs the service retires the
 //! drained Host end and restarts it with a fresh core.
 //! [`BluetoothEntropy`] binds the SoC entropy service as its random source.
 //!
@@ -60,5 +64,5 @@ pub use system::{
     BluetoothFailStop, BluetoothInterruptFault, BluetoothMemoryError, BluetoothParked,
     BluetoothRunnerFault, BluetoothStartError, BluetoothStartFailure, BluetoothStopError,
     BluetoothStopFailure, BluetoothSystem, BluetoothSystemFault, BluetoothSystemMemory,
-    BluetoothSystemRuntime, EVENTS, ITEMS, MODEM_TIMER_CAPACITY, start,
+    BluetoothSystemPort, BluetoothSystemRuntime, EVENTS, ITEMS, MODEM_TIMER_CAPACITY, start,
 };

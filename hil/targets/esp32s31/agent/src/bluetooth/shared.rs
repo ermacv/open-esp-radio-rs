@@ -75,17 +75,18 @@ async fn client(
     let Ok(parked) = BluetoothParked::new(partition, interrupts) else {
         crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");
     };
-    let system = match oer_esp32s31_bluetooth_system::start(radio, parked, public_address).await {
-        Ok(system) => system,
-        Err(_) => crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-start\r\n"),
-    };
+    let (system, port) =
+        match oer_esp32s31_bluetooth_system::start(radio, parked, public_address).await {
+            Ok(started) => started,
+            Err(_) => crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-start\r\n"),
+        };
     crate::console::runtime_log(format_args!(
         "OPEN_RADIO_HIL bluetooth=started at_micros={}",
         embassy_time::Instant::now().as_micros()
     ));
-    let hci = start_bluetooth_hci(system.runtime(), public_address, Some(VERSION), entropy);
+    let hci = start_bluetooth_hci(public_address, Some(VERSION), entropy);
     spawner.spawn(super::runner(radio, SYSTEM.init(system)).expect("Bluetooth runner task"));
-    spawner.spawn(super::service(hci.service).expect("Bluetooth HCI task"));
+    spawner.spawn(super::service(hci.service, port).expect("Bluetooth HCI task"));
     spawner.spawn(application(hci.host).expect("Bluetooth GATT task"));
 }
 

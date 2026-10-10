@@ -16,7 +16,7 @@ unless the backend reports them in its `HardwareServices`.
 
 | Part | Items |
 | --- | --- |
-| Submission | `tx_buffer(len)` lends a `TxBuffer` for an MPDU of `len` octets (`Ok(Ok(None))` when none is free, `Ok(Err(NotInstalled))` without a backend); the caller writes the MPDU up to its body and submits `TxAttempt<TxPayload<TxBuffer, TxBody>>`: caller `TxId`, `VifId`, `WmmAccessCategory`, the buffer, the body by ownership (`TxBody`, the composition's type, such as a network frame whose payload the caller does not copy) and the `TxResponse`, `PhyRate`, `Protection` (none, RTS/CTS, CTS-to-self), `KeySelector`, `TxPower`, `Backoff` and the attempt's `CoexPriority`. A refusal is `Refused { error: SubmitError, attempt }`: nothing is sent and the attempt comes back with its buffer and body, for every reason, a backend that is not installed (`NotInstalled`) included; a submission's outer `Err` is only `Poisoned` with the backend's cause (`SubmitResult`), after which the backend keeps the attempt until its reset. An unsubmitted buffer goes back through `release_tx_buffer`. The backend holds an admitted attempt's bodies until the attempt's completion event carries them back by subframe (`into_completed`), and a retransmission sends the same owners; whether a backend sends a body from its owner's memory or copies it is its own choice |
+| Submission | `tx_buffer(len)` lends a `TxBuffer` for an MPDU of `len` octets (`Ok(None)` when none is free; the port value exists only while its backend is installed); the caller writes the MPDU up to its body and submits `TxAttempt<TxPayload<TxBuffer, TxBody>>`: caller `TxId`, `VifId`, `WmmAccessCategory`, the buffer, the body by ownership (`TxBody`, the composition's type, such as a network frame whose payload the caller does not copy) and the `TxResponse`, `PhyRate`, `Protection` (none, RTS/CTS, CTS-to-self), `KeySelector`, `TxPower`, `Backoff` and the attempt's `CoexPriority`. A refusal is `Refused { error: SubmitError, attempt }`: nothing is sent and the attempt comes back with its buffer and body, for every reason; a submission's outer `Err` is only `Poisoned` with the backend's cause (`SubmitResult`), after which the backend keeps the attempt until its reset. An unsubmitted buffer goes back through `release_tx_buffer`. The backend holds an admitted attempt's bodies until the attempt's completion event carries them back by subframe (`into_completed`), and a retransmission sends the same owners; whether a backend sends a body from its owner's memory or copies it is its own choice |
 | Events | `next_event` yields owned events viewed as `LowerMacEvent`: `Received { frame, RxMeta }`, whose frame `into_received` takes out as the backend's `RxBuffer` (dropping it returns the memory, so a consumer that keeps a frame longer than one step copies it), `TxCompleted(TxCompletion)` with `TxStatus`, ACK RSSI and SNR and the `BlockAckReport` (starting sequence, bitmap) of a BlockAckReq or A-MPDU, whose event owns the attempt's bodies: `into_completed` takes the completion out with them (`TxBodies`, each with its subframe index), and dropping the event or the bodies ends them, so a body comes back exactly once and there is no separate reclaim step, lifecycle terminals, and `Extension` for an event an extension trait views. The backend reserves each admitted attempt's completion and each lifecycle terminal, so only received frames and TBTTs are dropped, reported once as `EventsLost` in place of the first dropped event; a poisoned backend returns `Poisoned` with its cause after every earlier event |
 | Controls | `apply(LowerMacSetting)`: `Channel`, interface configuration (`VifConfig`: address, `VifRole`, BSSID, `ReceiveFilter`, whose `PROBE_REQUESTS` rule admits the Probe Requests an access point answers, wildcard ones included), key removal, receive Block Ack agreements, the `Edca` parameter set, the global `TxGate`, the beacon receive priority (`RxBeaconPriority`) and an interface's HE BSS color (`HeBssColor`). `install_key` returns the `KeyHandle` attempts select |
 | Capabilities | `LowerMacCapabilities`, the parametric limits: bands, widths, rates, `HardwareServices`, interfaces, transmit queues, longest MPDU, largest backoff, lowest power ceiling, coexistence levels, the PPDU formats of unicast no-ACK frames, each role's receive rules, key slots and receive Block Ack limits |
@@ -29,8 +29,9 @@ The port extends the `RadioPort` base trait of
 call is synchronous. `EventsLost`, `Poisoned`, the refusals, the lifecycle
 vocabulary, `CancelError`, the `Correlation` trait `TxId` implements and
 `ClockInfo` are the shared ones, re-exported here. Every call returns a
-`PortResult`: its inner `Err` is a refusal and nothing changed (a backend
-that is not installed included; a submission hands its attempt back); work
+`PortResult`: its inner `Err` is a refusal and nothing changed (a submission
+hands its attempt back); the port value exists only while its backend is
+installed, so no call is refused as not installed; work
 that ends without its result ends as `TxStatus::Aborted`, `TxStatus::Fault`
 or a lifecycle `Failed`; the outer `Err` is only `Poisoned` with the
 backend's cause, returned by every call once the backend's state is unknown.
@@ -222,7 +223,10 @@ implements the port in two layers:
   pushed (the core's own attempts take no body, `Infallible`), and holds the
   owners, one table entry per attempt within the owed completions, until
   the attempt's completion is taken, which carries them (`Esp32s31TxBodies`),
-  or an uninstall drops them; the event queues hold no body. The owned
+  or an uninstall drops them; the event queues hold no body. Its `install`
+  returns the port (`Esp32s31LowerMacPort`) and the composition's
+  `Esp32s31LowerMacControl`, whose `uninstall` consumes both; the interrupt
+  entries, the receive producer and the runner stay on the runtime. The owned
   event is sized by its largest variant, and a consumer that queues events
   (the upper-MAC router's receive and extension rings) pays that size per
   entry: on a 64-bit host a received frame's variant is 120 bytes, which a

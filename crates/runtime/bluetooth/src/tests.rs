@@ -22,8 +22,8 @@ use oer_bluetooth_hci_transport::{
 use oer_bluetooth_radio::{
     CancelError, ClockError, ClockInfo, ConnectionAllowances, EventId, EventResult, EventsLost,
     LeInstant, LePhys, LeRadio, LeRadioCapabilities, LeRadioPort, LifecycleCommand, LifecycleError,
-    LifecycleEvent, NoRadio, NotInstalled, Poisoned, PortResult, RadioActivity, RadioDuration,
-    RadioOutcome, RadioPort, RadioRequest, RadioTiming, RequestError,
+    LifecycleEvent, NoRadio, Poisoned, PortResult, RadioActivity, RadioDuration, RadioOutcome,
+    RadioPort, RadioRequest, RadioTiming, RequestError,
 };
 
 use oer_time::Duration;
@@ -254,9 +254,9 @@ impl LeRadioPort for ModelRadio {
         }
     }
 
-    fn activity(&self, activity: RadioActivity) -> PortResult<(), NotInstalled, Infallible> {
+    fn activity(&self, activity: RadioActivity) -> Result<(), Poisoned<Infallible>> {
         self.activity.borrow_mut().push(activity);
-        Ok(Ok(()))
+        Ok(())
     }
 }
 
@@ -463,7 +463,7 @@ impl LeRadioPort for PoisonedRadio {
         match *event {}
     }
 
-    fn activity(&self, _: RadioActivity) -> PortResult<(), NotInstalled, ModelFault> {
+    fn activity(&self, _: RadioActivity) -> Result<(), Poisoned<ModelFault>> {
         Err(POISONED)
     }
 }

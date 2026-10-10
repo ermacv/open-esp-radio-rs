@@ -48,8 +48,8 @@ use oer_bluetooth_controller::{LeController, PlanningError, RadioWork};
 use oer_bluetooth_hci::HostToControllerFrame;
 use oer_bluetooth_hci_transport::{HciChannelError, InProcessHciControllerTransport};
 use oer_bluetooth_radio::{
-    CancelError, ClockError, EventsLost, LeRadioPort, LifecycleCommand, LifecycleError, Poisoned,
-    RadioActivity, RequestError,
+    ClockError, EventsLost, LeRadioPort, LifecycleCommand, LifecycleError, Poisoned, RadioActivity,
+    RequestError,
 };
 use oer_time::{Duration, Instant, Timer};
 
@@ -65,8 +65,6 @@ pub enum ServeExit<F> {
     Planning(PlanningError),
     /// The transport refused a packet.
     Transport(HciChannelError),
-    /// No radio backend is installed.
-    NotInstalled,
     /// The port refused to enable.
     Lifecycle(LifecycleError),
     /// The radio clock could not be read.
@@ -103,7 +101,6 @@ where
 {
     match radio.lifecycle(LifecycleCommand::Enable).await {
         Ok(Ok(()) | Err(LifecycleError::AlreadyInState)) => {}
-        Ok(Err(LifecycleError::NotInstalled)) => return ServeExit::NotInstalled,
         Ok(Err(error)) => return ServeExit::Lifecycle(error),
         Err(poisoned) => return poisoned.into(),
     }
@@ -118,10 +115,8 @@ where
         // Report a change of the active roles first.
         let activity = core.activity();
         if activity != reported {
-            match radio.activity(activity) {
-                Ok(Ok(())) => {}
-                Ok(Err(_)) => return ServeExit::NotInstalled,
-                Err(poisoned) => return poisoned.into(),
+            if let Err(poisoned) = radio.activity(activity) {
+                return poisoned.into();
             }
             reported = activity;
         }
@@ -141,7 +136,6 @@ where
             retry_at = None;
             let now = match radio.now().await {
                 Ok(Ok(now)) => now,
-                Ok(Err(ClockError::NotInstalled)) => return ServeExit::NotInstalled,
                 Ok(Err(error)) => return ServeExit::Clock(error),
                 Err(poisoned) => return poisoned.into(),
             };
@@ -152,7 +146,6 @@ where
             match work {
                 Some(RadioWork::Submit(request)) => {
                     let result = match radio.submit(request).await {
-                        Ok(Err(RequestError::NotInstalled)) => return ServeExit::NotInstalled,
                         Ok(result) => result,
                         Err(poisoned) => return poisoned.into(),
                     };
@@ -166,7 +159,6 @@ where
                 }
                 Some(RadioWork::Cancel(id)) => {
                     let result = match radio.cancel(id).await {
-                        Ok(Err(CancelError::NotInstalled)) => return ServeExit::NotInstalled,
                         Ok(result) => result,
                         Err(poisoned) => return poisoned.into(),
                     };

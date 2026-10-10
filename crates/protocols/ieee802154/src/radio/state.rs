@@ -84,11 +84,9 @@ pub struct AcceptedCommand {
 /// A command cannot be admitted in the current finite state/capability set.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CommandError {
-    /// The backend is not installed or is paused: no state machine runs.
-    NotInstalled,
-    /// The backend's admission of operations is quiesced
-    /// ([`LifecycleCommand::Quiesce`](crate::LifecycleCommand::Quiesce));
-    /// `Enable` opens it again.
+    /// The quiesced port holds the radio still
+    /// ([`LifecycleCommand::Quiesce`](crate::LifecycleCommand::Quiesce)):
+    /// a command that writes the hardware waits for the port's `Enabled`.
     Quiesced,
     /// The backend's event queue has no free slot to reserve for the
     /// operation's terminal event; taking events frees one.

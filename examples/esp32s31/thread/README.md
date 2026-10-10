@@ -4,7 +4,7 @@ This example runs [OpenThread](https://github.com/esp-rs/openthread) (the
 `openthread` crate) on the ESP32-S31 IEEE 802.15.4 radio. It starts the IEEE
 802.15.4 client on the [shared radio system](../../../crates/runtime/esp32s31/radio/README.md),
 spawns the radio system's periodic PHY tracking and hands the client's
-runtime to OpenThread through the
+radio port to OpenThread through the
 [OpenThread radio adapter](../../../crates/adapters/openthread/ieee802154/README.md).
 The device joins the network of the active operational dataset, logs its
 role and addresses on every state change and echoes UDP datagrams on port

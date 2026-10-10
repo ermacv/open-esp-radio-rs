@@ -1950,7 +1950,6 @@ dependencies = [
  "oer-esp32s31-radio-runtime",
  "oer-espressif-ieee802154-engine",
  "oer-espressif-ieee802154-runtime",
- "oer-ieee802154",
  "oer-memory",
  "oer-time-embassy",
 ]

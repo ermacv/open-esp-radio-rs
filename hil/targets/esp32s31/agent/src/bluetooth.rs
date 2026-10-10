@@ -34,7 +34,7 @@ use oer_esp32s31_bluetooth_system::BluetoothHostTransport;
 #[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_bluetooth_system::{BluetoothEntropy, BluetoothParked, start_bluetooth_hci};
 #[cfg(not(feature = "bluetooth-secure-gatt"))]
-use oer_esp32s31_bluetooth_system::{BluetoothHciService, BluetoothSystem};
+use oer_esp32s31_bluetooth_system::{BluetoothHciService, BluetoothSystem, BluetoothSystemPort};
 #[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_hal::root::ConcurrentPartitions;
 #[cfg(feature = "bluetooth-radio")]
@@ -120,18 +120,19 @@ async fn main(
     let Ok(parked) = BluetoothParked::new(bluetooth, interrupts) else {
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");
     };
-    let system = match oer_esp32s31_bluetooth_system::start(radio, parked, public_address).await {
-        Ok(system) => system,
-        Err(_) => super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-start\r\n"),
-    };
-    let hci = start_bluetooth_hci(system.runtime(), public_address, Some(VERSION), entropy);
+    let (system, port) =
+        match oer_esp32s31_bluetooth_system::start(radio, parked, public_address).await {
+            Ok(started) => started,
+            Err(_) => super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-start\r\n"),
+        };
+    let hci = start_bluetooth_hci(public_address, Some(VERSION), entropy);
     spawner.spawn(tracking(radio).expect("PHY tracking task"));
     #[cfg(feature = "bluetooth-secure-gatt")]
-    secure::run(spawner, radio, system, hci, public_address, usb, boot).await;
+    secure::run(spawner, radio, system, port, hci, public_address, usb, boot).await;
     #[cfg(not(feature = "bluetooth-secure-gatt"))]
     {
         spawner.spawn(runner(radio, SYSTEM.init(system)).expect("Bluetooth runner task"));
-        spawner.spawn(service(hci.service).expect("Bluetooth HCI task"));
+        spawner.spawn(service(hci.service, port).expect("Bluetooth HCI task"));
         image(spawner, hci.host, usb, boot).await;
     }
 }
@@ -172,7 +173,7 @@ async fn runner(radio: &'static Radio, system: &'static mut BluetoothSystem) {
 
 #[cfg(not(feature = "bluetooth-secure-gatt"))]
 #[embassy_executor::task]
-async fn service(mut service: BluetoothHciService) {
-    let _exit = service.run().await;
+async fn service(mut service: BluetoothHciService, port: BluetoothSystemPort) {
+    let _exit = service.run(&port).await;
     super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n");
 }

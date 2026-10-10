@@ -24,7 +24,7 @@ use oer::systems::esp32s31::embassy::ieee802154::{
     self as ieee802154, EspHalRadioPlatform, IEEE802154_DEFAULT_TX_POWER_DBM,
     IEEE802154_RECEIVE_SENSITIVITY_DBM, Ieee802154CoexConfig, Ieee802154CoexLevel,
     Ieee802154Parked, Ieee802154PibDefaults, Ieee802154System, Ieee802154SystemClock,
-    Ieee802154SystemRuntime,
+    Ieee802154SystemPort, Ieee802154SystemRuntime,
     openthread::{
         MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio,
         OpenThreadRadioDefaults, PortRssi,
@@ -51,7 +51,7 @@ oer_espressif_staged_runtime::interrupt_table! {
 
 /// Frames OpenThread has not taken yet while it transmits or scans.
 const RX_QUEUE: usize = 8;
-type ThreadRadio = OpenThreadRadio<'static, Ieee802154SystemRuntime, RX_QUEUE>;
+type ThreadRadio = OpenThreadRadio<'static, Ieee802154SystemPort, RX_QUEUE>;
 
 const UDP_PORT: u16 = 1212;
 const UDP_BUFFER: usize = 1280;
@@ -73,13 +73,14 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 static TRNG: StaticCell<Trng> = StaticCell::new();
 static SYSTEM: StaticCell<Ieee802154System> = StaticCell::new();
+static PORT: StaticCell<Ieee802154SystemPort> = StaticCell::new();
 static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
 static OT_UDP: StaticCell<OtUdpResources<UDP_SOCKETS, UDP_BUFFER>> = StaticCell::new();
 static OT_SETTINGS_BUFFER: ConstStaticCell<[u8; 1024]> = ConstStaticCell::new([0; 1024]);
 static OT_SETTINGS: StaticCell<SimpleRamSettings> = StaticCell::new();
 static RADIO_CLOCK: StaticCell<MonotonicRadioClock<&'static Ieee802154SystemClock>> =
     StaticCell::new();
-static RADIO_RSSI: StaticCell<PortRssi<'static, Ieee802154SystemRuntime>> = StaticCell::new();
+static RADIO_RSSI: StaticCell<PortRssi<'static, Ieee802154SystemPort>> = StaticCell::new();
 static UDP_RECEIVE: ConstStaticCell<[u8; UDP_BUFFER]> = ConstStaticCell::new([0; UDP_BUFFER]);
 
 /// The IEEE 802.15.4 EUI-64 as ESP-IDF derives it
@@ -165,11 +166,13 @@ async fn thread_task(
         let started = pin!(start(radio, parked, defaults));
         started.await
     };
-    let Ok(system) = started else {
+    let Ok((system, port)) = started else {
         error!("the IEEE 802.15.4 client did not start");
         return;
     };
     let system = SYSTEM.init(system);
+    // OpenThread is the port's one event consumer for the image's life.
+    let port = PORT.init(port);
 
     let ot_settings = OT_SETTINGS.init(SimpleRamSettings::new(OT_SETTINGS_BUFFER.take()));
     // OpenThread's `SubMac` reads the radio capabilities when the instance
@@ -182,13 +185,13 @@ async fn thread_task(
         ot_settings,
         // OpenThread reads the port's own clock and live RSSI.
         RADIO_CLOCK.init(MonotonicRadioClock::new(system.runtime().clock())),
-        Some(RADIO_RSSI.init(PortRssi::new(system.runtime()))),
+        Some(RADIO_RSSI.init(PortRssi::new(port))),
         ot_resources,
         OT_UDP.init(OtUdpResources::new()),
     )
     .expect("OpenThread must initialize once");
     let thread_radio = OpenThreadRadio::new(
-        system.runtime(),
+        port,
         OpenThreadRadioDefaults::esp_idf(
             IEEE802154_DEFAULT_TX_POWER_DBM,
             IEEE802154_RECEIVE_SENSITIVITY_DBM,
@@ -279,9 +282,7 @@ async fn role_task(
                 txrx,
                 ..system.coex_config()
             };
-            if system.update_coexistence(radio, config).await.is_err() {
-                error!("the coexistence level of role {current:?} was not applied");
-            }
+            system.update_coexistence(radio, config).await;
         }
         info!("role {:?}, rloc16 {:#06x}", current, ot.rloc16());
         let _ = ot.ipv6_addrs(|address| {

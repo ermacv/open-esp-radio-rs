@@ -171,9 +171,8 @@ fn every_ieee802154_event_decodes_to_what_it_encoded() {
         round_trip(Lease::Paused { receiving });
         round_trip(Lease::Resumed { receiving });
     }
-    round_trip(Lease::PauseRefused(PauseRefusal::NotInstalled));
+    round_trip(Lease::PauseRefused(PauseRefusal::EventQueueFull));
     round_trip(Lease::PauseRefused(PauseRefusal::Busy));
-    round_trip(Lease::ResumeRefused);
 }
 
 #[test]
@@ -237,7 +236,9 @@ fn words_no_ieee802154_event_encodes_fail_to_decode() {
     assert_eq!(Timer::decode([2 << 8, 1]), None);
     assert_eq!(Lease::decode([0, 1]), None);
     assert_eq!(Lease::decode([0, 2 << 8]), None);
-    assert_eq!(Lease::decode([1, 2]), None);
+    assert_eq!(Lease::decode([1, 0]), None);
+    assert_eq!(Lease::decode([1, 3]), None);
+    assert_eq!(Lease::decode([3, 0]), None);
     assert_eq!(Lease::decode([3, 1]), None);
     assert_eq!(Lease::decode([4, 0]), None);
 }

@@ -106,9 +106,9 @@ use oer_ieee80211_lower_mac::{
     EventsLost, Ieee80211LowerMacPort, Ieee80211Radio, Ieee80211Stamp, KeyHandle, KeyInstall,
     LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu, LowerMacBeaconTiming,
     LowerMacCapabilities, LowerMacEvent, LowerMacMonitor, LowerMacSetting, MonitorCapabilities,
-    NotInstalled, Poisoned, PortResult, RadioPort, Refused, RxBuffer, RxEvidence, RxMeta,
-    SettingError, SubmitError, SubmitResult, TbttEvent, TbttSchedule, TsfSample, TxCompletion,
-    TxId, VifId, VifTsf,
+    Poisoned, PortResult, RadioPort, Refused, RxBuffer, RxEvidence, RxMeta, SettingError,
+    SubmitError, SubmitResult, TbttEvent, TbttSchedule, TsfSample, TxCompletion, TxId, VifId,
+    VifTsf,
 };
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduPayload, MpduAttempt, TxBody, TxBuffer, TxPayload,
@@ -510,6 +510,49 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
     }
 }
 
+/// No core is installed: the runtime's own entries (the interrupts, the
+/// receive producer and the runner) outlive the installed core and do
+/// nothing then.
+#[derive(Debug, PartialEq, Eq)]
+struct NoCore;
+
+/// The invariant of every port call: the port exists only while its core is
+/// installed.
+const INSTALLED: &str = "the port exists only while its core is installed";
+
+/// The answer of a port call, which always finds the core installed.
+fn installed<V>(answer: Result<V, NoCore>) -> V {
+    answer.expect(INSTALLED)
+}
+
+/// The radio port of an installed [`Esp32s31LowerMac`], for its one event
+/// consumer.
+///
+/// [`Esp32s31LowerMac::install`] returns it with the core's
+/// [`Esp32s31LowerMacControl`], and [`Esp32s31LowerMacControl::uninstall`]
+/// consumes both, so the port never meets a runtime without its core: no
+/// call is refused as not installed. It is neither `Copy` nor `Clone`. The
+/// interrupt entries, the receive producer and the runner
+/// ([`Esp32s31LowerMac::run`]) keep reaching the runtime itself.
+#[must_use = "an installed core leaves only through its control's uninstall"]
+pub struct Esp32s31LowerMacPort<'r, L> {
+    lower_mac: &'r L,
+}
+
+/// The composition's handle to an installed [`Esp32s31LowerMac`]: the
+/// uninstall. [`Esp32s31LowerMac::install`] returns it with the port.
+#[must_use = "an installed core leaves only through its control's uninstall"]
+pub struct Esp32s31LowerMacControl<'r, L> {
+    lower_mac: &'r L,
+}
+
+impl<'r, L> Esp32s31LowerMacControl<'r, L> {
+    /// The runtime this control belongs to.
+    pub const fn lower_mac(&self) -> &'r L {
+        self.lower_mac
+    }
+}
+
 /// The core, its register owner and the retune of `Enable`.
 pub struct Esp32s31LowerMacParts<
     'slot,
@@ -780,14 +823,16 @@ where
         })
     }
 
-    /// Install a disabled core with its register owner and retune. A loss
-    /// an earlier uninstall recorded stays pending.
+    /// Install a disabled core with its register owner and retune, and
+    /// return the core's port and control. A loss an earlier uninstall
+    /// recorded stays pending.
     ///
     /// # Errors
     ///
     /// Returns the parts unchanged if a backend is already installed.
     #[allow(
         clippy::result_large_err,
+        clippy::type_complexity,
         reason = "the no-alloc runtime returns the unconsumed owners by value"
     )]
     pub fn install(
@@ -806,7 +851,10 @@ where
             AMPDU_BUFFERS,
         >,
     ) -> Result<
-        (),
+        (
+            Esp32s31LowerMacPort<'_, Self>,
+            Esp32s31LowerMacControl<'_, Self>,
+        ),
         Esp32s31LowerMacParts<
             'slot,
             P,
@@ -844,26 +892,28 @@ where
         self.retune.lock(|slot| *slot.borrow_mut() = Some(retune));
         self.fault.lock(|fault| fault.set(None));
         self.wake.signal(());
-        Ok(())
+        Ok((
+            Esp32s31LowerMacPort { lower_mac: self },
+            Esp32s31LowerMacControl { lower_mac: self },
+        ))
     }
 
-    /// Take the core and its register owner back and discard queued events.
-    /// The discarded events, and the terminal events the core still owed,
-    /// are reported as [`EventsLost`] to the consumer, also across a later
-    /// install. The retune stays while an `Enable` awaits it.
+    /// Take the core and its register owner back and discard queued events
+    /// ([`Esp32s31LowerMacControl::uninstall`]).
     #[allow(
         clippy::type_complexity,
         reason = "the uninstalled owners are returned as they were installed"
     )]
-    pub fn uninstall(
+    fn uninstall(
         &self,
-    ) -> Option<(
+    ) -> (
         LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
         H,
-    )> {
+    ) {
         let installed = self
             .installed
-            .lock(|installed| installed.borrow_mut().take());
+            .lock(|installed| installed.borrow_mut().take())
+            .expect(INSTALLED);
         self.queues.discard();
         // The core's attempts went with it: their bodies go back.
         self.bodies.lock(|bodies| {
@@ -872,7 +922,7 @@ where
             }
         });
         self.pending_retune.lock(|pending| pending.set(None));
-        installed.map(|installed| (installed.core, installed.hardware))
+        (installed.core, installed.hardware)
     }
 
     /// Run one entry under the lock; a fault poisons the port.
@@ -893,14 +943,14 @@ where
             &mut H,
             &mut QueueSink<'_, M, EVENTS, U>,
         ) -> Result<V, LowerMacFault>,
-    ) -> PortResult<V, NotInstalled, LowerMacFault> {
+    ) -> PortResult<V, NoCore, LowerMacFault> {
         if let Some(cause) = self.fault.lock(Cell::get) {
             return Err(Poisoned { cause });
         }
         let result = self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let Some(installed) = installed.as_mut() else {
-                return Ok(Err(NotInstalled));
+                return Ok(Err(NoCore));
             };
             let mut sink = QueueSink {
                 queues: &self.queues,
@@ -1144,12 +1194,103 @@ where
     }
 }
 
-/// A setting's answer, with a backend that is not installed refused as
-/// [`SettingError::NotInstalled`].
+impl<
+    'slot,
+    M: RawMutex,
+    P,
+    E,
+    T,
+    H,
+    R,
+    S,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const EVENTS: usize,
+    U: LowerMacRxUnit,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+    O: TxBody,
+>
+    Esp32s31LowerMacControl<
+        '_,
+        Esp32s31LowerMac<
+            'slot,
+            M,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            EVENTS,
+            U,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+            O,
+        >,
+    >
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: oer_time::Timer,
+    H: LowerMacHardware,
+    R: LowerMacRetune,
+    S: AmpduBacking,
+{
+    /// Take the core and its register owner back and discard queued events,
+    /// consuming both handles of the installed core. The discarded events,
+    /// and the terminal events the core still owed, are reported as
+    /// [`EventsLost`] to the consumer of a later install. The retune stays
+    /// while an `Enable` awaits it.
+    ///
+    /// # Panics
+    ///
+    /// `port` belongs to another runtime.
+    #[allow(
+        clippy::type_complexity,
+        reason = "the uninstalled owners are returned as they were installed"
+    )]
+    pub fn uninstall(
+        self,
+        port: Esp32s31LowerMacPort<
+            '_,
+            Esp32s31LowerMac<
+                'slot,
+                M,
+                P,
+                E,
+                T,
+                H,
+                R,
+                BUFFER_SIZE,
+                TX_BUFFERS,
+                EVENTS,
+                U,
+                S,
+                AMPDU_SLOTS,
+                AMPDU_BUFFERS,
+                O,
+            >,
+        >,
+    ) -> (
+        LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
+        H,
+    ) {
+        assert!(
+            core::ptr::eq(self.lower_mac, port.lower_mac),
+            "the port belongs to this control's runtime"
+        );
+        self.lower_mac.uninstall()
+    }
+}
+
+/// A setting's answer from the installed core.
 fn setting_answer<V>(
-    answer: PortResult<Result<V, SettingError>, NotInstalled, LowerMacFault>,
+    answer: PortResult<Result<V, SettingError>, NoCore, LowerMacFault>,
 ) -> PortResult<V, SettingError, LowerMacFault> {
-    answer.map(|answer| answer.unwrap_or(Err(SettingError::NotInstalled)))
+    answer.map(installed)
 }
 
 /// Returns the retune to its slot, and the channel to the pending retune
@@ -1211,22 +1352,25 @@ impl<
     const AMPDU_BUFFERS: usize,
     O: TxBody,
 > RadioPort
-    for Esp32s31LowerMac<
-        'slot,
-        M,
-        P,
-        E,
-        T,
-        H,
-        R,
-        BUFFER_SIZE,
-        TX_BUFFERS,
-        EVENTS,
-        U,
-        S,
-        AMPDU_SLOTS,
-        AMPDU_BUFFERS,
-        O,
+    for Esp32s31LowerMacPort<
+        '_,
+        Esp32s31LowerMac<
+            'slot,
+            M,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            EVENTS,
+            U,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+            O,
+        >,
     >
 where
     P: WifiTxPowerProfile,
@@ -1246,7 +1390,7 @@ where
     ) -> impl Future<
         Output = PortResult<Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>, EventsLost, LowerMacFault>,
     > + '_ {
-        self.wait_event()
+        self.lower_mac.wait_event()
     }
 
     fn now(
@@ -1263,8 +1407,9 @@ where
         id: TxId,
     ) -> impl Future<Output = PortResult<(), CancelError, LowerMacFault>> + '_ {
         ready(
-            self.with_core(|core, _, sink| Ok(core.cancel(id, sink)))
-                .map(|cancelled| cancelled.unwrap_or(Err(CancelError::NotInstalled))),
+            self.lower_mac
+                .with_core(|core, _, sink| Ok(core.cancel(id, sink)))
+                .map(installed),
         )
     }
 
@@ -1272,7 +1417,7 @@ where
         &self,
         command: LifecycleCommand,
     ) -> impl Future<Output = PortResult<(), LifecycleError, LowerMacFault>> + '_ {
-        ready(self.start_lifecycle(command))
+        ready(self.lower_mac.start_lifecycle(command))
     }
 }
 
@@ -1337,7 +1482,7 @@ where
                 started
             }))
         })?;
-        match started.unwrap_or(Err(LifecycleError::NotInstalled)) {
+        match installed(started) {
             Ok(LifecycleStart::Admitted) => Ok(Ok(())),
             Ok(LifecycleStart::Retune(channel)) => {
                 self.pending_retune
@@ -1367,22 +1512,25 @@ impl<
     const AMPDU_BUFFERS: usize,
     O: TxBody,
 > Ieee80211LowerMacPort
-    for Esp32s31LowerMac<
-        'slot,
-        M,
-        P,
-        E,
-        T,
-        H,
-        R,
-        BUFFER_SIZE,
-        TX_BUFFERS,
-        EVENTS,
-        U,
-        S,
-        AMPDU_SLOTS,
-        AMPDU_BUFFERS,
-        O,
+    for Esp32s31LowerMacPort<
+        '_,
+        Esp32s31LowerMac<
+            'slot,
+            M,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            EVENTS,
+            U,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+            O,
+        >,
     >
 where
     P: WifiTxPowerProfile,
@@ -1435,14 +1583,16 @@ where
     fn tx_buffer(
         &self,
         len: usize,
-    ) -> PortResult<Option<Esp32s31TxBuffer<'slot, BUFFER_SIZE>>, NotInstalled, LowerMacFault> {
-        self.with_core(|core, _, _| Ok(core.tx_buffer(len)))
+    ) -> Result<Option<Esp32s31TxBuffer<'slot, BUFFER_SIZE>>, Poisoned<LowerMacFault>> {
+        self.lower_mac
+            .with_core(|core, _, _| Ok(core.tx_buffer(len)))
+            .map(installed)
     }
 
-    /// A buffer released while no backend is installed or the port is
-    /// poisoned is lost until the radio is reset.
+    /// A buffer released while the port is poisoned is lost until the radio
+    /// is reset.
     fn release_tx_buffer(&self, buffer: Esp32s31TxBuffer<'slot, BUFFER_SIZE>) {
-        let _ = self.with_core(|core, _, _| {
+        let _ = self.lower_mac.with_core(|core, _, _| {
             core.release_tx_buffer(buffer);
             Ok(())
         });
@@ -1468,7 +1618,11 @@ where
             attempt.payload.frame.frame_mut()[header..].copy_from_slice(body.bytes());
         }
         let holds = body.is_some();
-        if holds && let Err((body, _)) = self.hold_bodies(id, body, [const { None }; AMPDU_SLOTS]) {
+        if holds
+            && let Err((body, _)) =
+                self.lower_mac
+                    .hold_bodies(id, body, [const { None }; AMPDU_SLOTS])
+        {
             attempt.payload.body = body;
             return Ok(Err(Refused {
                 error: SubmitError::Busy,
@@ -1481,21 +1635,17 @@ where
                 body: None,
                 response: payload.response,
             });
-        let queues = &self.queues;
+        let queues = &self.lower_mac.queues;
         // A poisoned backend keeps the held body until its reset.
         let admitted = self
+            .lower_mac
             .admit_with_core(attempt, |core, hardware, attempt| {
                 owe_completion(queues, attempt, |attempt| core.submit(hardware, attempt))
             })?
-            .unwrap_or_else(|attempt| {
-                Err(Refused {
-                    error: SubmitError::NotInstalled,
-                    attempt,
-                })
-            })
+            .unwrap_or_else(|_| panic!("{INSTALLED}"))
             .map_err(|Refused { error, attempt }| {
                 let body = holds
-                    .then(|| self.unhold_bodies(id))
+                    .then(|| self.lower_mac.unhold_bodies(id))
                     .flatten()
                     .and_then(|held| held.mpdu);
                 Refused {
@@ -1508,15 +1658,17 @@ where
                 }
             });
         // A publication starts its watchdog.
-        self.wake.signal(());
+        self.lower_mac.wake.signal(());
         Ok(admitted)
     }
 
     fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, LowerMacFault> {
-        let applied =
-            setting_answer(self.with_core(|core, hardware, _| core.apply(hardware, setting)));
+        let applied = setting_answer(
+            self.lower_mac
+                .with_core(|core, hardware, _| core.apply(hardware, setting)),
+        );
         // Opening the transmit gate publishes a held attempt.
-        self.wake.signal(());
+        self.lower_mac.wake.signal(());
         applied
     }
 
@@ -1524,18 +1676,22 @@ where
         &self,
         key: KeyInstall<'_>,
     ) -> PortResult<KeyHandle, SettingError, LowerMacFault> {
-        setting_answer(self.with_core(|core, hardware, _| Ok(core.install_key(hardware, key))))
+        setting_answer(
+            self.lower_mac
+                .with_core(|core, hardware, _| Ok(core.install_key(hardware, key))),
+        )
     }
 
     /// The MAC local time and the monotonic time read back to back, in the
     /// current generation of the MAC clock.
     fn clock_sample(&self) -> PortResult<Ieee80211ClockSample, ClockError, LowerMacFault> {
-        Ok(match self.with_core(|_, _, _| Ok(self.timer.snapshot()))? {
-            Err(NotInstalled) => Err(ClockError::NotInstalled),
-            Ok(snapshot) => snapshot
-                .map(|snapshot| snapshot.sample())
-                .ok_or(ClockError::Unavailable),
-        })
+        let snapshot = installed(
+            self.lower_mac
+                .with_core(|_, _, _| Ok(self.lower_mac.timer.snapshot()))?,
+        );
+        Ok(snapshot
+            .map(|snapshot| snapshot.sample())
+            .ok_or(ClockError::Unavailable))
     }
 }
 
@@ -1555,22 +1711,25 @@ impl<
     const AMPDU_BUFFERS: usize,
     O: TxBody,
 > LowerMacBeaconTiming
-    for Esp32s31LowerMac<
+    for Esp32s31LowerMacPort<
         '_,
-        M,
-        P,
-        E,
-        T,
-        H,
-        R,
-        BUFFER_SIZE,
-        TX_BUFFERS,
-        EVENTS,
-        U,
-        S,
-        AMPDU_SLOTS,
-        AMPDU_BUFFERS,
-        O,
+        Esp32s31LowerMac<
+            '_,
+            M,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            EVENTS,
+            U,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+            O,
+        >,
     >
 where
     P: WifiTxPowerProfile,
@@ -1585,21 +1744,22 @@ where
     }
 
     fn tsf(&self, vif: VifId) -> PortResult<VifTsf, SettingError, LowerMacFault> {
-        setting_answer(self.with_core(|core, hardware, _| Ok(core.tsf(hardware, vif))))
+        setting_answer(
+            self.lower_mac
+                .with_core(|core, hardware, _| Ok(core.tsf(hardware, vif))),
+        )
     }
 
     /// The TSF read between two MAC-clock readings of one generation: the
     /// sample's radio stamp is the first, its uncertainty the distance to
     /// the second plus the counter's microsecond.
     fn tsf_sample(&self, vif: VifId) -> PortResult<TsfSample, SettingError, LowerMacFault> {
-        let Ok((before, reading, after)) = self.with_core(|core, hardware, _| {
-            let before = self.timer.snapshot();
-            let reading = core.tsf_reading(hardware, vif);
-            Ok((before, reading, self.timer.snapshot()))
-        })?
-        else {
-            return Ok(Err(SettingError::NotInstalled));
-        };
+        let (before, reading, after) =
+            installed(self.lower_mac.with_core(|core, hardware, _| {
+                let before = self.lower_mac.timer.snapshot();
+                let reading = core.tsf_reading(hardware, vif);
+                Ok((before, reading, self.lower_mac.timer.snapshot()))
+            })?);
         // Two readings of one generation, in order, or no sample.
         let Some((before, uncertainty)) = before
             .zip(after)
@@ -1631,15 +1791,24 @@ where
     }
 
     fn set_tsf(&self, tsf: VifTsf) -> PortResult<(), SettingError, LowerMacFault> {
-        setting_answer(self.with_core(|core, hardware, _| Ok(core.set_tsf(hardware, tsf))))
+        setting_answer(
+            self.lower_mac
+                .with_core(|core, hardware, _| Ok(core.set_tsf(hardware, tsf))),
+        )
     }
 
     fn set_tbtt(&self, schedule: TbttSchedule) -> PortResult<(), SettingError, LowerMacFault> {
-        setting_answer(self.with_core(|core, hardware, _| Ok(core.set_tbtt(hardware, schedule))))
+        setting_answer(
+            self.lower_mac
+                .with_core(|core, hardware, _| Ok(core.set_tbtt(hardware, schedule))),
+        )
     }
 
     fn stop_tbtt(&self, vif: VifId) -> PortResult<(), SettingError, LowerMacFault> {
-        setting_answer(self.with_core(|core, hardware, _| Ok(core.stop_tbtt(hardware, vif))))
+        setting_answer(
+            self.lower_mac
+                .with_core(|core, hardware, _| Ok(core.stop_tbtt(hardware, vif))),
+        )
     }
 
     fn tbtt(event: &Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>) -> Option<TbttEvent> {
@@ -1666,22 +1835,25 @@ impl<
     const AMPDU_BUFFERS: usize,
     O: TxBody,
 > LowerMacMonitor
-    for Esp32s31LowerMac<
+    for Esp32s31LowerMacPort<
         '_,
-        M,
-        P,
-        E,
-        T,
-        H,
-        R,
-        BUFFER_SIZE,
-        TX_BUFFERS,
-        EVENTS,
-        U,
-        S,
-        AMPDU_SLOTS,
-        AMPDU_BUFFERS,
-        O,
+        Esp32s31LowerMac<
+            '_,
+            M,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            EVENTS,
+            U,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+            O,
+        >,
     >
 where
     P: WifiTxPowerProfile,
@@ -1696,7 +1868,10 @@ where
     }
 
     fn set_monitor(&self, enabled: bool) -> PortResult<(), SettingError, LowerMacFault> {
-        setting_answer(self.with_core(|core, hardware, _| Ok(core.set_monitor(hardware, enabled))))
+        setting_answer(
+            self.lower_mac
+                .with_core(|core, hardware, _| Ok(core.set_monitor(hardware, enabled))),
+        )
     }
 }
 
@@ -1717,22 +1892,25 @@ impl<
     const AMPDU_BUFFERS: usize,
     O: TxBody,
 > LowerMacAmpdu
-    for Esp32s31LowerMac<
-        'slot,
-        M,
-        P,
-        E,
-        T,
-        H,
-        R,
-        BUFFER_SIZE,
-        TX_BUFFERS,
-        EVENTS,
-        U,
-        S,
-        AMPDU_SLOTS,
-        AMPDU_BUFFERS,
-        O,
+    for Esp32s31LowerMacPort<
+        '_,
+        Esp32s31LowerMac<
+            'slot,
+            M,
+            P,
+            E,
+            T,
+            H,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            EVENTS,
+            U,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+            O,
+        >,
     >
 where
     P: WifiTxPowerProfile,
@@ -1750,25 +1928,23 @@ where
 
     fn ampdu_buffer(
         &self,
-    ) -> PortResult<
-        Option<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>,
-        NotInstalled,
-        LowerMacFault,
-    > {
-        let inner = self.with_core(|core, _, _| Ok(core.ampdu_buffer()))?;
-        Ok(inner.map(|inner| {
-            inner.map(|inner| Esp32s31PortAmpduBuffer {
-                inner,
-                bodies: [const { None }; AMPDU_SLOTS],
-            })
+    ) -> Result<Option<Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>>, Poisoned<LowerMacFault>>
+    {
+        let inner = installed(
+            self.lower_mac
+                .with_core(|core, _, _| Ok(core.ampdu_buffer()))?,
+        );
+        Ok(inner.map(|inner| Esp32s31PortAmpduBuffer {
+            inner,
+            bodies: [const { None }; AMPDU_SLOTS],
         }))
     }
 
-    /// An aggregate released while no backend is installed or the port is
-    /// poisoned returns its subframes, and its aggregate owner is lost until
-    /// the radio is reset.
+    /// An aggregate released while the port is poisoned returns its
+    /// subframes, and its aggregate owner is lost until the radio is
+    /// reset.
     fn release_ampdu_buffer(&self, buffer: Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>) {
-        let _ = self.with_core(|core, _, _| {
+        let _ = self.lower_mac.with_core(|core, _, _| {
             core.release_ampdu_buffer(buffer.inner);
             Ok(())
         });
@@ -1787,7 +1963,7 @@ where
                 &mut attempt.payload.subframes.bodies,
                 [const { None }; AMPDU_SLOTS],
             );
-            if let Err((_, bodies)) = self.hold_bodies(id, None, bodies) {
+            if let Err((_, bodies)) = self.lower_mac.hold_bodies(id, None, bodies) {
                 attempt.payload.subframes.bodies = bodies;
                 return Ok(Err(Refused {
                     error: SubmitError::Busy,
@@ -1801,23 +1977,19 @@ where
                 tid: payload.tid,
                 min_mpdu_start_spacing: payload.min_mpdu_start_spacing,
             });
-        let queues = &self.queues;
+        let queues = &self.lower_mac.queues;
         // A poisoned backend keeps the held bodies until its reset.
         let admitted = self
+            .lower_mac
             .admit_with_core(attempt, |core, hardware, attempt| {
                 owe_completion(queues, attempt, |attempt| {
                     core.submit_ampdu(hardware, attempt)
                 })
             })?
-            .unwrap_or_else(|attempt| {
-                Err(Refused {
-                    error: SubmitError::NotInstalled,
-                    attempt,
-                })
-            })
+            .unwrap_or_else(|_| panic!("{INSTALLED}"))
             .map_err(|Refused { error, attempt }| {
                 let bodies = carries
-                    .then(|| self.unhold_bodies(id))
+                    .then(|| self.lower_mac.unhold_bodies(id))
                     .flatten()
                     .map_or([const { None }; AMPDU_SLOTS], |held| held.subframes);
                 Refused {
@@ -1833,7 +2005,7 @@ where
                 }
             });
         // A publication starts its watchdog.
-        self.wake.signal(());
+        self.lower_mac.wake.signal(());
         Ok(admitted)
     }
 }

@@ -10,16 +10,20 @@
 //! holds its state under `ieee802154_enter_critical`. The platform interrupt
 //! handler and every command run inside that lock. Portable events leave the
 //! lock as owned values through a bounded queue that any executor may await.
-//! The runtime is an [`Ieee802154RadioPort`]: commands, events, the clock,
-//! the state and the settings the interrupt handler reads (MAC keys, CSL,
-//! the enhanced-ACK generator, armed transmit security) go through the
-//! port; installation, pause and resume, coexistence, statistics and the
-//! frame-pending table stay inherent.
+//! [`Ieee802154Runtime::install`] returns the installed radio's two
+//! handles. The [`Ieee802154Port`] is the [`Ieee802154RadioPort`](oer_ieee802154::Ieee802154RadioPort) of the
+//! protocol's one event consumer: commands, events, the clock, the state and
+//! the settings the interrupt handler reads (MAC keys, CSL, the
+//! enhanced-ACK generator, armed transmit security). The
+//! [`Ieee802154Control`] stays with the composition: shared-PHY maintenance,
+//! coexistence, statistics, the frame-pending table and the uninstall, which
+//! consumes both. Neither handle exists without an installed radio, so no
+//! call is refused as not installed.
 //!
 //! CSMA-CA backoffs and the delays before retries run on the runtime's
 //! [`oer_time::Timer`] in [`Ieee802154Runtime::run`], the runner the composition polls for as long
 //! as the radio is installed, as ESP-IDF's OpenThread `SubMac` runs them on
-//! its tasklet timer; [`RadioPort::next_event`] only takes events.
+//! its tasklet timer; [`RadioPort::next_event`](oer_ieee802154::RadioPort::next_event) only takes events.
 //!
 //! The bounded event queue reserves a slot for every terminal event it
 //! owes when the work is admitted: the admitted operation's end, the fault
@@ -31,12 +35,21 @@
 //!
 //! The runtime never poisons (its fault type is [`Infallible`]): a broken
 //! event sequence ends in a recoverable [`RadioEvent::Fault`] that leaves
-//! the radio disabled. A radio that is not installed, also while paused,
-//! refuses every call as not installed.
+//! the radio disabled.
+//!
+//! Shared-PHY maintenance is a layer over the port's lifecycle:
+//! [`Ieee802154Control::pause`] quiesces an enabled port (the consumer sees
+//! `Quiesced`), leaves receive mode and lends the hardware out;
+//! [`Ieee802154Control::resume`] takes it back, enters receive mode again
+//! and enables the port (`Enabled`). A quiesced port holds the radio
+//! still: it refuses every command and setting that writes the hardware
+//! as quiesced and admits software configuration; while the hardware is lent, lifecycle commands are refused
+//! as busy too.
 
 #[cfg(test)]
 extern crate std;
 
+mod port;
 mod trace;
 
 use core::{
@@ -44,38 +57,34 @@ use core::{
     convert::Infallible,
 };
 
-use core::future::{Future, ready};
 use embassy_futures::select::{Either, select};
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::RawMutex},
     channel::Channel,
     signal::Signal,
 };
-use oer_espressif_ieee802154_engine::engine::{Ieee802154Engine, PENDING_TABLE_SIZE};
+use oer_espressif_ieee802154_engine::engine::Ieee802154Engine;
 pub use oer_espressif_ieee802154_engine::engine::{
     Ieee802154RxAbortStatistics, Ieee802154RxStatistics, Ieee802154TxAbortStatistics,
     Ieee802154TxRxStatistics, Ieee802154TxStatistics,
 };
+use oer_espressif_ieee802154_engine::ll::{Ieee802154LowLevel, Ieee802154RecentRssi};
 use oer_espressif_ieee802154_engine::pib::Ieee802154PibDefaults;
-use oer_espressif_ieee802154_engine::{
-    coex::Ieee802154Coexistence,
-    ll::{Ieee802154LowLevel, Ieee802154RecentRssi},
-    types::Ieee802154MultipanIndex,
-};
 use oer_espressif_ieee802154_radio::{
     Ieee802154Csl, Ieee802154EnhancedAckGenerator, Ieee802154Radio, Ieee802154RadioSink,
+    writes_registers,
 };
 
-pub use oer_ieee802154::NotInstalled;
 use oer_ieee802154::{
-    AcceptedCommand, AppliedSecurity, AutoPendingMode, CancelError, ClockError, ClockInfo,
-    CommandError, EventsLost, Frame, FrameCounterUpdate, Ieee802154Capabilities, Ieee802154Instant,
-    Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError, LifecycleEvent, MacKeys,
-    PendingTable, PortResult, RadioCommand, RadioEvent, RadioFault, RadioPort, RadioSetting,
-    RadioState, ReceivedFrame, RequestId, RestingState, RxMetadata, SettingError, TxStatus,
+    AcceptedCommand, AppliedSecurity, CancelError, CommandError, EventsLost, Frame,
+    FrameCounterUpdate, Interface, LifecycleCommand, LifecycleError, LifecycleEvent, MacKeys,
+    PortResult, RadioCommand, RadioEvent, RadioFault, RadioSetting, RadioState, ReceivedFrame,
+    RequestId, RestingState, RxMetadata, SettingError, TxStatus,
 };
 use oer_ieee802154_trace::{Lease, PauseRefusal};
 use oer_time::{Duration, Instant, Timer};
+
+pub use port::{Ieee802154Control, Ieee802154Port};
 
 pub use oer_espressif_ieee802154_radio::{
     IEEE802154_ENH_ACK_PROBING_CAPACITY, IEEE802154_ENHANCED_ACK_IE_CAPACITY,
@@ -246,34 +255,52 @@ pub struct Ieee802154RuntimeParts<'storage, H> {
 
 struct Installed<'storage, H, R> {
     radio: Ieee802154Radio<'storage, R>,
-    hardware: H,
+    hardware: Hardware<H>,
 }
 
-/// Why the runtime could not pause.
+/// The hardware of the installed radio, or what shared-PHY maintenance left
+/// in its place while it holds it.
+enum Hardware<H> {
+    Held(H),
+    /// [`Ieee802154Control::pause`] lent the hardware out; `recent_rssi` is
+    /// the RSSI it read last, which no reception changes while the MAC
+    /// stays stopped.
+    Lent {
+        recent_rssi: i8,
+    },
+}
+
+/// The invariant of every port and control call: the handles exist only
+/// while their radio is installed.
+const INSTALLED: &str = "a port or control exists only while its radio is installed";
+
+/// Why the radio could not pause.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ieee802154PauseError {
-    /// No radio is installed.
-    NotInstalled,
     /// A transmission, energy scan or CCA is still running.
     Busy,
+    /// The event queue has no room for the `Quiesced` and `Enabled` the
+    /// pause owes the consumer; taking events frees it.
+    EventQueueFull,
 }
 
-/// The radio role and its hardware held outside the runtime while the MAC is
-/// stopped, for example across shared PHY maintenance.
+/// The hardware of a paused radio, lent out across shared PHY maintenance.
 ///
-/// While paused the runtime rejects commands as not installed and its
-/// interrupt entry does nothing, so the platform CPU route must stay closed
-/// until [`Ieee802154Runtime::resume`].
+/// The radio stays installed with its port quiesced, and its interrupt
+/// entry does nothing, so the platform CPU route must stay closed until
+/// [`Ieee802154Control::resume`].
 #[must_use = "a paused radio must be resumed"]
-pub struct Ieee802154RuntimePaused<'storage, H, R> {
-    installed: Installed<'storage, H, R>,
+pub struct Ieee802154RuntimePaused<H> {
+    hardware: H,
     receiving: Option<oer_ieee802154::Channel>,
+    /// The pause quiesced an enabled port; the resume enables it again.
+    reopen: bool,
 }
 
-impl<H, R> Ieee802154RuntimePaused<'_, H, R> {
+impl<H> Ieee802154RuntimePaused<H> {
     /// Borrow the hardware, for example to prove the MAC quiescent.
     pub fn hardware_mut(&mut self) -> &mut H {
-        &mut self.installed.hardware
+        &mut self.hardware
     }
 
     /// The channel receive mode resumes on, if the radio was receiving.
@@ -301,13 +328,18 @@ struct Owed {
     quiescing: bool,
     /// Admission of operations is closed until `Enable`.
     quiesced: bool,
+    /// A pause quiesced the port; its resume's `Enabled` holds a slot.
+    maintenance: bool,
     /// An event taken after the loss it reported.
     held: Option<Ieee802154RadioEvent>,
 }
 
 impl Owed {
     fn reserved(&self) -> usize {
-        usize::from(self.operation) + usize::from(self.fault) + usize::from(self.quiescing)
+        usize::from(self.operation)
+            + usize::from(self.fault)
+            + usize::from(self.quiescing)
+            + usize::from(self.maintenance)
     }
 }
 
@@ -337,6 +369,7 @@ impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
                 fault: false,
                 quiescing: false,
                 quiesced: false,
+                maintenance: false,
                 held: None,
             })),
             changed: Signal::new(),
@@ -509,7 +542,7 @@ impl<
     }
 
     /// The image's monotonic clock the runtime reads: its radio clock
-    /// ([`ClockInfo::MONOTONIC_MICROS`]), for a synchronous reader such as
+    /// ([`ClockInfo::MONOTONIC_MICROS`](oer_ieee802154::ClockInfo::MONOTONIC_MICROS)), for a synchronous reader such as
     /// OpenThread's `otPlatRadioGetNow`.
     pub const fn clock(&self) -> &T {
         &self.timer
@@ -535,11 +568,16 @@ impl<
     /// enabled afterwards; the port's `Enable` lifecycle command opens
     /// admission.
     ///
+    /// Returns the radio's port, for the protocol's one event consumer, and
+    /// its control, for the composition; [`Ieee802154Control::uninstall`]
+    /// consumes both.
+    ///
     /// # Errors
     ///
     /// Returns the parts unchanged if a radio is already installed.
     #[allow(
         clippy::result_large_err,
+        clippy::type_complexity,
         reason = "the no-alloc runtime returns the unconsumed owners by value"
     )]
     pub fn install(
@@ -547,7 +585,10 @@ impl<
         mut parts: Ieee802154RuntimeParts<'storage, H>,
         random: R,
         defaults: Ieee802154PibDefaults,
-    ) -> Result<(), Ieee802154RuntimeParts<'storage, H>> {
+    ) -> Result<
+        (Ieee802154Port<'_, Self>, Ieee802154Control<'_, Self>),
+        Ieee802154RuntimeParts<'storage, H>,
+    > {
         #[allow(
             clippy::result_large_err,
             reason = "the no-alloc runtime returns the unconsumed owners by value"
@@ -561,11 +602,12 @@ impl<
             parts.engine.mac_init(&mut parts.hardware, defaults);
             *installed = Some(Installed {
                 radio: Ieee802154Radio::new(parts.engine, random),
-                hardware: parts.hardware,
+                hardware: Hardware::Held(parts.hardware),
             });
             Ok(())
         };
-        self.installed.lock(install)
+        self.installed.lock(install)?;
+        Ok((Ieee802154Port::new(self), Ieee802154Control::new(self)))
     }
 
     /// `esp_ieee802154_disable` after the platform CPU route is disabled:
@@ -573,197 +615,87 @@ impl<
     /// MAC's coexistence PTIs to the disabled foundation image, and disable
     /// and return the engine and hardware. Queued events stay with the
     /// consumer.
-    pub fn uninstall(&self) -> Option<Ieee802154RuntimeParts<'storage, H>> {
+    fn uninstall(&self) -> Ieee802154RuntimeParts<'storage, H> {
         let parts = self.installed.lock(|installed| {
-            installed.borrow_mut().take().map(|installed| {
-                let Installed {
-                    mut radio,
-                    mut hardware,
-                    ..
-                } = installed;
-                let mut sink = QueueSink {
-                    events: &self.events,
-                };
-                // A disabled radio has nothing in flight.
-                let _ = radio.disable(&mut hardware, &self.timer, &mut sink);
-                let mut engine = radio.into_engine();
-                engine.mac_deinit(&mut hardware);
-                engine.disable();
-                Ieee802154RuntimeParts { engine, hardware }
-            })
+            let Installed {
+                mut radio,
+                hardware,
+            } = installed.borrow_mut().take().expect(INSTALLED);
+            let Hardware::Held(mut hardware) = hardware else {
+                panic!("a paused radio is resumed before its uninstall");
+            };
+            let mut sink = QueueSink {
+                events: &self.events,
+            };
+            // A disabled radio has nothing in flight.
+            let _ = radio.disable(&mut hardware, &self.timer, &mut sink);
+            let mut engine = radio.into_engine();
+            engine.mac_deinit(&mut hardware);
+            engine.disable();
+            Ieee802154RuntimeParts { engine, hardware }
         });
         self.events.owed(|owed| {
             owed.fault = false;
             owed.quiesced = false;
+            owed.maintenance = false;
         });
         self.backoff_until.lock(|backoff| backoff.set(None));
         parts
     }
 
-    /// Stop the MAC and take the radio out of the runtime.
-    ///
-    /// A resting radio pauses: receive mode is left, and resumed by
-    /// [`Self::resume`]. The caller then closes the platform CPU route.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed, or an operation with a pending terminal event
-    /// is running; nothing changes.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc runtime moves the paused owners by value"
-    )]
-    pub fn pause(&self) -> Result<Ieee802154RuntimePaused<'storage, H, R>, Ieee802154PauseError> {
-        let result = self.pause_locked();
-        trace::emit(|| match &result {
-            Ok(paused) => Lease::Paused {
-                receiving: paused.receiving.map(oer_ieee802154::Channel::get),
-            },
-            Err(Ieee802154PauseError::NotInstalled) => {
-                Lease::PauseRefused(PauseRefusal::NotInstalled)
-            }
-            Err(Ieee802154PauseError::Busy) => Lease::PauseRefused(PauseRefusal::Busy),
-        });
-        result
+    /// Whether the port is quiesced or quiescing: it holds the radio still.
+    fn quiesced(&self) -> bool {
+        self.events.owed(|owed| owed.quiescing || owed.quiesced)
     }
 
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc runtime moves the paused owners by value"
-    )]
-    fn pause_locked(
+    /// Run `entry` on the installed radio and its slot for the hardware.
+    fn with_installed<O>(
         &self,
-    ) -> Result<Ieee802154RuntimePaused<'storage, H, R>, Ieee802154PauseError> {
+        entry: impl FnOnce(
+            &mut Ieee802154Radio<'storage, R>,
+            &mut Hardware<H>,
+            &mut QueueSink<'_, M, EVENTS>,
+        ) -> O,
+    ) -> O {
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
-            let receiving = match installed
-                .as_ref()
-                .ok_or(Ieee802154PauseError::NotInstalled)?
-                .radio
-                .state()
-            {
-                RadioState::Resting(RestingState::Receiving { channel }) => Some(channel),
-                RadioState::Resting(RestingState::Sleeping) | RadioState::Disabled => None,
-                _ => return Err(Ieee802154PauseError::Busy),
+            let installed = installed.as_mut().expect(INSTALLED);
+            let mut sink = QueueSink {
+                events: &self.events,
             };
-            let mut paused = installed.take().expect("checked above");
-            if receiving.is_some() {
-                let mut sink = QueueSink {
-                    events: &self.events,
-                };
-                let Installed {
-                    radio, hardware, ..
-                } = &mut paused;
-                if radio
-                    .submit(
-                        hardware,
-                        &self.timer,
-                        RadioCommand::Sleep { id: PAUSE_REQUEST },
-                        &mut sink,
-                    )
-                    .is_err()
-                {
-                    *installed = Some(paused);
-                    return Err(Ieee802154PauseError::Busy);
-                }
-            }
-            Ok(Ieee802154RuntimePaused {
-                installed: paused,
-                receiving,
-            })
+            entry(&mut installed.radio, &mut installed.hardware, &mut sink)
         })
     }
 
-    /// Put a paused radio back, entering receive mode again if it was
-    /// receiving. The caller opens the platform CPU route afterwards.
-    ///
-    /// # Errors
-    ///
-    /// Another radio is installed; the paused radio is returned.
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc runtime returns the paused owners by value"
-    )]
-    pub fn resume(
-        &self,
-        paused: Ieee802154RuntimePaused<'storage, H, R>,
-    ) -> Result<(), Ieee802154RuntimePaused<'storage, H, R>> {
-        let receiving = paused.receiving.map(oer_ieee802154::Channel::get);
-        let result = self.resume_locked(paused);
-        trace::emit(|| match &result {
-            Ok(()) => Lease::Resumed { receiving },
-            Err(_) => Lease::ResumeRefused,
-        });
-        result
-    }
-
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc runtime returns the paused owners by value"
-    )]
-    fn resume_locked(
-        &self,
-        paused: Ieee802154RuntimePaused<'storage, H, R>,
-    ) -> Result<(), Ieee802154RuntimePaused<'storage, H, R>> {
-        self.installed.lock(|installed| {
-            let mut installed = installed.borrow_mut();
-            if installed.is_some() {
-                return Err(paused);
-            }
-            let Ieee802154RuntimePaused {
-                installed: mut resumed,
-                receiving,
-            } = paused;
-            if let Some(channel) = receiving {
-                let mut sink = QueueSink {
-                    events: &self.events,
-                };
-                let Installed {
-                    radio, hardware, ..
-                } = &mut resumed;
-                // The paused state is the sleeping state it left, so the
-                // receive admission cannot be rejected.
-                let _ = radio.submit(
-                    hardware,
-                    &self.timer,
-                    RadioCommand::Receive {
-                        id: PAUSE_REQUEST,
-                        channel,
-                    },
-                    &mut sink,
-                );
-            }
-            *installed = Some(resumed);
-            Ok(())
-        })
-    }
-
-    fn with_radio<O>(
+    /// Run `entry` on the radio and its hardware while a radio is installed
+    /// and holds its hardware: the interrupt entry and the runner, which
+    /// outlive the installed radio and do nothing while the hardware is
+    /// lent.
+    fn with_held<O>(
         &self,
         entry: impl FnOnce(
             &mut Ieee802154Radio<'storage, R>,
             &mut H,
             &mut QueueSink<'_, M, EVENTS>,
         ) -> O,
-    ) -> Result<O, NotInstalled> {
+    ) -> Option<O> {
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
-            let installed = installed.as_mut().ok_or(NotInstalled)?;
+            let installed = installed.as_mut()?;
+            let Hardware::Held(hardware) = &mut installed.hardware else {
+                return None;
+            };
             let mut sink = QueueSink {
                 events: &self.events,
             };
-            Ok(entry(
-                &mut installed.radio,
-                &mut installed.hardware,
-                &mut sink,
-            ))
+            Some(entry(&mut installed.radio, hardware, &mut sink))
         })
     }
 
     /// The platform interrupt handler (`ieee802154_isr`). Does nothing while
-    /// no radio is installed.
+    /// no radio is installed or a pause holds its hardware.
     pub fn on_interrupt(&self) {
-        if let Ok(backoff) = self.with_radio(|radio, port, sink| {
+        if let Some(backoff) = self.with_held(|radio, port, sink| {
             radio.isr(port, &self.timer, sink);
             radio.take_delay()
         }) {
@@ -771,39 +703,12 @@ impl<
         }
     }
 
-    /// Collect the vendor's TX/RX statistics
-    /// (`CONFIG_IEEE802154_TXRX_STATISTIC`), from zero, or stop collecting
-    /// them.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn set_txrx_statistics(&self, collect: bool) -> Result<(), NotInstalled> {
-        self.with_radio(|radio, _, _| radio.engine().set_txrx_statistics(collect))
-    }
-
-    /// The TX/RX statistics while collected
-    /// (`esp_ieee802154_txrx_statistic_print` reads them).
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn txrx_statistics(&self) -> Result<Option<Ieee802154TxRxStatistics>, NotInstalled> {
-        self.with_radio(|radio, _, _| radio.engine().txrx_statistics())
-    }
-
-    /// `esp_ieee802154_txrx_statistic_clear`.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn clear_txrx_statistics(&self) -> Result<(), NotInstalled> {
-        self.with_radio(|radio, _, _| radio.engine().clear_txrx_statistics())
-    }
-
-    /// Admit and start one portable command. An operation reserves its
-    /// terminal event's slot first, and is refused while admission is
-    /// quiesced or no slot is free.
+    /// Admit and start one portable command. A quiesced port holds the radio
+    /// still: it refuses every command that writes the MAC registers as
+    /// quiesced, as it does while a pause holds the hardware, and admits a
+    /// configuration of the PIB or the pending table. An operation reserves
+    /// its terminal event's slot first and is refused while no slot is
+    /// free.
     fn submit_locked(&self, command: RadioCommand<'_>) -> Result<AcceptedCommand, CommandError> {
         let operation = matches!(
             command,
@@ -812,15 +717,27 @@ impl<
                 | RadioCommand::ClearChannelAssessment { .. }
                 | RadioCommand::ScheduledReceive(_)
         );
-        let submitted = self.installed.lock(|installed| {
-            let mut installed = installed.borrow_mut();
-            let installed = installed.as_mut().ok_or(CommandError::NotInstalled)?;
+        let submitted = self.with_installed(|radio, hardware, sink| {
+            // A configuration of the PIB or the pending table needs no
+            // hardware: a quiesced or paused radio takes it too.
+            if !writes_registers(&command) {
+                return Ok((radio.submit_software_configuration(command), None));
+            }
+            // A paused radio is quiesced, or disabled: only `Enable` would
+            // serve a disabled one, and it waits for the resume.
+            let Hardware::Held(hardware) = hardware else {
+                return Err(if self.quiesced() {
+                    CommandError::Quiesced
+                } else {
+                    CommandError::Disabled
+                });
+            };
+            if self.quiesced() {
+                return Err(CommandError::Quiesced);
+            }
             // A second operation is the state machine's to refuse.
             let reserved = operation
                 && self.events.owed(|owed| {
-                    if owed.quiescing || owed.quiesced {
-                        return Err(CommandError::Quiesced);
-                    }
                     if owed.operation {
                         return Ok(false);
                     }
@@ -830,32 +747,27 @@ impl<
                     owed.operation = true;
                     Ok(true)
                 })?;
-            let mut sink = QueueSink {
-                events: &self.events,
-            };
-            let accepted =
-                installed
-                    .radio
-                    .submit(&mut installed.hardware, &self.timer, command, &mut sink);
+            let accepted = radio.submit(hardware, &self.timer, command, sink);
             if accepted.is_err() && reserved {
                 self.events.owed(|owed| owed.operation = false);
             }
-            Ok((accepted, installed.radio.take_delay()))
+            Ok((accepted, radio.take_delay()))
         });
         let (accepted, backoff) = submitted?;
         self.start_backoff(backoff);
         accepted
     }
 
-    /// End the running operation `target` through its terminal event.
+    /// End the running operation `target` through its terminal event. While
+    /// a pause holds the hardware, no operation runs.
     fn cancel_locked(&self, target: RequestId) -> Result<(), CancelError> {
-        let cancelled = self.with_radio(|radio, hardware, sink| {
+        let (cancelled, backoff) = self.with_installed(|radio, hardware, sink| {
+            let Hardware::Held(hardware) = hardware else {
+                return (Err(CancelError::NotRunning), None);
+            };
             let cancelled = radio.cancel(hardware, &self.timer, target, sink);
             (cancelled, radio.take_delay())
         });
-        let Ok((cancelled, backoff)) = cancelled else {
-            return Err(CancelError::NotInstalled);
-        };
         self.start_backoff(backoff);
         cancelled
     }
@@ -869,8 +781,13 @@ impl<
     ///   then disables the radio; its terminal takes the fault's slot.
     /// - `Quiesce` closes admission of operations and ends with `Quiesced`
     ///   after the terminal event of the operation in flight.
+    ///
+    /// Every command is refused as busy while a pause holds the hardware.
     fn lifecycle_locked(&self, command: LifecycleCommand) -> Result<(), LifecycleError> {
-        let started = self.with_radio(|radio, hardware, sink| {
+        self.with_installed(|radio, hardware, sink| {
+            let Hardware::Held(hardware) = hardware else {
+                return Err(LifecycleError::Busy);
+            };
             let enabled = radio.state() != RadioState::Disabled;
             let (quiescing, quiesced) = self.events.owed(|owed| (owed.quiescing, owed.quiesced));
             if quiescing {
@@ -933,16 +850,15 @@ impl<
                     Ok(())
                 }
             }
-        });
-        started.unwrap_or(Err(LifecycleError::NotInstalled))
+        })
     }
 
     /// The radio's runner: a transmission's CSMA-CA backoff or retry delay,
     /// after which the transmission goes on.
     ///
     /// Poll it for as long as the runtime is used, beside the consumer of
-    /// [`RadioPort::next_event`]; it never ends. Dropping it keeps
-    /// the delay for the next runner.
+    /// the port's events; it never ends. Dropping it keeps the delay for the
+    /// next runner.
     pub async fn run(&self) -> Infallible {
         loop {
             let until = self.backoff_until.lock(Cell::get);
@@ -955,7 +871,7 @@ impl<
             match select(backoff, self.backoff_started.wait()).await {
                 Either::First(()) => {
                     self.backoff_until.lock(|backoff| backoff.set(None));
-                    if let Ok(backoff) = self.with_radio(|radio, port, sink| {
+                    if let Some(backoff) = self.with_held(|radio, port, sink| {
                         radio.delay_elapsed(port, &self.timer, sink);
                         radio.take_delay()
                     }) {
@@ -981,49 +897,140 @@ impl<
             .await;
         }
     }
+}
 
-    /// Read or change the frame-pending table.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn with_pending_table<O>(
-        &self,
-        change: impl FnOnce(&mut PendingTable<PENDING_TABLE_SIZE>) -> O,
-    ) -> Result<O, NotInstalled> {
-        self.with_radio(|radio, _, _| change(radio.engine().pending_table()))
+impl<
+    'storage,
+    M: RawMutex,
+    H: Ieee802154LowLevel + Ieee802154RecentRssi,
+    T: Timer,
+    R: Ieee802154Random,
+    const EVENTS: usize,
+> Ieee802154Runtime<'storage, M, H, T, R, EVENTS>
+{
+    /// Quiesce an enabled port, leave receive mode and lend the hardware
+    /// out ([`Ieee802154Control::pause`]).
+    fn pause(&self) -> Result<Ieee802154RuntimePaused<H>, Ieee802154PauseError> {
+        let result = self.pause_locked();
+        trace::emit(|| match &result {
+            Ok(paused) => Lease::Paused {
+                receiving: paused.receiving.map(oer_ieee802154::Channel::get),
+            },
+            Err(Ieee802154PauseError::Busy) => Lease::PauseRefused(PauseRefusal::Busy),
+            Err(Ieee802154PauseError::EventQueueFull) => {
+                Lease::PauseRefused(PauseRefusal::EventQueueFull)
+            }
+        });
+        result
     }
 
-    /// `esp_ieee802154_set_pending_mode`: how the automatic acknowledgement
-    /// decides frame pending. The PIB publishes it before the next operation.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn set_pending_mode(&self, mode: AutoPendingMode) -> Result<(), NotInstalled> {
-        self.with_radio(|radio, _, _| {
-            radio
-                .engine()
-                .pib()
-                .set_pending_mode(Ieee802154MultipanIndex::CONTEXT0, mode);
+    fn pause_locked(&self) -> Result<Ieee802154RuntimePaused<H>, Ieee802154PauseError> {
+        self.with_installed(|radio, slot, sink| {
+            let Hardware::Held(hardware) = slot else {
+                panic!("a paused radio is resumed before the next pause");
+            };
+            let state = radio.state();
+            let receiving = match state {
+                RadioState::Resting(RestingState::Receiving { channel }) => Some(channel),
+                RadioState::Resting(RestingState::Sleeping) | RadioState::Disabled => None,
+                _ => return Err(Ieee802154PauseError::Busy),
+            };
+            // An enabled port the consumer has not quiesced is quiesced now
+            // and enabled again by the resume: `Quiesced` and `Enabled`.
+            let reopen = self.events.owed(|owed| {
+                let reopen = state != RadioState::Disabled && !owed.quiesced;
+                if reopen && !self.events.has_room(owed, 2) {
+                    return Err(Ieee802154PauseError::EventQueueFull);
+                }
+                Ok(reopen)
+            })?;
+            if receiving.is_some()
+                && radio
+                    .submit(
+                        hardware,
+                        &self.timer,
+                        RadioCommand::Sleep { id: PAUSE_REQUEST },
+                        sink,
+                    )
+                    .is_err()
+            {
+                return Err(Ieee802154PauseError::Busy);
+            }
+            let recent_rssi = hardware.recent_rssi();
+            if reopen {
+                self.events.owed(|owed| {
+                    owed.quiesced = true;
+                    owed.maintenance = true;
+                    self.events.send(
+                        owed,
+                        Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced),
+                    );
+                });
+            }
+            let Hardware::Held(hardware) = core::mem::replace(slot, Hardware::Lent { recent_rssi })
+            else {
+                unreachable!("the hardware was held above");
+            };
+            Ok(Ieee802154RuntimePaused {
+                hardware,
+                receiving,
+                reopen,
+            })
         })
     }
 
-    /// Replace the engine's software-coexistence priorities
-    /// ([`Ieee802154Engine::set_coexistence`]).
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn set_coexistence(&self, coexistence: Ieee802154Coexistence) -> Result<(), NotInstalled> {
-        self.with_radio(|radio, _, _| radio.engine().set_coexistence(coexistence))
+    /// Take a paused radio's hardware back, enter receive mode again if it
+    /// was receiving and enable the port the pause quiesced
+    /// ([`Ieee802154Control::resume`]).
+    fn resume(&self, paused: Ieee802154RuntimePaused<H>) {
+        let Ieee802154RuntimePaused {
+            mut hardware,
+            receiving,
+            reopen,
+        } = paused;
+        self.with_installed(|radio, slot, sink| {
+            assert!(
+                matches!(slot, Hardware::Lent { .. }),
+                "only a paused radio resumes"
+            );
+            if let Some(channel) = receiving {
+                // The paused state is the sleeping state it left, so the
+                // receive admission cannot be rejected.
+                let _ = radio.submit(
+                    &mut hardware,
+                    &self.timer,
+                    RadioCommand::Receive {
+                        id: PAUSE_REQUEST,
+                        channel,
+                    },
+                    sink,
+                );
+            }
+            *slot = Hardware::Held(hardware);
+            if reopen {
+                self.events.owed(|owed| {
+                    owed.maintenance = false;
+                    owed.quiesced = false;
+                    self.events.send(
+                        owed,
+                        Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled),
+                    );
+                });
+            }
+        });
+        trace::emit(|| Lease::Resumed {
+            receiving: receiving.map(oer_ieee802154::Channel::get),
+        });
     }
 }
 
 /// Apply one portable setting to the radio under the runtime's lock.
+///
+/// `hardware` is `None` while a pause holds it: a setting that writes it is
+/// refused as quiesced.
 fn apply_setting<L: Ieee802154LowLevel + ?Sized, R: Ieee802154Random>(
     radio: &mut Ieee802154Radio<'_, R>,
-    hardware: &mut L,
+    hardware: Option<&mut L>,
     setting: RadioSetting<'_>,
 ) -> Result<(), SettingError> {
     fn keys<'r, R: Ieee802154Random>(
@@ -1090,122 +1097,11 @@ fn apply_setting<L: Ieee802154LowLevel + ?Sized, R: Ieee802154Random>(
         // `esp_ieee802154_set_transmit_security`; the transmission's later
         // attempts arm it again.
         RadioSetting::TransmitSecurity(arming) => {
+            let hardware = hardware.ok_or(SettingError::Quiesced)?;
             radio.set_transmit_security(hardware, arming.frame, &arming.key, &arming.address);
         }
     }
     Ok(())
-}
-
-impl<M: RawMutex, H, T: Timer, R: Ieee802154Random, const EVENTS: usize> RadioPort
-    for Ieee802154Runtime<'_, M, H, T, R, EVENTS>
-where
-    H: Ieee802154LowLevel + Ieee802154RecentRssi,
-{
-    type Event = Ieee802154RadioEvent;
-    type Id = RequestId;
-    type Domain = oer_ieee802154::Ieee802154Radio;
-    /// The runtime never poisons.
-    type Fault = Infallible;
-
-    fn next_event(
-        &self,
-    ) -> impl Future<Output = PortResult<Ieee802154RadioEvent, EventsLost, Infallible>> + '_ {
-        self.wait_event()
-    }
-
-    /// The radio clock (`otPlatRadioGetNow`): the runtime's own clock, the
-    /// one its engine reads at every event. It runs whether or not a radio
-    /// is installed.
-    fn now(
-        &self,
-    ) -> impl Future<Output = PortResult<Ieee802154Instant, ClockError, Infallible>> + '_ {
-        ready(Ok(Ok(Ieee802154Instant::from_micros(
-            self.timer.now().as_micros(),
-        ))))
-    }
-
-    fn cancel(
-        &self,
-        id: RequestId,
-    ) -> impl Future<Output = PortResult<(), CancelError, Infallible>> + '_ {
-        ready(Ok(self.cancel_locked(id)))
-    }
-
-    fn lifecycle(
-        &self,
-        command: LifecycleCommand,
-    ) -> impl Future<Output = PortResult<(), LifecycleError, Infallible>> + '_ {
-        ready(Ok(self.lifecycle_locked(command)))
-    }
-}
-
-impl<M: RawMutex, H, T: Timer, R: Ieee802154Random, const EVENTS: usize> Ieee802154RadioPort
-    for Ieee802154Runtime<'_, M, H, T, R, EVENTS>
-where
-    H: Ieee802154LowLevel + Ieee802154RecentRssi,
-{
-    fn view(event: &Ieee802154RadioEvent) -> RadioEvent<'_> {
-        event.portable()
-    }
-
-    /// The installed radio's capabilities and interfaces, or the role's
-    /// with the primary interface alone without one.
-    fn capabilities(&self) -> Ieee802154Capabilities {
-        self.installed.lock(|installed| {
-            installed.borrow().as_ref().map_or(
-                Ieee802154Capabilities {
-                    operations: IEEE802154_RADIO_CAPABILITIES,
-                    interfaces: 1,
-                },
-                |installed| Ieee802154Capabilities {
-                    operations: installed.radio.capabilities(),
-                    interfaces: installed.radio.interfaces(),
-                },
-            )
-        })
-    }
-
-    fn submit(
-        &self,
-        command: RadioCommand<'_>,
-    ) -> PortResult<AcceptedCommand, CommandError, Infallible> {
-        Ok(self.submit_locked(command))
-    }
-
-    /// The radio clock is the runtime's clock (`esp_timer_get_time` in
-    /// ESP-IDF), which the ESP32-S31 composition binds to the image's
-    /// monotonic clock.
-    fn clock_info(&self) -> ClockInfo {
-        ClockInfo::MONOTONIC_MICROS
-    }
-
-    fn state(&self) -> PortResult<RadioState, NotInstalled, Infallible> {
-        Ok(self.with_radio(|radio, _, _| radio.state()))
-    }
-
-    fn apply(&self, setting: RadioSetting<'_>) -> PortResult<(), SettingError, Infallible> {
-        Ok(self
-            .with_radio(|radio, hardware, _| apply_setting(radio, hardware, setting))
-            .unwrap_or(Err(SettingError::NotInstalled)))
-    }
-
-    fn frame_counter(
-        &self,
-        interface: Interface,
-    ) -> PortResult<Option<u32>, NotInstalled, Infallible> {
-        Ok(self.with_radio(|radio, _, _| {
-            radio
-                .interface_mac_keys(interface)
-                .and_then(|keys| keys.as_ref().map(MacKeys::frame_counter))
-        }))
-    }
-
-    /// The live RSSI (`esp_ieee802154_get_recent_rssi`), read from the
-    /// hardware whatever the radio's state, as the vendor reads it.
-    // CAPABILITY: ieee802154-phy-and-rf-rssi
-    fn recent_rssi(&self) -> PortResult<i8, NotInstalled, Infallible> {
-        Ok(self.with_radio(|_, hardware, _| hardware.recent_rssi()))
-    }
 }
 
 /// Host models of the hardware for tests of this runtime and the crates
@@ -1236,28 +1132,29 @@ impl<M: RawMutex, T: Timer, R: Ieee802154Random, const EVENTS: usize>
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let installed = installed.as_mut().expect("a radio is installed");
+            let Hardware::Held(hardware) = &mut installed.hardware else {
+                panic!("the radio holds its hardware");
+            };
             if let Some(frame) = frame {
-                let address = installed
-                    .hardware
-                    .rx_address
-                    .expect("a receive buffer is published");
+                let address = hardware.rx_address.expect("a receive buffer is published");
                 assert!(installed.radio.engine().model_dma_write(address, frame));
             }
-            installed.hardware.raise(events);
+            hardware.raise(events);
         });
         self.on_interrupt();
     }
 
     /// Inspect or set the modelled hardware.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// No radio is installed.
+    /// No radio is installed, or a pause holds its hardware.
     pub fn with_model<O>(
         &self,
         entry: impl FnOnce(&mut oer_espressif_ieee802154_engine::ll::model::Ieee802154LlModel) -> O,
-    ) -> Result<O, NotInstalled> {
-        self.with_radio(|_, hardware, _| entry(hardware))
+    ) -> O {
+        self.with_held(|_, hardware, _| entry(hardware))
+            .expect("an installed radio holds its hardware")
     }
 }
 

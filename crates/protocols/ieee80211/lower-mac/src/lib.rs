@@ -73,8 +73,8 @@ pub use extensions::{
 };
 pub use oer_radio_port::{
     CancelError, ClockError, ClockInfo, Correlation, CorrelationIds, EpochError, EventsLost,
-    LifecycleCommand, LifecycleError, LifecycleEvent, NotInstalled, Poisoned, PortResult,
-    Projected, RadioEpoch, RadioPort,
+    LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, PortResult, Projected, RadioEpoch,
+    RadioPort,
 };
 pub use port::{Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};

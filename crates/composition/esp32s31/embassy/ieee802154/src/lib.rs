@@ -15,8 +15,10 @@
 //! transaction that fails is fail-stop.
 //!
 //! The runtime is a process singleton: modem source 132 has one handler and
-//! the MAC has one set of owners. Commands and events go through
-//! [`Ieee802154System::runtime`].
+//! the MAC has one set of owners. [`start`] returns the running client, which
+//! keeps the radio's control, and the radio's port
+//! ([`Ieee802154SystemPort`]), through which its one consumer issues commands
+//! and takes events; [`Ieee802154System::stop`] takes the port back.
 
 mod maintenance;
 #[cfg(target_arch = "riscv32")]
@@ -70,5 +72,6 @@ pub use oer_esp32s31_ieee802154_esp_hal::{
 pub use system::{
     IEEE802154_EVENT_CAPACITY, Ieee802154FailStop, Ieee802154MaintenanceError, Ieee802154Parked,
     Ieee802154StartError, Ieee802154StartFailure, Ieee802154StopError, Ieee802154StopFailure,
-    Ieee802154System, Ieee802154SystemClock, Ieee802154SystemRuntime, ieee802154_interrupt, start,
+    Ieee802154System, Ieee802154SystemClock, Ieee802154SystemPort, Ieee802154SystemRuntime,
+    ieee802154_interrupt, start,
 };

@@ -46,8 +46,12 @@ async fn restart(
 ) -> (Ieee802154SessionRestartEvidence, Option<Ieee802154System>) {
     let mut evidence = Ieee802154SessionRestartEvidence::default();
     let _ = session.rest_disabled().await;
+    let port = session
+        .port
+        .take()
+        .expect("the session holds its port outside a restart");
     let stopped = {
-        let stopped = core::pin::pin!(client.stop(system));
+        let stopped = core::pin::pin!(client.stop(system, port));
         stopped.await
     };
     let Some(parked) = stopped else {
@@ -59,16 +63,17 @@ async fn restart(
         let started = core::pin::pin!(client.start(parked));
         started.await
     };
-    let Some(system) = started else {
+    let Some((system, port)) = started else {
         evidence.result = Ieee802154SessionResult::StartFailed;
         return (evidence, None);
     };
-    session.runtime = system.runtime();
+    session.port = Some(port);
+    session.maintained = false;
     evidence.result = match session.configure(config).await {
         Ok(()) => {
             let id = session.id();
             let channel = session.channel;
-            match session.submit(RadioCommand::Receive { id, channel }) {
+            match session.submit(RadioCommand::Receive { id, channel }).await {
                 Ok(()) => Ieee802154SessionResult::Done,
                 Err(result) => result,
             }
@@ -107,7 +112,7 @@ pub(in crate::product_hil) async fn run_session(
         let started = core::pin::pin!(client.start(parked));
         started.await
     };
-    let Some(mut system) = started else {
+    let Some((mut system, port)) = started else {
         publish_event_reliably(
             0,
             request_id,
@@ -116,8 +121,11 @@ pub(in crate::product_hil) async fn run_session(
         .await;
         return;
     };
+    report_power_sequence_once(&system);
     let mut session = Session {
-        runtime: system.runtime(),
+        port: Some(port),
+        maintained: false,
+        maintenance_ends: 0,
         channel,
         next_id: 0,
         received: Received::default(),
@@ -155,7 +163,7 @@ pub(in crate::product_hil) async fn run_session(
     };
     let counts = Cell::new(Ieee802154SessionMaintenanceCounts::default());
     // The runtime's runner progresses backoffs beside the served commands.
-    let runtime = session.runtime;
+    let runtime = system.runtime();
     let serving = async {
         loop {
             let served = {
@@ -208,8 +216,12 @@ pub(in crate::product_hil) async fn run_session(
     }
 
     let _ = session.rest_disabled().await;
+    let port = session
+        .port
+        .take()
+        .expect("the session holds its port outside a restart");
     let stopped = {
-        let stopped = core::pin::pin!(client.stop(system));
+        let stopped = core::pin::pin!(client.stop(system, port));
         stopped.await
     };
     let stopped = match stopped {
@@ -226,4 +238,14 @@ pub(in crate::product_hil) async fn run_session(
         }),
     )
     .await;
+}
+
+/// Print the MAC power-sequencing words once per boot, before the first
+/// transmission, read under the runtime's lock.
+fn report_power_sequence_once(system: &Ieee802154System) {
+    static REPORTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+    if REPORTED.swap(true, core::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    crate::console::ieee802154_power_sequence_report(system.power_sequence());
 }

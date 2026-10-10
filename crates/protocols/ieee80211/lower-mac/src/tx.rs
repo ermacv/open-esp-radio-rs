@@ -293,9 +293,6 @@ pub struct TxCompletion {
 /// Why the backend refused an attempt; nothing was sent or changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SubmitError {
-    /// No backend serves the port: it is not installed yet, or its radio
-    /// start was replaced. Installing it serves again.
-    NotInstalled,
     /// An earlier attempt still holds the attempt's queue; submit again
     /// after its completion.
     Busy,

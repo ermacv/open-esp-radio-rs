@@ -23,7 +23,8 @@ use oer_bluetooth_hci::{
     },
 };
 use oer_esp32s31_bluetooth_system::{
-    BluetoothHci, BluetoothHciService, BluetoothHostTransport, BluetoothSystem, start,
+    BluetoothHci, BluetoothHciService, BluetoothHostTransport, BluetoothSystem,
+    BluetoothSystemPort, start,
 };
 use oer_hil_agent::bluetooth_gatt::secure::{
     reset_gate::{self, GatedController},
@@ -117,6 +118,7 @@ pub(super) async fn run(
     spawner: embassy_executor::Spawner,
     radio: &'static Radio,
     system: BluetoothSystem,
+    port: BluetoothSystemPort,
     hci: BluetoothHci,
     public_address: BluetoothPublicDeviceAddress,
     usb: crate::transport::Usb,
@@ -124,7 +126,8 @@ pub(super) async fn run(
 ) -> ! {
     let state: &'static State = STATE.init_with(State::new);
     spawner.spawn(
-        lifecycle(radio, system, hci, public_address, state).expect("Bluetooth lifecycle task"),
+        lifecycle(radio, system, port, hci, public_address, state)
+            .expect("Bluetooth lifecycle task"),
     );
     spawner.spawn(requests(state).expect("Bluetooth request task"));
     console::serve_console(usb, boot, state).await
@@ -140,6 +143,7 @@ async fn requests(state: &'static State) {
 async fn lifecycle(
     radio: &'static Radio,
     mut system: BluetoothSystem,
+    mut port: BluetoothSystemPort,
     hci: BluetoothHci,
     public_address: BluetoothPublicDeviceAddress,
     state: &'static State,
@@ -163,6 +167,7 @@ async fn lifecycle(
             let mut epoch = pin!(run_epoch(
                 radio,
                 &mut system,
+                &port,
                 &mut service,
                 transport,
                 resources,
@@ -175,7 +180,7 @@ async fn lifecycle(
         let action = exit.action();
         if action == ShutdownAction::Retain {
             state.stopped();
-            retain((exit, system, service)).await;
+            retain((exit, system, port, service)).await;
         }
 
         // Retire the old Host end once its undelivered packets are drained.
@@ -190,7 +195,7 @@ async fn lifecycle(
             crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-retirement\r\n");
         }
         let parked = {
-            let mut stop = pin!(system.stop(radio));
+            let mut stop = pin!(system.stop(port, radio));
             match stop.as_mut().await {
                 Ok(parked) => parked,
                 Err(_) => crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n"),
@@ -204,10 +209,10 @@ async fn lifecycle(
             state.stopped();
             retain((exit, parked, service)).await;
         }
-        system = {
+        (system, port) = {
             let mut restart = pin!(start(radio, parked, public_address));
             match restart.as_mut().await {
-                Ok(system) => system,
+                Ok(started) => started,
                 Err(_) => crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-restart\r\n"),
             }
         };
@@ -221,6 +226,7 @@ async fn lifecycle(
 async fn run_epoch(
     radio: &'static Radio,
     system: &mut BluetoothSystem,
+    port: &BluetoothSystemPort,
     service: &mut BluetoothHciService,
     transport: BluetoothHostTransport,
     resources: &mut Resources,
@@ -242,7 +248,7 @@ async fn run_epoch(
         state.restart.wait(),
         |event| state.observe(event),
     ));
-    let hardware = pin!(select(system.run(radio), service.run()));
+    let hardware = pin!(select(system.run(radio), service.run(port)));
     match select(host, hardware).await {
         Either::First(exit) => exit,
         Either::Second(Either::First(_)) => {

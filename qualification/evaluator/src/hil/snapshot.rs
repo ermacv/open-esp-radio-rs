@@ -1,4 +1,4 @@
-//! Independent validation of captured source identities and every archived byte.
+//! Independent validation of captured source identities and every captured byte.
 use super::*;
 
 /// A source a build record cites: the run bundle's own record.
@@ -8,25 +8,27 @@ pub(super) use oer_hil_run_bundle_format::build::SourceMaterial as Source;
 // their order, which a source's identity digests, are one contract.
 use oer_hil_schema::snapshot::is_agent_guidance;
 pub(super) use oer_hil_schema::snapshot::{MANIFEST_SCHEMA, Manifest};
+use oer_hil_schema::snapshot::{SNAPSHOT_SCHEMA, object};
 
 #[derive(Deserialize)]
 struct Snapshot {
     schema: u16,
     snapshot_id: String,
-    archive_sha256: String,
     files: usize,
 }
 
-pub(super) fn verified(directory: &Path, sources: &[Source]) -> Result<Option<Manifest>> {
+/// The manifest of the snapshot in `directory` when it binds `sources` and
+/// every file it names is an object in `objects` holding exactly its bytes.
+pub(super) fn verified(
+    directory: &Path,
+    objects: &Path,
+    sources: &[Source],
+) -> Result<Option<Manifest>> {
     let manifest: Manifest = read_json(&directory.join("manifest.json"))?;
     let snapshot: Snapshot = read_json(&directory.join("snapshot.json"))?;
     if manifest.schema != MANIFEST_SCHEMA
-        || snapshot.schema != 1
+        || snapshot.schema != SNAPSHOT_SCHEMA
         || oer_durable::sha256_bytes(&serde_json::to_vec(&manifest)?) != snapshot.snapshot_id
-        || crate::digests()
-            .sha256_file(&directory.join("sources.tar"))
-            .map_err(|error| error.to_string())?
-            != snapshot.archive_sha256
         || sources.len() != manifest.sources.len()
     {
         return Ok(None);
@@ -55,27 +57,20 @@ pub(super) fn verified(directory: &Path, sources: &[Source]) -> Result<Option<Ma
     if snapshot.files != expected.len() {
         return Ok(None);
     }
-    // Check all archived bytes without extracting anything into the filesystem.
-    let mut archive = tar::Archive::new(fs::File::open(directory.join("sources.tar"))?);
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let path = entry.path()?.into_owned();
-        let Some(file) = expected.remove(&path) else {
-            return Ok(None);
-        };
-        if !entry.header().entry_type().is_file()
-            || entry.size() != file.size_bytes
-            || entry.header().mode()? != file.mode
+    // Every file is the object its digest names; a missing or different one
+    // leaves the snapshot unverified.
+    for file in expected.values() {
+        let stored = object(objects, &file.sha256);
+        if !fs::metadata(&stored).is_ok_and(|metadata| metadata.len() == file.size_bytes)
+            || crate::digests()
+                .sha256_file(&stored)
+                .map_err(|error| error.to_string())?
+                != file.sha256
         {
             return Ok(None);
         }
-        let mut hash = Sha256::new();
-        std::io::copy(&mut entry, &mut hash)?;
-        if format!("{:x}", hash.finalize()) != file.sha256 {
-            return Ok(None);
-        }
     }
-    Ok(expected.is_empty().then_some(manifest))
+    Ok(Some(manifest))
 }
 
 /// A direct observation binds the complete current source selection. Property
@@ -233,7 +228,12 @@ pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<boo
             }
         }
     }
-    Ok(verified(&directory, sources)?.is_some())
+    Ok(verified(
+        &directory,
+        &oer_hil_schema::snapshot::objects_of_run(run)?,
+        sources,
+    )?
+    .is_some())
 }
 
 #[cfg(test)]
@@ -248,7 +248,8 @@ mod tests {
         use oer_hil_schema::snapshot::FileInput;
 
         let root = tempfile::tempdir().unwrap();
-        let run = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let run = store.path().join("runs/run-1");
         let git = |arguments: &[&str]| {
             let configured = [
                 "-c",
@@ -271,7 +272,7 @@ mod tests {
         git(&["add", "."]);
         git(&["commit", "-qm", "source and agent guidance"]);
 
-        let snapshot = run.path().join("source/snapshot");
+        let snapshot = run.join("source/snapshot");
         fs::create_dir_all(&snapshot).unwrap();
         let source = SourceInput {
             name: "repository".into(),
@@ -306,38 +307,28 @@ mod tests {
             schema: MANIFEST_SCHEMA,
             sources: vec![source],
         };
-        let mut archive =
-            tar::Builder::new(fs::File::create(snapshot.join("sources.tar")).unwrap());
-        for (path, bytes) in inputs {
-            let mut header = tar::Header::new_gnu();
-            header.set_size(bytes.len() as u64);
-            header.set_mode(0o644);
-            header.set_cksum();
-            archive
-                .append_data(
-                    &mut header,
-                    Path::new("repository").join(path),
-                    bytes.as_bytes(),
-                )
-                .unwrap();
+        for (_, bytes) in inputs {
+            let stored = oer_hil_schema::snapshot::object(
+                &store.path().join(oer_hil_schema::snapshot::OBJECTS),
+                &oer_durable::sha256_bytes(bytes.as_bytes()),
+            );
+            fs::create_dir_all(stored.parent().unwrap()).unwrap();
+            fs::write(stored, bytes).unwrap();
         }
-        archive.finish().unwrap();
-        drop(archive);
         let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
         fs::write(snapshot.join("manifest.json"), &manifest_bytes).unwrap();
         fs::write(
             snapshot.join("snapshot.json"),
             serde_json::to_vec(&serde_json::json!({
-                "schema": 1,
+                "schema": SNAPSHOT_SCHEMA,
                 "snapshot_id": oer_durable::sha256_bytes(&manifest_bytes),
-                "archive_sha256": oer_durable::sha256_file(&snapshot.join("sources.tar")).unwrap(),
                 "files": inputs.len(),
             }))
             .unwrap(),
         )
         .unwrap();
-        assert!(run_closure(root.path(), run.path()).is_none());
-        assert!(current(root.path(), run.path(), &sources).unwrap());
+        assert!(run_closure(root.path(), &run).is_none());
+        assert!(current(root.path(), &run, &sources).unwrap());
 
         fs::remove_file(root.path().join("AGENTS.md")).unwrap();
         std::os::unix::fs::symlink("/etc/passwd", root.path().join("AGENTS.md")).unwrap();
@@ -348,10 +339,10 @@ mod tests {
             "changed instructions\n",
         )
         .unwrap();
-        assert!(current(root.path(), run.path(), &sources).unwrap());
+        assert!(current(root.path(), &run, &sources).unwrap());
 
         fs::write(root.path().join("input.rs"), "changed source\n").unwrap();
-        assert!(!current(root.path(), run.path(), &sources).unwrap());
+        assert!(!current(root.path(), &run, &sources).unwrap());
     }
 
     #[test]

@@ -423,7 +423,10 @@ counted. Pins live in the store's `pins.json`. Pruning with `--apply`, and the
 automatic rule, also delete the observer builds in the store's `observers/`
 that no remaining run names and that were stored more than an hour ago; a
 starting run stores its build before its manifest names it. Run verification
-requires every build there to hash to its name. They also delete the firmware
+requires every build there to hash to its name. They delete the source
+objects in the store's `sources/` that no remaining run's snapshot manifest
+names and that were stored or reused more than a day ago, which leaves a
+capture time to reach its run. They also delete the firmware
 objects of this checkout's and every registered checkout's
 `target/hil/<target>/objects/` that no run links to any more: a run's
 firmware is a hard link to its object, so an object with a single link serves

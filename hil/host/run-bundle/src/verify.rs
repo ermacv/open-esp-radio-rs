@@ -763,15 +763,13 @@ fn validate_snapshot_materials(run: &Path, provenance: &BuildProvenance) -> Resu
     if snapshot_sources == 0 && materials.is_empty() {
         return Ok(());
     }
-    if snapshot_sources != provenance.sources.len() || materials.len() != 3 {
+    if snapshot_sources != provenance.sources.len()
+        || materials.len() != crate::build::SNAPSHOT_MATERIALS.len()
+    {
         return Err("incomplete source snapshot binding".into());
     }
     let mut directory = None;
-    for (name, filename) in [
-        ("source-snapshot-metadata", "snapshot.json"),
-        ("source-snapshot-manifest", "manifest.json"),
-        ("source-snapshot-archive", "sources.tar"),
-    ] {
+    for (name, filename) in crate::build::SNAPSHOT_MATERIALS {
         let file = materials
             .iter()
             .find(|f| f.name == name)
@@ -793,7 +791,10 @@ fn validate_snapshot_materials(run: &Path, provenance: &BuildProvenance) -> Resu
             return Err("source snapshot materials must share one directory".into());
         }
     }
-    let frozen = oer_hil_source_snapshot::FrozenSources::open(&run.join(directory.unwrap()))?;
+    let frozen = oer_hil_source_snapshot::FrozenSources::open(
+        &run.join(directory.unwrap()),
+        &oer_hil_schema::snapshot::objects_of_run(run)?,
+    )?;
     if frozen.sources().len() != provenance.sources.len() {
         return Err("source snapshot roles disagree with provenance".into());
     }

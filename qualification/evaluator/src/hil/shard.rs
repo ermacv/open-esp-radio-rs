@@ -67,32 +67,36 @@ fn digest(root: &Path, path: &Path) -> Result<String> {
     }
 }
 
-/// The repository files a run's source snapshot archived, with their bytes.
+/// The repository files a run's source snapshot captured, with their bytes.
 struct Snapshot(BTreeMap<PathBuf, Vec<u8>>);
 
 impl Snapshot {
-    /// The snapshot `run` archived; `None` for a bundle recorded before
-    /// source snapshots.
+    /// The snapshot `run` captured, its files read from the store's source
+    /// objects, each checked against its digest; `None` for a bundle recorded
+    /// before source snapshots.
     fn load(run: &Path) -> Result<Option<Self>> {
-        let archive = run.join("source/snapshot/sources.tar");
-        if !archive.is_file() {
+        let manifest = run.join("source/snapshot/manifest.json");
+        if !manifest.is_file() {
             return Ok(None);
         }
+        let manifest: oer_hil_schema::snapshot::Manifest = read_json(&manifest)?;
+        let objects = oer_hil_schema::snapshot::objects_of_run(run)?;
         let mut files = BTreeMap::new();
-        let mut archive = tar::Archive::new(fs::File::open(&archive)?);
-        for entry in archive.entries()? {
-            let mut entry = entry?;
-            if !entry.header().entry_type().is_file() {
-                continue;
+        for source in manifest.sources.iter().filter(|s| s.name == "repository") {
+            for file in &source.files {
+                let stored = oer_hil_schema::snapshot::object(&objects, &file.sha256);
+                let bytes = fs::read(&stored).map_err(|error| {
+                    format!("source object {} is missing: {error}", stored.display())
+                })?;
+                if oer_durable::sha256_bytes(&bytes) != file.sha256 {
+                    return Err(format!(
+                        "source object {} does not hash to its name",
+                        stored.display()
+                    )
+                    .into());
+                }
+                files.insert(file.path.clone(), bytes);
             }
-            let path = entry.path()?.into_owned();
-            let Ok(relative) = path.strip_prefix("repository") else {
-                continue;
-            };
-            let relative = relative.to_owned();
-            let mut bytes = Vec::new();
-            std::io::Read::read_to_end(&mut entry, &mut bytes)?;
-            files.insert(relative, bytes);
         }
         Ok(Some(Self(files)))
     }

@@ -1104,6 +1104,7 @@ fn start_run(
     if let Some(snapshot) = invocation.snapshot {
         session.bind_source_snapshot(
             snapshot.directory(),
+            &oer_hil_image::source_objects()?,
             &oer_hil_image::frozen::build_slots(lab.chip())?,
         )?;
     } else if matches!(firmware, Some(PlannedFirmware::BuildCurrent)) {

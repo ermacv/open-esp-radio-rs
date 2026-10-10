@@ -422,22 +422,29 @@ pub fn archived_file_material(
     }
 }
 
-/// Archive the snapshot in `directory` into the bundle at `output`, with its
-/// objects in the store below `target`, and open the archived copy in a
-/// free build workspace of `build_slots`.
+/// The build file materials a source snapshot archives into a run: its
+/// record and its manifest, by material name and file name.
+pub const SNAPSHOT_MATERIALS: [(&str, &str); 2] = [
+    ("source-snapshot-metadata", "snapshot.json"),
+    ("source-snapshot-manifest", "manifest.json"),
+];
+
+/// Archive the snapshot in `directory` (its record and manifest) into the
+/// bundle at `output`, content-addressed in the object store below `target`,
+/// and open the archived copy, its files read from the source objects in
+/// `objects`, in a free build workspace of `build_slots`.
 pub fn archive_snapshot(
     directory: &Path,
+    objects: &Path,
     output: &Path,
     target: &Path,
     build_slots: &Path,
 ) -> Result<(FrozenSources, Vec<SourceMaterial>, Vec<BuildFileMaterial>)> {
     let destination = output.join("source/snapshot");
     let mut files: Vec<BuildFileMaterial> = Vec::new();
-    for (name, filename) in [
-        ("source-snapshot-metadata", "snapshot.json"),
-        ("source-snapshot-manifest", "manifest.json"),
-        ("source-snapshot-archive", "sources.tar"),
-    ] {
+    // The files themselves are objects in `objects`, which the manifest
+    // names by digest; only the manifest and its record are archived.
+    for (name, filename) in SNAPSHOT_MATERIALS {
         let relative = PathBuf::from("source/snapshot").join(filename);
         let archived =
             archive_content_addressed(&directory.join(filename), &output.join(&relative), target)?;
@@ -450,7 +457,7 @@ pub fn archive_snapshot(
     }
     // A persistent host build slot keeps unchanged sources, so Cargo
     // rebuilds only the packages whose sources changed on each run.
-    let frozen = FrozenSources::open_in_free_workspace(&destination, build_slots)?;
+    let frozen = FrozenSources::open_in_free_workspace(&destination, objects, build_slots)?;
     let sources = frozen
         .sources()
         .iter()

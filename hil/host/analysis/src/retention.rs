@@ -142,6 +142,9 @@ pub struct Pruned {
     pub total: usize,
     /// How many observer builds no kept run names were deleted.
     pub observers: usize,
+    /// How many source objects no kept run names were deleted, and their
+    /// bytes.
+    pub sources: (usize, u64),
     /// The deleted runs this build cannot read, with the bytes only they
     /// held: those of an older schema, and with `unreadable` those of the
     /// current one.
@@ -309,6 +312,7 @@ pub fn prune(
             fs::remove_dir_all(&run.directory)?;
         }
         pruned.observers = crate::runs::collect_observers(store)?;
+        pruned.sources = crate::runs::collect_sources(store)?;
     }
     Ok(pruned)
 }

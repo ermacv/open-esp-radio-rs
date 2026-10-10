@@ -9,8 +9,12 @@
 //! untracked file it archived and why. This is a source
 //! snapshot, not a hermetic build or a qualification decision.
 //!
-//! Image builds read a snapshot through [`FrozenSources`]; run evidence
-//! records it and verification re-derives each source's [`identity`].
+//! A snapshot directory holds its manifest and record; each file's bytes are
+//! an object named by their SHA-256 in an objects directory shared by every
+//! snapshot and run (the run store's `sources`), so an unchanged file is
+//! stored once. Image builds read a snapshot through [`FrozenSources`]; run
+//! evidence records it and verification re-derives each source's
+//! [`identity`].
 
 use oer_durable::{Result, atomic_json};
 use serde::{Deserialize, Serialize};
@@ -23,7 +27,8 @@ use std::{
 
 pub use oer_hil_schema::snapshot::SourceInput;
 use oer_hil_schema::snapshot::{
-    FileInput, MANIFEST_SCHEMA, Manifest, UntrackedInput, UntrackedReason, is_agent_guidance,
+    FileInput, MANIFEST_SCHEMA, Manifest, SNAPSHOT_SCHEMA, UntrackedInput, UntrackedReason,
+    is_agent_guidance, object,
 };
 
 /// Repository directories of the HIL host packages and scenarios, whose
@@ -66,7 +71,6 @@ pub struct Snapshot {
     schema: u16,
     snapshot_id: String,
     directory: PathBuf,
-    archive_sha256: String,
     files: usize,
 }
 
@@ -80,9 +84,9 @@ impl Snapshot {
         &self.snapshot_id
     }
 
-    /// The snapshot captured earlier into `directory`, whose archive and
-    /// manifest are verified before they are used.
-    pub fn load(directory: &Path) -> Result<Self> {
+    /// The snapshot captured earlier into `directory`, whose manifest and
+    /// every file in `objects` are verified before they are used.
+    pub fn load(directory: &Path, objects: &Path) -> Result<Self> {
         let directory = directory.canonicalize()?;
         let snapshot: Self = serde_json::from_slice(&fs::read(directory.join("snapshot.json"))?)?;
         if snapshot.directory.canonicalize()? != directory {
@@ -92,7 +96,7 @@ impl Snapshot {
             )
             .into());
         }
-        FrozenSources::open(&directory)?;
+        FrozenSources::open(&directory, objects)?;
         Ok(snapshot)
     }
 }
@@ -138,25 +142,27 @@ impl Checkout {
 const WORKSPACE_SLOTS: usize = 3;
 
 impl FrozenSources {
-    pub fn open(directory: &Path) -> Result<Self> {
+    /// Materialize the snapshot in `directory`, its files read from
+    /// `objects`, into a fresh temporary checkout.
+    pub fn open(directory: &Path, objects: &Path) -> Result<Self> {
         let checkout = Checkout::Temporary(
             tempfile::Builder::new()
                 .prefix("oer-source-build-")
                 .tempdir()?,
         );
-        Self::materialize(directory, checkout)
+        Self::materialize(directory, objects, checkout)
     }
 
     /// Materialize into `workspace` once no other build holds it. The
     /// snapshot is verified in a staging directory; the workspace then keeps
     /// every file whose bytes and mode are unchanged, receives the rest and
     /// loses anything the snapshot does not contain.
-    pub fn open_in_workspace(directory: &Path, workspace: &Path) -> Result<Self> {
+    pub fn open_in_workspace(directory: &Path, objects: &Path, workspace: &Path) -> Result<Self> {
         let lock = oer_process::lock::FileLock::acquire(
             &Self::workspace_lock(workspace)?,
             oer_process::lock::Mode::Exclusive,
         )?;
-        Self::open_locked(directory, workspace, lock)
+        Self::open_locked(directory, objects, workspace, lock)
     }
 
     /// Materialize into the first free slot of the build workspaces
@@ -164,7 +170,7 @@ impl FrozenSources {
     /// an unchanged source file keeps its bytes and modification time and
     /// Cargo rebuilds only the packages whose sources changed. A cold build in
     /// a temporary directory takes longer than waiting for a slot.
-    pub fn open_in_free_workspace(directory: &Path, base: &Path) -> Result<Self> {
+    pub fn open_in_free_workspace(directory: &Path, objects: &Path, base: &Path) -> Result<Self> {
         let name = base
             .file_name()
             .ok_or("source build workspace has no name")?
@@ -189,7 +195,7 @@ impl FrozenSources {
             .iter()
             .position(|path| path == lock.path())
             .ok_or("a source build slot lock outside the slots")?;
-        Self::open_locked(directory, &workspaces[slot], lock)
+        Self::open_locked(directory, objects, &workspaces[slot], lock)
     }
 
     /// The lock file of the build workspace `workspace`.
@@ -202,6 +208,7 @@ impl FrozenSources {
 
     fn open_locked(
         directory: &Path,
+        objects: &Path,
         workspace: &Path,
         lock: oer_process::lock::FileLock,
     ) -> Result<Self> {
@@ -210,7 +217,7 @@ impl FrozenSources {
             fs::remove_dir_all(&staging)?;
         }
         fs::create_dir(&staging)?;
-        let (snapshot, manifest) = materialize::materialize(directory, &staging)?;
+        let (snapshot, manifest) = materialize::materialize(directory, objects, &staging)?;
         if !fs::symlink_metadata(workspace).is_ok_and(|metadata| metadata.is_dir()) {
             if fs::symlink_metadata(workspace).is_ok() {
                 fs::remove_file(workspace)?;
@@ -231,8 +238,8 @@ impl FrozenSources {
         Ok(sources)
     }
 
-    fn materialize(directory: &Path, checkout: Checkout) -> Result<Self> {
-        let (snapshot, manifest) = materialize::materialize(directory, checkout.path())?;
+    fn materialize(directory: &Path, objects: &Path, checkout: Checkout) -> Result<Self> {
+        let (snapshot, manifest) = materialize::materialize(directory, objects, checkout.path())?;
         Ok(Self {
             checkout,
             snapshot,
@@ -364,6 +371,7 @@ pub fn capture(
     include: &[String],
     include_untracked: bool,
     store: &Path,
+    objects: &Path,
 ) -> Result<Snapshot> {
     let overrides = Dependency::ALL
         .into_iter()
@@ -371,7 +379,7 @@ pub fn capture(
             std::env::var_os(dependency.root_env()).map(|path| (dependency, PathBuf::from(path)))
         })
         .collect::<Vec<_>>();
-    capture_with_overrides(root, include, include_untracked, &overrides, store)
+    capture_with_overrides(root, include, include_untracked, &overrides, store, objects)
 }
 
 /// [`capture`] with the local dependency checkouts named by `overrides`
@@ -382,6 +390,7 @@ pub fn capture_with_overrides(
     include_untracked: bool,
     overrides: &[(Dependency, PathBuf)],
     store: &Path,
+    objects: &Path,
 ) -> Result<Snapshot> {
     let scopes = if include_untracked {
         untracked_scopes(image_packages(root)?)
@@ -392,7 +401,7 @@ pub fn capture_with_overrides(
     for (dependency, path) in overrides {
         roots.push((dependency.id().into(), path.canonicalize()?));
     }
-    capture_roots(&roots, include, &scopes, store)
+    capture_roots(&roots, include, &scopes, store, objects)
 }
 
 /// The repository directories whose untracked files `--include-untracked`
@@ -498,9 +507,10 @@ fn capture_roots(
     include: &[String],
     scopes: &[(PathBuf, UntrackedReason)],
     output: &Path,
+    objects: &Path,
 ) -> Result<Snapshot> {
     until_unchanged(CAPTURE_ATTEMPTS, CAPTURE_RETRY_PAUSE, || {
-        capture_roots_once(roots, include, scopes, output)
+        capture_roots_once(roots, include, scopes, output, objects)
     })
 }
 
@@ -530,6 +540,7 @@ fn capture_roots_once(
     include: &[String],
     scopes: &[(PathBuf, UntrackedReason)],
     output: &Path,
+    objects: &Path,
 ) -> Result<Snapshot> {
     let selections = roots
         .iter()
@@ -593,28 +604,12 @@ fn capture_roots_once(
     let staging = tempfile::Builder::new()
         .prefix(".capture-")
         .tempdir_in(output)?;
-    let archive_path = staging.path().join("sources.tar");
-    let mut archive = tar::Builder::new(fs::File::create(&archive_path)?);
     let mut sources = Vec::new();
     for selection in &selections {
         sources.push(read_source(selection, |file, bytes| {
-            let mut header = tar::Header::new_gnu();
-            header.set_size(file.size_bytes);
-            header.set_mode(file.mode);
-            header.set_uid(0);
-            header.set_gid(0);
-            header.set_mtime(0);
-            header.set_cksum();
-            archive.append_data(
-                &mut header,
-                Path::new(&selection.name).join(&file.path),
-                bytes,
-            )?;
-            Ok(())
+            store_object(objects, &file.sha256, bytes)
         })?);
     }
-    archive.finish()?;
-    archive.into_inner()?.sync_all()?;
     // Re-read bytes and membership, not just Git diff/stat caching. The archive
     // itself is authoritative; a changed capture is rejected, never relabelled.
     for (selection, captured) in selections.iter().zip(&sources) {
@@ -639,13 +634,11 @@ fn capture_roots_once(
         sources,
     };
     let snapshot_id = digest(&serde_json::to_vec(&manifest)?);
-    let archive_sha256 = oer_durable::sha256_file(&archive_path)?;
     atomic_json(&staging.path().join("manifest.json"), &manifest)?;
     let snapshot = Snapshot {
-        schema: 1,
+        schema: SNAPSHOT_SCHEMA,
         directory: output.join(&snapshot_id),
         snapshot_id,
-        archive_sha256,
         files: manifest.sources.iter().map(|s| s.files.len()).sum(),
     };
     atomic_json(&staging.path().join("snapshot.json"), &snapshot)?;
@@ -654,8 +647,6 @@ fn capture_roots_once(
             != fs::read(staging.path().join("manifest.json"))?
             || fs::read(snapshot.directory.join("snapshot.json"))?
                 != fs::read(staging.path().join("snapshot.json"))?
-            || oer_durable::sha256_file(&snapshot.directory.join("sources.tar"))?
-                != snapshot.archive_sha256
         {
             return Err("existing source snapshot has conflicting or corrupted content".into());
         }
@@ -738,11 +729,31 @@ fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+/// Store `bytes`, whose SHA-256 is `sha256`, as an object in `objects`. An
+/// object already there is kept when its bytes hash to its name, and its
+/// modification time becomes now, so collection spares an object a capture
+/// is about to name; one that does not is replaced.
+fn store_object(objects: &Path, sha256: &str, bytes: &[u8]) -> Result<()> {
+    let path = object(objects, sha256);
+    if oer_durable::sha256_file(&path).is_ok_and(|stored| stored == sha256) {
+        fs::File::options()
+            .append(true)
+            .open(&path)?
+            .set_modified(std::time::SystemTime::now())?;
+        return Ok(());
+    }
+    fs::create_dir_all(path.parent().ok_or("source object has no directory")?)?;
+    // Concurrent captures of one digest write the same bytes; each renames
+    // its own temporary file into place.
+    oer_durable::atomic_write(&path, bytes)?;
+    Ok(())
+}
+
 // Snapshot fixtures also serve the runner's cross-package tests.
 #[cfg(any(test, feature = "test-support"))]
 mod tests;
 #[cfg(any(test, feature = "test-support"))]
-pub use tests::test_snapshot;
+pub use tests::{test_snapshot, test_snapshot_into};
 
 mod materialize;
 #[cfg(test)]
@@ -756,6 +767,24 @@ pub fn test_capture(root: &Path) -> Snapshot {
         &[],
         &[],
         &root.join("target/snapshots"),
+        &test_objects(root),
     )
     .unwrap()
+}
+
+/// The objects directory of [`test_capture`]'s snapshots of `root`.
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_objects(root: &Path) -> PathBuf {
+    root.join("target/snapshots/sources")
+}
+
+/// The objects directory a test snapshot's files are in: `sources` beside
+/// the snapshot's directory.
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_objects_of(snapshot: &Snapshot) -> PathBuf {
+    snapshot
+        .directory()
+        .parent()
+        .expect("a snapshot directory has a parent")
+        .join("sources")
 }

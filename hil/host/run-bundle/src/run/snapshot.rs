@@ -3,9 +3,15 @@
 use super::*;
 
 impl RunSession {
-    /// Bind the snapshot in `directory`, archived into this run and checked
-    /// out in a free build workspace of `build_slots`.
-    pub fn bind_source_snapshot(&mut self, directory: &Path, build_slots: &Path) -> Result<()> {
+    /// Bind the snapshot in `directory`, whose files are in `objects`,
+    /// archived into this run and checked out in a free build workspace of
+    /// `build_slots`.
+    pub fn bind_source_snapshot(
+        &mut self,
+        directory: &Path,
+        objects: &Path,
+        build_slots: &Path,
+    ) -> Result<()> {
         if self.frozen_sources.is_some()
             || !self.manifest.firmware.is_empty()
             || self.directory.join("attempts").exists()
@@ -14,6 +20,7 @@ impl RunSession {
         }
         let (frozen, sources, files) = crate::build::archive_snapshot(
             directory,
+            objects,
             &self.directory,
             &self.target_directory,
             build_slots,

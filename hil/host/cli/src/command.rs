@@ -679,6 +679,13 @@ fn runs(
                         pruned.observers
                     );
                 }
+                if pruned.sources.0 > 0 {
+                    println!(
+                        "deleted {} source objects no kept run names ({} MiB)",
+                        pruned.sources.0,
+                        pruned.sources.1 >> 20
+                    );
+                }
                 let objects = collect_objects(ctx);
                 if objects.objects > 0 {
                     println!(

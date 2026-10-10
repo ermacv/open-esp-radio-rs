@@ -15,13 +15,14 @@
 //!
 //! The guardian runs only async-signal-safe system calls after the fork:
 //! no allocation, no locks, no Rust standard I/O. It therefore tracks a
-//! fixed number of groups. The owner mirrors the registered set, so a group
-//! the guardian could not track is refused before its record is sent, and
+//! fixed number of slots. The owner mirrors the guardian's slots, one per
+//! registration, so a group the guardian could not track is refused before
+//! its record is sent, and
 //! a guardian that could not start or no longer reads refuses every group:
 //! no group runs unguarded.
 
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     fs::File,
     io::Write,
     os::fd::FromRawFd,
@@ -35,11 +36,56 @@ pub(crate) const CAPACITY: usize = 256;
 const ADD: i32 = 1;
 const REMOVE: i32 = 2;
 
-/// The owner's end: the registration pipe and the groups the guardian
-/// tracks, in the order its records were sent.
-struct Registry {
-    pipe: File,
-    groups: HashSet<i32>,
+/// The owner's end: the registration pipe and a mirror of the guardian's
+/// slots.
+///
+/// A group id can be registered more than once: once its leader is reaped,
+/// the kernel may hand the same PID to the next owned child before the
+/// first child unregisters. Each registration holds one guardian slot, so
+/// the mirror counts registrations per group and every unregistration
+/// frees exactly one of them.
+struct Registry<W = File> {
+    pipe: W,
+    groups: HashMap<i32, usize>,
+    slots: usize,
+}
+
+impl<W: Write> Registry<W> {
+    fn new(pipe: W) -> Self {
+        Self {
+            pipe,
+            groups: HashMap::new(),
+            slots: 0,
+        }
+    }
+
+    fn register(&mut self, group: i32) -> crate::Result<()> {
+        if self.slots >= CAPACITY {
+            return Err(format!(
+                "the process guardian already tracks {CAPACITY} process groups, so group \
+                 {group} would outlive a lost owner"
+            )
+            .into());
+        }
+        send(&mut self.pipe, ADD, group)
+            .map_err(|error| format!("the process guardian does not read: {error}"))?;
+        *self.groups.entry(group).or_default() += 1;
+        self.slots += 1;
+        Ok(())
+    }
+
+    fn unregister(&mut self, group: i32) {
+        let Some(count) = self.groups.get_mut(&group) else {
+            return;
+        };
+        *count -= 1;
+        if *count == 0 {
+            self.groups.remove(&group);
+        }
+        self.slots -= 1;
+        // A guardian that no longer reads has nothing to forget.
+        let _ = send(&mut self.pipe, REMOVE, group);
+    }
 }
 
 fn registry() -> crate::Result<&'static Mutex<Registry>> {
@@ -47,12 +93,7 @@ fn registry() -> crate::Result<&'static Mutex<Registry>> {
     REGISTRY
         .get_or_init(|| {
             start()
-                .map(|pipe| {
-                    Mutex::new(Registry {
-                        pipe,
-                        groups: HashSet::new(),
-                    })
-                })
+                .map(|pipe| Mutex::new(Registry::new(pipe)))
                 .map_err(|error| format!("the process guardian did not start: {error}"))
         })
         .as_ref()
@@ -62,35 +103,23 @@ fn registry() -> crate::Result<&'static Mutex<Registry>> {
 /// Registers `group` with the guardian; an error when the guardian cannot
 /// take it, and the caller must not leave the group running.
 pub(crate) fn register(group: i32) -> crate::Result<()> {
-    let mut registry = registry()?
+    registry()?
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if registry.groups.len() >= CAPACITY {
-        return Err(format!(
-            "the process guardian already tracks {CAPACITY} process groups, so group \
-             {group} would outlive a lost owner"
-        )
-        .into());
-    }
-    send(&mut registry.pipe, ADD, group)
-        .map_err(|error| format!("the process guardian does not read: {error}"))?;
-    registry.groups.insert(group);
-    Ok(())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .register(group)
 }
 
-/// Unregisters `group` once the owner itself has terminated it.
+/// Unregisters one successful registration of `group` once the owner itself
+/// has terminated it.
 pub(crate) fn unregister(group: i32) {
     let Ok(registry) = registry() else { return };
-    let mut registry = registry
+    registry
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if registry.groups.remove(&group) {
-        // A guardian that no longer reads has nothing to forget.
-        let _ = send(&mut registry.pipe, REMOVE, group);
-    }
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unregister(group);
 }
 
-fn send(pipe: &mut File, operation: i32, group: i32) -> std::io::Result<()> {
+fn send(pipe: &mut impl Write, operation: i32, group: i32) -> std::io::Result<()> {
     let mut record = [0_u8; 8];
     record[..4].copy_from_slice(&operation.to_ne_bytes());
     record[4..].copy_from_slice(&group.to_ne_bytes());
@@ -203,5 +232,50 @@ fn guard(read: i32) -> ! {
             }
         }
         libc::_exit(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn records(pipe: &[u8]) -> Vec<(i32, i32)> {
+        pipe.chunks_exact(8)
+            .map(|record| {
+                let operation = i32::from_ne_bytes(record[..4].try_into().unwrap());
+                let group = i32::from_ne_bytes(record[4..].try_into().unwrap());
+                (operation, group)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_reused_group_id_holds_one_slot_per_registration() {
+        let mut registry = Registry::new(Vec::new());
+        registry.register(42).unwrap();
+        // The first child's leader was reaped and its PID handed to the next
+        // child before the first one unregistered.
+        registry.register(42).unwrap();
+        registry.unregister(42);
+        registry.unregister(42);
+        registry.unregister(42);
+        assert_eq!(
+            records(&registry.pipe),
+            [(ADD, 42), (ADD, 42), (REMOVE, 42), (REMOVE, 42)]
+        );
+        assert_eq!(registry.slots, 0);
+        assert!(registry.groups.is_empty());
+    }
+
+    #[test]
+    fn capacity_counts_registrations_of_a_reused_group_id() {
+        let mut registry = Registry::new(Vec::new());
+        for _ in 0..CAPACITY {
+            registry.register(42).unwrap();
+        }
+        assert!(registry.register(43).is_err());
+        registry.unregister(42);
+        registry.register(43).unwrap();
+        assert_eq!(records(&registry.pipe).len(), CAPACITY + 2);
     }
 }

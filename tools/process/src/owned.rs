@@ -23,6 +23,8 @@ pub struct Child {
     interruptible: bool,
     deadline: Option<Instant>,
     group: i32,
+    /// Whether the guardian holds a registration of `group` for this child.
+    guarded: bool,
     finished: bool,
     shutdown_grace: Duration,
 }
@@ -51,6 +53,7 @@ impl Child {
                 interruptible: !super::cancellation::in_cleanup(),
                 deadline: super::cancellation::cleanup_deadline(),
                 group,
+                guarded: registered.is_ok(),
                 finished: false,
                 shutdown_grace,
             };
@@ -157,7 +160,9 @@ impl Child {
                 std::thread::sleep(Duration::from_millis(10));
             }
             self.signal(libc::SIGKILL);
-            super::guardian::unregister(self.group);
+            if self.guarded {
+                super::guardian::unregister(self.group);
+            }
         }
         let _ = self.child.wait();
         self.finished = true;

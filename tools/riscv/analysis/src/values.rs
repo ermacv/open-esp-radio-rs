@@ -817,8 +817,15 @@ pub(super) fn analyze_with(
                 .iter()
                 .take_while(|e| e.from == node.offset)
                 .any(|e| e.relation == EdgeKind::Indirect);
+        // Only a jump without a link can be a known jump; its search is
+        // charged.
         let dispatch = unexpanded
-            || (input.image.is_none() && input.jumps.iter().any(|jump| jump.site == node.offset));
+            || (input.image.is_none()
+                && matches!(
+                    node.decoded.flow,
+                    InstructionFlow::Indirect { link: false, .. }
+                )
+                && super::known_jump(input.jumps, node.offset, control)?.is_some());
         if unexpanded {
             effects
                 .gap
@@ -1577,6 +1584,76 @@ mod tests {
             sink.0
                 .iter()
                 .any(|r| matches!(r, FunctionRecord::CallInputs { offset: 6, .. }))
+        );
+    }
+    #[test]
+    fn known_jump_searches_are_charged_and_only_at_jumps() {
+        struct Meter(u64);
+        impl RunControl for Meter {
+            fn checkpoint(&mut self, units: u64) -> Result<()> {
+                self.0 += units;
+                Ok(())
+            }
+        }
+        // `jalr zero, 0(a5)` alone, or a plain instruction, with known jumps
+        // at other sites the search visits and passes.
+        let work = |flow: InstructionFlow, jumps: &[KnownJump]| {
+            let nodes = [Node {
+                offset: 0,
+                decoded: DecodedOp {
+                    length: 2,
+                    text: String::new(),
+                    flow,
+                },
+                conflict: false,
+            }];
+            let input = FunctionInput {
+                image: None,
+                section: 1,
+                extent: CodeRange {
+                    start: 0,
+                    length: 2,
+                },
+                bytes: &[0, 0],
+                relocations: &PreparedReferences::empty(),
+                data_ranges: &[],
+                jumps,
+            };
+            let memory = WorkingMemory::new(1024 * 1024).unwrap();
+            let mut meter = Meter(0);
+            analyze_with(
+                &input,
+                &nodes,
+                &[],
+                &Isa(vec![SemanticOp::None]),
+                &memory,
+                &mut meter,
+                &mut Records::default(),
+                true,
+                None,
+            )
+            .unwrap();
+            meter.0
+        };
+        let elsewhere: Vec<_> = (1..=1000)
+            .map(|i| KnownJump {
+                site: 2 * i,
+                targets: Vec::new(),
+            })
+            .collect();
+        let jump = InstructionFlow::Indirect {
+            base: 15,
+            offset: 0,
+            link: false,
+        };
+        assert!(
+            work(jump, &elsewhere) >= work(jump, &[]) + 1000,
+            "each known jump the search visits is charged"
+        );
+        assert_eq!(
+            work(InstructionFlow::Next, &elsewhere),
+            work(InstructionFlow::Next, &[]),
+            "an instruction that is no jump searches nothing"
         );
     }
     #[test]

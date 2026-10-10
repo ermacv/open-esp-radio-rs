@@ -235,8 +235,9 @@ pub(super) fn load(root: &Path, directory: &Path, target: &str) -> Result<Vec<(S
 }
 
 /// The sources the observed builds read: the path packages of the firmware
-/// workspaces, the observer's manifest directories and the build files.
-pub(crate) fn tracked_sources(root: &Path, observers: &[&Value]) -> Result<Vec<PathBuf>> {
+/// workspaces, the manifest directories of the observers of `index`'s
+/// qualifying run observations and the build files.
+pub(crate) fn tracked_sources(root: &Path, index: &HilEvidenceIndex) -> Result<Vec<PathBuf>> {
     let mut paths = BTreeSet::new();
     let chips = super::chips::all(root)?;
     let model = oer_repo::Model::load(&oer_repo::Repo::load(root)?)?;
@@ -256,7 +257,7 @@ pub(crate) fn tracked_sources(root: &Path, observers: &[&Value]) -> Result<Vec<P
             paths.insert(PathBuf::from(&package.directory));
         }
     }
-    paths.extend(observer_directories(observers)?);
+    paths.extend(observer_directories(&observers(index))?);
     paths.extend(OBSERVER_FILES.iter().map(PathBuf::from));
     paths.extend(chips.into_iter().flat_map(|chip| chip.build_files));
     paths.remove(Path::new(""));
@@ -264,19 +265,54 @@ pub(crate) fn tracked_sources(root: &Path, observers: &[&Value]) -> Result<Vec<P
 }
 
 /// The manifest directories of the observers' builds.
-fn observer_directories(observers: &[&Value]) -> Result<BTreeSet<PathBuf>> {
+fn observer_directories(observers: &[&subject::ObserverReference]) -> Result<BTreeSet<PathBuf>> {
+    use std::{
+        collections::HashMap,
+        sync::{Mutex, OnceLock},
+    };
+    // A build is named by the digest of its bytes, so its directories are
+    // remembered by that name: each build is read once, not once per
+    // observation, and only the directories are kept.
+    type Directories = HashMap<(String, String), BTreeSet<PathBuf>>;
+    static DIRECTORIES: OnceLock<Mutex<Directories>> = OnceLock::new();
     let mut paths = BTreeSet::new();
     for observer in observers {
-        let manifests = observer["build"]["resolved"]["manifests"]
-            .as_object()
-            .ok_or("observer manifests missing")?;
-        for manifest in manifests.keys() {
-            let path = Path::new(manifest);
-            if !safe_relative(path) {
-                return Err("unsafe observer manifest path".into());
+        let identity = observer.identity();
+        let known = DIRECTORIES
+            .get_or_init(Default::default)
+            .lock()
+            .map_err(|_| "observer directory cache poisoned")?
+            .get(&identity)
+            .cloned();
+        let directories = match known {
+            Some(directories) => directories,
+            None => {
+                let directories = manifest_directories(&observer.proof()?)?;
+                DIRECTORIES
+                    .get_or_init(Default::default)
+                    .lock()
+                    .map_err(|_| "observer directory cache poisoned")?
+                    .insert(identity, directories.clone());
+                directories
             }
-            paths.insert(path.parent().map(Path::to_path_buf).unwrap_or_default());
+        };
+        paths.extend(directories);
+    }
+    Ok(paths)
+}
+
+/// The manifest directories of `proof`'s build.
+fn manifest_directories(proof: &Value) -> Result<BTreeSet<PathBuf>> {
+    let mut paths = BTreeSet::new();
+    let manifests = proof["build"]["resolved"]["manifests"]
+        .as_object()
+        .ok_or("observer manifests missing")?;
+    for manifest in manifests.keys() {
+        let path = Path::new(manifest);
+        if !safe_relative(path) {
+            return Err("unsafe observer manifest path".into());
         }
+        paths.insert(path.parent().map(Path::to_path_buf).unwrap_or_default());
     }
     Ok(paths)
 }
@@ -302,7 +338,7 @@ fn observation_sources(
     recorded_sources(
         run,
         &subject.firmware,
-        subject.observer.as_deref(),
+        subject.observer.as_ref(),
         &|provenance| image_packages(root, &provenance.parameters),
     )
 }
@@ -398,7 +434,7 @@ fn image_packages(root: &Path, parameters: &BuildParameters) -> Result<Option<BT
 fn recorded_sources(
     run: &Path,
     images: &[subject::FirmwareIdentity],
-    observer: Option<&Value>,
+    observer: Option<&subject::ObserverReference>,
     packages: &dyn Fn(&BuildProvenance) -> Result<Option<BTreeSet<PathBuf>>>,
 ) -> Result<Option<Vec<PathBuf>>> {
     if images.is_empty() {
@@ -482,6 +518,9 @@ pub(crate) fn distill(
     };
     fs::create_dir_all(root.join(directory))?;
     let mut recorded = vec![];
+    // The observer builds stored beside the shards so far: each is read and
+    // stored once, however many shards name it.
+    let mut stored = BTreeSet::new();
     for (scenario, observations) in &index.scenarios {
         let mut qualifying = Vec::new();
         for o in observations {
@@ -575,8 +614,10 @@ pub(crate) fn distill(
                 }
             },
         };
-        if let Some(observer) = &subject.observer {
-            observer_store::store(&root.join(directory), &observer["build"])
+        if let Some(observer) = &subject.observer
+            && stored.insert(observer.identity())
+        {
+            observer_store::store(&root.join(directory), &observer.proof()?["build"])
                 .map_err(|error| error.to_string())?;
         }
         let mut bytes = serde_json::to_vec_pretty(&shard)?;
@@ -762,13 +803,13 @@ fn collect_observers(directory: &Path) -> Result<()> {
 }
 
 /// Observer proofs of the qualifying run observations of `index`.
-pub(crate) fn observers(index: &HilEvidenceIndex) -> Vec<&Value> {
+fn observers(index: &HilEvidenceIndex) -> Vec<&subject::ObserverReference> {
     index
         .scenarios
         .values()
         .flatten()
         .filter(|o| !o.source_bound && o.exclusions.is_empty() && o.outcome == Outcome::Passed)
-        .filter_map(|o| o.subject.as_ref()?.observer.as_deref())
+        .filter_map(|o| o.subject.as_ref()?.observer.as_ref())
         .collect()
 }
 
@@ -854,9 +895,18 @@ mod tests {
                 ".cargo/config.toml"
             ]),
         );
-        let observer = json!({"build": {"resolved": {"manifests": {
+        let build = json!({"resolved": {"manifests": {
             "hil/host/runner/Cargo.toml": {}
-        }}}});
+        }}});
+        let observer = subject::ObserverReference::resolve(
+            json!({
+                "schema": observer_store::REFERENCED,
+                "executable_sha256": "aa".repeat(32),
+                "build_sha256": observer_store::store(&root, &build).unwrap(),
+            }),
+            &root,
+        )
+        .unwrap();
         let radio = |_: &BuildProvenance| Ok(Some(BTreeSet::from([PathBuf::from("crates/radio")])));
         let sources = recorded_sources(
             &run,

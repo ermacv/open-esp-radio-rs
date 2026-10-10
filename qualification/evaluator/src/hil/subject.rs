@@ -25,13 +25,9 @@ pub(super) struct FirmwareIdentity {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub(super) struct ObservationSubject {
-    /// The runner's observer proof with its build inline, shared between
-    /// observations of one observer: the build is several megabytes and most
-    /// runs share one. It is written as a reference to the build's digest;
-    /// a read reference is resolved against its observer store with
-    /// [`ObservationSubject::resolve_observer`].
-    #[serde(serialize_with = "observer_reference")]
-    pub(super) observer: Option<std::sync::Arc<serde_json::Value>>,
+    /// The runner's observer record, naming its build by digest; the build
+    /// is read only while a decision needs it.
+    pub(super) observer: Option<ObserverReference>,
     pub(super) repository: RepositoryProvenance,
     /// Images recorded in this completion boundary; no missing association is inferred.
     pub(super) firmware: Vec<FirmwareIdentity>,
@@ -40,78 +36,103 @@ pub(super) struct ObservationSubject {
     pub(super) source_snapshot_manifest: Option<FileIdentity>,
 }
 
-fn observer_reference<S: serde::Serializer>(
-    observer: &Option<std::sync::Arc<serde_json::Value>>,
-    serializer: S,
-) -> std::result::Result<S::Ok, S::Error> {
-    use oer_hil_run_bundle_format::observer::store::{EMBEDDED, REFERENCED};
-    match observer.as_deref() {
-        Some(record) if record["schema"] == EMBEDDED => serde_json::json!({
-            "schema": REFERENCED,
-            "executable_sha256": record["executable_sha256"],
-            "build_sha256": record["build_sha256"],
-        })
-        .serialize(serializer),
-        record => record.serialize(serializer),
+/// A stored observer record: a reference naming the observer's build by
+/// digest, and the store holding that build.
+///
+/// The build carries the observer's resolved Cargo graph unrolled into a
+/// tree, hundreds of megabytes of JSON and several times that once parsed,
+/// and the store keeps one per observer the runs ever used. An observation
+/// therefore holds only this reference: the build is checked to be present
+/// and to hash to its name when the reference is resolved, and parsed by
+/// [`Self::proof`] only while a decision needs it, never kept.
+#[derive(Clone, Debug)]
+pub(super) struct ObserverReference {
+    record: serde_json::Value,
+    store: PathBuf,
+}
+
+/// The identity is the record; the store is only where its build was found.
+impl PartialEq for ObserverReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.record == other.record
     }
 }
 
-/// One shared copy of each distinct observer proof, with its build inline.
-/// A stored record names its build by digest; the build must be present in
-/// `store` and hash to its name, else loading fails. It is read again only
-/// when its file changed since it was verified. A record embedding its build
-/// is not read.
-fn shared_observer(
-    record: &serde_json::Value,
-    store: &Path,
-) -> Result<std::sync::Arc<serde_json::Value>> {
-    use oer_hil_run_bundle_format::observer::store::{self as observer_store, REFERENCED};
-    use std::{
-        collections::HashMap,
-        sync::{Arc, Mutex, OnceLock},
-    };
-    type File = (PathBuf, u64, std::time::SystemTime);
-    type Key = (File, String, String);
-    static PROOFS: OnceLock<Mutex<HashMap<Key, Arc<serde_json::Value>>>> = OnceLock::new();
-    if record["schema"] != REFERENCED {
-        return Err(format!(
-            "HIL observer proof has schema {}; only references (schema {REFERENCED}) are read",
-            record["schema"]
-        )
-        .into());
+impl Eq for ObserverReference {}
+
+impl Serialize for ObserverReference {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        self.record.serialize(serializer)
     }
-    let digest = observer_store::build_digest(record).unwrap_or_default();
-    let path = observer_store::path(store, digest)
-        .map_err(|error| format!("HIL observer proof: {error}"))?;
-    let metadata = fs::metadata(&path).map_err(|error| {
-        format!(
-            "HIL observer proof: build {} is missing: {error}",
-            path.display()
-        )
-    })?;
-    let key = (
-        (path, metadata.len(), metadata.modified()?),
-        digest.to_owned(),
-        record["executable_sha256"].to_string(),
-    );
-    if let Some(shared) = PROOFS
-        .get_or_init(Default::default)
-        .lock()
-        .map_err(|_| "observer proof cache poisoned")?
-        .get(&key)
-    {
-        return Ok(shared.clone());
+}
+
+/// A read reference names no store yet: it is resolved against its own with
+/// [`ObservationSubject::resolve_observer`] before use.
+impl<'de> Deserialize<'de> for ObserverReference {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        Ok(Self {
+            record: serde_json::Value::deserialize(deserializer)?,
+            store: PathBuf::new(),
+        })
     }
-    let proof = Arc::new(
-        observer_store::attach(record, store)
-            .map_err(|error| format!("HIL observer proof: {error}"))?,
-    );
-    PROOFS
-        .get_or_init(Default::default)
-        .lock()
-        .map_err(|_| "observer proof cache poisoned")?
-        .insert(key, proof.clone());
-    Ok(proof)
+}
+
+impl ObserverReference {
+    /// The stored `record` whose build lives in `store`. The build must be
+    /// present there and hash to its name, else resolving fails.
+    pub(super) fn resolve(record: serde_json::Value, store: &Path) -> Result<Self> {
+        use oer_hil_run_bundle_format::observer::store::{self as observer_store, REFERENCED};
+        if record["schema"] != REFERENCED {
+            return Err(format!(
+                "HIL observer proof has schema {}; only references (schema {REFERENCED}) are read",
+                record["schema"]
+            )
+            .into());
+        }
+        let digest = observer_store::build_digest(&record).unwrap_or_default();
+        let path = observer_store::path(store, digest)
+            .map_err(|error| format!("HIL observer proof: {error}"))?;
+        let sha256 = crate::digests().sha256_file(&path).map_err(|error| {
+            format!(
+                "HIL observer proof: build {} is missing: {error}",
+                path.display()
+            )
+        })?;
+        if sha256 != digest {
+            return Err(format!(
+                "HIL observer proof: build {} does not hash to its name",
+                path.display()
+            )
+            .into());
+        }
+        Ok(Self {
+            record,
+            store: store.to_owned(),
+        })
+    }
+
+    /// The build and executable the record names, which identify the
+    /// observer.
+    pub(super) fn identity(&self) -> (String, String) {
+        (
+            self.record["build_sha256"].to_string(),
+            self.record["executable_sha256"].to_string(),
+        )
+    }
+
+    /// The record with its build inline, read from the store; the caller
+    /// holds it only while it needs it.
+    pub(super) fn proof(&self) -> Result<serde_json::Value> {
+        #[cfg(test)]
+        super::observer::work::count(|work| work.build_loads += 1);
+        oer_hil_run_bundle_format::observer::store::attach(&self.record, &self.store)
+            .map_err(|error| format!("HIL observer proof: {error}").into())
+    }
 }
 
 impl ObservationSubject {
@@ -122,7 +143,6 @@ impl ObservationSubject {
             &manifest.firmware,
             Some(scenario),
         )?;
-        subject.observer = manifest.observer().cloned().map(std::sync::Arc::new);
         // The store holding the run's referenced observer build is beside the
         // directory the run's directory resolves into.
         let store = fs::canonicalize(run)?
@@ -130,15 +150,18 @@ impl ObservationSubject {
             .and_then(Path::parent)
             .ok_or("HIL run directory has no observer store")?
             .to_owned();
-        subject.resolve_observer(&store)?;
+        subject.observer = manifest
+            .observer()
+            .map(|record| ObserverReference::resolve(record.clone(), &store))
+            .transpose()?;
         Ok(subject)
     }
 
-    /// Replace the observer record with the shared proof carrying its build,
-    /// reading a referenced build from `store`.
+    /// Resolve the observer reference against `store`, which must hold its
+    /// build.
     pub(super) fn resolve_observer(&mut self, store: &Path) -> Result<()> {
-        if let Some(record) = &self.observer {
-            self.observer = Some(shared_observer(record, store)?);
+        if let Some(observer) = &mut self.observer {
+            *observer = ObserverReference::resolve(observer.record.clone(), store)?;
         }
         Ok(())
     }

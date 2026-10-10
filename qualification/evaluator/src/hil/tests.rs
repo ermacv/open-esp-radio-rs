@@ -844,6 +844,111 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// The current observer's side of an assessment depends on the workload
+/// alone and a recorded build is shared by the runs that name it: however
+/// many runs a store holds, the current graph is projected once per
+/// workload, a workload's inputs are hashed once, and each recorded build
+/// is read and projected once per workload.
+#[test]
+fn observer_assessment_work_does_not_grow_with_the_runs() {
+    let root = std::env::temp_dir().join(format!(
+        "open-radio-qualification-hil-observer-work-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        fs::remove_dir_all(&root).unwrap();
+    }
+    let runs = ["run-1", "run-2", "run-3"];
+    for (number, run_id) in runs.into_iter().enumerate() {
+        let run = root.join("runs").join(run_id);
+        fs::create_dir_all(&run).unwrap();
+        fs::write(
+            run.join("manifest.json"),
+            serde_json::to_vec_pretty(&json!({
+                "schema": 2, "run_id": run_id, "target": "chip-a", "state": "completed",
+                "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
+                "repository": {"commit": "abc123", "dirty": false, "workspace_sha256": "00".repeat(32)}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            run.join("suite.json"),
+            serde_json::to_vec_pretty(&json!({
+                "schema": 2, "run_id": run_id, "target": "chip-a", "outcome": "passed",
+                "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
+                "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0,
+                    "blocked": 0, "interrupted": 0},
+                "scenarios": [{
+                    "schema": 2, "scenario": "station-reconnect", "outcome": "passed",
+                    "required_repetitions": 1,
+                    "repetitions": [{"schema": 2, "repetition": 1, "outcome": "passed", "failure": null}],
+                    "failure": null,
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        // Every run names the one observer build the first stores.
+        if number == 0 {
+            add_current_build(&root, &run);
+        } else {
+            let first: serde_json::Value =
+                read_json(&root.join("runs").join(runs[0]).join("manifest.json")).unwrap();
+            let mut manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
+            manifest["runner"] = first["runner"].clone();
+            manifest["firmware"] = json!([{
+                "build_id": "ab".repeat(32),
+                "build_provenance_path": "build-provenance.json",
+            }]);
+            fs::write(
+                run.join("manifest.json"),
+                serde_json::to_vec(&manifest).unwrap(),
+            )
+            .unwrap();
+            fs::copy(
+                root.join("runs")
+                    .join(runs[0])
+                    .join("build-provenance.json"),
+                run.join("build-provenance.json"),
+            )
+            .unwrap();
+        }
+        seal(&run);
+    }
+    let registry = read_json(&root.join("hil/schema/observer-inputs.json")).unwrap();
+    let workloads = observer::build_inputs::workloads(&registry).unwrap().len() + 1;
+    let repository = RepositoryState {
+        commit: "abc123".to_owned(),
+        dirty: false,
+    };
+    observer::work::take();
+    let index = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "chip-a",
+        &repository,
+    )
+    .unwrap();
+    assert_eq!(
+        index.summary().qualifying,
+        runs.len(),
+        "{:?}",
+        index.summary()
+    );
+    assert_eq!(
+        observer::work::take(),
+        observer::work::Work {
+            current_projections: workloads,
+            input_hashes: 1,
+            build_loads: 1,
+            recorded_projections: 1,
+        }
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// A run's manifest names its observer build by digest: a manifest that
 /// embeds the build, a missing build or one that does not hash to its name
 /// fails closed.

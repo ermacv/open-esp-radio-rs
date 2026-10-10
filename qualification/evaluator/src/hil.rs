@@ -518,6 +518,10 @@ impl HilEvidenceIndex {
         }
         entries.sort_by_key(std::fs::DirEntry::file_name);
         let mut scenarios = BTreeMap::<String, Vec<ScenarioEvidence>>::new();
+        // Observations awaiting their observer's assessment, by the observer
+        // they name, and each evidence run's observations.
+        let mut observed = BTreeMap::<(String, String), Vec<(String, usize)>>::new();
+        let mut runs_observations = Vec::new();
         let mut summary = HilEvidenceSummary {
             observer_configuration_problem: current_observer.problem.clone(),
             evaluator_dirty: repository.dirty,
@@ -572,7 +576,7 @@ impl HilEvidenceIndex {
                 }
             };
             let mut current_producer = false;
-            let mut qualifying = false;
+            let mut observations_of_run = Vec::new();
             // Counters describe enclosing invocations, not individual seals.
             if bundle.manifest().state == RunState::Completed {
                 summary.completed += 1;
@@ -702,31 +706,97 @@ impl HilEvidenceIndex {
                             source_bound: false,
                             stale_snapshot,
                         });
-                    let observation = scenarios.get_mut(&scenario_id).unwrap().last_mut().unwrap();
+                    let observations = scenarios.get_mut(&scenario_id).unwrap();
+                    let position = (scenario_id, observations.len() - 1);
+                    let observation = observations.last_mut().unwrap();
                     if !current_observer.available() {
                         observation
                             .exclusions
                             .push(decision::Exclusion::CurrentObserverConfigurationUnavailable);
+                    } else if let Some(reference) = observation
+                        .subject
+                        .as_ref()
+                        .and_then(|subject| subject.observer.as_ref())
+                    {
+                        observed
+                            .entry(reference.identity())
+                            .or_default()
+                            .push(position.clone());
                     } else {
-                        match observer::assess(root, &current_observer, observation, None)? {
-                            observer::Compatibility::Compatible => {}
-                            observer::Compatibility::GraphNotProjectable => observation
-                                .exclusions
-                                .push(decision::Exclusion::ObserverGraphNotProjectable),
-                            observer::Compatibility::IdentityDiffers => observation
-                                .exclusions
-                                .push(decision::Exclusion::ObserverIdentityNotEstablished),
-                        }
+                        observation
+                            .exclusions
+                            .push(decision::Exclusion::ObserverIdentityNotEstablished);
                     }
-                    if observation.exclusions.is_empty() && observation.outcome == Outcome::Passed {
-                        qualifying = true;
-                    }
+                    observations_of_run.push(position);
                 }
             }
             summary.current_source_producer += usize::from(current_producer);
-            summary.qualifying += usize::from(qualifying);
+            runs_observations.push(observations_of_run);
         }
+        Self::assess_observers(root, &current_observer, &mut scenarios, observed)?;
+        summary.qualifying = runs_observations
+            .iter()
+            .filter(|observations| {
+                observations.iter().any(|(scenario, index)| {
+                    let observation = &scenarios[scenario][*index];
+                    observation.exclusions.is_empty() && observation.outcome == Outcome::Passed
+                })
+            })
+            .count();
         Ok(Self { scenarios, summary })
+    }
+
+    /// Exclude every observation in `observed` whose observer is not the
+    /// current one. `observed` groups the observations, by scenario and
+    /// position, by the observer build and executable they name: each build
+    /// is read once and dropped before the next, and each of its workloads
+    /// is assessed once, so the memory and work do not grow with the runs
+    /// that share an observer.
+    fn assess_observers(
+        root: &Path,
+        current: &observer::Current,
+        scenarios: &mut BTreeMap<String, Vec<ScenarioEvidence>>,
+        observed: BTreeMap<(String, String), Vec<(String, usize)>>,
+    ) -> Result<()> {
+        for positions in observed.into_values() {
+            let (scenario, index) = &positions[0];
+            let proof = scenarios[scenario][*index]
+                .subject
+                .as_ref()
+                .and_then(|subject| subject.observer.as_ref())
+                .ok_or("grouped observation names no observer")?
+                .proof()?;
+            let identified = observer::identified(&proof)?;
+            let mut verdicts = BTreeMap::new();
+            for (scenario, index) in positions {
+                let observation = &mut scenarios
+                    .get_mut(&scenario)
+                    .ok_or("grouped observation missing")?[index];
+                let compatibility = if identified {
+                    let workload = observer::workload(observation)?;
+                    match verdicts.get(&workload) {
+                        Some(compatibility) => *compatibility,
+                        None => {
+                            let compatibility = current.assess(root, &proof, &workload)?;
+                            verdicts.insert(workload, compatibility);
+                            compatibility
+                        }
+                    }
+                } else {
+                    observer::Compatibility::IdentityDiffers
+                };
+                match compatibility {
+                    observer::Compatibility::Compatible => {}
+                    observer::Compatibility::GraphNotProjectable => observation
+                        .exclusions
+                        .push(decision::Exclusion::ObserverGraphNotProjectable),
+                    observer::Compatibility::IdentityDiffers => observation
+                        .exclusions
+                        .push(decision::Exclusion::ObserverIdentityNotEstablished),
+                }
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn evidence_for(

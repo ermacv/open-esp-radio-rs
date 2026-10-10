@@ -445,8 +445,20 @@ pub(crate) fn jump_tables<'r, 'm>(
         }
     }
     let inside = |target: u64| target >= extent.start && target < extent.start + extent.length;
-    let mut jumps = Vec::new();
+    // One table per dispatch site at most, and the second pass's jump per
+    // table: both are reserved before the list is allocated at its exact
+    // capacity, so it never grows.
     let mut reserved = AdmittedVec::new(memory);
+    let per_site = (std::mem::size_of::<JumpTable>()
+        + std::mem::size_of::<oer_riscv_analysis::KnownJump>()) as u64;
+    reserved.push(
+        memory.reserve(sites.len() as u64 * per_site, c.position())?,
+        c.position(),
+    )?;
+    let mut jumps = Vec::new();
+    jumps
+        .try_reserve_exact(sites.len())
+        .map_err(|_| Error::new(ErrorCode::ResourceLimited, "jump table allocation refused"))?;
     for &(site, base) in sites.iter() {
         let mut block = None;
         for &(start, end) in blocks.iter() {
@@ -499,23 +511,26 @@ pub(crate) fn jump_tables<'r, 'm>(
         };
         c.checkpoint(u64::from(entries))?;
         // The entries, and the second pass's sorted copy of them, are
-        // reserved before they are allocated.
-        let bytes = 2 * u64::from(entries) * std::mem::size_of::<u64>() as u64
-            + std::mem::size_of::<JumpTable>() as u64;
+        // reserved before they are allocated, each at its exact capacity.
+        let bytes = 2 * u64::from(entries) * std::mem::size_of::<u64>() as u64;
         reserved.push(memory.reserve(bytes, c.position())?, c.position())?;
-        let targets: Option<Vec<u64>> = (0..u64::from(entries))
-            .map(|i| match facts.word(table_section, base_offset + 4 * i) {
+        let mut targets = Vec::new();
+        targets
+            .try_reserve_exact(entries as usize)
+            .map_err(|_| Error::new(ErrorCode::ResourceLimited, "jump table allocation refused"))?;
+        for i in 0..u64::from(entries) {
+            match facts.word(table_section, base_offset + 4 * i) {
                 Some((target_section, target)) if target_section == section && inside(target) => {
-                    Some(target)
+                    targets.push(target)
                 }
-                _ => None,
-            })
-            .collect();
-        if let Some(entries) = targets {
+                _ => break,
+            }
+        }
+        if targets.len() == entries as usize {
             jumps.push(JumpTable {
                 site,
                 first_case: first_case(index, &expressions),
-                entries,
+                entries: targets,
             });
         }
     }

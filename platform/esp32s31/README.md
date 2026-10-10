@@ -134,6 +134,28 @@ reads what the bootloader leaves and what esp-hal relies on:
 - Disabling the TIMG watchdog through esp-hal holds: no reset arrives past
   the armed timeout.
 
+## Brownout detector policy
+
+The ESP-IDF bootloader leaves its analog mode-1 brownout reset armed. The
+bootstrap replaces it once, right after `esp_hal::init` and before the
+application runs, with ESP-IDF's application policy, as `esp_brownout_init`
+does at startup: mode 0 at level 7 (about 2.4 V), with the hardware reset,
+flash power-down and RF power-down, and no brownout interrupt (the ESP32-S31
+has no `ESP_BROWNOUT_USE_INTR`). A brownout still resets the chip; the
+policy sets the threshold and powers the flash and RF down before the reset.
+
+The bootstrap then reads the detector's mode, actions and waits back and
+prints `OER_BOOT bootstrap=BROWNOUT`, or stops with
+`reason=brownout-policy`, so every boot checks it; the threshold is an
+analog register esp-hal writes but cannot read back. Every image boots
+through the bootstrap, so the detector is configured before the
+application, and before the radio platform takes the analog bus
+([#313](https://github.com/ermacv/open-esp-radio-rs/issues/313)). Rejected:
+keeping the bootloader's mode-1 reset, a project-specific level, action or
+interrupt, and applying the policy in the radio platform constructor, which
+pulled esp-hal's critical section into the vendor-compared PHY probe;
+disabling the detector is never an option.
+
 ## Recovery after a lockup
 
 An application can leave LP/PMU state behind that survives a watchdog reset,

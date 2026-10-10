@@ -58,8 +58,10 @@ static FLASH_TUNING_SCRATCH: ConstStaticCell<[u32; esp_hal::flash::FLASH_TUNING_
 fn main() -> ! {
     staged::start();
 
-    let peripherals = esp_hal::init(esp_hal::Config::default());
+    let mut peripherals = esp_hal::init(esp_hal::Config::default());
     print(c"OER_BOOT bootstrap=INIT\r\n");
+    apply_brownout_policy(&mut peripherals.I2C_ANA_MST);
+    print(c"OER_BOOT bootstrap=BROWNOUT\r\n");
     let mut flash_mmu = FlashMmu::new(peripherals.SPI0);
     let mut flash =
         match esp_hal::flash::Flash::new(peripherals.FLASH, esp_hal::flash::Config::default()) {
@@ -101,6 +103,45 @@ fn main() -> ! {
     // behind until a future S31 cache-invalidate primitive is available. The
     // region is disposable; stage two was copied from a disjoint range first.
     staged::hand_off(staged)
+}
+
+/// Replace the bootloader's analog mode-1 brownout reset with ESP-IDF's
+/// application policy, once, before the application runs, and stop the boot
+/// unless the detector reads back in that policy.
+///
+/// SOURCE: ESP-IDF 4d59230d `esp_brownout_init`
+/// (`components/esp_hw_support/power_supply/brownout.c`), run at startup by
+/// `init_brownout` (`components/esp_system/startup_funcs.c`). The ESP32-S31
+/// has no `ESP_BROWNOUT_USE_INTR`, so it configures mode 0 with the hardware
+/// reset enabled, flash and RF power-down, at `ESP_BROWNOUT_DET_LVL` 7
+/// (about 2.4 V), the S31 default of
+/// `components/esp_hw_support/power_supply/port/esp32s31/Kconfig.power`.
+/// `BrownoutConfig::default()` is that configuration; `brownout::configure`
+/// follows `brownout_hal_config`. The threshold is an analog register that
+/// esp-hal writes but does not read back, so the check covers the detector's
+/// mode, actions and waits.
+fn apply_brownout_policy(analog_bus: &mut esp_hal::peripherals::I2C_ANA_MST<'_>) {
+    use esp_hal::rtc_cntl::brownout::{self, BrownoutConfig};
+
+    brownout::configure(analog_bus, BrownoutConfig::default());
+    let lp_ana = esp_hal::peripherals::LP_ANA::regs();
+    let mode0 = lp_ana.bod_mode0_cntl().read();
+    let mode1 = lp_ana.bod_mode1_cntl().read();
+    // A clear `BOD_MODE1_FIB` hands mode 1 to software
+    // (`brownout_ll_ana_reset_enable`).
+    let mode1_software = !lp_ana.fib_enable().read().bod_mode1_fib().bit();
+    let configured = mode1_software
+        && !mode1.bod_mode1_reset_ena().bit()
+        && mode0.bod_mode0_reset_ena().bit()
+        && mode0.bod_mode0_reset_sel().bit()
+        && mode0.bod_mode0_intr_ena().bit()
+        && mode0.bod_mode0_pd_rf_ena().bit()
+        && mode0.bod_mode0_close_flash_ena().bit()
+        && mode0.bod_mode0_reset_wait().bits() == 0x3ff
+        && mode0.bod_mode0_intr_wait().bits() == 2;
+    if !configured {
+        fail(c"OER_BOOT bootstrap=FAIL reason=brownout-policy\r\n");
+    }
 }
 
 const fn flash_tuning_reference() -> [u32; FLASH_TUNING_REFERENCE_WORDS] {

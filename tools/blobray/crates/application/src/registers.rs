@@ -11,6 +11,8 @@ pub(crate) struct Candidate<'a> {
     pub fact: &'a FunctionRecord,
     pub address: Option<u32>,
     pub alternative: Option<u8>,
+    /// The progression of an unresolved address computed from one index.
+    pub indexed: Option<IndexedAddress>,
     pub mask: Option<RegisterMask>,
     /// The sources of a store's bits.
     pub stored: Option<Vec<StoredBits>>,
@@ -21,8 +23,11 @@ type Observer<'a> = dyn FnMut(Candidate<'_>, &mut dyn RunControl) -> Result<()> 
 /// Every candidate address the analyzed function `records` access: memory
 /// accesses with the bits a read-modify-write replaces, and masked reads.
 /// A resolved address outside every range of nonempty `ranges` is skipped.
+/// An unresolved address is always kept; it carries its indexed progression
+/// when it has one and, with nonempty `ranges`, the progression may reach a
+/// range: its base lies in one, or its bounded index reaches one.
 pub(crate) fn observe<'a, 'm>(
-    records: &[FunctionRecord],
+    records: &'a [FunctionRecord],
     facts: &Facts<'a, 'm>,
     memory: &'m WorkingMemory,
     ranges: &[ImageRegion],
@@ -35,12 +40,16 @@ pub(crate) fn observe<'a, 'm>(
     let mut evaluator = blobray_analysis::registers::StoredBitsEvaluator::new(facts, memory);
     let mut observe = |record: u64,
                        width: u8,
-                       address: &AbstractValue,
+                       address: &'a AbstractValue,
                        mask: Option<RegisterMask>,
                        stored_value: Option<&'a AbstractValue>,
                        c: &mut dyn RunControl| {
         let fact = &records[record as usize];
         let mut stored: Option<Vec<StoredBits>> = None;
+        let indexed = match blobray_analysis::registers::indexed_address(facts, address, c)? {
+            Some(indexed) if in_ranges(&indexed, width, ranges, c)? => Some(indexed),
+            _ => None,
+        };
         candidates(address, c, &mut |resolved, alternative, c| {
             c.checkpoint(ranges.len() as u64 + 1)?;
             if let Some(resolved) = resolved
@@ -69,6 +78,7 @@ pub(crate) fn observe<'a, 'm>(
                     fact,
                     address: resolved,
                     alternative,
+                    indexed: if resolved.is_none() { indexed } else { None },
                     mask,
                     stored: stored.clone(),
                 },
@@ -102,6 +112,37 @@ pub(crate) fn observe<'a, 'm>(
         }
     }
     Ok(())
+}
+
+/// Index values of a bounded progression checked against the ranges; a
+/// longer bound is judged by its base alone.
+const MAX_CHECKED_INDICES: u32 = 4096;
+
+/// Whether the `width`-byte accesses of `indexed` may reach a range of
+/// nonempty `ranges`: its base does, or, for a bound up to
+/// [`MAX_CHECKED_INDICES`], the address at some index does.
+fn in_ranges(
+    indexed: &IndexedAddress,
+    width: u8,
+    ranges: &[ImageRegion],
+    c: &mut dyn RunControl,
+) -> Result<bool> {
+    let hits = |address: u32| {
+        ranges.iter().any(|r| {
+            u64::from(address) < r.end().unwrap_or(0)
+                && u64::from(r.start) < u64::from(address) + u64::from(width)
+        })
+    };
+    if ranges.is_empty() || hits(indexed.base) {
+        return Ok(true);
+    }
+    match indexed.count {
+        Some(count) if count <= MAX_CHECKED_INDICES => {
+            c.checkpoint(u64::from(count) * (ranges.len() as u64 + 1))?;
+            Ok((1..count).any(|i| hits(indexed.at(i))))
+        }
+        _ => Ok(false),
+    }
 }
 
 /// Validate explicit candidate intervals: at most 256, each nonempty and

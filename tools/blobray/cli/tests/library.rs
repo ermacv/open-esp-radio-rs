@@ -414,8 +414,9 @@ fn filters_select_observations_while_the_summary_counts_the_whole_analysis() {
     let human = String::from_utf8(run(&["--address", "0x20000"], false)).unwrap();
     let mut lines = human.lines();
     assert_eq!(lines.next(), Some("0x00020000"), "{human}");
+    let summary = human.lines().last().unwrap();
     assert!(
-        human.lines().last().unwrap().ends_with("unresolved)"),
+        summary.contains(" unresolved, ") && summary.ends_with(" indexed)"),
         "{human}"
     );
 }

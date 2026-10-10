@@ -465,7 +465,7 @@ pub fn register_accesses(
 ) -> Result<RegisterAccessSummary> {
     crate::registers::validate_ranges(ranges)?;
     let mut summary = RegisterAccessSummary {
-        schema: 2,
+        schema: 3,
         ranges: ranges.to_vec(),
         functions: 0,
         partial_functions: 0,
@@ -474,6 +474,7 @@ pub fn register_accesses(
         gaps: 0,
         observations: 0,
         unresolved_addresses: 0,
+        indexed_addresses: 0,
     };
     analyze_library(
         inputs,
@@ -497,6 +498,7 @@ pub fn register_accesses(
                     &mut |o, c| {
                         summary.observations += 1;
                         summary.unresolved_addresses += u64::from(o.address.is_none());
+                        summary.indexed_addresses += u64::from(o.indexed.is_some());
                         emit(
                             &RegisterAccess::Observation {
                                 function: analyzed.function.clone(),
@@ -504,6 +506,7 @@ pub fn register_accesses(
                                 fact: Box::new(o.fact.clone()),
                                 address: o.address,
                                 alternative: o.alternative,
+                                indexed: o.indexed,
                                 mask: o.mask,
                                 stored: o.stored,
                             },

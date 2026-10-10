@@ -626,8 +626,9 @@ pub fn of_change(change: &Change) -> Vec<&'static Check> {
 /// lock, or the checks' own tooling runs everything. The `architecture`
 /// policies are not one, since they read the whole tree (zeroed sections in
 /// every `.rs`, interrupt features of every manifest, the HIL agent's
-/// composition); their job's Clippy is. Declared inputs per check (#467)
-/// generalize this.
+/// composition); the chip-target Clippy split from them
+/// (`architecture-clippy`) is. Declared inputs per check (#467) generalize
+/// this.
 pub const SCOPED_IN_CI: &[&str] = &[
     // Chip-target Clippy of the production profiles: its trigger is the
     // packages it compiles, as the model classifies them

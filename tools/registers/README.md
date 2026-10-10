@@ -111,8 +111,14 @@ caller keeps its own copy:
 - `inventory`: the publication's owned MMIO regions and declared words
   (`model`), Blobray's `register-accesses` records (`observations`), their
   classification and the report; `inventory::run` (behind `cargo registers
-  inventory`) runs Blobray over the pinned binaries, ranks the
-  provenance registry's cited functions first and writes the report.
+  inventory`) runs Blobray over the pinned binaries under the RISC-V integer
+  calling convention, ranks the provenance registry's cited functions first
+  and writes the report. An indexed progression (an array element chosen at
+  run time) touches each word of a small index bound (a mask), otherwise only
+  declared words inside its bound: the elements of the declared register array
+  at its stride that has its base as an element, and the run of declared words
+  along it from its base. The report counts these touches as `indexed`: the
+  vendor reaches the array, not provably that element.
 
 `ChipSources` resolves the files a chip's publication manifest names
 without validating them. The binding index format is

@@ -1,7 +1,8 @@
 //! The inventory run behind `cargo registers inventory`: Blobray's
-//! `register-accesses` over every pinned vendor binary inside the
-//! publication's owned MMIO ranges, compared with the register model
-//! ([`super`]), with the provenance registry's cited functions ranked first.
+//! `register-accesses`, under the RISC-V integer calling convention, over
+//! every pinned vendor binary inside the publication's owned MMIO ranges,
+//! compared with the register model ([`super`]), with the provenance
+//! registry's cited functions ranked first.
 use super::{self as inventory, Region};
 use crate::Result;
 use oer_process::Checkout;
@@ -61,6 +62,10 @@ fn accesses(
     let mut command = ctx.command(host);
     command
         .args(["--format", "json", "register-accesses"])
+        // A base address the vendor keeps in a callee-saved register across
+        // a call stays known: without the assumption every register is
+        // unknown after each call.
+        .args(["--abi", "riscv-integer"])
         .args(["--timeout-secs", &OPERATION_TIMEOUT_SECS.to_string()]);
     for input in inputs {
         command
@@ -107,6 +112,7 @@ pub fn run(ctx: &Checkout, chip: &str, output: Option<PathBuf>) -> Result<()> {
     let mut words = inventory::classify(
         &regions,
         &inventory::declared_words(&registers),
+        &inventory::arrays(&registers),
         &observations,
         &cited,
     );

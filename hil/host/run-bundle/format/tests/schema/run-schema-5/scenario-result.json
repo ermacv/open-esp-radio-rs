@@ -1,0 +1,102 @@
+{
+  "schema": 5,
+  "scenario": "bluetooth-trouble-gatt",
+  "image": "bluetooth-gatt",
+  "outcome": "failed",
+  "required_repetitions": 3,
+  "repetitions": [
+    {
+      "schema": 5,
+      "repetition": 1,
+      "outcome": "failed",
+      "started_unix_millis": 1791582365170,
+      "duration_millis": 25951,
+      "artifact_directory": "scenarios/bluetooth-trouble-gatt/repetition-001",
+      "attachments": [
+        {
+          "path": "scenarios/bluetooth-trouble-gatt/repetition-001/adapter-before.json",
+          "media_type": "application/json",
+          "size_bytes": 102,
+          "sha256": "e30843fc9f6645a8f1bb385a46aac41321d1885bfdafb63780bf8603a38f8a74"
+        },
+        {
+          "path": "scenarios/bluetooth-trouble-gatt/repetition-001/cleanup.json",
+          "media_type": "application/json",
+          "size_bytes": 3,
+          "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+        }
+      ],
+      "measurements": [
+        {
+          "name": "connection-attempts",
+          "value": 2,
+          "unit": "count",
+          "semantics": 1,
+          "better": null,
+          "threshold": null,
+          "verdict": null
+        },
+        {
+          "name": "connections-not-established",
+          "value": 0,
+          "unit": "count",
+          "semantics": 1,
+          "better": "lower",
+          "threshold": null,
+          "verdict": null
+        }
+      ],
+      "failure": {
+        "kind": "scenario",
+        "message": "GATT transition deadline: BluetoothGattEvidence { address: Some([209, 246, 243, 160, 237, 48]), advertising: true, connected: false, advertising_starts: 2, connections: 1, disconnections: 1, reads: 2, writes: 1, value: 49, last_disconnect_reason: Some(19), cpu0_stack: Some(StackWatermark { capacity_bytes: 196608, free_bytes: 171640, used_bytes: 24968, minimum_free_bytes: 16384 }) }"
+      }
+    },
+    {
+      "schema": 5,
+      "repetition": 2,
+      "outcome": "failed",
+      "started_unix_millis": 1791582391128,
+      "duration_millis": 17149,
+      "artifact_directory": "scenarios/bluetooth-trouble-gatt/repetition-002",
+      "attachments": [
+        {
+          "path": "scenarios/bluetooth-trouble-gatt/repetition-002/adapter-before.json",
+          "media_type": "application/json",
+          "size_bytes": 102,
+          "sha256": "e30843fc9f6645a8f1bb385a46aac41321d1885bfdafb63780bf8603a38f8a74"
+        },
+        {
+          "path": "scenarios/bluetooth-trouble-gatt/repetition-002/cleanup.json",
+          "media_type": "application/json",
+          "size_bytes": 3,
+          "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+        }
+      ],
+      "measurements": [
+        {
+          "name": "connection-attempts",
+          "value": 2,
+          "unit": "count",
+          "semantics": 1,
+          "better": null,
+          "threshold": null,
+          "verdict": null
+        },
+        {
+          "name": "connections-not-established",
+          "value": 0,
+          "unit": "count",
+          "semantics": 1,
+          "better": "lower",
+          "threshold": null,
+          "verdict": null
+        }
+      ],
+      "failure": {
+        "kind": "scenario",
+        "message": "GATT transition deadline: BluetoothGattEvidence { address: Some([209, 246, 243, 160, 237, 48]), advertising: true, connected: false, advertising_starts: 2, connections: 1, disconnections: 1, reads: 2, writes: 1, value: 49, last_disconnect_reason: Some(19), cpu0_stack: Some(StackWatermark { capacity_bytes: 196608, free_bytes: 171640, used_bytes: 24968, minimum_free_bytes: 16384 }) }"
+      }
+    }
+  ],
+  "failure": null
+}

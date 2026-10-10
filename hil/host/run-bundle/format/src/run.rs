@@ -11,7 +11,7 @@ mod model;
 mod records;
 pub mod validation;
 
-pub use attempt::{ATTEMPTS, Attempt, AttemptSeal, completed, material_files};
+pub use attempt::{ATTEMPT_SEAL_SCHEMA, ATTEMPTS, Attempt, AttemptSeal, completed, material_files};
 pub use integrity::{
     INTEGRITY, collect_attachments, collect_integrity_files, write_integrity_index,
 };

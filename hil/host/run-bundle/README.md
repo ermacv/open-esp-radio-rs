@@ -14,6 +14,17 @@ evaluator included, goes through it.
 | `verify` | Offline verification of whole bundles (`cargo hil report verify`) and of a replay source against the image builder's recipe |
 | `experiment`, `lab` | The A/B experiment and the laboratory cell a run records |
 
+Every document of a bundle carries a schema version (`RUN_SCHEMA`, the
+scenario seal's `ATTEMPT_SEAL_SCHEMA`, `LAB_PROVENANCE_SCHEMA`,
+`BUILD_PROVENANCE_SCHEMA`, `OBSERVATIONS_SCHEMA`, the source snapshot's
+`MANIFEST_SCHEMA`). `format/tests/schema/run-schema-<RUN_SCHEMA>/` holds one
+document of each kind with its optional parts present, and
+`format/tests/schema.rs` reads each back unchanged: a change a stored bundle
+would not survive (a new required field, a renamed, removed or retyped one)
+fails there and needs a schema bump, with those documents moved to the new
+schema's directory and brought to the new shape. A new optional field that
+defaults when absent needs none.
+
 The JUnit and HTML views a run seals are rendered by `oer-hil-analysis`,
 which the runner hands `RunSession::finish`. The bundle depends on no
 stand, board or image builder code.

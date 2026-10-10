@@ -649,6 +649,7 @@ fn runs(
                 None,
                 apply,
                 unreadable,
+                &[oer_hil_image::source_snapshot_store()?],
             )?;
             for (run, bytes) in &pruned.removed_unreadable {
                 let schema = run
@@ -800,6 +801,7 @@ fn prune_automatically(ctx: &Checkout, store: &oer_hil_run_bundle::RunStore) -> 
         Some(run_store_budget()?),
         true,
         false,
+        &[oer_hil_image::source_snapshot_store()?],
     )?;
     let objects = collect_objects(ctx);
     if objects.objects > 0 {

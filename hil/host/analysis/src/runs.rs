@@ -8,7 +8,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use oer_hil_run_bundle::RunStore;
@@ -678,20 +678,37 @@ pub fn collect_observers(store: &RunStore) -> Result<usize> {
 /// a capture can be reused for a while with `--source-snapshot`.
 pub const SOURCE_GRACE: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
 
-/// Remove the source objects of `store` that no run's snapshot manifest names
-/// and that were stored more than [`SOURCE_GRACE`] ago; returns how many were
-/// removed and their bytes.
-pub fn collect_sources(store: &RunStore) -> Result<(usize, u64)> {
+/// Remove the source objects of `store` that no run's snapshot manifest and
+/// no capture in the capture stores `captures` names, and that were stored
+/// more than [`SOURCE_GRACE`] ago; returns how many were removed and their
+/// bytes. A capture keeps its objects while its directory exists: a queued
+/// job, or a later `--source-snapshot`, reads it before any run names it.
+pub fn collect_sources(store: &RunStore, captures: &[PathBuf]) -> Result<(usize, u64)> {
     let mut named = BTreeSet::new();
-    for id in store.ids_newest_first()? {
-        let manifest = store.run(&id).join("source/snapshot/manifest.json");
-        let Some(manifest) = fs::read(&manifest).ok().and_then(|bytes| {
+    let mut name = |manifest: &Path| {
+        let Some(manifest) = fs::read(manifest).ok().and_then(|bytes| {
             serde_json::from_slice::<oer_hil_schema::snapshot::Manifest>(&bytes).ok()
         }) else {
-            continue;
+            return;
         };
         for source in manifest.sources {
             named.extend(source.files.into_iter().map(|file| file.sha256));
+        }
+    };
+    for id in store.ids_newest_first()? {
+        name(&store.run(&id).join("source/snapshot/manifest.json"));
+    }
+    for capture_store in captures {
+        let Ok(schemas) = fs::read_dir(capture_store) else {
+            continue;
+        };
+        for schema in schemas.flatten() {
+            let Ok(snapshots) = fs::read_dir(schema.path()) else {
+                continue;
+            };
+            for snapshot in snapshots.flatten() {
+                name(&snapshot.path().join("manifest.json"));
+            }
         }
     }
     let objects = store.sources();

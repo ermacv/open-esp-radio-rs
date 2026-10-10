@@ -144,10 +144,14 @@ jobs:
           # tolerates the other's failure.
           failed() {
             status error "$1" || echo "::warning::The error status was not set"
-            gh issue create --title "review: Claude review of #$PR did not complete" \
+            printf 'The Claude review of #%s at `%s` ([run](%s)) failed: %s. Its findings reached no session. While #%s is open, comment `@claude review` on it; once merged, review its diff against the current `main` and file what still holds. Then close this issue.\n\n<!-- claude-review-branch: %s -->\n' \
+              "$PR" "$HEAD" "$RUN" "$1" "$PR" "$BRANCH" >"$RUNNER_TEMP/review-failure.md"
+            # The issue-label policy validates the labels and checks that
+            # GitHub kept them.
+            PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/issue_labels.py create \
+              --title "review: Claude review of #$PR did not complete" \
+              --body-file "$RUNNER_TEMP/review-failure.md" \
               --label kind:bug --label area:tooling --label priority:P1 \
-              --body "$(printf 'The Claude review of #%s at `%s` ([run](%s)) failed: %s. Its findings reached no session. While #%s is open, comment `@claude review` on it; once merged, review its diff against the current `main` and file what still holds. Then close this issue.\n\n<!-- claude-review-branch: %s -->' \
-                "$PR" "$HEAD" "$RUN" "$1" "$PR" "$BRANCH")" \
               >/dev/null || echo "::warning::The failure issue was not filed either"
             exit 1
           }

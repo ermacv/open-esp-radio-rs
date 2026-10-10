@@ -54,6 +54,7 @@ schema.
 | --- | --- | --- |
 | `audit-targets` | `TARGET_AUDIT_SCHEMA` 1 | `{schema, artifact, decoder, semantics, ranges, records, summary, verdict}` |
 | `register-accesses` | `REGISTER_ACCESSES_SCHEMA` 3 | `{schema, inputs, abi, records, groups?, summary}`, records streamed; `groups` only with `--group-by` |
+| `call-arguments` | `CALL_ARGUMENTS_SCHEMA` 1 | `{schema, inputs, abi, symbols, callers, blocked, partial, gaps}` |
 | Linked image manifest | 4 | `ImageManifest` |
 | Execution request | `EXECUTION_SCHEMA` 25 | `ExecutionRequest` |
 | Errors | 1 | `{schema:1, error:{code, message, memory}}` on stderr |

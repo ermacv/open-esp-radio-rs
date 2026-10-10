@@ -111,13 +111,14 @@ pub fn write_mask(
 }
 
 /// One bit of a stored value: fixed, an entry register's bit, a loaded
-/// value's bit, or unknown.
+/// value's bit, or unknown. A loaded bit names its load expression's id, so
+/// two loads of one address (two reads of a register) are never one source.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Bit<'a> {
     Zero,
     One,
     Entry(u8, u8),
-    Load(&'a AbstractValue, u8, u8),
+    Load(u32, &'a AbstractValue, u8, u8),
     Unknown,
 }
 
@@ -274,9 +275,9 @@ impl<'f, 'a, 'm> StoredBitsEvaluator<'f, 'a, 'm> {
                     std::array::from_fn(|i| {
                         let i = i as u32;
                         if i < loaded {
-                            Bit::Load(address, *width, i as u8)
+                            Bit::Load(top, address, *width, i as u8)
                         } else if *signed && loaded != 0 {
-                            Bit::Load(address, *width, (loaded - 1) as u8)
+                            Bit::Load(top, address, *width, (loaded - 1) as u8)
                         } else {
                             Bit::Zero
                         }
@@ -382,7 +383,7 @@ pub fn stored_bits<'a>(
         let next = |previous: Bit<'a>, bit: Bit<'a>| match (previous, bit) {
             (Bit::Zero | Bit::One, Bit::Zero | Bit::One) => true,
             (Bit::Entry(r, b), Bit::Entry(s, c)) => r == s && c == b + 1,
-            (Bit::Load(a, w, b), Bit::Load(x, v, c)) => a == x && w == v && c == b + 1,
+            (Bit::Load(e, _, _, b), Bit::Load(f, _, _, c)) => e == f && c == b + 1,
             (Bit::Unknown, Bit::Unknown) => true,
             _ => false,
         };
@@ -396,7 +397,7 @@ pub fn stored_bits<'a>(
                 }),
             },
             Bit::Entry(register, low) => StoredBitsSource::EntryRegister { register, low },
-            Bit::Load(loaded, loaded_width, low) => StoredBitsSource::Load {
+            Bit::Load(_, loaded, loaded_width, low) => StoredBitsSource::Load {
                 address: exact_address(loaded),
                 width: loaded_width,
                 low,
@@ -616,6 +617,77 @@ mod tests {
                 source: StoredBitsSource::Constant { value: 0xff },
             }],
             "only the access width is described"
+        );
+    }
+    #[test]
+    fn two_loads_of_one_address_are_two_sources() {
+        let memory = WorkingMemory::new(65536).unwrap();
+        let word = number(0x6000_0000);
+        let load = || Expression::Load {
+            address: word.clone(),
+            width: 4,
+            signed: false,
+        };
+        let records = records(vec![
+            load(),
+            load(),
+            Expression::Integer {
+                op: IntegerOp::Or,
+                left: value(0),
+                right: value(1),
+            },
+            Expression::Integer {
+                op: IntegerOp::And,
+                left: value(0),
+                right: number(0xff),
+            },
+            Expression::Integer {
+                op: IntegerOp::And,
+                left: value(1),
+                right: number(0xff00),
+            },
+            Expression::Integer {
+                op: IntegerOp::Or,
+                left: value(3),
+                right: value(4),
+            },
+        ]);
+        let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
+        let (both, bytes) = (value(2), value(5));
+        let mut evaluator = StoredBitsEvaluator::new(&facts, &memory);
+        let mut stored =
+            |value| super::stored_bits(&mut evaluator, &word, 4, value, &mut || Ok(())).unwrap();
+        assert_eq!(
+            stored(&both),
+            [StoredBits {
+                low: 0,
+                width: 32,
+                source: StoredBitsSource::Unknown,
+            }],
+            "the OR of two reads of one register is neither read"
+        );
+        let read = |low, width| StoredBits {
+            low,
+            width,
+            source: StoredBitsSource::Load {
+                address: Some(0x6000_0000),
+                width: 4,
+                low,
+                same_word: true,
+            },
+        };
+        assert_eq!(
+            stored(&bytes),
+            [
+                read(0, 8),
+                read(8, 8),
+                StoredBits {
+                    low: 16,
+                    width: 16,
+                    source: StoredBitsSource::Constant { value: 0 },
+                },
+            ],
+            "bytes of two reads stay two runs"
         );
     }
     #[test]

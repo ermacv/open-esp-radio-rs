@@ -739,7 +739,7 @@ impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
 
 /// A registered attempt identity. Dropping it ends the registration and
 /// discards a completion nobody took, with its bodies, unless the port holds
-/// the attempt: one it admitted ([`Self::admitted`]) whose completion the
+/// the attempt: one it admitted, as the exchange records, whose completion the
 /// exchange has not taken. The router then keeps the registration and the
 /// attempt's queue until the completion arrives, and drops its bodies.
 pub struct Registration<'r, 'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> {

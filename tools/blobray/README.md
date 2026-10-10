@@ -21,6 +21,7 @@ and board prerequisites.
 
 | Task | Interface | Reference |
 | --- | --- | --- |
+| List symbols and strings | `blobray symbols`, `blobray strings` | [Symbols and strings](cli/reference/inventory-linking/README.md#symbols-and-strings) |
 | Inspect inputs | `blobray_application::captured::inventory` | [Inventory](cli/reference/inventory-linking/README.md#inventory) |
 | Investigate code | `blobray function-records`, `blobray field-accesses`, `blobray callers`, `blobray_application::library::analyze_library` | [Function analysis](cli/reference/analysis/README.md#function-analysis-contract) |
 | Investigate call arguments | `blobray call-arguments` | [Call arguments](cli/reference/analysis/README.md#call-arguments) |

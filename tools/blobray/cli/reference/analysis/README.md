@@ -48,7 +48,10 @@ symbols, or with the bare address when no symbol covers it; overlapping
 aliases resolve to the one starting last, then the shorter name. These names
 are built before the analysis on the operation's one work budget and
 deadline, as every Blobray resource contract requires: a reached limit fails
-the operation, and a completed analysis is never discarded for them. The JSON document is
+the operation, and a completed analysis is never discarded for them. A
+relocation to a `.L` local label in a read-only string section
+(`SHF_STRINGS`) shows the escaped text there in quotes; labels of other data,
+such as jump tables, get no text. The JSON document is
 `{"schema":2,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,

@@ -13,6 +13,8 @@
       "function-records",
       "field-accesses",
       "callers",
+      "symbols",
+      "strings",
       "call-arguments"
     ]
   },
@@ -96,6 +98,37 @@
     "path": [
       "blobray",
       "callers"
+    ],
+    "subcommands": []
+  },
+  {
+    "flags": [
+      "--input",
+      "--match",
+      "--working-memory-mib",
+      "--timeout-secs",
+      "--max-work-units"
+    ],
+    "forwards": false,
+    "path": [
+      "blobray",
+      "symbols"
+    ],
+    "subcommands": []
+  },
+  {
+    "flags": [
+      "--input",
+      "--object",
+      "--min-length",
+      "--working-memory-mib",
+      "--timeout-secs",
+      "--max-work-units"
+    ],
+    "forwards": false,
+    "path": [
+      "blobray",
+      "strings"
     ],
     "subcommands": []
   },

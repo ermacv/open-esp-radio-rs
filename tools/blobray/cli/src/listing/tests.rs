@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use oer_riscv_model::{
@@ -68,7 +69,7 @@ fn records() -> Vec<FunctionRecord> {
 #[test]
 fn the_listing_names_each_instructions_relocated_symbols() {
     assert_eq!(
-        listing(&records(), None),
+        listing(&records(), None, &BTreeMap::new()),
         [
             format!("{:6x}  {:<40} g_pm+52", 0, "lui a5, 0"),
             format!("{:6x}  {:<40} pm_scale_listen_interval", 4, "auipc ra, 0"),
@@ -159,7 +160,7 @@ fn the_listing_annotates_exact_values_and_addresses_in_hexadecimal() {
         ),
     ];
     assert_eq!(
-        listing(&records, None),
+        listing(&records, None, &BTreeMap::new()),
         [
             format!("{:6x}  {:<40}  # a4=0x20109000", 0, "lui a4, 131337"),
             format!("{:6x}  {:<40}  # [0x20109004]", 4, "lw a5, 4(a4)"),
@@ -192,7 +193,7 @@ fn a_symbol_value_is_named_with_its_addend() {
         ),
     ];
     assert_eq!(
-        listing(&records, None),
+        listing(&records, None, &BTreeMap::new()),
         [format!(
             "{:6x}  {:<40} phy_param  # s0=phy_param+0xef",
             0, "lui s0, 0"
@@ -245,7 +246,7 @@ fn a_pcrel_low_value_is_named_by_its_high_target_not_the_label() {
         ),
     ];
     assert_eq!(
-        listing(&records, None)[1],
+        listing(&records, None, &BTreeMap::new())[1],
         format!(
             "{:6x}  {:<40} .Lpcrel_hi0  # a5=phy_param+0x10",
             4, "addi a5, a5, 0"
@@ -298,7 +299,7 @@ fn image_transfers_and_branches_are_named_from_the_function_symbols() {
         },
     ];
     assert_eq!(
-        listing(&records, Some(&image)),
+        listing(&records, Some(&image), &BTreeMap::new()),
         [
             format!(
                 "{:6x}  {:<40}  # -> phy_get_data_sat",
@@ -315,7 +316,7 @@ fn image_transfers_and_branches_are_named_from_the_function_symbols() {
         ]
     );
     assert_eq!(
-        listing(&records, None),
+        listing(&records, None, &BTreeMap::new()),
         [
             format!("{:6x}  jal ra, -648", 0x2f82_62ac_u64),
             format!("{:6x}  blt a4, zero, 210", 0x2f82_6264_u64),
@@ -340,4 +341,20 @@ fn only_a_little_endian_executable_header_is_an_image() {
     assert!(!is_executable_image(&big), "big-endian");
     assert!(!is_executable_image(b"!<arch>\n"), "an archive");
     assert!(!is_executable_image(&header), "a truncated header");
+}
+
+#[test]
+fn referenced_read_only_text_is_quoted_with_escapes() {
+    let records = vec![
+        instruction(0x2c2, "lui a0, 0"),
+        reference(0x2c2, ".LC0", 0, ReferenceKind::Address),
+    ];
+    let strings = BTreeMap::from([(0x2c2, vec!["0x%x,0x%x\\n".to_string()])]);
+    assert_eq!(
+        listing(&records, None, &strings),
+        [format!(
+            "{:6x}  {:<40} .LC0  # \"0x%x,0x%x\\n\"",
+            0x2c2, "lui a0, 0"
+        )]
+    );
 }

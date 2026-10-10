@@ -480,3 +480,116 @@ fn the_command_reports_the_arguments_of_each_call_site() {
         "the opaque call leaves the caller's semantics incomplete: {human}"
     );
 }
+
+/// `greet`: `lui a0, %hi(.LC0); ret`, with `.LC0` in `.rodata.str1.1`.
+fn object_with_strings() -> Vec<u8> {
+    use object::write::{Object, Relocation, Symbol, SymbolSection};
+    use object::{
+        Architecture, BinaryFormat, Endianness, RelocationFlags, SectionKind, SymbolFlags,
+        SymbolKind, SymbolScope,
+    };
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    let code: Vec<u8> = [0x0000_0537_u32, 0x0000_8067]
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect();
+    object.append_section_data(text, &code, 4);
+    let strings = object.add_section(
+        Vec::new(),
+        b".rodata.str1.1".to_vec(),
+        SectionKind::ReadOnlyString,
+    );
+    object.append_section_data(strings, b"hello\0caf\xc3\xa9\xff\0", 1);
+    object.add_symbol(Symbol {
+        name: b"greet".to_vec(),
+        value: 0,
+        size: code.len() as u64,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Linkage,
+        weak: false,
+        section: SymbolSection::Section(text),
+        flags: SymbolFlags::None,
+    });
+    let label = object.add_symbol(Symbol {
+        name: b".LC0".to_vec(),
+        value: 0,
+        size: 0,
+        kind: SymbolKind::Data,
+        scope: SymbolScope::Compilation,
+        weak: false,
+        section: SymbolSection::Section(strings),
+        flags: SymbolFlags::None,
+    });
+    object
+        .add_relocation(
+            text,
+            Relocation {
+                offset: 0,
+                symbol: label,
+                addend: 0,
+                flags: RelocationFlags::Elf {
+                    r_type: object::elf::R_RISCV_HI20,
+                },
+            },
+        )
+        .unwrap();
+    object.write().unwrap()
+}
+
+#[test]
+fn symbols_strings_and_referenced_text_come_from_the_captured_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("strings.a");
+    let member = object_with_strings();
+    std::fs::write(
+        &path,
+        support::archive(&[(b"dup.o", &member), (b"dup.o", &member)], false),
+    )
+    .unwrap();
+    let run = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+            .args(args)
+            .arg(format!("vendorlib={}", path.display()))
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        output.stdout
+    };
+    let symbols: blobray_cli::wire::SymbolsDocument = serde_json::from_slice(&run(&[
+        "--format", "json", "symbols", "--match", "gre*", "--input",
+    ]))
+    .unwrap();
+    assert_eq!(
+        symbols.symbols.len(),
+        2,
+        "both same-named members are listed"
+    );
+    assert!(
+        symbols
+            .symbols
+            .iter()
+            .all(|row| row.citation == "vendorlib[dup.o]::greet"
+                && row.kind == "function"
+                && row.section.as_deref() == Some(".text"))
+    );
+    let strings: blobray_cli::wire::StringsDocument =
+        serde_json::from_slice(&run(&["--format", "json", "strings", "--input"])).unwrap();
+    let texts: Vec<_> = strings
+        .strings
+        .iter()
+        .map(|row| (row.offset, row.text.as_str()))
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            (0, "hello"),
+            (6, "caf\\xc3\\xa9\\xff"),
+            (0, "hello"),
+            (6, "caf\\xc3\\xa9\\xff")
+        ]
+    );
+    let listing =
+        String::from_utf8(run(&["function-records", "--function", "greet", "--input"])).unwrap();
+    assert!(listing.contains(".LC0  # \"hello\""), "{listing}");
+}

@@ -203,6 +203,10 @@ pub(crate) struct HilEvidenceSummary {
     /// Published runs whose bundle or seals fail validation, with the
     /// reason. They contribute no evidence; every other run still counts.
     pub(crate) invalid: Vec<InvalidRun>,
+    /// Published runs of another schema, by the schema their manifest
+    /// names: this evaluator does not read them, and they contribute no
+    /// evidence.
+    pub(crate) unsupported: BTreeMap<u64, usize>,
 }
 
 /// A published run excluded from evidence because it failed validation.
@@ -233,6 +237,8 @@ enum LoadedRun {
     NotEvidence,
     /// Another chip's run: every chip's runs share the store.
     OtherChip,
+    /// A run whose manifest names another schema.
+    Unsupported { schema: u64 },
     /// Validated evidence units and whether they are independent seals.
     Units {
         bundle: Box<RunBundle>,
@@ -253,6 +259,28 @@ struct Unit {
 /// run bundle's reader, every sealed file hashed again; an error means the
 /// published bundle cannot be trusted as evidence.
 fn load_run(run_directory: &Path, target: &str) -> Result<LoadedRun> {
+    // A manifest of another schema need not parse as this one: its schema
+    // and target are read without its types.
+    let raw = fs::read(run_directory.join(oer_hil_run_bundle_format::read::MANIFEST))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+    if let Some(schema) = raw
+        .as_ref()
+        .and_then(|manifest| manifest["schema"].as_u64())
+        .filter(|schema| *schema != u64::from(RUN_SCHEMA))
+    {
+        let manifest = raw.as_ref().expect("a schema was read from it");
+        return Ok(
+            if manifest["target"]
+                .as_str()
+                .is_some_and(|other| other != target)
+            {
+                LoadedRun::OtherChip
+            } else {
+                LoadedRun::Unsupported { schema }
+            },
+        );
+    }
     let Some(bundle) = RunBundle::open(run_directory).map_err(|error| error.to_string())? else {
         return Ok(LoadedRun::Unpublished);
     };
@@ -549,6 +577,11 @@ impl HilEvidenceIndex {
                 }
                 Ok(LoadedRun::NotEvidence) => {
                     summary.bundles += 1;
+                    continue;
+                }
+                Ok(LoadedRun::Unsupported { schema }) => {
+                    summary.bundles += 1;
+                    *summary.unsupported.entry(schema).or_default() += 1;
                     continue;
                 }
                 Ok(LoadedRun::OtherChip) => {

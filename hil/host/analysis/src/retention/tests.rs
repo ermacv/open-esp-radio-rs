@@ -101,15 +101,15 @@ fn a_prune_lists_then_deletes_what_no_rule_keeps_and_holds_the_budget() {
         keep_failed: 0,
     };
     // `old-pass` is pinned and `new-pass` the latest pass: nothing goes.
-    let listed = prune(&store, directory.path(), &rule, None, false).unwrap();
+    let listed = prune(&store, directory.path(), &rule, None, false, false).unwrap();
     assert!(listed.removed.is_empty());
     assert_eq!((listed.kept, listed.total), (2, 2));
     // Over a budget of nothing, a run only its age keeps still stays: the
     // budget never overrides another rule.
-    let pruned = prune(&store, directory.path(), &rule, Some(0), true).unwrap();
+    let pruned = prune(&store, directory.path(), &rule, Some(0), true, false).unwrap();
     assert!(pruned.removed.is_empty(), "{:?}", pruned.removed.len());
     store.note(Sidecar::Pins, "old-pass", None).unwrap();
-    let pruned = prune(&store, directory.path(), &rule, None, true).unwrap();
+    let pruned = prune(&store, directory.path(), &rule, None, true, false).unwrap();
     assert_eq!(
         pruned
             .removed
@@ -120,4 +120,75 @@ fn a_prune_lists_then_deletes_what_no_rule_keeps_and_holds_the_budget() {
     );
     assert!(!store.run("old-pass").exists());
     assert!(store.run("new-pass").is_dir());
+}
+
+/// A run this build cannot read goes when its schema is older and it is
+/// older than the rule's days, or, with `unreadable`, when its schema is
+/// this build's; a pinned one, a recent one and one of a newer schema stay.
+#[test]
+fn unreadable_runs_go_by_schema_and_age() {
+    use oer_hil_run_bundle_format::run::RUN_SCHEMA;
+    let directory = tempfile::tempdir().unwrap();
+    let store = RunStore::at(directory.path());
+    let now = oer_durable::unix_millis();
+    bundle(&store.runs(), "readable", now, true, None);
+    let raw = |id: &str, schema: u64, started: u64| {
+        let run = store.run(id);
+        fs::create_dir_all(&run).unwrap();
+        fs::write(
+            run.join("manifest.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "schema": schema, "run_id": id, "target": "chip-a",
+                "started_unix_millis": started,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    };
+    let older = u64::from(RUN_SCHEMA) - 1;
+    raw("older-old", older, 1);
+    raw("older-recent", older, now);
+    raw("older-pinned", older, 1);
+    raw("current-broken", u64::from(RUN_SCHEMA), 1);
+    raw("newer", u64::from(RUN_SCHEMA) + 1, 1);
+    store
+        .note(
+            Sidecar::Pins,
+            "older-pinned",
+            Some(oer_hil_run_bundle::store::Note {
+                by: "wifi".into(),
+                reason: "baseline".into(),
+                unix_millis: 0,
+            }),
+        )
+        .unwrap();
+    let rule = Retention {
+        keep_days: 30,
+        keep_failed: 0,
+    };
+    let ids = |runs: &[(Unreadable, u64)]| {
+        let mut ids = runs
+            .iter()
+            .map(|(run, _)| run.id.clone())
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    };
+    let listed = prune(&store, directory.path(), &rule, None, false, false).unwrap();
+    assert_eq!(ids(&listed.removed_unreadable), ["older-old"]);
+    assert_eq!(listed.unreadable_kept.len(), 4);
+    assert_eq!(listed.total, 6);
+    let listed = prune(&store, directory.path(), &rule, None, false, true).unwrap();
+    assert_eq!(
+        ids(&listed.removed_unreadable),
+        ["current-broken", "older-old"]
+    );
+    assert!(store.run("older-old").is_dir(), "listing deletes nothing");
+    prune(&store, directory.path(), &rule, None, true, true).unwrap();
+    for gone in ["older-old", "current-broken"] {
+        assert!(!store.run(gone).exists(), "{gone}");
+    }
+    for kept in ["readable", "older-recent", "older-pinned", "newer"] {
+        assert!(store.run(kept).is_dir(), "{kept}");
+    }
 }

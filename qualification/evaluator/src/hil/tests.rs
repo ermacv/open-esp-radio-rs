@@ -1317,3 +1317,48 @@ fn a_bundle_the_writer_seals_is_admitted_through_the_shared_reader() {
     let rejected = HilEvidenceIndex::rejection(load()).unwrap();
     assert!(rejected.contains("sealed file inventory"), "{rejected}");
 }
+
+/// A run of another schema is counted by its schema, not reported invalid
+/// one by one; another chip's run of another schema is not counted at all.
+#[test]
+fn runs_of_another_schema_are_counted_by_schema() {
+    let root = std::env::temp_dir().join(format!(
+        "open-radio-qualification-hil-unsupported-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        fs::remove_dir_all(&root).unwrap();
+    }
+    let raw = |id: &str, schema: u64, target: &str| {
+        let run = root.join("runs").join(id);
+        fs::create_dir_all(&run).unwrap();
+        fs::write(
+            run.join("manifest.json"),
+            serde_json::to_vec(&json!({"schema": schema, "run_id": id, "target": target})).unwrap(),
+        )
+        .unwrap();
+    };
+    raw("old-a", 3, "chip-a");
+    raw("old-b", 3, "chip-a");
+    raw("newer", u64::from(RUN_SCHEMA) + 1, "chip-a");
+    raw("other-chip", 3, "chip-b");
+    let index = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "chip-a",
+        &RepositoryState {
+            commit: "abc123".to_owned(),
+            dirty: false,
+        },
+    )
+    .unwrap();
+    let summary = index.summary();
+    assert!(summary.invalid.is_empty(), "{:?}", summary.invalid);
+    assert_eq!(
+        summary.unsupported,
+        BTreeMap::from([(3, 2), (u64::from(RUN_SCHEMA) + 1, 1)])
+    );
+    assert_eq!((summary.directories, summary.bundles), (3, 3));
+    fs::remove_dir_all(root).unwrap();
+}

@@ -49,6 +49,8 @@ struct HilInputsReport {
     current_shards: usize,
     evaluator_dirty: bool,
     invalid: Vec<crate::hil::InvalidRun>,
+    /// Runs of another schema, by schema.
+    unsupported: std::collections::BTreeMap<u64, usize>,
 }
 
 #[derive(Serialize)]
@@ -137,6 +139,7 @@ fn report(qualification: &Qualification) -> Report<'_> {
                 shards: qualification.evidence_inputs.hil.shards,
                 current_shards: qualification.evidence_inputs.hil.current_shards,
                 invalid: qualification.evidence_inputs.hil.invalid.clone(),
+                unsupported: qualification.evidence_inputs.hil.unsupported.clone(),
                 observer_configuration_problem: qualification
                     .evidence_inputs
                     .hil
@@ -199,7 +202,7 @@ pub(crate) fn absent_lines(absent: &[crate::model::AbsentDirectory]) -> Vec<Stri
 
 pub(crate) fn print(qualification: &Qualification) {
     println!(
-        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-source-producer={}\thil-qualifying={}\thil-sealed-attempts={}\thil-shards={}\thil-current-shards={}\tevaluator-dirty={}",
+        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-source-producer={}\thil-qualifying={}\thil-sealed-attempts={}\thil-shards={}\thil-current-shards={}\thil-unsupported-schema={}\tevaluator-dirty={}",
         qualification.evidence_inputs.verification_entries,
         qualification
             .evidence_inputs
@@ -214,6 +217,12 @@ pub(crate) fn print(qualification: &Qualification) {
         qualification.evidence_inputs.hil.sealed_attempts,
         qualification.evidence_inputs.hil.shards,
         qualification.evidence_inputs.hil.current_shards,
+        qualification
+            .evidence_inputs
+            .hil
+            .unsupported
+            .values()
+            .sum::<usize>(),
         qualification.evidence_inputs.hil.evaluator_dirty,
     );
     for line in absent_lines(&qualification.evidence_inputs.absent) {
@@ -225,6 +234,11 @@ pub(crate) fn print(qualification: &Qualification) {
         .observer_configuration_problem
     {
         println!("NOTICE\tcurrent-observer-configuration-unavailable\treason={problem}");
+    }
+    for (schema, runs) in &qualification.evidence_inputs.hil.unsupported {
+        println!(
+            "HIL-UNSUPPORTED\tschema={schema}\truns={runs}\tdisposition=excluded-from-evidence"
+        );
     }
     for invalid in &qualification.evidence_inputs.hil.invalid {
         println!(

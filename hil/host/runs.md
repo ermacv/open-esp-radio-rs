@@ -26,6 +26,7 @@ cargo hil runs release <scenario>
 cargo hil runs pin <run-id> --reason "A/B baseline"
 cargo hil runs prune                  # list what the rule would delete
 cargo hil runs prune --apply
+cargo hil runs prune --unreadable     # also this schema's unreadable runs
 ```
 
 `list` shows each run's time, outcome, checkout, commit (`+` when dirty),
@@ -404,7 +405,14 @@ changes no run's outcome or evidence.
 `prune` keeps pinned runs, runs cited by committed evidence shards, runs whose
 firmware another run replayed, runs younger than `--days` (30), incomplete
 runs, the latest pass and the `--keep-failed` (5) newest failures of every
-scenario and image class. The automatic rule also holds the esp32s31 store to
+scenario and image class. A run this build cannot read goes when its manifest
+names an older `RUN_SCHEMA` and it is older than `--days`: no checkout reads
+it any more, and after a schema bump the newest history stays that long for
+an older checkout. A run of a newer schema, or of an unknown one, always
+stays: the store is shared, and a newer branch's runs are only unreadable to
+this checkout. A run of this schema that does not read goes only with
+`--unreadable`, which the automatic rule never passes; a newer branch's run
+of the same schema may be among them. The automatic rule also holds the esp32s31 store to
 a size budget, `OER_HIL_RUN_STORE_BUDGET_GIB` (40 GiB by default): over it, it
 deletes the oldest runs that only their age kept until the store fits, and
 every other reason above still keeps its runs. Run by hand without `--apply` it only lists the other runs and

@@ -13,7 +13,10 @@ use oer_hil_run_bundle::store::Notes;
 use oer_hil_run_bundle::store::Sidecar;
 use oer_hil_run_bundle_format::run::RunState;
 
-use crate::{Result, run::Run};
+use crate::{
+    Result,
+    run::{Run, Unreadable},
+};
 
 /// The prune rule.
 #[derive(Debug)]
@@ -137,11 +140,23 @@ pub struct Pruned {
     pub total: usize,
     /// How many observer builds no kept run names were deleted.
     pub observers: usize,
+    /// The deleted runs this build cannot read, with the bytes only they
+    /// held: those of an older schema, and with `unreadable` those of the
+    /// current one.
+    pub removed_unreadable: Vec<(Unreadable, u64)>,
+    /// The runs this build cannot read that stay: pinned, cited, of a newer
+    /// or unknown schema, or of the current one without `unreadable`.
+    pub unreadable_kept: Vec<Unreadable>,
 }
 
 impl Pruned {
     pub fn freed(&self) -> u64 {
-        self.removed.iter().map(|(_, bytes)| bytes).sum()
+        self.removed.iter().map(|(_, bytes)| bytes).sum::<u64>()
+            + self
+                .removed_unreadable
+                .iter()
+                .map(|(_, bytes)| bytes)
+                .sum::<u64>()
     }
 }
 
@@ -150,12 +165,20 @@ impl Pruned {
 /// not replayed, not younger than the rule, not the latest pass or a recent
 /// failure of a scenario. With a `budget` in bytes, a store over it also
 /// loses its oldest runs that only their age kept.
+///
+/// A run this build cannot read is deleted when its schema is older than
+/// this build's and it is older than the rule's days, and, with
+/// `unreadable`, when its schema is this build's; pinned and cited runs
+/// stay. A run of a newer or unknown schema always stays: the
+/// store is shared by every checkout, and a newer branch's runs are only
+/// unreadable to this one.
 pub fn prune(
     store: &RunStore,
     checkout: &Path,
     rule: &Retention,
     budget: Option<u64>,
     apply: bool,
+    unreadable: bool,
 ) -> Result<Pruned> {
     let all = Run::all(store)?;
     let now = oer_durable::unix_millis();
@@ -165,10 +188,24 @@ pub fn prune(
         .collect::<BTreeSet<_>>();
     let cited = cited_by_shards(checkout);
     let keep = retained(&all, rule, now, &pinned, &cited);
+    let unreadable_runs = Run::unreadable(store)?;
+    let recent = now.saturating_sub(rule.keep_days * 24 * 3600 * 1000);
     let mut pruned = Pruned {
-        total: all.len(),
+        total: all.len() + unreadable_runs.len(),
         ..Pruned::default()
     };
+    for run in unreadable_runs {
+        if !pinned.contains(&run.id)
+            && !cited.contains(&run.id)
+            && ((run.older_schema() && run.started_millis < recent)
+                || (unreadable && run.current_schema()))
+        {
+            let bytes = exclusive_bytes(&run.directory);
+            pruned.removed_unreadable.push((run, bytes));
+        } else {
+            pruned.unreadable_kept.push(run);
+        }
+    }
     let (remaining, deleted): (Vec<Run>, Vec<Run>) =
         all.into_iter().partition(|run| keep.contains_key(run.id()));
     for run in deleted {
@@ -208,6 +245,9 @@ pub fn prune(
     if apply {
         for (run, _) in &pruned.removed {
             fs::remove_dir_all(run.directory())?;
+        }
+        for (run, _) in &pruned.removed_unreadable {
+            fs::remove_dir_all(&run.directory)?;
         }
         pruned.observers = crate::runs::collect_observers(store)?;
     }

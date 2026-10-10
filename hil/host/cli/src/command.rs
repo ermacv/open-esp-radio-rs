@@ -637,6 +637,7 @@ fn runs(
             days,
             keep_failed,
             apply,
+            unreadable,
         } => {
             let pruned = retention::prune(
                 &store,
@@ -647,7 +648,32 @@ fn runs(
                 },
                 None,
                 apply,
+                unreadable,
             )?;
+            for (run, bytes) in &pruned.removed_unreadable {
+                let schema = run
+                    .schema
+                    .map_or_else(|| String::from("unknown"), |schema| schema.to_string());
+                if apply {
+                    println!(
+                        "deleted {} ({} MiB), unreadable, schema {schema}",
+                        run.id,
+                        bytes >> 20
+                    );
+                } else {
+                    println!(
+                        "would delete {}, unreadable, schema {schema}: {}",
+                        run.id, run.reason
+                    );
+                }
+            }
+            if !pruned.unreadable_kept.is_empty() {
+                println!(
+                    "kept {} unreadable runs of a newer, unknown or (without --unreadable) this \
+                     build's schema, or pinned or cited",
+                    pruned.unreadable_kept.len()
+                );
+            }
             for (run, bytes) in &pruned.removed {
                 if apply {
                     println!("deleted {} ({} MiB)", run.id(), bytes >> 20);
@@ -674,7 +700,7 @@ fn runs(
             println!(
                 "{} {} of {} runs, {} MiB held only by them; {} kept{}",
                 if apply { "deleted" } else { "would delete" },
-                pruned.removed.len(),
+                pruned.removed.len() + pruned.removed_unreadable.len(),
                 pruned.total,
                 pruned.freed() >> 20,
                 pruned.kept,
@@ -775,6 +801,7 @@ fn prune_automatically(ctx: &Checkout, store: &oer_hil_run_bundle::RunStore) -> 
         },
         Some(run_store_budget()?),
         true,
+        false,
     )?;
     let objects = collect_objects(ctx);
     if objects.objects > 0 {
@@ -784,10 +811,10 @@ fn prune_automatically(ctx: &Checkout, store: &oer_hil_run_bundle::RunStore) -> 
             objects.bytes >> 20
         );
     }
-    if !pruned.removed.is_empty() {
+    if !pruned.removed.is_empty() || !pruned.removed_unreadable.is_empty() {
         eprintln!(
             "hil: pruned {} runs ({} MiB) no rule keeps; see `cargo hil runs prune`",
-            pruned.removed.len(),
+            pruned.removed.len() + pruned.removed_unreadable.len(),
             pruned.freed() >> 20
         );
     }
@@ -1284,6 +1311,10 @@ enum RunsCli {
         keep_failed: usize,
         #[arg(long)]
         apply: bool,
+        /// Also runs of this build's schema that it cannot read; a newer
+        /// branch's runs of the same schema may be among them.
+        #[arg(long)]
+        unreadable: bool,
     },
 }
 

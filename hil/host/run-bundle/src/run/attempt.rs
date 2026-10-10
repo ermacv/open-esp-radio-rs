@@ -1,7 +1,7 @@
 //! Durable completion of one scenario's whole repetition set: the seal.
 
 use super::*;
-use oer_hil_run_bundle_format::run::{ATTEMPTS, AttemptSeal, material_files};
+use oer_hil_run_bundle_format::run::{ATTEMPT_SEAL_SCHEMA, ATTEMPTS, AttemptSeal, material_files};
 use oer_hil_scenario::{Scenario, ScenarioFamily};
 
 impl RunSession {
@@ -54,7 +54,7 @@ impl RunSession {
         atomic_json(
             &seal_path,
             &AttemptSeal {
-                schema: 1,
+                schema: ATTEMPT_SEAL_SCHEMA,
                 manifest,
                 suite,
                 files,

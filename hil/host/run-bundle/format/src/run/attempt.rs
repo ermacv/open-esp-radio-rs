@@ -20,6 +20,9 @@ use crate::Result;
 /// The directory of a run's scenario seals.
 pub const ATTEMPTS: &str = "attempts";
 
+/// Version of a scenario seal (`attempts/<scenario>.json`).
+pub const ATTEMPT_SEAL_SCHEMA: u16 = 1;
+
 /// One scenario's sealed completion inside a run: the manifest and the
 /// one-scenario suite the seal fixed.
 #[derive(Clone, Debug)]
@@ -127,7 +130,7 @@ pub fn completed(run: &Path, parent: &RunManifest) -> Result<Option<Vec<Attempt>
             return Err("attempt must be a regular file".into());
         }
         let mut seal: AttemptSeal = serde_json::from_slice(&fs::read(entry.path())?)?;
-        if seal.schema != 1
+        if seal.schema != ATTEMPT_SEAL_SCHEMA
             || seal.manifest.run_id != parent.run_id
             || seal.manifest.target != parent.target
             || seal.manifest.state != RunState::Completed

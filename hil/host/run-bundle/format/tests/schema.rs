@@ -1,0 +1,110 @@
+//! A run bundle of the current schema stays readable.
+//!
+//! `schema/run-schema-<RUN_SCHEMA>/` holds every document a run bundle of
+//! that schema carries, with its optional parts present. Each document must
+//! read as its type and write back to the same JSON, and carry the current
+//! version of its own schema. A change that a stored bundle of this schema
+//! would not survive (a new required field, a renamed, removed or retyped
+//! one) fails here: it needs a new `RUN_SCHEMA` (or the document's own
+//! schema constant), with these documents moved to the new directory and
+//! brought to the new shape. A new optional field that defaults when absent
+//! reads every stored bundle and passes.
+
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use oer_hil_run_bundle_format::build::{BUILD_PROVENANCE_SCHEMA, BuildProvenance};
+use oer_hil_run_bundle_format::lab::{LAB_PROVENANCE_SCHEMA, LabProvenance};
+use oer_hil_run_bundle_format::run::{
+    ATTEMPT_SEAL_SCHEMA, AttemptSeal, CleanupRecord, IntegrityIndex, OBSERVATIONS_SCHEMA,
+    Observations, RUN_SCHEMA, RunManifest, RunPlan, ScenarioResult, UsbEvent,
+};
+use oer_hil_schema::run::RunEvent;
+use oer_hil_schema::snapshot::{MANIFEST_SCHEMA, Manifest as SnapshotManifest};
+use serde::{Serialize, de::DeserializeOwned};
+use serde_json::Value;
+
+fn samples() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/schema")
+}
+
+/// The directory of the current schema's documents.
+fn current() -> PathBuf {
+    let directories = fs::read_dir(samples())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect::<Vec<_>>();
+    let expected = format!("run-schema-{RUN_SCHEMA}");
+    assert_eq!(
+        directories,
+        std::slice::from_ref(&expected),
+        "tests/schema holds the documents of the current RUN_SCHEMA only: after a \
+         schema bump, move them to {expected} and bring them to the new shape"
+    );
+    samples().join(expected)
+}
+
+/// Reads `name` as `T` and checks that it writes back to the same JSON.
+fn read<T: DeserializeOwned + Serialize>(name: &str) -> T {
+    let path = current().join(name);
+    let text = fs::read_to_string(&path).unwrap();
+    let document: T = serde_json::from_str(&text).unwrap_or_else(|error| {
+        panic!(
+            "{} no longer reads ({error}); a stored bundle of schema {RUN_SCHEMA} would \
+             not either: bump the schema",
+            path.display()
+        )
+    });
+    let original: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        serde_json::to_value(&document).unwrap(),
+        original,
+        "{} does not write back unchanged: a field was renamed, removed or retyped; \
+         bump the schema",
+        path.display()
+    );
+    document
+}
+
+#[test]
+fn every_document_of_the_current_schema_reads_and_writes_back() {
+    let manifest: RunManifest = read("manifest.json");
+    assert_eq!(manifest.schema, RUN_SCHEMA);
+    assert!(
+        manifest.experiment.is_some(),
+        "the sample covers an A/B run"
+    );
+    assert!(manifest.firmware[0].replayed_from.is_some());
+    let plan: RunPlan = read("plan.json");
+    assert_eq!(plan.schema, RUN_SCHEMA);
+    let attempt: AttemptSeal = read("attempt.json");
+    assert_eq!(attempt.schema, ATTEMPT_SEAL_SCHEMA);
+    assert_eq!(attempt.manifest.schema, RUN_SCHEMA);
+    assert_eq!(attempt.suite.schema, RUN_SCHEMA);
+    let scenario: ScenarioResult = read("scenario-result.json");
+    assert_eq!(scenario.schema, RUN_SCHEMA);
+    assert!(!scenario.repetitions[0].measurements.is_empty());
+    let observations: Observations = read("observations.json");
+    assert_eq!(observations.schema, OBSERVATIONS_SCHEMA);
+    let cleanup: Vec<CleanupRecord> = read("cleanup.json");
+    assert!(cleanup[0].failure.is_some());
+    let usb: Vec<UsbEvent> = read("usb-events.json");
+    assert!(!usb.is_empty());
+    let lab: LabProvenance = read("lab-provenance.json");
+    assert_eq!(lab.schema, LAB_PROVENANCE_SCHEMA);
+    let build: BuildProvenance = read("build-provenance.json");
+    assert_eq!(build.schema, BUILD_PROVENANCE_SCHEMA);
+    let _: IntegrityIndex = read("integrity.json");
+    let snapshot: SnapshotManifest = read("source-snapshot-manifest.json");
+    assert_eq!(snapshot.schema, MANIFEST_SCHEMA);
+    let events = fs::read_to_string(current().join("events.jsonl")).unwrap();
+    for line in events.lines() {
+        let event: RunEvent = serde_json::from_str(line).unwrap();
+        assert_eq!(
+            serde_json::to_value(&event).unwrap(),
+            serde_json::from_str::<Value>(line).unwrap()
+        );
+    }
+}

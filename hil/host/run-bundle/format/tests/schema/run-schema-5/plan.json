@@ -1,0 +1,56 @@
+{
+  "schema": 5,
+  "run_id": "1791582140859-002c088b",
+  "selection": "scenarios: bluetooth-trouble-gatt, bluetooth-trouble-secure-gatt",
+  "firmware": {
+    "source": "build-current"
+  },
+  "entries": [
+    {
+      "scenario": "access-point-bidirectional",
+      "image": "correctness",
+      "repetitions": 1,
+      "disposition": "filtered",
+      "reason": "excluded by `scenarios: bluetooth-trouble-gatt, bluetooth-trouble-secure-gatt`",
+      "requirements": {
+        "station_network": true,
+        "bluetooth_adapter": false,
+        "peer": false,
+        "station_control": false,
+        "station_udp_rx_capture": false,
+        "station_udp_tx_capture": false,
+        "laptop_client": true,
+        "openwrt_client": false,
+        "openwrt_tx_monitor": false,
+        "laptop_air_monitor": false,
+        "probe_load": false,
+        "non_ht_member": false,
+        "legacy_bss": false,
+        "air_observer": false
+      }
+    },
+    {
+      "scenario": "access-point-bidirectional-openwrt",
+      "image": "correctness",
+      "repetitions": 1,
+      "disposition": "filtered",
+      "reason": "excluded by `scenarios: bluetooth-trouble-gatt, bluetooth-trouble-secure-gatt`",
+      "requirements": {
+        "station_network": true,
+        "bluetooth_adapter": false,
+        "peer": false,
+        "station_control": false,
+        "station_udp_rx_capture": false,
+        "station_udp_tx_capture": false,
+        "laptop_client": false,
+        "openwrt_client": true,
+        "openwrt_tx_monitor": false,
+        "laptop_air_monitor": false,
+        "probe_load": false,
+        "non_ht_member": false,
+        "legacy_bss": false,
+        "air_observer": false
+      }
+    }
+  ]
+}

@@ -26,8 +26,13 @@ pub fn listing(records: &[FunctionRecord]) -> Vec<String> {
     let mut names: BTreeMap<&SymbolId, String> = BTreeMap::new();
     for record in records {
         if let FunctionRecord::Reference { raw, target, .. } = record {
+            // A value names the normalized target: for a PCREL_LO12 pair that
+            // is the HI20 site's symbol, not the raw `.Lpcrel_hi` label.
+            names.insert(
+                &target.symbol,
+                String::from_utf8_lossy(&target.name).into_owned(),
+            );
             let name = String::from_utf8_lossy(&raw.target.name).into_owned();
-            names.insert(&target.symbol, name.clone());
             let name = match raw.addend {
                 Some(addend) if addend != 0 => format!("{name}{addend:+}"),
                 _ => name,

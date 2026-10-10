@@ -144,6 +144,44 @@ fn chip_code_is_in_chip_only_and_chip_platform_packages() {
 }
 
 #[test]
+fn a_renamed_file_counts_at_both_paths() {
+    let repository = tempfile::tempdir().unwrap();
+    let root = repository.path();
+    let git = |arguments: &[&str]| {
+        oer_process::git::text(
+            root,
+            [
+                &[
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ],
+                arguments,
+            ]
+            .concat(),
+        )
+        .unwrap()
+    };
+    git(&["init", "--quiet"]);
+    std::fs::create_dir_all(root.join("crates/a")).unwrap();
+    std::fs::write(root.join("crates/a/fixture.bin"), "the same bytes\n").unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "--quiet", "-m", "base"]);
+    let base = git(&["rev-parse", "HEAD"]);
+    std::fs::create_dir_all(root.join("crates/b")).unwrap();
+    git(&["mv", "crates/a/fixture.bin", "crates/b/fixture.bin"]);
+    git(&["commit", "--quiet", "-m", "move"]);
+    let ctx = oer_process::Checkout::new(root).unwrap();
+    let mut files = committed(&ctx, &base).unwrap();
+    files.sort();
+    assert_eq!(files, ["crates/a/fixture.bin", "crates/b/fixture.bin"]);
+}
+
+#[test]
 fn every_input_of_the_guides_selects_the_documentation() {
     for path in [
         "docs/book.toml",

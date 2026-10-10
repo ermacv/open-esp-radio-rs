@@ -9,7 +9,9 @@
 //!   change reaches ([`Scope::Change`]);
 //! - `cargo xtask push` runs the fast checks over what `HEAD` changed;
 //! - each CI job runs `cargo xtask check tier TIER --job JOB`: every check of
-//!   that job up to that tier, over the whole tree ([`Scope::Tree`]). The
+//!   that job up to that tier, over the whole tree ([`Scope::Tree`]); on a
+//!   branch `--checks` limits it to those its change reaches
+//!   ([`of_job_for`]), and `main` runs them all after the merge. The
 //!   workflows keep jobs for parallelism and the runner setup (caches,
 //!   toolchains a check needs), never a list of checks; a test holds them to
 //!   the registry.

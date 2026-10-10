@@ -95,7 +95,9 @@ blobray --abi riscv-integer call-arguments --input rom=/path/to/rom.elf --symbol
 
 In a relocatable object a call site is a `call` or `branch` relocation to the
 name, and its register state is the analysis' `CallInputs` record at the
-transfer of the `auipc`/`jalr` pair. An executable image has no relocations:
+`jalr` four bytes after a `call` relocation's `auipc`, or at a `branch` (JAL
+or conditional branch) relocation's own offset; a site never takes another
+transfer's state, so a jump the analysis kept no state for has no arguments. An executable image has no relocations:
 a transfer to the start address of a sized function symbol of that name is a
 call site. Each argument is a constant, an image address, a symbol plus
 addend, a section- or entry-stack-relative value, a finite alternative set,

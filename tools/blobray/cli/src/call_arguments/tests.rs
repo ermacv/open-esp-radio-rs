@@ -151,11 +151,12 @@ fn a_relocated_call_reports_each_argument_kind() {
     assert_eq!(
         sites[1],
         CallSite {
-            offset: 0x40,
+            offset: 0x44,
             target: b"phy_i2c_writeReg".to_vec(),
             arguments: Vec::new(),
         },
-        "a call without retained register state says so instead of guessing"
+        "a call without retained register state says so instead of guessing; \
+         its site is the pair's jalr, as for a call with state"
     );
 }
 
@@ -195,4 +196,32 @@ fn an_image_transfer_to_a_named_function_is_a_call_site() {
         ]
     );
     assert!(call_sites(&records, &["phy_i2c_writeReg_Mask".into()], None).is_empty());
+}
+
+#[test]
+fn a_jump_without_its_own_register_state_never_borrows_the_next_call() {
+    let records = vec![
+        reference(0x40, "phy_i2c_writeReg", 1, ReferenceKind::Branch),
+        reference(0x44, "other", 3, ReferenceKind::Call),
+        inputs(0x44, &[(10, constant(9))]),
+        inputs(0x48, &[(10, constant(7))]),
+    ];
+    assert_eq!(
+        call_sites(&records, &["phy_i2c_writeReg".into()], None),
+        [CallSite {
+            offset: 0x40,
+            target: b"phy_i2c_writeReg".to_vec(),
+            arguments: Vec::new(),
+        }],
+        "`j phy_i2c_writeReg` at 0x40 has no state; 0x44 and 0x48 belong to other transfers"
+    );
+    let jal = vec![
+        reference(0x40, "phy_i2c_writeReg", 1, ReferenceKind::Branch),
+        inputs(0x40, &[(10, constant(0x67))]),
+    ];
+    assert_eq!(
+        call_sites(&jal, &["phy_i2c_writeReg".into()], None)[0].arguments[0],
+        ArgumentValue::Constant { value: 0x67 },
+        "a linked `jal` relocation carries its own state"
+    );
 }

@@ -40,8 +40,10 @@ pub struct Index {
     pub target: String,
     /// The scenario whose claims this shard holds; the file stem.
     pub scenario: String,
-    /// SHA-256 of each authenticated input the scenario captured, by session
-    /// input index, including the production probe ELF.
+    /// SHA-256 of each input the scenario captured that a fetched pin
+    /// identifies, by session input index. The production probe ELF and
+    /// firmware outputs are built on the host, so no digest of theirs is
+    /// recorded: their recipes are among the `sources`.
     pub inputs: BTreeMap<String, String>,
     /// Digests of the sources every verdict depends on, sorted by path and
     /// unique: each production file the scenario's executions ran or whose

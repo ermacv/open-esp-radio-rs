@@ -55,7 +55,9 @@ pub struct Claims {
     /// Vendor bytes a claim's cases write without comparing them, with the
     /// claim's vendor root and production entry.
     pub unprojected: std::collections::BTreeSet<(String, String, crate::state::Byte)>,
-    /// SHA-256 of every input the session captured, by session input index.
+    /// SHA-256 of every captured input a fetched pin identifies, by session
+    /// input index: compiled production and firmware outputs are built on
+    /// the host, and their recipes are the shard's sources instead.
     pub inputs: BTreeMap<String, String>,
     /// What the claims' executions depend on in the production probe.
     pub dependencies: crate::dependencies::Dependencies,
@@ -1109,6 +1111,7 @@ impl Session {
                 .iter()
                 .enumerate()
                 .map(|(index, input)| (format!("input-{index}"), input.id().as_str().to_owned()))
+                .filter(|(_, digest)| crate::artifacts::is_fetched_pin(digest))
                 .collect(),
             dependencies,
         })

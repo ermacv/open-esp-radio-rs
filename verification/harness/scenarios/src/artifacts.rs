@@ -50,6 +50,16 @@ pub fn sha256(id: &str) -> Result<&'static str> {
         .map_err(|error| invalid(format!("{id}: {error}")))
 }
 
+/// Whether `digest` is the pinned SHA-256 of a fetched artifact: the one
+/// input identity every host shares. Compiled production and firmware
+/// outputs are identified by their recipe instead.
+pub fn is_fetched_pin(digest: &str) -> bool {
+    manifest()
+        .artifact
+        .iter()
+        .any(|artifact| artifact.sha256.as_deref() == Some(digest))
+}
+
 /// The digest of the firmware output `artifact` of the current build.
 fn built_digest(artifact: &Artifact) -> Result<String> {
     let root = oer_process::built_root();

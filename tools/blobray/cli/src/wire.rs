@@ -165,3 +165,37 @@ pub struct Caller {
     pub function: LibraryFunction,
     pub references: Vec<crate::listing::SymbolReference>,
 }
+
+/// Schema of the `call-arguments` document
+/// (`{"schema":1,"inputs":[...],"abi":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"gaps":N}`).
+pub const CALL_ARGUMENTS_SCHEMA: u32 = 1;
+
+/// The argument registers at every call site of the named functions.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CallArgumentsDocument {
+    pub schema: u32,
+    pub inputs: Vec<RegisterAccessInput>,
+    /// The calling convention the analysis assumed, if any.
+    pub abi: Option<CallAbi>,
+    /// The requested function names.
+    pub symbols: Vec<String>,
+    /// The calling functions with their call sites, in input, object and
+    /// symbol order.
+    pub callers: Vec<CallingFunction>,
+    /// Functions that cannot be analyzed: their calls are unknown.
+    pub blocked: Vec<LibraryFunction>,
+    /// Analyzed functions whose coverage or value semantics are incomplete:
+    /// they can hold further call sites or less precise values.
+    pub partial: u64,
+    /// Code no function covers.
+    pub gaps: u64,
+}
+
+/// One function with its call sites of the named functions.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CallingFunction {
+    pub function: LibraryFunction,
+    pub sites: Vec<crate::call_arguments::CallSite>,
+}

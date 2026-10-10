@@ -138,6 +138,21 @@ enum Command {
         #[command(flatten)]
         limits: InProcessOptions,
     },
+    /// Analyze every function of captured inputs in this process and report
+    /// the argument registers a0..a7 at every call site of the named
+    /// functions: constants, symbols, the caller's own arguments or unknown.
+    CallArguments {
+        /// Repeat ROLE=PATH; a function names its input by position.
+        #[arg(long = "input", required = true, value_name = "ROLE=PATH")]
+        inputs: Vec<OsString>,
+        /// A called function's name; repeat for several.
+        #[arg(long = "symbol", required = true, value_name = "NAME")]
+        symbols: Vec<String>,
+        #[command(flatten)]
+        assumptions: Assumptions,
+        #[command(flatten)]
+        limits: InProcessOptions,
+    },
 }
 
 /// The `--group-by` key of `register-accesses`.
@@ -275,6 +290,12 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             assumptions,
             limits,
         } => callers(inputs, symbols, assumptions.abi(), limits, format),
+        Command::CallArguments {
+            inputs,
+            symbols,
+            assumptions,
+            limits,
+        } => call_arguments(inputs, symbols, assumptions.abi(), limits, format),
     }
 }
 
@@ -845,6 +866,137 @@ fn register_accesses(
             summary.unresolved_addresses
         )
         .map_err(io_error)?;
+    }
+    out.flush().map_err(io_error)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Analyze the inputs in this process and print the argument registers at
+/// every call site of a function `symbols` names.
+fn call_arguments(
+    inputs: Vec<OsString>,
+    symbols: Vec<String>,
+    abi: Option<CallAbi>,
+    limits: InProcessOptions,
+    format: Format,
+) -> Result<ExitCode> {
+    let inputs = inputs
+        .into_iter()
+        .map(parse_input)
+        .collect::<Result<Vec<_>>>()?;
+    let executables = inputs
+        .iter()
+        .map(|input| {
+            std::fs::read(&input.path)
+                .map(app::in_process::Executable::new)
+                .map_err(io_error)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let memory = limits.memory()?;
+    let mut control = limits.control();
+    let images = executables
+        .iter()
+        .map(|executable| image_symbols(executable, &memory, &mut control))
+        .collect::<Result<Vec<_>>>()?;
+    let mut callers = Vec::new();
+    let mut blocked = Vec::new();
+    let (mut partial, mut gaps) = (0_u64, 0_u64);
+    app::library::analyze_library(
+        &executables,
+        abi,
+        &oer_riscv_lift::RiscvDecoder,
+        &memory,
+        &mut control,
+        &mut |outcome, _| {
+            match outcome {
+                app::library::LibraryOutcome::Analyzed(analyzed) => {
+                    if !analyzed.complete() {
+                        partial += 1;
+                    }
+                    let image = images
+                        .get(analyzed.function.input as usize)
+                        .and_then(Option::as_ref);
+                    let sites =
+                        blobray_cli::call_arguments::call_sites(analyzed.records, &symbols, image);
+                    if !sites.is_empty() {
+                        callers.push(blobray_cli::wire::CallingFunction {
+                            function: analyzed.function.clone(),
+                            sites,
+                        });
+                    }
+                }
+                app::library::LibraryOutcome::Blocked { function, .. } => {
+                    blocked.push(function.clone());
+                }
+                app::library::LibraryOutcome::Gap { .. } => gaps += 1,
+            }
+            Ok(())
+        },
+    )?;
+    let mut out = std::io::BufWriter::new(std::io::stdout().lock());
+    match format {
+        Format::Json => {
+            let document = blobray_cli::wire::CallArgumentsDocument {
+                schema: blobray_cli::wire::CALL_ARGUMENTS_SCHEMA,
+                inputs: inputs
+                    .iter()
+                    .zip(&executables)
+                    .map(
+                        |(input, executable)| blobray_cli::wire::RegisterAccessInput {
+                            role: input.role.clone(),
+                            sha256: executable.id().clone(),
+                        },
+                    )
+                    .collect(),
+                abi,
+                symbols,
+                callers,
+                blocked,
+                partial,
+                gaps,
+            };
+            serde_json::to_writer(&mut out, &document).map_err(json_error)?;
+            writeln!(out).map_err(io_error)?;
+        }
+        Format::Human => {
+            let mut count = 0;
+            for caller in &callers {
+                let name = caller
+                    .function
+                    .name
+                    .as_deref()
+                    .map(String::from_utf8_lossy)
+                    .unwrap_or_default();
+                for site in &caller.sites {
+                    count += 1;
+                    let arguments = if site.arguments.is_empty() {
+                        String::from("no register state")
+                    } else {
+                        site.arguments
+                            .iter()
+                            .enumerate()
+                            .map(|(index, value)| format!("a{index}={}", value.human()))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    writeln!(
+                        out,
+                        "{name} (input {}) +{:x}: {}({arguments})",
+                        caller.function.input,
+                        site.offset,
+                        String::from_utf8_lossy(&site.target),
+                    )
+                    .map_err(io_error)?;
+                }
+            }
+            writeln!(
+                out,
+                "{count} call sites in {} functions; {partial} partial, {} blocked, {gaps} gaps",
+                callers.len(),
+                blocked.len(),
+            )
+            .map_err(io_error)?;
+        }
     }
     out.flush().map_err(io_error)?;
     Ok(ExitCode::SUCCESS)

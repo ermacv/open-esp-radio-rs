@@ -615,10 +615,11 @@ pub fn of_change(change: &Change) -> Vec<&'static Check> {
 /// backstop, and most do not name every input their check reads; only these
 /// were audited to read nothing outside what their trigger names, given that
 /// a change to the workflows, the toolchain, the root workspace manifest or
-/// lock, or the checks' own tooling runs everything. `architecture` is not
-/// one: besides chip-target Clippy it holds whole-tree policies (zeroed
-/// sections in every `.rs`, interrupt features of every manifest, the HIL
-/// agent's composition). Declared inputs per check (#467) generalize this.
+/// lock, or the checks' own tooling runs everything. The `architecture`
+/// policies are not one, since they read the whole tree (zeroed sections in
+/// every `.rs`, interrupt features of every manifest, the HIL agent's
+/// composition); their job's Clippy is. Declared inputs per check (#467)
+/// generalize this.
 pub const SCOPED_IN_CI: &[&str] = &[
     // Chip-target Clippy of the production profiles: its trigger is the
     // packages it compiles, as the model classifies them

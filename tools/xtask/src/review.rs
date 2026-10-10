@@ -231,8 +231,9 @@ fn previous(ctx: &Checkout, branch: &str) -> Option<Verdict> {
     verdicts.pop().map(|(_, verdict)| verdict)
 }
 
-/// Run `claude -p` and return its report and cost.
-fn claude(ctx: &Checkout, prompt: &str) -> Result<(Report, f64)> {
+/// Run `claude -p` in `tree`, the reviewed commit's checkout, and return its
+/// report and cost.
+fn claude(ctx: &Checkout, tree: &Path, prompt: &str) -> Result<(Report, f64)> {
     // The instructions and label catalog of `origin/main`, as CI reads them
     // from trusted main: the reviewed branch cannot relax its own review.
     let main = |name: &str| git::text(&ctx.root, ["show", &format!("origin/main:{name}")]);
@@ -245,7 +246,7 @@ fn claude(ctx: &Checkout, prompt: &str) -> Result<(Report, f64)> {
     let model = std::env::var("OER_REVIEW_MODEL").unwrap_or_else(|_| MODEL.to_owned());
     let mut command = process::command("claude");
     command
-        .current_dir(&ctx.root)
+        .current_dir(tree)
         .args(["-p", prompt])
         .args(["--model", &model, "--effort", "high"])
         .args(["--max-budget-usd", MAX_BUDGET_USD])
@@ -281,9 +282,8 @@ fn claude(ctx: &Checkout, prompt: &str) -> Result<(Report, f64)> {
     Ok((report, result["total_cost_usd"].as_f64().unwrap_or(0.0)))
 }
 
-/// The verdict on `branch`'s diff from `base` to `head`, the checked-out
-/// commit: the stored one when the diff was reviewed already, otherwise a
-/// new review, refused when `HEAD` moved while Claude read the tree.
+/// The verdict on `branch`'s diff from `base` to the commit `head`: the
+/// stored one when the diff was reviewed already, otherwise a new review.
 pub fn verdict(ctx: &Checkout, branch: &str, base: &str, head: &str) -> Result<(Verdict, PathBuf)> {
     let identity = identity(&ctx.root, base, head)?;
     let path = directory(ctx).join(format!("{identity}.json"));
@@ -304,16 +304,20 @@ pub fn verdict(ctx: &Checkout, branch: &str, base: &str, head: &str) -> Result<(
             ""
         }
     );
-    let (report, cost_usd) = claude(ctx, &prompt(branch, head, base, previous.as_ref()))?;
-    let now = git::text(&ctx.root, ["rev-parse", "HEAD"])?;
-    if now != head {
-        return Err(format!(
-            "review: HEAD moved from {} to {} during the review, which read the working tree; run it again",
-            &head[..12],
-            &now[..now.len().min(12)]
-        )
-        .into());
-    }
+    // Claude reads a detached checkout of `head`, never the working tree, which
+    // the session keeps editing while the review runs.
+    let tree = git::Worktree::detached(
+        &ctx.root,
+        &directory(ctx).join(format!("tree-{identity}")),
+        head,
+    )?;
+    let reviewed = claude(
+        ctx,
+        tree.path(),
+        &prompt(branch, head, base, previous.as_ref()),
+    );
+    tree.remove()?;
+    let (report, cost_usd) = reviewed?;
     let verdict = Verdict {
         branch: branch.to_owned(),
         head: head.to_owned(),

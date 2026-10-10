@@ -936,11 +936,22 @@ impl<
                 _ => return Err(Ieee802154PauseError::Busy),
             };
             // An enabled port the consumer has not quiesced is quiesced now
-            // and enabled again by the resume: `Quiesced` and `Enabled`.
+            // and enabled again by the resume: `Quiesced` takes a slot and
+            // the resume's `Enabled` holds one. Both are claimed under the
+            // check, before leaving receive mode flushes received frames
+            // into the queue, so no frame can take them.
             let reopen = self.events.owed(|owed| {
                 let reopen = state != RadioState::Disabled && !owed.quiesced;
-                if reopen && !self.events.has_room(owed, 2) {
-                    return Err(Ieee802154PauseError::EventQueueFull);
+                if reopen {
+                    if !self.events.has_room(owed, 2) {
+                        return Err(Ieee802154PauseError::EventQueueFull);
+                    }
+                    owed.quiesced = true;
+                    owed.maintenance = true;
+                    self.events.send(
+                        owed,
+                        Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced),
+                    );
                 }
                 Ok(reopen)
             })?;
@@ -954,19 +965,20 @@ impl<
                     )
                     .is_err()
             {
+                // Nothing paused: the reserved slot ends the window at once.
+                if reopen {
+                    self.events.owed(|owed| {
+                        owed.maintenance = false;
+                        owed.quiesced = false;
+                        self.events.send(
+                            owed,
+                            Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled),
+                        );
+                    });
+                }
                 return Err(Ieee802154PauseError::Busy);
             }
             let recent_rssi = hardware.recent_rssi();
-            if reopen {
-                self.events.owed(|owed| {
-                    owed.quiesced = true;
-                    owed.maintenance = true;
-                    self.events.send(
-                        owed,
-                        Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced),
-                    );
-                });
-            }
             let Hardware::Held(hardware) = core::mem::replace(slot, Hardware::Lent { recent_rssi })
             else {
                 unreachable!("the hardware was held above");

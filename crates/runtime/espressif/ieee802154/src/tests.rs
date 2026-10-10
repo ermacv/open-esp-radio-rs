@@ -28,8 +28,9 @@ use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
 
 use super::{
-    IEEE802154_RADIO_CAPABILITIES, Ieee802154Control, Ieee802154Port, Ieee802154RadioEvent,
-    Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts, Ieee802154TxRxStatistics,
+    Hardware, IEEE802154_RADIO_CAPABILITIES, Ieee802154Control, Ieee802154Port,
+    Ieee802154RadioEvent, Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts,
+    Ieee802154TxRxStatistics,
 };
 
 static LEVELS: [i8; 1] = [0];
@@ -764,6 +765,50 @@ fn a_quiesced_or_disabled_port_pauses_without_events() {
     runtime.control.resume(paused);
     assert!(runtime.events.take().is_none());
     assert_eq!(state(&runtime), RadioState::Disabled);
+}
+
+/// A pause claims the slots of `Quiesced` and of the resume's `Enabled`
+/// before leaving receive mode: a frame the stop flushes into a nearly full
+/// queue is reported lost instead of taking the `Enabled` slot (#456).
+#[test]
+fn a_frame_flushed_by_the_pause_never_takes_the_resumes_slot() {
+    // The fault slot and three free ones.
+    let mut runtime = enabled::<4>();
+    runtime
+        .port
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(11),
+        })
+        .unwrap()
+        .unwrap();
+    // One frame the consumer has not taken yet.
+    runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
+    // A second frame the MAC received, not yet serviced: leaving receive
+    // mode flushes it.
+    runtime.with_installed(|radio, hardware, _| {
+        let Hardware::Held(hardware) = hardware else {
+            panic!("the radio holds its hardware");
+        };
+        let address = hardware.rx_address.expect("a receive buffer is published");
+        assert!(radio.engine().model_dma_write(address, &received_image()));
+        hardware.raise(&[Ieee802154Event::RxDone]);
+    });
+    let paused = runtime.control.pause().unwrap();
+    runtime.control.resume(paused);
+    assert!(matches!(
+        next(&runtime),
+        Ok(Ieee802154RadioEvent::Received(_))
+    ));
+    assert_eq!(
+        next(&runtime),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced))
+    );
+    assert_eq!(next(&runtime), Err(EventsLost));
+    assert_eq!(
+        next(&runtime),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
 }
 
 #[test]

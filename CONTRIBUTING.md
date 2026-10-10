@@ -22,9 +22,11 @@ The PR head is checked out in `pr/` and only read. Claude gets read-only tools (
 and a read-only GitHub token, and returns a structured report. A separate job
 with write access posts it as a PR review with inline comments, files each
 🟣 pre-existing finding as a `kind:bug` issue with the area and priority the
-reviewer chose (once: the reviewer is shown the findings already filed and
-names the issue of one it finds again, and an identical path and title is
-caught too; a differently worded repeat it fails to recognize is filed anew) and
+reviewer chose (once: the reviewer is shown the findings already filed, the
+marked issues of the workflow and of the repository owner only, and names the
+issue of one it finds again; a number it was not shown files anew, an
+identical path and title is caught too, and a differently worded repeat it
+fails to recognize is filed anew) and
 sets the commit status `claude-runtime-review`: success without 🔴 or 🟡
 findings, failure with them, error when the review did not complete or its
 pre-existing findings could not be filed. A blocked PR stays open until a

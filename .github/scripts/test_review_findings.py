@@ -1,8 +1,6 @@
 """Offline regressions for recording pre-existing review findings; no GitHub calls."""
 
 import unittest
-from urllib.error import HTTPError
-
 import issue_labels
 import review_findings as findings
 
@@ -24,16 +22,22 @@ class FakeGitHub:
     def request(self, method, path, data=None):
         if method == "POST" and path == "issues":
             issue = {"number": 500 + len(self.created), "body": data["body"],
+                     "user": {"login": "github-actions[bot]"},
                      "labels": [{"name": name} for name in data["labels"]],
                      "html_url": "https://github.com/x/y/issues/500"}
             self.created.append(data)
             self.issues.append(issue)
             return issue
+        # create_issue reads the issue back to verify its labels.
+        assert method == "GET", (method, path)
         number = int(path.removeprefix("issues/"))
-        issue = next((issue for issue in self.issues if issue["number"] == number), None)
-        if issue is None:
-            raise HTTPError(path, 404, "Not Found", None, None)
-        return issue
+        return next(issue for issue in self.issues if issue["number"] == number)
+
+
+def filed(number, author="ermacv", **fields):
+    """An issue that records the default finding, by `author`."""
+    return {"number": number, "title": "t", "state": "open", "user": {"login": author},
+            "body": findings.marker(finding()), **fields}
 
 
 class Record(unittest.TestCase):
@@ -63,15 +67,28 @@ class Record(unittest.TestCase):
         self.assertEqual(lines, ["- 🟣 **stale cache**: already recorded as #500"] * 2)
 
     def test_a_finding_the_reviewer_names_as_filed_is_not_filed_again(self):
-        api = FakeGitHub([{"number": 42, "body": "filed by hand", "title": "t", "state": "open"}])
+        api = FakeGitHub([filed(42)])
         lines = self.record(api, finding(title="reworded", issue=42))
         self.assertEqual(api.created, [])
         self.assertEqual(lines, ["- 🟣 **reworded**: already recorded as #42"])
 
-    def test_a_named_issue_that_does_not_exist_files_the_finding(self):
-        api = FakeGitHub()
-        self.record(api, finding(issue=9999))
+    def test_a_named_number_the_reviewer_was_not_shown_files_the_finding(self):
+        api = FakeGitHub([
+            filed(41, pull_request={}),
+            {"number": 43, "title": "t", "state": "open", "user": {"login": "ermacv"},
+             "body": "no marker"},
+        ])
+        for number in (41, 43, 9999):
+            self.record(api, finding(title=f"reworded {number}", issue=number))
+        self.assertEqual(len(api.created), 3)
+
+    def test_only_a_trusted_authors_marker_records_a_finding(self):
+        api = FakeGitHub([filed(44, title="owner"), filed(42, author="someone")])
+        self.assertEqual([issue["number"] for issue in findings.recorded(api).values()], [44])
+        api = FakeGitHub([filed(42, author="someone")])
+        lines = self.record(api, finding(issue=42))
         self.assertEqual(len(api.created), 1)
+        self.assertEqual(lines, ["- 🟣 **stale cache**: recorded as #500"])
 
     def test_another_path_or_title_is_another_finding(self):
         self.assertNotEqual(findings.key(finding()), findings.key(finding(path="a/c.rs")))

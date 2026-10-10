@@ -107,6 +107,41 @@ pub enum RegisterAccess {
     },
 }
 
+/// Why analyzed functions are partial. Each count is the number of partial
+/// functions with that cause, so a function with several counts under each;
+/// every partial function has at least one, `other` when none of the named
+/// causes explains it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartialCauses {
+    /// Code the decoder could not read.
+    pub decoding: u64,
+    /// Control flow the graph could not follow: an unexpanded indirect jump
+    /// or conflicting instruction boundaries.
+    pub control_flow: u64,
+    /// Relocations the analysis could not resolve.
+    pub references: u64,
+    /// Calls whose callee is not analyzed: registers and memory after them
+    /// are unknown. Common, and no gap in the function's own code.
+    pub opaque_calls: u64,
+    /// Values whose alternatives exceeded their bound.
+    pub value_limits: u64,
+    /// Partial for no named cause.
+    pub other: u64,
+}
+
+impl PartialCauses {
+    /// Add `other`'s counts.
+    pub fn add(&mut self, other: PartialCauses) {
+        self.decoding += other.decoding;
+        self.control_flow += other.control_flow;
+        self.references += other.references;
+        self.opaque_calls += other.opaque_calls;
+        self.value_limits += other.value_limits;
+        self.other += other.other;
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegisterAccessSummary {
@@ -116,6 +151,8 @@ pub struct RegisterAccessSummary {
     pub functions: u64,
     /// Analyzed functions whose coverage or value semantics are incomplete.
     pub partial_functions: u64,
+    /// `partial_functions` by cause.
+    pub partial_causes: PartialCauses,
     pub blocked_functions: u64,
     pub gaps: u64,
     pub observations: u64,

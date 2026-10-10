@@ -367,16 +367,18 @@ fn field_accesses(
     let mut gaps = 0_u64;
     let mut unknown_addresses = 0_u64;
     let mut partial = 0_u64;
+    let mut partial_causes = blobray_domain::PartialCauses::default();
     app::library::analyze_library(
         &executables,
         abi,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
-        &mut |outcome, _| {
+        &mut |outcome, c| {
             match outcome {
                 app::library::LibraryOutcome::Analyzed(analyzed) => {
                     partial += u64::from(!analyzed.complete());
+                    partial_causes.add(analyzed.partial_causes(c)?);
                     unknown_addresses += blobray_cli::field::unknown_addresses(analyzed.records);
                     let accesses =
                         blobray_cli::field::field_accesses(analyzed.records, offset, width);
@@ -416,6 +418,7 @@ fn field_accesses(
                 functions,
                 blocked,
                 partial,
+                partial_causes,
                 gaps,
                 unknown_addresses,
             };
@@ -451,9 +454,10 @@ fn field_accesses(
             }
             writeln!(
                 out,
-                "{} functions access the field; {} functions blocked; {partial} functions analyzed incompletely; {gaps} gaps; {unknown_addresses} accesses at unknown addresses",
+                "{} functions access the field; {} functions blocked; {partial} functions analyzed incompletely{}; {gaps} gaps; {unknown_addresses} accesses at unknown addresses",
                 functions.len(),
-                blocked.len()
+                blocked.len(),
+                blobray_cli::partial::human(&partial_causes),
             )
             .map_err(io_error)?;
             if abi.is_none() && unknown_addresses > 0 {
@@ -1188,9 +1192,10 @@ fn register_accesses(
         }
         writeln!(
             out,
-            "{} functions ({} partial, {} blocked), {} gaps, {} observations ({} unresolved)",
+            "{} functions ({} partial{}, {} blocked), {} gaps, {} observations ({} unresolved)",
             summary.functions,
             summary.partial_functions,
+            blobray_cli::partial::human(&summary.partial_causes),
             summary.blocked_functions,
             summary.gaps,
             summary.observations,
@@ -1232,18 +1237,18 @@ fn call_arguments(
     let mut callers = Vec::new();
     let mut blocked = Vec::new();
     let (mut partial, mut gaps) = (0_u64, 0_u64);
+    let mut partial_causes = blobray_domain::PartialCauses::default();
     app::library::analyze_library(
         &executables,
         abi,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
-        &mut |outcome, _| {
+        &mut |outcome, c| {
             match outcome {
                 app::library::LibraryOutcome::Analyzed(analyzed) => {
-                    if !analyzed.complete() {
-                        partial += 1;
-                    }
+                    partial += u64::from(!analyzed.complete());
+                    partial_causes.add(analyzed.partial_causes(c)?);
                     let image = images
                         .get(analyzed.function.input as usize)
                         .and_then(Option::as_ref);
@@ -1284,6 +1289,7 @@ fn call_arguments(
                 callers,
                 blocked,
                 partial,
+                partial_causes,
                 gaps,
             };
             serde_json::to_writer(&mut out, &document).map_err(json_error)?;
@@ -1322,8 +1328,9 @@ fn call_arguments(
             }
             writeln!(
                 out,
-                "{count} call sites in {} functions; {partial} partial, {} blocked, {gaps} gaps",
+                "{count} call sites in {} functions; {partial} partial{}, {} blocked, {gaps} gaps",
                 callers.len(),
+                blobray_cli::partial::human(&partial_causes),
                 blocked.len(),
             )
             .map_err(io_error)?;

@@ -53,13 +53,24 @@ schema.
 | Document | Schema | Shape |
 | --- | --- | --- |
 | `audit-targets` | `TARGET_AUDIT_SCHEMA` 1 | `{schema, artifact, decoder, semantics, ranges, records, summary, verdict}` |
-| `register-accesses` | `REGISTER_ACCESSES_SCHEMA` 4 | `{schema, inputs, abi, records, groups?, summary}`, records streamed; `groups` only with `--group-by`; a store observation carries `stored` |
-| `call-arguments` | `CALL_ARGUMENTS_SCHEMA` 1 | `{schema, inputs, abi, symbols, callers, blocked, partial, gaps}` |
+| `register-accesses` | `REGISTER_ACCESSES_SCHEMA` 5 | `{schema, inputs, abi, records, groups?, summary}`, records streamed; `groups` only with `--group-by`; a store observation carries `stored`; `summary` (its own `schema` 2) carries `partial_causes` |
+| `field-accesses` | `FIELD_ACCESSES_SCHEMA` 3 | `{schema, inputs, abi, offset, width, functions, blocked, partial, partial_causes, gaps, unknown_addresses}` |
+| `call-arguments` | `CALL_ARGUMENTS_SCHEMA` 2 | `{schema, inputs, abi, symbols, callers, blocked, partial, partial_causes, gaps}` |
 | `symbols` | `SYMBOLS_SCHEMA` 1 | `{schema, inputs, symbols}` |
 | `strings` | `STRINGS_SCHEMA` 1 | `{schema, inputs, strings}` |
 | Linked image manifest | 4 | `ImageManifest` |
 | Execution request | `EXECUTION_SCHEMA` 25 | `ExecutionRequest` |
 | Errors | 1 | `{schema:1, error:{code, message, memory}}` on stderr |
+
+`partial_causes` is `{decoding, control_flow, references, opaque_calls,
+value_limits, other}`: each the number of partial functions with that cause
+(an undecodable instruction; an unexpanded indirect jump, conflicting
+boundaries or an instruction with an unknown relocation; an unresolved
+relocation; a call whose callee is not analyzed; a value whose alternatives
+exceeded their bound; none of these). A function with several causes counts
+under each, so the causes can sum to more than `partial`, and every partial
+function counts under at least one. The human summaries list the nonzero
+causes as `(by cause: …)`.
 
 Partial research exits 0. A failed or inconclusive audit exits nonzero with its
 document on stdout. Other failures print the error document and exit nonzero.

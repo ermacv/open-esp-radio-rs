@@ -80,9 +80,11 @@ displacements after it: such an access is a candidate to read, not a proof.
 An access whose last displacement is `--offset` (of `--width` bytes, when
 given) is reported with its instruction offset, kind and width; absolute
 addresses are no field. The JSON document is
-`{"schema":2,"inputs":[...],"abi":...,"offset":N,"width":W,"functions":[...],"blocked":[...],"partial":N,"gaps":N,"unknown_addresses":N}`:
+`{"schema":3,"inputs":[...],"abi":...,"offset":N,"width":W,"functions":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N,"unknown_addresses":N}`:
 `blocked` lists the functions no analysis could read, `partial` counts the
-analyzed functions whose coverage or value semantics is incomplete, `gaps`
+analyzed functions whose coverage or value semantics is incomplete and
+`partial_causes` breaks them down by cause (see
+[interfaces and formats](../interfaces-formats/README.md)), `gaps`
 counts the code no function covers and `unknown_addresses` the accesses whose
 address is not known at all. Any of them means the list may be incomplete.
 
@@ -108,9 +110,10 @@ the caller's own argument at entry (`arg0`..`arg7`), another entry register,
 or unknown (`?`); a site without retained register state has no arguments.
 These are may-values of one site: there is no interprocedural expansion and
 a value does not prove that its path runs. The JSON document is
-`{"schema":1,"inputs":[...],"abi":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"gaps":N}`;
+`{"schema":2,"inputs":[...],"abi":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N}`;
 `partial` counts analyzed functions whose coverage or semantics is
-incomplete, which can hold further sites or less precise values.
+incomplete, which can hold further sites or less precise values, and
+`partial_causes` breaks them down by cause.
 
 ### Calling convention
 

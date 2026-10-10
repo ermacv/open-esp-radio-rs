@@ -169,13 +169,13 @@ workspace's `Cargo.toml` and `Cargo.lock` (lint policy, `[patch]` pins), and
 any host package under `tools/` other than Blobray that the change reaches
 (`registry::check_tooling`: this registry, its checks and the tools they
 run). When the change cannot be told every check runs too. A renamed file
-counts at both paths. Everything under `docs/` selects the documentation
-checks and guides, and so does a change reaching a host tool whose command
-tree the `docs` check compares. A check whose
+counts at both paths. The `docs` check reads the whole tree (links and code
+paths name any file, documented commands every tool's command tree) in
+seconds, so it runs, with the guides, on every branch; the API
+documentation (`doc`) runs for the packages a change reaches. A check whose
 trigger misses an input it reads is therefore caught by `main`'s run after
 the merge, not on the branch. The documentation workflow builds the guides
-only when its `docs` check runs and assembles the site only for a manual
-run.
+with its `docs` check and assembles the site only for a manual run.
 
 Planning requires a clean checkout so the tree hash describes its source
 files. Repository source inputs must be tracked; external sources are

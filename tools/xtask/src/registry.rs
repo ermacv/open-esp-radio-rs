@@ -231,15 +231,10 @@ pub const CHECKS: &[Check] = &[
         tier: Tier::Full,
         job: "docs",
         summary: "Markdown links, documented commands and the static qualification catalogs",
-        // The documented commands are checked against the command trees of
-        // the host tools, which a change to their code can alter.
-        trigger: Some(|change| {
-            change.selection.docs
-                || affected_under(change, &["tools/", "hil/host/"])
-                    .next()
-                    .is_some()
-                || touches(change, &["tools/blobray/cli/command-tree.json"])
-        }),
+        // Its inputs are the whole tree: Markdown links and code paths name
+        // any file, and documented commands every tool's command tree. It
+        // takes seconds, so every change runs it.
+        trigger: Some(|_| true),
         run: |ctx, _| checks::docs::run(ctx),
     },
     Check {

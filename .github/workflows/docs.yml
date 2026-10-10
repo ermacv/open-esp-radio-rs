@@ -92,8 +92,7 @@ jobs:
       - id: environment
         run: cargo xtask ci check-environment --workflow docs --job docs
       - run: cargo xtask --verbose check tier full --job docs --checks "${{ needs.prepare.outputs.checks_docs }}"
-      # The guides are Markdown: they build when the `docs` check runs, on
-      # every main or manual run and for a branch whose change reaches it.
+      # The guides build with the `docs` check, which every run selects.
       - name: Install mdBook
         if: needs.prepare.outputs.checks_docs == 'all' || contains(format(',{0},', needs.prepare.outputs.checks_docs), ',docs,')
         run: |

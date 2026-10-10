@@ -13,9 +13,10 @@
 //! With `wifi`, start at `wifi::WifiIdle`. A successful role start consumes
 //! the idle capability, and only a successful stop returns a reusable one.
 //! Rejected preparation returns the unchanged request and idle capability;
-//! a fault after materialization does not. Executor bindings live in adapter
-//! crates; `oer-radio-supervisor` supplies the one-command mailbox used by the
-//! concrete ESP32-S31 runner. This crate depends on no executor or adapter.
+//! a fault after materialization does not. The executor-independent runtime
+//! `oer-radio-supervisor` supplies the one-command mailbox and the role-epoch
+//! actor that the concrete ESP32-S31 composition binds to an executor. This
+//! crate depends on no executor or adapter.
 //!
 //! # Command and data planes
 //!

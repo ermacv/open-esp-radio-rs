@@ -68,15 +68,22 @@ every change that reaches what the index is computed from. `main` publishes
 its index as the CI artifact `vendor-evidence-<commit>`, and on a branch
 `--compare <directory>` sets the index main published nearest the merge
 base (the merge base's, or while its run has not published, the latest
-earlier commit's) beside the branch's: the check fails when a vendor root the base index
-claims is claimed by no shard of the branch's (a claim exists only with a
-MATCH), and reports every other difference (a root's production entry or
-scenario, cases, coverage, observation, state, untriaged locations) without
-failing, since refactors and analyzer improvements move those. A root
-stopped on purpose is retired with its reason in
-`verification/<chip>/decisions/retired.toml`; retiring one the index still
-claims is an error, and a retirement may go once `main` no longer claims
-its root. Qualification reads it from there; an index a source or reviewed
+earlier commit's) beside the branch's. The check fails when a vendor root
+the base index claims is claimed by no shard of the branch's (a claim
+exists only with a MATCH), or when the branch's comparisons of a claimed
+root reach fewer of its vendor closure's blocks or branch directions than
+the base's (the most any of the root's entries reach). It reports every
+other difference (a root's production entry or scenario, cases, coverage
+totals, observation, state, untriaged locations) without failing, since
+refactors and analyzer improvements move those. A loss on purpose is
+accepted with its reason in
+`verification/<chip>/decisions/accepted-losses.toml`: a `[[retired]]` root
+the index no longer claims, or a `[[narrowed]]` root with the `blocks` and
+`directions` its comparisons keep, so a further narrowing fails again.
+Retiring a root the index still claims, accepting a narrowing of one it
+does not claim, or keeping a narrowing its comparisons reach beyond again,
+is an error; an acceptance may go once `main` holds it.
+Qualification reads the index from there; an index a source or reviewed
 coverage decision changed since holds no evidence, never partly trusted
 evidence, and its report names it stale until it is computed again. The [ESP32-S31 project](esp32s31/README.md)
 describes the scenarios, their inputs and their reviewed decisions; the

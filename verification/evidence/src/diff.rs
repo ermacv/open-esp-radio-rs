@@ -238,27 +238,6 @@ pub fn is_evidence(difference: &Difference) -> bool {
     )
 }
 
-/// A vendor root an index claims: its archive or ROM `source` and `symbol`,
-/// whatever scenario and production entry compare it.
-pub type Root = (String, String);
-
-/// The vendor roots the base index claims and the new one does not, except
-/// the `retired` ones: lost evidence. A claim only exists with a MATCH, so a
-/// root whose comparison stopped matching is lost too. Renaming its
-/// production entry or moving it to another scenario loses nothing; case
-/// counts, coverage, observation, state and untriaged locations change with
-/// every analyzer improvement and are reported only.
-pub fn lost_roots(
-    base: &BTreeSet<Root>,
-    new: &BTreeSet<Root>,
-    retired: &BTreeSet<Root>,
-) -> Vec<Root> {
-    base.iter()
-        .filter(|root| !new.contains(*root) && !retired.contains(*root))
-        .cloned()
-        .collect()
-}
-
 /// The readable summary of `differences` under `scenario`.
 pub fn render(scenario: &str, differences: &[Difference]) -> String {
     let mut text = format!("{scenario}:\n");
@@ -350,16 +329,5 @@ mod tests {
         );
         assert_eq!(found.iter().filter(|d| is_evidence(d)).count(), 3);
         assert!(render("i2c", &differences(&old, &old)).contains("identical"));
-    }
-
-    #[test]
-    fn only_a_claimed_vendor_root_the_index_no_longer_claims_is_lost() {
-        let root = |symbol: &str| ("libphy".to_owned(), symbol.to_owned());
-        let base = BTreeSet::from([root("set_chan"), root("cal"), root("old")]);
-        // `set_chan` moved scenario or production entry: its root is still claimed.
-        let new = BTreeSet::from([root("set_chan"), root("added")]);
-        let retired = BTreeSet::from([root("old")]);
-        assert_eq!(lost_roots(&base, &new, &retired), [root("cal")]);
-        assert!(lost_roots(&base, &base, &BTreeSet::new()).is_empty());
     }
 }

@@ -211,6 +211,9 @@ struct Owed<const CONNECTIONS: usize> {
     /// one of its reserved slots.
     companion: bool,
     admission: Admission,
+    /// Counts the lifecycle commands that started: a closing admission and
+    /// the terminal it reaches share one generation. It survives a reset.
+    generation: u32,
 }
 
 /// One queued outcome, with whether a loss precedes it.
@@ -244,6 +247,7 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
                 data: [None; CONNECTIONS],
                 companion: false,
                 admission: Admission::Disabled,
+                generation: 0,
             })),
         }
     }
@@ -254,6 +258,11 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
 
     fn admission(&self) -> Admission {
         self.owed(|owed| owed.admission)
+    }
+
+    /// The admission and the generation of the command that set it.
+    fn lifecycle_state(&self) -> (Admission, u32) {
+        self.owed(|owed| (owed.admission, owed.generation))
     }
 
     /// Whether `slots` more terminal outcomes fit beside the queued and
@@ -305,6 +314,7 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
                 return false;
             }
             owed.admission = admission;
+            owed.generation = owed.generation.wrapping_add(1);
             self.send(owed, BluetoothOutcome::Lifecycle(terminal));
             true
         })
@@ -319,6 +329,7 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
             }
             owed.reserved += 1;
             owed.admission = admission;
+            owed.generation = owed.generation.wrapping_add(1);
             true
         })
     }
@@ -426,6 +437,7 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
             owed.data = [None; CONNECTIONS];
             owed.companion = false;
             owed.admission = Admission::Disabled;
+            owed.generation = owed.generation.wrapping_add(1);
         });
     }
 }
@@ -779,6 +791,15 @@ impl<
         &self,
         command: LifecycleCommand,
     ) -> PortResult<(), LifecycleError, BluetoothFault<H::StartError>> {
+        Ok(self.start_lifecycle(command).await?.map(drop))
+    }
+
+    /// [`Self::run_lifecycle`], returning the generation of the command
+    /// that started, taken under the same lock as its transition.
+    pub(crate) async fn start_lifecycle(
+        &self,
+        command: LifecycleCommand,
+    ) -> PortResult<u32, LifecycleError, BluetoothFault<H::StartError>> {
         let mut installed = self.installed.lock().await;
         if let Some(poisoned) = self.poisoned() {
             return Err(poisoned);
@@ -828,7 +849,7 @@ impl<
         }
         self.changed.signal(());
         self.work.signal(());
-        Ok(started)
+        Ok(started.map(|()| queue.lifecycle_state().1))
     }
 
     /// What the radio serves: its roles on LE 1M, Direct Test Mode,
@@ -1004,9 +1025,9 @@ impl<
         maintenance: impl FnOnce(ClientQuiescence<'_>) -> R,
     ) -> PortResult<R, NotInstalled, BluetoothFault<H::StartError>> {
         let resume = loop {
-            match self.run_lifecycle(LifecycleCommand::Quiesce).await? {
-                Ok(()) => break true,
-                Err(LifecycleError::AlreadyInState | LifecycleError::InvalidState) => break false,
+            match self.start_lifecycle(LifecycleCommand::Quiesce).await? {
+                Ok(generation) => break Some(generation),
+                Err(LifecycleError::AlreadyInState | LifecycleError::InvalidState) => break None,
                 Err(LifecycleError::NotInstalled) => return Ok(Err(NotInstalled)),
                 // Another command closes admission: wait for its end.
                 Err(LifecycleError::Busy) => self.admission.wait().await,
@@ -1038,29 +1059,46 @@ impl<
         let Ok(result) = result else {
             return Err(self.poisoned().expect("the runtime is poisoned"));
         };
-        if resume {
-            self.reopen().await?;
+        if let Some(generation) = resume {
+            self.reopen(generation).await?;
         }
         Ok(Ok(result))
     }
 
-    /// Enable the port that a quiesce left `Quiesced`. A full queue refuses
-    /// `Enable` as busy until the consumer takes an outcome; the retry stops
-    /// as soon as another owner's command or an uninstall moved the port out
-    /// of `Quiesced`, so it never overrides that command.
-    pub(crate) async fn reopen(&self) -> Result<(), Poisoned<BluetoothFault<H::StartError>>> {
-        while self.outcomes.admission() == Admission::Quiesced {
-            match self.run_lifecycle(LifecycleCommand::Enable).await? {
-                Err(LifecycleError::Busy) => self.admission.wait().await,
-                Ok(())
-                | Err(
-                    LifecycleError::AlreadyInState
-                    | LifecycleError::InvalidState
-                    | LifecycleError::NotInstalled,
-                ) => break,
+    /// Enable the port that the quiesce of `generation` left `Quiesced`.
+    ///
+    /// The decision and the transition happen under one lock: the port is
+    /// enabled only while it is still in that quiesce's `Quiesced`. Another
+    /// owner's later command, even one that ended in `Quiesced` again, or an
+    /// uninstall decides the state instead. A full queue defers `Enabled`
+    /// until the consumer takes an outcome.
+    pub(crate) async fn reopen(
+        &self,
+        generation: u32,
+    ) -> Result<(), Poisoned<BluetoothFault<H::StartError>>> {
+        loop {
+            {
+                let installed = self.installed.lock().await;
+                if let Some(poisoned) = self.poisoned() {
+                    return Err(poisoned);
+                }
+                if installed.is_none()
+                    || self.outcomes.lifecycle_state() != (Admission::Quiesced, generation)
+                {
+                    return Ok(());
+                }
+                if self
+                    .outcomes
+                    .lifecycle_now(LifecycleEvent::Enabled, Admission::Enabled)
+                {
+                    self.admission.signal(());
+                    self.changed.signal(());
+                    self.work.signal(());
+                    return Ok(());
+                }
             }
+            self.admission.wait().await;
         }
-        Ok(())
     }
 
     /// Stop the scheduler, take the radio and its hardware out of the

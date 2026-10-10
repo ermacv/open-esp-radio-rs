@@ -40,7 +40,12 @@ entry stack frame as `[address]`, a store with `<- value`. A finite alternative
 set is `one-of{a | b}`, a symbol `name+addend`, a section-relative value
 `section<index>+offset` and an entry-stack value `sp-offset`. Unknown values and
 expressions are omitted, so a missing annotation is no claim either way; the
-decoded text itself keeps the disassembler's spelling. The JSON document is
+decoded text itself keeps the disassembler's spelling. An executable image (ET_EXEC) has
+no relocations to name its transfers, so for such an input each call or
+out-of-function jump to an image address and each taken branch or jump is
+annotated `-> name` or `-> name+offset` from the image's sized function
+symbols, or with the bare address when no symbol covers it; overlapping
+aliases resolve to the one starting last, then the shorter name. The JSON document is
 `{"schema":2,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,

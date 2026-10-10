@@ -2,7 +2,7 @@
 //! the symbols its relocations name, and the references it makes to named
 //! symbols.
 use oer_riscv_model::{
-    AbstractValue, FunctionRecord, MemoryKind, ReferenceKind, SymbolId, ValueAlternative,
+    AbstractValue, EdgeKind, FunctionRecord, MemoryKind, ReferenceKind, SymbolId, ValueAlternative,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -21,7 +21,12 @@ const SP: u8 = 2;
 /// `<- value`. Values are hexadecimal; an alternative set is `one-of{..}`.
 /// Unknown values and expressions are omitted, so an annotation is never a
 /// claim the records do not make.
-pub fn listing(records: &[FunctionRecord]) -> Vec<String> {
+///
+/// With `image`, the function belongs to an executable image without
+/// relocations: each call or out-of-function jump to an image address and
+/// each taken branch or jump is annotated `-> name` or `-> name+offset` from
+/// the image's function symbols, or with the bare address when none covers it.
+pub fn listing(records: &[FunctionRecord], image: Option<&ImageSymbols>) -> Vec<String> {
     let mut symbols: BTreeMap<u64, Vec<String>> = BTreeMap::new();
     let mut names: BTreeMap<&SymbolId, String> = BTreeMap::new();
     for record in records {
@@ -77,6 +82,27 @@ pub fn listing(records: &[FunctionRecord]) -> Vec<String> {
                         .push(format!("[{address}]{}", stored.unwrap_or_default()));
                 }
             }
+            FunctionRecord::Transfer { offset, target, .. } => {
+                if let (Some(image), AbstractValue::ImageAddress { address }) = (image, target) {
+                    notes
+                        .entry(*offset)
+                        .or_default()
+                        .push(format!("-> {}", image.describe(u64::from(*address))));
+                }
+            }
+            FunctionRecord::Edge {
+                from,
+                target: Some(target),
+                relation: EdgeKind::Taken | EdgeKind::Jump,
+                external: false,
+            } => {
+                if let Some(image) = image {
+                    notes
+                        .entry(*from)
+                        .or_default()
+                        .push(format!("-> {}", image.describe(*target)));
+                }
+            }
             _ => {}
         }
     }
@@ -103,6 +129,43 @@ pub fn listing(records: &[FunctionRecord]) -> Vec<String> {
             _ => None,
         })
         .collect()
+}
+
+/// The function symbols of one executable image, for naming the targets of
+/// transfers its code makes without relocations.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ImageSymbols {
+    /// `(start, size, name)`, sorted by start.
+    functions: Vec<(u64, u64, String)>,
+}
+
+impl ImageSymbols {
+    /// Retain the sized, named entries of `functions` (`(address, size, name)`).
+    pub fn new(functions: impl IntoIterator<Item = (u64, u64, String)>) -> Self {
+        let mut functions: Vec<_> = functions
+            .into_iter()
+            .filter(|(_, size, name)| *size != 0 && !name.is_empty())
+            .collect();
+        functions.sort();
+        functions.dedup();
+        Self { functions }
+    }
+
+    /// `name` for a function's first byte, `name+0x10` inside it and the bare
+    /// address when no sized function covers it. Overlapping aliases resolve
+    /// to the one starting last at or before `address`, then the shorter name.
+    pub fn describe(&self, address: u64) -> String {
+        let covering = self
+            .functions
+            .iter()
+            .filter(|(start, size, _)| *start <= address && address - start < *size)
+            .max_by(|a, b| a.0.cmp(&b.0).then(b.2.len().cmp(&a.2.len())));
+        match covering {
+            Some((start, _, name)) if *start == address => name.clone(),
+            Some((start, _, name)) => format!("{name}+{:#x}", address - start),
+            None => format!("{address:#x}"),
+        }
+    }
 }
 
 /// The exact hexadecimal spelling of `value`, or `None` when the records

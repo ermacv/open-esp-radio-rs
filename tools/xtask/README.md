@@ -163,10 +163,15 @@ only runs over the whole tree (`registry::of_job_for`), passed as
 `check tier full --job JOB --checks …`; a job the change reaches no check of
 is skipped. `verify` accepts such a skip only in a change-scoped plan, and a
 partial run proves no reusable coverage. `main` and manual runs are never
-scoped, nor is a change to `.github/workflows/` or the toolchain and lint
-configuration every check runs under, and when the change cannot be told
-every check runs. A renamed file counts at both paths. Everything under
-`docs/` selects the documentation checks and guides. A check whose
+scoped, nor is a change to what every check runs under or with: the
+workflows, the toolchain and lint configuration (`gate::GLOBAL`), the root
+workspace's `Cargo.toml` and `Cargo.lock` (lint policy, `[patch]` pins), and
+any host package under `tools/` other than Blobray that the change reaches
+(`registry::check_tooling`: this registry, its checks and the tools they
+run). When the change cannot be told every check runs too. A renamed file
+counts at both paths. Everything under `docs/` selects the documentation
+checks and guides, and so does a change reaching a host tool whose command
+tree the `docs` check compares. A check whose
 trigger misses an input it reads is therefore caught by `main`'s run after
 the merge, not on the branch. The documentation workflow builds the guides
 only when its `docs` check runs and assembles the site only for a manual

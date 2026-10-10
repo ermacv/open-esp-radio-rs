@@ -112,6 +112,13 @@ fn change_scope(root: &Path, api: &GitHub, workflow: Workflow) -> Result<Scope> 
         return Err(format!("{file} changes how CI itself runs").into());
     }
     let change = crate::gate::Change::of(&ctx, files, &base, Some("HEAD"), registry::Tier::Full)?;
+    if let Some(package) = registry::check_tooling(&change) {
+        return Err(format!(
+            "the change reaches {}, which the checks run with",
+            package.name
+        )
+        .into());
+    }
     let checks = workflow
         .spec()
         .jobs

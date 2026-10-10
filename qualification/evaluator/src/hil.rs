@@ -713,6 +713,11 @@ impl HilEvidenceIndex {
                         observation
                             .exclusions
                             .push(decision::Exclusion::CurrentObserverConfigurationUnavailable);
+                    } else if !observation.exclusions.is_empty() && only.is_none() {
+                        // Already excluded: no observer makes it apply, and
+                        // assessing one reads its build. Only runs named for
+                        // recording are assessed whatever else excludes
+                        // them, since a stale snapshot may still be recorded.
                     } else if let Some(reference) = observation
                         .subject
                         .as_ref()

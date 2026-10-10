@@ -703,7 +703,12 @@ executable hash; a direct Cargo build has no receipt and cannot establish
 current observer compatibility. The registry's `build.profile` selects the
 required host profile (`debug` maps to Cargo's `dev`). An observation whose
 observer differs from the current one in sources, dependencies, features,
-compiler, profile or Cargo settings is excluded.
+compiler, profile or Cargo settings is excluded. The observer is assessed
+only for an observation nothing else excludes, or of a run `hil-evidence
+--run` or `--pending` names (a stale snapshot may still be recorded): an
+observation already excluded, for example by its commit, is listed without
+an observer exclusion, so evaluation time follows the current runs, not the
+store.
 
 ## Functional AP availability
 

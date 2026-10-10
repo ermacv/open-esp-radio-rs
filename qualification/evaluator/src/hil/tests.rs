@@ -946,6 +946,40 @@ fn observer_assessment_work_does_not_grow_with_the_runs() {
             recorded_projections: 1,
         }
     );
+    // Observations something else already excludes read no observer build,
+    // so time follows the runs that can still apply, not the store; runs
+    // named for recording are still assessed.
+    let other = RepositoryState {
+        commit: "other-commit".to_owned(),
+        dirty: false,
+    };
+    let index = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "chip-a",
+        &other,
+    )
+    .unwrap();
+    assert_eq!(index.summary().qualifying, 0);
+    assert_eq!(observer::work::take().build_loads, 0);
+    assert!(
+        index.scenarios["station-reconnect"]
+            .iter()
+            .all(|o| o.exclusions == [decision::Exclusion::DifferentCommit])
+    );
+    let named = runs.map(str::to_owned).into_iter().collect::<BTreeSet<_>>();
+    let index = HilEvidenceIndex::load_selected(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "chip-a",
+        &other,
+        Some(&named),
+    )
+    .unwrap();
+    assert_eq!(observer::work::take().build_loads, 1);
+    assert_eq!(index.summary().qualifying, 0);
     fs::remove_dir_all(root).unwrap();
 }
 

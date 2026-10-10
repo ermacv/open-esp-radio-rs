@@ -24,9 +24,10 @@ use crate::{
 /// The caller appends the MPDUs in transmission order, each without FCS;
 /// the backend adds delimiters and padding. It is released when the
 /// attempt's completion is reported, as a [`TxBuffer`](crate::TxBuffer) is;
-/// the bodies it holds stay with the backend until
-/// [`Ieee80211LowerMacPort::reclaim_tx_bodies`] after the attempt ended. A
-/// buffer released unsubmitted drops its bodies.
+/// the bodies it holds stay with the backend until the attempt's completion
+/// event carries them back by subframe
+/// ([`Ieee80211LowerMacPort::into_completed`]). A buffer released
+/// unsubmitted drops its bodies.
 pub trait AmpduBuffer {
     /// The owner of an MPDU's body.
     type Body: TxBody;

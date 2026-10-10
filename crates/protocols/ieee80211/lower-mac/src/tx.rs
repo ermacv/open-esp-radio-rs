@@ -82,11 +82,12 @@ pub enum TxResponse {
 /// frame's payload, which the caller does not copy.
 ///
 /// The backend holds the body from the attempt's admission until the
-/// caller takes it back with
-/// [`Ieee80211LowerMacPort::reclaim_tx_bodies`](crate::Ieee80211LowerMacPort::reclaim_tx_bodies)
-/// after the attempt ended, so a retransmission sends the same owner again.
-/// A body the caller never reclaims is dropped with the backend's state:
-/// dropping it is how its owner learns it is no longer needed.
+/// attempt's completion event carries it back
+/// ([`Ieee80211LowerMacPort::into_completed`](crate::Ieee80211LowerMacPort::into_completed)),
+/// so a retransmission sends the same owner again. Dropping a body is how
+/// its owner learns it is no longer needed: a consumer that drops the
+/// completion event drops its bodies, and a backend that discards an
+/// attempt, as an uninstall does, drops them with it.
 pub trait TxBody {
     /// The octets the MPDU ends with.
     fn bytes(&self) -> &[u8];
@@ -314,19 +315,6 @@ pub enum SubmitError {
     /// backoff, power ceiling, coexistence level, a response the rate
     /// cannot carry, or an aggregate larger than its limits.
     Unsupported,
-}
-
-/// Why the bodies of an attempt cannot be reclaimed.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum ReclaimError {
-    /// The backend is not installed or is paused.
-    NotInstalled,
-    /// The attempt has not ended: no completion was reported and no
-    /// cancellation proved it over.
-    Running,
-    /// No attempt of that identity holds a body: none was admitted, or its
-    /// bodies were reclaimed already.
-    Unknown,
 }
 
 /// A refused submission: the error and the attempt with its buffers and

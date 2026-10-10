@@ -46,6 +46,7 @@ impl Ieee80211LowerMacPort for DisabledRetune {
     type TxBuffer = <Model as Ieee80211LowerMacPort>::TxBuffer;
     type TxBody = <Model as Ieee80211LowerMacPort>::TxBody;
     type RxBuffer = <Model as Ieee80211LowerMacPort>::RxBuffer;
+    type TxBodies = <Model as Ieee80211LowerMacPort>::TxBodies;
 
     fn view(event: &Self::Event) -> LowerMacEvent<'_> {
         Model::view(event)
@@ -53,6 +54,10 @@ impl Ieee80211LowerMacPort for DisabledRetune {
 
     fn into_received(event: Self::Event) -> Result<(Self::RxBuffer, RxMeta), Self::Event> {
         Model::into_received(event)
+    }
+
+    fn into_completed(event: Self::Event) -> Result<(TxCompletion, Self::TxBodies), Self::Event> {
+        Model::into_completed(event)
     }
 
     fn capabilities(&self) -> LowerMacCapabilities {
@@ -76,14 +81,6 @@ impl Ieee80211LowerMacPort for DisabledRetune {
         attempt: MpduAttempt<Self::TxBuffer, Self::TxBody>,
     ) -> SubmitResult<MpduAttempt<Self::TxBuffer, Self::TxBody>, Fault> {
         self.model.submit(attempt)
-    }
-
-    fn reclaim_tx_bodies(
-        &self,
-        id: TxId,
-        each: impl FnMut(usize, Self::TxBody),
-    ) -> PortResult<(), ReclaimError, Fault> {
-        self.model.reclaim_tx_bodies(id, each)
     }
 
     fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, Fault> {

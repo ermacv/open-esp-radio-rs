@@ -97,16 +97,27 @@ pub const MODEL_AMPDU: AmpduCapabilities = AmpduCapabilities {
     max_length: 65_535,
 };
 
-/// One owned event of the model.
+/// One owned event of the model: an attempt's completion carries the
+/// bodies of its attempt by subframe.
 #[derive(Debug)]
-pub enum ModelEvent {
+pub enum ModelEvent<O = ModelBody> {
+    Received(ModelRxBuffer, RxMeta),
+    Tx(TxCompletion, Vec<(usize, O)>),
+    Tbtt(TbttEvent),
+    Lifecycle(LifecycleEvent),
+}
+
+/// An event the model queues; a completion takes its attempt's bodies as
+/// it is taken ([`RadioPort::next_event`]).
+#[derive(Debug)]
+enum Queued {
     Received(ModelRxBuffer, RxMeta),
     Tx(TxCompletion),
     Tbtt(TbttEvent),
     Lifecycle(LifecycleEvent),
 }
 
-impl ModelEvent {
+impl Queued {
     /// Whether the event ends admitted work, whose slot was reserved.
     fn is_terminal(&self) -> bool {
         matches!(self, Self::Tx(_) | Self::Lifecycle(_))
@@ -325,7 +336,7 @@ struct State {
     ampdu_lent: usize,
     /// Events in order, with a loss marker in place of the first event a
     /// full queue dropped.
-    events: VecDeque<Result<ModelEvent, EventsLost>>,
+    events: VecDeque<Result<Queued, EventsLost>>,
     /// Non-terminal events the queue holds.
     queued: usize,
     poisoned: bool,
@@ -334,7 +345,7 @@ struct State {
 }
 
 impl State {
-    fn push(&mut self, event: ModelEvent) {
+    fn push(&mut self, event: Queued) {
         if event.is_terminal() {
             self.events.push_back(Ok(event));
         } else if self.queued < MODEL_EVENT_CAPACITY {
@@ -345,7 +356,7 @@ impl State {
         }
     }
 
-    fn pop(&mut self) -> Option<Result<ModelEvent, EventsLost>> {
+    fn pop(&mut self) -> Option<Result<Queued, EventsLost>> {
         let event = self.events.pop_front()?;
         if event.as_ref().is_ok_and(|event| !event.is_terminal()) {
             self.queued -= 1;
@@ -377,7 +388,7 @@ impl State {
             Lent::AmpduBuffer => self.ampdu_lent -= 1,
             Lent::Nothing => {}
         }
-        self.push(ModelEvent::Tx(completion));
+        self.push(Queued::Tx(completion));
     }
 
     /// End every published attempt that a queued outcome answers.
@@ -402,7 +413,7 @@ impl State {
 pub struct LowerMacModel<O = ModelBody> {
     state: RefCell<State>,
     /// The bodies of admitted attempts, by attempt and subframe, until the
-    /// caller reclaims them.
+    /// attempt's completion is taken.
     bodies: RefCell<Vec<(TxId, usize, O)>>,
     /// Receive buffers lent and not yet dropped.
     rx_lent: Rc<Cell<usize>>,
@@ -531,7 +542,7 @@ impl<O: TxBody> LowerMacModel<O> {
         let mut state = self.state.borrow_mut();
         let admitted = state.monitor || state.vifs.iter().flatten().any(|vif| vif.admits(frame));
         if state.enabled && admitted {
-            state.push(ModelEvent::Received(
+            state.push(Queued::Received(
                 ModelRxBuffer::lend(frame, &self.rx_lent),
                 meta,
             ));
@@ -553,7 +564,7 @@ impl<O: TxBody> LowerMacModel<O> {
     pub fn fire_tbtt(&self, vif: VifId) {
         let mut state = self.state.borrow_mut();
         let at = state.tsf[usize::from(vif.0)].at(self.now.get());
-        state.push(ModelEvent::Tbtt(TbttEvent {
+        state.push(Queued::Tbtt(TbttEvent {
             tbtt: VifTsf::new(vif, at),
         }));
     }
@@ -723,6 +734,30 @@ impl<O: TxBody> LowerMacModel<O> {
         self.bodies.borrow().len()
     }
 
+    /// The event a queued one is taken as: a completion with the bodies of
+    /// its attempt, which the model holds no longer.
+    fn owned(&self, event: Queued) -> ModelEvent<O> {
+        match event {
+            Queued::Received(frame, meta) => ModelEvent::Received(frame, meta),
+            Queued::Tx(completion) => {
+                let mut held = self.bodies.borrow_mut();
+                let mut bodies = Vec::new();
+                let mut index = 0;
+                while index < held.len() {
+                    if held[index].0 == completion.id {
+                        let (_, subframe, body) = held.remove(index);
+                        bodies.push((subframe, body));
+                    } else {
+                        index += 1;
+                    }
+                }
+                ModelEvent::Tx(completion, bodies)
+            }
+            Queued::Tbtt(event) => ModelEvent::Tbtt(event),
+            Queued::Lifecycle(event) => ModelEvent::Lifecycle(event),
+        }
+    }
+
     fn admit<P>(
         &self,
         attempt: &TxAttempt<P>,
@@ -814,12 +849,12 @@ impl<O: TxBody> LowerMacModel<O> {
             LifecycleCommand::Enable if state.channel.is_none() => {
                 // Nothing to tune to: the command fails and the port stays
                 // disabled.
-                state.push(ModelEvent::Lifecycle(LifecycleEvent::Failed { command }));
+                state.push(Queued::Lifecycle(LifecycleEvent::Failed { command }));
                 Ok(())
             }
             LifecycleCommand::Enable => {
                 state.enabled = true;
-                state.push(ModelEvent::Lifecycle(LifecycleEvent::Enabled));
+                state.push(Queued::Lifecycle(LifecycleEvent::Enabled));
                 Ok(())
             }
             LifecycleCommand::Disable | LifecycleCommand::Quiesce if !state.enabled => {
@@ -830,7 +865,7 @@ impl<O: TxBody> LowerMacModel<O> {
                 while !state.in_flight.is_empty() {
                     state.finish(0, ModelOutcome::Fail(TxStatus::Aborted));
                 }
-                state.push(ModelEvent::Lifecycle(
+                state.push(Queued::Lifecycle(
                     if matches!(command, LifecycleCommand::Disable) {
                         LifecycleEvent::Disabled
                     } else {
@@ -863,13 +898,13 @@ impl<O: TxBody> LowerMacModel<O> {
 /// test changed the model.
 pub struct NextModelEvent<'a, O>(&'a LowerMacModel<O>);
 
-impl<O> Future for NextModelEvent<'_, O> {
-    type Output = PortResult<ModelEvent, EventsLost, ModelFault>;
+impl<O: TxBody> Future for NextModelEvent<'_, O> {
+    type Output = PortResult<ModelEvent<O>, EventsLost, ModelFault>;
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
         let mut state = self.0.state.borrow_mut();
         match state.pop() {
-            Some(event) => Poll::Ready(Ok(event)),
+            Some(event) => Poll::Ready(Ok(event.map(|event| self.0.owned(event)))),
             None if state.poisoned => Poll::Ready(Err(POISONED)),
             None => Poll::Pending,
         }
@@ -877,14 +912,14 @@ impl<O> Future for NextModelEvent<'_, O> {
 }
 
 impl<O: TxBody> RadioPort for LowerMacModel<O> {
-    type Event = ModelEvent;
+    type Event = ModelEvent<O>;
     type Id = TxId;
     type Domain = Ieee80211Radio;
     type Fault = ModelFault;
 
     fn next_event(
         &self,
-    ) -> impl Future<Output = PortResult<ModelEvent, EventsLost, ModelFault>> + '_ {
+    ) -> impl Future<Output = PortResult<ModelEvent<O>, EventsLost, ModelFault>> + '_ {
         NextModelEvent(self)
     }
 
@@ -913,21 +948,31 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
     type RxBuffer = ModelRxBuffer;
     type TxBuffer = ModelBuffer;
     type TxBody = O;
+    type TxBodies = Vec<(usize, O)>;
 
-    fn into_received(event: ModelEvent) -> Result<(ModelRxBuffer, RxMeta), ModelEvent> {
+    fn into_received(event: ModelEvent<O>) -> Result<(ModelRxBuffer, RxMeta), ModelEvent<O>> {
         match event {
             ModelEvent::Received(frame, meta) => Ok((frame, meta)),
             event => Err(event),
         }
     }
 
-    fn view(event: &ModelEvent) -> LowerMacEvent<'_> {
+    fn into_completed(
+        event: ModelEvent<O>,
+    ) -> Result<(TxCompletion, Vec<(usize, O)>), ModelEvent<O>> {
+        match event {
+            ModelEvent::Tx(completion, bodies) => Ok((completion, bodies)),
+            event => Err(event),
+        }
+    }
+
+    fn view(event: &ModelEvent<O>) -> LowerMacEvent<'_> {
         match event {
             ModelEvent::Received(frame, meta) => LowerMacEvent::Received {
                 frame: frame.bytes(),
                 meta: *meta,
             },
-            ModelEvent::Tx(completion) => LowerMacEvent::TxCompleted(*completion),
+            ModelEvent::Tx(completion, _) => LowerMacEvent::TxCompleted(*completion),
             ModelEvent::Tbtt(_) => LowerMacEvent::Extension,
             ModelEvent::Lifecycle(event) => LowerMacEvent::Lifecycle(*event),
         }
@@ -997,32 +1042,6 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
             self.bodies.borrow_mut().push((attempt.id, 0, body));
         }
         Ok(refused.map_err(|error| Refused { error, attempt }))
-    }
-
-    fn reclaim_tx_bodies(
-        &self,
-        id: TxId,
-        mut each: impl FnMut(usize, O),
-    ) -> PortResult<(), ReclaimError, ModelFault> {
-        let state = self.serving()?;
-        if state.in_flight.iter().any(|attempt| attempt.id == id) {
-            return Ok(Err(ReclaimError::Running));
-        }
-        drop(state);
-        let mut bodies = self.bodies.borrow_mut();
-        if !bodies.iter().any(|(attempt, _, _)| *attempt == id) {
-            return Ok(Err(ReclaimError::Unknown));
-        }
-        let mut index = 0;
-        while index < bodies.len() {
-            if bodies[index].0 == id {
-                let (_, subframe, body) = bodies.remove(index);
-                each(subframe, body);
-            } else {
-                index += 1;
-            }
-        }
-        Ok(Ok(()))
     }
 
     fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, ModelFault> {
@@ -1370,7 +1389,7 @@ impl<O: TxBody> LowerMacBeaconTiming for LowerMacModel<O> {
         self.tbtt_role(vif)
     }
 
-    fn tbtt(event: &ModelEvent) -> Option<TbttEvent> {
+    fn tbtt(event: &ModelEvent<O>) -> Option<TbttEvent> {
         match event {
             ModelEvent::Tbtt(event) => Some(*event),
             _ => None,

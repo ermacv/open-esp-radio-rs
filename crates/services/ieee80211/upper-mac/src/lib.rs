@@ -47,8 +47,8 @@ pub use router::{
 use oer_ieee80211_lower_mac::{
     AirReservation, AmpduBuffer, AmpduPayload, Backoff, ClockError, CoexPriority,
     Ieee80211LowerMacPort, KeySelector, LowerMacAirReservation, LowerMacAmpdu, NotInstalled,
-    PhyRate, Poisoned, Protection, ReclaimError, Refused, SubmitError, TxAttempt,
-    TxBody as PortTxBody, TxBuffer, TxCompletion, TxId, TxPayload, TxPower, TxResponse, VifId,
+    PhyRate, Poisoned, Protection, Refused, SubmitError, TxAttempt, TxBody as PortTxBody, TxBuffer,
+    TxCompletion, TxId, TxPayload, TxPower, TxResponse, VifId,
 };
 use oer_ieee80211_mac::block_ack::encode_block_ack_request;
 use oer_ieee80211_mac::qos::WmmAccessCategory;
@@ -79,8 +79,6 @@ pub enum UpperMacTxError<F> {
     Clock(ClockError),
     /// The port is poisoned.
     Poisoned(Poisoned<F>),
-    /// The port kept the bodies of an attempt that ended.
-    BodiesHeld { attempt: TxId },
 }
 
 impl<F> From<Poisoned<F>> for UpperMacTxError<F> {
@@ -367,7 +365,7 @@ where
     }
 
     /// Await the completion of a registered attempt from the router and take
-    /// back the bodies it carried, the attempt's subframe `n` into the
+    /// back the bodies it carries, the attempt's subframe `n` into the
     /// caller's `origin(n)`.
     async fn completion(
         &self,
@@ -375,19 +373,14 @@ where
         bodies: &mut [Option<P::TxBody>],
         origin: impl Fn(usize) -> Option<usize>,
     ) -> Result<TxCompletion, UpperMacTxError<P::Fault>> {
-        let id = registration.id();
-        let completion = self.router.completion(id).await?;
-        // The attempt ended: its bodies come back.
-        let reclaimed = self.port.reclaim_tx_bodies(id, |subframe, body| {
+        let (completion, returned) = self.router.completion(registration.id()).await?;
+        // The attempt ended: its bodies come back with its completion.
+        for (subframe, body) in returned {
             if let Some(slot) = origin(subframe).and_then(|origin| bodies.get_mut(origin)) {
                 *slot = Some(body);
             }
-        })?;
-        match reclaimed {
-            Ok(()) | Err(ReclaimError::Unknown) => Ok(completion),
-            Err(ReclaimError::Running) => Err(UpperMacTxError::BodiesHeld { attempt: id }),
-            Err(ReclaimError::NotInstalled) => Err(UpperMacTxError::NotInstalled),
         }
+        Ok(completion)
     }
 }
 

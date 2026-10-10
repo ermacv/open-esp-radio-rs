@@ -111,7 +111,7 @@ use oer_ieee80211_lower_mac::{
     TxId, VifId, VifTsf,
 };
 use oer_ieee80211_lower_mac::{
-    AmpduBuffer, AmpduPayload, MpduAttempt, ReclaimError, TxBody, TxBuffer, TxPayload,
+    AmpduBuffer, AmpduPayload, MpduAttempt, TxBody, TxBuffer, TxPayload,
 };
 use oer_ieee80211_lower_mac::{Ieee80211ClockSample, Ieee80211Instant};
 
@@ -200,21 +200,22 @@ impl<U: LowerMacRxUnit> RxBuffer for Esp32s31RxBuffer<U> {
     }
 }
 
-/// One owned event of the port.
+/// One owned event of the port. An attempt's completion owns the bodies
+/// of its attempt, at most one MPDU's and `SUBFRAMES` subframes'.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Esp32s31LowerMacEvent<U> {
+pub enum Esp32s31LowerMacEvent<U, O, const SUBFRAMES: usize> {
     /// A received MPDU.
     Received {
         frame: Esp32s31RxBuffer<U>,
         meta: RxMeta,
     },
-    TxCompleted(TxCompletion),
+    TxCompleted(TxCompletion, Esp32s31TxBodies<O, SUBFRAMES>),
     Lifecycle(LifecycleEvent),
     /// A station TBTT, viewed through [`LowerMacBeaconTiming::tbtt`].
     Tbtt(TbttEvent),
 }
 
-impl<U: LowerMacRxUnit> Esp32s31LowerMacEvent<U> {
+impl<U: LowerMacRxUnit, O, const SUBFRAMES: usize> Esp32s31LowerMacEvent<U, O, SUBFRAMES> {
     /// Lend the event as a portable value.
     pub fn portable(&self) -> LowerMacEvent<'_> {
         match self {
@@ -222,10 +223,71 @@ impl<U: LowerMacRxUnit> Esp32s31LowerMacEvent<U> {
                 frame: frame.bytes(),
                 meta: *meta,
             },
-            Self::TxCompleted(completion) => LowerMacEvent::TxCompleted(*completion),
+            Self::TxCompleted(completion, _) => LowerMacEvent::TxCompleted(*completion),
             Self::Lifecycle(event) => LowerMacEvent::Lifecycle(*event),
             Self::Tbtt(_) => LowerMacEvent::Extension,
         }
+    }
+}
+
+/// An event the port queues; a completion takes the bodies of its attempt
+/// only as the consumer takes it ([`RadioPort::next_event`]), so the queues
+/// hold no body.
+#[derive(Debug)]
+enum QueuedEvent<U> {
+    Received {
+        frame: Esp32s31RxBuffer<U>,
+        meta: RxMeta,
+    },
+    TxCompleted(TxCompletion),
+    Lifecycle(LifecycleEvent),
+    Tbtt(TbttEvent),
+}
+
+/// The bodies of one attempt: an MPDU's, or an aggregate's by subframe.
+/// The port holds them from the attempt's admission; its completion event
+/// carries them back.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Esp32s31TxBodies<O, const SUBFRAMES: usize> {
+    mpdu: Option<O>,
+    subframes: [Option<O>; SUBFRAMES],
+}
+
+impl<O, const SUBFRAMES: usize> Esp32s31TxBodies<O, SUBFRAMES> {
+    const NONE: Self = Self {
+        mpdu: None,
+        subframes: [const { None }; SUBFRAMES],
+    };
+}
+
+impl<O, const SUBFRAMES: usize> IntoIterator for Esp32s31TxBodies<O, SUBFRAMES> {
+    type Item = (usize, O);
+    type IntoIter = Esp32s31TxBodiesIter<O, SUBFRAMES>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Esp32s31TxBodiesIter {
+            mpdu: self.mpdu,
+            subframes: self.subframes.into_iter().enumerate(),
+        }
+    }
+}
+
+/// The bodies of an attempt with their subframe index (0 for an MPDU's).
+#[derive(Debug)]
+pub struct Esp32s31TxBodiesIter<O, const SUBFRAMES: usize> {
+    mpdu: Option<O>,
+    subframes: core::iter::Enumerate<core::array::IntoIter<Option<O>, SUBFRAMES>>,
+}
+
+impl<O, const SUBFRAMES: usize> Iterator for Esp32s31TxBodiesIter<O, SUBFRAMES> {
+    type Item = (usize, O);
+
+    fn next(&mut self) -> Option<(usize, O)> {
+        if let Some(body) = self.mpdu.take() {
+            return Some((0, body));
+        }
+        self.subframes
+            .find_map(|(index, body)| body.map(|body| (index, body)))
     }
 }
 
@@ -314,12 +376,11 @@ impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
     }
 }
 
-/// The bodies of one admitted attempt, which the port holds until the
-/// caller reclaims them: an MPDU's, or an aggregate's by subframe.
+/// The bodies of one admitted attempt, which the port holds until its
+/// completion event carries them.
 struct HeldBodies<O, const SUBFRAMES: usize> {
     id: TxId,
-    mpdu: Option<O>,
-    subframes: [Option<O>; SUBFRAMES],
+    bodies: Esp32s31TxBodies<O, SUBFRAMES>,
 }
 
 /// An aggregate buffer of the port: the core's, whose MPDUs it fills, and
@@ -376,7 +437,7 @@ struct Queues<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> {
     completions: EventQueue<M, TxCompletion, COMPLETION_SLOTS>,
     lifecycle: EventQueue<M, LifecycleEvent, LIFECYCLE_SLOTS>,
     tbtt: EventQueue<M, TbttEvent, TBTT_CAPACITY>,
-    received: EventQueue<M, Esp32s31LowerMacEvent<U>, EVENTS>,
+    received: EventQueue<M, QueuedEvent<U>, EVENTS>,
     /// Completions owed: admitted attempts whose completion was not taken.
     owed_completions: Mutex<M, Cell<usize>>,
     /// Lifecycle terminals owed.
@@ -401,23 +462,23 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
 
     /// The next queued event: completions, lifecycle terminals, TBTTs,
     /// then received frames.
-    fn take(&self) -> Option<Result<Esp32s31LowerMacEvent<U>, EventsLost>> {
+    fn take(&self) -> Option<Result<QueuedEvent<U>, EventsLost>> {
         if let Some(entry) = self.completions.take() {
             if entry.is_ok() {
                 self.owed_completions
                     .lock(|owed| owed.set(owed.get().saturating_sub(1)));
             }
-            return Some(entry.map(Esp32s31LowerMacEvent::TxCompleted));
+            return Some(entry.map(QueuedEvent::TxCompleted));
         }
         if let Some(entry) = self.lifecycle.take() {
             if entry.is_ok() {
                 self.owed_lifecycle
                     .lock(|owed| owed.set(owed.get().saturating_sub(1)));
             }
-            return Some(entry.map(Esp32s31LowerMacEvent::Lifecycle));
+            return Some(entry.map(QueuedEvent::Lifecycle));
         }
         if let Some(entry) = self.tbtt.take() {
-            return Some(entry.map(Esp32s31LowerMacEvent::Tbtt));
+            return Some(entry.map(QueuedEvent::Tbtt));
         }
         self.received.take()
     }
@@ -565,8 +626,8 @@ pub struct Esp32s31LowerMac<
     /// The image's monotonic time the runner's watchdog waits on; the same
     /// time the installed core's transmit owner reads.
     timer: T,
-    /// The bodies of admitted attempts until the caller reclaims them, one
-    /// entry per attempt; the owed completions bound them.
+    /// The bodies of admitted attempts until their completion events carry
+    /// them, one entry per attempt; the owed completions bound them.
     #[allow(clippy::type_complexity, reason = "one entry per owed attempt")]
     bodies: Mutex<M, RefCell<[Option<HeldBodies<O, AMPDU_SLOTS>>; COMPLETION_CAPACITY]>>,
 }
@@ -677,7 +738,7 @@ where
     }
 
     /// Hold attempt `id`'s bodies before the attempt is published, so a
-    /// completion and reclaim that follow the publication at once find them;
+    /// completion that follows the publication at once finds them;
     /// the bodies come back when a slot is free for no attempt, or one of
     /// the same identity already holds bodies.
     #[allow(
@@ -700,21 +761,22 @@ where
             };
             *free = Some(HeldBodies {
                 id,
-                mpdu,
-                subframes,
+                bodies: Esp32s31TxBodies { mpdu, subframes },
             });
             Ok(())
         })
     }
 
-    /// Take back the bodies of attempt `id`, which the backend did not admit.
-    fn unhold_bodies(&self, id: TxId) -> Option<HeldBodies<O, AMPDU_SLOTS>> {
+    /// Take back the bodies of attempt `id`: the backend did not admit it,
+    /// or its completion is taken.
+    fn unhold_bodies(&self, id: TxId) -> Option<Esp32s31TxBodies<O, AMPDU_SLOTS>> {
         self.bodies.lock(|bodies| {
             bodies
                 .borrow_mut()
                 .iter_mut()
                 .find(|held| held.as_ref().is_some_and(|held| held.id == id))
                 .and_then(Option::take)
+                .map(|held| held.bodies)
         })
     }
 
@@ -965,7 +1027,7 @@ where
         let Ok(Ok(Some((mpdu, meta)))) = received else {
             return Ok(Ok(()));
         };
-        let event = Esp32s31LowerMacEvent::Received {
+        let event = QueuedEvent::Received {
             frame: Esp32s31RxBuffer { unit, mpdu },
             meta,
         };
@@ -981,7 +1043,7 @@ where
             Ok(())
         });
         Ok(match refused {
-            Some(Esp32s31LowerMacEvent::Received { frame, .. }) => Err(frame.unit),
+            Some(QueuedEvent::Received { frame, .. }) => Err(frame.unit),
             _ => Ok(()),
         })
     }
@@ -1053,12 +1115,26 @@ where
         }
     }
 
-    /// Take the next event: the queued ones in their order, then the
-    /// [`Poisoned`] of a poisoned port.
-    async fn wait_event(&self) -> PortResult<Esp32s31LowerMacEvent<U>, EventsLost, LowerMacFault> {
+    /// Take the next event: the queued ones in their order, a completion
+    /// with the bodies of its attempt, then the [`Poisoned`] of a poisoned
+    /// port.
+    async fn wait_event(
+        &self,
+    ) -> PortResult<Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>, EventsLost, LowerMacFault> {
         loop {
             if let Some(event) = self.queues.take() {
-                return Ok(event);
+                return Ok(event.map(|event| match event {
+                    QueuedEvent::Received { frame, meta } => {
+                        Esp32s31LowerMacEvent::Received { frame, meta }
+                    }
+                    QueuedEvent::TxCompleted(completion) => Esp32s31LowerMacEvent::TxCompleted(
+                        completion,
+                        self.unhold_bodies(completion.id)
+                            .unwrap_or(Esp32s31TxBodies::NONE),
+                    ),
+                    QueuedEvent::Lifecycle(event) => Esp32s31LowerMacEvent::Lifecycle(event),
+                    QueuedEvent::Tbtt(event) => Esp32s31LowerMacEvent::Tbtt(event),
+                }));
             }
             if let Some(cause) = self.fault.lock(Cell::get) {
                 return Err(Poisoned { cause });
@@ -1160,15 +1236,16 @@ where
     R: LowerMacRetune,
     S: AmpduBacking,
 {
-    type Event = Esp32s31LowerMacEvent<U>;
+    type Event = Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>;
     type Id = TxId;
     type Domain = Ieee80211Radio;
     type Fault = LowerMacFault;
 
     fn next_event(
         &self,
-    ) -> impl Future<Output = PortResult<Esp32s31LowerMacEvent<U>, EventsLost, LowerMacFault>> + '_
-    {
+    ) -> impl Future<
+        Output = PortResult<Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>, EventsLost, LowerMacFault>,
+    > + '_ {
         self.wait_event()
     }
 
@@ -1317,17 +1394,30 @@ where
 {
     type TxBuffer = Esp32s31TxBuffer<'slot, BUFFER_SIZE>;
     type TxBody = O;
+    type TxBodies = Esp32s31TxBodies<O, AMPDU_SLOTS>;
     type RxBuffer = Esp32s31RxBuffer<U>;
 
-    fn view(event: &Esp32s31LowerMacEvent<U>) -> LowerMacEvent<'_> {
+    fn view(event: &Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>) -> LowerMacEvent<'_> {
         event.portable()
     }
 
     fn into_received(
-        event: Esp32s31LowerMacEvent<U>,
-    ) -> Result<(Esp32s31RxBuffer<U>, RxMeta), Esp32s31LowerMacEvent<U>> {
+        event: Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>,
+    ) -> Result<(Esp32s31RxBuffer<U>, RxMeta), Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>> {
         match event {
             Esp32s31LowerMacEvent::Received { frame, meta } => Ok((frame, meta)),
+            event => Err(event),
+        }
+    }
+
+    fn into_completed(
+        event: Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>,
+    ) -> Result<
+        (TxCompletion, Esp32s31TxBodies<O, AMPDU_SLOTS>),
+        Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>,
+    > {
+        match event {
+            Esp32s31LowerMacEvent::TxCompleted(completion, bodies) => Ok((completion, bodies)),
             event => Err(event),
         }
     }
@@ -1420,37 +1510,6 @@ where
         // A publication starts its watchdog.
         self.wake.signal(());
         Ok(admitted)
-    }
-
-    fn reclaim_tx_bodies(
-        &self,
-        id: TxId,
-        mut each: impl FnMut(usize, O),
-    ) -> PortResult<(), ReclaimError, LowerMacFault> {
-        match self.with_core(|core, _, _| Ok(core.running(id)))? {
-            Err(NotInstalled) => return Ok(Err(ReclaimError::NotInstalled)),
-            Ok(true) => return Ok(Err(ReclaimError::Running)),
-            Ok(false) => {}
-        }
-        let held = self.bodies.lock(|bodies| {
-            bodies
-                .borrow_mut()
-                .iter_mut()
-                .find(|held| held.as_ref().is_some_and(|held| held.id == id))
-                .and_then(Option::take)
-        });
-        let Some(held) = held else {
-            return Ok(Err(ReclaimError::Unknown));
-        };
-        if let Some(body) = held.mpdu {
-            each(0, body);
-        }
-        for (index, body) in held.subframes.into_iter().enumerate() {
-            if let Some(body) = body {
-                each(index, body);
-            }
-        }
-        Ok(Ok(()))
     }
 
     fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, LowerMacFault> {
@@ -1583,7 +1642,7 @@ where
         setting_answer(self.with_core(|core, hardware, _| Ok(core.stop_tbtt(hardware, vif))))
     }
 
-    fn tbtt(event: &Esp32s31LowerMacEvent<U>) -> Option<TbttEvent> {
+    fn tbtt(event: &Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>) -> Option<TbttEvent> {
         match event {
             Esp32s31LowerMacEvent::Tbtt(event) => Some(*event),
             _ => None,

@@ -1362,3 +1362,94 @@ fn runs_of_another_schema_are_counted_by_schema() {
     assert_eq!((summary.directories, summary.bundles), (3, 3));
     fs::remove_dir_all(root).unwrap();
 }
+
+/// An observation whose observer recorded a build of an older schema (a tree,
+/// schema 2) is not this observer's: it is excluded as
+/// `observer-identity-not-established`, and its run stays valid evidence of
+/// everything else (the owner's choice in #412).
+#[test]
+fn an_observer_build_of_an_older_schema_is_another_observer() {
+    use oer_hil_run_bundle_format::observer::store as observer_store;
+    let root = std::env::temp_dir().join(format!(
+        "open-radio-qualification-hil-observer-schema-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        fs::remove_dir_all(&root).unwrap();
+    }
+    let run = root.join("runs/run-1");
+    fs::create_dir_all(&run).unwrap();
+    fs::write(
+        run.join("manifest.json"),
+        serde_json::to_vec_pretty(&json!({
+            "schema": 2, "run_id": "run-1", "target": "chip-a", "state": "completed",
+            "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
+            "repository": {"commit": "abc123", "dirty": false, "workspace_sha256": "00".repeat(32)}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        run.join("suite.json"),
+        serde_json::to_vec_pretty(&json!({
+            "schema": 2, "run_id": "run-1", "target": "chip-a", "outcome": "passed",
+            "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
+            "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0,
+                "blocked": 0, "interrupted": 0},
+            "scenarios": [{
+                "schema": 2, "scenario": "station-reconnect", "outcome": "passed",
+                "required_repetitions": 1,
+                "repetitions": [{"schema": 2, "repetition": 1, "outcome": "passed", "failure": null}],
+                "failure": null,
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    add_current_build(&root, &run);
+    seal(&run);
+    let repository = RepositoryState {
+        commit: "abc123".to_owned(),
+        dirty: false,
+    };
+    let load = || {
+        HilEvidenceIndex::load(
+            &root,
+            Path::new("runs"),
+            Path::new("evidence"),
+            "chip-a",
+            &repository,
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        load().summary().qualifying,
+        1,
+        "the current build qualifies"
+    );
+
+    // The same build recorded under schema 2, stored and named correctly.
+    let mut manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
+    let mut embedded = observer_store::attach(&manifest["runner"]["observer"], &root).unwrap();
+    embedded["build"]["schema"] = json!(2);
+    embedded["build_sha256"] = json!(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&embedded["build"]).unwrap())
+    ));
+    manifest["runner"]["observer"] = observer_store::detach(&embedded, &root).unwrap();
+    fs::write(
+        run.join("manifest.json"),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .unwrap();
+    seal(&run);
+    let index = load();
+    let summary = index.summary();
+    assert!(summary.invalid.is_empty(), "{:?}", summary.invalid);
+    assert_eq!((summary.bundles, summary.qualifying), (1, 0));
+    assert_eq!(
+        index.scenarios["station-reconnect"][0].exclusions,
+        [decision::Exclusion::ObserverIdentityNotEstablished]
+    );
+    fs::remove_dir_all(root).unwrap();
+}

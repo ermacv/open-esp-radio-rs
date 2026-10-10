@@ -6403,7 +6403,7 @@ pub mod phy_agc_oracle {
         pub const fn rf_rx_saturation_config(&self) -> &RfRxSaturationConfig {
             &self.rf_rx_saturation_config
         }
-        #[doc = "0x7094 - Project-assigned name. Complete phy_agc_reg_init replaces one seven-bit parameter-derived field."]
+        #[doc = "0x7094 - Project-assigned name. Holds the seven-bit AGC initial receive-gain index INITIAL_GAIN_INDEX, which complete phy_agc_reg_init derives from a parameter byte and librftest rx_init_gain sets with RX_GAIN_LIMIT_CONTROL."]
         #[inline(always)]
         pub const fn agc_gain_limit_low(&self) -> &AgcGainLimitLow {
             &self.agc_gain_limit_low
@@ -6448,7 +6448,7 @@ pub mod phy_agc_oracle {
         pub const fn agc_init_high_control(&self) -> &AgcInitHighControl {
             &self.agc_init_high_control
         }
-        #[doc = "0x713c - Project-assigned name. Shared seven-bit gain limit written by phy_agc_reg_init and the final phy_set_rx_gain_table tail."]
+        #[doc = "0x713c - Project-assigned name. Holds the seven-bit AGC initial receive-gain index INITIAL_GAIN_INDEX, written by phy_agc_reg_init, the final phy_set_rx_gain_table tail and librftest rx_init_gain together with AGC_GAIN_LIMIT_LOW."]
         #[inline(always)]
         pub const fn rx_gain_limit_control(&self) -> &RxGainLimitControl {
             &self.rx_gain_limit_control
@@ -7048,10 +7048,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_GAIN_LIMIT_LOW (rw) register accessor: Project-assigned name. Complete phy_agc_reg_init replaces one seven-bit parameter-derived field.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_gain_limit_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_gain_limit_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_gain_limit_low`] module"]
+    #[doc = "AGC_GAIN_LIMIT_LOW (rw) register accessor: Project-assigned name. Holds the seven-bit AGC initial receive-gain index INITIAL_GAIN_INDEX, which complete phy_agc_reg_init derives from a parameter byte and librftest rx_init_gain sets with RX_GAIN_LIMIT_CONTROL.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_gain_limit_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_gain_limit_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_gain_limit_low`] module"]
     #[doc(alias = "AGC_GAIN_LIMIT_LOW")]
     pub type AgcGainLimitLow = crate::Reg<agc_gain_limit_low::AgcGainLimitLowSpec>;
-    #[doc = "Project-assigned name. Complete phy_agc_reg_init replaces one seven-bit parameter-derived field."]
+    #[doc = "Project-assigned name. Holds the seven-bit AGC initial receive-gain index INITIAL_GAIN_INDEX, which complete phy_agc_reg_init derives from a parameter byte and librftest rx_init_gain sets with RX_GAIN_LIMIT_CONTROL."]
     pub mod agc_gain_limit_low {
         #[doc = "Register `AGC_GAIN_LIMIT_LOW` reader"]
         pub type R = crate::R<AgcGainLimitLowSpec>;
@@ -7075,7 +7075,7 @@ pub mod phy_agc_oracle {
                 InitialGainIndexW::new(self, 2)
             }
         }
-        #[doc = "Project-assigned name. Complete phy_agc_reg_init replaces one seven-bit parameter-derived field.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_gain_limit_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_gain_limit_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Holds the seven-bit AGC initial receive-gain index INITIAL_GAIN_INDEX, which complete phy_agc_reg_init derives from a parameter byte and librftest rx_init_gain sets with RX_GAIN_LIMIT_CONTROL.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_gain_limit_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_gain_limit_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcGainLimitLowSpec;
         impl crate::RegisterSpec for AgcGainLimitLowSpec {
             type Ux = u32;
@@ -7459,10 +7459,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_GAIN_LIMIT_CONTROL (rw) register accessor: Project-assigned name. Shared seven-bit gain limit written by phy_agc_reg_init and the final phy_set_rx_gain_table tail.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_limit_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_limit_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_gain_limit_control`] module"]
+    #[doc = "RX_GAIN_LIMIT_CONTROL (rw) register accessor: Project-assigned name. Holds the seven-bit AGC initial receive-gain index INITIAL_GAIN_INDEX, written by phy_agc_reg_init, the final phy_set_rx_gain_table tail and librftest rx_init_gain together with AGC_GAIN_LIMIT_LOW.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_limit_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_limit_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_gain_limit_control`] module"]
     #[doc(alias = "RX_GAIN_LIMIT_CONTROL")]
     pub type RxGainLimitControl = crate::Reg<rx_gain_limit_control::RxGainLimitControlSpec>;
-    #[doc = "Project-assigned name. Shared seven-bit gain limit written by phy_agc_reg_init and the final phy_set_rx_gain_table tail."]
+    #[doc = "Project-assigned name. Holds the seven-bit AGC initial receive-gain index INITIAL_GAIN_INDEX, written by phy_agc_reg_init, the final phy_set_rx_gain_table tail and librftest rx_init_gain together with AGC_GAIN_LIMIT_LOW."]
     pub mod rx_gain_limit_control {
         #[doc = "Register `RX_GAIN_LIMIT_CONTROL` reader"]
         pub type R = crate::R<RxGainLimitControlSpec>;
@@ -7486,7 +7486,7 @@ pub mod phy_agc_oracle {
                 InitialGainIndexW::new(self, 18)
             }
         }
-        #[doc = "Project-assigned name. Shared seven-bit gain limit written by phy_agc_reg_init and the final phy_set_rx_gain_table tail.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_limit_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_limit_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Holds the seven-bit AGC initial receive-gain index INITIAL_GAIN_INDEX, written by phy_agc_reg_init, the final phy_set_rx_gain_table tail and librftest rx_init_gain together with AGC_GAIN_LIMIT_LOW.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_limit_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_limit_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxGainLimitControlSpec;
         impl crate::RegisterSpec for RxGainLimitControlSpec {
             type Ux = u32;

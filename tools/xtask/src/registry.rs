@@ -539,6 +539,14 @@ pub const CHECKS: &[Check] = &[
         run: |ctx, _| verification(ctx, &["check", "probes"]),
     },
     Check {
+        id: "vendor-scenarios",
+        tier: Tier::Nightly,
+        job: "verification",
+        summary: "each verified chip's vendor scenarios against the pinned vendor code, their firmware inputs built from the tracked recipes",
+        trigger: None,
+        run: |ctx, _| verification(ctx, &["evidence"]),
+    },
+    Check {
         id: "host-stands",
         tier: Tier::Nightly,
         job: "verification",

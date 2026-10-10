@@ -62,7 +62,8 @@ follows from the checkout's sources and pins, so nothing tracks it.
 `cargo verification evidence --chip <chip>` computes it for the checkout into
 `target/verification/<chip>/evidence`, fetching the pins and building the
 firmware inputs from their recipes first, and fails when a scenario does not
-match. Qualification reads it from there; an index a source or reviewed
+match; without `--chip` it computes every verified chip's index, as the
+nightly `vendor-scenarios` check runs it. Qualification reads it from there; an index a source or reviewed
 coverage decision changed since holds no evidence, never partly trusted
 evidence, and its report names it stale until it is computed again. The [ESP32-S31 project](esp32s31/README.md)
 describes the scenarios, their inputs and their reviewed decisions; the

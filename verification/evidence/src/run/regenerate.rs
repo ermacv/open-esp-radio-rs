@@ -182,9 +182,14 @@ pub fn run(
     ctx: &Checkout,
     chip: &str,
     scenarios: Vec<String>,
-    linker: PathBuf,
+    linker: Option<PathBuf>,
     output: PathBuf,
 ) -> Result<ExitCode> {
+    // Ubuntu's LLD 18 fails these RV32 links: the toolchain's LLD is the default.
+    let linker = match linker {
+        Some(linker) => linker,
+        None => oer_toolchain::lld()?,
+    };
     let relative = directory(&ctx.root, chip)?;
     let directory = ctx.root.join(&relative);
     if scenarios.is_empty() {

@@ -12,8 +12,9 @@ name: Nightly
 #   llvm-objdump;
 # - blobray: Blobray's workspace, Clippy and tests, and its standalone
 #   extraction;
-# - verification: each verified chip's provenance, probe images and vendor
-#   host stands, with the pinned artifacts the checks fetch.
+# - verification: each verified chip's provenance, probe images, vendor
+#   scenarios (their ESP-IDF firmware inputs built from the tracked recipes)
+#   and vendor host stands, with the pinned artifacts the checks fetch.
 on:
   schedule:
     - cron: '17 2 * * *'
@@ -162,9 +163,16 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
+            target/*
+            !target/vendor-firmware
+            !target/blobray-research
           key: verification-nightly-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'verification/*/artifacts.toml') }}
           restore-keys: verification-nightly-${{ runner.os }}-
+      # The ESP-IDF tree and tools the vendor scenarios' firmware inputs are
+      # built with (~/.cache/open-esp-radio), those builds and the scenario
+      # runs (target/vendor-firmware, target/blobray-research) are prepared
+      # afresh each night: their gigabytes would evict the CI caches of
+      # every other job.
       - name: Fetch every workspace
         run: cargo tidy fetch
       - run: cargo xtask --verbose check tier nightly --job verification

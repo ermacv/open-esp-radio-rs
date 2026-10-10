@@ -105,3 +105,15 @@ fn the_host_triple_is_the_host_line_of_rustc_verbose_version() {
     assert_eq!(super::host_of(verbose).unwrap(), "x86_64-unknown-linux-gnu");
     assert!(super::host_of("rustc 1.95.0\n").is_err());
 }
+
+#[test]
+fn the_pinned_toolchain_ships_the_lld_that_links_rv32_images() {
+    let lld = lld().unwrap();
+    let name = format!("ld.lld{}", std::env::consts::EXE_SUFFIX);
+    assert!(
+        lld.ends_with(Path::new("gcc-ld").join(name)),
+        "{}",
+        lld.display()
+    );
+    assert!(lld.is_file());
+}

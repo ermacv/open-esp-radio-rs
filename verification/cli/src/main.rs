@@ -82,11 +82,13 @@ enum Command {
     /// every shard, its firmware inputs built from their recipes, or only the
     /// named scenarios' shards.
     Evidence {
+        /// The chip; every verified chip's whole index when omitted.
         #[arg(long)]
-        chip: String,
-        /// Linker the scenarios prepare images with.
-        #[arg(long, default_value = "ld.lld")]
-        linker: PathBuf,
+        chip: Option<String>,
+        /// Linker the scenarios prepare images with; the pinned Rust
+        /// toolchain's LLD when omitted.
+        #[arg(long)]
+        linker: Option<PathBuf>,
         /// Ignored output root of the scenario runs.
         #[arg(long, default_value = "target/blobray-research/evidence")]
         output: PathBuf,
@@ -229,6 +231,16 @@ fn run() -> Result<ExitCode> {
             scenarios,
         } => {
             use oer_vendor_evidence::run::regenerate;
+            let Some(chip) = chip else {
+                if untriaged || !scenarios.is_empty() {
+                    return Err("naming scenarios or `--untriaged` needs `--chip`".into());
+                }
+                // Every verified chip's whole index, as the nightly check runs it.
+                for chip in verified_chips(&ctx)? {
+                    regenerate::run(&ctx, &chip, vec![], linker.clone(), output.clone())?;
+                }
+                return Ok(ExitCode::SUCCESS);
+            };
             return if untriaged {
                 regenerate::untriaged(&ctx, &chip)
             } else {

@@ -133,6 +133,22 @@ pub fn program_in(
     }
 }
 
+/// The LLD the active Rust toolchain ships,
+/// `<sysroot>/lib/rustlib/<host>/bin/gcc-ld/ld.lld`, for the host tools that
+/// link RV32 images themselves: an unrelated LLD on `PATH`, such as
+/// Ubuntu's LLD 18, need not link them.
+pub fn lld() -> Result<PathBuf> {
+    let rustc = program(Tool::Rustc)?;
+    let path = sysroot_bin(&rustc)?
+        .join("gcc-ld")
+        .join(format!("ld.lld{}", std::env::consts::EXE_SUFFIX));
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(format!("the active Rust toolchain ships no {}", path.display()).into())
+    }
+}
+
 /// `<sysroot>/lib/rustlib/<host>/bin` of `rustc`.
 fn sysroot_bin(rustc: &OsStr) -> Result<PathBuf> {
     let text = |arguments: &[&str]| -> Result<String> {

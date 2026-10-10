@@ -377,6 +377,42 @@ mod tests {
         assert!(projection(&resolved, &BTreeSet::from(["wire".into()])).is_err());
     }
 
+    /// The graph projects exactly what its `--no-dedupe` tree projected. The
+    /// expected values are the tree projection's output (the reader removed
+    /// in schema 3) for the tree of this graph: `wire` and `ble` share
+    /// `shared`, which `ble` also reaches as a second Cargo node with more
+    /// features and its own dependency.
+    #[test]
+    fn the_graph_projects_what_its_tree_projected() {
+        let package = |name: &str, checksum: &str| json!({"name":name,"version":"1","source":"registry+test","checksum":checksum});
+        let mut resolved = fixture();
+        resolved["packages"] = json!([
+            {"package":{"name":RUNNER,"version":"1"},"features":[],"edges":[1,3]},
+            {"package":package("wire","a"),"features":["std"],"edges":[2]},
+            {"package":package("shared","c"),"features":["alloc"],"edges":[]},
+            {"package":package("ble","b"),"features":[],"edges":[2,4,5]},
+            {"package":package("ble-only","d"),"features":[],"edges":[]},
+            {"package":package("shared","c"),"features":["alloc","std"],"edges":[6]},
+            {"package":package("std-only","e"),"features":[],"edges":[]}
+        ]);
+        let wire: Value = serde_json::from_str(
+            r#"{"manifests":{"hil/host/runner/Cargo.toml":{"build-dependencies":null,"dependencies":{"wire":{"features":["std"],"version":"1"}},"package":{"name":"oer-hil-runner","version":"1"}}},"packages":{"oer-hil-runner@\"1\":null":{"dependencies":["wire 1 (registry+test)"],"features":[],"name":"oer-hil-runner","script_flags":null,"unit_profiles":[],"version":"1"},"shared@\"1\":\"registry+test\"":{"checksum":"c","dependencies":[],"features":["alloc"],"name":"shared","script_flags":null,"source":"registry+test","unit_profiles":[],"version":"1"},"wire@\"1\":\"registry+test\"":{"checksum":"a","dependencies":["shared 1 (registry+test)"],"features":["std"],"name":"wire","script_flags":null,"source":"registry+test","unit_profiles":[],"version":"1"}},"workspace":{"workspace":{}}}"#,
+        )
+        .unwrap();
+        let both: Value = serde_json::from_str(
+            r#"{"manifests":{"hil/host/runner/Cargo.toml":{"build-dependencies":null,"dependencies":{"ble":"1","wire":{"features":["std"],"version":"1"}},"package":{"name":"oer-hil-runner","version":"1"}}},"packages":{"ble-only@\"1\":\"registry+test\"":{"checksum":"d","dependencies":[],"features":[],"name":"ble-only","script_flags":null,"source":"registry+test","unit_profiles":[],"version":"1"},"ble@\"1\":\"registry+test\"":{"checksum":"b","dependencies":["ble-only 1 (registry+test)","shared 1 (registry+test)"],"features":[],"name":"ble","script_flags":null,"source":"registry+test","unit_profiles":[],"version":"1"},"oer-hil-runner@\"1\":null":{"dependencies":["ble 1 (registry+test)","wire 1 (registry+test)"],"features":[],"name":"oer-hil-runner","script_flags":null,"unit_profiles":[],"version":"1"},"shared@\"1\":\"registry+test\"":{"checksum":"c","dependencies":["std-only 1 (registry+test)"],"features":["alloc"],"name":"shared","script_flags":null,"source":"registry+test","unit_profiles":[],"version":"1"},"std-only@\"1\":\"registry+test\"":{"checksum":"e","dependencies":[],"features":[],"name":"std-only","script_flags":null,"source":"registry+test","unit_profiles":[],"version":"1"},"wire@\"1\":\"registry+test\"":{"checksum":"a","dependencies":["shared 1 (registry+test)"],"features":["std"],"name":"wire","script_flags":null,"source":"registry+test","unit_profiles":[],"version":"1"}},"workspace":{"workspace":{}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            projection(&resolved, &BTreeSet::from(["wire".into()])).unwrap(),
+            wire
+        );
+        assert_eq!(
+            projection(&resolved, &BTreeSet::from(["wire".into(), "ble".into()])).unwrap(),
+            both
+        );
+    }
+
     #[test]
     fn wifi_scope_ignores_ble_pins_but_preserves_features_and_dependency_manifests() {
         let mut resolved = fixture();

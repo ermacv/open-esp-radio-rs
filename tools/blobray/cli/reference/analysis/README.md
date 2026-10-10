@@ -272,9 +272,14 @@ dispatch when the bounds check guarding it states the entry count (at most
 conditional branch on the same index against a constant, the fall-through
 of `bltu limit, index` / `bgeu index, limit` or the taken edge of
 `bltu index, limit` / `bgeu limit, index`. A comparison elsewhere in the
-function bounds nothing. Every selected entry must carry a relocation to a label inside
-the function; then the function is analyzed again with those targets as
-jumps. A dispatch without a bound, with any entry unrelocated or leaving the
+function bounds nothing. Every selected entry must carry an `R_RISCV_32` relocation with an
+explicit addend (`SHT_RELA`; a `SHT_REL` table keeps its addends in the
+words and is not proven) to a label inside the function; then the function
+is analyzed again with those targets as jumps. The symbols and the RELA
+relocations of read-only data this needs, the recognizer's indexes and the
+found entries are held in admitted working memory, and every record the
+recognizer visits is charged to the work budget; a return
+(`jalr zero, 0(ra)`) is never a candidate. A dispatch without a bound, with any entry unrelocated or leaving the
 function stays an indirect gap, and executable images, which keep no
 relocations, are not resolved. `function-records` lists each followed table
 as `jump_tables` (`{site, first_case, entries}`, entry `i` being case

@@ -146,10 +146,10 @@ pub enum FunctionRecord {
     },
     /// Register state before the transfer instruction: a call or tail call,
     /// a jump to a target outside the function, an image's jump to local
-    /// targets the graph does not expand, and a relocatable object's
-    /// register-indirect jump that is no return (`jalr zero, 0(ra|t0)`),
-    /// expanded or not. Its architectural write is a separate `Value` fact and
-    /// must precede callee-entry substitution.
+    /// targets the graph does not expand, and a relocatable object's jump
+    /// the graph leaves without a target or a caller expanded through a
+    /// `KnownJump` (a dispatch). Its architectural write is a separate
+    /// `Value` fact and must precede callee-entry substitution.
     CallInputs {
         offset: u64,
         registers: Vec<AbstractValue>,

@@ -122,7 +122,12 @@ pub fn run(context: &Checkout, chip: &str, list_roles: bool) -> Result<()> {
                 let _cache = oer_toolchain::image::lock_compile_cache(&cache)?;
                 process::run(command)?;
                 std::fs::create_dir_all(elf.parent().ok_or("probe output has no parent")?)?;
-                std::fs::copy(cache.join(&target).join("release").join(&package), &elf)?;
+                let built = cache.join(&target).join("release").join(&package);
+                std::fs::copy(&built, &elf)?;
+                // A shard's sources start from the image's dep-info beside it.
+                let mut dep_info = elf.clone().into_os_string();
+                dep_info.push(".d");
+                std::fs::copy(built.with_extension("d"), dep_info)?;
             }
             let catalog = oer_probe_codegen::validate_elf(&std::fs::read(&elf)?, &package)?;
             eprintln!(

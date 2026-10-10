@@ -14,7 +14,8 @@
 //! next; those no session fixed within a day and nobody claimed (assigned)
 //! one by one to any session, to claim before new work,
 //! since agents push and move on before the review reports; the rest as a
-//! count.
+//! count. An open pull request whose review ended in error (it did not
+//! complete, or its findings were not filed) is listed for a `@claude review`.
 
 use std::{collections::BTreeSet, path::Path};
 
@@ -423,8 +424,77 @@ fn open_findings(ctx: &Checkout) -> Result<Vec<String>, String> {
     Ok(review_findings(&issues, &view))
 }
 
+/// The status the Claude review workflow sets on a pull request's head.
+const REVIEW_STATUS: &str = "claude-runtime-review";
+
+/// An open pull request as `gh pr list --json` reports it.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PullRequest {
+    number: u64,
+    url: String,
+    head_ref_name: String,
+    status_check_rollup: Vec<serde_json::Value>,
+}
+
+/// One line per open pull request whose Claude review ended in `error`: it
+/// did not complete, or its findings were not filed as issues, so they reach
+/// no session until a `@claude review` comment reviews it again. The session
+/// on that branch (`branch`, this checkout's) asks for it.
+fn unreviewed(pulls: &[PullRequest], branch: Option<&str>) -> Vec<String> {
+    pulls
+        .iter()
+        .filter(|pull| {
+            pull.status_check_rollup
+                .iter()
+                .any(|check| check["context"] == REVIEW_STATUS && check["state"] == "ERROR")
+        })
+        .map(|pull| {
+            let (whose, who) = if branch == Some(pull.head_ref_name.as_str()) {
+                (" of this branch", "comment")
+            } else {
+                ("", "the session on its branch comments")
+            };
+            format!(
+                "PR #{} ({}){whose} has no Claude review: it failed or its findings were not \
+                 filed; {who} `@claude review` on it: {}",
+                pull.number, pull.head_ref_name, pull.url
+            )
+        })
+        .collect()
+}
+
+/// [`unreviewed`] of the repository's open pull requests.
+fn unreviewed_pulls(ctx: &Checkout) -> Result<Vec<String>, String> {
+    let output = process::capture(ctx.command("gh").args([
+        "pr",
+        "list",
+        "--state",
+        "open",
+        "--limit",
+        "100",
+        "--json",
+        "number,url,headRefName,statusCheckRollup",
+    ]))
+    .map_err(|error| {
+        error
+            .to_string()
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("`gh pr list` failed")
+            .trim()
+            .to_owned()
+    })?;
+    let pulls = serde_json::from_slice::<Vec<PullRequest>>(&output.stdout)
+        .map_err(|error| format!("`gh pr list` printed no pull request list: {error}"))?;
+    let branch = git::text(&ctx.root, ["rev-parse", "--abbrev-ref", "HEAD"]).ok();
+    Ok(unreviewed(&pulls, branch.as_deref()))
+}
+
 /// Prints [`report`]'s lines, or one warning line when CI's state is
-/// unknown, then the open Claude review findings, prefixed with `label`.
+/// unknown, then the open Claude review findings and the pull requests whose
+/// review failed, prefixed with `label`.
 pub fn print(ctx: &Checkout, label: &str) {
     match report(ctx) {
         Ok(failures) if failures.is_empty() => println!("{label}: CI on main is green"),
@@ -443,6 +513,18 @@ pub fn print(ctx: &Checkout, label: &str) {
         }
         Err(reason) => {
             println!("{label}: warning: open Claude review findings are unknown: {reason}");
+        }
+    }
+    match unreviewed_pulls(ctx) {
+        Ok(pulls) => {
+            for line in pulls {
+                println!("{label}: {line}");
+            }
+        }
+        Err(reason) => {
+            println!(
+                "{label}: warning: pull requests without a Claude review are unknown: {reason}"
+            );
         }
     }
 }
@@ -642,6 +724,32 @@ esac
         );
         assert!(review_findings(&issues, &view(Some("xreview-6")))[0].contains("#3 has no owner"));
         assert!(review_findings(&[], &view(Some("fix/a"))).is_empty());
+    }
+
+    #[test]
+    fn a_pull_request_whose_review_failed_is_listed() {
+        let pulls: Vec<PullRequest> = serde_json::from_str(
+            r#"[
+            {"number":1,"url":"u1","headRefName":"fix/a","statusCheckRollup":[
+                {"__typename":"CheckRun","name":"ci-ok","conclusion":"SUCCESS"},
+                {"__typename":"StatusContext","context":"claude-runtime-review","state":"ERROR"}]},
+            {"number":2,"url":"u2","headRefName":"fix/b","statusCheckRollup":[
+                {"__typename":"StatusContext","context":"claude-runtime-review","state":"SUCCESS"}]},
+            {"number":3,"url":"u3","headRefName":"fix/c","statusCheckRollup":[
+                {"__typename":"StatusContext","context":"claude-runtime-review","state":"ERROR"}]},
+            {"number":4,"url":"u4","headRefName":"fix/d","statusCheckRollup":[]}
+        ]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            unreviewed(&pulls, Some("fix/a")),
+            [
+                "PR #1 (fix/a) of this branch has no Claude review: it failed or its findings \
+                 were not filed; comment `@claude review` on it: u1",
+                "PR #3 (fix/c) has no Claude review: it failed or its findings were not filed; \
+                 the session on its branch comments `@claude review` on it: u3",
+            ]
+        );
     }
 
     #[test]

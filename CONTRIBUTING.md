@@ -33,7 +33,10 @@ identical path and title is caught too, and a differently worded repeat it
 fails to recognize is filed anew) and
 sets the informational commit status `claude-runtime-review`: success with
 the number of findings filed, error when the review did not complete or its
-findings could not be filed. It is not a required check: a PR merges once
+findings could not be filed, which `cargo xtask ci-status` lists while the
+PR is open for a `@claude review`. A finding whose issue was closed as fixed
+came back and is filed anew; one closed as not planned stays dismissed. It
+is not a required check: a PR merges once
 `ci-ok` passes, and the findings stay open as issues. `cargo xtask
 ci-status`, `check changed`, `push` and the session start hook list the open
 findings of the checkout's branch one by one and count the others; the

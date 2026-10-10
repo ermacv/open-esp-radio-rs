@@ -28,7 +28,7 @@ TOOLS = ["Read", "Grep", "Glob", "Agent", "Bash"]
 ALLOWED_TOOLS = ["Read", "Grep", "Glob", "Agent",
                  "Bash(git -C pr diff *)", "Bash(git -C pr log *)", "Bash(git -C pr show *)",
                  "Bash(gh pr view *)", "Bash(gh pr diff *)", "Bash(gh issue view *)"]
-# The classification an issue of a pre-existing finding is filed with
+# The classification the issue of a finding is filed with
 # (review_findings.py); the label catalog is the one vocabulary.
 LABELS = [label["name"] for label in json.loads((Path(__file__).parents[1] / "labels.json").read_text())]
 SCHEMA = {
@@ -46,7 +46,7 @@ SCHEMA = {
                 "body": {"type": "string"},
                 "area": {"enum": [name for name in LABELS if name.startswith("area:")]},
                 "priority": {"enum": [name for name in LABELS if name.startswith("priority:")]},
-                # The issue that already records a pre-existing finding, or 0.
+                # The issue that already records the finding, or 0.
                 "issue": {"type": "integer", "minimum": 0}}}}}}
 
 

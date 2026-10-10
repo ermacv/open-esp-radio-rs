@@ -135,7 +135,8 @@ impl<
     /// End the operation in flight, disable the radio and take the engine
     /// and hardware out of the runtime, consuming both handles of the
     /// installed radio (`esp_ieee802154_disable`). Call it after the
-    /// platform CPU route is disabled. Queued events stay readable.
+    /// platform CPU route is disabled. The port's stream ends with it: its
+    /// undelivered events are discarded and the next port starts empty.
     ///
     /// # Panics
     ///

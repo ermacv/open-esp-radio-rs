@@ -433,10 +433,15 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
         })
     }
 
-    /// Forget the events of a radio that left: their ends never come, and
-    /// the next radio starts disabled.
+    /// Forget the events of a radio that left with its port: their ends
+    /// never come, the outcomes it did not deliver and a loss it owed end
+    /// with the port's stream, and the next radio starts disabled with an
+    /// empty queue.
     fn reset(&self) {
         self.owed(|owed| {
+            while self.entries.try_receive().is_ok() {}
+            owed.held = None;
+            owed.lost = false;
             owed.events = 0;
             owed.reserved = 0;
             owed.data = [None; CONNECTIONS];
@@ -1101,8 +1106,9 @@ impl<
     /// memory only after the Controller reset
     /// ([`BluetoothRadio::into_memory`]): their ends never come, so the
     /// slots they reserved are released, and the next radio starts
-    /// disabled. Outcomes already queued stay readable. [`Self::run`] then
-    /// returns [`BluetoothRuntimeFault::NotInstalled`].
+    /// disabled. The port's stream ends here: outcomes it did not deliver
+    /// are discarded, so the next port starts with an empty queue.
+    /// [`Self::run`] then returns [`BluetoothRuntimeFault::NotInstalled`].
     ///
     /// # Errors
     ///

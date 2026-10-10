@@ -441,6 +441,15 @@ impl<M: RawMutex, const EVENTS: usize> EventQueue<M, EVENTS> {
         assert!(sent.is_ok(), "a terminal event holds a reserved slot");
     }
 
+    /// End the stream of a port that left: its undelivered events, a loss
+    /// it owed and every reservation go, so the next port starts empty.
+    fn clear(&self) {
+        self.owed(|owed| {
+            while self.entries.try_receive().is_ok() {}
+            *owed = Owed::default();
+        });
+    }
+
     fn take(&self) -> Option<Result<Ieee802154RadioEvent, EventsLost>> {
         self.owed(|owed| {
             if let Some(event) = owed.held.take() {
@@ -611,10 +620,10 @@ impl<
     }
 
     /// `esp_ieee802154_disable` after the platform CPU route is disabled:
-    /// end the operation in flight with its terminal event, return the
-    /// MAC's coexistence PTIs to the disabled foundation image, and disable
-    /// and return the engine and hardware. Queued events stay with the
-    /// consumer.
+    /// stop the operation in flight, return the MAC's coexistence PTIs to
+    /// the disabled foundation image, and disable and return the engine and
+    /// hardware. The port's stream ends here: its undelivered events and
+    /// the terminals it owed are discarded, so the next port starts empty.
     fn uninstall(&self) -> Ieee802154RuntimeParts<'storage, H> {
         let parts = self.installed.lock(|installed| {
             let Installed {
@@ -634,11 +643,7 @@ impl<
             engine.disable();
             Ieee802154RuntimeParts { engine, hardware }
         });
-        self.events.owed(|owed| {
-            owed.fault = false;
-            owed.quiesced = false;
-            owed.maintenance = false;
-        });
+        self.events.clear();
         self.backoff_until.lock(|backoff| backoff.set(None));
         parts
     }

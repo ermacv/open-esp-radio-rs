@@ -32,8 +32,8 @@ pub enum LowerMacEvent<'a> {
 pub type MpduAttempt<B, O> = TxAttempt<TxPayload<B, O>>;
 
 /// The result of a submission: admitted, or refused with the attempt, its
-/// buffer and body handed back. Every refusal is the inner one, a port that
-/// is not installed included; the outer error is only
+/// buffer and body handed back. Every refusal is the inner one; the outer
+/// error is only
 /// [`Poisoned`] with the backend's cause `F`,
 /// after which the backend keeps the attempt until its reset.
 pub type SubmitResult<A, F> = PortResult<(), Refused<A>, F>;
@@ -112,8 +112,8 @@ pub type SubmitResult<A, F> = PortResult<(), Refused<A>, F>;
 /// # Refusals and poisoning
 ///
 /// Every call returns a [`PortResult`]. Its inner `Err` is a refusal and
-/// nothing changed: a backend that is not installed refuses there too. A
-/// submission is refused only through its inner `Err`, which hands the
+/// nothing changed; the port exists only while its backend is installed,
+/// so no call refuses as not installed. A submission is refused only through its inner `Err`, which hands the
 /// attempt back. Admitted work that ends without its result ends as
 /// [`TxStatus::Aborted`](crate::TxStatus::Aborted) or
 /// [`TxStatus::Fault`](crate::TxStatus::Fault), and a lifecycle command

@@ -386,7 +386,11 @@ installed" is unrepresentable and no port call refuses as such. The
 interrupt entries and the runner stay on the runtime itself. Shared-PHY
 maintenance is a layer over `Quiesce`: the consumer sees `Quiesced` and
 `Enabled`, and meanwhile the port refuses what would touch the held
-hardware as each port's contract states for its quiesced state.
+hardware as each port's contract states for its quiesced state. A port's
+event stream lives as long as the port: `uninstall` discards the events it
+did not deliver, the terminal events still owed and a pending loss, and the
+next install's port starts with an empty stream; every event guarantee
+below holds for the port's lifetime.
 
 **Loss and poisoning.** A backend reserves the slot of every event whose
 loss would break a guarantee when it admits the work: every terminal event
@@ -419,8 +423,8 @@ qualification catalog, not in code.
 **Refusals and poisoning.** Every port call returns
 `Result<Result<T, Refusal>, Poisoned<Fault>>`. The inner `Err` is a typed
 refusal: nothing changed, and a refused submission hands its arguments back
-(a Wi-Fi attempt with its buffer and body). A backend that is not installed
-or is paused refuses through the inner `Err` too. Admitted work that ends
+(a Wi-Fi attempt with its buffer and body). A port exists only while its
+backend is installed, so no call refuses as not installed. Admitted work that ends
 without its result reports that in its terminal event (an aborted attempt,
 a `Fault` that leaves an IEEE 802.15.4 radio disabled, a lifecycle
 `Failed`), and the port stays usable. The outer `Err` is only

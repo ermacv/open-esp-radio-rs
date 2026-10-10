@@ -26,7 +26,14 @@ const SP: u8 = 2;
 /// relocations: each call or out-of-function jump to an image address and
 /// each taken branch or jump is annotated `-> name` or `-> name+offset` from
 /// the image's function symbols, or with the bare address when none covers it.
-pub fn listing(records: &[FunctionRecord], image: Option<&ImageSymbols>) -> Vec<String> {
+///
+/// `strings` holds the read-only text an instruction's relocation names, by
+/// instruction offset; each is annotated as a quoted, escaped string.
+pub fn listing(
+    records: &[FunctionRecord],
+    image: Option<&ImageSymbols>,
+    strings: &BTreeMap<u64, Vec<String>>,
+) -> Vec<String> {
     let mut symbols: BTreeMap<u64, Vec<String>> = BTreeMap::new();
     let mut names: BTreeMap<&SymbolId, String> = BTreeMap::new();
     for record in records {
@@ -37,6 +44,9 @@ pub fn listing(records: &[FunctionRecord], image: Option<&ImageSymbols>) -> Vec<
                 &target.symbol,
                 String::from_utf8_lossy(&target.name).into_owned(),
             );
+            if raw.target.name.is_empty() {
+                continue;
+            }
             let name = String::from_utf8_lossy(&raw.target.name).into_owned();
             let name = match raw.addend {
                 Some(addend) if addend != 0 => format!("{name}{addend:+}"),
@@ -46,6 +56,10 @@ pub fn listing(records: &[FunctionRecord], image: Option<&ImageSymbols>) -> Vec<
         }
     }
     let mut notes: BTreeMap<u64, Vec<String>> = BTreeMap::new();
+    for (offset, texts) in strings {
+        let entry = notes.entry(*offset).or_default();
+        entry.extend(texts.iter().map(|text| format!("\"{text}\"")));
+    }
     for record in records {
         match record {
             FunctionRecord::Value {

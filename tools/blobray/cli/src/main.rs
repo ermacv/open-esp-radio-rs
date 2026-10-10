@@ -138,6 +138,34 @@ enum Command {
         #[command(flatten)]
         limits: InProcessOptions,
     },
+    /// List the defined function and data symbols of captured inputs with
+    /// member, section, address, size and their `ROLE[member]::name` citation.
+    Symbols {
+        /// Repeat ROLE=PATH; use the pinned artifact id as ROLE to print the
+        /// citation form provenance checks use.
+        #[arg(long = "input", required = true, value_name = "ROLE=PATH")]
+        inputs: Vec<OsString>,
+        /// A substring of the name, or a whole-name pattern with `*`.
+        #[arg(long = "match", value_name = "PATTERN")]
+        pattern: Option<String>,
+        #[command(flatten)]
+        limits: InProcessOptions,
+    },
+    /// List the NUL-terminated text in the read-only data sections of
+    /// captured inputs, with member, section and offset.
+    Strings {
+        /// Repeat ROLE=PATH; a string names its input by position.
+        #[arg(long = "input", required = true, value_name = "ROLE=PATH")]
+        inputs: Vec<OsString>,
+        /// Only this archive member.
+        #[arg(long = "object", value_name = "MEMBER")]
+        object: Option<String>,
+        /// The shortest string reported.
+        #[arg(long = "min-length", default_value_t = blobray_cli::symbols::MIN_STRING)]
+        min_length: usize,
+        #[command(flatten)]
+        limits: InProcessOptions,
+    },
     /// Analyze every function of captured inputs in this process and report
     /// the argument registers a0..a7 at every call site of the named
     /// functions: constants, symbols, the caller's own arguments or unknown.
@@ -296,6 +324,17 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             assumptions,
             limits,
         } => call_arguments(inputs, symbols, assumptions.abi(), limits, format),
+        Command::Symbols {
+            inputs,
+            pattern,
+            limits,
+        } => symbols(inputs, pattern, limits, format),
+        Command::Strings {
+            inputs,
+            object,
+            min_length,
+            limits,
+        } => strings(inputs, object, min_length, limits, format),
     }
 }
 
@@ -510,6 +549,10 @@ fn function_records(
     } else {
         ExitCode::FAILURE
     };
+    let mut texts = match format {
+        Format::Human => referenced_strings(&functions, &executables, &memory, &mut control)?,
+        Format::Json => std::collections::BTreeMap::new(),
+    };
     let mut out = std::io::BufWriter::new(std::io::stdout().lock());
     match format {
         Format::Json => {
@@ -552,6 +595,9 @@ fn function_records(
                         blobray_cli::listing::listing(
                             records,
                             images.get(function.input as usize).and_then(Option::as_ref),
+                            &texts
+                                .remove(&(function.input, function.symbol.clone()))
+                                .unwrap_or_default(),
                         )
                         .iter()
                         .try_for_each(|line| writeln!(out, "{line}"))
@@ -572,6 +618,297 @@ fn function_records(
     }
     out.flush().map_err(io_error)?;
     Ok(status)
+}
+
+/// The text each analyzed function's `.L` local-label relocations name in a
+/// read-only string section (`SHF_STRINGS`), by function and instruction
+/// offset. Labels of other data, such as jump tables, are not text.
+#[allow(clippy::type_complexity)]
+fn referenced_strings(
+    functions: &[blobray_cli::wire::NamedFunction],
+    executables: &[app::in_process::Executable],
+    memory: &oer_riscv_model::WorkingMemory,
+    control: &mut app::in_process::Limits,
+) -> Result<
+    std::collections::BTreeMap<
+        (u64, oer_riscv_model::SymbolId),
+        std::collections::BTreeMap<u64, Vec<String>>,
+    >,
+> {
+    use std::collections::BTreeMap;
+    let mut inventories = BTreeMap::new();
+    let mut sections: BTreeMap<(oer_riscv_model::ObjectId, u32), Option<Vec<u8>>> = BTreeMap::new();
+    let mut texts = BTreeMap::new();
+    for function in functions {
+        let blobray_cli::wire::NamedFunction::Analyzed {
+            function, records, ..
+        } = function
+        else {
+            continue;
+        };
+        let object = &function.symbol.object;
+        for record in records {
+            let oer_riscv_model::FunctionRecord::Reference { raw, target, .. } = record else {
+                continue;
+            };
+            let (Some(section), true) = (target.section, target.name.starts_with(b".L")) else {
+                continue;
+            };
+            let key = (object.clone(), section);
+            if !sections.contains_key(&key) {
+                let Some(executable) = executables.get(function.input as usize) else {
+                    continue;
+                };
+                let inventory = match inventories.entry(function.input) {
+                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        entry.insert(app::captured::inventory(executable, memory, control)?)
+                    }
+                };
+                let read_only = inventory
+                    .objects
+                    .iter()
+                    .find(|candidate| &candidate.id == object)
+                    .and_then(|candidate| candidate.elf.as_ref())
+                    .is_some_and(|elf| blobray_cli::symbols::is_string_section(elf, section));
+                let bytes = if read_only {
+                    Some(section_bytes(
+                        object,
+                        section,
+                        executables,
+                        memory,
+                        control,
+                    )?)
+                } else {
+                    None
+                };
+                sections.insert(key.clone(), bytes);
+            }
+            let Some(bytes) = &sections[&key] else {
+                continue;
+            };
+            let offset = target
+                .offset
+                .checked_add_signed(raw.addend.unwrap_or(0))
+                .unwrap_or(u64::MAX);
+            if let Some(text) =
+                blobray_cli::symbols::string_at(bytes, offset).filter(|text| !text.is_empty())
+            {
+                texts
+                    .entry((function.input, function.symbol.clone()))
+                    .or_insert_with(BTreeMap::new)
+                    .entry(raw.offset)
+                    .or_insert_with(Vec::new)
+                    .push(text);
+            }
+        }
+    }
+    Ok(texts)
+}
+
+/// The complete bytes of section `section` of `object`.
+fn section_bytes(
+    object: &oer_riscv_model::ObjectId,
+    section: u32,
+    executables: &[app::in_process::Executable],
+    memory: &oer_riscv_model::WorkingMemory,
+    control: &mut app::in_process::Limits,
+) -> Result<Vec<u8>> {
+    let inventory = executables
+        .iter()
+        .find(|executable| executable.id() == &object.artifact)
+        .map(|executable| app::captured::inventory(executable, memory, control))
+        .transpose()?;
+    let length = inventory
+        .as_ref()
+        .and_then(|inventory| {
+            inventory
+                .objects
+                .iter()
+                .find(|candidate| &candidate.id == object)
+        })
+        .and_then(|candidate| candidate.elf.as_ref())
+        .and_then(|elf| elf.sections.iter().find(|record| record.index == section))
+        .map_or(0, |record| record.size);
+    let request = blobray_domain::DataRequest {
+        object: object.clone(),
+        symbol: None,
+        ranges: vec![blobray_domain::DataSelector::Section {
+            section,
+            offset: 0,
+            length,
+        }],
+    };
+    Ok(app::data::export(&request, executables, memory, control)?.bytes)
+}
+
+/// List the symbols of `inputs`, optionally those `pattern` selects.
+fn symbols(
+    inputs: Vec<OsString>,
+    pattern: Option<String>,
+    limits: InProcessOptions,
+    format: Format,
+) -> Result<ExitCode> {
+    let inputs = inputs
+        .into_iter()
+        .map(parse_input)
+        .collect::<Result<Vec<_>>>()?;
+    let executables = inputs
+        .iter()
+        .map(|input| {
+            std::fs::read(&input.path)
+                .map(app::in_process::Executable::new)
+                .map_err(io_error)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let memory = limits.memory()?;
+    let mut control = limits.control();
+    let mut rows = Vec::new();
+    for (index, (input, executable)) in inputs.iter().zip(&executables).enumerate() {
+        let inventory = app::captured::inventory(executable, &memory, &mut control)?;
+        rows.extend(blobray_cli::symbols::rows(
+            index as u64,
+            &input.role,
+            &inventory,
+            pattern.as_deref(),
+        ));
+    }
+    let mut out = std::io::BufWriter::new(std::io::stdout().lock());
+    match format {
+        Format::Json => {
+            let document = blobray_cli::wire::SymbolsDocument {
+                schema: blobray_cli::wire::SYMBOLS_SCHEMA,
+                inputs: described(&inputs, &executables),
+                symbols: rows,
+            };
+            serde_json::to_writer(&mut out, &document).map_err(json_error)?;
+            writeln!(out).map_err(io_error)?;
+        }
+        Format::Human => {
+            for row in &rows {
+                writeln!(
+                    out,
+                    "{:#010x} {:>6x} {:<8} {:<6} {:<24} {}",
+                    row.address,
+                    row.size,
+                    row.kind,
+                    row.binding,
+                    row.section.as_deref().unwrap_or("-"),
+                    row.citation
+                )
+                .map_err(io_error)?;
+            }
+        }
+    }
+    out.flush().map_err(io_error)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// List the strings of the read-only data sections of `inputs`.
+fn strings(
+    inputs: Vec<OsString>,
+    member: Option<String>,
+    minimum: usize,
+    limits: InProcessOptions,
+    format: Format,
+) -> Result<ExitCode> {
+    let inputs = inputs
+        .into_iter()
+        .map(parse_input)
+        .collect::<Result<Vec<_>>>()?;
+    let executables = inputs
+        .iter()
+        .map(|input| {
+            std::fs::read(&input.path)
+                .map(app::in_process::Executable::new)
+                .map_err(io_error)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let memory = limits.memory()?;
+    let mut control = limits.control();
+    let mut rows = Vec::new();
+    for (index, executable) in executables.iter().enumerate() {
+        let inventory = app::captured::inventory(executable, &memory, &mut control)?;
+        for object in &inventory.objects {
+            let name = object
+                .name
+                .as_deref()
+                .map(|name| String::from_utf8_lossy(name).into_owned());
+            if member
+                .as_ref()
+                .is_some_and(|wanted| name.as_ref() != Some(wanted))
+            {
+                continue;
+            }
+            let Some(elf) = &object.elf else { continue };
+            for section in blobray_cli::symbols::read_only_data(elf) {
+                let bytes = section_bytes(
+                    &object.id,
+                    section.index,
+                    &executables,
+                    &memory,
+                    &mut control,
+                )?;
+                for (offset, text) in blobray_cli::symbols::strings(&bytes, minimum) {
+                    rows.push(blobray_cli::wire::StringRow {
+                        input: index as u64,
+                        member: name.clone(),
+                        section: section
+                            .name
+                            .as_deref()
+                            .map(|name| String::from_utf8_lossy(name).into_owned()),
+                        offset,
+                        text,
+                    });
+                }
+            }
+        }
+    }
+    let mut out = std::io::BufWriter::new(std::io::stdout().lock());
+    match format {
+        Format::Json => {
+            let document = blobray_cli::wire::StringsDocument {
+                schema: blobray_cli::wire::STRINGS_SCHEMA,
+                inputs: described(&inputs, &executables),
+                strings: rows,
+            };
+            serde_json::to_writer(&mut out, &document).map_err(json_error)?;
+            writeln!(out).map_err(io_error)?;
+        }
+        Format::Human => {
+            for row in &rows {
+                writeln!(
+                    out,
+                    "{}[{}] {}+{:#x}: \"{}\"",
+                    inputs[row.input as usize].role,
+                    row.member.as_deref().unwrap_or(""),
+                    row.section.as_deref().unwrap_or("-"),
+                    row.offset,
+                    row.text
+                )
+                .map_err(io_error)?;
+            }
+        }
+    }
+    out.flush().map_err(io_error)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Each input's role and content identity.
+fn described(
+    inputs: &[Input],
+    executables: &[app::in_process::Executable],
+) -> Vec<blobray_cli::wire::RegisterAccessInput> {
+    inputs
+        .iter()
+        .zip(executables)
+        .map(
+            |(input, executable)| blobray_cli::wire::RegisterAccessInput {
+                role: input.role.clone(),
+                sha256: executable.id().clone(),
+            },
+        )
+        .collect()
 }
 
 /// The sized function symbols of `executable` when it is one little-endian

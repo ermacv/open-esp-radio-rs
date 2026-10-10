@@ -199,3 +199,39 @@ pub struct CallingFunction {
     pub function: LibraryFunction,
     pub sites: Vec<crate::call_arguments::CallSite>,
 }
+
+/// Schema of the `symbols` document (`{"schema":1,"inputs":[...],"symbols":[...]}`).
+pub const SYMBOLS_SCHEMA: u32 = 1;
+
+/// The defined function and data symbols of the inputs.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SymbolsDocument {
+    pub schema: u32,
+    pub inputs: Vec<RegisterAccessInput>,
+    pub symbols: Vec<crate::symbols::SymbolRow>,
+}
+
+/// Schema of the `strings` document (`{"schema":1,"inputs":[...],"strings":[...]}`).
+pub const STRINGS_SCHEMA: u32 = 1;
+
+/// The NUL-terminated text of the inputs' read-only data sections.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StringsDocument {
+    pub schema: u32,
+    pub inputs: Vec<RegisterAccessInput>,
+    pub strings: Vec<StringRow>,
+}
+
+/// One string, by input, archive member, section and section offset.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StringRow {
+    pub input: u64,
+    pub member: Option<String>,
+    pub section: Option<String>,
+    pub offset: u64,
+    /// Escaped text: printable ASCII with `\\n`, `\\t`, `\\r`, `\\\\`, `\\"` and `\\xNN`.
+    pub text: String,
+}

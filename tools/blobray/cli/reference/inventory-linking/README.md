@@ -26,6 +26,30 @@ them exactly. The inventory charges the caller's control for every member and
 record and reserves working memory for what it keeps; exhausting either fails
 the call rather than truncating the inventory.
 
+### Symbols and strings
+
+Two read-only commands present the inventory without extracting members or
+running external tools on vendor objects:
+
+```console
+blobray symbols --input librftest=/path/to/librftest.a --match 'rx_*_gain'
+blobray strings --input librftest=/path/to/librftest.a --object phy_test.o
+```
+
+`symbols` lists every defined, named function and data symbol with its input,
+archive member, section, address, size, kind, binding and citation
+`ROLE[member]::name`; with the pinned artifact's id as `ROLE` that is the form
+`cargo verification check provenance` prints. `--match` selects names
+containing a substring, or matching a whole-name pattern when it contains `*`.
+Same-named archive members stay separate rows. `strings` lists every
+NUL-terminated run of at least `--min-length` (default 4) text bytes in the
+allocated, read-only, non-executable `PROGBITS` sections, with its section
+offset; text is printable ASCII, tab, newline, carriage return and bytes above
+0x7f, rendered with `\n`, `\t`, `\r`, `\\`, `\"` and `\xNN` escapes so a
+non-UTF-8 string stays exact. A run without its terminator is not reported.
+Both JSON documents are schema 1 (`{"schema":1,"inputs":[...],"symbols":[...]}`,
+`{"schema":1,"inputs":[...],"strings":[...]}`).
+
 ## Synthetic linked images
 
 `blobray_application::linking::link(request, executables, linker, host,

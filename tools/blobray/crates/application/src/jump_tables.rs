@@ -4,7 +4,7 @@
 //! `lui/addi table; slli index, 2; add; lw target; jalr zero, 0(target)`
 //! with the table in read-only data and one `R_RISCV_32` relocation per entry.
 //! After a first analysis the jump's base register holds
-//! `load4[(index << 2) + table]`; the bounds check whose in-range edge is the
+//! `load4[(index << 2) + table]` in the analysis' `CallInputs` at the jump; the bounds check whose in-range edge is the
 //! only way into the dispatch block, such as `bltu limit, index`, fixes the
 //! entry count. Each entry's
 //! relocation then names its case label. A dispatch whose table lacks a
@@ -471,27 +471,21 @@ pub(crate) fn jump_tables<'r, 'm>(
         let Some(start) = block else {
             continue;
         };
-        // The base register's last write before the jump in its block.
+        // The base register's value at the jump, from the analysis' record
+        // of a dispatch it does not expand.
         let mut target = None;
         for record in records {
             c.checkpoint(1)?;
-            if let FunctionRecord::Value {
-                offset: at,
-                register,
-                value,
-                ..
-            } = record
-                && *register == base
-                && *at >= start
-                && *at < site
-                && target.is_none_or(|(last, _)| *at >= last)
+            if let FunctionRecord::CallInputs { offset, registers } = record
+                && *offset == site
             {
-                target = Some((*at, value));
+                target = registers.get(usize::from(base));
+                break;
             }
         }
         let Some(Expression::Load {
             address, width: 4, ..
-        }) = target.and_then(|(_, value)| expression_of(value, &expressions))
+        }) = target.and_then(|value| expression_of(value, &expressions))
         else {
             continue;
         };

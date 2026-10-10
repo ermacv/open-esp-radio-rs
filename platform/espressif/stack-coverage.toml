@@ -9,7 +9,7 @@ schema = 1
 [[reviewed]]
 symbols = ["esp_hal::interrupt::__rtos_implementation::local::stub"]
 category = "assembly"
-source = "esp-hal@de9bd926 esp-hal/src/interrupt/__rtos_implementation.rs local::stub #[naked]"
+source = "esp-hal@4fd4ba9b esp-hal/src/interrupt/__rtos_implementation.rs local::stub #[naked]"
 reason = "Naked context-switch stub retained by esp-hal initialization on ESP32-C5. The staged runtime replaces its vector with the SRAM stack-switching entries and uses its own executor, so the stub is not dispatched. No compiler frame or call-chain bound is claimed."
 
 [[reviewed]]

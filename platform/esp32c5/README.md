@@ -24,8 +24,8 @@ clock: see the ESP32-C5 entry of the [hardware errata](../../docs/hardware-errat
 
 ## Build
 
-esp-hal comes from the owner's fork, branch `oer/pr210-panic-sram` (revision
-`de9bd926`): fixed-origin PSRAM mapping (`PsramOrigin::Fixed`), code
+esp-hal comes from the owner's fork, branch `oer/pr313-bod-mode1-fib`
+(revision `4fd4ba9b`, on top of `oer/pr210-panic-sram`): fixed-origin PSRAM mapping (`PsramOrigin::Fixed`), code
 preparation in PSRAM and re-initialized interrupt vectoring after the
 handoff on the ESP32-C5. The shared panic handler records into retained
 RAM and resets without formatting. HAL restores UART0's undivided XTAL

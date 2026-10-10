@@ -28,10 +28,12 @@ guard does not borrow it, because ESP-HAL's counts are global.
 is the ownership of the analog-I2C bus. The platform hands it out once as the
 HAL's `AnalogBusOwnership`, without which `RadioHardware::take` gives no radio
 root, so the PHY's analog transactions, split across executor polls, run only
-under it. ESP-HAL code that writes analog registers after `init`
-(`rtc_cntl::brownout::configure`) borrows the singleton too: configure the
-brownout detector before the singleton moves into the platform. No lock is
-shared with ESP-HAL.
+under it. The brownout detector, whose ESP-HAL configuration borrows the
+singleton too, is configured once by the platform bootstrap before the
+application starts
+([platform policy](../../../../../platform/esp32s31/README.md#brownout-detector-policy)),
+so no image configures it after the singleton moves here. No lock is shared
+with ESP-HAL.
 
 Every protocol composition reaches these singletons through the one shared
 radio system that owns this platform; the Wi-Fi ESP-HAL adapter owns only the

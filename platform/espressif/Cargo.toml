@@ -24,7 +24,7 @@ debug_assert_with_mut_call = "deny"
 disallowed_methods = "deny"
 
 [workspace.dependencies]
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "de9bd926207d7d182f74b2add7eab3ec433f23a4", default-features = false }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "4fd4ba9b78aa9f96e54115c3d784491c1e12df02", default-features = false }
 oer-espressif-staged-layout = { path = "staged-layout" }
 oer-espressif-interrupt-table-esp-hal = { path = "../../crates/adapters/esp-hal/espressif/interrupt-table" }
 

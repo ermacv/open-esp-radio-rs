@@ -12,7 +12,7 @@ bytemuck = { version = "1.25.2", default-features = false, features = ["derive"]
 oer-probe-macros = { path = "../../../../harness/macros" }
 embassy-futures.workspace = true
 embassy-sync.workspace = true
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "de9bd926207d7d182f74b2add7eab3ec433f23a4", default-features = false, features = ["esp32s31", "static-interrupts", "unstable"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "4fd4ba9b78aa9f96e54115c3d784491c1e12df02", default-features = false, features = ["esp32s31", "static-interrupts", "unstable"] }
 oer-esp32s31-coex.workspace = true
 oer-memory.workspace = true
 oer-esp32s31-hal.workspace = true

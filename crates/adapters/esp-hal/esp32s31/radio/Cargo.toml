@@ -15,7 +15,7 @@ esp32s31 = ["dep:esp-hal", "dep:oer-interrupt-table",
 
 [dependencies]
 critical-section = "1.2.0"
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "de9bd926207d7d182f74b2add7eab3ec433f23a4", default-features = false, features = ["esp32s31", "static-interrupts", "unstable"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "4fd4ba9b78aa9f96e54115c3d784491c1e12df02", default-features = false, features = ["esp32s31", "static-interrupts", "unstable"], optional = true }
 oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
 oer-esp32s31-bluetooth = { path = "../../../../hardware/esp32s31/driver/bluetooth" }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }

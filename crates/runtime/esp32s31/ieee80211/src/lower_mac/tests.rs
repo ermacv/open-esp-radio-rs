@@ -1300,7 +1300,7 @@ fn the_port_holds_every_body_before_the_core_publishes_its_attempt() {
         coex: CoexPriority::Normal,
     };
 
-    let mut buffer = port.tx_buffer(26 + 4).unwrap().unwrap();
+    let mut buffer = port.tx_buffer(26 + 4).unwrap().unwrap().unwrap();
     buffer.frame_mut()[..26].copy_from_slice(&data_frame());
     assert!(matches!(
         port.submit(common(1).map_payload(|()| TxPayload {
@@ -1312,7 +1312,7 @@ fn the_port_holds_every_body_before_the_core_publishes_its_attempt() {
     ));
     assert_eq!(*held.lock().unwrap(), [TxId(1)], "the MPDU's body");
 
-    let mut aggregate = port.ampdu_buffer().unwrap().unwrap();
+    let mut aggregate = port.ampdu_buffer().unwrap().unwrap().unwrap();
     let mpdu = aggregate
         .push_mpdu(26 + 6, Some(TestBody(std::vec![0xcd; 6])))
         .unwrap();

@@ -199,3 +199,57 @@ fn a_symbol_value_is_named_with_its_addend() {
         )]
     );
 }
+
+#[test]
+fn a_pcrel_low_value_is_named_by_its_high_target_not_the_label() {
+    let FunctionRecord::Reference { target: high, .. } =
+        reference(0, "phy_param", 0, ReferenceKind::Address)
+    else {
+        unreachable!()
+    };
+    let label = Arc::new(ReferenceTarget {
+        name: b".Lpcrel_hi0".to_vec(),
+        symbol: SymbolId {
+            index: 7,
+            ..high.symbol.clone()
+        },
+        ..(*high).clone()
+    });
+    let low = FunctionRecord::Reference {
+        raw: Box::new(FunctionRelocation {
+            section: 1,
+            index: 1,
+            offset: 4,
+            relocation_type: 24,
+            addend: Some(0),
+            target: label,
+        }),
+        reference_kind: ReferenceKind::Address,
+        target: high.clone(),
+        addend: Some(0),
+        paired: Some((0, 0)),
+        known: true,
+    };
+    let records = vec![
+        instruction(0, "auipc a5, 0"),
+        reference(0, "phy_param", 0, ReferenceKind::Address),
+        instruction(4, "addi a5, a5, 0"),
+        low,
+        value(
+            4,
+            15,
+            AbstractValue::Symbol {
+                symbol: high.symbol.clone(),
+                addend: 0x10,
+            },
+        ),
+    ];
+    assert_eq!(
+        listing(&records)[1],
+        format!(
+            "{:6x}  {:<40} .Lpcrel_hi0  # a5=phy_param+0x10",
+            4, "addi a5, a5, 0"
+        ),
+        "the relocation column keeps its own label; the value names the HI20 target"
+    );
+}

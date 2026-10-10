@@ -107,6 +107,61 @@ fn every_library_function_reports_its_masked_and_unresolved_accesses() {
 }
 
 #[test]
+fn a_store_describes_its_stored_bits_and_a_load_never_does() {
+    let (_, records) = accesses(&[library()], &[]).unwrap();
+    let mut stores = 0;
+    for record in &records {
+        let RegisterAccess::Observation {
+            fact,
+            address,
+            stored,
+            ..
+        } = record
+        else {
+            continue;
+        };
+        // A load, or a masked read whose fact is its selecting expression.
+        if !matches!(
+            fact.as_ref(),
+            FunctionRecord::MemoryAccess {
+                access: MemoryKind::Store,
+                ..
+            }
+        ) {
+            assert!(stored.is_none(), "a read stores nothing: {record:?}");
+            continue;
+        }
+        stores += 1;
+        assert_eq!(*address, Some(0x20000));
+        // `sw ((lw 0x20000) & ~15 | 3), 0x20000`.
+        assert_eq!(
+            stored.as_deref(),
+            Some(
+                &[
+                    StoredBits {
+                        low: 0,
+                        width: 4,
+                        source: StoredBitsSource::Constant { value: 3 },
+                    },
+                    StoredBits {
+                        low: 4,
+                        width: 28,
+                        source: StoredBitsSource::Load {
+                            address: Some(0x20000),
+                            width: 4,
+                            low: 4,
+                            same_word: true,
+                        },
+                    },
+                ][..]
+            ),
+            "{record:?}"
+        );
+    }
+    assert_eq!(stores, 2, "one store per archive member");
+}
+
+#[test]
 fn ranges_select_resolved_addresses_and_bad_ranges_are_rejected() {
     let inside = [ImageRegion {
         start: 0x20000,

@@ -1,9 +1,9 @@
 # Manage issues and dependencies
 
-An issue names one result, the owner that accepts it and the evidence needed
+An issue names one result, the code owner that accepts it and the evidence needed
 to close it. Keep the current scope and accepted decisions in the body. Keep
 experiments and superseded proposals in comments, with a link from the current
-summary when they explain a decision. Task tracking stays in GitHub; owner
+summary when they explain a decision. Task tracking stays in GitHub; the code owner's
 documentation describes the implemented contract.
 
 ## Classify the result
@@ -33,8 +33,8 @@ conflicting kinds or priorities violate the invariant.
 | `kind:feature` | A named API or scenario works in the stated scope |
 | `kind:refactor` | A named ownership or structural invariant holds, consumers are migrated and behavior is checked |
 | `kind:validation` | A method and predeclared acceptance criteria produce evidence for the named subject; qualification evaluates readiness |
-| `kind:docs` | The canonical owner description is accurate and its checks pass |
-| `kind:tracking` | Required child results and integration criteria are met or explicitly revised by the owner |
+| `kind:docs` | The code owner's canonical description is accurate and its checks pass |
+| `kind:tracking` | Required child results and integration criteria are met or explicitly revised by the repository owner |
 
 Areas identify responsibility: Wi-Fi, Bluetooth, IEEE 802.15.4, shared radio,
 register publication, platform, host tooling, HIL and qualification. In the
@@ -43,7 +43,7 @@ body name the defining paths and their existing
 The repository model's [Layer](../tools/repo/src/classification.rs) is the
 canonical vocabulary; do not create a separate issue-layer taxonomy. For work
 across packages, select the primary accepting package's layer and name the
-other owners in the body. For non-package data or documentation, identify the
+other code owners in the body. For non-package data or documentation, identify the
 accepting code owner and its layer. A register investigation or HIL experiment
 is a work stage, not a new architecture layer.
 
@@ -55,11 +55,11 @@ decides. "Owner decision" always means the repository owner's decision.
 
 An owner decision is what the repository owner said or approved, recorded
 with a link to where they did. A comment, an issue body or a `kind:decision`
-label written by an agent is a proposal, not a decision. The owner may
+label written by an agent is a proposal, not a decision. The repository owner may
 revise or withdraw a decision at any time; the record then says what
 changed and when, and the superseded wording is not kept as current.
 Agents propose options, ask, and never write "owner decision" for anything
-the owner did not say.
+the repository owner did not say.
 
 ## Creation and automatic control
 
@@ -118,7 +118,7 @@ The fast host gate tests the same policy offline through the check registry.
 Start with the desired result and why it matters to a concrete consumer.
 Then provide:
 
-- Scope: owner paths, layer, target/profile and explicit exclusions.
+- Scope: code owner paths, layer, target/profile and explicit exclusions.
 - Current evidence: what is observed, inferred, unknown or already decided;
   immutable source, PR or applicable run references where available.
 - Acceptance: observable conditions and the checks that establish them.
@@ -127,11 +127,12 @@ Then provide:
 
 A bug needs expected and observed behavior plus a reachable reproducer. A
 research task needs a question, a bounded method and a usable conclusion.
-A decision needs alternatives and the owner who chooses. A refactor names
+A decision needs alternatives and names the repository owner as the one
+who chooses. A refactor names
 the invariant rather than asking to make code cleaner. A validation task
 names the subject, apparatus, measurements and tolerance before the run.
 
-Split a card when outcomes have different owners, readiness, priority or
+Split a card when outcomes have different code owners, readiness, priority or
 acceptance. Do not create implementation and qualification cards for every
 speculative feature. Create them when the result is selected and the scope
 is known. A tracking card supplies the integration criteria; it is not an
@@ -148,8 +149,8 @@ its child.
 
 Keep dependency direction from prerequisite to consumer and avoid cycles.
 Check a required artifact, not just the prerequisite's closed state. A
-negative research outcome may close research while requiring a new owner
-decision about the consumer. It does not make an implementation ready.
+negative research outcome may close research while requiring a new
+repository owner decision about the consumer. It does not make an implementation ready.
 
 For hardware features, separate what each result proves:
 
@@ -165,7 +166,7 @@ For hardware features, separate what each result proves:
 These steps are not one mandatory serial chain. Protocol model work can run
 alongside hardware research when its contract is already known. Publish an
 unknown hardware semantic before relying on it; bring a materially different
-contract to the owner before implementation. Host success, recovered vendor
+contract to the repository owner before implementation. Host success, recovered vendor
 code and a merged PR each establish their own scope. The
 [verification and qualification contract](verification-and-qualification.md)
 defines hardware readiness.
@@ -198,14 +199,14 @@ never capability readiness.
 If the Project uses a `Layer` navigation field, its options use the canonical
 metadata names unchanged. Set it to the primary accepting package's layer;
 the defining paths, other affected layers and detailed obligations stay in
-the issue body. Maintain that field manually when the owner changes.
+the issue body. Maintain that field manually when the accepting code owner changes.
 
 | Status | Entry condition |
 | --- | --- |
 | Triage | Supplied classification, scope or acceptance needs review; `triage:incomplete` must be cleared before leaving |
 | Backlog | Accepted scope, not yet selected or waiting for its future trigger |
 | Ready | Selected next work; required inputs and the next step are available |
-| In progress | An owner is actively doing the named step |
+| In progress | An assignee is actively doing the named step |
 | Review | The named deliverable is available for review or qualification evaluation |
 | Waiting | Selected work awaits a named artifact, decision, apparatus or external event |
 | Done | The issue is closed with its scoped outcome recorded |
@@ -213,7 +214,7 @@ the issue body. Maintain that field manually when the owner changes.
 At triage, review the supplied classification and priority, then inspect dependencies before
 moving to Ready. Review Waiting cards when their named input changes, and
 Backlog cards when their trigger happens. Do not infer In progress from a
-recent edit or assign an owner who has not taken the work.
+recent edit or assign anyone who has not taken the work.
 
 At closure, update the current summary, link the deliverable and state what
 was established. Close a duplicate with a link to the retained card. A

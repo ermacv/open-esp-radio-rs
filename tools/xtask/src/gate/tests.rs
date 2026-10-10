@@ -144,6 +144,18 @@ fn chip_code_is_in_chip_only_and_chip_platform_packages() {
 }
 
 #[test]
+fn every_input_of_the_guides_selects_the_documentation() {
+    for path in [
+        "docs/book.toml",
+        "docs/theme/head.hbs",
+        "crates/a/README.md",
+    ] {
+        assert!(run(&[path]).docs, "{path}");
+    }
+    assert!(!run(&["tools/tool/src/main.rs"]).docs);
+}
+
+#[test]
 fn declared_inputs_select_the_packages_that_read_them() {
     let selection = run(&["qualification/catalog/chip-a/coex.toml"]);
     assert!(selection.docs);

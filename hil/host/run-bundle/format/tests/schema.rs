@@ -6,7 +6,9 @@
 //! parts present (asserted below, so
 //! a sample cannot lose one unnoticed). Each document must
 //! read as its type and write back to the same JSON, and carry the current
-//! version of its own schema. A change that a stored bundle of this schema
+//! version of its own schema where the format publishes one as a constant
+//! (a fixture record's version is its writer's literal; the samples hold
+//! what those writers produce). A change that a stored bundle of this schema
 //! would not survive (a new required field, a renamed, removed or retyped
 //! one) fails here: it needs a new `RUN_SCHEMA` (or the document's own
 //! schema constant), with these documents moved to the new directory and

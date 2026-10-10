@@ -550,8 +550,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn frequent_metadata_runs_do_not_hide_a_source_ci_failure() {
-        use std::os::unix::fs::PermissionsExt as _;
-
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("Cargo.toml"), "[workspace]\n").unwrap();
         let workflow_dir = directory.path().join(".github/workflows");
@@ -574,9 +572,9 @@ mod tests {
             })
             .collect();
         let gh = directory.path().join("gh");
-        std::fs::write(
+        crate::test_support::executable(
             &gh,
-            format!(
+            &format!(
                 r#"#!/bin/sh
 case "$1 $2" in
   "run list")
@@ -591,9 +589,7 @@ esac
 "#,
                 metadata = serde_json::to_string(&metadata).unwrap(),
             ),
-        )
-        .unwrap();
-        std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        );
         let ctx = Checkout::new(directory.path()).unwrap();
         let failures = report_with(&ctx, gh.to_str().unwrap()).unwrap();
         assert_eq!(failures.len(), 1);

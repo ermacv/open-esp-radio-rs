@@ -602,6 +602,93 @@ mod tests {
         }
     }
 
+    /// Two-byte instructions: `1` is `jalr zero, 0(a5)`, anything else
+    /// falls through.
+    struct Jalr;
+    impl FunctionDecoder for Jalr {
+        fn identity(&self) -> &'static str {
+            "jalr"
+        }
+        fn decode(&self, bytes: &[u8]) -> Option<DecodedOp> {
+            Some(DecodedOp {
+                length: 2,
+                text: String::new(),
+                flow: if bytes[0] == 1 {
+                    InstructionFlow::Indirect {
+                        base: 15,
+                        offset: 0,
+                        link: false,
+                    }
+                } else {
+                    InstructionFlow::Next
+                },
+            })
+        }
+        fn reference(
+            &self,
+            _: &FunctionRelocation,
+            _: &[FunctionRelocation],
+            _: u32,
+            _: &mut dyn RunControl,
+        ) -> Result<NormalizedReference> {
+            unreachable!()
+        }
+    }
+    impl FunctionSemantics for Jalr {
+        fn semantic_identity(&self) -> &'static str {
+            "jalr"
+        }
+        fn lift(&self, _: &[u8]) -> SemanticOp {
+            SemanticOp::None
+        }
+        fn value_relocation(&self, _: &FunctionRelocation, _: SemanticOp) -> ValueRelocation {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn the_graph_charges_its_known_jump_search_at_a_jump() {
+        struct Meter(u64);
+        impl RunControl for Meter {
+            fn checkpoint(&mut self, units: u64) -> Result<()> {
+                self.0 += units;
+                Ok(())
+            }
+        }
+        let work = |code: [u8; 2], jumps: &[KnownJump]| {
+            let input = FunctionInput {
+                image: None,
+                section: 1,
+                extent: CodeRange {
+                    start: 0,
+                    length: 2,
+                },
+                bytes: &code,
+                relocations: &PreparedReferences::empty(),
+                data_ranges: &[],
+                jumps,
+            };
+            let memory = WorkingMemory::new(1024 * 1024).unwrap();
+            let mut meter = Meter(0);
+            research(input, &Jalr, &memory, &mut meter, &mut Discard, None).unwrap();
+            meter.0
+        };
+        // Known jumps at other sites: every search visits all of them.
+        let elsewhere: Vec<_> = (1..=1000)
+            .map(|i| KnownJump {
+                site: 2 * i,
+                targets: Vec::new(),
+            })
+            .collect();
+        let at_jump = work([1, 0], &elsewhere) - work([1, 0], &[]);
+        let elsewhere_only = work([0, 0], &elsewhere) - work([0, 0], &[]);
+        // The graph searches at the jump; the values need no search there,
+        // since the jump is unexpanded (their search is tested in `values`).
+        assert!(
+            at_jump >= elsewhere_only + 1000,
+            "the graph's search at the jump is charged: {at_jump} vs {elsewhere_only}"
+        );
+    }
     #[test]
     fn sizing_the_known_jumps_is_charged_before_the_graph_is_built() {
         let jumps: Vec<_> = (0..4096)

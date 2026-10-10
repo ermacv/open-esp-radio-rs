@@ -38,7 +38,9 @@ findings could not be filed. It is not a required check: a PR merges once
 ci-status`, `check changed`, `push` and the session start hook list the open
 findings of the checkout's branch one by one and count the others; the
 session on that branch fixes them next, in a follow-up PR once the reviewed
-one merged. A failed review's run log names the result subtype, API status
+one merged. Agents push and move on before the review reports, so a finding
+still open after a day is listed to every session as having no owner, until
+one claims it by assigning the issue and fixes it on a `review-<n>` branch. A failed review's run log names the result subtype, API status
 and error message. A newer review of the same PR cancels a running one.
 Re-reviews read the previous Claude review and focus on the new commits.
 

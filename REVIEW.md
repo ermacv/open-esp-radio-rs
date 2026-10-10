@@ -72,9 +72,10 @@ round closes them all instead of one per review.
 
 When the PR already has a Claude review, read it (`gh pr view --comments`).
 Focus on commits since the reviewed head and on whether earlier findings are
-fixed. Report every still-open important and nit finding again, since the
-verdict is recomputed from this review alone. A pre-existing finding already
-reported needs no repeat; one reported again is not filed twice.
+fixed. A still-open finding of any severity is reported again with `issue`
+set to the issue that records it, so it is not filed twice; a fixed one is
+named as fixed in the summary. The local review is handed its previous
+findings in the prompt instead and reports every still-open one again.
 
 ## Output
 

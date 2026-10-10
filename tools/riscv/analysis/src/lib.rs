@@ -45,6 +45,21 @@ struct Edge {
     relation: EdgeKind,
     external: bool,
 }
+/// The caller's known jump at `site`, each visited entry charged to
+/// `control`.
+fn known_jump<'j>(
+    jumps: &'j [KnownJump],
+    site: u64,
+    control: &mut dyn RunControl,
+) -> Result<Option<&'j KnownJump>> {
+    for jump in jumps {
+        control.checkpoint(1)?;
+        if jump.site == site {
+            return Ok(Some(jump));
+        }
+    }
+    Ok(None)
+}
 fn reserve_vec<T>(capacity: usize) -> Result<Vec<T>> {
     let mut result = Vec::new();
     result
@@ -113,7 +128,9 @@ fn analyze_with(
     // Each instruction adds at most two edges, and a known jump one per
     // target; the known jumps' edges, and one instruction's outgoing edges
     // before they join the graph, are admitted beyond the graph's own
-    // capacity, so pushing them never grows either vector unadmitted.
+    // capacity, so pushing them never grows either vector unadmitted. Both
+    // sizes read every known jump once.
+    control.checkpoint(input.jumps.len() as u64)?;
     let known_edges = input
         .jumps
         .iter()
@@ -354,9 +371,11 @@ fn analyze_with(
                 offset: imm,
                 link,
             } => {
-                let known = (!link)
-                    .then(|| input.jumps.iter().find(|jump| jump.site == offset))
-                    .flatten();
+                let known = if link {
+                    None
+                } else {
+                    known_jump(input.jumps, offset, control)?
+                };
                 if let Some(known) = known {
                     for &target in &known.targets {
                         outgoing.push((Some(target), EdgeKind::Jump));
@@ -583,6 +602,49 @@ mod tests {
         }
     }
 
+    #[test]
+    fn sizing_the_known_jumps_is_charged_before_the_graph_is_built() {
+        let jumps: Vec<_> = (0..4096)
+            .map(|i| KnownJump {
+                site: 2 * i,
+                targets: Vec::new(),
+            })
+            .collect();
+        let input = FunctionInput {
+            image: None,
+            section: 1,
+            extent: CodeRange {
+                start: 0,
+                length: 4,
+            },
+            bytes: &[0; 4],
+            relocations: &PreparedReferences::empty(),
+            data_ranges: &[],
+            jumps: &jumps,
+        };
+        struct Budget(u64);
+        impl RunControl for Budget {
+            fn checkpoint(&mut self, units: u64) -> Result<()> {
+                self.0 = self
+                    .0
+                    .checked_sub(units)
+                    .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "work budget"))?;
+                Ok(())
+            }
+        }
+        let memory = WorkingMemory::new(1024 * 1024).unwrap();
+        let error = research(
+            input,
+            &Unreached,
+            &memory,
+            &mut Budget(100),
+            &mut Discard,
+            None,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+    }
     #[test]
     fn known_jump_edges_are_admitted_before_the_graph_is_built() {
         let bytes = [0; 4];

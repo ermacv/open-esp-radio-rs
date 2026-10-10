@@ -2189,6 +2189,12 @@ code = "f433fde2d3dd3b61dd34f58f3c1ccb139d5020f64ad728b43c7e2e7371b5ca7f"
 [[function]]
 artifact = "libphy"
 member = "phy_init.o"
+symbol = "phy_rc_cal_init"
+code = "05d15c358d67e37c5fa9d40fcbd48d244d4e930df2df9f227338740e061899f2"
+
+[[function]]
+artifact = "libphy"
+member = "phy_init.o"
 symbol = "phy_reg_update_new"
 code = "e1ac02c29a8a146f403845254a5b45cb7ab02a228b52b52ee3e2b3dd854f0432"
 
@@ -4797,6 +4803,48 @@ symbol = "force_rx_gain"
 code = "867a79ebd1ab19e4da56fc4d93d9ed9701cfdf5b45bb406f3c398cc5e686086c"
 
 [[function]]
+artifact = "librftest"
+member = "phy_test.o"
+symbol = "get_rfrx_sat"
+code = "db096fd9ba28b9f70fa17e078f15e8a9c123b1b4b9a49fc263636bc5df7df73f"
+
+[[function]]
+artifact = "librftest"
+member = "phy_test.o"
+symbol = "phy_rx_sat_test"
+code = "19c47179aac155ba017cbe03b8b252a47b32bd26955d9794aa82487b576c638d"
+
+[[function]]
+artifact = "librftest"
+member = "phy_test.o"
+symbol = "phy_test_filter_band_set"
+code = "674d5dd0bc60913036c37f8f79468bc4a4e7eab9a6908dbda5db6d88bbc1c103"
+
+[[function]]
+artifact = "librftest"
+member = "phy_test.o"
+symbol = "print_dump_data"
+code = "33252d46a51b80721ab92ee040af334bf38190cb0058504319a71aa9622fcf1f"
+
+[[function]]
+artifact = "librftest"
+member = "phy_test.o"
+symbol = "rx_max_gain"
+code = "5a13f8be99a86b16ceb02f9ec1e21c5d800f9f56a5b289c21a68699ff15344f1"
+
+[[function]]
+artifact = "librftest"
+member = "phy_test.o"
+symbol = "set_dump_mode"
+code = "4162772ca6cad3a8ff0ddce5b448e486a058d94539b1b67ec33d528b2776f513"
+
+[[function]]
+artifact = "librftest"
+member = "wifi.o"
+symbol = "rx_init_gain"
+code = "1eb55ac03c531b947679973b6974d640540d2f1cf6e707cb769f227bde552a81"
+
+[[function]]
 artifact = "rom"
 member = ""
 symbol = "GetAccess"
@@ -6018,6 +6066,12 @@ artifact = "rom"
 member = ""
 symbol = "phy_rate_to_index"
 code = "2925804f3c00614979ef31a1b1dab10e83587d89abb44242f26274a037347716"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_rc_cal"
+code = "1257f3491f1b006ebedf8d6e109e4e602d1435260c4ac7c7788127e4ca60a762"
 
 [[function]]
 artifact = "rom"

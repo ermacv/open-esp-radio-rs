@@ -80,6 +80,7 @@ fragments = [
     "peripherals/wifi-mac-rx-dma.toml",
     "peripherals/phy-fecoex-recovered.toml",
     "peripherals/phy-fedata-recovered.toml",
+    "peripherals/phy-adc-dump-recovered.toml",
     "peripherals/phy-fectrl-recovered.toml",
     "peripherals/phy-fedata-wifi-recovered.toml",
     "peripherals/phy-btagc-recovered.toml",

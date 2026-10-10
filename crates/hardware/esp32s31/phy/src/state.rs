@@ -1786,6 +1786,17 @@ impl PhyState {
         self.common.rc_calibrated
     }
 
+    /// Derive the five filter-DCAP parameter bytes from one RC-calibration
+    /// result.
+    ///
+    /// SOURCE(esp32s31): rev0 ROM `phy_rc_cal` computes each code as
+    /// `82 * (result + 56) / (10 * divisor) - 8` (the auxiliary codes as
+    /// `0x334 * (result + 56) / (104 * divisor) - 8`) and saturates it, after
+    /// bounding a result above 45 to 50. `libphy.a[phy_init.o]::phy_rc_cal_init`
+    /// passes the divisor, bound and auxiliary byte arrays retained below.
+    /// The two primary divisors are 20 and 40, equal to the 20 and 40 MHz
+    /// Wi-Fi channel widths, and a code falls as its divisor rises; these
+    /// bodies do not establish the bandwidth each code produces.
     pub fn apply_rc_calibration(&mut self, result: u8) {
         const UPPER: [u8; 4] = [0x28, 0x14, 0x1e, 0x14];
         const PRIMARY: [u8; 2] = [0x14, 0x28];

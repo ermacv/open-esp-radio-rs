@@ -614,6 +614,12 @@ impl PhyI2cConfigurationOperation {
 }
 
 /// One of the four Bluetooth TX-power analog-control byte registers.
+///
+/// The same block-0x67 registers carry the filter-DCAP parameter `0xf0`.
+/// SOURCE(esp32s31): `librftest.a[phy_test.o]::phy_test_filter_band_set`
+/// writes parameter byte `0xef` or `0xf0` to both `Low0` and `Low1`
+/// depending on its selector, so these two registers also select a filter
+/// band; which band each value selects is not established.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothTxPowerControlRegister {
     Low0,

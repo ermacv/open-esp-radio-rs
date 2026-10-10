@@ -568,7 +568,11 @@ impl MaskedI2cWriteBinding {
 /// Five explicit parameter bytes consumed by ROM `phy_filter_dcap_set`.
 ///
 /// Offset-based names are deliberate: the electrical meaning of these
-/// vendor parameter fields has not yet been established.
+/// vendor parameter fields has not yet been established. Bytes `0xe9` and
+/// `0xea` are the two primary RC-derived codes of
+/// the RC-calibration state, for divisors 20 and 40; `phy_filter_dcap_set` writes the first to
+/// block-0x67 registers 0x04, 0x05, 0x0c and 0x0d and the second to 0x06,
+/// 0x07, 0x0e and 0x0f.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FilterDcapParameters {
     parameter_e9: u8,

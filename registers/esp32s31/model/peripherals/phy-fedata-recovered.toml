@@ -9,10 +9,20 @@ baseAddress = 0x20100400
 
 [peripherals.registers.register]
 name = "RX_FILTER_MODE_OPAQUE"
-description = "Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed."
+description = "Complete phy_rx_filter_mode performs a read-modify-write of FILTER_MODE; the other fields remain unnamed."
 addressOffset = 0x30
 size = 32
 access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "FILTER_MODE"
+description = "Receive filter mode: complete phy_rx_filter_mode replaces these bits with the low four bits of its argument and preserves every other bit."
+bitOffset = 18
+bitWidth = 4
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
 
 [[peripherals.registers]]
 
@@ -55,6 +65,14 @@ completeness = "unknown"
 entity = "PHY_FEDATA_RECOVERED.RX_FILTER_MODE_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
+
+[[review]]
+entity = "PHY_FEDATA_RECOVERED.RX_FILTER_MODE_OPAQUE.FILTER_MODE"
+naming = "descriptive"
+sources = ["ROM_REV0_PHY_RX_FILTER_MODE"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FEDATA_RECOVERED.TX_RX_RESET_OPAQUE"

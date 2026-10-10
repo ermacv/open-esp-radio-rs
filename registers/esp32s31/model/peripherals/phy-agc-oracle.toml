@@ -60,8 +60,8 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "RX_GAIN_INDEX_OPAQUE"
-description = "Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication."
+name = "WIFI_MAX_GAIN_INDEX"
+description = "Highest Wi-Fi receive-gain table index: librftest rx_max_gain returns these bits for its Wi-Fi path. Complete phy_agc_reg_init writes parameter byte 0x121 and phy_set_rx_gain_table the final Wi-Fi RX gain index after table publication."
 bitOffset = 8
 bitWidth = 7
 
@@ -70,14 +70,14 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "PULSE_OPAQUE"
-description = "Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."
+name = "FORCED_GAIN_ENABLE"
+description = "Enables the forced receive-gain index in FORCED_GAIN_INDEX. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain replace it with the low bit of their enable argument; librftest clears it and waits 5 us after writing the index before setting it. Complete phy_enable_agc and the delayed tail of phy_pbus_force_mode pulse it."
 bitOffset = 23
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_HIGH_OPAQUE"
-description = "Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image."
+name = "FORCED_GAIN_INDEX"
+description = "Receive-gain table index applied while FORCED_GAIN_ENABLE is set. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain write their gain argument here before the enable bit; complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23, so a PBus work-mode transition replaces any previously forced index."
 bitOffset = 24
 bitWidth = 8
 
@@ -273,8 +273,8 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "PARAMETER_MINUS_ONE_OPAQUE"
-description = "Bits 8:2 receive the low seven bits of parameter byte 0x121 minus one."
+name = "INITIAL_GAIN_INDEX"
+description = "AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into RX_GAIN_LIMIT_CONTROL.INITIAL_GAIN_INDEX. Complete phy_agc_reg_init writes the low seven bits of parameter byte 0x121 minus one."
 bitOffset = 2
 bitWidth = 7
 
@@ -473,8 +473,8 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "RX_GAIN_LIMIT_OPAQUE"
-description = "Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."
+name = "INITIAL_GAIN_INDEX"
+description = "AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into AGC_GAIN_LIMIT_LOW.INITIAL_GAIN_INDEX. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."
 bitOffset = 18
 bitWidth = 7
 
@@ -704,35 +704,38 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.RX_GAIN_INDEX_OPAQUE"
-naming = "opaque"
+entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.WIFI_MAX_GAIN_INDEX"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_AGC",
     "BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE",
+    "BLOB_LIBRFTEST_RX_MAX_GAIN",
 ]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.PULSE_OPAQUE"
-naming = "opaque"
+entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.FORCED_GAIN_ENABLE"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_AGC",
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_FORCE_RX_GAIN",
+    "BLOB_LIBRFTEST_FORCE_RX_GAIN",
 ]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.CONTROL_HIGH_OPAQUE"
-naming = "opaque"
+entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.FORCED_GAIN_INDEX"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_AGC",
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_FORCE_RX_GAIN",
+    "BLOB_LIBRFTEST_FORCE_RX_GAIN",
 ]
 provenance = "observed"
 accuracy = "exact"
@@ -914,9 +917,9 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_GAIN_LIMIT_LOW.PARAMETER_MINUS_ONE_OPAQUE"
-naming = "opaque"
-sources = ["ROM_REV0_PHY_AGC"]
+entity = "PHY_AGC_ORACLE.AGC_GAIN_LIMIT_LOW.INITIAL_GAIN_INDEX"
+naming = "descriptive"
+sources = ["ROM_REV0_PHY_AGC", "BLOB_LIBRFTEST_RX_INIT_GAIN"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
@@ -1081,11 +1084,12 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL.RX_GAIN_LIMIT_OPAQUE"
-naming = "opaque"
+entity = "PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL.INITIAL_GAIN_INDEX"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_AGC",
     "BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE",
+    "BLOB_LIBRFTEST_RX_INIT_GAIN",
 ]
 provenance = "observed"
 accuracy = "exact"

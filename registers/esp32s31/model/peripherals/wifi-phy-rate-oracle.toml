@@ -15,7 +15,7 @@ baseAddress = 0x20100000
 
 [peripherals.registers.register]
 name = "NOISE_FLOOR_MEASUREMENT"
-description = "Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."
+description = "Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result; it consumes no higher bits. The librftest saturation probes read bits 18:12. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."
 addressOffset = 0x708C
 size = 32
 access = "read-only"
@@ -25,6 +25,13 @@ name = "SIGNED_SIXTEENTH_DB_CODE"
 description = "Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."
 bitOffset = 0
 bitWidth = 12
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BITS_12_18_OPAQUE"
+description = "Seven-bit receive status field. Complete librftest get_rfrx_sat counts how many of one hundred reads have the value 49 and returns that count as its RF receive saturation result; phy_rx_sat_test samples it after forcing receive gain. Neither body assigns a unit to the value."
+bitOffset = 12
+bitWidth = 7
 access = "read-only"
 
 [[peripherals.registers]]
@@ -80,6 +87,7 @@ naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_READ_NOISE_FLOOR",
     "HIL_OPEN_STA_RATE_CONTROL_2026_07_30",
+    "BLOB_LIBRFTEST_RF_RX_SATURATION_PROBES",
 ]
 provenance = "reviewed"
 accuracy = "exact"
@@ -95,6 +103,14 @@ sources = [
 provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_PHY_RATE_ORACLE.NOISE_FLOOR_MEASUREMENT.BITS_12_18_OPAQUE"
+naming = "opaque"
+sources = ["BLOB_LIBRFTEST_RF_RX_SATURATION_PROBES"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_PHY_RATE_ORACLE.LOW_RATE_PRIMARY_CONTROL"

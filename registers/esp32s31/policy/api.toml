@@ -96,6 +96,7 @@ peripherals = [
     "PHY_BTAGC_RECOVERED",
     "PHY_CLOCK_ORACLE",
     "PHY_FECTRL_RECOVERED",
+    "PHY_ADC_DUMP_RECOVERED",
     "PHY_FEDATA_RECOVERED",
     "PHY_FEDATA_WIFI_RECOVERED",
     "PHY_FREQUENCY_CHANNEL_ORACLE",
@@ -2607,7 +2608,7 @@ sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
 name = "raise_phy_agc_enable_pulse"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "PULSE_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_ENABLE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
@@ -2616,7 +2617,7 @@ sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
 name = "lower_phy_agc_enable_pulse"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "PULSE_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_ENABLE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
@@ -2661,7 +2662,7 @@ sources = ["BLOB_LIBPHY_PHY_DC_MEM_CLR", "S31_ESP_PACS_SVD"]
 name = "configure_phy_pbus_work_mode_control"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "CONTROL_HIGH_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_INDEX", source-bit-offset = 0 }]
 value = 0x32
 exposure = "facade"
 sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
@@ -2670,7 +2671,7 @@ sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
 name = "raise_phy_pbus_work_mode_pulse"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "PULSE_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_ENABLE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
@@ -2679,7 +2680,7 @@ sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
 name = "lower_phy_pbus_work_mode_pulse"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "PULSE_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_ENABLE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
@@ -8771,7 +8772,7 @@ sources = ["ROM_REV0_PHY_ANT_DFT_CFG", "S31_ESP_PACS_SVD"]
 name = "configure_forced_rx_gain_value"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "CONTROL_HIGH_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_INDEX", source-bit-offset = 0 }]
 domain = "ForcedRxGain"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_FORCE_RX_GAIN", "S31_ESP_PACS_SVD"]
@@ -8780,7 +8781,7 @@ sources = ["ROM_REV0_PHY_FORCE_RX_GAIN", "S31_ESP_PACS_SVD"]
 name = "configure_forced_rx_gain_value_from_vendor_argument"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "CONTROL_HIGH_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_INDEX", source-bit-offset = 0 }]
 domain = "PhyVendorRegisterArgument"
 input-transform = { wrapping-subtract = 0, retain-mask = 0xff }
 exposure = "facade"
@@ -8790,7 +8791,7 @@ sources = ["ROM_REV0_PHY_FORCE_RX_GAIN", "S31_ESP_PACS_SVD"]
 name = "configure_forced_rx_gain_state"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "PULSE_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_ENABLE", source-bit-offset = 0 }]
 domain = "AgcRuntimeEnableState"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_FORCE_RX_GAIN", "S31_ESP_PACS_SVD"]
@@ -8799,7 +8800,7 @@ sources = ["ROM_REV0_PHY_FORCE_RX_GAIN", "S31_ESP_PACS_SVD"]
 name = "configure_forced_rx_gain_state_from_vendor_argument"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "PULSE_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_ENABLE", source-bit-offset = 0 }]
 domain = "PhyVendorRegisterArgument"
 input-transform = { wrapping-subtract = 0, retain-mask = 1 }
 exposure = "facade"
@@ -8866,7 +8867,7 @@ sources = ["ROM_REV0_PHY_AGC"]
 name = "configure_phy_agc_initial_rx_gain_limit"
 peripheral = "PHY_AGC_ORACLE"
 register = "RX_GAIN_LIMIT_CONTROL"
-fields = [{ field = "RX_GAIN_LIMIT_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "INITIAL_GAIN_INDEX", source-bit-offset = 0 }]
 domain = "PhyAgcParameterByte"
 input-transform = { wrapping-subtract = 1, retain-mask = 0x7f }
 exposure = "facade"
@@ -8876,7 +8877,7 @@ sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
 name = "configure_phy_agc_initial_gain_limit_low"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_GAIN_LIMIT_LOW"
-fields = [{ field = "PARAMETER_MINUS_ONE_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "INITIAL_GAIN_INDEX", source-bit-offset = 0 }]
 domain = "PhyAgcParameterByte"
 input-transform = { wrapping-subtract = 1, retain-mask = 0x7f }
 exposure = "facade"
@@ -8886,7 +8887,7 @@ sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
 name = "configure_phy_agc_initial_rx_gain_index"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "RX_GAIN_INDEX_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "WIFI_MAX_GAIN_INDEX", source-bit-offset = 0 }]
 domain = "PhyAgcParameterByte"
 input-transform = { wrapping-subtract = 0, retain-mask = 0x7f }
 exposure = "facade"
@@ -8924,7 +8925,7 @@ sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
 name = "configure_phy_agc_initial_control_high"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "CONTROL_HIGH_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_INDEX", source-bit-offset = 0 }]
 value = 0x32
 exposure = "facade"
 sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
@@ -8933,7 +8934,7 @@ sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
 name = "raise_phy_agc_initial_pulse"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "PULSE_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_ENABLE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
@@ -8942,7 +8943,7 @@ sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
 name = "lower_phy_agc_initial_pulse"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "PULSE_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "FORCED_GAIN_ENABLE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
@@ -9083,7 +9084,7 @@ sources = ["BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE"]
 name = "configure_phy_rx_gain_table_final_index"
 peripheral = "PHY_AGC_ORACLE"
 register = "AGC_SHARED_CONTROL"
-fields = [{ field = "RX_GAIN_INDEX_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "WIFI_MAX_GAIN_INDEX", source-bit-offset = 0 }]
 domain = "PhyRxGainTableLastIndex"
 input-transform = { wrapping-subtract = 0, retain-mask = 0x7f }
 exposure = "facade"
@@ -9093,7 +9094,7 @@ sources = ["BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE", "S31_ESP_PACS_SVD"]
 name = "configure_phy_rx_gain_table_final_limit"
 peripheral = "PHY_AGC_ORACLE"
 register = "RX_GAIN_LIMIT_CONTROL"
-fields = [{ field = "RX_GAIN_LIMIT_OPAQUE", source-bit-offset = 0 }]
+fields = [{ field = "INITIAL_GAIN_INDEX", source-bit-offset = 0 }]
 domain = "PhyRxGainTableLastIndex"
 input-transform = { wrapping-subtract = 0, clamp-maximum = 0x4c, retain-mask = 0x7f }
 exposure = "facade"

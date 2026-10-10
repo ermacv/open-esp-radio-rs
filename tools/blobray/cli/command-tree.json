@@ -34,6 +34,9 @@
     "flags": [
       "--input",
       "--range",
+      "--address",
+      "--function",
+      "--group-by",
       "--abi",
       "--working-memory-mib",
       "--timeout-secs",

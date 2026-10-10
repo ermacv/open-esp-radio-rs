@@ -31,8 +31,9 @@ pub struct TargetAuditDocument {
 }
 
 /// Schema of the `register-accesses` document
-/// (`{"schema":2,"inputs":[...],"abi":...,"records":[...],"summary":{...}}`).
-pub const REGISTER_ACCESSES_SCHEMA: u32 = 2;
+/// (`{"schema":3,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
+/// `groups` only with `--group-by`).
+pub const REGISTER_ACCESSES_SCHEMA: u32 = 3;
 
 /// One analyzed input of a `register-accesses` document, by position.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -50,7 +51,13 @@ pub struct RegisterAccessDocument {
     pub inputs: Vec<RegisterAccessInput>,
     /// The calling convention the analysis assumed, if any.
     pub abi: Option<CallAbi>,
+    /// The records the request's filter selected: its observations, every
+    /// blocked function it names and every gap.
     pub records: Vec<RegisterAccess>,
+    /// The selected observations grouped as `--group-by` requested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub groups: Option<Vec<crate::access_groups::AccessGroup>>,
+    /// The whole analysis, independent of the filter.
     pub summary: RegisterAccessSummary,
 }
 

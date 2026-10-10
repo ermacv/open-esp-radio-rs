@@ -300,3 +300,67 @@ fn the_command_reports_the_accesses_of_one_field() {
     let human = String::from_utf8_lossy(&human.stdout);
     assert!(human.contains("0 functions access the field"), "{human}");
 }
+
+#[test]
+fn filters_select_observations_while_the_summary_counts_the_whole_analysis() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.a");
+    std::fs::write(&path, library().bytes()).unwrap();
+    let run = |extra: &[&str], json: bool| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_blobray"));
+        if json {
+            command.args(["--format", "json"]);
+        }
+        let output = command
+            .arg("register-accesses")
+            .arg("--input")
+            .arg(format!("code={}", path.display()))
+            .args(extra)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        output.stdout
+    };
+    let parse = |bytes: Vec<u8>| -> blobray_cli::wire::RegisterAccessDocument {
+        serde_json::from_slice(&bytes).unwrap()
+    };
+    let all = parse(run(&[], true));
+    assert!(all.groups.is_none(), "groups only with --group-by");
+    let word = parse(run(
+        &["--address", "0x20002", "--group-by", "address"],
+        true,
+    ));
+    assert_eq!(
+        word.summary, all.summary,
+        "a filter never changes the summary"
+    );
+    let observations = |document: &blobray_cli::wire::RegisterAccessDocument| {
+        document
+            .records
+            .iter()
+            .filter(|record| matches!(record, blobray_domain::RegisterAccess::Observation { .. }))
+            .count()
+    };
+    assert!(observations(&word) > 0 && observations(&word) <= observations(&all));
+    assert!(word.records.iter().all(|record| match record {
+        blobray_domain::RegisterAccess::Observation { address, .. } =>
+            address.is_some_and(|address| address & !3 == 0x20000),
+        _ => true,
+    }));
+    let groups = word.groups.expect("address groups");
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].word, Some(0x20000));
+    let absent = parse(run(
+        &["--function", "absent", "--group-by", "function"],
+        true,
+    ));
+    assert_eq!(observations(&absent), 0);
+    assert_eq!(absent.groups, Some(Vec::new()));
+    let human = String::from_utf8(run(&["--address", "0x20000"], false)).unwrap();
+    let mut lines = human.lines();
+    assert_eq!(lines.next(), Some("0x00020000"), "{human}");
+    assert!(
+        human.lines().last().unwrap().ends_with("unresolved)"),
+        "{human}"
+    );
+}

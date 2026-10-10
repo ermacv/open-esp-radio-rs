@@ -98,7 +98,23 @@
     "id": "fixture-experiment",
     "arm": "b",
     "variant": {
-      "commit": "0123456789abcdef0123456789abcdef01234567"
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "overrides": [
+        {
+          "dependency": "esp-hal",
+          "path": "../esp-hal",
+          "commit": "3333333333333333333333333333333333333333",
+          "dirty": false
+        }
+      ],
+      "features": {
+        "add": [
+          "probe"
+        ],
+        "remove": [
+          "trace"
+        ]
+      }
     },
     "round": {
       "layout_seed": 7,

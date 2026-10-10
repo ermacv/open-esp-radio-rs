@@ -1,7 +1,8 @@
 //! A run bundle of the current schema stays readable.
 //!
 //! `schema/run-schema-<RUN_SCHEMA>/` holds every document a run bundle of
-//! that schema carries, with its optional parts present. Each document must
+//! that schema carries, with its optional parts present (asserted below, so
+//! a sample cannot lose one unnoticed). Each document must
 //! read as its type and write back to the same JSON, and carry the current
 //! version of its own schema. A change that a stored bundle of this schema
 //! would not survive (a new required field, a renamed, removed or retyped
@@ -16,10 +17,10 @@ use std::{
 };
 
 use oer_hil_run_bundle_format::build::{BUILD_PROVENANCE_SCHEMA, BuildProvenance};
-use oer_hil_run_bundle_format::lab::{LAB_PROVENANCE_SCHEMA, LabProvenance};
+use oer_hil_run_bundle_format::lab::{FixtureObservation, LAB_PROVENANCE_SCHEMA, LabProvenance};
 use oer_hil_run_bundle_format::run::{
     ATTEMPT_SEAL_SCHEMA, AttemptSeal, CleanupRecord, IntegrityIndex, OBSERVATIONS_SCHEMA,
-    Observations, RUN_SCHEMA, RunManifest, RunPlan, ScenarioResult, UsbEvent,
+    Observations, PlannedFirmware, RUN_SCHEMA, RunManifest, RunPlan, ScenarioResult, UsbEvent,
 };
 use oer_hil_schema::run::RunEvent;
 use oer_hil_schema::snapshot::{MANIFEST_SCHEMA, Manifest as SnapshotManifest};
@@ -77,25 +78,47 @@ fn every_document_of_the_current_schema_reads_and_writes_back() {
         "the sample covers an A/B run"
     );
     assert!(manifest.firmware[0].replayed_from.is_some());
+    let variant = &manifest.experiment.as_ref().unwrap().variant;
+    assert!(!variant.overrides.is_empty() && !variant.features.is_empty());
     let plan: RunPlan = read("plan.json");
     assert_eq!(plan.schema, RUN_SCHEMA);
+    assert!(matches!(
+        plan.firmware,
+        Some(PlannedFirmware::Replay { .. })
+    ));
+    assert!(
+        plan.entries
+            .iter()
+            .any(|entry| entry.requirements.is_some())
+    );
     let attempt: AttemptSeal = read("attempt.json");
     assert_eq!(attempt.schema, ATTEMPT_SEAL_SCHEMA);
     assert_eq!(attempt.manifest.schema, RUN_SCHEMA);
     assert_eq!(attempt.suite.schema, RUN_SCHEMA);
     let scenario: ScenarioResult = read("scenario-result.json");
     assert_eq!(scenario.schema, RUN_SCHEMA);
-    assert!(!scenario.repetitions[0].measurements.is_empty());
+    let measurement = &scenario.repetitions[0].measurements[0];
+    assert!(measurement.threshold.is_some() && measurement.verdict.is_some());
+    assert!(scenario.failure.is_some() && scenario.repetitions[0].failure.is_some());
+    assert!(!scenario.repetitions[0].attachments.is_empty());
     let observations: Observations = read("observations.json");
     assert_eq!(observations.schema, OBSERVATIONS_SCHEMA);
+    assert!(
+        observations
+            .claim
+            .is_some_and(|claim| !claim.not_proven.is_empty())
+    );
     let cleanup: Vec<CleanupRecord> = read("cleanup.json");
     assert!(cleanup[0].failure.is_some());
     let usb: Vec<UsbEvent> = read("usb-events.json");
     assert!(!usb.is_empty());
     let lab: LabProvenance = read("lab-provenance.json");
     assert_eq!(lab.schema, LAB_PROVENANCE_SCHEMA);
+    assert!(matches!(lab.fixture, FixtureObservation::OpenWrt(_)));
+    assert!(lab.host.interfaces[0].wireless_link.is_some() && !lab.host.ipv4_routes.is_empty());
     let build: BuildProvenance = read("build-provenance.json");
     assert_eq!(build.schema, BUILD_PROVENANCE_SCHEMA);
+    assert!(build.parameters.layout_seed.is_some() && !build.parameters.features.is_empty());
     let _: IntegrityIndex = read("integrity.json");
     let snapshot: SnapshotManifest = read("source-snapshot-manifest.json");
     assert_eq!(snapshot.schema, MANIFEST_SCHEMA);

@@ -4,10 +4,19 @@
   "build_type": "open-esp-radio-hil-firmware/v1",
   "parameters": {
     "image": "bluetooth-gatt",
-    "network": null,
+    "network": "owned-network",
     "runtime_profile": "psram-code-psram-data-psram-stack",
     "target": "riscv32imafc-unknown-none-elf",
-    "runtime_features": "bluetooth-gatt"
+    "runtime_features": "bluetooth-gatt",
+    "layout_seed": 7,
+    "features": {
+      "add": [
+        "probe"
+      ],
+      "remove": [
+        "trace"
+      ]
+    }
   },
   "sources": [
     {

@@ -183,7 +183,8 @@ fn image_rollouts_and_tool_drift_do_not_fail_execution_or_issue_wrong_coverage()
         let proof: Proof = serde_json::from_slice(&std::fs::read(&proof_path).unwrap()).unwrap();
         assert_eq!(proof.attempt, 2);
         assert_eq!(proof.jobs.contains_key("isa-conformance"), reusable);
-        assert_eq!(proof.jobs.len(), if reusable { 7 } else { 6 });
+        let jobs = Workflow::Ci.spec().jobs.len();
+        assert_eq!(proof.jobs.len(), if reusable { jobs } else { jobs - 1 });
         let at = proof.jobs["host"].verified_at + 1;
         let next = coverage::select(manifest, 43, &[proof], Mode::Reuse, at, None).unwrap();
         for (id, action) in next.actions {

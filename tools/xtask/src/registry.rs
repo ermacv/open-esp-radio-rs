@@ -107,7 +107,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "tidy",
         tier: Tier::Fast,
-        job: "host",
+        job: "host-lint",
         summary: "the oer-tidy text policy over the whole tree",
         trigger: Some(|_| true),
         run: tidy,
@@ -115,7 +115,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "fmt",
         tier: Tier::Fast,
-        job: "host",
+        job: "host-lint",
         summary: "rustfmt of every workspace, or of a change's packages",
         trigger: Some(|change| !change.selection.format.is_empty()),
         run: fmt,
@@ -123,7 +123,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "issue-labels",
         tier: Tier::Fast,
-        job: "host",
+        job: "host-lint",
         summary: "issue-label catalog and offline creation/reconciliation regressions",
         trigger: Some(|change| {
             touches(
@@ -147,7 +147,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "claude-review",
         tier: Tier::Fast,
-        job: "host",
+        job: "host-lint",
         summary: "offline Claude review and finding-issue script regressions",
         trigger: Some(|change| {
             touches(
@@ -167,7 +167,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "claude-hooks",
         tier: Tier::Fast,
-        job: "host",
+        job: "host-lint",
         summary: "offline Claude Code hook regressions",
         trigger: Some(|change| touches(change, &[".claude/hooks/", ".claude/settings.json"])),
         run: |ctx, _| {
@@ -182,7 +182,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "lock",
         tier: Tier::Fast,
-        job: "host",
+        job: "host-lint",
         summary: "every lock matches its manifests (`lock --check`)",
         trigger: Some(|change| !change.selection.locks.is_empty()),
         run: lock,
@@ -206,7 +206,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "clippy",
         tier: Tier::Fast,
-        job: "host",
+        job: "host-lint",
         summary: "Clippy -D warnings of the root and tidy workspaces, or of a change's host packages and their dependents",
         trigger: Some(|change| !host_packages(change).is_empty()),
         run: clippy,
@@ -222,7 +222,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "feature-sets",
         tier: Tier::Fast,
-        job: "host",
+        job: "host-lint",
         summary: "tests under each declared `open-radio.test-feature-sets`",
         trigger: Some(|change| !tested(change).is_empty()),
         run: feature_sets,
@@ -246,7 +246,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "metadata",
         tier: Tier::Full,
-        job: "host",
+        job: "host-lint",
         summary: "locked metadata, patches, Git pins and lints of every workspace",
         trigger: Some(|change| change.files.iter().any(|file| manifest(file))),
         run: |ctx, _| checks::metadata::run(ctx).map(drop),
@@ -254,7 +254,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "network",
         tier: Tier::Full,
-        job: "host",
+        job: "host-lint",
         summary: "isolated network consumers and their dependency boundaries",
         trigger: Some(|change| {
             change.files.iter().any(|file| manifest(file))
@@ -275,7 +275,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "architecture-clippy",
         tier: Tier::Full,
-        job: "architecture",
+        job: "architecture-clippy",
         summary: "chip-target Clippy of every production feature profile and the validation probes",
         trigger: Some(production_profiles),
         run: |ctx, _| checks::architecture::clippy(ctx),
@@ -306,7 +306,7 @@ pub const CHECKS: &[Check] = &[
     Check {
         id: "example-link",
         tier: Tier::Full,
-        job: "images",
+        job: "example-link",
         summary: "the station example built, audited and encoded into a bundle",
         trigger: Some(|change| touches(change, &["platform/"])),
         // The interrupt-stack gate fetches the pinned ROM it bounds the
@@ -430,11 +430,21 @@ pub const CHECKS: &[Check] = &[
         run: |ctx, _| checks::isa_conformance::run(ctx, std::path::Path::new("clang")),
     },
     // A change type-checks the classes it reaches instead.
+    // The final images build in jobs of their own: on one runner they wait
+    // for each other's shared build directory.
     Check {
         id: "final-images",
         tier: Tier::Full,
         job: "images",
-        summary: "final radio images and staged boot smoke built with every gate",
+        summary: "the final performance radio image built with every gate",
+        trigger: None,
+        run: |ctx, _| hil(ctx, &["images", "check", "--class", "performance"]),
+    },
+    Check {
+        id: "final-images-correctness",
+        tier: Tier::Full,
+        job: "images-correctness",
+        summary: "the final correctness radio image and staged boot smoke built with every gate",
         trigger: None,
         run: |ctx, _| {
             hil(
@@ -442,8 +452,6 @@ pub const CHECKS: &[Check] = &[
                 &[
                     "images",
                     "check",
-                    "--class",
-                    "performance",
                     "--class",
                     "correctness",
                     "--class",

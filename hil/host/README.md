@@ -219,10 +219,17 @@ Qualification applies the same exclusion when checking source currency.
 No symlink or submodule content in the remaining source inputs is silently followed;
 such inputs require review and are rejected by this capture interface.
 
-The content-addressed directory contains `manifest.json`, `snapshot.json` and
-`sources.tar`. It records exact file bytes and executable modes for the main
-source and configured overrides. Subsequent capture does not overwrite an
-existing identity, and corrupt stored material is rejected. Builds with
+The content-addressed directory contains `manifest.json` and `snapshot.json`
+(record schema 2). The manifest records each file's size, SHA-256 and
+executable mode for the main source and configured overrides; the bytes are
+objects named by their SHA-256 in the run store's `sources/` directory
+(`~/.local/share/open-esp-radio/hil/sources/<2 hex>/<sha256>`), shared by every
+capture, run and checkout, so an unchanged file is stored once however many
+snapshots name it. A run archives only the manifest and record. Subsequent
+capture does not overwrite an existing identity, rewrites an object whose bytes
+no longer hash to its name, and every reader checks each object's digest; a
+missing or corrupt object is rejected. `cargo hil runs prune --apply` and the
+automatic rule delete the objects no run names once a day old. Builds with
 `--source-snapshot` validate and materialize these inputs in one of the host's
 build slots, `~/.cache/open-esp-radio/build/<chip>/source-build-<n>/`
 (`OER_BUILD_ROOT` replaces `~/.cache/open-esp-radio/build`; a set

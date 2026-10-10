@@ -346,6 +346,12 @@ pub fn source_snapshot_store() -> Result<PathBuf> {
     Ok(oer_image::host_build_root()?.join("source-snapshots"))
 }
 
+/// The source files of every snapshot, by their SHA-256: beside the shared
+/// run store's runs, which keep naming them after a build cache is cleared.
+pub fn source_objects() -> Result<PathBuf> {
+    Ok(oer_hil_run_bundle::RunStore::shared()?.sources())
+}
+
 /// The host build root of `chip` images.
 pub fn chip_build_root(chip: &str) -> Result<PathBuf> {
     Ok(oer_image::host_build_root()?.join(chip))

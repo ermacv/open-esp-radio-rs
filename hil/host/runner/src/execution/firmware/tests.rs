@@ -82,10 +82,14 @@ fn session(root: &Path) -> RunSession {
         vec![OsString::from("test")],
     )
     .unwrap();
-    let (_snapshot_root, snapshot) = oer_hil_source_snapshot::test_snapshot(root);
+    // The run's store holds the source objects, as the shared store does.
+    let objects = oer_hil_schema::snapshot::objects_of_run(session.directory()).unwrap();
+    let (_snapshot_root, snapshot) =
+        oer_hil_source_snapshot::test_snapshot_into(root, Some(&objects));
     session
         .bind_source_snapshot(
             snapshot.directory(),
+            &objects,
             &oer_hil_image::frozen::build_slots("chip-a").unwrap(),
         )
         .unwrap();

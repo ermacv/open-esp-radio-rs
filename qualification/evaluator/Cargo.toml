@@ -23,7 +23,6 @@ oer-durable = { path = "../../tools/durable" }
 oer-process = { path = "../../tools/process" }
 toml = "=1.1.4"
 toml_edit = { version = "=0.25.13", features = ["serde"] }
-tar = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 oer-hil-run-bundle = { path = "../../hil/host/run-bundle", features = ["test-support"] }

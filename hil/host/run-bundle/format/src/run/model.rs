@@ -8,7 +8,7 @@ use oer_hil_schema::image::ImageClass;
 
 /// Format of a run's `manifest.json`. 5: an experiment round records its
 /// [`crate::experiment::Phase`].
-pub const RUN_SCHEMA: u16 = 5;
+pub const RUN_SCHEMA: u16 = 6;
 
 pub use oer_hil_schema::run::{
     Better, Comparison, FailureKind, MeasurementUnit, MeasurementVerdict, Outcome, RunEventKind,

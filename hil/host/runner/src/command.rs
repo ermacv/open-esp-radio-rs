@@ -112,6 +112,7 @@ pub(crate) fn run() -> Result<()> {
                     &source_include,
                     include_untracked,
                     &image::source_snapshot_store()?,
+                    &image::source_objects()?,
                 )?;
                 emit_json(&snapshot, true)
             }
@@ -127,6 +128,7 @@ pub(crate) fn run() -> Result<()> {
                     .map(|snapshot| {
                         oer_hil_source_snapshot::FrozenSources::open_in_free_workspace(
                             snapshot,
+                            &image::source_objects()?,
                             &image::frozen::build_slots(&chip)?,
                         )
                     })
@@ -141,8 +143,13 @@ pub(crate) fn run() -> Result<()> {
                                 layout_seed,
                                 &oer_hil_schema::image::FeatureDelta::default(),
                             )?;
-                            let record =
-                                oer_hil_image::record::publish(&root, snapshot, class, &artifacts)?;
+                            let record = oer_hil_image::record::publish(
+                                &root,
+                                snapshot,
+                                &image::source_objects()?,
+                                class,
+                                &artifacts,
+                            )?;
                             eprintln!("build_record={}", record.display());
                             artifacts
                         }
@@ -223,14 +230,16 @@ pub(crate) fn run() -> Result<()> {
             }
             let snapshot = match (&firmware_from, source_snapshot) {
                 (Some(_), _) => None,
-                (None, Some(directory)) => {
-                    Some(oer_hil_source_snapshot::Snapshot::load(&directory)?)
-                }
+                (None, Some(directory)) => Some(oer_hil_source_snapshot::Snapshot::load(
+                    &directory,
+                    &image::source_objects()?,
+                )?),
                 (None, None) => Some(oer_hil_source_snapshot::capture(
                     &root,
                     &source_include,
                     include_untracked,
                     &image::source_snapshot_store()?,
+                    &image::source_objects()?,
                 )?),
             };
             if build_only {
@@ -240,6 +249,7 @@ pub(crate) fn run() -> Result<()> {
                 let selected = selected.iter().collect::<Vec<_>>();
                 let frozen = oer_hil_source_snapshot::FrozenSources::open_in_free_workspace(
                     snapshot.directory(),
+                    &image::source_objects()?,
                     &image::frozen::build_slots(&chip)?,
                 )?;
                 for class in orchestration::image_classes(&selected) {
@@ -320,6 +330,7 @@ pub(crate) fn run() -> Result<()> {
                 &source_include,
                 include_untracked,
                 &image::source_snapshot_store()?,
+                &image::source_objects()?,
             )?;
             let required = requirements(&selected);
             for provider in crate::scenario::Families::FIXTURES {

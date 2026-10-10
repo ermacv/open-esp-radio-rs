@@ -247,9 +247,11 @@ pub fn run(
                 &[],
                 true,
                 &oer_hil_image::source_snapshot_store()?,
+                &oer_hil_image::source_objects()?,
             )?;
             Some(FrozenSources::open_in_free_workspace(
                 snapshot.directory(),
+                &oer_hil_image::source_objects()?,
                 &oer_hil_image::frozen::build_slots(chip)?,
             )?)
         }

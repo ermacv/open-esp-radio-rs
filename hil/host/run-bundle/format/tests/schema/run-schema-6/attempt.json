@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "manifest": {
-    "schema": 5,
+    "schema": 6,
     "run_id": "1791582140859-002c088b",
     "target": "esp32s31",
     "state": "completed",
@@ -97,7 +97,7 @@
     }
   },
   "suite": {
-    "schema": 5,
+    "schema": 6,
     "run_id": "1791582140859-002c088b",
     "target": "esp32s31",
     "outcome": "failed",
@@ -115,14 +115,14 @@
     },
     "scenarios": [
       {
-        "schema": 5,
+        "schema": 6,
         "scenario": "bluetooth-trouble-gatt",
         "image": "bluetooth-gatt",
         "outcome": "failed",
         "required_repetitions": 3,
         "repetitions": [
           {
-            "schema": 5,
+            "schema": 6,
             "repetition": 1,
             "outcome": "failed",
             "started_unix_millis": 1791582365170,
@@ -171,7 +171,7 @@
             }
           },
           {
-            "schema": 5,
+            "schema": 6,
             "repetition": 2,
             "outcome": "failed",
             "started_unix_millis": 1791582391128,

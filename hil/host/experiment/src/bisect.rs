@@ -413,6 +413,7 @@ impl Bisection<'_> {
             &[],
             false,
             &oer_hil_image::source_snapshot_store()?,
+            &oer_hil_image::source_objects()?,
         )?;
         let mut arguments = vec![
             String::from("run"),

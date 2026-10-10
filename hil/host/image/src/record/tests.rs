@@ -93,7 +93,11 @@ fn firmware_record_archives_the_exact_application() {
     let (_snapshot_root, snapshot) = oer_hil_source_snapshot::test_snapshot(&root);
     let slots = root.join("slots/source-build");
     first_session
-        .bind_source_snapshot(snapshot.directory(), &slots)
+        .bind_source_snapshot(
+            snapshot.directory(),
+            &oer_hil_source_snapshot::test_objects_of(&snapshot),
+            &slots,
+        )
         .unwrap();
     firmware::record(
         &mut first_session,
@@ -180,8 +184,9 @@ fn firmware_record_archives_the_exact_application() {
     let object_root = root.join("objects/sha256");
     let first_objects = collect_integrity_files(&object_root).unwrap();
     // The application, both ELFs, the runtime binary, the lock, the build
-    // provenance, the source inputs and the snapshot materials.
-    assert_eq!(first_objects.len(), 9);
+    // provenance, the source inputs and the snapshot's record and manifest
+    // (its files are source objects of their own).
+    assert_eq!(first_objects.len(), 8);
     assert!(
         firmware::record(
             &mut first_session,
@@ -206,7 +211,11 @@ fn firmware_record_archives_the_exact_application() {
     fs::create_dir(&second_run_directory).unwrap();
     let mut second = session(&second_run_directory);
     second
-        .bind_source_snapshot(snapshot.directory(), &slots)
+        .bind_source_snapshot(
+            snapshot.directory(),
+            &oer_hil_source_snapshot::test_objects_of(&snapshot),
+            &slots,
+        )
         .unwrap();
     firmware::record(
         &mut second,
@@ -250,10 +259,17 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     let source_directory = runs_directory.join("source-run");
     fs::create_dir(&source_directory).unwrap();
     let mut source = session_for(&source_directory, &target_directory, &repository_root);
-    let (_snapshot_root, snapshot) = oer_hil_source_snapshot::test_snapshot(&repository_root);
     let slots = root.join("slots/source-build");
+    // The runs' store holds the source objects, as the shared store does for
+    // every capture and run.
+    let objects = runs_directory
+        .parent()
+        .unwrap()
+        .join(oer_hil_schema::snapshot::OBJECTS);
+    let (_snapshot_root, snapshot) =
+        oer_hil_source_snapshot::test_snapshot_into(&repository_root, Some(&objects));
     source
-        .bind_source_snapshot(snapshot.directory(), &slots)
+        .bind_source_snapshot(snapshot.directory(), &objects, &slots)
         .unwrap();
     firmware::record(
         &mut source,

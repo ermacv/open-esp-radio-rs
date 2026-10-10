@@ -124,7 +124,8 @@ fn every_document_of_the_current_schema_reads_and_writes_back() {
     let build: BuildProvenance = read("build-provenance.json");
     assert_eq!(build.schema, BUILD_PROVENANCE_SCHEMA);
     assert!(build.parameters.layout_seed.is_some() && !build.parameters.features.is_empty());
-    let _: IntegrityIndex = read("integrity.json");
+    let integrity: IntegrityIndex = read("integrity.json");
+    assert_eq!(integrity.schema, RUN_SCHEMA);
     let snapshot: SnapshotManifest = read("source-snapshot-manifest.json");
     assert_eq!(snapshot.schema, MANIFEST_SCHEMA);
     // The fixture records a repetition carries; `helper.json` wraps a

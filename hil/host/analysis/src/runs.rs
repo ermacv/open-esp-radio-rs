@@ -673,6 +673,56 @@ pub fn collect_observers(store: &RunStore) -> Result<usize> {
     .len())
 }
 
+/// How long a source object no run names is kept: a capture stores its
+/// objects (or refreshes their time) before a run archives its manifest, and
+/// a capture can be reused for a while with `--source-snapshot`.
+pub const SOURCE_GRACE: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// Remove the source objects of `store` that no run's snapshot manifest names
+/// and that were stored more than [`SOURCE_GRACE`] ago; returns how many were
+/// removed and their bytes.
+pub fn collect_sources(store: &RunStore) -> Result<(usize, u64)> {
+    let mut named = BTreeSet::new();
+    for id in store.ids_newest_first()? {
+        let manifest = store.run(&id).join("source/snapshot/manifest.json");
+        let Some(manifest) = fs::read(&manifest).ok().and_then(|bytes| {
+            serde_json::from_slice::<oer_hil_schema::snapshot::Manifest>(&bytes).ok()
+        }) else {
+            continue;
+        };
+        for source in manifest.sources {
+            named.extend(source.files.into_iter().map(|file| file.sha256));
+        }
+    }
+    let objects = store.sources();
+    let Ok(prefixes) = fs::read_dir(&objects) else {
+        return Ok((0, 0));
+    };
+    let (mut removed, mut bytes) = (0, 0);
+    for prefix in prefixes {
+        let prefix = prefix?;
+        if !prefix.file_type()?.is_dir() {
+            continue;
+        }
+        for object in fs::read_dir(prefix.path())? {
+            let object = object?;
+            let name = object.file_name().to_string_lossy().into_owned();
+            let metadata = object.metadata()?;
+            let young = metadata
+                .modified()?
+                .elapsed()
+                .is_ok_and(|age| age < SOURCE_GRACE);
+            if named.contains(&name) || young || !metadata.is_file() {
+                continue;
+            }
+            fs::remove_file(object.path())?;
+            removed += 1;
+            bytes += metadata.len();
+        }
+    }
+    Ok((removed, bytes))
+}
+
 /// Follow the run in `directory`, handing `report` each step its events
 /// record, until it ends; the exit status for its outcome: 0 passed, 1
 /// failed, broken, blocked or skipped, 2 interrupted, abandoned or on a

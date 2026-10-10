@@ -1133,22 +1133,24 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
         // The run's snapshot holds its own firmware source.
         let snapshot = run.join("source/snapshot");
         fs::create_dir_all(&snapshot).unwrap();
-        let mut archive =
-            tar::Builder::new(fs::File::create(snapshot.join("sources.tar")).unwrap());
         let bytes = format!("{id} source");
-        let mut header = tar::Header::new_gnu();
-        header.set_size(bytes.len() as u64);
-        header.set_mode(0o644);
-        header.set_cksum();
-        archive
-            .append_data(
-                &mut header,
-                "repository/firmware/src/lib.rs",
-                bytes.as_bytes(),
-            )
-            .unwrap();
-        archive.finish().unwrap();
-        drop(archive);
+        let sha256 = oer_durable::sha256_bytes(bytes.as_bytes());
+        let stored = oer_hil_schema::snapshot::object(
+            &root.join(oer_hil_schema::snapshot::OBJECTS),
+            &sha256,
+        );
+        fs::create_dir_all(stored.parent().unwrap()).unwrap();
+        fs::write(stored, &bytes).unwrap();
+        fs::write(
+            snapshot.join("manifest.json"),
+            serde_json::to_vec(&json!({"schema": 1, "sources": [{
+                "name": "repository", "commit": "abc123", "dirty": false,
+                "files": [{"path": "firmware/src/lib.rs", "size_bytes": bytes.len(),
+                    "sha256": sha256, "mode": 0o644}],
+            }]}))
+            .unwrap(),
+        )
+        .unwrap();
         seal(&run);
     };
     observe("run-1", "station-reconnect", 100);

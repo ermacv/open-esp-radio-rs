@@ -464,3 +464,46 @@ fn why_shows_the_failure_that_blocked_a_scenario_before_any_repetition() {
     assert!(text.contains("failure (image-build):"), "{text}");
     assert!(text.contains("      frame grew to 9248 bytes"), "{text}");
 }
+
+/// A source object a run's snapshot manifest names stays; an unnamed one goes
+/// once it is older than the grace, and a fresh one stays.
+#[test]
+fn source_objects_no_run_names_are_collected_after_the_grace() {
+    use oer_hil_schema::snapshot::object;
+    let directory = tempfile::tempdir().unwrap();
+    let store = RunStore::at(directory.path());
+    let put = |bytes: &[u8]| {
+        let sha256 = oer_durable::sha256_bytes(bytes);
+        let path = object(&store.sources(), &sha256);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, bytes).unwrap();
+        (sha256, path)
+    };
+    let (named, named_path) = put(b"named");
+    let (_, old_path) = put(b"orphan");
+    let (_, young_path) = put(b"young");
+    let run = store.run("1000-a");
+    write_run(&run, 1, RunState::Completed, Vec::new(), |_| {});
+    fs::create_dir_all(run.join("source/snapshot")).unwrap();
+    fs::write(
+        run.join("source/snapshot/manifest.json"),
+        serde_json::to_vec(&serde_json::json!({"schema": 1, "sources": [{
+            "name": "repository", "commit": "abc", "dirty": false,
+            "files": [{"path": "a.rs", "size_bytes": 5, "sha256": named, "mode": 0o644}],
+        }]}))
+        .unwrap(),
+    )
+    .unwrap();
+    let old = std::time::SystemTime::now() - 2 * SOURCE_GRACE;
+    for path in [&named_path, &old_path] {
+        fs::File::options()
+            .append(true)
+            .open(path)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+    }
+    assert_eq!(collect_sources(&store).unwrap(), (1, 6));
+    assert!(named_path.is_file() && young_path.is_file());
+    assert!(!old_path.exists());
+}

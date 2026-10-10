@@ -31,6 +31,7 @@ struct Record {
 pub fn publish(
     root: &Path,
     snapshot: &Path,
+    objects: &Path,
     class: ImageClass,
     artifacts: &Artifacts,
 ) -> Result<PathBuf> {
@@ -43,7 +44,7 @@ pub fn publish(
         .tempdir_in(&builds)?;
     let directory = staging.path();
     let (frozen, sources, materials) =
-        build::archive_snapshot(snapshot, directory, &target, &build_slots(&chip)?)?;
+        build::archive_snapshot(snapshot, objects, directory, &target, &build_slots(&chip)?)?;
     frozen.verify_unchanged()?;
     let (artifact, _) = firmware::archive(
         &FirmwareArchive {

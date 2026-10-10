@@ -441,6 +441,7 @@ fn prepare(
             .map(|entry| (entry.dependency, entry.path.clone()))
             .collect::<Vec<_>>(),
         &oer_hil_image::source_snapshot_store()?,
+        &oer_hil_image::source_objects()?,
     )?;
     Ok(PreparedArm {
         arm,

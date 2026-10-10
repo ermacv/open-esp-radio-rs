@@ -1,10 +1,12 @@
 //! The source-snapshot manifest: which files a run's firmware was built from.
 //!
-//! The runner writes `manifest.json` beside the snapshot's `sources.tar`;
-//! the qualification evaluator reads it back and recomputes each source's
-//! identity from its serialized form. Both use these types, so the field
-//! order and the fields themselves are one contract. Unknown fields are
-//! refused: a field this build does not know would change an identity it
+//! The runner writes `manifest.json` and `snapshot.json` into a snapshot's
+//! directory; each file's bytes are an object named by their SHA-256 in the
+//! store's [`OBJECTS`] directory, shared by every snapshot and run. The
+//! qualification evaluator reads the manifest back and recomputes each
+//! source's identity from its serialized form. Both use these types, so the
+//! field order and the fields themselves are one contract. Unknown fields
+//! are refused: a field this build does not know would change an identity it
 //! cannot recompute.
 
 use std::path::{Path, PathBuf};
@@ -13,6 +15,31 @@ use serde::{Deserialize, Serialize};
 
 /// The manifest schema this build writes and reads.
 pub const MANIFEST_SCHEMA: u16 = 1;
+
+/// The version of `snapshot.json`. Version 2 names no archive: the files are
+/// objects in [`OBJECTS`].
+pub const SNAPSHOT_SCHEMA: u16 = 2;
+
+/// The directory, beside a run store's `runs`, holding source files by their
+/// SHA-256.
+pub const OBJECTS: &str = "sources";
+
+/// The object holding the bytes whose SHA-256 is `sha256`, below `objects`.
+pub fn object(objects: &Path, sha256: &str) -> PathBuf {
+    objects
+        .join(sha256.get(..2).unwrap_or_default())
+        .join(sha256)
+}
+
+/// The objects directory of the store `run` (a run directory) lies in.
+pub fn objects_of_run(run: &Path) -> std::io::Result<PathBuf> {
+    let run = run.canonicalize()?;
+    let store = run
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| std::io::Error::other("a run directory lies in a store's runs"))?;
+    Ok(store.join(OBJECTS))
+}
 
 /// Agent instructions and skills are not firmware or HIL source inputs.
 /// Capture and evidence currency checks apply this same exclusion to scoped

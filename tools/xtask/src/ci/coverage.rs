@@ -43,7 +43,8 @@ fn validate(manifest: &Manifest) -> Result<()> {
 }
 
 /// The plan: each job is reused when a proof covers its inputs (in `Reuse`
-/// mode); otherwise, for a change-`scope`d branch run, it runs the checks the
+/// mode), except the `fresh` ones, which publish what this run computes;
+/// otherwise, for a change-`scope`d branch run, it runs the checks the
 /// change reaches, or is skipped when it reaches none; otherwise it runs all.
 pub fn select(
     manifest: Manifest,
@@ -52,6 +53,7 @@ pub fn select(
     mode: Mode,
     at: u64,
     scope: Option<&Scope>,
+    fresh: &[&str],
 ) -> Result<Plan> {
     validate(&manifest)?;
     let actions = manifest
@@ -70,7 +72,7 @@ pub fn select(
                         .cloned()
                 })
                 .flatten();
-            let reused = mode == Mode::Reuse && source.is_some();
+            let reused = mode == Mode::Reuse && source.is_some() && !fresh.contains(&job.as_str());
             let action = match scope.and_then(|scope| scope.checks.get(job)) {
                 Some(checks) if !reused && checks.is_empty() => Action {
                     run: false,

@@ -402,7 +402,9 @@ fn the_vendor_evidence_index_runs_for_what_it_is_computed_from() {
     };
     // A production line a reviewed decision may name, through the probe's closure.
     assert!(of(&["crates/driver/src/lib.rs"]));
-    assert!(of(&["verification/esp32s31/scenarios/src/decisions/observation.rs"]));
+    assert!(of(&[
+        "verification/esp32s31/scenarios/src/decisions/observation.rs"
+    ]));
     assert!(of(&["registers/chip-a/model/radio.toml"]));
     assert!(!of(&["crates/other/src/lib.rs"]));
     assert!(!of(&["hil/targets/chip-a/agent/src/main.rs"]));

@@ -96,6 +96,12 @@ enum Command {
         /// other scenario covers, without running a scenario.
         #[arg(long)]
         untriaged: bool,
+        /// Compare every computed index with the one `main` computed at the
+        /// change's merge base, below this directory as
+        /// `<chip>/evidence`; fail when evidence was lost. An absent
+        /// directory skips the comparison.
+        #[arg(long, conflicts_with_all = ["chip", "untriaged", "scenarios"])]
+        compare: Option<PathBuf>,
         /// Scenarios whose shards to rewrite; the whole index when empty.
         scenarios: Vec<String>,
     },
@@ -228,6 +234,7 @@ fn run() -> Result<ExitCode> {
             linker,
             output,
             untriaged,
+            compare,
             scenarios,
         } => {
             use oer_vendor_evidence::run::regenerate;
@@ -235,11 +242,31 @@ fn run() -> Result<ExitCode> {
                 if untriaged || !scenarios.is_empty() {
                     return Err("naming scenarios or `--untriaged` needs `--chip`".into());
                 }
-                // Every verified chip's whole index, as the nightly check runs it.
-                for chip in verified_chips(&ctx)? {
-                    regenerate::run(&ctx, &chip, vec![], linker.clone(), output.clone())?;
+                // Every verified chip's whole index, as the vendor-evidence check runs it.
+                let chips = verified_chips(&ctx)?;
+                for chip in &chips {
+                    regenerate::run(&ctx, chip, vec![], linker.clone(), output.clone())?;
                 }
-                return Ok(ExitCode::SUCCESS);
+                let Some(base) = compare.map(|base| ctx.root.join(base)) else {
+                    return Ok(ExitCode::SUCCESS);
+                };
+                if !base.is_dir() {
+                    println!(
+                        "no base vendor evidence index at {}: the comparison is skipped",
+                        base.display()
+                    );
+                    return Ok(ExitCode::SUCCESS);
+                }
+                let mut lost = false;
+                for chip in &chips {
+                    lost |= regenerate::compare(&ctx, chip, &base.join(chip).join("evidence"))?;
+                }
+                return if lost {
+                    Err("the change loses vendor evidence the merge base's index holds".into())
+                } else {
+                    println!("no vendor evidence of the merge base's index is lost");
+                    Ok(ExitCode::SUCCESS)
+                };
             };
             return if untriaged {
                 regenerate::untriaged(&ctx, &chip)
@@ -280,6 +307,25 @@ fn main() -> ExitCode {
         Err(error) => {
             eprintln!("verification: {error}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_comparison_covers_every_chip_and_never_one() {
+        let parse =
+            |args: &[&str]| Cli::try_parse_from([&["verification", "evidence"], args].concat());
+        assert!(parse(&["--compare", "base"]).is_ok());
+        for args in [
+            &["--chip", "esp32s31", "--compare", "base"][..],
+            &["--untriaged", "--compare", "base"],
+            &["wifi-mac", "--compare", "base"],
+        ] {
+            assert!(parse(args).is_err(), "{args:?}");
         }
     }
 }

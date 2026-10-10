@@ -79,10 +79,8 @@ fn unscopable(files: &[String]) -> Option<&String> {
     })
 }
 
-/// The checks of each job of `workflow` that the change from the merge base
-/// of the run's commit with `main` to the checkout reaches. The checkout is
-/// shallow, so GitHub names the merge base and only that commit is fetched.
-fn change_scope(root: &Path, api: &GitHub, workflow: Workflow) -> Result<Scope> {
+/// The merge base of the run's commit with `main`, as GitHub names it.
+fn merge_base(api: &GitHub) -> Result<String> {
     #[derive(serde::Deserialize)]
     struct Commit {
         sha: String,
@@ -91,10 +89,17 @@ fn change_scope(root: &Path, api: &GitHub, workflow: Workflow) -> Result<Scope> 
     struct Compare {
         merge_base_commit: Commit,
     }
-    let base = api
+    Ok(api
         .query::<Compare>(&format!("compare/main...{}", api.commit))?
         .merge_base_commit
-        .sha;
+        .sha)
+}
+
+/// The checks of each job of `workflow` that the change from `base`, the
+/// merge base of the run's commit with `main`, to the checkout reaches. The
+/// checkout is shallow, so only that commit is fetched.
+fn change_scope(root: &Path, base: &str, workflow: Workflow) -> Result<Scope> {
+    let base = base.to_owned();
     oer_process::git::output(
         root,
         [
@@ -182,7 +187,7 @@ fn summary(plan: &Plan, repository: &str) -> String {
 
 /// `run_<job>` and `checks_<job>` (`all` or the comma-separated checks to
 /// pass to `check tier --checks`) for each job.
-fn outputs(plan: &Plan) -> String {
+fn outputs(plan: &Plan, merge_base: Option<&str>) -> String {
     let mut text = String::new();
     for (job, action) in &plan.actions {
         let name = job.replace('-', "_");
@@ -195,7 +200,36 @@ fn outputs(plan: &Plan) -> String {
             action.run
         ));
     }
+    // A branch's merge base with `main`, whose artifacts a job compares the
+    // branch's results with, whether or not the change scopes the checks;
+    // empty on `main` and manual runs.
+    text.push_str(&format!("merge_base={}\n", merge_base.unwrap_or_default()));
     text
+}
+
+/// A `branch` run's merge base with `main` and the checks its change
+/// reaches: the base stays known when the change cannot scope the checks,
+/// since a job compares the branch's results with main's there.
+fn branch_change(
+    branch: bool,
+    merge_base: impl FnOnce() -> Result<String>,
+    scope: impl FnOnce(&str) -> Result<Scope>,
+) -> (Option<String>, Option<Scope>) {
+    let base = branch
+        .then(|| {
+            merge_base()
+                .inspect_err(|error| eprintln!("CI: the merge base is unknown ({error})"))
+                .ok()
+        })
+        .flatten();
+    let scope = base.as_deref().and_then(|base| {
+        scope(base)
+            .inspect_err(|error| {
+                eprintln!("CI: the change is unknown ({error}); every check will run");
+            })
+            .ok()
+    });
+    (base, scope)
 }
 
 pub fn prepare(root: &Path, workflow: Workflow, output: &Path) -> Result<()> {
@@ -221,16 +255,15 @@ pub fn prepare(root: &Path, workflow: Workflow, output: &Path) -> Result<()> {
     };
     // A branch push skips the audited checks its change does not reach;
     // `main`, a manual run and any failure to tell the change run everything.
-    let scope = (std::env::var("GITHUB_EVENT_NAME")? == "push"
-        && std::env::var("GITHUB_REF")? != MAIN)
-        .then(|| {
-            change_scope(root, &api, workflow)
-                .inspect_err(|error| {
-                    eprintln!("CI: the change is unknown ({error}); every check will run");
-                })
-                .ok()
-        })
-        .flatten();
+    // Its merge base is known even when the change cannot scope the checks,
+    // and a job compares the branch's results with main's there.
+    let main = std::env::var("GITHUB_REF")? == MAIN;
+    let branch = std::env::var("GITHUB_EVENT_NAME")? == "push" && !main;
+    let (base, scope) = branch_change(
+        branch,
+        || merge_base(&api),
+        |base| change_scope(root, base, workflow),
+    );
     let plan = coverage::select(
         manifest,
         api.run_id,
@@ -238,9 +271,14 @@ pub fn prepare(root: &Path, workflow: Workflow, output: &Path) -> Result<()> {
         mode,
         oer_durable::unix_seconds(),
         scope.as_ref(),
+        if main {
+            registry::PUBLISHED_ON_MAIN
+        } else {
+            &[]
+        },
     )?;
     oer_durable::atomic_json(output, &plan)?;
-    append("GITHUB_OUTPUT", &outputs(&plan))?;
+    append("GITHUB_OUTPUT", &outputs(&plan, base.as_deref()))?;
     append("GITHUB_STEP_SUMMARY", &summary(&plan, &api.repository))
 }
 
@@ -358,6 +396,17 @@ mod tests {
                 Some(path)
             );
         }
+    }
+
+    #[test]
+    fn a_branch_keeps_its_merge_base_when_its_change_cannot_scope_the_checks() {
+        let unscoped = |_: &str| -> Result<Scope> { Err("workflows change".into()) };
+        let (base, scope) = branch_change(true, || Ok("base".into()), unscoped);
+        assert_eq!((base.as_deref(), scope.is_none()), (Some("base"), true));
+        let (base, _) = branch_change(false, || Ok("base".into()), unscoped);
+        assert_eq!(base, None);
+        let unknown = || -> Result<String> { Err("no API".into()) };
+        assert_eq!(branch_change(true, unknown, unscoped).0, None);
     }
 
     #[test]

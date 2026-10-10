@@ -781,21 +781,28 @@ fn quiesce_on_a_full_queue_proceeds_once_the_consumer_frees_a_slot() {
         .unwrap();
 }
 
-#[test]
-fn reopening_after_a_quiesce_never_overrides_another_owners_disable() {
-    let model = Model::default();
-    let runtime = installed(&model);
-    // Four unread terminals fill the queue and leave the port Quiesced.
+/// Fill the four-entry queue with unread terminals and leave the port in
+/// the `Quiesced` of a quiesce whose generation is returned.
+fn quiesced_on_a_full_queue(runtime: &Runtime) -> u32 {
     for command in [
         LifecycleCommand::Quiesce,
         LifecycleCommand::Disable,
         LifecycleCommand::Enable,
-        LifecycleCommand::Quiesce,
     ] {
         assert_eq!(block_on(runtime.run_lifecycle(command)), Ok(Ok(())));
     }
+    block_on(runtime.start_lifecycle(LifecycleCommand::Quiesce))
+        .unwrap()
+        .unwrap()
+}
+
+#[test]
+fn reopening_after_a_quiesce_never_overrides_another_owners_disable() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    let generation = quiesced_on_a_full_queue(&runtime);
     let mut context = core::task::Context::from_waker(core::task::Waker::noop());
-    let mut reopen = core::pin::pin!(runtime.reopen());
+    let mut reopen = core::pin::pin!(runtime.reopen(generation));
     // No slot for Enabled: the reopen waits.
     assert!(reopen.as_mut().poll(&mut context).is_pending());
     // Another owner disables the port in the slot the consumer freed.
@@ -806,6 +813,30 @@ fn reopening_after_a_quiesce_never_overrides_another_owners_disable() {
     );
     // A slot is free again, but the port is no longer the quiesce's.
     assert!(taken(&runtime).is_some());
+    assert_eq!(
+        reopen.as_mut().poll(&mut context),
+        core::task::Poll::Ready(Ok(()))
+    );
+    assert_eq!(
+        block_on(runtime.submit_request(configure())),
+        Ok(Err(RequestError::Disabled))
+    );
+}
+
+#[test]
+fn reopening_never_overrides_another_owners_later_quiesce() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    let generation = quiesced_on_a_full_queue(&runtime);
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    let mut reopen = core::pin::pin!(runtime.reopen(generation));
+    assert!(reopen.as_mut().poll(&mut context).is_pending());
+    // Another owner enables and quiesces again: the port is Quiesced, but
+    // by that owner's command.
+    while taken(&runtime).is_some() {}
+    for command in [LifecycleCommand::Enable, LifecycleCommand::Quiesce] {
+        assert_eq!(block_on(runtime.run_lifecycle(command)), Ok(Ok(())));
+    }
     assert_eq!(
         reopen.as_mut().poll(&mut context),
         core::task::Poll::Ready(Ok(()))

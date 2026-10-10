@@ -652,12 +652,8 @@ fn capture_roots_once(
         {
             return Err("existing source snapshot has conflicting or corrupted content".into());
         }
-        // A capture taken again is in use again: collection keeps a capture
-        // for a while after its record was last written or reused.
-        fs::File::options()
-            .append(true)
-            .open(snapshot.directory.join("snapshot.json"))?
-            .set_modified(std::time::SystemTime::now())?;
+        // A capture taken again is in use again.
+        mark_used(&snapshot.directory)?;
     } else {
         let parent = capture_directory(output);
         fs::create_dir_all(&parent)?;
@@ -737,6 +733,17 @@ fn read_source(
 
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+/// Record that the capture in `directory` was used just now: collection keeps
+/// a capture for a while after its record was last written or used, so a
+/// build or run from `--source-snapshot` calls this before it reads it.
+pub fn mark_used(directory: &Path) -> Result<()> {
+    fs::File::options()
+        .append(true)
+        .open(directory.join("snapshot.json"))?
+        .set_modified(std::time::SystemTime::now())?;
+    Ok(())
 }
 
 /// Where the captures of this build's record schema lie in the capture store

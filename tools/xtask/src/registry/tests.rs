@@ -327,16 +327,21 @@ fn a_branch_run_skips_only_an_audited_check_its_change_does_not_reach() {
     assert!(!docs.contains(&"doc"));
     assert!(docs.contains(&"docs") && docs.contains(&"capabilities"));
     // Every check outside the audited list runs, whatever its trigger says:
-    // `architecture` reads every `.rs` and manifest of the tree.
-    for job in ["architecture", "images", "firmware", "verification"] {
+    // the `architecture` policies read every `.rs` and manifest of the tree.
+    for job in ["images", "firmware", "verification"] {
         assert_eq!(
             ids(of_job_for(&target, job)),
             ids(of_job(Tier::Full, job)),
             "{job}"
         );
     }
+    let architecture = ids(of_job_for(&target, "architecture"));
+    assert!(
+        architecture.contains(&"architecture") && !architecture.contains(&"architecture-clippy")
+    );
     let driver = change(&["crates/driver/src/lib.rs"], Tier::Full);
     assert!(ids(of_job_for(&driver, "docs")).contains(&"doc"));
+    assert!(ids(of_job_for(&driver, "architecture")).contains(&"architecture-clippy"));
     for check in SCOPED_IN_CI {
         assert!(
             CHECKS
@@ -344,6 +349,25 @@ fn a_branch_run_skips_only_an_audited_check_its_change_does_not_reach() {
                 .any(|known| known.id == *check && known.trigger.is_some()),
             "{check}"
         );
+    }
+}
+
+#[test]
+fn chip_target_clippy_runs_for_what_it_compiles_and_its_build_configuration() {
+    // The fixture's `crates/driver` is a production chip package, and
+    // `tools/tool` a host tool, which Clippy of the chip profiles skips.
+    let reaches = |paths: &[&str]| production_profiles(&change(paths, Tier::Full));
+    assert!(reaches(&["crates/driver/src/lib.rs"]));
+    assert!(reaches(&["crates/driver/Cargo.toml"]));
+    assert!(!reaches(&["tools/tool/src/lib.rs"]));
+    assert!(!reaches(&["hil/host/notes.md", "docs/index.md"]));
+    for path in [
+        "platform/chip-a/chip.toml",
+        "registers/chip-a/model.toml",
+        "hil/targets/chip-a/.cargo/config.toml",
+        "hil/targets/chip-a/rust-toolchain.toml",
+    ] {
+        assert!(reaches(&[path]), "{path}");
     }
 }
 

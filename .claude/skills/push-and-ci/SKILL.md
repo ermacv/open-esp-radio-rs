@@ -47,8 +47,9 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    Never push to `main` directly.
 7. **CI** runs on every branch push: xtask plans jobs by the complete Git tree and tool versions
    ([CI reuse](../../../tools/xtask/README.md#ci-input-reuse)). On a branch
-   it skips the API documentation (`doc`) of root packages the change from
-   its merge base does not reach, and
+   it skips chip-target Clippy (`architecture-clippy`) and the API
+   documentation (`doc`) when the change from its merge base does not reach
+   what they compile, and
    runs every other check (all of them when the change touches
    `.github/workflows/`, the toolchain, the root `Cargo.toml` or
    `Cargo.lock`, or host tooling under `tools/` other than Blobray); `main`

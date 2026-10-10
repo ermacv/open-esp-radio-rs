@@ -13,9 +13,12 @@
 
 /// Version of an observer build (`build.schema`).
 ///
-/// Schema 3 records the runner's resolved Cargo graph as a package graph:
-/// `resolved.packages` holds each package once, the runner first, with the
-/// indices of the packages it depends on in `edges`. Schema 2 recorded the
+/// Schema 3 records the runner's resolved Cargo graph as Cargo's graph:
+/// `resolved.packages` holds each of Cargo's nodes (a package with its
+/// features) once, the runner first, with the indices of the nodes it
+/// depends on in `edges`. A package that is both a normal and a build
+/// dependency with different features is two nodes; a reader merges a
+/// package's nodes ([`inputs::projection`]). Schema 2 recorded the
 /// graph as a tree with a node per path to a package, hundreds of megabytes;
 /// no reader for it remains, so an observation recorded with it is not this
 /// observer's.

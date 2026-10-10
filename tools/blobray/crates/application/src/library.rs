@@ -381,6 +381,7 @@ pub fn register_accesses(
                             address: o.address,
                             alternative: o.alternative,
                             mask: o.mask,
+                            stored: o.stored,
                         },
                         c,
                     )

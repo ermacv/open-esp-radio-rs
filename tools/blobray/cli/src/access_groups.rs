@@ -3,7 +3,9 @@
 //! A filter selects observations only. Blocked functions and gaps stay in the
 //! output and the summary always counts the whole analysis, so a selection
 //! cannot hide that the analysis was incomplete.
-use blobray_domain::{RegisterAccess, RegisterMask, RegisterMaskKind};
+use blobray_domain::{
+    RegisterAccess, RegisterMask, RegisterMaskKind, StoredBits, StoredBitsSource,
+};
 use oer_riscv_model::{FunctionRecord, MemoryKind, ObjectLocation, SymbolId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -117,19 +119,24 @@ pub struct AccessEntry {
     pub access: String,
     pub width: Option<u8>,
     pub mask: Option<RegisterMask>,
+    /// For stores, where each run of the stored bits comes from; entries
+    /// with different sources stay apart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stored: Option<Vec<StoredBits>>,
     pub count: u64,
 }
 
 /// A group: its word or its function.
 type GroupKey = (Option<u32>, Option<GroupFunction>);
 /// A group's entries with each entry's mask and count.
-type Entries = BTreeMap<EntryKey, (Option<RegisterMask>, u64)>;
+type Entries = BTreeMap<EntryKey, (Option<RegisterMask>, Option<Vec<StoredBits>>, u64)>;
 type EntryKey = (
     Option<u32>,
     Option<GroupFunction>,
     String,
     Option<u8>,
     Option<(u8, u32)>,
+    String,
 );
 
 /// Aggregates selected observations into groups in key order.
@@ -154,11 +161,13 @@ impl AccessGroups {
             fact,
             address,
             mask,
+            stored,
             ..
         } = record
         else {
             return;
         };
+        let stored_key = stored.as_deref().map(stored_human).unwrap_or_default();
         let function = GroupFunction {
             input: function.input,
             name: function
@@ -174,11 +183,11 @@ impl AccessGroups {
         let (group, entry) = match self.by {
             GroupBy::Address => (
                 (word, None),
-                (None, Some(function), access, width, mask_key),
+                (None, Some(function), access, width, mask_key, stored_key),
             ),
             GroupBy::Function => (
                 (None, Some(function)),
-                (word, None, access, width, mask_key),
+                (word, None, access, width, mask_key, stored_key),
             ),
         };
         let slot = self
@@ -186,8 +195,8 @@ impl AccessGroups {
             .entry(group)
             .or_default()
             .entry(entry)
-            .or_insert((*mask, 0));
-        slot.1 += 1;
+            .or_insert((*mask, stored.clone(), 0));
+        slot.2 += 1;
     }
 
     /// The groups in key order: addresses ascending with unresolved first, or
@@ -201,13 +210,16 @@ impl AccessGroups {
                 entries: entries
                     .iter()
                     .map(
-                        |((word, function, access, width, _), (mask, count))| AccessEntry {
-                            word: *word,
-                            function: function.clone(),
-                            access: access.clone(),
-                            width: *width,
-                            mask: *mask,
-                            count: *count,
+                        |((word, function, access, width, _, _), (mask, stored, count))| {
+                            AccessEntry {
+                                word: *word,
+                                function: function.clone(),
+                                access: access.clone(),
+                                width: *width,
+                                mask: *mask,
+                                stored: stored.clone(),
+                                count: *count,
+                            }
                         },
                     )
                     .collect(),
@@ -243,14 +255,69 @@ impl AccessGroups {
                         }
                     })
                     .unwrap_or_default();
+                let stored = entry
+                    .stored
+                    .as_deref()
+                    .map(|runs| format!(" {}", stored_human(runs)))
+                    .unwrap_or_default();
                 lines.push(format!(
-                    "  {subject} {}{width}{mask} x{}",
+                    "  {subject} {}{width}{mask}{stored} x{}",
                     entry.access, entry.count
                 ));
             }
         }
         lines
     }
+}
+
+/// The runs of a stored value, high bits first: `[24:18]=arg0[6:0]`,
+/// `[17:0]=kept` for bits a read-modify-write keeps in place, `=0x1b` for
+/// fixed bits, `=load 0x20109004[7:0]` for another loaded word and `=?`.
+pub fn stored_human(runs: &[StoredBits]) -> String {
+    let range = |low: u8, width: u8| {
+        if width == 1 {
+            format!("[{low}]")
+        } else {
+            format!("[{}:{low}]", low + width - 1)
+        }
+    };
+    runs.iter()
+        .rev()
+        .map(|run| {
+            let source = match &run.source {
+                StoredBitsSource::Constant { value } => format!("{value:#x}"),
+                StoredBitsSource::EntryRegister { register, low }
+                    if (10..18).contains(register) =>
+                {
+                    format!("arg{}{}", register - 10, range(*low, run.width))
+                }
+                StoredBitsSource::EntryRegister { register, low } => {
+                    format!("entry x{register}{}", range(*low, run.width))
+                }
+                StoredBitsSource::Load {
+                    same_word: true,
+                    low,
+                    ..
+                } if *low == run.low => String::from("kept"),
+                StoredBitsSource::Load {
+                    address,
+                    low,
+                    same_word,
+                    ..
+                } => {
+                    let word = match (same_word, address) {
+                        (true, _) => String::from("same word"),
+                        (false, Some(address)) => format!("load {address:#x}"),
+                        (false, None) => String::from("load"),
+                    };
+                    format!("{word}{}", range(*low, run.width))
+                }
+                StoredBitsSource::Unknown => String::from("?"),
+            };
+            format!("{}={source}", range(run.low, run.width))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn mask_kind(kind: RegisterMaskKind) -> u8 {

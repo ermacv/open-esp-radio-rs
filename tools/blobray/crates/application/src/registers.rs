@@ -12,6 +12,8 @@ pub(crate) struct Candidate<'a> {
     pub address: Option<u32>,
     pub alternative: Option<u8>,
     pub mask: Option<RegisterMask>,
+    /// The sources of a store's bits.
+    pub stored: Option<Vec<StoredBits>>,
 }
 
 type Observer<'a> = dyn FnMut(Candidate<'_>, &mut dyn RunControl) -> Result<()> + 'a;
@@ -30,6 +32,7 @@ pub(crate) fn observe(
                        width: u8,
                        address: &AbstractValue,
                        mask: Option<RegisterMask>,
+                       stored: Option<Vec<StoredBits>>,
                        c: &mut dyn RunControl| {
         let fact = &records[record as usize];
         candidates(address, c, &mut |address, alternative, c| {
@@ -50,6 +53,7 @@ pub(crate) fn observe(
                     address,
                     alternative,
                     mask,
+                    stored: stored.clone(),
                 },
                 c,
             )
@@ -59,7 +63,13 @@ pub(crate) fn observe(
         let mask = access.value.and_then(|v| {
             blobray_analysis::registers::write_mask(facts, access.address, access.width, v)
         });
-        observe(access.record, access.width, access.address, mask, c)
+        let stored = access
+            .value
+            .filter(|_| matches!(access.access, MemoryKind::Store))
+            .map(|v| {
+                blobray_analysis::registers::stored_bits(facts, access.address, access.width, v)
+            });
+        observe(access.record, access.width, access.address, mask, stored, c)
     })?;
     for (record, fact) in records.iter().enumerate() {
         c.checkpoint(1)?;
@@ -67,7 +77,7 @@ pub(crate) fn observe(
             && let Some((address, width, mask)) =
                 blobray_analysis::registers::read_mask(facts, expression)
         {
-            observe(record as u64, width, address, Some(mask), c)?;
+            observe(record as u64, width, address, Some(mask), None, c)?;
         }
     }
     Ok(())

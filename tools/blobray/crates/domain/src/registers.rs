@@ -16,6 +16,39 @@ pub struct RegisterMask {
     pub kind: RegisterMaskKind,
     pub bits: u32,
 }
+/// One run of bits of a stored value with a common source.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoredBits {
+    /// The run's lowest bit in the stored value.
+    pub low: u8,
+    pub width: u8,
+    pub source: StoredBitsSource,
+}
+
+/// Where a run of stored bits comes from. These are expression observations
+/// of one store, not a claim that the path reaching it runs.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum StoredBitsSource {
+    /// Fixed bits; `value` is the run's bits, right-aligned.
+    Constant { value: u32 },
+    /// Bits `low..` of a register's value at the function's entry: an
+    /// argument for `a0`..`a7`.
+    EntryRegister { register: u8, low: u8 },
+    /// Bits `low..` of a value the function loaded; `address` when it is one
+    /// exact address, and `same_word` when that is the stored word itself
+    /// (bits a read-modify-write keeps).
+    Load {
+        address: Option<u32>,
+        width: u8,
+        low: u8,
+        same_word: bool,
+    },
+    /// No exact source.
+    Unknown,
+}
+
 /// A function one captured library input defines.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,6 +74,10 @@ pub enum RegisterAccess {
         address: Option<u32>,
         alternative: Option<u8>,
         mask: Option<RegisterMask>,
+        /// For a store: where each run of the stored bits comes from, low run
+        /// first, covering the access width. Absent for loads.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stored: Option<Vec<StoredBits>>,
     },
     /// A function that cannot be analyzed; its accesses are unknown.
     Blocked {

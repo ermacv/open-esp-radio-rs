@@ -53,7 +53,7 @@ schema.
 | Document | Schema | Shape |
 | --- | --- | --- |
 | `audit-targets` | `TARGET_AUDIT_SCHEMA` 1 | `{schema, artifact, decoder, semantics, ranges, records, summary, verdict}` |
-| `register-accesses` | `REGISTER_ACCESSES_SCHEMA` 3 | `{schema, inputs, abi, records, groups?, summary}`, records streamed; `groups` only with `--group-by` |
+| `register-accesses` | `REGISTER_ACCESSES_SCHEMA` 4 | `{schema, inputs, abi, records, groups?, summary}`, records streamed; `groups` only with `--group-by`; a store observation carries `stored` |
 | `call-arguments` | `CALL_ARGUMENTS_SCHEMA` 1 | `{schema, inputs, abi, symbols, callers, blocked, partial, gaps}` |
 | `symbols` | `SYMBOLS_SCHEMA` 1 | `{schema, inputs, symbols}` |
 | `strings` | `STRINGS_SCHEMA` 1 | `{schema, inputs, strings}` |

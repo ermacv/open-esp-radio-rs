@@ -471,8 +471,10 @@ pub(crate) fn jump_tables<'r, 'm>(
         let Some(start) = block else {
             continue;
         };
-        // The base register's value at the jump, from the analysis' record
-        // of a dispatch it does not expand.
+        // The base register's value at the jump, from the analysis' record of
+        // a relocatable object's dispatch: one the graph leaves without a
+        // target on the first pass, and one this recognizer expanded on the
+        // passes that follow, so each pass proves its tables again.
         let mut target = None;
         for record in records {
             c.checkpoint(1)?;

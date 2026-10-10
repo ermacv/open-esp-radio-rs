@@ -267,8 +267,9 @@ GCC dispatches an RV32 `switch` through a read-only table:
 with one `R_RISCV_32` relocation per entry naming its case label. After a
 first analysis of a relocatable function, a `jalr zero` whose base register
 holds `load4[(index << 2) + table]` (or `sh2add`) in the analysis' `CallInputs`
-record at the jump (recorded at every register-indirect jump of a relocatable
-object that is neither a return nor a tail call) is a
+record at the jump (recorded at a relocatable object's jump the graph leaves
+without a target, and kept once a pass follows the table, so every pass proves
+it again) is a
 dispatch when the bounds check guarding it states the entry count (at most
 4096): the dispatch block's only incoming edge must be the in-range side of a
 conditional branch on the same index against a constant, the fall-through

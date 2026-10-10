@@ -162,6 +162,15 @@ impl ImageSymbols {
         Self { functions }
     }
 
+    /// The start address of every function `names` names, with its name.
+    pub fn starts_named<'a>(&'a self, names: &[String]) -> BTreeMap<u64, &'a str> {
+        self.functions
+            .iter()
+            .filter(|(_, _, name)| names.iter().any(|wanted| wanted == name))
+            .map(|(start, _, name)| (*start, name.as_str()))
+            .collect()
+    }
+
     /// `name` for a function's first byte, `name+0x10` inside it and the bare
     /// address when no sized function covers it. Overlapping aliases resolve
     /// to the one starting last at or before `address`, then the shorter name.
@@ -215,7 +224,7 @@ fn alternative(value: &ValueAlternative, names: &BTreeMap<&SymbolId, String>) ->
 }
 
 /// `+0x10`, `-0x8`, or nothing for zero.
-fn signed_hex(value: i64) -> String {
+pub(crate) fn signed_hex(value: i64) -> String {
     match value {
         0 => String::new(),
         v if v < 0 => format!("-{:#x}", v.unsigned_abs()),

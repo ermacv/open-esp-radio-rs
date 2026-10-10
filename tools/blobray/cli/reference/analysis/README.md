@@ -83,6 +83,30 @@ analyzed functions whose coverage or value semantics is incomplete, `gaps`
 counts the code no function covers and `unknown_addresses` the accesses whose
 address is not known at all. Any of them means the list may be incomplete.
 
+### Call arguments
+
+`call-arguments` reports the argument registers `a0`..`a7` at every call site
+of the named functions, so writes made through calls such as
+`phy_i2c_writeReg(block, host, register, value)` become a query:
+
+```console
+blobray --abi riscv-integer call-arguments --input rom=/path/to/rom.elf --symbol phy_i2c_writeReg_Mask
+```
+
+In a relocatable object a call site is a `call` or `branch` relocation to the
+name, and its register state is the analysis' `CallInputs` record at the
+transfer of the `auipc`/`jalr` pair. An executable image has no relocations:
+a transfer to the start address of a sized function symbol of that name is a
+call site. Each argument is a constant, an image address, a symbol plus
+addend, a section- or entry-stack-relative value, a finite alternative set,
+the caller's own argument at entry (`arg0`..`arg7`), another entry register,
+or unknown (`?`); a site without retained register state has no arguments.
+These are may-values of one site: there is no interprocedural expansion and
+a value does not prove that its path runs. The JSON document is
+`{"schema":1,"inputs":[...],"abi":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"gaps":N}`;
+`partial` counts analyzed functions whose coverage or semantics is
+incomplete, which can hold further sites or less precise values.
+
 ### Calling convention
 
 Without an assumption, every register is unknown after a call the analysis

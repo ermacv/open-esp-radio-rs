@@ -12,7 +12,8 @@
       "register-accesses",
       "function-records",
       "field-accesses",
-      "callers"
+      "callers",
+      "call-arguments"
     ]
   },
   {
@@ -95,6 +96,22 @@
     "path": [
       "blobray",
       "callers"
+    ],
+    "subcommands": []
+  },
+  {
+    "flags": [
+      "--input",
+      "--symbol",
+      "--abi",
+      "--working-memory-mib",
+      "--timeout-secs",
+      "--max-work-units"
+    ],
+    "forwards": false,
+    "path": [
+      "blobray",
+      "call-arguments"
     ],
     "subcommands": []
   }

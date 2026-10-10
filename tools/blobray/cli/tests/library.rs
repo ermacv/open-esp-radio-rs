@@ -364,3 +364,119 @@ fn filters_select_observations_while_the_summary_counts_the_whole_analysis() {
         "{human}"
     );
 }
+
+/// `caller`: `li a0, 0x67; li a1, 1; mv a2, a5; call phy_i2c_writeReg; ret`.
+fn calling_object() -> Vec<u8> {
+    use object::write::{Object, Relocation, Symbol, SymbolSection};
+    use object::{
+        Architecture, BinaryFormat, Endianness, RelocationFlags, SectionKind, SymbolFlags,
+        SymbolKind, SymbolScope,
+    };
+    let words: [u32; 6] = [
+        0x0670_0513, // addi a0, zero, 0x67
+        0x0010_0593, // addi a1, zero, 1
+        0x0007_8613, // addi a2, a5, 0
+        0x0000_0097, // auipc ra, 0
+        0x0000_80e7, // jalr ra, 0(ra)
+        0x0000_8067, // jalr zero, 0(ra)
+    ];
+    let code: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    object.append_section_data(text, &code, 4);
+    object.add_symbol(Symbol {
+        name: b"caller".to_vec(),
+        value: 0,
+        size: code.len() as u64,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Linkage,
+        weak: false,
+        section: SymbolSection::Section(text),
+        flags: SymbolFlags::None,
+    });
+    let callee = object.add_symbol(Symbol {
+        name: b"phy_i2c_writeReg".to_vec(),
+        value: 0,
+        size: 0,
+        kind: SymbolKind::Unknown,
+        scope: SymbolScope::Linkage,
+        weak: false,
+        section: SymbolSection::Undefined,
+        flags: SymbolFlags::None,
+    });
+    object
+        .add_relocation(
+            text,
+            Relocation {
+                offset: 12,
+                symbol: callee,
+                addend: 0,
+                flags: RelocationFlags::Elf {
+                    r_type: object::elf::R_RISCV_CALL_PLT,
+                },
+            },
+        )
+        .unwrap();
+    object.write().unwrap()
+}
+
+#[test]
+fn the_command_reports_the_arguments_of_each_call_site() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("calls.a");
+    std::fs::write(
+        &path,
+        support::archive(&[(b"calls.o", &calling_object())], false),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args([
+            "--format",
+            "json",
+            "call-arguments",
+            "--abi",
+            "riscv-integer",
+            "--input",
+        ])
+        .arg(format!("code={}", path.display()))
+        .args(["--symbol", "phy_i2c_writeReg"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let document: blobray_cli::wire::CallArgumentsDocument =
+        serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document.schema, blobray_cli::wire::CALL_ARGUMENTS_SCHEMA);
+    assert_eq!(document.callers.len(), 1, "{document:?}");
+    let sites = &document.callers[0].sites;
+    assert_eq!(sites.len(), 1);
+    use blobray_cli::call_arguments::ArgumentValue;
+    assert_eq!(sites[0].offset, 16, "the jalr of the call pair");
+    assert_eq!(
+        &sites[0].arguments[..4],
+        [
+            ArgumentValue::Constant { value: 0x67 },
+            ArgumentValue::Constant { value: 1 },
+            ArgumentValue::EntryArgument { index: 5 },
+            ArgumentValue::EntryArgument { index: 3 },
+        ]
+    );
+    let human = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["call-arguments", "--abi", "riscv-integer", "--input"])
+        .arg(format!("code={}", path.display()))
+        .args(["--symbol", "phy_i2c_writeReg"])
+        .output()
+        .unwrap();
+    let human = String::from_utf8(human.stdout).unwrap();
+    assert!(
+        human.starts_with(
+            "caller (input 0) +10: phy_i2c_writeReg(a0=0x67, a1=0x1, a2=arg5, a3=arg3,"
+        ),
+        "{human}"
+    );
+    assert!(
+        human
+            .trim_end()
+            .ends_with("1 call sites in 1 functions; 1 partial, 0 blocked, 0 gaps"),
+        "the opaque call leaves the caller's semantics incomplete: {human}"
+    );
+}

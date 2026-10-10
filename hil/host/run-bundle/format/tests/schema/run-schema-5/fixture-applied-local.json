@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "backend": "hostapd",
+  "backend": "local-linux",
   "verified": true,
   "phy": "ht20",
   "channel": 6,

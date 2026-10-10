@@ -9,10 +9,11 @@
 //! 3. The registry's fast checks ([`crate::registry`]) check what `HEAD`'s
 //!    commits change against the merge base with `origin/main`.
 //! 4. Unless the pull request is a draft, the local Claude review
-//!    ([`crate::review`]) of the same diff has no blocking finding: the
-//!    review in CI blocks on the same findings, and each one it reports there
-//!    costs a full CI round. `--skip-review REASON` pushes without it and
-//!    records the reason on the pull request; CI's review still blocks.
+//!    ([`crate::review`]) of the same diff has no blocking finding: it is the
+//!    only review that blocks; the one in CI reviews the pull request once
+//!    and only files its findings as issues. `--skip-review REASON` pushes
+//!    without it and records the reason on the pull request, so nothing
+//!    reviewed the push before it merges.
 //! 5. Push the branch, open its pull request when it has none, and enable
 //!    auto-merge: GitHub rebases it onto `main` once CI passes. With
 //!    `--draft` the pull request is a draft and nothing merges it.
@@ -142,7 +143,7 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
             format!(
                 "push: the local review did not complete; nothing pushed: {error}\n\
                  Without Claude Code, `cargo xtask push --skip-review \"<reason>\"` pushes \
-                 and CI's review still blocks merging"
+                 unreviewed; CI's review only files findings as issues and blocks nothing"
             )
         })?;
         print!("{}", review::render(&verdict));

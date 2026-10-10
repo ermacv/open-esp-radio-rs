@@ -13,8 +13,9 @@
 //! diff between the merge base with `origin/main` and `HEAD`, so a rebase
 //! that changes nothing in the diff, or a reworded commit, keeps it. A
 //! re-review of the branch hands Claude the findings of the branch's previous
-//! verdict to check. 🔴 important and 🟡 nit findings block, as in CI; 🟣
-//! pre-existing ones are only printed, since CI files them as issues.
+//! verdict to check. 🔴 important and 🟡 nit findings block the push; 🟣
+//! pre-existing ones are only printed. This is the only blocking review: the
+//! one in CI reviews a pull request once and files its findings as issues.
 
 use std::{
     fs,

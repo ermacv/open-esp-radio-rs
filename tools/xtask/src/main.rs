@@ -32,7 +32,8 @@ enum Task {
         #[arg(long)]
         draft: bool,
         /// Push without the local review, recording REASON on the pull
-        /// request; the review in CI still blocks merging.
+        /// request; the review in CI blocks nothing, so the push merges
+        /// unreviewed.
         #[arg(long, value_name = "REASON")]
         skip_review: Option<String>,
     },

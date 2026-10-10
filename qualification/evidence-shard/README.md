@@ -7,7 +7,7 @@ HIL evidence.
 
 - `index`: the shard schema, validation, source and coverage-decision currency,
   and the cross-scenario views of a whole evidence directory.
-- `store`: the shared shard reader and writer, names and stale-shard selection.
+- `store`: the shared shard reader and writer and the shard names of an index.
 
 [`verification/evidence`](../../verification/evidence/README.md) re-exports
 this API and owns verdict source policy, the producer contract and producer

@@ -59,39 +59,5 @@ pub fn shards(directory: &Path) -> Result<Vec<Index>> {
         .collect())
 }
 
-/// Scenario names of the shards in `directory` below `root` that are stale
-/// or unreadable: a shard is current only when it parses, names its own
-/// file and every recorded source keeps its digest ([`Index::is_current`]).
-pub fn stale(root: &Path, directory: &Path) -> Result<Vec<String>> {
-    let directory = root.join(directory);
-    Ok(names(&directory)?
-        .into_iter()
-        .filter(|name| {
-            !read(&directory, name)
-                .is_some_and(|shard| shard.scenario == *name && shard.is_current(root))
-        })
-        .collect())
-}
-
-/// Whether `shard` records one of the `changed` repository paths: a
-/// recorded file itself, a file below a recorded directory, or a changed
-/// decision file whose decisions that apply to the shard differ from those
-/// it recorded.
-pub fn records_any(root: &Path, shard: &Index, changed: &[PathBuf]) -> bool {
-    shard.sources.iter().any(|source| {
-        changed
-            .iter()
-            .any(|path| path == &source.path || path.starts_with(&source.path))
-    }) || shard
-        .dependence
-        .coverage_decisions
-        .as_ref()
-        .is_some_and(|decisions| {
-            changed.contains(&decisions.path)
-                && !crate::CoverageDecisions::read(root, &decisions.path)
-                    .is_ok_and(|file| file.applicable_digest(&shard.functions) == decisions.sha256)
-        })
-}
-
 #[cfg(test)]
 pub(crate) mod tests;

@@ -164,9 +164,10 @@ were audited to read nothing beyond what their trigger names: chip-target
 Clippy of the production profiles (`architecture-clippy`, triggered by the
 packages it compiles as the model classifies them, `platform/`,
 `registers/` and any workspace's build configuration) and the API
-documentation (`doc`). The cheap whole-tree policies of the same job
-(`architecture`: zeroed sections in every `.rs`, interrupt features of
-every manifest, the HIL agent's composition) always run. Each
+documentation (`doc`). The cheap whole-tree policies of the `architecture`
+check and job (zeroed sections in every `.rs`, interrupt features of every
+manifest, the HIL agent's composition) always run; the Clippy has the
+`architecture-clippy` job to itself. Each
 job runs every other check, and these only when the change fires their trigger
 (`registry::of_job_for`), passed as `check tier full --job JOB --checks …`;
 a job left with no check is skipped. `verify` accepts such a skip only in a change-scoped plan, and a

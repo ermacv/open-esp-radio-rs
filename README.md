@@ -139,8 +139,8 @@ cargo xtask check tier full --job models
 ```
 
 They need the embedded target; the `images`, `images-correctness` and
-`example-link` jobs also need the toolchain's
-`llvm-tools` component and fetches the pinned ROM ELF itself.
+`example-link` jobs also need the toolchain's `llvm-tools` component and
+fetch the pinned ROM ELF themselves.
 Together they check dependency
 and ownership boundaries, generated PAC outputs and compiled artifacts. Independent example,
 integration, HIL and Blobray workspaces have their own build configuration; the

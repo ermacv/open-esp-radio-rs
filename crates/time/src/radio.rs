@@ -16,6 +16,7 @@ use core::{
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
+    num::NonZeroU64,
 };
 
 /// A microsecond coordinate in the radio domain and epoch owned by `D`.
@@ -194,6 +195,40 @@ impl RadioDuration {
     }
 }
 
+/// A radio-time span of at least one microsecond: the duration of a window
+/// that cannot be empty.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct NonZeroRadioDuration(NonZeroU64);
+
+impl NonZeroRadioDuration {
+    /// Construct a duration from a non-zero count of microseconds.
+    pub const fn from_micros(micros: NonZeroU64) -> Self {
+        Self(micros)
+    }
+
+    /// The span, or `None` when it is zero.
+    pub const fn new(duration: RadioDuration) -> Option<Self> {
+        match NonZeroU64::new(duration.0) {
+            Some(micros) => Some(Self(micros)),
+            None => None,
+        }
+    }
+
+    /// The span as a possibly-zero duration.
+    pub const fn get(self) -> RadioDuration {
+        RadioDuration(self.0.get())
+    }
+
+    /// The sum, or `None` past `u64::MAX` microseconds.
+    pub const fn checked_add(self, other: RadioDuration) -> Option<Self> {
+        match self.0.checked_add(other.0) {
+            Some(micros) => Some(Self(micros)),
+            None => None,
+        }
+    }
+}
+
 /// Why a window is not representable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowError {
@@ -226,6 +261,31 @@ impl<D> RadioWindow<D> {
             return Err(WindowError::Overflow);
         }
         Ok(Self { start, duration })
+    }
+
+    /// Reserve a non-zero `duration` from `start`, or `None` when the
+    /// exclusive endpoint lies past the epoch: the only way such a window can
+    /// fail.
+    pub const fn nonempty(start: RadioInstant<D>, duration: NonZeroRadioDuration) -> Option<Self> {
+        match Self::new(start, duration.get()) {
+            Ok(window) => Some(window),
+            Err(_) => None,
+        }
+    }
+
+    /// The same window, starting `lead` earlier and ending where it ends, or
+    /// `None` when the earlier start precedes the epoch: the only way it can
+    /// fail, since the end stays representable.
+    pub const fn extended_before(self, lead: RadioDuration) -> Option<Self> {
+        match self.start.checked_sub(lead) {
+            // `start + duration` is representable, so `lead + duration`,
+            // which ends at the same instant from an earlier start, is too.
+            Some(start) => Some(Self {
+                start,
+                duration: RadioDuration(self.duration.0 + lead.0),
+            }),
+            None => None,
+        }
     }
 
     /// First reserved instant.
@@ -285,7 +345,8 @@ impl<D> fmt::Debug for RadioWindow<D> {
 
 #[cfg(test)]
 mod tests {
-    use super::{RadioDuration, RadioInstant, RadioWindow, WindowError};
+    use super::{NonZeroRadioDuration, RadioDuration, RadioInstant, RadioWindow, WindowError};
+    use core::num::NonZeroU64;
 
     /// A test port's domain.
     enum Port {}
@@ -474,5 +535,55 @@ mod tests {
             assert_eq!(left.overlaps(right), overlaps);
             assert_eq!(right.overlaps(left), overlaps);
         }
+    }
+
+    #[test]
+    fn a_nonempty_window_fails_only_past_the_epoch() {
+        enum D {}
+        let one = NonZeroRadioDuration::from_micros(NonZeroU64::MIN);
+        assert_eq!(
+            NonZeroRadioDuration::new(RadioDuration::from_micros(0)),
+            None
+        );
+        assert_eq!(
+            NonZeroRadioDuration::new(RadioDuration::from_micros(1)),
+            Some(one)
+        );
+        let last = RadioWindow::<D>::nonempty(RadioInstant::from_micros(u64::MAX - 1), one)
+            .expect("ends at the last instant");
+        assert_eq!(last.end().as_micros(), u64::MAX);
+        assert!(RadioWindow::<D>::nonempty(RadioInstant::from_micros(u64::MAX), one).is_none());
+        assert_eq!(
+            one.checked_add(RadioDuration::from_micros(u64::MAX - 1))
+                .map(|d| d.get().as_micros()),
+            Some(u64::MAX)
+        );
+        assert_eq!(one.checked_add(RadioDuration::from_micros(u64::MAX)), None);
+    }
+
+    #[test]
+    fn extending_a_window_before_keeps_its_end_and_fails_only_before_the_epoch() {
+        enum D {}
+        let whole = RadioWindow::<D>::new(
+            RadioInstant::from_micros(10),
+            RadioDuration::from_micros(u64::MAX - 10),
+        )
+        .unwrap();
+        let extended = whole
+            .extended_before(RadioDuration::from_micros(10))
+            .expect("starts at the epoch's first instant");
+        assert_eq!(extended.start().as_micros(), 0);
+        assert_eq!(extended.end().as_micros(), u64::MAX);
+        assert_eq!(extended.duration().as_micros(), u64::MAX);
+        assert!(
+            whole
+                .extended_before(RadioDuration::from_micros(11))
+                .is_none()
+        );
+        let same = whole
+            .extended_before(RadioDuration::from_micros(0))
+            .unwrap();
+        assert_eq!(same.start().as_micros(), 10);
+        assert_eq!(same.end().as_micros(), u64::MAX);
     }
 }

@@ -3,7 +3,6 @@ use super::*;
 #[cfg(unix)]
 #[test]
 fn host_ci_runs_tidy_tests_and_clippy_in_its_own_workspace() {
-    use std::os::unix::fs::PermissionsExt as _;
     const ROLE: &str = "OER_REGISTRY_HOST_TEST_ROOT";
     const TEST: &str = "registry::tests::host_ci_runs_tidy_tests_and_clippy_in_its_own_workspace";
     if let Some(root) = std::env::var_os(ROLE) {
@@ -16,12 +15,10 @@ fn host_ci_runs_tidy_tests_and_clippy_in_its_own_workspace() {
     let root = directory.path();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
     let cargo = root.join("cargo");
-    std::fs::write(
+    crate::test_support::executable(
         &cargo,
         "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$OER_REGISTRY_HOST_TEST_ROOT/calls\"\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
+    );
     let mut child = process::command(std::env::current_exe().unwrap());
     child
         .args(["--exact", TEST])

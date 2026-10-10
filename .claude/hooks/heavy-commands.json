@@ -17,7 +17,8 @@
   "xtask": [
     "check",
     "push",
-    "doc"
+    "doc",
+    "review"
   ],
   "xtask_listing": [
     "--list"

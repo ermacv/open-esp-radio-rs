@@ -34,13 +34,17 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    A production change needed by Blobray or verification work is its own commit.
    The pull request merges by rebase, so each commit lands on `main` as is.
 6. **Push** with `cargo xtask push` in the background: it gates exactly
-   `HEAD`, pushes the branch, opens the pull request titled by its first
+   `HEAD`, runs the local Claude review of the branch's diff in a separate
+   Claude Code process (`cargo xtask review`, minutes; an unchanged diff
+   reuses its verdict) and refuses a 🔴 or 🟡 finding, pushes the branch, opens the pull request titled by its first
    commit (`gh pr create --fill-first`)
    and enables auto-merge. Do not wait for CI: GitHub merges the branch once
    the required `ci-ok` check passes. `--draft` for work that needs the
-   user's review first. To resolve a conflict with `main`, rebase the
-   branch and push again: `push` rewrites only its own branch, with
-   `--force-with-lease`. Never push to `main` directly.
+   user's review first. `--skip-review "<reason>"` only when Claude Code
+   cannot run; the reason is commented on the pull request. Rebase onto
+   `main` only to resolve a conflict, then push again: `push` rewrites only
+   its own branch, with `--force-with-lease`; every rebase reruns all of CI.
+   Never push to `main` directly.
 7. **CI** runs on every branch push: xtask plans jobs by the complete Git tree and tool versions
    ([CI reuse](../../../tools/xtask/README.md#ci-input-reuse)). Each executed
    check job of `.github/workflows/ci.yml` runs
@@ -58,6 +62,9 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    session start and the gate list every open PR a review blocks, with its
    branch. Only the session on that branch acts: for it, fixing comes before
    other work (`gh pr view <n> --comments`, fix, `cargo xtask push` again),
+   local findings the same way. Fix the defect, not the cited line: search
+   the diff for every place with the same mistake and fix them together,
+   since the next review reports the ones left,
    and a PR without a review verdict gets a `@claude review` comment. Every
    other session leaves the branch alone and only tells the user, who
    decides who takes over an abandoned one.

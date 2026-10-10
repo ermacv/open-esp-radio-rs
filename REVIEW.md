@@ -48,6 +48,10 @@ Before reporting an important finding, try to refute it: read the callers,
 guards and state transitions, ideally in an independent subagent. Drop what
 you cannot confirm; never report a guess as a defect.
 
+When the diff repeats a defect, report every place in one pass: a finding
+names each other `path:line` with the same mistake in its body, so one fix
+round closes them all instead of one per review.
+
 ## Scope
 
 - Diff against the merge base: `git -C pr diff origin/main...HEAD`.

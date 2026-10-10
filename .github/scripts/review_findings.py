@@ -3,8 +3,8 @@
 The publish job of the review workflow runs this from trusted main with the
 review's structured result in RESULT. Each 🟣 pre-existing finding becomes one
 `kind:bug` issue with the area and priority the reviewer chose, unless an
-issue already records it: the reviewer, shown the filed findings, names the
-issue of one it finds again, and the body's key of the finding's path and
+issue already records it: the reviewer, shown the findings a trusted author
+filed, names the issue of one it finds again, and the body's key of the finding's path and
 title catches an identical one. Prints one Markdown
 line per finding for the PR comment. Python's standard library only.
 """
@@ -13,11 +13,13 @@ import hashlib
 import json
 import os
 import sys
-from urllib.error import HTTPError
 
 import issue_labels
 
-
+# The authors whose marked issues record a finding: the workflow itself and
+# the repository owner, who files and marks findings by hand. Anyone else's
+# marker would suppress a finding and put its title into the review prompt.
+TRUSTED = ("github-actions[bot]", issue_labels.REPOSITORY.split("/")[0])
 
 def key(finding):
     """A stable identity of a finding: its path and title."""
@@ -48,10 +50,10 @@ def body(finding, pr, head, repository):
 
 def recorded(api):
     """The issues that record a review finding, open or closed, by finding
-    key: those this workflow filed and any other that carries the marker."""
+    key: those of a trusted author that carry the marker."""
     issues = {}
     for issue in api.list("issues?state=all"):
-        if "pull_request" in issue:
+        if "pull_request" in issue or (issue.get("user") or {}).get("login") not in TRUSTED:
             continue
         for line in (issue.get("body") or "").splitlines():
             if line.startswith("<!-- claude-review-finding: ") and line.endswith(" -->"):
@@ -68,16 +70,11 @@ def record(api, result, pr, head, repository, catalog):
     known = recorded(api)
     lines = []
     for finding in findings:
-        # The reviewer names the issue of a finding it was told is filed;
-        # an identical path and title is caught too.
-        issue = known.get(key(finding))
-        if issue is None and finding["issue"]:
-            try:
-                issue = api.request("GET", f"issues/{finding['issue']}")
-            except HTTPError as error:
-                # A number that names no issue files the finding anew.
-                if error.code != 404:
-                    raise
+        # The reviewer names the issue of a finding it was shown as filed;
+        # an identical path and title is caught too. A number it was not
+        # shown, such as a pull request or an unmarked issue, files anew.
+        filed = {issue["number"]: issue for issue in known.values()}
+        issue = known.get(key(finding)) or filed.get(finding["issue"])
         if issue is None:
             issue = issue_labels.create_issue(
                 api, f"review: {finding['title']}", body(finding, pr, head, repository),

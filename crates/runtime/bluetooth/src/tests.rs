@@ -88,8 +88,8 @@ enum Recorded {
 /// An owned event of the model radio.
 #[derive(Clone, Copy, Debug)]
 enum ModelEvent {
-    /// The event ended, with a failed capture when `true`.
-    Ended(EventId, bool),
+    /// The event ended without executing.
+    Ended(EventId),
     Lifecycle(LifecycleEvent),
 }
 
@@ -99,7 +99,6 @@ struct ModelRadio {
     /// The radio epoch's origin.
     started: std::time::Instant,
     now: Cell<Option<LeInstant>>,
-    capture_failure: Cell<bool>,
     requests: RefCell<Vec<Recorded>>,
     outcomes: Channel<NoopRawMutex, Result<EventId, EventsLost>, 4>,
     lifecycle: Channel<NoopRawMutex, LifecycleEvent, 2>,
@@ -114,7 +113,6 @@ impl ModelRadio {
             requests: RefCell::new(Vec::new()),
             started: std::time::Instant::now(),
             now: Cell::new(None),
-            capture_failure: Cell::new(false),
             outcomes: Channel::new(),
             lifecycle: Channel::new(),
             refuse: RefCell::new(None),
@@ -174,11 +172,7 @@ impl RadioPort for ModelRadio {
         if let Ok(event) = self.lifecycle.try_receive() {
             return Ok(Ok(ModelEvent::Lifecycle(event)));
         }
-        Ok(self
-            .outcomes
-            .receive()
-            .await
-            .map(|id| ModelEvent::Ended(id, self.capture_failure.get())))
+        Ok(self.outcomes.receive().await.map(ModelEvent::Ended))
     }
 
     async fn now(&self) -> PortResult<LeInstant, ClockError, Infallible> {
@@ -236,20 +230,11 @@ impl LeRadioPort for ModelRadio {
     }
 
     fn view(event: &ModelEvent) -> RadioOutcome<'_> {
-        use oer_bluetooth_radio::{CaptureError, TimingError};
         match *event {
             ModelEvent::Lifecycle(event) => RadioOutcome::Lifecycle(event),
-            ModelEvent::Ended(id, failed) => RadioOutcome::EventEnded {
+            ModelEvent::Ended(id) => RadioOutcome::EventEnded {
                 id,
-                result: if failed {
-                    EventResult::TimingFailed {
-                        cause: CaptureError::PacketStartCorrection(TimingError::BeforeEpoch),
-                        executed: true,
-                        anchor: Ok(None),
-                    }
-                } else {
-                    EventResult::NotExecuted
-                },
+                result: EventResult::NotExecuted,
             },
         }
     }
@@ -543,31 +528,6 @@ fn advertising_enable_and_disable_report_the_active_roles() {
         radio.outcomes.send(Ok(last)).await;
         assert_eq!(status(&host).await, 0x00);
         assert_eq!(*radio.activity.borrow(), [advertising, RadioActivity::IDLE]);
-        controller.close();
-    }));
-    assert_eq!(exit, ServeExit::Closed);
-}
-
-#[test]
-fn a_capture_failure_settles_the_operation_and_the_same_service_continues() {
-    let mut resources = resources();
-    let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
-    let clock: VirtualClock = VirtualClock::new();
-    let radio = ModelRadio::new();
-    radio.capture_failure.set(true);
-    let (exit, ()) = block_on(join(serve(&controller, &mut core, &radio, &clock), async {
-        host.write(&Reset::new()).await.unwrap();
-        status(&host).await;
-        host.write(&nonconnectable()).await.unwrap();
-        status(&host).await;
-        host.write(&LeSetAdvEnable::new(true)).await.unwrap();
-        assert_eq!(status(&host).await, 0);
-        radio.until(1).await;
-        let first = radio.advertised()[0];
-        radio.outcomes.send(Ok(first)).await;
-        radio.until(2).await;
-        assert_ne!(radio.advertised()[1], first);
         controller.close();
     }));
     assert_eq!(exit, ServeExit::Closed);

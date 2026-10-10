@@ -636,7 +636,7 @@ impl Advertiser {
     pub(crate) fn outcome(&mut self, outcome: RadioOutcome<'_>) {
         match outcome {
             RadioOutcome::Received { id, pdu } if self.owns(id) => {
-                let (Ok(Some(at)), Phase::Running) = (pdu.captured_at, self.phase) else {
+                let (Some(at), Phase::Running) = (pdu.captured_at, self.phase) else {
                     return;
                 };
                 let Ok(request) = LeLegacyConnectionRequest::decode(pdu.pdu) else {

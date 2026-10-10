@@ -41,10 +41,9 @@
 //! The service ends admission on planning failure and its lifecycle owner
 //! settles the retained core and admitted identities before returning memory.
 //!
-//! Receive PDUs and TX acknowledgements remain usable after a capture timing
-//! failure. A failed timestamp never opens or updates a connection time
-//! reference; the identified event ends with `TimingFailed` and other events
-//! continue through the same service.
+//! Only a captured packet start opens or updates a connection time
+//! reference: a PDU without one, and an event that ended `Aborted`, prove no
+//! anchor.
 //!
 //! Commands complete in order. Reset, advertising and scanning enable
 //! changes, filter accept list changes, advertising-data updates while

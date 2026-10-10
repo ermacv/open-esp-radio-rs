@@ -36,20 +36,12 @@ enum Seen {
     Anchor(EventId, Option<LeInstant>),
     Acknowledged(ConnectionId),
     Test(EventId, TestReport),
-    TimingFailed(
-        EventId,
-        oer_bluetooth_radio::CaptureError,
-        bool,
-        Result<Option<LeInstant>, oer_bluetooth_radio::CaptureError>,
-    ),
+    Aborted(EventId),
     Fault,
 }
 
 #[derive(Default)]
-struct Sink(
-    Vec<Seen>,
-    Vec<Result<Option<LeInstant>, oer_bluetooth_radio::CaptureError>>,
-);
+struct Sink(Vec<Seen>, Vec<Option<LeInstant>>);
 
 impl BluetoothRadioSink for Sink {
     fn outcome(&mut self, outcome: RadioOutcome<'_>) {
@@ -67,13 +59,8 @@ impl BluetoothRadioSink for Sink {
             } => Seen::Anchor(id, Some(anchor)),
             RadioOutcome::EventEnded {
                 id,
-                result:
-                    EventResult::TimingFailed {
-                        cause,
-                        executed,
-                        anchor,
-                    },
-            } => Seen::TimingFailed(id, cause, executed, anchor),
+                result: EventResult::Aborted,
+            } => Seen::Aborted(id),
             RadioOutcome::EventEnded { id, result } => {
                 Seen::Ended(id, matches!(result, EventResult::Executed { .. }))
             }
@@ -105,12 +92,13 @@ fn view(busy: bool) -> SchedulerHardwareView {
     }
 }
 
+/// The instant `micros` after the start of the radio epoch.
+fn at(micros: u64) -> LeInstant {
+    LeInstant::from_micros(super::EPOCH_MARGIN + micros)
+}
+
 fn window(start: u64, duration: u32) -> LeWindow {
-    LeWindow::new(
-        LeInstant::from_micros(start),
-        RadioDuration::from_micros(u64::from(duration)),
-    )
-    .unwrap()
+    LeWindow::new(at(start), RadioDuration::from_micros(u64::from(duration))).unwrap()
 }
 
 const NONCONN: [u8; 8] = [0x02, 6, 1, 2, 3, 4, 5, 6];
@@ -135,7 +123,7 @@ fn advertise(id: u32, anchor: u64, channels: AdvertisingChannels) -> RadioReques
     RadioRequest::Advertise(AdvertisingEvent {
         id: EventId::new(id),
         set: AdvertisingSetId::new(0),
-        anchor: LeInstant::from_micros(anchor),
+        anchor: at(anchor),
         channels,
         channel_spacing: RadioDuration::from_micros(1_000),
         coexistence: CoexistenceLevel::Baseline,
@@ -155,7 +143,7 @@ fn the_timing_follows_the_scheduler_policy() {
     let radio = radio();
     assert_eq!(radio.timing().preparation_lead.as_micros(), 137);
     assert_eq!(radio.timing().admission_guard.as_micros(), 40);
-    assert_eq!(radio.now(), LeInstant::from_micros(0));
+    assert_eq!(radio.now(), at(0));
     // A recurring event ends 1,074 us after its widened anchor less the lead.
     let connection = radio.timing().connection;
     assert_eq!(connection.local_sleep_clock_ppm, 500);
@@ -471,7 +459,7 @@ fn a_connectable_set_receives_its_requests() {
         RadioRequest::Advertise(AdvertisingEvent {
             id: EventId::new(7),
             set: AdvertisingSetId::new(3),
-            anchor: LeInstant::from_micros(10_000),
+            anchor: at(10_000),
             channels,
             channel_spacing: RadioDuration::from_micros(600),
             coexistence: CoexistenceLevel::Baseline,
@@ -558,8 +546,8 @@ fn captures_become_the_on_air_packet_start() {
     assert!(delay > 0);
     let raw = radio.clock.raw(20_000);
     assert_eq!(
-        radio.clock.packet_start(raw).unwrap().as_micros(),
-        radio.clock.instant(raw).unwrap().as_micros() - u64::from(delay)
+        radio.clock.packet_start(raw).as_micros(),
+        radio.clock.instant(raw).as_micros() - u64::from(delay)
     );
 }
 
@@ -573,7 +561,7 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
             connection,
             access_address: AccessAddress([0xd4, 0xc3, 0xb2, 0xa1]),
             crc_init: CrcInit([0x33, 0x22, 0x11]),
-            created_at: LeInstant::from_micros(1_000),
+            created_at: at(1_000),
             tx_power: TxPower::from_dbm(0),
             phy: LePhy::Le1M,
         }))
@@ -1129,38 +1117,100 @@ fn list_changes_edit_the_device_table_up_to_its_capacity() {
 }
 
 #[test]
-fn capture_projection_and_phy_correction_refuse_epoch_boundaries() {
-    use oer_bluetooth_radio::{CaptureError, TimingError};
+fn the_epoch_starts_one_margin_above_zero() {
+    let radio = radio();
+    assert_eq!(radio.now(), LeInstant::from_micros(super::EPOCH_MARGIN));
+    assert!(super::EPOCH_MARGIN >= 1 << 31);
+    // The margin keeps the low word of an instant equal to the controller
+    // microseconds it projects.
+    assert_eq!(super::EPOCH_MARGIN % (1 << 32), 0);
+}
+
+#[test]
+fn captures_before_now_at_the_epoch_start_keep_their_instant() {
     let mut radio = radio();
     let delay = u64::from(BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros());
+    let now = super::EPOCH_MARGIN;
+    // Ahead of the clock, and behind it.
+    for at in [now + 1_000, now, now - 1, now - 1_000] {
+        assert_eq!(radio.clock.instant(radio.clock.raw(at)).as_micros(), at);
+        assert_eq!(
+            radio.clock.packet_start(radio.clock.raw(at)).as_micros(),
+            at - delay
+        );
+    }
+    // The correction one below, at and one above the delay of a capture at
+    // the epoch's first instant.
+    for offset in [delay - 1, delay, delay + 1] {
+        assert_eq!(
+            radio.clock.packet_start(radio.clock.raw(now + offset)),
+            LeInstant::from_micros(now + offset - delay)
+        );
+    }
+    // Far from the latest sample on both sides, within the half range of the
+    // 2^31-microsecond raw counter.
+    let earliest = now - (1 << 29);
     assert_eq!(
-        radio.clock.packet_start(radio.clock.raw(delay)),
-        Ok(LeInstant::from_micros(0))
+        radio.clock.instant(radio.clock.raw(earliest)).as_micros(),
+        earliest
     );
     assert_eq!(
-        radio.clock.packet_start(radio.clock.raw(delay - 1)),
-        Err(CaptureError::PacketStartCorrection(
-            TimingError::BeforeEpoch
-        ))
+        radio
+            .clock
+            .packet_start(radio.clock.raw(earliest))
+            .as_micros(),
+        earliest - delay
     );
+    let latest = now + (1 << 29);
     assert_eq!(
-        radio.clock.instant(radio.clock.raw(u64::MAX)),
-        Err(CaptureError::EpochProjection(TimingError::BeforeEpoch))
+        radio.clock.instant(radio.clock.raw(latest)).as_micros(),
+        latest
     );
-    radio.clock.now = u64::MAX;
+    // Near the last instant of the epoch every capture stays representable.
+    radio.clock.now = super::EPOCH_END - (super::EPOCH_END & 0xffff_ffff);
+    let latest = radio.clock.now + (1 << 29);
     assert_eq!(
-        radio.clock.instant(radio.clock.raw(u64::MAX)),
-        Ok(LeInstant::from_micros(u64::MAX))
-    );
-    assert_eq!(
-        radio.clock.instant(radio.clock.raw(0)),
-        Err(CaptureError::EpochProjection(TimingError::BeyondEpoch))
+        radio.clock.instant(radio.clock.raw(latest)).as_micros(),
+        latest
     );
 }
 
 #[test]
-fn a_failed_capture_preserves_the_pdu_and_settles_only_its_event() {
-    use oer_bluetooth_radio::{CaptureError, TimingError};
+fn an_observation_past_the_epoch_end_leaves_the_clock_unchanged() {
+    let mut radio = radio();
+    // The clock's low word stays that of the first sample.
+    let base = super::EPOCH_END - (super::EPOCH_END & 0xffff_ffff);
+    radio.clock.now = base;
+    // 2^29 us per step, a quarter of the raw period at two ticks per
+    // microsecond.
+    let step = 1_u32 << 30;
+    let mut raw = 0_u32;
+    for _ in 0..7 {
+        raw = raw.wrapping_add(step);
+        radio
+            .observe_time(&ControllerTimeSample::for_validation(raw))
+            .unwrap();
+    }
+    let before = radio.now();
+    assert_eq!(before.as_micros(), base + 7 * (1 << 29));
+    assert_eq!(super::EPOCH_END - before.as_micros(), (1 << 29) - 1);
+    // One microsecond past the end is refused without a change.
+    let past = raw.wrapping_add(step);
+    assert_eq!(
+        radio.observe_time(&ControllerTimeSample::for_validation(past)),
+        Err(super::EpochExhausted)
+    );
+    assert_eq!(radio.now(), before);
+    // The last instant itself is reached.
+    let last = raw.wrapping_add(step - 2);
+    radio
+        .observe_time(&ControllerTimeSample::for_validation(last))
+        .unwrap();
+    assert_eq!(radio.now(), LeInstant::from_micros(super::EPOCH_END));
+}
+
+#[test]
+fn a_capture_before_the_first_sample_is_placed_before_it() {
     let mut radio = radio();
     let mut sink = Sink::default();
     radio
@@ -1196,15 +1246,24 @@ fn a_failed_capture_preserves_the_pdu_and_settles_only_its_event() {
     );
     execute_all(&radio, 0);
     radio.complete(&mut sink);
-    let cause = CaptureError::PacketStartCorrection(TimingError::BeforeEpoch);
+    // The capture at controller time zero lies the PHY delay before the
+    // packet start of the first sample's instant.
+    let delay = u64::from(BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros());
     assert_eq!(
         sink.0,
         [
             Seen::Received(EventId::new(7), pdu.to_vec()),
-            Seen::TimingFailed(EventId::new(7), cause, true, Ok(None))
+            Seen::Ended(EventId::new(7), true)
         ]
     );
-    assert_eq!(sink.1, [Err(cause)]);
+    assert_eq!(
+        sink.1,
+        [Some(
+            at(0)
+                .checked_sub(RadioDuration::from_micros(delay))
+                .unwrap()
+        )]
+    );
     assert!(!radio.faulted);
     radio.complete(&mut sink);
     assert_eq!(

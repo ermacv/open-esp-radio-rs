@@ -1,8 +1,8 @@
 //! Owned copies of the portable outcomes.
 
 use oer_bluetooth_radio::{
-    CaptureError, ConnectionId, EventId, EventResult, LeInstant, LifecycleEvent, RadioOutcome,
-    ReceivedPdu, TestReport,
+    ConnectionId, EventId, EventResult, LeInstant, LifecycleEvent, RadioOutcome, ReceivedPdu,
+    TestReport,
 };
 use oer_esp32s31_bluetooth_memory::BLUETOOTH_LE_RX_PAYLOAD_CAPACITY;
 
@@ -18,8 +18,8 @@ pub struct BluetoothReceivedPdu {
     len: u8,
     /// Receive strength.
     pub rssi_dbm: i8,
-    /// Independent packet-start status; failed timing retains the PDU.
-    pub captured_at: Result<Option<LeInstant>, CaptureError>,
+    /// The on-air start, or `None` when the hardware captured none.
+    pub captured_at: Option<LeInstant>,
 }
 
 impl BluetoothReceivedPdu {

@@ -544,6 +544,11 @@ pub enum RequestError {
     /// The backend could not read its clock to admit the request; a later
     /// request may succeed.
     ClockUnavailable,
+    /// The radio epoch is exhausted: the port admits no timed work again,
+    /// and its clock reports [`ClockError::EpochExhausted`].
+    ///
+    /// [`ClockError::EpochExhausted`]: crate::ClockError::EpochExhausted
+    EpochExhausted,
     /// No instance of the role is free.
     NoInstance,
     /// The set, scanner or connection is not configured.

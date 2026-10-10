@@ -69,7 +69,7 @@ impl Harness {
             pdu: ReceivedPdu {
                 pdu: &connect_ind(),
                 rssi_dbm: -50,
-                captured_at: Ok(Some(LeInstant::from_micros(INDICATION_AT))),
+                captured_at: (Some(LeInstant::from_micros(INDICATION_AT))),
             },
         });
         let Some(Request::OpenConnection(configuration)) = harness.step().unwrap() else {
@@ -116,7 +116,7 @@ impl Harness {
             pdu: ReceivedPdu {
                 pdu,
                 rssi_dbm: -40,
-                captured_at: Ok(None),
+                captured_at: None,
             },
         });
     }
@@ -638,7 +638,7 @@ fn a_scannable_set_answers_scans_but_ignores_connection_indications() {
         pdu: ReceivedPdu {
             pdu: &connect_ind(),
             rssi_dbm: -50,
-            captured_at: Ok(Some(LeInstant::from_micros(INDICATION_AT))),
+            captured_at: (Some(LeInstant::from_micros(INDICATION_AT))),
         },
     });
     harness.end(event.id);
@@ -704,7 +704,7 @@ fn low_duty_directed_advertising_connects_only_its_target() {
         pdu: ReceivedPdu {
             pdu: &stranger,
             rssi_dbm: -50,
-            captured_at: Ok(Some(LeInstant::from_micros(INDICATION_AT))),
+            captured_at: (Some(LeInstant::from_micros(INDICATION_AT))),
         },
     });
     harness.end(event.id);
@@ -718,7 +718,7 @@ fn low_duty_directed_advertising_connects_only_its_target() {
         pdu: ReceivedPdu {
             pdu: &connect_ind(),
             rssi_dbm: -50,
-            captured_at: Ok(Some(LeInstant::from_micros(INDICATION_AT))),
+            captured_at: (Some(LeInstant::from_micros(INDICATION_AT))),
         },
     });
     assert!(matches!(
@@ -787,16 +787,14 @@ fn mic_corruption_is_an_unknown_command_without_the_diagnostic_feature() {
 }
 
 #[test]
-fn failed_packet_timing_retains_acl_and_ack_without_a_fabricated_anchor() {
-    use oer_bluetooth_radio::{CaptureError, TimingError};
+fn an_aborted_connection_event_keeps_its_data_without_an_anchor() {
     let (mut harness, first) = Harness::connected();
-    let cause = CaptureError::PacketStartCorrection(TimingError::BeforeEpoch);
     harness.core.outcome(RadioOutcome::Received {
         id: first,
         pdu: ReceivedPdu {
             pdu: &[0x02, 3, 0xaa, 0xbb, 0xcc],
             rssi_dbm: -40,
-            captured_at: Err(cause),
+            captured_at: None,
         },
     });
     assert_eq!(
@@ -805,11 +803,7 @@ fn failed_packet_timing_retains_acl_and_ack_without_a_fabricated_anchor() {
     );
     harness.core.outcome(RadioOutcome::EventEnded {
         id: first,
-        result: EventResult::TimingFailed {
-            cause,
-            executed: true,
-            anchor: Err(cause),
-        },
+        result: EventResult::Aborted,
     });
     let data = [1, 2, 3];
     harness.core.acl(bt_hci::data::AclPacket::new(
@@ -825,26 +819,14 @@ fn failed_packet_timing_retains_acl_and_ack_without_a_fabricated_anchor() {
     let Some(Request::ConnectionEvent(second)) = harness.step().unwrap() else {
         panic!("connection continues")
     };
-    // A failed capture cannot replace the first planned connection anchor.
+    // An aborted event cannot replace the first planned connection anchor.
     let first_anchor = INDICATION_AT + 352 + 1_250;
     assert!(second.window.start().as_micros() > first_anchor + INTERVAL - 1_000);
     assert!(second.window.start().as_micros() < first_anchor + INTERVAL);
-    harness.acknowledge();
-    assert_eq!(harness.drain(), [std::vec![0x13, 5, 1, 0, 0, 1, 0]]);
-    harness.core.outcome(RadioOutcome::EventEnded {
-        id: second.id,
-        result: EventResult::TimingFailed {
-            cause,
-            executed: true,
-            anchor: Err(cause),
-        },
-    });
-    assert!(harness.core.is_acl_ready());
 }
 
 #[test]
-fn a_connection_indication_with_failed_timing_does_not_open_a_reference() {
-    use oer_bluetooth_radio::{CaptureError, TimingError};
+fn a_connection_indication_without_a_capture_does_not_open_a_reference() {
     let mut harness = Harness::configured();
     let mut params = super::nonconnectable_parameters();
     params[4] = 0;
@@ -858,22 +840,17 @@ fn a_connection_indication_with_failed_timing_does_not_open_a_reference() {
     let Some(Request::Advertise(event)) = harness.step().unwrap() else {
         panic!("advertise")
     };
-    let cause = CaptureError::PacketStartCorrection(TimingError::BeforeEpoch);
     harness.core.outcome(RadioOutcome::Received {
         id: event.id,
         pdu: ReceivedPdu {
             pdu: &connect_ind(),
             rssi_dbm: -40,
-            captured_at: Err(cause),
+            captured_at: None,
         },
     });
     harness.core.outcome(RadioOutcome::EventEnded {
         id: event.id,
-        result: EventResult::TimingFailed {
-            cause,
-            executed: true,
-            anchor: Ok(None),
-        },
+        result: EventResult::Executed { anchor: None },
     });
     assert!(harness.drain().is_empty());
     assert!(matches!(
@@ -941,7 +918,7 @@ fn failed_first_connection_geometry_keeps_the_indication_until_reset() {
             pdu: ReceivedPdu {
                 pdu: &connect_ind(),
                 rssi_dbm: -40,
-                captured_at: Ok(Some(LeInstant::from_micros(captured))),
+                captured_at: (Some(LeInstant::from_micros(captured))),
             },
         });
         let expected = crate::PlanningError {

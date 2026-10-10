@@ -332,6 +332,22 @@ fn a_branch_run_executes_what_its_change_reaches_and_every_whole_tree_check() {
 }
 
 #[test]
+fn a_change_to_host_tooling_reaches_the_checks_themselves_and_their_docs() {
+    // The fixture's `tools/tool` stands for a host tool the checks run with.
+    let tool = change(&["tools/tool/src/lib.rs"], Tier::Full);
+    assert_eq!(
+        check_tooling(&tool).map(|package| package.name.as_str()),
+        Some("tool")
+    );
+    assert!(ids(of_job_for(&tool, "docs")).contains(&"docs"));
+    let driver = change(&["crates/driver/src/lib.rs"], Tier::Full);
+    assert!(check_tooling(&driver).is_none());
+    assert!(!ids(of_job_for(&driver, "docs")).contains(&"docs"));
+    let blobray_tree = change(&["tools/blobray/cli/command-tree.json"], Tier::Full);
+    assert!(ids(of_job_for(&blobray_tree, "docs")).contains(&"docs"));
+}
+
+#[test]
 fn a_job_runs_only_the_checks_named_and_refuses_one_it_lacks() {
     let named = [String::from("provenance")];
     assert_eq!(

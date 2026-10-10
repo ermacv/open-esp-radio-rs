@@ -231,7 +231,15 @@ pub const CHECKS: &[Check] = &[
         tier: Tier::Full,
         job: "docs",
         summary: "Markdown links, documented commands and the static qualification catalogs",
-        trigger: Some(|change| change.selection.docs),
+        // The documented commands are checked against the command trees of
+        // the host tools, which a change to their code can alter.
+        trigger: Some(|change| {
+            change.selection.docs
+                || affected_under(change, &["tools/", "hil/host/"])
+                    .next()
+                    .is_some()
+                || touches(change, &["tools/blobray/cli/command-tree.json"])
+        }),
         run: |ctx, _| checks::docs::run(ctx),
     },
     Check {
@@ -708,6 +716,32 @@ pub fn list() -> String {
         );
     }
     text
+}
+
+/// The packages `change` reaches, its own and their dependents, whose
+/// directory is under one of `prefixes`.
+fn affected_under<'a>(
+    change: &'a Change,
+    prefixes: &'a [&'a str],
+) -> impl Iterator<Item = &'a gate::Package> + 'a {
+    change.tree.packages.iter().filter(move |package| {
+        prefixes
+            .iter()
+            .any(|prefix| package.directory.starts_with(prefix))
+            && change
+                .affected
+                .contains(&(package.workspace.clone(), package.name.clone()))
+    })
+}
+
+/// A host tool the change reaches that the checks run or build with: this
+/// registry and its checks (`oer-xtask`), the tools they invoke (`cargo fw`,
+/// the image pipeline, …) and their foundation. Blobray, a separate
+/// workspace, is not one. No check's trigger names its own implementation,
+/// so a change scoped CI cannot answer for runs every check.
+pub fn check_tooling(change: &Change) -> Option<&gate::Package> {
+    affected_under(change, &["tools/"])
+        .find(|package| !package.directory.starts_with("tools/blobray"))
 }
 
 fn touches(change: &Change, prefixes: &[&str]) -> bool {

@@ -48,8 +48,9 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
 7. **CI** runs on every branch push: xtask plans jobs by the complete Git tree and tool versions
    ([CI reuse](../../../tools/xtask/README.md#ci-input-reuse)). On a branch
    it runs only the full-tier checks the change from its merge base reaches
-   (every check when the change touches `.github/workflows/` or the
-   toolchain) and skips a job it reaches none of; `main` runs everything
+   (every check when the change touches `.github/workflows/`, the
+   toolchain, the root `Cargo.toml` or `Cargo.lock`, or host tooling under
+   `tools/` other than Blobray) and skips a job it reaches none of; `main` runs everything
    after the merge. Each executed check job of `.github/workflows/ci.yml`
    runs `cargo xtask check tier full --job <job> --checks <ids|all>`, so a
    failed check job is reproduced locally with the same command. A new check is a registry

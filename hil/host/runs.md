@@ -412,7 +412,9 @@ an older checkout. A run of a newer schema, or of an unknown one, always
 stays: the store is shared, and a newer branch's runs are only unreadable to
 this checkout. A run of this schema that does not read goes only with
 `--unreadable`, which the automatic rule never passes; a newer branch's run
-of the same schema may be among them. The automatic rule also holds the esp32s31 store to
+of the same schema may be among them. The size budget below weighs every run
+that stays, readable or not, and over it also deletes an older-schema run
+only its age keeps. The automatic rule also holds the esp32s31 store to
 a size budget, `OER_HIL_RUN_STORE_BUDGET_GIB` (40 GiB by default): over it, it
 deletes the oldest runs that only their age kept until the store fits, and
 every other reason above still keeps its runs. Run by hand without `--apply` it only lists the other runs and

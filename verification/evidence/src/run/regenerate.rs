@@ -257,7 +257,16 @@ pub fn compare(ctx: &Checkout, chip: &str, base: &Path) -> Result<bool> {
             print!("{}", summary(name, old.as_ref(), new.as_ref()));
         }
     }
-    let (old, new) = (baseline::claims(base)?, baseline::claims(&directory)?);
+    let (base_read, new) = (
+        baseline::claims(base)?,
+        baseline::claims(&directory)?.current()?,
+    );
+    for (source, symbol) in &base_read.unread_coverage {
+        println!(
+            "{chip}: the base records the coverage of vendor root {source}::{symbol} in another form: its narrowing is not compared, only its loss"
+        );
+    }
+    let old = base_read.claims;
     let accepted = baseline::Accepted::load(&ctx.root, chip)?;
     accepted.check(chip, &new)?;
     let losses = baseline::losses(&old, &new, &accepted);

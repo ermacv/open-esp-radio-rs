@@ -111,19 +111,31 @@ fn analyze_with(
     let mut nodes = reserve_vec::<Node>(slots)?;
     let mut work = reserve_vec::<u64>(slots)?;
     // Each instruction adds at most two edges, and a known jump one per
-    // target; the known jumps' edges are admitted beyond the graph's own
-    // capacity, so pushing them never grows the vector unadmitted.
+    // target; the known jumps' edges, and one instruction's outgoing edges
+    // before they join the graph, are admitted beyond the graph's own
+    // capacity, so pushing them never grows either vector unadmitted.
     let known_edges = input
         .jumps
         .iter()
         .try_fold(0usize, |sum, jump| sum.checked_add(jump.targets.len()))
         .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "edge capacity overflow"))?;
-    let _known_capacity = memory.reserve(
-        (known_edges as u64)
-            .checked_mul(std::mem::size_of::<Edge>() as u64)
-            .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "edge capacity overflow"))?,
-        control.position(),
-    )?;
+    let outgoing_capacity = input
+        .jumps
+        .iter()
+        .map(|jump| jump.targets.len())
+        .max()
+        .unwrap_or(0)
+        .saturating_add(2);
+    let known_bytes = (known_edges as u64)
+        .checked_mul(std::mem::size_of::<Edge>() as u64)
+        .and_then(|edges| {
+            (outgoing_capacity as u64)
+                .checked_mul(std::mem::size_of::<(Option<u64>, EdgeKind)>() as u64)
+                .and_then(|outgoing| edges.checked_add(outgoing))
+        })
+        .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "edge capacity overflow"))?;
+    let _known_capacity = memory.reserve(known_bytes, control.position())?;
+    let mut outgoing = reserve_vec::<(Option<u64>, EdgeKind)>(outgoing_capacity)?;
     let mut edges = reserve_vec::<Edge>(
         slots
             .checked_mul(2)
@@ -308,7 +320,7 @@ fn analyze_with(
         if relevant > 1 {
             unknown = true;
         }
-        let mut outgoing: Vec<(Option<u64>, EdgeKind)> = Vec::with_capacity(2);
+        outgoing.clear();
         let destination = |displacement: i32| {
             if unknown {
                 None
@@ -392,7 +404,7 @@ fn analyze_with(
             summary.coverage.control_flow = false;
         }
         let transfer = !matches!(decoded.flow, InstructionFlow::Next);
-        for (destination, mut relation) in outgoing {
+        for (destination, mut relation) in outgoing.drain(..) {
             let external = destination.is_none_or(|v| !in_scope(v));
             if let Some(to) = destination.filter(|v| in_scope(*v)) {
                 if !to.is_multiple_of(2) {

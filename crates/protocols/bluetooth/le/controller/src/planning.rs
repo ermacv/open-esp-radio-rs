@@ -1,7 +1,7 @@
-//! Context retained when a required radio continuation cannot be represented.
+//! Context retained when a required radio continuation lies outside the
+//! radio epoch.
 
-use oer_bluetooth_ll::dtm::DtmPlanningError;
-use oer_bluetooth_radio::{LeInstant, RadioTiming, TimingError};
+use oer_bluetooth_radio::{LeInstant, RadioTiming};
 
 /// The logical owner whose continuation failed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -18,8 +18,6 @@ pub enum PlanningOperation {
     Event,
     FutureReservation,
     ConnectionIndication,
-    ProcedureTimeout,
-    Supervision,
 }
 
 /// The failing calculation within that operation.
@@ -36,45 +34,39 @@ pub enum PlanningCalculation {
     MinimumWindow,
     WindowClipping,
     FirstAnchor,
-    TransmitWindow,
     WindowGeometry,
     Widening,
-    Elapsed,
     SlotAlignment,
-    IntervalTransition,
+    /// The earliest recurring DTM transmitter point reachable now.
+    ReachableAnchor,
+    /// The next point on the DTM transmitter's interval grid.
+    NextAnchor,
 }
 
-/// The accepting owner's original cause.
+/// A required continuation of the current schedule lies outside the radio
+/// epoch: no later sample can bring it back. The service must cease
+/// admission and settle the retained Controller and radio owners through
+/// its managed stop.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PlanningCause {
-    Timing(TimingError),
-    DirectTest(DtmPlanningError),
-    /// The required LL event distance exceeds its bounded wire-counter preview.
-    EventDeltaOutsideRange,
-}
-
-/// A required continuation failed. The service must cease admission and settle
-/// the retained Controller and radio owners through managed teardown.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PlanningError {
+pub struct EpochExhausted {
+    /// The role whose continuation left the epoch.
     pub role: PlanningRole,
+    /// The operation being prepared.
     pub operation: PlanningOperation,
+    /// The calculation whose result left the epoch.
     pub calculation: PlanningCalculation,
-    pub cause: PlanningCause,
 }
 
-impl PlanningError {
-    pub(crate) const fn timing(
+impl EpochExhausted {
+    pub(crate) const fn at(
         role: PlanningRole,
         operation: PlanningOperation,
         calculation: PlanningCalculation,
-        cause: TimingError,
     ) -> Self {
         Self {
             role,
             operation,
             calculation,
-            cause: PlanningCause::Timing(cause),
         }
     }
 }
@@ -83,14 +75,13 @@ pub(crate) fn earliest(
     now: LeInstant,
     timing: RadioTiming,
     role: PlanningRole,
-) -> Result<LeInstant, PlanningError> {
+) -> Result<LeInstant, EpochExhausted> {
     now.checked_add(timing.preparation_lead)
         .and_then(|at| at.checked_add(timing.admission_guard))
         .and_then(|at| at.checked_add(crate::PLANNING_SLACK))
-        .ok_or(PlanningError::timing(
+        .ok_or(EpochExhausted::at(
             role,
             PlanningOperation::Event,
             PlanningCalculation::Admission,
-            TimingError::BeyondEpoch,
         ))
 }

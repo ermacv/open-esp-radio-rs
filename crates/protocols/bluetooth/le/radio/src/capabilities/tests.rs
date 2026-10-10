@@ -20,7 +20,7 @@ fn le_1m_peripheral() -> LeRadioCapabilities {
         direct_test_mode: true,
         phys: LePhys::LE_1M,
         test_phys: LePhys::LE_1M.with(LePhy::Le2M),
-        timing: crate::RadioTiming::ZERO,
+        timing: crate::RadioTiming::MINIMAL,
     }
 }
 

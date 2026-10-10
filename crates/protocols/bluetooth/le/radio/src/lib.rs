@@ -49,7 +49,7 @@ pub use oer_radio_port::{
     CancelError, ClockError, ClockInfo, Correlation, CorrelationIds, EventsLost, LifecycleCommand,
     LifecycleError, LifecycleEvent, Poisoned, PortResult, RadioEpoch, RadioPort,
 };
-pub use oer_time::{RadioDuration, WindowError};
+pub use oer_time::{NonZeroRadioDuration, RadioDuration, WindowError};
 
 /// The clock domain of the LE radio port: its instants never mix with
 /// another port's.
@@ -67,7 +67,7 @@ pub use request::{
     AcceptListChange, AcceptListDevice, AccessAddress, AdvertisingConfiguration, AdvertisingEvent,
     AdvertisingReception, AdvertisingSetId, CoexistenceLevel, ConnectionAllowances,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit,
-    EventId, IdlePriority, RadioRequest, RadioTiming, RequestError, ScanFilterPolicy, ScanType,
-    ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit, TimingError,
+    EventId, IdlePriority, OutsideEpoch, RadioRequest, RadioTiming, RequestError, ScanFilterPolicy,
+    ScanType, ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit,
     TxPower,
 };

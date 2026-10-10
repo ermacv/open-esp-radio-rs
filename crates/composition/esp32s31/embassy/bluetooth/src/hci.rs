@@ -2,10 +2,13 @@
 //! core and service loop over the radio runtime.
 //!
 //! The transport and the core live for the whole boot. Each Controller epoch
-//! serves one Host epoch: [`BluetoothHciService::retire`] closes the old
-//! Host end once both directions are drained, and
-//! [`BluetoothHciService::restart`] rebuilds the core and opens a new Host end
-//! on the same storage. Handles of a retired Host epoch stay closed.
+//! serves one Host epoch: [`BluetoothHciService::run`] serves it until its
+//! owner asks it to stop or the service must end, and ends with the port's
+//! managed stop. [`BluetoothHciService::retire`] then closes the old Host end
+//! once both directions are drained, and [`BluetoothHciService::restart`]
+//! rebuilds the core and opens a new Host end on the same storage; or
+//! [`BluetoothHciService::close`] closes the Host epoch for good. Handles of
+//! a retired or closed Host epoch stay closed.
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use oer_bluetooth_controller::{LeController, LeControllerConfig, LeVersionInformation};
@@ -16,7 +19,7 @@ use oer_bluetooth_hci_transport::{
     HciRestartError, HciRetired, HciRetirementError, InProcessHciControllerTransport,
     InProcessHciHostTransport, LeControllerHciEndpoints, LeControllerHciResources,
 };
-use oer_bluetooth_runtime::{ServeExit, serve};
+use oer_bluetooth_runtime::{Served, serve};
 use oer_esp32s31_bluetooth_memory::BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY;
 use oer_esp32s31_soc_esp_hal::entropy::Entropy;
 use oer_time_embassy::EmbassyClock;
@@ -106,14 +109,29 @@ pub enum BluetoothHciRestartError {
 }
 
 impl BluetoothHciService {
-    /// Serve over `port`, the radio port of the running client, until the
-    /// transport closes or the radio fails. The service is the port's one
-    /// outcome consumer while it runs.
+    /// Serve over `port`, the radio port of the running client, until `stop`
+    /// completes or the transport, the radio or the radio epoch ends the
+    /// service, then disable the port and account every admitted event in
+    /// the core ([`Served`]). The service is the port's one outcome consumer
+    /// from its start to the port's `Disabled`; the client's runner keeps
+    /// running meanwhile.
     ///
-    /// Cancelling it leaves the core mid-request; only [`Self::restart`]
-    /// makes the core serve again, after the Host epoch was retired.
-    pub async fn run(&mut self, port: &BluetoothSystemPort) -> ServeExit<BluetoothSystemFault> {
-        serve(&self.transport, self.core, port, &EmbassyClock).await
+    /// Run it to completion: cancelling it leaves the core mid-request and
+    /// the port enabled, which [`BluetoothSystem::stop`](crate::BluetoothSystem::stop)
+    /// refuses. Only [`Self::restart`] makes the core serve again, after the
+    /// Host epoch was retired.
+    pub async fn run(
+        &mut self,
+        port: &BluetoothSystemPort,
+        stop: impl Future<Output = ()>,
+    ) -> Served<BluetoothSystemFault> {
+        serve(&self.transport, self.core, port, &EmbassyClock, stop).await
+    }
+
+    /// Close the current Host epoch for good: every handle of it reports the
+    /// transport closed, and no restart follows.
+    pub fn close(&self) {
+        self.transport.close();
     }
 
     /// Wait until the Host and the service drained both directions of the

@@ -3033,7 +3033,7 @@ section = "bluetooth-controller-lifetime"
 title = "Powered shutdown"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "Stopping a Controller epoch stops the scheduler with any events still listed, recovers both interrupt owners, leaves the shared PHY and BTBB, resets the Controller, releases its clocks and power and returns the controller memory to its allocation-time image for the next start."
+scope-and-limitations = "Stopping a Controller epoch takes a port the HCI service disabled, whose Disable stopped the scheduler and ended every admitted event with what the hardware recorded; it recovers both interrupt owners, leaves the shared PHY and BTBB, resets the Controller, releases its clocks and power and returns the controller memory to its allocation-time image for the next start."
 
 [[items]]
 id = "bluetooth-internal-wi-fi-bluetooth-coexistence"

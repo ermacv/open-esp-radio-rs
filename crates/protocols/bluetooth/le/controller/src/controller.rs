@@ -29,12 +29,12 @@ use oer_bluetooth_ll::{
     dtm::DTM_MAX_PAYLOAD,
 };
 use oer_bluetooth_radio::{
-    AcceptListChange, AcceptListDevice, CancelError, EventId, LeInstant, RadioActivity,
-    RadioDuration, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    AcceptListChange, AcceptListDevice, CancelError, EventId, LeInstant, OutsideEpoch,
+    RadioActivity, RadioDuration, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
 use crate::planning::{
-    PlanningCalculation as C, PlanningError, PlanningOperation as O, PlanningRole as R,
+    EpochExhausted, PlanningCalculation as C, PlanningOperation as O, PlanningRole as R,
 };
 
 use crate::{
@@ -990,7 +990,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         &mut self,
         now: LeInstant,
         timing: RadioTiming,
-    ) -> Result<Option<RadioWork<'_>>, PlanningError> {
+    ) -> Result<Option<RadioWork<'_>>, EpochExhausted> {
         if self.in_flight.is_some() {
             return Ok(None);
         }
@@ -1054,8 +1054,8 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                     self.peripheral.busy(),
                     self.peripheral.planned(timing)?,
                 ];
-                let anchor = place(proposal, timing, &busy).map_err(|cause| {
-                    PlanningError::timing(R::Advertising, O::Event, C::Reservation, cause)
+                let anchor = place(proposal, timing, &busy).map_err(|OutsideEpoch| {
+                    EpochExhausted::at(R::Advertising, O::Event, C::Reservation)
                 })?;
                 match anchor {
                     Some(anchor) => {

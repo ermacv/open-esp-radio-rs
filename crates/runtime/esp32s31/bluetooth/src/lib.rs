@@ -19,7 +19,11 @@
 //!   carries list transactions through their hardware waits. A scheduler
 //!   interrupt, a request or a short recheck delay resumes it.
 //! - The port's submission admits one request against a fresh
-//!   controller-time sample while its lifecycle enables it.
+//!   controller-time sample while its lifecycle enables it. Its `Disable`
+//!   stops the scheduler and ends every admitted event with what the
+//!   hardware recorded (`EventResult::Aborted` when a started item left no
+//!   status), and its `Enable` resumes the scheduler; the uninstall takes
+//!   only a disabled radio, so no admitted event outlives it.
 //! - [`BluetoothControl::quiesce`] quiesces the port, stops the scheduler,
 //!   lends the Bluetooth quiescence proof to shared-PHY maintenance, resumes
 //!   the scheduler and enables the port again.
@@ -70,7 +74,7 @@ pub use port::{BluetoothControl, BluetoothPort};
 #[cfg(any(target_arch = "riscv32", test))]
 pub use runtime::{
     BluetoothFault, BluetoothInstallError, BluetoothRuntime, BluetoothRuntimeFault,
-    BluetoothTimeError, HARDWARE_RECHECK, TIME_REFRESH,
+    BluetoothTimeError, BluetoothUninstallError, HARDWARE_RECHECK, TIME_REFRESH,
 };
 
 #[cfg(test)]

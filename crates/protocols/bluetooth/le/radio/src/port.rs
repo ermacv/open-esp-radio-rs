@@ -95,7 +95,8 @@ pub trait LeRadioPort: RadioPort<Id = EventId, Domain = LeRadio> {
 /// A port without a radio: time stands still and every request lies
 /// outside its empty capabilities, so it is refused as
 /// [`RequestError::Unsupported`]. Radio commands then complete with a
-/// failure status. It is always enabled and runs nothing to cancel.
+/// failure status. It admits nothing, so enabling or disabling it changes
+/// nothing (`AlreadyInState`), and it runs nothing to cancel or quiesce.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoRadio;
 
@@ -128,8 +129,8 @@ impl RadioPort for NoRadio {
         command: LifecycleCommand,
     ) -> impl Future<Output = PortResult<(), LifecycleError, Infallible>> + '_ {
         ready(Ok(Err(match command {
-            LifecycleCommand::Enable => LifecycleError::AlreadyInState,
-            LifecycleCommand::Disable | LifecycleCommand::Quiesce => LifecycleError::InvalidState,
+            LifecycleCommand::Enable | LifecycleCommand::Disable => LifecycleError::AlreadyInState,
+            LifecycleCommand::Quiesce => LifecycleError::InvalidState,
         })))
     }
 }

@@ -8,7 +8,10 @@
 //! typed HIL console. The
 //! `bluetooth-hil` image drives Direct Test Mode with HCI commands and the
 //! `bluetooth-gatt` image runs the Trouble Host and the GATT application; both
-//! run the radio runner and the HCI service on their own tasks. The
+//! run the radio runner and the HCI service on one client task
+//! ([`client`]), which has no restart: when the service ends, its managed
+//! stop has accounted every admitted event, the task closes the Host epoch,
+//! stops the Controller and only then reports why. The
 //! `bluetooth-secure-gatt` image runs them beside its Host and restarts the
 //! Controller epoch on request. All reach the radio only through the HCI
 //! transport.
@@ -53,8 +56,6 @@ pub(super) type Radio = oer_esp32s31_radio_system::SharedRadio;
 #[cfg(feature = "wifi-ble-coex")]
 pub(super) type Radio = oer_esp32s31_ieee80211_system::SharedRadio;
 
-#[cfg(all(feature = "bluetooth-radio", not(feature = "bluetooth-secure-gatt")))]
-static SYSTEM: StaticCell<BluetoothSystem> = StaticCell::new();
 #[cfg(feature = "bluetooth-radio")]
 static ENTROPY: StaticCell<BluetoothEntropy<'static>> = StaticCell::new();
 
@@ -131,8 +132,7 @@ async fn main(
     secure::run(spawner, radio, system, port, hci, public_address, usb, boot).await;
     #[cfg(not(feature = "bluetooth-secure-gatt"))]
     {
-        spawner.spawn(runner(radio, SYSTEM.init(system)).expect("Bluetooth runner task"));
-        spawner.spawn(service(hci.service, port).expect("Bluetooth HCI task"));
+        spawner.spawn(client(radio, system, port, hci.service).expect("Bluetooth client task"));
         image(spawner, hci.host, usb, boot).await;
     }
 }
@@ -164,16 +164,53 @@ async fn tracking(radio: &'static Radio) {
     super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=phy-tracking\r\n");
 }
 
+/// Drive the radio runner and the HCI service of a client without restart
+/// until the service ends, then close the Host epoch, stop the Controller
+/// and report why the service ended.
+///
+/// A runner fault, a failed managed stop or a failed Controller stop keeps
+/// every owner as it is: the report diverges with them alive.
 #[cfg(not(feature = "bluetooth-secure-gatt"))]
 #[embassy_executor::task]
-async fn runner(radio: &'static Radio, system: &'static mut BluetoothSystem) {
-    let _fault = system.run(radio).await;
-    super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n");
-}
+async fn client(
+    radio: &'static Radio,
+    mut system: BluetoothSystem,
+    port: BluetoothSystemPort,
+    mut service: BluetoothHciService,
+) {
+    use embassy_futures::select::{Either, select};
+    use oer_esp32s31_bluetooth_system::{ServeExit, Served};
 
-#[cfg(not(feature = "bluetooth-secure-gatt"))]
-#[embassy_executor::task]
-async fn service(mut service: BluetoothHciService, port: BluetoothSystemPort) {
-    let _exit = service.run(&port).await;
-    super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n");
+    let served = match select(
+        system.run(radio),
+        service.run(&port, core::future::pending()),
+    )
+    .await
+    {
+        Either::First(_fault) => {
+            super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n")
+        }
+        Either::Second(served) => served,
+    };
+    let Served::Stopped(exit) = served else {
+        super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n");
+    };
+    // No restart follows: the Host epoch closes for good.
+    service.close();
+    let stopped = system.stop(port, radio).await;
+    let Ok(_parked) = stopped else {
+        super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n");
+    };
+    match exit {
+        ServeExit::EpochExhausted(_) => {
+            super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-epoch-exhausted\r\n")
+        }
+        ServeExit::Stopped
+        | ServeExit::Closed
+        | ServeExit::Transport(_)
+        | ServeExit::Lifecycle(_)
+        | ServeExit::Clock(_) => {
+            super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n")
+        }
+    }
 }

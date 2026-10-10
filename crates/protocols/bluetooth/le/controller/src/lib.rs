@@ -35,11 +35,12 @@
 //!
 //! Schedule calculations use checked radio-domain arithmetic. `next_request`
 //! returns `Ok(None)` for ordinary absence of work or a bounded placement
-//! conflict, and a contextual [`PlanningError`] when a required continuation
-//! cannot fit the epoch. Calculation precedes committing provisional owners;
-//! cancellation and release requests do not require a future anchor.
-//! The service ends admission on planning failure and its lifecycle owner
-//! settles the retained core and admitted identities before returning memory.
+//! conflict, and [`EpochExhausted`], with the role, operation and
+//! calculation, when a required continuation lies outside the radio epoch:
+//! its only failure. Calculation precedes committing provisional owners;
+//! cancellation and release requests do not require a future anchor. The
+//! service then ends through its managed stop, which settles the retained
+//! core and admitted identities before memory is returned.
 //!
 //! Only a captured packet start opens or updates a connection time
 //! reference: a PDU without one, and an event that ended `Aborted`, prove no
@@ -71,9 +72,7 @@ mod scanning;
 pub use controller::{ControllerBusy, LeController, LeControllerConfig, PLANNING_SLACK, RadioWork};
 pub use oer_bluetooth_ll::control::LeVersionInformation;
 pub use output::{HCI_PACKET_CAPACITY, HciPacket};
-pub use planning::{
-    PlanningCalculation, PlanningCause, PlanningError, PlanningOperation, PlanningRole,
-};
+pub use planning::{EpochExhausted, PlanningCalculation, PlanningOperation, PlanningRole};
 pub use scanning::{DUPLICATE_FILTER_CAPACITY, MINIMUM_SCAN_WINDOW};
 
 #[cfg(test)]

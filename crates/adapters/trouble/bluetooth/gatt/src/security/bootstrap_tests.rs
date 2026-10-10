@@ -80,6 +80,7 @@ fn run_bootstrap(fail: bool, bonds: bool) {
         &mut core,
         &NoRadio,
         &oer_time_embassy::EmbassyClock,
+        core::future::pending(),
     );
     // Public commands wait for Host initialization. Keep polling afterwards too:
     // the Host still executes post-initialization commands after opening that

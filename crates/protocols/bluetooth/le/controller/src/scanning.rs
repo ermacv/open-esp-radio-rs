@@ -12,6 +12,7 @@
 //! the scan responses it receives.
 
 use bt_hci::param::{AddrKind, BdAddr, Error as HciError, LeAdvEventKind, Status};
+use core::num::NonZeroU64;
 use oer_bluetooth_hci::{
     LeLegacyAdvertisingReportEvent, LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableRequest,
 };
@@ -22,22 +23,23 @@ use oer_bluetooth_ll::{
         parse_legacy_advertising_report,
     },
 };
+
 use oer_bluetooth_radio::{
-    AdvertisingChannel, EventId, LeInstant, LePhy, LeWindow, RadioDuration, RadioOutcome,
-    RadioRequest, RadioTiming, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
-    ScannerId, TxPower,
+    AdvertisingChannel, EventId, LeInstant, LePhy, LeWindow, NonZeroRadioDuration, OutsideEpoch,
+    RadioDuration, RadioOutcome, RadioRequest, RadioTiming, ScanFilterPolicy, ScanType, ScanWindow,
+    ScannerConfiguration, ScannerId, TxPower,
 };
 
 use crate::RadioWork;
 use crate::planning::{
-    PlanningCalculation as C, PlanningError, PlanningOperation as O, PlanningRole as R,
+    EpochExhausted, PlanningCalculation as C, PlanningOperation as O, PlanningRole as R,
 };
-use oer_bluetooth_radio::TimingError;
 
 use crate::arbiter::{Proposal, place};
 
 /// Shortest scan window worth scheduling.
-pub const MINIMUM_SCAN_WINDOW: RadioDuration = RadioDuration::from_micros(1_250);
+pub const MINIMUM_SCAN_WINDOW: NonZeroRadioDuration =
+    NonZeroRadioDuration::from_micros(NonZeroU64::new(1_250).unwrap());
 /// Distinct advertisements the duplicate filter remembers.
 pub const DUPLICATE_FILTER_CAPACITY: usize = 16;
 const SCANNER: ScannerId = ScannerId::new(0);
@@ -206,20 +208,19 @@ impl Scanner {
         earliest: LeInstant,
         timing: RadioTiming,
         busy: &[Option<LeWindow>],
-    ) -> Result<Placement, PlanningError> {
+    ) -> Result<Placement, EpochExhausted> {
         assert!(self.wants_window(), "only an eligible scanner is planned");
         let anchor = next_anchor.map_or(earliest, |anchor| anchor.max(earliest));
         let interval_end = anchor
             .checked_add(self.interval)
-            .ok_or(error(C::IntervalEnd, TimingError::BeyondEpoch))?;
-        let Some(slack) = self.interval.checked_sub(MINIMUM_SCAN_WINDOW) else {
-            return Ok(Placement::Skipped {
-                next_anchor: interval_end,
-            });
+            .ok_or(error(C::IntervalEnd))?;
+        let skipped = Placement::Skipped {
+            next_anchor: interval_end,
         };
-        let latest = anchor
-            .checked_add(slack)
-            .ok_or(error(C::MinimumWindow, TimingError::BeyondEpoch))?;
+        let Some(slack) = self.interval.checked_sub(MINIMUM_SCAN_WINDOW.get()) else {
+            return Ok(skipped);
+        };
+        let latest = anchor.checked_add(slack).ok_or(error(C::MinimumWindow))?;
         let start = place(
             Proposal {
                 earliest: anchor,
@@ -229,38 +230,30 @@ impl Scanner {
             timing,
             busy,
         )
-        .map_err(|cause| error(C::Reservation, cause))?;
+        .map_err(|OutsideEpoch| error(C::Reservation))?;
         let Some(start) = start else {
-            return Ok(Placement::Skipped {
-                next_anchor: interval_end,
-            });
+            return Ok(skipped);
         };
-        // Clip the required duration before adding it to a late start. The
+        // The window ends at the interval's end, after the requested window
+        // or at the next busy reservation, whichever comes first. The
         // unrestricted requested end need not exist beyond this interval.
-        let mut duration = interval_end
-            .checked_duration_since(start)
-            .ok_or(error(C::WindowClipping, TimingError::ReversedTime))?
-            .min(self.window);
-        for window in busy.iter().flatten() {
-            if window.start() >= start {
-                duration = duration.min(
-                    window
-                        .start()
-                        .checked_duration_since(start)
-                        .ok_or(error(C::WindowClipping, TimingError::ReversedTime))?,
-                );
-            }
-        }
-        if duration < MINIMUM_SCAN_WINDOW {
-            return Ok(Placement::Skipped {
-                next_anchor: interval_end,
-            });
-        }
-        let window = LeWindow::new(start, duration)
-            .map_err(|cause| error(C::WindowClipping, TimingError::Window(cause)))?;
+        let Some(room) = interval_end.checked_duration_since(start) else {
+            return Ok(skipped);
+        };
+        let room = busy
+            .iter()
+            .flatten()
+            .filter_map(|window| window.start().checked_duration_since(start))
+            .fold(room.min(self.window), RadioDuration::min);
+        let Some(duration) =
+            NonZeroRadioDuration::new(room).filter(|duration| *duration >= MINIMUM_SCAN_WINDOW)
+        else {
+            return Ok(skipped);
+        };
+        let window = LeWindow::nonempty(start, duration).ok_or(error(C::WindowClipping))?;
         let reservation = timing
             .reservation(window)
-            .map_err(|cause| error(C::Reservation, cause))?;
+            .map_err(|OutsideEpoch| error(C::Reservation))?;
         Ok(Placement::Ready {
             window,
             reservation,
@@ -396,8 +389,8 @@ const fn scan_channel(channel: AdvertisingChannel) -> PrimaryScanChannel {
     }
 }
 
-fn error(calculation: C, cause: TimingError) -> PlanningError {
-    PlanningError::timing(R::Scanning, O::Event, calculation, cause)
+fn error(calculation: C) -> EpochExhausted {
+    EpochExhausted::at(R::Scanning, O::Event, calculation)
 }
 
 pub(crate) enum Placement {
@@ -461,9 +454,8 @@ mod tests {
         for _ in 0..2 {
             assert!(matches!(
                 scanner.place(None, earliest, crate::tests::TIMING, &[]),
-                Err(PlanningError {
+                Err(EpochExhausted {
                     calculation: C::IntervalEnd,
-                    cause: crate::PlanningCause::Timing(TimingError::BeyondEpoch),
                     ..
                 })
             ));

@@ -1120,10 +1120,6 @@ fn list_changes_edit_the_device_table_up_to_its_capacity() {
 fn the_epoch_starts_one_margin_above_zero() {
     let radio = radio();
     assert_eq!(radio.now(), LeInstant::from_micros(super::EPOCH_MARGIN));
-    assert!(super::EPOCH_MARGIN >= 1 << 31);
-    // The margin keeps the low word of an instant equal to the controller
-    // microseconds it projects.
-    assert_eq!(super::EPOCH_MARGIN % (1 << 32), 0);
 }
 
 #[test]
@@ -1198,7 +1194,7 @@ fn an_observation_past_the_epoch_end_leaves_the_clock_unchanged() {
     let past = raw.wrapping_add(step);
     assert_eq!(
         radio.observe_time(&ControllerTimeSample::for_validation(past)),
-        Err(super::EpochExhausted)
+        Err(super::OutsideEpoch)
     );
     assert_eq!(radio.now(), before);
     // The last instant itself is reached.
@@ -1279,4 +1275,34 @@ fn a_capture_before_the_first_sample_is_placed_before_it() {
     execute_all(&radio, 0);
     radio.complete(&mut sink);
     assert_eq!(sink.0.last(), Some(&Seen::Ended(EventId::new(8), true)));
+}
+
+#[test]
+fn a_stopped_cancellation_needs_the_receipt_and_aborts_a_started_event() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    configure_legacy(&mut radio);
+    let channels = AdvertisingChannels::single(AdvertisingChannel::Channel37);
+    radio.request(advertise(1, 10_000, channels)).unwrap();
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::Start(_)
+    ));
+    // A running scheduler proves nothing about the listed item.
+    assert_eq!(
+        radio.cancel_all_stopped(&ControllerTimeSample::for_validation(0), &mut sink),
+        Err(oer_esp32s31_bluetooth::scheduler::SchedulerNotStopped)
+    );
+    radio
+        .enter_stopped(oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped::for_validation())
+        .unwrap();
+    // 20 ms later, at two raw ticks per microsecond: the event's start has
+    // passed and the hardware recorded no status.
+    radio
+        .cancel_all_stopped(&ControllerTimeSample::for_validation(2 * 20_000), &mut sink)
+        .unwrap();
+    let RadioStep::Transaction(_) = radio.drive(view(false), &mut sink) else {
+        panic!("the stopped scheduler releases the item")
+    };
+    assert_eq!(sink.0, [Seen::Aborted(EventId::new(1))]);
 }

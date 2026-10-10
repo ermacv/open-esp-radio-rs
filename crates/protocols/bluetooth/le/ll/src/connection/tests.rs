@@ -580,6 +580,29 @@ fn connection_update_commits_timing_only_at_the_exact_instant() {
     assert_eq!(transition.instant(), 4);
     assert!(transition.host_parameters_changed());
     assert_eq!(provisional.timing(), updated);
+    assert_eq!(
+        provisional.connection_timing_intervals(),
+        Some(super::LeConnectionTimingIntervals {
+            before: 1,
+            after: 0
+        })
+    );
+    // A longer step crosses the instant at its first event: one interval of
+    // the previous timing, then two of the updated one.
+    let restored = provisional.cancel();
+    let longer =
+        restored.prepare_recurring_event(LePeripheralConnectionEventDelta::new(3).unwrap());
+    assert_eq!(longer.connection_timing_transition(), Some(transition));
+    assert_eq!(
+        longer.connection_timing_intervals(),
+        Some(super::LeConnectionTimingIntervals {
+            before: 1,
+            after: 2
+        })
+    );
+    let provisional = longer
+        .cancel()
+        .prepare_recurring_event(LePeripheralConnectionEventDelta::new(1).unwrap());
 
     let restored = provisional.cancel();
     assert_eq!(restored.timing(), request.timing());

@@ -390,7 +390,11 @@ hardware as each port's contract states for its quiesced state. A port's
 event stream lives as long as the port: `uninstall` discards the events it
 did not deliver, the terminal events still owed and a pending loss, and the
 next install's port starts with an empty stream; every event guarantee
-below holds for the port's lifetime.
+below holds for the port's lifetime. The Bluetooth LE backend uninstalls
+only a disabled port whose consumer took every event up to `Disabled`: its
+`Disable` stops the scheduler and ends every admitted event with what the
+hardware recorded, so none is discarded, and `serve` ends every session
+with that managed stop.
 
 **Loss and poisoning.** A backend reserves the slot of every event whose
 loss would break a guarantee when it admits the work: every terminal event

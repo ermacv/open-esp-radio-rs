@@ -3,8 +3,8 @@
 //! The Wi-Fi image owns the radio system, its PHY tracking and coexistence
 //! schedule tasks and the HIL console. This client parks the Controller on the
 //! radio's Bluetooth partition, starts it on the shared radio and runs the
-//! radio runner, the HCI service and the Trouble GATT application on their own
-//! tasks. The application's observations are published for the Wi-Fi
+//! radio runner and the HCI service on one client task, as the Bluetooth images
+//! do, and the Trouble GATT application on its own. The application's observations are published for the Wi-Fi
 //! console's `QueryBluetoothGatt` answer.
 
 use core::cell::Cell;
@@ -14,15 +14,13 @@ use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
 use oer_esp32s31_bluetooth_system::{
-    BluetoothEntropy, BluetoothHostTransport, BluetoothParked, BluetoothSystem, start_bluetooth_hci,
+    BluetoothEntropy, BluetoothHostTransport, BluetoothParked, start_bluetooth_hci,
 };
 use oer_esp32s31_hal::root::BluetoothPartition;
 use oer_hil_protocol::bluetooth::BluetoothGattEvidence;
-use static_cell::StaticCell;
 
 use super::{Radio, VERSION, gatt};
 
-static SYSTEM: StaticCell<BluetoothSystem> = StaticCell::new();
 /// The last application observation; `None` until the Host reports one.
 static EVIDENCE: Mutex<CriticalSectionRawMutex, Cell<Option<BluetoothGattEvidence>>> =
     Mutex::new(Cell::new(None));
@@ -85,8 +83,7 @@ async fn client(
         embassy_time::Instant::now().as_micros()
     ));
     let hci = start_bluetooth_hci(public_address, Some(VERSION), entropy);
-    spawner.spawn(super::runner(radio, SYSTEM.init(system)).expect("Bluetooth runner task"));
-    spawner.spawn(super::service(hci.service, port).expect("Bluetooth HCI task"));
+    spawner.spawn(super::client(radio, system, port, hci.service).expect("Bluetooth client task"));
     spawner.spawn(application(hci.host).expect("Bluetooth GATT task"));
 }
 

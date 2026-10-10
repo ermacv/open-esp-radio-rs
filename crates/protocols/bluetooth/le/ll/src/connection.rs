@@ -367,6 +367,18 @@ impl LeConnectionTimingTransition {
     }
 }
 
+/// How the intervals of one recurring step divide around a connection
+/// update's instant: `before` intervals of the previous timing reach the
+/// instant, then `after` intervals of the updated timing follow, together
+/// the step's event distance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeConnectionTimingIntervals {
+    /// Intervals of the previous timing, the last one ending at the instant.
+    pub before: u16,
+    /// Intervals of the updated timing after the instant.
+    pub after: u16,
+}
+
 /// Complete semantic value carried by one legacy `CONNECT_IND` PDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 // CAPABILITY: bluetooth-connect-ind-decoding-and-admission
@@ -912,18 +924,22 @@ impl LePeripheralConnection {
         }
     }
 
+    /// The pending update whose instant lies among the `skipped` events
+    /// before `target` or at it, with the instant's offset from the first of
+    /// them, at most `skipped`.
     const fn connection_update_for_target(
         &self,
         target: u16,
         skipped: u16,
-    ) -> Option<PendingConnectionUpdate> {
+    ) -> Option<(PendingConnectionUpdate, u16)> {
         let update = match self.pending_connection_update {
             Some(update) => update,
             None => return None,
         };
         let source = target.wrapping_sub(skipped);
-        if update.instant.wrapping_sub(source) <= skipped {
-            Some(update)
+        let offset = update.instant.wrapping_sub(source);
+        if offset <= skipped {
+            Some((update, offset))
         } else {
             None
         }
@@ -935,7 +951,7 @@ impl LePeripheralConnection {
         skipped: u16,
     ) -> Option<LeConnectionTimingTransition> {
         let update = match self.connection_update_for_target(target, skipped) {
-            Some(update) => update,
+            Some((update, _)) => update,
             None => return None,
         };
         let transition = LeConnectionTimingTransition {
@@ -1219,16 +1235,24 @@ impl LePeripheralConnectionEventCompleted {
             selector = selector.with_channel_map(update.channel_map);
         }
         let (channel, _) = selector.preview(event_counter);
-        let connection_timing_transition = match self
+        let (connection_timing_transition, connection_timing_intervals) = match self
             .connection
             .connection_update_for_target(event_counter, skipped)
         {
-            Some(update) => Some(LeConnectionTimingTransition {
-                previous: self.connection.request.timing,
-                updated: update.timing,
-                instant: update.instant,
-            }),
-            None => None,
+            Some((update, offset)) => (
+                Some(LeConnectionTimingTransition {
+                    previous: self.connection.request.timing,
+                    updated: update.timing,
+                    instant: update.instant,
+                }),
+                // The instant is `offset + 1` events after the completed one,
+                // within the `skipped + 1` of the step: `offset <= skipped`.
+                Some(LeConnectionTimingIntervals {
+                    before: offset + 1,
+                    after: skipped - offset,
+                }),
+            ),
+            None => (None, None),
         };
         LePeripheralConnectionRecurringEventProvisional {
             completed: self,
@@ -1240,6 +1264,7 @@ impl LePeripheralConnectionEventCompleted {
                 None => None,
             },
             connection_timing_transition,
+            connection_timing_intervals,
             maintenance_skip: false,
         }
     }
@@ -1260,6 +1285,7 @@ pub struct LePeripheralConnectionRecurringEventProvisional {
     channel: LeDataChannelIndex,
     channel_map_update_instant: Option<u16>,
     connection_timing_transition: Option<LeConnectionTimingTransition>,
+    connection_timing_intervals: Option<LeConnectionTimingIntervals>,
     maintenance_skip: bool,
 }
 
@@ -1301,6 +1327,11 @@ impl LePeripheralConnectionRecurringEventProvisional {
         self.connection_timing_transition
     }
 
+    /// How the intervals of this step divide around the transition's instant.
+    pub const fn connection_timing_intervals(&self) -> Option<LeConnectionTimingIntervals> {
+        self.connection_timing_intervals
+    }
+
     /// Reject lower admission and recover the exact completed-event owner.
     pub const fn cancel(self) -> LePeripheralConnectionEventCompleted {
         self.completed
@@ -1315,6 +1346,7 @@ impl LePeripheralConnectionRecurringEventProvisional {
             channel,
             channel_map_update_instant: _,
             connection_timing_transition: _,
+            connection_timing_intervals: _,
             maintenance_skip,
         } = self;
         let skipped = delta.skipped();

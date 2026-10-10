@@ -7,7 +7,8 @@
 use bt_hci::param::Error as HciError;
 use oer_bluetooth_hci::{LeDtmCommand, LeDtmCommandCompleteEvent, LeDtmPhy, LeTestEndCommand};
 use oer_bluetooth_ll::dtm::{
-    DTM_MAX_PAYLOAD, DtmPayloadPattern, DtmSession, DtmStartError, DtmStop, DtmTest,
+    DTM_MAX_PAYLOAD, DtmCalculation, DtmEpochExhausted, DtmPayloadPattern, DtmSession,
+    DtmStartError, DtmStop, DtmTest,
 };
 use oer_bluetooth_radio::{
     EventId, LeInstant, RadioOutcome, RadioRequest, RadioTiming, TestChannel, TestPhy, TxPower,
@@ -165,19 +166,39 @@ impl DtmRole {
         now: LeInstant,
         timing: RadioTiming,
         payload: &'s mut [u8; DTM_MAX_PAYLOAD],
-    ) -> Result<DtmRadioWork<'s>, crate::PlanningError> {
+    ) -> Result<DtmRadioWork<'s>, crate::EpochExhausted> {
         Ok(match &mut self.phase {
             Phase::Idle => DtmRadioWork::None,
             Phase::Running => {
-                match self
-                    .session
-                    .next_request(now, timing, payload)
-                    .map_err(|cause| crate::PlanningError {
-                        role: crate::PlanningRole::DirectTest,
-                        operation: crate::PlanningOperation::Event,
-                        calculation: crate::PlanningCalculation::WindowGeometry,
-                        cause: crate::PlanningCause::DirectTest(cause),
-                    })? {
+                match self.session.next_request(now, timing, payload).map_err(
+                    |DtmEpochExhausted { calculation }| {
+                        crate::EpochExhausted::at(
+                            crate::PlanningRole::DirectTest,
+                            crate::PlanningOperation::Event,
+                            match calculation {
+                                DtmCalculation::Admission => crate::PlanningCalculation::Admission,
+                                DtmCalculation::InitialAnchor => {
+                                    crate::PlanningCalculation::FirstAnchor
+                                }
+                                DtmCalculation::NextAnchor => {
+                                    crate::PlanningCalculation::NextAnchor
+                                }
+                                DtmCalculation::ReachableAnchor => {
+                                    crate::PlanningCalculation::ReachableAnchor
+                                }
+                                DtmCalculation::SlotAlignment => {
+                                    crate::PlanningCalculation::SlotAlignment
+                                }
+                                DtmCalculation::AirWindow => {
+                                    crate::PlanningCalculation::WindowGeometry
+                                }
+                                DtmCalculation::Reservation => {
+                                    crate::PlanningCalculation::Reservation
+                                }
+                            },
+                        )
+                    },
+                )? {
                     Some(request) => DtmRadioWork::Request(request),
                     None => DtmRadioWork::None,
                 }

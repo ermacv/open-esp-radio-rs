@@ -27,8 +27,8 @@
 //! packet capture, which lies within the raw counter's half range of the
 //! latest sample, always has a representable on-air start. A sample past
 //! the last instant leaves the time unchanged and reports
-//! [`EpochExhausted`]: nothing timed may be admitted afterwards, while the
-//! admitted work still settles.
+//! [`OutsideEpoch`](oer_bluetooth_radio::OutsideEpoch): nothing timed may be
+//! admitted afterwards, while the admitted work still settles.
 
 #[cfg(any(test, all(feature = "test-support", not(target_arch = "riscv32"))))]
 extern crate std;
@@ -44,8 +44,6 @@ pub mod validation;
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub use coexistence::CoexistenceProfile;
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-pub use radio::{
-    BluetoothRadio, BluetoothRadioMemory, BluetoothRadioSink, EpochExhausted, RadioFault, RadioStep,
-};
+pub use radio::{BluetoothRadio, BluetoothRadioMemory, BluetoothRadioSink, RadioFault, RadioStep};
 
 pub use oer_bluetooth_radio::{RadioOutcome, RadioRequest, RadioTiming, RequestError};

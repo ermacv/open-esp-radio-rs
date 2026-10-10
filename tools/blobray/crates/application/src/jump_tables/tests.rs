@@ -125,6 +125,16 @@ fn section(index: u32, section_type: u32, info: u32, read_only_data: bool) -> Se
 /// `.rela.rodata` (`relocations` of type `relocation_type`) to the case labels
 /// at 0x20, 0x30, 0x20, … of `.text` (`last` for the last).
 fn facts_with(entries: u64, last: u64, relocation_type: u32) -> TableFacts<'static> {
+    facts_with_sections(entries, last, relocation_type, &[])
+}
+
+/// `facts_with`, with `extra` sections after the object's own.
+fn facts_with_sections(
+    entries: u64,
+    last: u64,
+    relocation_type: u32,
+    extra: &[SectionFact],
+) -> TableFacts<'static> {
     let memory = memory();
     let position = RunPosition::default();
     let mut facts = TableFacts::new(memory);
@@ -132,7 +142,10 @@ fn facts_with(entries: u64, last: u64, relocation_type: u32) -> TableFacts<'stat
         section(TEXT, 1, 0, false),
         section(RODATA, 1, 0, true),
         section(RELA_RODATA, relocation_type, RODATA, false),
-    ] {
+    ]
+    .into_iter()
+    .chain(extra.iter().copied())
+    {
         facts.sections.push(fact, position).unwrap();
     }
     for (index, value) in [
@@ -185,7 +198,7 @@ fn a_bounded_relocated_table_yields_its_cases_in_index_order() {
         tables,
         [JumpTable {
             site: 0x14,
-            first_case: 0,
+            first_case: Some(0),
             entries: vec![0x20, 0x30, 0x38],
         }],
         "`bltu 2, a1` admits indices 0..=2"
@@ -262,7 +275,7 @@ fn a_rebased_switch_value_reports_its_first_case() {
     }
     let tables = run(&rebased, &facts(3, 0x38));
     assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].first_case, 8);
+    assert_eq!(tables[0].first_case, Some(8));
 }
 
 #[test]
@@ -338,4 +351,37 @@ fn a_return_is_never_a_dispatch_candidate() {
         }
     }
     assert!(run(&returning, &facts(3, 0x38)).is_empty());
+}
+
+#[test]
+fn the_first_case_is_read_through_narrow_extensions_or_left_unknown() {
+    use super::first_case;
+    let value = |id| AbstractValue::Expression { id };
+    let number = |value: u32| AbstractValue::Constant { value };
+    let integer = |op, left, right| Expression::Integer { op, left, right };
+    let expressions = [
+        Expression::EntryRegister { register: 10 },
+        // `addi a0, a0, -8; andi a0, a0, 0xff`: `switch ((uint8_t) x)`.
+        integer(IntegerOp::Add, value(0), number((-8_i32) as u32)),
+        integer(IntegerOp::And, value(1), number(0xff)),
+        // `slli 16; srli 16` around a constant-first addition.
+        integer(IntegerOp::Add, number((-3_i32) as u32), value(0)),
+        integer(IntegerOp::Shl, value(3), number(16)),
+        integer(IntegerOp::Shr, value(4), number(16)),
+        // A product says nothing about the case values.
+        integer(IntegerOp::Mul, value(0), number(3)),
+        integer(IntegerOp::And, value(0), number(0xff)),
+    ];
+    let expressions: Vec<&Expression> = expressions.iter().collect();
+    assert_eq!(first_case(&value(2), &expressions), Some(8));
+    assert_eq!(first_case(&value(5), &expressions), Some(3));
+    assert_eq!(first_case(&value(6), &expressions), None);
+    assert_eq!(first_case(&value(7), &expressions), Some(0));
+    assert_eq!(first_case(&value(0), &expressions), Some(0));
+}
+
+#[test]
+fn a_section_relocated_twice_proves_no_table() {
+    let twice = facts_with_sections(3, 0x38, SHT_RELA, &[section(6, SHT_RELA, RODATA, false)]);
+    assert!(run(&records(true), &twice).is_empty());
 }

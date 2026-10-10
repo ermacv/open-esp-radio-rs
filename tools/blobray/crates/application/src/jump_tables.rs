@@ -42,6 +42,8 @@ struct SectionFact {
 type SymbolFact = ((u32, u64), (Option<u32>, u64));
 /// `((relocation section, offset), (symbol table, symbol, addend))`.
 type WordFact = ((u32, u64), (u32, u32, i64));
+/// `(relocated section, its only RELA section)`.
+type RelocatedFact = (u32, Option<u32>);
 
 /// The symbol and relocation facts of one object that table entries need,
 /// held in admitted working memory. Only `R_RISCV_32` RELA relocations of
@@ -54,6 +56,9 @@ pub(crate) struct TableFacts<'m> {
     /// `((relocation section, offset), (symbol table, symbol, addend))`,
     /// sorted by key once the object has been read.
     words: AdmittedVec<'m, WordFact>,
+    /// Each relocated section's RELA section, sorted by the relocated section
+    /// once the object has been read; a section with two has none.
+    relocated: AdmittedVec<'m, RelocatedFact>,
 }
 
 impl<'m> TableFacts<'m> {
@@ -62,6 +67,7 @@ impl<'m> TableFacts<'m> {
             sections: AdmittedVec::new(memory),
             symbols: AdmittedVec::new(memory),
             words: AdmittedVec::new(memory),
+            relocated: AdmittedVec::new(memory),
         }
     }
 
@@ -103,8 +109,9 @@ impl<'m> TableFacts<'m> {
             return Ok(());
         }
         // Sections stream in index order before their contents, so the
-        // relocation section is known; a target not seen yet is checked when
-        // a table is read.
+        // relocation section is found by a binary search; a target not seen
+        // yet is checked when a table is read. Were the order ever different,
+        // a missed section drops the word and no table is proven from it.
         match self.section_fact(r.section) {
             Some(relocations) if relocations.section_type == SHT_RELA => {
                 if self
@@ -127,17 +134,35 @@ impl<'m> TableFacts<'m> {
 
     /// Order the facts for lookup once the object has been read.
     pub(crate) fn finish(&mut self, c: &mut dyn RunControl) -> Result<()> {
-        c.checkpoint((self.symbols.len() + self.words.len()) as u64)?;
+        c.checkpoint((self.sections.len() + self.symbols.len() + self.words.len()) as u64)?;
+        self.sections.sort_unstable_by_key(|section| section.index);
         self.symbols.sort_unstable_by_key(|(key, _)| *key);
         self.words.sort_unstable_by_key(|(key, _)| *key);
+        for section in self.sections.iter() {
+            if section.section_type == SHT_RELA {
+                self.relocated
+                    .push((section.info, Some(section.index)), c.position())?;
+            }
+        }
+        self.relocated.sort_unstable_by_key(|(target, _)| *target);
+        // A section relocated by two RELA sections names neither.
+        let mut i = 0;
+        while i + 1 < self.relocated.len() {
+            if self.relocated[i].0 == self.relocated[i + 1].0 {
+                self.relocated[i].1 = None;
+                self.relocated[i + 1].1 = None;
+            }
+            i += 1;
+        }
         Ok(())
     }
 
     fn section_fact(&self, index: u32) -> Option<SectionFact> {
-        self.sections
-            .iter()
-            .find(|section| section.index == index)
-            .copied()
+        let at = self
+            .sections
+            .binary_search_by_key(&index, |section| section.index)
+            .ok()?;
+        Some(self.sections[at])
     }
 
     fn symbol_value(&self, table: u32, index: u64) -> Option<(Option<u32>, u64)> {
@@ -154,13 +179,14 @@ impl<'m> TableFacts<'m> {
         if !self.section_fact(section)?.read_only_data {
             return None;
         }
-        let relocations = self
-            .sections
-            .iter()
-            .find(|candidate| candidate.section_type == SHT_RELA && candidate.info == section)?;
+        let at = self
+            .relocated
+            .binary_search_by_key(&section, |(target, _)| *target)
+            .ok()?;
+        let relocations = self.relocated[at].1?;
         let at = self
             .words
-            .binary_search_by_key(&(relocations.index, offset), |(key, _)| *key)
+            .binary_search_by_key(&(relocations, offset), |(key, _)| *key)
             .ok()?;
         let (table, index, addend) = self.words[at].1;
         let (target_section, value) = self.symbol_value(table, u64::from(index))?;
@@ -292,21 +318,65 @@ fn guarding_bound(
     Ok(entries.filter(|entries| (1..=MAX_ENTRIES).contains(entries)))
 }
 
-/// The case value of entry zero: `c` when GCC rebased the switch value as
-/// `index = value - c`, otherwise zero.
-fn first_case(index: &AbstractValue, expressions: &[&Expression]) -> i64 {
-    match expression_of(index, expressions) {
+/// `value` without a zero extension to 8 or 16 bits (`andi 0xff`,
+/// `zext.h`'s `and 0xffff`, or `slli k; srli k`), which GCC emits for a
+/// narrow switch value.
+fn unextended<'a>(value: &'a AbstractValue, expressions: &[&'a Expression]) -> &'a AbstractValue {
+    match expression_of(value, expressions) {
         Some(Expression::Integer {
-            op: IntegerOp::Add,
+            op: IntegerOp::And,
+            left,
             right,
-            ..
-        }) => constant(right).map_or(0, |c| -i64::from(c as i32)),
+        }) => match (constant(left), constant(right)) {
+            (_, Some(0xff | 0xffff)) => left,
+            (Some(0xff | 0xffff), _) => right,
+            _ => value,
+        },
         Some(Expression::Integer {
+            op: IntegerOp::Shr,
+            left,
+            right,
+        }) => match (expression_of(left, expressions), constant(right)) {
+            (
+                Some(Expression::Integer {
+                    op: IntegerOp::Shl,
+                    left: inner,
+                    right: by,
+                }),
+                Some(k @ (16 | 24)),
+            ) if constant(by) == Some(k) => inner,
+            _ => value,
+        },
+        _ => value,
+    }
+}
+
+/// The case value of entry zero: `c` when GCC rebased the switch value as
+/// `index = value - c` (an addition of `-c` with the constant on either side
+/// or a subtraction of `c`, under any narrow zero extension), zero when the
+/// index is an opaque value itself, and unknown for any other shape: an
+/// unrecognized index never claims case values.
+fn first_case(index: &AbstractValue, expressions: &[&Expression]) -> Option<i64> {
+    let index = unextended(index, expressions);
+    let Some(expression) = expression_of(index, expressions) else {
+        return Some(0);
+    };
+    match expression {
+        Expression::Integer {
+            op: IntegerOp::Add,
+            left,
+            right,
+        } => match (constant(left), constant(right)) {
+            (_, Some(c)) | (Some(c), _) => Some(-i64::from(c as i32)),
+            _ => None,
+        },
+        Expression::Integer {
             op: IntegerOp::Sub,
             right,
             ..
-        }) => constant(right).map_or(0, |c| i64::from(c as i32)),
-        _ => 0,
+        } => constant(right).map(|c| i64::from(c as i32)),
+        Expression::Integer { .. } => None,
+        _ => Some(0),
     }
 }
 
@@ -315,6 +385,16 @@ fn first_case(index: &AbstractValue, expressions: &[&Expression]) -> i64 {
 pub(crate) struct FoundTables<'m> {
     pub(crate) tables: Vec<JumpTable>,
     _reserved: AdmittedVec<'m, MemoryReservation<'m>>,
+}
+
+impl<'m> FoundTables<'m> {
+    /// No tables: what a function's first pass follows.
+    pub(crate) fn none(memory: &'m WorkingMemory) -> Self {
+        Self {
+            tables: Vec::new(),
+            _reserved: AdmittedVec::new(memory),
+        }
+    }
 }
 
 /// The jump-table dispatches among one function's first-pass `records`, with
@@ -340,10 +420,7 @@ pub(crate) fn jump_tables<'r, 'm>(
             // leaves the index unusable, and then no table is proven.
             FunctionRecord::Expression { id, expression, .. } => {
                 if *id as usize != expressions.len() {
-                    return Ok(FoundTables {
-                        tables: Vec::new(),
-                        _reserved: AdmittedVec::new(memory),
-                    });
+                    return Ok(FoundTables::none(memory));
                 }
                 expressions.push(expression, c.position())?;
             }
@@ -371,10 +448,15 @@ pub(crate) fn jump_tables<'r, 'm>(
     let mut jumps = Vec::new();
     let mut reserved = AdmittedVec::new(memory);
     for &(site, base) in sites.iter() {
-        let Some(&(start, _)) = blocks
-            .iter()
-            .find(|(start, end)| *start <= site && site < *end)
-        else {
+        let mut block = None;
+        for &(start, end) in blocks.iter() {
+            c.checkpoint(1)?;
+            if start <= site && site < end {
+                block = Some(start);
+                break;
+            }
+        }
+        let Some(start) = block else {
             continue;
         };
         // The base register's last write before the jump in its block.

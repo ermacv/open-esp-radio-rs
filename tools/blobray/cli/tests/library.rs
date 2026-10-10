@@ -757,11 +757,6 @@ fn a_pcrel_pair_shows_the_text_at_its_high_addend_on_both_instructions() {
 /// keeps the check (a `nop` replaces it otherwise); `relocated` entries of
 /// the three carry their `R_RISCV_32`.
 fn switch_object(bounded: bool, relocated: u64) -> Vec<u8> {
-    use object::write::{Object, Relocation, Symbol, SymbolSection};
-    use object::{
-        Architecture, BinaryFormat, Endianness, RelocationFlags, SectionKind, SymbolFlags,
-        SymbolKind, SymbolScope,
-    };
     let words: [u32; 16] = [
         0x0020_0793,                                     // 0x00 addi a5, zero, 2
         if bounded { 0x02a7_ea63 } else { 0x0000_0013 }, // 0x04 bltu a5, a0, 0x38
@@ -780,12 +775,62 @@ fn switch_object(bounded: bool, relocated: u64) -> Vec<u8> {
         0x0000_0513,
         0x0000_8067, // 0x38 default
     ];
+    switches_object(&words, &[(0x08, &[0x20, 0x28, 0x30], relocated as usize)])
+}
+
+/// `dispatch(a0, a1)`: `switch (a0) { case 0: …; case 1: switch (a1) { … } }`,
+/// each dispatch shaped as in `switch_object`, the inner one reached only
+/// through the outer table's case 1.
+fn nested_switch_object() -> Vec<u8> {
+    let words: [u32; 24] = [
+        0x0010_0793, // 0x00 addi a5, zero, 1
+        0x04a7_ea63, // 0x04 bltu a5, a0, 0x58
+        0x0000_07b7, // 0x08 lui a5, %hi(.Ltable0)
+        0x0007_8793, // 0x0c addi a5, a5, %lo(.Ltable0)
+        0x0025_1713, // 0x10 slli a4, a0, 2
+        0x00f7_0733, // 0x14 add a4, a4, a5
+        0x0007_2783, // 0x18 lw a5, 0(a4)
+        0x0007_8067, // 0x1c jalr zero, 0(a5)
+        0x00a0_0513, // 0x20 outer case 0
+        0x0000_8067, // 0x24 ret
+        0x0010_0793, // 0x28 outer case 1: addi a5, zero, 1
+        0x02b7_e663, // 0x2c bltu a5, a1, 0x58
+        0x0000_07b7, // 0x30 lui a5, %hi(.Ltable1)
+        0x0007_8793, // 0x34 addi a5, a5, %lo(.Ltable1)
+        0x0025_9713, // 0x38 slli a4, a1, 2
+        0x00f7_0733, // 0x3c add a4, a4, a5
+        0x0007_2783, // 0x40 lw a5, 0(a4)
+        0x0007_8067, // 0x44 jalr zero, 0(a5)
+        0x00b0_0513, // 0x48 inner case 0
+        0x0000_8067, // 0x4c ret
+        0x00c0_0513, // 0x50 inner case 1
+        0x0000_8067, // 0x54 ret
+        0x0000_0513, // 0x58 default
+        0x0000_8067, // 0x5c ret
+    ];
+    switches_object(
+        &words,
+        &[(0x08, &[0x20, 0x28], 2), (0x30, &[0x48, 0x50], 2)],
+    )
+}
+
+/// A relocatable object defining `dispatch` as `words` in `.text`, with one
+/// `.Ltable{n}` in `.rodata` per `(lui offset, case labels, relocated)`: the
+/// `lui/addi` pair at that offset addresses it and its first `relocated`
+/// entries carry their `R_RISCV_32` to the case labels.
+fn switches_object(words: &[u32], tables: &[(u64, &[i64], usize)]) -> Vec<u8> {
+    use object::write::{Object, Relocation, Symbol, SymbolSection};
+    use object::{
+        Architecture, BinaryFormat, Endianness, RelocationFlags, SectionKind, SymbolFlags,
+        SymbolKind, SymbolScope,
+    };
     let code: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
     let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
     let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
     object.append_section_data(text, &code, 4);
     let rodata = object.add_section(Vec::new(), b".rodata".to_vec(), SectionKind::ReadOnlyData);
-    object.append_section_data(rodata, &[0; 12], 4);
+    let entries: usize = tables.iter().map(|(_, cases, _)| cases.len()).sum();
+    object.append_section_data(rodata, &vec![0; 4 * entries], 4);
     object.add_symbol(Symbol {
         name: b"dispatch".to_vec(),
         value: 0,
@@ -794,16 +839,6 @@ fn switch_object(bounded: bool, relocated: u64) -> Vec<u8> {
         scope: SymbolScope::Linkage,
         weak: false,
         section: SymbolSection::Section(text),
-        flags: SymbolFlags::None,
-    });
-    let table = object.add_symbol(Symbol {
-        name: b".Ltable".to_vec(),
-        value: 0,
-        size: 0,
-        kind: SymbolKind::Data,
-        scope: SymbolScope::Compilation,
-        weak: false,
-        section: SymbolSection::Section(rodata),
         flags: SymbolFlags::None,
     });
     let text_symbol = object.section_symbol(text);
@@ -820,28 +855,38 @@ fn switch_object(bounded: bool, relocated: u64) -> Vec<u8> {
             )
             .unwrap();
     };
-    relocate(&mut object, text, 0x08, table, 0, object::elf::R_RISCV_HI20);
-    relocate(
-        &mut object,
-        text,
-        0x0c,
-        table,
-        0,
-        object::elf::R_RISCV_LO12_I,
-    );
-    for (entry, case) in [0x20_i64, 0x28, 0x30]
-        .into_iter()
-        .enumerate()
-        .take(relocated as usize)
-    {
+    let mut at = 0;
+    for (n, (lui, cases, relocated)) in tables.iter().enumerate() {
+        let table = object.add_symbol(Symbol {
+            name: format!(".Ltable{n}").into_bytes(),
+            value: at,
+            size: 0,
+            kind: SymbolKind::Data,
+            scope: SymbolScope::Compilation,
+            weak: false,
+            section: SymbolSection::Section(rodata),
+            flags: SymbolFlags::None,
+        });
+        relocate(&mut object, text, *lui, table, 0, object::elf::R_RISCV_HI20);
         relocate(
             &mut object,
-            rodata,
-            4 * entry as u64,
-            text_symbol,
-            case,
-            object::elf::R_RISCV_32,
+            text,
+            lui + 4,
+            table,
+            0,
+            object::elf::R_RISCV_LO12_I,
         );
+        for (entry, case) in cases.iter().enumerate().take(*relocated) {
+            relocate(
+                &mut object,
+                rodata,
+                at + 4 * entry as u64,
+                text_symbol,
+                *case,
+                object::elf::R_RISCV_32,
+            );
+        }
+        at += 4 * cases.len() as u64;
     }
     object.write().unwrap()
 }
@@ -899,7 +944,7 @@ fn a_bounded_relocated_switch_is_followed_and_any_other_stays_a_gap() {
         tables,
         [blobray_domain::JumpTable {
             site: 0x1c,
-            first_case: 0,
+            first_case: Some(0),
             entries: vec![0x20, 0x28, 0x30],
         }]
     );
@@ -920,4 +965,49 @@ fn a_bounded_relocated_switch_is_followed_and_any_other_stays_a_gap() {
         assert!(tables.is_empty(), "{name}");
         assert_eq!(jumps(&gap), [(EdgeKind::Indirect, None)], "{name}");
     }
+}
+
+#[test]
+fn a_switch_reached_only_through_another_tables_case_is_followed_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("nested.a");
+    std::fs::write(
+        &path,
+        support::archive(&[(b"switch.o", &nested_switch_object())], false),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args([
+            "--format",
+            "json",
+            "function-records",
+            "--function",
+            "dispatch",
+            "--input",
+        ])
+        .arg(format!("code={}", path.display()))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let document: blobray_cli::wire::FunctionRecordsDocument =
+        serde_json::from_slice(&output.stdout).unwrap();
+    let blobray_cli::wire::NamedFunction::Analyzed {
+        coverage,
+        jump_tables,
+        ..
+    } = document.functions.into_iter().next().unwrap()
+    else {
+        panic!()
+    };
+    let table = |site, entries: &[u64]| blobray_domain::JumpTable {
+        site,
+        first_case: Some(0),
+        entries: entries.to_vec(),
+    };
+    assert_eq!(
+        jump_tables,
+        [table(0x1c, &[0x20, 0x28]), table(0x44, &[0x48, 0x50])],
+        "the inner dispatch is found on the pass that follows the outer table"
+    );
+    assert!(coverage.control_flow, "both dispatches are followed");
 }

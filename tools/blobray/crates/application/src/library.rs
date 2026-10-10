@@ -218,37 +218,46 @@ fn research_function<'m>(
             )
         };
         // A first pass locates jump-table dispatches; when their entries are
-        // proven, the function is analyzed again following them.
-        let mut first = RecordBuffer::new(memory);
-        let summary = research(&[], control, &mut Records(&mut first))?;
-        let found = crate::jump_tables::jump_tables(
-            &first,
-            view.section,
-            view.extent,
-            tables,
-            memory,
-            control,
-        )?;
-        if found.tables.is_empty() {
-            for record in first.iter() {
-                sink.record(record, control)?;
-            }
-            return Ok((summary, found));
-        }
-        let jumps: Vec<_> = found
-            .tables
-            .iter()
-            .map(|table| {
-                let mut targets = table.entries.clone();
-                targets.sort_unstable();
-                targets.dedup();
-                oer_riscv_analysis::KnownJump {
-                    site: table.site,
-                    targets,
+        // proven, the function is analyzed again following them, which can
+        // reach a dispatch only a table's case leads to (a nested `switch`).
+        // Passes repeat while each proves more tables than the one before
+        // follows, so they end within the function's dispatch count, every
+        // pass charged to the same control.
+        let mut followed = crate::jump_tables::FoundTables::none(memory);
+        let mut records = RecordBuffer::new(memory);
+        let mut summary = research(&[], control, &mut Records(&mut records))?;
+        loop {
+            let found = crate::jump_tables::jump_tables(
+                &records,
+                view.section,
+                view.extent,
+                tables,
+                memory,
+                control,
+            )?;
+            if found.tables.len() <= followed.tables.len() {
+                for record in records.iter() {
+                    sink.record(record, control)?;
                 }
-            })
-            .collect();
-        Ok((research(&jumps, control, sink)?, found))
+                return Ok((summary, followed));
+            }
+            let jumps: Vec<_> = found
+                .tables
+                .iter()
+                .map(|table| {
+                    let mut targets = table.entries.clone();
+                    targets.sort_unstable();
+                    targets.dedup();
+                    oer_riscv_analysis::KnownJump {
+                        site: table.site,
+                        targets,
+                    }
+                })
+                .collect();
+            followed = found;
+            records = RecordBuffer::new(memory);
+            summary = research(&jumps, control, &mut Records(&mut records))?;
+        }
     })
 }
 

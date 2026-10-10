@@ -71,7 +71,20 @@ overlap it; without a range every numeric address is reported, and unresolved
 addresses are reported either way. `--working-memory-mib`, `--timeout-secs`
 and `--max-work-units` bound the analysis cooperatively.
 
-The JSON document streams `{"schema":1,"inputs":[...],"records":[...],"summary":{...}}`.
+`--address ADDR` (repeatable) keeps the observations in that 32-bit word and
+`--function NAME` (repeatable) those of that function; blocked functions it
+names, every gap and the summary are never filtered, so a selection cannot
+hide an incomplete analysis. `--group-by address|function` groups the selected
+observations: one group per word (unresolved addresses first) listing each
+function by access kind (a masked expression is `expression`), width and mask
+with a count, or one group per
+function listing each word the same way. The human format prints the groups
+before the summary line and groups by address when a filter is given without
+`--group-by`.
+
+The JSON document streams `{"schema":3,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
+`records` holds the selected records and `groups` appears only with
+`--group-by`.
 `inputs` lists each input's role and SHA-256. A record is an `observation` (the
 function, the record ordinal and exact original fact, the address or null, its
 alternative index and a read-selection or write-replacement mask), a `blocked`

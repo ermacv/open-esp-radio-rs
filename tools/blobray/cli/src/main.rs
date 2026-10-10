@@ -74,6 +74,17 @@ enum Command {
         /// START:LENGTH candidate interval; without one, every numeric address.
         #[arg(long = "range", value_parser = parse_range)]
         ranges: Vec<blobray_domain::ImageRegion>,
+        /// Keep only observations in this 32-bit word; repeat for several.
+        /// Blocked functions, gaps and the summary are never filtered.
+        #[arg(long = "address", value_parser = parse_number, value_name = "ADDRESS")]
+        addresses: Vec<u64>,
+        /// Keep only observations of this function; repeat for several.
+        #[arg(long = "function", value_name = "NAME")]
+        functions: Vec<String>,
+        /// Group the selected observations by word or by function. The human
+        /// format groups by address when a filter is given without it.
+        #[arg(long = "group-by", value_enum)]
+        group_by: Option<GroupKey>,
         #[command(flatten)]
         assumptions: Assumptions,
         #[command(flatten)]
@@ -127,6 +138,22 @@ enum Command {
         #[command(flatten)]
         limits: InProcessOptions,
     },
+}
+
+/// The `--group-by` key of `register-accesses`.
+#[derive(Clone, Copy, ValueEnum)]
+enum GroupKey {
+    Address,
+    Function,
+}
+
+impl GroupKey {
+    fn by(self) -> blobray_cli::access_groups::GroupBy {
+        match self {
+            Self::Address => blobray_cli::access_groups::GroupBy::Address,
+            Self::Function => blobray_cli::access_groups::GroupBy::Function,
+        }
+    }
 }
 
 const MIB: u64 = 1024 * 1024;
@@ -204,9 +231,31 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
         Command::RegisterAccesses {
             inputs,
             ranges,
+            addresses,
+            functions,
+            group_by,
             assumptions,
             limits,
-        } => register_accesses(inputs, ranges, assumptions.abi(), limits, format),
+        } => {
+            let words = addresses
+                .into_iter()
+                .map(|address| {
+                    u32::try_from(address)
+                        .map(|address| address & !3)
+                        .map_err(|_| invalid("--address exceeds 32 bits"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let filter = blobray_cli::access_groups::AccessFilter { words, functions };
+            register_accesses(
+                inputs,
+                ranges,
+                filter,
+                group_by.map(GroupKey::by),
+                assumptions.abi(),
+                limits,
+                format,
+            )
+        }
         Command::FunctionRecords {
             inputs,
             functions,
@@ -638,6 +687,8 @@ fn audit_targets(
 fn register_accesses(
     inputs: Vec<OsString>,
     ranges: Vec<blobray_domain::ImageRegion>,
+    filter: blobray_cli::access_groups::AccessFilter,
+    group_by: Option<blobray_cli::access_groups::GroupBy>,
     abi: Option<CallAbi>,
     limits: InProcessOptions,
     format: Format,
@@ -658,6 +709,12 @@ fn register_accesses(
     let mut control = limits.control();
     let mut out = std::io::BufWriter::new(std::io::stdout().lock());
     let json = matches!(format, Format::Json);
+    let filtered = !filter.words.is_empty() || !filter.functions.is_empty();
+    let group_by = match (group_by, json, filtered) {
+        (None, false, true) => Some(blobray_cli::access_groups::GroupBy::Address),
+        (group_by, _, _) => group_by,
+    };
+    let mut groups = group_by.map(blobray_cli::access_groups::AccessGroups::new);
     if json {
         let described: Vec<_> = inputs
             .iter()
@@ -687,6 +744,12 @@ fn register_accesses(
         &memory,
         &mut control,
         &mut |record, _| {
+            if !filter.keeps(record) {
+                return Ok(());
+            }
+            if let Some(groups) = groups.as_mut() {
+                groups.add(record);
+            }
             if json {
                 if !first {
                     out.write_all(b",").map_err(io_error)?;
@@ -698,14 +761,28 @@ fn register_accesses(
         },
     )?;
     if json {
+        out.write_all(b"]").map_err(io_error)?;
+        if let Some(groups) = &groups {
+            write!(
+                out,
+                ",\"groups\":{}",
+                serde_json::to_string(&groups.groups()).map_err(json_error)?
+            )
+            .map_err(io_error)?;
+        }
         write!(
             out,
-            "],\"summary\":{}}}",
+            ",\"summary\":{}}}",
             serde_json::to_string(&summary).map_err(json_error)?
         )
         .map_err(io_error)?;
         writeln!(out).map_err(io_error)?;
     } else {
+        if let Some(groups) = &groups {
+            for line in groups.human() {
+                writeln!(out, "{line}").map_err(io_error)?;
+            }
+        }
         writeln!(
             out,
             "{} functions ({} partial, {} blocked), {} gaps, {} observations ({} unresolved)",

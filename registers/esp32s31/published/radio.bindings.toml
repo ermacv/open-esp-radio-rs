@@ -801,7 +801,13 @@ peripheral-type = "PhyFedataRecovered"
 peripheral-module = "phy_fedata_recovered"
 scope = []
 register-method = "rx_filter_mode_opaque"
-fields = []
+
+[[registers.fields]]
+svd-name = "FILTER_MODE"
+method = "filter_mode"
+bit-offset = 18
+bit-width = 4
+access = "read-write"
 
 [[registers]]
 address = 537920564
@@ -2206,6 +2212,24 @@ svd-name = "PARAMETER_120_OFFSET_OPAQUE"
 method = "parameter_120_offset_opaque"
 bit-offset = 12
 bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537921740
+width = 32
+access = "read-write"
+identity = "PHY_ADC_DUMP_RECOVERED.WORD_08CC_OPAQUE"
+peripheral = "PHY_ADC_DUMP_RECOVERED"
+peripheral-type = "PhyAdcDumpRecovered"
+peripheral-module = "phy_adc_dump_recovered"
+scope = []
+register-method = "word_08cc_opaque"
+
+[[registers.fields]]
+svd-name = "BITS_19_22_OPAQUE"
+method = "bits_19_22_opaque"
+bit-offset = 19
+bit-width = 4
 access = "read-write"
 
 [[registers]]
@@ -6612,6 +6636,24 @@ method = "rssi"
 bit-offset = 0
 bit-width = 8
 access = "read-only"
+
+[[registers]]
+address = 537927860
+width = 32
+access = "read-write"
+identity = "PHY_ADC_DUMP_RECOVERED.WORD_20B4_OPAQUE"
+peripheral = "PHY_ADC_DUMP_RECOVERED"
+peripheral-type = "PhyAdcDumpRecovered"
+peripheral-module = "phy_adc_dump_recovered"
+scope = []
+register-method = "word_20b4_opaque"
+
+[[registers.fields]]
+svd-name = "BIT_0_OPAQUE"
+method = "bit_0_opaque"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537927864
@@ -37322,22 +37364,22 @@ bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RX_GAIN_INDEX_OPAQUE"
-method = "rx_gain_index_opaque"
+svd-name = "WIFI_MAX_GAIN_INDEX"
+method = "wifi_max_gain_index"
 bit-offset = 8
 bit-width = 7
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "PULSE_OPAQUE"
-method = "pulse_opaque"
+svd-name = "FORCED_GAIN_ENABLE"
+method = "forced_gain_enable"
 bit-offset = 23
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CONTROL_HIGH_OPAQUE"
-method = "control_high_opaque"
+svd-name = "FORCED_GAIN_INDEX"
+method = "forced_gain_index"
 bit-offset = 24
 bit-width = 8
 access = "read-write"
@@ -37566,6 +37608,13 @@ bit-offset = 0
 bit-width = 12
 access = "read-only"
 
+[[registers.fields]]
+svd-name = "BITS_12_18_OPAQUE"
+method = "bits_12_18_opaque"
+bit-offset = 12
+bit-width = 7
+access = "read-only"
+
 [[registers]]
 address = 537948308
 width = 32
@@ -37578,8 +37627,8 @@ scope = []
 register-method = "agc_gain_limit_low"
 
 [[registers.fields]]
-svd-name = "PARAMETER_MINUS_ONE_OPAQUE"
-method = "parameter_minus_one_opaque"
+svd-name = "INITIAL_GAIN_INDEX"
+method = "initial_gain_index"
 bit-offset = 2
 bit-width = 7
 access = "read-write"
@@ -37618,6 +37667,24 @@ svd-name = "FORCE_LLTF"
 method = "force_lltf"
 bit-offset = 15
 bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537948344
+width = 32
+access = "read-write"
+identity = "PHY_ADC_DUMP_RECOVERED.WORD_70B8_OPAQUE"
+peripheral = "PHY_ADC_DUMP_RECOVERED"
+peripheral-type = "PhyAdcDumpRecovered"
+peripheral-module = "phy_adc_dump_recovered"
+scope = []
+register-method = "word_70b8_opaque"
+
+[[registers.fields]]
+svd-name = "BITS_0_2_OPAQUE"
+method = "bits_0_2_opaque"
+bit-offset = 0
+bit-width = 3
 access = "read-write"
 
 [[registers]]
@@ -37804,8 +37871,8 @@ scope = []
 register-method = "rx_gain_limit_control"
 
 [[registers.fields]]
-svd-name = "RX_GAIN_LIMIT_OPAQUE"
-method = "rx_gain_limit_opaque"
+svd-name = "INITIAL_GAIN_INDEX"
+method = "initial_gain_index"
 bit-offset = 18
 bit-width = 7
 access = "read-write"
@@ -39585,6 +39652,137 @@ method = "image_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
+
+[[registers]]
+address = 537956356
+width = 32
+access = "read-write"
+identity = "PHY_ADC_DUMP_RECOVERED.DUMP_CONTROL"
+peripheral = "PHY_ADC_DUMP_RECOVERED"
+peripheral-type = "PhyAdcDumpRecovered"
+peripheral-module = "phy_adc_dump_recovered"
+scope = []
+register-method = "dump_control"
+
+[[registers.fields]]
+svd-name = "LENGTH"
+method = "length"
+bit-offset = 0
+bit-width = 17
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BIT_17_OPAQUE"
+method = "bit_17_opaque"
+bit-offset = 17
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DONE"
+method = "done"
+bit-offset = 18
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TRIGGER"
+method = "trigger"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_20_21_OPAQUE"
+method = "bits_20_21_opaque"
+bit-offset = 20
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537956360
+width = 32
+access = "read-write"
+identity = "PHY_ADC_DUMP_RECOVERED.DUMP_CONFIG"
+peripheral = "PHY_ADC_DUMP_RECOVERED"
+peripheral-type = "PhyAdcDumpRecovered"
+peripheral-module = "phy_adc_dump_recovered"
+scope = []
+register-method = "dump_config"
+
+[[registers.fields]]
+svd-name = "BITS_0_15_OPAQUE"
+method = "bits_0_15_opaque"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_SELECT"
+method = "source_select"
+bit-offset = 17
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITS_21_24_OPAQUE"
+method = "bits_21_24_opaque"
+bit-offset = 21
+bit-width = 4
+access = "read-write"
+
+[[registers]]
+address = 537956376
+width = 32
+access = "read-write"
+identity = "PHY_ADC_DUMP_RECOVERED.DUMP_LANE_SELECT"
+peripheral = "PHY_ADC_DUMP_RECOVERED"
+peripheral-type = "PhyAdcDumpRecovered"
+peripheral-module = "phy_adc_dump_recovered"
+scope = []
+register-method = "dump_lane_select"
+
+[[registers.fields]]
+svd-name = "LANE_0"
+method = "lane_0"
+bit-offset = 0
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_1"
+method = "lane_1"
+bit-offset = 6
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_2"
+method = "lane_2"
+bit-offset = 12
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_3"
+method = "lane_3"
+bit-offset = 18
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BIT_24_OPAQUE"
+method = "bit_24_opaque"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537958400

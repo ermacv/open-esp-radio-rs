@@ -2769,8 +2769,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>RX_GAIN_INDEX_OPAQUE</name>
-              <description>Opaque: meaning not established. Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication.</description>
+              <name>WIFI_MAX_GAIN_INDEX</name>
+              <description>Project-assigned name. Highest Wi-Fi receive-gain table index: librftest rx_max_gain returns these bits for its Wi-Fi path. Complete phy_agc_reg_init writes parameter byte 0x121 and phy_set_rx_gain_table the final Wi-Fi RX gain index after table publication.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>7</bitWidth>
               <writeConstraint>
@@ -2781,14 +2781,14 @@
               </writeConstraint>
             </field>
             <field>
-              <name>PULSE_OPAQUE</name>
-              <description>Opaque: meaning not established. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit.</description>
+              <name>FORCED_GAIN_ENABLE</name>
+              <description>Project-assigned name. Enables the forced receive-gain index in FORCED_GAIN_INDEX. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain replace it with the low bit of their enable argument; librftest clears it and waits 5 us after writing the index before setting it. Complete phy_enable_agc and the delayed tail of phy_pbus_force_mode pulse it.</description>
               <bitOffset>23</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>CONTROL_HIGH_OPAQUE</name>
-              <description>Opaque: meaning not established. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image.</description>
+              <name>FORCED_GAIN_INDEX</name>
+              <description>Project-assigned name. Receive-gain table index applied while FORCED_GAIN_ENABLE is set. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain write their gain argument here before the enable bit; complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23, so a PBus work-mode transition replaces any previously forced index.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -2996,8 +2996,8 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>PARAMETER_MINUS_ONE_OPAQUE</name>
-              <description>Opaque: meaning not established. Bits 8:2 receive the low seven bits of parameter byte 0x121 minus one.</description>
+              <name>INITIAL_GAIN_INDEX</name>
+              <description>Project-assigned name. AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into RX_GAIN_LIMIT_CONTROL.INITIAL_GAIN_INDEX. Complete phy_agc_reg_init writes the low seven bits of parameter byte 0x121 minus one.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>7</bitWidth>
               <writeConstraint>
@@ -3217,8 +3217,8 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>RX_GAIN_LIMIT_OPAQUE</name>
-              <description>Opaque: meaning not established. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication.</description>
+              <name>INITIAL_GAIN_INDEX</name>
+              <description>Project-assigned name. AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into AGC_GAIN_LIMIT_LOW.INITIAL_GAIN_INDEX. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication.</description>
               <bitOffset>18</bitOffset>
               <bitWidth>7</bitWidth>
               <writeConstraint>
@@ -3396,7 +3396,7 @@
       <registers>
         <register>
           <name>NOISE_FLOOR_MEASUREMENT</name>
-          <description>Project-assigned name. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.</description>
+          <description>Project-assigned name. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result; it consumes no higher bits. The librftest saturation probes read bits 18:12. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.</description>
           <addressOffset>0x708C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
@@ -3406,6 +3406,13 @@
               <description>Project-assigned name. Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>12</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>BITS_12_18_OPAQUE</name>
+              <description>Opaque: meaning not established. Seven-bit receive status field. Complete librftest get_rfrx_sat counts how many of one hundred reads have the value 49 and returns that count as its RF receive saturation result; phy_rx_sat_test samples it after forcing receive gain. Neither body assigns a unit to the value.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>7</bitWidth>
               <access>read-only</access>
             </field>
           </fields>
@@ -16626,10 +16633,24 @@
       <registers>
         <register>
           <name>RX_FILTER_MODE_OPAQUE</name>
-          <description>Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write of FILTER_MODE; the other fields remain unnamed.</description>
           <addressOffset>0x30</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
+          <fields>
+            <field>
+              <name>FILTER_MODE</name>
+              <description>Project-assigned name. Receive filter mode: complete phy_rx_filter_mode replaces these bits with the low four bits of its argument and preserves every other bit.</description>
+              <bitOffset>18</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_RX_RESET_OPAQUE</name>
@@ -16654,6 +16675,217 @@
               <name>TX_RX_RESET_BIT_26</name>
               <description>Project-assigned name. Second upper reset bit cleared and then asserted by complete phy_fe_txrx_reset.</description>
               <bitOffset>26</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>PHY_ADC_DUMP_RECOVERED</name>
+      <description>Receive sample-dump words programmed by complete librftest adctrig and set_dump_mode. Dumped words are read back from 0x2f060000 as signed ten-bit components in bits 9:0 and 19:10 (complete print_dump_data and sampledeal); that aperture is not radio MMIO.</description>
+      <baseAddress>0x20100000</baseAddress>
+      <registers>
+        <register>
+          <name>WORD_08CC_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete set_dump_mode clears bits 22:19 in one fresh-read RMW before selecting the dump mode.</description>
+          <addressOffset>0x8CC</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BITS_19_22_OPAQUE</name>
+              <description>Opaque: meaning not established. Four bits cleared by complete set_dump_mode for every mode.</description>
+              <bitOffset>19</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>WORD_20B4_OPAQUE</name>
+          <description>Opaque: meaning not established. One path of the selector jump table of complete adctrig clears bit 0 before programming the dump source; the analysis does not resolve which selector values take that path.</description>
+          <addressOffset>0x20B4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BIT_0_OPAQUE</name>
+              <description>Opaque: meaning not established. Cleared by one selector path of complete adctrig.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>WORD_70B8_OPAQUE</name>
+          <description>Opaque: meaning not established. Complete set_dump_mode replaces bits 2:0 in one fresh-read RMW.</description>
+          <addressOffset>0x70B8</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BITS_0_2_OPAQUE</name>
+              <description>Opaque: meaning not established. Complete set_dump_mode writes one for mode zero and zero for every other mode.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>DUMP_CONTROL</name>
+          <description>Project-assigned name. Sample-dump length, start and completion word. Complete adctrig programs LENGTH, clears bits 17 and 21:20, sets ENABLE, pulses TRIGGER for selector zero, polls DONE with a bounded wait and finally clears ENABLE.</description>
+          <addressOffset>0x9004</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>LENGTH</name>
+              <description>Project-assigned name. Number of dump words: complete adctrig writes its first argument plus one.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>17</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>131071</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>BIT_17_OPAQUE</name>
+              <description>Opaque: meaning not established. Cleared by complete adctrig after LENGTH is written.</description>
+              <bitOffset>17</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>DONE</name>
+              <description>Project-assigned name. Dump completion: complete adctrig polls this bit after starting the dump and stops waiting once it is set or its 1,000,000-count bound of WIFI_MAC_LOCAL_TIME.COUNTER elapses.</description>
+              <bitOffset>18</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER</name>
+              <description>Project-assigned name. Software dump start: complete adctrig sets and then clears this bit for selector zero after setting ENABLE; selector twelve starts Bluetooth reception instead.</description>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>BITS_20_21_OPAQUE</name>
+              <description>Opaque: meaning not established. Cleared by complete adctrig before the dump starts.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>ENABLE</name>
+              <description>Project-assigned name. Dump enable: complete adctrig sets this bit before starting the dump and clears it after the completion wait.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>DUMP_CONFIG</name>
+          <description>Project-assigned name. Sample-dump source and rate word. Complete adctrig replaces bits 24:21 at entry, replaces SOURCE_SELECT on one selector path and reads the whole word after the completion wait.</description>
+          <addressOffset>0x9008</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BITS_0_15_OPAQUE</name>
+              <description>Opaque: meaning not established. Read by complete adctrig after the completion wait; it prints the low sixteen bits.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+            </field>
+            <field>
+              <name>SOURCE_SELECT</name>
+              <description>Project-assigned name. Dump source: one selector path of complete adctrig replaces these bits with its selector argument.</description>
+              <bitOffset>17</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>BITS_21_24_OPAQUE</name>
+              <description>Opaque: meaning not established. Complete adctrig writes half its fourth argument, or zero when that argument is below two.</description>
+              <bitOffset>21</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>DUMP_LANE_SELECT</name>
+          <description>Project-assigned name. Four six-bit dump lane selectors and an enable bit, programmed by complete adctrig: 24, 25, 26 and 27 by default, with other values for selector arguments 11 and 12.</description>
+          <addressOffset>0x9018</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>LANE_0</name>
+              <description>Project-assigned name. First lane selector; complete adctrig writes 24 by default.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>LANE_1</name>
+              <description>Project-assigned name. Second lane selector; complete adctrig writes 25 by default.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>LANE_2</name>
+              <description>Project-assigned name. Third lane selector; complete adctrig writes 26 by default.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>LANE_3</name>
+              <description>Project-assigned name. Fourth lane selector; complete adctrig writes 27 by default.</description>
+              <bitOffset>18</bitOffset>
+              <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>BIT_24_OPAQUE</name>
+              <description>Opaque: meaning not established. Set by complete adctrig after the lane selectors.</description>
+              <bitOffset>24</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
           </fields>

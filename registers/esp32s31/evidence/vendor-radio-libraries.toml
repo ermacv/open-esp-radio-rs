@@ -526,4 +526,32 @@ description = "libbtbb.a sha256 9bd762f68df0c894d27c542f01591aad21ee800b69fd6403
 
 [[sources]]
 id = "BLOB_LIBRFTEST_FORCE_RX_GAIN"
-description = "librftest.a sha256 c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a; complete phy_test.o force_rx_gain, which writes the caller's gain into 0x20102840 bits 31:24 and then its flag bit into bit 23 in separate fresh-read RMWs, the same layout as ROM phy_rx_gain_force."
+description = "librftest.a sha256 c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a; complete phy_test.o force_rx_gain(enable, gain, path), size 0x10c. A nonzero path writes the caller's gain into 0x20102840 bits 31:24 and then its flag bit into bit 23 in separate fresh-read RMWs, the same layout as ROM phy_rx_gain_force. Path zero applies the same order to 0x2010702c: it replaces bits 31:24 with the gain while keeping bits 23:0, clears bit 23, waits 5 us and then replaces bit 23 with the low bit of the enable argument."
+
+[[sources]]
+id = "BLOB_LIBRFTEST_RX_MAX_GAIN"
+description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0, esp32s31/librftest.a, sha256 c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a; complete phy_test.o rx_max_gain(path), size 0x1c. Path zero returns bits 14:8 of 0x2010702c; a nonzero path returns bits 20:14 of 0x20102850. It has no other effect."
+
+[[sources]]
+id = "BLOB_LIBRFTEST_RX_INIT_GAIN"
+description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0, esp32s31/librftest.a, sha256 c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a; complete wifi.o rx_init_gain(gain), size 0x36. Two fresh-read RMWs write the same seven-bit argument into 0x2010713c bits 24:18 and then 0x20107094 bits 8:2, preserving every other bit; it has no other effect."
+
+[[sources]]
+id = "BLOB_LIBRFTEST_RF_RX_SATURATION_PROBES"
+description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0, esp32s31/librftest.a, sha256 c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a; complete phy_test.o get_rfrx_sat, size 0x2c, reads 0x2010708c one hundred times and returns how many reads had bits 18:12 equal to 49. Complete phy_test.o phy_rx_sat_test, size 0x136, forces receive gain, then records bits 18:12 of 0x2010708c in one hundred samples and prints them. Neither body names the field or assigns a unit to its value."
+
+[[sources]]
+id = "BLOB_LIBRFTEST_ADCTRIG"
+description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0, esp32s31/librftest.a, sha256 c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a; complete mac_common.o adctrig, size 0x48c, the receive sample-dump trigger. It replaces bits 24:21 of 0x20109008 with half its fourth argument (zero below two), stores 0xffffffff to 0x20109c04, sets bit 2 of 0x20100800, replaces bits 16:0 of 0x20109004 with its first argument plus one and clears bit 17 there. It programs 0x20109018 as four six-bit selectors in bits 5:0, 11:6, 17:12 and 23:18, defaulting to 24, 25, 26 and 27, with alternative values for selector arguments 11 and 12, and sets bit 24. It clears bits 21:20 of 0x20109004. One path of its selector jump table, whose case values the static analysis does not resolve, clears bit 0 of 0x201020b4 and replaces bits 20:17 of 0x20109008 with the selector argument. It sets bit 31 of 0x20109004, pulses bit 19 there only for selector zero (selector twelve starts Bluetooth reception instead), polls bit 18 of 0x20109004 against a 1,000,000-count bound of 0x2010d800, then reads 0x20109008, clears bit 31 of 0x20109004 and prints the low sixteen bits of that read together with the constants 0x2f060000 and 0x20000. Optional gain arguments are written to 0x2010702c bits 31:24 with bit 23 set, alternating between two gains while polling in mode three."
+
+[[sources]]
+id = "BLOB_LIBRFTEST_SET_DUMP_MODE"
+description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0, esp32s31/librftest.a, sha256 c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a; complete phy_test.o set_dump_mode(mode), size 0x2a. It clears bits 22:19 of 0x201008cc, then replaces bits 2:0 of 0x201070b8 with one for mode zero and zero otherwise, in two fresh-read RMWs."
+
+[[sources]]
+id = "BLOB_LIBRFTEST_PRINT_DUMP_DATA"
+description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0, esp32s31/librftest.a, sha256 c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a; complete phy_test.o print_dump_data, size 0x114, reads 160 dump words from 0x2f060000 and interprets bits 9:0 and 19:10 of each as signed ten-bit components whose squares it sums; complete wifi.o sampledeal, size 0x12, performs the same ten-bit sign extension."
+
+[[sources]]
+id = "BLOB_LIBRFTEST_PHY_TEST_FILTER_BAND_SET"
+description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0, esp32s31/librftest.a, sha256 c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a; complete phy_test.o phy_test_filter_band_set(select), size 0x58. A nonzero select writes phy_param byte 0xef, and zero writes byte 0xf0, to both PHY-I2C block 0x67 host 1 registers 0x1c and 0x1d."

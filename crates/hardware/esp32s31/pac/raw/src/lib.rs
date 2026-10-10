@@ -6586,38 +6586,38 @@ pub mod phy_agc_oracle {
         #[doc = "Field `RX_COMPENSATION_LOW_OPAQUE` writer - Opaque: meaning not established. Complete phy_set_rx_comp_new writes 0xed into bits 7:0."]
         pub type RxCompensationLowOpaqueW<'a, REG> =
             crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
-        #[doc = "Field `RX_GAIN_INDEX_OPAQUE` reader - Opaque: meaning not established. Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication."]
-        pub type RxGainIndexOpaqueR = crate::FieldReader;
-        #[doc = "Field `RX_GAIN_INDEX_OPAQUE` writer - Opaque: meaning not established. Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication."]
-        pub type RxGainIndexOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
-        #[doc = "Field `PULSE_OPAQUE` reader - Opaque: meaning not established. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
-        pub type PulseOpaqueR = crate::BitReader;
-        #[doc = "Field `PULSE_OPAQUE` writer - Opaque: meaning not established. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
-        pub type PulseOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CONTROL_HIGH_OPAQUE` reader - Opaque: meaning not established. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image."]
-        pub type ControlHighOpaqueR = crate::FieldReader;
-        #[doc = "Field `CONTROL_HIGH_OPAQUE` writer - Opaque: meaning not established. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image."]
-        pub type ControlHighOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `WIFI_MAX_GAIN_INDEX` reader - Project-assigned name. Highest Wi-Fi receive-gain table index: librftest rx_max_gain returns these bits for its Wi-Fi path. Complete phy_agc_reg_init writes parameter byte 0x121 and phy_set_rx_gain_table the final Wi-Fi RX gain index after table publication."]
+        pub type WifiMaxGainIndexR = crate::FieldReader;
+        #[doc = "Field `WIFI_MAX_GAIN_INDEX` writer - Project-assigned name. Highest Wi-Fi receive-gain table index: librftest rx_max_gain returns these bits for its Wi-Fi path. Complete phy_agc_reg_init writes parameter byte 0x121 and phy_set_rx_gain_table the final Wi-Fi RX gain index after table publication."]
+        pub type WifiMaxGainIndexW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
+        #[doc = "Field `FORCED_GAIN_ENABLE` reader - Project-assigned name. Enables the forced receive-gain index in FORCED_GAIN_INDEX. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain replace it with the low bit of their enable argument; librftest clears it and waits 5 us after writing the index before setting it. Complete phy_enable_agc and the delayed tail of phy_pbus_force_mode pulse it."]
+        pub type ForcedGainEnableR = crate::BitReader;
+        #[doc = "Field `FORCED_GAIN_ENABLE` writer - Project-assigned name. Enables the forced receive-gain index in FORCED_GAIN_INDEX. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain replace it with the low bit of their enable argument; librftest clears it and waits 5 us after writing the index before setting it. Complete phy_enable_agc and the delayed tail of phy_pbus_force_mode pulse it."]
+        pub type ForcedGainEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FORCED_GAIN_INDEX` reader - Project-assigned name. Receive-gain table index applied while FORCED_GAIN_ENABLE is set. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain write their gain argument here before the enable bit; complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23, so a PBus work-mode transition replaces any previously forced index."]
+        pub type ForcedGainIndexR = crate::FieldReader;
+        #[doc = "Field `FORCED_GAIN_INDEX` writer - Project-assigned name. Receive-gain table index applied while FORCED_GAIN_ENABLE is set. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain write their gain argument here before the enable bit; complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23, so a PBus work-mode transition replaces any previously forced index."]
+        pub type ForcedGainIndexW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7 - Opaque: meaning not established. Complete phy_set_rx_comp_new writes 0xed into bits 7:0."]
             #[inline(always)]
             pub fn rx_compensation_low_opaque(&self) -> RxCompensationLowOpaqueR {
                 RxCompensationLowOpaqueR::new((self.bits & 0xff) as u8)
             }
-            #[doc = "Bits 8:14 - Opaque: meaning not established. Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication."]
+            #[doc = "Bits 8:14 - Project-assigned name. Highest Wi-Fi receive-gain table index: librftest rx_max_gain returns these bits for its Wi-Fi path. Complete phy_agc_reg_init writes parameter byte 0x121 and phy_set_rx_gain_table the final Wi-Fi RX gain index after table publication."]
             #[inline(always)]
-            pub fn rx_gain_index_opaque(&self) -> RxGainIndexOpaqueR {
-                RxGainIndexOpaqueR::new(((self.bits >> 8) & 0x7f) as u8)
+            pub fn wifi_max_gain_index(&self) -> WifiMaxGainIndexR {
+                WifiMaxGainIndexR::new(((self.bits >> 8) & 0x7f) as u8)
             }
-            #[doc = "Bit 23 - Opaque: meaning not established. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
+            #[doc = "Bit 23 - Project-assigned name. Enables the forced receive-gain index in FORCED_GAIN_INDEX. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain replace it with the low bit of their enable argument; librftest clears it and waits 5 us after writing the index before setting it. Complete phy_enable_agc and the delayed tail of phy_pbus_force_mode pulse it."]
             #[inline(always)]
-            pub fn pulse_opaque(&self) -> PulseOpaqueR {
-                PulseOpaqueR::new(((self.bits >> 23) & 1) != 0)
+            pub fn forced_gain_enable(&self) -> ForcedGainEnableR {
+                ForcedGainEnableR::new(((self.bits >> 23) & 1) != 0)
             }
-            #[doc = "Bits 24:31 - Opaque: meaning not established. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image."]
+            #[doc = "Bits 24:31 - Project-assigned name. Receive-gain table index applied while FORCED_GAIN_ENABLE is set. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain write their gain argument here before the enable bit; complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23, so a PBus work-mode transition replaces any previously forced index."]
             #[inline(always)]
-            pub fn control_high_opaque(&self) -> ControlHighOpaqueR {
-                ControlHighOpaqueR::new(((self.bits >> 24) & 0xff) as u8)
+            pub fn forced_gain_index(&self) -> ForcedGainIndexR {
+                ForcedGainIndexR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
@@ -6628,20 +6628,20 @@ pub mod phy_agc_oracle {
             ) -> RxCompensationLowOpaqueW<'_, AgcSharedControlSpec> {
                 RxCompensationLowOpaqueW::new(self, 0)
             }
-            #[doc = "Bits 8:14 - Opaque: meaning not established. Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication."]
+            #[doc = "Bits 8:14 - Project-assigned name. Highest Wi-Fi receive-gain table index: librftest rx_max_gain returns these bits for its Wi-Fi path. Complete phy_agc_reg_init writes parameter byte 0x121 and phy_set_rx_gain_table the final Wi-Fi RX gain index after table publication."]
             #[inline(always)]
-            pub fn rx_gain_index_opaque(&mut self) -> RxGainIndexOpaqueW<'_, AgcSharedControlSpec> {
-                RxGainIndexOpaqueW::new(self, 8)
+            pub fn wifi_max_gain_index(&mut self) -> WifiMaxGainIndexW<'_, AgcSharedControlSpec> {
+                WifiMaxGainIndexW::new(self, 8)
             }
-            #[doc = "Bit 23 - Opaque: meaning not established. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
+            #[doc = "Bit 23 - Project-assigned name. Enables the forced receive-gain index in FORCED_GAIN_INDEX. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain replace it with the low bit of their enable argument; librftest clears it and waits 5 us after writing the index before setting it. Complete phy_enable_agc and the delayed tail of phy_pbus_force_mode pulse it."]
             #[inline(always)]
-            pub fn pulse_opaque(&mut self) -> PulseOpaqueW<'_, AgcSharedControlSpec> {
-                PulseOpaqueW::new(self, 23)
+            pub fn forced_gain_enable(&mut self) -> ForcedGainEnableW<'_, AgcSharedControlSpec> {
+                ForcedGainEnableW::new(self, 23)
             }
-            #[doc = "Bits 24:31 - Opaque: meaning not established. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image."]
+            #[doc = "Bits 24:31 - Project-assigned name. Receive-gain table index applied while FORCED_GAIN_ENABLE is set. Complete phy_force_rx_gain and the Wi-Fi path of librftest force_rx_gain write their gain argument here before the enable bit; complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23, so a PBus work-mode transition replaces any previously forced index."]
             #[inline(always)]
-            pub fn control_high_opaque(&mut self) -> ControlHighOpaqueW<'_, AgcSharedControlSpec> {
-                ControlHighOpaqueW::new(self, 24)
+            pub fn forced_gain_index(&mut self) -> ForcedGainIndexW<'_, AgcSharedControlSpec> {
+                ForcedGainIndexW::new(self, 24)
             }
         }
         #[doc = "Project-assigned name. Shared word updated by complete phy_agc_reg_init, phy_enable_agc, phy_pbus_force_mode, phy_force_rx_gain, phy_set_rx_comp_new, and the final limit tail of phy_set_rx_gain_table.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_shared_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_shared_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7057,25 +7057,22 @@ pub mod phy_agc_oracle {
         pub type R = crate::R<AgcGainLimitLowSpec>;
         #[doc = "Register `AGC_GAIN_LIMIT_LOW` writer"]
         pub type W = crate::W<AgcGainLimitLowSpec>;
-        #[doc = "Field `PARAMETER_MINUS_ONE_OPAQUE` reader - Opaque: meaning not established. Bits 8:2 receive the low seven bits of parameter byte 0x121 minus one."]
-        pub type ParameterMinusOneOpaqueR = crate::FieldReader;
-        #[doc = "Field `PARAMETER_MINUS_ONE_OPAQUE` writer - Opaque: meaning not established. Bits 8:2 receive the low seven bits of parameter byte 0x121 minus one."]
-        pub type ParameterMinusOneOpaqueW<'a, REG> =
-            crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
+        #[doc = "Field `INITIAL_GAIN_INDEX` reader - Project-assigned name. AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into RX_GAIN_LIMIT_CONTROL.INITIAL_GAIN_INDEX. Complete phy_agc_reg_init writes the low seven bits of parameter byte 0x121 minus one."]
+        pub type InitialGainIndexR = crate::FieldReader;
+        #[doc = "Field `INITIAL_GAIN_INDEX` writer - Project-assigned name. AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into RX_GAIN_LIMIT_CONTROL.INITIAL_GAIN_INDEX. Complete phy_agc_reg_init writes the low seven bits of parameter byte 0x121 minus one."]
+        pub type InitialGainIndexW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 2:8 - Opaque: meaning not established. Bits 8:2 receive the low seven bits of parameter byte 0x121 minus one."]
+            #[doc = "Bits 2:8 - Project-assigned name. AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into RX_GAIN_LIMIT_CONTROL.INITIAL_GAIN_INDEX. Complete phy_agc_reg_init writes the low seven bits of parameter byte 0x121 minus one."]
             #[inline(always)]
-            pub fn parameter_minus_one_opaque(&self) -> ParameterMinusOneOpaqueR {
-                ParameterMinusOneOpaqueR::new(((self.bits >> 2) & 0x7f) as u8)
+            pub fn initial_gain_index(&self) -> InitialGainIndexR {
+                InitialGainIndexR::new(((self.bits >> 2) & 0x7f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 2:8 - Opaque: meaning not established. Bits 8:2 receive the low seven bits of parameter byte 0x121 minus one."]
+            #[doc = "Bits 2:8 - Project-assigned name. AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into RX_GAIN_LIMIT_CONTROL.INITIAL_GAIN_INDEX. Complete phy_agc_reg_init writes the low seven bits of parameter byte 0x121 minus one."]
             #[inline(always)]
-            pub fn parameter_minus_one_opaque(
-                &mut self,
-            ) -> ParameterMinusOneOpaqueW<'_, AgcGainLimitLowSpec> {
-                ParameterMinusOneOpaqueW::new(self, 2)
+            pub fn initial_gain_index(&mut self) -> InitialGainIndexW<'_, AgcGainLimitLowSpec> {
+                InitialGainIndexW::new(self, 2)
             }
         }
         #[doc = "Project-assigned name. Complete phy_agc_reg_init replaces one seven-bit parameter-derived field.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_gain_limit_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_gain_limit_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7471,24 +7468,22 @@ pub mod phy_agc_oracle {
         pub type R = crate::R<RxGainLimitControlSpec>;
         #[doc = "Register `RX_GAIN_LIMIT_CONTROL` writer"]
         pub type W = crate::W<RxGainLimitControlSpec>;
-        #[doc = "Field `RX_GAIN_LIMIT_OPAQUE` reader - Opaque: meaning not established. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
-        pub type RxGainLimitOpaqueR = crate::FieldReader;
-        #[doc = "Field `RX_GAIN_LIMIT_OPAQUE` writer - Opaque: meaning not established. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
-        pub type RxGainLimitOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
+        #[doc = "Field `INITIAL_GAIN_INDEX` reader - Project-assigned name. AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into AGC_GAIN_LIMIT_LOW.INITIAL_GAIN_INDEX. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
+        pub type InitialGainIndexR = crate::FieldReader;
+        #[doc = "Field `INITIAL_GAIN_INDEX` writer - Project-assigned name. AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into AGC_GAIN_LIMIT_LOW.INITIAL_GAIN_INDEX. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
+        pub type InitialGainIndexW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 18:24 - Opaque: meaning not established. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
+            #[doc = "Bits 18:24 - Project-assigned name. AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into AGC_GAIN_LIMIT_LOW.INITIAL_GAIN_INDEX. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
             #[inline(always)]
-            pub fn rx_gain_limit_opaque(&self) -> RxGainLimitOpaqueR {
-                RxGainLimitOpaqueR::new(((self.bits >> 18) & 0x7f) as u8)
+            pub fn initial_gain_index(&self) -> InitialGainIndexR {
+                InitialGainIndexR::new(((self.bits >> 18) & 0x7f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 18:24 - Opaque: meaning not established. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
+            #[doc = "Bits 18:24 - Project-assigned name. AGC initial receive-gain index: librftest rx_init_gain writes its gain argument here and into AGC_GAIN_LIMIT_LOW.INITIAL_GAIN_INDEX. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
             #[inline(always)]
-            pub fn rx_gain_limit_opaque(
-                &mut self,
-            ) -> RxGainLimitOpaqueW<'_, RxGainLimitControlSpec> {
-                RxGainLimitOpaqueW::new(self, 18)
+            pub fn initial_gain_index(&mut self) -> InitialGainIndexW<'_, RxGainLimitControlSpec> {
+                InitialGainIndexW::new(self, 18)
             }
         }
         #[doc = "Project-assigned name. Shared seven-bit gain limit written by phy_agc_reg_init and the final phy_set_rx_gain_table tail.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_limit_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_limit_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7896,7 +7891,7 @@ pub mod wifi_phy_rate_oracle {
         low_rate_secondary_control: LowRateSecondaryControl,
     }
     impl RegisterBlock {
-        #[doc = "0x708c - Project-assigned name. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."]
+        #[doc = "0x708c - Project-assigned name. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result; it consumes no higher bits. The librftest saturation probes read bits 18:12. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."]
         #[inline(always)]
         pub const fn noise_floor_measurement(&self) -> &NoiseFloorMeasurement {
             &self.noise_floor_measurement
@@ -7912,23 +7907,30 @@ pub mod wifi_phy_rate_oracle {
             &self.low_rate_secondary_control
         }
     }
-    #[doc = "NOISE_FLOOR_MEASUREMENT (r) register accessor: Project-assigned name. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_measurement::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@noise_floor_measurement`] module"]
+    #[doc = "NOISE_FLOOR_MEASUREMENT (r) register accessor: Project-assigned name. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result; it consumes no higher bits. The librftest saturation probes read bits 18:12. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_measurement::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@noise_floor_measurement`] module"]
     #[doc(alias = "NOISE_FLOOR_MEASUREMENT")]
     pub type NoiseFloorMeasurement = crate::Reg<noise_floor_measurement::NoiseFloorMeasurementSpec>;
-    #[doc = "Project-assigned name. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."]
+    #[doc = "Project-assigned name. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result; it consumes no higher bits. The librftest saturation probes read bits 18:12. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform."]
     pub mod noise_floor_measurement {
         #[doc = "Register `NOISE_FLOOR_MEASUREMENT` reader"]
         pub type R = crate::R<NoiseFloorMeasurementSpec>;
         #[doc = "Field `SIGNED_SIXTEENTH_DB_CODE` reader - Project-assigned name. Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
         pub type SignedSixteenthDbCodeR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_12_18_OPAQUE` reader - Opaque: meaning not established. Seven-bit receive status field. Complete librftest get_rfrx_sat counts how many of one hundred reads have the value 49 and returns that count as its RF receive saturation result; phy_rx_sat_test samples it after forcing receive gain. Neither body assigns a unit to the value."]
+        pub type Bits12_18OpaqueR = crate::FieldReader;
         impl R {
             #[doc = "Bits 0:11 - Project-assigned name. Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."]
             #[inline(always)]
             pub fn signed_sixteenth_db_code(&self) -> SignedSixteenthDbCodeR {
                 SignedSixteenthDbCodeR::new((self.bits & 0x0fff) as u16)
             }
+            #[doc = "Bits 12:18 - Opaque: meaning not established. Seven-bit receive status field. Complete librftest get_rfrx_sat counts how many of one hundred reads have the value 49 and returns that count as its RF receive saturation result; phy_rx_sat_test samples it after forcing receive gain. Neither body assigns a unit to the value."]
+            #[inline(always)]
+            pub fn bits_12_18_opaque(&self) -> Bits12_18OpaqueR {
+                Bits12_18OpaqueR::new(((self.bits >> 12) & 0x7f) as u8)
+            }
         }
-        #[doc = "Project-assigned name. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result. Higher bits are not consumed. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_measurement::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Complete phy_read_hw_noisefloor reads this word once, sign-extends the low twelve-bit two's-complement value and divides it arithmetically by four to produce its quarter-dB result; it consumes no higher bits. The librftest saturation probes read bits 18:12. Open rev0 HIL read a stable -92 dBm whole-unit result through the complete ROM plus wDev transform.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_measurement::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct NoiseFloorMeasurementSpec;
         impl crate::RegisterSpec for NoiseFloorMeasurementSpec {
             type Ux = u32;
@@ -37054,7 +37056,7 @@ pub mod phy_fedata_recovered {
         tx_rx_reset_opaque: TxRxResetOpaque,
     }
     impl RegisterBlock {
-        #[doc = "0x30 - Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed."]
+        #[doc = "0x30 - Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write of FILTER_MODE; the other fields remain unnamed."]
         #[inline(always)]
         pub const fn rx_filter_mode_opaque(&self) -> &RxFilterModeOpaque {
             &self.rx_filter_mode_opaque
@@ -37065,22 +37067,34 @@ pub mod phy_fedata_recovered {
             &self.tx_rx_reset_opaque
         }
     }
-    #[doc = "RX_FILTER_MODE_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_filter_mode_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_filter_mode_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_filter_mode_opaque`] module"]
+    #[doc = "RX_FILTER_MODE_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write of FILTER_MODE; the other fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_filter_mode_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_filter_mode_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_filter_mode_opaque`] module"]
     #[doc(alias = "RX_FILTER_MODE_OPAQUE")]
     pub type RxFilterModeOpaque = crate::Reg<rx_filter_mode_opaque::RxFilterModeOpaqueSpec>;
-    #[doc = "Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write of FILTER_MODE; the other fields remain unnamed."]
     pub mod rx_filter_mode_opaque {
         #[doc = "Register `RX_FILTER_MODE_OPAQUE` reader"]
         pub type R = crate::R<RxFilterModeOpaqueSpec>;
         #[doc = "Register `RX_FILTER_MODE_OPAQUE` writer"]
         pub type W = crate::W<RxFilterModeOpaqueSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `FILTER_MODE` reader - Project-assigned name. Receive filter mode: complete phy_rx_filter_mode replaces these bits with the low four bits of its argument and preserves every other bit."]
+        pub type FilterModeR = crate::FieldReader;
+        #[doc = "Field `FILTER_MODE` writer - Project-assigned name. Receive filter mode: complete phy_rx_filter_mode replaces these bits with the low four bits of its argument and preserves every other bit."]
+        pub type FilterModeW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 18:21 - Project-assigned name. Receive filter mode: complete phy_rx_filter_mode replaces these bits with the low four bits of its argument and preserves every other bit."]
+            #[inline(always)]
+            pub fn filter_mode(&self) -> FilterModeR {
+                FilterModeR::new(((self.bits >> 18) & 0x0f) as u8)
             }
         }
-        impl W {}
-        #[doc = "Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_filter_mode_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_filter_mode_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        impl W {
+            #[doc = "Bits 18:21 - Project-assigned name. Receive filter mode: complete phy_rx_filter_mode replaces these bits with the low four bits of its argument and preserves every other bit."]
+            #[inline(always)]
+            pub fn filter_mode(&mut self) -> FilterModeW<'_, RxFilterModeOpaqueSpec> {
+                FilterModeW::new(self, 18)
+            }
+        }
+        #[doc = "Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write of FILTER_MODE; the other fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_filter_mode_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_filter_mode_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxFilterModeOpaqueSpec;
         impl crate::RegisterSpec for RxFilterModeOpaqueSpec {
             type Ux = u32;
@@ -37158,6 +37172,451 @@ pub mod phy_fedata_recovered {
         impl crate::Readable for TxRxResetOpaqueSpec {}
         #[doc = "`write(|w| ..)` method takes [`tx_rx_reset_opaque::W`](W) writer structure"]
         impl crate::Writable for TxRxResetOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "Receive sample-dump words programmed by complete librftest adctrig and set_dump_mode. Dumped words are read back from 0x2f060000 as signed ten-bit components in bits 9:0 and 19:10 (complete print_dump_data and sampledeal); that aperture is not radio MMIO."]
+pub type PhyAdcDumpRecovered = crate::Periph<phy_adc_dump_recovered::RegisterBlock, 0x2010_0000>;
+impl core::fmt::Debug for PhyAdcDumpRecovered {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PhyAdcDumpRecovered").finish()
+    }
+}
+#[doc = "Receive sample-dump words programmed by complete librftest adctrig and set_dump_mode. Dumped words are read back from 0x2f060000 as signed ten-bit components in bits 9:0 and 19:10 (complete print_dump_data and sampledeal); that aperture is not radio MMIO."]
+pub mod phy_adc_dump_recovered {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x08cc],
+        word_08cc_opaque: Word08ccOpaque,
+        _reserved1: [u8; 0x17e4],
+        word_20b4_opaque: Word20b4Opaque,
+        _reserved2: [u8; 0x5000],
+        word_70b8_opaque: Word70b8Opaque,
+        _reserved3: [u8; 0x1f48],
+        dump_control: DumpControl,
+        dump_config: DumpConfig,
+        _reserved5: [u8; 0x0c],
+        dump_lane_select: DumpLaneSelect,
+    }
+    impl RegisterBlock {
+        #[doc = "0x8cc - Opaque: meaning not established. Complete set_dump_mode clears bits 22:19 in one fresh-read RMW before selecting the dump mode."]
+        #[inline(always)]
+        pub const fn word_08cc_opaque(&self) -> &Word08ccOpaque {
+            &self.word_08cc_opaque
+        }
+        #[doc = "0x20b4 - Opaque: meaning not established. One path of the selector jump table of complete adctrig clears bit 0 before programming the dump source; the analysis does not resolve which selector values take that path."]
+        #[inline(always)]
+        pub const fn word_20b4_opaque(&self) -> &Word20b4Opaque {
+            &self.word_20b4_opaque
+        }
+        #[doc = "0x70b8 - Opaque: meaning not established. Complete set_dump_mode replaces bits 2:0 in one fresh-read RMW."]
+        #[inline(always)]
+        pub const fn word_70b8_opaque(&self) -> &Word70b8Opaque {
+            &self.word_70b8_opaque
+        }
+        #[doc = "0x9004 - Project-assigned name. Sample-dump length, start and completion word. Complete adctrig programs LENGTH, clears bits 17 and 21:20, sets ENABLE, pulses TRIGGER for selector zero, polls DONE with a bounded wait and finally clears ENABLE."]
+        #[inline(always)]
+        pub const fn dump_control(&self) -> &DumpControl {
+            &self.dump_control
+        }
+        #[doc = "0x9008 - Project-assigned name. Sample-dump source and rate word. Complete adctrig replaces bits 24:21 at entry, replaces SOURCE_SELECT on one selector path and reads the whole word after the completion wait."]
+        #[inline(always)]
+        pub const fn dump_config(&self) -> &DumpConfig {
+            &self.dump_config
+        }
+        #[doc = "0x9018 - Project-assigned name. Four six-bit dump lane selectors and an enable bit, programmed by complete adctrig: 24, 25, 26 and 27 by default, with other values for selector arguments 11 and 12."]
+        #[inline(always)]
+        pub const fn dump_lane_select(&self) -> &DumpLaneSelect {
+            &self.dump_lane_select
+        }
+    }
+    #[doc = "WORD_08CC_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete set_dump_mode clears bits 22:19 in one fresh-read RMW before selecting the dump mode.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_08cc_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_08cc_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_08cc_opaque`] module"]
+    #[doc(alias = "WORD_08CC_OPAQUE")]
+    pub type Word08ccOpaque = crate::Reg<word_08cc_opaque::Word08ccOpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete set_dump_mode clears bits 22:19 in one fresh-read RMW before selecting the dump mode."]
+    pub mod word_08cc_opaque {
+        #[doc = "Register `WORD_08CC_OPAQUE` reader"]
+        pub type R = crate::R<Word08ccOpaqueSpec>;
+        #[doc = "Register `WORD_08CC_OPAQUE` writer"]
+        pub type W = crate::W<Word08ccOpaqueSpec>;
+        #[doc = "Field `BITS_19_22_OPAQUE` reader - Opaque: meaning not established. Four bits cleared by complete set_dump_mode for every mode."]
+        pub type Bits19_22OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_19_22_OPAQUE` writer - Opaque: meaning not established. Four bits cleared by complete set_dump_mode for every mode."]
+        pub type Bits19_22OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 19:22 - Opaque: meaning not established. Four bits cleared by complete set_dump_mode for every mode."]
+            #[inline(always)]
+            pub fn bits_19_22_opaque(&self) -> Bits19_22OpaqueR {
+                Bits19_22OpaqueR::new(((self.bits >> 19) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 19:22 - Opaque: meaning not established. Four bits cleared by complete set_dump_mode for every mode."]
+            #[inline(always)]
+            pub fn bits_19_22_opaque(&mut self) -> Bits19_22OpaqueW<'_, Word08ccOpaqueSpec> {
+                Bits19_22OpaqueW::new(self, 19)
+            }
+        }
+        #[doc = "Opaque: meaning not established. Complete set_dump_mode clears bits 22:19 in one fresh-read RMW before selecting the dump mode.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_08cc_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_08cc_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word08ccOpaqueSpec;
+        impl crate::RegisterSpec for Word08ccOpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`word_08cc_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word08ccOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_08cc_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word08ccOpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "WORD_20B4_OPAQUE (rw) register accessor: Opaque: meaning not established. One path of the selector jump table of complete adctrig clears bit 0 before programming the dump source; the analysis does not resolve which selector values take that path.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_20b4_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_20b4_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_20b4_opaque`] module"]
+    #[doc(alias = "WORD_20B4_OPAQUE")]
+    pub type Word20b4Opaque = crate::Reg<word_20b4_opaque::Word20b4OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. One path of the selector jump table of complete adctrig clears bit 0 before programming the dump source; the analysis does not resolve which selector values take that path."]
+    pub mod word_20b4_opaque {
+        #[doc = "Register `WORD_20B4_OPAQUE` reader"]
+        pub type R = crate::R<Word20b4OpaqueSpec>;
+        #[doc = "Register `WORD_20B4_OPAQUE` writer"]
+        pub type W = crate::W<Word20b4OpaqueSpec>;
+        #[doc = "Field `BIT_0_OPAQUE` reader - Opaque: meaning not established. Cleared by one selector path of complete adctrig."]
+        pub type Bit0OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_0_OPAQUE` writer - Opaque: meaning not established. Cleared by one selector path of complete adctrig."]
+        pub type Bit0OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Opaque: meaning not established. Cleared by one selector path of complete adctrig."]
+            #[inline(always)]
+            pub fn bit_0_opaque(&self) -> Bit0OpaqueR {
+                Bit0OpaqueR::new((self.bits & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Opaque: meaning not established. Cleared by one selector path of complete adctrig."]
+            #[inline(always)]
+            pub fn bit_0_opaque(&mut self) -> Bit0OpaqueW<'_, Word20b4OpaqueSpec> {
+                Bit0OpaqueW::new(self, 0)
+            }
+        }
+        #[doc = "Opaque: meaning not established. One path of the selector jump table of complete adctrig clears bit 0 before programming the dump source; the analysis does not resolve which selector values take that path.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_20b4_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_20b4_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word20b4OpaqueSpec;
+        impl crate::RegisterSpec for Word20b4OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`word_20b4_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word20b4OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_20b4_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word20b4OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "WORD_70B8_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete set_dump_mode replaces bits 2:0 in one fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_70b8_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_70b8_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_70b8_opaque`] module"]
+    #[doc(alias = "WORD_70B8_OPAQUE")]
+    pub type Word70b8Opaque = crate::Reg<word_70b8_opaque::Word70b8OpaqueSpec>;
+    #[doc = "Opaque: meaning not established. Complete set_dump_mode replaces bits 2:0 in one fresh-read RMW."]
+    pub mod word_70b8_opaque {
+        #[doc = "Register `WORD_70B8_OPAQUE` reader"]
+        pub type R = crate::R<Word70b8OpaqueSpec>;
+        #[doc = "Register `WORD_70B8_OPAQUE` writer"]
+        pub type W = crate::W<Word70b8OpaqueSpec>;
+        #[doc = "Field `BITS_0_2_OPAQUE` reader - Opaque: meaning not established. Complete set_dump_mode writes one for mode zero and zero for every other mode."]
+        pub type Bits0_2OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_0_2_OPAQUE` writer - Opaque: meaning not established. Complete set_dump_mode writes one for mode zero and zero for every other mode."]
+        pub type Bits0_2OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:2 - Opaque: meaning not established. Complete set_dump_mode writes one for mode zero and zero for every other mode."]
+            #[inline(always)]
+            pub fn bits_0_2_opaque(&self) -> Bits0_2OpaqueR {
+                Bits0_2OpaqueR::new((self.bits & 7) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:2 - Opaque: meaning not established. Complete set_dump_mode writes one for mode zero and zero for every other mode."]
+            #[inline(always)]
+            pub fn bits_0_2_opaque(&mut self) -> Bits0_2OpaqueW<'_, Word70b8OpaqueSpec> {
+                Bits0_2OpaqueW::new(self, 0)
+            }
+        }
+        #[doc = "Opaque: meaning not established. Complete set_dump_mode replaces bits 2:0 in one fresh-read RMW.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_70b8_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_70b8_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word70b8OpaqueSpec;
+        impl crate::RegisterSpec for Word70b8OpaqueSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`word_70b8_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word70b8OpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_70b8_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word70b8OpaqueSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DUMP_CONTROL (rw) register accessor: Project-assigned name. Sample-dump length, start and completion word. Complete adctrig programs LENGTH, clears bits 17 and 21:20, sets ENABLE, pulses TRIGGER for selector zero, polls DONE with a bounded wait and finally clears ENABLE.\n\nYou can [`read`](crate::Reg::read) this register and get [`dump_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dump_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@dump_control`] module"]
+    #[doc(alias = "DUMP_CONTROL")]
+    pub type DumpControl = crate::Reg<dump_control::DumpControlSpec>;
+    #[doc = "Project-assigned name. Sample-dump length, start and completion word. Complete adctrig programs LENGTH, clears bits 17 and 21:20, sets ENABLE, pulses TRIGGER for selector zero, polls DONE with a bounded wait and finally clears ENABLE."]
+    pub mod dump_control {
+        #[doc = "Register `DUMP_CONTROL` reader"]
+        pub type R = crate::R<DumpControlSpec>;
+        #[doc = "Register `DUMP_CONTROL` writer"]
+        pub type W = crate::W<DumpControlSpec>;
+        #[doc = "Field `LENGTH` reader - Project-assigned name. Number of dump words: complete adctrig writes its first argument plus one."]
+        pub type LengthR = crate::FieldReader<u32>;
+        #[doc = "Field `LENGTH` writer - Project-assigned name. Number of dump words: complete adctrig writes its first argument plus one."]
+        pub type LengthW<'a, REG> = crate::FieldWriter<'a, REG, 17, u32, crate::Safe>;
+        #[doc = "Field `BIT_17_OPAQUE` reader - Opaque: meaning not established. Cleared by complete adctrig after LENGTH is written."]
+        pub type Bit17OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_17_OPAQUE` writer - Opaque: meaning not established. Cleared by complete adctrig after LENGTH is written."]
+        pub type Bit17OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `DONE` reader - Project-assigned name. Dump completion: complete adctrig polls this bit after starting the dump and stops waiting once it is set or its 1,000,000-count bound of WIFI_MAC_LOCAL_TIME.COUNTER elapses."]
+        pub type DoneR = crate::BitReader;
+        #[doc = "Field `DONE` writer - Project-assigned name. Dump completion: complete adctrig polls this bit after starting the dump and stops waiting once it is set or its 1,000,000-count bound of WIFI_MAC_LOCAL_TIME.COUNTER elapses."]
+        pub type DoneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TRIGGER` reader - Project-assigned name. Software dump start: complete adctrig sets and then clears this bit for selector zero after setting ENABLE; selector twelve starts Bluetooth reception instead."]
+        pub type TriggerR = crate::BitReader;
+        #[doc = "Field `TRIGGER` writer - Project-assigned name. Software dump start: complete adctrig sets and then clears this bit for selector zero after setting ENABLE; selector twelve starts Bluetooth reception instead."]
+        pub type TriggerW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BITS_20_21_OPAQUE` reader - Opaque: meaning not established. Cleared by complete adctrig before the dump starts."]
+        pub type Bits20_21OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_20_21_OPAQUE` writer - Opaque: meaning not established. Cleared by complete adctrig before the dump starts."]
+        pub type Bits20_21OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `ENABLE` reader - Project-assigned name. Dump enable: complete adctrig sets this bit before starting the dump and clears it after the completion wait."]
+        pub type EnableR = crate::BitReader;
+        #[doc = "Field `ENABLE` writer - Project-assigned name. Dump enable: complete adctrig sets this bit before starting the dump and clears it after the completion wait."]
+        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:16 - Project-assigned name. Number of dump words: complete adctrig writes its first argument plus one."]
+            #[inline(always)]
+            pub fn length(&self) -> LengthR {
+                LengthR::new(self.bits & 0x0001_ffff)
+            }
+            #[doc = "Bit 17 - Opaque: meaning not established. Cleared by complete adctrig after LENGTH is written."]
+            #[inline(always)]
+            pub fn bit_17_opaque(&self) -> Bit17OpaqueR {
+                Bit17OpaqueR::new(((self.bits >> 17) & 1) != 0)
+            }
+            #[doc = "Bit 18 - Project-assigned name. Dump completion: complete adctrig polls this bit after starting the dump and stops waiting once it is set or its 1,000,000-count bound of WIFI_MAC_LOCAL_TIME.COUNTER elapses."]
+            #[inline(always)]
+            pub fn done(&self) -> DoneR {
+                DoneR::new(((self.bits >> 18) & 1) != 0)
+            }
+            #[doc = "Bit 19 - Project-assigned name. Software dump start: complete adctrig sets and then clears this bit for selector zero after setting ENABLE; selector twelve starts Bluetooth reception instead."]
+            #[inline(always)]
+            pub fn trigger(&self) -> TriggerR {
+                TriggerR::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bits 20:21 - Opaque: meaning not established. Cleared by complete adctrig before the dump starts."]
+            #[inline(always)]
+            pub fn bits_20_21_opaque(&self) -> Bits20_21OpaqueR {
+                Bits20_21OpaqueR::new(((self.bits >> 20) & 3) as u8)
+            }
+            #[doc = "Bit 31 - Project-assigned name. Dump enable: complete adctrig sets this bit before starting the dump and clears it after the completion wait."]
+            #[inline(always)]
+            pub fn enable(&self) -> EnableR {
+                EnableR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:16 - Project-assigned name. Number of dump words: complete adctrig writes its first argument plus one."]
+            #[inline(always)]
+            pub fn length(&mut self) -> LengthW<'_, DumpControlSpec> {
+                LengthW::new(self, 0)
+            }
+            #[doc = "Bit 17 - Opaque: meaning not established. Cleared by complete adctrig after LENGTH is written."]
+            #[inline(always)]
+            pub fn bit_17_opaque(&mut self) -> Bit17OpaqueW<'_, DumpControlSpec> {
+                Bit17OpaqueW::new(self, 17)
+            }
+            #[doc = "Bit 18 - Project-assigned name. Dump completion: complete adctrig polls this bit after starting the dump and stops waiting once it is set or its 1,000,000-count bound of WIFI_MAC_LOCAL_TIME.COUNTER elapses."]
+            #[inline(always)]
+            pub fn done(&mut self) -> DoneW<'_, DumpControlSpec> {
+                DoneW::new(self, 18)
+            }
+            #[doc = "Bit 19 - Project-assigned name. Software dump start: complete adctrig sets and then clears this bit for selector zero after setting ENABLE; selector twelve starts Bluetooth reception instead."]
+            #[inline(always)]
+            pub fn trigger(&mut self) -> TriggerW<'_, DumpControlSpec> {
+                TriggerW::new(self, 19)
+            }
+            #[doc = "Bits 20:21 - Opaque: meaning not established. Cleared by complete adctrig before the dump starts."]
+            #[inline(always)]
+            pub fn bits_20_21_opaque(&mut self) -> Bits20_21OpaqueW<'_, DumpControlSpec> {
+                Bits20_21OpaqueW::new(self, 20)
+            }
+            #[doc = "Bit 31 - Project-assigned name. Dump enable: complete adctrig sets this bit before starting the dump and clears it after the completion wait."]
+            #[inline(always)]
+            pub fn enable(&mut self) -> EnableW<'_, DumpControlSpec> {
+                EnableW::new(self, 31)
+            }
+        }
+        #[doc = "Project-assigned name. Sample-dump length, start and completion word. Complete adctrig programs LENGTH, clears bits 17 and 21:20, sets ENABLE, pulses TRIGGER for selector zero, polls DONE with a bounded wait and finally clears ENABLE.\n\nYou can [`read`](crate::Reg::read) this register and get [`dump_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dump_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DumpControlSpec;
+        impl crate::RegisterSpec for DumpControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`dump_control::R`](R) reader structure"]
+        impl crate::Readable for DumpControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`dump_control::W`](W) writer structure"]
+        impl crate::Writable for DumpControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DUMP_CONFIG (rw) register accessor: Project-assigned name. Sample-dump source and rate word. Complete adctrig replaces bits 24:21 at entry, replaces SOURCE_SELECT on one selector path and reads the whole word after the completion wait.\n\nYou can [`read`](crate::Reg::read) this register and get [`dump_config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dump_config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@dump_config`] module"]
+    #[doc(alias = "DUMP_CONFIG")]
+    pub type DumpConfig = crate::Reg<dump_config::DumpConfigSpec>;
+    #[doc = "Project-assigned name. Sample-dump source and rate word. Complete adctrig replaces bits 24:21 at entry, replaces SOURCE_SELECT on one selector path and reads the whole word after the completion wait."]
+    pub mod dump_config {
+        #[doc = "Register `DUMP_CONFIG` reader"]
+        pub type R = crate::R<DumpConfigSpec>;
+        #[doc = "Register `DUMP_CONFIG` writer"]
+        pub type W = crate::W<DumpConfigSpec>;
+        #[doc = "Field `BITS_0_15_OPAQUE` reader - Opaque: meaning not established. Read by complete adctrig after the completion wait; it prints the low sixteen bits."]
+        pub type Bits0_15OpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_0_15_OPAQUE` writer - Opaque: meaning not established. Read by complete adctrig after the completion wait; it prints the low sixteen bits."]
+        pub type Bits0_15OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        #[doc = "Field `SOURCE_SELECT` reader - Project-assigned name. Dump source: one selector path of complete adctrig replaces these bits with its selector argument."]
+        pub type SourceSelectR = crate::FieldReader;
+        #[doc = "Field `SOURCE_SELECT` writer - Project-assigned name. Dump source: one selector path of complete adctrig replaces these bits with its selector argument."]
+        pub type SourceSelectW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `BITS_21_24_OPAQUE` reader - Opaque: meaning not established. Complete adctrig writes half its fourth argument, or zero when that argument is below two."]
+        pub type Bits21_24OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_21_24_OPAQUE` writer - Opaque: meaning not established. Complete adctrig writes half its fourth argument, or zero when that argument is below two."]
+        pub type Bits21_24OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:15 - Opaque: meaning not established. Read by complete adctrig after the completion wait; it prints the low sixteen bits."]
+            #[inline(always)]
+            pub fn bits_0_15_opaque(&self) -> Bits0_15OpaqueR {
+                Bits0_15OpaqueR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 17:20 - Project-assigned name. Dump source: one selector path of complete adctrig replaces these bits with its selector argument."]
+            #[inline(always)]
+            pub fn source_select(&self) -> SourceSelectR {
+                SourceSelectR::new(((self.bits >> 17) & 0x0f) as u8)
+            }
+            #[doc = "Bits 21:24 - Opaque: meaning not established. Complete adctrig writes half its fourth argument, or zero when that argument is below two."]
+            #[inline(always)]
+            pub fn bits_21_24_opaque(&self) -> Bits21_24OpaqueR {
+                Bits21_24OpaqueR::new(((self.bits >> 21) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15 - Opaque: meaning not established. Read by complete adctrig after the completion wait; it prints the low sixteen bits."]
+            #[inline(always)]
+            pub fn bits_0_15_opaque(&mut self) -> Bits0_15OpaqueW<'_, DumpConfigSpec> {
+                Bits0_15OpaqueW::new(self, 0)
+            }
+            #[doc = "Bits 17:20 - Project-assigned name. Dump source: one selector path of complete adctrig replaces these bits with its selector argument."]
+            #[inline(always)]
+            pub fn source_select(&mut self) -> SourceSelectW<'_, DumpConfigSpec> {
+                SourceSelectW::new(self, 17)
+            }
+            #[doc = "Bits 21:24 - Opaque: meaning not established. Complete adctrig writes half its fourth argument, or zero when that argument is below two."]
+            #[inline(always)]
+            pub fn bits_21_24_opaque(&mut self) -> Bits21_24OpaqueW<'_, DumpConfigSpec> {
+                Bits21_24OpaqueW::new(self, 21)
+            }
+        }
+        #[doc = "Project-assigned name. Sample-dump source and rate word. Complete adctrig replaces bits 24:21 at entry, replaces SOURCE_SELECT on one selector path and reads the whole word after the completion wait.\n\nYou can [`read`](crate::Reg::read) this register and get [`dump_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dump_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DumpConfigSpec;
+        impl crate::RegisterSpec for DumpConfigSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`dump_config::R`](R) reader structure"]
+        impl crate::Readable for DumpConfigSpec {}
+        #[doc = "`write(|w| ..)` method takes [`dump_config::W`](W) writer structure"]
+        impl crate::Writable for DumpConfigSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DUMP_LANE_SELECT (rw) register accessor: Project-assigned name. Four six-bit dump lane selectors and an enable bit, programmed by complete adctrig: 24, 25, 26 and 27 by default, with other values for selector arguments 11 and 12.\n\nYou can [`read`](crate::Reg::read) this register and get [`dump_lane_select::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dump_lane_select::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@dump_lane_select`] module"]
+    #[doc(alias = "DUMP_LANE_SELECT")]
+    pub type DumpLaneSelect = crate::Reg<dump_lane_select::DumpLaneSelectSpec>;
+    #[doc = "Project-assigned name. Four six-bit dump lane selectors and an enable bit, programmed by complete adctrig: 24, 25, 26 and 27 by default, with other values for selector arguments 11 and 12."]
+    pub mod dump_lane_select {
+        #[doc = "Register `DUMP_LANE_SELECT` reader"]
+        pub type R = crate::R<DumpLaneSelectSpec>;
+        #[doc = "Register `DUMP_LANE_SELECT` writer"]
+        pub type W = crate::W<DumpLaneSelectSpec>;
+        #[doc = "Field `LANE_0` reader - Project-assigned name. First lane selector; complete adctrig writes 24 by default."]
+        pub type Lane0R = crate::FieldReader;
+        #[doc = "Field `LANE_0` writer - Project-assigned name. First lane selector; complete adctrig writes 24 by default."]
+        pub type Lane0W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `LANE_1` reader - Project-assigned name. Second lane selector; complete adctrig writes 25 by default."]
+        pub type Lane1R = crate::FieldReader;
+        #[doc = "Field `LANE_1` writer - Project-assigned name. Second lane selector; complete adctrig writes 25 by default."]
+        pub type Lane1W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `LANE_2` reader - Project-assigned name. Third lane selector; complete adctrig writes 26 by default."]
+        pub type Lane2R = crate::FieldReader;
+        #[doc = "Field `LANE_2` writer - Project-assigned name. Third lane selector; complete adctrig writes 26 by default."]
+        pub type Lane2W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `LANE_3` reader - Project-assigned name. Fourth lane selector; complete adctrig writes 27 by default."]
+        pub type Lane3R = crate::FieldReader;
+        #[doc = "Field `LANE_3` writer - Project-assigned name. Fourth lane selector; complete adctrig writes 27 by default."]
+        pub type Lane3W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `BIT_24_OPAQUE` reader - Opaque: meaning not established. Set by complete adctrig after the lane selectors."]
+        pub type Bit24OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_24_OPAQUE` writer - Opaque: meaning not established. Set by complete adctrig after the lane selectors."]
+        pub type Bit24OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:5 - Project-assigned name. First lane selector; complete adctrig writes 24 by default."]
+            #[inline(always)]
+            pub fn lane_0(&self) -> Lane0R {
+                Lane0R::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:11 - Project-assigned name. Second lane selector; complete adctrig writes 25 by default."]
+            #[inline(always)]
+            pub fn lane_1(&self) -> Lane1R {
+                Lane1R::new(((self.bits >> 6) & 0x3f) as u8)
+            }
+            #[doc = "Bits 12:17 - Project-assigned name. Third lane selector; complete adctrig writes 26 by default."]
+            #[inline(always)]
+            pub fn lane_2(&self) -> Lane2R {
+                Lane2R::new(((self.bits >> 12) & 0x3f) as u8)
+            }
+            #[doc = "Bits 18:23 - Project-assigned name. Fourth lane selector; complete adctrig writes 27 by default."]
+            #[inline(always)]
+            pub fn lane_3(&self) -> Lane3R {
+                Lane3R::new(((self.bits >> 18) & 0x3f) as u8)
+            }
+            #[doc = "Bit 24 - Opaque: meaning not established. Set by complete adctrig after the lane selectors."]
+            #[inline(always)]
+            pub fn bit_24_opaque(&self) -> Bit24OpaqueR {
+                Bit24OpaqueR::new(((self.bits >> 24) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - Project-assigned name. First lane selector; complete adctrig writes 24 by default."]
+            #[inline(always)]
+            pub fn lane_0(&mut self) -> Lane0W<'_, DumpLaneSelectSpec> {
+                Lane0W::new(self, 0)
+            }
+            #[doc = "Bits 6:11 - Project-assigned name. Second lane selector; complete adctrig writes 25 by default."]
+            #[inline(always)]
+            pub fn lane_1(&mut self) -> Lane1W<'_, DumpLaneSelectSpec> {
+                Lane1W::new(self, 6)
+            }
+            #[doc = "Bits 12:17 - Project-assigned name. Third lane selector; complete adctrig writes 26 by default."]
+            #[inline(always)]
+            pub fn lane_2(&mut self) -> Lane2W<'_, DumpLaneSelectSpec> {
+                Lane2W::new(self, 12)
+            }
+            #[doc = "Bits 18:23 - Project-assigned name. Fourth lane selector; complete adctrig writes 27 by default."]
+            #[inline(always)]
+            pub fn lane_3(&mut self) -> Lane3W<'_, DumpLaneSelectSpec> {
+                Lane3W::new(self, 18)
+            }
+            #[doc = "Bit 24 - Opaque: meaning not established. Set by complete adctrig after the lane selectors."]
+            #[inline(always)]
+            pub fn bit_24_opaque(&mut self) -> Bit24OpaqueW<'_, DumpLaneSelectSpec> {
+                Bit24OpaqueW::new(self, 24)
+            }
+        }
+        #[doc = "Project-assigned name. Four six-bit dump lane selectors and an enable bit, programmed by complete adctrig: 24, 25, 26 and 27 by default, with other values for selector arguments 11 and 12.\n\nYou can [`read`](crate::Reg::read) this register and get [`dump_lane_select::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dump_lane_select::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DumpLaneSelectSpec;
+        impl crate::RegisterSpec for DumpLaneSelectSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`dump_lane_select::R`](R) reader structure"]
+        impl crate::Readable for DumpLaneSelectSpec {}
+        #[doc = "`write(|w| ..)` method takes [`dump_lane_select::W`](W) writer structure"]
+        impl crate::Writable for DumpLaneSelectSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -58737,6 +59196,8 @@ pub struct Peripherals {
     pub phy_fecoex_recovered: PhyFecoexRecovered,
     #[doc = "PHY_FEDATA_RECOVERED"]
     pub phy_fedata_recovered: PhyFedataRecovered,
+    #[doc = "PHY_ADC_DUMP_RECOVERED"]
+    pub phy_adc_dump_recovered: PhyAdcDumpRecovered,
     #[doc = "PHY_FECTRL_RECOVERED"]
     pub phy_fectrl_recovered: PhyFectrlRecovered,
     #[doc = "PHY_FEDATA_WIFI_RECOVERED"]
@@ -58903,6 +59364,7 @@ impl Peripherals {
             wifi_mac_rx_dma: unsafe { WifiMacRxDma::steal() },
             phy_fecoex_recovered: unsafe { PhyFecoexRecovered::steal() },
             phy_fedata_recovered: unsafe { PhyFedataRecovered::steal() },
+            phy_adc_dump_recovered: unsafe { PhyAdcDumpRecovered::steal() },
             phy_fectrl_recovered: unsafe { PhyFectrlRecovered::steal() },
             phy_fedata_wifi_recovered: unsafe { PhyFedataWifiRecovered::steal() },
             phy_btagc_recovered: unsafe { PhyBtagcRecovered::steal() },
@@ -59539,6 +60001,7 @@ pub mod peripheral_ownership {
         pub phy_btagc_recovered: crate::PhyBtagcRecovered,
         pub phy_clock_oracle: crate::PhyClockOracle,
         pub phy_fectrl_recovered: crate::PhyFectrlRecovered,
+        pub phy_adc_dump_recovered: crate::PhyAdcDumpRecovered,
         pub phy_fedata_recovered: crate::PhyFedataRecovered,
         pub phy_fedata_wifi_recovered: crate::PhyFedataWifiRecovered,
         pub phy_frequency_channel_oracle: crate::PhyFrequencyChannelOracle,
@@ -59721,6 +60184,7 @@ pub mod peripheral_ownership {
             wifi_mac_rx_dma,
             phy_fecoex_recovered,
             phy_fedata_recovered,
+            phy_adc_dump_recovered,
             phy_fectrl_recovered,
             phy_fedata_wifi_recovered,
             phy_btagc_recovered,
@@ -59830,6 +60294,7 @@ pub mod peripheral_ownership {
                 phy_btagc_recovered,
                 phy_clock_oracle,
                 phy_fectrl_recovered,
+                phy_adc_dump_recovered,
                 phy_fedata_recovered,
                 phy_fedata_wifi_recovered,
                 phy_frequency_channel_oracle,
@@ -62734,7 +63199,7 @@ pub mod register_image_write {
 pub mod partition_image_read {
 
     /// Registers of `RadioPhyPeripherals` that [`radio_phy_register_image`] observes.
-    pub const RADIO_PHY_REGISTER_IMAGE_LEN: usize = 209;
+    pub const RADIO_PHY_REGISTER_IMAGE_LEN: usize = 215;
 
     /// Read register `index` of the `RadioPhyPeripherals` image; `None` past its end.
     pub fn radio_phy_register_image(
@@ -62979,594 +63444,620 @@ pub mod partition_image_read {
                 .read()
                 .bits(),
             60 => registers
+                .phy_adc_dump_recovered
+                .word_08cc_opaque()
+                .read()
+                .bits(),
+            61 => registers
                 .phy_iq_estimator_oracle
                 .estimator_activity_status()
                 .read()
                 .bits(),
-            61 => registers
+            62 => registers
                 .phy_baseband_config_oracle
                 .dac_scale_control()
                 .read()
                 .bits(),
-            62 => registers
+            63 => registers
                 .phy_baseband_config_oracle
                 .word_0c08_opaque()
                 .read()
                 .bits(),
-            63 => registers
+            64 => registers
                 .phy_baseband_config_oracle
                 .iq_correction_aux()
                 .read()
                 .bits(),
-            64 => registers
+            65 => registers
                 .phy_fedata_wifi_recovered
                 .cfo_config_word_0_opaque()
                 .read()
                 .bits(),
-            65 => registers
+            66 => registers
                 .phy_fedata_wifi_recovered
                 .frequency_correction_word_0_opaque()
                 .read()
                 .bits(),
-            66 => registers
+            67 => registers
                 .phy_fedata_wifi_recovered
                 .frequency_correction_word_1_opaque()
                 .read()
                 .bits(),
-            67 => registers
+            68 => registers
                 .phy_baseband_config_oracle
                 .word_0c20_opaque()
                 .read()
                 .bits(),
-            68 => registers.phy_btagc_recovered.cte_dc_shift().read().bits(),
-            69 => registers.phy_btagc_recovered.cte_re_gain().read().bits(),
-            70 => registers.phy_btagc_recovered.rx_gain_force().read().bits(),
-            71 => registers
+            69 => registers
+                .phy_adc_dump_recovered
+                .word_20b4_opaque()
+                .read()
+                .bits(),
+            70 => registers.phy_btagc_recovered.cte_dc_shift().read().bits(),
+            71 => registers.phy_btagc_recovered.cte_re_gain().read().bits(),
+            72 => registers.phy_btagc_recovered.rx_gain_force().read().bits(),
+            73 => registers
                 .phy_btagc_recovered
                 .rx_comp_control()
                 .read()
                 .bits(),
-            72 => registers
+            74 => registers
                 .phy_btagc_recovered
                 .gain_offset_word_0_opaque()
                 .read()
                 .bits(),
-            73 => registers
+            75 => registers
                 .phy_btagc_recovered
                 .word_004c_opaque()
                 .read()
                 .bits(),
-            74 => registers
+            76 => registers
                 .phy_btagc_recovered
                 .agc_gain_max_control()
                 .read()
                 .bits(),
-            75 => registers.phy_btagc_recovered.agc_gain_image().read().bits(),
-            76 => registers
+            77 => registers.phy_btagc_recovered.agc_gain_image().read().bits(),
+            78 => registers
                 .phy_btagc_recovered
                 .gain_offset_word_1_opaque()
                 .read()
                 .bits(),
-            77 => registers
+            79 => registers
                 .phy_btagc_recovered
                 .word_006c_opaque()
                 .read()
                 .bits(),
-            78 => registers
+            80 => registers
                 .phy_btagc_recovered
                 .word_0084_opaque()
                 .read()
                 .bits(),
-            79 => registers
+            81 => registers
                 .phy_btagc_recovered
                 .word_0088_opaque()
                 .read()
                 .bits(),
-            80 => registers
+            82 => registers
                 .phy_btagc_recovered
                 .word_008c_opaque()
                 .read()
                 .bits(),
-            81 => registers.phy_btagc_recovered.cca_config().read().bits(),
-            82 => registers.phy_btagc_recovered.cte_agc_target().read().bits(),
-            83 => registers
+            83 => registers.phy_btagc_recovered.cca_config().read().bits(),
+            84 => registers.phy_btagc_recovered.cte_agc_target().read().bits(),
+            85 => registers
                 .phy_btagc_recovered
                 .word_00a0_opaque()
                 .read()
                 .bits(),
-            84 => registers
+            86 => registers
                 .phy_btagc_recovered
                 .word_00a8_opaque()
                 .read()
                 .bits(),
-            85 => registers
+            87 => registers
                 .phy_btagc_recovered
                 .word_00b0_opaque()
                 .read()
                 .bits(),
-            86 => registers
+            88 => registers
                 .phy_btagc_recovered
                 .word_00b4_opaque()
                 .read()
                 .bits(),
-            87 => registers
+            89 => registers
                 .phy_btagc_recovered
                 .word_00b8_opaque()
                 .read()
                 .bits(),
-            88 => registers
+            90 => registers
                 .phy_btagc_recovered
                 .word_00bc_opaque()
                 .read()
                 .bits(),
-            89 => registers
+            91 => registers
                 .phy_btagc_recovered
                 .word_00c0_opaque()
                 .read()
                 .bits(),
-            90 => registers
+            92 => registers
                 .phy_btagc_recovered
                 .word_00c4_opaque()
                 .read()
                 .bits(),
-            91 => registers
+            93 => registers
                 .phy_btagc_recovered
                 .word_00d0_opaque()
                 .read()
                 .bits(),
-            92 => registers
+            94 => registers
                 .phy_btagc_recovered
                 .word_00d4_opaque()
                 .read()
                 .bits(),
-            93 => registers
+            95 => registers
                 .phy_btagc_recovered
                 .word_00dc_opaque()
                 .read()
                 .bits(),
-            94 => registers
+            96 => registers
                 .phy_btagc_recovered
                 .agc_restart_image_00e0_opaque()
                 .read()
                 .bits(),
-            95 => registers
+            97 => registers
                 .phy_btagc_recovered
                 .agc_restart_image_00e4_opaque()
                 .read()
                 .bits(),
-            96 => registers
+            98 => registers
                 .phy_btagc_recovered
                 .agc_restart_image_00e8_opaque()
                 .read()
                 .bits(),
-            97 => registers
+            99 => registers
                 .phy_btagc_recovered
                 .agc_restart_image_00ec_opaque()
                 .read()
                 .bits(),
-            98 => registers
+            100 => registers
                 .phy_btagc_recovered
                 .agc_restart_image_00f0_opaque()
                 .read()
                 .bits(),
-            99 => registers
+            101 => registers
                 .phy_btagc_recovered
                 .agc_restart_image_00f8_opaque()
                 .read()
                 .bits(),
-            100 => registers
+            102 => registers
                 .phy_btagc_recovered
                 .agc_restart_image_0100_opaque()
                 .read()
                 .bits(),
-            101 => registers
+            103 => registers
                 .phy_frequency_channel_oracle
                 .channel_tx_offset_control()
                 .read()
                 .bits(),
-            102 => registers
+            104 => registers
                 .phy_baseband_config_oracle
                 .i2c_tx_rate_control()
                 .read()
                 .bits(),
-            103 => registers
+            105 => registers
                 .phy_agc_recovered_gaps
                 .rx_sense_word_0_opaque()
                 .read()
                 .bits(),
-            104 => registers
+            106 => registers
                 .phy_agc_recovered_gaps
                 .rx_sense_word_1_opaque()
                 .read()
                 .bits(),
-            105 => registers
+            107 => registers
                 .phy_baseband_config_oracle
                 .noise_floor_control()
                 .read()
                 .bits(),
-            106 => registers
+            108 => registers
                 .phy_agc_recovered_gaps
                 .cca_control_opaque()
                 .read()
                 .bits(),
-            107 => registers.phy_agc_oracle.agc_shared_control().read().bits(),
-            108 => registers.phy_agc_oracle.agc_antenna_control().read().bits(),
-            109 => registers.phy_agc_oracle.dc_memory_control().read().bits(),
-            110 => registers
+            109 => registers.phy_agc_oracle.agc_shared_control().read().bits(),
+            110 => registers.phy_agc_oracle.agc_antenna_control().read().bits(),
+            111 => registers.phy_agc_oracle.dc_memory_control().read().bits(),
+            112 => registers
                 .phy_agc_oracle
                 .rx_11b_path_control_0()
                 .read()
                 .bits(),
-            111 => registers
+            113 => registers
                 .phy_agc_recovered_gaps
                 .noise_floor_status_opaque()
                 .read()
                 .bits(),
-            112 => registers
+            114 => registers
                 .phy_agc_oracle
                 .agc_saturation_control()
                 .read()
                 .bits(),
-            113 => registers
+            115 => registers
                 .phy_agc_recovered_gaps
                 .rssi_status_opaque()
                 .read()
                 .bits(),
-            114 => registers
+            116 => registers
                 .phy_agc_recovered_gaps
                 .channel_filter_control_opaque()
                 .read()
                 .bits(),
-            115 => registers.phy_agc_oracle.agc_gain_limit_low().read().bits(),
-            116 => registers
+            117 => registers.phy_agc_oracle.agc_gain_limit_low().read().bits(),
+            118 => registers
                 .phy_agc_oracle
                 .rx_compensation_high_control()
                 .read()
                 .bits(),
-            117 => registers
+            119 => registers
                 .phy_agc_oracle
                 .csi_dump_force_control()
                 .read()
                 .bits(),
-            118 => registers
-                .phy_agc_recovered_gaps
-                .backup_word_cc_opaque()
-                .read()
-                .bits(),
-            119 => registers
-                .phy_agc_recovered_gaps
-                .rifs_mode_control_opaque()
-                .read()
-                .bits(),
             120 => registers
-                .phy_agc_oracle
-                .rx_11b_window_control()
+                .phy_adc_dump_recovered
+                .word_70b8_opaque()
                 .read()
                 .bits(),
             121 => registers
                 .phy_agc_recovered_gaps
+                .backup_word_cc_opaque()
+                .read()
+                .bits(),
+            122 => registers
+                .phy_agc_recovered_gaps
+                .rifs_mode_control_opaque()
+                .read()
+                .bits(),
+            123 => registers
+                .phy_agc_oracle
+                .rx_11b_window_control()
+                .read()
+                .bits(),
+            124 => registers
+                .phy_agc_recovered_gaps
                 .rx_sense_backup_word_opaque()
                 .read()
                 .bits(),
-            122 => registers.phy_agc_oracle.antenna_control_0().read().bits(),
-            123 => registers.phy_agc_oracle.antenna_control_2().read().bits(),
-            124 => registers
+            125 => registers.phy_agc_oracle.antenna_control_0().read().bits(),
+            126 => registers.phy_agc_oracle.antenna_control_2().read().bits(),
+            127 => registers
                 .phy_agc_oracle
                 .rx_11b_path_control_1()
                 .read()
                 .bits(),
-            125 => registers
+            128 => registers
                 .phy_agc_oracle
                 .agc_init_high_control()
                 .read()
                 .bits(),
-            126 => registers
+            129 => registers
                 .phy_agc_oracle
                 .rx_gain_limit_control()
                 .read()
                 .bits(),
-            127 => registers
+            130 => registers
                 .phy_baseband_config_oracle
                 .word_7400_opaque()
                 .read()
                 .bits(),
-            128 => registers
+            131 => registers
                 .phy_baseband_config_oracle
                 .word_7428_opaque()
                 .read()
                 .bits(),
-            129 => registers
+            132 => registers
                 .phy_agc_recovered_gaps
                 .cfo_config_word_1_opaque()
                 .read()
                 .bits(),
-            130 => registers
+            133 => registers
                 .phy_agc_recovered_gaps
                 .cfo_config_word_2_opaque()
                 .read()
                 .bits(),
-            131 => registers
+            134 => registers
                 .phy_agc_recovered_gaps
                 .cfo_config_word_3_opaque()
                 .read()
                 .bits(),
-            132 => registers
+            135 => registers
                 .phy_baseband_config_oracle
                 .word_743c_opaque()
                 .read()
                 .bits(),
-            133 => registers
+            136 => registers
                 .phy_baseband_config_oracle
                 .tx_output_filter_control()
                 .read()
                 .bits(),
-            134 => registers
+            137 => registers
                 .phy_baseband_config_oracle
                 .tx_power_track_control_0()
                 .read()
                 .bits(),
-            135 => registers
+            138 => registers
                 .phy_baseband_config_oracle
                 .tx_power_track_control_1()
                 .read()
                 .bits(),
-            136 => registers
+            139 => registers
                 .phy_baseband_config_oracle
                 .tx_power_track_control_2()
                 .read()
                 .bits(),
-            137 => registers
+            140 => registers
                 .phy_baseband_config_oracle
                 .tx_power_track_control_3()
                 .read()
                 .bits(),
-            138 => registers
+            141 => registers
                 .phy_baseband_config_oracle
                 .hccfr_control()
                 .read()
                 .bits(),
-            139 => registers
+            142 => registers
                 .phy_baseband_config_oracle
                 .hccfr_value()
                 .read()
                 .bits(),
-            140 => registers
+            143 => registers
                 .phy_baseband_config_oracle
                 .iccfr_force_control()
                 .read()
                 .bits(),
-            141 => registers
+            144 => registers
                 .phy_baseband_config_oracle
                 .iccfr_enable_control()
                 .read()
                 .bits(),
-            142 => registers
+            145 => registers
                 .phy_nrx_recovered_gaps
                 .fft_scale_control_opaque()
                 .read()
                 .bits(),
-            143 => registers
+            146 => registers
                 .phy_baseband_config_oracle
                 .word_7808_opaque()
                 .read()
                 .bits(),
-            144 => registers
+            147 => registers
                 .phy_nrx_recovered_gaps
                 .backup_word_0c_opaque()
                 .read()
                 .bits(),
-            145 => registers
+            148 => registers
                 .phy_nrx_recovered_gaps
                 .one_tone_spur_control_opaque()
                 .read()
                 .bits(),
-            146 => registers
+            149 => registers
                 .phy_frequency_channel_oracle
                 .nrx_frequency_control()
                 .read()
                 .bits(),
-            147 => registers
+            150 => registers
                 .phy_baseband_config_oracle
                 .word_7890_opaque()
                 .read()
                 .bits(),
-            148 => registers
+            151 => registers
                 .phy_nrx_recovered_gaps
                 .frequency_correction_control_opaque()
                 .read()
                 .bits(),
-            149 => registers
+            152 => registers
                 .phy_nrx_recovered_gaps
                 .cfo_high_control_opaque()
                 .read()
                 .bits(),
-            150 => registers
+            153 => registers
                 .phy_agc_oracle
                 .post_init_rx_control()
                 .read()
                 .bits(),
-            151 => registers
+            154 => registers
                 .phy_baseband_config_oracle
                 .word_78dc_opaque()
                 .read()
                 .bits(),
-            152 => registers
+            155 => registers
                 .phy_baseband_config_oracle
                 .word_78e4_opaque()
                 .read()
                 .bits(),
-            153 => registers
+            156 => registers
                 .phy_nrx_recovered_gaps
                 .channel_filter_control_opaque()
                 .read()
                 .bits(),
-            154 => registers
+            157 => registers
                 .phy_baseband_config_oracle
                 .word_790c_opaque()
                 .read()
                 .bits(),
-            155 => registers
+            158 => registers
                 .phy_baseband_config_oracle
                 .word_7980_opaque()
                 .read()
                 .bits(),
-            156 => registers
+            159 => registers
                 .phy_baseband_config_oracle
                 .word_7a28_opaque()
                 .read()
                 .bits(),
-            157 => registers
+            160 => registers
                 .phy_baseband_config_oracle
                 .baseband_tx_pa_control()
                 .read()
                 .bits(),
-            158 => registers
+            161 => registers
                 .phy_baseband_config_oracle
                 .baseband_watchdog_status()
                 .read()
                 .bits(),
-            159 => registers
+            162 => registers
                 .phy_bb_recovered_gaps
                 .spur_coefficient_control_0_opaque()
                 .read()
                 .bits(),
-            160 => registers
+            163 => registers
                 .phy_baseband_config_oracle
                 .baseband_tx_pa_timing()
                 .read()
                 .bits(),
-            161 => registers
+            164 => registers
                 .phy_baseband_config_oracle
                 .baseband_watchdog_control()
                 .read()
                 .bits(),
-            162 => registers
+            165 => registers
                 .phy_baseband_config_oracle
                 .baseband_watchdog_enable()
                 .read()
                 .bits(),
-            163 => registers
+            166 => registers
                 .phy_baseband_config_oracle
                 .noise_floor_enable_0()
                 .read()
                 .bits(),
-            164 => registers
+            167 => registers
                 .phy_baseband_config_oracle
                 .noise_floor_enable_1()
                 .read()
                 .bits(),
-            165 => registers
+            168 => registers
                 .phy_bb_recovered_gaps
                 .cca_counter_control_opaque()
                 .read()
                 .bits(),
-            166 => registers
+            169 => registers
                 .phy_bb_recovered_gaps
                 .cca_counter_status_0_opaque()
                 .read()
                 .bits(),
-            167 => registers
+            170 => registers
                 .phy_bb_recovered_gaps
                 .cca_counter_status_1_opaque()
                 .read()
                 .bits(),
-            168 => registers
+            171 => registers
                 .phy_baseband_config_oracle
                 .word_7ca8_opaque()
                 .read()
                 .bits(),
-            169 => registers
+            172 => registers
                 .phy_baseband_config_oracle
                 .word_7cd0_opaque()
                 .read()
                 .bits(),
-            170 => registers
+            173 => registers
                 .phy_frequency_channel_oracle
                 .channel_cbw_control_0()
                 .read()
                 .bits(),
-            171 => registers
+            174 => registers
                 .phy_frequency_channel_oracle
                 .channel_cbw_control_1()
                 .read()
                 .bits(),
-            172 => registers
+            175 => registers
                 .phy_bb_recovered_gaps
                 .cfo_config_word_4_opaque()
                 .read()
                 .bits(),
-            173 => registers
+            176 => registers
                 .phy_bb_recovered_gaps
                 .cfo_config_word_5_opaque()
                 .read()
                 .bits(),
-            174 => registers.phy_agc_oracle.ftm_control().read().bits(),
-            175 => registers.phy_agc_oracle.rx_11b_mode_control().read().bits(),
-            176 => registers
+            177 => registers.phy_agc_oracle.ftm_control().read().bits(),
+            178 => registers.phy_agc_oracle.rx_11b_mode_control().read().bits(),
+            179 => registers
                 .phy_brx_recovered_gaps
                 .frequency_correction_control_opaque()
                 .read()
                 .bits(),
-            177 => registers
+            180 => registers
                 .phy_agc_oracle
                 .agc_update_8078_control()
                 .read()
                 .bits(),
-            178 => registers.modem_syscon_radio.clk_conf().read().bits(),
-            179 => registers
+            181 => registers
+                .phy_adc_dump_recovered
+                .dump_control()
+                .read()
+                .bits(),
+            182 => registers.phy_adc_dump_recovered.dump_config().read().bits(),
+            183 => registers
+                .phy_adc_dump_recovered
+                .dump_lane_select()
+                .read()
+                .bits(),
+            184 => registers.modem_syscon_radio.clk_conf().read().bits(),
+            185 => registers
                 .modem_syscon_radio
                 .clk_conf_power_st()
                 .read()
                 .bits(),
-            180 => registers.modem_syscon_radio.modem_rst_conf().read().bits(),
-            181 => registers.modem_syscon_radio.clk_conf1().read().bits(),
-            182 => registers.modem_syscon_radio.wifi_bb_cfg().read().bits(),
-            183 => registers
+            186 => registers.modem_syscon_radio.modem_rst_conf().read().bits(),
+            187 => registers.modem_syscon_radio.clk_conf1().read().bits(),
+            188 => registers.modem_syscon_radio.wifi_bb_cfg().read().bits(),
+            189 => registers
                 .modem_lpcon_shared_clock
                 .lp_timer_conf()
                 .read()
                 .bits(),
-            184 => registers
+            190 => registers
                 .modem_lpcon_shared_clock
                 .coex_lp_clk_conf()
                 .read()
                 .bits(),
-            185 => registers
+            191 => registers
                 .modem_lpcon_shared_clock
                 .wifi_lp_clk_conf()
                 .read()
                 .bits(),
-            186 => registers
+            192 => registers
                 .modem_lpcon_shared_clock
                 .modem_32k_clk_conf()
                 .read()
                 .bits(),
-            187 => registers
+            193 => registers
                 .modem_lpcon_shared_clock
                 .clk_conf_power_st()
                 .read()
                 .bits(),
-            188 => registers.modem_lpcon_phy_tick.tick_conf().read().bits(),
-            189 => registers.i2c_ana_mst.i2c0_ctrl().read().bits(),
-            190 => registers.i2c_ana_mst.i2c1_ctrl().read().bits(),
-            191 => registers.i2c_ana_mst.ana_conf0().read().bits(),
-            192 => registers.i2c_ana_mst.ana_conf1().read().bits(),
-            193 => registers.i2c_ana_mst.ana_conf2().read().bits(),
-            194 => registers.i2c_ana_mst.i2c0_ctrl1().read().bits(),
-            195 => registers.i2c_ana_mst.i2c1_ctrl1().read().bits(),
-            196 => registers.i2c_ana_mst.hw_i2c_ctrl().read().bits(),
-            197 => registers.hp_sys_clkrst_radio.modem_ctrl0().read().bits(),
-            198 => registers.hp_sys_clkrst_radio.modem_conf().read().bits(),
-            199 => registers.lp_aon_clkrst.root_clk_conf().read().bits(),
-            200 => registers.lp_aon_clkrst.rtc_sar2_pwdet_cct().read().bits(),
-            201 => registers.pmu_radio.hp_active_icg_modem().read().bits(),
-            202 => registers.pmu_radio.hp_active_hp_ck_power().read().bits(),
-            203 => registers.pmu_radio.imm_hp_ck_power_0().read().bits(),
-            204 => registers.pmu_radio.rf_pwc().read().bits(),
-            205 => registers.pmu_radio.ana_peri_pwr_ctrl().read().bits(),
-            206 => registers.lp_periclkrst.tsens_ctrl().read().bits(),
-            207 => registers.lp_tsens.ctrl().read().bits(),
-            208 => registers.lp_tsens.clk_conf().read().bits(),
+            194 => registers.modem_lpcon_phy_tick.tick_conf().read().bits(),
+            195 => registers.i2c_ana_mst.i2c0_ctrl().read().bits(),
+            196 => registers.i2c_ana_mst.i2c1_ctrl().read().bits(),
+            197 => registers.i2c_ana_mst.ana_conf0().read().bits(),
+            198 => registers.i2c_ana_mst.ana_conf1().read().bits(),
+            199 => registers.i2c_ana_mst.ana_conf2().read().bits(),
+            200 => registers.i2c_ana_mst.i2c0_ctrl1().read().bits(),
+            201 => registers.i2c_ana_mst.i2c1_ctrl1().read().bits(),
+            202 => registers.i2c_ana_mst.hw_i2c_ctrl().read().bits(),
+            203 => registers.hp_sys_clkrst_radio.modem_ctrl0().read().bits(),
+            204 => registers.hp_sys_clkrst_radio.modem_conf().read().bits(),
+            205 => registers.lp_aon_clkrst.root_clk_conf().read().bits(),
+            206 => registers.lp_aon_clkrst.rtc_sar2_pwdet_cct().read().bits(),
+            207 => registers.pmu_radio.hp_active_icg_modem().read().bits(),
+            208 => registers.pmu_radio.hp_active_hp_ck_power().read().bits(),
+            209 => registers.pmu_radio.imm_hp_ck_power_0().read().bits(),
+            210 => registers.pmu_radio.rf_pwc().read().bits(),
+            211 => registers.pmu_radio.ana_peri_pwr_ctrl().read().bits(),
+            212 => registers.lp_periclkrst.tsens_ctrl().read().bits(),
+            213 => registers.lp_tsens.ctrl().read().bits(),
+            214 => registers.lp_tsens.clk_conf().read().bits(),
             _ => return None,
         })
     }
@@ -66209,25 +66700,25 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_agc_enable_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.pulse_opaque().bit((input & 0x00000001) != 0)
+            writer.forced_gain_enable().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_agc_enable_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.pulse_opaque().bit((input & 0x00000001) != 0)
+            writer.forced_gain_enable().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -66285,40 +66776,36 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[CONTROL_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_pbus_work_mode_control(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
             let input = 0x00000032_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .control_high_opaque()
-                    .bits((input & 0x000000ff) as u8)
-            }
+            unsafe { writer.forced_gain_index().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_pbus_work_mode_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.pulse_opaque().bit((input & 0x00000001) != 0)
+            writer.forced_gain_enable().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_pbus_work_mode_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.pulse_opaque().bit((input & 0x00000001) != 0)
+            writer.forced_gain_enable().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -71346,21 +71833,17 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[CONTROL_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_rx_gain_value(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_shared_control().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .control_high_opaque()
-                    .bits((input & 0x000000ff) as u8)
-            }
+            unsafe { writer.forced_gain_index().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[CONTROL_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_rx_gain_value_from_vendor_argument(
         registers: &crate::PhyAgcOracle,
@@ -71370,25 +71853,21 @@ pub mod field_replace_modify {
             let input = input.wrapping_sub(0x00000000) & 0x000000ff;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .control_high_opaque()
-                    .bits((input & 0x000000ff) as u8)
-            }
+            unsafe { writer.forced_gain_index().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_rx_gain_state(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_shared_control().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.pulse_opaque().bit((input & 0x00000001) != 0)
+            writer.forced_gain_enable().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_rx_gain_state_from_vendor_argument(
         registers: &crate::PhyAgcOracle,
@@ -71398,7 +71877,7 @@ pub mod field_replace_modify {
             let input = input.wrapping_sub(0x00000000) & 0x00000001;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.pulse_opaque().bit((input & 0x00000001) != 0)
+            writer.forced_gain_enable().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -71439,37 +71918,29 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL fields `[RX_GAIN_LIMIT_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL fields `[INITIAL_GAIN_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_rx_gain_limit(registers: &crate::PhyAgcOracle, input: u32) {
         registers.rx_gain_limit_control().modify(|_, writer| {
             let input = input.wrapping_sub(0x00000001) & 0x0000007f;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .rx_gain_limit_opaque()
-                    .bits((input & 0x0000007f) as u8)
-            }
+            unsafe { writer.initial_gain_index().bits((input & 0x0000007f) as u8) }
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_GAIN_LIMIT_LOW fields `[PARAMETER_MINUS_ONE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_GAIN_LIMIT_LOW fields `[INITIAL_GAIN_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_gain_limit_low(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_gain_limit_low().modify(|_, writer| {
             let input = input.wrapping_sub(0x00000001) & 0x0000007f;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .parameter_minus_one_opaque()
-                    .bits((input & 0x0000007f) as u8)
-            }
+            unsafe { writer.initial_gain_index().bits((input & 0x0000007f) as u8) }
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[RX_GAIN_INDEX_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[WIFI_MAX_GAIN_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_rx_gain_index(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -71478,7 +71949,7 @@ pub mod field_replace_modify {
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
                 writer
-                    .rx_gain_index_opaque()
+                    .wifi_max_gain_index()
                     .bits((input & 0x0000007f) as u8)
             }
         });
@@ -71524,40 +71995,36 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[CONTROL_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_agc_initial_control_high(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
             let input = 0x00000032_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .control_high_opaque()
-                    .bits((input & 0x000000ff) as u8)
-            }
+            unsafe { writer.forced_gain_index().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn raise_phy_agc_initial_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.pulse_opaque().bit((input & 0x00000001) != 0)
+            writer.forced_gain_enable().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[PULSE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[FORCED_GAIN_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn lower_phy_agc_initial_pulse(registers: &crate::PhyAgcOracle) {
         registers.agc_shared_control().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.pulse_opaque().bit((input & 0x00000001) != 0)
+            writer.forced_gain_enable().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -71731,7 +72198,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[RX_GAIN_INDEX_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields `[WIFI_MAX_GAIN_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx_gain_table_final_index(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_shared_control().modify(|_, writer| {
@@ -71740,24 +72207,20 @@ pub mod field_replace_modify {
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
                 writer
-                    .rx_gain_index_opaque()
+                    .wifi_max_gain_index()
                     .bits((input & 0x0000007f) as u8)
             }
         });
     }
 
-    /// Replace PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL fields `[RX_GAIN_LIMIT_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL fields `[INITIAL_GAIN_INDEX]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_phy_rx_gain_table_final_limit(registers: &crate::PhyAgcOracle, input: u32) {
         registers.rx_gain_limit_control().modify(|_, writer| {
             let input = input.wrapping_sub(0x00000000).min(0x0000004c) & 0x0000007f;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .rx_gain_limit_opaque()
-                    .bits((input & 0x0000007f) as u8)
-            }
+            unsafe { writer.initial_gain_index().bits((input & 0x0000007f) as u8) }
         });
     }
 

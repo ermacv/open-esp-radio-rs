@@ -122,6 +122,10 @@ id = "ROM_REV0_PHY_FORCE_RX_GAIN"
 description = "_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_force_rx_gain at 0x2f8281f4 size 0x2c"
 
 [[sources]]
+id = "ROM_REV0_PHY_RX_FILTER_MODE"
+description = "_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_rx_filter_mode at 0x2f82751a size 0x20, one fresh-read RMW that replaces bits 21:18 of 0x20100430 with the low four bits of its argument and preserves every other bit"
+
+[[sources]]
 id = "ROM_REV0_PHY_RX11BLR_CFG"
 description = "_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_rx11blr_cfg at 0x2f8253b8 size 0x38"
 

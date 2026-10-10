@@ -14,9 +14,16 @@
 //! declared words ([`model`]), Blobray's access records ([`observations`]),
 //! [`classify`], [`rank`] and the report; [`run()`] runs Blobray over the
 //! pinned binaries (`cargo registers inventory`) and writes the report under
-//! `target/register-inventory/<chip>/`; nothing is tracked. Addresses
-//! computed at run time (queue strides, pointer tables) are not constants
-//! and stay outside the inventory.
+//! `target/register-inventory/<chip>/`; nothing is tracked. Blobray runs
+//! with the RISC-V integer calling convention, so a base address kept in a
+//! callee-saved register survives a call. An address computed from one run-time
+//! index (a queue stride) arrives as Blobray's indexed progression: a small
+//! bound (a mask) touches each word it reaches; a wide or absent bound only
+//! declared words inside the bound: the elements of a declared register array
+//! with its stride that has the progression's base as an element, and the run
+//! of declared words along the progression from its base. Such a word is
+//! touched by the array, not provably by this element (`indexed` counts it).
+//! Pointer tables and other run-time addresses stay outside.
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -43,6 +50,9 @@ pub struct DeclaredRegister {
     pub address: u64,
     pub width_bits: u32,
     pub name: String,
+    /// The declaration the register expands from: equal for the elements
+    /// of one array.
+    pub template: String,
     pub fields: Vec<DeclaredField>,
 }
 
@@ -109,11 +119,111 @@ pub enum Access {
     Expression,
 }
 
-/// One statically resolved access to a constant address.
+/// Where one access goes: a constant address, or Blobray's progression
+/// `base + stride * index` of an address computed from one run-time index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    Address(u32),
+    Indexed(Indexed),
+}
+
+/// `base + stride * index` modulo 2^32, the index below `count` when Blobray
+/// proves a bound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Indexed {
+    pub base: u32,
+    pub stride: i32,
+    pub count: Option<u32>,
+}
+
+/// Index values of a bounded progression enumerated word by word. A bound
+/// from a mask (`& 7`) is this small; one from a type (a byte-wide queue
+/// number reaches 256) is not, and enumerating it would list words far beyond
+/// any register the vendor reaches, so a longer bound is matched against the
+/// declared arrays like an unbounded index.
+const MAX_ENUMERATED_INDICES: u32 = 64;
+
+impl Indexed {
+    /// The addresses the progression touches: each index of a bound up to
+    /// [`MAX_ENUMERATED_INDICES`]; otherwise, inside the bound when there is
+    /// one, the elements of each declared array whose stride is the
+    /// progression's and that has its base as an element, and the run of
+    /// declared words the progression meets from its base on until the first
+    /// word no register declares (per-queue registers declared one by one).
+    fn addresses(&self, arrays: &[Vec<u32>], declared: &BTreeMap<u32, DeclaredWord>) -> Vec<u32> {
+        let stride = i64::from(self.stride);
+        let at = |index: i64| (i64::from(self.base) + stride * index) as u32;
+        if let Some(count) = self.count.filter(|count| *count <= MAX_ENUMERATED_INDICES) {
+            return (0..i64::from(count)).map(at).collect();
+        }
+        let inside = |index: i64| {
+            self.count
+                .is_none_or(|count| (0..i64::from(count)).contains(&index))
+        };
+        let mut addresses: Vec<u32> = arrays
+            .iter()
+            .filter(|array| {
+                i64::from(array[1] - array[0]) == stride.abs() && array.contains(&self.base)
+            })
+            .flatten()
+            .copied()
+            .filter(|element| inside((i64::from(*element) - i64::from(self.base)) / stride))
+            .collect();
+        let is_declared = |address: u32| declared.contains_key(&(address - address % WORD_BYTES));
+        // An unbounded index may be negative: the run extends both ways.
+        let directions: &[i64] = if self.count.is_none() { &[1, -1] } else { &[1] };
+        if is_declared(self.base) {
+            addresses.push(self.base);
+            for direction in directions {
+                let mut index = *direction;
+                while inside(index) && index.abs() <= i64::from(MAX_RUN) && is_declared(at(index)) {
+                    addresses.push(at(index));
+                    index += direction;
+                }
+            }
+        }
+        addresses.sort_unstable();
+        addresses.dedup();
+        addresses
+    }
+}
+
+/// Elements of a declared run followed from a progression's base, each way.
+const MAX_RUN: u32 = 256;
+
+/// The register arrays of the model: each array's element addresses in
+/// ascending order, for every template with two or more elements at one
+/// stride.
+pub fn arrays(registers: &[DeclaredRegister]) -> Vec<Vec<u32>> {
+    let mut templates: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
+    for register in registers {
+        if let Ok(address) = u32::try_from(register.address) {
+            templates
+                .entry(&register.template)
+                .or_default()
+                .push(address);
+        }
+    }
+    templates
+        .into_values()
+        .filter_map(|mut elements| {
+            elements.sort_unstable();
+            elements.dedup();
+            let stride = elements.get(1)?.checked_sub(elements[0])?;
+            elements
+                .windows(2)
+                .all(|pair| pair[1] - pair[0] == stride)
+                .then_some(elements)
+        })
+        .collect()
+}
+
+/// One statically resolved access.
 #[derive(Clone, Debug)]
 pub struct Observation {
     pub function: Function,
-    pub address: u32,
+    pub target: Target,
     pub access: Access,
     /// Bits a masked read selects or a read-modify-write replaces, in the
     /// accessed value.
@@ -151,13 +261,18 @@ pub struct WordReport {
     pub declared_bits: u32,
     pub undeclared_bits: u32,
     pub opaque_bits: u32,
+    /// Accesses that reach the word only through an indexed progression.
+    pub indexed: usize,
     pub functions: Vec<String>,
 }
 
-/// Compare the accesses inside `regions` with the declared words.
+/// Compare the accesses inside `regions` with the declared words; an
+/// indexed access touches the words of its progression ([`Indexed`]) among
+/// the declared `arrays`.
 pub fn classify(
     regions: &[Region],
     declared: &BTreeMap<u32, DeclaredWord>,
+    arrays: &[Vec<u32>],
     observations: &[Observation],
     cited: &BTreeSet<Function>,
 ) -> Vec<WordReport> {
@@ -168,27 +283,35 @@ pub fn classify(
         stores: usize,
         bits: u32,
         whole: bool,
+        indexed: usize,
     }
     let mut touched: BTreeMap<u32, Touch> = BTreeMap::new();
     for observation in observations {
-        if region_of(regions, observation.address).is_none() {
-            continue;
-        }
-        let word = observation.address - observation.address % WORD_BYTES;
-        let touch = touched.entry(word).or_default();
-        touch.functions.insert(observation.function.clone());
-        match observation.access {
-            Access::Load => touch.loads += 1,
-            Access::Store => touch.stores += 1,
-            Access::Expression => {}
-        }
-        match observation.bits {
-            Some(u32::MAX) => touch.whole = true,
-            Some(bits) => {
-                let lane = (observation.address % WORD_BYTES) * 8;
-                touch.bits |= bits.checked_shl(lane).unwrap_or(0);
+        let (addresses, indexed) = match observation.target {
+            Target::Address(address) => (vec![address], false),
+            Target::Indexed(progression) => (progression.addresses(arrays, declared), true),
+        };
+        for address in addresses {
+            if region_of(regions, address).is_none() {
+                continue;
             }
-            None => {}
+            let word = address - address % WORD_BYTES;
+            let touch = touched.entry(word).or_default();
+            touch.functions.insert(observation.function.clone());
+            touch.indexed += usize::from(indexed);
+            match observation.access {
+                Access::Load => touch.loads += 1,
+                Access::Store => touch.stores += 1,
+                Access::Expression => {}
+            }
+            match observation.bits {
+                Some(u32::MAX) => touch.whole = true,
+                Some(bits) => {
+                    let lane = (address % WORD_BYTES) * 8;
+                    touch.bits |= bits.checked_shl(lane).unwrap_or(0);
+                }
+                None => {}
+            }
         }
     }
     let empty = DeclaredWord::default();
@@ -221,6 +344,7 @@ pub fn classify(
                 declared_bits: declared_word.fields,
                 undeclared_bits,
                 opaque_bits,
+                indexed: touch.indexed,
                 functions: touch
                     .functions
                     .iter()
@@ -289,6 +413,7 @@ pub fn model(root: &Path, chip: &str) -> Result<(Vec<DeclaredRegister>, Vec<Regi
             address: r.address,
             width_bits: r.width.unwrap_or(WORD_BITS),
             name: r.name,
+            template: r.template,
             fields: r
                 .fields
                 .into_iter()
@@ -314,6 +439,8 @@ struct AccessRecord {
     function: Option<LibraryFunction>,
     fact: Option<Fact>,
     address: Option<u32>,
+    #[serde(default)]
+    indexed: Option<Indexed>,
     mask: Option<Mask>,
 }
 
@@ -334,7 +461,7 @@ struct Mask {
     bits: u32,
 }
 
-/// The resolved accesses of named functions in Blobray's
+/// The resolved and indexed accesses of named functions in Blobray's
 /// `register-accesses` document `accesses`; a function names its input by
 /// position in `inputs`, the artifact ids passed to Blobray in order.
 pub fn observations(accesses: &str, inputs: &[String]) -> Result<Vec<Observation>> {
@@ -344,9 +471,12 @@ pub fn observations(accesses: &str, inputs: &[String]) -> Result<Vec<Observation
         if access.kind != "observation" {
             continue;
         }
-        let (Some(function), Some(fact), Some(address)) =
-            (access.function, access.fact, access.address)
-        else {
+        let target = match (access.address, access.indexed) {
+            (Some(address), _) => Target::Address(address),
+            (None, Some(indexed)) => Target::Indexed(indexed),
+            (None, None) => continue,
+        };
+        let (Some(function), Some(fact)) = (access.function, access.fact) else {
             continue;
         };
         if fact.kind == CALLEE_EFFECT {
@@ -358,7 +488,7 @@ pub fn observations(accesses: &str, inputs: &[String]) -> Result<Vec<Observation
             .ok_or("function of an unknown input")?;
         observations.push(Observation {
             function: (input.clone(), name),
-            address,
+            target,
             access: match fact.access.as_deref() {
                 Some("load") => Access::Load,
                 Some("store") => Access::Store,
@@ -407,7 +537,7 @@ pub fn render(chip: &str, words: &[WordReport]) -> String {
     }
     for word in words.iter().filter(|w| w.status != Status::Declared) {
         text.push_str(&format!(
-            "\n0x{:08x} {:?}{} {}\n  registers: {}\n  loads {} stores {} field bits 0x{:08x}{} declared 0x{:08x} undeclared 0x{:08x} opaque 0x{:08x}\n  functions ({}): {}\n",
+            "\n0x{:08x} {:?}{} {}\n  registers: {}\n  loads {} stores {}{} field bits 0x{:08x}{} declared 0x{:08x} undeclared 0x{:08x} opaque 0x{:08x}\n  functions ({}): {}\n",
             word.address,
             word.status,
             if word.cited { " cited" } else { "" },
@@ -415,6 +545,11 @@ pub fn render(chip: &str, words: &[WordReport]) -> String {
             if word.registers.is_empty() { "-".into() } else { word.registers.join(", ") },
             word.loads,
             word.stores,
+            if word.indexed > 0 {
+                format!(" (indexed {})", word.indexed)
+            } else {
+                String::new()
+            },
             word.field_bits,
             if word.whole_word { " (and whole-word)" } else { "" },
             word.declared_bits,

@@ -18,6 +18,7 @@ fn register(
         address,
         width_bits,
         name: name.into(),
+        template: name.trim_end_matches(|c: char| c.is_ascii_digit()).into(),
         fields,
     }
 }
@@ -29,7 +30,7 @@ fn function(symbol: &str) -> Function {
 fn access(symbol: &str, address: u32, access: Access, bits: Option<u32>) -> Observation {
     Observation {
         function: function(symbol),
-        address,
+        target: Target::Address(address),
         access,
         bits,
     }
@@ -85,7 +86,7 @@ fn classify_reports_each_status_and_ignores_whole_word_masks() {
         access("absent", 0x1010, Access::Load, None),
         access("outside", 0x2000, Access::Store, None),
     ];
-    let words = classify(&region(), &declared, &observations, &BTreeSet::new());
+    let words = classify(&region(), &declared, &[], &observations, &BTreeSet::new());
     let status: BTreeMap<u32, Status> = words.iter().map(|w| (w.address, w.status)).collect();
     assert_eq!(
         status,
@@ -109,6 +110,7 @@ fn byte_lane_masks_shift_into_the_word() {
     let words = classify(
         &region(),
         &declared,
+        &[],
         &[access("lane", 0x1002, Access::Expression, Some(0xff))],
         &BTreeSet::new(),
     );
@@ -126,7 +128,7 @@ fn rank_puts_cited_words_first() {
         access("cited", 0x1004, Access::Load, None),
     ];
     let cited = BTreeSet::from([function("cited")]);
-    let mut words = classify(&region(), &declared, &observations, &cited);
+    let mut words = classify(&region(), &declared, &[], &observations, &cited);
     rank(&mut words);
     assert_eq!(words[0].address, 0x1004);
     assert!(words[0].cited);
@@ -168,4 +170,129 @@ fn observations_of_unknown_inputs_or_unnamed_functions_fail() {
     assert!(observations(&accesses(r#"{"input":0,"name":"f"}"#), &[]).is_err());
     let inputs = ["libx".to_owned()];
     assert!(observations(&accesses(r#"{"input":0,"name":null}"#), &inputs).is_err());
+}
+
+fn indexed(symbol: &str, base: u32, stride: i32, count: Option<u32>) -> Observation {
+    Observation {
+        function: function(symbol),
+        target: Target::Indexed(Indexed {
+            base,
+            stride,
+            count,
+        }),
+        access: Access::Store,
+        bits: None,
+    }
+}
+
+#[test]
+fn an_indexed_access_touches_its_bounded_words_or_its_declared_array() {
+    let registers = [
+        register(0x1000, 32, "TIMER0", vec![field("VALUE_OPAQUE", 0, 8)]),
+        register(0x1010, 32, "TIMER1", vec![field("VALUE_OPAQUE", 0, 8)]),
+        register(0x1020, 32, "TIMER2", vec![field("VALUE_OPAQUE", 0, 8)]),
+        register(0x1004, 32, "PARAMETER0", vec![field("F", 0, 8)]),
+        register(0x1014, 32, "PARAMETER1", vec![field("F", 0, 8)]),
+        register(0x1080, 32, "SINGLE", vec![field("F", 0, 8)]),
+    ];
+    let arrays = arrays(&registers);
+    assert_eq!(
+        arrays,
+        [vec![0x1004, 0x1014], vec![0x1000, 0x1010, 0x1020]],
+        "templates with two or more elements at one stride"
+    );
+    let declared = declared_words(&registers);
+    let words = |observation: Observation| -> Vec<(u32, usize)> {
+        classify(
+            &region(),
+            &declared,
+            &arrays,
+            &[observation],
+            &BTreeSet::new(),
+        )
+        .into_iter()
+        .map(|word| (word.address, word.indexed))
+        .collect()
+    };
+    // Unbounded: the array the base is an element of, at its stride.
+    assert_eq!(
+        words(indexed("timer_set", 0x1010, 0x10, None)),
+        [(0x1000, 1), (0x1010, 1), (0x1020, 1)]
+    );
+    assert_eq!(
+        words(indexed("descending", 0x1014, -0x10, None)),
+        [(0x1004, 1), (0x1014, 1)],
+        "a negative stride matches by its magnitude"
+    );
+    assert_eq!(
+        words(indexed("other_stride", 0x1000, 0x20, None)),
+        [(0x1000, 1), (0x1020, 1)],
+        "no array has that stride: the run of declared words from the base"
+    );
+    assert!(
+        words(indexed("between", 0x1008, 0x10, None)).is_empty(),
+        "the base is no element"
+    );
+    // A small bound: exactly the reached words inside the regions.
+    assert_eq!(
+        words(indexed("masked", 0x10f8, 4, Some(4))),
+        [(0x10f8, 1), (0x10fc, 1)],
+        "indices two and three leave the region"
+    );
+    // A type-wide bound reaches only the array's elements inside it.
+    assert_eq!(
+        words(indexed("queue", 0x1020, -0x10, Some(256))),
+        [(0x1000, 1), (0x1010, 1), (0x1020, 1)],
+        "no word beyond the declared array"
+    );
+    assert_eq!(
+        words(indexed("queue", 0x1010, 0x10, Some(256))),
+        [(0x1010, 1), (0x1020, 1)],
+        "an element below the base needs a negative index"
+    );
+    // Registers declared one by one at a stride: the run from the base ends
+    // at the first undeclared word.
+    let single = [
+        register(0x1040, 32, "QUEUE_Q0", vec![field("F", 0, 8)]),
+        register(0x1050, 32, "QUEUE_Q1_HIGH", vec![field("F", 0, 8)]),
+        register(0x1070, 32, "QUEUE_Q3_HIGH", vec![field("F", 0, 8)]),
+    ];
+    let declared = declared_words(&single);
+    let reached: Vec<u32> = classify(
+        &region(),
+        &declared,
+        &super::arrays(&single),
+        &[indexed("queue", 0x1040, 0x10, Some(256))],
+        &BTreeSet::new(),
+    )
+    .into_iter()
+    .map(|word| word.address)
+    .collect();
+    assert_eq!(reached, [0x1040, 0x1050], "0x1060 is undeclared");
+}
+
+#[test]
+fn blobray_indexed_records_become_indexed_targets() {
+    let inputs = ["libx".to_owned()];
+    let accesses = r#"{"records":[
+        {"kind":"observation","function":{"input":0,"name":"timer_set"},
+            "fact":{"kind":"memory-access","access":"store"},"address":null,
+            "indexed":{"base":4100,"stride":-16,"count":null},"mask":null},
+        {"kind":"observation","function":{"input":0,"name":"pointer"},
+            "fact":{"kind":"memory-access","access":"load"},"address":null,"mask":null}
+    ]}"#;
+    let observations = observations(accesses, &inputs).unwrap();
+    assert_eq!(
+        observations.len(),
+        1,
+        "an unindexed unresolved address is skipped"
+    );
+    assert_eq!(
+        observations[0].target,
+        Target::Indexed(Indexed {
+            base: 4100,
+            stride: -16,
+            count: None,
+        })
+    );
 }

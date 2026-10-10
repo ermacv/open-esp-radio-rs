@@ -118,7 +118,9 @@ The [Documentation workflow](.github/workflows/docs.yml)
 checks the guides and API documentation, and the [Nightly workflow](.github/workflows/nightly.yml)
 runs the nightly tier: every HIL image class and every ESP32-S31 example
 built with their audits, the RV32 decoder against the toolchain's
-`llvm-objdump`, Blobray and each chip's vendor probes and host stands.
+`llvm-objdump`, Blobray and each chip's vendor probes, vendor scenarios
+(their ESP-IDF firmware inputs built from the tracked recipes) and host
+stands.
 
 For API changes, run `cargo xtask doc`: one `cargo doc --no-deps` per
 documentation target with `RUSTDOCFLAGS=-D warnings`, as each package's

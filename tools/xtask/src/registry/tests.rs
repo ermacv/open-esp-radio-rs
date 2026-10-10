@@ -309,7 +309,13 @@ fn a_job_runs_its_checks_up_to_its_tier() {
     let nightly: Vec<&str> = ids(of_job(Tier::Nightly, "verification"));
     assert_eq!(
         nightly,
-        ["provenance", "vendor-probes", "host-stands", "verification"]
+        [
+            "provenance",
+            "vendor-probes",
+            "vendor-scenarios",
+            "host-stands",
+            "verification"
+        ]
     );
     assert!(of_job(Tier::Full, "no-such-job").is_empty());
     assert_eq!("nightly".parse::<Tier>(), Ok(Tier::Nightly));

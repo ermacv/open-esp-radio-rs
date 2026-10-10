@@ -38,7 +38,10 @@ each scenario's duration.
 With `--index <directory>` it then writes every scenario's shard of the
 native evidence index qualification reads: every claimed vendor root with its
 production entry, compared cases and retained executions, the input
-identities and the digests of the sources the verdicts depend on. Every
+identities and the digests of the sources the verdicts depend on. A shard
+rests on its own scenario's claims, so `all` writes the shard of every
+scenario that passed even when another did not; it then skips the decision
+checks that judge every scenario together, says so, and still fails. Every
 scenario subcommand takes the same `--index` and writes only its own shard.
 The index is derived data: `cargo verification evidence --chip esp32s31`
 computes it into `target/verification/esp32s31/evidence`, and after any

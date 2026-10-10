@@ -894,33 +894,28 @@ fn all(common: Common, inputs: AllInputs, report: &dyn RunReport) -> Result<Exit
             })
             .collect()
     });
-    let mut elapsed = vec![];
-    let mut passed = vec![];
+    let (elapsed, passed, failed) = split(outcomes);
+    let write = |directory: &Path, name: &str, claims: &session::Claims| -> Result<()> {
+        let production = if name == "bluetooth" {
+            &bluetooth_production
+        } else {
+            &common.production
+        };
+        oer_vendor_scenario_engine::shard::record(
+            directory,
+            &evidence::shard(name, production, claims, &common.verdict)?,
+        )
+    };
+    if let Some(failed) = conclude_failed(failed, common.index.as_deref(), &passed, write) {
+        return failed;
+    }
     let mut closures = vec![];
     let mut lines = observation::Lines::default();
     let mut unprojected = std::collections::BTreeSet::new();
-    let mut failed = None;
-    for (name, seconds, outcome) in outcomes {
-        elapsed.push((name, seconds));
-        match outcome {
-            Ok((code, claims)) if code == ExitCode::SUCCESS => {
-                closures.extend(claims.closures.iter().cloned());
-                lines.extend(&claims.lines);
-                unprojected.extend(claims.unprojected.iter().cloned());
-                passed.push((name, claims));
-            }
-            Ok((code, _)) => {
-                println!("scenario {name} did not pass");
-                failed.get_or_insert(Ok(code));
-            }
-            Err(error) => {
-                println!("scenario {name} failed: {error}");
-                failed.get_or_insert(Err(error));
-            }
-        }
-    }
-    if let Some(failed) = failed {
-        return failed;
+    for (_, claims) in &passed {
+        closures.extend(claims.closures.iter().cloned());
+        lines.extend(&claims.lines);
+        unprojected.extend(claims.unprojected.iter().cloned());
     }
     // A line is unobserved when no scenario observes it; every decision must
     // still review one.
@@ -997,21 +992,72 @@ fn all(common: Common, inputs: AllInputs, report: &dyn RunReport) -> Result<Exit
             claims.join(", ")
         );
     }
-    if let Some(directory) = &common.index {
-        for (name, claims) in &passed {
-            let production = if *name == "bluetooth" {
-                &bluetooth_production
-            } else {
-                &common.production
-            };
-            oer_vendor_scenario_engine::shard::record(
-                directory,
-                &evidence::shard(name, production, claims, &common.verdict)?,
-            )?;
-        }
-    }
+    record_passed(common.index.as_deref(), &passed, write)?;
     println!("all PHY comparison scenarios passed");
     Ok(ExitCode::SUCCESS)
+}
+
+/// Each scenario's duration, the scenarios that passed with their claims, and
+/// the first failure.
+type Split<'a, T> = (
+    Vec<(&'a str, f64)>,
+    Vec<(&'a str, T)>,
+    Option<Result<ExitCode>>,
+);
+
+/// Each scenario's name, duration and outcome, in the declared order.
+type Outcomes<'a, T> = Vec<(&'a str, f64, Result<(ExitCode, T)>)>;
+
+/// `all`'s scenario outcomes, split ([`Split`]).
+fn split<T>(outcomes: Outcomes<'_, T>) -> Split<'_, T> {
+    let (mut elapsed, mut passed, mut failed) = (vec![], vec![], None);
+    for (name, seconds, outcome) in outcomes {
+        elapsed.push((name, seconds));
+        match outcome {
+            Ok((code, claims)) if code == ExitCode::SUCCESS => passed.push((name, claims)),
+            Ok((code, _)) => {
+                println!("scenario {name} did not pass");
+                failed.get_or_insert(Ok(code));
+            }
+            Err(error) => {
+                println!("scenario {name} failed: {error}");
+                failed.get_or_insert(Err(error));
+            }
+        }
+    }
+    (elapsed, passed, failed)
+}
+
+/// Write the shard of every passed scenario into `index`, when one is given.
+fn record_passed<T>(
+    index: Option<&Path>,
+    passed: &[(&str, T)],
+    mut write: impl FnMut(&Path, &str, &T) -> Result<()>,
+) -> Result<()> {
+    let Some(index) = index else {
+        return Ok(());
+    };
+    for (name, claims) in passed {
+        write(index, name, claims)?;
+    }
+    Ok(())
+}
+
+/// What `all` ends with when a scenario failed: each passed scenario's shard
+/// rests on its own claims alone, so it is still written and one DIFF
+/// withholds only its own scenario's evidence; then the failure. The decision
+/// checks that judge every scenario's closures, lines and state together
+/// cannot run on a partial set and are skipped. `None` when every scenario
+/// passed.
+fn conclude_failed<T>(
+    failed: Option<Result<ExitCode>>,
+    index: Option<&Path>,
+    passed: &[(&str, T)],
+    write: impl FnMut(&Path, &str, &T) -> Result<()>,
+) -> Option<Result<ExitCode>> {
+    let failed = failed?;
+    println!("cross-scenario decision checks skipped: a scenario did not pass");
+    Some(record_passed(index, passed, write).and(failed))
 }
 
 impl Scenario {
@@ -1153,4 +1199,52 @@ pub fn run(mut scenario: Scenario, report: &dyn RunReport, verdict: Vec<PathBuf>
         eprintln!("error: {error}");
         ExitCode::FAILURE
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn outcomes() -> Outcomes<'static, u8> {
+        vec![
+            ("gain", 1.0, Ok((ExitCode::SUCCESS, 1))),
+            ("channel", 2.0, Err("scenario channel panicked".into())),
+            ("wifi-mac", 3.0, Ok((ExitCode::FAILURE, 3))),
+            ("bluetooth", 4.0, Ok((ExitCode::SUCCESS, 4))),
+        ]
+    }
+
+    #[test]
+    fn a_failed_scenario_still_records_every_passed_scenario_and_fails() {
+        let (elapsed, passed, failed) = split(outcomes());
+        assert_eq!(elapsed.len(), 4);
+        assert_eq!(passed, [("gain", 1), ("bluetooth", 4)]);
+        let mut written = vec![];
+        let result = conclude_failed(failed, Some(Path::new("index")), &passed, |_, name, _| {
+            written.push(name.to_owned());
+            Ok(())
+        });
+        assert_eq!(written, ["gain", "bluetooth"]);
+        // The first failure is the result.
+        let error = result.unwrap().unwrap_err().to_string();
+        assert!(error.contains("channel"), "{error}");
+    }
+
+    #[test]
+    fn without_an_index_or_a_failure_nothing_is_written_early() {
+        let (_, passed, failed) = split(outcomes());
+        let mut written = 0;
+        let result = conclude_failed(failed, None, &passed, |_, _, _| {
+            written += 1;
+            Ok(())
+        });
+        assert!(result.is_some() && written == 0);
+        let (_, passed, failed) = split(vec![("gain", 1.0, Ok((ExitCode::SUCCESS, 1u8)))]);
+        let result = conclude_failed(failed, Some(Path::new("index")), &passed, |_, _, _| {
+            written += 1;
+            Ok(())
+        });
+        // Every scenario passed: the decision checks run first, recording after.
+        assert!(result.is_none() && written == 0);
+    }
 }

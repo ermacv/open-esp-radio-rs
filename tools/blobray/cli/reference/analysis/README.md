@@ -276,8 +276,11 @@ function bounds nothing. Every selected entry must carry an `R_RISCV_32` relocat
 explicit addend (`SHT_RELA`; a `SHT_REL` table keeps its addends in the
 words and is not proven) to a label inside the function; then the function
 is analyzed again with those targets as jumps; passes repeat while each proves
-more tables, so a dispatch reached only through another table's case (a nested
-`switch`) is followed too. The symbols and the RELA
+again every table it followed and more, so a dispatch reached only through
+another table's case (a nested `switch`) is followed too. A pass that no longer
+proves a table it followed, such as one where a case jumps back into the
+dispatch block, proves none: the function is then reported without following
+any table. The symbols and the RELA
 relocations of read-only data this needs, the recognizer's indexes and the
 found entries are held in admitted working memory, and every record the
 recognizer visits is charged to the work budget; a return

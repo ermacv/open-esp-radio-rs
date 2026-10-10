@@ -220,9 +220,14 @@ fn research_function<'m>(
         // A first pass locates jump-table dispatches; when their entries are
         // proven, the function is analyzed again following them, which can
         // reach a dispatch only a table's case leads to (a nested `switch`).
-        // Passes repeat while each proves more tables than the one before
-        // follows, so they end within the function's dispatch count, every
-        // pass charged to the same control.
+        // A pass is kept only while its own records prove again every table
+        // it followed, unchanged, and more: then the records it emits are
+        // exactly those the reported tables' jumps produced. A pass that
+        // proves the same tables ends the search; one that loses or changes
+        // a table (a case label jumping back into its dispatch block) means
+        // no table is proven, and the function is reported from a pass that
+        // follows none, its dispatches indirect gaps. Passes end within the
+        // function's dispatch count, every pass charged to the same control.
         let mut followed = crate::jump_tables::FoundTables::none(memory);
         let mut records = RecordBuffer::new(memory);
         let mut summary = research(&[], control, &mut Records(&mut records))?;
@@ -235,11 +240,20 @@ fn research_function<'m>(
                 memory,
                 control,
             )?;
-            if found.tables.len() <= followed.tables.len() {
+            let keeps = followed
+                .tables
+                .iter()
+                .all(|table| found.tables.contains(table));
+            if keeps && found.tables.len() == followed.tables.len() {
                 for record in records.iter() {
                     sink.record(record, control)?;
                 }
                 return Ok((summary, followed));
+            }
+            if !keeps {
+                drop(records);
+                let summary = research(&[], control, sink)?;
+                return Ok((summary, crate::jump_tables::FoundTables::none(memory)));
             }
             let jumps: Vec<_> = found
                 .tables

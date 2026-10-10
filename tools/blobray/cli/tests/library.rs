@@ -814,6 +814,30 @@ fn nested_switch_object() -> Vec<u8> {
     )
 }
 
+/// `switch_object`'s dispatch whose case 0 sets `a0 = 100` and jumps back to
+/// the dispatch block past its bounds check: the index then reaches entry 100.
+fn reentrant_switch_object() -> Vec<u8> {
+    let words: [u32; 16] = [
+        0x0020_0793, // 0x00 addi a5, zero, 2
+        0x02a7_ea63, // 0x04 bltu a5, a0, 0x38
+        0x0000_07b7, // 0x08 lui a5, %hi(.Ltable0)
+        0x0007_8793, // 0x0c addi a5, a5, %lo(.Ltable0)
+        0x0025_1713, // 0x10 slli a4, a0, 2
+        0x00f7_0733, // 0x14 add a4, a4, a5
+        0x0007_2783, // 0x18 lw a5, 0(a4)
+        0x0007_8067, // 0x1c jalr zero, 0(a5)
+        0x0640_0513, // 0x20 case 0: addi a0, zero, 100
+        0xfe5f_f06f, // 0x24 jal zero, 0x08
+        0x00b0_0513,
+        0x0000_8067, // 0x28 case 1
+        0x00c0_0513,
+        0x0000_8067, // 0x30 case 2
+        0x0000_0513,
+        0x0000_8067, // 0x38 default
+    ];
+    switches_object(&words, &[(0x08, &[0x20, 0x28, 0x30], 3)])
+}
+
 /// A relocatable object defining `dispatch` as `words` in `.text`, with one
 /// `.Ltable{n}` in `.rodata` per `(lui offset, case labels, relocated)`: the
 /// `lui/addi` pair at that offset addresses it and its first `relocated`
@@ -965,6 +989,55 @@ fn a_bounded_relocated_switch_is_followed_and_any_other_stays_a_gap() {
         assert!(tables.is_empty(), "{name}");
         assert_eq!(jumps(&gap), [(EdgeKind::Indirect, None)], "{name}");
     }
+}
+
+#[test]
+fn a_table_a_later_pass_no_longer_proves_is_never_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reentrant.a");
+    std::fs::write(
+        &path,
+        support::archive(&[(b"switch.o", &reentrant_switch_object())], false),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args([
+            "--format",
+            "json",
+            "function-records",
+            "--function",
+            "dispatch",
+            "--input",
+        ])
+        .arg(format!("code={}", path.display()))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let document: blobray_cli::wire::FunctionRecordsDocument =
+        serde_json::from_slice(&output.stdout).unwrap();
+    let blobray_cli::wire::NamedFunction::Analyzed {
+        coverage,
+        records,
+        jump_tables,
+        ..
+    } = document.functions.into_iter().next().unwrap()
+    else {
+        panic!()
+    };
+    assert!(
+        jump_tables.is_empty(),
+        "following the table adds a second way into its dispatch block"
+    );
+    assert!(!coverage.control_flow, "the dispatch stays a gap");
+    assert!(records.iter().any(|record| matches!(
+        record,
+        FunctionRecord::Edge {
+            from: 0x1c,
+            target: None,
+            relation: EdgeKind::Indirect,
+            ..
+        }
+    )));
 }
 
 #[test]

@@ -121,9 +121,6 @@ pub(crate) enum Bit<'a> {
     Unknown,
 }
 
-/// The deepest expression chain followed; deeper values are unknown.
-const DEPTH: u8 = 24;
-
 fn constant_bits<'a>(value: u32) -> [Bit<'a>; 32] {
     std::array::from_fn(|i| {
         if value >> i & 1 == 1 {
@@ -205,108 +202,147 @@ fn shift_left(bits: [Bit<'_>; 32], by: u32) -> [Bit<'_>; 32] {
 /// caller's work budget, deadline and memory.
 pub struct StoredBitsEvaluator<'f, 'a, 'm> {
     facts: &'f Facts<'a, 'm>,
-    /// Each expression's bits with the depth budget they were computed
-    /// under, by expression id.
-    memo: AdmittedVec<'m, Option<(u8, [Bit<'a>; 32])>>,
+    memory: &'m WorkingMemory,
+    /// Each evaluated expression's bits, by expression id.
+    memo: AdmittedVec<'m, Option<[Bit<'a>; 32]>>,
 }
 
 impl<'f, 'a, 'm> StoredBitsEvaluator<'f, 'a, 'm> {
     pub fn new(facts: &'f Facts<'a, 'm>, memory: &'m WorkingMemory) -> Self {
         Self {
             facts,
+            memory,
             memo: AdmittedVec::new(memory),
         }
     }
 
-    fn bits(
-        &mut self,
-        value: &'a AbstractValue,
-        depth: u8,
-        c: &mut dyn RunControl,
-    ) -> Result<[Bit<'a>; 32]> {
-        if depth == 0 {
+    /// The bits of `value`. A leaf is read directly; an expression is
+    /// evaluated with every node it reaches computed exactly once per
+    /// function, in post order on an admitted stack: an operand's id is
+    /// always lower than its node's, so the walk needs no depth bound.
+    fn bits(&mut self, value: &'a AbstractValue, c: &mut dyn RunControl) -> Result<[Bit<'a>; 32]> {
+        let AbstractValue::Expression { id } = value else {
+            return Ok(self.operand(value, u32::MAX));
+        };
+        if self.facts.value_expression(value).is_none() {
             return Ok([Bit::Unknown; 32]);
         }
-        let (id, expression) = match value {
-            AbstractValue::Constant { value } | AbstractValue::ImageAddress { address: value } => {
-                return Ok(constant_bits(*value));
+        let mut stack = AdmittedVec::new(self.memory);
+        stack.push(*id, c.position())?;
+        while let Some(&top) = stack.last() {
+            if self.memoized(top).is_some() {
+                stack.pop();
+                continue;
             }
-            AbstractValue::Expression { id } => match self.facts.value_expression(value) {
-                Some(expression) => (*id, expression),
-                None => return Ok([Bit::Unknown; 32]),
-            },
-            _ => return Ok([Bit::Unknown; 32]),
-        };
-        // A result computed with at least this much depth is reused: it is
-        // never less exact than a fresh, shallower evaluation.
-        if let Some(Some((computed, bits))) = self.memo.get(id as usize)
-            && *computed >= depth
-        {
-            return Ok(*bits);
-        }
-        c.checkpoint(1)?;
-        let result = match expression {
-            Expression::EntryRegister { register } => {
-                std::array::from_fn(|i| Bit::Entry(*register, i as u8))
-            }
-            Expression::Load {
-                address,
-                width,
-                signed,
-            } => {
-                let loaded = u32::from(*width) * 8;
-                std::array::from_fn(|i| {
-                    let i = i as u32;
-                    if i < loaded {
-                        Bit::Load(address, *width, i as u8)
-                    } else if *signed && loaded != 0 {
-                        Bit::Load(address, *width, (loaded - 1) as u8)
-                    } else {
-                        Bit::Zero
+            let Some(expression) = self
+                .facts
+                .value_expression(&AbstractValue::Expression { id: top })
+            else {
+                stack.pop();
+                continue;
+            };
+            let mut pending = false;
+            if let Expression::Integer { left, right, .. } = expression {
+                for operand in [left, right] {
+                    if let AbstractValue::Expression { id: operand } = operand
+                        && *operand < top
+                        && self.memoized(*operand).is_none()
+                        && self
+                            .facts
+                            .value_expression(&AbstractValue::Expression { id: *operand })
+                            .is_some()
+                    {
+                        stack.push(*operand, c.position())?;
+                        pending = true;
                     }
-                })
-            }
-            Expression::Integer { op, left, right } => {
-                let l = self.bits(left, depth - 1, c)?;
-                let r = self.bits(right, depth - 1, c)?;
-                let by = constant(right).map(|k| k & 31);
-                match op {
-                    IntegerOp::And => std::array::from_fn(|i| and(l[i], r[i])),
-                    IntegerOp::AndNot => std::array::from_fn(|i| and(l[i], not(r[i]))),
-                    IntegerOp::Or => std::array::from_fn(|i| or(l[i], r[i])),
-                    IntegerOp::Xor => std::array::from_fn(|i| xor(l[i], r[i])),
-                    IntegerOp::Shl => match by {
-                        Some(by) => shift_left(l, by),
-                        None => [Bit::Unknown; 32],
-                    },
-                    IntegerOp::Shr | IntegerOp::Sar => match by {
-                        Some(by) => std::array::from_fn(|i| {
-                            let from = i as u32 + by;
-                            if from < 32 {
-                                l[from as usize]
-                            } else if *op == IntegerOp::Sar {
-                                l[31]
-                            } else {
-                                Bit::Zero
-                            }
-                        }),
-                        None => [Bit::Unknown; 32],
-                    },
-                    IntegerOp::Add => add(l, r),
-                    IntegerOp::Sub if r.iter().all(|bit| *bit == Bit::Zero) => l,
-                    IntegerOp::ShiftAdd1 => add(shift_left(l, 1), r),
-                    IntegerOp::ShiftAdd2 => add(shift_left(l, 2), r),
-                    IntegerOp::ShiftAdd3 => add(shift_left(l, 3), r),
-                    _ => [Bit::Unknown; 32],
                 }
             }
-            Expression::CallResult { .. } => [Bit::Unknown; 32],
-        };
-        while self.memo.len() <= id as usize {
-            self.memo.push(None, c.position())?;
+            if pending {
+                continue;
+            }
+            c.checkpoint(1)?;
+            let result = match expression {
+                Expression::EntryRegister { register } => {
+                    std::array::from_fn(|i| Bit::Entry(*register, i as u8))
+                }
+                Expression::Load {
+                    address,
+                    width,
+                    signed,
+                } => {
+                    let loaded = u32::from(*width) * 8;
+                    std::array::from_fn(|i| {
+                        let i = i as u32;
+                        if i < loaded {
+                            Bit::Load(address, *width, i as u8)
+                        } else if *signed && loaded != 0 {
+                            Bit::Load(address, *width, (loaded - 1) as u8)
+                        } else {
+                            Bit::Zero
+                        }
+                    })
+                }
+                Expression::Integer { op, left, right } => {
+                    let l = self.operand(left, top);
+                    let r = self.operand(right, top);
+                    let by = constant(right).map(|k| k & 31);
+                    match op {
+                        IntegerOp::And => std::array::from_fn(|i| and(l[i], r[i])),
+                        IntegerOp::AndNot => std::array::from_fn(|i| and(l[i], not(r[i]))),
+                        IntegerOp::Or => std::array::from_fn(|i| or(l[i], r[i])),
+                        IntegerOp::Xor => std::array::from_fn(|i| xor(l[i], r[i])),
+                        IntegerOp::Shl => match by {
+                            Some(by) => shift_left(l, by),
+                            None => [Bit::Unknown; 32],
+                        },
+                        IntegerOp::Shr | IntegerOp::Sar => match by {
+                            Some(by) => std::array::from_fn(|i| {
+                                let from = i as u32 + by;
+                                if from < 32 {
+                                    l[from as usize]
+                                } else if *op == IntegerOp::Sar {
+                                    l[31]
+                                } else {
+                                    Bit::Zero
+                                }
+                            }),
+                            None => [Bit::Unknown; 32],
+                        },
+                        IntegerOp::Add => add(l, r),
+                        IntegerOp::Sub if r.iter().all(|bit| *bit == Bit::Zero) => l,
+                        IntegerOp::ShiftAdd1 => add(shift_left(l, 1), r),
+                        IntegerOp::ShiftAdd2 => add(shift_left(l, 2), r),
+                        IntegerOp::ShiftAdd3 => add(shift_left(l, 3), r),
+                        _ => [Bit::Unknown; 32],
+                    }
+                }
+                Expression::CallResult { .. } => [Bit::Unknown; 32],
+            };
+            while self.memo.len() <= top as usize {
+                self.memo.push(None, c.position())?;
+            }
+            self.memo[top as usize] = Some(result);
+            stack.pop();
         }
-        self.memo[id as usize] = Some((depth, result));
-        Ok(result)
+        Ok(self.memoized(*id).unwrap_or([Bit::Unknown; 32]))
+    }
+
+    fn memoized(&self, id: u32) -> Option<[Bit<'a>; 32]> {
+        self.memo.get(id as usize).copied().flatten()
+    }
+
+    /// An operand of node `node`: a leaf's bits, or an already evaluated
+    /// earlier expression's; anything else is unknown.
+    fn operand(&self, value: &'a AbstractValue, node: u32) -> [Bit<'a>; 32] {
+        match value {
+            AbstractValue::Constant { value } | AbstractValue::ImageAddress { address: value } => {
+                constant_bits(*value)
+            }
+            AbstractValue::Expression { id } if *id < node => {
+                self.memoized(*id).unwrap_or([Bit::Unknown; 32])
+            }
+            _ => [Bit::Unknown; 32],
+        }
     }
 }
 
@@ -335,7 +371,7 @@ pub fn stored_bits<'a>(
     let Some(mask) = width_mask(width) else {
         return Ok(Vec::new());
     };
-    let value = evaluator.bits(value, DEPTH, c)?;
+    let value = evaluator.bits(value, c)?;
     let count = mask.count_ones() as usize;
     let mut runs: Vec<StoredBits> = Vec::new();
     let mut i = 0;
@@ -626,8 +662,8 @@ mod tests {
         let (long, long_top) = (chain(40), value(40));
         assert_eq!(
             visits(&long, &long_top),
-            u32::from(DEPTH),
-            "a chain deeper than the bound stops there"
+            41,
+            "every one of the 41 nodes is evaluated exactly once, at any depth"
         );
         let facts = Facts::new(&long, &memory, &mut || Ok(())).unwrap();
         let mut evaluator = StoredBitsEvaluator::new(&facts, &memory);
@@ -670,5 +706,35 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+    }
+    #[test]
+    fn a_node_reached_again_by_a_later_store_costs_nothing() {
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let mut expressions = vec![Expression::EntryRegister { register: 10 }];
+        for id in 0..30 {
+            expressions.push(Expression::Integer {
+                op: IntegerOp::Or,
+                left: value(id),
+                right: number(1 << (id % 32)),
+            });
+        }
+        let records = records(expressions);
+        let (deep, middle) = (value(30), value(15));
+        let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
+        let mut evaluator = StoredBitsEvaluator::new(&facts, &memory);
+        let mut charged = 0_u32;
+        stored_bits(&mut evaluator, &number(0), 4, &deep, &mut || {
+            charged += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(charged, 31);
+        let mut again = 0_u32;
+        stored_bits(&mut evaluator, &number(0), 4, &middle, &mut || {
+            again += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(again, 0, "node 15 was evaluated by the first store's walk");
     }
 }

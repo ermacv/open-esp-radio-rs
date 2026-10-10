@@ -219,7 +219,9 @@ Qualification applies the same exclusion when checking source currency.
 No symlink or submodule content in the remaining source inputs is silently followed;
 such inputs require review and are rejected by this capture interface.
 
-The content-addressed directory contains `manifest.json` and `snapshot.json`
+The content-addressed directory (`<capture store>/schema-2/<manifest
+digest>`, a directory per record schema so an earlier schema's capture of the
+same tree never conflicts) contains `manifest.json` and `snapshot.json`
 (record schema 2). The manifest records each file's size, SHA-256 and
 executable mode for the main source and configured overrides; the bytes are
 objects named by their SHA-256 in the run store's `sources/` directory
@@ -229,7 +231,8 @@ snapshots name it. A run archives only the manifest and record. Subsequent
 capture does not overwrite an existing identity, rewrites an object whose bytes
 no longer hash to its name, and every reader checks each object's digest; a
 missing or corrupt object is rejected. `cargo hil runs prune --apply` and the
-automatic rule delete the objects no run names once a day old. Builds with
+automatic rule delete the objects that no run and no capture in the capture
+store names once a day old; a queued job's snapshot is such a capture. Builds with
 `--source-snapshot` validate and materialize these inputs in one of the host's
 build slots, `~/.cache/open-esp-radio/build/<chip>/source-build-<n>/`
 (`OER_BUILD_ROOT` replaces `~/.cache/open-esp-radio/build`; a set

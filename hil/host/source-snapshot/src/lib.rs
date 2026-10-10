@@ -637,7 +637,9 @@ fn capture_roots_once(
     atomic_json(&staging.path().join("manifest.json"), &manifest)?;
     let snapshot = Snapshot {
         schema: SNAPSHOT_SCHEMA,
-        directory: output.join(&snapshot_id),
+        // A capture of an earlier record schema names the same manifest
+        // digest and keeps its own directory; each schema has its own.
+        directory: capture_directory(output).join(&snapshot_id),
         snapshot_id,
         files: manifest.sources.iter().map(|s| s.files.len()).sum(),
     };
@@ -651,8 +653,10 @@ fn capture_roots_once(
             return Err("existing source snapshot has conflicting or corrupted content".into());
         }
     } else {
+        let parent = capture_directory(output);
+        fs::create_dir_all(&parent)?;
         fs::rename(staging.path(), &snapshot.directory)?;
-        fs::File::open(output)?.sync_all()?;
+        fs::File::open(&parent)?.sync_all()?;
     }
     Ok(snapshot)
 }
@@ -729,6 +733,13 @@ fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+/// Where the captures of this build's record schema lie in the capture store
+/// `store`: one directory per schema, so a capture never meets a directory
+/// an earlier schema wrote for the same manifest.
+pub fn capture_directory(store: &Path) -> PathBuf {
+    store.join(format!("schema-{SNAPSHOT_SCHEMA}"))
+}
+
 /// Store `bytes`, whose SHA-256 is `sha256`, as an object in `objects`. An
 /// object already there is kept when its bytes hash to its name, and its
 /// modification time becomes now, so collection spares an object a capture
@@ -785,6 +796,7 @@ pub fn test_objects_of(snapshot: &Snapshot) -> PathBuf {
     snapshot
         .directory()
         .parent()
-        .expect("a snapshot directory has a parent")
+        .and_then(Path::parent)
+        .expect("a snapshot directory lies in a capture store")
         .join("sources")
 }

@@ -503,7 +503,29 @@ fn source_objects_no_run_names_are_collected_after_the_grace() {
             .set_modified(old)
             .unwrap();
     }
-    assert_eq!(collect_sources(&store).unwrap(), (1, 6));
-    assert!(named_path.is_file() && young_path.is_file());
+    // A capture that no run names yet keeps its objects too.
+    let (captured, captured_path) = put(b"captured");
+    let captures = directory.path().join("captures");
+    let capture = captures.join("schema-2/0123");
+    fs::create_dir_all(&capture).unwrap();
+    fs::write(
+        capture.join("manifest.json"),
+        serde_json::to_vec(&serde_json::json!({"schema": 1, "sources": [{
+            "name": "repository", "commit": "abc", "dirty": false,
+            "files": [{"path": "b.rs", "size_bytes": 8, "sha256": captured, "mode": 0o644}],
+        }]}))
+        .unwrap(),
+    )
+    .unwrap();
+    for path in [&named_path, &old_path, &captured_path] {
+        fs::File::options()
+            .append(true)
+            .open(path)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+    }
+    assert_eq!(collect_sources(&store, &[captures]).unwrap(), (1, 6));
+    assert!(named_path.is_file() && young_path.is_file() && captured_path.is_file());
     assert!(!old_path.exists());
 }

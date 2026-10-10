@@ -102,15 +102,15 @@ fn a_prune_lists_then_deletes_what_no_rule_keeps_and_holds_the_budget() {
         keep_failed: 0,
     };
     // `old-pass` is pinned and `new-pass` the latest pass: nothing goes.
-    let listed = prune(&store, directory.path(), &rule, None, false, false).unwrap();
+    let listed = prune(&store, directory.path(), &rule, None, false, false, &[]).unwrap();
     assert!(listed.removed.is_empty());
     assert_eq!((listed.kept, listed.total), (2, 2));
     // Over a budget of nothing, a run only its age keeps still stays: the
     // budget never overrides another rule.
-    let pruned = prune(&store, directory.path(), &rule, Some(0), true, false).unwrap();
+    let pruned = prune(&store, directory.path(), &rule, Some(0), true, false, &[]).unwrap();
     assert!(pruned.removed.is_empty(), "{:?}", pruned.removed.len());
     store.note(Sidecar::Pins, "old-pass", None).unwrap();
-    let pruned = prune(&store, directory.path(), &rule, None, true, false).unwrap();
+    let pruned = prune(&store, directory.path(), &rule, None, true, false, &[]).unwrap();
     assert_eq!(
         pruned
             .removed
@@ -175,18 +175,18 @@ fn unreadable_runs_go_by_schema_and_age() {
         ids.sort();
         ids
     };
-    let listed = prune(&store, directory.path(), &rule, None, false, false).unwrap();
+    let listed = prune(&store, directory.path(), &rule, None, false, false, &[]).unwrap();
     assert_eq!(ids(&listed.removed_unreadable), ["older-old"]);
     assert_eq!(listed.unreadable_kept.len(), 4);
     assert_eq!((listed.kept, listed.total), (5, 6), "kept and total agree");
     assert_eq!(listed.total, 6);
-    let listed = prune(&store, directory.path(), &rule, None, false, true).unwrap();
+    let listed = prune(&store, directory.path(), &rule, None, false, true, &[]).unwrap();
     assert_eq!(
         ids(&listed.removed_unreadable),
         ["current-broken", "older-old"]
     );
     assert!(store.run("older-old").is_dir(), "listing deletes nothing");
-    prune(&store, directory.path(), &rule, None, true, true).unwrap();
+    prune(&store, directory.path(), &rule, None, true, true, &[]).unwrap();
     for gone in ["older-old", "current-broken"] {
         assert!(!store.run(gone).exists(), "{gone}");
     }
@@ -195,7 +195,7 @@ fn unreadable_runs_go_by_schema_and_age() {
     }
     // Over a budget of nothing, the older-schema run only its age keeps
     // goes too; the pinned one and the newer-schema one stay.
-    let pruned = prune(&store, directory.path(), &rule, Some(0), true, false).unwrap();
+    let pruned = prune(&store, directory.path(), &rule, Some(0), true, false, &[]).unwrap();
     assert_eq!(ids(&pruned.removed_unreadable), ["older-recent"]);
     for kept in ["readable", "older-pinned", "newer"] {
         assert!(store.run(kept).is_dir(), "{kept}");

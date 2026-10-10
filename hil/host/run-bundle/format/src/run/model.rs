@@ -6,8 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use oer_hil_schema::image::ImageClass;
 
-/// Format of a run's `manifest.json`. 5: an experiment round records its
-/// [`crate::experiment::Phase`].
+/// Format of a run bundle and its `manifest.json`. 6: a run archives its
+/// source snapshot's manifest and record only; the files are objects in the
+/// run store's `sources/` (`oer_hil_schema::snapshot::OBJECTS`), not a
+/// `sources.tar` in the bundle.
 pub const RUN_SCHEMA: u16 = 6;
 
 pub use oer_hil_schema::run::{

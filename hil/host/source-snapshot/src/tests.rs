@@ -642,3 +642,25 @@ fn a_capture_is_taken_again_while_a_source_changes_under_it() {
     );
     assert_eq!(calls, 1);
 }
+
+/// A capture of an earlier record schema for the same manifest lies in the
+/// store's top level (schema 1 wrote `sources.tar` beside its record); this
+/// schema's captures have their own directory and never meet it.
+#[test]
+fn a_capture_of_an_earlier_schema_does_not_block_a_new_one() {
+    let root = repository();
+    let output = tempfile::tempdir().unwrap();
+    let roots = vec![("repository".into(), root.path().to_owned())];
+    let first = capture_roots(&roots, &[], &[], output.path(), &objects(output.path())).unwrap();
+    let earlier = output.path().join(first.id());
+    fs::create_dir_all(&earlier).unwrap();
+    fs::write(earlier.join("snapshot.json"), br#"{"schema":1}"#).unwrap();
+    fs::write(earlier.join("sources.tar"), b"archive").unwrap();
+    let again = capture_roots(&roots, &[], &[], output.path(), &objects(output.path())).unwrap();
+    assert_eq!(again.id(), first.id());
+    assert_eq!(
+        again.directory(),
+        capture_directory(output.path()).join(first.id())
+    );
+    assert_eq!(fs::read(earlier.join("sources.tar")).unwrap(), b"archive");
+}

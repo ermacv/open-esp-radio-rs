@@ -185,6 +185,7 @@ pub fn prune(
     budget: Option<u64>,
     apply: bool,
     unreadable: bool,
+    captures: &[std::path::PathBuf],
 ) -> Result<Pruned> {
     let all = Run::all(store)?;
     let now = oer_durable::unix_millis();
@@ -312,7 +313,7 @@ pub fn prune(
             fs::remove_dir_all(&run.directory)?;
         }
         pruned.observers = crate::runs::collect_observers(store)?;
-        pruned.sources = crate::runs::collect_sources(store)?;
+        pruned.sources = crate::runs::collect_sources(store, captures)?;
     }
     Ok(pruned)
 }

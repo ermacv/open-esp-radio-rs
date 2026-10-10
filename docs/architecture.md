@@ -376,6 +376,18 @@ and retune, the Bluetooth LE scheduler) runs in the backend's runner
 future (`run`), which the composition polls beside the consumer for as long
 as the port exists.
 
+**A port exists only while its backend is installed.** A backend's
+`install` returns two handles that borrow its runtime, and no other value
+reaches the installed backend: the port, for the protocol's one event
+consumer, and the control, for the composition, which carries the backend's
+own operations (coexistence, statistics, diagnostic hardware reads and
+shared-PHY maintenance). The control's `uninstall` consumes both, so "not
+installed" is unrepresentable and no port call refuses as such. The
+interrupt entries and the runner stay on the runtime itself. Shared-PHY
+maintenance is a layer over `Quiesce`: the consumer sees `Quiesced` and
+`Enabled`, and meanwhile the port refuses what would touch the held
+hardware as each port's contract states for its quiesced state.
+
 **Loss and poisoning.** A backend reserves the slot of every event whose
 loss would break a guarantee when it admits the work: every terminal event
 (an attempt's completion, an operation's or an event's end, a lifecycle

@@ -36,7 +36,7 @@ printf '{"reason":"compiler-artifact","target":{"name":"oer-hil-runner"},"execut
         &root.join("runner"),
         r#"#!/bin/sh
 if [ "$1" = --observer-build ]; then
-    printf '{"schema":2,"resolved":{"nodes":[]}}\n'
+    printf '{"schema":3,"resolved":{"packages":[]}}\n'
     exit 0
 fi
 if [ "$1" = exit ]; then exit 37; fi
@@ -93,7 +93,7 @@ fn resolved_owner_reaches_the_runner_without_losing_enclosing_authority() {
         &format!(
             "#!/bin/sh\n\
          if [ \"$1\" = --observer-build ]; then\n\
-         printf '{{\"schema\":2,\"resolved\":{{\"nodes\":[]}}}}\\n'\n\
+         printf '{{\"schema\":3,\"resolved\":{{\"packages\":[]}}}}\\n'\n\
          exit 0\nfi\n\
          export {ROLE}=runner\n\
          exec \"{}\" --exact {TEST} --test-threads=1\n",

@@ -21,6 +21,10 @@ pub fn resolve(root: &Path, target: &str) -> Result<Value> {
             "normal,build",
             "--prefix",
             "depth",
+            // `CARGO_TERM_COLOR=always` would wrap the `(*)` marker in
+            // escape sequences.
+            "--color",
+            "never",
             "--format",
             "{p}|{f}",
             "--target",

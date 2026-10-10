@@ -1,7 +1,9 @@
 //! A run bundle of the current schema stays readable.
 //!
 //! `schema/run-schema-<RUN_SCHEMA>/` holds every document a run bundle of
-//! that schema carries, with its optional parts present (asserted below, so
+//! that schema carries, the fixture records of a repetition included (all
+//! but `helper.json`, which wraps a family's own type), with its optional
+//! parts present (asserted below, so
 //! a sample cannot lose one unnoticed). Each document must
 //! read as its type and write back to the same JSON, and carry the current
 //! version of its own schema. A change that a stored bundle of this schema
@@ -18,6 +20,7 @@ use std::{
 
 use oer_hil_run_bundle_format::build::{BUILD_PROVENANCE_SCHEMA, BuildProvenance};
 use oer_hil_run_bundle_format::lab::{FixtureObservation, LAB_PROVENANCE_SCHEMA, LabProvenance};
+use oer_hil_run_bundle_format::run::fixtures::{AirMonitor, Applied, Protection, Reception};
 use oer_hil_run_bundle_format::run::{
     ATTEMPT_SEAL_SCHEMA, AttemptSeal, CleanupRecord, IntegrityIndex, OBSERVATIONS_SCHEMA,
     Observations, PlannedFirmware, RUN_SCHEMA, RunManifest, RunPlan, ScenarioResult, UsbEvent,
@@ -122,6 +125,18 @@ fn every_document_of_the_current_schema_reads_and_writes_back() {
     let _: IntegrityIndex = read("integrity.json");
     let snapshot: SnapshotManifest = read("source-snapshot-manifest.json");
     assert_eq!(snapshot.schema, MANIFEST_SCHEMA);
+    // The fixture records a repetition carries; `helper.json` wraps a
+    // family's own type and has no shape of the bundle's.
+    let openwrt: Applied = read("fixture-applied-openwrt.json");
+    assert!(matches!(openwrt, Applied::OpenWrt(applied) if applied.requested.beacon.is_some()));
+    let local: Applied = read("fixture-applied-local.json");
+    assert!(matches!(local, Applied::Local(_)));
+    let protection: Protection = read("fixture-protection.json");
+    assert!(protection.established.is_some() && !protection.windows.is_empty());
+    let monitor: AirMonitor = read("fixture-monitor.json");
+    assert!(monitor.target_egress.data_to_block_ack.is_some());
+    let reception: Reception = read("udp-reception.json");
+    assert!(reception.error.is_some() && !reception.bursts.is_empty());
     let events = fs::read_to_string(current().join("events.jsonl")).unwrap();
     for line in events.lines() {
         let event: RunEvent = serde_json::from_str(line).unwrap();

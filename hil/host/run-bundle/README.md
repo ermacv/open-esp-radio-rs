@@ -18,7 +18,9 @@ Every document of a bundle carries a schema version (`RUN_SCHEMA`, the
 scenario seal's `ATTEMPT_SEAL_SCHEMA`, `LAB_PROVENANCE_SCHEMA`,
 `BUILD_PROVENANCE_SCHEMA`, `OBSERVATIONS_SCHEMA`, the source snapshot's
 `MANIFEST_SCHEMA`). `format/tests/schema/run-schema-<RUN_SCHEMA>/` holds one
-document of each kind with its optional parts present, and
+document of each kind with its optional parts present, the fixture records of
+`run::fixtures` included (`helper.json` wraps a family's own type and is the
+family's to keep readable), and
 `format/tests/schema.rs` reads each back unchanged: a change a stored bundle
 would not survive (a new required field, a renamed, removed or retyped one)
 fails there and needs a schema bump, with those documents moved to the new

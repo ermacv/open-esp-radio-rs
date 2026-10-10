@@ -26,8 +26,10 @@ use oer_esp32s31_ieee80211_mac::tx::runtime::{
 use oer_esp32s31_ieee80211_mac::tx::{
     HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyTxQueue, TxHardware,
 };
+use oer_ieee80211_lower_mac::{Ieee80211Instant, Ieee80211Stamp};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_memory::{HardwareOwnedTxDma, PinnedDmaTxPool, PinnedDmaTxRadioLease, PreparedTxDma};
+use oer_time::RadioDuration;
 
 /// MPDUs one compared aggregate may hold.
 const SLOTS: usize = 8;
@@ -64,6 +66,16 @@ const RESOURCES_FAILED: u32 = 8;
 const STATUS_COMPLETED: u8 = 0;
 /// The time the probe commits an aggregate, from which its MSDUs age.
 const COMMITTED_MICROS: u64 = 0;
+/// The MAC clock generation every probe sample belongs to.
+const CLOCK_GENERATION: u32 = 1;
+
+/// A MAC clock sample `micros` after the probe's epoch.
+fn radio_stamp(micros: u64) -> Ieee80211Stamp {
+    Ieee80211Stamp {
+        at: Ieee80211Instant::from_micros(micros),
+        generation: CLOCK_GENERATION,
+    }
+}
 
 type Pool = PinnedDmaTxPool<FRAME_CAPACITY, 0, 0, SLOTS>;
 type Backing = PinnedDmaTxRadioLease<'static, FRAME_CAPACITY, 0, 0>;
@@ -287,15 +299,15 @@ oer_probe_macros::probe! {
             return SUBMIT_FAILED;
         }
         let policy = AmpduRetryPolicy {
-            lifetime_micros,
+            lifetime: RadioDuration::from_micros(u64::from(lifetime_micros)),
             retain_single_mpdu: retain_single != 0,
         };
         let Ok(mut retry) =
-            AmpduRetryState::<SLOTS>::new(first, count as u8, policy, COMMITTED_MICROS)
+            AmpduRetryState::<SLOTS>::new(first, count as u8, policy, radio_stamp(COMMITTED_MICROS))
         else {
             return INVALID_INPUT;
         };
-        let now = COMMITTED_MICROS + u64::from(elapsed_micros);
+        let now = radio_stamp(COMMITTED_MICROS + u64::from(elapsed_micros));
         let observed = match owner.observe_retry_completion(
             &mut hardware,
             cookie,
@@ -448,10 +460,10 @@ oer_probe_macros::probe! {
             return SUBMIT_FAILED;
         }
         let policy = AmpduRetryPolicy {
-            lifetime_micros,
+            lifetime: RadioDuration::from_micros(u64::from(lifetime_micros)),
             retain_single_mpdu: false,
         };
-        let Ok(retry) = AmpduRetryState::<SLOTS>::new(first, count as u8, policy, COMMITTED_MICROS)
+        let Ok(retry) = AmpduRetryState::<SLOTS>::new(first, count as u8, policy, radio_stamp(COMMITTED_MICROS))
         else {
             return INVALID_INPUT;
         };
@@ -487,7 +499,7 @@ oer_probe_macros::probe! {
             &mut hardware,
             sequence.cookie,
             &mut sequence.retry,
-            COMMITTED_MICROS,
+            radio_stamp(COMMITTED_MICROS),
             true,
         ) {
             Ok(Some(observed)) => observed,

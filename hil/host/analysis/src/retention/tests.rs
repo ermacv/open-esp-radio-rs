@@ -19,18 +19,19 @@ fn over_its_budget_a_store_loses_its_oldest_runs_only_age_kept() {
         );
     }
     let runs = Run::all(&store).unwrap();
-    let sizes = [("1-a", 10), ("2-b", 20), ("3-c", 30), ("4-d", 40)]
-        .map(|(id, size)| (String::from(id), size))
-        .into();
-    let kept = BTreeMap::from([(String::from("2-b"), String::from("pinned"))]);
-    let deleted = over_budget(&runs, &kept, &sizes, 65)
-        .into_iter()
-        .map(Run::id)
+    let weighed = runs
+        .iter()
+        .zip([10, 20, 30, 40])
+        .map(|(run, bytes)| Weighed {
+            id: run.id(),
+            bytes,
+            deletable: run.id() != "2-b",
+        })
         .collect::<Vec<_>>();
-    // 100 bytes: the oldest goes (90), the pinned one stays, the next
-    // goes (60) and the store fits.
-    assert_eq!(deleted, ["1-a", "3-c"]);
-    assert!(over_budget(&runs, &kept, &sizes, 100).is_empty());
+    // 100 bytes: the oldest goes (90), the kept one stays, the next goes
+    // (60) and the store fits.
+    assert_eq!(over_budget(&weighed, 65), ["1-a", "3-c"]);
+    assert!(over_budget(&weighed, 100).is_empty());
 }
 
 #[test]
@@ -177,6 +178,7 @@ fn unreadable_runs_go_by_schema_and_age() {
     let listed = prune(&store, directory.path(), &rule, None, false, false).unwrap();
     assert_eq!(ids(&listed.removed_unreadable), ["older-old"]);
     assert_eq!(listed.unreadable_kept.len(), 4);
+    assert_eq!((listed.kept, listed.total), (5, 6), "kept and total agree");
     assert_eq!(listed.total, 6);
     let listed = prune(&store, directory.path(), &rule, None, false, true).unwrap();
     assert_eq!(
@@ -189,6 +191,13 @@ fn unreadable_runs_go_by_schema_and_age() {
         assert!(!store.run(gone).exists(), "{gone}");
     }
     for kept in ["readable", "older-recent", "older-pinned", "newer"] {
+        assert!(store.run(kept).is_dir(), "{kept}");
+    }
+    // Over a budget of nothing, the older-schema run only its age keeps
+    // goes too; the pinned one and the newer-schema one stay.
+    let pruned = prune(&store, directory.path(), &rule, Some(0), true, false).unwrap();
+    assert_eq!(ids(&pruned.removed_unreadable), ["older-recent"]);
+    for kept in ["readable", "older-pinned", "newer"] {
         assert!(store.run(kept).is_dir(), "{kept}");
     }
 }

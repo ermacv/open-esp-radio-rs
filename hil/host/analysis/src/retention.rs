@@ -80,28 +80,30 @@ pub fn retained(
     keep
 }
 
+/// A run the size budget weighs: the bytes only it holds, and whether only
+/// its age keeps it.
+#[derive(Clone, Copy, Debug)]
+pub struct Weighed<'a> {
+    pub id: &'a str,
+    pub bytes: u64,
+    pub deletable: bool,
+}
+
 /// The runs to delete, oldest first, so that a store of these `runs`
-/// (oldest first) with these exclusive `sizes` fits `budget` bytes. Only a
-/// run that no rule but its age keeps is deleted: `kept` holds the runs the
-/// other rules keep.
-pub fn over_budget<'a>(
-    runs: &'a [Run],
-    kept: &BTreeMap<String, String>,
-    sizes: &BTreeMap<String, u64>,
-    budget: u64,
-) -> Vec<&'a Run> {
-    let size = |run: &Run| sizes.get(run.id()).copied().unwrap_or(0);
-    let mut total: u64 = runs.iter().map(size).sum();
+/// (oldest first) fits `budget` bytes. Only a run only its age keeps is
+/// deleted.
+pub fn over_budget<'a>(runs: &[Weighed<'a>], budget: u64) -> Vec<&'a str> {
+    let mut total: u64 = runs.iter().map(|run| run.bytes).sum();
     let mut deleted = Vec::new();
     for run in runs {
         if total <= budget {
             break;
         }
-        if kept.contains_key(run.id()) {
+        if !run.deletable {
             continue;
         }
-        total = total.saturating_sub(size(run));
-        deleted.push(run);
+        total = total.saturating_sub(run.bytes);
+        deleted.push(run.id);
     }
     deleted
 }
@@ -144,9 +146,10 @@ pub struct Pruned {
     /// held: those of an older schema, and with `unreadable` those of the
     /// current one.
     pub removed_unreadable: Vec<(Unreadable, u64)>,
-    /// The runs this build cannot read that stay: pinned, cited, of a newer
-    /// or unknown schema, or of the current one without `unreadable`.
-    pub unreadable_kept: Vec<Unreadable>,
+    /// The runs this build cannot read that stay, with why: pinned, cited,
+    /// of a newer or unknown schema, of an older one but younger than the
+    /// rule's days, or of the current one without `unreadable`.
+    pub unreadable_kept: Vec<(Unreadable, String)>,
 }
 
 impl Pruned {
@@ -195,15 +198,26 @@ pub fn prune(
         ..Pruned::default()
     };
     for run in unreadable_runs {
-        if !pinned.contains(&run.id)
-            && !cited.contains(&run.id)
-            && ((run.older_schema() && run.started_millis < recent)
-                || (unreadable && run.current_schema()))
-        {
-            let bytes = exclusive_bytes(&run.directory);
-            pruned.removed_unreadable.push((run, bytes));
+        let kept = if pinned.contains(&run.id) {
+            Some(String::from("pinned"))
+        } else if cited.contains(&run.id) {
+            Some(String::from("cited by a committed shard"))
+        } else if run.older_schema() {
+            (run.started_millis >= recent)
+                .then(|| format!("older schema, younger than {} days", rule.keep_days))
+        } else if run.current_schema() {
+            (!unreadable).then(|| String::from("this build's schema; --unreadable deletes it"))
+        } else if run.schema.is_some() {
+            Some(String::from("newer schema, a newer branch's"))
         } else {
-            pruned.unreadable_kept.push(run);
+            Some(String::from("unknown schema"))
+        };
+        match kept {
+            Some(reason) => pruned.unreadable_kept.push((run, reason)),
+            None => {
+                let bytes = exclusive_bytes(&run.directory);
+                pruned.removed_unreadable.push((run, bytes));
+            }
         }
     }
     let (remaining, deleted): (Vec<Run>, Vec<Run>) =
@@ -213,9 +227,18 @@ pub fn prune(
         pruned.removed.push((run, bytes));
     }
     if let Some(budget) = budget {
+        // Every run that stays counts, readable or not; a readable one only
+        // its age keeps and an older-schema one only its age keeps go,
+        // oldest first, until the store fits.
         let sizes = remaining
             .iter()
             .map(|run| (run.id().to_owned(), exclusive_bytes(run.directory())))
+            .chain(
+                pruned
+                    .unreadable_kept
+                    .iter()
+                    .map(|(run, _)| (run.id.clone(), exclusive_bytes(&run.directory))),
+            )
             .collect::<BTreeMap<_, _>>();
         let kept = retained(
             &remaining,
@@ -227,9 +250,36 @@ pub fn prune(
             &pinned,
             &cited,
         );
-        let over = over_budget(&remaining, &kept, &sizes, budget)
+        let mut weighed = remaining
+            .iter()
+            .map(|run| {
+                (
+                    run.started_millis(),
+                    Weighed {
+                        id: run.id(),
+                        bytes: sizes[run.id()],
+                        deletable: !kept.contains_key(run.id()),
+                    },
+                )
+            })
+            .chain(pruned.unreadable_kept.iter().map(|(run, _)| {
+                (
+                    run.started_millis,
+                    Weighed {
+                        id: &run.id,
+                        bytes: sizes[&run.id],
+                        deletable: run.older_schema()
+                            && !pinned.contains(&run.id)
+                            && !cited.contains(&run.id),
+                    },
+                )
+            }))
+            .collect::<Vec<_>>();
+        weighed.sort_by_key(|(started, run)| (*started, run.id));
+        let weighed = weighed.into_iter().map(|(_, run)| run).collect::<Vec<_>>();
+        let over = over_budget(&weighed, budget)
             .into_iter()
-            .map(|run| run.id().to_owned())
+            .map(str::to_owned)
             .collect::<BTreeSet<_>>();
         for run in remaining {
             if over.contains(run.id()) {
@@ -239,9 +289,18 @@ pub fn prune(
                 pruned.kept += 1;
             }
         }
+        for (run, reason) in std::mem::take(&mut pruned.unreadable_kept) {
+            if over.contains(&run.id) {
+                let bytes = sizes[&run.id];
+                pruned.removed_unreadable.push((run, bytes));
+            } else {
+                pruned.unreadable_kept.push((run, reason));
+            }
+        }
     } else {
         pruned.kept = remaining.len();
     }
+    pruned.kept += pruned.unreadable_kept.len();
     if apply {
         for (run, _) in &pruned.removed {
             fs::remove_dir_all(run.directory())?;

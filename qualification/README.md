@@ -637,7 +637,7 @@ its reason, listed in `evidence_inputs.hil.invalid` of JSON reports, and every
 other run is still evaluated. A run whose manifest names another `RUN_SCHEMA`
 is not read: such runs are counted per schema as one `HIL-UNSUPPORTED` line
 each (`evidence_inputs.hil.unsupported` in JSON reports, their total in
-`hil-unsupported-schema`), and `cargo hil runs prune` removes those of an
+`hil-invalid-unsupported`), and `cargo hil runs prune` removes those of an
 older schema. Whole-invocation evidence requires a valid
 integrity seal and a completed run; a running invocation alone supplies no
 evidence.

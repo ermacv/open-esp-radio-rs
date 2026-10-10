@@ -202,7 +202,7 @@ pub(crate) fn absent_lines(absent: &[crate::model::AbsentDirectory]) -> Vec<Stri
 
 pub(crate) fn print(qualification: &Qualification) {
     println!(
-        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-source-producer={}\thil-qualifying={}\thil-sealed-attempts={}\thil-shards={}\thil-current-shards={}\thil-unsupported-schema={}\tevaluator-dirty={}",
+        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-source-producer={}\thil-qualifying={}\thil-sealed-attempts={}\thil-shards={}\thil-current-shards={}\thil-invalid-unsupported={}\tevaluator-dirty={}",
         qualification.evidence_inputs.verification_entries,
         qualification
             .evidence_inputs

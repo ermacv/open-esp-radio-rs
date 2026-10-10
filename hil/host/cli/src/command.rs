@@ -654,25 +654,16 @@ fn runs(
                 let schema = run
                     .schema
                     .map_or_else(|| String::from("unknown"), |schema| schema.to_string());
-                if apply {
-                    println!(
-                        "deleted {} ({} MiB), unreadable, schema {schema}",
-                        run.id,
-                        bytes >> 20
-                    );
-                } else {
-                    println!(
-                        "would delete {}, unreadable, schema {schema}: {}",
-                        run.id, run.reason
-                    );
-                }
-            }
-            if !pruned.unreadable_kept.is_empty() {
                 println!(
-                    "kept {} unreadable runs of a newer, unknown or (without --unreadable) this \
-                     build's schema, or pinned or cited",
-                    pruned.unreadable_kept.len()
+                    "{} {} ({} MiB held only by it), unreadable, schema {schema}: {}",
+                    if apply { "deleted" } else { "would delete" },
+                    run.id,
+                    bytes >> 20,
+                    run.reason
                 );
+            }
+            for (run, why) in &pruned.unreadable_kept {
+                println!("kept {}, unreadable ({}): {why}", run.id, run.reason);
             }
             for (run, bytes) in &pruned.removed {
                 if apply {

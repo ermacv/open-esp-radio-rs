@@ -10,8 +10,8 @@ The port has exactly one event consumer: `EventRouter::new(port, first_id)`
 is that consumer, and its `run()` future, which the composition polls beside
 the backend's runner, takes every event and dispatches it:
 
-- a completion goes to the exchange that registered its `TxId`
-  (`register(id)` before the submission, `completion(id)`), so exchanges on
+- a completion goes to the exchange that registered its `TxId` under its
+  queue lease before the submission (`completion(id)`), so exchanges on
   different access categories run concurrently over one port;
 - received frames go to the bounded receive queue
   of the interface they belong to (`received(vif)`), extension events such
@@ -39,6 +39,15 @@ Thus two interfaces can use the same queue without a `Busy` refusal;
 different physical queues remain concurrent. Cancelling a wait before its
 grant releases its place, and port poisoning ends blocked waits. The
 router's `WAITERS` bounds both completion registrations and queue leases.
+
+Dropping an exchange's future never hands the port's work to the next
+waiter early (#225, option A). While the port holds an admitted attempt,
+the router keeps its registration and its queue place; the attempt's
+completion, which carries its bodies, ends them, at once when it already
+arrived, and only then is the queue granted to the next live waiter, in
+FIFO order. `EventsLost` cannot end such an attempt, since the port
+reserves every completion. A poisoned port ends every wait and keeps the
+bodies until its reset.
 
 `absence::PortAbsence` is the owner's receive-only off-channel primitive.
 The owner brings every transmitting client to a sync point and keeps it

@@ -44,6 +44,8 @@ pub use router::{
     Registration, RouterFull,
 };
 
+use router::TxQueueLease;
+
 use oer_ieee80211_lower_mac::{
     AirReservation, AmpduBuffer, AmpduPayload, Backoff, ClockError, CoexPriority,
     Ieee80211LowerMacPort, KeySelector, LowerMacAirReservation, LowerMacAmpdu, NotInstalled,
@@ -204,7 +206,7 @@ where
             .map_err(UpperMacTxError::Plan)?;
         loop {
             let (registration, origin) =
-                self.submit_single(&exchange, &plan, &headers, &mut bodies, key)?;
+                self.submit_single(&queue, &exchange, &plan, &headers, &mut bodies, key)?;
             let completion = self
                 .completion(&registration, &mut bodies, |_| origin)
                 .await?;
@@ -232,13 +234,12 @@ where
             .complete(exchange, completion, now, ladder, entropy))
     }
 
-    /// Submit an attempt that carries one MPDU: the request's MPDU, one
-    /// subframe of it, or a BlockAckReq for it.
-    /// Submit an attempt that carries one MPDU: the request's MPDU, one
-    /// subframe of it, or a BlockAckReq for it; the caller's subframe whose
-    /// body it took, if any.
+    /// Submit under `queue` an attempt that carries one MPDU: the request's
+    /// MPDU, one subframe of it, or a BlockAckReq for it; the caller's
+    /// subframe whose body it took, if any.
     fn submit_single(
         &mut self,
+        queue: &TxQueueLease<'r, 'p, P, WAITERS, RX>,
         exchange: &TxExchange,
         plan: &TxAttemptPlan,
         headers: &[&[u8]],
@@ -313,7 +314,7 @@ where
             self.port.release_tx_buffer(buffer);
             return Err(UpperMacTxError::InvalidFrames);
         }
-        let Ok(registration) = self.router.register(self.router.next_id()) else {
+        let Ok(registration) = self.router.register(self.router.next_id(), queue) else {
             self.port.release_tx_buffer(buffer);
             return Err(UpperMacTxError::RouterFull);
         };
@@ -331,7 +332,10 @@ where
             key,
         );
         match self.port.submit(attempt)? {
-            Ok(()) => Ok((registration, lent)),
+            Ok(()) => {
+                registration.admitted();
+                Ok((registration, lent))
+            }
             Err(Refused { error, attempt }) => {
                 // The body comes back with the refused attempt.
                 if let (Some(origin), Some(body)) = (lent, attempt.payload.body) {
@@ -405,7 +409,7 @@ where
             .queue(self.port.capabilities().tx_queue(access_category))
             .map_err(|_| UpperMacTxError::RouterFull)?;
         queue.ready().await?;
-        let Ok(registration) = self.router.register(self.router.next_id()) else {
+        let Ok(registration) = self.router.register(self.router.next_id(), &queue) else {
             return Err(UpperMacTxError::RouterFull);
         };
         let attempt = TxAttempt {
@@ -423,6 +427,7 @@ where
         if let Err(Refused { error, .. }) = self.port.submit_air_reservation(attempt)? {
             return Err(UpperMacTxError::Refused(error));
         }
+        registration.admitted();
         self.completion(&registration, &mut [], |_| None).await
     }
 }
@@ -470,6 +475,7 @@ where
                     retry,
                 } => {
                     let registration = self.submit_aggregate(
+                        &queue,
                         &plan,
                         headers,
                         bodies,
@@ -483,7 +489,7 @@ where
                 }
                 _ => {
                     let (registration, origin) =
-                        self.submit_single(&exchange, &plan, headers, bodies, key)?;
+                        self.submit_single(&queue, &exchange, &plan, headers, bodies, key)?;
                     self.completion(&registration, bodies, |_| origin).await?
                 }
             };
@@ -497,11 +503,13 @@ where
         }
     }
 
-    /// Submit the aggregate of the `selected` subframes, the `retry` ones
-    /// with the Retry bit, each with its body taken from `bodies`.
+    /// Submit under `queue` the aggregate of the `selected` subframes, the
+    /// `retry` ones with the Retry bit, each with its body taken from
+    /// `bodies`.
     #[allow(clippy::too_many_arguments)]
     fn submit_aggregate(
         &mut self,
+        queue: &TxQueueLease<'r, 'p, P, WAITERS, RX>,
         plan: &TxAttemptPlan,
         headers: &[&[u8]],
         bodies: &mut [Option<P::TxBody>],
@@ -538,7 +546,7 @@ where
                 return Err(UpperMacTxError::InvalidFrames);
             }
         }
-        let Ok(registration) = self.router.register(self.router.next_id()) else {
+        let Ok(registration) = self.router.register(self.router.next_id(), queue) else {
             self.port.release_ampdu_buffer(buffer);
             return Err(UpperMacTxError::RouterFull);
         };
@@ -554,7 +562,10 @@ where
             key,
         );
         match self.port.submit_ampdu(attempt)? {
-            Ok(()) => Ok(registration),
+            Ok(()) => {
+                registration.admitted();
+                Ok(registration)
+            }
             Err(Refused { error, attempt }) => {
                 self.port.release_ampdu_buffer(attempt.payload.subframes);
                 Err(UpperMacTxError::Refused(error))

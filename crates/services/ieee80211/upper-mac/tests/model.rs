@@ -1175,3 +1175,305 @@ fn a_completion_nobody_registered_ends_its_body_with_it() {
     // The router took the completion and, with it, the body: nothing waits.
     assert_eq!(model.bodies_held(), 0);
 }
+
+/// A protected QoS Data MPDU whose body the port holds while it sends it.
+fn with_body(frame: &[u8]) -> (&[u8], NetworkBody<Frame>) {
+    (&frame[..26], Frame::carrying(&frame[26..]))
+}
+
+#[test]
+fn a_dropped_exchange_keeps_its_queue_until_its_attempt_ends_and_its_body_is_reclaimed() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut first = driver(&router);
+    let mut second = driver(&router);
+    let first_frame = qos_data(30, [1, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let second_frame = qos_data(31, [2, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let (header, body) = with_body(&first_frame);
+    let mut first_entropy = Seeded(1);
+    let mut second_entropy = Seeded(2);
+    let mut first_send = Box::pin(first.send_mpdu(
+        TxMpdu {
+            header,
+            body: Some(body),
+        },
+        KeySelector::Plaintext,
+        request_on(&first_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut first_entropy,
+    ));
+    let mut second_send = pin!(second.send_mpdu(
+        TxMpdu::whole(&second_frame),
+        KeySelector::Plaintext,
+        request_on(&second_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut second_entropy,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(first_send.as_mut()).is_pending());
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    assert_eq!(model.in_flight(), 1);
+    assert_eq!(model.bodies_held(), 1);
+
+    // The first exchange's caller goes away while the port sends its
+    // attempt: the queue stays the attempt's, so the waiter neither
+    // submits nor meets a Busy refusal.
+    drop(first_send);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 1);
+    assert_eq!(model.bodies_held(), 1);
+
+    // At its completion the router reclaims its body once and hands the
+    // queue on.
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert_eq!(model.bodies_held(), 0);
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 2);
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(matches!(
+        poll_once(second_send.as_mut()),
+        Poll::Ready(Ok(TxReport::Mpdu(_)))
+    ));
+    assert_eq!(model.in_flight(), 0);
+    assert_eq!(model.buffers_lent(), 0);
+    assert_eq!(router.unclaimed_completions(), 0);
+}
+
+#[test]
+fn an_exchange_dropped_after_its_completion_ends_it_and_hands_the_queue_on_at_once() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut first = driver(&router);
+    let mut second = driver(&router);
+    let first_frame = qos_data(30, [1, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let second_frame = qos_data(31, [2, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let (header, body) = with_body(&first_frame);
+    let mut first_entropy = Seeded(1);
+    let mut second_entropy = Seeded(2);
+    let mut first_send = Box::pin(first.send_mpdu(
+        TxMpdu {
+            header,
+            body: Some(body),
+        },
+        KeySelector::Plaintext,
+        request_on(&first_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut first_entropy,
+    ));
+    let mut second_send = pin!(second.send_mpdu(
+        TxMpdu::whole(&second_frame),
+        KeySelector::Plaintext,
+        request_on(&second_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut second_entropy,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(first_send.as_mut()).is_pending());
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    // The completion, with the body, reaches the router, but the exchange is
+    // dropped before it takes them.
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert_eq!(model.bodies_held(), 0);
+    drop(first_send);
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 2);
+}
+
+#[test]
+fn a_dropped_aggregate_keeps_its_queue_and_every_subframe_body_until_it_ends() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut first = driver(&router);
+    let mut second = driver(&router);
+    let frames: Vec<Vec<u8>> = (0..2)
+        .map(|index| {
+            qos_data(
+                200 + index,
+                [3 * (index as u8 + 1), 0, 0, 0x20, 0, 0, 0, 0],
+                50,
+            )
+        })
+        .collect();
+    let headers: Vec<&[u8]> = frames.iter().map(|frame| &frame[..24]).collect();
+    let mut bodies: Vec<Option<NetworkBody<Frame>>> = frames
+        .iter()
+        .map(|frame| Some(Frame::carrying(&frame[24..])))
+        .collect();
+    let next_frame = qos_data(202, [9, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let mut first_entropy = Seeded(1);
+    let mut second_entropy = Seeded(2);
+    let mut aggregate = Box::pin(first.send_ampdu(
+        AmpduFrames {
+            headers: &headers,
+            bodies: &mut bodies,
+            key: KeySelector::Plaintext,
+            min_mpdu_start_spacing: 0,
+        },
+        ampdu_request(&frames, 200),
+        &Ladder,
+        &mut first_entropy,
+    ));
+    let mut next = pin!(second.send_mpdu(
+        TxMpdu::whole(&next_frame),
+        KeySelector::Plaintext,
+        request_on(&next_frame, WmmAccessCategory::Video),
+        &Ladder,
+        &mut second_entropy,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(aggregate.as_mut()).is_pending());
+    assert!(poll_once(next.as_mut()).is_pending());
+    assert_eq!(model.bodies_held(), 2);
+    drop(aggregate);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(poll_once(next.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 1);
+    assert_eq!(model.bodies_held(), 2);
+    model.complete_with(
+        queue(WmmAccessCategory::Video),
+        ModelOutcome::BlockAck(BlockAckReport {
+            start_sequence: SequenceNumber::new(200).unwrap(),
+            bitmap: 0b11,
+        }),
+    );
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert_eq!(model.bodies_held(), 0);
+    assert!(poll_once(next.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 2);
+}
+
+#[test]
+fn a_dropped_air_reservation_holds_its_queue_from_the_next_reservation() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let first = driver(&router);
+    let second = driver(&router);
+    let rate = PhyRate::Legacy(LegacyRate::Ofdm6M);
+    let reserve = |tx| {
+        Driver::reserve_air(
+            tx,
+            oer_time::Duration::from_millis(5),
+            WmmAccessCategory::Voice,
+            rate,
+            TxPower::Calibrated,
+            CoexPriority::Normal,
+        )
+    };
+    let mut abandoned = Box::pin(reserve(&first));
+    let mut waiting = pin!(reserve(&second));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(abandoned.as_mut()).is_pending());
+    assert!(poll_once(waiting.as_mut()).is_pending());
+    drop(abandoned);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(poll_once(waiting.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 1);
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(poll_once(waiting.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 2);
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(matches!(
+        poll_once(waiting.as_mut()),
+        Poll::Ready(Ok(completion)) if completion.status == TxStatus::Success
+    ));
+    assert_eq!(router.unclaimed_completions(), 0);
+}
+
+#[test]
+fn received_frames_lost_beside_a_dropped_exchange_do_not_end_its_attempt() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let _station = router.attach(STATION, VifRole::Station, ADDRESS).unwrap();
+    let mut first = driver(&router);
+    let mut second = driver(&router);
+    let first_frame = qos_data(30, [1, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let second_frame = qos_data(31, [2, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let (header, body) = with_body(&first_frame);
+    let mut first_entropy = Seeded(1);
+    let mut second_entropy = Seeded(2);
+    let mut first_send = Box::pin(first.send_mpdu(
+        TxMpdu {
+            header,
+            body: Some(body),
+        },
+        KeySelector::Plaintext,
+        request_on(&first_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut first_entropy,
+    ));
+    let mut second_send = pin!(second.send_mpdu(
+        TxMpdu::whole(&second_frame),
+        KeySelector::Plaintext,
+        request_on(&second_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut second_entropy,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(first_send.as_mut()).is_pending());
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    drop(first_send);
+    // More frames than the port queues: it reports a gap of received frames.
+    for _ in 0..64 {
+        receive(&model);
+    }
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 1);
+    assert_eq!(model.bodies_held(), 1);
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert_eq!(model.bodies_held(), 0);
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 2);
+}
+
+#[test]
+fn poisoning_ends_the_waiter_behind_a_dropped_exchange_and_the_port_keeps_its_body() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut first = driver(&router);
+    let mut second = driver(&router);
+    let first_frame = qos_data(30, [1, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let second_frame = qos_data(31, [2, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let (header, body) = with_body(&first_frame);
+    let mut first_entropy = Seeded(1);
+    let mut second_entropy = Seeded(2);
+    let mut first_send = Box::pin(first.send_mpdu(
+        TxMpdu {
+            header,
+            body: Some(body),
+        },
+        KeySelector::Plaintext,
+        request_on(&first_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut first_entropy,
+    ));
+    let mut second_send = pin!(second.send_mpdu(
+        TxMpdu::whole(&second_frame),
+        KeySelector::Plaintext,
+        request_on(&second_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        &mut second_entropy,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(first_send.as_mut()).is_pending());
+    assert!(poll_once(second_send.as_mut()).is_pending());
+    drop(first_send);
+    model.poison();
+    assert!(poll_once(routing.as_mut()).is_ready());
+    let poisoned = oer_ieee80211_lower_mac::Poisoned {
+        cause: oer_ieee80211_lower_mac::model::ModelFault,
+    };
+    assert_eq!(
+        poll_once(second_send.as_mut()),
+        Poll::Ready(Err(UpperMacTxError::Poisoned(poisoned)))
+    );
+    // The poisoned backend keeps the body until its reset.
+    assert_eq!(model.bodies_held(), 1);
+}

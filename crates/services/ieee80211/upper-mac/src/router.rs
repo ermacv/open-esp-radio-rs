@@ -22,6 +22,12 @@
 //!   terminal, so only received frames and TBTTs are in a gap;
 //! - [`Poisoned`] ends the router and every wait.
 //!
+//! An admitted attempt outlives its caller: when the future of an exchange
+//! drops while the port holds its attempt, the router keeps the attempt's
+//! registration and its place in the physical TX queue until the attempt's
+//! completion, which ends its bodies, then hands the queue to the next live
+//! waiter, which therefore never meets the abandoned attempt.
+//!
 //! A bounded queue that overflows reports its own [`EventsLost`] in place of
 //! the first dropped entry. A completion no exchange registered, whose
 //! bodies end with it, and a frame no attached interface owns, is counted
@@ -119,6 +125,14 @@ fn route(routes: &[Option<Route>; ROUTER_VIFS], frame: &[u8]) -> Option<usize> {
 
 struct Waiter<T> {
     id: TxId,
+    /// The queue lease slot the attempt is submitted under.
+    queue: usize,
+    /// The port admitted the attempt and holds it until its completion is
+    /// taken.
+    admitted: bool,
+    /// The registration dropped while the port held the attempt: the router
+    /// ends it at its completion.
+    detached: bool,
     /// The completion and the bodies of its attempt, until the exchange
     /// takes them.
     completion: Option<(TxCompletion, T)>,
@@ -130,6 +144,9 @@ struct QueueWaiter {
     queue: u8,
     next: Option<usize>,
     granted: bool,
+    /// The lease dropped while an admitted attempt still held the queue; the
+    /// place is released when that attempt ends.
+    abandoned: bool,
     waker: Option<Waker>,
 }
 
@@ -279,6 +296,7 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
             queue,
             next: None,
             granted,
+            abandoned: false,
             waker: None,
         });
         Ok(TxQueueLease { router: self, slot })
@@ -360,6 +378,16 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
             }
             Err(poisoned) => {
                 state.poisoned = Some(poisoned);
+                // No completion comes any more: a poisoned backend keeps the
+                // bodies of the attempts nobody waits for until its reset.
+                for slot in 0..WAITERS {
+                    if state.waiters[slot]
+                        .as_ref()
+                        .is_some_and(|waiter| waiter.detached)
+                    {
+                        state.retire(slot);
+                    }
+                }
                 for waiter in state.queues.iter_mut().flatten() {
                     if let Some(waker) = waiter.waker.take() {
                         waker.wake();
@@ -384,11 +412,17 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
             Ok((completion, bodies)) => {
                 match state
                     .waiters
-                    .iter_mut()
-                    .flatten()
-                    .find(|waiter| waiter.id == completion.id)
+                    .iter()
+                    .position(|waiter| waiter.as_ref().is_some_and(|w| w.id == completion.id))
                 {
-                    Some(waiter) => {
+                    Some(slot) if state.waiters[slot].as_ref().is_some_and(|w| w.detached) => {
+                        // Its exchange is gone: the bodies end with the
+                        // completion.
+                        drop(bodies);
+                        state.retire(slot);
+                    }
+                    Some(slot) => {
+                        let waiter = state.waiters[slot].as_mut().expect("a registered attempt");
                         waiter.completion = Some((completion, bodies));
                         if let Some(waker) = waiter.waker.take() {
                             waker.wake();
@@ -417,10 +451,15 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
         Ok(())
     }
 
-    /// Register `id` before submitting its attempt, so that a completion
-    /// that arrives at once is kept for it. The registration ends with the
-    /// returned guard.
-    pub fn register(&self, id: TxId) -> Result<Registration<'_, 'p, P, WAITERS, RX>, RouterFull> {
+    /// Register `id`, to be submitted under the granted `queue`, before
+    /// submitting its attempt, so that a completion that arrives at once is
+    /// kept for it. The registration ends with the returned guard, unless
+    /// the port holds the attempt then ([`Registration`]).
+    pub(crate) fn register(
+        &self,
+        id: TxId,
+        queue: &TxQueueLease<'_, 'p, P, WAITERS, RX>,
+    ) -> Result<Registration<'_, 'p, P, WAITERS, RX>, RouterFull> {
         let mut state = self.state.borrow_mut();
         let slot = state
             .waiters
@@ -429,6 +468,9 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
             .ok_or(RouterFull)?;
         *slot = Some(Waiter {
             id,
+            queue: queue.slot,
+            admitted: false,
+            detached: false,
             completion: None,
             waker: None,
         });
@@ -457,6 +499,8 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                 .find(|waiter| waiter.id == id)
                 .expect("a registered attempt");
             if let Some(completion) = waiter.completion.take() {
+                // The port holds nothing of the attempt any more.
+                waiter.admitted = false;
                 return Poll::Ready(Ok(completion));
             }
             if let Some(poisoned) = poisoned {
@@ -535,7 +579,9 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
 
 /// Keeps a physical TX queue through the whole exchange, including retry
 /// attempts and body reclamation. Dropping a pending lease unlinks it;
-/// dropping its owner grants the next waiter before another caller can join.
+/// dropping its owner grants the next waiter before another caller can join,
+/// unless the port still holds an attempt submitted under it: the next
+/// waiter is then granted when that attempt ends.
 pub(crate) struct TxQueueLease<
     'r,
     'p,
@@ -575,27 +621,59 @@ impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
 {
     fn drop(&mut self) {
         let mut state = self.router.state.borrow_mut();
-        let waiter = state.queues[self.slot].take().expect("a live queue lease");
-        if waiter.granted {
-            if let Some(next) = waiter.next {
-                let next = state.queues[next].as_mut().expect("the next live lease");
-                next.granted = true;
-                if let Some(waker) = next.waker.take() {
-                    waker.wake();
-                }
-            }
-        } else if let Some(previous) = state
-            .queues
-            .iter_mut()
+        let held = state
+            .waiters
+            .iter()
             .flatten()
-            .find(|previous| previous.next == Some(self.slot))
-        {
-            previous.next = waiter.next;
+            .any(|waiter| waiter.admitted && waiter.queue == self.slot);
+        if held {
+            let lease = state.queues[self.slot]
+                .as_mut()
+                .expect("a live queue lease");
+            lease.abandoned = true;
+            lease.waker = None;
+        } else {
+            state.release_queue(self.slot);
         }
     }
 }
 
 impl<E, T, F, const WAITERS: usize, const RX: usize> State<E, T, F, WAITERS, RX> {
+    /// Free queue lease `slot`: a granted lease grants the next waiter, a
+    /// pending one leaves the FIFO.
+    fn release_queue(&mut self, slot: usize) {
+        let waiter = self.queues[slot].take().expect("a live queue lease");
+        if waiter.granted {
+            if let Some(next) = waiter.next {
+                let next = self.queues[next].as_mut().expect("the next live lease");
+                next.granted = true;
+                if let Some(waker) = next.waker.take() {
+                    waker.wake();
+                }
+            }
+        } else if let Some(previous) = self
+            .queues
+            .iter_mut()
+            .flatten()
+            .find(|previous| previous.next == Some(slot))
+        {
+            previous.next = waiter.next;
+        }
+    }
+
+    /// End the attempt registered in waiter slot `slot`, with a completion
+    /// and bodies nobody took, and release the queue place an abandoned
+    /// lease left to it.
+    fn retire(&mut self, slot: usize) {
+        let waiter = self.waiters[slot].take().expect("a registered attempt");
+        if self.queues[waiter.queue]
+            .as_ref()
+            .is_some_and(|queue| queue.abandoned)
+        {
+            self.release_queue(waiter.queue);
+        }
+    }
+
     /// The station interface attached, or the only interface.
     fn station(&self) -> Option<usize> {
         let mut attached = self
@@ -659,8 +737,11 @@ impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
     }
 }
 
-/// A registered attempt identity; dropping it ends the registration and
-/// discards a completion nobody took, with its bodies.
+/// A registered attempt identity. Dropping it ends the registration and
+/// discards a completion nobody took, with its bodies, unless the port holds
+/// the attempt: one it admitted ([`Self::admitted`]) whose completion the
+/// exchange has not taken. The router then keeps the registration and the
+/// attempt's queue until the completion arrives, and drops its bodies.
 pub struct Registration<'r, 'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> {
     router: &'r EventRouter<'p, P, WAITERS, RX>,
     id: TxId,
@@ -673,6 +754,20 @@ impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
     pub const fn id(&self) -> TxId {
         self.id
     }
+
+    /// The port admitted the attempt: it holds the attempt and its bodies
+    /// until its completion, which the exchange takes
+    /// ([`EventRouter::completion`]).
+    pub(crate) fn admitted(&self) {
+        let mut state = self.router.state.borrow_mut();
+        state
+            .waiters
+            .iter_mut()
+            .flatten()
+            .find(|waiter| waiter.id == self.id)
+            .expect("a registered attempt")
+            .admitted = true;
+    }
 }
 
 impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
@@ -680,10 +775,22 @@ impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
 {
     fn drop(&mut self) {
         let mut state = self.router.state.borrow_mut();
-        for slot in &mut state.waiters {
-            if slot.as_ref().is_some_and(|waiter| waiter.id == self.id) {
-                *slot = None;
-            }
+        let Some(slot) = state
+            .waiters
+            .iter()
+            .position(|waiter| waiter.as_ref().is_some_and(|w| w.id == self.id))
+        else {
+            return;
+        };
+        let poisoned = state.poisoned.is_some();
+        let waiter = state.waiters[slot].as_mut().expect("a registered attempt");
+        if waiter.admitted && waiter.completion.is_none() && !poisoned {
+            // The port still holds the attempt: the router ends it at its
+            // completion.
+            waiter.detached = true;
+            waiter.waker = None;
+        } else {
+            state.retire(slot);
         }
     }
 }

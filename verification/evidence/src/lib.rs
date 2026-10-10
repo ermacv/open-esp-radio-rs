@@ -7,6 +7,9 @@
 //! - [`policy`]: the verdict source policy — the path closure a shard may
 //!   record, without the report packages that decide no verdict;
 //! - [`diff`]: what two versions of one shard say differently;
+//! - `baseline` (feature `producers`): which claimed vendor roots a change
+//!   loses or narrows against the index `main` published, and a chip's
+//!   reviewed acceptances of them;
 //! - [`producer`]: the contract of whatever compares vendor code with
 //!   compiled production code and writes shards (the Blobray scenario
 //!   engine, a host stand), and [`producer::host_stand`], the host stands'
@@ -19,6 +22,8 @@
 //! evaluator all read and write shards through it.
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "producers")]
+pub mod baseline;
 pub mod diff;
 pub mod policy;
 pub mod producer;

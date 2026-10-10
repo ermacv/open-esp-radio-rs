@@ -78,11 +78,11 @@ impl Project {
             .and_then(|rom| rom.summaries))
     }
 
-    /// The chip's reviewed retirements of vendor roots its index no longer
-    /// claims, which a comparison with an earlier index accepts as
-    /// intended rather than lost evidence.
-    pub fn retired_roots(&self) -> String {
-        self.verification("decisions/retired.toml")
+    /// The chip's reviewed acceptances of vendor roots its index retired or
+    /// whose comparisons it narrowed, which a comparison with an earlier
+    /// index accepts as intended rather than lost evidence.
+    pub fn accepted_losses(&self) -> String {
+        self.verification("decisions/accepted-losses.toml")
     }
 
     /// The chip's registry of reviewed vendor-function fingerprints.
@@ -131,8 +131,8 @@ mod tests {
                 format!("target/verification/{name}/evidence")
             );
             assert_eq!(
-                chip.retired_roots(),
-                format!("verification/{name}/decisions/retired.toml")
+                chip.accepted_losses(),
+                format!("verification/{name}/decisions/accepted-losses.toml")
             );
             assert_eq!(
                 chip.scenarios(),

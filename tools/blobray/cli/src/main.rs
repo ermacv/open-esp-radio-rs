@@ -550,8 +550,10 @@ fn function_records(
     Ok(status)
 }
 
-/// The sized function symbols of `executable` when it is one executable
-/// image (ET_EXEC), whose transfers carry no relocations to name them.
+/// The sized function symbols of `executable` when it is one little-endian
+/// executable image (ET_EXEC), whose transfers carry no relocations to name
+/// them. Other inputs are recognized from their first bytes and inventoried
+/// no further.
 fn image_symbols(
     executable: &app::in_process::Executable,
     memory: &oer_riscv_model::WorkingMemory,
@@ -559,6 +561,11 @@ fn image_symbols(
 ) -> Result<Option<blobray_cli::listing::ImageSymbols>> {
     const ET_EXEC: u16 = 2;
     const STT_FUNC: u8 = 2;
+    // Decide from the ELF header alone, so an archive or relocatable object
+    // costs no second inventory pass against the analysis' shared budget.
+    if !blobray_cli::listing::is_executable_image(executable.bytes()) {
+        return Ok(None);
+    }
     let inventory = app::captured::inventory(executable, memory, control)?;
     let [object] = inventory.objects.as_slice() else {
         return Ok(None);

@@ -43,6 +43,7 @@ fn observation(
         }),
         address,
         alternative: None,
+        stored: None,
         mask,
     }
 }
@@ -133,6 +134,7 @@ fn address_groups_list_each_accessing_function_by_access_and_mask() {
         access: access.into(),
         width: Some(4),
         mask,
+        stored: None,
         count,
     };
     assert_eq!(
@@ -213,5 +215,54 @@ fn same_named_functions_of_different_members_stay_apart() {
             "local_helper (input 0, member 5)",
             "  0x2010702c store 4B x2",
         ]
+    );
+}
+
+#[test]
+fn stored_runs_render_high_bits_first() {
+    use super::stored_human;
+    use blobray_domain::{StoredBits, StoredBitsSource};
+    let load = |low, width, same_word| StoredBits {
+        low,
+        width,
+        source: StoredBitsSource::Load {
+            address: Some(0x2010_9004),
+            width: 4,
+            low,
+            same_word,
+        },
+    };
+    assert_eq!(
+        stored_human(&[
+            load(0, 18, true),
+            StoredBits {
+                low: 18,
+                width: 7,
+                source: StoredBitsSource::EntryRegister {
+                    register: 10,
+                    low: 0
+                },
+            },
+            StoredBits {
+                low: 25,
+                width: 1,
+                source: StoredBitsSource::Constant { value: 1 },
+            },
+            StoredBits {
+                low: 26,
+                width: 2,
+                source: StoredBitsSource::EntryRegister {
+                    register: 8,
+                    low: 4
+                },
+            },
+            load(28, 2, false),
+            StoredBits {
+                low: 30,
+                width: 2,
+                source: StoredBitsSource::Unknown,
+            },
+        ]),
+        "[31:30]=? [29:28]=load 0x20109004[29:28] [27:26]=entry x8[5:4] [25]=0x1 [24:18]=arg0[6:0] [17:0]=kept"
     );
 }

@@ -84,7 +84,17 @@ unnamed functions stay apart; the human format shows the member ordinal. The hum
 before the summary line and groups by address when a filter is given without
 `--group-by`.
 
-The JSON document streams `{"schema":3,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
+A store observation also carries `stored`: the runs of the stored value,
+low bits first, each from a fixed value, bits of a register at the function's
+entry (an argument for `a0`..`a7`), bits of a loaded value (with `same_word`
+for the stored word itself, the bits a read-modify-write keeps) or unknown.
+Each bit follows the analysis' expressions through bitwise logic, constant
+shifts and additions that cannot carry; anything else is unknown, never
+guessed. The human groups print them high bits first, for example
+`[31:25]=kept [24:18]=arg0[6:0] [17:0]=kept`; entries with different sources
+stay apart.
+
+The JSON document streams `{"schema":4,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
 `records` holds the selected records and `groups` appears only with
 `--group-by`.
 `inputs` lists each input's role and SHA-256. A record is an `observation` (the

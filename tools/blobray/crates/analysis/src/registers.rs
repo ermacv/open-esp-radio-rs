@@ -110,6 +110,230 @@ pub fn write_mask(
     None
 }
 
+/// One bit of a stored value: fixed, an entry register's bit, a loaded
+/// value's bit, or unknown.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Bit<'a> {
+    Zero,
+    One,
+    Entry(u8, u8),
+    Load(&'a AbstractValue, u8, u8),
+    Unknown,
+}
+
+/// The deepest expression chain followed; deeper values are unknown.
+const DEPTH: u8 = 24;
+
+fn constant_bits<'a>(value: u32) -> [Bit<'a>; 32] {
+    std::array::from_fn(|i| {
+        if value >> i & 1 == 1 {
+            Bit::One
+        } else {
+            Bit::Zero
+        }
+    })
+}
+
+fn and<'a>(a: Bit<'a>, b: Bit<'a>) -> Bit<'a> {
+    match (a, b) {
+        (Bit::Zero, _) | (_, Bit::Zero) => Bit::Zero,
+        (Bit::One, x) | (x, Bit::One) => x,
+        (x, y) if x == y && x != Bit::Unknown => x,
+        _ => Bit::Unknown,
+    }
+}
+
+fn or<'a>(a: Bit<'a>, b: Bit<'a>) -> Bit<'a> {
+    match (a, b) {
+        (Bit::One, _) | (_, Bit::One) => Bit::One,
+        (Bit::Zero, x) | (x, Bit::Zero) => x,
+        (x, y) if x == y && x != Bit::Unknown => x,
+        _ => Bit::Unknown,
+    }
+}
+
+fn not(a: Bit<'_>) -> Bit<'_> {
+    match a {
+        Bit::Zero => Bit::One,
+        Bit::One => Bit::Zero,
+        _ => Bit::Unknown,
+    }
+}
+
+fn xor<'a>(a: Bit<'a>, b: Bit<'a>) -> Bit<'a> {
+    match (a, b) {
+        (Bit::Zero, x) | (x, Bit::Zero) => x,
+        (Bit::One, x) | (x, Bit::One) => not(x),
+        _ => Bit::Unknown,
+    }
+}
+
+/// `left + right` while no bit position can carry; from the first position
+/// where both may be set, every higher bit is unknown.
+fn add<'a>(left: [Bit<'a>; 32], right: [Bit<'a>; 32]) -> [Bit<'a>; 32] {
+    let mut carry = false;
+    std::array::from_fn(|i| {
+        if carry {
+            return Bit::Unknown;
+        }
+        match (left[i], right[i]) {
+            (Bit::Zero, x) | (x, Bit::Zero) => x,
+            _ => {
+                carry = true;
+                Bit::Unknown
+            }
+        }
+    })
+}
+
+fn shift_left(bits: [Bit<'_>; 32], by: u32) -> [Bit<'_>; 32] {
+    std::array::from_fn(|i| {
+        if (i as u32) < by {
+            Bit::Zero
+        } else {
+            bits[i - by as usize]
+        }
+    })
+}
+
+fn bits<'a>(facts: &Facts<'a, '_>, value: &'a AbstractValue, depth: u8) -> [Bit<'a>; 32] {
+    if depth == 0 {
+        return [Bit::Unknown; 32];
+    }
+    let expression = match value {
+        AbstractValue::Constant { value } | AbstractValue::ImageAddress { address: value } => {
+            return constant_bits(*value);
+        }
+        _ => match facts.value_expression(value) {
+            Some(expression) => expression,
+            None => return [Bit::Unknown; 32],
+        },
+    };
+    match expression {
+        Expression::EntryRegister { register } => {
+            std::array::from_fn(|i| Bit::Entry(*register, i as u8))
+        }
+        Expression::Load {
+            address,
+            width,
+            signed,
+        } => {
+            let loaded = u32::from(*width) * 8;
+            std::array::from_fn(|i| {
+                let i = i as u32;
+                if i < loaded {
+                    Bit::Load(address, *width, i as u8)
+                } else if *signed && loaded != 0 {
+                    Bit::Load(address, *width, (loaded - 1) as u8)
+                } else {
+                    Bit::Zero
+                }
+            })
+        }
+        Expression::Integer { op, left, right } => {
+            let l = bits(facts, left, depth - 1);
+            let r = bits(facts, right, depth - 1);
+            let by = constant(right).map(|k| k & 31);
+            match op {
+                IntegerOp::And => std::array::from_fn(|i| and(l[i], r[i])),
+                IntegerOp::AndNot => std::array::from_fn(|i| and(l[i], not(r[i]))),
+                IntegerOp::Or => std::array::from_fn(|i| or(l[i], r[i])),
+                IntegerOp::Xor => std::array::from_fn(|i| xor(l[i], r[i])),
+                IntegerOp::Shl => match by {
+                    Some(by) => shift_left(l, by),
+                    None => [Bit::Unknown; 32],
+                },
+                IntegerOp::Shr | IntegerOp::Sar => match by {
+                    Some(by) => std::array::from_fn(|i| {
+                        let from = i as u32 + by;
+                        if from < 32 {
+                            l[from as usize]
+                        } else if *op == IntegerOp::Sar {
+                            l[31]
+                        } else {
+                            Bit::Zero
+                        }
+                    }),
+                    None => [Bit::Unknown; 32],
+                },
+                IntegerOp::Add => add(l, r),
+                IntegerOp::Sub if r.iter().all(|bit| *bit == Bit::Zero) => l,
+                IntegerOp::ShiftAdd1 => add(shift_left(l, 1), r),
+                IntegerOp::ShiftAdd2 => add(shift_left(l, 2), r),
+                IntegerOp::ShiftAdd3 => add(shift_left(l, 3), r),
+                _ => [Bit::Unknown; 32],
+            }
+        }
+        Expression::CallResult { .. } => [Bit::Unknown; 32],
+    }
+}
+
+fn exact_address(value: &AbstractValue) -> Option<u32> {
+    match value {
+        AbstractValue::Constant { value } | AbstractValue::ImageAddress { address: value } => {
+            Some(*value)
+        }
+        _ => None,
+    }
+}
+
+/// Where each run of the `width`-byte value stored at `address` comes from,
+/// low run first: fixed bits, a function entry register's bits (an argument
+/// for `a0`..`a7`), a loaded value's bits (with `same_word` for the stored word
+/// itself) or unknown. Each bit follows bitwise logic, constant shifts and
+/// carry-free additions of the analysis' expressions; anything else is
+/// unknown, never guessed.
+pub fn stored_bits<'a>(
+    facts: &Facts<'a, '_>,
+    address: &AbstractValue,
+    width: u8,
+    value: &'a AbstractValue,
+) -> Vec<StoredBits> {
+    let Some(mask) = width_mask(width) else {
+        return Vec::new();
+    };
+    let value = bits(facts, value, DEPTH);
+    let count = mask.count_ones() as usize;
+    let mut runs: Vec<StoredBits> = Vec::new();
+    let mut i = 0;
+    while i < count {
+        let start = i;
+        let first = value[i];
+        i += 1;
+        let next = |previous: Bit<'a>, bit: Bit<'a>| match (previous, bit) {
+            (Bit::Zero | Bit::One, Bit::Zero | Bit::One) => true,
+            (Bit::Entry(r, b), Bit::Entry(s, c)) => r == s && c == b + 1,
+            (Bit::Load(a, w, b), Bit::Load(x, v, c)) => a == x && w == v && c == b + 1,
+            (Bit::Unknown, Bit::Unknown) => true,
+            _ => false,
+        };
+        while i < count && next(value[i - 1], value[i]) {
+            i += 1;
+        }
+        let source = match first {
+            Bit::Zero | Bit::One => StoredBitsSource::Constant {
+                value: (start..i).fold(0, |acc, bit| {
+                    acc | u32::from(value[bit] == Bit::One) << (bit - start)
+                }),
+            },
+            Bit::Entry(register, low) => StoredBitsSource::EntryRegister { register, low },
+            Bit::Load(loaded, loaded_width, low) => StoredBitsSource::Load {
+                address: exact_address(loaded),
+                width: loaded_width,
+                low,
+                same_word: loaded == address && loaded_width == width,
+            },
+            Bit::Unknown => StoredBitsSource::Unknown,
+        };
+        runs.push(StoredBits {
+            low: start as u8,
+            width: (i - start) as u8,
+            source,
+        });
+    }
+    runs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,5 +409,129 @@ mod tests {
         );
         assert!(write_mask(&facts, &number(0x20001), 2, &value(5)).is_none());
         assert!(write_mask(&facts, &number(0x20000), 4, &value(5)).is_none());
+    }
+    #[test]
+    fn stored_bits_name_fields_kept_bits_constants_and_unknowns() {
+        let memory = WorkingMemory::new(65536).unwrap();
+        let word = number(0x2010_713c);
+        let records = records(vec![
+            Expression::Load {
+                address: word.clone(),
+                width: 4,
+                signed: false,
+            },
+            Expression::EntryRegister { register: 10 },
+            Expression::Integer {
+                op: IntegerOp::Shl,
+                left: value(1),
+                right: number(18),
+            },
+            Expression::Integer {
+                op: IntegerOp::And,
+                left: value(2),
+                right: number(0x01fc_0000),
+            },
+            Expression::Integer {
+                op: IntegerOp::And,
+                left: value(0),
+                right: number(0xfe03_ffff),
+            },
+            Expression::Integer {
+                op: IntegerOp::Or,
+                left: value(3),
+                right: value(4),
+            },
+            Expression::Integer {
+                op: IntegerOp::Or,
+                left: value(4),
+                right: number(0x1b << 18),
+            },
+            Expression::Integer {
+                op: IntegerOp::Mul,
+                left: value(1),
+                right: number(3),
+            },
+            Expression::EntryRegister { register: 11 },
+            Expression::Integer {
+                op: IntegerOp::Add,
+                left: value(1),
+                right: value(8),
+            },
+        ]);
+        let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
+        let kept = |low, width| StoredBits {
+            low,
+            width,
+            source: StoredBitsSource::Load {
+                address: Some(0x2010_713c),
+                width: 4,
+                low,
+                same_word: true,
+            },
+        };
+        let field = value(5);
+        assert_eq!(
+            stored_bits(&facts, &word, 4, &field),
+            [
+                kept(0, 18),
+                StoredBits {
+                    low: 18,
+                    width: 7,
+                    source: StoredBitsSource::EntryRegister {
+                        register: 10,
+                        low: 0
+                    },
+                },
+                kept(25, 7),
+            ],
+            "the argument's low seven bits replace bits 24:18; the rest are kept"
+        );
+        let fixed = value(6);
+        assert_eq!(
+            stored_bits(&facts, &word, 4, &fixed)[1],
+            StoredBits {
+                low: 18,
+                width: 7,
+                source: StoredBitsSource::Constant { value: 0x1b },
+            }
+        );
+        let elsewhere = number(0x2010_7094);
+        assert!(matches!(
+            stored_bits(&facts, &elsewhere, 4, &field)[0].source,
+            StoredBitsSource::Load {
+                same_word: false,
+                address: Some(0x2010_713c),
+                ..
+            }
+        ));
+        let product = value(7);
+        assert_eq!(
+            stored_bits(&facts, &word, 4, &product),
+            [StoredBits {
+                low: 0,
+                width: 32,
+                source: StoredBitsSource::Unknown,
+            }],
+            "a product is never decomposed"
+        );
+        let sum = value(9);
+        assert_eq!(
+            stored_bits(&facts, &word, 4, &sum),
+            [StoredBits {
+                low: 0,
+                width: 32,
+                source: StoredBitsSource::Unknown,
+            }],
+            "two register values can carry from bit zero"
+        );
+        assert_eq!(
+            stored_bits(&facts, &word, 1, &number(0x1ff)),
+            [StoredBits {
+                low: 0,
+                width: 8,
+                source: StoredBitsSource::Constant { value: 0xff },
+            }],
+            "only the access width is described"
+        );
     }
 }

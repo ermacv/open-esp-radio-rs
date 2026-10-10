@@ -31,9 +31,9 @@ pub struct TargetAuditDocument {
 }
 
 /// Schema of the `register-accesses` document
-/// (`{"schema":3,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
+/// (`{"schema":4,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
 /// `groups` only with `--group-by`).
-pub const REGISTER_ACCESSES_SCHEMA: u32 = 3;
+pub const REGISTER_ACCESSES_SCHEMA: u32 = 4;
 
 /// One analyzed input of a `register-accesses` document, by position.
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -182,7 +182,7 @@ const FLOAT_ABI: [&str; 32] = [
 impl fmt::Display for Register {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Register::Integer(r) => f.write_str(super::extensions::name(r)),
+            Register::Integer(r) => f.write_str(super::extensions::register_name(r)),
             Register::Float(r) => f.write_str(FLOAT_ABI[r as usize]),
         }
     }

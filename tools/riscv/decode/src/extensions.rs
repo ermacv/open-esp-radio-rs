@@ -303,7 +303,8 @@ const ABI: [&str; 32] = [
     "t5", "t6",
 ];
 
-pub(crate) fn name(register: u8) -> &'static str {
+/// The ABI name of integer register `register` (`x0`..`x31`).
+pub fn register_name(register: u8) -> &'static str {
     ABI[register as usize]
 }
 
@@ -360,10 +361,15 @@ impl fmt::Display for Extension {
                     (BitExtract, _) => ("bext", false),
                     _ => unreachable!("extension decoding produces no other operation"),
                 };
-                write!(f, "{mnemonic} {}, {}", name(dest), name(left))?;
+                write!(
+                    f,
+                    "{mnemonic} {}, {}",
+                    register_name(dest),
+                    register_name(left)
+                )?;
                 match right {
                     _ if unary => Ok(()),
-                    Operand::Register(r) => write!(f, ", {}", name(r)),
+                    Operand::Register(r) => write!(f, ", {}", register_name(r)),
                     Operand::Immediate(v) => write!(f, ", {v}"),
                 }
             }
@@ -380,9 +386,16 @@ impl fmt::Display for Extension {
                 };
                 match source {
                     Operand::Register(r) => {
-                        write!(f, "{mnemonic} {}, {csr:#x}, {}", name(dest), name(r))
+                        write!(
+                            f,
+                            "{mnemonic} {}, {csr:#x}, {}",
+                            register_name(dest),
+                            register_name(r)
+                        )
                     }
-                    Operand::Immediate(v) => write!(f, "{mnemonic}i {}, {csr:#x}, {v}", name(dest)),
+                    Operand::Immediate(v) => {
+                        write!(f, "{mnemonic}i {}, {csr:#x}, {v}", register_name(dest))
+                    }
                 }
             }
             Extension::Memory {
@@ -400,7 +413,12 @@ impl fmt::Display for Extension {
                     (false, 1, _) => "c.sb",
                     (false, ..) => "c.sh",
                 };
-                write!(f, "{kind} {}, {offset}({})", name(register), name(base))
+                write!(
+                    f,
+                    "{kind} {}, {offset}({})",
+                    register_name(register),
+                    register_name(base)
+                )
             }
             Extension::Push {
                 list: l,
@@ -425,10 +443,20 @@ impl fmt::Display for Extension {
                 write!(f, ", {adjustment}")
             }
             Extension::MoveToSaved { first, second } => {
-                write!(f, "cm.mvsa01 {}, {}", name(first), name(second))
+                write!(
+                    f,
+                    "cm.mvsa01 {}, {}",
+                    register_name(first),
+                    register_name(second)
+                )
             }
             Extension::MoveFromSaved { first, second } => {
-                write!(f, "cm.mva01s {}, {}", name(first), name(second))
+                write!(
+                    f,
+                    "cm.mva01s {}, {}",
+                    register_name(first),
+                    register_name(second)
+                )
             }
         }
     }

@@ -1,5 +1,6 @@
 //! ISA-only function decoder and relocation interpretation; no I/O authority.
 use oer_elf::rv32::{self, Role};
+pub use oer_riscv_decode::register_name;
 use oer_riscv_decode::{Extension, Extensions, Inst, Instruction};
 use oer_riscv_model::*;
 pub struct RiscvDecoder;

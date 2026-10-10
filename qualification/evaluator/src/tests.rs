@@ -94,6 +94,8 @@ runs = "missing-runs"
             runs: Vec::new(),
             pending: false,
             changed: Vec::new(),
+            base: None,
+            drops: None,
         })
     }
 }
@@ -502,6 +504,15 @@ fn execution_plan_requires_an_evaluated_program() {
 }
 
 #[test]
+fn readiness_requires_its_output_directory() {
+    let parse = |words: &[&str]| parse_arguments(words.iter().map(|w| w.to_string()));
+    let parsed = parse(&["readiness", "--out", "o", "--base", "b", "--drops", "d.md"]).unwrap();
+    assert_eq!(parsed.base, Some(PathBuf::from("b")));
+    assert_eq!(parsed.drops, Some(PathBuf::from("d.md")));
+    assert!(parse(&["readiness", "--base", "b"]).is_err());
+}
+
+#[test]
 fn each_command_accepts_exactly_the_options_its_tree_lists() {
     let every = Command::ALL
         .iter()
@@ -512,6 +523,7 @@ fn each_command_accepts_exactly_the_options_its_tree_lists() {
         let required: &[&str] = match command {
             Command::CatalogAnchors => &["--catalog", "c.toml"],
             Command::CatalogRender => &["--manifest", "m.toml", "--out", "out"],
+            Command::Readiness => &["--out", "out"],
             _ => &["--manifest", "m.toml"],
         };
         let base = command
@@ -550,6 +562,7 @@ fn each_command_accepts_exactly_the_options_its_tree_lists() {
             "validate",
             "evaluate",
             "hil-evidence",
+            "readiness",
             "catalog"
         ]
     );

@@ -691,6 +691,34 @@ See the canonical
 [verification and qualification contract](../docs/verification-and-qualification.md)
 for evidence strength and the release workflow.
 
+### Readiness drops
+
+```console
+cargo qualification readiness --out target/qualification/readiness \
+  --base target/qualification/previous --drops target/qualification/drops.md
+```
+
+evaluates every program below `qualification/targets` into one JSON report
+each (`<chip>-<program>.json`) in `--out`, and compares each with its report
+in `--base`, the reports of an earlier evaluation. A capability's readiness
+drops when one of its axes was terminal and is no longer, or when it was
+proof-ready or ready and is no longer; a capability or program only one side
+has is a reviewed catalog change, not a drop. Each drop prints as
+`READINESS-DROP`, and with `--drops` they are written as a Markdown table
+(the file is removed when nothing dropped). Nightly runs it after its
+verification checks against the last good reports, the
+`qualification-readiness` artifact of a `main` run: while a readiness issue
+is open, those of the run its marker names, the last before the drop;
+otherwise the previous night's. A drop opens a `kind:bug`,
+`area:qualification`, `priority:P1` issue; each later night updates its
+table, comments on a further drop and closes it once readiness is back.
+Closing it by hand accepts the drop, and the next night's base is the
+previous night's reports again. When the issue's base reports expired, its
+marker becomes `expired-base-run`: the issue stays open, uncompared, and
+the previous night's reports are the base. Only a complete evaluation is
+published or reported; a base that fails to download fails the step
+rather than being replaced.
+
 ### Host observer identity
 
 A firmware snapshot does not identify the process that observed its behavior.

@@ -14,7 +14,9 @@ name: Nightly
 #   extraction;
 # - verification: each verified chip's provenance, probe images, vendor
 #   scenarios (their ESP-IDF firmware inputs built from the tracked recipes)
-#   and vendor host stands, with the pinned artifacts the checks fetch.
+#   and vendor host stands, with the pinned artifacts the checks fetch; then
+#   every program's readiness against the previous night's, filing a drop as
+#   an issue (`cargo qualification readiness`).
 on:
   schedule:
     - cron: '17 2 * * *'
@@ -154,6 +156,11 @@ jobs:
   verification:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    # Reading the previous night's readiness reports and filing a drop.
+    permissions:
+      contents: read
+      actions: read
+      issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -166,13 +173,128 @@ jobs:
             target/*
             !target/vendor-firmware
             !target/blobray-research
+            !target/verification/*/evidence
+            !target/qualification
           key: verification-nightly-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'verification/*/artifacts.toml') }}
           restore-keys: verification-nightly-${{ runner.os }}-
       # The ESP-IDF tree and tools the vendor scenarios' firmware inputs are
       # built with (~/.cache/open-esp-radio), those builds and the scenario
       # runs (target/vendor-firmware, target/blobray-research) are prepared
       # afresh each night: their gigabytes would evict the CI caches of
-      # every other job.
+      # every other job. The vendor evidence index is too, so readiness
+      # after a failed computation sees no index rather than an earlier
+      # night's.
       - name: Fetch every workspace
         run: cargo tidy fetch
+      - run: rm -rf target/verification/*/evidence
       - run: cargo xtask --verbose check tier nightly --job verification
+      # Every program's readiness against the evidence the night computed,
+      # also after a failed check: a scenario that stopped matching leaves
+      # its shard out and lowers readiness. The base is the last good
+      # reports: while a readiness issue is open, those of the run its marker
+      # names, the last before the drop; otherwise the previous night's on
+      # main. A drop opens the issue; each later night updates its table,
+      # comments on a further drop and closes it once readiness is back.
+      # Closing it by hand accepts the drop: the next night's base is the
+      # previous night again.
+      - name: Fetch the readiness base
+        id: base
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf target/qualification/previous
+          issue=$(gh issue list --state open --label area:qualification --limit 100 --json number,body --jq '
+            [.[] | select(.body | contains("<!-- nightly-readiness-drop base-run="))][0]
+            | if . then "\(.number) \(.body | capture("base-run=(?<run>[0-9]+)").run)" else "" end')
+          number=${issue%% *}
+          run=${issue#* }
+          if [ -n "$issue" ]; then
+            expired=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" --jq '
+              [.artifacts[] | select(.name == "qualification-readiness")][0] | if . then .expired else true end')
+            if [ "$expired" != true ]; then
+              # A transient failure fails the step rather than replace the base.
+              gh run download "$run" --name qualification-readiness --dir target/qualification/previous
+              echo "issue #$number keeps the readiness reports of run $run, the last before its drop, as the base"
+              echo "issue=$number" >>"$GITHUB_OUTPUT"
+              echo "run=$run" >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # The base expired: the issue stays open, no longer compared.
+            gh issue view "$number" --json body --jq .body >"$RUNNER_TEMP/body.md"
+            sed 's/<!-- nightly-readiness-drop base-run=/<!-- nightly-readiness-drop expired-base-run=/' \
+              "$RUNNER_TEMP/body.md" >"$RUNNER_TEMP/expired.md"
+            gh issue edit "$number" --body-file "$RUNNER_TEMP/expired.md"
+            gh issue comment "$number" --body "The readiness reports of run $run, this issue's base, expired. Nightly no longer compares with them: it compares with the previous night's and files a further drop as a new issue. This one stays open until its drop is fixed or accepted."
+          fi
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=qualification-readiness" --jq "
+            [.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == \"main\")
+              | select(.workflow_run.id != $GITHUB_RUN_ID)][0] | .workflow_run.id // empty")
+          if [ -n "$run" ]; then
+            gh run download "$run" --name qualification-readiness --dir target/qualification/previous
+            echo "the readiness reports of run $run, the previous night's, are the base"
+          else
+            echo "no earlier readiness reports: nothing to compare with"
+          fi
+          echo "run=$run" >>"$GITHUB_OUTPUT"
+      - name: Evaluate every program's readiness
+        id: readiness
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        run: >-
+          cargo qualification readiness --out target/qualification/readiness
+          --base target/qualification/previous --drops target/qualification/drops.md
+      # Only a complete evaluation is published or reported: without one, no
+      # drop file does not mean that nothing dropped.
+      - if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.readiness.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qualification-readiness
+          path: target/qualification/readiness
+          if-no-files-found: error
+          # An open readiness issue keeps its base run's reports as the base.
+          retention-days: 90
+          overwrite: true
+      - name: Report the readiness against its base
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.readiness.outcome == 'success' && steps.base.outputs.run != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ steps.base.outputs.issue }}
+          BASE: ${{ steps.base.outputs.run }}
+          RUNS: ${{ github.server_url }}/${{ github.repository }}/actions/runs
+        run: |
+          drops=target/qualification/drops.md
+          rows() { grep '^| `' || true; }
+          if [ ! -f "$drops" ]; then
+            if [ -n "$ISSUE" ]; then
+              gh issue comment "$ISSUE" --body "Nightly at \`$GITHUB_SHA\` ([run]($RUNS/$GITHUB_RUN_ID)) evaluates the readiness of [run $BASE]($RUNS/$BASE) again: the drop is restored."
+              gh issue close "$ISSUE" --reason completed
+            fi
+            exit 0
+          fi
+          {
+            printf 'Nightly at `%s` ([run](%s/%s)) evaluates a lower readiness than [run %s](%s/%s), the last on `main` before the drop:\n\n' \
+              "$GITHUB_SHA" "$RUNS" "$GITHUB_RUN_ID" "$BASE" "$RUNS" "$BASE"
+            cat "$drops"
+            printf '\nEach run'"'"'s `qualification-readiness` artifact holds every program'"'"'s report. Nightly updates this table every night and closes this issue once readiness is back; closing it by hand accepts the drop.\n\n'
+            printf '<!-- nightly-readiness-drop base-run=%s -->\n' "$BASE"
+          } >"$RUNNER_TEMP/drop.md"
+          if [ -z "$ISSUE" ]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/issue_labels.py create \
+              --title "qualification: readiness dropped in Nightly" \
+              --body-file "$RUNNER_TEMP/drop.md" \
+              --label kind:bug --label area:qualification --label priority:P1
+            exit 0
+          fi
+          gh issue view "$ISSUE" --json body --jq .body >"$RUNNER_TEMP/body.md"
+          rows <"$RUNNER_TEMP/body.md" | sort >"$RUNNER_TEMP/known"
+          rows <"$drops" | sort >"$RUNNER_TEMP/now"
+          gh issue edit "$ISSUE" --body-file "$RUNNER_TEMP/drop.md"
+          comm -13 "$RUNNER_TEMP/known" "$RUNNER_TEMP/now" >"$RUNNER_TEMP/added"
+          if [ -s "$RUNNER_TEMP/added" ]; then
+            {
+              printf 'Nightly at `%s` ([run](%s/%s)) finds a further drop:\n\n| Program | Capability | Axis | Before | Now |\n| --- | --- | --- | --- | --- |\n' \
+                "$GITHUB_SHA" "$RUNS" "$GITHUB_RUN_ID"
+              cat "$RUNNER_TEMP/added"
+            } >"$RUNNER_TEMP/further.md"
+            gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/further.md"
+          fi

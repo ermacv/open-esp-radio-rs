@@ -528,7 +528,7 @@ impl ManifestDocument {
 }
 
 /// Directory of the qualification programs, relative to the repository root.
-const PROGRAMS: &str = "qualification/targets";
+pub(crate) const PROGRAMS: &str = "qualification/targets";
 
 impl ManifestDocument {
     /// The scenarios the resolved program's HIL requirements name.
@@ -543,7 +543,7 @@ impl ManifestDocument {
 }
 
 /// Every program below [`PROGRAMS`], relative to the repository root.
-fn program_paths(root: &Path) -> Result<Vec<PathBuf>> {
+pub(crate) fn program_paths(root: &Path) -> Result<Vec<PathBuf>> {
     let mut stack = vec![PathBuf::from(PROGRAMS)];
     let mut programs = vec![];
     while let Some(directory) = stack.pop() {

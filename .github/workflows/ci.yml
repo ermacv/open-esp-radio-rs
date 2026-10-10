@@ -412,6 +412,7 @@ jobs:
             target/*
             !target/vendor-firmware
             !target/blobray-research
+            !target/verification/*/evidence
             !target/vendor-evidence-base
           key: verification-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'verification/*/artifacts.toml') }}
           restore-keys: verification-${{ runner.os }}-

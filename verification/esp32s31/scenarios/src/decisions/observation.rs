@@ -50,68 +50,9 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
-        reason: "construction of the validation-only shared-PHY wrapper: its fresh route \
-            state is a constant the optimized probes fold into each restore-slot check, so no \
-            store of it is read",
-        places: &[("hal/src/owner.rs", "Self {")],
-    },
-    Decision {
-        reason: "terminal inspection of the one-step RX-DC child: the arm selects the \
-            completed variant, while the compared DC codes depend on the policy lines that \
-            compute its configuration",
-        places: &[(
-            "phy/src/rx/gain_calibration.rs",
-            "Step::Complete(outcome) => Some(Ok(outcome)),",
-        )],
-    },
-    Decision {
-        reason: "per-search convergence quality of an RX DC product: production retains it \
-            for its own diagnostics and HIL evidence, the vendor keeps no counterpart, and \
-            the compared DC codes carry the calibration result",
-        places: &[
-            (
-                "phy/src/rx/gain_calibration/quality.rs",
-                "let mask = 1 << index;",
-            ),
-            (
-                "phy/src/rx/gain_calibration/quality.rs",
-                "self.converged = (self.converged & !mask) | if converged { mask } else { 0 };",
-            ),
-            (
-                "phy/src/rx/gain_calibration/quality.rs",
-                "self.record(index, converged);",
-            ),
-            (
-                "phy/src/rx/gain_calibration/quality.rs",
-                "self.record(11 + index, converged);",
-            ),
-            (
-                "phy/src/rx/gain_calibration/quality.rs",
-                "self.record(19 + index, converged);",
-            ),
-            (
-                "phy/src/target_port/calibration.rs",
-                "outcome.quality.record_shared(index, calibrated.converged);",
-            ),
-            (
-                "phy/src/target_port/calibration.rs",
-                ".record_wifi_baseband(index, calibrated.converged);",
-            ),
-            (
-                "phy/src/target_port/calibration.rs",
-                "outcome.quality.record_wifi_fine(fine, calibrated.converged);",
-            ),
-        ],
-    },
-    Decision {
         reason: "execution statistics of the RX-gain and TX-DC executors; they \
             report effort to production diagnostics and have no vendor counterpart",
         places: &[
-            (
-                "phy/src/rx/gain_calibration.rs",
-                "stats.minimum_searches += 1;",
-            ),
-            ("phy/src/rx/gain_calibration.rs", "stats.settle_10us += 1;"),
             (
                 "phy/src/rx/gain_calibration.rs",
                 "stats.minimum_operations += completion.operations();",
@@ -146,10 +87,6 @@ pub const DECISIONS: &[Decision] = &[
             (
                 "phy/src/tx/dc_power_detector.rs",
                 ".wrapping_add(self.total_measurements);",
-            ),
-            (
-                "phy/src/tx/dc_power_detector.rs",
-                "observations = observations.wrapping_add(1);",
             ),
             ("phy/src/tx/dc_power_detector.rs", "for transaction in ["),
             (
@@ -186,10 +123,6 @@ pub const DECISIONS: &[Decision] = &[
                 "phy/src/validation.rs",
                 "crate::target_port::select_phy_channel_with_hal::<D, _, _>(",
             ),
-            (
-                "phy/src/target_port.rs",
-                "TargetCompleter::<D>::select_channel_hal(state, channel_or_frequency, cbw, channel, observer)",
-            ),
         ],
     },
     Decision {
@@ -197,14 +130,7 @@ pub const DECISIONS: &[Decision] = &[
             state-discriminant and local stores into the future frame, register restores, and \
             the ready-flag take of a completed delay future at its `.await`; the probes poll \
             each future to completion without suspension, so no resume reads them",
-        places: &[
-            ("phy/src/target_port.rs", "}"),
-            ("phy/src/target_port/rfpll.rs", "}"),
-            (
-                "phy/src/target_port/temperature.rs",
-                ") -> Result<Result<PhyTemperatureOutcome, PhyTemperatureFailure>, PhyTargetPortError> {",
-            ),
-        ],
+        places: &[("phy/src/target_port.rs", "}")],
     },
     Decision {
         reason: "probe snapshot artifact: the tracking probes read the RX-gain memory \
@@ -250,10 +176,7 @@ pub const DECISIONS: &[Decision] = &[
             any read: the calibration child reads each `None` outcome field only after the \
             branch that sets it, and the recalibrated RX-gain child overwrites its initial \
             table results before reading them",
-        places: &[
-            ("phy/src/target_port.rs", "transition"),
-            ("phy/src/target_port.rs", "let mut child = pending"),
-        ],
+        places: &[("phy/src/target_port.rs", "transition")],
     },
     Decision {
         reason: "the grant-protect port lent to the PHY maintenance ports: the PHY-archive \
@@ -293,10 +216,6 @@ pub const DECISIONS: &[Decision] = &[
             ("phy/src/tracking/rfpll/thermal.rs", "self.request"),
             ("phy/src/tracking/parameters.rs", "self.child.request()"),
             ("phy/src/target_port.rs", "let request = child.request();"),
-            (
-                "phy/src/target_port/rfpll.rs",
-                ") -> Result<rfpll::Outcome, PhyTargetPortError> {",
-            ),
         ],
     },
     Decision {

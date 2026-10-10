@@ -263,6 +263,10 @@ pub struct Channel {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
+    /// Register-preserving short-delay event of the production probes: the
+    /// short settles of the transition, such as the force-TX/RX and RFPLL
+    /// waits, reach it instead of `ets_delay_us`.
+    short_delay: u32,
     effects: ArtifactId,
     committed: ArtifactId,
     sensor_effects: ArtifactId,
@@ -383,6 +387,7 @@ impl Channel {
             sensor_committed,
             rom_delay: image.sym(1, "ets_delay_us"),
             production_delay: image.sym(2, "ets_delay_us"),
+            short_delay: image.probes.entry("open_phy_trace_delay_event")?,
             image,
             effects,
             committed,
@@ -418,6 +423,9 @@ impl Channel {
         )?;
         let mut phase = self.enter_probe(probe);
         phase.calls = delay_calls("channel-delay", self.production_delay);
+        phase
+            .calls
+            .extend(delay_calls("channel-short-delay", self.short_delay));
         Ok(phase)
     }
 

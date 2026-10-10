@@ -1143,3 +1143,35 @@ fn a_client_reserves_its_air_with_a_cts_to_itself() {
         )))
     ));
 }
+
+#[test]
+fn a_completion_nobody_registered_ends_its_body_with_it() {
+    use oer_ieee80211_lower_mac::TxBuffer as _;
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let frame = qos_data(40, [1, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let mut buffer = model.tx_buffer(frame.len()).unwrap().unwrap().unwrap();
+    buffer.frame_mut()[..26].copy_from_slice(&frame[..26]);
+    let attempt = oer_ieee80211_lower_mac::TxAttempt {
+        id: oer_ieee80211_lower_mac::TxId(7),
+        vif: STATION,
+        access_category: WmmAccessCategory::BestEffort,
+        payload: oer_ieee80211_lower_mac::TxPayload {
+            frame: buffer,
+            body: Some(Frame::carrying(&frame[26 + 14..])),
+            response: TxResponse::Ack,
+        },
+        rate: OFDM54,
+        protection: Protection::None,
+        key: KeySelector::Plaintext,
+        power: TxPower::Calibrated,
+        backoff: Backoff::Slots(0),
+        coex: CoexPriority::Normal,
+    };
+    assert!(matches!(model.submit(attempt), Ok(Ok(()))));
+    model.complete(queue(WmmAccessCategory::BestEffort), TxStatus::Success);
+    assert!(poll_once(pin!(router.run())).is_pending());
+    assert_eq!(router.unclaimed_completions(), 1);
+    // The router took the completion and, with it, the body: nothing waits.
+    assert_eq!(model.bodies_held(), 0);
+}

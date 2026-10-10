@@ -79,9 +79,8 @@ pub use oer_radio_port::{
 pub use port::{Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};
 pub use tx::{
-    Backoff, BlockAckReport, KeySelector, Protection, ReclaimError, Refused, SubmitError,
-    TxAttempt, TxBody, TxBuffer, TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse,
-    TxStatus,
+    Backoff, BlockAckReport, KeySelector, Protection, Refused, SubmitError, TxAttempt, TxBody,
+    TxBuffer, TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus,
 };
 
 #[cfg(any(test, feature = "model"))]

@@ -129,9 +129,8 @@ request, ladder, entropy)` run one exchange to its `TxReport`:
    addresses into a buffer the port lends, hands the port their bodies,
    sets the Retry bit where the plan says so, and submits one `TxAttempt`
    with the plan's rate, protection, backoff, power and coexistence level;
-3. it awaits the attempt's completion from the router and reclaims the
-   bodies to the subframes they came from (`BodiesHeld` when the port keeps
-   those of an attempt that ended);
+3. it awaits the attempt's completion from the router, which carries the
+   attempt's bodies, and puts them back to the subframes they came from;
 4. it feeds the completion and the port's radio time to the planner and
    repeats with the next plan until the exchange ends.
 

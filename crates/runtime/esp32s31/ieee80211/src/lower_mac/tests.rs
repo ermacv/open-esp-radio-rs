@@ -43,8 +43,8 @@ use oer_esp32s31_ieee80211_mac::{
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduPayload, Backoff, BlockAckReport, Channel, ChannelWidth, CoexPriority,
     KeySelector, MacAddress, PhyFormatSet, PhyRate, Poisoned, PortResult, Protection, RadioPort,
-    ReceiveFilter, ReclaimError, SubmitError, TxAttempt, TxBody, TxBuffer, TxId, TxPayload,
-    TxPower, TxResponse, TxStatus, VifConfig, VifRole,
+    ReceiveFilter, SubmitError, TxAttempt, TxBody, TxBuffer, TxId, TxPayload, TxPower, TxResponse,
+    TxStatus, VifConfig, VifRole,
 };
 use oer_ieee80211_mac::{
     phy::{HtMcs, HtRate, LegacyRate, PpduBandwidth},
@@ -466,7 +466,7 @@ fn take<P: Ieee80211LowerMacPort>(
     }
 }
 
-fn next_owned(port: &Port) -> Result<&'static Esp32s31LowerMacEvent<TestRxUnit>, EventsLost> {
+fn next_owned(port: &Port) -> Result<&'static <Port as RadioPort>::Event, EventsLost> {
     // Views borrow the owned event; tests compare leaked copies.
     take(port, port.run())
         .expect("the port is not poisoned")
@@ -1197,9 +1197,12 @@ fn install_ampdu(port: &AmpduPort) -> &'static Backings {
     backings
 }
 
-fn next_completion(port: &AmpduPort) -> TxCompletion {
+/// The next event, a completion, with the bodies of its attempt.
+fn next_completed(port: &AmpduPort) -> (TxCompletion, Vec<(usize, TestBody)>) {
     match take(port, port.run()) {
-        Ok(Ok(Esp32s31LowerMacEvent::TxCompleted(completion))) => completion,
+        Ok(Ok(Esp32s31LowerMacEvent::TxCompleted(completion, bodies))) => {
+            (completion, bodies.into_iter().collect())
+        }
         _ => panic!("a completion"),
     }
 }
@@ -1399,11 +1402,6 @@ fn attempts_on_different_queues_complete_by_their_identity() {
     };
     assert!(matches!(port.submit_ampdu(ampdu), Ok(Ok(()))));
     assert_eq!(backings.free.0.borrow().len(), BACKINGS - 2);
-    // The port holds the bodies while their attempts run.
-    assert_eq!(
-        port.reclaim_tx_bodies(TxId(1), |_, _| panic!("still running")),
-        Ok(Err(ReclaimError::Running))
-    );
     assert_eq!(
         with_hardware_of(&port, |hardware| (hardware.legacy.len(), hardware.ht.len())),
         (1, 1)
@@ -1420,7 +1418,8 @@ fn attempts_on_different_queues_complete_by_their_identity() {
         ));
     });
     port.on_interrupt(EVENT_TX_COMPLETE);
-    let completion = next_completion(&port);
+    // The completion event carries the aggregate's bodies by subframe.
+    let (completion, back) = next_completed(&port);
     assert_eq!(completion.id, TxId(2));
     assert_eq!(
         completion.block_ack,
@@ -1430,27 +1429,14 @@ fn attempts_on_different_queues_complete_by_their_identity() {
         })
     );
     assert_eq!(backings.free.0.borrow().len(), BACKINGS);
-    let mut back = Vec::new();
-    assert_eq!(
-        port.reclaim_tx_bodies(TxId(2), |index, body| back.push((index, body))),
-        Ok(Ok(()))
-    );
     assert_eq!(back, [(1, TestBody(std::vec![0xcd; 6]))]);
     with_hardware_of(&port, |hardware| {
         hardware.completion[VO] = Some(MacTxCompletionObservation::new_model(0, 0));
     });
     port.on_interrupt(EVENT_TX_COMPLETE);
-    assert_eq!(next_completion(&port).id, TxId(1));
-    let mut back = Vec::new();
-    assert_eq!(
-        port.reclaim_tx_bodies(TxId(1), |index, body| back.push((index, body))),
-        Ok(Ok(()))
-    );
+    let (completion, back) = next_completed(&port);
+    assert_eq!(completion.id, TxId(1));
     assert_eq!(back, [(0, TestBody(std::vec![0xab; 4]))]);
-    assert_eq!(
-        port.reclaim_tx_bodies(TxId(1), |_, _| panic!("reclaimed twice")),
-        Ok(Err(ReclaimError::Unknown))
-    );
 
     // The aggregate owner is lent again; a refused aggregate comes back.
     let empty = port.ampdu_buffer().unwrap().unwrap().unwrap();

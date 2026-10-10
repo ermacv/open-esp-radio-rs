@@ -6,8 +6,8 @@
 //! dispatches it to the owner that waits for it, so several exchanges, a
 //! receive path and a lifecycle owner share one port:
 //!
-//! - an attempt completion goes to the exchange that registered its
-//!   [`TxId`] ([`EventRouter::completion`]);
+//! - an attempt completion goes, with the bodies of its attempt, to the
+//!   exchange that registered its [`TxId`] ([`EventRouter::completion`]);
 //! - received frames go to the bounded receive
 //!   queue of the interface they belong to ([`EventRouter::received`]), and
 //!   extension events (a TBTT) to the station's ([`EventRouter::extension`]):
@@ -23,8 +23,8 @@
 //! - [`Poisoned`] ends the router and every wait.
 //!
 //! A bounded queue that overflows reports its own [`EventsLost`] in place of
-//! the first dropped entry. A completion no exchange registered, and a frame
-//! no attached interface owns, is counted
+//! the first dropped entry. A completion no exchange registered, whose
+//! bodies end with it, and a frame no attached interface owns, is counted
 //! ([`EventRouter::unclaimed_completions`], [`EventRouter::unrouted_frames`])
 //! and dropped.
 //!
@@ -117,9 +117,11 @@ fn route(routes: &[Option<Route>; ROUTER_VIFS], frame: &[u8]) -> Option<usize> {
     }
 }
 
-struct Waiter {
+struct Waiter<T> {
     id: TxId,
-    completion: Option<TxCompletion>,
+    /// The completion and the bodies of its attempt, until the exchange
+    /// takes them.
+    completion: Option<(TxCompletion, T)>,
     waker: Option<Waker>,
 }
 
@@ -202,8 +204,8 @@ impl<T, const N: usize> Ring<T, N> {
 /// Lifecycle terminals and extension events the router holds.
 const SMALL_QUEUE: usize = 4;
 
-struct State<E, F, const WAITERS: usize, const RX: usize> {
-    waiters: [Option<Waiter>; WAITERS],
+struct State<E, T, F, const WAITERS: usize, const RX: usize> {
+    waiters: [Option<Waiter<T>>; WAITERS],
     queues: [Option<QueueWaiter>; WAITERS],
     routes: [Option<Route>; ROUTER_VIFS],
     received: [Ring<E, RX>; ROUTER_VIFS],
@@ -221,7 +223,7 @@ struct State<E, F, const WAITERS: usize, const RX: usize> {
 /// and `RX` the received frames waiting for the receive path.
 pub struct EventRouter<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> {
     port: &'p P,
-    state: RefCell<State<P::Event, P::Fault, WAITERS, RX>>,
+    state: RefCell<State<P::Event, P::TxBodies, P::Fault, WAITERS, RX>>,
 }
 
 impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
@@ -378,8 +380,8 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                 return Err(poisoned);
             }
         };
-        match P::view(&event) {
-            LowerMacEvent::TxCompleted(completion) => {
+        let event = match P::into_completed(event) {
+            Ok((completion, bodies)) => {
                 match state
                     .waiters
                     .iter_mut()
@@ -387,14 +389,20 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                     .find(|waiter| waiter.id == completion.id)
                 {
                     Some(waiter) => {
-                        waiter.completion = Some(completion);
+                        waiter.completion = Some((completion, bodies));
                         if let Some(waker) = waiter.waker.take() {
                             waker.wake();
                         }
                     }
+                    // Nobody takes the bodies back: they end here.
                     None => state.unclaimed = state.unclaimed.saturating_add(1),
                 }
+                return Ok(());
             }
+            Err(event) => event,
+        };
+        match P::view(&event) {
+            LowerMacEvent::TxCompleted(_) => unreachable!("a completion is taken above"),
             LowerMacEvent::Received { frame, .. } => match route(&state.routes, frame) {
                 Some(index) => state.received[index].push(event),
                 None => state.unrouted = state.unrouted.saturating_add(1),
@@ -427,14 +435,18 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
         Ok(Registration { router: self, id })
     }
 
-    /// Wait for the completion of a registered attempt; [`Poisoned`] once
-    /// the port is. The port reserves the completion's slot when it admits
-    /// the attempt, so it is never lost.
+    /// Wait for the completion of a registered attempt, with the bodies of
+    /// the attempt; [`Poisoned`] once the port is, whose backend keeps the
+    /// bodies until its reset. The port reserves the completion's slot when
+    /// it admits the attempt, so it is never lost.
     ///
     /// # Panics
     ///
     /// When `id` is not registered.
-    pub async fn completion(&self, id: TxId) -> Result<TxCompletion, Poisoned<P::Fault>> {
+    pub async fn completion(
+        &self,
+        id: TxId,
+    ) -> Result<(TxCompletion, P::TxBodies), Poisoned<P::Fault>> {
         poll_fn(|context| {
             let mut state = self.state.borrow_mut();
             let poisoned = state.poisoned;
@@ -583,7 +595,7 @@ impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
     }
 }
 
-impl<E, F, const WAITERS: usize, const RX: usize> State<E, F, WAITERS, RX> {
+impl<E, T, F, const WAITERS: usize, const RX: usize> State<E, T, F, WAITERS, RX> {
     /// The station interface attached, or the only interface.
     fn station(&self) -> Option<usize> {
         let mut attached = self
@@ -648,7 +660,7 @@ impl<P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> Drop
 }
 
 /// A registered attempt identity; dropping it ends the registration and
-/// discards a completion nobody took.
+/// discards a completion nobody took, with its bodies.
 pub struct Registration<'r, 'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize> {
     router: &'r EventRouter<'p, P, WAITERS, RX>,
     id: TxId,

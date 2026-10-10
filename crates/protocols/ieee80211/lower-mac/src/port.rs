@@ -7,7 +7,7 @@ use crate::{
     capabilities::LowerMacCapabilities,
     control::{KeyHandle, KeyInstall, LowerMacSetting, SettingError},
     rx::{RxBuffer, RxMeta},
-    tx::{ReclaimError, Refused, TxAttempt, TxBody, TxBuffer, TxCompletion, TxId, TxPayload},
+    tx::{Refused, TxAttempt, TxBody, TxBuffer, TxCompletion, TxId, TxPayload},
 };
 
 /// The portable view of one owned event.
@@ -16,7 +16,9 @@ pub enum LowerMacEvent<'a> {
     /// One received MPDU, from its header to the end of its body, without
     /// the FCS.
     Received { frame: &'a [u8], meta: RxMeta },
-    /// The terminal event of one attempt. Its buffer is released.
+    /// The terminal event of one attempt. Its buffer is released; the event
+    /// owns the attempt's bodies, which
+    /// [`Ieee80211LowerMacPort::into_completed`] takes out.
     TxCompleted(TxCompletion),
     /// The terminal event of a lifecycle command.
     Lifecycle(LifecycleEvent),
@@ -45,7 +47,8 @@ pub type SubmitResult<A, F> = PortResult<(), Refused<A>, F>;
 /// - **Submission**: [`Self::submit`] admits one [`TxAttempt`], one hardware
 ///   transmission attempt, or refuses it as a value. The frame's header is
 ///   written into a buffer of [`Self::tx_buffer`]; its body travels by
-///   ownership and comes back through [`Self::reclaim_tx_bodies`].
+///   ownership and comes back with the attempt's completion event
+///   ([`Self::into_completed`]).
 /// - **Events**: [`RadioPort::next_event`] yields owned events, read through
 ///   [`Self::view`]: reception, attempt completions, lifecycle terminals and
 ///   extension events. Loss is reported as
@@ -126,6 +129,9 @@ pub trait Ieee80211LowerMacPort: RadioPort<Id = TxId, Domain = Ieee80211Radio> {
     type TxBody: TxBody;
     /// The memory of one received MPDU, lent with its event.
     type RxBuffer: RxBuffer;
+    /// The bodies an ended attempt's completion event carries, each with its
+    /// subframe index (0 for a single MPDU).
+    type TxBodies: IntoIterator<Item = (usize, Self::TxBody)>;
 
     /// The portable view of an owned event.
     fn view(event: &Self::Event) -> LowerMacEvent<'_>;
@@ -133,6 +139,12 @@ pub trait Ieee80211LowerMacPort: RadioPort<Id = TxId, Domain = Ieee80211Radio> {
     /// Take the frame out of a [`LowerMacEvent::Received`] event, with its
     /// metadata; any other event comes back unchanged.
     fn into_received(event: Self::Event) -> Result<(Self::RxBuffer, RxMeta), Self::Event>;
+
+    /// Take the completion out of a [`LowerMacEvent::TxCompleted`] event,
+    /// with the bodies of its attempt; any other event comes back unchanged.
+    /// The event owns the bodies: dropping it, or them, ends them, so a body
+    /// comes back exactly once and never outlives its attempt's terminal.
+    fn into_completed(event: Self::Event) -> Result<(TxCompletion, Self::TxBodies), Self::Event>;
 
     /// What the backend accepts; it does not change while the port exists.
     fn capabilities(&self) -> LowerMacCapabilities;
@@ -158,22 +170,13 @@ pub trait Ieee80211LowerMacPort: RadioPort<Id = TxId, Domain = Ieee80211Radio> {
     /// nothing was sent and the attempt comes back with its buffer and body.
     /// An admitted attempt reports exactly one [`LowerMacEvent::TxCompleted`]
     /// with its identity, and its buffer is released then; its body stays
-    /// with the backend until [`Self::reclaim_tx_bodies`].
+    /// with the backend until that event carries it back
+    /// ([`Self::into_completed`]). A poisoned backend keeps it until the
+    /// reset.
     fn submit(
         &self,
         attempt: MpduAttempt<Self::TxBuffer, Self::TxBody>,
     ) -> SubmitResult<MpduAttempt<Self::TxBuffer, Self::TxBody>, Self::Fault>;
-
-    /// Hand the bodies of attempt `id` to `each`, with their subframe index
-    /// (0 for a single MPDU), once the attempt ended: its completion was
-    /// reported, or [`RadioPort::cancel`] proved it over. The backend keeps
-    /// no body of the attempt afterwards. A poisoned backend keeps them
-    /// until the reset.
-    fn reclaim_tx_bodies(
-        &self,
-        id: TxId,
-        each: impl FnMut(usize, Self::TxBody),
-    ) -> PortResult<(), ReclaimError, Self::Fault>;
 
     /// Apply one setting. `Ok(Err(_))` when the backend refused it.
     fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, Self::Fault>;

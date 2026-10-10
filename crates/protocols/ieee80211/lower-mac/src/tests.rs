@@ -64,6 +64,14 @@ fn next_completion<P: Ieee80211LowerMacPort>(port: &P) -> TxCompletion {
     }
 }
 
+/// The next event, a completion, with the bodies it carries.
+fn next_completed<P: Ieee80211LowerMacPort>(port: &P) -> (TxCompletion, P::TxBodies) {
+    match P::into_completed(next(port)) {
+        Ok(completed) => completed,
+        Err(other) => panic!("expected a completion, got {:?}", P::view(&other)),
+    }
+}
+
 const STATION: VifId = VifId(0);
 const ACCESS_POINT: VifId = VifId(1);
 const ADDRESS: MacAddress = [0x02, 0, 0, 0, 0, 1];
@@ -1050,7 +1058,7 @@ fn live_retuning_preserves_both_tsfs_configuration_and_completed_tx_ownership() 
     outgoing.payload.body = Some(body.clone());
     model.submit(outgoing).unwrap().unwrap();
     model.complete(0, TxStatus::Success);
-    // Keep the completion queued and the body unreclaimed during the visit.
+    // Keep the completion, which carries the body, queued during the visit.
     model
         .apply(LowerMacSetting::TxGate { open: false })
         .unwrap()
@@ -1075,17 +1083,10 @@ fn live_retuning_preserves_both_tsfs_configuration_and_completed_tx_ownership() 
     assert_eq!(model.rx_block_acks(), [agreement]);
     assert!(!model.gate_open());
     assert_eq!(model.lifecycle_requests(), lifecycle);
-    assert_eq!(next_completion(&model).id, TxId(1));
-    let mut reclaimed = Vec::new();
-    model
-        .reclaim_tx_bodies(TxId(1), |_, body| reclaimed.push(body))
-        .unwrap()
-        .unwrap();
-    assert_eq!(reclaimed, [body]);
-    assert_eq!(
-        model.reclaim_tx_bodies(TxId(1), |_, _| panic!("reclaimed twice")),
-        Ok(Err(ReclaimError::Unknown))
-    );
+    let (completion, bodies) = next_completed(&model);
+    assert_eq!(completion.id, TxId(1));
+    assert_eq!(bodies, [(0, body)]);
+    assert_eq!(model.bodies_held(), 0);
 }
 
 #[test]
@@ -1295,25 +1296,80 @@ fn a_body_travels_by_ownership_and_comes_back_once_its_attempt_ended() {
         (&sent[..24], &sent[24..]),
         (&header(7)[..], &b"payload"[..])
     );
-    // The port holds the body while the attempt runs.
+    // The port holds the body while the attempt runs, and while its
+    // completion waits to be taken.
     assert_eq!(model.bodies_held(), 1);
-    assert_eq!(
-        model.reclaim_tx_bodies(TxId(1), |_, _| panic!("still running")),
-        Ok(Err(ReclaimError::Running))
-    );
     model.complete(0, TxStatus::Success);
-    next_completion(&model);
-    let mut back = Vec::new();
+    assert_eq!(model.bodies_held(), 1);
+    // The completion event owns the body: taking the event takes it, once.
+    let event = next(&model);
+    assert_eq!(model.bodies_held(), 0);
+    let Ok((completion, bodies)) = Model::into_completed(event) else {
+        panic!("a completion");
+    };
+    assert_eq!(completion.id, TxId(1));
+    assert_eq!(bodies, [(0, body)]);
+}
+
+#[test]
+fn a_completion_without_a_body_carries_none_and_other_events_come_back() {
+    let model = enabled_station();
+    model.submit(mpdu(&model, 1, 1)).unwrap().unwrap();
+    model.complete(0, TxStatus::Success);
+    let (completion, bodies) = next_completed(&model);
+    assert_eq!(completion.id, TxId(1));
+    assert!(bodies.is_empty());
+    model.fire_tbtt(STATION);
+    let Err(event) = Model::into_completed(next(&model)) else {
+        panic!("a TBTT is no completion");
+    };
+    assert_eq!(Model::view(&event), LowerMacEvent::Extension);
+}
+
+/// An attempt `id` whose MPDU carries `body`.
+fn with_body(model: &Model, id: u32, body: &ModelBody) -> MpduAttempt<ModelBuffer, ModelBody> {
+    let len = body.0.len();
+    let mut frame = model.tx_buffer(24 + len).unwrap().unwrap().unwrap();
+    frame.frame_mut()[..24].copy_from_slice(&header(7));
+    attempt(
+        id,
+        TxPayload {
+            frame,
+            body: Some(body.clone()),
+            response: TxResponse::Ack,
+        },
+        OFDM24,
+    )
+}
+
+#[test]
+fn a_failed_or_cancelled_attempt_s_completion_carries_its_body_back() {
+    let model = enabled_station();
+    let failed = ModelBody(b"failed".to_vec());
+    assert_eq!(model.submit(with_body(&model, 1, &failed)), Ok(Ok(())));
+    model.complete(0, TxStatus::AckTimeout);
+    let (completion, bodies) = next_completed(&model);
     assert_eq!(
-        model.reclaim_tx_bodies(TxId(1), |index, body| back.push((index, body))),
+        (completion.id, completion.status),
+        (TxId(1), TxStatus::AckTimeout)
+    );
+    assert_eq!(bodies, [(0, failed)]);
+
+    // A cancelled attempt that was never published.
+    assert_eq!(
+        model.apply(LowerMacSetting::TxGate { open: false }),
         Ok(Ok(()))
     );
-    assert_eq!(back, [(0, body)]);
-    assert_eq!(model.bodies_held(), 0);
+    let cancelled = ModelBody(b"cancelled".to_vec());
+    assert_eq!(model.submit(with_body(&model, 2, &cancelled)), Ok(Ok(())));
+    assert_eq!(ready(model.cancel(TxId(2))), Ok(Ok(())));
+    let (completion, bodies) = next_completed(&model);
     assert_eq!(
-        model.reclaim_tx_bodies(TxId(1), |_, _| panic!("reclaimed twice")),
-        Ok(Err(ReclaimError::Unknown))
+        (completion.id, completion.status),
+        (TxId(2), TxStatus::Aborted)
     );
+    assert_eq!(bodies, [(0, cancelled)]);
+    assert_eq!(model.bodies_held(), 0);
 }
 
 #[test]
@@ -1369,13 +1425,13 @@ fn an_aggregate_s_bodies_come_back_by_subframe() {
     assert_eq!(model.submit_ampdu(attempt(1, payload, ht)), Ok(Ok(())));
     assert!(model.submitted()[0].frames[2].ends_with(b"two"));
     model.complete(0, TxStatus::Success);
-    next_completion(&model);
-    let mut back = Vec::new();
-    assert_eq!(
-        model.reclaim_tx_bodies(TxId(1), |index, body| back.push((index, body.0))),
-        Ok(Ok(()))
-    );
+    let (_, bodies) = next_completed(&model);
+    let back: Vec<_> = bodies
+        .into_iter()
+        .map(|(index, body)| (index, body.0))
+        .collect();
     assert_eq!(back, [(1, b"one".to_vec()), (2, b"two".to_vec())]);
+    assert_eq!(model.bodies_held(), 0);
 }
 
 /// A radio on `channel` whose access point interface is `PEER`.

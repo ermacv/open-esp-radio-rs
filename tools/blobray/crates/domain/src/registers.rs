@@ -49,6 +49,17 @@ pub enum StoredBitsSource {
     Unknown,
 }
 
+/// One compiler jump table a relocatable function dispatches through, as
+/// its relocations prove it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JumpTable {
+    /// The dispatching `jalr`'s offset.
+    pub site: u64,
+    /// The case targets in index order: entry `i` is case `i`.
+    pub entries: Vec<u64>,
+}
+
 /// A function one captured library input defines.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

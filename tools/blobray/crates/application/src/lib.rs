@@ -23,6 +23,7 @@ mod execution_memory;
 mod execution_steps;
 mod external_calls;
 pub mod in_process;
+mod jump_tables;
 pub mod library;
 pub mod linking;
 mod registers;

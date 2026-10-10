@@ -529,6 +529,7 @@ fn function_records(
                         coverage: analyzed.coverage,
                         semantics: analyzed.semantics,
                         records: analyzed.records.to_vec(),
+                        jump_tables: analyzed.jump_tables.to_vec(),
                     });
                 }
                 app::library::LibraryOutcome::Blocked { function, error } if wanted(function) => {
@@ -585,6 +586,7 @@ fn function_records(
                         function,
                         complete,
                         records,
+                        jump_tables,
                         ..
                     } => writeln!(
                         out,
@@ -604,6 +606,11 @@ fn function_records(
                         )
                         .iter()
                         .try_for_each(|line| writeln!(out, "{line}"))
+                    })
+                    .and_then(|()| {
+                        jump_tables.iter().try_for_each(|table| {
+                            writeln!(out, "{}", blobray_cli::jump_table::human(table))
+                        })
                     }),
                     blobray_cli::wire::NamedFunction::Blocked { function, error } => writeln!(
                         out,

@@ -52,7 +52,7 @@ the operation, and a completed analysis is never discarded for them. A
 relocation to a `.L` local label in a read-only string section
 (`SHF_STRINGS`) shows the escaped text there in quotes; labels of other data,
 such as jump tables, get no text. The JSON document is
-`{"schema":2,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
+`{"schema":3,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,
 expressions, values, memory accesses, conditions and return values); a
@@ -257,7 +257,25 @@ admitted memory and work; exhausting either fails the call. JSON uses
 `{"kind":"alternatives","values":[{"kind":"image-address","address":4096},{"kind":"image-address","address":8192}]}`;
 human output uses `one-of{... | ...}`. Analysis never selects one of these
 callees or composes it as a definite call. Expressions retain alternative operands.
-Branches are not pruned and computed indirect destinations do not extend the CFG.
+Branches are not pruned and computed indirect destinations do not extend the CFG,
+with one relocation-proven exception: a compiler jump table.
+
+### Jump tables
+
+GCC dispatches an RV32 `switch` through a read-only table:
+`lui`/`addi` of the table, `slli index, 2`, `add`, `lw`, `jalr zero, 0(target)`,
+with one `R_RISCV_32` relocation per entry naming its case label. After a
+first analysis of a relocatable function, a `jalr zero` whose base register's
+last write in its block is `load4[(index << 2) + table]` (or `sh2add`) is a
+dispatch when a bounds check on the same index value, `bltu limit, index`
+or `bgeu index, limit`, states the entry count (at most 4096, the smallest
+such bound). Every selected entry must carry a relocation to a label inside
+the function; then the function is analyzed again with those targets as
+jumps. A dispatch without a bound, with any entry unrelocated or leaving the
+function stays an indirect gap, and executable images, which keep no
+relocations, are not resolved. `function-records` lists each followed table
+as `jump_tables` (`{site, entries}`, entry `i` being case `i`), and the human
+format prints `jump table +site: +target <- cases …` after the listing.
 
 Loads retain address and width. In the static ELF image profile, file-backed
 bytes in readable, non-writable PT_LOAD segments supply constants, with signed

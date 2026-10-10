@@ -1015,7 +1015,6 @@ impl SerialCapture {
     }
 }
 
-/// The boot of the newest Hello among `messages`: the boot they belong to now.
 /// The current boot's station fault, if the station role faulted: its
 /// terminal lifecycle edge, after which no readiness can follow.
 pub fn station_fault_in(messages: &[Received]) -> Option<StationLifecycleEvent> {
@@ -1032,6 +1031,7 @@ pub fn station_fault_in(messages: &[Received]) -> Option<StationLifecycleEvent> 
         })
 }
 
+/// The boot of the newest Hello among `messages`: the boot they belong to now.
 pub fn latest_boot_id_in(messages: &[Received]) -> Option<u64> {
     messages.iter().rev().find_map(|message| {
         message

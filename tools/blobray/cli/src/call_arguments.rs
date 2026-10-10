@@ -97,9 +97,9 @@ impl ArgumentValue {
 
 /// Every call site among `records` whose target `targets` names.
 ///
-/// In a relocatable object a call is a `Call` or `Branch` relocation to the
-/// name; its register state is the next transfer within the `auipc`/`jalr`
-/// pair. Without relocations, `image` supplies the addresses of the named
+/// In a relocatable object a call is a `Call` relocation to the name, whose
+/// register state is at the `jalr` four bytes after its `auipc`, or a
+/// `Branch` (JAL or branch) relocation, whose state is at its own offset. Without relocations, `image` supplies the addresses of the named
 /// functions and a transfer to one of them is a call site.
 pub fn call_sites(
     records: &[FunctionRecord],
@@ -144,15 +144,21 @@ pub fn call_sites(
         match record {
             FunctionRecord::Reference {
                 raw,
-                reference_kind: ReferenceKind::Call | ReferenceKind::Branch,
+                reference_kind: kind @ (ReferenceKind::Call | ReferenceKind::Branch),
                 target,
                 ..
             } if wanted(&target.name) => {
-                let transfer = inputs.range(raw.offset..=raw.offset + 4).next();
+                // A CALL pair relocates its `auipc` and transfers at the
+                // `jalr` four bytes on; a JAL or branch relocation is its
+                // own transfer. Never borrow another transfer's state.
+                let site = match kind {
+                    ReferenceKind::Call => raw.offset + 4,
+                    _ => raw.offset,
+                };
                 sites.push(CallSite {
-                    offset: transfer.map_or(raw.offset, |(offset, _)| *offset),
+                    offset: site,
                     target: target.name.clone(),
-                    arguments: arguments(transfer.map(|(_, registers)| registers)),
+                    arguments: arguments(inputs.get(&site)),
                 });
             }
             FunctionRecord::Transfer {

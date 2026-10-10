@@ -138,7 +138,7 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
     registry::run_change(ctx, &change)
         .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
     if !draft && skip_review.is_none() {
-        let (verdict, path) = review::verdict(ctx).map_err(|error| {
+        let (verdict, path) = review::verdict(ctx, &branch, &base, &head).map_err(|error| {
             format!(
                 "push: the local review did not complete; nothing pushed: {error}\n\
                  Without Claude Code, `cargo xtask push --skip-review \"<reason>\"` pushes \
@@ -157,6 +157,17 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
             .into());
         }
     }
+    // The gate and the review take minutes while the session keeps working:
+    // push only the commit they checked.
+    let now = git::text(&ctx.root, ["rev-parse", "HEAD"])?;
+    if now != head {
+        return Err(format!(
+            "push: HEAD moved from {} to {} after it was gated; nothing pushed, push again",
+            &head[..12],
+            &now[..now.len().min(12)]
+        )
+        .into());
+    }
     let reference = format!("refs/heads/{branch}");
     let remote = git::text(&ctx.root, ["ls-remote", "origin", &reference])?
         .split_whitespace()
@@ -165,18 +176,27 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
     let descends = match &remote {
         Some(seen) => {
             git::output(&ctx.root, ["fetch", "--quiet", "origin", &reference])?;
-            git::output(&ctx.root, ["merge-base", "--is-ancestor", seen, "HEAD"]).is_ok()
+            git::output(&ctx.root, ["merge-base", "--is-ancestor", seen, &head]).is_ok()
         }
         None => true,
     };
     let update = update(remote.as_deref(), descends);
     let mut command = git::command(&ctx.root);
-    command.args(["push", "--quiet", "--set-upstream"]);
+    command.args(["push", "--quiet"]);
     if let Update::Rewrite { seen } = &update {
         command.arg(format!("--force-with-lease={reference}:{seen}"));
     }
-    process::capture(command.args(["origin", &format!("HEAD:{reference}")]))
+    process::capture(command.args(["origin", &format!("{head}:{reference}")]))
         .map_err(|error| format!("push: git push of {branch} failed: {error}"))?;
+    // A commit, not a branch, was pushed, so Git set no upstream.
+    git::output(
+        &ctx.root,
+        [
+            "branch",
+            &format!("--set-upstream-to=origin/{branch}"),
+            &branch,
+        ],
+    )?;
     match &update {
         Update::FastForward => println!("push: pushed {} to {branch}", &head[..12]),
         Update::Rewrite { seen } => println!(

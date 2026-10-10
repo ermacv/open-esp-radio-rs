@@ -1,7 +1,8 @@
 name: Documentation
 
 # Every push checks the guides and API documentation: main whole, a branch
-# what its change reaches (`cargo xtask ci prepare`). A manual run from main
+# the API documentation of the packages its change reaches (`cargo xtask ci
+# prepare`). A manual run from main
 # also publishes them to GitHub Pages.
 on:
   push:

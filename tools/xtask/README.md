@@ -34,7 +34,7 @@ The gate every change passes before it reaches `main`; see [the push gate](#the-
 | Command | Contract |
 | --- | --- |
 | `cargo xtask check changed [--base REV] [--full]` | The push gate over what this checkout changed against the merge base with `REV` (default `origin/main`), committed, uncommitted or untracked: every fast check of [the registry](#the-check-registry) the change selects ([selection](#the-push-gate)). `--full` adds the full-tier checks it selects, as CI runs them on every push: among them the tests of every dependent package, `check docs`, root-workspace Clippy, API documentation of the affected root packages, the HIL image classes whose last build read a changed file, the examples, the PHY, network, architecture, register, qualification and provenance checks for their inputs |
-| `cargo xtask check tier TIER --job JOB [--checks IDS]` | Run every check of the registry that CI job `JOB` has up to `TIER` (`fast`, `full` or `nightly`), or only the comma-separated `IDS` of them (default `all`), over the whole tree, as that job does; a failing check does not stop the others. Each CI job is one such call, on a branch with the checks its change reaches ([CI input reuse](#ci-input-reuse)) |
+| `cargo xtask check tier TIER --job JOB [--checks IDS]` | Run every check of the registry that CI job `JOB` has up to `TIER` (`fast`, `full` or `nightly`), or only the comma-separated `IDS` of them (default `all`), over the whole tree, as that job does; a failing check does not stop the others. Each CI job is one such call, on a branch without the audited checks its change does not reach ([CI input reuse](#ci-input-reuse)) |
 | `cargo xtask check tier --list` | Print the registry: each check's id, tier, CI job and what it checks; a check marked whole-tier-only never runs for a change |
 | `cargo xtask ci-status` | Print each workflow whose newest finished run on `main` failed, naming its failed jobs, or that `main` is green, then the open Claude review findings (`review: …` issues of the workflow or the repository owner): those of the checkout's branch, or of the finding its `review-<n>` branch fixes, one by one; up to three a day old and assigned to nobody, for any session to claim by assigning it; and a count of the rest; then every open pull request whose `claude-runtime-review` ended in error, to review again with `@claude review`; the session start hook runs it |
 | `cargo xtask hooks [--check]` | Write `.claude/hooks/heavy-commands.json`, the commands the Claude Code pre-tool hook keeps out of the foreground, from `oer_xtask::hooks`; `--check` only fails when it is stale (a test checks it too) |
@@ -157,11 +157,14 @@ hide a source workflow's last failure behind a shared page of runs.
 A push to a branch other than `main` is also **scoped to its change**:
 `prepare` asks GitHub for the merge base with `main`, fetches that one
 commit into the shallow checkout and builds the same change the push gate
-does (`gate::Change` at the full tier). Each job then runs only its checks
-whose trigger the change fires, plus every check without a trigger, which
-only runs over the whole tree (`registry::of_job_for`), passed as
-`check tier full --job JOB --checks …`; a job the change reaches no check of
-is skipped. `verify` accepts such a skip only in a change-scoped plan, and a
+does (`gate::Change` at the full tier). Triggers select what the local gate
+runs, with CI as the backstop, and most do not name every input their check
+reads, so a branch skips only the checks of `registry::SCOPED_IN_CI`, which
+were audited to read nothing beyond what their trigger names: chip-target
+Clippy (`architecture`) and the API documentation (`doc`). Each job runs
+every other check, and those two only when the change fires their trigger
+(`registry::of_job_for`), passed as `check tier full --job JOB --checks …`;
+a job left with no check is skipped. `verify` accepts such a skip only in a change-scoped plan, and a
 partial run proves no reusable coverage. `main` and manual runs are never
 scoped, nor is a change to what every check runs under or with: the
 workflows, the toolchain and lint configuration (`gate::GLOBAL`), the root
@@ -169,13 +172,11 @@ workspace's `Cargo.toml` and `Cargo.lock` (lint policy, `[patch]` pins), and
 any host package under `tools/` other than Blobray that the change reaches
 (`registry::check_tooling`: this registry, its checks and the tools they
 run). When the change cannot be told every check runs too. A renamed file
-counts at both paths. The `docs` check reads the whole tree (links and code
-paths name any file, documented commands every tool's command tree) in
-seconds, so it runs, with the guides, on every branch; the API
-documentation (`doc`) runs for the packages a change reaches. A check whose
-trigger misses an input it reads is therefore caught by `main`'s run after
-the merge, not on the branch. The documentation workflow builds the guides
-with its `docs` check and assembles the site only for a manual run.
+counts at both paths. A new entry of `SCOPED_IN_CI` needs the same audit;
+declaring each check's inputs, from which both its trigger and its reuse
+key would follow, is the general fix. The documentation workflow builds the
+guides with its `docs` check, which every run executes, and assembles the
+site only for a manual run.
 
 Planning requires a clean checkout so the tree hash describes its source
 files. Repository source inputs must be tracked; external sources are

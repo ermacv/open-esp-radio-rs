@@ -10,7 +10,8 @@ evaluator included, goes through it.
 | `read` | `RunBundle::open`, the typed reader: manifest, plan, suite, events, scenario documents and results, cleanup and USB records, lab and build provenance, the verified integrity seal and scenario seals, the runner's checkout, liveness |
 | `store` | `RunStore`: the store every checkout shares (`$OER_HIL_STORE`, else `<XDG data>/open-esp-radio/hil`) with `runs/`, the observer builds, the sidecars (pins, quarantine, performance baselines, caches) and a checkout's link `target/hil/runs`; `store::pending`, the checkout's pending evidence |
 | `receipt` | `OER_HIL_RUN_RECEIPT`, the receipt a runner names the runs it creates in, and `RunId` |
-| `build` | The build provenance of a run's images and the content-addressed object store: the one definition of a build's identity, which the image builder fills |
+| `build` | The build provenance of a run's images and the content-addressed object store: the one definition of a build's identity, which the image builder fills; it archives the runtime ELF deflate-compressed |
+| `archived` | How a bundle keeps an archived file: the runtime ELF deflate-compressed at `<path>.deflate` (recorded by its uncompressed path, size and digest), every other file as it is; `read_archived` and `archived_identity`, the one reader every consumer goes through |
 | `verify` | Offline verification of whole bundles (`cargo hil report verify`) and of a replay source against the image builder's recipe |
 | `experiment`, `lab` | The A/B experiment and the laboratory cell a run records |
 

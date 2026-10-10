@@ -4,6 +4,7 @@
 use std::{
     env,
     fs::{self, File},
+    io,
     path::{Path, PathBuf},
 };
 
@@ -11,6 +12,9 @@ use sha2::{Digest, Sha256};
 
 use crate::Result;
 use oer_durable::{atomic_write, sha256_file};
+use oer_hil_run_bundle_format::archived::{
+    DEFLATE, compressed, read_archived, stored_identity, stored_path,
+};
 use oer_hil_run_bundle_format::build::*;
 use oer_hil_source_snapshot::FrozenSources;
 use oer_process::lock::{FileLock, Mode};
@@ -54,7 +58,7 @@ pub fn synthetic_environment() -> BuildEnvironment {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ArchivedFile {
     pub size_bytes: u64,
     pub sha256: String,
@@ -68,19 +72,40 @@ struct GitSourceState {
     workspace_sha256: String,
 }
 
+/// Where a file to archive comes from.
+#[derive(Clone, Copy, Debug)]
+pub enum Source<'a> {
+    /// A file a build wrote.
+    Built(&'a Path),
+    /// A file another bundle archived, read through
+    /// [`oer_hil_run_bundle_format::archived::read_archived`].
+    Archived(&'a Path),
+}
+
+/// Archive `source` at `destination` in a bundle as a hard link to its
+/// object in the content-addressed store below `target_directory` (a copy
+/// when linking fails), compressed when `destination` is a
+/// [`oer_hil_run_bundle_format::archived::COMPRESSED`] file; returns the size
+/// and digest of its uncompressed bytes.
 pub fn archive_content_addressed(
-    source: &Path,
+    source: Source<'_>,
     destination: &Path,
     target_directory: &Path,
 ) -> Result<ArchivedFile> {
-    let source_metadata = fs::symlink_metadata(source)?;
-    if !source_metadata.file_type().is_file() {
+    let path = match source {
+        Source::Built(path) => path.to_owned(),
+        Source::Archived(path) => stored_path(path),
+    };
+    if !fs::symlink_metadata(&path)?.file_type().is_file() {
         return Err(format!(
             "firmware artifact is not a regular file: {}",
-            source.display()
+            path.display()
         )
         .into());
     }
+    let source_compressed = matches!(source, Source::Archived(path) if compressed(path));
+    let destination_compressed = compressed(destination);
+    let destination = stored_path(destination);
     if destination.try_exists()? {
         return Err(format!(
             "firmware artifact is already archived: {}",
@@ -88,20 +113,47 @@ pub fn archive_content_addressed(
         )
         .into());
     }
-    let size_bytes = source_metadata.len();
-    let sha256 = sha256_file(source)?;
+    let oer_hil_run_bundle_format::archived::Identity { size_bytes, sha256 } =
+        stored_identity(&path, source_compressed)?;
     // Collection deletes objects only while no archive uses the store.
     let _store = object_store_lock(target_directory, Mode::Shared)?;
-    let object = target_directory
+    let mut object = target_directory
         .join("objects/sha256")
         .join(&sha256[..2])
         .join(&sha256);
-    if object.try_exists()? {
-        require_archive_identity(&object, size_bytes, &sha256)?;
-    } else {
-        copy_regular_file(source, &object)?;
-        require_archive_identity(&object, size_bytes, &sha256)?;
+    if destination_compressed {
+        object.set_extension(DEFLATE);
     }
+    if !object.try_exists()? {
+        let bytes = match source {
+            Source::Built(path) => fs::read(path)?,
+            Source::Archived(path) => read_archived(path)?,
+        };
+        let bytes = if destination_compressed {
+            let mut encoder =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+            io::Write::write_all(&mut encoder, &bytes)?;
+            encoder.finish()?
+        } else {
+            bytes
+        };
+        atomic_write(&object, &bytes)?;
+    }
+    let require = |path: &Path| -> Result<()> {
+        let actual = stored_identity(path, destination_compressed)?;
+        if !fs::symlink_metadata(path)?.file_type().is_file()
+            || actual.size_bytes != size_bytes
+            || actual.sha256 != sha256
+        {
+            return Err(format!(
+                "content-addressed firmware artifact has the wrong identity: {}",
+                path.display()
+            )
+            .into());
+        }
+        Ok(())
+    };
+    require(&object)?;
     make_read_only(&object)?;
     let destination_parent = destination.parent().ok_or_else(|| {
         format!(
@@ -110,11 +162,11 @@ pub fn archive_content_addressed(
         )
     })?;
     fs::create_dir_all(destination_parent)?;
-    if fs::hard_link(&object, destination).is_err() {
-        copy_regular_file(&object, destination)?;
+    if fs::hard_link(&object, &destination).is_err() {
+        copy_regular_file(&object, &destination)?;
     }
-    require_archive_identity(destination, size_bytes, &sha256)?;
-    make_read_only(destination)?;
+    require(&destination)?;
+    make_read_only(&destination)?;
     File::open(destination_parent)?.sync_all()?;
     Ok(ArchivedFile { size_bytes, sha256 })
 }
@@ -173,21 +225,6 @@ fn make_read_only(path: &Path) -> Result<()> {
     let mut permissions = fs::metadata(path)?.permissions();
     permissions.set_readonly(true);
     fs::set_permissions(path, permissions)?;
-    Ok(())
-}
-
-fn require_archive_identity(path: &Path, expected_size: u64, expected_sha256: &str) -> Result<()> {
-    let metadata = fs::symlink_metadata(path)?;
-    if !metadata.file_type().is_file()
-        || metadata.len() != expected_size
-        || sha256_file(path)? != expected_sha256
-    {
-        return Err(format!(
-            "content-addressed firmware artifact has the wrong identity: {}",
-            path.display()
-        )
-        .into());
-    }
     Ok(())
 }
 
@@ -446,8 +483,11 @@ pub fn archive_snapshot(
     // names by digest; only the manifest and its record are archived.
     for (name, filename) in SNAPSHOT_MATERIALS {
         let relative = PathBuf::from("source/snapshot").join(filename);
-        let archived =
-            archive_content_addressed(&directory.join(filename), &output.join(&relative), target)?;
+        let archived = archive_content_addressed(
+            Source::Built(&directory.join(filename)),
+            &output.join(&relative),
+            target,
+        )?;
         files.push(archived_file_material(
             name,
             Path::new(filename),

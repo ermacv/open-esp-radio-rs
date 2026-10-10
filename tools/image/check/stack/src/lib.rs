@@ -100,6 +100,15 @@ impl Image {
     pub fn read(root: &Path, profile: &oer_chip_profile::Profile, elf: &Path) -> Result<Self> {
         let elf = std::fs::read(elf)
             .map_err(|error| format!("cannot read {}: {error}", elf.display()))?;
+        Self::of_bytes(root, profile, elf)
+    }
+
+    /// [`Self::read`] of the ELF bytes `elf`.
+    pub fn of_bytes(
+        root: &Path,
+        profile: &oer_chip_profile::Profile,
+        elf: Vec<u8>,
+    ) -> Result<Self> {
         let rom = profile
             .rom
             .as_ref()

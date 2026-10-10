@@ -171,7 +171,11 @@ fn archive_expected_file(
     expected_size: u64,
     expected_sha256: &str,
 ) -> Result<()> {
-    let archived = build::archive_content_addressed(source, destination, target_directory)?;
+    let archived = build::archive_content_addressed(
+        build::Source::Archived(source),
+        destination,
+        target_directory,
+    )?;
     if archived.size_bytes != expected_size || archived.sha256 != expected_sha256 {
         return Err(format!(
             "replayed firmware input changed after bundle verification: {}",

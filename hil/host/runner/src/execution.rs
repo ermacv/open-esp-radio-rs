@@ -68,6 +68,11 @@ pub(crate) fn execute_workload(
         }
     };
     let elf = runtime_elf(output, selected.image().id());
+    // Read only when a failure needs the ELF to name code addresses.
+    let elf_bytes = std::cell::LazyCell::new(|| {
+        elf.as_deref()
+            .and_then(|elf| oer_hil_run_bundle_format::archived::read_archived(elf).ok())
+    });
     // A failure may be the target ending: ask it how, without resetting it;
     // a target that does not answer climbs the recovery ladder.
     let failed = result
@@ -77,7 +82,12 @@ pub(crate) fn execute_workload(
     let mut post_mortem = failed
         .then(|| {
             device.and_then(|device| {
-                oer_hil_lab::post_mortem::inspect(&lab.dut.serial, device, output, elf.as_deref())
+                oer_hil_lab::post_mortem::inspect(
+                    &lab.dut.serial,
+                    device,
+                    output,
+                    elf_bytes.as_deref(),
+                )
             })
         })
         .flatten();
@@ -88,7 +98,7 @@ pub(crate) fn execute_workload(
             lab.chip(),
             device,
             output,
-            elf.as_deref(),
+            elf_bytes.as_deref(),
         );
     }
     let recovery = (failed && post_mortem.is_none())
@@ -99,7 +109,7 @@ pub(crate) fn execute_workload(
                 .and_then(|device| lab.dut_board()?.lease(device));
             match leased {
                 Ok(board) => {
-                    oer_hil_lab::recovery::recover(&board, output, elf.as_deref(), &origin)
+                    oer_hil_lab::recovery::recover(&board, output, elf_bytes.as_deref(), &origin)
                 }
                 Err(error) => {
                     eprintln!("hil: the board {mac} cannot be recovered: {error}");
@@ -215,10 +225,11 @@ fn check_interrupt_stacks(chip: &str, elf: Option<&Path>, evidence: &mut Executi
 }
 
 /// The runtime ELF the run archived for `image`, found from a repetition's
-/// output directory inside the run bundle.
+/// output directory inside the run bundle; its bytes are read through
+/// `oer_hil_run_bundle_format::archived::read_archived`.
 fn runtime_elf(output: &Path, image: &str) -> Option<std::path::PathBuf> {
     output
         .ancestors()
         .map(|directory| directory.join("firmware").join(image).join("runtime.elf"))
-        .find(|elf| elf.is_file())
+        .find(|elf| oer_hil_run_bundle_format::archived::stored_path(elf).is_file())
 }

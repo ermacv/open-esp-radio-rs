@@ -122,16 +122,16 @@ fn firmware_record_archives_the_exact_application() {
         b"application bytes"
     );
     assert_eq!(artifact.application_sha256.len(), 64);
+    // The runtime ELF is kept compressed; its one reader returns it whole.
+    let archived_elf = run_directory.join(
+        artifact
+            .runtime_elf_path
+            .as_ref()
+            .expect("runtime ELF path"),
+    );
+    assert!(!archived_elf.exists());
     assert_eq!(
-        fs::read(
-            run_directory.join(
-                artifact
-                    .runtime_elf_path
-                    .as_ref()
-                    .expect("runtime ELF path")
-            )
-        )
-        .unwrap(),
+        oer_hil_run_bundle_format::archived::read_archived(&archived_elf).unwrap(),
         b"runtime elf"
     );
     assert_eq!(artifact.runtime_elf_size_bytes, Some(11));
@@ -205,6 +205,36 @@ fn firmware_record_archives_the_exact_application() {
         collect_integrity_files(&object_root).unwrap(),
         first_objects
     );
+    // A scenario sealed on this firmware reads back: its seal holds the
+    // compressed runtime ELF the manifest records by its uncompressed bytes.
+    let catalog = oer_hil_scenario::test_family::catalog();
+    let scenario = catalog.get("throughput").unwrap();
+    let artifacts = PathBuf::from("scenarios/throughput/repetition-001");
+    fs::create_dir_all(run_directory.join(&artifacts)).unwrap();
+    let result = oer_hil_run_bundle_format::run::ScenarioResult::from_repetitions(
+        scenario.id().to_owned(),
+        ImageClass::Correctness,
+        scenario.repetitions(),
+        vec![oer_hil_run_bundle_format::run::RepetitionResult {
+            schema: oer_hil_run_bundle_format::run::RUN_SCHEMA,
+            repetition: 1,
+            outcome: oer_hil_run_bundle_format::run::Outcome::Passed,
+            started_unix_millis: 1,
+            duration_millis: 2,
+            artifact_directory: artifacts,
+            attachments: Vec::new(),
+            measurements: Vec::new(),
+            failure: None,
+        }],
+    );
+    first_session.seal_scenario(scenario, &result).unwrap();
+    let attempts = oer_hil_run_bundle_format::read::RunBundle::open(&run_directory)
+        .unwrap()
+        .unwrap()
+        .attempts()
+        .unwrap()
+        .unwrap();
+    assert_eq!(attempts.len(), 1);
     drop(first_session);
 
     let second_run_directory = root.join("run-2");

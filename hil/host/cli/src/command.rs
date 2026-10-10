@@ -1171,7 +1171,9 @@ fn profile(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> 
             .and_then(|result| result["image"].as_str().map(str::to_owned));
         let elf = image
             .map(|image| run.join("firmware").join(image).join("runtime.elf"))
-            .filter(|elf| elf.is_file());
+            .filter(|elf| oer_hil_run_bundle_format::archived::stored_path(elf).is_file())
+            .map(|elf| oer_hil_run_bundle_format::archived::read_archived(&elf))
+            .transpose()?;
         let mut profiles = Vec::new();
         collect_profiles(&scenario, &mut profiles)?;
         profiles.sort();

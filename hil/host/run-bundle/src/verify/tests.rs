@@ -125,12 +125,24 @@ fn fixture() -> (PathBuf, PathBuf) {
     (root, run)
 }
 
+/// Archive `bytes` at `path` the way a bundle keeps a compressed file.
+fn write_compressed(path: &Path, bytes: &[u8]) {
+    let mut encoder =
+        flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut encoder, bytes).unwrap();
+    fs::write(
+        oer_hil_run_bundle_format::archived::stored_path(path),
+        encoder.finish().unwrap(),
+    )
+    .unwrap();
+}
+
 fn add_build_provenance(run: &Path) {
     let runtime_elf_path = PathBuf::from("firmware/correctness/runtime.elf");
     let runtime_bin_path = PathBuf::from("firmware/correctness/runtime.bin");
     let bootstrap_elf_path = PathBuf::from("firmware/correctness/bootstrap.elf");
     let effective_lock_path = PathBuf::from("firmware/correctness/effective-Cargo.lock");
-    fs::write(run.join(&runtime_elf_path), b"runtime elf").unwrap();
+    write_compressed(&run.join(&runtime_elf_path), b"runtime elf");
     fs::write(run.join(&runtime_bin_path), b"runtime bin").unwrap();
     fs::write(run.join(&bootstrap_elf_path), b"bootstrap elf").unwrap();
     fs::write(run.join(&effective_lock_path), b"effective lock").unwrap();
@@ -139,7 +151,7 @@ fn add_build_provenance(run: &Path) {
     let artifact = &mut manifest.firmware[0];
     artifact.runtime_elf_path = Some(runtime_elf_path.clone());
     artifact.runtime_elf_size_bytes = Some(11);
-    artifact.runtime_elf_sha256 = sha256_file(&run.join(&runtime_elf_path)).unwrap();
+    artifact.runtime_elf_sha256 = oer_durable::sha256_bytes(b"runtime elf");
     artifact.runtime_bin_path = Some(runtime_bin_path.clone());
     artifact.runtime_bin_size_bytes = Some(11);
     artifact.runtime_bin_sha256 = Some(sha256_file(&run.join(&runtime_bin_path)).unwrap());
@@ -475,7 +487,10 @@ fn a_manifest_seed_must_be_the_build_records_seed() {
 fn rejects_tampered_archived_runtime_elf() {
     let (root, run) = fixture();
     add_build_provenance(&run);
-    fs::write(run.join("firmware/correctness/runtime.elf"), b"runtime elF").unwrap();
+    write_compressed(
+        &run.join("firmware/correctness/runtime.elf"),
+        b"runtime elF",
+    );
     let error = verify(&root, Some("chip-a"), Some("run-1"), &TestRecipe).unwrap_err();
     assert!(error.to_string().contains("SHA-256"));
     fs::remove_dir_all(root).unwrap();

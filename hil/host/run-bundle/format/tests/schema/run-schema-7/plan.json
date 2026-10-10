@@ -1,5 +1,5 @@
 {
-  "schema": 6,
+  "schema": 7,
   "run_id": "1791582140859-002c088b",
   "selection": "scenarios: bluetooth-trouble-gatt, bluetooth-trouble-secure-gatt",
   "firmware": {

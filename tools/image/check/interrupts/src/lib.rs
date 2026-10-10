@@ -358,14 +358,14 @@ pub fn rom_summaries(root: &Path, profile: &oer_chip_profile::Profile) -> Result
     Ok(summaries.into_iter().map(|summary| summary.name).collect())
 }
 
-/// Bound every hart's interrupt stack of the runtime ELF `elf`, with the
-/// pinned ROM of the repository at `root`.
+/// Bound every hart's interrupt stack of the runtime ELF bytes `elf`, with
+/// the pinned ROM of the repository at `root`.
 pub fn interrupt_stacks(
     root: &Path,
     profile: &oer_chip_profile::Profile,
-    elf: &Path,
+    elf: Vec<u8>,
 ) -> Result<InterruptStacks> {
-    interrupt_stacks_of(&Image::read(root, profile, elf)?)
+    interrupt_stacks_of(&Image::of_bytes(root, profile, elf)?)
 }
 
 /// [`interrupt_stacks`] of an analysed runtime image.

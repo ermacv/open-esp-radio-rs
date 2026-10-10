@@ -852,8 +852,15 @@ fn verify_indexed_file(
     validate_relative_path(relative_path, kind)?;
     validate_sha256(expected_sha256, kind, &relative_path.display().to_string())?;
     let path = run_directory.join(relative_path);
-    require_regular_file_below(run_directory, relative_path)?;
-    let actual_size = fs::metadata(&path)?.len();
+    // A compressed file is checked by its uncompressed bytes.
+    require_regular_file_below(
+        run_directory,
+        &oer_hil_run_bundle_format::archived::stored_path(relative_path),
+    )?;
+    let oer_hil_run_bundle_format::archived::Identity {
+        size_bytes: actual_size,
+        sha256: actual_sha256,
+    } = oer_hil_run_bundle_format::archived::archived_identity(&path)?;
     if actual_size != expected_size {
         return Err(format!(
             "HIL {kind} `{}` has size {actual_size}, expected {expected_size}",
@@ -861,7 +868,6 @@ fn verify_indexed_file(
         )
         .into());
     }
-    let actual_sha256 = sha256_file(&path)?;
     if actual_sha256 != expected_sha256 {
         return Err(format!(
             "HIL {kind} `{}` has SHA-256 {actual_sha256}, expected {expected_sha256}",

@@ -163,13 +163,26 @@ pub fn completed(run: &Path, parent: &RunManifest) -> Result<Option<Vec<Attempt>
                     .subjects()
                     .map(|subject| (subject.path, subject.size_bytes, subject.sha256)),
             ) {
-                if let Some(path) = path
-                    && !files.iter().any(|f| {
-                        &f.path == path
-                            && Some(f.size_bytes) == size
-                            && Some(f.sha256.as_str()) == hash
-                    })
-                {
+                let Some(path) = path else {
+                    continue;
+                };
+                // A compressed file is sealed as its stored bytes and
+                // recorded by its uncompressed ones.
+                let stored = crate::archived::stored_path(path);
+                let sealed = files.iter().find(|f| f.path == stored);
+                let identity = match sealed {
+                    Some(f) if crate::archived::compressed(path) => Some(
+                        crate::archived::decompressed_identity(&run.join(&stored), &f.sha256)?,
+                    ),
+                    Some(f) => Some(crate::archived::Identity {
+                        size_bytes: f.size_bytes,
+                        sha256: f.sha256.clone(),
+                    }),
+                    None => None,
+                };
+                if !identity.is_some_and(|identity| {
+                    Some(identity.size_bytes) == size && Some(identity.sha256.as_str()) == hash
+                }) {
                     return Err("attempt firmware identity is outside sealed material".into());
                 }
             }

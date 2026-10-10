@@ -404,7 +404,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
+            target/*
+            !target/vendor-firmware
+            !target/blobray-research
           key: verification-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'verification/*/artifacts.toml') }}
           restore-keys: verification-${{ runner.os }}-
       - name: Fetch every workspace

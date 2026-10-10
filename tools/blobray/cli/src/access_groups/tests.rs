@@ -128,6 +128,7 @@ fn address_groups_list_each_accessing_function_by_access_and_mask() {
         function: Some(GroupFunction {
             input: 0,
             name: name.into(),
+            symbol: function(name).symbol,
         }),
         access: access.into(),
         width: Some(4),
@@ -162,13 +163,13 @@ fn address_groups_list_each_accessing_function_by_access_and_mask() {
         groups.human(),
         [
             "unresolved",
-            "  phy_set_rx_gain_table (input 0) load 4B x1",
+            "  phy_set_rx_gain_table (input 0, member 0) load 4B x1",
             "0x20107094",
-            "  rx_init_gain (input 0) store 4B x1",
+            "  rx_init_gain (input 0, member 0) store 4B x1",
             "0x2010713c",
-            "  phy_set_rx_gain_table (input 0) store 4B replace 0x01fc0000 x1",
-            "  rx_init_gain (input 0) load 4B x1",
-            "  rx_init_gain (input 0) store 4B replace 0x01fc0000 x1",
+            "  phy_set_rx_gain_table (input 0, member 0) store 4B replace 0x01fc0000 x1",
+            "  rx_init_gain (input 0, member 0) load 4B x1",
+            "  rx_init_gain (input 0, member 0) store 4B replace 0x01fc0000 x1",
         ]
     );
 }
@@ -180,13 +181,37 @@ fn function_groups_list_each_accessed_word() {
     assert_eq!(
         groups.human(),
         [
-            "phy_set_rx_gain_table (input 0)",
+            "phy_set_rx_gain_table (input 0, member 0)",
             "  unresolved load 4B x1",
             "  0x2010713c store 4B replace 0x01fc0000 x1",
-            "rx_init_gain (input 0)",
+            "rx_init_gain (input 0, member 0)",
             "  0x20107094 store 4B x1",
             "  0x2010713c load 4B x1",
             "  0x2010713c store 4B replace 0x01fc0000 x1",
+        ]
+    );
+}
+
+#[test]
+fn same_named_functions_of_different_members_stay_apart() {
+    let in_member = |ordinal| {
+        let mut record = observation("local_helper", MemoryKind::Store, Some(0x2010_702c), None);
+        if let RegisterAccess::Observation { function, .. } = &mut record {
+            function.symbol.object.location = ObjectLocation::ArchiveMember { ordinal };
+        }
+        record
+    };
+    let mut groups = AccessGroups::new(GroupBy::Function);
+    for record in [in_member(2), in_member(5), in_member(5)] {
+        groups.add(&record);
+    }
+    assert_eq!(
+        groups.human(),
+        [
+            "local_helper (input 0, member 2)",
+            "  0x2010702c store 4B x1",
+            "local_helper (input 0, member 5)",
+            "  0x2010702c store 4B x2",
         ]
     );
 }

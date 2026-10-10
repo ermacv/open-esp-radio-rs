@@ -45,7 +45,9 @@ no relocations to name its transfers, so for such an input each call or
 out-of-function jump to an image address and each taken branch or jump is
 annotated `-> name` or `-> name+offset` from the image's sized function
 symbols, or with the bare address when no symbol covers it; overlapping
-aliases resolve to the one starting last, then the shorter name. The JSON document is
+aliases resolve to the one starting last, then the shorter name. These names
+are built on a budget of their own after the analysis; when it is exhausted
+the listing shows bare addresses rather than failing. The JSON document is
 `{"schema":2,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,

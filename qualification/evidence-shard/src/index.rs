@@ -76,8 +76,9 @@ pub struct Index {
 /// What a shard's verdicts depend on beyond its source digests.
 /// [`Index::is_current`] checks the source digests only, without a build;
 /// `read_data` changes only with the probe data the executions read, which
-/// only a rerun recomputes (`cargo verification evidence --check`), so a constant
-/// edited in a file the executions did not run is caught there.
+/// only a rerun recomputes: the derived index is computed whole for each
+/// evaluated checkout (`cargo verification evidence`), so a constant edited
+/// in a file the executions did not run is caught there.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Dependence {
@@ -511,41 +512,6 @@ impl Index {
         Ok(())
     }
 
-    /// Whether every recorded source still has its recorded digest and the
-    /// decisions that apply to the shard's closures are unchanged. A
-    /// recorded source or decision file that no longer exists is an error:
-    /// the shard names a missing referent.
-    pub fn currency(&self, root: &Path) -> Result<bool> {
-        for source in &self.sources {
-            if fs::symlink_metadata(root.join(&source.path)).is_err() {
-                return Err(format!(
-                    "evidence shard {} binds {}, which does not exist",
-                    self.scenario,
-                    source.path.display()
-                )
-                .into());
-            }
-            if digest_source(root, &source.path)? != source.sha256 {
-                return Ok(false);
-            }
-        }
-        let Some(decisions) = &self.dependence.coverage_decisions else {
-            return Ok(true);
-        };
-        if fs::symlink_metadata(root.join(&decisions.path)).is_err() {
-            return Err(format!(
-                "evidence shard {} binds the coverage decisions {}, which do not exist",
-                self.scenario,
-                decisions.path.display()
-            )
-            .into());
-        }
-        Ok(
-            CoverageDecisions::read(root, &decisions.path)?.applicable_digest(&self.functions)
-                == decisions.sha256,
-        )
-    }
-
     /// The generator's question: whether the shard can be kept as it is.
     /// Anything that differs or no longer exists means regenerating it.
     pub fn is_current(&self, root: &Path) -> bool {
@@ -563,19 +529,28 @@ impl Index {
 }
 
 /// Every shard of an index directory with whether its sources are current.
-/// A missing directory holds no shard.
+/// A missing directory holds no shard. The index is derived data, so what
+/// only another checkout explains is staleness, not an error: a recorded
+/// source or decision file that no longer exists makes a shard not current,
+/// and a shard of another schema is listed in `other_schema`.
 pub struct Evidence {
     pub shards: Vec<(Index, bool)>,
+    /// Scenarios whose shard another schema of the format wrote.
+    pub other_schema: Vec<String>,
 }
 
 impl Evidence {
     /// Load and validate every shard of `directory` below `root`.
     pub fn load(root: &Path, directory: &Path, target: &str) -> Result<Self> {
         let mut shards = vec![];
+        let mut other_schema = vec![];
         let entries = match fs::read_dir(root.join(directory)) {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Self { shards });
+                return Ok(Self {
+                    shards,
+                    other_schema,
+                });
             }
             Err(error) => return Err(error.into()),
         };
@@ -587,7 +562,20 @@ impl Evidence {
             if path.extension().and_then(|e| e.to_str()) != Some(SHARD_EXTENSION) {
                 return Err(format!("unexpected evidence file {}", path.display()).into());
             }
-            let shard: Index = serde_json::from_str(&fs::read_to_string(&path)?)?;
+            let text = fs::read_to_string(&path)?;
+            let schema = serde_json::from_str::<serde_json::Value>(&text)
+                .map_err(|error| format!("evidence shard {}: {error}", path.display()))?
+                .get("schema")
+                .and_then(serde_json::Value::as_u64);
+            if schema != Some(u64::from(SCHEMA)) {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default();
+                other_schema.push(name.to_owned());
+                continue;
+            }
+            let shard: Index = serde_json::from_str(&text)?;
             shard
                 .validate(target)
                 .map_err(|error| format!("evidence shard {}: {error}", path.display()))?;
@@ -596,12 +584,13 @@ impl Evidence {
                     format!("evidence shard {} names another scenario", path.display()).into(),
                 );
             }
-            let current = shard
-                .currency(root)
-                .map_err(|error| format!("{}: {error}", path.display()))?;
+            let current = shard.is_current(root);
             shards.push((shard, current));
         }
-        Ok(Self { shards })
+        Ok(Self {
+            shards,
+            other_schema,
+        })
     }
 
     /// Untriaged locations no scenario covers ([`untriaged`]).

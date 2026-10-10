@@ -16,6 +16,7 @@ oer-hil-schema = { path = "../../hil/schema" }
 oer-markers = { path = "../../tools/markers" }
 oer-repo = { path = "../../tools/repo" }
 oer-vendor-evidence-shard = { path = "../evidence-shard" }
+oer-vendor-artifacts = { path = "../../tools/vendor-artifacts" }
 serde = { version = "=1.0.229", features = ["derive", "rc"] }
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"

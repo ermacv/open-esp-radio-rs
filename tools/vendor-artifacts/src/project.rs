@@ -16,6 +16,14 @@ pub fn supported(root: &Path) -> Result<Vec<String>> {
     oer_chip_profile::supported(root)
 }
 
+/// Directory of `chip`'s vendor scenario evidence shards, relative to the
+/// root: derived data, which `cargo verification evidence` writes for the
+/// checkout from its sources and pins, and nothing tracks. Its one location
+/// for every reader, the qualification evaluator included.
+pub fn evidence_shards(chip: &str) -> String {
+    format!("target/{VERIFICATION}/{chip}/evidence")
+}
+
 /// A chip's typed vendor scenarios: the verdict library that decides their
 /// verdicts, and the entry package whose binary, of the same name, runs
 /// them through the shared scenario command line (a report package the
@@ -55,9 +63,10 @@ impl Project {
         oer_vendor_pins::manifest(&self.0)
     }
 
-    /// Directory of the chip's scenario evidence shards.
+    /// Directory of the chip's vendor scenario evidence shards
+    /// ([`evidence_shards`]).
     pub fn evidence_shards(&self) -> String {
-        self.verification("evidence/scenarios")
+        evidence_shards(&self.0)
     }
 
     /// The chip's reviewed summaries of the ROM functions its images call,
@@ -112,7 +121,7 @@ mod tests {
             );
             assert_eq!(
                 chip.evidence_shards(),
-                format!("verification/{name}/evidence/scenarios")
+                format!("target/verification/{name}/evidence")
             );
             assert_eq!(
                 chip.scenarios(),

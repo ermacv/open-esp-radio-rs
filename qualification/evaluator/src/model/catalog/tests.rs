@@ -10,12 +10,9 @@ use crate::{
 };
 
 const PROGRAM_PREFIX: &str = r#"
-schema = 4
+schema = 5
 target = "test-radio"
 required-capabilities = ["base-phy", "wifi-channel"]
-
-[verification]
-evidence-index = "vendor.json"
 
 [hil]
 target = "test-radio"
@@ -125,10 +122,8 @@ fn parse(input: &str) -> ManifestDocument {
 
 fn catalog_program(path: &str, capability: &str) -> String {
     PROGRAM_PREFIX.replace(
-        "\n[verification]",
-        &format!(
-            "\ncatalogs = [\"{path}\"]\ncatalog-capabilities = [\"{capability}\"]\n\n[verification]"
-        ),
+        "\n[hil]",
+        &format!("\ncatalogs = [\"{path}\"]\ncatalog-capabilities = [\"{capability}\"]\n\n[hil]"),
     )
 }
 
@@ -144,7 +139,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
     let root = TestRoot::new("equivalence");
     let unselected = BASE_PHY.replace("id = \"base-phy\"", "id = \"unselected-phy\"");
     root.write_catalog(&format!(
-        "schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{WIFI_CHANNEL}{WIFI_SCOPE}{unselected}{BASE_SCOPE}"
+        "schema = 4\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{WIFI_CHANNEL}{WIFI_SCOPE}{unselected}{BASE_SCOPE}"
     ));
     let canonical_input = catalog_program("catalog/wifi.toml", "wifi-channel");
     let canonical = parse(&canonical_input)
@@ -260,7 +255,7 @@ fn catalogs_reject_unknown_repeated_and_unsupported_inputs() {
     assert!(error.contains("unsupported capability catalog schema"));
 
     root.write_catalog(&format!(
-        "schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{BASE_PHY}{BASE_SCOPE}"
+        "schema = 4\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{BASE_PHY}{BASE_SCOPE}"
     ));
     let error = resolution_error(parse(&unknown).resolve_catalogs(
         &root.path,
@@ -270,7 +265,7 @@ fn catalogs_reject_unknown_repeated_and_unsupported_inputs() {
     assert!(error.contains("declared by both catalog"));
 
     root.write_catalog(&format!(
-        "schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}"
+        "schema = 4\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}"
     ));
     let error = resolution_error(parse(&unknown).resolve_catalogs(
         &root.path,
@@ -279,7 +274,7 @@ fn catalogs_reject_unknown_repeated_and_unsupported_inputs() {
     ));
     assert!(error.contains("unknown catalog capability"));
 
-    root.write_catalog(&format!("schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}"));
+    root.write_catalog(&format!("schema = 4\nid = \"test-wifi-phy\"\n{BASE_PHY}"));
     let selected = catalog_program("catalog/wifi.toml", "base-phy");
     let error = resolution_error(parse(&selected).resolve_catalogs(
         &root.path,
@@ -296,7 +291,7 @@ fn catalog_paths_reject_symlink_components() {
 
     let root = TestRoot::new("symlink");
     root.write_catalog(&format!(
-        "schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}"
+        "schema = 4\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}"
     ));
     symlink(root.path.join("catalog"), root.path.join("linked-catalog")).unwrap();
     let input = catalog_program("linked-catalog/wifi.toml", "base-phy");
@@ -326,7 +321,7 @@ fn unselected_catalog_declarations_fail_static_validation() {
         "depends-on = [\"missing-phy\"]",
     );
     let error = check(format!(
-        "schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{missing_dependency}{WIFI_SCOPE}"
+        "schema = 4\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{missing_dependency}{WIFI_SCOPE}"
     ));
     assert!(error.contains("depends on missing missing-phy"));
 
@@ -343,7 +338,7 @@ fn unselected_catalog_declarations_fail_static_validation() {
             "async = \"bounded\"\ndepends-on = [\"cycle-a\"]",
         );
     let error = check(format!(
-        "schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{first}{BASE_SCOPE}{second}{BASE_SCOPE}"
+        "schema = 4\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{first}{BASE_SCOPE}{second}{BASE_SCOPE}"
     ));
     assert!(error.contains("dependency cycle"));
 
@@ -352,7 +347,7 @@ fn unselected_catalog_declarations_fail_static_validation() {
         "gaps = [{ axis = \"implementation\", id = \"impossible-gap\" }, { axis = \"vendor\", id = \"vendor-trace-missing\" }]",
     );
     let error = check(format!(
-        "schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{inconsistent}{WIFI_SCOPE}"
+        "schema = 4\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{inconsistent}{WIFI_SCOPE}"
     ));
     assert!(error.contains("terminal implementation axis"));
 
@@ -361,7 +356,7 @@ fn unselected_catalog_declarations_fail_static_validation() {
         WIFI_CHANNEL, WIFI_SCOPE
     );
     let error = check(format!(
-        "schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{bad_contract}"
+        "schema = 4\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{bad_contract}"
     ));
     assert!(error.contains("missing.rs"), "{error}");
 }
@@ -369,8 +364,8 @@ fn unselected_catalog_declarations_fail_static_validation() {
 #[test]
 fn multi_catalog_closure_is_order_independent_and_duplicates_fail() {
     let root = TestRoot::new("multi-catalog");
-    let base = format!("schema = 3\nid = \"base\"\n{BASE_PHY}{BASE_SCOPE}");
-    let wifi = format!("schema = 3\nid = \"wifi\"\n{WIFI_CHANNEL}{WIFI_SCOPE}");
+    let base = format!("schema = 4\nid = \"base\"\n{BASE_PHY}{BASE_SCOPE}");
+    let wifi = format!("schema = 4\nid = \"wifi\"\n{WIFI_CHANNEL}{WIFI_SCOPE}");
     root.write_named_catalog("a", &base);
     root.write_named_catalog("b", &wifi);
     let program = parse(PROGRAM_PREFIX);
@@ -380,7 +375,7 @@ fn multi_catalog_closure_is_order_independent_and_duplicates_fail() {
             PathBuf::from("catalog/a.toml"),
             PathBuf::from("catalog/b.toml"),
         ],
-        Some((&program.verification, &program.hil)),
+        Some(&program.hil),
     )
     .unwrap();
     let second = CatalogView::load_with_program(
@@ -389,7 +384,7 @@ fn multi_catalog_closure_is_order_independent_and_duplicates_fail() {
             PathBuf::from("catalog/b.toml"),
             PathBuf::from("catalog/a.toml"),
         ],
-        Some((&program.verification, &program.hil)),
+        Some(&program.hil),
     )
     .unwrap();
     assert_eq!(
@@ -416,7 +411,7 @@ fn multi_catalog_closure_is_order_independent_and_duplicates_fail() {
             PathBuf::from("catalog/a.toml"),
             PathBuf::from("catalog/b.toml"),
         ],
-        Some((&program.verification, &program.hil)),
+        Some(&program.hil),
     )
     .unwrap_err()
     .to_string();
@@ -434,7 +429,7 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
         .replace("vendor-anchors = [\"Cargo.toml\"]", "vendor-roots = [{ source = \"archive\", symbol = \"wifi_root\" }]\nvendor-evidence = [{ suite = \"wifi-suite\", source = \"archive\", symbol = \"wifi_root\" }]")
         .replace("gaps = [{ axis = \"vendor\", id = \"vendor-trace-missing\" }]", "");
     let catalog: CatalogDocument = toml_edit::de::from_str(&format!(
-        "schema = 3\nid = \"matrix\"\n{base}{BASE_SCOPE}{wifi}{WIFI_SCOPE}"
+        "schema = 4\nid = \"matrix\"\n{base}{BASE_SCOPE}{wifi}{WIFI_SCOPE}"
     ))
     .unwrap();
     let declared = catalog.capabilities;
@@ -456,6 +451,7 @@ fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
             .into_iter()
             .map(|(shard, _)| (shard, false))
             .collect(),
+        stale: Vec::new(),
     };
     let cases = [
         (
@@ -636,7 +632,6 @@ source-paths = ["Cargo.toml"]
 
 const TEST_CATALOG_VALIDATION: &str = r#"
 [validation]
-evidence-index = "vendor.json"
 hil-catalog = "scenarios"
 "#;
 
@@ -674,7 +669,7 @@ fn source_fact_projects_one_edit_into_inventory_and_qualification_views() {
         "async = \"bounded\"\nsource-fact-refs = [\"shared-handoff\"]",
     );
     root.write_catalog(&format!(
-        "schema = 3\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{capability}{BASE_SCOPE}{FACT_SECTIONS}"
+        "schema = 4\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{capability}{BASE_SCOPE}{FACT_SECTIONS}"
     ));
     let first = CatalogView::load(&root.path, &[PathBuf::from("catalog/wifi.toml")]).unwrap();
     assert_eq!(first.items.len(), 2);
@@ -698,7 +693,7 @@ fn source_fact_projects_one_edit_into_inventory_and_qualification_views() {
         .replace("status = \"implemented\"", "status = \"partial\"")
         .replace("One initial PHY handoff", "One revised PHY handoff");
     root.write_catalog(&format!(
-        "schema = 3\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{changed}{capability}{BASE_SCOPE}{FACT_SECTIONS}"
+        "schema = 4\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{changed}{capability}{BASE_SCOPE}{FACT_SECTIONS}"
     ));
     let second = CatalogView::load(&root.path, &[PathBuf::from("catalog/wifi.toml")]).unwrap();
     assert!(second.items.iter().all(|item| {
@@ -717,7 +712,7 @@ fn source_fact_projects_one_edit_into_inventory_and_qualification_views() {
 fn source_fact_references_reject_dangling_and_independent_overrides() {
     let root = TestRoot::new("source-fact-invalid");
     root.write_catalog(&format!(
-        "schema = 3\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{}{}{}",
+        "schema = 4\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{}{}{}",
         BASE_PHY.replace(
             "async = \"bounded\"",
             "async = \"bounded\"\nsource-fact-refs = [\"missing-fact\"]"
@@ -738,7 +733,7 @@ fn source_fact_references_reject_dangling_and_independent_overrides() {
         "source-fact = \"shared-handoff\"\nstatus = \"absent\"",
     );
     root.write_catalog(&format!(
-        "schema = 3\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{BASE_PHY}{BASE_SCOPE}{overridden}"
+        "schema = 4\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{BASE_PHY}{BASE_SCOPE}{overridden}"
     ));
     let error = CatalogView::load(&root.path, &[PathBuf::from("catalog/wifi.toml")])
         .unwrap_err()
@@ -766,7 +761,7 @@ fn implemented_source_fact_does_not_promote_an_incomplete_parent() {
             "async = \"bounded\"\nsource-fact-refs = [\"shared-handoff\"]",
         );
     root.write_catalog(&format!(
-        "schema = 3\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{capability}{BASE_SCOPE}{FACT_SECTIONS}"
+        "schema = 4\nid = \"shared\"\n{TEST_CATALOG_VALIDATION}{SHARED_FACT}{capability}{BASE_SCOPE}{FACT_SECTIONS}"
     ));
     let view = CatalogView::load(&root.path, &[PathBuf::from("catalog/wifi.toml")]).unwrap();
     assert_eq!(
@@ -1167,22 +1162,17 @@ fn ieee802154_catalog_migration_preserves_program_and_full_source_inventory() {
 #[test]
 fn imported_catalogs_resolve_transitively_once_and_preserve_provenance() {
     let root = TestRoot::new("imports");
-    let base = format!("schema = 3\nid = \"base\"\n{BASE_PHY}{BASE_SCOPE}");
+    let base = format!("schema = 4\nid = \"base\"\n{BASE_PHY}{BASE_SCOPE}");
     let wifi = format!(
-        "schema = 3\nid = \"wifi\"\nimports = [\"catalog/a.toml\"]\n{WIFI_CHANNEL}{WIFI_SCOPE}"
+        "schema = 4\nid = \"wifi\"\nimports = [\"catalog/a.toml\"]\n{WIFI_CHANNEL}{WIFI_SCOPE}"
     );
     root.write_named_catalog("a", &base);
     root.write_named_catalog("b", &wifi);
     let extra = BASE_PHY.replace("id = \"base-phy\"", "id = \"other-phy\"");
-    root.write_named_catalog("c", &format!("schema = 3\nid = \"extra\"\nimports = [\"catalog/a.toml\", \"catalog/b.toml\"]\n{extra}{BASE_SCOPE}"));
+    root.write_named_catalog("c", &format!("schema = 4\nid = \"extra\"\nimports = [\"catalog/a.toml\", \"catalog/b.toml\"]\n{extra}{BASE_SCOPE}"));
     let program = parse(PROGRAM_PREFIX);
     let load = |paths: &[PathBuf]| {
-        CatalogView::load_with_program(
-            &root.path,
-            paths,
-            Some((&program.verification, &program.hil)),
-        )
-        .unwrap()
+        CatalogView::load_with_program(&root.path, paths, Some(&program.hil)).unwrap()
     };
     let imported = load(&["catalog/c.toml".into()]);
     let explicit = load(&[
@@ -1213,7 +1203,7 @@ fn imported_catalogs_resolve_transitively_once_and_preserve_provenance() {
 #[test]
 fn invalid_catalog_imports_fail_before_any_selection() {
     let root = TestRoot::new("invalid-imports");
-    let base = format!("schema = 3\nid = \"base\"\n{BASE_PHY}{BASE_SCOPE}");
+    let base = format!("schema = 4\nid = \"base\"\n{BASE_PHY}{BASE_SCOPE}");
     for (imports, expected) in [
         ("[\"catalog/missing.toml\"]", "missing"),
         ("[\"../outside.toml\"]", "relative"),
@@ -1223,7 +1213,7 @@ fn invalid_catalog_imports_fail_before_any_selection() {
         root.write_named_catalog("a", &base);
         root.write_named_catalog(
             "b",
-            &format!("schema = 3\nid = \"wifi\"\nimports = {imports}\n{WIFI_CHANNEL}{WIFI_SCOPE}"),
+            &format!("schema = 4\nid = \"wifi\"\nimports = {imports}\n{WIFI_CHANNEL}{WIFI_SCOPE}"),
         );
         let error = imports::load(&root.path, &["catalog/b.toml".into()])
             .err()
@@ -1246,7 +1236,7 @@ fn explicit_catalog_closure_follows_new_dependencies_without_relaxing_exact_prog
         "scope = \"One base initialization\"",
         "scope = \"One base initialization\"\ndepends-on = [\"clock-owner\"]",
     );
-    root.write_catalog(&format!("schema = 3\nid = \"test-wifi-phy\"\n{additional}{BASE_SCOPE}{dependent}{BASE_SCOPE}{WIFI_CHANNEL}{WIFI_SCOPE}"));
+    root.write_catalog(&format!("schema = 4\nid = \"test-wifi-phy\"\n{additional}{BASE_SCOPE}{dependent}{BASE_SCOPE}{WIFI_CHANNEL}{WIFI_SCOPE}"));
     let load =
         |input: &str| parse(input).resolve_catalogs(&root.path, Path::new("program.toml"), input);
     let derived = load(&derived_input).unwrap();

@@ -93,7 +93,7 @@ geometry the register model publishes for the PAC read.
 
 `cargo verification evidence --chip esp32s31 ieee802154-host` runs `compare` for every catalog
 scenario and, only when all of them MATCH, writes the stand's evidence shard `ieee802154-host.json` into the
-chip's evidence index `evidence/scenarios`: one entry per
+chip's derived evidence index `target/verification/esp32s31/evidence`: one entry per
 scenario (source `esp-idf`, production `oer_espressif_ieee802154_engine::engine`), the
 digests of the pinned ESP-IDF files and of the stand's path-dependency
 closure. The stand measures no vendor coverage, production observation or

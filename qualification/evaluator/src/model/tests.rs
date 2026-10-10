@@ -208,7 +208,10 @@ pub(crate) fn native_evidence(root: &Path, roots: &[(&str, &str, &str)]) -> Nati
             (shard, current)
         })
         .collect();
-    NativeEvidence { shards }
+    NativeEvidence {
+        shards,
+        stale: Vec::new(),
+    }
 }
 
 /// A current shard of `suite` over `root/production` holding MATCH entries
@@ -322,11 +325,12 @@ fn native_index_supports_only_current_match_entries_of_the_referenced_suite() {
 fn reloaded(root: &Path, shard: &oer_vendor_evidence_shard::Index) -> NativeEvidence {
     NativeEvidence {
         shards: vec![(shard.clone(), shard.is_current(root))],
+        stale: Vec::new(),
     }
 }
 
 #[test]
-fn a_stale_shard_leaves_other_scenarios_current() {
+fn a_stale_shard_voids_the_whole_derived_index() {
     let fixture = fixture_root("shards");
     let root = &fixture.0;
     fs::create_dir_all(root.join("other/src")).unwrap();
@@ -350,18 +354,20 @@ fn a_stale_shard_leaves_other_scenarios_current() {
         )
         .unwrap();
     }
+    let evidence = NativeEvidence::load(root, directory, "test-radio").unwrap();
+    assert_eq!(evidence.current_entries(), 2);
+    // A source of `radio` changed since the index was computed: the index is
+    // recomputed whole, never partly trusted, so it holds no evidence until
+    // then and names the stale scenario.
     fs::write(root.join("production/src/lib.rs"), b"changed").unwrap();
     let evidence = NativeEvidence::load(root, directory, "test-radio").unwrap();
-    let supported = |suite: &str, symbol: &str| {
-        evidence.supports(&VendorEvidenceRef {
-            suite: suite.into(),
-            source: "archive".into(),
-            symbol: symbol.into(),
-        })
-    };
-    assert!(!supported("radio", "set_channel"));
-    assert!(supported("other", "other_root"));
-    assert_eq!(evidence.current_entries(), 1);
+    assert_eq!(evidence.stale, ["radio"]);
+    assert_eq!(evidence.entries(), 0);
+    assert!(!evidence.supports(&VendorEvidenceRef {
+        suite: "other".into(),
+        source: "archive".into(),
+        symbol: "other_root".into(),
+    }));
 }
 
 #[test]
@@ -386,6 +392,7 @@ fn cross_scenario_views_follow_every_shard() {
     second.observed = vec![line(2)];
     let evidence = oer_vendor_evidence_shard::Evidence {
         shards: vec![(first.clone(), true), (second.clone(), true)],
+        other_schema: Vec::new(),
     };
     // The second scenario's closure covers the shared location.
     assert_eq!(evidence.untriaged(), vec![location("solo")]);
@@ -394,6 +401,7 @@ fn cross_scenario_views_follow_every_shard() {
     second.untriaged = vec![location("shared")];
     let evidence = oer_vendor_evidence_shard::Evidence {
         shards: vec![(first, true), (second, true)],
+        other_schema: Vec::new(),
     };
     assert_eq!(
         evidence.untriaged(),
@@ -457,15 +465,25 @@ fn corrupt_unsupported_and_non_match_native_indexes_fail_closed() {
     fs::write(root.join(directory).join("notes.txt"), "").unwrap();
     assert!(NativeEvidence::load(root, directory, "test-radio").is_err());
     fs::remove_file(root.join(directory).join("notes.txt")).unwrap();
-    // A shard binding a source that no longer exists fails closed.
+    // What another checkout explains is staleness of the derived index, not
+    // an error: a recorded source deleted since, or a shard another schema
+    // of the format wrote, leaves the index holding no evidence.
     let mut missing = valid.clone();
     missing.sources[0].path = PathBuf::from("deleted/source");
     write(&missing);
-    let Err(error) = NativeEvidence::load(root, directory, "test-radio") else {
-        panic!("a missing bound source was accepted");
-    };
-    let error = error.to_string();
-    assert!(error.contains("does not exist"), "{error}");
+    let evidence = NativeEvidence::load(root, directory, "test-radio").unwrap();
+    assert_eq!(
+        (evidence.stale.as_slice(), evidence.entries()),
+        (&["radio".to_owned()][..], 0)
+    );
+    let mut older = valid.clone();
+    older.schema -= 1;
+    write(&older);
+    let evidence = NativeEvidence::load(root, directory, "test-radio").unwrap();
+    assert_eq!(
+        (evidence.stale.as_slice(), evidence.entries()),
+        (&["radio".to_owned()][..], 0)
+    );
 }
 
 #[test]
@@ -629,10 +647,12 @@ fn an_absent_evidence_directory_is_reported_and_supports_nothing() {
             AbsentDirectory {
                 kind: "hil-evidence",
                 path: PathBuf::from("hil/evidence/chip"),
+                state: "absent",
             },
             AbsentDirectory {
                 kind: "hil-runs",
                 path: PathBuf::from("target/hil/chip/runs"),
+                state: "absent",
             },
         ]
     );
@@ -641,6 +661,17 @@ fn an_absent_evidence_directory_is_reported_and_supports_nothing() {
         [
             "EVIDENCE-DIR\tabsent\tkind=hil-evidence\tpath=hil/evidence/chip\tshards=0",
             "EVIDENCE-DIR\tabsent\tkind=hil-runs\tpath=target/hil/chip/runs\tbundles=0",
+        ]
+    );
+    // A stale derived vendor index is reported as such and holds nothing.
+    assert_eq!(
+        crate::report::absent_lines(&[AbsentDirectory {
+            kind: "vendor-evidence",
+            path: PathBuf::from("target/verification/chip/evidence"),
+            state: "stale",
+        }]),
+        [
+            "EVIDENCE-DIR\tstale\tkind=vendor-evidence\tpath=target/verification/chip/evidence\tshards=0"
         ]
     );
     // What an absent vendor index holds supports no obligation.

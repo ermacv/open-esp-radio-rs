@@ -1061,6 +1061,7 @@ name = "oer-vendor-evidence"
 version = "0.1.0"
 dependencies = [
  "oer-chip-profile",
+ "oer-image",
  "oer-image-policy",
  "oer-probe-codegen",
  "oer-process",

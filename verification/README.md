@@ -16,7 +16,7 @@ chip calibration relations and comparisons in `hil/phy/`.
 | --- | --- | --- |
 | L0 pins | which vendor code is the reference | [`esp32s31/artifacts.toml`](esp32s31/artifacts.toml) |
 | L1 facts | recovered constants, tables and register facts describe the pinned code | production `SOURCE:` blocks, [`registers`](../registers/README.md) evidence, [`esp32s31/facts`](esp32s31/facts) |
-| L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md); `cargo verification evidence` writes their shards to `esp32s31/evidence/scenarios` |
+| L2 behavior | compiled production code behaves as the vendor code | [`esp32s31/probes`](esp32s31/probes/README.md), [`esp32s31/scenarios`](esp32s31/scenarios), [`esp32s31/host`](esp32s31/host/ieee802154/README.md); `cargo verification evidence` computes their derived index into `target/verification/esp32s31/evidence` |
 | L3 hardware | the drivers work on the board and calibrate as the vendor firmware does | [`hil`](../hil/README.md), whose runs `cargo qualification hil-evidence` records as shards to `hil/evidence/<chip>/`, the [ESP32-S31 calibration comparison](../hil/phy/esp32s31/calibration/README.md) with [`esp32s31/hil-vendor`](esp32s31/hil-vendor/README.md) |
 | L4 readiness | a capability is qualified | [`qualification`](../qualification/README.md) |
 
@@ -57,16 +57,14 @@ and `tools/symbol-lineage` pairs obfuscated names across releases. See the
 **L2.** A typed scenario runs the pinned vendor function and the compiled
 production probe in one [Blobray](../tools/blobray/README.md) session and
 fails closed with MATCH, DIFF or INCOMPLETE. Each scenario writes its shard
-of the evidence index with `--index`; qualification treats a shard as stale
-when any source it records changed or a reviewed coverage decision that
-applies to its closures did, and rejects a shard whose recorded source or
-decision file no longer exists. CI does not rerun the vendor scenarios,
-because the firmware pins of `esp32s31/artifacts.toml` are built with
-ESP-IDF rather than downloaded: Blobray's periodic local `cargo verification evidence --chip <chip>
---check` is the gate; `--changed-since <rev>` skips the shards that record no
-file changed since a rebase's base. Only that check's owner regenerates the shards, in
-commits of their own after each check; other changes, including rebases over a
-shard, leave `evidence/scenarios` untouched, so shards never conflict. The [ESP32-S31 project](esp32s31/README.md)
+of the evidence index with `--index`. The index is derived data: every shard
+follows from the checkout's sources and pins, so nothing tracks it.
+`cargo verification evidence --chip <chip>` computes it for the checkout into
+`target/verification/<chip>/evidence`, fetching the pins and building the
+firmware inputs from their recipes first, and fails when a scenario does not
+match. Qualification reads it from there; an index a source or reviewed
+coverage decision changed since holds no evidence, never partly trusted
+evidence, and its report names it stale until it is computed again. The [ESP32-S31 project](esp32s31/README.md)
 describes the scenarios, their inputs and their reviewed decisions; the
 [vendor contract reference](../docs/vendor/esp32s31/README.md) explains the
 vendor behavior they cover.

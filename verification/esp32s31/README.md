@@ -40,9 +40,10 @@ native evidence index qualification reads: every claimed vendor root with its
 production entry, compared cases and retained executions, the input
 identities and the digests of the sources the verdicts depend on. Every
 scenario subcommand takes the same `--index` and writes only its own shard.
-Regenerate the shards below `evidence/scenarios/` after any production, probe,
-scenario or Blobray change they depend on; until then qualification treats
-those shards as stale. See
+The index is derived data: `cargo verification evidence --chip esp32s31`
+computes it into `target/verification/esp32s31/evidence`, and after any
+production, probe, scenario or Blobray change it depends on qualification
+counts no evidence from it, and reports it stale, until it is computed again. See
 [vendor verification](../../docs/verification-and-qualification.md#vendor-verification-path).
 
 ```console
@@ -50,7 +51,7 @@ cargo verification scenario --chip esp32s31 all \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --bluetooth-production target/verification/esp32s31-bluetooth-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-bluetooth-elf \
   --linker /usr/bin/ld.lld --output target/blobray-research/all \
-  --index verification/esp32s31/evidence/scenarios
+  --index target/verification/esp32s31/evidence
 ```
 
 ## Captured I2C command-memory comparison
@@ -634,8 +635,8 @@ Each decision has a `reason` and one or more places: a vendor `function`,
 optionally with offsets `start` up to `end` or `diagnostic = true`. A shard
 records the SHA-256 of the decisions with a place in one of its closure
 functions, so editing, adding or removing a decision stales only the shards
-whose closures it names; `cargo verification evidence --check --changed-since` reruns
-only those shards.
+whose closures it names; `cargo verification evidence --chip esp32s31 <scenario>`
+recomputes only those shards.
 
 A shard lists what its own scenario leaves untriaged, so a vendor function
 several scenarios reach can appear in one shard while another scenario

@@ -21,6 +21,5 @@ pin.
 | --- | --- |
 | `scenarios/` | Typed vendor scenarios: the verdict library `oer-esp32c5-vendor-scenarios` and, in `cli/`, its binary `oer-esp32c5-vendor-scenarios-cli` behind the shared report command line; `phy_i2c` compares the analog-register I2C transport of the pinned `libphy.a` with the production transport, over the v1.0 ROM |
 | [`probes/`](probes/README.md) | Compiled Rust entry points of the production code the scenarios run |
-| `evidence/scenarios/` | The evidence shard each scenario writes with `--index` |
 | `facts/provenance.toml` | Reviewed code fingerprints of the cited vendor functions, which `cargo verification check provenance --chip esp32c5` holds the pins to |
 | [`hardware/register-probe/`](hardware/register-probe/README.md) | A board image that checks the published [register model](../../registers/esp32c5/README.md) on the silicon |

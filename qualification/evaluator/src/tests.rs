@@ -28,11 +28,10 @@ impl StaticProgramRoot {
         fs::write(path.join("Cargo.toml"), "[workspace]\n").unwrap();
         fs::write(
             path.join("catalog/source.toml"),
-            r#"schema = 3
+            r#"schema = 4
 id = "test-catalog"
 
 [validation]
-evidence-index = "vendor.json"
 hil-catalog = "scenarios"
 
 [[capabilities]]
@@ -65,14 +64,11 @@ limitations = "No readiness claim"
         fs::write(
             self.path.join("program.toml"),
             format!(
-                r#"schema = 4
+                r#"schema = 5
 target = "test-program"
 required-capabilities = [{required}]
 catalogs = ["catalog/source.toml"]
 catalog-capabilities = [{selected}]
-
-[verification]
-evidence-index = "vendor.json"
 
 [hil]
 target = "test-target"
@@ -234,8 +230,18 @@ fn absent_vendor_index_allows_status_and_hil_planning_without_qualifying_hardwar
         );
         assert_eq!(plan["obligations"].as_array().unwrap().len(), 1);
         assert_eq!(plan["obligations"][0]["action"], "run");
-        assert!(!root.path.join("vendor.json").exists());
-        fs::write(root.path.join("vendor.json"), "{broken").unwrap();
+        assert!(
+            !root
+                .path
+                .join("target/verification/test-target/evidence")
+                .exists()
+        );
+        fs::create_dir_all(root.path.join("target/verification/test-target")).unwrap();
+        fs::write(
+            root.path.join("target/verification/test-target/evidence"),
+            "{broken",
+        )
+        .unwrap();
         assert!(
             execute(
                 parse_arguments(
@@ -259,7 +265,12 @@ fn absent_vendor_index_allows_status_and_hil_planning_without_qualifying_hardwar
 fn status_reads_catalog_without_git_or_evidence_and_writes_the_same_map() {
     let root = StaticProgramRoot::new("engineering-map");
     // Invalid evidence must not be loaded in declarations-only mode.
-    fs::write(root.path.join("vendor.json"), "invalid evidence").unwrap();
+    fs::create_dir_all(root.path.join("target/verification/test-target")).unwrap();
+    fs::write(
+        root.path.join("target/verification/test-target/evidence"),
+        "invalid evidence",
+    )
+    .unwrap();
     let arguments = parse_arguments(
         [
             "status",
@@ -411,7 +422,12 @@ fn help_forms_are_explicit_and_finite() {
 fn manifest_catalog_check_rejects_unknown_selection_without_evidence_outputs() {
     let root = StaticProgramRoot::new("unknown-selection");
     root.write_program("\"base\"", "\"missing\"");
-    assert!(!root.path.join("vendor.json").exists());
+    assert!(
+        !root
+            .path
+            .join("target/verification/test-target/evidence")
+            .exists()
+    );
     assert!(!root.path.join("missing-runs").exists());
     let error = root.check().unwrap_err().to_string();
     assert!(
@@ -424,7 +440,12 @@ fn manifest_catalog_check_rejects_unknown_selection_without_evidence_outputs() {
 fn manifest_catalog_check_rejects_non_exact_required_set_without_evidence_outputs() {
     let root = StaticProgramRoot::new("required-set");
     root.write_program("\"other\"", "\"base\"");
-    assert!(!root.path.join("vendor.json").exists());
+    assert!(
+        !root
+            .path
+            .join("target/verification/test-target/evidence")
+            .exists()
+    );
     assert!(!root.path.join("missing-runs").exists());
     let error = root.check().unwrap_err().to_string();
     assert!(error.contains("qualification root mismatch"), "{error}");

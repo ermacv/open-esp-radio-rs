@@ -271,6 +271,21 @@ pub fn ensure(root: &Path, chip: &str, id: &str) -> Result<PathBuf> {
     fetch(root, source, artifact)
 }
 
+/// The firmware catalog images whose outputs `chip` pins, in pin order:
+/// what `cargo hil firmware build` builds before a scenario links them.
+pub fn firmware_images(root: &Path, chip: &str) -> Result<Vec<String>> {
+    Ok(images(Manifest::load(root, chip)?))
+}
+
+fn images(manifest: Manifest) -> Vec<String> {
+    manifest
+        .source
+        .into_iter()
+        .filter(|source| source.kind == SourceKind::Firmware)
+        .filter_map(|source| source.image)
+        .collect()
+}
+
 /// The fetched vendor artifacts of `chip` that are missing or differ from
 /// their pin; empty when every citation can be checked.
 pub fn unfetched(root: &Path, chip: &str) -> Result<Vec<String>> {
@@ -470,6 +485,20 @@ mod tests {
         let pinned: Vec<_> = resolved.pinned.iter().map(|p| p.id.as_str()).collect();
         assert_eq!(pinned, ["fetched"]);
     }
+
+    #[test]
+    fn the_firmware_images_are_those_of_firmware_sources_in_pin_order() {
+        let manifest = Manifest::parse(
+            "schema = 1\nartifact = []\n\
+             [[source]]\nid = \"b\"\nkind = \"firmware\"\nimage = \"second\"\n\
+             [[source]]\nid = \"vendor\"\nkind = \"git\"\n\
+             repository = \"https://github.com/o/r\"\nrevision = \"0123\"\n\
+             [[source]]\nid = \"a\"\nkind = \"firmware\"\nimage = \"first\"\n",
+        )
+        .unwrap();
+        assert_eq!(images(manifest), ["second", "first"]);
+    }
+
     #[test]
     fn a_checkout_links_the_shared_store_and_merges_its_former_cache() {
         let dir = tempfile::tempdir().unwrap();

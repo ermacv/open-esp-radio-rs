@@ -5,8 +5,8 @@
 //!   probe catalogs validated;
 //! - [`scenario`]: the typed Blobray vendor scenarios, built in the Blobray
 //!   workspace and run one at a time;
-//! - [`regenerate`]: which producer reruns which stale or named shard, the
-//!   rerun check against committed shards, and the untriaged listing.
+//! - [`regenerate`]: which producer computes which shard of the derived
+//!   index, whole or named, and the untriaged listing.
 //!
 //! Each long step prints a `phase <name>: <seconds> s` line ([`phase`]).
 

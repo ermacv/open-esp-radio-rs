@@ -78,8 +78,9 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<OsString>,
     },
-    /// Rewrite the vendor evidence shards whose recorded sources changed, or
-    /// the named scenarios' shards. Resolves conflicting shards after a merge.
+    /// Compute the chip's derived vendor evidence index for this checkout:
+    /// every shard, its firmware inputs built from their recipes, or only the
+    /// named scenarios' shards.
     Evidence {
         #[arg(long)]
         chip: String,
@@ -89,23 +90,11 @@ enum Command {
         /// Ignored output root of the scenario runs.
         #[arg(long, default_value = "target/blobray-research/evidence")]
         output: PathBuf,
-        /// Rerun the named scenarios, or every one, into the output root and
-        /// fail unless each committed shard equals its rerun, without
-        /// rewriting any. A differing shard reports its changed claims and
-        /// sources.
+        /// Print every vendor location the index leaves untriaged that no
+        /// other scenario covers, without running a scenario.
         #[arg(long)]
-        check: bool,
-        /// With `--check`, rerun only shards that record a file changed
-        /// since this revision, in the worktree or untracked; a shard that
-        /// does not parse is always rerun.
-        #[arg(long, requires = "check")]
-        changed_since: Option<String>,
-        /// Print every vendor location the committed shards leave untriaged
-        /// that no other scenario covers, without running a scenario.
-        #[arg(long, conflicts_with = "check")]
         untriaged: bool,
-        /// Scenarios to rewrite, or with `--check` to rerun; every stale
-        /// shard, or with `--check` every shard, when empty.
+        /// Scenarios whose shards to rewrite; the whole index when empty.
         scenarios: Vec<String>,
     },
     /// Build the chip's Rust comparison probe images.
@@ -236,16 +225,12 @@ fn run() -> Result<ExitCode> {
             chip,
             linker,
             output,
-            check,
-            changed_since,
             untriaged,
             scenarios,
         } => {
             use oer_vendor_evidence::run::regenerate;
             return if untriaged {
                 regenerate::untriaged(&ctx, &chip)
-            } else if check {
-                regenerate::check(&ctx, &chip, scenarios, changed_since, linker, output)
             } else {
                 regenerate::run(&ctx, &chip, scenarios, linker, output)
             };

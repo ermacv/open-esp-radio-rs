@@ -18,7 +18,7 @@ application path exists, and incomplete programs are ordinary development states
 | Blobray `production-trace` | Does concrete vendor execution match the exact compiled production entry under the declared bounded contract? | Supplies vendor evidence only |
 | Blobray `shared-core` or static analysis | Does supporting code or a model agree? | No |
 | HIL sealed run | Did the current production composition pass the declared scenario on hardware? | Supplies HIL evidence only |
-| Qualification v4 | Are all required axes and dependencies closed by acceptable current evidence? | **Sole readiness authority** |
+| Qualification | Are all required axes and dependencies closed by acceptable current evidence? | **Sole readiness authority** |
 
 No evidence producer imports product-readiness policy. Qualification consumes
 their typed outputs and derives the verdict.
@@ -107,8 +107,9 @@ replay/deadline policy do not require vendor equivalence.
 
 Vendor evidence comes from the typed vendor scenarios in
 [`verification/esp32s31/scenarios`](../verification/esp32s31/scenarios).
-The native evidence index is the directory `evidence/scenarios` of
-[`verification/esp32s31`](../verification/esp32s31/README.md)
+The native evidence index is derived data, never tracked: the directory
+`target/verification/<chip>/evidence` that
+`cargo verification evidence --chip <chip>` computes for the checkout
 ([`oer-vendor-evidence`](../verification/evidence/README.md)), one shard per
 scenario named after it, written only through that crate's writer by a
 producer: the typed scenarios or a host stand's `shard` command.
@@ -167,9 +168,10 @@ is untriaged when some scenario lists it and every scenario whose closures
 contain its function lists it too, and a line is unobserved when some
 scenario lists it and no scenario observes it. The index carries identities
 and verdicts only, never vendor bytes.
-Qualification reads the index directory named by the program's
-`[verification] evidence-index` (catalogs name it in `[validation]
-evidence-index`), checks each shard's schema, producer command, chip target
+Qualification reads the index of the program's chip (its `[hil] target`)
+from `oer_vendor_artifacts::project::evidence_shards`, the one place that
+names it, treats an index that is stale for the checkout as holding no
+evidence, checks each shard's schema, producer command, chip target
 and scenario name, requires every entry to belong to its shard's scenario and
 to be a MATCH
 claim with compared cases whose coverage accounts for every uncovered location,
@@ -178,19 +180,23 @@ counts account for every written byte, and recomputes every recorded directory
 digest. Coverage, observation and state are reported, not readiness gates: they
 show which vendor behavior the comparisons never exercised, which executed
 production lines they cannot notice and which vendor state they never compare. Any
-change to a shard's sources makes that shard stale: its evidence supports no
-claim until its scenario runs again, while shards whose sources are unchanged
-stay current. The scenario code a shard records is what Cargo compiled into
+change to a shard's sources makes that shard stale, and a stale shard voids
+the whole index: the index is computed whole for one checkout, so it supports
+no claim until it is computed again, and the report names it
+`EVIDENCE-DIR stale`. The scenario code a shard records is what Cargo compiled into
 the libraries that decide verdicts: the scenario engine and the chip's
 scenario library, whose dep-info `cargo verification scenario` passes to the
 scenario binary. Every verification package declares
 `package.metadata.open-radio.evidence` as `verdict` or `report`; a report
 package only renders reviewer aids, a verdict package may not depend on one,
 and writing or checking a shard fails when it would record a report
-package's file, so editing a report leaves every shard current. An absent index directory means no vendor evidence is
-available: affected capabilities remain unqualified while status and HIL
-planning still work. An unreadable, malformed or inconsistent existing shard,
-or a file in the directory that is not a shard, remains an error.
+package's file, so editing a report leaves every shard current. An absent or
+stale index means no vendor evidence is available: affected capabilities
+remain unqualified while status and HIL planning still work. A shard whose recorded source or decision file no
+longer exists, or that another schema of the format wrote, is stale too: only
+another checkout explains it. A malformed shard of the current schema, one that
+breaks the format's invariants or names another scenario than its file, or a
+file in the directory that is not a shard, remains an error.
 
 The IEEE 802.15.4 host stand
 ([`verification/esp32s31/host/ieee802154`](../verification/esp32s31/host/ieee802154/README.md))
@@ -199,11 +205,9 @@ stand scenario comparing the compiled public ESP-IDF driver with the
 production engine, over the pinned `esp-idf` sources. Its entries carry no
 Blobray coverage, observation or state counts.
 
-`cargo verification evidence --chip <chip>` rewrites every stale shard, or the shards of the
-scenarios it names. The verification owner runs it; other changes leave shards
-alone, and a shard their sources made stale stays stale until then. Git merges
-shards as binary files, so a conflicting merge keeps one side intact instead of
-inserting markers, and the next regeneration replaces it.
+`cargo verification evidence --chip <chip>` computes the whole index for the
+checkout, or rewrites the shards of the scenarios it names. Nothing tracks the
+index, so no change, merge or rebase ever edits a shard.
 
 The qualification manifest names vendor roots and explicit evidence rows:
 

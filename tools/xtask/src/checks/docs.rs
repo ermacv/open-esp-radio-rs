@@ -113,8 +113,8 @@ pub fn capabilities(ctx: &Checkout, changed: &[PathBuf]) -> Result<()> {
     process::run(&mut command)
 }
 
-/// Validate every qualification program and evaluate its committed
-/// evidence (`cargo qualification validate` and `evaluate`).
+/// Validate every qualification program and evaluate its tracked HIL and
+/// derived vendor evidence (`cargo qualification validate` and `evaluate`).
 pub fn programs(ctx: &Checkout) -> Result<()> {
     let binary = qualification_binary(ctx)?;
     for group in catalog_groups(ctx, &oer_repo::Repo::from_git(&ctx.root)?)? {

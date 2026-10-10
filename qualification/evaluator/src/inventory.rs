@@ -713,7 +713,7 @@ mod tests {
             fs::write(
                 self.path.join(format!("catalog/{name}.toml")),
                 format!(
-                    "schema = 3\nid = \"{id}\"\n\n[validation]\nevidence-index = \"vendor.json\"\nhil-catalog = \"scenarios\"\n{body}"
+                    "schema = 4\nid = \"{id}\"\n\n[validation]\nhil-catalog = \"scenarios\"\n{body}"
                 ),
             )
             .unwrap();

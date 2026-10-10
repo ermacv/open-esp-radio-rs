@@ -1,5 +1,5 @@
-# Qualification v4 declares explicit proof states and blockers.
-schema = 4
+# Qualification declares explicit proof states and blockers.
+schema = 5
 target = "esp32s31-ieee802154"
 required-capabilities = [
   "clock-reset-foundation",
@@ -17,9 +17,6 @@ catalog-capabilities = [
   "polled-ed-cca",
   "rx-tx-dataplane",
 ]
-
-[verification]
-evidence-index = "verification/esp32s31/evidence/scenarios"
 
 [hil]
 target = "esp32s31"

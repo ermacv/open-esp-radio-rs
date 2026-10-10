@@ -382,7 +382,7 @@ pub const CHECKS: &[Check] = &[
         id: "qualification",
         tier: Tier::Full,
         job: "models",
-        summary: "every qualification program validates and its committed evidence evaluates",
+        summary: "every qualification program validates and evaluates its tracked HIL and derived vendor evidence",
         trigger: Some(|change| {
             touches(
                 change,

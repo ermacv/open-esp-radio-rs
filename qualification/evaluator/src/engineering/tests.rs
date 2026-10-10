@@ -220,6 +220,37 @@ fn inventory_markdown_links_resolve_against_their_original_owner() {
 }
 
 #[test]
+fn a_catalog_map_links_the_derived_index_of_its_chip() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("target/verification/chip-a/evidence")).unwrap();
+    let scope: crate::model::CapabilityScope = toml_edit::de::from_str(
+        r#"
+chip = "chip-a"
+role = "role"
+phy = "phy"
+security = ["not-applicable"]
+composition = "composition"
+level = "lower-primitive"
+activation-boundary = "One call"
+limitations = "None"
+"#,
+    )
+    .unwrap();
+    let mut catalog = CatalogView::default();
+    catalog.scopes.insert("capability".into(), scope);
+    let map = ProjectMap::from_catalog(&catalog, None).unwrap();
+    let text = map
+        .markdown(&root.path().join("target/map"), root.path())
+        .unwrap();
+    assert!(
+        text.contains(
+            "- [target/verification/chip-a/evidence](../../target/verification/chip-a/evidence)"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
 fn only_written_evidence_indexes_are_linked() {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(root.path().join("evidence/written")).unwrap();

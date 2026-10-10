@@ -40,14 +40,33 @@ pub struct Candidate {
     pub reason: String,
 }
 
-/// The files that queued or running HIL jobs were fixed with.
+/// The files that queued or running HIL jobs were fixed with, and the
+/// source snapshot each names with `--source-snapshot`, which it reads when
+/// it starts.
 pub(crate) fn held_by_jobs() -> Result<Vec<PathBuf>> {
     Ok(oer_stand_arbiter::Arbiter::open()?
         .jobs()
         .unfinished()
         .into_iter()
-        .flat_map(|job| job.fixed)
+        .flat_map(|job| {
+            let snapshot = named_snapshot(&job.command).map(|path| job.checkout.join(path));
+            job.fixed.into_iter().chain(snapshot)
+        })
         .collect())
+}
+
+/// The value of `--source-snapshot` in the `cargo hil` arguments `command`.
+fn named_snapshot(command: &[String]) -> Option<&str> {
+    let mut arguments = command.iter();
+    while let Some(argument) = arguments.next() {
+        if argument == "--source-snapshot" {
+            return arguments.next().map(String::as_str);
+        }
+        if let Some(value) = argument.strip_prefix("--source-snapshot=") {
+            return Some(value);
+        }
+    }
+    None
 }
 
 /// `found` without the candidates that hold or lie inside a `held` path.
@@ -313,5 +332,31 @@ mod tests {
             candidates(root.path(), &[], Policy::default(), SystemTime::now()).len(),
             1
         );
+    }
+
+    /// A job names the snapshot it reads with `--source-snapshot`; a sweep
+    /// and source collection keep it as if the job were fixed with it.
+    #[test]
+    fn a_job_holds_the_snapshot_it_names() {
+        let command = |arguments: &[&str]| -> Vec<String> {
+            arguments
+                .iter()
+                .map(|argument| (*argument).to_owned())
+                .collect()
+        };
+        assert_eq!(
+            named_snapshot(&command(&[
+                "run",
+                "smoke",
+                "--source-snapshot",
+                "/s/schema-2/ab"
+            ])),
+            Some("/s/schema-2/ab")
+        );
+        assert_eq!(
+            named_snapshot(&command(&["run", "--source-snapshot=rel/cd", "smoke"])),
+            Some("rel/cd")
+        );
+        assert_eq!(named_snapshot(&command(&["run", "smoke"])), None);
     }
 }

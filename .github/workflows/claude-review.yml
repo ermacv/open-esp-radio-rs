@@ -90,6 +90,9 @@ jobs:
           "$RUNNER_TEMP/review/bin/pip" install --quiet --only-binary=:all: claude-agent-sdk==0.2.160
       - id: claude
         name: Review with read-only tools
+        # Below the job's limit: a step timeout fails the job, which publish
+        # reports, while a cancelled job means a newer review superseded it.
+        timeout-minutes: 40
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -148,7 +151,8 @@ jobs:
               >/dev/null || echo "::warning::The failure issue was not filed either"
             exit 1
           }
-          # A newer review of this PR cancelled this one and sets the status.
+          # A newer review of this PR cancelled this one and sets the status;
+          # a review that ran out of time failed at its step's limit instead.
           if [ "$OUTCOME" = cancelled ]; then exit 0; fi
           if [ "$OUTCOME" != success ] || [ -z "$RESULT" ]; then
             failed "Review did not complete ($OUTCOME); no verdict"

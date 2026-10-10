@@ -4,7 +4,7 @@
 //! output and the summary always counts the whole analysis, so a selection
 //! cannot hide that the analysis was incomplete.
 use blobray_domain::{
-    RegisterAccess, RegisterMask, RegisterMaskKind, StoredBits, StoredBitsSource,
+    IndexedAddress, RegisterAccess, RegisterMask, RegisterMaskKind, StoredBits, StoredBitsSource,
 };
 use oer_riscv_model::{FunctionRecord, MemoryKind, ObjectLocation, SymbolId};
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,8 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AccessFilter {
     /// Word addresses; an observation is kept when its address lies in one of
-    /// these 32-bit words. Empty keeps every address, unresolved included.
+    /// these 32-bit words, or its indexed progression may reach one. Empty
+    /// keeps every address, unresolved included.
     pub words: Vec<u32>,
     /// Function names; empty keeps every function.
     pub functions: Vec<String>,
@@ -26,10 +27,16 @@ impl AccessFilter {
     pub fn keeps(&self, record: &RegisterAccess) -> bool {
         match record {
             RegisterAccess::Observation {
-                function, address, ..
+                function,
+                address,
+                indexed,
+                ..
             } => {
                 let word = self.words.is_empty()
-                    || address.is_some_and(|address| self.words.contains(&(address & !3)));
+                    || address.is_some_and(|address| self.words.contains(&(address & !3)))
+                    || indexed.is_some_and(|indexed| {
+                        self.words.iter().any(|word| indexed.may_reach_word(*word))
+                    });
                 word && self.names(function.name.as_deref())
             }
             RegisterAccess::Blocked { function, .. } => self.names(function.name.as_deref()),
@@ -110,6 +117,9 @@ pub struct AccessEntry {
     /// The accessed word, for function grouping; `None` there is unresolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub word: Option<u32>,
+    /// The progression of an unresolved address computed from one index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexed: Option<IndexedAddress>,
     /// The accessing function, for address grouping.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub function: Option<GroupFunction>,
@@ -132,6 +142,7 @@ type GroupKey = (Option<u32>, Option<GroupFunction>);
 type Entries = BTreeMap<EntryKey, (Option<RegisterMask>, Option<Vec<StoredBits>>, u64)>;
 type EntryKey = (
     Option<u32>,
+    Option<IndexedAddress>,
     Option<GroupFunction>,
     String,
     Option<u8>,
@@ -160,6 +171,7 @@ impl AccessGroups {
             function,
             fact,
             address,
+            indexed,
             mask,
             stored,
             ..
@@ -185,11 +197,19 @@ impl AccessGroups {
         let (group, entry) = match self.by {
             GroupBy::Address => (
                 (word, None),
-                (None, Some(function), access, width, mask_key, stored_key),
+                (
+                    None,
+                    *indexed,
+                    Some(function),
+                    access,
+                    width,
+                    mask_key,
+                    stored_key,
+                ),
             ),
             GroupBy::Function => (
                 (None, Some(function)),
-                (word, None, access, width, mask_key, stored_key),
+                (word, *indexed, None, access, width, mask_key, stored_key),
             ),
         };
         let slot = self
@@ -212,9 +232,13 @@ impl AccessGroups {
                 entries: entries
                     .iter()
                     .map(
-                        |((word, function, access, width, _, _), (mask, stored, count))| {
+                        |(
+                            (word, indexed, function, access, width, _, _),
+                            (mask, stored, count),
+                        )| {
                             AccessEntry {
                                 word: *word,
+                                indexed: *indexed,
                                 function: function.clone(),
                                 access: access.clone(),
                                 width: *width,
@@ -239,10 +263,15 @@ impl AccessGroups {
                 (None, None) => String::from("unresolved"),
             });
             for entry in &group.entries {
-                let subject = match (&entry.function, entry.word) {
-                    (Some(function), _) => function.human(),
-                    (None, Some(word)) => format!("{word:#010x}"),
-                    (None, None) => String::from("unresolved"),
+                let subject = match (&entry.function, entry.word, entry.indexed) {
+                    (Some(function), _, _) => function.human(),
+                    (None, Some(word), _) => format!("{word:#010x}"),
+                    (None, None, Some(indexed)) => indexed_human(&indexed),
+                    (None, None, None) => String::from("unresolved"),
+                };
+                let indexed = match (&entry.function, entry.indexed) {
+                    (Some(_), Some(indexed)) => format!(" {}", indexed_human(&indexed)),
+                    _ => String::new(),
                 };
                 let width = entry
                     .width
@@ -263,13 +292,28 @@ impl AccessGroups {
                     .map(|runs| format!(" {}", stored_human(runs)))
                     .unwrap_or_default();
                 lines.push(format!(
-                    "  {subject} {}{width}{mask}{stored} x{}",
+                    "  {subject}{indexed} {}{width}{mask}{stored} x{}",
                     entry.access, entry.count
                 ));
             }
         }
         lines
     }
+}
+
+/// `indexed 0x2010f400+0x10*i` for an indexed progression, with `(i<6)` when
+/// the index is bounded; a negative stride prints as `-0x7c*i`.
+pub fn indexed_human(indexed: &IndexedAddress) -> String {
+    let sign = if indexed.stride < 0 { '-' } else { '+' };
+    let bound = indexed
+        .count
+        .map(|count| format!(" (i<{count})"))
+        .unwrap_or_default();
+    format!(
+        "indexed {:#010x}{sign}{:#x}*i{bound}",
+        indexed.base,
+        indexed.stride.unsigned_abs()
+    )
 }
 
 /// The runs of a stored value, high bits first: `[24:18]=arg0[6:0]` for an

@@ -1192,14 +1192,15 @@ fn register_accesses(
         }
         writeln!(
             out,
-            "{} functions ({} partial{}, {} blocked), {} gaps, {} observations ({} unresolved)",
+            "{} functions ({} partial{}, {} blocked), {} gaps, {} observations ({} unresolved, {} indexed)",
             summary.functions,
             summary.partial_functions,
             blobray_cli::partial::human(&summary.partial_causes),
             summary.blocked_functions,
             summary.gaps,
             summary.observations,
-            summary.unresolved_addresses
+            summary.unresolved_addresses,
+            summary.indexed_addresses
         )
         .map_err(io_error)?;
     }

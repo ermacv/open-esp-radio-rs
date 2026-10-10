@@ -43,6 +43,7 @@ fn observation(
         }),
         address,
         alternative: None,
+        indexed: None,
         stored: None,
         mask,
     }
@@ -126,6 +127,7 @@ fn address_groups_list_each_accessing_function_by_access_and_mask() {
     records().iter().for_each(|record| groups.add(record));
     let entry = |name: &str, access: &str, mask, count| AccessEntry {
         word: None,
+        indexed: None,
         function: Some(GroupFunction {
             input: 0,
             name: name.into(),
@@ -296,6 +298,38 @@ fn loads_of_different_widths_stay_separate_entries() {
             "store_byte (input 0, member 0)",
             "  0x2010702c store 4B [7:0]=load 1B 0xa[7:0] x1",
             "  0x2010702c store 4B [7:0]=load 4B 0xa[7:0] x1",
+        ]
+    );
+}
+
+#[test]
+fn an_indexed_observation_is_selected_by_the_words_its_progression_reaches() {
+    use blobray_domain::IndexedAddress;
+    let mut record = observation("coex_hw_timer_set", MemoryKind::Store, None, None);
+    if let RegisterAccess::Observation { indexed, .. } = &mut record {
+        *indexed = Some(IndexedAddress {
+            base: 0x2010_f400,
+            stride: 0x10,
+            count: Some(6),
+        });
+    }
+    let filter = |word| AccessFilter {
+        words: vec![word],
+        functions: vec![],
+    };
+    assert!(filter(0x2010_f450).keeps(&record), "index five");
+    assert!(
+        !filter(0x2010_f460).keeps(&record),
+        "index six is out of bound"
+    );
+    assert!(!filter(0x2010_f404).keeps(&record), "between elements");
+    let mut groups = AccessGroups::new(GroupBy::Address);
+    groups.add(&record);
+    assert_eq!(
+        groups.human(),
+        [
+            "unresolved",
+            "  coex_hw_timer_set (input 0, member 0) indexed 0x2010f400+0x10*i (i<6) store 4B x1",
         ]
     );
 }

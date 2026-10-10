@@ -49,6 +49,71 @@ pub enum StoredBitsSource {
     Unknown,
 }
 
+/// An address the analysis computes as `base + stride * index` from one
+/// unknown index, every step exact modulo 2^32: an array element the code
+/// selects at run time. Each address of the progression is a may-address; no
+/// index value is claimed to occur.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IndexedAddress {
+    /// The address at index zero.
+    pub base: u32,
+    /// The distance between consecutive indices; never zero.
+    pub stride: i32,
+    /// The index lies in `0..count` when its expression proves that bound
+    /// (a mask, a zero-extending load, an unsigned remainder or right
+    /// shift); `None` when any 32-bit index is possible.
+    pub count: Option<u32>,
+}
+
+impl IndexedAddress {
+    /// The address at `index`.
+    pub fn at(&self, index: u32) -> u32 {
+        self.base
+            .wrapping_add((self.stride as u32).wrapping_mul(index))
+    }
+
+    /// Whether some index inside the proven bound reaches the 32-bit word
+    /// at `word`: one of its four bytes is the address at that index. An
+    /// unbounded index wraps modulo 2^32, so it reaches every word its
+    /// stride's power of two allows: a selection never hides a may-access.
+    pub fn may_reach_word(&self, word: u32) -> bool {
+        let word = word & !3;
+        (0..4).any(|byte| self.index_of(word.wrapping_add(byte)).is_some())
+    }
+
+    /// The smallest index whose address is `address`, inside the bound.
+    pub fn index_of(&self, address: u32) -> Option<u32> {
+        let stride = self.stride as u32;
+        let distance = address.wrapping_sub(self.base);
+        // `stride * index == distance (mod 2^32)`: with `stride = 2^k * odd`,
+        // a solution exists only when `2^k` divides the distance, and then
+        // the smallest one is `(distance / 2^k) * odd^-1` modulo `2^(32-k)`.
+        let shift = stride.trailing_zeros();
+        if shift >= 32 || distance.trailing_zeros() < shift {
+            return None;
+        }
+        let odd = stride >> shift;
+        let modulus_mask = u32::MAX >> shift;
+        let index = (distance >> shift).wrapping_mul(inverse(odd)) & modulus_mask;
+        match self.count {
+            Some(count) if index >= count => None,
+            _ => Some(index),
+        }
+    }
+}
+
+/// The multiplicative inverse of an odd `value` modulo 2^32.
+fn inverse(value: u32) -> u32 {
+    // Newton's iteration doubles the correct low bits each step from the
+    // three an odd number is its own inverse in.
+    let mut inverse = value;
+    for _ in 0..4 {
+        inverse = inverse.wrapping_mul(2u32.wrapping_sub(value.wrapping_mul(inverse)));
+    }
+    inverse
+}
+
 /// One compiler jump table a relocatable function dispatches through, as
 /// its relocations prove it.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -88,6 +153,10 @@ pub enum RegisterAccess {
         /// None retains an unresolved or nonnumeric address; never silently absent.
         address: Option<u32>,
         alternative: Option<u8>,
+        /// For an unresolved address computed from one unknown index: the
+        /// array progression it selects from.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        indexed: Option<IndexedAddress>,
         mask: Option<RegisterMask>,
         /// For a store: where each run of the stored bits comes from, low run
         /// first, covering the access width. Absent for loads.
@@ -157,4 +226,49 @@ pub struct RegisterAccessSummary {
     pub gaps: u64,
     pub observations: u64,
     pub unresolved_addresses: u64,
+    /// Unresolved addresses with an indexed progression.
+    pub indexed_addresses: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_indexed_address_finds_the_index_of_each_reachable_address() {
+        let descending = IndexedAddress {
+            base: 0x2010_54fc,
+            stride: -0x7c,
+            count: None,
+        };
+        assert_eq!(descending.at(3), 0x2010_5388);
+        assert_eq!(descending.index_of(0x2010_5388), Some(3));
+        // An unbounded index wraps: every address its stride's power of two
+        // divides the distance to is reachable, here every word.
+        let wrapped = descending.index_of(0x2010_538c).unwrap();
+        assert_eq!(descending.at(wrapped), 0x2010_538c);
+        let queues = IndexedAddress {
+            count: Some(8),
+            ..descending
+        };
+        assert_eq!(queues.index_of(0x2010_538c), None, "between elements");
+        assert!(queues.may_reach_word(0x2010_5388));
+        assert!(!queues.may_reach_word(0x2010_538c));
+        // An even stride reaches only addresses its power of two divides.
+        let even = IndexedAddress {
+            base: 0x100,
+            stride: 12,
+            count: Some(4),
+        };
+        assert_eq!(even.index_of(0x124), Some(3));
+        assert_eq!(even.index_of(0x130), None, "index four is out of bound");
+        assert_eq!(even.index_of(0x106), None);
+        // An odd stride reaches every address within an unbounded index.
+        let odd = IndexedAddress {
+            base: 0,
+            stride: 3,
+            count: None,
+        };
+        assert_eq!(odd.at(odd.index_of(0x2010_0001).unwrap()), 0x2010_0001);
+    }
 }

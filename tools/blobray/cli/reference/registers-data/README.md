@@ -71,7 +71,23 @@ overlap it; without a range every numeric address is reported, and unresolved
 addresses are reported either way. `--working-memory-mib`, `--timeout-secs`
 and `--max-work-units` bound the analysis cooperatively.
 
+An unresolved address that the analysis computes as a constant plus a
+nonzero multiple of one unknown index (through additions, subtractions,
+constant shifts and multiplications and `shNadd`, at most 16 operators deep)
+also carries `indexed`: the progression `base + stride * i` modulo 2^32 it
+selects from, as an array element chosen at run time. `count` bounds the
+index to `0..count` when its expression proves it (a mask, a zero-extending
+byte or halfword load, an unsigned remainder, a right shift or a comparison)
+and is null otherwise. Two different unknowns, any other operator and a unit
+stride with an unbounded index (a pointer plus an offset) carry none. With
+`--range`, a progression is kept when its base lies in a range or, for a
+bound up to 4096, an index reaches one; otherwise the address stays a plain
+unresolved one. The summary counts these as `indexed_addresses`, a subset of
+`unresolved_addresses`. Each address of a progression is a may-address: no
+index value is claimed to occur.
+
 `--address ADDR` (repeatable) keeps the observations in that 32-bit word and
+an indexed observation whose progression may reach it, and
 `--function NAME` (repeatable) those of that function; blocked functions it
 names, every gap and the summary are never filtered, so a selection cannot
 hide an incomplete analysis. `--group-by address|function` groups the selected
@@ -80,7 +96,10 @@ function by access kind (a masked expression is `expression`), width and mask
 with a count, or one group per
 function listing each word the same way. A group's function carries its
 symbol identity, so same-named functions of different archive members or
-unnamed functions stay apart; the human format shows the member ordinal. The human format prints the groups
+unnamed functions stay apart; the human format shows the member ordinal. An
+indexed observation groups with the unresolved addresses and prints its
+progression, for example `indexed 0x2010f400+0x10*i (i<6)`, apart from other
+progressions. The human format prints the groups
 before the summary line and groups by address when a filter is given without
 `--group-by`.
 
@@ -99,19 +118,22 @@ evaluation. The human groups print them high bits first, for example
 their load width (`load 1B 0xa[7:0]`); entries with different sources stay
 apart, keyed by the sources themselves.
 
-The JSON document streams `{"schema":5,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
+The JSON document streams `{"schema":6,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
 `records` holds the selected records and `groups` appears only with
 `--group-by`.
 `inputs` lists each input's role and SHA-256. A record is an `observation` (the
 function, the record ordinal and exact original fact, the address or null, its
-alternative index and a read-selection or write-replacement mask), a `blocked`
+alternative index, an unresolved address's `indexed` progression when it has
+one and a read-selection or write-replacement mask), a `blocked`
 function whose analysis stopped (for example an unknown extent), or a `gap`
 naming code no function was selected from: an unsupported object, a thin
 archive member, a malformed container or an ELF diagnostic. The summary counts
-analyzed, partial and blocked functions, gaps and observations, and breaks the
+analyzed, partial and blocked functions, gaps, observations, unresolved and
+indexed addresses, and breaks the
 partial functions down by cause (`partial_causes`, see
 [interfaces and formats](../interfaces-formats/README.md)). `cargo registers
-inventory` compares these accesses with the register model.
+inventory` runs it with `--abi riscv-integer` and compares these accesses,
+indexed progressions included, with the register model.
 
 Observations name no hardware registers: the reviewed register model owns
 register identity and fields. Instruction access widths remain observations,

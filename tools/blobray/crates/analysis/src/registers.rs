@@ -347,6 +347,164 @@ impl<'f, 'a, 'm> StoredBitsEvaluator<'f, 'a, 'm> {
     }
 }
 
+/// Operator nodes an indexed address is followed through; deeper sums are
+/// left unresolved, never truncated into a different progression.
+const INDEXED_DEPTH: u8 = 16;
+
+/// `constant + coefficient * term`, every operation modulo 2^32, with at most
+/// one term: a value the linear walk cannot split further. Terms are equal
+/// when they are the same leaf or the same expression node.
+#[derive(Clone, Copy)]
+struct Linear<'a> {
+    constant: u32,
+    term: Option<(&'a AbstractValue, u32)>,
+}
+
+impl<'a> Linear<'a> {
+    fn scale(self, by: u32) -> Self {
+        Self {
+            constant: self.constant.wrapping_mul(by),
+            term: self
+                .term
+                .map(|(term, coefficient)| (term, coefficient.wrapping_mul(by))),
+        }
+    }
+
+    /// The sum, or `None` when the operands carry two different terms.
+    fn add(self, other: Self) -> Option<Self> {
+        let term = match (self.term, other.term) {
+            (None, term) | (term, None) => term,
+            (Some((a, x)), Some((b, y))) if a == b => Some((a, x.wrapping_add(y))),
+            _ => return None,
+        };
+        Some(Self {
+            constant: self.constant.wrapping_add(other.constant),
+            term,
+        })
+    }
+}
+
+fn linear<'a>(
+    facts: &Facts<'a, '_>,
+    value: &'a AbstractValue,
+    depth: u8,
+    c: &mut dyn RunControl,
+) -> Result<Option<Linear<'a>>> {
+    if let Some(constant) = exact_address(value) {
+        return Ok(Some(Linear {
+            constant,
+            term: None,
+        }));
+    }
+    let term = Linear {
+        constant: 0,
+        term: Some((value, 1)),
+    };
+    let Some(Expression::Integer { op, left, right }) = facts.value_expression(value) else {
+        return Ok(Some(term));
+    };
+    if depth == 0 {
+        return Ok(None);
+    }
+    c.checkpoint(1)?;
+    let operand = |v: &'a AbstractValue, c: &mut dyn RunControl| linear(facts, v, depth - 1, c);
+    Ok(match op {
+        IntegerOp::Add => match (operand(left, c)?, operand(right, c)?) {
+            (Some(l), Some(r)) => l.add(r),
+            _ => None,
+        },
+        IntegerOp::Sub => match (operand(left, c)?, operand(right, c)?) {
+            (Some(l), Some(r)) => l.add(r.scale(u32::MAX)),
+            _ => None,
+        },
+        IntegerOp::Shl => match constant(right) {
+            Some(by) => operand(left, c)?.map(|l| l.scale(1 << (by & 31))),
+            None => Some(term),
+        },
+        IntegerOp::Mul => match (constant(left), constant(right)) {
+            (_, Some(by)) => operand(left, c)?.map(|l| l.scale(by)),
+            (Some(by), _) => operand(right, c)?.map(|r| r.scale(by)),
+            _ => Some(term),
+        },
+        IntegerOp::ShiftAdd1 | IntegerOp::ShiftAdd2 | IntegerOp::ShiftAdd3 => {
+            let by = match op {
+                IntegerOp::ShiftAdd1 => 2,
+                IntegerOp::ShiftAdd2 => 4,
+                _ => 8,
+            };
+            match (operand(left, c)?, operand(right, c)?) {
+                (Some(l), Some(r)) => l.scale(by).add(r),
+                _ => None,
+            }
+        }
+        _ => Some(term),
+    })
+}
+
+/// The values an index expression is proven to stay below: `x & mask`, a
+/// zero-extending byte or halfword load, `x %u n` and `x >> k`; `None` when
+/// any 32-bit value is possible.
+fn index_count(facts: &Facts<'_, '_>, index: &AbstractValue) -> Option<u32> {
+    match facts.value_expression(index)? {
+        Expression::Integer { op, left, right } => match op {
+            IntegerOp::And => constant(right)
+                .or_else(|| constant(left))
+                .and_then(|mask| mask.checked_add(1)),
+            IntegerOp::Remu => constant(right).filter(|n| *n != 0),
+            IntegerOp::Shr => constant(right)
+                .map(|by| by & 31)
+                .filter(|by| *by != 0)
+                .map(|by| 1 << (32 - by)),
+            IntegerOp::Lt | IntegerOp::Ltu => Some(2),
+            _ => None,
+        },
+        Expression::Load {
+            width: 1,
+            signed: false,
+            ..
+        } => Some(1 << 8),
+        Expression::Load {
+            width: 2,
+            signed: false,
+            ..
+        } => Some(1 << 16),
+        _ => None,
+    }
+}
+
+/// The progression an unresolved `address` selects from when the analysis
+/// computes it as a constant plus a nonzero multiple of one unknown index,
+/// through additions, subtractions, constant shifts and multiplications and
+/// `shNadd`. Any other shape, two different unknowns or a sum deeper than
+/// [`INDEXED_DEPTH`] is `None`: the address stays unresolved.
+pub fn indexed_address<'a>(
+    facts: &Facts<'a, '_>,
+    address: &'a AbstractValue,
+    c: &mut dyn RunControl,
+) -> Result<Option<IndexedAddress>> {
+    if facts.value_expression(address).is_none() {
+        return Ok(None);
+    }
+    let Some(Linear {
+        constant,
+        term: Some((index, coefficient)),
+    }) = linear(facts, address, INDEXED_DEPTH, c)?
+    else {
+        return Ok(None);
+    };
+    let count = index_count(facts, index);
+    // An unbounded index with a unit step reaches every address: that is a
+    // pointer plus an offset, not an array, and says nothing.
+    if coefficient == 0 || (count.is_none() && matches!(coefficient, 1 | u32::MAX)) {
+        return Ok(None);
+    }
+    Ok(Some(IndexedAddress {
+        base: constant,
+        stride: coefficient as i32,
+        count,
+    }))
+}
+
 fn exact_address(value: &AbstractValue) -> Option<u32> {
     match value {
         AbstractValue::Constant { value } | AbstractValue::ImageAddress { address: value } => {
@@ -808,5 +966,148 @@ mod tests {
         })
         .unwrap();
         assert_eq!(again, 0, "node 15 was evaluated by the first store's walk");
+    }
+
+    /// The indexed progression of `expressions`' last node.
+    fn indexed(expressions: Vec<Expression>) -> Option<IndexedAddress> {
+        let memory = WorkingMemory::new(1 << 16).unwrap();
+        let last = value(expressions.len() as u32 - 1);
+        let records = records(expressions);
+        let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
+        indexed_address(&facts, &last, &mut || Ok(())).unwrap()
+    }
+    fn integer(op: IntegerOp, left: AbstractValue, right: AbstractValue) -> Expression {
+        Expression::Integer { op, left, right }
+    }
+    fn argument(register: u8) -> Expression {
+        Expression::EntryRegister { register }
+    }
+
+    #[test]
+    fn an_address_of_one_scaled_index_is_an_indexed_progression() {
+        // coex_hw_timer_set: `(index + 0x2010f40) << 4`.
+        assert_eq!(
+            indexed(vec![
+                argument(10),
+                integer(IntegerOp::Add, value(0), number(0x0201_0f40)),
+                integer(IntegerOp::Shl, value(1), number(4)),
+                integer(IntegerOp::Add, value(2), number(4)),
+            ]),
+            Some(IndexedAddress {
+                base: 0x2010_f404,
+                stride: 0x10,
+                count: None,
+            })
+        );
+        // mac_tx_set_mplen: a descending queue vector, `index * -0x7c + base`.
+        assert_eq!(
+            indexed(vec![
+                argument(11),
+                integer(IntegerOp::Mul, value(0), number(0xffff_ff84)),
+                integer(IntegerOp::Add, value(1), number(0x2010_54fc)),
+            ]),
+            Some(IndexedAddress {
+                base: 0x2010_54fc,
+                stride: -0x7c,
+                count: None,
+            })
+        );
+        // A masked index bounds the progression; `sh2add` scales it.
+        assert_eq!(
+            indexed(vec![
+                argument(10),
+                integer(IntegerOp::And, value(0), number(7)),
+                integer(IntegerOp::ShiftAdd2, value(1), number(0x2010_4000)),
+                integer(IntegerOp::Sub, value(2), number(8)),
+            ]),
+            Some(IndexedAddress {
+                base: 0x2010_3ff8,
+                stride: 4,
+                count: Some(8),
+            })
+        );
+        // The same index twice is still one index.
+        assert_eq!(
+            indexed(vec![
+                argument(10),
+                integer(IntegerOp::Shl, value(0), number(3)),
+                integer(IntegerOp::Add, value(1), value(0)),
+                integer(IntegerOp::Add, value(2), number(0x2010_0000)),
+            ])
+            .map(|indexed| indexed.stride),
+            Some(9)
+        );
+    }
+
+    #[test]
+    fn a_pointer_offset_or_two_indices_stay_unresolved() {
+        // A loaded pointer plus a field offset: any address, not an array.
+        assert_eq!(
+            indexed(vec![
+                Expression::Load {
+                    address: number(0x3fc0_0000),
+                    width: 4,
+                    signed: false,
+                },
+                integer(IntegerOp::Add, value(0), number(8)),
+            ]),
+            None
+        );
+        // Two different unknowns.
+        assert_eq!(
+            indexed(vec![
+                argument(10),
+                argument(11),
+                integer(IntegerOp::Shl, value(0), number(4)),
+                integer(IntegerOp::Add, value(2), value(1)),
+            ]),
+            None
+        );
+        // An index that cancels out leaves no progression.
+        assert_eq!(
+            indexed(vec![
+                argument(10),
+                integer(IntegerOp::Shl, value(0), number(2)),
+                integer(IntegerOp::Sub, value(1), value(1)),
+                integer(IntegerOp::Add, value(2), number(0x2010_0000)),
+            ]),
+            None
+        );
+        // A byte index bounds a unit stride, which is then an array again.
+        assert_eq!(
+            indexed(vec![
+                Expression::Load {
+                    address: number(0x3fc0_0000),
+                    width: 1,
+                    signed: false,
+                },
+                integer(IntegerOp::Add, value(0), number(0x2010_0000)),
+            ]),
+            Some(IndexedAddress {
+                base: 0x2010_0000,
+                stride: 1,
+                count: Some(256),
+            })
+        );
+    }
+
+    #[test]
+    fn a_sum_deeper_than_the_bound_stays_unresolved_and_is_charged() {
+        let mut expressions = vec![argument(10), integer(IntegerOp::Shl, value(0), number(2))];
+        for id in 1..=u32::from(INDEXED_DEPTH) + 1 {
+            expressions.push(integer(IntegerOp::Add, value(id), number(4)));
+        }
+        assert_eq!(indexed(expressions), None);
+        let memory = WorkingMemory::new(1 << 16).unwrap();
+        let records = records(vec![
+            argument(10),
+            integer(IntegerOp::Shl, value(0), number(2)),
+            integer(IntegerOp::Add, value(1), number(0x2010_0000)),
+        ]);
+        let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
+        let refused = indexed_address(&facts, &value(2), &mut || {
+            Err(Error::new(ErrorCode::ResourceLimited, "work budget"))
+        });
+        assert_eq!(refused.unwrap_err().code, ErrorCode::ResourceLimited);
     }
 }

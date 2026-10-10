@@ -267,15 +267,21 @@ GCC dispatches an RV32 `switch` through a read-only table:
 with one `R_RISCV_32` relocation per entry naming its case label. After a
 first analysis of a relocatable function, a `jalr zero` whose base register's
 last write in its block is `load4[(index << 2) + table]` (or `sh2add`) is a
-dispatch when a bounds check on the same index value, `bltu limit, index`
-or `bgeu index, limit`, states the entry count (at most 4096, the smallest
-such bound). Every selected entry must carry a relocation to a label inside
+dispatch when the bounds check guarding it states the entry count (at most
+4096): the dispatch block's only incoming edge must be the in-range side of a
+conditional branch on the same index against a constant, the fall-through
+of `bltu limit, index` / `bgeu index, limit` or the taken edge of
+`bltu index, limit` / `bgeu limit, index`. A comparison elsewhere in the
+function bounds nothing. Every selected entry must carry a relocation to a label inside
 the function; then the function is analyzed again with those targets as
 jumps. A dispatch without a bound, with any entry unrelocated or leaving the
 function stays an indirect gap, and executable images, which keep no
 relocations, are not resolved. `function-records` lists each followed table
-as `jump_tables` (`{site, entries}`, entry `i` being case `i`), and the human
-format prints `jump table +site: +target <- cases …` after the listing.
+as `jump_tables` (`{site, first_case, entries}`, entry `i` being case
+`first_case + i`, where `first_case` undoes GCC's subtraction of the smallest
+case from the switch value), and the human format prints
+`jump table +site: +target <- cases …` with those case values after the
+listing.
 
 Loads retain address and width. In the static ELF image profile, file-backed
 bytes in readable, non-writable PT_LOAD segments supply constants, with signed

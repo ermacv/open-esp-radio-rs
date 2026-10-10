@@ -4,8 +4,9 @@
 //! `lui/addi table; slli index, 2; add; lw target; jalr zero, 0(target)`
 //! with the table in read-only data and one `R_RISCV_32` relocation per entry.
 //! After a first analysis the jump's base register holds
-//! `load4[(index << 2) + table]`; a bounds check `bltu limit, index` (or
-//! `bgeu index, limit`) on the same index fixes the entry count. Each entry's
+//! `load4[(index << 2) + table]`; the bounds check whose in-range edge is the
+//! only way into the dispatch block, such as `bltu limit, index`, fixes the
+//! entry count. Each entry's
 //! relocation then names its case label. A dispatch whose table lacks a
 //! relocation for any selected entry, whose index has no bound, or whose
 //! entries leave the function stays an indirect gap.
@@ -115,27 +116,71 @@ fn scaled_table<'a>(
     }
 }
 
-/// The smallest entry count a bounds check on `index` among `records` states.
-fn bound(records: &[FunctionRecord], index: &AbstractValue) -> Option<u32> {
-    records
-        .iter()
-        .filter_map(|record| match record {
-            FunctionRecord::Condition {
-                test: BranchTest::Ltu,
-                left,
-                right,
-                ..
-            } if right == index => constant(left)?.checked_add(1),
-            FunctionRecord::Condition {
-                test: BranchTest::Geu,
-                left,
-                right,
-                ..
-            } if left == index => constant(right),
-            _ => None,
-        })
-        .filter(|entries| (1..=MAX_ENTRIES).contains(entries))
-        .min()
+/// The entry count the bounds check guarding the dispatch block at `block`
+/// states. The block must have exactly one incoming edge, from a conditional
+/// branch on `index` against a constant, and that edge must be the branch's
+/// in-range side: the fall-through of `bltu limit, index` / `bgeu index, limit`
+/// or the taken edge of `bltu index, limit` / `bgeu limit, index`. Any other
+/// shape, such as a check elsewhere in the function, states no bound.
+fn guarding_bound(records: &[FunctionRecord], index: &AbstractValue, block: u64) -> Option<u32> {
+    let mut incoming = records.iter().filter_map(|record| match record {
+        FunctionRecord::Edge {
+            from,
+            target: Some(target),
+            relation,
+            external: false,
+        } if *target == block => Some((*from, *relation)),
+        _ => None,
+    });
+    let (branch, relation) = incoming.next()?;
+    if incoming.next().is_some() {
+        return None;
+    }
+    let (test, left, right) = records.iter().find_map(|record| match record {
+        FunctionRecord::Condition {
+            offset,
+            test,
+            left,
+            right,
+        } if *offset == branch => Some((*test, left, right)),
+        _ => None,
+    })?;
+    let entries = match (test, relation) {
+        // `bltu limit, index` leaves the range when taken.
+        (BranchTest::Ltu, EdgeKind::Fallthrough) if right == index => {
+            constant(left)?.checked_add(1)
+        }
+        // `bgeu index, limit` leaves the range when taken.
+        (BranchTest::Geu, EdgeKind::Fallthrough) if left == index => constant(right),
+        // `bltu index, limit` enters the range when taken.
+        (BranchTest::Ltu, EdgeKind::Taken) if left == index => constant(right),
+        // `bgeu limit, index` enters the range when taken.
+        (BranchTest::Geu, EdgeKind::Taken) if right == index => constant(left)?.checked_add(1),
+        _ => None,
+    }?;
+    (1..=MAX_ENTRIES).contains(&entries).then_some(entries)
+}
+
+/// The case value of entry zero: `c` when GCC rebased the switch value as
+/// `index = value - c`, otherwise zero.
+fn first_case(index: &AbstractValue, expressions: &BTreeMap<u32, &Expression>) -> i64 {
+    let rebased = match index {
+        AbstractValue::Expression { id } => expressions.get(id).copied(),
+        _ => None,
+    };
+    match rebased {
+        Some(Expression::Integer {
+            op: IntegerOp::Add,
+            right,
+            ..
+        }) => constant(right).map_or(0, |c| -i64::from(c as i32)),
+        Some(Expression::Integer {
+            op: IntegerOp::Sub,
+            right,
+            ..
+        }) => constant(right).map_or(0, |c| i64::from(c as i32)),
+        _ => 0,
+    }
 }
 
 /// The jump-table dispatches among one function's first-pass `records`, with
@@ -214,7 +259,7 @@ pub(crate) fn jump_tables(
             continue;
         };
         let (Some(entries), Some(&(Some(table_section), value))) = (
-            bound(records, index),
+            guarding_bound(records, index, start),
             facts.symbols.get(&(table.table_section, table.index)),
         ) else {
             continue;
@@ -233,6 +278,7 @@ pub(crate) fn jump_tables(
         if let Some(entries) = targets {
             jumps.push(JumpTable {
                 site: *offset,
+                first_case: first_case(index, &expressions),
                 entries,
             });
         }

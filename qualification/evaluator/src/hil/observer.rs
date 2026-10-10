@@ -5,11 +5,89 @@ use serde_json::{Value, json};
 
 /// One prepared configuration shared by archive loading and shards. Loading it
 /// only reads files; producer preparation is an explicit xtask operation.
-#[derive(Clone, Debug, Default)]
+///
+/// Everything an assessment needs of the current observer depends on the
+/// workload alone, never on the observation: it is computed once per
+/// evaluation, and the prepared graph itself, hundreds of megabytes once
+/// parsed, is not kept.
+#[derive(Debug, Default)]
 pub(super) struct Current {
-    resolved: Option<Value>,
+    prepared: Option<Prepared>,
     pub(super) problem: Option<String>,
 }
+
+#[derive(Debug)]
+struct Prepared {
+    /// What an observer build must record besides its unit profiles: the
+    /// compiler, environment, Cargo configuration and selected profiles.
+    configuration: Value,
+    /// The current side of each workload the registry classifies, and of
+    /// the unscoped workload `""`.
+    workloads: BTreeMap<String, Workload>,
+}
+
+#[derive(Debug)]
+struct Workload {
+    dependencies: BTreeSet<String>,
+    /// The current graph projected onto the workload's dependencies, without
+    /// its unit profiles and workspace profile.
+    projection: Value,
+    units: Value,
+    /// The workload's source inputs and their digests, hashed on first use.
+    inputs: std::cell::OnceCell<std::result::Result<Inputs, String>>,
+}
+
+#[derive(Debug)]
+struct Inputs {
+    prefixes: Vec<PathBuf>,
+    digests: BTreeMap<String, String>,
+}
+
+impl Workload {
+    fn new(resolved: &Value, dependencies: BTreeSet<String>) -> Result<Self> {
+        let mut projection = build_inputs::projection(resolved, &dependencies)?;
+        let units = build_inputs::take_unit_profiles(&mut projection);
+        without_workspace_profile(&mut projection)?;
+        Ok(Self {
+            dependencies,
+            projection,
+            units,
+            inputs: std::cell::OnceCell::new(),
+        })
+    }
+
+    fn inputs(&self, root: &Path) -> Result<&Inputs> {
+        self.inputs
+            .get_or_init(|| self.hash_inputs(root).map_err(|error| error.to_string()))
+            .as_ref()
+            .map_err(|error| error.clone().into())
+    }
+
+    fn hash_inputs(&self, root: &Path) -> Result<Inputs> {
+        #[cfg(test)]
+        work::count(|work| work.input_hashes += 1);
+        let prefixes = source_inputs(root, &self.projection)?;
+        // Used manifests are compared through the shared Cargo projection.
+        // Their raw bytes remain provenance, but dev-only declarations must
+        // not reintroduce an unrelated dependency through the file selector.
+        let mut digests = inputs(root, &prefixes)?;
+        digests.retain(|path, _| !self.projected_manifest(path));
+        Ok(Inputs { prefixes, digests })
+    }
+
+    fn projected_manifest(&self, path: &str) -> bool {
+        self.projection["manifests"].get(path).is_some()
+    }
+}
+
+fn without_workspace_profile(projection: &mut Value) -> Result<()> {
+    projection["workspace"]
+        .as_object_mut()
+        .ok_or("workspace missing")?
+        .remove("profile");
+    Ok(())
+}
+
 impl Current {
     pub(super) fn load(root: &Path) -> Self {
         match Self::read(root) {
@@ -22,10 +100,13 @@ impl Current {
     }
     fn read(root: &Path) -> Result<Self> {
         let path = oer_hil_run_bundle_format::observer::receipt::selected(root);
-        let receipt: Value = read_json(&path).map_err(|error| format!(
+        let mut receipt: Value = read_json(&path).map_err(|error| format!(
             "current observer configuration unavailable ({}): {error}; prepare with cargo hil observer", path.display()))?;
-        let build = &receipt["build"];
-        let mut resolved = build["resolved"].clone();
+        // The graph is hundreds of megabytes once parsed: it is taken out of
+        // the receipt and turned into the live graph in place, never copied.
+        let mut build = receipt["build"].take();
+        drop(receipt);
+        let mut resolved = build["resolved"].take();
         if build["schema"] != 2
             || resolved["compilation"] != "cargo-compiler-artifacts-v1"
             || resolved["selected_profile"].as_str().is_none()
@@ -34,31 +115,31 @@ impl Current {
         }
         resolved["configuration"] =
             json!({"compiler":build["compiler"],"environment":build["environment"]});
+        drop(build);
         let registry: Value = read_json(&root.join("hil/schema/observer-inputs.json"))?;
         build_inputs::check_registry_schema(&registry)?;
         build_inputs::validate_registry(&resolved, &registry)?;
-        for kind in std::iter::once(String::new()).chain(build_inputs::workloads(&registry)?) {
-            build_inputs::projection(&resolved, &build_inputs::dependencies(&registry, &kind)?)?;
-        }
-        let mut live = resolved.clone();
-        for (path, manifest) in live["manifests"]
-            .as_object_mut()
+        let workloads = std::iter::once(String::new())
+            .chain(build_inputs::workloads(&registry)?)
+            .map(|kind| {
+                #[cfg(test)]
+                work::count(|work| work.current_projections += 1);
+                let dependencies = build_inputs::dependencies(&registry, &kind)?;
+                Ok((kind, Workload::new(&resolved, dependencies)?))
+            })
+            .collect::<Result<BTreeMap<_, _>>>()?;
+        let mut configuration = resolved["configuration"].clone();
+        configuration["cargo"] = resolved["cargo_config"].clone();
+        configuration["profiles"] = profile_configuration(&resolved);
+        let mut manifests = resolved["manifests"]
+            .as_object()
             .ok_or("observer manifests missing")?
-        {
+            .clone();
+        for (path, manifest) in &mut manifests {
             if !safe_relative(Path::new(path)) {
                 return Err("unsafe observer manifest path".into());
             }
             *manifest = toml_edit::de::from_str(&fs::read_to_string(root.join(path))?)?;
-        }
-        let lock: Value = toml_edit::de::from_str(&fs::read_to_string(root.join("Cargo.lock"))?)?;
-        let packages = lock["package"].as_array().ok_or("lock packages missing")?;
-        for node in live["nodes"]
-            .as_array_mut()
-            .ok_or("observer graph missing")?
-        {
-            let old = &node["package"];
-            node["package"] = packages.iter().find(|p| p["name"] == old["name"] && p["version"] == old["version"] && p["source"] == old["source"])
-                .cloned().unwrap_or_else(|| json!({"name":old["name"],"version":old["version"],"source":old["source"],"missing":true}));
         }
         let config = root.join(".cargo/config.toml");
         let mut config: Value = if config.is_file() {
@@ -70,7 +151,6 @@ impl Current {
             .as_object_mut()
             .ok_or("invalid Cargo config")?
             .retain(|k, _| matches!(k.as_str(), "build" | "target" | "env"));
-        live["cargo_config"] = config;
         // Any normal/build dependency can participate in feature unification.
         // A prepared descriptor remains a current configuration only while the
         // full normal/build declarations match; source compatibility is scoped
@@ -86,8 +166,9 @@ impl Current {
         // Keep new, not-yet-registered direct dependencies in this freshness
         // comparison too; the producer must resolve and assign them explicitly.
         for kind in ["dependencies", "build-dependencies"] {
-            for (alias, dependency) in live["manifests"]["hil/host/runner/Cargo.toml"][kind]
-                .as_object()
+            for (alias, dependency) in manifests
+                .get("hil/host/runner/Cargo.toml")
+                .and_then(|manifest| manifest[kind].as_object())
                 .into_iter()
                 .flatten()
             {
@@ -98,21 +179,174 @@ impl Current {
             .as_str()
             .ok_or("observer profile missing")?;
         let profile = if profile == "debug" { "dev" } else { profile };
-        if build_inputs::projection(&resolved, &dependencies)?
-            != build_inputs::projection(&live, &dependencies)?
-            || lock_dependencies(&resolved)? != lock_dependencies(&live)?
-            || resolved["cargo_config"] != live["cargo_config"]
-            || resolved["selected_profile"] != profile
+        let prepared_projection = build_inputs::projection(&resolved, &dependencies)?;
+        let prepared_lock = lock_dependencies(&resolved)?;
+        let fresh_configuration =
+            resolved["cargo_config"] == config && resolved["selected_profile"] == profile;
+        // The live graph: the prepared one with today's manifests, locked
+        // packages and Cargo configuration.
+        let mut live = resolved;
+        live["manifests"] = Value::Object(manifests);
+        let lock: Value = toml_edit::de::from_str(&fs::read_to_string(root.join("Cargo.lock"))?)?;
+        let packages = lock["package"].as_array().ok_or("lock packages missing")?;
+        for node in live["nodes"]
+            .as_array_mut()
+            .ok_or("observer graph missing")?
+        {
+            let old = &node["package"];
+            node["package"] = packages.iter().find(|p| p["name"] == old["name"] && p["version"] == old["version"] && p["source"] == old["source"])
+                .cloned().unwrap_or_else(|| json!({"name":old["name"],"version":old["version"],"source":old["source"],"missing":true}));
+        }
+        live["cargo_config"] = config;
+        if prepared_projection != build_inputs::projection(&live, &dependencies)?
+            || prepared_lock != lock_dependencies(&live)?
+            || !fresh_configuration
         {
             return Err("prepared observer configuration is stale: normal/build dependencies or Cargo configuration changed; prepare with cargo hil observer".into());
         }
         Ok(Self {
-            resolved: Some(resolved),
+            prepared: Some(Prepared {
+                configuration,
+                workloads,
+            }),
             problem: None,
         })
     }
     pub(super) fn available(&self) -> bool {
-        self.resolved.is_some()
+        self.prepared.is_some()
+    }
+
+    /// Whether `proof`, an observer record with its build inline whose
+    /// identity [`identified`] accepted, built the current observer of
+    /// `workload`.
+    pub(super) fn assess(
+        &self,
+        root: &Path,
+        proof: &Value,
+        workload: &str,
+    ) -> Result<Compatibility> {
+        let Some(current) = &self.prepared else {
+            return Ok(Compatibility::IdentityDiffers);
+        };
+        // A run of a workload the registry no longer classifies, such as one
+        // of a removed scenario, has no dependency scope in today's observer
+        // inputs.
+        let Some(workload) = current.workloads.get(workload) else {
+            return Ok(Compatibility::GraphNotProjectable);
+        };
+        #[cfg(test)]
+        work::count(|work| work.recorded_projections += 1);
+        // An observer recorded by an older runner whose package graph no
+        // longer projects onto today's inputs cannot be this observer: the
+        // observation is excluded as incompatible, as for any other
+        // dependency difference.
+        let Ok(mut old_dependencies) =
+            build_inputs::projection(&proof["build"]["resolved"], &workload.dependencies)
+        else {
+            return Ok(Compatibility::GraphNotProjectable);
+        };
+        let old_units = build_inputs::take_unit_profiles(&mut old_dependencies);
+        without_workspace_profile(&mut old_dependencies)?;
+        if old_dependencies != workload.projection {
+            return Ok(Compatibility::IdentityDiffers);
+        }
+        let inputs = workload.inputs(root)?;
+        let Some(recorded) = proof["build"]["inputs"].as_object() else {
+            return Ok(Compatibility::IdentityDiffers);
+        };
+        let relevant = recorded
+            .iter()
+            .filter(|(path, _)| {
+                selected(Path::new(path), &inputs.prefixes) && !workload.projected_manifest(path)
+            })
+            .map(|(path, hash)| (path.clone(), hash.as_str().unwrap_or_default().to_owned()))
+            .collect::<BTreeMap<_, _>>();
+        if inputs.digests != relevant {
+            return Ok(Compatibility::IdentityDiffers);
+        }
+        let actual = json!({"units":old_units,"cargo":proof["build"]["resolved"]["cargo_config"],"compiler":proof["build"]["compiler"],"environment":proof["build"]["environment"],"profiles":profile_configuration(&proof["build"]["resolved"])});
+        let mut required = current.configuration.clone();
+        required["units"] = workload.units.clone();
+        Ok(if actual == required {
+            Compatibility::Compatible
+        } else {
+            Compatibility::IdentityDiffers
+        })
+    }
+}
+
+/// Whether `proof`, an observer record with its build inline, is a complete
+/// identity: the build it names, compiled from resolved Cargo units under a
+/// selected profile, hashes to the digest the record names. A record that
+/// is not cannot identify the current observer for any workload.
+pub(super) fn identified(proof: &Value) -> Result<bool> {
+    Ok(proof["schema"] == 1
+        && proof["build"]["schema"] == 2
+        && proof["build"]["resolved"]["compilation"] == "cargo-compiler-artifacts-v1"
+        && proof["build"]["resolved"]["selected_profile"]
+            .as_str()
+            .is_some_and(|profile| !profile.is_empty())
+        && proof["executable_sha256"]
+            .as_str()
+            .is_some_and(valid_sha256)
+        && proof["build_sha256"].as_str()
+            == Some(&oer_durable::sha256_bytes(&serde_json::to_vec(
+                &proof["build"],
+            )?)))
+}
+
+/// The workload an observation's executed procedure ran, `""` for one that
+/// names none.
+pub(super) fn workload(observation: &ScenarioEvidence) -> Result<String> {
+    let document = observation
+        .run_directory
+        .as_ref()
+        .zip(
+            observation
+                .subject
+                .as_ref()
+                .and_then(|s| s.procedure.as_ref()),
+        )
+        .map(|(run, p)| read_json::<Value>(&run.join(&p.path)))
+        .transpose()?;
+    Ok(document
+        .as_ref()
+        .and_then(build_inputs::workload)
+        .unwrap_or_default())
+}
+
+/// Counts of the work assessments do, which regression tests bound.
+#[cfg(test)]
+pub(super) mod work {
+    use std::cell::Cell;
+
+    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+    pub(in crate::hil) struct Work {
+        /// Projections of the current observer's graph.
+        pub(in crate::hil) current_projections: usize,
+        /// Hashings of a workload's current source inputs.
+        pub(in crate::hil) input_hashes: usize,
+        /// Observer builds read from a store.
+        pub(in crate::hil) build_loads: usize,
+        /// Projections of a recorded observer build's graph.
+        pub(in crate::hil) recorded_projections: usize,
+    }
+
+    thread_local! {
+        static WORK: Cell<Work> = Cell::new(Work::default());
+    }
+
+    pub(in crate::hil) fn count(update: impl FnOnce(&mut Work)) {
+        WORK.with(|cell| {
+            let mut work = cell.get();
+            update(&mut work);
+            cell.set(work);
+        });
+    }
+
+    /// The work counted on this thread since the last call.
+    pub(in crate::hil) fn take() -> Work {
+        WORK.with(Cell::take)
     }
 }
 
@@ -294,119 +528,6 @@ pub(super) enum Compatibility {
     /// onto today's observer inputs.
     GraphNotProjectable,
     IdentityDiffers,
-}
-
-pub(super) fn assess(
-    root: &Path,
-    current: &Current,
-    observation: &ScenarioEvidence,
-    proof: Option<&Value>,
-) -> Result<Compatibility> {
-    // A tracked shard is current only while the observer's recorded sources
-    // match the checkout, which establishes the observer's identity.
-    if observation.source_bound && proof.is_none() {
-        return Ok(Compatibility::Compatible);
-    }
-    let Some(proof) = proof.or_else(|| {
-        observation
-            .subject
-            .as_ref()
-            .and_then(|s| s.observer.as_deref())
-    }) else {
-        return Ok(Compatibility::IdentityDiffers);
-    };
-    if proof["schema"] != 1
-        || proof["build"]["schema"] != 2
-        || proof["build"]["resolved"]["compilation"] != "cargo-compiler-artifacts-v1"
-        || proof["build"]["resolved"]["selected_profile"]
-            .as_str()
-            .is_none_or(str::is_empty)
-        || !proof["executable_sha256"]
-            .as_str()
-            .is_some_and(valid_sha256)
-        || proof["build_sha256"].as_str()
-            != Some(&oer_durable::sha256_bytes(&serde_json::to_vec(
-                &proof["build"],
-            )?))
-    {
-        return Ok(Compatibility::IdentityDiffers);
-    }
-    let document = observation
-        .run_directory
-        .as_ref()
-        .zip(
-            observation
-                .subject
-                .as_ref()
-                .and_then(|s| s.procedure.as_ref()),
-        )
-        .map(|(run, p)| read_json::<Value>(&run.join(&p.path)))
-        .transpose()?;
-    let registry: Value = read_json(&root.join("hil/schema/observer-inputs.json"))?;
-    let workload = document
-        .as_ref()
-        .and_then(build_inputs::workload)
-        .unwrap_or_default();
-    // A run of a workload the registry no longer classifies, such as one of
-    // a removed scenario, has no dependency scope in today's observer inputs.
-    if !workload.is_empty() && registry["timing"].get(&workload).is_none() {
-        return Ok(Compatibility::GraphNotProjectable);
-    }
-    let dependencies = build_inputs::dependencies(&registry, &workload)?;
-    let Some(current) = current.resolved.as_ref() else {
-        return Ok(Compatibility::IdentityDiffers);
-    };
-    if build_inputs::validate_registry(current, &registry).is_err() {
-        return Ok(Compatibility::IdentityDiffers);
-    }
-    // An observer recorded by an older runner whose package graph no longer
-    // projects onto today's inputs cannot be this observer: the observation
-    // is excluded as incompatible, as for any other dependency difference.
-    let Ok(mut old_dependencies) =
-        build_inputs::projection(&proof["build"]["resolved"], &dependencies)
-    else {
-        return Ok(Compatibility::GraphNotProjectable);
-    };
-    let mut new_dependencies = build_inputs::projection(current, &dependencies)?;
-    let old_units = build_inputs::take_unit_profiles(&mut old_dependencies);
-    let new_units = build_inputs::take_unit_profiles(&mut new_dependencies);
-    for projection in [&mut old_dependencies, &mut new_dependencies] {
-        projection["workspace"]
-            .as_object_mut()
-            .ok_or("workspace missing")?
-            .remove("profile");
-    }
-    if old_dependencies != new_dependencies {
-        return Ok(Compatibility::IdentityDiffers);
-    }
-    let prefixes = source_inputs(root, &new_dependencies)?;
-    // Used manifests have already been compared through the shared Cargo
-    // projection. Their raw bytes remain provenance, but dev-only declarations
-    // must not reintroduce an unrelated dependency through the file selector.
-    let projected_manifest = |path: &str| new_dependencies["manifests"].get(path).is_some();
-    let mut expected = inputs(root, &prefixes)?;
-    expected.retain(|path, _| !projected_manifest(path));
-    let Some(recorded) = proof["build"]["inputs"].as_object() else {
-        return Ok(Compatibility::IdentityDiffers);
-    };
-    let relevant = recorded
-        .iter()
-        .filter(|(path, _)| selected(Path::new(path), &prefixes) && !projected_manifest(path))
-        .map(|(path, hash)| (path.clone(), hash.as_str().unwrap_or_default().to_owned()))
-        .collect::<BTreeMap<_, _>>();
-    if expected != relevant {
-        return Ok(Compatibility::IdentityDiffers);
-    }
-    let actual = json!({"units":old_units,"cargo":proof["build"]["resolved"]["cargo_config"],"compiler":proof["build"]["compiler"],"environment":proof["build"]["environment"],"profiles":profile_configuration(&proof["build"]["resolved"])});
-    let mut required = current["configuration"].clone();
-    required["units"] = new_units;
-    required["cargo"] = current["cargo_config"].clone();
-    required["profiles"] = profile_configuration(current);
-    Ok(if actual == required {
-        Compatibility::Compatible
-    } else {
-        Compatibility::IdentityDiffers
-    })
 }
 
 #[cfg(test)]

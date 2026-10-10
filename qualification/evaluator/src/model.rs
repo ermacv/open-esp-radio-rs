@@ -651,8 +651,7 @@ impl ValidatedProgram {
             &repository,
             runs,
         )?;
-        let sources =
-            crate::hil::shard::tracked_sources(root, &crate::hil::shard::observers(&index))?;
+        let sources = crate::hil::shard::tracked_sources(root, &index)?;
         let recorded =
             crate::hil::shard::distill(root, &index, evidence, &hil_target, &sources, runs)?;
         let verdicts = match runs {

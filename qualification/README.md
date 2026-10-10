@@ -556,13 +556,19 @@ and qualifies only for a checkout whose sources it binds. The evaluator reads
 the store only through the checkout's `target/hil/runs` link, which
 any `cargo hil` command creates.
 The runner's observer proof names the build its executable was compiled from,
-several megabytes that most runs share. A run's manifest names that build by
+which most runs share. A run's manifest names that build by
 digest, and the build is stored once in `observers/<build_sha256>.json` next to
 the store's `runs` directory, as the exact bytes the digest is computed over.
 A shard does the same with `observers/` next to it in the evidence directory.
-The evaluator reads each build once and fails closed when it is missing or its
-bytes do not hash to its name. A stored record that embeds its build instead is
-an error.
+The evaluator fails closed when a named build is missing or its bytes do not
+hash to its name. A stored record that embeds its build instead is an error.
+A build holds the observer's resolved Cargo graph unrolled into a tree, a few
+hundred megabytes of JSON and several times that once parsed, and the store
+keeps one per observer its runs used. An observation therefore keeps only the
+reference: the evaluator parses each build once per evaluation, for every
+observation naming it together, and drops it before the next, while the
+current observer's side (its projection per workload and the digests of that
+workload's inputs) is computed once. Memory follows one build, not the store.
 Digests of sealed files are remembered in the user's cache per file identity
 and status-change time (`OER_QUALIFICATION_HASH_CACHE=0` disables it). `cargo qualification hil-evidence (--manifest PATH |
 --hil-target TARGET)` records

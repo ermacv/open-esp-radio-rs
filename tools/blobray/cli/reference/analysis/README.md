@@ -275,7 +275,9 @@ of `bltu limit, index` / `bgeu index, limit` or the taken edge of
 function bounds nothing. Every selected entry must carry an `R_RISCV_32` relocation with an
 explicit addend (`SHT_RELA`; a `SHT_REL` table keeps its addends in the
 words and is not proven) to a label inside the function; then the function
-is analyzed again with those targets as jumps. The symbols and the RELA
+is analyzed again with those targets as jumps; passes repeat while each proves
+more tables, so a dispatch reached only through another table's case (a nested
+`switch`) is followed too. The symbols and the RELA
 relocations of read-only data this needs, the recognizer's indexes and the
 found entries are held in admitted working memory, and every record the
 recognizer visits is charged to the work budget; a return
@@ -284,8 +286,11 @@ function stays an indirect gap, and executable images, which keep no
 relocations, are not resolved. `function-records` lists each followed table
 as `jump_tables` (`{site, first_case, entries}`, entry `i` being case
 `first_case + i`, where `first_case` undoes GCC's subtraction of the smallest
-case from the switch value), and the human format prints
-`jump table +site: +target <- cases …` with those case values after the
+case from the switch value, seen through an addition of a constant on either
+side or a subtraction under any 8- or 16-bit zero extension; `first_case` is
+`null` for any other index shape, and then no case value is claimed), and the
+human format prints `jump table +site: +target <- cases …` with those case
+values, or `<- entries …` with entry indexes when they are unknown, after the
 listing.
 
 Loads retain address and width. In the static ELF image profile, file-backed

@@ -22,7 +22,9 @@
 //! with [`PortStaApEvent::StationEnded`].
 //! Later runs keep serving the access point and passively search on its
 //! channel. [`CurrentChannel`] needs no optional absence capability and
-//! carries no off-channel policy. [`ProtectedSearch`] additionally executes
+//! carries no off-channel policy; its [`UpstreamLossPolicy`] bounds the
+//! wait: after it, the access point stops, the station scans alone and
+//! rejoins, and the access point starts again. [`ProtectedSearch`] additionally executes
 //! the coordinator's protected, receive-only absences, requiring both
 //! [`LowerMacAirReservation`] and [`LowerMacLiveRetune`].
 //! A found upstream is joined without a probe, after the access point's
@@ -32,13 +34,13 @@
 use core::{
     cell::Cell,
     future::{Future, poll_fn},
-    marker::PhantomData,
     pin::pin,
     task::Poll,
 };
 
 use oer_ieee80211_ap::coordinator::{
     ApFollowPolicy, ApSearchPolicy, ChannelCoordinator, CoordinatorAction, CoordinatorActions,
+    UpstreamLossPolicy,
 };
 use oer_ieee80211_ap_service::port::{PortAccessPoint, PortApEnv, PortApError, PortApEvent};
 use oer_ieee80211_lower_mac::{Channel, LowerMacAirReservation, LowerMacLiveRetune};
@@ -52,13 +54,48 @@ use oer_ieee80211_upper_mac_service::absence::{
 use oer_ieee80211_upper_mac_service::client::{PortFault, PortMsdu, PortRxBuffer};
 use oer_time::{Instant, Timer};
 
-/// Why [`PortStaAp::run_until`] returned before its deadline.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PortStaApEvent {
+/// Why [`PortStaAp::run_until`] returned before its deadline. Each is an
+/// outcome the pair's policy expects: the pair stays whole and the next
+/// `run_until` carries on.
+pub enum PortStaApEvent<S: PortStationEnv> {
     /// The station's association ended; the access point runs on.
     StationEnded(PortDisconnect),
     /// The coordinator's policy made the station leave the upstream.
     UpstreamLeft,
+    /// An attempt the pair made on its own to join the upstream, a passive
+    /// rejoin or the [`UpstreamLossPolicy`]'s scan, did not join it, for
+    /// this reason. The access point runs and the station is kept for the
+    /// next attempt.
+    UpstreamNotJoined(PortAttemptError<S>),
+}
+
+impl<S: PortStationEnv> core::fmt::Debug for PortStaApEvent<S>
+where
+    PortAttemptError<S>: core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::StationEnded(reason) => f.debug_tuple("StationEnded").field(reason).finish(),
+            Self::UpstreamLeft => f.write_str("UpstreamLeft"),
+            Self::UpstreamNotJoined(error) => {
+                f.debug_tuple("UpstreamNotJoined").field(error).finish()
+            }
+        }
+    }
+}
+
+impl<S: PortStationEnv> PartialEq for PortStaApEvent<S>
+where
+    PortAttemptError<S>: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::StationEnded(first), Self::StationEnded(second)) => first == second,
+            (Self::UpstreamLeft, Self::UpstreamLeft) => true,
+            (Self::UpstreamNotJoined(first), Self::UpstreamNotJoined(second)) => first == second,
+            _ => false,
+        }
+    }
 }
 
 /// Why an operation of the pair failed.
@@ -114,16 +151,24 @@ struct PendingRetune {
 
 /// Observe the upstream only on the AP's operating channel. No CTS or
 /// enabled-port retune extension is needed; there is no off-channel policy.
-pub struct CurrentChannel;
+/// The station cannot search elsewhere while the access point serves, so
+/// `upstream_loss` states what happens when the upstream does not come back.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CurrentChannel {
+    pub upstream_loss: UpstreamLossPolicy,
+}
 
 /// Search in the coordinator's protected receive-only windows. Requires
 /// both CTS-to-self and temporary retuning without a lifecycle transition.
 pub struct ProtectedSearch;
 
 /// The common home-channel loop stops here so only the protected mode
-/// needs to instantiate the absence driver and its backend bounds.
-enum SyncReport {
-    Finished(Option<PortStaApEvent>),
+/// needs to instantiate the absence driver and its backend bounds, and only
+/// the current-channel mode carries out its upstream loss policy.
+enum SyncReport<S: PortStationEnv> {
+    Finished(Option<PortStaApEvent<S>>),
+    /// The upstream loss policy is due.
+    UpstreamLoss,
     Absence {
         channel: Channel,
         start: Instant,
@@ -149,7 +194,7 @@ where
     announcing: bool,
     /// The access point runs: started and not stopped since.
     running: bool,
-    search: PhantomData<Search>,
+    search: Search,
 }
 
 impl<'p, S, A, T, Search> PortStaAp<'p, S, A, T, Search>
@@ -162,6 +207,7 @@ where
         station: PortStation<'p, S>,
         access_point: PortAccessPoint<'p, A>,
         coordinator: ChannelCoordinator<'p>,
+        search: Search,
         timer: T,
     ) -> Self {
         Self {
@@ -174,7 +220,7 @@ where
             absence: AbsenceState::new(),
             announcing: false,
             running: false,
-            search: PhantomData,
+            search,
         }
     }
 
@@ -263,16 +309,18 @@ where
         self.coordinator.access_point_running(schedule);
         self.join_channel = None;
         self.join_station(schedule.channel, false, access_point_deliver)
-            .await
+            .await?
+            .map_err(PortStaApError::Join)
     }
 
-    /// Finish a join without abandoning either client's current exchange.
+    /// Finish a join without abandoning either client's current exchange:
+    /// the inner `Err` is a failed attempt, which keeps the station.
     async fn join_station(
         &mut self,
         channel: Channel,
         observed: bool,
         access_point_deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<A>>),
-    ) -> Result<(), PortStaApError<S, A>> {
+    ) -> Result<Result<(), PortAttemptError<S>>, PortStaApError<S, A>> {
         if !self.running {
             self.move_port(channel, false).await?;
             self.join_channel = None;
@@ -317,7 +365,7 @@ where
                 let (station, _, _, error, _) = failure.into_parts();
                 self.station = Some(station);
                 self.coordinator.upstream_join_failed();
-                Err(PortStaApError::Join(error))
+                Err(error)
             }
         };
         if let Some(PortApEvent::ChannelSwitch { target }) =
@@ -328,7 +376,9 @@ where
                 .access_point_switch_due(target, self.timer.now());
             self.act(actions).await?;
         }
-        joined?;
+        if let Err(error) = joined {
+            return Ok(Err(error));
+        }
         let channel = self
             .station()
             .connection()
@@ -336,16 +386,18 @@ where
             .config()
             .channel;
         let actions = self.coordinator.station_connected(channel);
-        self.act(actions).await
+        self.act(actions).await.map(Ok)
     }
 
-    /// Complete home-channel work until a report or receive-only window.
+    /// Complete home-channel work until a report, a receive-only window or
+    /// the `upstream_loss` policy's due instant.
     async fn run_until_sync(
         &mut self,
         deadline: Instant,
+        upstream_loss: Option<UpstreamLossPolicy>,
         station_deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<S>>),
         access_point_deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<A>>),
-    ) -> Result<SyncReport, PortStaApError<S, A>> {
+    ) -> Result<SyncReport<S>, PortStaApError<S, A>> {
         self.check_absence()?;
         loop {
             let now = self.timer.now();
@@ -358,8 +410,14 @@ where
                 return Ok(SyncReport::Finished(None));
             }
             if let Some(channel) = self.join_channel.take() {
-                self.join_station(channel, true, access_point_deliver)
-                    .await?;
+                if let Err(error) = self
+                    .join_station(channel, true, access_point_deliver)
+                    .await?
+                {
+                    return Ok(SyncReport::Finished(Some(
+                        PortStaApEvent::UpstreamNotJoined(error),
+                    )));
+                }
                 continue;
             }
             let mut sync = deadline;
@@ -369,6 +427,14 @@ where
             if let Some(schedule) = self.access_point.schedule() {
                 self.coordinator.access_point_running(schedule);
                 sync = sync.min(schedule.next_tbtt);
+            }
+            if let Some(due) =
+                upstream_loss.and_then(|policy| self.coordinator.upstream_loss_due(policy))
+            {
+                if now >= due {
+                    return Ok(SyncReport::UpstreamLoss);
+                }
+                sync = sync.min(due);
             }
             if let Some(CoordinatorAction::Absence {
                 channel,
@@ -398,36 +464,37 @@ where
             } = self;
             let station = station.as_mut().ok_or(PortStaApError::NoStation)?;
             let mut found = None;
-            let (station_report, access_point_report) = if *running
-                && station.connection().is_none()
-            {
-                if searching {
-                    let (observed, served) = join(
-                        station.observe_on_until(home.expect("the running AP has a channel"), sync),
+            let (station_report, access_point_report) =
+                if *running && station.connection().is_none() {
+                    // A restarted access point has no schedule until its first
+                    // beacon; the station observes from then on.
+                    if let (true, Some(home)) = (searching, home) {
+                        let (observed, served) = join(
+                            station.observe_on_until(home, sync),
+                            access_point.run_until(sync, access_point_deliver),
+                        )
+                        .await;
+                        found = observed.map_err(PortStaApError::Station)?;
+                        (Ok(None), Some(served))
+                    } else {
+                        (
+                            Ok(None),
+                            Some(access_point.run_until(sync, access_point_deliver).await),
+                        )
+                    }
+                } else if *running {
+                    let (station_report, access_point_report) = join(
+                        station.run_until(sync, station_deliver),
                         access_point.run_until(sync, access_point_deliver),
                     )
                     .await;
-                    found = observed.map_err(PortStaApError::Station)?;
-                    (Ok(None), Some(served))
+                    (station_report, Some(access_point_report))
                 } else {
-                    (
-                        Ok(None),
-                        Some(access_point.run_until(sync, access_point_deliver).await),
-                    )
-                }
-            } else if *running {
-                let (station_report, access_point_report) = join(
-                    station.run_until(sync, station_deliver),
-                    access_point.run_until(sync, access_point_deliver),
-                )
-                .await;
-                (station_report, Some(access_point_report))
-            } else {
-                if station.connection().is_none() {
-                    return Err(PortStaApError::NoStation);
-                }
-                (station.run_until(sync, station_deliver).await, None)
-            };
+                    if station.connection().is_none() {
+                        return Err(PortStaApError::NoStation);
+                    }
+                    (station.run_until(sync, station_deliver).await, None)
+                };
             let now = self.timer.now();
             match access_point_report.transpose() {
                 Ok(Some(Some(PortApEvent::ChannelSwitch { target }))) => {
@@ -481,7 +548,7 @@ where
     async fn act_reporting(
         &mut self,
         actions: CoordinatorActions,
-    ) -> Result<Option<PortStaApEvent>, PortStaApError<S, A>> {
+    ) -> Result<Option<PortStaApEvent<S>>, PortStaApError<S, A>> {
         let mut event = None;
         for action in actions {
             match action {
@@ -590,17 +657,20 @@ where
 {
     /// Build the explicitly current-channel pair. Its coordinator has no
     /// off-channel search list; neither optional absence capability is
-    /// required. Permanent channel moves still follow `policy`.
+    /// required. Permanent channel moves still follow `policy`, and
+    /// `upstream_loss` bounds the wait for a lost upstream.
     pub fn new(
         station: PortStation<'p, S>,
         access_point: PortAccessPoint<'p, A>,
         policy: ApFollowPolicy,
+        upstream_loss: UpstreamLossPolicy,
         timer: T,
     ) -> Self {
         Self::from_parts(
             station,
             access_point,
             ChannelCoordinator::new(policy, ApSearchPolicy::new(&[])),
+            CurrentChannel { upstream_loss },
             timer,
         )
     }
@@ -608,31 +678,82 @@ where
     /// Serve both interfaces until `deadline`, following permanent channel
     /// moves. After `StationEnded`, listen passively on the AP's channel
     /// and join an observed upstream there without another scan or probe.
+    /// When the upstream stays lost for the [`UpstreamLossPolicy`]'s
+    /// `after`, the access point stops, the station scans alone and joins
+    /// the upstream, and the access point starts on the upstream's
+    /// channel; a scan that joins none starts it again on its previous
+    /// channel and ends this call with
+    /// [`PortStaApEvent::UpstreamNotJoined`], and the next attempt follows
+    /// `after` later.
     /// Started exchanges and joins complete before returning, so they can
-    /// extend the caller's deadline while still home. A failed join keeps
-    /// the station for the next call.
+    /// extend the caller's deadline while still home. A failed join ends the
+    /// call with [`PortStaApEvent::UpstreamNotJoined`] and keeps the station
+    /// for the next one.
     pub async fn run_until(
         &mut self,
         deadline: Instant,
         station_deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<S>>),
         access_point_deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<A>>),
-    ) -> Result<Option<PortStaApEvent>, PortStaApError<S, A>> {
-        match self
-            .run_until_sync(deadline, station_deliver, access_point_deliver)
-            .await?
-        {
-            SyncReport::Finished(event) => Ok(event),
-            // Only the constructors can install a coordinator, and this
-            // mode's constructor installs an empty off-channel list.
-            SyncReport::Absence {
-                channel,
-                start,
-                until,
-            } => Err(PortStaApError::Unsupported(CoordinatorAction::Absence {
-                channel,
-                start,
-                until,
-            })),
+    ) -> Result<Option<PortStaApEvent<S>>, PortStaApError<S, A>> {
+        loop {
+            match self
+                .run_until_sync(
+                    deadline,
+                    Some(self.search.upstream_loss),
+                    station_deliver,
+                    access_point_deliver,
+                )
+                .await?
+            {
+                SyncReport::Finished(event) => return Ok(event),
+                SyncReport::UpstreamLoss => {
+                    if let Some(event) = self.rescan_upstream().await? {
+                        return Ok(Some(event));
+                    }
+                }
+                // Only the constructors can install a coordinator, and this
+                // mode's constructor installs an empty off-channel list.
+                SyncReport::Absence {
+                    channel,
+                    start,
+                    until,
+                } => {
+                    return Err(PortStaApError::Unsupported(CoordinatorAction::Absence {
+                        channel,
+                        start,
+                        until,
+                    }));
+                }
+            }
+        }
+    }
+
+    /// Carry out the upstream loss policy: stop the access point, scan and
+    /// join alone on the port, and start the access point on the upstream's
+    /// channel, or on its previous one when no upstream was joined.
+    async fn rescan_upstream(&mut self) -> Result<Option<PortStaApEvent<S>>, PortStaApError<S, A>> {
+        let stop = self.coordinator.upstream_rescan();
+        self.act(stop).await?;
+        let mut station = self.station.take().ok_or(PortStaApError::NoStation)?;
+        // A full scan, not the candidate the lost upstream left.
+        station.set_refresh(true);
+        match station.connect().await {
+            AssociationAttemptOutcome::Connected { connected, .. } => {
+                let channel = connected
+                    .connection()
+                    .map(|connection| connection.config().channel);
+                self.station = Some(connected);
+                let channel = channel.ok_or(PortStaApError::NoStation)?;
+                let start = self.coordinator.station_connected(channel);
+                self.act(start).await.map(|()| None)
+            }
+            AssociationAttemptOutcome::Failed(failure) => {
+                let (station, _, _, error, _) = failure.into_parts();
+                self.station = Some(station);
+                let restart = self.coordinator.upstream_rescan_failed(self.timer.now());
+                self.act(restart).await?;
+                Ok(Some(PortStaApEvent::UpstreamNotJoined(error)))
+            }
         }
     }
 }
@@ -683,13 +804,15 @@ where
         coordinator: ChannelCoordinator<'p>,
         timer: T,
     ) -> Self {
-        Self::from_parts(station, access_point, coordinator, timer)
+        Self::from_parts(station, access_point, coordinator, ProtectedSearch, timer)
     }
 
     /// Serve both interfaces until `deadline`. After `StationEnded`, listen
     /// on the AP's channel and in the coordinator's protected passive
     /// windows. Join a discovered upstream without a probe, after CSA if
-    /// needed. A failed join retains the station and original search density.
+    /// needed. A failed join ends the call with
+    /// [`PortStaApEvent::UpstreamNotJoined`] and retains the station and
+    /// original search density.
     /// Started exchanges complete before a sync point; a late exchange or
     /// CTS skips a window rather than extending it. An expired window or
     /// one reaching the next TBTT is skipped. Finishing an already started
@@ -699,13 +822,15 @@ where
         deadline: Instant,
         station_deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<S>>),
         access_point_deliver: &mut impl FnMut(PortMsdu<'_, PortRxBuffer<A>>),
-    ) -> Result<Option<PortStaApEvent>, PortStaApError<S, A>> {
+    ) -> Result<Option<PortStaApEvent<S>>, PortStaApError<S, A>> {
         loop {
             match self
-                .run_until_sync(deadline, station_deliver, access_point_deliver)
+                .run_until_sync(deadline, None, station_deliver, access_point_deliver)
                 .await?
             {
                 SyncReport::Finished(event) => return Ok(event),
+                // This mode carries no upstream loss policy.
+                SyncReport::UpstreamLoss => unreachable!("no upstream loss policy"),
                 SyncReport::Absence {
                     channel,
                     start,

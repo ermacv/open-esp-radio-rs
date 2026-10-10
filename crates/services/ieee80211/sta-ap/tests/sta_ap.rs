@@ -10,7 +10,7 @@ use core::{
 };
 
 use oer_ieee80211_ap::coordinator::{
-    ApBands, ApFollowPolicy, ApSearchPolicy, ApUnservable, ChannelCoordinator,
+    ApBands, ApFollowPolicy, ApSearchPolicy, ApUnservable, ChannelCoordinator, UpstreamLossPolicy,
 };
 use oer_ieee80211_ap::{
     AccessPointClientLimit, AccessPointInactiveTimeout, AccessPointPeerStorage, AccessPointService,

@@ -14,7 +14,7 @@ The search mode is a type parameter, selected when constructing the pair:
 
 | Mode | Construction | Backend requirements | Search policy |
 | --- | --- | --- | --- |
-| `CurrentChannel` (the default type) | `PortStaAp::new(station, ap, follow_policy, timer)` | The clients' existing port requirements | No off-channel channel list; observe the AP's operating channel |
+| `CurrentChannel` (the default type) | `PortStaAp::new(station, ap, follow_policy, upstream_loss, timer)` | The clients' existing port requirements | No off-channel channel list; observe the AP's operating channel, bounded by the mandatory `UpstreamLossPolicy` |
 | `ProtectedSearch` | `PortStaAp::new_with_search(station, ap, coordinator, timer)` | `LowerMacAirReservation` and `LowerMacLiveRetune` | The coordinator's explicit `ApSearchPolicy`, including its channel list |
 
 Both modes expose `connect`, `reconnect` and `run_until`. Missing backend
@@ -41,6 +41,25 @@ channel setting refuses while enabled, so this operation disables the port,
 sets the channel and enables it again. The S31 channel setting breaks both
 VIFs' TSF relations; an announced CSA move tolerates that change. Temporary
 search windows require the separate live-retune contract below.
+
+In `CurrentChannel` mode the station cannot search other channels while the
+access point serves, so the mandatory `UpstreamLossPolicy { after, action }`
+(`oer-ieee80211-ap::coordinator`) states what happens when the upstream
+does not come back; there is no implicit wait without end
+([owner decision](https://github.com/ermacv/open-esp-radio-rs/issues/324#issuecomment-6095469384)).
+`UpstreamLossPolicy::DEFAULT` is `after` 30 s with
+`UpstreamLossAction::RescanAndRestart`: `after` the loss, the access point
+stops (its peers deauthenticated, its BSS closed), the station scans alone
+on its profile's channels and joins the upstream, and the access point
+starts on the upstream's channel. A scan that finds no upstream starts the
+access point again on its previous channel and ends that `run_until` with
+the event `PortStaApEvent::UpstreamNotJoined`, which carries the attempt's
+error; the next attempt follows `after` later, counted from the restart. Outside this bounded action the access point runs, unless the
+follow policy stops it on an unservable channel. While the upstream stays
+absent, the peers re-associate once a cycle. An upstream heard again on the
+access point's channel before `after` is joined passively, the access point
+untouched. `ProtectedSearch` carries no loss policy: its windows search
+other channels instead. HIL evidence is #410.
 
 Neither client tunes the port while both run. A lost upstream ends
 `run_until` with `PortStaApEvent::StationEnded`; subsequent calls serve the
@@ -107,7 +126,11 @@ and data, dense-to-sparse scheduling, delayed/failed CTS and cancellation
 of passive reception, a configurable dwell and skipped late windows. A
 backend that refuses enabled-port channel settings and implements neither
 absence extension tests current-channel connect, reconnect, passive rejoin
-and persistent CSA with lifecycle retuning and preserved downstream peers.
+and persistent CSA with lifecycle retuning and preserved downstream peers,
+and, in virtual time, the upstream loss policy: an upstream back before
+30 s leaves the access point untouched; one back on another channel after
+30 s restarts the access point there; a scan that finds none restarts it on
+its previous channel and repeats 30 s later.
 The S31 protected mode still needs CTS support (#202) and a qualified
 live-retune implementation (#218); S31 implements neither extension yet.
 This host step supplies no HIL evidence.

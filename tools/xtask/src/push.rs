@@ -8,7 +8,12 @@
 //!    which CI checks and merges.
 //! 3. The registry's fast checks ([`crate::registry`]) check what `HEAD`'s
 //!    commits change against the merge base with `origin/main`.
-//! 4. Push the branch, open its pull request when it has none, and enable
+//! 4. Unless the pull request is a draft, the local Claude review
+//!    ([`crate::review`]) of the same diff has no blocking finding: the
+//!    review in CI blocks on the same findings, and each one it reports there
+//!    costs a full CI round. `--skip-review REASON` pushes without it and
+//!    records the reason on the pull request; CI's review still blocks.
+//! 5. Push the branch, open its pull request when it has none, and enable
 //!    auto-merge: GitHub rebases it onto `main` once CI passes. With
 //!    `--draft` the pull request is a draft and nothing merges it.
 //!
@@ -21,7 +26,7 @@
 
 use oer_process::{self as process, git};
 
-use crate::{Result, gate, registry};
+use crate::{Result, gate, registry, review};
 use oer_process::Checkout;
 
 /// The base pull requests merge into.
@@ -94,7 +99,7 @@ fn gh(ctx: &Checkout, arguments: &[&str]) -> Result<String> {
 }
 
 /// Gate, push, open the pull request; see the module documentation.
-pub fn run(ctx: &Checkout, draft: bool) -> Result<()> {
+pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()> {
     // Porcelain lines start with their status columns: never trim them.
     let tracked: Vec<String> =
         git::lines(&ctx.root, ["status", "--porcelain", "--untracked-files=no"])?
@@ -132,6 +137,26 @@ pub fn run(ctx: &Checkout, draft: bool) -> Result<()> {
     );
     registry::run_change(ctx, &change)
         .map_err(|error| format!("push: the gate failed; nothing pushed: {error}"))?;
+    if !draft && skip_review.is_none() {
+        let (verdict, path) = review::verdict(ctx).map_err(|error| {
+            format!(
+                "push: the local review did not complete; nothing pushed: {error}\n\
+                 Without Claude Code, `cargo xtask push --skip-review \"<reason>\"` pushes \
+                 and CI's review still blocks merging"
+            )
+        })?;
+        print!("{}", review::render(&verdict));
+        let blocking = verdict.blocking();
+        if blocking > 0 {
+            return Err(format!(
+                "push: the local review found {blocking} blocking finding(s); nothing pushed. \
+                 Fix each one and every place with the same defect, commit and push again \
+                 (report: {})",
+                path.display()
+            )
+            .into());
+        }
+    }
     let reference = format!("refs/heads/{branch}");
     let remote = git::text(&ctx.root, ["ls-remote", "origin", &reference])?
         .split_whitespace()
@@ -185,6 +210,13 @@ pub fn run(ctx: &Checkout, draft: bool) -> Result<()> {
             gh(ctx, &create).map_err(|error| format!("push: gh pr create failed: {error}"))?
         }
     };
+    if let (Some(reason), false) = (skip_review, draft) {
+        let body = format!("The local Claude review was skipped for this push: {reason}");
+        gh(ctx, &["pr", "comment", &branch, "--body", &body]).map_err(|error| {
+            format!("push: recording the skipped review on {url} failed: {error}")
+        })?;
+        println!("push: local review skipped; the reason is recorded on {url}");
+    }
     if draft {
         if opened {
             println!("push: opened draft pull request {url}");

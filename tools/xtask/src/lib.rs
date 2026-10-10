@@ -14,6 +14,7 @@ pub mod hooks;
 pub mod push;
 pub mod registry;
 pub mod report;
+pub mod review;
 pub mod worktree;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

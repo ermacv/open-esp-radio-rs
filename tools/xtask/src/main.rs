@@ -23,14 +23,23 @@ enum Task {
     /// Build API documentation from each package's `[package.metadata.docs.rs]`
     /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
     Doc,
-    /// Run the fast gate on exactly the committed tree, push this branch,
-    /// open its pull request when it has none, and let it merge itself once
-    /// CI passes. Refused on main.
+    /// Run the fast gate and the local Claude review on exactly the
+    /// committed tree, push this branch, open its pull request when it has
+    /// none, and let it merge itself once CI passes. Refused on main.
     Push {
-        /// Open the pull request as a draft and leave merging to a person.
+        /// Open the pull request as a draft and leave merging to a person;
+        /// a draft skips the local review.
         #[arg(long)]
         draft: bool,
+        /// Push without the local review, recording REASON on the pull
+        /// request; the review in CI still blocks merging.
+        #[arg(long, value_name = "REASON")]
+        skip_review: Option<String>,
     },
+    /// Review this branch's committed diff against origin/main with a
+    /// separate headless Claude Code run, by REVIEW.md, as CI's review does;
+    /// fails on an important or nit finding.
+    Review,
     /// Update every workspace's Cargo.lock to its manifests after a
     /// dependency or pin change.
     Lock {
@@ -217,6 +226,7 @@ fn log_name(command: &Task) -> Option<String> {
         Task::Doc => String::from("doc"),
         Task::Lock { .. } => String::from("lock"),
         Task::Push { .. } => String::from("push"),
+        Task::Review => String::from("review"),
         _ => return None,
     };
     Some(name)
@@ -242,7 +252,10 @@ fn dispatch(ctx: &Checkout, command: Task) -> Result<std::process::ExitCode> {
     let ctx = ctx.clone();
     match command {
         Task::Doc => oer_xtask::doc::run(&ctx),
-        Task::Push { draft } => oer_xtask::push::run(&ctx, draft),
+        Task::Push { draft, skip_review } => {
+            oer_xtask::push::run(&ctx, draft, skip_review.as_deref())
+        }
+        Task::Review => oer_xtask::review::run(&ctx),
         Task::Lock { check: false } => checks::metadata::update_locks(&ctx),
         Task::Lock { check: true } => checks::metadata::check_locks(
             &ctx,

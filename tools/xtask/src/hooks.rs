@@ -23,7 +23,7 @@ pub const CARGO: &[&str] = &[
 
 /// `cargo xtask` subcommands that build, check or run long work; a
 /// subcommand matches when it starts with one of them.
-pub const XTASK: &[&str] = &["check", "push", "doc"];
+pub const XTASK: &[&str] = &["check", "push", "doc", "review"];
 
 /// Flags with which a heavy xtask subcommand only lists.
 pub const XTASK_LISTING: &[&str] = &["--list"];

@@ -1,11 +1,12 @@
 //! The local Claude review of this branch before it is pushed.
 //!
-//! The Claude review in CI (`.github/workflows/claude-review.yml`) starts
-//! only after CI passed, so every finding it reports costs a full CI round
-//! before the fix is reviewed again. This review runs the same instructions
-//! (root `CLAUDE.md` and `REVIEW.md`, read from `origin/main` as CI reads
-//! them from main) and report schema in a separate,
-//! headless Claude Code process (`claude -p`) on the committed branch, with
+//! A review finding is cheapest before the push: once pushed, its fix costs
+//! a full CI round, and the Claude review in CI
+//! (`.github/workflows/claude-review.yml`) only audits each pull request once
+//! within the API budget. This review runs the same instructions (root
+//! `CLAUDE.md` and `REVIEW.md`, read from `origin/main` as CI reads them from
+//! main) and report schema in a separate, headless Claude Code process
+//! (`claude -p`) on the committed branch, with
 //! read-only tools and no repository settings, hooks or MCP servers, so the
 //! session that wrote the change never reviews it in its own context.
 //!

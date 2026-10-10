@@ -8,7 +8,9 @@ reviewer chose and the reviewed branch, which `cargo xtask ci-status` lists to
 the session on that branch, unless an issue already records it: the reviewer,
 shown the findings a trusted author filed, names the issue of one it finds
 again, and the body's key of the finding's path and title catches an
-identical one. Prints one Markdown line per finding for the PR comment.
+identical one. A finding whose issue was closed as fixed came back and is
+filed anew; one closed as not planned stays dismissed. Prints one Markdown
+line per finding for the PR comment.
 Python's standard library only.
 """
 
@@ -85,10 +87,16 @@ def record(api, result, pr, head, repository, catalog, branch):
         # shown, such as a pull request or an unmarked issue, files anew.
         filed = {issue["number"]: issue for issue in known.values()}
         issue = known.get(key(finding)) or filed.get(finding["issue"])
-        if issue is None:
+        # An issue closed as fixed records a defect that came back, which no
+        # open issue would show; one closed as not planned was dismissed.
+        regressed = (issue is not None and issue.get("state") == "closed"
+                     and issue.get("state_reason") != "not_planned")
+        if issue is None or regressed:
+            text = body(finding, pr, head, repository, branch)
+            if regressed:
+                text = f"Reported again after #{issue['number']} was closed as fixed.\n\n{text}"
             issue = issue_labels.create_issue(
-                api, f"review: {finding['title']}", body(finding, pr, head, repository, branch),
-                labels(finding), catalog)
+                api, f"review: {finding['title']}", text, labels(finding), catalog)
             known[key(finding)] = issue
             verb = "recorded as"
         else:

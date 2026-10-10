@@ -78,6 +78,19 @@ class Record(unittest.TestCase):
         self.assertEqual(api.created, [])
         self.assertEqual(lines, ["- 🟣 **reworded**: already recorded as #42"])
 
+    def test_a_finding_whose_issue_was_closed_as_fixed_is_filed_again(self):
+        api = FakeGitHub([filed(42, state="closed", state_reason="completed")])
+        lines = self.record(api, finding(severity="nit", issue=42))
+        self.assertEqual(len(api.created), 1)
+        self.assertIn("after #42 was closed as fixed", api.created[0]["body"])
+        self.assertEqual(lines, ["- 🟡 **stale cache**: recorded as #500"])
+
+    def test_a_finding_dismissed_as_not_planned_stays_dismissed(self):
+        api = FakeGitHub([filed(42, state="closed", state_reason="not_planned")])
+        lines = self.record(api, finding(severity="important"))
+        self.assertEqual(api.created, [])
+        self.assertEqual(lines, ["- 🔴 **stale cache**: already recorded as #42"])
+
     def test_a_named_number_the_reviewer_was_not_shown_files_the_finding(self):
         api = FakeGitHub([
             filed(41, pull_request={}),

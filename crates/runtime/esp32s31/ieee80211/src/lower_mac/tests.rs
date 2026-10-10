@@ -73,6 +73,8 @@ struct Hardware {
     block_ack_completion: [Option<MacHtAmpduCompletionObservation>; 4],
     station_tsf: u64,
     tbtt: Option<StaTbttSchedule>,
+    /// Runs as an attempt is published, before the core's admission returns.
+    on_publish: Option<std::boxed::Box<dyn FnMut()>>,
 }
 
 /// The hardware index of the best-effort queue.
@@ -88,6 +90,9 @@ impl TxHardware for Hardware {
         program: MacLegacyTxProgram,
     ) -> bool {
         self.legacy.push(program);
+        if let Some(on_publish) = &mut self.on_publish {
+            on_publish();
+        }
         true
     }
 
@@ -100,6 +105,9 @@ impl TxHardware for Hardware {
         program: MacHtTxProgram,
     ) -> bool {
         self.ht.push(program);
+        if let Some(on_publish) = &mut self.on_publish {
+            on_publish();
+        }
         true
     }
 
@@ -1220,6 +1228,76 @@ fn a_port_without_its_backend_hands_every_attempt_and_body_back() {
         0
     );
     drop((refused, refused_ampdu, parts));
+}
+
+#[test]
+fn the_port_holds_every_body_before_the_core_publishes_its_attempt() {
+    let port: &'static AmpduPort =
+        std::boxed::Box::leak(std::boxed::Box::new(AmpduPort::new(ModelTimer::default())));
+    install_ampdu(port);
+    // What a completion interrupt right after the publication would find.
+    let held: &'static std::sync::Mutex<Vec<TxId>> =
+        std::boxed::Box::leak(std::boxed::Box::default());
+    with_hardware_of(port, |hardware| {
+        hardware.on_publish = Some(std::boxed::Box::new(|| {
+            let ids = port.bodies.lock(|bodies| {
+                bodies
+                    .borrow()
+                    .iter()
+                    .flatten()
+                    .map(|held| held.id)
+                    .collect::<Vec<_>>()
+            });
+            *held.lock().unwrap() = ids;
+        }));
+    });
+    let common = |id| TxAttempt {
+        id: TxId(id),
+        vif: STA,
+        access_category: WmmAccessCategory::BestEffort,
+        payload: (),
+        rate: PhyRate::Ht(
+            HtRate::new(HtMcs::new(7).unwrap(), PpduBandwidth::Mhz20, false).unwrap(),
+        ),
+        protection: Protection::None,
+        key: KeySelector::Plaintext,
+        power: TxPower::Calibrated,
+        backoff: Backoff::Slots(3),
+        coex: CoexPriority::Normal,
+    };
+
+    let mut buffer = port.tx_buffer(26 + 4).unwrap().unwrap();
+    buffer.frame_mut()[..26].copy_from_slice(&data_frame());
+    assert!(matches!(
+        port.submit(common(1).map_payload(|()| TxPayload {
+            frame: buffer,
+            body: Some(TestBody(std::vec![0xab; 4])),
+            response: TxResponse::Ack,
+        })),
+        Ok(Ok(()))
+    ));
+    assert_eq!(*held.lock().unwrap(), [TxId(1)], "the MPDU's body");
+
+    let mut aggregate = port.ampdu_buffer().unwrap().unwrap();
+    let mpdu = aggregate
+        .push_mpdu(26 + 6, Some(TestBody(std::vec![0xcd; 6])))
+        .unwrap();
+    mpdu.copy_from_slice(&data_frame());
+    let ampdu = common(2).map_payload(|()| AmpduPayload {
+        subframes: aggregate,
+        tid: 0,
+        min_mpdu_start_spacing: 0,
+    });
+    let ampdu = TxAttempt {
+        access_category: WmmAccessCategory::Voice,
+        ..ampdu
+    };
+    assert!(matches!(port.submit_ampdu(ampdu), Ok(Ok(()))));
+    assert_eq!(
+        *held.lock().unwrap(),
+        [TxId(1), TxId(2)],
+        "the aggregate's subframe body"
+    );
 }
 
 #[test]

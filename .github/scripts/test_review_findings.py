@@ -1,4 +1,4 @@
-"""Offline regressions for recording pre-existing review findings; no GitHub calls."""
+"""Offline regressions for recording review findings; no GitHub calls."""
 
 import unittest
 import issue_labels
@@ -46,18 +46,24 @@ class Record(unittest.TestCase):
 
     def record(self, api, *items):
         return findings.record(api, {"summary": "", "findings": list(items)}, "386", "abc",
-                               issue_labels.REPOSITORY, self.catalog)
+                               issue_labels.REPOSITORY, self.catalog, "fix/a")
 
-    def test_only_pre_existing_findings_become_labelled_issues(self):
+    def test_every_finding_becomes_a_labelled_issue_naming_its_branch(self):
         api = FakeGitHub()
-        lines = self.record(api, finding(severity="nit"), finding(severity="important"), finding())
-        self.assertEqual(len(api.created), 1)
-        created = api.created[0]
+        lines = self.record(api, finding(severity="nit", title="stale doc"),
+                            finding(severity="important", title="lost error"), finding())
+        self.assertEqual(len(api.created), 3)
+        created = api.created[2]
         self.assertEqual(created["title"], "review: stale cache")
         self.assertEqual(created["labels"], ["kind:bug", "area:tooling", "priority:P2"])
+        self.assertIn("Pre-existing", created["body"])
         self.assertIn("#386", created["body"])
         self.assertIn(findings.marker(finding()), created["body"])
-        self.assertEqual(lines, ["- 🟣 **stale cache**: recorded as #500"])
+        self.assertIn("<!-- claude-review-branch: fix/a -->", api.created[0]["body"])
+        self.assertIn("introduces or touches", api.created[1]["body"])
+        self.assertEqual(lines, ["- 🟡 **stale doc**: recorded as #500",
+                                 "- 🔴 **lost error**: recorded as #501",
+                                 "- 🟣 **stale cache**: recorded as #502"])
 
     def test_a_finding_recorded_before_is_not_filed_again(self):
         api = FakeGitHub()
@@ -100,11 +106,11 @@ class Record(unittest.TestCase):
             self.record(api, finding(area="area:nowhere"))
         self.assertEqual(api.created, [])
 
-    def test_no_pre_existing_finding_reads_nothing(self):
+    def test_no_finding_reads_nothing(self):
         class Untouchable:
             def list(self, path):
                 raise AssertionError(path)
-        self.assertEqual(self.record(Untouchable(), finding(severity="nit")), [])
+        self.assertEqual(self.record(Untouchable()), [])
 
 
 if __name__ == "__main__":

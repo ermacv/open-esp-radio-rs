@@ -1,17 +1,15 @@
 name: Claude review
 
-# Reviews a ready same-repository PR into main after each successful CI run,
-# when it opens or becomes ready with CI already green, and on an
-# "@claude review" PR comment. Every event runs this file from
+# Reviews a ready same-repository PR into main once, when it opens or becomes
+# ready, in parallel with CI, and again on an "@claude review" PR comment: the
+# blocking review of every push is the local one (`cargo xtask review`), and
+# this one audits it within the API budget. Every event runs this file from
 # main, which the Anthropic federation rule requires. Through the Claude Agent
 # SDK (.github/scripts/claude_review.py), Claude reads the PR head in pr/ with
 # read-only tools and a read-only token, following REVIEW.md; a separate job
-# publishes the review, files an issue for each pre-existing finding and sets
-# the required status.
+# publishes the review, files an issue for each finding and sets the
+# informational claude-runtime-review status. It never blocks a merge.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
   pull_request_target:
     types: [opened, reopened, ready_for_review]
   issue_comment:
@@ -26,51 +24,37 @@ jobs:
   target:
     if: >-
       github.repository == 'ermacv/open-esp-radio-rs' &&
-      ((github.event_name == 'workflow_run' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.conclusion == 'success') ||
-       github.event_name == 'pull_request_target' ||
+      (github.event_name == 'pull_request_target' ||
        (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
         startsWith(github.event.comment.body, '@claude review') &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      actions: read
       contents: read
       pull-requests: read
     outputs:
       pr: ${{ steps.pr.outputs.pr }}
       head: ${{ steps.pr.outputs.head }}
+      branch: ${{ steps.pr.outputs.branch }}
     steps:
-      - name: Find the PR and require green CI on its head
+      - name: Find the PR
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
           NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         run: |
-          if [ -n "$SHA" ]; then
-            pr=$(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq "map(select(.head.sha == \"$SHA\"))[0]")
-          else
-            pr=$(gh api "repos/$GH_REPO/pulls/$NUMBER")
-          fi
+          pr=$(gh api "repos/$GH_REPO/pulls/$NUMBER")
           pr=$(jq -c --arg repo "$GH_REPO" 'select(. != null and .state == "open" and (.draft | not)
             and .base.ref == "main" and .head.repo.full_name == $repo)' <<<"${pr:-null}")
           if [ -z "$pr" ]; then
             echo "No open ready same-repository PR into main; nothing to review."
             exit 0
           fi
-          head=$(jq -r .head.sha <<<"$pr")
-          ci=$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?head_sha=$head&event=push" \
-            --jq '.workflow_runs[0].conclusion')
-          if [ "$ci" != success ]; then
-            echo "CI on $head is '$ci'; the review starts after it succeeds."
-            exit 0
-          fi
           echo "pr=$(jq .number <<<"$pr")" >>"$GITHUB_OUTPUT"
-          echo "head=$head" >>"$GITHUB_OUTPUT"
+          echo "head=$(jq -r .head.sha <<<"$pr")" >>"$GITHUB_OUTPUT"
+          echo "branch=$(jq -r .head.ref <<<"$pr")" >>"$GITHUB_OUTPUT"
 
   review:
     needs: target
@@ -130,17 +114,18 @@ jobs:
       pull-requests: write
       statuses: write
     steps:
-      # Trusted main: the issue-label policy files the pre-existing findings.
+      # Trusted main: the issue-label policy files the findings.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github
           persist-credentials: false
-      - name: Post the review and set claude-runtime-review
+      - name: Post the review, file its findings and set claude-runtime-review
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR: ${{ needs.target.outputs.pr }}
           HEAD: ${{ needs.target.outputs.head }}
+          BRANCH: ${{ needs.target.outputs.branch }}
           OUTCOME: ${{ needs.review.result }}
           RESULT: ${{ needs.review.outputs.result }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -176,20 +161,15 @@ jobs:
           # GitHub rejects the whole review when a finding's line is outside
           # the diff; then the body carries every finding in full.
           review "$(body false)" "$comments" || review "$(body true)" '[]'
-          # Pre-existing findings never block; each is filed as an issue
-          # once, and the PR names the issues.
+          # No finding blocks: each is filed as an issue once, naming the
+          # branch, and the PR names the issues.
           if ! recorded=$(PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/review_findings.py); then
-            status error "Pre-existing findings were not recorded as issues; rerun the review"
+            status error "Findings were not recorded as issues; rerun the review"
             exit 1
           fi
           if [ -n "$recorded" ]; then
-            jq -n --arg body "$(printf 'Pre-existing findings, filed as issues:\n\n%s' "$recorded")" '{body: $body}' |
+            jq -n --arg body "$(printf 'Findings, filed as issues; the session on this branch fixes them next:\n\n%s' "$recorded")" '{body: $body}' |
               gh api "repos/$GH_REPO/issues/$PR/comments" --input - >/dev/null
           fi
-          # Important and nit findings block until a re-review no longer reports them.
-          blocking=$(jq '[.findings[] | select(.severity == "important" or .severity == "nit")] | length' <<<"$RESULT")
-          if [ "$blocking" = 0 ]; then
-            status success "No blocking findings"
-          else
-            status failure "$blocking blocking finding(s)"
-          fi
+          count=$(jq '.findings | length' <<<"$RESULT")
+          status success "$count finding(s) filed as issues; not blocking"

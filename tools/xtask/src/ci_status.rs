@@ -8,10 +8,10 @@
 //! `push` until a later run of the same workflow passes, so whoever pushed the
 //! failing commit, or anyone who sees it first, fixes it before other work.
 //!
-//! An open pull request whose Claude review reported blocking findings
-//! (`claude-runtime-review` failed) never merges by itself; it is listed the
-//! same way until a re-review after the fixing push passes. Only the session
-//! on its branch fixes it; every other session only reports it.
+//! The Claude review in CI never blocks a merge: it files each finding as an
+//! issue titled `review: …`, which names the reviewed branch. The open ones
+//! are listed the same way: those of this checkout's branch one by one, to fix
+//! next, the others as a count.
 
 use std::{collections::BTreeSet, path::Path};
 
@@ -223,69 +223,77 @@ fn report_with(ctx: &Checkout, gh: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// The status the Claude review workflow sets on a pull request's head.
-const REVIEW_STATUS: &str = "claude-runtime-review";
+/// The title prefix of an issue the Claude review files for a finding.
+const FINDING_TITLE: &str = "review: ";
+/// The body line that names the branch a finding was reviewed on.
+const FINDING_BRANCH: &str = "<!-- claude-review-branch: ";
 
-/// An open pull request as `gh pr list --json` reports it.
+/// An open issue as `gh issue list --json` reports it.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PullRequest {
+struct Issue {
     number: u64,
+    title: String,
     url: String,
-    head_ref_name: String,
-    status_check_rollup: Vec<serde_json::Value>,
+    #[serde(default)]
+    body: String,
 }
 
-/// One line per open pull request whose Claude review failed or gave no
-/// verdict, naming its branch: either holds its merge. Only the session on
-/// that branch (`branch`, this checkout's) acts on it; any other session
-/// leaves the branch alone and only reports it.
-fn review_blocked(pulls: &[PullRequest], branch: Option<&str>) -> Vec<String> {
-    pulls
+impl Issue {
+    fn branch(&self) -> Option<&str> {
+        self.body
+            .lines()
+            .find_map(|line| line.strip_prefix(FINDING_BRANCH)?.strip_suffix(" -->"))
+    }
+}
+
+/// One line per open review finding of `branch` (this checkout's), to fix
+/// before other work, then one line counting every other open finding.
+fn review_findings(issues: &[Issue], branch: Option<&str>) -> Vec<String> {
+    let findings: Vec<&Issue> = issues
         .iter()
-        .filter_map(|pull| {
-            let state = pull
-                .status_check_rollup
-                .iter()
-                .find(|check| check["context"] == REVIEW_STATUS)?["state"]
-                .as_str()?;
-            let mine = branch == Some(pull.head_ref_name.as_str());
-            let why = match (state, mine) {
-                ("FAILURE", true) => {
-                    "of this branch is blocked by Claude review findings; fix them before other work"
-                }
-                ("ERROR", true) => {
-                    "of this branch has no Claude review verdict; comment `@claude review` on it"
-                }
-                ("FAILURE", false) => {
-                    "is blocked by Claude review findings; the session on its branch fixes them, \
-                     others never push to it and only tell the user"
-                }
-                ("ERROR", false) => {
-                    "has no Claude review verdict; the session on its branch asks for one, \
-                     others only tell the user"
-                }
-                _ => return None,
-            };
-            Some(format!(
-                "PR #{} ({}) {why}: {}",
-                pull.number, pull.head_ref_name, pull.url
-            ))
+        .filter(|issue| issue.title.starts_with(FINDING_TITLE))
+        .collect();
+    let (mine, others): (Vec<&Issue>, Vec<&Issue>) = findings
+        .into_iter()
+        .partition(|issue| branch.is_some() && issue.branch() == branch);
+    let mut lines: Vec<String> = mine
+        .iter()
+        .map(|issue| {
+            format!(
+                "Claude review finding #{} of this branch; fix it before other work: {}: {}",
+                issue.number,
+                issue.title.trim_start_matches(FINDING_TITLE),
+                issue.url
+            )
         })
-        .collect()
+        .collect();
+    if !others.is_empty() {
+        let numbers: Vec<String> = others
+            .iter()
+            .map(|issue| format!("#{}", issue.number))
+            .collect();
+        lines.push(format!(
+            "{} open Claude review finding(s) of other branches: {}",
+            others.len(),
+            numbers.join(", ")
+        ));
+    }
+    lines
 }
 
-/// [`review_blocked`] of the repository's open pull requests.
-fn blocked_pulls(ctx: &Checkout) -> Result<Vec<String>, String> {
+/// [`review_findings`] of the repository's open issues.
+fn open_findings(ctx: &Checkout) -> Result<Vec<String>, String> {
     let output = process::capture(ctx.command("gh").args([
-        "pr",
+        "issue",
         "list",
         "--state",
         "open",
+        "--search",
+        "\"review:\" in:title",
         "--limit",
-        "100",
+        "200",
         "--json",
-        "number,url,headRefName,statusCheckRollup",
+        "number,title,url,body",
     ]))
     .map_err(|error| {
         error
@@ -293,19 +301,18 @@ fn blocked_pulls(ctx: &Checkout) -> Result<Vec<String>, String> {
             .lines()
             .rev()
             .find(|line| !line.trim().is_empty())
-            .unwrap_or("`gh pr list` failed")
+            .unwrap_or("`gh issue list` failed")
             .trim()
             .to_owned()
     })?;
-    let pulls = serde_json::from_slice::<Vec<PullRequest>>(&output.stdout)
-        .map_err(|error| format!("`gh pr list` printed no pull request list: {error}"))?;
+    let issues = serde_json::from_slice::<Vec<Issue>>(&output.stdout)
+        .map_err(|error| format!("`gh issue list` printed no issue list: {error}"))?;
     let branch = git::text(&ctx.root, ["rev-parse", "--abbrev-ref", "HEAD"]).ok();
-    Ok(review_blocked(&pulls, branch.as_deref()))
+    Ok(review_findings(&issues, branch.as_deref()))
 }
 
 /// Prints [`report`]'s lines, or one warning line when CI's state is
-/// unknown, then the pull requests a Claude review blocks, prefixed with
-/// `label`.
+/// unknown, then the open Claude review findings, prefixed with `label`.
 pub fn print(ctx: &Checkout, label: &str) {
     match report(ctx) {
         Ok(failures) if failures.is_empty() => println!("{label}: CI on main is green"),
@@ -316,14 +323,14 @@ pub fn print(ctx: &Checkout, label: &str) {
         }
         Err(reason) => println!("{label}: warning: the state of CI on main is unknown: {reason}"),
     }
-    match blocked_pulls(ctx) {
-        Ok(blocked) => {
-            for line in blocked {
+    match open_findings(ctx) {
+        Ok(findings) => {
+            for line in findings {
                 println!("{label}: {line}");
             }
         }
         Err(reason) => {
-            println!("{label}: warning: blocked pull requests are unknown: {reason}");
+            println!("{label}: warning: open Claude review findings are unknown: {reason}");
         }
     }
 }
@@ -481,35 +488,31 @@ esac
     }
 
     #[test]
-    fn a_pull_request_with_a_failed_or_missing_review_verdict_is_listed() {
-        let pulls: Vec<PullRequest> = serde_json::from_str(
+    fn findings_of_this_branch_are_listed_and_others_counted() {
+        let issues: Vec<Issue> = serde_json::from_str(
             r#"[
-            {"number":1,"url":"u1","headRefName":"fix/a","statusCheckRollup":[
-                {"__typename":"CheckRun","name":"ci-ok","conclusion":"SUCCESS"},
-                {"__typename":"StatusContext","context":"claude-runtime-review","state":"FAILURE"}]},
-            {"number":2,"url":"u2","headRefName":"fix/b","statusCheckRollup":[
-                {"__typename":"StatusContext","context":"claude-runtime-review","state":"SUCCESS"}]},
-            {"number":3,"url":"u3","headRefName":"fix/c","statusCheckRollup":[
-                {"__typename":"StatusContext","context":"claude-runtime-review","state":"ERROR"}]},
-            {"number":4,"url":"u4","headRefName":"fix/d","statusCheckRollup":[
-                {"__typename":"CheckRun","name":"claude-runtime-review","conclusion":"FAILURE"}]}
+            {"number":1,"title":"review: Lost error","url":"u1",
+             "body":"Found.\n\n<!-- claude-review-finding: k -->\n<!-- claude-review-branch: fix/a -->"},
+            {"number":2,"title":"review: Stale doc","url":"u2",
+             "body":"<!-- claude-review-branch: fix/b -->"},
+            {"number":3,"title":"review: Filed by hand","url":"u3","body":"No branch."},
+            {"number":4,"title":"Unrelated reviewer notes","url":"u4",
+             "body":"<!-- claude-review-branch: fix/a -->"}
         ]"#,
         )
         .unwrap();
         assert_eq!(
-            review_blocked(&pulls, Some("fix/a")),
+            review_findings(&issues, Some("fix/a")),
             [
-                "PR #1 (fix/a) of this branch is blocked by Claude review findings; fix them before \
-                 other work: u1",
-                "PR #3 (fix/c) has no Claude review verdict; the session on its branch asks for one, \
-                 others only tell the user: u3",
+                "Claude review finding #1 of this branch; fix it before other work: Lost error: u1",
+                "2 open Claude review finding(s) of other branches: #2, #3",
             ]
         );
-        // Another session's blocked pull request is only reported.
-        assert!(
-            review_blocked(&pulls, Some("main"))[0]
-                .contains("the session on its branch fixes them, others never push to it")
+        assert_eq!(
+            review_findings(&issues, None),
+            ["3 open Claude review finding(s) of other branches: #1, #2, #3"]
         );
+        assert!(review_findings(&[], Some("fix/a")).is_empty());
     }
 
     #[test]

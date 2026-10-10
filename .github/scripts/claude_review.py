@@ -110,13 +110,13 @@ async def review(prompt, guidance, model, token_file):
 
 
 def filed_findings(recorded):
-    """The prompt's list of pre-existing findings already filed as issues, so
+    """The prompt's list of the findings already filed as issues, so
     the review names the issue of one it finds again instead of a new title."""
     issues = sorted({issue["number"]: issue for issue in recorded.values()}.values(),
                     key=lambda issue: issue["number"])
     if not issues:
-        return "No pre-existing finding has been filed as an issue yet."
-    return "Pre-existing findings already filed as issues:\n" + "\n".join(
+        return "No finding has been filed as an issue yet."
+    return "Findings already filed as issues:\n" + "\n".join(
         f"- #{issue['number']} ({issue['state']}): {issue['title']}" for issue in issues)
 
 

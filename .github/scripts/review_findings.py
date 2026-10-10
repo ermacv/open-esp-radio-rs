@@ -1,12 +1,15 @@
-"""Record a Claude review's pre-existing findings as issues.
+"""Record a Claude review's findings as issues.
 
 The publish job of the review workflow runs this from trusted main with the
-review's structured result in RESULT. Each 🟣 pre-existing finding becomes one
-`kind:bug` issue with the area and priority the reviewer chose, unless an
-issue already records it: the reviewer, shown the findings a trusted author
-filed, names the issue of one it finds again, and the body's key of the finding's path and
-title catches an identical one. Prints one Markdown
-line per finding for the PR comment. Python's standard library only.
+review's structured result in RESULT. The review never blocks a merge, so the
+issues are the record of what it found: each finding, 🔴 important, 🟡 nit or
+🟣 pre-existing, becomes one `kind:bug` issue with the area and priority the
+reviewer chose and the reviewed branch, which `cargo xtask ci-status` lists to
+the session on that branch, unless an issue already records it: the reviewer,
+shown the findings a trusted author filed, names the issue of one it finds
+again, and the body's key of the finding's path and title catches an
+identical one. Prints one Markdown line per finding for the PR comment.
+Python's standard library only.
 """
 
 import hashlib
@@ -35,17 +38,24 @@ def labels(finding):
     return ["kind:bug", finding["area"], finding["priority"]]
 
 
-def body(finding, pr, head, repository):
+MARKS = {"important": "🔴", "nit": "🟡", "pre-existing": "🟣"}
+
+
+def branch_marker(branch):
+    return f"<!-- claude-review-branch: {branch} -->"
+
+
+def body(finding, pr, head, repository, branch):
     url = f"https://github.com/{repository}/blob/{head}/{finding['path']}#L{finding['line']}"
-    return "\n".join([
-        f"Pre-existing defect found by the Claude review of #{pr} at "
-        f"[`{finding['path']}:{finding['line']}`]({url}); it is not part of that "
-        "pull request and did not block it.",
-        "",
-        finding["body"],
-        "",
-        marker(finding),
-    ])
+    place = f"[`{finding['path']}:{finding['line']}`]({url})"
+    if finding["severity"] == "pre-existing":
+        origin = (f"Pre-existing defect found by the Claude review of #{pr} at {place}; "
+                  "it is not part of that pull request.")
+    else:
+        origin = (f"{MARKS[finding['severity']]} {finding['severity']} finding of the Claude review "
+                  f"of #{pr} at {place}: a defect that pull request introduces or touches. "
+                  "The review does not block merging; the session on its branch fixes it next.")
+    return "\n".join([origin, "", finding["body"], "", marker(finding), branch_marker(branch)])
 
 
 def recorded(api):
@@ -61,10 +71,10 @@ def recorded(api):
     return issues
 
 
-def record(api, result, pr, head, repository, catalog):
-    """File an issue for every pre-existing finding not yet recorded; return
-    one Markdown line per pre-existing finding naming its issue."""
-    findings = [f for f in result["findings"] if f["severity"] == "pre-existing"]
+def record(api, result, pr, head, repository, catalog, branch):
+    """File an issue for every finding not yet recorded; return one Markdown
+    line per finding naming its issue."""
+    findings = result["findings"]
     if not findings:
         return []
     known = recorded(api)
@@ -77,13 +87,13 @@ def record(api, result, pr, head, repository, catalog):
         issue = known.get(key(finding)) or filed.get(finding["issue"])
         if issue is None:
             issue = issue_labels.create_issue(
-                api, f"review: {finding['title']}", body(finding, pr, head, repository),
+                api, f"review: {finding['title']}", body(finding, pr, head, repository, branch),
                 labels(finding), catalog)
             known[key(finding)] = issue
             verb = "recorded as"
         else:
             verb = "already recorded as"
-        lines.append(f"- 🟣 **{finding['title']}**: {verb} #{issue['number']}")
+        lines.append(f"- {MARKS[finding['severity']]} **{finding['title']}**: {verb} #{issue['number']}")
     return lines
 
 
@@ -94,7 +104,7 @@ def main():
         raise ValueError(f"This policy operates only on {issue_labels.REPOSITORY}")
     api = issue_labels.GitHub(os.environ.get("GH_TOKEN"))
     lines = record(api, result, os.environ["PR"], os.environ["HEAD"], repository,
-                   issue_labels.load_catalog())
+                   issue_labels.load_catalog(), os.environ["BRANCH"])
     print("\n".join(lines))
     return 0
 

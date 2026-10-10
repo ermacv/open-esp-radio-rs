@@ -1,7 +1,8 @@
 //! The gate `cargo xtask push` runs before it pushes a branch, and that
 //! `cargo xtask check changed` runs for the developer: what a set of changed
 //! files can break, checked within a minute warm. CI on a pull request runs
-//! the full-tier checks the same selection reaches, and `main` every check.
+//! every full-tier check but the audited ones this selection does not reach
+//! (`registry::SCOPED_IN_CI`), and `main` every check.
 //!
 //! Selection reads the tree through the repository model (`oer-repo`),
 //! without Cargo:

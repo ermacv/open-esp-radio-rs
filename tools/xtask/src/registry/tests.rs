@@ -320,15 +320,27 @@ fn a_job_runs_its_checks_up_to_its_tier() {
 }
 
 #[test]
-fn a_branch_run_executes_what_its_change_reaches_and_every_whole_tree_check() {
+fn a_branch_run_skips_only_an_audited_check_its_change_does_not_reach() {
     let tool = change(&["tools/tool/src/lib.rs"], Tier::Full);
-    assert!(ids(of_job_for(&tool, "architecture")).is_empty());
-    // A check without a trigger cannot be scoped to a change: it always runs.
-    let images = ids(of_job_for(&tool, "images"));
-    assert!(images.contains(&"final-images") && !images.contains(&"example-link"));
+    let architecture = ids(of_job_for(&tool, "architecture"));
+    assert!(!architecture.contains(&"architecture"));
+    // Every check outside the audited list runs, whatever its trigger says.
+    assert_eq!(
+        ids(of_job_for(&tool, "images")),
+        ids(of_job(Tier::Full, "images"))
+    );
+    let docs = ids(of_job_for(&tool, "docs"));
+    assert!(docs.contains(&"docs") && docs.contains(&"capabilities"));
     let platform = change(&["platform/esp32s31/chip.toml"], Tier::Full);
     assert!(ids(of_job_for(&platform, "architecture")).contains(&"architecture"));
-    assert!(ids(of_job_for(&platform, "images")).contains(&"example-link"));
+    for check in SCOPED_IN_CI {
+        assert!(
+            CHECKS
+                .iter()
+                .any(|known| known.id == *check && known.trigger.is_some()),
+            "{check}"
+        );
+    }
 }
 
 #[test]
@@ -344,8 +356,8 @@ fn a_change_to_host_tooling_reaches_the_checks_themselves() {
 }
 
 #[test]
-fn the_documentation_check_reads_the_whole_tree_so_every_change_runs_it() {
-    // A deleted file a link names, a tool's command line: any change.
+fn the_documentation_check_runs_on_every_branch() {
+    // Its links, code paths and command trees read the whole tree.
     for path in [
         "crates/driver/src/lib.rs",
         "stand/src/main.rs",

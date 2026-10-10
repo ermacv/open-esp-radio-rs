@@ -219,8 +219,8 @@ pub fn prepare(root: &Path, workflow: Workflow, output: &Path) -> Result<()> {
             Vec::new()
         })
     };
-    // A branch push runs what its change reaches; `main`, a manual run and
-    // any failure to tell the change run everything.
+    // A branch push skips the audited checks its change does not reach;
+    // `main`, a manual run and any failure to tell the change run everything.
     let scope = (std::env::var("GITHUB_EVENT_NAME")? == "push"
         && std::env::var("GITHUB_REF")? != MAIN)
         .then(|| {

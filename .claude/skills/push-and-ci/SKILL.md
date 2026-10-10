@@ -47,11 +47,12 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    Never push to `main` directly.
 7. **CI** runs on every branch push: xtask plans jobs by the complete Git tree and tool versions
    ([CI reuse](../../../tools/xtask/README.md#ci-input-reuse)). On a branch
-   it runs only the full-tier checks the change from its merge base reaches
-   (every check when the change touches `.github/workflows/`, the
-   toolchain, the root `Cargo.toml` or `Cargo.lock`, or host tooling under
-   `tools/` other than Blobray) and skips a job it reaches none of; `main` runs everything
-   after the merge. Each executed check job of `.github/workflows/ci.yml`
+   it skips chip-target Clippy (`architecture`) and API documentation
+   (`doc`) when the change from its merge base does not reach them, and
+   runs every other check (all of them when the change touches
+   `.github/workflows/`, the toolchain, the root `Cargo.toml` or
+   `Cargo.lock`, or host tooling under `tools/` other than Blobray); `main`
+   runs everything after the merge. Each executed check job of `.github/workflows/ci.yml`
    runs `cargo xtask check tier full --job <job> --checks <ids|all>`, so a
    failed check job is reproduced locally with the same command. A new check is a registry
    entry (`tools/xtask/src/registry.rs`), never a workflow step. A failed

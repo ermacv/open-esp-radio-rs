@@ -10,8 +10,9 @@
 //! - `cargo xtask push` runs the fast checks over what `HEAD` changed;
 //! - each CI job runs `cargo xtask check tier TIER --job JOB`: every check of
 //!   that job up to that tier, over the whole tree ([`Scope::Tree`]); on a
-//!   branch `--checks` limits it to those its change reaches
-//!   ([`of_job_for`]), and `main` runs them all after the merge. The
+//!   branch `--checks` leaves out the audited checks ([`SCOPED_IN_CI`]) its
+//!   change does not reach ([`of_job_for`]), and `main` runs them all after
+//!   the merge. The
 //!   workflows keep jobs for parallelism and the runner setup (caches,
 //!   toolchains a check needs), never a list of checks; a test holds them to
 //!   the registry.
@@ -231,10 +232,7 @@ pub const CHECKS: &[Check] = &[
         tier: Tier::Full,
         job: "docs",
         summary: "Markdown links, documented commands and the static qualification catalogs",
-        // Its inputs are the whole tree: Markdown links and code paths name
-        // any file, and documented commands every tool's command tree. It
-        // takes seconds, so every change runs it.
-        trigger: Some(|_| true),
+        trigger: Some(|change| change.selection.docs),
         run: |ctx, _| checks::docs::run(ctx),
     },
     Check {
@@ -602,13 +600,29 @@ pub fn of_change(change: &Change) -> Vec<&'static Check> {
         .collect()
 }
 
+/// The checks a branch's CI may skip when its change does not fire their
+/// trigger. Triggers select what the local gate runs, with CI as the
+/// backstop, and most do not name every input their check reads; only these
+/// were audited to read nothing outside what their trigger names, given that
+/// a change to the workflows, the toolchain, the root workspace manifest or
+/// lock, or the checks' own tooling runs everything.
+pub const SCOPED_IN_CI: &[&str] = &[
+    // chip-target Clippy of `crates/`, `platform/` and `registers/`
+    "architecture",
+    // API documentation of the root packages a change reaches
+    "doc",
+];
+
 /// The checks of `job` up to `change`'s tier that a CI run for `change`
-/// executes: those whose trigger the change fires, and every check without a
-/// trigger, which only runs over the whole tree and so always runs.
+/// executes: every check, but one of [`SCOPED_IN_CI`] only when the change
+/// fires its trigger.
 pub fn of_job_for(change: &Change, job: &str) -> Vec<&'static Check> {
     of_job(change.tier, job)
         .into_iter()
-        .filter(|check| check.trigger.is_none_or(|trigger| trigger(change)))
+        .filter(|check| {
+            !SCOPED_IN_CI.contains(&check.id)
+                || check.trigger.is_some_and(|trigger| trigger(change))
+        })
         .collect()
 }
 

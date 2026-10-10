@@ -59,16 +59,23 @@ pub(crate) fn observe(
             )
         })
     };
+    let mut evaluator = blobray_analysis::registers::StoredBitsEvaluator::new(facts);
     facts.accesses(c, &mut |access, c| {
         let mask = access.value.and_then(|v| {
             blobray_analysis::registers::write_mask(facts, access.address, access.width, v)
         });
-        let stored = access
-            .value
-            .filter(|_| matches!(access.access, MemoryKind::Store))
-            .map(|v| {
-                blobray_analysis::registers::stored_bits(facts, access.address, access.width, v)
-            });
+        let stored = match access.value {
+            Some(v) if matches!(access.access, MemoryKind::Store) => {
+                Some(blobray_analysis::registers::stored_bits(
+                    &mut evaluator,
+                    access.address,
+                    access.width,
+                    v,
+                    c,
+                )?)
+            }
+            _ => None,
+        };
         observe(access.record, access.width, access.address, mask, stored, c)
     })?;
     for (record, fact) in records.iter().enumerate() {

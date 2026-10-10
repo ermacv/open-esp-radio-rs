@@ -4,7 +4,7 @@
 //! output and the summary always counts the whole analysis, so a selection
 //! cannot hide that the analysis was incomplete.
 use blobray_domain::{RegisterAccess, RegisterMask, RegisterMaskKind};
-use oer_riscv_model::{FunctionRecord, MemoryKind};
+use oer_riscv_model::{FunctionRecord, MemoryKind, ObjectLocation, SymbolId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -69,12 +69,36 @@ pub struct AccessGroup {
     pub entries: Vec<AccessEntry>,
 }
 
-/// A function named by its input position and symbol name.
+/// A function by its input position, display name and symbol identity.
+///
+/// The symbol keeps functions apart that share a name: local functions of
+/// different archive members, unnamed functions and names equal only after
+/// lossy UTF-8 decoding. Groups order by input, then name, then symbol.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GroupFunction {
     pub input: u64,
+    /// The symbol name, lossily decoded for display; empty when unnamed.
     pub name: String,
+    pub symbol: SymbolId,
+}
+
+impl GroupFunction {
+    /// `name (input 0, member 3)`; `<unnamed>` for a function without a name
+    /// and no member for a standalone ELF.
+    pub fn human(&self) -> String {
+        let name = if self.name.is_empty() {
+            "<unnamed>"
+        } else {
+            &self.name
+        };
+        match self.symbol.object.location {
+            ObjectLocation::ArchiveMember { ordinal } => {
+                format!("{name} (input {}, member {ordinal})", self.input)
+            }
+            _ => format!("{name} (input {})", self.input),
+        }
+    }
 }
 
 /// Observations of one group that agree on the other key, access and mask.
@@ -142,6 +166,7 @@ impl AccessGroups {
                 .as_deref()
                 .map(|name| String::from_utf8_lossy(name).into_owned())
                 .unwrap_or_default(),
+            symbol: function.symbol.clone(),
         };
         let word = address.map(|address| address & !3);
         let (access, width) = access(fact);
@@ -195,13 +220,13 @@ impl AccessGroups {
         let mut lines = Vec::new();
         for group in self.groups() {
             lines.push(match (&group.function, group.word) {
-                (Some(function), _) => format!("{} (input {})", function.name, function.input),
+                (Some(function), _) => function.human(),
                 (None, Some(word)) => format!("{word:#010x}"),
                 (None, None) => String::from("unresolved"),
             });
             for entry in &group.entries {
                 let subject = match (&entry.function, entry.word) {
-                    (Some(function), _) => format!("{} (input {})", function.name, function.input),
+                    (Some(function), _) => function.human(),
                     (None, Some(word)) => format!("{word:#010x}"),
                     (None, None) => String::from("unresolved"),
                 };

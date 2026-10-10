@@ -78,7 +78,9 @@ hide an incomplete analysis. `--group-by address|function` groups the selected
 observations: one group per word (unresolved addresses first) listing each
 function by access kind (a masked expression is `expression`), width and mask
 with a count, or one group per
-function listing each word the same way. The human format prints the groups
+function listing each word the same way. A group's function carries its
+symbol identity, so same-named functions of different archive members or
+unnamed functions stay apart; the human format shows the member ordinal. The human format prints the groups
 before the summary line and groups by address when a filter is given without
 `--group-by`.
 

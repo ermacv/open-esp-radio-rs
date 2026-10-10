@@ -593,3 +593,105 @@ fn symbols_strings_and_referenced_text_come_from_the_captured_bytes() {
         String::from_utf8(run(&["function-records", "--function", "greet", "--input"])).unwrap();
     assert!(listing.contains(".LC0  # \"hello\""), "{listing}");
 }
+
+/// `pcrel`: `auipc a0, %pcrel_hi(.LC0+6); addi a0, a0, %pcrel_lo(.Lpcrel_hi0); ret`.
+fn object_with_pcrel_string() -> Vec<u8> {
+    use object::write::{Object, Relocation, Symbol, SymbolSection};
+    use object::{
+        Architecture, BinaryFormat, Endianness, RelocationFlags, SectionKind, SymbolFlags,
+        SymbolKind, SymbolScope,
+    };
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    let code: Vec<u8> = [0x0000_0517_u32, 0x0005_0513, 0x0000_8067]
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect();
+    object.append_section_data(text, &code, 4);
+    let strings = object.add_section(
+        Vec::new(),
+        b".rodata.str1.1".to_vec(),
+        SectionKind::ReadOnlyString,
+    );
+    object.append_section_data(strings, b"hello\0world\0", 1);
+    let symbol = |object: &mut Object, name: &[u8], value, size, kind, scope, section| {
+        object.add_symbol(Symbol {
+            name: name.to_vec(),
+            value,
+            size,
+            kind,
+            scope,
+            weak: false,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::None,
+        })
+    };
+    symbol(
+        &mut object,
+        b"pcrel",
+        0,
+        code.len() as u64,
+        SymbolKind::Text,
+        SymbolScope::Linkage,
+        text,
+    );
+    let high = symbol(
+        &mut object,
+        b".Lpcrel_hi0",
+        0,
+        0,
+        SymbolKind::Label,
+        SymbolScope::Compilation,
+        text,
+    );
+    let label = symbol(
+        &mut object,
+        b".LC0",
+        0,
+        0,
+        SymbolKind::Data,
+        SymbolScope::Compilation,
+        strings,
+    );
+    for (offset, symbol, addend, r_type) in [
+        (0, label, 6, object::elf::R_RISCV_PCREL_HI20),
+        (4, high, 0, object::elf::R_RISCV_PCREL_LO12_I),
+    ] {
+        object
+            .add_relocation(
+                text,
+                Relocation {
+                    offset,
+                    symbol,
+                    addend,
+                    flags: RelocationFlags::Elf { r_type },
+                },
+            )
+            .unwrap();
+    }
+    object.write().unwrap()
+}
+
+#[test]
+fn a_pcrel_pair_shows_the_text_at_its_high_addend_on_both_instructions() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pcrel.a");
+    std::fs::write(
+        &path,
+        support::archive(&[(b"pcrel.o", &object_with_pcrel_string())], false),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["function-records", "--function", "pcrel", "--input"])
+        .arg(format!("code={}", path.display()))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let listing = String::from_utf8(output.stdout).unwrap();
+    let quoted: Vec<_> = listing.lines().filter(|line| line.contains('"')).collect();
+    assert_eq!(quoted.len(), 2, "{listing}");
+    assert!(
+        quoted.iter().all(|line| line.contains("\"world\"")),
+        "{listing}"
+    );
+}

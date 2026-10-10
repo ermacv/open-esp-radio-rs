@@ -74,7 +74,13 @@ pub fn authenticate(inputs: &[Input<'_>]) -> Result<(Vec<String>, Vec<Vec<u8>>)>
     let mut identities = Vec::with_capacity(inputs.len());
     let mut contents = Vec::with_capacity(inputs.len());
     for input in inputs {
-        let bytes = fs::read(input.path)?;
+        let bytes = fs::read(input.path).map_err(|error| {
+            invalid(format!(
+                "{}: cannot read {}: {error}",
+                input.role,
+                input.path.display()
+            ))
+        })?;
         let actual = oer_durable::sha256_bytes(&bytes);
         if let Some(expected) = input.sha256
             && actual != expected

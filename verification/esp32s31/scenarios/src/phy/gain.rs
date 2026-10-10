@@ -274,12 +274,12 @@ impl Gain {
             Input {
                 role: "phy",
                 path: &options.library,
-                sha256: Some(crate::artifacts::sha256("libphy")),
+                sha256: Some(crate::artifacts::sha256("libphy")?),
             },
             Input {
                 role: "rom",
                 path: &options.rom,
-                sha256: Some(crate::artifacts::sha256("rom")),
+                sha256: Some(crate::artifacts::sha256("rom")?),
             },
             Input {
                 role: "production",
@@ -291,7 +291,7 @@ impl Gain {
             inputs.push(Input {
                 role: "rftest",
                 path: rftest,
-                sha256: Some(crate::artifacts::sha256("librftest")),
+                sha256: Some(crate::artifacts::sha256("librftest")?),
             });
         }
         let session = Session::start(

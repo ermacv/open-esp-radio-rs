@@ -1,8 +1,9 @@
 # oer-vendor-artifacts
 
 The pinned vendor artifacts of a chip. `verification/<chip>/artifacts.toml`
-is the only pin: git sources at a revision, release assets and local build
-outputs, each artifact with its SHA-256. This crate is its only reader
+is the only pin: git sources at a revision and release assets, each
+artifact with its SHA-256, and firmware outputs, pinned by the tracked
+catalog image whose recipe builds them and by no digest. This crate is its only reader
 (`Manifest::parse`, `Manifest::load`, typed `Source` and `Artifact`,
 `Manifest::location`, `fetched(root, chip, id)` for one verified artifact
 such as the ROM ELF the firmware stack gate reads). It resolves every

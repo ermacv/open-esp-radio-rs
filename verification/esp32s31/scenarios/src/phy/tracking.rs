@@ -387,7 +387,7 @@ impl Tracking {
     pub fn new(options: &Options, phy_sdk: &Path) -> Result<Self> {
         let session = start_session(
             options,
-            &[phy_sdk_input(phy_sdk)],
+            &[phy_sdk_input(phy_sdk)?],
             "captured combined calibration and parameter tracking parents; no RF qualification",
         )?;
         let link = LinkRequest {

@@ -3,18 +3,28 @@
 ## Pinned vendor artifacts
 
 [`artifacts.toml`](artifacts.toml) is the single pin of every vendor archive,
-the ROM ELF and the locally built SDK firmware this project compares against:
-upstream repository, revision, path and SHA-256 of each. Fetch the pinned
-artifacts into `target/vendor/<source>/<revision>/` with
+the ROM ELF and the SDK firmware this project compares against: upstream
+repository, revision, path and SHA-256 of each fetched artifact, and for the
+firmware outputs the catalog image whose tracked recipe builds them, with no
+digest. Fetch the pinned artifacts into `target/vendor/<source>/<revision>/` with
 
 ```console
 cargo verification fetch esp32s31
 ```
 
-which verifies every file and reports missing local builds. Every scenario
-authenticates its inputs against the manifest, and its `--library`, `--rom`,
+which verifies every file and reports unbuilt firmware outputs. Every scenario
+authenticates its fetched inputs against the manifest, and its `--library`, `--rom`,
 `--libpp`, `--libnet80211`, `--libcoexist`, `--sdk`, `--phy-sdk` and
-`--rftest` arguments default to those pinned locations; an explicit path must still match the pin. Changing a pin
+`--rftest` arguments default to those pinned locations; an explicit path must still match the pin.
+`--sdk` and `--phy-sdk` are the bootloader and image of the
+[`phy-tracking-reference`](hil-vendor/README.md) catalog project, built with
+
+```console
+cargo hil firmware build phy-tracking-reference
+```
+
+and accepted only while that build follows the project's current recipe:
+its files and the pinned ESP-IDF tree. Changing a pin
 means changing the manifest; production follows the pinned behaviour.
 Hashes in reviewed register evidence and reference notes record the artifact
 a fact was observed in; they are not pins.

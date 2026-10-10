@@ -4,8 +4,8 @@
 //! The chip's tracked `artifacts.toml` is the only pin. Git artifacts come
 //! from the upstream repository at the pinned revision, release members from
 //! the pinned release asset; every file is verified against its SHA-256
-//! before it enters `target/vendor/<source>/<revision>/<path>`. Local build
-//! outputs are only verified. Downloads use `curl` and release members `tar`.
+//! before it enters `target/vendor/<source>/<revision>/<path>`. Firmware
+//! outputs are built from their tracked recipe: neither fetched nor hashed. Downloads use `curl` and release members `tar`.
 //!
 //! Pinned artifacts are immutable and verified, so every checkout of the host
 //! shares one store ([`store`]): each checkout's `target/vendor` is a link
@@ -82,8 +82,8 @@ pub fn fetched(root: &Path, chip: &str, id: &str) -> Result<PathBuf> {
     let manifest = Manifest::load(root, chip)?;
     let artifact = manifest.artifact(id)?;
     let source = manifest.source_of(artifact);
-    if source.kind == SourceKind::Local {
-        return Err(format!("`{id}` is a local build, not a fetched artifact").into());
+    if source.kind == SourceKind::Firmware {
+        return Err(format!("`{id}` is a firmware build output, not a fetched artifact").into());
     }
     let path = cache_directory(&store()?, source)?.join(&artifact.path);
     if !path.is_file() {
@@ -93,39 +93,24 @@ pub fn fetched(root: &Path, chip: &str, id: &str) -> Result<PathBuf> {
         )
         .into());
     }
-    if !verified(&path, &artifact.sha256)? {
-        return Err(format!(
-            "{} differs from its pin {}",
-            path.display(),
-            artifact.sha256
-        )
-        .into());
+    let pin = pinned_sha256(artifact)?;
+    if !verified(&path, pin)? {
+        return Err(format!("{} differs from its pin {pin}", path.display()).into());
     }
     Ok(path)
+}
+
+/// The pinned SHA-256 of the fetched `artifact`.
+fn pinned_sha256(artifact: &Artifact) -> Result<&str> {
+    artifact
+        .sha256
+        .as_deref()
+        .ok_or_else(|| format!("{} pins no SHA-256", artifact.id).into())
 }
 
 /// Whether `path` is a file whose SHA-256 is `expected`.
 pub fn verified(path: &Path, expected: &str) -> Result<bool> {
     Ok(path.is_file() && oer_durable::sha256_file(path)? == expected)
-}
-
-/// A local build's state against its pin.
-#[derive(Debug, PartialEq, Eq)]
-enum LocalBuild {
-    Pinned,
-    /// Not built on this host: optional, not an error.
-    Absent,
-    Differs,
-}
-
-fn local_build(path: &Path, expected: &str) -> Result<LocalBuild> {
-    Ok(if !path.is_file() {
-        LocalBuild::Absent
-    } else if verified(path, expected)? {
-        LocalBuild::Pinned
-    } else {
-        LocalBuild::Differs
-    })
 }
 
 /// `https://github.com/<owner>/<repo>` as `<owner>/<repo>`.
@@ -163,7 +148,8 @@ fn download(url: &str, destination: &Path) -> Result<()> {
 fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
     let directory = cache_directory(&root.join(CACHE), source)?;
     let destination = directory.join(&artifact.path);
-    if verified(&destination, &artifact.sha256)? {
+    let pin = pinned_sha256(artifact)?;
+    if verified(&destination, pin)? {
         return Ok(destination);
     }
     let repository = source
@@ -211,33 +197,30 @@ fn fetch(root: &Path, source: &Source, artifact: &Artifact) -> Result<PathBuf> {
                 return Err(format!("{asset} lacks member {}", artifact.path).into());
             }
         }
-        SourceKind::Local => unreachable!("local artifacts are not fetched"),
+        SourceKind::Firmware => unreachable!("firmware outputs are not fetched"),
     }
     let actual = oer_durable::sha256_file(&destination)?;
-    if actual != artifact.sha256 {
-        return Err(format!(
-            "{}: fetched sha256 {actual}, pinned {}",
-            artifact.id, artifact.sha256
-        )
-        .into());
+    if actual != pin {
+        return Err(format!("{}: fetched sha256 {actual}, pinned {pin}", artifact.id).into());
     }
     Ok(destination)
 }
 
-/// One pinned artifact at its cache or local-build path.
+/// One pinned artifact at its cache or firmware build path.
 #[derive(Debug)]
 pub struct Pinned {
     pub id: String,
     /// The artifact's source id.
     pub source: String,
     pub path: PathBuf,
-    /// Built locally rather than fetched from a vendor source.
-    pub local: bool,
+    /// Built from a tracked firmware recipe rather than fetched from a
+    /// vendor source.
+    pub firmware: bool,
 }
 
 /// Every pinned artifact of `chip` at its verified path; fails when one is
 /// missing or differs, naming `cargo verification fetch` for fetched ones.
-/// Local builds are skipped when absent: they are not vendor sources.
+/// Firmware outputs are skipped when unbuilt: they are not vendor sources.
 pub fn pinned(root: &Path, chip: &str) -> Result<Vec<Pinned>> {
     let resolved = resolve(root, chip)?;
     match resolved.unfetched.first() {
@@ -250,14 +233,14 @@ pub fn pinned(root: &Path, chip: &str) -> Result<Vec<Pinned>> {
 }
 
 /// Fetches every pinned vendor artifact of `chip` into the shared store,
-/// leaving local builds alone; fails when one cannot be fetched as pinned.
+/// leaving firmware outputs alone; fails when one cannot be fetched as pinned.
 pub fn fetch_vendor_sources(root: &Path, chip: &str) -> Result<()> {
     link_store(root, &store()?)?;
     let manifest = Manifest::load(root, chip)?;
     let mut failures = vec![];
     for artifact in &manifest.artifact {
         let source = manifest.source_of(artifact);
-        if source.kind == SourceKind::Local {
+        if source.kind == SourceKind::Firmware {
             continue;
         }
         if let Err(error) = fetch(root, source, artifact) {
@@ -282,8 +265,8 @@ pub fn ensure(root: &Path, chip: &str, id: &str) -> Result<PathBuf> {
     let manifest = Manifest::load(root, chip)?;
     let artifact = manifest.artifact(id)?;
     let source = manifest.source_of(artifact);
-    if source.kind == SourceKind::Local {
-        return Err(format!("`{id}` is a local build, not a fetched artifact").into());
+    if source.kind == SourceKind::Firmware {
+        return Err(format!("`{id}` is a firmware build output, not a fetched artifact").into());
     }
     fetch(root, source, artifact)
 }
@@ -309,26 +292,28 @@ fn resolve_manifest(root: &Path, manifest: &Manifest) -> Result<Resolved> {
         unfetched: vec![],
     };
     for artifact in manifest.artifact.iter().cloned() {
-        let local = manifest.source_of(&artifact).kind == SourceKind::Local;
+        let firmware = manifest.source_of(&artifact).kind == SourceKind::Firmware;
         let path = manifest.location(root, &artifact)?;
-        if !verified(&path, &artifact.sha256)? {
-            if !local {
-                resolved.unfetched.push(artifact.id);
+        if firmware {
+            if !path.is_file() {
+                continue;
             }
+        } else if !verified(&path, pinned_sha256(&artifact)?)? {
+            resolved.unfetched.push(artifact.id);
             continue;
         }
         resolved.pinned.push(Pinned {
             id: artifact.id,
             source: artifact.source,
             path,
-            local,
+            firmware,
         });
     }
     Ok(resolved)
 }
 
-/// Fetch and verify every artifact of `chip`; report local builds that are
-/// missing or differ. Fails when any artifact is not available as pinned.
+/// Fetch and verify every artifact of `chip`; report firmware outputs that
+/// are not built. Fails when any fetched artifact is not available as pinned.
 pub fn run(root: &Path, chip: &str, only: &[String]) -> Result<()> {
     link_store(root, &store()?)?;
     let manifest = Manifest::load(root, chip)?;
@@ -336,23 +321,19 @@ pub fn run(root: &Path, chip: &str, only: &[String]) -> Result<()> {
     let mut failures = vec![];
     for artifact in &artifacts {
         let source = manifest.source_of(artifact);
-        let result = if source.kind == SourceKind::Local {
-            let path = root.join(&artifact.path);
-            match local_build(&path, &artifact.sha256)? {
-                LocalBuild::Pinned => Ok(path),
-                // Local builds are optional: a host without one skips it.
-                LocalBuild::Absent => {
-                    println!(
-                        "{:<16} skipped: local build {} absent",
-                        artifact.id,
-                        path.display()
-                    );
-                    continue;
-                }
-                LocalBuild::Differs => {
-                    Err(format!("local build {} differs from the pin", path.display()).into())
-                }
+        let result = if source.kind == SourceKind::Firmware {
+            let path = manifest.location(root, artifact)?;
+            if !path.is_file() {
+                // Firmware outputs are optional here: a host builds them
+                // when a scenario needs them.
+                println!(
+                    "{:<16} skipped: not built; run `cargo hil firmware build {}`",
+                    artifact.id,
+                    source.image.as_deref().unwrap_or_default()
+                );
+                continue;
             }
+            Ok(path)
         } else {
             fetch(root, source, artifact)
         };
@@ -391,24 +372,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_absent_local_build_is_optional_and_a_changed_one_fails() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("sdk.elf");
-        let pin = "0".repeat(64);
-        assert_eq!(local_build(&path, &pin).unwrap(), LocalBuild::Absent);
-        std::fs::write(&path, b"built").unwrap();
-        assert_eq!(local_build(&path, &pin).unwrap(), LocalBuild::Differs);
-        let actual = oer_durable::sha256_file(&path).unwrap();
-        assert_eq!(local_build(&path, &actual).unwrap(), LocalBuild::Pinned);
-    }
-
-    #[test]
     fn an_artifact_selection_keeps_only_the_named_artifacts() {
         let artifact = |id: &str| Artifact {
             id: id.to_owned(),
             source: "s".to_owned(),
             path: "p".to_owned(),
-            sha256: "h".to_owned(),
+            sha256: Some("h".to_owned()),
         };
         let all = || vec![artifact("rom"), artifact("phy")];
         assert_eq!(selected(all(), &[]).unwrap().len(), 2);
@@ -429,7 +398,7 @@ mod tests {
             };
             assert!(manifest.artifact("libphy").is_ok(), "{chip}");
             for source in &manifest.source {
-                if source.kind != SourceKind::Local {
+                if source.kind != SourceKind::Firmware {
                     github(source.repository.as_deref().unwrap()).unwrap();
                     assert!(source.revision.is_some());
                 }
@@ -484,10 +453,10 @@ mod tests {
             "schema = 1\n\
              [[source]]\nid = \"vendor\"\nkind = \"git\"\n\
              repository = \"https://github.com/o/r\"\nrevision = \"0123\"\n\
-             [[source]]\nid = \"build\"\nkind = \"local\"\n\
+             [[source]]\nid = \"build\"\nkind = \"firmware\"\nimage = \"img\"\n\
              [[artifact]]\nid = \"fetched\"\nsource = \"vendor\"\npath = \"lib.a\"\nsha256 = \"{}\"\n\
              [[artifact]]\nid = \"missing\"\nsource = \"vendor\"\npath = \"other.a\"\nsha256 = \"00\"\n\
-             [[artifact]]\nid = \"unbuilt\"\nsource = \"build\"\npath = \"out.elf\"\nsha256 = \"00\"\n",
+             [[artifact]]\nid = \"unbuilt\"\nsource = \"build\"\npath = \"out.elf\"\n",
             oer_durable::sha256_file(&cached).unwrap()
         );
         let manifest = Manifest::parse(&manifest).unwrap();

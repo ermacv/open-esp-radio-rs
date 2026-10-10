@@ -566,12 +566,12 @@ impl LeafRun {
             Input {
                 role: suite.archives[0],
                 path: &options.archives[0],
-                sha256: Some(crate::artifacts::sha256(suite.archives[0])),
+                sha256: Some(crate::artifacts::sha256(suite.archives[0])?),
             },
             Input {
                 role: "rom",
                 path: &options.rom,
-                sha256: Some(crate::artifacts::sha256(suite.rom)),
+                sha256: Some(crate::artifacts::sha256(suite.rom)?),
             },
             Input {
                 role: "production",
@@ -583,14 +583,14 @@ impl LeafRun {
             inputs.push(Input {
                 role: "firmware",
                 path,
-                sha256: Some(crate::artifacts::sha256(id)),
+                sha256: Some(crate::artifacts::sha256(id)?),
             });
         }
         for (id, path) in suite.archives.iter().zip(&options.archives).skip(1) {
             inputs.push(Input {
                 role: id,
                 path,
-                sha256: Some(crate::artifacts::sha256(id)),
+                sha256: Some(crate::artifacts::sha256(id)?),
             });
         }
         let archive_inputs: Vec<u64> = (0..suite.archives.len())

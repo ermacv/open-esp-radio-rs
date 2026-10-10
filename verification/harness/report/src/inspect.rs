@@ -134,13 +134,15 @@ pub struct Corpus {
     /// by address: an image calls into the ROM and back.
     names: BTreeMap<u32, String>,
     registers: Registers,
-    /// Code artifacts the manifest pins but this checkout does not hold.
+    /// Code artifacts the manifest pins but this checkout does not hold, or
+    /// holds as a firmware build of another recipe.
     pub missing: Vec<String>,
 }
 
 impl Corpus {
     /// Load every code artifact of the chip's manifest below the repository
-    /// `root`, failing on one whose bytes differ from its pinned digest.
+    /// `root`, failing on one whose bytes differ from its pinned digest (for
+    /// a firmware output, that of its build of the current recipe).
     pub fn load(root: &Path) -> Result<Self> {
         let mut corpus = Self {
             functions: vec![],
@@ -160,13 +162,18 @@ impl Corpus {
                 corpus.missing.push(artifact.id.clone());
                 continue;
             };
+            // A firmware output whose build does not follow its current
+            // recipe has no digest to match: it is not held as pinned.
+            let Ok(pin) = oer_vendor_scenario_engine::artifacts::sha256(&artifact.id) else {
+                corpus.missing.push(artifact.id.clone());
+                continue;
+            };
             let digest = format!("{:x}", Sha256::digest(&bytes));
-            if digest != artifact.sha256 {
+            if digest != pin {
                 return Err(invalid(format!(
-                    "{} at {} has sha256 {digest}, not the pinned {}",
+                    "{} at {} has sha256 {digest}, not the pinned {pin}",
                     artifact.id,
                     path.display(),
-                    artifact.sha256
                 )));
             }
             corpus.add_artifact(&artifact.id, &bytes)?;

@@ -175,12 +175,12 @@ impl I2c {
             Input {
                 role: "phy",
                 path: &options.library,
-                sha256: Some(crate::artifacts::sha256("libphy")),
+                sha256: Some(crate::artifacts::sha256("libphy")?),
             },
             Input {
                 role: "rom",
                 path: &options.rom,
-                sha256: Some(crate::artifacts::sha256("rom")),
+                sha256: Some(crate::artifacts::sha256("rom")?),
             },
             Input {
                 role: "production",
@@ -192,14 +192,14 @@ impl I2c {
             inputs.push(Input {
                 role: "sdk",
                 path: sdk,
-                sha256: Some(crate::artifacts::sha256("sdk")),
+                sha256: Some(crate::artifacts::sha256("sdk")?),
             });
         }
         if let Some(phy_sdk) = &options.phy_sdk {
             inputs.push(Input {
                 role: "phy-sdk",
                 path: phy_sdk,
-                sha256: Some(crate::artifacts::sha256("phy-sdk")),
+                sha256: Some(crate::artifacts::sha256("phy-sdk")?),
             });
         }
         let session = Session::start(

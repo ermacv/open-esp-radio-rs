@@ -17,6 +17,7 @@ oer-register-bindings = { path = "../../../tools/registers/bindings" }
 oer-durable = { path = "../../../tools/durable" }
 oer-repo = { path = "../../../tools/repo" }
 oer-vendor-pins = { path = "../../../tools/vendor-pins" }
+oer-image = { path = "../../../tools/image/pipeline" }
 oer-riscv-model = { path = "../../../tools/riscv/model" }
 oer-riscv-lift = { path = "../../../tools/riscv/lift" }
 blobray-application = { path = "../../../tools/blobray/crates/application" }

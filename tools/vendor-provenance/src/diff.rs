@@ -228,7 +228,7 @@ pub fn run(
         (Some(old), Some(new), None) => vec![(new.display().to_string(), old, new)],
         (None, None, Some(baseline)) => oer_vendor_artifacts::pinned(root, chip)?
             .into_iter()
-            .filter(|a| !a.local)
+            .filter(|a| !a.firmware)
             .filter_map(|a| {
                 let name = a.path.file_name()?.to_owned();
                 let old = baseline.join(name);

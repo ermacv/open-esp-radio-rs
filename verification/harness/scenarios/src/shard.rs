@@ -201,6 +201,9 @@ pub fn shard(
     for file in verdict {
         tool.extend(dep_info_file(&root, file)?);
     }
+    // A firmware input pins no digest in the manifest: the recipe of its
+    // catalog project is its identity, so the project is a source.
+    tool.extend(crate::artifacts::firmware_projects(&root)?);
     let closures = Closures {
         probe: dep_info(&root, production)?,
         tool: tool.into_iter().collect(),

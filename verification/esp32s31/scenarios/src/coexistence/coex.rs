@@ -201,12 +201,12 @@ impl Coex {
             Input {
                 role: "libcoexist",
                 path: &options.library,
-                sha256: Some(crate::artifacts::sha256("libcoexist")),
+                sha256: Some(crate::artifacts::sha256("libcoexist")?),
             },
             Input {
                 role: "rom",
                 path: &options.rom,
-                sha256: Some(crate::artifacts::sha256("rom")),
+                sha256: Some(crate::artifacts::sha256("rom")?),
             },
             Input {
                 role: "production",

@@ -63,11 +63,15 @@ kind = "git"
 repository = "https://github.com/espressif/esp-idf"
 revision = "4d59230ddff16327812782151ef0afef202dc6d7"
 
-# Built locally from an ESP-IDF tree; never fetched. `path` is where the
-# scenarios expect the build output below the repository root.
+# The vendor link environment: the tracked firmware catalog project
+# hil-vendor/phy-tracking-reference, built against the pins above by
+# `cargo hil firmware build phy-tracking-reference`; never fetched. The
+# recipe is the pin, so its outputs carry no SHA-256, and `path` is where
+# each output lies below the repository root.
 [[source]]
-id = "local-build"
-kind = "local"
+id = "phy-tracking-reference"
+kind = "firmware"
+image = "phy-tracking-reference"
 
 [[artifact]]
 id = "libphy"
@@ -165,32 +169,30 @@ source = "esp-rom-elfs"
 path = "esp32s31_rev0_rom.elf"
 sha256 = "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87"
 
-# ESP-IDF firmware of the PHY vendor-tracking reference project.
+# The image and bootloader of the vendor link environment, built from
+# hil-vendor/phy-tracking-reference by
+# `cargo hil firmware build phy-tracking-reference`.
 [[artifact]]
 id = "sdk"
-source = "local-build"
-path = "target/architecture-research/phy-vendor-tracking/vendor-wifi/build/bootloader/bootloader.elf"
-sha256 = "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
+source = "phy-tracking-reference"
+path = "target/vendor-firmware/esp32s31/phy-tracking-reference/build/bootloader/bootloader.elf"
 
 [[artifact]]
 id = "phy-sdk"
-source = "local-build"
-path = "target/architecture-research/phy-vendor-tracking/vendor-wifi/build/phy_tracking_reference.elf"
-sha256 = "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
+source = "phy-tracking-reference"
+path = "target/vendor-firmware/esp32s31/phy-tracking-reference/build/phy_tracking_reference.elf"
 
-# ESP-IDF component archives of the same reference build: the modem clock
+# ESP-IDF component archives of the same build: the modem clock
 # driver and its HAL, linked for the Bluetooth low-power clock comparison.
 [[artifact]]
 id = "libesp-hw-support"
-source = "local-build"
-path = "target/architecture-research/phy-vendor-tracking/vendor-wifi/build/esp-idf/esp_hw_support/libesp_hw_support.a"
-sha256 = "e643ad6aef2d840fa605255dc3c773f328cd103ecbc93ef0047ebc9deea7dadc"
+source = "phy-tracking-reference"
+path = "target/vendor-firmware/esp32s31/phy-tracking-reference/build/esp-idf/esp_hw_support/libesp_hw_support.a"
 
 [[artifact]]
 id = "libhal"
-source = "local-build"
-path = "target/architecture-research/phy-vendor-tracking/vendor-wifi/build/esp-idf/hal/libhal.a"
-sha256 = "7505ee6a2b1a70e43f802d54ccd951da92f8bf6bfbc3a3dd4f2c2f052557fddc"
+source = "phy-tracking-reference"
+path = "target/vendor-firmware/esp32s31/phy-tracking-reference/build/esp-idf/hal/libhal.a"
 
 [[artifact]]
 id = "esp-idf/components/esp_coex/include/esp_coex_i154.h"

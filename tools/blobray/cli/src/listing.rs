@@ -131,6 +131,17 @@ pub fn listing(records: &[FunctionRecord], image: Option<&ImageSymbols>) -> Vec<
         .collect()
 }
 
+/// Whether `bytes` begin with the header of one little-endian ELF executable
+/// image (`e_type` ET_EXEC), decided without parsing anything else.
+pub fn is_executable_image(bytes: &[u8]) -> bool {
+    const ET_EXEC: u16 = 2;
+    bytes.starts_with(b"\x7fELF")
+        && bytes.get(5) == Some(&1)
+        && bytes
+            .get(16..18)
+            .is_some_and(|e_type| u16::from_le_bytes([e_type[0], e_type[1]]) == ET_EXEC)
+}
+
 /// The function symbols of one executable image, for naming the targets of
 /// transfers its code makes without relocations.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

@@ -267,7 +267,7 @@ access = "write-only"
 
 [peripherals.registers.register]
 name = "AGC_GAIN_LIMIT_LOW"
-description = "Complete phy_agc_reg_init replaces one seven-bit parameter-derived field."
+description = "Holds the seven-bit AGC initial receive-gain index INITIAL_GAIN_INDEX, which complete phy_agc_reg_init derives from a parameter byte and librftest rx_init_gain sets with RX_GAIN_LIMIT_CONTROL."
 addressOffset = 0x7094
 size = 32
 access = "read-write"
@@ -467,7 +467,7 @@ maximum = 0xFF
 
 [peripherals.registers.register]
 name = "RX_GAIN_LIMIT_CONTROL"
-description = "Shared seven-bit gain limit written by phy_agc_reg_init and the final phy_set_rx_gain_table tail."
+description = "Holds the seven-bit AGC initial receive-gain index INITIAL_GAIN_INDEX, written by phy_agc_reg_init, the final phy_set_rx_gain_table tail and librftest rx_init_gain together with AGC_GAIN_LIMIT_LOW."
 addressOffset = 0x713C
 size = 32
 access = "read-write"

@@ -4,6 +4,7 @@ mod hil;
 mod inventory;
 mod model;
 mod planning;
+mod readiness;
 mod report;
 
 use std::{env, error::Error, path::PathBuf, process::ExitCode, sync::OnceLock};
@@ -39,7 +40,7 @@ fn digests() -> &'static DigestCache {
     })
 }
 
-const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--run RUN_ID ... | --pending] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n       cargo qualification catalog anchors --catalog PATH [--catalog PATH ...] [--changed FILE ...] [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nhil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, or of the checkout's pending runs (--pending, which then leaves the pending list), as tracked shards bound to their firmware and observer sources.\ncatalog anchors checks the `// CAPABILITY: <id>` comments in code against every selected catalog entry (pass all catalogs: an anchor naming an unselected entry is unknown) and lists the entries anchored in --changed files.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
+const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--run RUN_ID ... | --pending] [--root PATH]\n       cargo qualification readiness --out DIRECTORY [--base DIRECTORY] [--drops PATH] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n       cargo qualification catalog anchors --catalog PATH [--catalog PATH ...] [--changed FILE ...] [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nreadiness evaluates every program into one JSON report each in --out and, against the reports of an earlier evaluation in --base, lists every capability whose readiness dropped, as a table in --drops.\nhil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, or of the checkout's pending runs (--pending, which then leaves the pending list), as tracked shards bound to their firmware and observer sources.\ncatalog anchors checks the `// CAPABILITY: <id>` comments in code against every selected catalog entry (pass all catalogs: an anchor naming an unselected entry is unknown) and lists the entries anchored in --changed files.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
@@ -52,16 +53,18 @@ enum Command {
     CatalogRender,
     CatalogAnchors,
     HilEvidence,
+    Readiness,
 }
 
 impl Command {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::Status,
         Self::Next,
         Self::Plan,
         Self::Validate,
         Self::Evaluate,
         Self::HilEvidence,
+        Self::Readiness,
         Self::CatalogCheck,
         Self::CatalogRender,
         Self::CatalogAnchors,
@@ -76,6 +79,7 @@ impl Command {
             Self::Validate => &["validate"],
             Self::Evaluate => &["evaluate"],
             Self::HilEvidence => &["hil-evidence"],
+            Self::Readiness => &["readiness"],
             Self::CatalogCheck => &["catalog", "check"],
             Self::CatalogRender => &["catalog", "render"],
             Self::CatalogAnchors => &["catalog", "anchors"],
@@ -105,6 +109,7 @@ impl Command {
             Self::Plan => &["--manifest", "--capability", "--root", "--json-report"],
             Self::Validate | Self::Evaluate => REPORTS,
             Self::HilEvidence => &["--manifest", "--hil-target", "--run", "--pending", "--root"],
+            Self::Readiness => &["--out", "--base", "--drops", "--root"],
             Self::CatalogCheck => &["--manifest", "--catalog", "--root"],
             Self::CatalogRender => &["--manifest", "--catalog", "--out", "--root"],
             Self::CatalogAnchors => &["--catalog", "--changed", "--root"],
@@ -192,6 +197,10 @@ struct Arguments {
     pending: bool,
     /// `catalog anchors --changed`: repository-relative files an edit touched.
     changed: Vec<PathBuf>,
+    /// `readiness --base`: the reports of an earlier evaluation.
+    base: Option<PathBuf>,
+    /// `readiness --drops`: where the table of dropped readiness goes.
+    drops: Option<PathBuf>,
 }
 
 fn take_value(arguments: &[String], index: &mut usize, option: &str) -> Result<PathBuf> {
@@ -217,6 +226,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut runs = Vec::new();
     let mut pending = false;
     let mut changed = Vec::new();
+    let mut base = None;
+    let mut drops = None;
     while index < arguments.len() {
         let option = arguments[index].as_str();
         if !command.options().contains(&option) {
@@ -305,11 +316,26 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                     return Err("duplicate --out".into());
                 }
             }
+            "--base" => {
+                let value = take_value(&arguments, &mut index, "--base")?;
+                if base.replace(value).is_some() {
+                    return Err("duplicate --base".into());
+                }
+            }
+            "--drops" => {
+                let value = take_value(&arguments, &mut index, "--drops")?;
+                if drops.replace(value).is_some() {
+                    return Err("duplicate --drops".into());
+                }
+            }
             option => return Err(format!("unknown option {option:?}").into()),
         }
     }
     if command == Command::CatalogRender && output_directory.is_none() {
         return Err("catalog render requires --out".into());
+    }
+    if command == Command::Readiness && output_directory.is_none() {
+        return Err("readiness requires --out".into());
     }
     match command {
         Command::CatalogAnchors if catalogs.is_empty() => {
@@ -344,6 +370,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         runs,
         pending,
         changed,
+        base,
+        drops,
     })
 }
 
@@ -372,6 +400,28 @@ fn execute(arguments: Arguments) -> Result<()> {
         if let Some(path) = &arguments.json_report {
             report::write_serialized(&map, &arguments.root.join(path))?;
         }
+        return Ok(());
+    }
+    if arguments.command == Command::Readiness {
+        let root = &arguments.root;
+        let out = arguments
+            .output_directory
+            .as_deref()
+            .ok_or("missing --out")?;
+        let base = arguments
+            .base
+            .as_deref()
+            .map(|p| readiness::rooted(root, p));
+        let drops = arguments
+            .drops
+            .as_deref()
+            .map(|p| readiness::rooted(root, p));
+        readiness::run(
+            root,
+            &readiness::rooted(root, out),
+            base.as_deref(),
+            drops.as_deref(),
+        )?;
         return Ok(());
     }
     if arguments.command == Command::CatalogAnchors {

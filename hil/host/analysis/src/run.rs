@@ -1,15 +1,49 @@
 //! One run as the analyses read it: its bundle and its suite.
 
-use std::path::Path;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use oer_hil_run_bundle::RunStore;
 use oer_hil_run_bundle_format::RunBundle;
+use oer_hil_run_bundle_format::read::MANIFEST;
 use oer_hil_run_bundle_format::run::Outcome;
+use oer_hil_run_bundle_format::run::RUN_SCHEMA;
 use oer_hil_run_bundle_format::run::RunState;
 use oer_hil_run_bundle_format::run::ScenarioResult;
 use oer_hil_run_bundle_format::run::SuiteResult;
 
 use crate::Result;
+
+/// A published run this build cannot read as a [`Run`].
+#[derive(Clone, Debug)]
+pub struct Unreadable {
+    pub id: String,
+    pub directory: PathBuf,
+    /// The schema its manifest names, when the manifest is JSON naming one.
+    pub schema: Option<u64>,
+    /// When it started: its manifest's `started_unix_millis`, else its
+    /// directory's modification time.
+    pub started_millis: u64,
+    pub reason: String,
+}
+
+impl Unreadable {
+    /// Whether its schema is older than this build's: no checkout of this
+    /// repository, newer or older, reads it any more. A run of this or a
+    /// newer schema may be a newer branch's that only this build cannot
+    /// read; the store is shared by every checkout.
+    pub fn older_schema(&self) -> bool {
+        self.schema
+            .is_some_and(|schema| schema < u64::from(RUN_SCHEMA))
+    }
+
+    /// Whether it names this build's schema.
+    pub fn current_schema(&self) -> bool {
+        self.schema == Some(u64::from(RUN_SCHEMA))
+    }
+}
 
 /// A published run with its suite, when it has one.
 #[derive(Clone, Debug)]
@@ -41,7 +75,56 @@ impl Run {
             .collect())
     }
 
+    /// Every published run of `store` that is not a [`Run`]: its manifest
+    /// does not read, names another schema, or its suite does not read.
+    pub fn unreadable(store: &RunStore) -> Result<Vec<Unreadable>> {
+        let mut found = Vec::new();
+        for id in store.ids_newest_first()? {
+            let directory = store.run(&id);
+            let reason = match RunBundle::open(&directory) {
+                Ok(None) => continue,
+                Ok(Some(bundle)) => match Self::of(bundle) {
+                    Ok(_) => continue,
+                    Err(error) => error.to_string(),
+                },
+                Err(error) => error.to_string(),
+            };
+            // The schema the manifest names, read without its types: a
+            // manifest of another schema need not parse as this one.
+            let manifest = fs::read(directory.join(MANIFEST))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+            let schema = manifest
+                .as_ref()
+                .and_then(|manifest| manifest["schema"].as_u64());
+            let started_millis = manifest
+                .as_ref()
+                .and_then(|manifest| manifest["started_unix_millis"].as_u64())
+                .or_else(|| {
+                    let modified = fs::metadata(&directory).ok()?.modified().ok()?;
+                    let since = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+                    u64::try_from(since.as_millis()).ok()
+                })
+                .unwrap_or(0);
+            found.push(Unreadable {
+                id,
+                directory,
+                schema,
+                started_millis,
+                reason,
+            });
+        }
+        found.reverse();
+        Ok(found)
+    }
+
+    /// `bundle` as a run; an error for a bundle of another schema, whose
+    /// documents this build reads only by accident, or whose suite does not
+    /// read.
     pub fn of(bundle: RunBundle) -> Result<Self> {
+        if bundle.manifest().schema != RUN_SCHEMA {
+            return Err(format!("run schema {}", bundle.manifest().schema).into());
+        }
         let suite = bundle.suite()?;
         let abandoned = bundle.abandoned();
         Ok(Self {

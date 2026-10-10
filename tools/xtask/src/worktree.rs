@@ -32,11 +32,23 @@ pub fn skipped(relative: &Path) -> bool {
         .any(|component| SKIPPED.iter().any(|skip| component.as_os_str() == *skip))
 }
 
+/// The remote branch `from` names, such as `main` for `origin/main`.
+pub fn remote_branch(from: &str) -> Option<&str> {
+    from.strip_prefix("origin/")
+        .filter(|branch| !branch.is_empty())
+}
+
 /// Creates `path` as a worktree on `branch` (new, from `from`) and seeds its
-/// build outputs.
+/// build outputs. A `from` on `origin` is fetched first: the remote-tracking
+/// ref otherwise holds whatever this checkout last fetched, and a branch
+/// started there is behind `main` from its first commit.
 pub fn add(ctx: &Checkout, path: &Path, branch: &str, from: &str) -> Result<()> {
     if path.exists() {
         return Err(format!("worktree: {} already exists", path.display()).into());
+    }
+    if let Some(remote) = remote_branch(from) {
+        oer_process::git::output(&ctx.root, ["fetch", "--quiet", "origin", remote])
+            .map_err(|error| format!("worktree: fetching {from} failed: {error}"))?;
     }
     process::run(
         oer_process::git::command(&ctx.root)
@@ -295,6 +307,15 @@ pub fn remove(ctx: &Checkout, path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_start_on_origin_is_fetched() {
+        assert_eq!(remote_branch("origin/main"), Some("main"));
+        assert_eq!(remote_branch("origin/feat/a"), Some("feat/a"));
+        assert_eq!(remote_branch("origin/"), None);
+        assert_eq!(remote_branch("main"), None);
+        assert_eq!(remote_branch("HEAD"), None);
+    }
 
     #[test]
     fn seeds_skip_incremental_data_and_hil_outputs() {

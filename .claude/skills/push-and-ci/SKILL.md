@@ -62,10 +62,10 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    session start and the gate list every open PR a review blocks, with its
    branch. Only the session on that branch acts: for it, fixing comes before
    other work (`gh pr view <n> --comments`, fix, `cargo xtask push` again),
-   local findings the same way. Fix the defect, not the cited line: search
-   the diff for every place with the same mistake and fix them together,
-   since the next review reports the ones left,
-   and a PR without a review verdict gets a `@claude review` comment. Every
+   and a PR without a review verdict gets a `@claude review` comment. Local
+   findings are fixed the same way. Fix the defect, not the cited line:
+   search the diff for every place with the same mistake and fix them
+   together, since the next review reports the ones left. Every
    other session leaves the branch alone and only tells the user, who
    decides who takes over an abandoned one.
 

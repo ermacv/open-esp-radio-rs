@@ -99,7 +99,7 @@ evaluation. The human groups print them high bits first, for example
 their load width (`load 1B 0xa[7:0]`); entries with different sources stay
 apart, keyed by the sources themselves.
 
-The JSON document streams `{"schema":4,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
+The JSON document streams `{"schema":5,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
 `records` holds the selected records and `groups` appears only with
 `--group-by`.
 `inputs` lists each input's role and SHA-256. A record is an `observation` (the
@@ -108,7 +108,9 @@ alternative index and a read-selection or write-replacement mask), a `blocked`
 function whose analysis stopped (for example an unknown extent), or a `gap`
 naming code no function was selected from: an unsupported object, a thin
 archive member, a malformed container or an ELF diagnostic. The summary counts
-analyzed, partial and blocked functions, gaps and observations. `cargo registers
+analyzed, partial and blocked functions, gaps and observations, and breaks the
+partial functions down by cause (`partial_causes`, see
+[interfaces and formats](../interfaces-formats/README.md)). `cargo registers
 inventory` compares these accesses with the register model.
 
 Observations name no hardware registers: the reviewed register model owns

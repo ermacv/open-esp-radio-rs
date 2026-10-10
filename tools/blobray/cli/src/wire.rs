@@ -31,9 +31,9 @@ pub struct TargetAuditDocument {
 }
 
 /// Schema of the `register-accesses` document
-/// (`{"schema":4,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
+/// (`{"schema":5,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
 /// `groups` only with `--group-by`).
-pub const REGISTER_ACCESSES_SCHEMA: u32 = 4;
+pub const REGISTER_ACCESSES_SCHEMA: u32 = 5;
 
 /// One analyzed input of a `register-accesses` document, by position.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -64,7 +64,7 @@ pub struct RegisterAccessDocument {
 /// Schema of the `function-records` document
 /// (`{"schema":3,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`).
 pub const FUNCTION_RECORDS_SCHEMA: u32 = 3;
-pub const FIELD_ACCESSES_SCHEMA: u32 = 2;
+pub const FIELD_ACCESSES_SCHEMA: u32 = 3;
 pub const CALLERS_SCHEMA: u32 = 1;
 
 /// Every memory access of the analyzed functions that lands on one field
@@ -89,6 +89,8 @@ pub struct FieldAccessesDocument {
     /// Analyzed functions whose coverage or value semantics is incomplete:
     /// some of their accesses may be missing above.
     pub partial: u64,
+    /// `partial` by cause.
+    pub partial_causes: blobray_domain::PartialCauses,
     /// Code no function covers, whose accesses are unknown too.
     pub gaps: u64,
     /// Accesses of the analyzed functions whose address is not known at
@@ -170,8 +172,8 @@ pub struct Caller {
 }
 
 /// Schema of the `call-arguments` document
-/// (`{"schema":1,"inputs":[...],"abi":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"gaps":N}`).
-pub const CALL_ARGUMENTS_SCHEMA: u32 = 1;
+/// (`{"schema":2,"inputs":[...],"abi":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N}`).
+pub const CALL_ARGUMENTS_SCHEMA: u32 = 2;
 
 /// The argument registers at every call site of the named functions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -191,6 +193,8 @@ pub struct CallArgumentsDocument {
     /// Analyzed functions whose coverage or value semantics are incomplete:
     /// they can hold further call sites or less precise values.
     pub partial: u64,
+    /// `partial` by cause.
+    pub partial_causes: blobray_domain::PartialCauses,
     /// Code no function covers.
     pub gaps: u64,
 }

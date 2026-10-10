@@ -529,9 +529,9 @@ fn the_command_reports_the_arguments_of_each_call_site() {
         "{human}"
     );
     assert!(
-        human
-            .trim_end()
-            .ends_with("1 call sites in 1 functions; 1 partial, 0 blocked, 0 gaps"),
+        human.trim_end().ends_with(
+            "1 call sites in 1 functions; 1 partial (by cause: 1 opaque calls), 0 blocked, 0 gaps"
+        ),
         "the opaque call leaves the caller's semantics incomplete: {human}"
     );
 }
@@ -913,6 +913,112 @@ fn switches_object(words: &[u32], tables: &[(u64, &[i64], usize)]) -> Vec<u8> {
         at += 4 * cases.len() as u64;
     }
     object.write().unwrap()
+}
+
+/// `orphan`: `addi a0, a0, %pcrel_lo(.Lnone); ret`, whose low half names no
+/// `%pcrel_hi` and so no target.
+fn orphan_relocation_object() -> Vec<u8> {
+    use object::write::{Object, Relocation, Symbol, SymbolSection};
+    use object::{
+        Architecture, BinaryFormat, Endianness, RelocationFlags, SectionKind, SymbolFlags,
+        SymbolKind, SymbolScope,
+    };
+    let code: Vec<u8> = [0x0005_0513_u32, 0x0000_8067]
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect();
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    object.append_section_data(text, &code, 4);
+    object.add_symbol(Symbol {
+        name: b"orphan".to_vec(),
+        value: 0,
+        size: code.len() as u64,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Linkage,
+        weak: false,
+        section: SymbolSection::Section(text),
+        flags: SymbolFlags::None,
+    });
+    let label = object.add_symbol(Symbol {
+        name: b".Lnone".to_vec(),
+        value: 4,
+        size: 0,
+        kind: SymbolKind::Label,
+        scope: SymbolScope::Compilation,
+        weak: false,
+        section: SymbolSection::Section(text),
+        flags: SymbolFlags::None,
+    });
+    object
+        .add_relocation(
+            text,
+            Relocation {
+                offset: 0,
+                symbol: label,
+                addend: 0,
+                flags: RelocationFlags::Elf {
+                    r_type: object::elf::R_RISCV_PCREL_LO12_I,
+                },
+            },
+        )
+        .unwrap();
+    object.write().unwrap()
+}
+
+#[test]
+fn partial_functions_are_counted_once_per_cause() {
+    let causes = |name: &[u8], object: Vec<u8>| {
+        let library = Executable::new(support::archive(&[(name, &object)], false));
+        let (summary, _) = accesses(&[library], &[]).unwrap();
+        assert_eq!(summary.partial_functions, 1);
+        summary.partial_causes
+    };
+    let only = |cause: fn(&mut PartialCauses) -> &mut u64| {
+        let mut causes = PartialCauses::default();
+        *cause(&mut causes) = 1;
+        causes
+    };
+    assert_eq!(
+        causes(b"call.o", calling_object()),
+        only(|c| &mut c.opaque_calls),
+        "an opaque call leaves the values after it unknown, nothing else"
+    );
+    assert_eq!(
+        causes(b"switch.o", switch_object(false, 3)),
+        only(|c| &mut c.control_flow),
+        "an unexpanded indirect jump is control flow only"
+    );
+    assert_eq!(
+        causes(b"orphan.o", orphan_relocation_object()),
+        PartialCauses {
+            references: 1,
+            // The graph treats an instruction with an unknown relocation as
+            // possibly transferring control, so its flow is incomplete too.
+            control_flow: 1,
+            ..PartialCauses::default()
+        },
+    );
+    // Together, each function counts once in the total and once per cause.
+    let library = Executable::new(support::archive(
+        &[
+            (b"call.o", &calling_object()),
+            (b"switch.o", &switch_object(false, 3)),
+            (b"orphan.o", &orphan_relocation_object()),
+        ],
+        false,
+    ));
+    let (summary, _) = accesses(&[library], &[]).unwrap();
+    assert_eq!((summary.functions, summary.partial_functions), (3, 3));
+    assert_eq!(
+        summary.partial_causes,
+        PartialCauses {
+            control_flow: 2,
+            references: 1,
+            opaque_calls: 1,
+            ..PartialCauses::default()
+        }
+    );
 }
 
 #[test]

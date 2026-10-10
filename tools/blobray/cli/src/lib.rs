@@ -5,5 +5,6 @@ pub mod call_arguments;
 pub mod field;
 pub mod jump_table;
 pub mod listing;
+pub mod partial;
 pub mod symbols;
 pub mod wire;

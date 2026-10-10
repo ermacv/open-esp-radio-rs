@@ -18,6 +18,40 @@ impl AnalyzedFunction<'_> {
     pub fn complete(&self) -> bool {
         self.coverage.complete() && self.semantics.complete
     }
+
+    /// This function's causes of being partial, each 0 or 1, all 0 when it
+    /// is complete: its coverage, and the reasons of its semantic gaps, each
+    /// visited record charged to `c`.
+    pub fn partial_causes(&self, c: &mut dyn RunControl) -> Result<PartialCauses> {
+        if self.complete() {
+            return Ok(PartialCauses::default());
+        }
+        let mut causes = PartialCauses {
+            decoding: u64::from(!self.coverage.decoding),
+            control_flow: u64::from(!self.coverage.control_flow),
+            references: u64::from(!self.coverage.references),
+            ..PartialCauses::default()
+        };
+        for record in self.records {
+            c.checkpoint(1)?;
+            let FunctionRecord::SemanticGap { reason, .. } = record else {
+                continue;
+            };
+            let cause = match reason {
+                SemanticGapReason::UnsupportedInstruction => &mut causes.decoding,
+                SemanticGapReason::UnexpandedControlFlow
+                | SemanticGapReason::ConflictingBoundary => &mut causes.control_flow,
+                SemanticGapReason::UnresolvedRelocation => &mut causes.references,
+                SemanticGapReason::OpaqueCall => &mut causes.opaque_calls,
+                SemanticGapReason::AlternativeLimit => &mut causes.value_limits,
+            };
+            *cause = 1;
+        }
+        if causes == PartialCauses::default() {
+            causes.other = 1;
+        }
+        Ok(causes)
+    }
 }
 
 /// One outcome of a library analysis, in input, object and symbol order.
@@ -431,10 +465,11 @@ pub fn register_accesses(
 ) -> Result<RegisterAccessSummary> {
     crate::registers::validate_ranges(ranges)?;
     let mut summary = RegisterAccessSummary {
-        schema: 1,
+        schema: 2,
         ranges: ranges.to_vec(),
         functions: 0,
         partial_functions: 0,
+        partial_causes: PartialCauses::default(),
         blocked_functions: 0,
         gaps: 0,
         observations: 0,
@@ -450,6 +485,7 @@ pub fn register_accesses(
             LibraryOutcome::Analyzed(analyzed) => {
                 summary.functions += 1;
                 summary.partial_functions += u64::from(!analyzed.complete());
+                summary.partial_causes.add(analyzed.partial_causes(c)?);
                 c.phase(RunPhase::AnalyzeValues)?;
                 let facts = Facts::new(analyzed.records, memory, c)?;
                 crate::registers::observe(
@@ -504,4 +540,92 @@ pub fn register_accesses(
         },
     )?;
     Ok(summary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn function() -> LibraryFunction {
+        LibraryFunction {
+            input: 0,
+            symbol: SymbolId {
+                object: ObjectId {
+                    artifact: ArtifactId::of_bytes(b"object"),
+                    location: ObjectLocation::Standalone,
+                },
+                table: SymbolTableKind::Static,
+                table_section: 1,
+                index: 1,
+            },
+            name: None,
+        }
+    }
+
+    fn causes(
+        coverage: FunctionCoverage,
+        complete: bool,
+        records: &[FunctionRecord],
+        c: &mut dyn RunControl,
+    ) -> Result<PartialCauses> {
+        let function = function();
+        AnalyzedFunction {
+            function: &function,
+            records,
+            coverage,
+            semantics: SemanticSummary {
+                complete,
+                ..SemanticSummary::default()
+            },
+            jump_tables: &[],
+        }
+        .partial_causes(c)
+    }
+
+    #[test]
+    fn each_semantic_gap_reason_names_its_cause_and_none_is_other() {
+        let gap = |reason| FunctionRecord::SemanticGap { offset: 0, reason };
+        let full = FunctionCoverage::default();
+        assert_eq!(
+            causes(full, true, &[], &mut || Ok(())).unwrap(),
+            PartialCauses::default(),
+            "a complete function has no cause"
+        );
+        assert_eq!(
+            causes(
+                full,
+                false,
+                &[
+                    gap(SemanticGapReason::AlternativeLimit),
+                    gap(SemanticGapReason::AlternativeLimit),
+                    gap(SemanticGapReason::UnsupportedInstruction),
+                ],
+                &mut || Ok(())
+            )
+            .unwrap(),
+            PartialCauses {
+                value_limits: 1,
+                decoding: 1,
+                ..PartialCauses::default()
+            },
+            "two gaps of one reason count the function once"
+        );
+        assert_eq!(
+            causes(full, false, &[], &mut || Ok(())).unwrap(),
+            PartialCauses {
+                other: 1,
+                ..PartialCauses::default()
+            },
+            "a partial function no named cause explains is never uncounted"
+        );
+        let exhausted = causes(
+            full,
+            false,
+            &[gap(SemanticGapReason::OpaqueCall)],
+            &mut || Err(Error::new(ErrorCode::ResourceLimited, "work budget")),
+        )
+        .err()
+        .unwrap();
+        assert_eq!(exhausted.code, ErrorCode::ResourceLimited);
+    }
 }

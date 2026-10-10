@@ -24,6 +24,12 @@
 //!   search is dense, one about every [`ApSearchPolicy::sparse_interval`]
 //!   after that. Found on the access point's channel, the station joins it
 //!   again; found elsewhere, the access point announces the move first.
+//! - **The upstream stays lost.** An [`UpstreamLossPolicy`] bounds the
+//!   search: [`UpstreamLossPolicy::after`] the loss, the access point stops,
+//!   the station scans alone and joins the upstream, and the access point
+//!   starts on the upstream's channel. A scan that finds none starts the
+//!   access point again on its previous channel, and the next attempt
+//!   follows `after` later ([`ChannelCoordinator::upstream_rescan`]).
 
 use oer_ieee80211_mac::channel::{Band, Channel};
 use oer_ieee80211_mac::channel_switch::ChannelSwitchMode;
@@ -122,6 +128,36 @@ impl<'a> ApSearchPolicy<'a> {
             sparse_interval: Duration::from_secs(1),
         }
     }
+}
+
+/// What the pair does when its upstream stays lost.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UpstreamLossAction {
+    /// Stop the access point (its peers released, its BSS closed), let the
+    /// station scan alone for the upstream and join it, then start the
+    /// access point on the upstream's channel. A scan that finds no
+    /// upstream starts the access point again on its previous channel; the
+    /// next attempt follows [`UpstreamLossPolicy::after`] later.
+    RescanAndRestart,
+}
+
+/// When and how the pair gives up waiting for a lost upstream on the
+/// access point's channel. Both fields are mandatory: there is no implicit
+/// wait without end.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UpstreamLossPolicy {
+    /// How long after the loss, or after a scan that found no upstream, the
+    /// action runs.
+    pub after: Duration,
+    pub action: UpstreamLossAction,
+}
+
+impl UpstreamLossPolicy {
+    /// After 30 s, stop the access point, scan and restart it.
+    pub const DEFAULT: Self = Self {
+        after: Duration::from_secs(30),
+        action: UpstreamLossAction::RescanAndRestart,
+    };
 }
 
 /// What the port's owner does for the coordinator.
@@ -244,6 +280,12 @@ enum Upstream {
         channel: Channel,
         since: Instant,
         waiting_for_move: bool,
+    },
+    /// Scanned for by the station alone on the port, the access point
+    /// stopped by the [`UpstreamLossPolicy`]; it starts again on `fallback`
+    /// when the scan finds none.
+    Rescanning {
+        fallback: Channel,
     },
 }
 
@@ -439,6 +481,57 @@ impl<'a> ChannelCoordinator<'a> {
             mode: ChannelSwitchMode::Continue,
             count: self.policy.announce_count.max(1),
         })
+    }
+
+    /// When the [`UpstreamLossPolicy`] acts on the upstream lost while the
+    /// access point runs: `policy.after` the loss, or after a scan that
+    /// found none. `None` while the upstream is not searched for.
+    pub fn upstream_loss_due(&self, policy: UpstreamLossPolicy) -> Option<Instant> {
+        match (self.upstream, self.access_point) {
+            (Upstream::Searching { since, .. }, AccessPoint::Running(_)) => {
+                since.checked_add(policy.after)
+            }
+            _ => None,
+        }
+    }
+
+    /// The [`UpstreamLossPolicy`]'s action is due: the access point stops,
+    /// and the station, alone on the port, scans for the upstream. Report
+    /// the outcome: [`Self::station_connected`] when it joined,
+    /// [`Self::upstream_rescan_failed`] when it did not.
+    pub fn upstream_rescan(&mut self) -> CoordinatorActions {
+        let (Upstream::Searching { .. }, AccessPoint::Running(schedule)) =
+            (self.upstream, self.access_point)
+        else {
+            return CoordinatorActions::NONE;
+        };
+        self.upstream = Upstream::Rescanning {
+            fallback: schedule.channel,
+        };
+        self.access_point = AccessPoint::Stopped;
+        CoordinatorActions::one(CoordinatorAction::StopAccessPoint)
+    }
+
+    /// The station's scan found no upstream to join at `now`: the port goes
+    /// back to the access point's previous channel, the access point starts
+    /// there, and the loss counts again from `now`.
+    pub fn upstream_rescan_failed(&mut self, now: Instant) -> CoordinatorActions {
+        let Upstream::Rescanning { fallback } = self.upstream else {
+            return CoordinatorActions::NONE;
+        };
+        self.upstream = Upstream::Searching {
+            since: now,
+            next_absence: None,
+            cursor: 0,
+        };
+        self.access_point = AccessPoint::Starting(fallback);
+        CoordinatorActions::two(
+            CoordinatorAction::Retune {
+                channel: fallback,
+                at: now,
+            },
+            CoordinatorAction::StartAccessPoint { channel: fallback },
+        )
     }
 
     /// A discovered upstream refused the join. Resume searching without

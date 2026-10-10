@@ -209,6 +209,7 @@ fn setup(world: &World) -> Setup {
             world.pair_frames,
         ),
         policy(),
+        UpstreamLossPolicy::DEFAULT,
         world.timer,
     );
     assert!(pair.coordinator().search_policy().channels.is_empty());
@@ -391,5 +392,205 @@ fn current_channel_mode_searches_and_rejoins_without_either_absence_extension() 
             .unwrap();
         assert_eq!(after.association_id, peer.association_id);
         assert_eq!(after.association_epoch, peer.association_epoch);
+    });
+}
+
+/// What one `run_until` of the current-channel pair returns.
+type CurrentRun = Result<
+    Option<PortStaApEvent<Env<DisabledRetune>>>,
+    PortStaApError<Env<DisabledRetune>, Env<DisabledRetune>>,
+>;
+
+/// Run the pair alone (the upstream silent) until `until`.
+fn run_pair(world: &World, setup: &mut Setup, until: Instant) -> CurrentRun {
+    world.drive_with_pair_router(
+        setup.pair.run_until(until, &mut |_| {}, &mut |_| {}),
+        setup.router,
+        || {},
+    )
+}
+
+#[test]
+fn an_upstream_back_before_the_loss_policy_leaves_the_access_point_untouched() {
+    on_large_stack(|| {
+        let world = World::new();
+        let mut setup = setup(&world);
+        let peer = setup
+            .pair
+            .access_point()
+            .service()
+            .peer_status(CLIENT)
+            .unwrap();
+        lose(&world, &mut setup);
+        // 29 s without an upstream: the access point serves on.
+        assert_eq!(
+            run_pair(&world, &mut setup, world.after(28_000)).unwrap(),
+            None
+        );
+        assert_eq!(
+            setup.pair.access_point().schedule().unwrap().channel,
+            ghz2_4(6)
+        );
+        setup.upstream.start(ghz2_4(6)).unwrap();
+        let until = world.after(1_000);
+        let (_, served) = world.drive_with_pair_router(
+            join(
+                serve_upstream(&mut setup.upstream, until),
+                setup.pair.run_until(until, &mut |_| {}, &mut |_| {}),
+            ),
+            setup.router,
+            || {},
+        );
+        assert_eq!(served.unwrap(), None);
+        assert!(setup.pair.station().connection().is_some());
+        let after = setup
+            .pair
+            .access_point()
+            .service()
+            .peer_status(CLIENT)
+            .unwrap();
+        assert_eq!(after.association_epoch, peer.association_epoch);
+    });
+}
+
+#[test]
+fn an_upstream_lost_past_the_policy_restarts_the_access_point_on_its_new_channel() {
+    on_large_stack(|| {
+        let world = World::new();
+        let mut setup = setup(&world);
+        lose(&world, &mut setup);
+        let lost = world.timer.now();
+        // The upstream comes back where the pair, on channel 6, cannot hear it.
+        world
+            .drive_with_pair_router(
+                setup.upstream.client_mut().retune(ghz2_4(11)),
+                setup.router,
+                || {},
+            )
+            .unwrap();
+        setup.upstream.start(ghz2_4(11)).unwrap();
+        let mut stopped_at = None;
+        let until = world.after(36_000);
+        let (_, served) = world.drive_with_pair_router(
+            join(
+                serve_upstream(&mut setup.upstream, until),
+                setup.pair.run_until(until, &mut |_| {}, &mut |_| {}),
+            ),
+            setup.router,
+            || {
+                if stopped_at.is_none() && world.pair.0.channel() != Some(ghz2_4(6)) {
+                    stopped_at = Some(world.timer.now());
+                }
+            },
+        );
+        assert_eq!(served.unwrap(), None);
+        // Not before the policy's 30 s.
+        let stopped_at = stopped_at.expect("the station scanned other channels");
+        assert!(stopped_at.saturating_duration_since(lost) >= UpstreamLossPolicy::DEFAULT.after);
+        // The station rejoined on channel 11 and the access point followed;
+        // its peer was released when it stopped.
+        assert_eq!(
+            setup.pair.station().connection().unwrap().config().channel,
+            ghz2_4(11)
+        );
+        assert_eq!(
+            setup.pair.access_point().schedule().unwrap().channel,
+            ghz2_4(11)
+        );
+        assert_eq!(world.pair.0.channel(), Some(ghz2_4(11)));
+        assert!(
+            setup
+                .pair
+                .access_point()
+                .service()
+                .peer_status(CLIENT)
+                .is_none()
+        );
+    });
+}
+
+#[test]
+fn a_rescan_that_finds_no_upstream_restarts_the_access_point_and_repeats_after_the_policy() {
+    on_large_stack(|| {
+        let world = World::new();
+        let mut setup = setup(&world);
+        lose(&world, &mut setup);
+        let lost = world.timer.now();
+        let after = UpstreamLossPolicy::DEFAULT.after;
+        let mut failures = Vec::new();
+        while failures.len() < 2 {
+            match run_pair(&world, &mut setup, world.after(70_000)) {
+                Ok(Some(PortStaApEvent::UpstreamNotJoined(PortStationError::NoCandidate))) => {
+                    failures.push(world.timer.now());
+                }
+                other => panic!("expected a scan without an upstream, got {other:?}"),
+            }
+            // The access point runs again on its previous channel, its
+            // schedule set by its first beacon.
+            assert_eq!(
+                run_pair(&world, &mut setup, world.after(500)).unwrap(),
+                None
+            );
+            assert_eq!(
+                setup.pair.access_point().schedule().unwrap().channel,
+                ghz2_4(6)
+            );
+            assert_eq!(world.pair.0.channel(), Some(ghz2_4(6)));
+            assert!(setup.pair.station().connection().is_none());
+        }
+        assert!(failures[0].saturating_duration_since(lost) >= after);
+        // The next attempt follows `after` past the failed scan's restart.
+        let gap = failures[1].saturating_duration_since(failures[0]);
+        assert!(gap >= after, "{gap:?}");
+        assert!(
+            gap < after.checked_add(Duration::from_secs(5)).unwrap(),
+            "{gap:?}"
+        );
+    });
+}
+
+#[test]
+fn a_failed_passive_rejoin_is_an_event_and_the_pair_runs_on() {
+    on_large_stack(|| {
+        let world = World::new();
+        let mut setup = setup(&world);
+        lose(&world, &mut setup);
+        setup.upstream.start(ghz2_4(6)).unwrap();
+        // The upstream sends its first beacon, then stops processing
+        // requests: the station hears it but cannot authenticate.
+        let served_until = world.after(1);
+        let (_, event) = world.drive_with_pair_router(
+            join(
+                serve_upstream(&mut setup.upstream, served_until),
+                setup
+                    .pair
+                    .run_until(world.after(5_000), &mut |_| {}, &mut |_| {}),
+            ),
+            setup.router,
+            || {},
+        );
+        assert!(
+            matches!(
+                event,
+                Ok(Some(PortStaApEvent::UpstreamNotJoined(
+                    PortStationError::Join(_)
+                )))
+            ),
+            "{event:?}"
+        );
+        assert!(setup.pair.station().connection().is_none());
+        // The pair is whole: the access point keeps its peer and serves on.
+        assert!(
+            setup
+                .pair
+                .access_point()
+                .service()
+                .peer_status(CLIENT)
+                .is_some()
+        );
+        assert_eq!(
+            run_pair(&world, &mut setup, world.after(500)).unwrap(),
+            None
+        );
     });
 }

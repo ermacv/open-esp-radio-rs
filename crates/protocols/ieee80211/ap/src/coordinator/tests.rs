@@ -363,3 +363,89 @@ fn a_failed_join_keeps_the_original_search_density() {
         .saturating_duration_since(start);
     assert!(gap >= Duration::from_secs(1));
 }
+
+#[test]
+fn the_loss_policy_is_due_its_after_past_the_loss_only_while_the_access_point_runs() {
+    let policy = UpstreamLossPolicy::DEFAULT;
+    let mut coordinator = running(ApFollowPolicy::DEFAULT, ghz2_4(6));
+    // Connected: nothing is due.
+    assert_eq!(coordinator.upstream_loss_due(policy), None);
+    let lost = at(FIRST_TBTT + 7);
+    coordinator.upstream_lost(lost);
+    assert_eq!(
+        coordinator.upstream_loss_due(policy),
+        lost.checked_add(Duration::from_secs(30))
+    );
+    // Found again before then: the policy no longer runs.
+    let found = actions(coordinator.upstream_found(ghz2_4(6)));
+    assert_eq!(
+        found,
+        [CoordinatorAction::JoinUpstream { channel: ghz2_4(6) }]
+    );
+    assert_eq!(coordinator.upstream_loss_due(policy), None);
+    // A refused join keeps the original loss instant.
+    coordinator.upstream_join_failed();
+    assert_eq!(
+        coordinator.upstream_loss_due(policy),
+        lost.checked_add(Duration::from_secs(30))
+    );
+}
+
+#[test]
+fn a_rescan_that_finds_no_upstream_restarts_the_access_point_on_its_channel_and_counts_again() {
+    let policy = UpstreamLossPolicy::DEFAULT;
+    let mut coordinator = running(ApFollowPolicy::DEFAULT, ghz2_4(6));
+    coordinator.upstream_lost(at(FIRST_TBTT));
+    assert_eq!(
+        actions(coordinator.upstream_rescan()),
+        [CoordinatorAction::StopAccessPoint]
+    );
+    // The station scans alone: nothing is due meanwhile.
+    assert_eq!(coordinator.upstream_loss_due(policy), None);
+    assert!(coordinator.upstream_rescan().is_empty());
+    let failed = at(FIRST_TBTT + 31_000_000);
+    assert_eq!(
+        actions(coordinator.upstream_rescan_failed(failed)),
+        [
+            CoordinatorAction::Retune {
+                channel: ghz2_4(6),
+                at: failed,
+            },
+            CoordinatorAction::StartAccessPoint { channel: ghz2_4(6) },
+        ]
+    );
+    // Not due before the access point runs again, then `after` past the
+    // failed scan.
+    assert_eq!(coordinator.upstream_loss_due(policy), None);
+    coordinator.access_point_running(schedule(ghz2_4(6)));
+    assert_eq!(
+        coordinator.upstream_loss_due(policy),
+        failed.checked_add(policy.after)
+    );
+}
+
+#[test]
+fn a_rescan_that_joins_the_upstream_starts_the_access_point_on_its_new_channel() {
+    let mut coordinator = running(ApFollowPolicy::DEFAULT, ghz2_4(6));
+    coordinator.upstream_lost(at(FIRST_TBTT));
+    assert_eq!(
+        actions(coordinator.upstream_rescan()),
+        [CoordinatorAction::StopAccessPoint]
+    );
+    assert_eq!(
+        actions(coordinator.station_connected(ghz2_4(11))),
+        [CoordinatorAction::StartAccessPoint {
+            channel: ghz2_4(11)
+        }]
+    );
+    assert_eq!(
+        coordinator.upstream_loss_due(UpstreamLossPolicy::DEFAULT),
+        None
+    );
+    // No rescan-failure path is left to take.
+    assert!(
+        coordinator
+            .upstream_rescan_failed(at(FIRST_TBTT))
+            .is_empty()
+    );
+}

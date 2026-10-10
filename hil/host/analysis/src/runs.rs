@@ -678,6 +678,12 @@ pub fn collect_observers(store: &RunStore) -> Result<usize> {
 /// a capture can be reused for a while with `--source-snapshot`.
 pub const SOURCE_GRACE: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
 
+/// How long a capture no job holds is kept after its record was last
+/// written or used (`--source-snapshot` marks it used): a snapshot taken for
+/// reuse lasts a week. Owner decision:
+/// <https://github.com/ermacv/open-esp-radio-rs/issues/417#issuecomment-6098692404>
+pub const CAPTURE_GRACE: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
+
 /// The captures source collection weighs: the capture stores, and the paths
 /// queued or running jobs were fixed with.
 #[derive(Debug, Default)]
@@ -691,13 +697,13 @@ pub struct Captures {
 pub struct CollectedSources {
     pub objects: usize,
     pub bytes: u64,
-    /// Capture directories no job holds that were last written or reused
-    /// more than [`SOURCE_GRACE`] ago.
+    /// Capture directories no job holds that were last written or used
+    /// more than [`CAPTURE_GRACE`] ago.
     pub captures: usize,
 }
 
 /// Remove the captures in `captures.stores` that no job holds and that were
-/// last written or reused more than [`SOURCE_GRACE`] ago, then the source
+/// last written or used more than [`CAPTURE_GRACE`] ago, then the source
 /// objects of `store` that neither a run's snapshot manifest nor a remaining
 /// capture names and that were stored more than [`SOURCE_GRACE`] ago. A
 /// queued job, or a later `--source-snapshot`, reads a capture before any run
@@ -738,7 +744,7 @@ pub fn collect_sources(store: &RunStore, captures: &Captures) -> Result<Collecte
                     .and_then(|metadata| metadata.modified())
                     .ok()
                     .and_then(|modified| modified.elapsed().ok())
-                    .is_none_or(|age| age < SOURCE_GRACE);
+                    .is_none_or(|age| age < CAPTURE_GRACE);
                 if held || young {
                     name(&directory.join("manifest.json"));
                 } else {

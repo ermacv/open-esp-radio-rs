@@ -684,4 +684,14 @@ fn capturing_again_refreshes_the_capture_record() {
     capture_roots(&roots, &[], &[], output.path(), &objects(output.path())).unwrap();
     let modified = fs::metadata(&record).unwrap().modified().unwrap();
     assert!(modified.elapsed().unwrap() < std::time::Duration::from_secs(3600));
+    // So does a build or run that reads it with `--source-snapshot`.
+    fs::File::options()
+        .append(true)
+        .open(&record)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    mark_used(first.directory()).unwrap();
+    let modified = fs::metadata(&record).unwrap().modified().unwrap();
+    assert!(modified.elapsed().unwrap() < std::time::Duration::from_secs(3600));
 }

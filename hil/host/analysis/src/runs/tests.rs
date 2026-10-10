@@ -531,13 +531,17 @@ fn source_objects_no_run_names_are_collected_after_the_grace() {
         }
         (capture, path)
     };
+    let unused = std::time::SystemTime::now() - 2 * CAPTURE_GRACE;
     let (recent, recent_object) = capture("recent", b"recent", None);
-    let (queued, queued_object) = capture("queued", b"queued", Some(old));
-    let (stale, stale_object) = capture("stale", b"stale!", Some(old));
+    // Used two days ago: a capture is kept for a week after its last use.
+    let (used, used_object) = capture("used", b"used!!", Some(old));
+    let (queued, queued_object) = capture("queued", b"queued", Some(unused));
+    let (stale, stale_object) = capture("stale", b"stale!", Some(unused));
     for path in [
         &named_path,
         &old_path,
         &recent_object,
+        &used_object,
         &queued_object,
         &stale_object,
     ] {
@@ -566,6 +570,7 @@ fn source_objects_no_run_names_are_collected_after_the_grace() {
     );
     assert!(named_path.is_file() && young_path.is_file());
     assert!(recent.is_dir() && recent_object.is_file());
+    assert!(used.is_dir() && used_object.is_file());
     assert!(queued.is_dir() && queued_object.is_file());
     assert!(!stale.exists() && !stale_object.exists() && !old_path.exists());
 }

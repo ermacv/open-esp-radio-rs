@@ -232,8 +232,9 @@ capture does not overwrite an existing identity, rewrites an object whose bytes
 no longer hash to its name, and every reader checks each object's digest; a
 missing or corrupt object is rejected. `cargo hil runs prune --apply` and the
 automatic rule delete a capture no queued or running job holds (was fixed with,
-or names with `--source-snapshot`) once its record
-was last written or reused a day ago, then the objects that no run and no
+or names with `--source-snapshot`) a week after its
+record was last written or used (every build or run from `--source-snapshot`
+uses it), then the objects that no run and no
 remaining capture names once a day old. Builds with
 `--source-snapshot` validate and materialize these inputs in one of the host's
 build slots, `~/.cache/open-esp-radio/build/<chip>/source-build-<n>/`

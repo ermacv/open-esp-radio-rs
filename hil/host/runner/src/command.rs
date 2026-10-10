@@ -126,6 +126,7 @@ pub(crate) fn run() -> Result<()> {
                 let frozen = source_snapshot
                     .as_deref()
                     .map(|snapshot| {
+                        oer_hil_source_snapshot::mark_used(snapshot)?;
                         oer_hil_source_snapshot::FrozenSources::open_in_free_workspace(
                             snapshot,
                             &image::source_objects()?,
@@ -230,10 +231,13 @@ pub(crate) fn run() -> Result<()> {
             }
             let snapshot = match (&firmware_from, source_snapshot) {
                 (Some(_), _) => None,
-                (None, Some(directory)) => Some(oer_hil_source_snapshot::Snapshot::load(
-                    &directory,
-                    &image::source_objects()?,
-                )?),
+                (None, Some(directory)) => {
+                    oer_hil_source_snapshot::mark_used(&directory)?;
+                    Some(oer_hil_source_snapshot::Snapshot::load(
+                        &directory,
+                        &image::source_objects()?,
+                    )?)
+                }
                 (None, None) => Some(oer_hil_source_snapshot::capture(
                     &root,
                     &source_include,

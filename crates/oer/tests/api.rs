@@ -9,7 +9,7 @@ fn wifi_facade_preserves_implementation_type_identity() {
 
 #[cfg(feature = "owned-xarxa")]
 #[test]
-fn embassy_radio_facade_preserves_supervisor_reexport_type_identity() {
+fn runtime_radio_facade_preserves_supervisor_reexport_type_identity() {
     let _: fn(
         radio_supervisor::WifiSupervisorCommand,
     ) -> oer::runtime::radio::WifiSupervisorCommand = |command| command;

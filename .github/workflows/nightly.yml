@@ -243,18 +243,10 @@ jobs:
         run: >-
           cargo qualification readiness --out target/qualification/readiness
           --base target/qualification/previous --drops target/qualification/drops.md
-      # Only a complete evaluation is published or reported: without one, no
-      # drop file does not mean that nothing dropped.
-      - if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.readiness.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: qualification-readiness
-          path: target/qualification/readiness
-          if-no-files-found: error
-          # An open readiness issue keeps its base run's reports as the base.
-          retention-days: 90
-          overwrite: true
+      # Only a complete evaluation is reported: without one, no drop file
+      # does not mean that nothing dropped.
       - name: Report the readiness against its base
+        id: report
         if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.readiness.outcome == 'success' && steps.base.outputs.run != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -298,3 +290,14 @@ jobs:
             } >"$RUNNER_TEMP/further.md"
             gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/further.md"
           fi
+      # The night's reports become a base only once their drop is recorded:
+      # published before a failed report, the drop would be the next base.
+      - if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.readiness.outcome == 'success' && steps.report.outcome != 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qualification-readiness
+          path: target/qualification/readiness
+          if-no-files-found: error
+          # An open readiness issue keeps its base run's reports as the base.
+          retention-days: 90
+          overwrite: true

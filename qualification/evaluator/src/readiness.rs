@@ -192,22 +192,38 @@ pub(crate) fn run(
     base: Option<&Path>,
     drops_file: Option<&Path>,
 ) -> Result<Vec<Regression>> {
-    let mut found = vec![];
-    let mut compared = 0;
     let programs = model::program_paths(root)?;
+    let mut reports = vec![];
     for program in &programs {
         let qualification = Qualification::load_and_evaluate(&root.join(program), root)?;
         let name = report_name(program)?;
-        let report = out.join(&name);
-        crate::report::write_json(&qualification, &report)?;
-        let Some(earlier) = base.map(|base| base.join(&name)).filter(|p| p.is_file()) else {
+        crate::report::write_json(&qualification, &out.join(&name))?;
+        reports.push((program.display().to_string(), name));
+    }
+    compare_reports(&reports, out, base, drops_file)
+}
+
+/// Compare each of the `reports` (program, report file) in `out` with the
+/// report of the same name in `base`, when that holds one; print every drop
+/// and a summary, and write the drops to `drops_file` as a table, or remove
+/// it when nothing dropped, so a file never outlives the run that found it.
+fn compare_reports(
+    reports: &[(String, String)],
+    out: &Path,
+    base: Option<&Path>,
+    drops_file: Option<&Path>,
+) -> Result<Vec<Regression>> {
+    let mut found = vec![];
+    let mut compared = 0;
+    for (program, name) in reports {
+        let Some(earlier) = base.map(|base| base.join(name)).filter(|p| p.is_file()) else {
             continue;
         };
         compared += 1;
         found.extend(drops(
-            &program.display().to_string(),
+            program,
             &capabilities(&earlier)?,
-            &capabilities(&report)?,
+            &capabilities(&out.join(name))?,
         ));
     }
     for regression in &found {
@@ -222,7 +238,7 @@ pub(crate) fn run(
     }
     println!(
         "READINESS\tprograms={}\tcompared={compared}\tdrops={}",
-        programs.len(),
+        reports.len(),
         found.len()
     );
     if let Some(path) = drops_file {
@@ -345,5 +361,49 @@ mod tests {
         )
         .unwrap();
         assert_eq!(capabilities(&path).unwrap()["x"].vendor, "qualified");
+    }
+
+    #[test]
+    fn reports_compare_with_the_base_and_the_drop_table_follows_the_drops() {
+        let directory = tempfile::tempdir().unwrap();
+        let (out, base) = (directory.path().join("out"), directory.path().join("base"));
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::create_dir_all(&base).unwrap();
+        let report = |vendor: &str, ready: bool| {
+            format!(
+                r#"{{"capabilities": [{{"id": "x", "implementation": "complete", "host": "covered",
+                    "vendor": "{vendor}", "hil": "missing", "async": "bounded",
+                    "proof_ready": {ready}, "ready": {ready}}}]}}"#
+            )
+        };
+        std::fs::write(out.join("a.json"), report("mapped", false)).unwrap();
+        std::fs::write(out.join("b.json"), report("qualified", true)).unwrap();
+        std::fs::write(base.join("a.json"), report("qualified", true)).unwrap();
+        // `b` has no base report: it is not compared.
+        let reports = [
+            ("a.toml".to_owned(), "a.json".to_owned()),
+            ("b.toml".to_owned(), "b.json".to_owned()),
+        ];
+        let table = directory.path().join("drops.md");
+        let found = compare_reports(&reports, &out, Some(&base), Some(&table)).unwrap();
+        assert_eq!(found.len(), 3);
+        assert!(
+            std::fs::read_to_string(&table)
+                .unwrap()
+                .contains("| `a.toml` | `x` | vendor |")
+        );
+        // Nothing dropped: the earlier table goes, so it never reads as this run's.
+        std::fs::write(base.join("a.json"), report("mapped", false)).unwrap();
+        assert!(
+            compare_reports(&reports, &out, Some(&base), Some(&table))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!table.exists());
+        assert!(
+            compare_reports(&reports, &out, None, Some(&table))
+                .unwrap()
+                .is_empty()
+        );
     }
 }

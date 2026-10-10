@@ -41,7 +41,7 @@ pub struct Candidate {
 }
 
 /// The files that queued or running HIL jobs were fixed with.
-fn held_by_jobs() -> Result<Vec<PathBuf>> {
+pub(crate) fn held_by_jobs() -> Result<Vec<PathBuf>> {
     Ok(oer_stand_arbiter::Arbiter::open()?
         .jobs()
         .unfinished()

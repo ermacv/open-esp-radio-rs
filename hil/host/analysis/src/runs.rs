@@ -678,12 +678,32 @@ pub fn collect_observers(store: &RunStore) -> Result<usize> {
 /// a capture can be reused for a while with `--source-snapshot`.
 pub const SOURCE_GRACE: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
 
-/// Remove the source objects of `store` that no run's snapshot manifest and
-/// no capture in the capture stores `captures` names, and that were stored
-/// more than [`SOURCE_GRACE`] ago; returns how many were removed and their
-/// bytes. A capture keeps its objects while its directory exists: a queued
-/// job, or a later `--source-snapshot`, reads it before any run names it.
-pub fn collect_sources(store: &RunStore, captures: &[PathBuf]) -> Result<(usize, u64)> {
+/// The captures source collection weighs: the capture stores, and the paths
+/// queued or running jobs were fixed with.
+#[derive(Debug, Default)]
+pub struct Captures {
+    pub stores: Vec<PathBuf>,
+    pub held: Vec<PathBuf>,
+}
+
+/// What [`collect_sources`] removed.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CollectedSources {
+    pub objects: usize,
+    pub bytes: u64,
+    /// Capture directories no job holds that were last written or reused
+    /// more than [`SOURCE_GRACE`] ago.
+    pub captures: usize,
+}
+
+/// Remove the captures in `captures.stores` that no job holds and that were
+/// last written or reused more than [`SOURCE_GRACE`] ago, then the source
+/// objects of `store` that neither a run's snapshot manifest nor a remaining
+/// capture names and that were stored more than [`SOURCE_GRACE`] ago. A
+/// queued job, or a later `--source-snapshot`, reads a capture before any run
+/// names its objects; a capture nothing uses any more no longer keeps them.
+pub fn collect_sources(store: &RunStore, captures: &Captures) -> Result<CollectedSources> {
+    let mut collected = CollectedSources::default();
     let mut named = BTreeSet::new();
     let mut name = |manifest: &Path| {
         let Some(manifest) = fs::read(manifest).ok().and_then(|bytes| {
@@ -698,24 +718,40 @@ pub fn collect_sources(store: &RunStore, captures: &[PathBuf]) -> Result<(usize,
     for id in store.ids_newest_first()? {
         name(&store.run(&id).join("source/snapshot/manifest.json"));
     }
-    for capture_store in captures {
+    for capture_store in &captures.stores {
         let Ok(schemas) = fs::read_dir(capture_store) else {
             continue;
         };
-        for schema in schemas.flatten() {
-            let Ok(snapshots) = fs::read_dir(schema.path()) else {
-                continue;
-            };
-            for snapshot in snapshots.flatten() {
-                name(&snapshot.path().join("manifest.json"));
+        // Captures of this layout lie in `schema-<n>/<id>`; the store's
+        // other entries are earlier layouts' and are not weighed here.
+        for schema in schemas.flatten().filter(|entry| {
+            entry.file_name().to_string_lossy().starts_with("schema-")
+                && entry.file_type().is_ok_and(|kind| kind.is_dir())
+        }) {
+            for snapshot in fs::read_dir(schema.path())?.flatten() {
+                let directory = snapshot.path();
+                let held = captures
+                    .held
+                    .iter()
+                    .any(|path| path.starts_with(&directory) || directory.starts_with(path));
+                let young = fs::metadata(directory.join("snapshot.json"))
+                    .and_then(|metadata| metadata.modified())
+                    .ok()
+                    .and_then(|modified| modified.elapsed().ok())
+                    .is_none_or(|age| age < SOURCE_GRACE);
+                if held || young {
+                    name(&directory.join("manifest.json"));
+                } else {
+                    fs::remove_dir_all(&directory)?;
+                    collected.captures += 1;
+                }
             }
         }
     }
     let objects = store.sources();
     let Ok(prefixes) = fs::read_dir(&objects) else {
-        return Ok((0, 0));
+        return Ok(collected);
     };
-    let (mut removed, mut bytes) = (0, 0);
     for prefix in prefixes {
         let prefix = prefix?;
         if !prefix.file_type()?.is_dir() {
@@ -733,11 +769,11 @@ pub fn collect_sources(store: &RunStore, captures: &[PathBuf]) -> Result<(usize,
                 continue;
             }
             fs::remove_file(object.path())?;
-            removed += 1;
-            bytes += metadata.len();
+            collected.objects += 1;
+            collected.bytes += metadata.len();
         }
     }
-    Ok((removed, bytes))
+    Ok(collected)
 }
 
 /// Follow the run in `directory`, handing `report` each step its events

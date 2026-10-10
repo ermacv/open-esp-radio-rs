@@ -226,7 +226,7 @@ fn issue_policy_changes_run_the_offline_guard_in_the_fast_gate() {
         let selected = ids(of_change(&change(&[path], Tier::Fast)));
         assert!(selected.contains(&"issue-labels"), "{path}: {selected:?}");
     }
-    assert!(ids(of_job(Tier::Full, "host")).contains(&"issue-labels"));
+    assert!(ids(of_job(Tier::Full, "host-lint")).contains(&"issue-labels"));
 }
 
 #[test]
@@ -241,7 +241,7 @@ fn review_script_changes_run_its_offline_regressions() {
         let selected = ids(of_change(&change(&[path], Tier::Fast)));
         assert!(selected.contains(&"claude-review"), "{path}: {selected:?}");
     }
-    assert!(ids(of_job(Tier::Full, "host")).contains(&"claude-review"));
+    assert!(ids(of_job(Tier::Full, "host-lint")).contains(&"claude-review"));
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn claude_hook_changes_run_its_offline_regressions() {
         let selected = ids(of_change(&change(&[path], Tier::Fast)));
         assert!(selected.contains(&"claude-hooks"), "{path}: {selected:?}");
     }
-    assert!(ids(of_job(Tier::Full, "host")).contains(&"claude-hooks"));
+    assert!(ids(of_job(Tier::Full, "host-lint")).contains(&"claude-hooks"));
 }
 
 #[test]
@@ -332,13 +332,11 @@ fn a_branch_run_skips_only_an_audited_check_its_change_does_not_reach() {
             "{job}"
         );
     }
-    let architecture = ids(of_job_for(&target, "architecture"));
-    assert!(
-        architecture.contains(&"architecture") && !architecture.contains(&"architecture-clippy")
-    );
+    assert!(ids(of_job_for(&target, "architecture")).contains(&"architecture"));
+    assert!(ids(of_job_for(&target, "architecture-clippy")).is_empty());
     let driver = change(&["crates/driver/src/lib.rs"], Tier::Full);
     assert!(ids(of_job_for(&driver, "docs")).contains(&"doc"));
-    assert!(ids(of_job_for(&driver, "architecture")).contains(&"architecture-clippy"));
+    assert!(ids(of_job_for(&driver, "architecture-clippy")).contains(&"architecture-clippy"));
     for check in SCOPED_IN_CI {
         assert!(
             CHECKS

@@ -139,9 +139,13 @@ const fn tree_job(id: &'static str) -> JobSpec {
 const CI: WorkflowSpec = WorkflowSpec {
     workflow: Workflow::Ci,
     preparation: "prepare",
+    // Jobs run in parallel and a pull request waits for the longest, so the
+    // longest checks get jobs of their own.
     jobs: &[
         tree_job("host"),
+        tree_job("host-lint"),
         tree_job("architecture"),
+        tree_job("architecture-clippy"),
         tree_job("firmware"),
         tree_job("models"),
         JobSpec {
@@ -149,6 +153,8 @@ const CI: WorkflowSpec = WorkflowSpec {
             ..tree_job("isa-conformance")
         },
         tree_job("images"),
+        tree_job("images-correctness"),
+        tree_job("example-link"),
         tree_job("verification"),
     ],
 };

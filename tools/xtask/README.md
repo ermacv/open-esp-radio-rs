@@ -413,6 +413,6 @@ network state. Linux process ownership uses explicit process groups.
 Unsupported hosts return an error when the required ownership backend is
 unavailable.
 
-The full `images` job also builds `boot-smoke` for every staged HIL target,
+The full `images-correctness` job also builds `boot-smoke` for every staged HIL target,
 including C5, through the same coverage, placement and stack gates as a run.
 Radio final images additionally receive Blobray's forbidden-ROM audit.

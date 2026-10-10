@@ -22,7 +22,7 @@ dependencies are absent from Cargo's offline cache, bootstrap with
 does not require this override. The host CI test and Clippy jobs cover both
 the root workspace and this workspace.
 The push gate invokes it as a process, and CI runs it as the first check of
-the registry's `host` job (`cargo xtask check tier full --job host`). Like every
+the registry's `host-lint` job (`cargo xtask check tier full --job host-lint`). Like every
 repository tool, it prints its commands for `__command-tree`, which `cargo
 xtask check docs` holds the documentation to.
 

@@ -131,12 +131,15 @@ locally:
 ```console
 cargo xtask check tier --list
 cargo xtask check tier full --job host
+cargo xtask check tier full --job host-lint
 cargo xtask check tier full --job architecture
+cargo xtask check tier full --job architecture-clippy
 cargo xtask check tier full --job firmware
 cargo xtask check tier full --job models
 ```
 
-They need the embedded target; the `images` job also needs the toolchain's
+They need the embedded target; the `images`, `images-correctness` and
+`example-link` jobs also need the toolchain's
 `llvm-tools` component and fetches the pinned ROM ELF itself.
 Together they check dependency
 and ownership boundaries, generated PAC outputs and compiled artifacts. Independent example,

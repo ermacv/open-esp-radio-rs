@@ -14,6 +14,7 @@
 //! `oer-hil-run-bundle`'s.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
+pub mod archived;
 pub mod build;
 pub mod experiment;
 pub mod lab;

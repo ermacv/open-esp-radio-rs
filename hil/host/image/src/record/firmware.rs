@@ -49,7 +49,7 @@ pub(super) fn archive(
     let archive = |source: &Path, file: &str| -> Result<(PathBuf, build::ArchivedFile)> {
         let path = firmware_directory.join(file);
         let archived = build::archive_content_addressed(
-            source,
+            build::Source::Built(source),
             &context.directory.join(&path),
             context.target_directory,
         )?;

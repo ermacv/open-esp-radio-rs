@@ -100,7 +100,7 @@ impl Recovery {
 pub fn recover(
     board: &LeasedBoard,
     output: &Path,
-    elf: Option<&Path>,
+    elf: Option<&[u8]>,
     origin: &str,
 ) -> crate::Result<Option<Recovery>> {
     // A cancelled run stops rather than judges the board it leaves.
@@ -148,7 +148,7 @@ pub fn recover(
                 .iter()
                 .find_map(|step| step.saved_pc)
                 .map(|address| {
-                    let symbols = elf.and_then(|elf| oer_elf::dwarf::Symbolizer::read(elf).ok());
+                    let symbols = elf.and_then(|elf| oer_elf::dwarf::Symbolizer::new(elf).ok());
                     post_mortem::symbol(symbols.as_ref(), address)
                 });
             let _ = arbiter.journal().record_by(

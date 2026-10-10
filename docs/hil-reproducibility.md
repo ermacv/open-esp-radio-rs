@@ -83,7 +83,7 @@ owners and meanings.
 
 ```text
 target/hil/esp32s31/
-├── objects/sha256/<prefix>/<digest>
+├── objects/sha256/<prefix>/<digest>[.deflate]
 ├── reproducibility/
 └── runs/<run-id>/
     ├── manifest.json
@@ -92,7 +92,7 @@ target/hil/esp32s31/
     ├── firmware/<image>/
     │   ├── build-provenance.json
     │   ├── application.bin
-    │   ├── runtime.elf
+    │   ├── runtime.elf.deflate
     │   ├── runtime.bin
     │   ├── bootstrap.elf
     │   ├── bootstrap-Cargo.lock
@@ -104,8 +104,12 @@ target/hil/esp32s31/
 ([find and compare runs](../hil/host/runs.md#find-and-compare-runs)); the
 object store and reproducibility reports stay with the checkout.
 
-Subjects are ordinary files. A local content-addressed store permits hard-link
-deduplication; copying is the fallback when linking is unavailable. Copying a
+Subjects are ordinary files named by the SHA-256 of their bytes. The runtime
+ELF, large and read only to symbolize, is kept deflate-compressed
+(`runtime.elf.deflate`, its object `<digest>.deflate`); the manifest and build
+provenance record its uncompressed path, size and digest, and every reader goes
+through `oer_hil_run_bundle_format::archived::read_archived`, which decompresses it. A
+local content-addressed store permits hard-link deduplication; copying is the fallback when linking is unavailable. Copying a
 sealed run produces a self-contained bundle. Firmware binaries and generated
 reports remain outside tracked source. Pruning deletes the objects no file
 links to any more, in this checkout and every registered one (see

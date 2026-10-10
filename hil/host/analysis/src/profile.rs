@@ -43,9 +43,9 @@ fn containing(loader: Option<&Symbolizer>, address: u32) -> String {
         .unwrap_or_else(|| format!("{address:#010x}"))
 }
 
-/// The report of `profile.json` at `path`, symbolized against `elf`, with
-/// the `top` most sampled functions of each hart.
-pub fn report(path: &Path, elf: Option<&Path>, top: usize) -> Result<String> {
+/// The report of `profile.json` at `path`, symbolized against the ELF bytes
+/// `elf`, with the `top` most sampled functions of each hart.
+pub fn report(path: &Path, elf: Option<&[u8]>, top: usize) -> Result<String> {
     let record: Record = serde_json::from_slice(&std::fs::read(path)?)?;
     if let Some(error) = record.error {
         return Ok(format!("profile not drained: {error}\n"));
@@ -54,7 +54,7 @@ pub fn report(path: &Path, elf: Option<&Path>, top: usize) -> Result<String> {
     if status.open {
         return Ok("profile window still open when drained: no samples\n".into());
     }
-    let loader = elf.and_then(|elf| Symbolizer::read(elf).ok());
+    let loader = elf.and_then(|elf| Symbolizer::new(elf).ok());
     let loader = loader.as_ref();
     let mut text = String::new();
     if loader.is_none() {

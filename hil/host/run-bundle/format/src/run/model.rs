@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 
 use oer_hil_schema::image::ImageClass;
 
-/// Format of a run bundle and its `manifest.json`. 6: a run archives its
-/// source snapshot's manifest and record only; the files are objects in the
-/// run store's `sources/` (`oer_hil_schema::snapshot::OBJECTS`), not a
-/// `sources.tar` in the bundle.
-pub const RUN_SCHEMA: u16 = 6;
+/// Format of a run bundle and its `manifest.json`. 7: a run's runtime ELF
+/// lies deflate-compressed at `firmware/<image>/runtime.elf.deflate`; what
+/// the manifest and build provenance record of it (path, size, digest) is
+/// the uncompressed file's ([`crate::archived`]).
+pub const RUN_SCHEMA: u16 = 7;
 
 pub use oer_hil_schema::run::{
     Better, Comparison, FailureKind, MeasurementUnit, MeasurementVerdict, Outcome, RunEventKind,

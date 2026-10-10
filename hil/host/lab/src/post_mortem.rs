@@ -50,7 +50,7 @@ pub fn jtag_snapshot_through_stand_openocd(
     chip: &str,
     access: &oer_device_lock::DeviceAccess,
     output: &Path,
-    elf: Option<&Path>,
+    elf: Option<&[u8]>,
 ) {
     match oer_devices::openocd::Openocd::locate() {
         Ok(openocd) => jtag_snapshot(&openocd, chip, access, output, elf),
@@ -63,7 +63,7 @@ pub fn jtag_snapshot(
     chip: &str,
     access: &oer_device_lock::DeviceAccess,
     output: &Path,
-    elf: Option<&Path>,
+    elf: Option<&[u8]>,
 ) {
     let operation = match access.operation() {
         Ok(operation) => operation,
@@ -85,7 +85,7 @@ pub fn jtag_snapshot(
             return;
         }
     };
-    let loader = elf.and_then(|elf| oer_elf::dwarf::Symbolizer::read(elf).ok());
+    let loader = elf.and_then(|elf| oer_elf::dwarf::Symbolizer::new(elf).ok());
     let value = |name: &str| {
         registers
             .iter()
@@ -124,7 +124,7 @@ pub fn inspect(
     port: &Path,
     access: &oer_device_lock::DeviceAccess,
     output: &Path,
-    elf: Option<&Path>,
+    elf: Option<&[u8]>,
 ) -> Option<Finding> {
     let _operation = access.operation().ok()?;
     let mac = access.id();
@@ -172,7 +172,7 @@ pub fn inspect(
             .as_ref()
             .and_then(|summary| capture.post_mortem_checkpoints(summary.checkpoints).ok())
             .unwrap_or_default();
-        let symbols = elf.and_then(|elf| oer_elf::dwarf::Symbolizer::read(elf).ok());
+        let symbols = elf.and_then(|elf| oer_elf::dwarf::Symbolizer::new(elf).ok());
         let name = |address: u32| symbol(symbols.as_ref(), address);
         let failure = classify(&boot, &checkpoints, &name);
         drain_trace(&capture, &output.join("post-mortem"));

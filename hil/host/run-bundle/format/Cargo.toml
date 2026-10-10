@@ -10,6 +10,8 @@ description = "The HIL run bundle format: its typed documents, their validation,
 
 [dependencies]
 oer-durable = { path = "../../../../tools/durable" }
+flate2 = "1.1.9"
+sha2 = "0.10"
 oer-hil-scenario-catalog = { path = "../../scenario/catalog" }
 oer-hil-schema = { path = "../../../schema" }
 oer-process = { path = "../../../../tools/process" }

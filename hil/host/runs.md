@@ -207,7 +207,7 @@ cargo hil profile <run-id> --scenario S --repetition 1 --top 20
 ```
 
 `profile` symbolizes each `profile.json` against the run's own
-`firmware/<image>/runtime.elf`, prints each hart's most sampled functions
+`firmware/<image>/runtime.elf` (stored compressed as `runtime.elf.deflate`), prints each hart's most sampled functions
 (the outermost frame of the inline chain), their most frequent inlined frame
 and the callers the return addresses name, and writes the report to this
 checkout's `target/hil/profiles/<run>/<scenario>/<repetition>/profile.txt`;

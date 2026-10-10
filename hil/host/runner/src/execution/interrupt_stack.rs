@@ -84,8 +84,8 @@ pub(crate) fn evaluate(
         .collect()
 }
 
-/// Each hart's static interrupt-stack bound of `chip`'s runtime ELF at
-/// `elf`, computed once per ELF.
+/// Each hart's static interrupt-stack bound of `chip`'s runtime ELF archived
+/// at `elf`, computed once per ELF.
 pub(crate) fn bounds(chip: &str, elf: &Path) -> Result<Bounds, String> {
     static BOUNDS: Mutex<BTreeMap<PathBuf, Result<Bounds, String>>> = Mutex::new(BTreeMap::new());
     let mut cache = BOUNDS
@@ -97,7 +97,9 @@ pub(crate) fn bounds(chip: &str, elf: &Path) -> Result<Bounds, String> {
             let root = oer_process::built_root();
             let stacks = oer_chip_profile::Profile::load(&root, chip)
                 .and_then(|profile| {
-                    oer_image_check_interrupts::interrupt_stacks(&root, &profile, elf)
+                    let bytes = oer_hil_run_bundle_format::archived::read_archived(elf)
+                        .map_err(|error| error.to_string())?;
+                    oer_image_check_interrupts::interrupt_stacks(&root, &profile, bytes)
                 })
                 .map_err(|error| format!("interrupt-stack bound of {}: {error}", elf.display()))?;
             stacks

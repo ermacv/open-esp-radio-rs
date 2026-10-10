@@ -269,7 +269,9 @@ firmware/<image>/
 ├── build-provenance.json
 │                   build recipe, source materials, tools and output subjects
 ├── application.bin exact application bytes used by the flash operation
-├── runtime.elf     exact symbolized runtime used to produce the image
+├── runtime.elf.deflate
+│                   exact symbolized runtime used to produce the image,
+│                   deflate-compressed; recorded as runtime.elf
 ├── runtime.bin     exact packed stage-two runtime
 ├── bootstrap.elf   exact bootstrap used to encode the application
 │                   (bootloader.bin and partition-table.bin instead of

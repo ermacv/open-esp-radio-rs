@@ -3378,6 +3378,7 @@ dependencies = [
  "oer-hil-image-class",
  "oer-hil-run-bundle",
  "oer-hil-run-bundle-format",
+ "oer-hil-scenario",
  "oer-hil-schema",
  "oer-hil-source-snapshot",
  "oer-image",
@@ -3510,6 +3511,7 @@ dependencies = [
 name = "oer-hil-run-bundle"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "oer-durable",
  "oer-hil-protocol",
  "oer-hil-run-bundle-format",
@@ -3529,12 +3531,14 @@ dependencies = [
 name = "oer-hil-run-bundle-format"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "oer-durable",
  "oer-hil-scenario-catalog",
  "oer-hil-schema",
  "oer-process",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
 ]
 

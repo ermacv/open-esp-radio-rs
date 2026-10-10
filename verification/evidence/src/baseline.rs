@@ -36,12 +36,22 @@ impl Reach {
 /// producers measure no coverage (a host stand compiling vendor source).
 pub type Claims = BTreeMap<Root, Option<Reach>>;
 
+/// An index's claims, as [`claims`] reads them.
+#[derive(Debug, Default)]
+pub struct Read {
+    pub claims: Claims,
+    /// Roots one of whose entries records coverage in a form this format
+    /// does not read: their reach is unknown, so only their loss compares.
+    pub unread_coverage: BTreeSet<Root>,
+}
+
 /// The claims of every shard of the index `directory`, read from each
 /// entry's `source`, `symbol` and reached coverage only: an index an earlier
 /// format wrote still names them, so a change of the shard format stays
-/// comparable. A file without them makes the comparison impossible rather
-/// than an index that claims nothing.
-pub fn claims(directory: &Path) -> Result<Claims> {
+/// comparable. Coverage of another form leaves its root's reach unknown
+/// ([`Read::unread_coverage`]). A file without the roots makes the
+/// comparison impossible rather than an index that claims nothing.
+pub fn claims(directory: &Path) -> Result<Read> {
     #[derive(serde::Deserialize)]
     struct Shard {
         entries: Vec<Entry>,
@@ -50,7 +60,7 @@ pub fn claims(directory: &Path) -> Result<Claims> {
     struct Entry {
         source: String,
         symbol: String,
-        coverage: Option<Coverage>,
+        coverage: Option<serde_json::Value>,
     }
     #[derive(serde::Deserialize)]
     struct Coverage {
@@ -61,7 +71,7 @@ pub fn claims(directory: &Path) -> Result<Claims> {
     struct Count {
         reached: u64,
     }
-    let mut claims = Claims::new();
+    let mut read = Read::default();
     for name in store::names(directory)? {
         let path = store::path(directory, &name);
         let shard: Shard = serde_json::from_slice(&std::fs::read(&path)?).map_err(|error| {
@@ -71,11 +81,19 @@ pub fn claims(directory: &Path) -> Result<Claims> {
             )
         })?;
         for entry in shard.entries {
-            let reach = entry.coverage.map(|coverage| Reach {
-                blocks: coverage.blocks.reached,
-                directions: coverage.directions.reached,
-            });
-            let claim = claims.entry((entry.source, entry.symbol)).or_default();
+            let root = (entry.source, entry.symbol);
+            let reach = match entry.coverage.map(serde_json::from_value::<Coverage>) {
+                None => None,
+                Some(Ok(coverage)) => Some(Reach {
+                    blocks: coverage.blocks.reached,
+                    directions: coverage.directions.reached,
+                }),
+                Some(Err(_)) => {
+                    read.unread_coverage.insert(root.clone());
+                    None
+                }
+            };
+            let claim = read.claims.entry(root).or_default();
             *claim = match (*claim, reach) {
                 (Some(a), Some(b)) => Some(Reach {
                     blocks: a.blocks.max(b.blocks),
@@ -85,7 +103,26 @@ pub fn claims(directory: &Path) -> Result<Claims> {
             };
         }
     }
-    Ok(claims)
+    // A root's best reach is unknown when any of its entries' is.
+    for root in &read.unread_coverage {
+        read.claims.insert(root.clone(), None);
+    }
+    Ok(read)
+}
+
+impl Read {
+    /// The claims of an index the current format wrote, as the change's own
+    /// is: coverage it does not read is an error, never an unknown reach
+    /// that would read as a narrowing to nothing.
+    pub fn current(self) -> Result<Claims> {
+        match self.unread_coverage.first() {
+            Some((source, symbol)) => Err(format!(
+                "the index records the coverage of vendor root {source}::{symbol} in a form `baseline::claims` does not read; update it with the shard format"
+            )
+            .into()),
+            None => Ok(self.claims),
+        }
+    }
 }
 
 /// A chip's reviewed acceptances of what its index lost on purpose
@@ -355,7 +392,7 @@ mod tests {
     #[test]
     fn claims_keep_the_best_reach_of_a_root_and_read_an_earlier_format() {
         let directory = tempfile::tempdir().unwrap();
-        assert!(claims(directory.path()).unwrap().is_empty());
+        assert!(claims(directory.path()).unwrap().claims.is_empty());
         // An earlier format: another schema and fields this one lacks.
         let earlier = r#"{"schema": 1, "gone": true, "entries": [
             {"source": "libphy", "symbol": "set_chan", "gone": 0,
@@ -365,8 +402,23 @@ mod tests {
             {"source": "libphy", "symbol": "stand"}]}"#;
         std::fs::write(store::path(directory.path(), "radio"), earlier).unwrap();
         let read = claims(directory.path()).unwrap();
-        assert_eq!(read[&root("set_chan")], reach(6, 7));
-        assert_eq!(read[&root("stand")], None);
+        assert_eq!(read.claims[&root("set_chan")], reach(6, 7));
+        assert_eq!(read.claims[&root("stand")], None);
+        assert!(read.unread_coverage.is_empty());
+        // Coverage of another form in any entry leaves the root's reach
+        // unknown, not the other entries' partial one; the root stays claimed.
+        let other = r#"{"entries": [{"source": "libphy", "symbol": "set_chan",
+            "coverage": {"blocks": 4, "branches": {"hit": 7}}},
+            {"source": "libphy", "symbol": "set_chan",
+             "coverage": {"blocks": {"reached": 2, "total": 9}, "directions": {"reached": 1, "total": 8}}}]}"#;
+        std::fs::write(store::path(directory.path(), "radio"), other).unwrap();
+        let read = claims(directory.path()).unwrap();
+        assert_eq!(read.claims[&root("set_chan")], None);
+        assert_eq!(read.unread_coverage, [root("set_chan")].into());
+        // The change's own index is the current format: unread coverage there
+        // is an error.
+        let error = read.current().unwrap_err().to_string();
+        assert!(error.contains("libphy::set_chan"), "{error}");
         std::fs::write(store::path(directory.path(), "radio"), r#"{"schema": 1}"#).unwrap();
         let error = claims(directory.path()).unwrap_err().to_string();
         assert!(error.contains("cannot be compared"), "{error}");

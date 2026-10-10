@@ -45,6 +45,14 @@ Scenario authors also read the
    and the host stands (`verification/<chip>/host/<name>`, shard
    `<name>-host`, written by the stand's own `shard` command). A shard never
    records a file of a report package.
+   On a branch, CI's `vendor-evidence` compares the index with `main`'s:
+   a claimed vendor root that is gone, or whose comparisons reach fewer
+   blocks or branch directions, fails it unless
+   `verification/<chip>/decisions/accepted-losses.toml` accepts it with a
+   reason (`[[retired]]`, or `[[narrowed]]` with the reach kept). A
+   `[[narrowed]]` entry the comparisons reach beyond again is an error too:
+   a change that widens such a root removes or updates its entry
+   ([comparison with main](../../../verification/README.md)).
 7. **Hardware cross-checks** are HIL runs: `cargo hil run
    phy-vendor-calibration` (and its `-restart`, `-ieee802154` points) flashes
    the vendor firmware and production alternately and records the

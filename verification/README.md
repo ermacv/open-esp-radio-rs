@@ -72,7 +72,9 @@ earlier commit's) beside the branch's. The check fails when a vendor root
 the base index claims is claimed by no shard of the branch's (a claim
 exists only with a MATCH), or when the branch's comparisons of a claimed
 root reach fewer of its vendor closure's blocks or branch directions than
-the base's (the most any of the root's entries reach). It reports every
+the base's (the most any of the root's entries reach; a root whose base
+entry records coverage in a form this one does not read has an unknown
+reach, so only its loss compares, and the check says so). It reports every
 other difference (a root's production entry or scenario, cases, coverage
 totals, observation, state, untriaged locations) without failing, since
 refactors and analyzer improvements move those. A loss on purpose is

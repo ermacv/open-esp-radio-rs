@@ -318,3 +318,30 @@ fn a_job_runs_its_checks_up_to_its_tier() {
     assert_eq!("nightly".parse::<Tier>(), Ok(Tier::Nightly));
     assert!("weekly".parse::<Tier>().is_err());
 }
+
+#[test]
+fn a_branch_run_executes_what_its_change_reaches_and_every_whole_tree_check() {
+    let tool = change(&["tools/tool/src/lib.rs"], Tier::Full);
+    assert!(ids(of_job_for(&tool, "architecture")).is_empty());
+    // A check without a trigger cannot be scoped to a change: it always runs.
+    let images = ids(of_job_for(&tool, "images"));
+    assert!(images.contains(&"final-images") && !images.contains(&"example-link"));
+    let platform = change(&["platform/esp32s31/chip.toml"], Tier::Full);
+    assert!(ids(of_job_for(&platform, "architecture")).contains(&"architecture"));
+    assert!(ids(of_job_for(&platform, "images")).contains(&"example-link"));
+}
+
+#[test]
+fn a_job_runs_only_the_checks_named_and_refuses_one_it_lacks() {
+    let named = [String::from("provenance")];
+    assert_eq!(
+        ids(selected(Tier::Full, "verification", Some(&named)).unwrap()),
+        ["provenance"]
+    );
+    assert_eq!(
+        ids(selected(Tier::Full, "verification", None).unwrap()),
+        ids(of_job(Tier::Full, "verification"))
+    );
+    let foreign = [String::from("architecture")];
+    assert!(selected(Tier::Full, "verification", Some(&foreign)).is_err());
+}

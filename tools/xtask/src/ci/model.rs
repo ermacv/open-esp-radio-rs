@@ -4,7 +4,7 @@ use crate::registry::Workflow;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, str::FromStr};
 
-pub const SCHEMA: u32 = 3;
+pub const SCHEMA: u32 = 4;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CommonEnvironment {
@@ -68,10 +68,31 @@ pub struct Record {
     pub run_id: u64,
 }
 
+/// What a job does in a run. It runs all its checks (`checks: None`), only
+/// those of them a change reaches (`Some`, non-empty), is skipped because a
+/// successful run with the same inputs covers it (`source`), or is skipped
+/// because the change reaches none of its checks (`Some`, empty).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Action {
     pub run: bool,
     pub source: Option<Record>,
+    #[serde(default)]
+    pub checks: Option<Vec<String>>,
+}
+
+impl Action {
+    /// Skipped because the change reaches none of the job's checks.
+    pub fn unaffected(&self) -> bool {
+        !self.run && self.source.is_none() && self.checks.as_ref().is_some_and(Vec::is_empty)
+    }
+}
+
+/// The change a branch run is scoped to: its merge base with `main` and the
+/// checks of each job it reaches. `main` always runs whole.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Scope {
+    pub base: String,
+    pub checks: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -81,6 +102,9 @@ pub struct Plan {
     pub run_id: u64,
     pub mode: Mode,
     pub actions: BTreeMap<String, Action>,
+    /// The merge base a change-scoped plan selected checks against.
+    #[serde(default)]
+    pub change_base: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -153,6 +153,21 @@ it does not query or mutate GitHub from the source gate. See the
 `ci-status` reads recent runs per workflow, so metadata event traffic cannot
 hide a source workflow's last failure behind a shared page of runs.
 
+A push to a branch other than `main` is also **scoped to its change**:
+`prepare` asks GitHub for the merge base with `main`, fetches that one
+commit into the shallow checkout and builds the same change the push gate
+does (`gate::Change` at the full tier). Each job then runs only its checks
+whose trigger the change fires, plus every check without a trigger, which
+only runs over the whole tree (`registry::of_job_for`), passed as
+`check tier full --job JOB --checks …`; a job the change reaches no check of
+is skipped. `verify` accepts such a skip only in a change-scoped plan, and a
+partial run proves no reusable coverage. `main` and manual runs are never
+scoped, and when the change cannot be told every check runs. A check whose
+trigger misses an input it reads is therefore caught by `main`'s run after
+the merge, not on the branch. The documentation workflow builds the guides
+only when its `docs` check runs and assembles the site only for a manual
+run.
+
 Planning requires a clean checkout so the tree hash describes its source
 files. Repository source inputs must be tracked; external sources are
 materialized from pins in tracked configuration by their existing owners.

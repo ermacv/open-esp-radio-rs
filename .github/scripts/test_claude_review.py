@@ -67,7 +67,7 @@ class Policy(unittest.TestCase):
     def test_the_prompt_lists_each_filed_finding_once(self):
         issue = {"number": 7, "state": "closed", "title": "review: stale cache"}
         listed = review.filed_findings({"k1": issue, "k2": issue})
-        self.assertEqual(listed, "Pre-existing findings already filed as issues:\n"
+        self.assertEqual(listed, "Findings already filed as issues:\n"
                                  "- #7 (closed): review: stale cache")
         self.assertIn("yet", review.filed_findings({}))
 

@@ -9,10 +9,13 @@ through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overvie
 Actions, is covered by the
 [monthly API credits of Max and Team plans](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers);
 an uncovered request fails with `Credit balance too low`. It reviews each
-open, ready, same-repository pull request into `main` after every successful
-`CI` push run, when the PR opens or is marked ready with CI already green, and when a
-collaborator comments `@claude review` on it. Draft PRs and PRs without green
-CI are not reviewed.
+open, ready, same-repository pull request into `main` once, when the PR opens
+or is marked ready, in parallel with CI, and again when a collaborator
+comments `@claude review` on it. Draft PRs are not reviewed. Every push is
+reviewed before it leaves the checkout by the local review
+(`cargo xtask review`, run by `cargo xtask push`), which blocks on 🔴 and 🟡
+findings and is paid by the developer's Claude Code plan; this review audits
+it within the API budget.
 
 Every event runs the workflow file from `main`. The trusted `main` checkout
 supplies the script, `REVIEW.md` and the root `CLAUDE.md`, appended to the
@@ -21,22 +24,23 @@ The PR head is checked out in `pr/` and only read. Claude gets read-only tools (
 `git diff/log/show` in `pr/`, `gh pr view/diff`, `gh issue view`, subagents)
 and a read-only GitHub token, and returns a structured report. A separate job
 with write access posts it as a PR review with inline comments, files each
-🟣 pre-existing finding as a `kind:bug` issue with the area and priority the
+finding (🔴 important, 🟡 nit or 🟣 pre-existing) as a `kind:bug` issue
+titled `review: …` and naming the branch, with the area and priority the
 reviewer chose (once: the reviewer is shown the findings already filed, the
 marked issues of the workflow and of the repository owner only, and names the
 issue of one it finds again; a number it was not shown files anew, an
 identical path and title is caught too, and a differently worded repeat it
 fails to recognize is filed anew) and
-sets the commit status `claude-runtime-review`: success without 🔴 or 🟡
-findings, failure with them, error when the review did not complete or its
-pre-existing findings could not be filed. A blocked PR stays open until a
-re-review after the fixing push no longer reports them; `cargo xtask
-ci-status`, `check changed`, `push` and the session start hook list such PRs.
-Only the session on the PR's branch fixes it; the others only report it. A failed review's run log
-names the result subtype, API status and error message. Require this status
-alongside `ci-ok` in `main` branch protection so auto-merge cannot overtake
-the reviewer. A newer review of the same PR cancels a running one. Re-reviews
-read the previous Claude review and focus on the new commits.
+sets the informational commit status `claude-runtime-review`: success with
+the number of findings filed, error when the review did not complete or its
+findings could not be filed. It is not a required check: a PR merges once
+`ci-ok` passes, and the findings stay open as issues. `cargo xtask
+ci-status`, `check changed`, `push` and the session start hook list the open
+findings of the checkout's branch one by one and count the others; the
+session on that branch fixes them next, in a follow-up PR once the reviewed
+one merged. A failed review's run log names the result subtype, API status
+and error message. A newer review of the same PR cancels a running one.
+Re-reviews read the previous Claude review and focus on the new commits.
 
 The workflow authenticates through GitHub Actions OIDC and
 [Anthropic Workload Identity Federation](https://platform.claude.com/docs/en/manage-claude/wif-providers/github-actions),

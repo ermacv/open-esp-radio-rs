@@ -57,17 +57,16 @@ Read first (about 2k tokens): [gate and push](../../../tools/xtask/README.md#gat
    gate print a red `main`.
    Fixing it comes before other work: `gh run view <id> --log-failed`,
    reproduce the job's command locally, fix it on a branch.
-9. **Review findings.** The Claude review blocks a PR on 🔴 important and 🟡
-   nit findings and files 🟣 pre-existing ones as issues (`REVIEW.md`). The
-   session start and the gate list every open PR a review blocks, with its
-   branch. Only the session on that branch acts: for it, fixing comes before
-   other work (`gh pr view <n> --comments`, fix, `cargo xtask push` again),
-   and a PR without a review verdict gets a `@claude review` comment. Local
-   findings are fixed the same way. Fix the defect, not the cited line:
-   search the diff for every place with the same mistake and fix them
-   together, since the next review reports the ones left. Every
-   other session leaves the branch alone and only tells the user, who
-   decides who takes over an abandoned one.
+9. **Review findings.** The local review blocks the push on 🔴 important and
+   🟡 nit findings. The Claude review in CI reviews each PR once, blocks
+   nothing and files every finding as an issue titled `review: …` naming the
+   branch (`REVIEW.md`). The session start and the gate list the open findings
+   of this checkout's branch; for its session fixing them comes before other
+   work: on the same branch while the PR is open, in a follow-up PR once it
+   merged, with `Fixes #<issue>`. Fix the defect, not the cited line: search
+   the diff for every place with the same mistake and fix them together,
+   since the next review reports the ones left. Findings of other branches
+   are only reported to the user, who decides who takes over an abandoned one.
 
 ## Other workspaces and dependencies
 

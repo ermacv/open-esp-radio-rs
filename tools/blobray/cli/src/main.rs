@@ -431,6 +431,16 @@ fn function_records(
         .collect::<Result<Vec<_>>>()?;
     let memory = limits.memory()?;
     let mut control = limits.control();
+    // Image names are presentation, built before the analysis on the same
+    // control: one budget for the whole operation, and a completed analysis
+    // is never lost to them.
+    let images = match format {
+        Format::Human => executables
+            .iter()
+            .map(|executable| image_symbols(executable, &memory, &mut control))
+            .collect::<Result<Vec<_>>>()?,
+        Format::Json => Vec::new(),
+    };
     let wanted = |function: &blobray_domain::LibraryFunction| {
         function
             .name
@@ -478,13 +488,6 @@ fn function_records(
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
-    };
-    let images = match format {
-        Format::Human => executables
-            .iter()
-            .map(|executable| listing_image_symbols(executable, &memory, &limits))
-            .collect::<Result<Vec<_>>>()?,
-        Format::Json => Vec::new(),
     };
     let mut out = std::io::BufWriter::new(std::io::stdout().lock());
     match format {
@@ -586,26 +589,6 @@ fn image_symbols(
                 ))
             }),
     )))
-}
-
-/// The image symbols that name a human listing's transfer targets, built on
-/// a budget of their own so the finished analysis keeps its result. The names
-/// are presentation only: when that budget is exhausted the listing prints
-/// bare addresses instead of failing; any other error still fails.
-fn listing_image_symbols(
-    executable: &app::in_process::Executable,
-    memory: &oer_riscv_model::WorkingMemory,
-    limits: &InProcessOptions,
-) -> Result<Option<blobray_cli::listing::ImageSymbols>> {
-    names_or_none(image_symbols(executable, memory, &mut limits.control()))
-}
-
-/// `result`, with an exhausted budget read as no names.
-fn names_or_none<T>(result: Result<Option<T>>) -> Result<Option<T>> {
-    match result {
-        Err(error) if error.code == ErrorCode::ResourceLimited => Ok(None),
-        other => other,
-    }
 }
 
 fn io_error(e: std::io::Error) -> Error {
@@ -974,23 +957,4 @@ fn callers(
     }
     out.flush().map_err(io_error)?;
     Ok(ExitCode::SUCCESS)
-}
-
-#[cfg(test)]
-mod listing_names {
-    use super::names_or_none;
-    use oer_riscv_model::{Error, ErrorCode};
-
-    #[test]
-    fn an_exhausted_naming_budget_leaves_bare_addresses_and_other_errors_fail() {
-        let limited: oer_riscv_model::Result<Option<u8>> = Err(Error::new(
-            ErrorCode::ResourceLimited,
-            "work budget exhausted",
-        ));
-        assert_eq!(names_or_none(limited).unwrap(), None);
-        let broken: oer_riscv_model::Result<Option<u8>> =
-            Err(Error::new(ErrorCode::Integrity, "malformed section table"));
-        assert!(names_or_none(broken).is_err());
-        assert_eq!(names_or_none(Ok(Some(1_u8))).unwrap(), Some(1));
-    }
 }

@@ -46,8 +46,9 @@ out-of-function jump to an image address and each taken branch or jump is
 annotated `-> name` or `-> name+offset` from the image's sized function
 symbols, or with the bare address when no symbol covers it; overlapping
 aliases resolve to the one starting last, then the shorter name. These names
-are built on a budget of their own after the analysis; when it is exhausted
-the listing shows bare addresses rather than failing. The JSON document is
+are built before the analysis on the operation's one work budget and
+deadline, as every Blobray resource contract requires: a reached limit fails
+the operation, and a completed analysis is never discarded for them. The JSON document is
 `{"schema":2,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,

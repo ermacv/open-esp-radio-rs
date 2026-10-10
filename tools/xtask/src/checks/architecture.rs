@@ -27,27 +27,16 @@ fn platform_runtime(name: &str) -> bool {
     name == "esp-hal" || (name.starts_with("embassy-") && name != "embassy-sync")
 }
 
-pub fn run(ctx: &Checkout) -> Result<()> {
-    // Classification, the package name rule and the layer, platform and
-    // role rules of every dependency are `oer-tidy`'s (`cargo tidy check`).
+/// Chip-target Clippy of every production package's isolated feature
+/// profiles and of the validation probes the chip profiles name: what
+/// [`run`]'s whole-tree policies leave out, and most of the job's time. Its
+/// inputs are those packages with their dependencies, their workspaces'
+/// manifests, locks and build configuration, and the chip profiles.
+pub fn clippy(ctx: &Checkout) -> Result<()> {
     let repo = oer_repo::Repo::from_git(&ctx.root)?;
     let model = oer_repo::Model::load(&repo)?;
     let chips = oer_repo::chips::Chips::at(&ctx.root)?;
-    registers(ctx, &["check", "pac-transactions", "crates/hardware"])?;
-    zeroed::check(&repo)?;
-    interrupts::check(&model, &chips)?;
-    for profile in chips
-        .profiles()
-        .iter()
-        .filter(|profile| profile.gate.shared_words)
-    {
-        shared_words(ctx, profile)?;
-    }
     let packages = production_packages(&ctx.root, &model)?;
-    let policy = unsafe_policy::Policy::load(&ctx.root)?;
-    unsafe_policy::check(&ctx.root, &policy, &packages)?;
-    // Protocol logic is sans-IO; drivers that wait live in services.
-    sans_io::check(&packages)?;
     let configurations = architecture_configurations(&ctx.root, &packages)?;
     // Clippy compiles each isolated profile and applies every crate's own
     // lint policy from its manifest `[lints]` and crate attributes.
@@ -79,6 +68,30 @@ pub fn run(ctx: &Checkout) -> Result<()> {
             "validation-probes",
         ]))?;
     }
+    Ok(())
+}
+
+pub fn run(ctx: &Checkout) -> Result<()> {
+    // Classification, the package name rule and the layer, platform and
+    // role rules of every dependency are `oer-tidy`'s (`cargo tidy check`).
+    let repo = oer_repo::Repo::from_git(&ctx.root)?;
+    let model = oer_repo::Model::load(&repo)?;
+    let chips = oer_repo::chips::Chips::at(&ctx.root)?;
+    registers(ctx, &["check", "pac-transactions", "crates/hardware"])?;
+    zeroed::check(&repo)?;
+    interrupts::check(&model, &chips)?;
+    for profile in chips
+        .profiles()
+        .iter()
+        .filter(|profile| profile.gate.shared_words)
+    {
+        shared_words(ctx, profile)?;
+    }
+    let packages = production_packages(&ctx.root, &model)?;
+    let policy = unsafe_policy::Policy::load(&ctx.root)?;
+    unsafe_policy::check(&ctx.root, &policy, &packages)?;
+    // Protocol logic is sans-IO; drivers that wait live in services.
+    sans_io::check(&packages)?;
     facade::check(ctx, &chips, &policy)?;
     for target in chip_targets(&chips) {
         let graph = cargo::metadata(ctx, &ctx.root.join("Cargo.toml"), &[], Some(&target), true)?;

@@ -316,7 +316,9 @@ fn dispatch(ctx: &Checkout, command: Task) -> Result<std::process::ExitCode> {
             Check::Changed { base, full } => checks::changed::run(&ctx, &base, full),
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
             Check::FeatureSets => checks::feature_sets::run(&ctx),
-            Check::Architecture => checks::architecture::run(&ctx),
+            Check::Architecture => {
+                checks::architecture::run(&ctx).and_then(|()| checks::architecture::clippy(&ctx))
+            }
             Check::Network => checks::network::run(&ctx),
             Check::Docs => checks::docs::run(&ctx),
             Check::Capabilities { changed } => checks::docs::capabilities(&ctx, &changed),

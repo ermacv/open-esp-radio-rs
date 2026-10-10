@@ -266,9 +266,19 @@ pub const CHECKS: &[Check] = &[
         id: "architecture",
         tier: Tier::Full,
         job: "architecture",
-        summary: "chip-target Clippy of every production feature profile, facade, unsafe and PAC boundaries",
-        trigger: Some(|change| touches(change, &["crates/", "platform/", "registers/"])),
+        summary: "facade, unsafe, sans-IO, interrupt, zeroed-section, shared-word and PAC boundaries, platform-free layers and compositions",
+        // Whole-tree policies: zeroed sections in every `.rs`, interrupt
+        // features of every manifest, the HIL agent's composition.
+        trigger: Some(|_| true),
         run: |ctx, _| checks::architecture::run(ctx),
+    },
+    Check {
+        id: "architecture-clippy",
+        tier: Tier::Full,
+        job: "architecture",
+        summary: "chip-target Clippy of every production feature profile and the validation probes",
+        trigger: Some(production_profiles),
+        run: |ctx, _| checks::architecture::clippy(ctx),
     },
     Check {
         id: "chip-doctest",
@@ -610,11 +620,51 @@ pub fn of_change(change: &Change) -> Vec<&'static Check> {
 /// sections in every `.rs`, interrupt features of every manifest, the HIL
 /// agent's composition). Declared inputs per check (#467) generalize this.
 pub const SCOPED_IN_CI: &[&str] = &[
+    // Chip-target Clippy of the production profiles: its trigger is the
+    // packages it compiles, as the model classifies them
+    // ([`production_profiles`]).
+    "architecture-clippy",
     // API documentation of the root packages a change reaches; their
     // sources and manifests select them, and what else it reads (the root
     // lock, the toolchain) runs everything.
     "doc",
 ];
+
+/// Whether `change` reaches what `architecture-clippy` compiles: a
+/// production package that builds for a chip target, itself or through a
+/// dependency (`affected` holds the dependents of every changed package,
+/// including through declared inputs and lock changes), a package the model
+/// cannot classify, the chip profiles that name targets and validation
+/// probes (`platform/`), the register models (`registers/`), or the build
+/// configuration of any workspace. The root workspace's manifest and lock,
+/// the toolchain and the checks' own tooling run everything anyway.
+pub fn production_profiles(change: &Change) -> bool {
+    let build_configuration = change.files.iter().any(|file| {
+        let name = file.rsplit('/').next().unwrap_or(file);
+        file.ends_with(".cargo/config.toml")
+            || file.ends_with(".cargo/config")
+            || name == "rust-toolchain.toml"
+            || name == "clippy.toml"
+    });
+    let model = &change.tree.model;
+    build_configuration
+        || touches(change, &["platform/", "registers/"])
+        || model.packages().iter().any(|package| {
+            let compiled = match model.classification(package) {
+                Ok(class) => {
+                    class.scope == oer_repo::Scope::Production
+                        && class.platform != oer_repo::Platform::Host
+                }
+                Err(_) => true,
+            };
+            compiled
+                && model.workspace_of(package).is_some_and(|workspace| {
+                    change
+                        .affected
+                        .contains(&(workspace.to_owned(), package.name.clone()))
+                })
+        })
+}
 
 /// The checks of `job` up to `change`'s tier that a CI run for `change`
 /// executes: every check, but one of [`SCOPED_IN_CI`] only when the change

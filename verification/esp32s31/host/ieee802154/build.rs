@@ -67,7 +67,10 @@ fn ledger(text: &str, root: &Path) -> (PathBuf, String, Vec<Source>) {
                 .iter()
                 .find(|(unit, _)| *unit == a.path)
                 .map(|(_, feature)| (*feature).to_owned()),
-            sha256: a.sha256.clone(),
+            sha256: a
+                .sha256
+                .clone()
+                .expect("the ESP-IDF source pins each file's SHA-256"),
             path: a.path.clone(),
         })
         .collect();

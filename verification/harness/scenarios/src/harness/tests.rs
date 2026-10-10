@@ -183,6 +183,7 @@ fn catalog_prepares_buffers_without_inventing_private_layouts() {
 
 #[test]
 fn authentication_precedes_capture() {
+    crate::install(&crate::chip::TEST);
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
     let source = root.join("source");
@@ -193,4 +194,19 @@ fn authentication_precedes_capture() {
         sha256: Some("wrong-hash"),
     }];
     assert!(authenticate(&inputs).is_err());
+}
+
+#[test]
+fn a_missing_input_names_its_role_and_path() {
+    crate::install(&crate::chip::TEST);
+    let directory = tempfile::tempdir().unwrap();
+    let missing = directory.path().join("absent.elf");
+    let inputs = [Input {
+        role: "phy-sdk",
+        path: &missing,
+        sha256: None,
+    }];
+    let error = authenticate(&inputs).err().unwrap().to_string();
+    assert!(error.contains("phy-sdk: cannot read"), "{error}");
+    assert!(error.contains("absent.elf"), "{error}");
 }

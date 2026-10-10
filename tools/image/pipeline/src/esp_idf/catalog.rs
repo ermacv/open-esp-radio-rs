@@ -129,6 +129,17 @@ pub fn build(root: &Path, image: &str) -> Result<idf::Build> {
         .ok_or_else(|| "the build produced no image".into())
 }
 
+/// The record of the catalog entry `image`'s last build in the tree at
+/// `root` when it followed the entry's current recipe; an error naming the
+/// build command when the entry is not built or its sources or pins changed
+/// since.
+pub fn current(root: &Path, image: &str) -> Result<idf::Build> {
+    let entries = entries(root)?;
+    let entry = entry(&entries, image)?;
+    idf::current(root, &entry.pins, &entry.project(root))
+        .map_err(|error| format!("{error}; run `cargo hil firmware build {image}`").into())
+}
+
 /// The application a built entry provides and its SHA-256.
 pub fn product(build: &idf::Build) -> (PathBuf, String) {
     (

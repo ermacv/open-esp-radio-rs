@@ -90,12 +90,12 @@ pub fn start_session(options: &PhyOptions, extra: &[Input<'_>], purpose: &str) -
         Input {
             role: "phy",
             path: &options.library,
-            sha256: Some(crate::artifacts::sha256(layout().library)),
+            sha256: Some(crate::artifacts::sha256(layout().library)?),
         },
         Input {
             role: "rom",
             path: &options.rom,
-            sha256: Some(crate::artifacts::sha256(layout().rom)),
+            sha256: Some(crate::artifacts::sha256(layout().rom)?),
         },
         Input {
             role: "production",
@@ -142,16 +142,16 @@ pub fn delay_calls(id: &str, address: u32) -> Vec<blobray_domain::CallDeclaratio
 
 /// Authenticated PHY SDK firmware: supplies the never-executed diagnostics
 /// symbols (`phy_printf`) that co-located archive sections reference.
-pub fn phy_sdk_input(path: &Path) -> Input<'_> {
-    Input {
+pub fn phy_sdk_input(path: &Path) -> Result<Input<'_>> {
+    Ok(Input {
         role: "phy-sdk",
         path,
         sha256: Some(crate::artifacts::sha256(
             layout()
                 .phy_sdk
                 .expect("the chip's PHY layout names its SDK firmware"),
-        )),
-    }
+        )?),
+    })
 }
 
 /// Code and data placement of linked PHY images.

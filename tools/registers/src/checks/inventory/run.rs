@@ -20,12 +20,12 @@ struct Input {
     sha256: String,
 }
 
-/// Every pinned vendor binary of `chip`, in pin order. Local builds are
+/// Every pinned vendor binary of `chip`, in pin order. Firmware outputs are
 /// applications linked from these binaries, and sources are not code.
 fn inputs(ctx: &Checkout, chip: &str) -> Result<Vec<Input>> {
     let mut inputs = vec![];
     for pinned in oer_vendor_artifacts::pinned(&ctx.root, chip)? {
-        if pinned.local {
+        if pinned.firmware {
             continue;
         }
         let bytes = fs::read(&pinned.path)?;

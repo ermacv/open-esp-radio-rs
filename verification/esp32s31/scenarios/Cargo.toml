@@ -24,6 +24,8 @@ toml = "=1.1.4"
 
 [dev-dependencies]
 oer-vendor-pins = { path = "../../../tools/vendor-pins" }
+oer-esp-idf = { path = "../../../tools/esp-idf" }
+oer-image = { path = "../../../tools/image/pipeline" }
 
 [lints]
 workspace = true

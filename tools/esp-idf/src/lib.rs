@@ -35,6 +35,8 @@ const IDF_SOURCE: &str = "esp-idf";
 const TOOLS: &str = "idf-tools";
 /// The ESP-IDF tree that configured a project's build directory.
 const CONFIGURED_TREE: &str = "configured-tree";
+/// The recipe that last configured a project's outputs.
+const CONFIGURED_RECIPE: &str = "configured-recipe";
 
 /// Marker of a completed tool installation for one ESP-IDF tree and chip.
 const TOOLS_MARKER: &str = ".oer-installed";
@@ -319,6 +321,8 @@ pub struct Build {
     pub application: String,
     pub application_sha256: String,
     pub elf: String,
+    /// The [`recipe`] the build followed.
+    pub recipe: String,
 }
 
 /// One ESP-IDF project to build: its directory and its target chip.
@@ -332,6 +336,61 @@ pub struct Project {
 /// `build.json`.
 pub fn output(root: &Path, project: &Project) -> PathBuf {
     root.join(OUTPUT).join(&project.chip).join(&project.name)
+}
+
+/// SHA-256 of what a build of `project` against the `artifacts.toml` of
+/// `pins` follows from: the pinned ESP-IDF tree (the IDF
+/// revision and every pinned source) and each file below the project
+/// directory with its contents. Files the project names outside its
+/// directory, such as a shared partition table, are not part of it.
+pub fn recipe(root: &Path, pins: &str, project: &Project) -> Result<String> {
+    project_recipe(&oer_vendor_pins::git_pins(root, pins)?, &project.source)
+}
+
+fn project_recipe(pins: &[GitPin], source: &Path) -> Result<String> {
+    let revision = &pins
+        .iter()
+        .find(|pin| pin.id == IDF_SOURCE)
+        .ok_or("the pins name no ESP-IDF source")?
+        .revision;
+    let mut files = vec![];
+    project_files(source, Path::new(""), &mut files)?;
+    files.sort();
+    let mut text = format!("tree {}\n", tree_name(pins, revision));
+    for file in files {
+        let digest = oer_durable::sha256_file(&source.join(&file))?;
+        text.push_str(&format!("{digest} {}\n", file.display()));
+    }
+    Ok(oer_durable::sha256_bytes(text.as_bytes()))
+}
+
+/// Every file below `directory`, relative to the project root.
+fn project_files(base: &Path, relative: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in std::fs::read_dir(base.join(relative))? {
+        let entry = entry?;
+        let path = relative.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            project_files(base, &path, files)?;
+        } else {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// The record of the last build of `project` when it followed the current
+/// [`recipe`]; an error when the project is not built or its build followed
+/// another recipe.
+pub fn current(root: &Path, pins: &str, project: &Project) -> Result<Build> {
+    let record = output(root, project).join(BUILD_RECORD);
+    let Ok(bytes) = std::fs::read(&record) else {
+        return Err(format!("{} is not built", project.name).into());
+    };
+    let build: Build = serde_json::from_slice(&bytes)?;
+    if build.recipe != recipe(root, pins, project)? {
+        return Err(format!("the build of {} follows another recipe", project.name).into());
+    }
+    Ok(build)
 }
 
 /// Build `projects` against the ESP-IDF and vendor archives pinned by the
@@ -355,6 +414,23 @@ fn built_tree(output: &Path) -> Option<(String, Option<PathBuf>)> {
     Some((record.idf_revision, record.idf_tree))
 }
 
+/// Prepare `output` for a build of `recipe` before it starts. The previous
+/// record is removed, so a failed build leaves none that a later rollback of
+/// the sources could take for this one. The recipe the outputs were last
+/// configured by is kept apart from the record: when it differs, the
+/// sdkconfig starts afresh, since ESP-IDF applies `sdkconfig.defaults` only
+/// to options an existing sdkconfig lacks.
+fn configure_recipe(output: &Path, recipe: &str) -> Result<()> {
+    std::fs::create_dir_all(output)?;
+    remove_if_present(&output.join(BUILD_RECORD))?;
+    let marker = output.join(CONFIGURED_RECIPE);
+    if std::fs::read_to_string(&marker).ok().as_deref() != Some(recipe) {
+        remove_if_present(&output.join("sdkconfig"))?;
+    }
+    std::fs::write(marker, recipe)?;
+    Ok(())
+}
+
 fn remove_if_present(path: &Path) -> Result<()> {
     let removed = if path.is_dir() {
         std::fs::remove_dir_all(path)
@@ -368,6 +444,10 @@ fn remove_if_present(path: &Path) -> Result<()> {
 }
 
 pub fn build(root: &Path, pins: &str, projects: &[Project]) -> Result<Vec<Build>> {
+    let recipes = projects
+        .iter()
+        .map(|project| recipe(root, pins, project))
+        .collect::<Result<Vec<_>>>()?;
     let pins = oer_vendor_pins::git_pins(root, pins)?;
     let cache = cache_directory()?;
     std::fs::create_dir_all(&cache)?;
@@ -384,7 +464,7 @@ pub fn build(root: &Path, pins: &str, projects: &[Project]) -> Result<Vec<Build>
     lock.convert(Mode::Shared)?;
     remove_checkout_copies(root);
     let mut builds = Vec::with_capacity(projects.len());
-    for project in projects {
+    for (project, recipe) in projects.iter().zip(recipes) {
         let name = &project.name;
         let chip = &project.chip;
         let output = output(root, project);
@@ -393,7 +473,7 @@ pub fn build(root: &Path, pins: &str, projects: &[Project]) -> Result<Vec<Build>
             remove_if_present(&build)?;
             remove_if_present(&output.join("sdkconfig"))?;
         }
-        std::fs::create_dir_all(&output)?;
+        configure_recipe(&output, &recipe)?;
         std::fs::write(
             output.join(CONFIGURED_TREE),
             tree.to_string_lossy().as_bytes(),
@@ -436,6 +516,7 @@ idf.py --preview -C "$OER_PROJECT" -B "$OER_BUILD" -DIDF_TARGET="$OER_CHIP" -DSD
             application_sha256: oer_durable::sha256_file(&application)?,
             application: application.display().to_string(),
             elf: elf.display().to_string(),
+            recipe,
         };
         let mut bytes = serde_json::to_vec_pretty(&record)?;
         bytes.push(b'\n');
@@ -533,6 +614,7 @@ mod tests {
             application: String::new(),
             application_sha256: String::new(),
             elf: String::new(),
+            recipe: String::new(),
         };
         std::fs::write(
             directory.path().join(BUILD_RECORD),
@@ -546,10 +628,31 @@ mod tests {
         // A record from before the cache names no tree, so its build is redone.
         std::fs::write(
             directory.path().join(BUILD_RECORD),
-            r#"{"chip":"chip-a","project":"p","idf_revision":"abc","overrides":[],"application":"","application_sha256":"","elf":""}"#,
+            r#"{"chip":"chip-a","project":"p","idf_revision":"abc","overrides":[],"application":"","application_sha256":"","elf":"","recipe":"r"}"#,
         )
         .unwrap();
         assert_eq!(built_tree(directory.path()), Some(("abc".into(), None)));
+    }
+
+    #[test]
+    fn a_build_of_another_recipe_drops_the_record_and_the_sdkconfig_first() {
+        let output = tempfile::tempdir().unwrap();
+        let path = |name: &str| output.path().join(name);
+        configure_recipe(output.path(), "old").unwrap();
+        std::fs::write(path("sdkconfig"), "old").unwrap();
+        std::fs::write(path(BUILD_RECORD), "{}").unwrap();
+        // The same recipe keeps the sdkconfig; its record is rewritten after the build.
+        configure_recipe(output.path(), "old").unwrap();
+        assert!(path("sdkconfig").is_file());
+        assert!(!path(BUILD_RECORD).exists());
+        // Another recipe starts the sdkconfig afresh, and when its build
+        // fails and the sources roll back, no record confirms the outputs.
+        std::fs::write(path(BUILD_RECORD), "{}").unwrap();
+        configure_recipe(output.path(), "new").unwrap();
+        assert!(!path("sdkconfig").exists() && !path(BUILD_RECORD).exists());
+        std::fs::write(path("sdkconfig"), "new").unwrap();
+        configure_recipe(output.path(), "old").unwrap();
+        assert!(!path("sdkconfig").exists());
     }
 
     #[test]
@@ -567,6 +670,29 @@ mod tests {
         assert_eq!(tree_name(&reordered, "aa"), name);
         let changed = [pin("esp-idf", "aa"), pin("esp32-wifi-lib", "cc")];
         assert_ne!(tree_name(&changed, "aa"), name);
+    }
+
+    #[test]
+    fn a_recipe_follows_the_project_files_and_the_pinned_tree() {
+        let pin = |id: &str, revision: &str| GitPin {
+            id: id.into(),
+            repository: format!("https://example.invalid/{id}"),
+            revision: revision.into(),
+            artifacts: vec![],
+        };
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join("main")).unwrap();
+        std::fs::write(project.path().join("main/main.c"), "a").unwrap();
+        let pins = [pin("esp-idf", "aa")];
+        let recipe = project_recipe(&pins, project.path()).unwrap();
+        assert_eq!(project_recipe(&pins, project.path()).unwrap(), recipe);
+        assert_ne!(
+            project_recipe(&[pin("esp-idf", "bb")], project.path()).unwrap(),
+            recipe
+        );
+        std::fs::write(project.path().join("main/main.c"), "b").unwrap();
+        assert_ne!(project_recipe(&pins, project.path()).unwrap(), recipe);
+        assert!(project_recipe(&[pin("esp32-wifi-lib", "cc")], project.path()).is_err());
     }
 
     #[test]

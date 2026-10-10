@@ -411,7 +411,7 @@ fn pinned_functions(
     let mut out = BTreeMap::new();
     let mut symbols = BTreeSet::new();
     for artifact in oer_vendor_artifacts::pinned(root, chip)? {
-        if artifact.local {
+        if artifact.firmware {
             continue;
         }
         let bytes = std::fs::read(&artifact.path)

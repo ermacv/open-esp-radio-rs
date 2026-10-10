@@ -61,8 +61,8 @@ of the evidence index with `--index`; qualification treats a shard as stale
 when any source it records changed or a reviewed coverage decision that
 applies to its closures did, and rejects a shard whose recorded source or
 decision file no longer exists. CI does not rerun the vendor scenarios,
-because the `local-build` pins of `esp32s31/artifacts.toml` cannot be
-downloaded: Blobray's periodic local `cargo verification evidence --chip <chip>
+because the firmware pins of `esp32s31/artifacts.toml` are built with
+ESP-IDF rather than downloaded: Blobray's periodic local `cargo verification evidence --chip <chip>
 --check` is the gate; `--changed-since <rev>` skips the shards that record no
 file changed since a rebase's base. Only that check's owner regenerates the shards, in
 commits of their own after each check; other changes, including rebases over a

@@ -21,37 +21,53 @@ type Observer<'a> = dyn FnMut(Candidate<'_>, &mut dyn RunControl) -> Result<()> 
 /// Every candidate address the analyzed function `records` access: memory
 /// accesses with the bits a read-modify-write replaces, and masked reads.
 /// A resolved address outside every range of nonempty `ranges` is skipped.
-pub(crate) fn observe<'m>(
+pub(crate) fn observe<'a, 'm>(
     records: &[FunctionRecord],
-    facts: &Facts<'_, 'm>,
+    facts: &Facts<'a, 'm>,
     memory: &'m WorkingMemory,
     ranges: &[ImageRegion],
     c: &mut dyn RunControl,
     emit: &mut Observer<'_>,
 ) -> Result<()> {
+    // A store's stored bits are evaluated only once one of its candidates
+    // is in range, and once for all of them, so a store the ranges exclude
+    // costs no work and no memo.
+    let mut evaluator = blobray_analysis::registers::StoredBitsEvaluator::new(facts, memory);
     let mut observe = |record: u64,
                        width: u8,
                        address: &AbstractValue,
                        mask: Option<RegisterMask>,
-                       stored: Option<Vec<StoredBits>>,
+                       stored_value: Option<&'a AbstractValue>,
                        c: &mut dyn RunControl| {
         let fact = &records[record as usize];
-        candidates(address, c, &mut |address, alternative, c| {
+        let mut stored: Option<Vec<StoredBits>> = None;
+        candidates(address, c, &mut |resolved, alternative, c| {
             c.checkpoint(ranges.len() as u64 + 1)?;
-            if let Some(address) = address
+            if let Some(resolved) = resolved
                 && !ranges.is_empty()
                 && !ranges.iter().any(|r| {
-                    u64::from(address) < r.end().unwrap_or(0)
-                        && u64::from(r.start) < u64::from(address) + u64::from(width)
+                    u64::from(resolved) < r.end().unwrap_or(0)
+                        && u64::from(r.start) < u64::from(resolved) + u64::from(width)
                 })
             {
                 return Ok(());
+            }
+            if let Some(value) = stored_value
+                && stored.is_none()
+            {
+                stored = Some(blobray_analysis::registers::stored_bits(
+                    &mut evaluator,
+                    address,
+                    width,
+                    value,
+                    c,
+                )?);
             }
             emit(
                 Candidate {
                     record,
                     fact,
-                    address,
+                    address: resolved,
                     alternative,
                     mask,
                     stored: stored.clone(),
@@ -60,24 +76,21 @@ pub(crate) fn observe<'m>(
             )
         })
     };
-    let mut evaluator = blobray_analysis::registers::StoredBitsEvaluator::new(facts, memory);
     facts.accesses(c, &mut |access, c| {
         let mask = access.value.and_then(|v| {
             blobray_analysis::registers::write_mask(facts, access.address, access.width, v)
         });
-        let stored = match access.value {
-            Some(v) if matches!(access.access, MemoryKind::Store) => {
-                Some(blobray_analysis::registers::stored_bits(
-                    &mut evaluator,
-                    access.address,
-                    access.width,
-                    v,
-                    c,
-                )?)
-            }
-            _ => None,
-        };
-        observe(access.record, access.width, access.address, mask, stored, c)
+        let stored_value = access
+            .value
+            .filter(|_| matches!(access.access, MemoryKind::Store));
+        observe(
+            access.record,
+            access.width,
+            access.address,
+            mask,
+            stored_value,
+            c,
+        )
     })?;
     for (record, fact) in records.iter().enumerate() {
         c.checkpoint(1)?;
@@ -124,5 +137,79 @@ fn candidates(
             Ok(())
         }
         _ => emit(None, None, c),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NODES: u32 = 40;
+
+    /// `x0 = a0; x(i+1) = x(i) + x(i)` and a store of `value` to 0x20000.
+    fn records(value: AbstractValue) -> Vec<FunctionRecord> {
+        let mut records: Vec<FunctionRecord> = (0..NODES)
+            .map(|id| FunctionRecord::Expression {
+                id,
+                offset: 0,
+                expression: if id == 0 {
+                    Expression::EntryRegister { register: 10 }
+                } else {
+                    Expression::Integer {
+                        op: IntegerOp::Add,
+                        left: AbstractValue::Expression { id: id - 1 },
+                        right: AbstractValue::Expression { id: id - 1 },
+                    }
+                },
+            })
+            .collect();
+        records.push(FunctionRecord::MemoryAccess {
+            offset: 4,
+            access: MemoryKind::Store,
+            width: 4,
+            address: AbstractValue::Constant { value: 0x20000 },
+            value: Some(value),
+            relocation: None,
+        });
+        records
+    }
+
+    /// The checkpoints `observe` takes over `records` with `ranges`.
+    fn work(records: &[FunctionRecord], ranges: &[ImageRegion]) -> u64 {
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let facts = Facts::new(records, &memory, &mut || Ok(())).unwrap();
+        let mut checkpoints = 0;
+        let mut count = || {
+            checkpoints += 1;
+            Ok(())
+        };
+        observe(records, &facts, &memory, ranges, &mut count, &mut |_, _| {
+            Ok(())
+        })
+        .unwrap();
+        checkpoints
+    }
+
+    #[test]
+    fn a_store_outside_the_ranges_evaluates_no_stored_bits() {
+        let deep = records(AbstractValue::Expression { id: NODES - 1 });
+        let flat = records(AbstractValue::Constant { value: 3 });
+        let outside = [ImageRegion {
+            start: 0x40000,
+            length: 4,
+        }];
+        assert_eq!(
+            work(&deep, &outside),
+            work(&flat, &outside),
+            "an excluded store's value is never walked"
+        );
+        let inside = [ImageRegion {
+            start: 0x20000,
+            length: 4,
+        }];
+        assert!(
+            work(&deep, &inside) >= work(&flat, &inside) + u64::from(NODES),
+            "an included store's value is walked, one checkpoint per node"
+        );
     }
 }

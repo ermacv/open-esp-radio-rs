@@ -501,6 +501,12 @@ fn function_records(
             .collect::<Result<Vec<_>>>()?,
         Format::Json => Vec::new(),
     };
+    // The string sections the named functions' objects hold, read on the
+    // same control before the analysis, like the image names.
+    let strings = match format {
+        Format::Human => string_sections(&executables, &names, &memory, &mut control)?,
+        Format::Json => std::collections::BTreeMap::new(),
+    };
     let wanted = |function: &blobray_domain::LibraryFunction| {
         function
             .name
@@ -549,10 +555,7 @@ fn function_records(
     } else {
         ExitCode::FAILURE
     };
-    let mut texts = match format {
-        Format::Human => referenced_strings(&functions, &executables, &memory, &mut control)?,
-        Format::Json => std::collections::BTreeMap::new(),
-    };
+    let mut texts = referenced_strings(&functions, &strings);
     let mut out = std::io::BufWriter::new(std::io::stdout().lock());
     match format {
         Format::Json => {
@@ -620,25 +623,55 @@ fn function_records(
     Ok(status)
 }
 
+/// The bytes of every read-only string section (`SHF_STRINGS`) of the
+/// objects that define a function `names` names, by object and section.
+fn string_sections(
+    executables: &[app::in_process::Executable],
+    names: &[String],
+    memory: &oer_riscv_model::WorkingMemory,
+    control: &mut app::in_process::Limits,
+) -> Result<std::collections::BTreeMap<(oer_riscv_model::ObjectId, u32), Vec<u8>>> {
+    let mut sections = std::collections::BTreeMap::new();
+    for executable in executables {
+        let inventory = app::captured::inventory(executable, memory, control)?;
+        for object in &inventory.objects {
+            let Some(elf) = &object.elf else { continue };
+            let defines = elf.symbols.iter().any(|symbol| {
+                symbol.raw_section != 0
+                    && symbol
+                        .name
+                        .as_deref()
+                        .is_some_and(|name| names.iter().any(|wanted| wanted.as_bytes() == name))
+            });
+            if !defines {
+                continue;
+            }
+            for section in blobray_cli::symbols::read_only_data(elf) {
+                if blobray_cli::symbols::is_string_section(elf, section.index) {
+                    let bytes = section_bytes(&object.id, section, executables, memory, control)?;
+                    sections.insert((object.id.clone(), section.index), bytes);
+                }
+            }
+        }
+    }
+    Ok(sections)
+}
+
 /// The text each analyzed function's `.L` local-label relocations name in a
-/// read-only string section (`SHF_STRINGS`), by function and instruction
-/// offset. Labels of other data, such as jump tables, are not text.
+/// read-only string section of `sections`, by function and instruction
+/// offset. A PCREL low reference names its high part's label and addend, so
+/// both instructions of the pair show the same text; labels of other data,
+/// such as jump tables, are not text.
 #[allow(clippy::type_complexity)]
 fn referenced_strings(
     functions: &[blobray_cli::wire::NamedFunction],
-    executables: &[app::in_process::Executable],
-    memory: &oer_riscv_model::WorkingMemory,
-    control: &mut app::in_process::Limits,
-) -> Result<
-    std::collections::BTreeMap<
-        (u64, oer_riscv_model::SymbolId),
-        std::collections::BTreeMap<u64, Vec<String>>,
-    >,
+    sections: &std::collections::BTreeMap<(oer_riscv_model::ObjectId, u32), Vec<u8>>,
+) -> std::collections::BTreeMap<
+    (u64, oer_riscv_model::SymbolId),
+    std::collections::BTreeMap<u64, Vec<String>>,
 > {
-    use std::collections::BTreeMap;
-    let mut inventories = BTreeMap::new();
-    let mut sections: BTreeMap<(oer_riscv_model::ObjectId, u32), Option<Vec<u8>>> = BTreeMap::new();
-    let mut texts = BTreeMap::new();
+    let mut texts: std::collections::BTreeMap<_, std::collections::BTreeMap<u64, Vec<String>>> =
+        std::collections::BTreeMap::new();
     for function in functions {
         let blobray_cli::wire::NamedFunction::Analyzed {
             function, records, ..
@@ -646,65 +679,38 @@ fn referenced_strings(
         else {
             continue;
         };
-        let object = &function.symbol.object;
         for record in records {
-            let oer_riscv_model::FunctionRecord::Reference { raw, target, .. } = record else {
+            let oer_riscv_model::FunctionRecord::Reference {
+                raw,
+                target,
+                addend,
+                ..
+            } = record
+            else {
                 continue;
             };
             let (Some(section), true) = (target.section, target.name.starts_with(b".L")) else {
                 continue;
             };
-            let key = (object.clone(), section);
-            if !sections.contains_key(&key) {
-                let Some(executable) = executables.get(function.input as usize) else {
-                    continue;
-                };
-                let inventory = match inventories.entry(function.input) {
-                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(app::captured::inventory(executable, memory, control)?)
-                    }
-                };
-                let record = inventory
-                    .objects
-                    .iter()
-                    .find(|candidate| &candidate.id == object)
-                    .and_then(|candidate| candidate.elf.as_ref())
-                    .filter(|elf| blobray_cli::symbols::is_string_section(elf, section))
-                    .and_then(|elf| elf.sections.iter().find(|record| record.index == section))
-                    .cloned();
-                let bytes = match record {
-                    Some(record) => Some(section_bytes(
-                        object,
-                        &record,
-                        executables,
-                        memory,
-                        control,
-                    )?),
-                    None => None,
-                };
-                sections.insert(key.clone(), bytes);
-            }
-            let Some(bytes) = &sections[&key] else {
+            let Some(bytes) = sections.get(&(function.symbol.object.clone(), section)) else {
                 continue;
             };
-            let offset = target
-                .offset
-                .checked_add_signed(raw.addend.unwrap_or(0))
-                .unwrap_or(u64::MAX);
+            let Some(offset) = target.offset.checked_add_signed(addend.unwrap_or(0)) else {
+                continue;
+            };
             if let Some(text) =
                 blobray_cli::symbols::string_at(bytes, offset).filter(|text| !text.is_empty())
             {
                 texts
                     .entry((function.input, function.symbol.clone()))
-                    .or_insert_with(BTreeMap::new)
+                    .or_default()
                     .entry(raw.offset)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(text);
             }
         }
     }
-    Ok(texts)
+    texts
 }
 
 /// The complete bytes of `section` of `object`, as its inventory record

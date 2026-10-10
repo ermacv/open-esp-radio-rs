@@ -75,11 +75,17 @@ fn records(bounded: bool) -> Vec<FunctionRecord> {
                 signed: true,
             },
         ),
-        FunctionRecord::Value {
-            offset: 0x10,
-            register: 15,
-            value: AbstractValue::Expression { id: 3 },
-            relocation: None,
+        FunctionRecord::CallInputs {
+            offset: 0x14,
+            registers: (0..32)
+                .map(|register| {
+                    if register == 15 {
+                        AbstractValue::Expression { id: 3 }
+                    } else {
+                        AbstractValue::Unknown
+                    }
+                })
+                .collect(),
         },
         FunctionRecord::Instruction {
             offset: 0x14,
@@ -346,8 +352,8 @@ fn a_return_is_never_a_dispatch_candidate() {
                 link: false,
             };
         }
-        if let FunctionRecord::Value { register, .. } = record {
-            *register = 1;
+        if let FunctionRecord::CallInputs { registers, .. } = record {
+            registers.swap(1, 15);
         }
     }
     assert!(run(&returning, &facts(3, 0x38)).is_empty());

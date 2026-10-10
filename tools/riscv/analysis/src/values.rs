@@ -804,6 +804,26 @@ pub(super) fn analyze_with(
             symbolic,
             abi,
         )?;
+        // In a relocatable object, a jump the graph left without a target (an
+        // `indirect` edge, which already makes its control flow incomplete),
+        // such as one through a jump table whose base a register holds, is a
+        // gap; one a caller expanded is a dispatch too, but no gap. Returns,
+        // tail calls and relocated jumps have targets and are neither. An
+        // image finds its unexpanded jumps below, where their targets are
+        // known.
+        let first = edges.partition_point(|e| e.from < node.offset);
+        let unexpanded = input.image.is_none()
+            && edges[first..]
+                .iter()
+                .take_while(|e| e.from == node.offset)
+                .any(|e| e.relation == EdgeKind::Indirect);
+        let dispatch = unexpanded
+            || (input.image.is_none() && input.jumps.iter().any(|jump| jump.site == node.offset));
+        if unexpanded {
+            effects
+                .gap
+                .get_or_insert(SemanticGapReason::UnexpandedControlFlow);
+        }
         if symbolic {
             if let Some((test, left, right)) =
                 isa.branch(&input.bytes[start..start + node.decoded.length as usize])
@@ -818,7 +838,10 @@ pub(super) fn analyze_with(
                     control,
                 )?;
             }
-            if operations[i].opaque_call {
+            // The registers at a call, and at a relocatable object's dispatch,
+            // expanded or not: a caller reads a jump table from them, and
+            // proves it again on the pass that follows it.
+            if operations[i].opaque_call || dispatch {
                 sink.record(
                     &FunctionRecord::CallInputs {
                         offset: node.offset,
@@ -1555,6 +1578,165 @@ mod tests {
                 .iter()
                 .any(|r| matches!(r, FunctionRecord::CallInputs { offset: 6, .. }))
         );
+    }
+    #[test]
+    fn an_object_dispatch_through_a_loaded_register_records_its_registers() {
+        // `lw a5, 0(a1); jalr zero, 0(a5)` in a relocatable object, and a
+        // `jalr zero, 0(ra)` return.
+        let ops = vec![
+            SemanticOp::Memory {
+                kind: MemoryKind::Load,
+                base: 11,
+                displacement: 0,
+                width: 4,
+                dest: Some(15),
+                source: None,
+                swap: false,
+                signed: false,
+            },
+            SemanticOp::None,
+        ];
+        let bytes = [0, 0, 1, 0];
+        let run = |base: u8, jumps: &[KnownJump], relocated: bool| {
+            let nodes: Vec<_> = (0..2)
+                .map(|i| Node {
+                    offset: i * 2,
+                    decoded: DecodedOp {
+                        length: 2,
+                        text: String::new(),
+                        flow: if i == 1 {
+                            InstructionFlow::Indirect {
+                                base,
+                                offset: 0,
+                                link: false,
+                            }
+                        } else {
+                            InstructionFlow::Next
+                        },
+                    },
+                    conflict: false,
+                })
+                .collect();
+            // The graph's edges: a fall-through, then the jump's as the graph
+            // builds them (`indirect` when unexpanded, `jump` to each known
+            // target, none for a return).
+            let mut edges = vec![Edge {
+                from: 0,
+                target: Some(2),
+                relation: EdgeKind::Fallthrough,
+                external: false,
+            }];
+            if relocated {
+                // A relocated `jalr zero, %lo(sym)(a5)`: the graph's target.
+                edges.push(Edge {
+                    from: 2,
+                    target: Some(0x100),
+                    relation: EdgeKind::Jump,
+                    external: true,
+                });
+            } else if base != 1 {
+                match jumps.first() {
+                    Some(jump) => edges.extend(jump.targets.iter().map(|&target| Edge {
+                        from: 2,
+                        target: Some(target),
+                        relation: EdgeKind::Jump,
+                        external: false,
+                    })),
+                    None => edges.push(Edge {
+                        from: 2,
+                        target: None,
+                        relation: EdgeKind::Indirect,
+                        external: false,
+                    }),
+                }
+            }
+            let input = FunctionInput {
+                image: None,
+                section: 1,
+                extent: CodeRange {
+                    start: 0,
+                    length: 4,
+                },
+                bytes: &bytes,
+                relocations: &PreparedReferences::empty(),
+                data_ranges: &[],
+                jumps,
+            };
+            let memory = WorkingMemory::new(1024 * 1024).unwrap();
+            let mut sink = Records::default();
+            let summary = analyze_with(
+                &input,
+                &nodes,
+                &edges,
+                &Isa(ops.clone()),
+                &memory,
+                &mut || Ok(()),
+                &mut sink,
+                true,
+                None,
+            )
+            .unwrap();
+            (summary.complete, sink.0)
+        };
+        let (complete, records) = run(15, &[], false);
+        assert!(!complete, "the dispatch is not expanded");
+        assert!(records.iter().any(|r| matches!(
+            r,
+            FunctionRecord::SemanticGap {
+                offset: 2,
+                reason: SemanticGapReason::UnexpandedControlFlow
+            }
+        )));
+        let loaded = records.iter().find_map(|r| match r {
+            FunctionRecord::CallInputs {
+                offset: 2,
+                registers,
+            } => Some(registers[15].clone()),
+            _ => None,
+        });
+        let Some(AbstractValue::Expression { id }) = loaded else {
+            panic!("a5 at the dispatch: {loaded:?} in {records:?}")
+        };
+        assert!(records.iter().any(|r| matches!(
+            r,
+            FunctionRecord::Expression {
+                id: e,
+                expression: Expression::Load { width: 4, .. },
+                ..
+            } if *e == id
+        )));
+        // A return records nothing; a dispatch its caller already expanded
+        // keeps its registers, so the table is proven again, but is no gap.
+        let (complete, returned) = run(1, &[], false);
+        assert!(complete);
+        assert!(
+            !returned
+                .iter()
+                .any(|r| matches!(r, FunctionRecord::CallInputs { .. })),
+            "{returned:?}"
+        );
+        let (complete, expanded) = run(
+            15,
+            &[KnownJump {
+                site: 2,
+                targets: vec![0],
+            }],
+            false,
+        );
+        assert!(complete, "{expanded:?}");
+        assert!(
+            expanded
+                .iter()
+                .any(|r| matches!(r, FunctionRecord::CallInputs { offset: 2, .. }))
+        );
+        // A jump the graph resolved through its relocation stays complete:
+        // only a jump the graph left without a target is a gap.
+        let (complete, relocated) = run(15, &[], true);
+        assert!(complete, "{relocated:?}");
+        assert!(!relocated.iter().any(|r| matches!(
+            r,
+            FunctionRecord::CallInputs { .. } | FunctionRecord::SemanticGap { .. }
+        )));
     }
     #[test]
     fn exact_words_round_trip_through_entry_stack_slots_until_clobbered() {

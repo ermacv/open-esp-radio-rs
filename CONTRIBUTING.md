@@ -35,8 +35,10 @@ sets the informational commit status `claude-runtime-review`: success with
 the number of findings filed, error when the review did not complete or its
 findings could not be filed. The review runs in parallel with CI and may
 fail after the merge, so a failure also files a `review: …` issue naming the
-branch, which `cargo xtask ci-status` lists like a finding; a `@claude
-review` comment reviews the PR again, a merged one too. A finding whose issue was closed as fixed
+branch, which `cargo xtask ci-status` lists like a finding: while the PR is
+open, a `@claude review` comment reviews it again; once merged, whoever takes
+the issue reviews its diff against the current `main`. Findings are filed
+before the PR review is posted, so a failed post loses none. A finding whose issue was closed as fixed
 came back and is filed anew; one closed as not planned stays dismissed. It
 is not a required check: a PR merges once
 `ci-ok` passes, and the findings stay open as issues. `cargo xtask

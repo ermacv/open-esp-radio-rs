@@ -44,16 +44,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-          EVENT: ${{ github.event_name }}
         run: |
           pr=$(gh api "repos/$GH_REPO/pulls/$NUMBER")
-          # A requested review also covers a merged PR: the review runs in
-          # parallel with CI, so a failed one may be noticed after the merge.
-          pr=$(jq -c --arg repo "$GH_REPO" --arg event "$EVENT" 'select(. != null
-            and (.state == "open" or (.merged_at != null and $event == "issue_comment"))
-            and (.draft | not) and .base.ref == "main" and .head.repo.full_name == $repo)' <<<"${pr:-null}")
+          pr=$(jq -c --arg repo "$GH_REPO" 'select(. != null and .state == "open" and (.draft | not)
+            and .base.ref == "main" and .head.repo.full_name == $repo)' <<<"${pr:-null}")
           if [ -z "$pr" ]; then
-            echo "No open (or, on request, merged) ready same-repository PR into main; nothing to review."
+            echo "No open ready same-repository PR into main; nothing to review."
             exit 0
           fi
           echo "pr=$(jq .number <<<"$pr")" >>"$GITHUB_OUTPUT"
@@ -138,16 +134,17 @@ jobs:
             gh api "repos/$GH_REPO/statuses/$HEAD" -f context=claude-runtime-review \
               -f state="$1" -f description="$2" -f target_url="$RUN" >/dev/null
           }
-          # failed DESCRIPTION: the review's findings reach no session, so
-          # besides the status, which only an open PR's head shows, file a
-          # `review: …` issue naming the branch that `cargo xtask ci-status`
-          # lists even after the merge.
+          # failed DESCRIPTION: the review's findings reach no session. The
+          # PR may merge before the review ends, and the status shows only on
+          # an open PR's head, so file a `review: …` issue naming the branch,
+          # which `cargo xtask ci-status` lists after the merge too. Each step
+          # tolerates the other's failure.
           failed() {
-            status error "$1"
+            status error "$1" || echo "::warning::The error status was not set"
             gh issue create --title "review: Claude review of #$PR did not complete" \
               --label kind:bug --label area:tooling --label priority:P1 \
-              --body "$(printf '%s\n\nThe Claude review of #%s at `%s` ([run](%s)) failed: %s. Its findings reached no session. Comment `@claude review` on #%s (a merged PR too) to review it again, then close this issue.\n\n<!-- claude-review-branch: %s -->' \
-                "The review of a pull request did not record its findings." "$PR" "$HEAD" "$RUN" "$1" "$PR" "$BRANCH")" \
+              --body "$(printf 'The Claude review of #%s at `%s` ([run](%s)) failed: %s. Its findings reached no session. While #%s is open, comment `@claude review` on it; once merged, review its diff against the current `main` and file what still holds. Then close this issue.\n\n<!-- claude-review-branch: %s -->' \
+                "$PR" "$HEAD" "$RUN" "$1" "$PR" "$BRANCH")" \
               >/dev/null || echo "::warning::The failure issue was not filed either"
             exit 1
           }
@@ -174,17 +171,20 @@ jobs:
               '{commit_id: $sha, event: "COMMENT", body: $body, comments: $comments}' |
               gh api "repos/$GH_REPO/pulls/$PR/reviews" --input - >/dev/null
           }
-          # GitHub rejects the whole review when a finding's line is outside
-          # the diff; then the body carries every finding in full.
-          review "$(body false)" "$comments" || review "$(body true)" '[]'
           # No finding blocks: each is filed as an issue once, naming the
-          # branch, and the PR names the issues.
+          # branch, first, since the issues are the record that reaches a
+          # session; the PR review and comment only show them on the PR.
           if ! recorded=$(PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/review_findings.py); then
             failed "Findings were not recorded as issues"
           fi
+          # GitHub rejects the whole review when a finding's line is outside
+          # the diff; then the body carries every finding in full.
+          review "$(body false)" "$comments" || review "$(body true)" '[]' ||
+            echo "::warning::The PR review was not posted; its findings are filed as issues"
           if [ -n "$recorded" ]; then
             jq -n --arg body "$(printf 'Findings, filed as issues; the session on this branch fixes them next:\n\n%s' "$recorded")" '{body: $body}' |
-              gh api "repos/$GH_REPO/issues/$PR/comments" --input - >/dev/null
+              gh api "repos/$GH_REPO/issues/$PR/comments" --input - >/dev/null ||
+              echo "::warning::The PR comment naming the issues was not posted"
           fi
           count=$(jq '.findings | length' <<<"$RESULT")
           status success "$count finding(s) filed as issues; not blocking"

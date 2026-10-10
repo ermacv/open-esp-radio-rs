@@ -30,7 +30,7 @@ use core::future::Future;
 
 pub mod radio;
 
-pub use radio::{RadioDuration, RadioInstant, RadioWindow, WindowError};
+pub use radio::{NonZeroRadioDuration, RadioDuration, RadioInstant, RadioWindow, WindowError};
 
 /// A point on the image's monotonic time, in microseconds since an epoch
 /// the [`Clock`] defines.

@@ -1477,3 +1477,127 @@ fn poisoning_ends_the_waiter_behind_a_dropped_exchange_and_the_port_keeps_its_bo
     // The poisoned backend keeps the body until its reset.
     assert_eq!(model.bodies_held(), 1);
 }
+
+#[test]
+fn an_aggregate_dropped_after_its_completion_ends_it_and_hands_the_queue_on_at_once() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut first = driver(&router);
+    let mut second = driver(&router);
+    let frames: Vec<Vec<u8>> = (0..2)
+        .map(|index| {
+            qos_data(
+                200 + index,
+                [3 * (index as u8 + 1), 0, 0, 0x20, 0, 0, 0, 0],
+                50,
+            )
+        })
+        .collect();
+    let headers: Vec<&[u8]> = frames.iter().map(|frame| &frame[..24]).collect();
+    let mut bodies: Vec<Option<NetworkBody<Frame>>> = frames
+        .iter()
+        .map(|frame| Some(Frame::carrying(&frame[24..])))
+        .collect();
+    let next_frame = qos_data(202, [9, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let mut first_entropy = Seeded(1);
+    let mut second_entropy = Seeded(2);
+    let mut aggregate = Box::pin(first.send_ampdu(
+        AmpduFrames {
+            headers: &headers,
+            bodies: &mut bodies,
+            key: KeySelector::Plaintext,
+            min_mpdu_start_spacing: 0,
+        },
+        ampdu_request(&frames, 200),
+        &Ladder,
+        &mut first_entropy,
+    ));
+    let mut next = pin!(second.send_mpdu(
+        TxMpdu::whole(&next_frame),
+        KeySelector::Plaintext,
+        request_on(&next_frame, WmmAccessCategory::Video),
+        &Ladder,
+        &mut second_entropy,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(aggregate.as_mut()).is_pending());
+    assert!(poll_once(next.as_mut()).is_pending());
+    assert_eq!(model.bodies_held(), 2);
+    // The completion and both subframe bodies reach the router, but the
+    // exchange is dropped before it takes them back.
+    model.complete_with(
+        queue(WmmAccessCategory::Video),
+        ModelOutcome::BlockAck(BlockAckReport {
+            start_sequence: SequenceNumber::new(200).unwrap(),
+            bitmap: 0b11,
+        }),
+    );
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert_eq!(model.bodies_held(), 0);
+    drop(aggregate);
+    assert!(poll_once(next.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 2);
+    assert_eq!(router.unclaimed_completions(), 0);
+}
+
+#[test]
+fn a_waiter_cancelled_behind_a_dropped_exchange_keeps_the_next_one_waiting_for_its_end() {
+    let model = enabled_station();
+    let router = Router::new(&model, 100);
+    let mut first = driver(&router);
+    let mut second = driver(&router);
+    let mut third = driver(&router);
+    let first_frame = qos_data(30, [1, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let second_frame = qos_data(31, [2, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let third_frame = qos_data(32, [3, 0, 0, 0x20, 0, 0, 0, 0], 40);
+    let (header, body) = with_body(&first_frame);
+    let mut entropies = [Seeded(1), Seeded(2), Seeded(3)];
+    let [first_entropy, second_entropy, third_entropy] = &mut entropies;
+    let mut first_send = Box::pin(first.send_mpdu(
+        TxMpdu {
+            header,
+            body: Some(body),
+        },
+        KeySelector::Plaintext,
+        request_on(&first_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        first_entropy,
+    ));
+    let mut cancelled = Box::pin(second.send_mpdu(
+        TxMpdu::whole(&second_frame),
+        KeySelector::Plaintext,
+        request_on(&second_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        second_entropy,
+    ));
+    let mut third_send = pin!(third.send_mpdu(
+        TxMpdu::whole(&third_frame),
+        KeySelector::Plaintext,
+        request_on(&third_frame, WmmAccessCategory::Voice),
+        &Ladder,
+        third_entropy,
+    ));
+    let mut routing = pin!(router.run());
+    assert!(poll_once(first_send.as_mut()).is_pending());
+    assert!(poll_once(cancelled.as_mut()).is_pending());
+    assert!(poll_once(third_send.as_mut()).is_pending());
+    // The first exchange is abandoned with its attempt in flight, then the
+    // waiter behind it gives up its place.
+    drop(first_send);
+    drop(cancelled);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(poll_once(third_send.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 1);
+    // The abandoned attempt's end hands the queue to the remaining waiter.
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(poll_once(third_send.as_mut()).is_pending());
+    assert_eq!(model.submitted().len(), 2);
+    assert_eq!(model.submitted()[1].frames[0], third_frame);
+    model.complete(queue(WmmAccessCategory::Voice), TxStatus::Success);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(matches!(
+        poll_once(third_send.as_mut()),
+        Poll::Ready(Ok(TxReport::Mpdu(_)))
+    ));
+}

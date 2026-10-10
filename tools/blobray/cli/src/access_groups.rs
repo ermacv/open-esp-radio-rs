@@ -272,9 +272,12 @@ impl AccessGroups {
     }
 }
 
-/// The runs of a stored value, high bits first: `[24:18]=arg0[6:0]`,
-/// `[17:0]=kept` for bits a read-modify-write keeps in place, `=0x1b` for
-/// fixed bits, `=load 0x20109004[7:0]` for another loaded word and `=?`.
+/// The runs of a stored value, high bits first: `[24:18]=arg0[6:0]` for an
+/// argument's bits (`entry x8[5:4]` for another entry register),
+/// `[17:0]=kept` for bits a read-modify-write keeps in place,
+/// `=same word[9:2]` for the stored word's bits moved elsewhere, `=0x1b` for
+/// fixed bits, `=load 4B 0x20109004[7:0]` for another loaded value with its
+/// load width and `=?` for an unknown source.
 pub fn stored_human(runs: &[StoredBits]) -> String {
     let range = |low: u8, width: u8| {
         if width == 1 {

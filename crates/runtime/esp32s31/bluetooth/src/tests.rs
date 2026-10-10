@@ -1193,7 +1193,8 @@ fn a_wait_past_the_timer_range_is_an_error_not_a_forever_wait() {
 
 /// Install returns the radio's two handles: the consumer serves through the
 /// port, the composition maintains through the control, and the control's
-/// uninstall consumes both and returns the owners for the next install.
+/// uninstall consumes both, ends the port's stream and returns the owners
+/// for the next install.
 #[test]
 fn install_returns_the_port_and_the_control_whose_uninstall_takes_both() {
     use oer_bluetooth_radio::{LeRadioPort, RadioPort};
@@ -1221,6 +1222,9 @@ fn install_returns_the_port_and_the_control_whose_uninstall_takes_both() {
         radio.into_memory(&oer_esp32s31_hal::bluetooth::BluetoothControllerReset::for_validation());
     let (port, _control) = block_on(runtime.install(memory, hardware))
         .unwrap_or_else(|_| panic!("the next epoch installs"));
+    // The first port's undelivered outcomes ended with its stream: the next
+    // port starts with an empty queue (#457).
+    assert_eq!(taken(&runtime), None);
     // The next radio starts disabled.
     assert_eq!(
         block_on(port.submit(configure())),

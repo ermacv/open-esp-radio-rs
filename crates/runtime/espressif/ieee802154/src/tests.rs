@@ -261,7 +261,7 @@ fn an_overflowing_queue_reports_the_loss_once() {
 }
 
 #[test]
-fn uninstall_returns_the_parts_and_keeps_queued_events() {
+fn uninstall_ends_the_ports_stream() {
     let runtime = enabled::<4>();
     runtime
         .port
@@ -274,7 +274,7 @@ fn uninstall_returns_the_parts_and_keeps_queued_events() {
     runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     let empty = runtime.runtime;
     let parts = runtime.uninstall();
-    // The queued frame stays with the consumer, across a new install.
+    // The queued frame ended with the first port's stream (#457).
     let Ok((port, control)) = empty.install(parts, FixedRandom, Ieee802154PibDefaults::default())
     else {
         panic!("the uninstalled runtime installs again");
@@ -284,25 +284,36 @@ fn uninstall_returns_the_parts_and_keeps_queued_events() {
         port,
         control,
     };
-    assert!(matches!(
-        next(&runtime),
-        Ok(Ieee802154RadioEvent::Received(_))
-    ));
     assert!(runtime.events.take().is_none());
 }
 
-/// An uninstall ends the transmission in flight with its terminal event.
+/// An uninstall stops the transmission in flight; its terminal ends with
+/// the port's stream, and its reservation goes with it, so the next port
+/// admits an operation at once.
 #[test]
 fn uninstall_ends_the_operation_in_flight() {
     let runtime = enabled::<4>();
     runtime.port.submit(transmit(5)).unwrap().unwrap();
     let empty = runtime.runtime;
-    let _parts = runtime.uninstall();
-    assert_eq!(
-        empty.events.take().map(|event| event.ok()),
-        Some(Some(aborted(5)))
-    );
+    let parts = runtime.uninstall();
     assert!(empty.events.take().is_none());
+    let Ok((port, control)) = empty.install(parts, FixedRandom, Ieee802154PibDefaults::default())
+    else {
+        panic!("the uninstalled runtime installs again");
+    };
+    let runtime = Radio {
+        runtime: empty,
+        port,
+        control,
+    };
+    block_on(runtime.port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        next(&runtime),
+        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
+    runtime.port.submit(transmit(6)).unwrap().unwrap();
 }
 
 fn transmit(id: u32) -> RadioCommand<'static> {

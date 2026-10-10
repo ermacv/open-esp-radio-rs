@@ -363,15 +363,12 @@ impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
         })
     }
 
-    /// Discard every entry. A discarded event, a pending marker or `owed`
-    /// entries that will never arrive leave one loss for the consumer.
-    fn discard(&self, owed: bool) {
+    /// Discard every entry and a pending loss: the stream of the port that
+    /// left ends here.
+    fn discard(&self) {
         self.lost.lock(|lost| {
-            let mut discarded = owed || lost.get();
-            while let Ok(_entry) = self.entries.try_receive() {
-                discarded = true;
-            }
-            lost.set(discarded);
+            while let Ok(_entry) = self.entries.try_receive() {}
+            lost.set(false);
         });
     }
 }
@@ -443,7 +440,7 @@ struct Queues<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> {
     /// Lifecycle terminals owed.
     owed_lifecycle: Mutex<M, Cell<usize>>,
     /// Raised when the consumer must look again without a new entry: a
-    /// poisoning, or a loss an uninstall recorded.
+    /// poisoning.
     changed: Signal<M, ()>,
 }
 
@@ -497,16 +494,16 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
         .await;
     }
 
-    /// Discard every queued event on uninstall; terminal events the
-    /// uninstalled core still owed are lost as well, and every loss stays
-    /// pending for the consumer.
+    /// End the stream of the port that left: its queued events, the
+    /// terminal events the uninstalled core still owed and any pending loss
+    /// are discarded, so the next port starts with empty queues.
     fn discard(&self) {
-        let owed = |owed: &Mutex<M, Cell<usize>>| owed.lock(|owed| owed.replace(0)) > 0;
-        self.completions.discard(owed(&self.owed_completions));
-        self.lifecycle.discard(owed(&self.owed_lifecycle));
-        self.tbtt.discard(false);
-        self.received.discard(false);
-        self.changed.signal(());
+        self.owed_completions.lock(|owed| owed.set(0));
+        self.owed_lifecycle.lock(|owed| owed.set(0));
+        self.completions.discard();
+        self.lifecycle.discard();
+        self.tbtt.discard();
+        self.received.discard();
     }
 }
 
@@ -824,8 +821,7 @@ where
     }
 
     /// Install a disabled core with its register owner and retune, and
-    /// return the core's port and control. A loss an earlier uninstall
-    /// recorded stays pending.
+    /// return the core's port and control, whose stream starts empty.
     ///
     /// # Errors
     ///
@@ -1239,11 +1235,11 @@ where
     R: LowerMacRetune,
     S: AmpduBacking,
 {
-    /// Take the core and its register owner back and discard queued events,
-    /// consuming both handles of the installed core. The discarded events,
-    /// and the terminal events the core still owed, are reported as
-    /// [`EventsLost`] to the consumer of a later install. The retune stays
-    /// while an `Enable` awaits it.
+    /// Take the core and its register owner back, consuming both handles of
+    /// the installed core. The port's stream ends here: its queued events
+    /// and the terminal events the core still owed are discarded, and the
+    /// next port starts with empty queues. The retune stays while an
+    /// `Enable` awaits it.
     ///
     /// # Panics
     ///

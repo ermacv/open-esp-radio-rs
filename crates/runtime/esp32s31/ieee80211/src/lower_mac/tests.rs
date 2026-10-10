@@ -1088,7 +1088,7 @@ fn the_runner_services_a_kept_deadline_once_per_wake() {
 }
 
 #[test]
-fn uninstall_keeps_the_loss_of_discarded_and_owed_events() {
+fn uninstall_ends_the_ports_stream() {
     let port = install(true);
     block_on(port.lifecycle(LifecycleCommand::Enable))
         .unwrap()
@@ -1114,8 +1114,8 @@ fn uninstall_keeps_the_loss_of_discarded_and_owed_events() {
         port,
         control,
     };
-    // The Enabled terminal was discarded: the consumer learns of the gap.
-    assert_eq!(next(&port), Err(EventsLost));
+    // The Enabled terminal ended with the first port's stream; the next
+    // port's stream starts empty, without a loss it never had (#457).
     assert!(port.runtime.queues.take().is_none());
 }
 

@@ -23,8 +23,8 @@
 //! The loop owns no memory of its own beyond one command buffer and spawns
 //! nothing; the caller polls it on a task of its choice, beside the radio
 //! backend's own runner. It is the port's one event consumer. It ends when
-//! the transport closes or fails, when the radio backend is not installed
-//! or its clock cannot be read, or when the port is poisoned
+//! the transport closes or fails, when the radio's clock cannot be read,
+//! or when the port is poisoned
 //! ([`ServeExit::Poisoned`] with the backend's cause). The port reserves
 //! every event's end and a connection event's data when it admits the
 //! event, so an [`EventsLost`] stands for advertising and scan reports only

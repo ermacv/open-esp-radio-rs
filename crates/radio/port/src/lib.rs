@@ -35,6 +35,13 @@
 //! Maintenance that must stop the radio, such as shared PHY tracking, is a
 //! layer over [`LifecycleCommand::Quiesce`], not a removal of the backend.
 //!
+//! A port's event stream lives as long as the port. Handing the port to
+//! `uninstall` ends it: the events it did not deliver, the terminal events
+//! still owed and a pending loss are discarded, and the next install's port
+//! starts with an empty stream. Every guarantee about events (a terminal
+//! event is never lost, a loss is reported once) holds for the port's
+//! lifetime.
+//!
 //! # Event model
 //!
 //! Every port has exactly one consumer of its events: one task owns the
@@ -127,8 +134,8 @@ pub type PortResult<T, R, C> = Result<Result<T, R>, Poisoned<C>>;
 /// The marker takes the place of the first dropped event: every event
 /// reported before it was produced before the gap, and every event reported
 /// after it was produced after every dropped one. It is reported once per
-/// gap, and never silently discarded, not even across an uninstall and a
-/// later install of the backend.
+/// gap, and never silently discarded while the port lives; a gap the port's
+/// uninstall leaves ends with its stream.
 ///
 /// A backend reserves the slot of every terminal event, and of data its
 /// protocol promises to deliver, when it admits the work, so the gap holds

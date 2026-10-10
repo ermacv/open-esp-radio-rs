@@ -110,9 +110,24 @@ fn analyze_with(
     states.resize(slots, 0); // 0 unseen, 1 queued, 2 start, 3 interior, 4 gap
     let mut nodes = reserve_vec::<Node>(slots)?;
     let mut work = reserve_vec::<u64>(slots)?;
+    // Each instruction adds at most two edges, and a known jump one per
+    // target; the known jumps' edges are admitted beyond the graph's own
+    // capacity, so pushing them never grows the vector unadmitted.
+    let known_edges = input
+        .jumps
+        .iter()
+        .try_fold(0usize, |sum, jump| sum.checked_add(jump.targets.len()))
+        .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "edge capacity overflow"))?;
+    let _known_capacity = memory.reserve(
+        (known_edges as u64)
+            .checked_mul(std::mem::size_of::<Edge>() as u64)
+            .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "edge capacity overflow"))?,
+        control.position(),
+    )?;
     let mut edges = reserve_vec::<Edge>(
         slots
             .checked_mul(2)
+            .and_then(|own| own.checked_add(known_edges))
             .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "edge capacity overflow"))?,
     )?;
     let mut summary = AnalysisSummary::default();
@@ -513,4 +528,81 @@ fn emit(
         _ => {}
     }
     sink.record(&record, control)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A decoder the analysis must never reach.
+    struct Unreached;
+    impl FunctionDecoder for Unreached {
+        fn identity(&self) -> &'static str {
+            "unreached"
+        }
+        fn decode(&self, _: &[u8]) -> Option<DecodedOp> {
+            unreachable!("the graph's capacity is admitted before decoding")
+        }
+        fn reference(
+            &self,
+            _: &FunctionRelocation,
+            _: &[FunctionRelocation],
+            _: u32,
+            _: &mut dyn RunControl,
+        ) -> Result<NormalizedReference> {
+            unreachable!()
+        }
+    }
+    impl FunctionSemantics for Unreached {
+        fn semantic_identity(&self) -> &'static str {
+            "unreached"
+        }
+        fn lift(&self, _: &[u8]) -> SemanticOp {
+            unreachable!()
+        }
+        fn value_relocation(&self, _: &FunctionRelocation, _: SemanticOp) -> ValueRelocation {
+            unreachable!()
+        }
+    }
+    struct Discard;
+    impl FunctionSink for Discard {
+        fn record(&mut self, _: &FunctionRecord, _: &mut dyn RunControl) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn known_jump_edges_are_admitted_before_the_graph_is_built() {
+        let bytes = [0; 4];
+        // Far more targets than two edges per instruction leave room for.
+        let jumps = [KnownJump {
+            site: 0,
+            targets: (0..4096).map(|i| i * 2).collect(),
+        }];
+        let input = FunctionInput {
+            image: None,
+            section: 1,
+            extent: CodeRange {
+                start: 0,
+                length: 4,
+            },
+            bytes: &bytes,
+            relocations: &PreparedReferences::empty(),
+            data_ranges: &[],
+            jumps: &jumps,
+        };
+        // The graph's own capacity fits; the known jumps' edges do not.
+        let memory = WorkingMemory::new(8 * 1024).unwrap();
+        let error = research(
+            input,
+            &Unreached,
+            &memory,
+            &mut || Ok(()),
+            &mut Discard,
+            None,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+    }
 }

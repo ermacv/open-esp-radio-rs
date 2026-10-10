@@ -17,7 +17,7 @@ pub struct RegisterMask {
     pub bits: u32,
 }
 /// One run of bits of a stored value with a common source.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StoredBits {
     /// The run's lowest bit in the stored value.
@@ -28,7 +28,7 @@ pub struct StoredBits {
 
 /// Where a run of stored bits comes from. These are expression observations
 /// of one store, not a claim that the path reaching it runs.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum StoredBitsSource {
     /// Fixed bits; `value` is the run's bits, right-aligned.

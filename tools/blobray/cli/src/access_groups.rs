@@ -136,7 +136,7 @@ type EntryKey = (
     String,
     Option<u8>,
     Option<(u8, u32)>,
-    String,
+    Option<Vec<StoredBits>>,
 );
 
 /// Aggregates selected observations into groups in key order.
@@ -167,7 +167,9 @@ impl AccessGroups {
         else {
             return;
         };
-        let stored_key = stored.as_deref().map(stored_human).unwrap_or_default();
+        // The sources themselves key an entry: two runs with equal text, such
+        // as loads of different widths, stay apart.
+        let stored_key = stored.clone();
         let function = GroupFunction {
             input: function.input,
             name: function
@@ -301,14 +303,14 @@ pub fn stored_human(runs: &[StoredBits]) -> String {
                 } if *low == run.low => String::from("kept"),
                 StoredBitsSource::Load {
                     address,
+                    width,
                     low,
                     same_word,
-                    ..
                 } => {
                     let word = match (same_word, address) {
                         (true, _) => String::from("same word"),
-                        (false, Some(address)) => format!("load {address:#x}"),
-                        (false, None) => String::from("load"),
+                        (false, Some(address)) => format!("load {width}B {address:#x}"),
+                        (false, None) => format!("load {width}B"),
                     };
                     format!("{word}{}", range(*low, run.width))
                 }

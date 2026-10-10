@@ -263,6 +263,39 @@ fn stored_runs_render_high_bits_first() {
                 source: StoredBitsSource::Unknown,
             },
         ]),
-        "[31:30]=? [29:28]=load 0x20109004[29:28] [27:26]=entry x8[5:4] [25]=0x1 [24:18]=arg0[6:0] [17:0]=kept"
+        "[31:30]=? [29:28]=load 4B 0x20109004[29:28] [27:26]=entry x8[5:4] [25]=0x1 [24:18]=arg0[6:0] [17:0]=kept"
+    );
+}
+
+#[test]
+fn loads_of_different_widths_stay_separate_entries() {
+    use blobray_domain::{StoredBits, StoredBitsSource};
+    let store = |width| {
+        let mut record = observation("store_byte", MemoryKind::Store, Some(0x2010_702c), None);
+        if let RegisterAccess::Observation { stored, .. } = &mut record {
+            *stored = Some(vec![StoredBits {
+                low: 0,
+                width: 8,
+                source: StoredBitsSource::Load {
+                    address: Some(0xa),
+                    width,
+                    low: 0,
+                    same_word: false,
+                },
+            }]);
+        }
+        record
+    };
+    let mut groups = AccessGroups::new(GroupBy::Function);
+    for record in [store(1), store(4)] {
+        groups.add(&record);
+    }
+    assert_eq!(
+        groups.human(),
+        [
+            "store_byte (input 0, member 0)",
+            "  0x2010702c store 4B [7:0]=load 1B 0xa[7:0] x1",
+            "  0x2010702c store 4B [7:0]=load 4B 0xa[7:0] x1",
+        ]
     );
 }

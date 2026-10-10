@@ -121,7 +121,7 @@ fn image_rollouts_and_tool_drift_do_not_fail_execution_or_issue_wrong_coverage()
             _ => {}
         }
         let manifest = planning::manifest(&root, Workflow::Ci, expected).unwrap();
-        let plan = coverage::select(manifest.clone(), 42, &[], Mode::Observe, 1100).unwrap();
+        let plan = coverage::select(manifest.clone(), 42, &[], Mode::Observe, 1100, None).unwrap();
         oer_durable::atomic_json(&plan_path, &plan).unwrap();
         std::fs::write(&output_path, "").unwrap();
         std::fs::write(&summary_path, "").unwrap();
@@ -185,7 +185,7 @@ fn image_rollouts_and_tool_drift_do_not_fail_execution_or_issue_wrong_coverage()
         assert_eq!(proof.jobs.contains_key("isa-conformance"), reusable);
         assert_eq!(proof.jobs.len(), if reusable { 7 } else { 6 });
         let at = proof.jobs["host"].verified_at + 1;
-        let next = coverage::select(manifest, 43, &[proof], Mode::Reuse, at).unwrap();
+        let next = coverage::select(manifest, 43, &[proof], Mode::Reuse, at, None).unwrap();
         for (id, action) in next.actions {
             assert_eq!(action.run, id == "isa-conformance" && !reusable);
         }

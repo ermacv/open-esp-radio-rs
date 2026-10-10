@@ -37,18 +37,28 @@ env:
 # prepares its runner and runs its checks up to the full tier.
 jobs:
   # The registry computes input identities; only successful matching push
-  # runs can cover a job. API/retention misses cause execution.
+  # runs can cover a job. API/retention misses cause execution. A branch
+  # push runs only the checks its change from the merge base with main
+  # reaches (their triggers, and every check without one), skipping a job it
+  # reaches none of; main and manual runs check everything.
   prepare:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       run_host: ${{ steps.plan.outputs.run_host }}
+      checks_host: ${{ steps.plan.outputs.checks_host }}
       run_architecture: ${{ steps.plan.outputs.run_architecture }}
+      checks_architecture: ${{ steps.plan.outputs.checks_architecture }}
       run_firmware: ${{ steps.plan.outputs.run_firmware }}
+      checks_firmware: ${{ steps.plan.outputs.checks_firmware }}
       run_models: ${{ steps.plan.outputs.run_models }}
+      checks_models: ${{ steps.plan.outputs.checks_models }}
       run_isa_conformance: ${{ steps.plan.outputs.run_isa_conformance }}
+      checks_isa_conformance: ${{ steps.plan.outputs.checks_isa_conformance }}
       run_images: ${{ steps.plan.outputs.run_images }}
+      checks_images: ${{ steps.plan.outputs.checks_images }}
       run_verification: ${{ steps.plan.outputs.run_verification }}
+      checks_verification: ${{ steps.plan.outputs.checks_verification }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,7 +109,7 @@ jobs:
         run: cargo tidy fetch
       - id: environment
         run: cargo xtask ci check-environment --workflow ci --job host
-      - run: cargo xtask --verbose check tier full --job host
+      - run: cargo xtask --verbose check tier full --job host --checks "${{ needs.prepare.outputs.checks_host }}"
 
   # Clippy for every production feature profile on the chip target, the
   # layer, facade, unsafe-code and PAC-access boundaries, and the
@@ -127,7 +137,7 @@ jobs:
         run: cargo tidy fetch
       - id: environment
         run: cargo xtask ci check-environment --workflow ci --job architecture
-      - run: cargo xtask --verbose check tier full --job architecture
+      - run: cargo xtask --verbose check tier full --job architecture --checks "${{ needs.prepare.outputs.checks_architecture }}"
 
   # Code built for a chip: the final HIL images' runtimes type-checked
   # exactly as the image builder compiles them, every chip's examples with
@@ -159,7 +169,7 @@ jobs:
         run: cargo tidy fetch
       - id: environment
         run: cargo xtask ci check-environment --workflow ci --job firmware
-      - run: cargo xtask --verbose check tier full --job firmware
+      - run: cargo xtask --verbose check tier full --job firmware --checks "${{ needs.prepare.outputs.checks_firmware }}"
 
   # Every register publication and every qualification program.
   models:
@@ -185,7 +195,7 @@ jobs:
         run: cargo tidy fetch
       - id: environment
         run: cargo xtask ci check-environment --workflow ci --job models
-      - run: cargo xtask --verbose check tier full --job models
+      - run: cargo xtask --verbose check tier full --job models --checks "${{ needs.prepare.outputs.checks_models }}"
 
   # Blobray's RISC-V executor against the pinned RISC-V architectural tests,
   # with the Sail formal model as the reference. Needs clang and lld.
@@ -215,7 +225,7 @@ jobs:
         run: cargo tidy fetch
       - id: environment
         run: cargo xtask ci check-environment --workflow ci --job isa-conformance
-      - run: cargo xtask --verbose check tier full --job isa-conformance
+      - run: cargo xtask --verbose check tier full --job isa-conformance --checks "${{ needs.prepare.outputs.checks_isa_conformance }}"
 
   # Both final HIL application images and the station example, built by the
   # image pipeline with every gate and the Blobray target audit. Needs the
@@ -248,7 +258,7 @@ jobs:
         run: cargo tidy fetch
       - id: environment
         run: cargo xtask ci check-environment --workflow ci --job images
-      - run: cargo xtask --verbose check tier full --job images
+      - run: cargo xtask --verbose check tier full --job images --checks "${{ needs.prepare.outputs.checks_images }}"
 
   # The provenance of every cited vendor function against the pinned vendor
   # artifacts, which the check fetches.
@@ -275,7 +285,7 @@ jobs:
         run: cargo tidy fetch
       - id: environment
         run: cargo xtask ci check-environment --workflow ci --job verification
-      - run: cargo xtask --verbose check tier full --job verification
+      - run: cargo xtask --verbose check tier full --job verification --checks "${{ needs.prepare.outputs.checks_verification }}"
 
   # Every planned job passed or has explicit successful input coverage.
   ci-ok:

@@ -59,16 +59,73 @@ fn load_proofs(api: &GitHub, workflow: Workflow) -> Result<Vec<Proof>> {
     Ok(proofs)
 }
 
+/// The branch `main`, which every run checks whole.
+const MAIN: &str = "refs/heads/main";
+
+/// The checks of each job of `workflow` that the change from the merge base
+/// of `commit` with `main` to the checkout reaches. The checkout is shallow,
+/// so GitHub names the merge base and only that commit is fetched.
+fn change_scope(root: &Path, api: &GitHub, workflow: Workflow) -> Result<Scope> {
+    #[derive(serde::Deserialize)]
+    struct Commit {
+        sha: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Compare {
+        merge_base_commit: Commit,
+    }
+    let base = api
+        .query::<Compare>(&format!("compare/main...{}", api.commit))?
+        .merge_base_commit
+        .sha;
+    oer_process::git::output(
+        root,
+        [
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--depth=1",
+            "origin",
+            &base,
+        ],
+    )?;
+    let ctx = oer_process::Checkout::new(root)?;
+    let files = crate::gate::committed(&ctx, &base)?;
+    let change = crate::gate::Change::of(&ctx, files, &base, Some("HEAD"), registry::Tier::Full)?;
+    let checks = workflow
+        .spec()
+        .jobs
+        .iter()
+        .map(|job| {
+            let ids = registry::of_job_for(&change, job.id)
+                .iter()
+                .map(|check| check.id.to_owned())
+                .collect();
+            (job.id.to_owned(), ids)
+        })
+        .collect();
+    Ok(Scope { base, checks })
+}
+
 fn summary(plan: &Plan, repository: &str) -> String {
     let mut text = format!(
-        "## CI coverage\n\nMode: `{:?}`; tree: `{}`.\n\n| Job | Action | Successful verification |\n| --- | --- | --- |\n",
-        plan.mode, plan.manifest.tree
+        "## CI coverage\n\nMode: `{:?}`; tree: `{}`; {}.\n\n| Job | Action | Successful verification |\n| --- | --- | --- |\n",
+        plan.mode,
+        plan.manifest.tree,
+        plan.change_base.as_ref().map_or_else(
+            || "every check".to_owned(),
+            |base| format!("checks the change from `{base}` reaches")
+        )
     );
     for (job, action) in &plan.actions {
         let decision = match (action.run, action.source.is_some(), plan.mode) {
-            (true, true, Mode::Observe) => "run (would reuse)",
-            (true, _, _) => "run",
-            _ => "reuse",
+            _ if action.unaffected() => "skip (change reaches no check)".to_owned(),
+            (true, true, Mode::Observe) => "run (would reuse)".to_owned(),
+            (true, _, _) => match &action.checks {
+                Some(checks) => format!("run {}", checks.join(", ")),
+                None => "run".to_owned(),
+            },
+            _ => "reuse".to_owned(),
         };
         let source = action.source.as_ref().map_or_else(
             || "none".to_owned(),
@@ -84,10 +141,20 @@ fn summary(plan: &Plan, repository: &str) -> String {
     text
 }
 
+/// `run_<job>` and `checks_<job>` (`all` or the comma-separated checks to
+/// pass to `check tier --checks`) for each job.
 fn outputs(plan: &Plan) -> String {
     let mut text = String::new();
     for (job, action) in &plan.actions {
-        text.push_str(&format!("run_{}={}\n", job.replace('-', "_"), action.run));
+        let name = job.replace('-', "_");
+        let checks = action
+            .checks
+            .as_ref()
+            .map_or_else(|| "all".to_owned(), |checks| checks.join(","));
+        text.push_str(&format!(
+            "run_{name}={}\nchecks_{name}={checks}\n",
+            action.run
+        ));
     }
     text
 }
@@ -113,12 +180,25 @@ pub fn prepare(root: &Path, workflow: Workflow, output: &Path) -> Result<()> {
             Vec::new()
         })
     };
+    // A branch push runs what its change reaches; `main`, a manual run and
+    // any failure to tell the change run everything.
+    let scope = (std::env::var("GITHUB_EVENT_NAME")? == "push"
+        && std::env::var("GITHUB_REF")? != MAIN)
+        .then(|| {
+            change_scope(root, &api, workflow)
+                .inspect_err(|error| {
+                    eprintln!("CI: the change is unknown ({error}); every check will run");
+                })
+                .ok()
+        })
+        .flatten();
     let plan = coverage::select(
         manifest,
         api.run_id,
         &proofs,
         mode,
         oer_durable::unix_seconds(),
+        scope.as_ref(),
     )?;
     oer_durable::atomic_json(output, &plan)?;
     append("GITHUB_OUTPUT", &outputs(&plan))?;
@@ -128,6 +208,9 @@ pub fn prepare(root: &Path, workflow: Workflow, output: &Path) -> Result<()> {
 pub fn verify(root: &Path, workflow: Workflow, output: &Path) -> Result<()> {
     let api = GitHub::current(root)?;
     let plan = load_plan(&api, workflow)?;
+    if plan.change_base.is_some() && std::env::var("GITHUB_REF")? == MAIN {
+        return Err("a run on main must check everything, not a change".into());
+    }
     let needs = needs(&std::env::var("CI_NEEDS")?)?;
     let proof = coverage::finish(
         &plan,

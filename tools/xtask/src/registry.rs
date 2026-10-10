@@ -597,6 +597,16 @@ pub fn of_change(change: &Change) -> Vec<&'static Check> {
         .collect()
 }
 
+/// The checks of `job` up to `change`'s tier that a CI run for `change`
+/// executes: those whose trigger the change fires, and every check without a
+/// trigger, which only runs over the whole tree and so always runs.
+pub fn of_job_for(change: &Change, job: &str) -> Vec<&'static Check> {
+    of_job(change.tier, job)
+        .into_iter()
+        .filter(|check| check.trigger.is_none_or(|trigger| trigger(change)))
+        .collect()
+}
+
 /// One check's outcome, printed as it ends.
 fn step(label: &str, check: &Check, work: impl FnOnce() -> Result<()>) -> Result<()> {
     let started = Instant::now();
@@ -630,10 +640,31 @@ pub fn run_change(ctx: &Checkout, change: &Change) -> Result<()> {
     Ok(())
 }
 
-/// Run every check `job` has up to `tier` over the whole tree; a failure
-/// does not stop the remaining checks, and any failure fails the job.
-pub fn run_tier(ctx: &Checkout, tier: Tier, job: &str) -> Result<()> {
+/// The checks of `job` up to `tier` that `only` names, all of them when it is
+/// `None`; a named check the job does not have is an error, so a stale plan
+/// cannot run less than it says.
+pub fn selected(tier: Tier, job: &str, only: Option<&[String]>) -> Result<Vec<&'static Check>> {
     let checks = of_job(tier, job);
+    let Some(only) = only else {
+        return Ok(checks);
+    };
+    if let Some(unknown) = only
+        .iter()
+        .find(|id| !checks.iter().any(|check| check.id == id.as_str()))
+    {
+        return Err(format!("job `{job}` has no check `{unknown}` up to tier {tier}").into());
+    }
+    Ok(checks
+        .into_iter()
+        .filter(|check| only.iter().any(|id| id == check.id))
+        .collect())
+}
+
+/// Run every check `job` has up to `tier`, or those of them `only` names,
+/// over the whole tree; a failure does not stop the remaining checks, and
+/// any failure fails the job.
+pub fn run_tier(ctx: &Checkout, tier: Tier, job: &str, only: Option<&[String]>) -> Result<()> {
+    let checks = selected(tier, job, only)?;
     if checks.is_empty() {
         return Err(format!(
             "no check of job `{job}` up to tier {tier}; jobs: {}",

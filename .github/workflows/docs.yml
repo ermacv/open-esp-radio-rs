@@ -1,6 +1,7 @@
 name: Documentation
 
-# Every push checks the guides and API documentation. A manual run from main
+# Every push checks the guides and API documentation: main whole, a branch
+# what its change reaches (`cargo xtask ci prepare`). A manual run from main
 # also publishes them to GitHub Pages.
 on:
   push:
@@ -34,6 +35,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       run_docs: ${{ steps.plan.outputs.run_docs }}
+      checks_docs: ${{ steps.plan.outputs.checks_docs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -89,19 +91,25 @@ jobs:
       # registry's `docs` job.
       - id: environment
         run: cargo xtask ci check-environment --workflow docs --job docs
-      - run: cargo xtask --verbose check tier full --job docs
+      - run: cargo xtask --verbose check tier full --job docs --checks "${{ needs.prepare.outputs.checks_docs }}"
+      # The guides are Markdown: they build when the `docs` check runs, on
+      # every main or manual run and for a branch whose change reaches it.
       - name: Install mdBook
+        if: needs.prepare.outputs.checks_docs == 'all' || contains(format(',{0},', needs.prepare.outputs.checks_docs), ',docs,')
         run: |
           mdbook --version | grep -q "v$MDBOOK_VERSION" || cargo install --locked mdbook --version "$MDBOOK_VERSION"
           mdbook-mermaid --version | grep -q "$MDBOOK_MERMAID_VERSION" || cargo install --locked mdbook-mermaid --version "$MDBOOK_MERMAID_VERSION"
           # mdbook-permalinks has no --version; the cache key carries its version.
           command -v mdbook-permalinks >/dev/null || cargo install --locked mdbook-permalinks --version "$MDBOOK_PERMALINKS_VERSION"
       - name: Guides
+        if: needs.prepare.outputs.checks_docs == 'all' || contains(format(',{0},', needs.prepare.outputs.checks_docs), ',docs,')
         run: |
           mdbook-mermaid install docs
           mdbook build docs
           mdbook test docs
+      # Only the manual run on main publishes the site.
       - name: Assemble site
+        if: github.event_name == 'workflow_dispatch'
         run: |
           site=target/pages
           rm -rf "$site"
@@ -119,6 +127,7 @@ jobs:
             fi
           done
       - name: Package site
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
           path: target/pages

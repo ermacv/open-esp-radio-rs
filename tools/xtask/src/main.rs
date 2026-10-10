@@ -143,6 +143,10 @@ enum Check {
         tier: Option<oer_xtask::registry::Tier>,
         #[arg(long)]
         job: Option<String>,
+        /// Run only these checks of the job, comma-separated, as a pull
+        /// request's CI plan selects them; `all` runs every one.
+        #[arg(long, requires = "job", default_value = "all")]
+        checks: String,
         #[arg(long)]
         list: bool,
     },
@@ -301,8 +305,13 @@ fn dispatch(ctx: &Checkout, command: Task) -> Result<std::process::ExitCode> {
             Check::Tier {
                 tier: Some(tier),
                 job: Some(job),
+                checks,
                 ..
-            } => oer_xtask::registry::run_tier(&ctx, tier, &job),
+            } => {
+                let only: Option<Vec<String>> =
+                    (checks != "all").then(|| checks.split(',').map(str::to_owned).collect());
+                oer_xtask::registry::run_tier(&ctx, tier, &job, only.as_deref())
+            }
             Check::Tier { .. } => Err("select a tier and a --job, or --list".into()),
             Check::Changed { base, full } => checks::changed::run(&ctx, &base, full),
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),

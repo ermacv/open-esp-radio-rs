@@ -5,10 +5,9 @@ use oer_riscv_analysis::{FunctionInput, KnownJump, PreparedReferences, research}
 use oer_riscv_lift::RiscvDecoder;
 use oer_riscv_model::*;
 use oer_riscv_program::ProgramView;
+use oer_riscv_program::facts::ImageFacts;
 use std::collections::BTreeMap;
 
-/// Working capacity of one image's analysis.
-const MEMORY_LIMIT: u64 = 1 << 32;
 const SP: u8 = 2;
 
 /// A defined code symbol and every alias at its address.
@@ -18,64 +17,14 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorCode::Integrity, message)
 }
 
-pub(crate) fn parse(elf: &[u8]) -> Result<oer_elf::Elf<'_>> {
-    oer_elf::Elf::executable(elf)
-        .map_err(|_| invalid("stack analysis requires a static little-endian RV32 executable"))
-}
-
-/// The defined code symbols of `elf` as functions, ascending by address
-/// ([`oer_elf::Elf::functions`]).
-pub fn functions(elf: &[u8]) -> Result<Vec<Function>> {
-    parse(elf)?
-        .functions()
-        .map_err(|error| invalid(error.to_string()))
-}
-
-/// The little-endian word at `address` of an allocated section with file
-/// contents that is neither writable nor executable, such as `.rodata`: code
-/// loaded into RAM may hold tables the program rewrites, such as a vector
-/// table in an `AX` section.
-pub(crate) fn read_only_word(file: &oer_elf::Elf<'_>, address: u32) -> Option<u32> {
-    let address = u64::from(address);
-    file.sections().find_map(|section| {
-        let readonly = section.allocated && !section.writable && !section.executable;
-        if !readonly || address < section.address || address + 4 > section.address + section.size {
-            return None;
-        }
-        section.word(address)
-    })
-}
-
 /// The words of the data object that starts at `address` in an unwritable
 /// section: a table whose every entry an index the language bounds-checks
 /// against the object's length may load.
-pub(crate) fn table(elf: &[u8], address: u32) -> Result<Option<Vec<u32>>> {
-    let file = parse(elf)?;
-    let Some(symbol) = file.symbols().find(|symbol| {
-        symbol.kind == oer_elf::SymbolKind::Data
-            && symbol.address == u64::from(address)
-            && symbol.size > 0
-            && symbol.size % 4 == 0
-    }) else {
-        return Ok(None);
-    };
-    let words: Option<Vec<u32>> = (0..symbol.size / 4)
-        .map(|i| read_only_word(&file, address.wrapping_add(4 * i as u32)))
-        .collect();
-    Ok(words)
-}
-
-/// Address ranges of the executable sections of `elf`.
-pub(crate) fn executable_ranges(elf: &[u8]) -> Result<Vec<(u32, u32)>> {
-    let file = parse(elf)?;
-    let mut ranges = Vec::new();
-    for section in file.sections().filter(|section| section.executable) {
-        let start = u32::try_from(section.address).map_err(|_| invalid("section beyond RV32"))?;
-        let end = u32::try_from(section.address + section.size)
-            .map_err(|_| invalid("section beyond RV32"))?;
-        ranges.push((start, end));
-    }
-    Ok(ranges)
+pub(crate) fn table(image: &ImageFacts<'_>, address: u32) -> Option<Vec<u32>> {
+    let size = image.data_object(address)?;
+    (0..size / 4)
+        .map(|i| image.read_only_word(address.wrapping_add(4 * i as u32)))
+        .collect()
 }
 
 fn uleb128(bytes: &[u8], at: &mut usize) -> Result<u64> {
@@ -96,8 +45,8 @@ fn uleb128(bytes: &[u8], at: &mut usize) -> Result<u64> {
 /// The compiler's frame record of each function: `.stack_sizes` entries of a
 /// 32-bit address followed by a ULEB128 size. An image without the section has
 /// no records; one function recorded twice with different sizes is an error.
-pub fn stack_sizes(elf: &[u8]) -> Result<BTreeMap<u32, u64>> {
-    let file = parse(elf)?;
+pub fn stack_sizes(image: &ImageFacts<'_>) -> Result<BTreeMap<u32, u64>> {
+    let file = image.file();
     let mut sizes = BTreeMap::new();
     let Some(section) = file.section_by_name(".stack_sizes") else {
         return Ok(sizes);
@@ -225,26 +174,29 @@ impl FunctionSink for Observer {
     }
 }
 
-/// Run `body` with an observer of `elf`'s functions: `observe(function,
+/// The bounded value analysis of one function, its control-flow graph
+/// following the indirect jumps whose targets the given jumps name.
+pub(crate) type Observe<'a> =
+    dyn FnMut(&Function, &[KnownJump], &mut dyn RunControl) -> Result<Observation> + 'a;
+
+/// Run `body` with an observer of `image`'s functions: `observe(function,
 /// jumps)` runs the bounded value analysis over one function, its control-
 /// flow graph following the indirect jumps whose targets `jumps` names.
 pub(crate) fn observing<R>(
-    elf: &[u8],
-    body: impl FnOnce(&mut dyn FnMut(&Function, &[KnownJump]) -> Result<Observation>) -> Result<R>,
+    image: &ImageFacts<'_>,
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+    body: impl FnOnce(&mut Observe<'_>, &mut dyn RunControl) -> Result<R>,
 ) -> Result<R> {
-    let file = parse(elf)?;
-    let memory = WorkingMemory::new(MEMORY_LIMIT)?;
-    let view = ProgramView::new(elf, &file, &memory, &mut || Ok(()))?;
-    let mut observe = |function: &Function, jumps: &[KnownJump]| -> Result<Observation> {
-        let mut control = || Ok(());
-        let code = function_bytes(&file, function)?;
-        let references = PreparedReferences::new(
-            &[],
-            function.section as u32,
-            &RiscvDecoder,
-            &memory,
-            &mut control,
-        )?;
+    let file = image.file();
+    let view = ProgramView::new(image.bytes(), file, memory, control)?;
+    let mut observe = |function: &Function,
+                       jumps: &[KnownJump],
+                       control: &mut dyn RunControl|
+     -> Result<Observation> {
+        let code = function_bytes(file, function)?;
+        let references =
+            PreparedReferences::new(&[], function.section as u32, &RiscvDecoder, memory, control)?;
         let mut observer = Observer::default();
         let summary = research(
             FunctionInput {
@@ -260,8 +212,8 @@ pub(crate) fn observing<R>(
                 jumps,
             },
             &RiscvDecoder,
-            &memory,
-            &mut control,
+            memory,
+            control,
             &mut observer,
             // The psABI preserves sp and the saved registers across calls.
             Some(CallAbi::RiscvInteger),
@@ -280,5 +232,5 @@ pub(crate) fn observing<R>(
             site_registers: observer.site_registers,
         })
     };
-    body(&mut observe)
+    body(&mut observe, control)
 }

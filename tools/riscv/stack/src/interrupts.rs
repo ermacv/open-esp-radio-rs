@@ -3,9 +3,8 @@
 //! symbol holds (its pointer word relocated to the entries, then its length);
 //! every non-zero handler word carries the relocation that names it, and a
 //! zero word is an entry the build left out.
-use crate::image::read_only_word;
-use crate::relocations::Relocations;
 use oer_riscv_model::{Error, ErrorCode, Result};
+use oer_riscv_program::facts::ImageFacts;
 
 /// Where one field lies in a table entry, in bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,22 +36,26 @@ pub struct TableEntry {
     pub handler: Option<u32>,
 }
 
-/// The entries of the table `symbol` holds in `elf`.
-pub fn interrupt_table(elf: &[u8], symbol: &str, layout: &TableLayout) -> Result<Vec<TableEntry>> {
+/// The entries of the table `symbol` holds in `image`.
+pub fn interrupt_table(
+    image: &ImageFacts<'_>,
+    symbol: &str,
+    layout: &TableLayout,
+) -> Result<Vec<TableEntry>> {
     let invalid = |message: String| Error::new(ErrorCode::Integrity, message);
-    let file = oer_elf::Elf::parse(elf).map_err(|_| invalid("invalid ELF".into()))?;
-    let relocations = Relocations::read(elf)?;
-    let slice = file
+    let slice = image
+        .file()
         .symbols()
         .find(|candidate| candidate.name == symbol)
         .ok_or_else(|| Error::new(ErrorCode::NotFound, format!("no `{symbol}` in the image")))?;
     let at = u32::try_from(slice.address).map_err(|_| invalid("table beyond RV32".into()))?;
     let word = |address: u32| {
-        read_only_word(&file, address)
+        image
+            .read_only_word(address)
             .ok_or_else(|| invalid(format!("{address:#010x} is not read-only data")))
     };
     let first = word(at)?;
-    if relocations.word(at) != Some(first) {
+    if image.word(at) != Some(first) {
         return Err(invalid(format!(
             "`{symbol}`'s pointer at {at:#010x} has no relocation"
         )));
@@ -76,7 +79,7 @@ pub fn interrupt_table(elf: &[u8], symbol: &str, layout: &TableLayout) -> Result
             let entry = first + index * layout.entry;
             let address = entry + layout.handler;
             let handler = word(address)?;
-            if handler != 0 && relocations.word(address) != Some(handler) {
+            if handler != 0 && image.word(address) != Some(handler) {
                 return Err(invalid(format!(
                     "the handler word at {address:#010x} has no relocation"
                 )));

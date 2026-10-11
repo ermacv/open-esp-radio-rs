@@ -104,10 +104,15 @@ exercised call chains. The gate also fails an ELF without `.stack_sizes`
 records and every function of `oer-riscv-stack`'s inventory without a record
 that `stack-coverage.toml` does not review exactly once (assembly, vector data,
 compiler runtime or a linker script's section label; a review supplies no
-frame). Reports go to
-`runtime-stack.txt` and `bootstrap-stack.txt`: coverage, then per stack its
-bound (proven, conditional or partial), budget, headroom, deepest path and
-unresolved sites.
+frame). The analysis of one image runs within
+`oer_image_check_stack::budget`: 10^9 work units, 512 MiB of working memory
+(the image facts and the value analysis) and 5 minutes, chosen by the owner
+from the measured analysis of every image class; running out fails the gate
+with `ResourceLimited`. Reports go to
+`runtime-stack.txt` and `bootstrap-stack.txt`: what the analysis used of its
+work units and working memory, coverage, then per stack its bound (proven,
+conditional or partial), budget, headroom, deepest path and unresolved
+sites.
 
 Its `interrupt_stack` module is the interrupt half of the runtime's gate: it
 bounds each hart's interrupt stack from

@@ -236,6 +236,10 @@ impl<'a, T> AdmittedVec<'a, T> {
     pub fn pop(&mut self) -> Option<T> {
         self.values.pop()
     }
+    /// Keep the first `length` values; the admitted capacity stays.
+    pub fn truncate(&mut self, length: usize) {
+        self.values.truncate(length);
+    }
     pub fn push(&mut self, value: T, position: RunPosition) -> Result<()> {
         if self.values.len() == self.values.capacity() {
             let count = self.values.len().saturating_mul(2).max(8);

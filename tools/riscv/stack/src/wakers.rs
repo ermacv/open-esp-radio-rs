@@ -7,10 +7,9 @@
 //! image builds from a `const` or `static` vtable is among them. A vtable
 //! built at run time in writable memory (a leaked allocation) is not.
 use crate::dwarf::Dwarf;
-use crate::image::read_only_word;
-use crate::relocations::Relocations;
 use crate::{Analysis, Fact, Resolutions, TransferKind};
-use oer_riscv_model::{Error, ErrorCode, Result};
+use oer_riscv_model::Result;
+use oer_riscv_program::facts::ImageFacts;
 use std::collections::BTreeSet;
 
 const RAW_WAKER: &str = "core::task::wake::RawWaker";
@@ -30,18 +29,19 @@ fn slot(function: &str) -> Option<usize> {
     }
 }
 
-/// Each `RawWakerVTable` of `elf`: its four functions, by slot.
-pub fn waker_vtables(elf: &[u8], dwarf: &Dwarf, analysis: &Analysis) -> Result<Vec<[u32; 4]>> {
-    let file = oer_elf::Elf::parse(elf)
-        .map_err(|_| Error::new(ErrorCode::Integrity, "invalid ELF".to_owned()))?;
-    let relocations = Relocations::read(elf)?;
+/// Each `RawWakerVTable` of `image`: its four functions, by slot.
+pub fn waker_vtables(
+    image: &ImageFacts<'_>,
+    dwarf: &Dwarf,
+    analysis: &Analysis,
+) -> Result<Vec<[u32; 4]>> {
     let function = |address: u32| {
-        let target = relocations.word(address)? & !1;
-        read_only_word(&file, address)?;
+        let target = image.word(address)? & !1;
+        image.read_only_word(address)?;
         analysis.functions.contains_key(&target).then_some(target)
     };
     let mut vtables = Vec::new();
-    for (address, _) in relocations.words() {
+    for &(address, _) in image.words() {
         if address % 4 != 0 {
             continue;
         }

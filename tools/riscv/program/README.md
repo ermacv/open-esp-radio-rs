@@ -11,6 +11,15 @@ to the [analysis](../analysis/README.md), its code symbols
 (`code_symbols`, `code_symbol_at`) and its executable sections. It performs
 no loading, relocation or execution, and has no filesystem access.
 
+`facts::ImageFacts` reads, in one parse under the caller's `WorkingMemory`
+and `RunControl`, the facts of a static executable that more than one
+analysis needs: its functions with their aliases, executable ranges,
+read-only words, sized data objects, the address words an `--emit-relocs`
+link kept (each checked against the word it relocates) and the compiler's
+`.LJTI*` jump-table labels, each table running to the next symbol of its
+section. Lookups never parse again. The stack analyzer reads images through
+it.
+
 `execution_segments` lends validated static RV32 ELF segment bytes to a caller's
 admitted loader. It shares `ProgramView` validation with static image research,
 including overlapping mappings, permissions, dynamic/TLS rejection and input

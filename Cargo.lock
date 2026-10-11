@@ -3958,6 +3958,7 @@ dependencies = [
  "oer-elf",
  "oer-image-check-stack",
  "oer-riscv-model",
+ "oer-riscv-program",
  "oer-riscv-stack",
 ]
 
@@ -3978,6 +3979,8 @@ dependencies = [
  "oer-chip-profile",
  "oer-elf",
  "oer-image-policy",
+ "oer-riscv-model",
+ "oer-riscv-program",
  "oer-riscv-stack",
  "oer-vendor-artifacts",
  "rustc-demangle",

@@ -16,6 +16,7 @@
 //! as does an image without compiler frame records or a linked function
 //! without a record that the coverage review does not explain.
 
+pub mod budget;
 pub mod contract;
 mod coverage;
 
@@ -23,11 +24,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
+use oer_riscv_model::WorkingMemory;
+use oer_riscv_program::facts::ImageFacts;
 use oer_riscv_stack::{
-    Analysis, Bound, Dwarf, Function, Reason, Resolutions, Summary, TypeFacts, address_taken,
-    analyze, function_pointer_resolutions, functions, parse_summaries, stack_sizes,
-    taken_addresses, waker_resolutions, waker_vtables,
+    Analysis, Bound, Dwarf, Function, Reason, Resolutions, Summary, TypeFacts, analyze,
+    function_pointer_resolutions, parse_summaries, stack_sizes, taken_addresses, waker_resolutions,
+    waker_vtables,
 };
+
+use crate::budget::{Budget, MEMORY_LIMIT, TIMEOUT, Usage, WORK_UNITS};
 
 pub use coverage::{Coverage, CoverageCategory, CoveragePolicy, CoverageReview};
 use oer_image_policy::{StackPolicy, Storage, TaskStack};
@@ -86,12 +91,16 @@ pub struct Image {
     pub analysis: Analysis,
     /// The image's own functions.
     pub functions: Vec<Function>,
+    /// The compiler's frame record of each function (`.stack_sizes`).
+    pub stack_sizes: BTreeMap<u32, u64>,
     /// The image's function names, demangled, by address.
     pub names: BTreeMap<u32, String>,
     pub dwarf: Dwarf,
     pub resolutions: Resolutions,
     /// The chip's address map and interrupt contract, when it names them.
     pub contract: Option<Contract>,
+    /// What the analysis used of its [`budget`].
+    pub usage: Usage,
 }
 
 impl Image {
@@ -121,15 +130,24 @@ impl Image {
         Self::new(elf, &[&rom_elf], &summaries, Contract::of(profile))
     }
 
-    /// The analysis of `elf` with its `companions` and their `summaries`.
+    /// The analysis of `elf` with its `companions` and their `summaries`,
+    /// within the [`budget`] of one image analysis.
     fn new(
         elf: Vec<u8>,
         companions: &[&[u8]],
         summaries: &[Summary],
         contract: Option<Contract>,
     ) -> Result<Self> {
-        let analysis = analyze(&elf, companions, summaries)?;
-        let functions = functions(&elf)?;
+        let memory = WorkingMemory::new(MEMORY_LIMIT)?;
+        let mut control = Budget::new(WORK_UNITS, TIMEOUT);
+        let facts = ImageFacts::new(&elf, &memory, &mut control)?;
+        let companions = companions
+            .iter()
+            .map(|companion| ImageFacts::new(companion, &memory, &mut control))
+            .collect::<oer_riscv_model::Result<Vec<_>>>()?;
+        let companions: Vec<&ImageFacts<'_>> = companions.iter().collect();
+        let analysis = analyze(&facts, &companions, summaries, &memory, &mut control)?;
+        let functions = facts.functions().to_vec();
         let names = functions
             .iter()
             .filter_map(|function| {
@@ -138,27 +156,33 @@ impl Image {
             })
             .collect();
         let dwarf = Dwarf::read(&elf)?;
+        let vtables = waker_vtables(&facts, &dwarf, &analysis)?;
+        let mut resolutions = waker_resolutions(&analysis, &dwarf, &vtables)?;
+        // Calls through a static's function pointer reach the taken functions
+        // of its type: the diagnostic observers' `OnceCell<fn(..)>`.
+        let types = TypeFacts::read(&elf)?;
+        let taken = taken_addresses(&facts)?;
+        let pointers = function_pointer_resolutions(&analysis, &types, &taken);
+        let stack_sizes = stack_sizes(&facts)?;
+        let usage = Usage {
+            memory_bytes: memory.peak(),
+            work_units: control.used(),
+        };
+        drop(companions);
+        drop(facts);
         let mut image = Self {
             elf,
             analysis,
             functions,
+            stack_sizes,
             names,
             dwarf,
             resolutions: Resolutions::new(),
             contract,
+            usage,
         };
-        let vtables = waker_vtables(&image.elf, &image.dwarf, &image.analysis)?;
-        let mut resolutions = waker_resolutions(&image.analysis, &image.dwarf, &vtables)?;
-        resolutions.extend(image.ipc_resolutions()?);
-        // Calls through a static's function pointer reach the taken functions
-        // of its type: the diagnostic observers' `OnceCell<fn(..)>`.
-        let types = TypeFacts::read(&image.elf)?;
-        let taken = taken_addresses(&image.elf)?;
-        resolutions.extend(function_pointer_resolutions(
-            &image.analysis,
-            &types,
-            &taken,
-        ));
+        resolutions.extend(image.ipc_resolutions(&taken)?);
+        resolutions.extend(pointers);
         image.resolutions = resolutions;
         Ok(image)
     }
@@ -230,7 +254,7 @@ impl Image {
     /// The targets of the IPC dispatch's call of the posted callback: the
     /// `handler` argument of every direct call of the only function that
     /// posts one; none when the image posts none.
-    fn ipc_resolutions(&self) -> Result<Resolutions> {
+    fn ipc_resolutions(&self, taken: &BTreeSet<u32>) -> Result<Resolutions> {
         let mut resolutions = Resolutions::new();
         let Some(contract) = &self.contract else {
             return Ok(resolutions);
@@ -240,7 +264,7 @@ impl Image {
         };
         let mut targets = BTreeSet::new();
         for post in self.address_of(&ipc.post) {
-            if address_taken(&self.elf, post)? {
+            if taken.contains(&post) {
                 return Err(format!("`{}` is called through a pointer", ipc.post).into());
             }
             targets.extend(
@@ -270,6 +294,8 @@ impl Image {
 pub struct StackAudit {
     pub coverage: Coverage,
     pub stacks: Vec<StackBound>,
+    /// What the image's analysis used of its [`budget`].
+    pub usage: Usage,
 }
 
 /// One stack's budget and its root's bound.
@@ -297,7 +323,7 @@ impl StackAudit {
         stacks: &[(&'static str, &TaskStack)],
     ) -> Result<Self> {
         let coverage = CoveragePolicy::load(policy.stacks()?.coverage_policy)?
-            .coverage(&image.functions, &stack_sizes(&image.elf)?)?;
+            .coverage(&image.functions, &image.stack_sizes)?;
         let mut bounds = Vec::new();
         for &(name, stack) in stacks {
             let storage = match stack.storage() {
@@ -344,6 +370,7 @@ impl StackAudit {
         Ok(Self {
             coverage,
             stacks: bounds,
+            usage: image.usage,
         })
     }
 
@@ -424,8 +451,13 @@ impl StackAudit {
     pub fn render(&self) -> String {
         let coverage = &self.coverage;
         let mut out = format!(
+            "analysis: {} of {WORK_UNITS} work units, {} of {MEMORY_LIMIT} bytes of working memory\n",
+            self.usage.work_units, self.usage.memory_bytes
+        );
+        let _ = writeln!(
+            out,
             "frame coverage: {} of {} functions have a compiler frame record; {} reviewed, {} \
-             unreviewed\n",
+             unreviewed",
             coverage.measured,
             coverage.functions,
             coverage.reviewed.len(),

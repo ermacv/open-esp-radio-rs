@@ -14,7 +14,10 @@ use oer_riscv_stack::{
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+use oer_image_check_stack::budget::{Budget, MEMORY_LIMIT, TIMEOUT, WORK_UNITS};
 use oer_image_check_stack::{ADMITTED, Image, contract::Contract};
+use oer_riscv_model::WorkingMemory;
+use oer_riscv_program::facts::ImageFacts;
 
 /// The interrupt stacks' report in an image build's output directory.
 pub const INTERRUPT_REPORT: &str = "interrupt-stack.txt";
@@ -378,6 +381,7 @@ pub fn interrupt_stacks_of(image: &Image) -> Result<InterruptStacks> {
         dwarf,
         resolutions,
         contract,
+        ..
     } = image;
     let contract = contract
         .as_ref()
@@ -389,8 +393,10 @@ pub fn interrupt_stacks_of(image: &Image) -> Result<InterruptStacks> {
             .ok_or_else(|| format!("the runtime has no `{name}`").into())
     };
     let field = |(offset, size): (u32, u32)| Field { offset, size };
+    let memory = WorkingMemory::new(MEMORY_LIMIT)?;
+    let facts = ImageFacts::new(elf, &memory, &mut Budget::new(WORK_UNITS, TIMEOUT))?;
     let table = interrupt_table(
-        elf,
+        &facts,
         &interrupts.table_symbol,
         &TableLayout {
             entry: interrupts.table_entry_bytes,
@@ -400,12 +406,12 @@ pub fn interrupt_stacks_of(image: &Image) -> Result<InterruptStacks> {
             handler: interrupts.table_handler,
         },
     )?;
-    let vectors = vector_table(elf, &interrupts.vector_table_symbol)?
+    let vectors = vector_table(&facts, &interrupts.vector_table_symbol)?
         .into_iter()
         .flatten()
-        .map(|entry| trap_entry(elf, functions, entry))
+        .map(|entry| trap_entry(&facts, entry))
         .collect::<oer_riscv_model::Result<Vec<_>>>()?;
-    let exception = trap_entry(elf, functions, symbol(&interrupts.exception_entry_symbol)?)?;
+    let exception = trap_entry(&facts, symbol(&interrupts.exception_entry_symbol)?)?;
     // The handler a slot calls is a direct call of the slot's own code: a
     // call site no inlined function owns. Calls from a handler inlined into
     // the slot are the handler's.

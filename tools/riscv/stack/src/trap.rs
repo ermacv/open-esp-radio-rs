@@ -10,11 +10,12 @@
 //! first instruction to the call of its handler over every path: each memory
 //! access must address the frame below that position, which the entry may
 //! learn only from an unsigned comparison of the two values.
-use crate::image::{Function, parse};
+use crate::image::Function;
 use crate::sweep::destination;
 use oer_elf::rv32::{self, Role};
 use oer_riscv_decode::{Extension, Extensions, Float, Inst, Instruction, decode};
 use oer_riscv_model::{Error, ErrorCode, Result};
+use oer_riscv_program::facts::ImageFacts;
 
 /// `mscratch`.
 const MSCRATCH: u16 = 0x340;
@@ -36,8 +37,8 @@ pub struct TrapEntry {
 
 /// The entries of the vector table `symbol`: each word a relocation names,
 /// by slot; an empty slot holds zero and no relocation.
-pub fn vector_table(elf: &[u8], symbol: &str) -> Result<Vec<Option<u32>>> {
-    let file = parse(elf)?;
+pub fn vector_table(image: &ImageFacts<'_>, symbol: &str) -> Result<Vec<Option<u32>>> {
+    let file = image.file();
     let table = file
         .symbols()
         .find(|s| s.name == symbol)
@@ -90,9 +91,9 @@ pub fn vector_table(elf: &[u8], symbol: &str) -> Result<Vec<Option<u32>>> {
     Ok(slots)
 }
 
-/// Check the trap entry at `entry` of `elf` and measure its frame.
-pub fn trap_entry(elf: &[u8], functions: &[Function], entry: u32) -> Result<TrapEntry> {
-    let file = parse(elf)?;
+/// Check the trap entry at `entry` of `image` and measure its frame.
+pub fn trap_entry(image: &ImageFacts<'_>, entry: u32) -> Result<TrapEntry> {
+    let (file, functions) = (image.file(), image.functions());
     let name = |address: u32| {
         functions
             .iter()
@@ -121,7 +122,7 @@ pub fn trap_entry(elf: &[u8], functions: &[Function], entry: u32) -> Result<Trap
                 return Err(fail(state.pc, "runs longer than the check follows"));
             }
             let pc = state.pc;
-            let bytes = code(&file, pc).ok_or_else(|| fail(pc, "leaves the code"))?;
+            let bytes = code(file, pc).ok_or_else(|| fail(pc, "leaves the code"))?;
             let (instruction, length) =
                 decode(bytes, Extensions::ALL).ok_or_else(|| fail(pc, "undecodable"))?;
             let next = pc.wrapping_add(length as u32);

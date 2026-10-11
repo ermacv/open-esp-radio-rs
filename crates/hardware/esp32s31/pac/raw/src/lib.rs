@@ -13375,20 +13375,29 @@ pub mod pmu_radio {
         pub type TieHighXpdBbI2cR = crate::BitReader;
         #[doc = "Field `TIE_HIGH_XPD_BB_I2C` writer - Force the baseband analog-I2C power control high."]
         pub type TieHighXpdBbI2cW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `PHY_RF_SHUTDOWN_HIGH_OPAQUE` reader - Opaque: meaning not established. Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown."]
-        pub type PhyRfShutdownHighOpaqueR = crate::FieldReader;
-        #[doc = "Field `PHY_RF_SHUTDOWN_HIGH_OPAQUE` writer - Opaque: meaning not established. Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown."]
-        pub type PhyRfShutdownHighOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `TIE_HIGH_XPD_XTALX2` reader - Force the doubled-crystal power control high."]
+        pub type TieHighXpdXtalx2R = crate::BitReader;
+        #[doc = "Field `TIE_HIGH_XPD_XTALX2` writer - Force the doubled-crystal power control high."]
+        pub type TieHighXpdXtalx2W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TIE_HIGH_XPD_XTAL` reader - Force the crystal power control high."]
+        pub type TieHighXpdXtalR = crate::BitReader;
+        #[doc = "Field `TIE_HIGH_XPD_XTAL` writer - Force the crystal power control high."]
+        pub type TieHighXpdXtalW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 28 - Force the baseband analog-I2C power control high."]
             #[inline(always)]
             pub fn tie_high_xpd_bb_i2c(&self) -> TieHighXpdBbI2cR {
                 TieHighXpdBbI2cR::new(((self.bits >> 28) & 1) != 0)
             }
-            #[doc = "Bits 29:31 - Opaque: meaning not established. Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown."]
+            #[doc = "Bit 30 - Force the doubled-crystal power control high."]
             #[inline(always)]
-            pub fn phy_rf_shutdown_high_opaque(&self) -> PhyRfShutdownHighOpaqueR {
-                PhyRfShutdownHighOpaqueR::new(((self.bits >> 29) & 7) as u8)
+            pub fn tie_high_xpd_xtalx2(&self) -> TieHighXpdXtalx2R {
+                TieHighXpdXtalx2R::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Force the crystal power control high."]
+            #[inline(always)]
+            pub fn tie_high_xpd_xtal(&self) -> TieHighXpdXtalR {
+                TieHighXpdXtalR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
@@ -13397,12 +13406,15 @@ pub mod pmu_radio {
             pub fn tie_high_xpd_bb_i2c(&mut self) -> TieHighXpdBbI2cW<'_, ImmHpCkPower0Spec> {
                 TieHighXpdBbI2cW::new(self, 28)
             }
-            #[doc = "Bits 29:31 - Opaque: meaning not established. Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown."]
+            #[doc = "Bit 30 - Force the doubled-crystal power control high."]
             #[inline(always)]
-            pub fn phy_rf_shutdown_high_opaque(
-                &mut self,
-            ) -> PhyRfShutdownHighOpaqueW<'_, ImmHpCkPower0Spec> {
-                PhyRfShutdownHighOpaqueW::new(self, 29)
+            pub fn tie_high_xpd_xtalx2(&mut self) -> TieHighXpdXtalx2W<'_, ImmHpCkPower0Spec> {
+                TieHighXpdXtalx2W::new(self, 30)
+            }
+            #[doc = "Bit 31 - Force the crystal power control high."]
+            #[inline(always)]
+            pub fn tie_high_xpd_xtal(&mut self) -> TieHighXpdXtalW<'_, ImmHpCkPower0Spec> {
+                TieHighXpdXtalW::new(self, 31)
             }
         }
         #[doc = "Immediate high-power clock ties. The reviewed complete PHY body reads this word before its preserving update, overriding the write-only access class in the uncorrected public SVD.\n\nYou can [`read`](crate::Reg::read) this register and get [`imm_hp_ck_power_0::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`imm_hp_ck_power_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]

@@ -5779,10 +5779,16 @@
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>PHY_RF_SHUTDOWN_HIGH_OPAQUE</name>
-              <description>Opaque: meaning not established. Upper three-bit immediate-clock image cleared together with TIE_HIGH_XPD_BB_I2C by complete ESP32-S31 phy_xpd_rf_new; individual hardware meanings remain unknown.</description>
-              <bitOffset>29</bitOffset>
-              <bitWidth>3</bitWidth>
+              <name>TIE_HIGH_XPD_XTALX2</name>
+              <description>Force the doubled-crystal power control high.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIE_HIGH_XPD_XTAL</name>
+              <description>Force the crystal power control high.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

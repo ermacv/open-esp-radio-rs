@@ -45687,10 +45687,17 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "PHY_RF_SHUTDOWN_HIGH_OPAQUE"
-method = "phy_rf_shutdown_high_opaque"
-bit-offset = 29
-bit-width = 3
+svd-name = "TIE_HIGH_XPD_XTALX2"
+method = "tie_high_xpd_xtalx2"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TIE_HIGH_XPD_XTAL"
+method = "tie_high_xpd_xtal"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]

@@ -1,20 +1,30 @@
 //! The one authority over an installed port.
 //!
 //! An installed port has exactly one owner ([`RadioPortOwner`]), which is
-//! neither `Clone` nor `Copy`. Every exclusive operation takes `&mut` on it:
-//! the lifecycle, and each protocol's radio-wide settings (a Wi-Fi channel,
-//! transmit gate or EDCA, an IEEE 802.15.4 channel, a Bluetooth LE
-//! activity). Between running phases the owner also consumes the event
-//! stream and cancels admitted work.
+//! neither `Clone` nor `Copy`. The operations that conflict with work in
+//! flight take `&mut` on it, between running phases: the lifecycle and each
+//! protocol's permanent radio moves (a Wi-Fi or IEEE 802.15.4 channel move).
+//! Between phases the owner also consumes the event stream and ends any
+//! admitted work.
 //!
 //! For one running phase the owner lends the port out:
-//! [`RadioPortOwner::split`] borrows it mutably and returns the phase's one
-//! event consumer ([`RadioPortEvents`]) and the protocol's client handles,
-//! each scoped to its interface ([`RadioPortClient`]). While any of them
-//! lives, the borrow checker refuses every owner call, so an exclusive
-//! operation never meets a client's work at run time and no backend refuses
-//! one as busy. Dropping the handles ends the phase; work they admitted
-//! stays in flight, and its terminal events reach the owner's stream.
+//! [`RadioPortOwner::split`] borrows it mutably and returns three parts
+//! ([`RadioPortSplit`]):
+//!
+//! - the phase's one event consumer ([`RadioPortEvents`]);
+//! - the phase control, one value that is neither `Clone` nor `Copy`, for
+//!   the radio-wide operations that only gate or tune admission while
+//!   clients run (a Wi-Fi transmit gate, beacon-receive priority, EDCA or
+//!   modem-sleep membership), held by the policy that drives them;
+//! - the protocol's client handles, each scoped to its interface
+//!   ([`RadioPortClient`]).
+//!
+//! While any of them lives, the borrow checker refuses every owner call, so
+//! an operation that conflicts with work in flight never meets a client's
+//! work at run time and no backend refuses one as busy. Dropping the parts
+//! ends the phase; work the clients admitted stays in flight, and its
+//! terminal events, with what they return (a Wi-Fi attempt's bodies), reach
+//! the owner's stream: the owner is where they go back to their pools.
 //!
 //! ```
 //! # use oer_radio_port::{LifecycleCommand, RadioPortOwner};
@@ -129,18 +139,22 @@ pub trait RadioPortOwner {
     fn split(&mut self) -> Self::Split<'_>;
 }
 
-/// The handles one running phase lends: its one event consumer and the
-/// protocol's client handles.
+/// The handles one running phase lends: its one event consumer, its
+/// control and the protocol's client handles.
 pub trait RadioPortSplit {
     /// The cause a poisoned backend reports.
     type Fault: Copy + Debug;
     /// The phase's one event consumer.
     type Events: RadioPortEvents<Fault = Self::Fault>;
+    /// The phase control: the radio-wide operations that only gate or tune
+    /// admission while clients run. Neither `Clone` nor `Copy`.
+    type Control;
     /// The protocol's client handles, one per interface.
     type Clients;
 
-    /// The event consumer and the client handles, as separate values.
-    fn into_parts(self) -> (Self::Events, Self::Clients);
+    /// The event consumer, the control and the client handles, as separate
+    /// values.
+    fn into_parts(self) -> (Self::Events, Self::Control, Self::Clients);
 }
 
 /// The one consumer of a running phase's events.
@@ -168,9 +182,13 @@ pub trait RadioPortEvents {
 ///
 /// A client is scoped to its interface: its protocol's submissions and
 /// settings name only that interface, so one client cannot act for another.
+/// Its admitted work is a [`Self::Work`] value that only its own
+/// submissions return, so a client names only its own work, by type.
 pub trait RadioPortClient {
-    /// The correlation identity of the port's admitted work.
-    type Id: Correlation;
+    /// One admitted operation of this client, which its protocol's
+    /// submission returns: neither `Clone` nor `Copy`, and with no public
+    /// constructor.
+    type Work;
     /// The clock domain of the port's radio instants.
     type Domain;
     /// The cause a poisoned backend reports.
@@ -185,10 +203,9 @@ pub trait RadioPortClient {
 
     /// End one operation this client admitted. Its terminal event is the
     /// operation's own, which may be its natural end. A refusal as
-    /// [`CancelError::NotRunning`] proves that the operation already ended,
-    /// or that this client did not admit it.
-    fn cancel(
-        &self,
-        id: Self::Id,
-    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + '_;
+    /// [`CancelError::NotRunning`] proves that the operation already ended.
+    fn cancel<'a>(
+        &'a self,
+        work: &'a Self::Work,
+    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + 'a;
 }

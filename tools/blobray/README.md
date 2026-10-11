@@ -26,6 +26,7 @@ and board prerequisites.
 | Investigate code | `blobray function-records`, `blobray field-accesses`, `blobray callers`, `blobray_application::library::analyze_library` | [Function analysis](cli/reference/analysis/README.md#function-analysis-contract) |
 | Investigate call arguments | `blobray call-arguments` | [Call arguments](cli/reference/analysis/README.md#call-arguments) |
 | Investigate registers | `blobray register-accesses` | [Library register accesses](cli/reference/registers-data/README.md#library-register-accesses) |
+| Check what a change does to the hardware | `blobray mmio-diff` | [MMIO difference between builds](cli/reference/registers-data/README.md#mmio-difference-between-builds) |
 | Recover tables and coefficients | `blobray_application::data::export` | [Tables and coefficients](cli/reference/registers-data/README.md#captured-data-tables-and-coefficients) |
 | Link an image | `blobray_application::linking::{link, propose_companions}` | [Linked images](cli/reference/inventory-linking/README.md#synthetic-linked-images), [ROM companions](cli/reference/analysis/README.md#explicit-rom-companions) |
 | Audit a final image | `blobray audit-targets` | [Target audit](cli/reference/analysis/README.md#final-image-target-audit) |

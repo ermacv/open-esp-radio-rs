@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 mod data;
 pub use data::*;
+mod mmio;
+pub use mmio::*;
 mod registers;
 pub use registers::*;
 mod execution;

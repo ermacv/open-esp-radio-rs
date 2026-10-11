@@ -13,6 +13,7 @@
       "function-records",
       "field-accesses",
       "callers",
+      "mmio-diff",
       "symbols",
       "strings",
       "call-arguments"
@@ -98,6 +99,23 @@
     "path": [
       "blobray",
       "callers"
+    ],
+    "subcommands": []
+  },
+  {
+    "flags": [
+      "--old",
+      "--new",
+      "--range",
+      "--abi",
+      "--working-memory-mib",
+      "--timeout-secs",
+      "--max-work-units"
+    ],
+    "forwards": false,
+    "path": [
+      "blobray",
+      "mmio-diff"
     ],
     "subcommands": []
   },

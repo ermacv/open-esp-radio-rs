@@ -208,6 +208,21 @@ pub struct CallingFunction {
     pub sites: Vec<crate::call_arguments::CallSite>,
 }
 
+/// Schema of the `mmio-diff` document.
+pub const MMIO_DIFF_SCHEMA: u32 = 1;
+
+/// The MMIO difference of two builds.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MmioDiffDocument {
+    pub schema: u32,
+    pub old: Vec<RegisterAccessInput>,
+    pub new: Vec<RegisterAccessInput>,
+    pub abi: Option<CallAbi>,
+    #[serde(flatten)]
+    pub diff: blobray_domain::MmioDiff,
+}
+
 /// Schema of the `symbols` document (`{"schema":1,"inputs":[...],"symbols":[...]}`).
 pub const SYMBOLS_SCHEMA: u32 = 1;
 

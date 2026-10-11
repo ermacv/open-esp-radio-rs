@@ -138,6 +138,26 @@ enum Command {
         #[command(flatten)]
         limits: InProcessOptions,
     },
+    /// Compare two builds of the same firmware by their MMIO behavior: for
+    /// each function, the accesses inside the `--range` windows that one
+    /// build has and the other lacks. Symbol hashes, code layout, branch
+    /// offsets and the addresses of loaded data do not differ; a stored
+    /// image address does only where no sized symbol names it.
+    MmioDiff {
+        /// The old build: repeat ROLE=PATH.
+        #[arg(long = "old", required = true, value_name = "ROLE=PATH")]
+        old: Vec<OsString>,
+        /// The new build: repeat ROLE=PATH.
+        #[arg(long = "new", required = true, value_name = "ROLE=PATH")]
+        new: Vec<OsString>,
+        /// START:LENGTH MMIO window; repeat for several.
+        #[arg(long = "range", required = true, value_parser = parse_range)]
+        ranges: Vec<blobray_domain::ImageRegion>,
+        #[command(flatten)]
+        assumptions: Assumptions,
+        #[command(flatten)]
+        limits: InProcessOptions,
+    },
     /// List the defined function and data symbols of captured inputs with
     /// member, section, address, size and their `ROLE[member]::name` citation.
     Symbols {
@@ -324,6 +344,13 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             assumptions,
             limits,
         } => call_arguments(inputs, symbols, assumptions.abi(), limits, format),
+        Command::MmioDiff {
+            old,
+            new,
+            ranges,
+            assumptions,
+            limits,
+        } => mmio_diff(old, new, ranges, assumptions.abi(), limits, format),
         Command::Symbols {
             inputs,
             pattern,
@@ -743,6 +770,65 @@ fn section_bytes(
         }],
     };
     Ok(app::data::export(&request, executables, memory, control)?.bytes)
+}
+
+/// Compare the MMIO behavior of the builds `old` and `new` names.
+fn mmio_diff(
+    old: Vec<OsString>,
+    new: Vec<OsString>,
+    ranges: Vec<blobray_domain::ImageRegion>,
+    abi: Option<CallAbi>,
+    limits: InProcessOptions,
+    format: Format,
+) -> Result<ExitCode> {
+    let read = |inputs: Vec<OsString>| -> Result<(Vec<Input>, Vec<app::in_process::Executable>)> {
+        let inputs = inputs
+            .into_iter()
+            .map(parse_input)
+            .collect::<Result<Vec<_>>>()?;
+        let executables = inputs
+            .iter()
+            .map(|input| {
+                std::fs::read(&input.path)
+                    .map(app::in_process::Executable::new)
+                    .map_err(io_error)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok((inputs, executables))
+    };
+    let (old_inputs, old) = read(old)?;
+    let (new_inputs, new) = read(new)?;
+    let memory = limits.memory()?;
+    let mut control = limits.control();
+    let diff = app::mmio_diff::mmio_diff(
+        &old,
+        &new,
+        abi,
+        &ranges,
+        &oer_riscv_lift::RiscvDecoder,
+        &memory,
+        &mut control,
+    )?;
+    let mut out = std::io::BufWriter::new(std::io::stdout().lock());
+    match format {
+        Format::Json => {
+            let document = blobray_cli::wire::MmioDiffDocument {
+                schema: blobray_cli::wire::MMIO_DIFF_SCHEMA,
+                old: described(&old_inputs, &old),
+                new: described(&new_inputs, &new),
+                abi,
+                diff,
+            };
+            serde_json::to_writer(&mut out, &document).map_err(json_error)?;
+            writeln!(out).map_err(io_error)?;
+        }
+        Format::Human => {
+            out.write_all(blobray_cli::mmio::render(&diff).as_bytes())
+                .map_err(io_error)?;
+        }
+    }
+    out.flush().map_err(io_error)?;
+    Ok(ExitCode::SUCCESS)
 }
 
 /// List the symbols of `inputs`, optionally those `pattern` selects.

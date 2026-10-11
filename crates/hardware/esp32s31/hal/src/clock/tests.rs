@@ -164,7 +164,7 @@ fn common_power_holds_one_platform_reference_of_each_shared_gate() {
     assert!(log.borrow().is_empty());
     assert_eq!(power.exit(&mut port, RadioClient::Bluetooth), Ok(()));
     // The last client closes the analog-I2C gate, restores the baseline
-    // captured before the first edge, then drops the 160 MHz source and MPLL.
+    // captured before the first edge, then gives back the 160 MHz source and MPLL.
     assert_eq!(
         *log.borrow(),
         [

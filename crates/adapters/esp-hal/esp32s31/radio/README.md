@@ -20,8 +20,12 @@ counts: the 160 MHz PLL output and the MPLL through their clock-tree nodes
 (`clock::ll::request_pll_f160m`, `request_mpll_clk`) and the three
 `MODEM_LPCON.CLK_CONF` gates (analog-I2C master, coexistence and low-power
 timer) under the lock ESP-HAL's regi2c accesses share, added by the pinned
-fork. `acquire` returns a `PlatformClockGuard`; only its `release` calls
-the matching ESP-HAL release, and a dropped guard keeps the clock held. The
+fork. `acquire` returns a `PlatformClockGuard`, which ends explicitly: its
+`release` calls the matching ESP-HAL release, and its `abandon` keeps the
+clock on deliberately, as a fail-stop owner does. Dropping a guard otherwise
+is a defect that keeps the clock on and asserts in a debug build. The
+provider records no abandonment on the chip, because the radio's single
+shared owner lives for the whole program. The
 provider is a zero-size capability and a
 guard does not borrow it, because ESP-HAL's counts are global.
 

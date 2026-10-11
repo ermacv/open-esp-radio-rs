@@ -109,7 +109,7 @@ pub unsafe fn initialize_phy_registers(
 /// Returns whether the lease accepted the selection.
 #[inline(always)]
 pub fn select_low_power_clock() -> bool {
-    let (shared, partitions) = crate::root::RadioHardware::for_validation().into_concurrent(());
+    let (mut shared, partitions) = crate::root::RadioHardware::for_validation().into_concurrent(());
     let (controller, timer, interrupts) = partitions.bluetooth.into_parts();
     let task = oer_esp32s31_pac::BluetoothTaskRegisters::new(controller);
     let accepted = match shared.try_acquire() {
@@ -118,7 +118,9 @@ pub fn select_low_power_clock() -> bool {
             .is_ok(),
         Err(_) => false,
     };
-    // The comparison image retains every partition it mutated.
+    // The comparison image keeps the selected timer gate on: its guard ends
+    // with `abandon`, and the image retains every partition it mutated.
+    shared.abandon_platform_clocks();
     let _retained = (shared, task, timer, interrupts);
     accepted
 }

@@ -133,7 +133,7 @@ fn a_poisoned_acquisition_is_abandoned_with_its_references_on() {
     // transaction stays fail-stop.
     assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
     drop(poisoned);
-    held_clocks.abandon_for_test();
+    held_clocks.abandon();
     assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
     let (abandoned, dropped) = abandoned();
     assert_eq!(abandoned, holding(&[PlatformClock::Pll160m]));
@@ -160,18 +160,22 @@ fn a_guard_ends_with_release_or_abandon() {
 }
 
 /// Dropping a guard without `release` or `abandon` is a defect: the clock
-/// stays on and the drop is recorded, so destroying the radio's
+/// stays on and the provider records the drop, so destroying the radio's
 /// bookkeeping never closes a clock under a user that still runs on it
 /// (#551: the IEEE 802.15.4 ED probe lost the coexistence clock when its
-/// shared radio was dropped); a debug build asserts.
+/// shared radio was dropped); a debug build also asserts.
 #[test]
-#[should_panic(expected = "dropped without release or abandon")]
-fn a_dropped_guard_keeps_its_clock_and_asserts() {
+fn a_dropped_guard_keeps_its_clock_and_is_recorded() {
     let platform = CountingPlatformClocks::new();
     let guard = platform
         .acquire(PlatformClock::ModemCoexistence)
         .unwrap_or_else(|_| panic!("granted"));
-    drop(guard);
+    let dropped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(guard)));
+    assert_eq!(dropped.is_err(), cfg!(debug_assertions));
+    assert_eq!(held(), holding(&[PlatformClock::ModemCoexistence]));
+    let (abandoned, dropped) = abandoned();
+    assert!(abandoned.is_empty());
+    assert_eq!(dropped, holding(&[PlatformClock::ModemCoexistence]));
 }
 
 /// The planner's explicit release gives each platform clock back once.

@@ -2224,21 +2224,13 @@ fn the_analysis_charges_each_table_entry_it_follows() {
         table: Some(TableBase::Address(RODATA)),
         load: None,
     };
-    let observation = image::Observation {
-        depth: None,
-        complete: false,
-        resolved: Vec::new(),
-        local_jumps: Vec::new(),
-        site_depths: BTreeMap::new(),
-        site_registers: BTreeMap::new(),
-    };
     let jump_table = labelled(&[dispatch(false)], &[TEXT + 24, TEXT + 28]);
     with_facts(&jump_table, |facts| {
         assert_eq!(
-            table_entries(facts, &transfer, &observation, &mut Units(2))?,
+            table_entries(facts, &transfer, None, &mut Units(2))?,
             Some(vec![TEXT + 24, TEXT + 28])
         );
-        let error = table_entries(facts, &transfer, &observation, &mut Units(1)).unwrap_err();
+        let error = table_entries(facts, &transfer, None, &mut Units(1)).unwrap_err();
         assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
         Ok(())
     })

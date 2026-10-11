@@ -382,17 +382,35 @@ fn first_case(index: &AbstractValue, expressions: &[&Expression]) -> Option<i64>
 
 /// The jump tables of one function with the working memory their entries and
 /// the second pass's copies of them hold, released when this is dropped.
-pub(crate) struct FoundTables<'m> {
-    pub(crate) tables: Vec<JumpTable>,
-    _reserved: AdmittedVec<'m, MemoryReservation<'m>>,
+pub(crate) type FoundTables<'m> = oer_riscv_analysis::ProvenTables<'m, JumpTable>;
+
+/// The tables an object's `R_RISCV_32` RELA words prove for the functions of
+/// one of its sections.
+pub(crate) struct ObjectTables<'f> {
+    pub(crate) facts: &'f TableFacts<'f>,
+    pub(crate) section: u32,
 }
 
-impl<'m> FoundTables<'m> {
-    /// No tables: what a function's first pass follows.
-    pub(crate) fn none(memory: &'m WorkingMemory) -> Self {
-        Self {
-            tables: Vec::new(),
-            _reserved: AdmittedVec::new(memory),
+impl oer_riscv_analysis::JumpTableSource for ObjectTables<'_> {
+    type Table = JumpTable;
+
+    fn tables<'m>(
+        &self,
+        records: &[FunctionRecord],
+        extent: CodeRange,
+        memory: &'m WorkingMemory,
+        control: &mut dyn RunControl,
+    ) -> Result<FoundTables<'m>> {
+        jump_tables(records, self.section, extent, self.facts, memory, control)
+    }
+
+    fn jump(&self, table: &JumpTable) -> oer_riscv_analysis::KnownJump {
+        let mut targets = table.entries.clone();
+        targets.sort_unstable();
+        targets.dedup();
+        oer_riscv_analysis::KnownJump {
+            site: table.site,
+            targets,
         }
     }
 }
@@ -420,7 +438,7 @@ pub(crate) fn jump_tables<'r, 'm>(
             // leaves the index unusable, and then no table is proven.
             FunctionRecord::Expression { id, expression, .. } => {
                 if *id as usize != expressions.len() {
-                    return Ok(FoundTables::none(memory));
+                    return Ok(oer_riscv_analysis::ProvenTables::none(memory));
                 }
                 expressions.push(expression, c.position())?;
             }
@@ -530,9 +548,9 @@ pub(crate) fn jump_tables<'r, 'm>(
             });
         }
     }
-    Ok(FoundTables {
+    Ok(oer_riscv_analysis::ProvenTables {
         tables: jumps,
-        _reserved: reserved,
+        reserved,
     })
 }
 

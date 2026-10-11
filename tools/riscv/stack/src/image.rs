@@ -1,7 +1,9 @@
 //! Functions, compiler frame records and value-analysis observations of one
 //! static RV32 image.
 use crate::TransferKind;
-use oer_riscv_analysis::{FunctionInput, KnownJump, PreparedReferences, research};
+use oer_riscv_analysis::{
+    FunctionInput, JumpTableSource, KnownJump, PreparedReferences, research_following_tables,
+};
 use oer_riscv_lift::RiscvDecoder;
 use oer_riscv_model::*;
 use oer_riscv_program::ProgramView;
@@ -202,15 +204,8 @@ impl FunctionSink for Observer {
                 if let Some(AbstractValue::EntryStack { offset: sp }) = registers.get(SP as usize) {
                     self.site_depths.insert(*offset as u32, sp.unsigned_abs());
                 }
-                let mut exact = [None; 32];
-                for (slot, value) in exact.iter_mut().zip(registers) {
-                    *slot = match value {
-                        AbstractValue::Constant { value: v }
-                        | AbstractValue::ImageAddress { address: v } => Some(*v),
-                        _ => None,
-                    };
-                }
-                self.site_registers.insert(*offset as u32, exact);
+                self.site_registers
+                    .insert(*offset as u32, exact_registers(registers));
             }
             _ => {}
         }
@@ -218,14 +213,33 @@ impl FunctionSink for Observer {
     }
 }
 
+/// The exact integer registers among a call site's inputs.
+pub(crate) fn exact_registers(registers: &[AbstractValue]) -> [Option<u32>; 32] {
+    let mut exact = [None; 32];
+    for (slot, value) in exact.iter_mut().zip(registers) {
+        *slot = match value {
+            AbstractValue::Constant { value: v } | AbstractValue::ImageAddress { address: v } => {
+                Some(*v)
+            }
+            _ => None,
+        };
+    }
+    exact
+}
+
+/// The jump tables of a function's dispatches, from the facts of its image.
+pub(crate) type Tables<'a> = dyn JumpTableSource<Table = KnownJump> + 'a;
+
 /// The bounded value analysis of one function, its control-flow graph
-/// following the indirect jumps whose targets the given jumps name.
-pub(crate) type Observe<'a> =
-    dyn FnMut(&Function, &[KnownJump], &mut dyn RunControl) -> Result<Observation> + 'a;
+/// following the indirect jumps the given jumps name and the jump tables
+/// the given source proves ([`research_following_tables`]).
+pub(crate) type Observe<'a> = dyn FnMut(&Function, &[KnownJump], &Tables<'_>, &mut dyn RunControl) -> Result<Observation>
+    + 'a;
 
 /// Run `body` with an observer of `image`'s functions: `observe(function,
-/// jumps)` runs the bounded value analysis over one function, its control-
-/// flow graph following the indirect jumps whose targets `jumps` names.
+/// jumps, tables)` runs the bounded value analysis over one function, its
+/// control-flow graph following the indirect jumps `jumps` names and the
+/// tables `tables` proves.
 pub(crate) fn observing<R>(
     image: &ImageFacts<'_>,
     memory: &WorkingMemory,
@@ -236,13 +250,14 @@ pub(crate) fn observing<R>(
     let view = ProgramView::new(image.bytes(), file, memory, control)?;
     let mut observe = |function: &Function,
                        jumps: &[KnownJump],
+                       tables: &Tables<'_>,
                        control: &mut dyn RunControl|
      -> Result<Observation> {
         let code = function_bytes(file, function)?;
         let references =
             PreparedReferences::new(&[], function.section as u32, &RiscvDecoder, memory, control)?;
         let mut observer = Observer::default();
-        let summary = research(
+        let (summary, _) = research_following_tables(
             FunctionInput {
                 image: Some(&view),
                 section: function.section as u32,
@@ -255,6 +270,7 @@ pub(crate) fn observing<R>(
                 data_ranges: &[],
                 jumps,
             },
+            tables,
             &RiscvDecoder,
             memory,
             control,

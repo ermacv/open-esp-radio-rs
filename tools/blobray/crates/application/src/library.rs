@@ -231,81 +231,26 @@ fn research_function<'m>(
             references.push((view.section, prepared), control.position())?;
             references.len() - 1
         };
-        let research = |jumps: &[oer_riscv_analysis::KnownJump],
-                        control: &mut dyn RunControl,
-                        sink: &mut dyn FunctionSink| {
-            oer_riscv_analysis::research(
-                oer_riscv_analysis::FunctionInput {
-                    image: view.image,
-                    section: view.section,
-                    extent: view.extent,
-                    bytes: view.code,
-                    relocations: &references[index].1,
-                    data_ranges: view.data_ranges,
-                    jumps,
-                },
-                decoder,
-                memory,
-                control,
-                sink,
-                abi,
-            )
-        };
-        // A first pass locates jump-table dispatches; when their entries are
-        // proven, the function is analyzed again following them, which can
-        // reach a dispatch only a table's case leads to (a nested `switch`).
-        // A pass is kept only while its own records prove again every table
-        // it followed, unchanged, and more: then the records it emits are
-        // exactly those the reported tables' jumps produced. A pass that
-        // proves the same tables ends the search; one that loses or changes
-        // a table (a case label jumping back into its dispatch block) means
-        // no table is proven, and the function is reported from a pass that
-        // follows none, its dispatches indirect gaps. Passes end within the
-        // function's dispatch count, every pass charged to the same control.
-        let mut followed = crate::jump_tables::FoundTables::none(memory);
-        let mut records = RecordBuffer::new(memory);
-        let mut summary = research(&[], control, &mut Records(&mut records))?;
-        loop {
-            let found = crate::jump_tables::jump_tables(
-                &records,
-                view.section,
-                view.extent,
-                tables,
-                memory,
-                control,
-            )?;
-            let keeps = followed
-                .tables
-                .iter()
-                .all(|table| found.tables.contains(table));
-            if keeps && found.tables.len() == followed.tables.len() {
-                for record in records.iter() {
-                    sink.record(record, control)?;
-                }
-                return Ok((summary, followed));
-            }
-            if !keeps {
-                drop(records);
-                let summary = research(&[], control, sink)?;
-                return Ok((summary, crate::jump_tables::FoundTables::none(memory)));
-            }
-            let jumps: Vec<_> = found
-                .tables
-                .iter()
-                .map(|table| {
-                    let mut targets = table.entries.clone();
-                    targets.sort_unstable();
-                    targets.dedup();
-                    oer_riscv_analysis::KnownJump {
-                        site: table.site,
-                        targets,
-                    }
-                })
-                .collect();
-            followed = found;
-            records = RecordBuffer::new(memory);
-            summary = research(&jumps, control, &mut Records(&mut records))?;
-        }
+        oer_riscv_analysis::research_following_tables(
+            oer_riscv_analysis::FunctionInput {
+                image: view.image,
+                section: view.section,
+                extent: view.extent,
+                bytes: view.code,
+                relocations: &references[index].1,
+                data_ranges: view.data_ranges,
+                jumps: &[],
+            },
+            &crate::jump_tables::ObjectTables {
+                facts: tables,
+                section: view.section,
+            },
+            decoder,
+            memory,
+            control,
+            sink,
+            abi,
+        )
     })
 }
 

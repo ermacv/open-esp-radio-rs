@@ -15,9 +15,11 @@
 //! queues of their own; an overflow of either is reported as [`EventsLost`]
 //! in that queue's order; a received frame holds its receive unit (on the
 //! target, the staging pool's DMA buffer) until the consumer drops it, and
-//! a frame dropped with an overflow returns it at once. Completions are
-//! taken first, then lifecycle terminals, TBTTs and received frames; the
-//! loss ordering rule holds within each queue. A fault poisons the port:
+//! a frame dropped with an overflow returns it at once. Every event is
+//! queued under the core's lock with one occurrence number across the
+//! queues, and the port yields them as one stream in that order: a frame
+//! received before `Disable` comes before `Disabled`, and a loss marker
+//! stands where its first dropped event occurred. A fault poisons the port:
 //! the queued events are still reported, then [`Poisoned`] with the
 //! [`LowerMacFault`] at every call.
 //!
@@ -103,12 +105,12 @@ impl oer_esp32s31_ieee80211::lower_mac::RadioCoexPriorities for RadioCoex<'_> {
 
 use oer_ieee80211_lower_mac::{
     AmpduAttempt, AmpduCapabilities, BeaconTimingCapabilities, CancelError, ClockError, ClockInfo,
-    EventsLost, Ieee80211LowerMacPort, Ieee80211Radio, Ieee80211Stamp, KeyHandle, KeyInstall,
-    LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu, LowerMacBeaconTiming,
-    LowerMacCapabilities, LowerMacEvent, LowerMacMonitor, LowerMacSetting, MonitorCapabilities,
-    Poisoned, PortResult, RadioPort, Refused, RxBuffer, RxEvidence, RxMeta, SettingError,
-    SubmitError, SubmitResult, TbttEvent, TbttSchedule, TsfSample, TxCompletion, TxId, VifId,
-    VifTsf,
+    EventsLost, ExtensionKind, Ieee80211LowerMacPort, Ieee80211Radio, Ieee80211Stamp, KeyHandle,
+    KeyInstall, LifecycleCommand, LifecycleError, LifecycleEvent, LowerMacAmpdu,
+    LowerMacBeaconTiming, LowerMacCapabilities, LowerMacEvent, LowerMacMonitor, LowerMacSetting,
+    MonitorCapabilities, Poisoned, PortResult, RadioPort, Refused, RxBuffer, RxEvidence, RxMeta,
+    SettingError, SubmitError, SubmitResult, TbttEvent, TbttSchedule, TsfSample, TxCompletion,
+    TxId, VifId, VifTsf,
 };
 use oer_ieee80211_lower_mac::{
     AmpduBuffer, AmpduPayload, MpduAttempt, TxBody, TxBuffer, TxPayload,
@@ -225,7 +227,10 @@ impl<U: LowerMacRxUnit, O, const SUBFRAMES: usize> Esp32s31LowerMacEvent<U, O, S
             },
             Self::TxCompleted(completion, _) => LowerMacEvent::TxCompleted(*completion),
             Self::Lifecycle(event) => LowerMacEvent::Lifecycle(*event),
-            Self::Tbtt(_) => LowerMacEvent::Extension,
+            Self::Tbtt(event) => LowerMacEvent::Extension {
+                kind: ExtensionKind::Tbtt,
+                vif: event.tbtt.vif,
+            },
         }
     }
 }
@@ -292,50 +297,70 @@ impl<O, const SUBFRAMES: usize> Iterator for Esp32s31TxBodiesIter<O, SUBFRAMES> 
 }
 
 /// A bounded queue whose overflow is reported in its order: a loss marker
-/// takes the place of the first dropped entry.
+/// takes the place of the first dropped entry. Each entry keeps the
+/// occurrence number it was queued with, so the port merges its queues in
+/// the order the events occurred.
 struct EventQueue<M: RawMutex, T, const N: usize> {
     entries: Channel<M, Result<T, EventsLost>, N>,
-    /// An entry was dropped and its marker is not queued yet.
-    lost: Mutex<M, Cell<bool>>,
+    /// The occurrence of each queued entry, in the same order.
+    occurrences: Channel<M, u64, N>,
+    /// The occurrence of the first dropped entry whose marker is not queued
+    /// yet.
+    lost: Mutex<M, Cell<Option<u64>>>,
 }
 
 impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
     const fn new() -> Self {
         Self {
             entries: Channel::new(),
-            lost: Mutex::new(Cell::new(false)),
+            occurrences: Channel::new(),
+            lost: Mutex::new(Cell::new(None)),
         }
     }
 
-    /// Queue `entry` behind a pending loss marker; drop it and remember the
-    /// loss when there is no room.
-    fn push(&self, entry: T) {
+    /// Queue the marker of a pending loss, if there is room for it.
+    fn queue_marker(&self, lost: &Cell<Option<u64>>) -> bool {
+        let Some(first) = lost.get() else {
+            return true;
+        };
+        if self.entries.try_send(Err(EventsLost)).is_err() {
+            return false;
+        }
+        let _ = self.occurrences.try_send(first);
+        lost.set(None);
+        true
+    }
+
+    /// Queue `entry`, which occurred as `occurrence`, behind a pending loss
+    /// marker; drop it and remember the loss when there is no room.
+    fn push(&self, occurrence: u64, entry: T) {
         self.lost.lock(|lost| {
-            if lost.get() {
-                if self.entries.try_send(Err(EventsLost)).is_err() {
-                    return;
-                }
-                lost.set(false);
+            if !self.queue_marker(lost) {
+                return;
             }
             if self.entries.try_send(Ok(entry)).is_err() {
-                lost.set(true);
+                lost.set(Some(occurrence));
+            } else {
+                let _ = self.occurrences.try_send(occurrence);
             }
         });
     }
 
-    /// Queue `entry` behind a pending loss marker, or hand it back when
-    /// there is no room for both: nothing is lost.
-    fn try_push(&self, entry: T) -> Result<(), T> {
+    /// Queue `entry`, which occurred as `occurrence`, behind a pending loss
+    /// marker, or hand it back when there is no room for both: nothing is
+    /// lost.
+    fn try_push(&self, occurrence: u64, entry: T) -> Result<(), T> {
         self.lost.lock(|lost| {
-            let marker = usize::from(lost.get());
+            let marker = usize::from(lost.get().is_some());
             if self.entries.free_capacity() < marker + 1 {
                 return Err(entry);
             }
-            if lost.replace(false) {
-                let _ = self.entries.try_send(Err(EventsLost));
-            }
+            self.queue_marker(lost);
             self.entries
                 .try_send(Ok(entry))
+                .map(|()| {
+                    let _ = self.occurrences.try_send(occurrence);
+                })
                 .map_err(|error| match error {
                     embassy_sync::channel::TrySendError::Full(Ok(entry)) => entry,
                     embassy_sync::channel::TrySendError::Full(Err(_)) => {
@@ -350,15 +375,24 @@ impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
         self.lost.lock(|lost| {
             self.entries
                 .free_capacity()
-                .saturating_sub(usize::from(lost.get()))
+                .saturating_sub(usize::from(lost.get().is_some()))
         })
+    }
+
+    /// The occurrence of the entry [`Self::take`] would return next.
+    fn head(&self) -> Option<u64> {
+        self.lost
+            .lock(|lost| self.occurrences.try_peek().ok().or(lost.get()))
     }
 
     /// The next entry, or the loss marker after the last entry.
     fn take(&self) -> Option<Result<T, EventsLost>> {
         self.lost.lock(|lost| match self.entries.try_receive() {
-            Ok(entry) => Some(entry),
-            Err(_) if lost.replace(false) => Some(Err(EventsLost)),
+            Ok(entry) => {
+                let _ = self.occurrences.try_receive();
+                Some(entry)
+            }
+            Err(_) if lost.take().is_some() => Some(Err(EventsLost)),
             Err(_) => None,
         })
     }
@@ -368,7 +402,8 @@ impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
     fn discard(&self) {
         self.lost.lock(|lost| {
             while let Ok(_entry) = self.entries.try_receive() {}
-            lost.set(false);
+            while let Ok(_occurrence) = self.occurrences.try_receive() {}
+            lost.set(None);
         });
     }
 }
@@ -439,6 +474,12 @@ struct Queues<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> {
     owed_completions: Mutex<M, Cell<usize>>,
     /// Lifecycle terminals owed.
     owed_lifecycle: Mutex<M, Cell<usize>>,
+    /// The occurrence number of the next event, one sequence for every
+    /// queue: the stream is merged in this order. Its lock also orders the
+    /// queues: a producer numbers and queues an event, and the consumer
+    /// picks and takes the earliest head, each under it, so an interrupt
+    /// never queues between a head's reading and its taking.
+    next_occurrence: Mutex<M, Cell<u64>>,
     /// Raised when the consumer must look again without a new entry: a
     /// poisoning.
     changed: Signal<M, ()>,
@@ -453,31 +494,60 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> Queues<M, EVENTS, U> {
             received: EventQueue::new(),
             owed_completions: Mutex::new(Cell::new(0)),
             owed_lifecycle: Mutex::new(Cell::new(0)),
+            next_occurrence: Mutex::new(Cell::new(0)),
             changed: Signal::new(),
         }
     }
 
-    /// The next queued event: completions, lifecycle terminals, TBTTs,
-    /// then received frames.
+    /// Queue an event happening now through `queue`, which receives its
+    /// occurrence number, under the order lock.
+    fn ordered<R>(&self, queue: impl FnOnce(u64) -> R) -> R {
+        self.next_occurrence.lock(|next| {
+            let occurrence = next.get();
+            next.set(occurrence.wrapping_add(1));
+            queue(occurrence)
+        })
+    }
+
+    /// The next queued event, of any kind, in the order the events
+    /// occurred: the queue whose head occurred first gives it, picked and
+    /// taken under the order lock.
     fn take(&self) -> Option<Result<QueuedEvent<U>, EventsLost>> {
-        if let Some(entry) = self.completions.take() {
-            if entry.is_ok() {
-                self.owed_completions
-                    .lock(|owed| owed.set(owed.get().saturating_sub(1)));
+        self.next_occurrence.lock(|_| self.take_earliest())
+    }
+
+    fn take_earliest(&self) -> Option<Result<QueuedEvent<U>, EventsLost>> {
+        let heads = [
+            self.completions.head(),
+            self.lifecycle.head(),
+            self.tbtt.head(),
+            self.received.head(),
+        ];
+        let (first, _) = heads
+            .iter()
+            .enumerate()
+            .filter_map(|(queue, head)| Some((queue, (*head)?)))
+            .min_by_key(|(_, occurrence)| *occurrence)?;
+        match first {
+            0 => {
+                let entry = self.completions.take()?;
+                if entry.is_ok() {
+                    self.owed_completions
+                        .lock(|owed| owed.set(owed.get().saturating_sub(1)));
+                }
+                Some(entry.map(QueuedEvent::TxCompleted))
             }
-            return Some(entry.map(QueuedEvent::TxCompleted));
-        }
-        if let Some(entry) = self.lifecycle.take() {
-            if entry.is_ok() {
-                self.owed_lifecycle
-                    .lock(|owed| owed.set(owed.get().saturating_sub(1)));
+            1 => {
+                let entry = self.lifecycle.take()?;
+                if entry.is_ok() {
+                    self.owed_lifecycle
+                        .lock(|owed| owed.set(owed.get().saturating_sub(1)));
+                }
+                Some(entry.map(QueuedEvent::Lifecycle))
             }
-            return Some(entry.map(QueuedEvent::Lifecycle));
+            2 => Some(self.tbtt.take()?.map(QueuedEvent::Tbtt)),
+            _ => self.received.take(),
         }
-        if let Some(entry) = self.tbtt.take() {
-            return Some(entry.map(QueuedEvent::Tbtt));
-        }
-        self.received.take()
     }
 
     /// Wait until a queue may have an entry or [`Self::changed`] rose.
@@ -594,15 +664,18 @@ impl<M: RawMutex, const EVENTS: usize, U: LowerMacRxUnit> LowerMacSink
     for QueueSink<'_, M, EVENTS, U>
 {
     fn tx_completed(&mut self, completion: TxCompletion) {
-        self.queues.completions.push(completion);
+        let queues = self.queues;
+        queues.ordered(|occurrence| queues.completions.push(occurrence, completion));
     }
 
     fn lifecycle(&mut self, event: LifecycleEvent) {
-        self.queues.lifecycle.push(event);
+        let queues = self.queues;
+        queues.ordered(|occurrence| queues.lifecycle.push(occurrence, event));
     }
 
     fn tbtt(&mut self, event: TbttEvent) {
-        self.queues.tbtt.push(event);
+        let queues = self.queues;
+        queues.ordered(|occurrence| queues.tbtt.push(occurrence, event));
     }
 }
 
@@ -1081,11 +1154,14 @@ where
         // meanwhile drops the unit instead.
         let mut refused = None;
         let _ = self.with_core(|_, _, sink| {
-            if keep {
-                refused = sink.queues.received.try_push(event).err();
-            } else {
-                sink.queues.received.push(event);
-            }
+            let queues = sink.queues;
+            queues.ordered(|occurrence| {
+                if keep {
+                    refused = queues.received.try_push(occurrence, event).err();
+                } else {
+                    queues.received.push(occurrence, event);
+                }
+            });
             Ok(())
         });
         Ok(match refused {

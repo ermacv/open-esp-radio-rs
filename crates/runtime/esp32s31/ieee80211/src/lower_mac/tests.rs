@@ -781,7 +781,10 @@ fn station_tbtts_arrive_through_the_power_interrupt() {
     let event = next_owned(&port).unwrap();
     assert_eq!(
         Esp32s31LowerMacPort::<'static, Lower>::view(event),
-        LowerMacEvent::Extension
+        LowerMacEvent::Extension {
+            kind: oer_ieee80211_lower_mac::ExtensionKind::Tbtt,
+            vif: STA,
+        }
     );
     assert_eq!(
         Esp32s31LowerMacPort::<'static, Lower>::tbtt(event),
@@ -962,7 +965,7 @@ fn a_received_frame_is_its_unit_until_the_consumer_drops_it() {
 }
 
 #[test]
-fn a_receive_overflow_does_not_drop_completions() {
+fn a_receive_overflow_keeps_the_completion_in_its_place() {
     let port = install(true);
     block_on(port.lifecycle(LifecycleCommand::Enable))
         .unwrap()
@@ -987,11 +990,83 @@ fn a_receive_overflow_does_not_drop_completions() {
         hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
     });
     port.runtime.on_interrupt(EVENT_TX_COMPLETE);
-    // The completion has its own queue and is taken first.
+    // One stream in the order the events occurred: the frames that fit,
+    // the loss where the first dropped frame was, then the completion,
+    // which its reserved slot kept.
+    let mut received = 0;
+    loop {
+        match next(&port) {
+            Ok(LowerMacEvent::Received { .. }) => received += 1,
+            Err(EventsLost) => break,
+            other => panic!("a frame or the loss before the completion, not {other:?}"),
+        }
+    }
+    assert!(received > 0 && received < 5);
     let Ok(LowerMacEvent::TxCompleted(completion)) = next(&port) else {
-        panic!("the completion survives the receive burst");
+        panic!("the completion survives the receive burst, after it");
     };
     assert_eq!(completion.id, TxId(7));
+}
+
+#[test]
+fn events_of_every_kind_leave_in_the_order_they_occurred() {
+    let port = install(true);
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
+    let mut mpdu = data_frame();
+    mpdu[4..10].copy_from_slice(&STATION);
+    mpdu[10..16].copy_from_slice(&BSSID);
+    let mpdu: &'static [u8] = std::boxed::Box::leak(std::boxed::Box::new(mpdu));
+    let live = live_units();
+    assert_eq!(submit(&port, attempt(&port, 3, &data_frame())), Ok(Ok(())));
+    // A frame, then the completion, then another frame, then `Disable`:
+    // nothing is taken until all of them occurred.
+    assert_eq!(
+        port.runtime.on_received(TestRxUnit::new(mpdu, None, live)),
+        Ok(())
+    );
+    with_hardware(&port, |hardware| {
+        hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+    });
+    port.runtime.on_interrupt(EVENT_TX_COMPLETE);
+    assert_eq!(
+        port.runtime.on_received(TestRxUnit::new(mpdu, None, live)),
+        Ok(())
+    );
+    block_on(port.lifecycle(LifecycleCommand::Disable))
+        .unwrap()
+        .unwrap();
+    // A frame offered after `Disable` is not received.
+    assert_eq!(
+        port.runtime.on_received(TestRxUnit::new(mpdu, None, live)),
+        Ok(())
+    );
+    assert_eq!(
+        next(&port),
+        Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
+    assert!(matches!(next(&port), Ok(LowerMacEvent::Received { .. })));
+    assert!(matches!(
+        next(&port),
+        Ok(LowerMacEvent::TxCompleted(TxCompletion { id: TxId(3), .. }))
+    ));
+    assert!(matches!(next(&port), Ok(LowerMacEvent::Received { .. })));
+    // The frames received before `Disable` came before its terminal.
+    assert_eq!(
+        next(&port),
+        Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Disabled))
+    );
+    // Nothing else: the frame offered after `Disable` was not received.
+    let mut event = core::pin::pin!(port.port.next_event());
+    assert!(
+        event
+            .as_mut()
+            .poll(&mut core::task::Context::from_waker(
+                core::task::Waker::noop()
+            ))
+            .is_pending()
+    );
 }
 
 /// Poison the port through the locked entry, as a core fault does.

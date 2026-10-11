@@ -10,7 +10,7 @@
 //!   exchange that registered its [`TxId`] ([`EventRouter::completion`]);
 //! - received frames go to the bounded receive
 //!   queue of the interface they belong to ([`EventRouter::received`]), and
-//!   extension events (a TBTT) to the station's ([`EventRouter::extension`]):
+//!   extension events (a TBTT) to the interface each names ([`EventRouter::extension`]):
 //!   every client of the port attaches its interface
 //!   ([`EventRouter::attach`]), and with a station and an access point on
 //!   one port a frame goes where its addresses put it
@@ -442,11 +442,14 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                 None => state.unrouted = state.unrouted.saturating_add(1),
             },
             LowerMacEvent::Lifecycle(lifecycle) => state.lifecycle.push(lifecycle),
-            // A TBTT is the station's.
-            LowerMacEvent::Extension => match state.station() {
-                Some(index) => state.extension[index].push(event),
-                None => state.unrouted = state.unrouted.saturating_add(1),
-            },
+            // An extension event goes to the interface it concerns.
+            LowerMacEvent::Extension { vif, .. } => {
+                let index = usize::from(vif.0);
+                match state.routes.get(index) {
+                    Some(Some(_)) => state.extension[index].push(event),
+                    _ => state.unrouted = state.unrouted.saturating_add(1),
+                }
+            }
         }
         Ok(())
     }
@@ -671,23 +674,6 @@ impl<E, T, F, const WAITERS: usize, const RX: usize> State<E, T, F, WAITERS, RX>
             .is_some_and(|queue| queue.abandoned)
         {
             self.release_queue(waiter.queue);
-        }
-    }
-
-    /// The station interface attached, or the only interface.
-    fn station(&self) -> Option<usize> {
-        let mut attached = self
-            .routes
-            .iter()
-            .enumerate()
-            .filter_map(|(index, route)| Some((index, (*route)?)));
-        let first = attached.next()?;
-        match attached.next() {
-            None => Some(first.0),
-            Some(second) => [first, second]
-                .into_iter()
-                .find(|(_, route)| route.role == VifRole::Station)
-                .map(|(index, _)| index),
         }
     }
 }

@@ -536,6 +536,39 @@ fn cancel_of_a_published_attempt_ends_with_its_own_completion() {
 }
 
 #[test]
+fn the_stream_keeps_the_order_the_events_occurred_in() {
+    let model = enabled_station();
+    assert_eq!(model.set_monitor(true), Ok(Ok(())));
+    let beacon = management(8, [0xff; 6], OTHER_BSS);
+    let meta = RxMeta::unavailable(channel_six());
+    model.submit(mpdu(&model, 1, 1)).unwrap().unwrap();
+    // A frame, the completion, another frame, then `Disable`; nothing is
+    // taken until all of them occurred.
+    model.receive(&beacon, meta);
+    model.complete(0, TxStatus::Success);
+    model.receive(&beacon, meta);
+    ready(model.lifecycle(LifecycleCommand::Disable))
+        .unwrap()
+        .unwrap();
+    // After `Disable` nothing is received.
+    model.receive(&beacon, meta);
+    assert!(matches!(
+        Model::view(&next(&model)),
+        LowerMacEvent::Received { .. }
+    ));
+    assert_eq!(next_completion(&model).id, TxId(1));
+    assert!(matches!(
+        Model::view(&next(&model)),
+        LowerMacEvent::Received { .. }
+    ));
+    assert_eq!(
+        Model::view(&next(&model)),
+        LowerMacEvent::Lifecycle(LifecycleEvent::Disabled)
+    );
+    assert!(poll_event(&model).is_none());
+}
+
+#[test]
 fn quiesce_ends_with_its_terminal_event_and_stops_admission() {
     let model = enabled_station();
     assert_eq!(
@@ -751,7 +784,13 @@ fn loss_is_reported_once_in_place_of_the_first_dropped_event() {
     // The events before the gap come first, then one marker.
     for _ in 0..EVENT_CAPACITY {
         let event = next(&model);
-        assert_eq!(Model::view(&event), LowerMacEvent::Extension);
+        assert_eq!(
+            Model::view(&event),
+            LowerMacEvent::Extension {
+                kind: ExtensionKind::Tbtt,
+                vif: STATION,
+            }
+        );
         assert_eq!(
             Model::tbtt(&event),
             Some(TbttEvent {
@@ -763,7 +802,13 @@ fn loss_is_reported_once_in_place_of_the_first_dropped_event() {
     assert!(poll_event(&model).is_none());
     // Events after the gap follow the marker.
     model.fire_tbtt(STATION);
-    assert_eq!(Model::view(&next(&model)), LowerMacEvent::Extension);
+    assert_eq!(
+        Model::view(&next(&model)),
+        LowerMacEvent::Extension {
+            kind: ExtensionKind::Tbtt,
+            vif: STATION,
+        }
+    );
 }
 
 #[test]
@@ -776,7 +821,13 @@ fn a_completion_holds_the_slot_its_attempt_reserved_and_is_never_lost() {
     }
     model.complete(0, TxStatus::Success);
     for _ in 0..EVENT_CAPACITY {
-        assert_eq!(Model::view(&next(&model)), LowerMacEvent::Extension);
+        assert_eq!(
+            Model::view(&next(&model)),
+            LowerMacEvent::Extension {
+                kind: ExtensionKind::Tbtt,
+                vif: STATION,
+            }
+        );
     }
     // The loss covers only the TBTT; the completion follows it.
     assert!(matches!(poll_event(&model), Some(Ok(Err(EventsLost)))));
@@ -1389,7 +1440,13 @@ fn a_completion_without_a_body_carries_none_and_other_events_come_back() {
     let Err(event) = Model::into_completed(next(&model)) else {
         panic!("a TBTT is no completion");
     };
-    assert_eq!(Model::view(&event), LowerMacEvent::Extension);
+    assert_eq!(
+        Model::view(&event),
+        LowerMacEvent::Extension {
+            kind: ExtensionKind::Tbtt,
+            vif: STATION,
+        }
+    );
 }
 
 /// An attempt `id` whose MPDU carries `body`.

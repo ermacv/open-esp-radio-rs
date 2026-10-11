@@ -63,7 +63,7 @@ pub enum RxCryptoStatus {
 ///
 /// The consumer keeps it for as long as it needs the frame and drops it to
 /// return the memory to the backend; a backend whose receive DMA buffer
-/// is the frame (the ESP32-S31 staging pool) lends that buffer, so the
+/// is the frame lends that buffer, so the
 /// frame is never copied on its way up. Memory a consumer keeps is memory
 /// the backend cannot receive into: a consumer that holds a frame for
 /// longer than one step (an out-of-order MPDU in a reorder window) copies
@@ -79,16 +79,14 @@ pub trait RxBuffer {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxMeta {
     /// The channel the backend was configured to when it received the
-    /// frame. This is configuration, not a per-frame observation: the
-    /// ESP32-S31 receive prefix carries no channel field the MAC can trust
-    /// (`hardware/esp32s31/driver/ieee80211/mac/src/rx.rs`,
-    /// `decode_normalized_rx_metadata`).
+    /// frame. This is configuration, not a per-frame observation: a
+    /// receive report need carry no channel field the MAC can trust.
     pub channel: Channel,
     pub rate: RxEvidence<PhyRate>,
     pub rssi_dbm: RxEvidence<i8>,
     /// The receiver's noise floor when the frame arrived: a per-frame
-    /// measurement, or the PHY's running estimate read at reception (the
-    /// ESP32-S31's), observed either way.
+    /// measurement, or the PHY's running estimate read at reception,
+    /// observed either way.
     pub noise_floor_dbm: RxEvidence<i8>,
     /// Reception time in the port's radio clock, with the generation of
     /// the clock relation it was taken in.

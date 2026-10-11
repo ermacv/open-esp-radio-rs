@@ -167,6 +167,73 @@ impl TableEntries for ObjectTables<'_> {
     }
 }
 
+/// The jump-table entries a static image's facts prove: a table the
+/// compiler labelled (`.LJTI*`) is the run of words an `--emit-relocs` link
+/// kept relocated from its label to the next symbol of its section; a sized
+/// read-only data object is its words; with a bounds check, the bound's
+/// count of read-only words.
+pub struct ImageTables<'f, 'a> {
+    pub image: &'f crate::facts::ImageFacts<'a>,
+}
+
+impl TableEntries for ImageTables<'_, '_> {
+    fn entries<'m>(
+        &self,
+        base: &AbstractValue,
+        count: Option<u32>,
+        _: u32,
+        memory: &'m WorkingMemory,
+        control: &mut dyn RunControl,
+    ) -> Result<Option<TableWords<'m>>> {
+        let (AbstractValue::Constant { value: base }
+        | AbstractValue::ImageAddress { address: base }) = *base
+        else {
+            return Ok(None);
+        };
+        let image = self.image;
+        let limit = count.map(u64::from);
+        // Each entry is reserved and charged before it is read.
+        let mut reserved = memory.reserve(0, control.position())?;
+        let mut entries = Vec::new();
+        let mut push = |entry: u32, control: &mut dyn RunControl| -> Result<()> {
+            control.checkpoint(1)?;
+            if entries.len() == entries.capacity() {
+                let grown = (entries.capacity() * 2).max(8);
+                let next = memory.reserve((grown * size_of::<u64>()) as u64, control.position())?;
+                entries
+                    .try_reserve_exact(grown - entries.len())
+                    .map_err(|_| {
+                        Error::new(ErrorCode::ResourceLimited, "table allocation refused")
+                    })?;
+                reserved = next;
+            }
+            entries.push(u64::from(entry));
+            Ok(())
+        };
+        if let Some(words) = image.jump_table(base) {
+            for (i, word) in words.enumerate() {
+                if limit.is_some_and(|limit| i as u64 == limit) {
+                    break;
+                }
+                push(word, control)?;
+            }
+        } else {
+            let words = match (limit, image.data_object(base)) {
+                (Some(limit), _) => limit,
+                (None, Some(size)) => size / 4,
+                (None, None) => return Ok(None),
+            };
+            for i in 0..words {
+                let Some(word) = image.read_only_word(base.wrapping_add(4 * i as u32)) else {
+                    break;
+                };
+                push(word, control)?;
+            }
+        }
+        Ok(Some(TableWords { entries, reserved }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

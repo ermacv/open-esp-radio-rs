@@ -2236,3 +2236,36 @@ fn the_analysis_charges_each_table_entry_it_follows() {
     })
     .unwrap();
 }
+
+#[test]
+fn image_tables_read_a_labelled_table_a_sized_object_or_a_bounded_run() {
+    use oer_riscv_model::{AbstractValue, TableEntries};
+    use oer_riscv_program::tables::ImageTables;
+    let entries = |elf: &[u8], base: AbstractValue, count: Option<u32>| {
+        with_facts(elf, |facts| {
+            let memory = WorkingMemory::new(TEST_MEMORY)?;
+            Ok(ImageTables { image: facts }
+                .entries(&base, count, 0, &memory, &mut || Ok(()))?
+                .map(|words| words.entries))
+        })
+        .unwrap()
+    };
+    let at = |address| AbstractValue::Constant { value: address };
+    let words = vec![u64::from(TEXT), u64::from(TEXT) + 4];
+    // A compiler table: the relocated words from its label, bound or not.
+    let labelled = labelled(&[leaf(Some(32))], &[TEXT, TEXT + 4]);
+    assert_eq!(entries(&labelled, at(RODATA), None), Some(words.clone()));
+    assert_eq!(
+        entries(&labelled, at(RODATA), Some(1)),
+        Some(words[..1].to_vec())
+    );
+    // A sized object: its words.
+    let sized = image(&[leaf(Some(32))], &[TEXT, TEXT + 4], true);
+    assert_eq!(entries(&sized, at(RODATA), None), Some(words.clone()));
+    // Neither: only a bound states the run of read-only words.
+    let plain = image(&[leaf(Some(32))], &[TEXT, TEXT + 4], false);
+    assert_eq!(entries(&plain, at(RODATA), None), None);
+    assert_eq!(entries(&plain, at(RODATA), Some(2)), Some(words));
+    // An object's symbol is no image address.
+    assert_eq!(entries(&plain, AbstractValue::Unknown, Some(2)), None);
+}

@@ -36,9 +36,13 @@ impl<'m, T> ProvenTables<'m, T> {
 /// one build, such as an object's relocations or an image's relocated
 /// words and jump-table labels.
 pub trait JumpTableSource {
-    /// What the source proves of one table; two passes prove the same table
-    /// when they prove equal values.
-    type Table: PartialEq;
+    /// What the source proves of one table.
+    type Table;
+
+    /// Whether `earlier` and `later` prove the same table: the same jump
+    /// through the same entries. What a table reports beyond them, such as
+    /// a case value only a known index shows, may differ between passes.
+    fn same(&self, earlier: &Self::Table, later: &Self::Table) -> bool;
 
     /// The tables the `records` of one pass over the function at `extent`
     /// prove: each a dispatch the records locate whose every followed entry
@@ -101,7 +105,7 @@ pub fn research_following_tables<'m, S: JumpTableSource + ?Sized>(
         let keeps = followed
             .tables
             .iter()
-            .all(|table| found.tables.contains(table));
+            .all(|table| found.tables.iter().any(|other| source.same(table, other)));
         if keeps && found.tables.len() == followed.tables.len() {
             for record in records.iter() {
                 sink.record(record, control)?;

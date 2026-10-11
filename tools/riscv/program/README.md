@@ -24,7 +24,11 @@ it.
 relocatable object: a table's entries are the labels its read-only data's
 `R_RISCV_32` RELA words name, as many as the dispatch's bounds check states
 (a `SHT_REL` table, whose addends live in its words, and a section two RELA
-sections relocate name none).
+sections relocate name none). `tables::ImageTables` implements it for a
+static image over its `ImageFacts`: a labelled `.LJTI*` table is the run of
+words the link kept relocated from its label, with or without a bound; a
+sized read-only data object is its words; with a bound, the bound's count
+of read-only words.
 
 `execution_segments` lends validated static RV32 ELF segment bytes to a caller's
 admitted loader. It shares `ProgramView` validation with static image research,

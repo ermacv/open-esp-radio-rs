@@ -84,6 +84,15 @@ fn records(bounded: bool) -> Vec<FunctionRecord> {
                 })
                 .collect(),
         },
+        FunctionRecord::Dispatch {
+            offset: 0x14,
+            base: AbstractValue::Symbol {
+                symbol: table_symbol(),
+                addend: 0,
+            },
+            index: AbstractValue::Expression { id: 0 },
+            scale: 2,
+        },
         FunctionRecord::Instruction {
             offset: 0x14,
             bytes: vec![0x67, 0x80, 0x07, 0x00],
@@ -249,7 +258,10 @@ fn a_rebased_switch_value_reports_its_first_case() {
                 expression: Expression::Integer { left, .. },
                 ..
             } => *left = AbstractValue::Expression { id: 4 },
-            FunctionRecord::Condition { right, .. } => *right = AbstractValue::Expression { id: 4 },
+            FunctionRecord::Condition { right, .. }
+            | FunctionRecord::Dispatch { index: right, .. } => {
+                *right = AbstractValue::Expression { id: 4 }
+            }
             _ => {}
         }
     }
@@ -272,24 +284,6 @@ fn the_recognizer_stops_when_the_work_budget_does() {
     .err()
     .unwrap();
     assert_eq!(error.code, ErrorCode::ResourceLimited);
-}
-
-#[test]
-fn a_return_is_never_a_dispatch_candidate() {
-    let mut returning = records(true);
-    for record in &mut returning {
-        if let FunctionRecord::Instruction { decoded, .. } = record {
-            decoded.flow = InstructionFlow::Indirect {
-                base: 1,
-                offset: 0,
-                link: false,
-            };
-        }
-        if let FunctionRecord::CallInputs { registers, .. } = record {
-            registers.swap(1, 15);
-        }
-    }
-    assert!(run(&returning, &facts(3, 0x38)).is_empty());
 }
 
 #[test]
@@ -317,4 +311,76 @@ fn the_first_case_is_read_through_narrow_extensions_or_left_unknown() {
     assert_eq!(first_case(&value(6), &expressions), None);
     assert_eq!(first_case(&value(7), &expressions), Some(0));
     assert_eq!(first_case(&value(0), &expressions), Some(0));
+    // An unknown index claims no case value.
+    assert_eq!(first_case(&AbstractValue::Unknown, &expressions), None);
+}
+
+#[test]
+fn an_unknown_index_proves_only_a_delimited_table_and_claims_no_case() {
+    let mut unknown = records(true);
+    for record in &mut unknown {
+        if let FunctionRecord::Dispatch { index, .. } = record {
+            *index = AbstractValue::Unknown;
+        }
+    }
+    // The object's facts need a bound: no table.
+    assert!(run(&unknown, &facts(3, 0x38)).is_empty());
+    // Facts that delimit the table themselves, as an image's labelled table:
+    // the whole table, with no case value claimed.
+    struct Delimited;
+    impl TableEntries for Delimited {
+        fn entries<'m>(
+            &self,
+            _: &AbstractValue,
+            count: Option<u32>,
+            _: u32,
+            memory: &'m WorkingMemory,
+            control: &mut dyn RunControl,
+        ) -> Result<Option<TableWords<'m>>> {
+            assert_eq!(count, None);
+            control.checkpoint(3)?;
+            Ok(Some(TableWords {
+                entries: vec![0x20, 0x30, 0x38],
+                reserved: memory.reserve(24, control.position())?,
+            }))
+        }
+    }
+    let tables = jump_tables(&unknown, TEXT, EXTENT, &Delimited, memory(), &mut || Ok(()))
+        .unwrap()
+        .tables;
+    assert_eq!(
+        tables,
+        [JumpTable {
+            site: 0x14,
+            first_case: None,
+            entries: vec![0x20, 0x30, 0x38],
+        }]
+    );
+}
+
+#[test]
+fn a_table_is_the_same_whatever_case_value_a_pass_shows() {
+    use crate::tables::JumpTableSource;
+    let facts = facts(3, 0x38);
+    let source = RecognizedTables {
+        entries: &facts,
+        section: TEXT,
+    };
+    let known = JumpTable {
+        site: 0x14,
+        first_case: Some(0),
+        entries: vec![0x20, 0x30, 0x38],
+    };
+    // A later pass whose index merged shows no case value: the same table.
+    let merged = JumpTable {
+        first_case: None,
+        ..known.clone()
+    };
+    assert!(source.same(&known, &merged));
+    // Other entries are another table.
+    let other = JumpTable {
+        entries: vec![0x20, 0x30],
+        ..known.clone()
+    };
+    assert!(!source.same(&known, &other));
 }

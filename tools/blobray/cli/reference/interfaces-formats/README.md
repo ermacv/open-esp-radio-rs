@@ -58,6 +58,7 @@ schema.
 | --- | --- | --- |
 | `audit-targets` | `TARGET_AUDIT_SCHEMA` 1 | `{schema, artifact, decoder, semantics, ranges, records, summary, verdict}` |
 | `register-accesses` | `REGISTER_ACCESSES_SCHEMA` 6 | `{schema, inputs, abi, records, groups?, summary}`, records streamed; `groups` only with `--group-by`; a store observation carries `stored`, an unresolved one its `indexed` progression when it has one; `summary` (its own `schema` 3) carries `partial_causes` and `indexed_addresses` |
+| `function-records` | `FUNCTION_RECORDS_SCHEMA` 4 | `{schema, inputs, abi, functions, missing}`; an analyzed function carries every record of its analysis (a table dispatch as a `dispatch` record: `{offset, base, index, scale}`) and `jump_tables` it followed |
 | `field-accesses` | `FIELD_ACCESSES_SCHEMA` 3 | `{schema, inputs, abi, offset, width, functions, blocked, partial, partial_causes, gaps, unknown_addresses}` |
 | `call-arguments` | `CALL_ARGUMENTS_SCHEMA` 2 | `{schema, inputs, abi, symbols, callers, blocked, partial, partial_causes, gaps}` |
 | `symbols` | `SYMBOLS_SCHEMA` 1 | `{schema, inputs, symbols}` |

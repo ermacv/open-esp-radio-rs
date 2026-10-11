@@ -310,9 +310,10 @@ fn analyze_object(
     let (Some(bytes), Some(payload)) = (bytes, payload) else {
         return Ok(());
     };
-    // A relocatable object's relocations prove its jump tables; a linked
-    // image's facts are not read here.
-    let relocatable = elf.as_ref().is_some_and(|e| e.object_type == 1);
+    // A relocatable object's relocations prove its jump tables; a static
+    // image's facts (the words an `--emit-relocs` link kept, its `.LJTI*`
+    // labels and sized read-only objects) prove its own.
+    let object_type = elf.as_ref().map(|e| e.object_type);
     let functions: Vec<LibraryFunction> = selection
         .functions
         .into_iter()
@@ -329,28 +330,40 @@ fn analyze_object(
     let result =
         blobray_artifacts::with_prepared_object(bytes, &payload, memory, control, |prepared, c| {
             entered = true;
-            let object_tables = if relocatable {
-                match oer_riscv_program::tables::ObjectTables::new(prepared.bytes(), memory, c) {
-                    Ok(tables) => Some(tables),
-                    Err(error) if error.code == ErrorCode::Integrity => {
-                        visit(
-                            LibraryOutcome::Gap {
-                                input,
-                                object: Some(&object),
-                                reason: &format!("jump-table facts unreadable: {}", error.message),
-                            },
-                            c,
-                        )?;
-                        None
-                    }
-                    Err(error) => return Err(error),
+            let bytes = prepared.bytes();
+            let mut unreadable = |error: Error, c: &mut dyn RunControl| {
+                if error.code != ErrorCode::Integrity {
+                    return Err(error);
                 }
-            } else {
-                None
+                visit(
+                    LibraryOutcome::Gap {
+                        input,
+                        object: Some(&object),
+                        reason: &format!("jump-table facts unreadable: {}", error.message),
+                    },
+                    c,
+                )
             };
-            let tables: &dyn TableEntries = match &object_tables {
-                Some(tables) => tables,
-                None => &NoTables,
+            let mut object_tables = None;
+            let mut image_facts = None;
+            match object_type {
+                Some(1) => match oer_riscv_program::tables::ObjectTables::new(bytes, memory, c) {
+                    Ok(tables) => object_tables = Some(tables),
+                    Err(error) => unreadable(error, c)?,
+                },
+                Some(2) => match oer_riscv_program::facts::ImageFacts::new(bytes, memory, c) {
+                    Ok(facts) => image_facts = Some(facts),
+                    Err(error) => unreadable(error, c)?,
+                },
+                _ => {}
+            }
+            let image_tables = image_facts
+                .as_ref()
+                .map(|image| oer_riscv_program::tables::ImageTables { image });
+            let tables: &dyn TableEntries = match (&object_tables, &image_tables) {
+                (Some(tables), _) => tables,
+                (None, Some(tables)) => tables,
+                (None, None) => &NoTables,
             };
             let mut references = AdmittedVec::new(memory);
             for function in &functions {

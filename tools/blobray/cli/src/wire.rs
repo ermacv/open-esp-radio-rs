@@ -62,8 +62,8 @@ pub struct RegisterAccessDocument {
 }
 
 /// Schema of the `function-records` document
-/// (`{"schema":3,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`).
-pub const FUNCTION_RECORDS_SCHEMA: u32 = 3;
+/// (`{"schema":4,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`).
+pub const FUNCTION_RECORDS_SCHEMA: u32 = 4;
 pub const FIELD_ACCESSES_SCHEMA: u32 = 3;
 pub const CALLERS_SCHEMA: u32 = 1;
 
@@ -132,7 +132,8 @@ pub enum NamedFunction {
         coverage: FunctionCoverage,
         semantics: SemanticSummary,
         records: Vec<FunctionRecord>,
-        /// The relocation-proven jump tables the analysis followed.
+        /// The jump tables the analysis followed, proven by the build's
+        /// facts.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         jump_tables: Vec<blobray_domain::JumpTable>,
     },

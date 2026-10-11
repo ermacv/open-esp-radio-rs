@@ -147,9 +147,9 @@ pub enum FunctionRecord {
     /// Register state before the transfer instruction: a call or tail call,
     /// a jump to a target outside the function, an image's jump to local
     /// targets the graph does not expand, and a relocatable object's jump
-    /// the graph leaves without a target or a caller expanded through a
-    /// `KnownJump` (a dispatch). Its architectural write is a separate
-    /// `Value` fact and must precede callee-entry substitution.
+    /// the graph leaves without a target. A table dispatch is a `Dispatch`
+    /// record. Its architectural write is a separate `Value` fact and must
+    /// precede callee-entry substitution.
     CallInputs {
         offset: u64,
         registers: Vec<AbstractValue>,
@@ -158,6 +158,18 @@ pub enum FunctionRecord {
         offset: u64,
         low: AbstractValue,
         high: AbstractValue,
+    },
+    /// An indirect jump through a table: its target is the word loaded from
+    /// `base + (index << scale)`, the load, the addition and the scaling all
+    /// in the jump's own block. `base` is the value the addition reads, a
+    /// constant, an image address or an object's symbol; `index` the value
+    /// the scaling reads, possibly unknown. A base the block or a loop's
+    /// preheader forms gives the same record on every pass.
+    Dispatch {
+        offset: u64,
+        base: AbstractValue,
+        index: AbstractValue,
+        scale: u8,
     },
     /// A call or out-of-function jump. A resolved target does not prove returns
     /// or effects; unresolved transfers remain visible.

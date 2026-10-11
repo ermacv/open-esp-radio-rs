@@ -337,6 +337,10 @@ struct SweptTables<'a, 'f> {
 impl JumpTableSource for SweptTables<'_, '_> {
     type Table = KnownJump;
 
+    fn same(&self, earlier: &KnownJump, later: &KnownJump) -> bool {
+        earlier == later
+    }
+
     fn tables<'m>(
         &self,
         records: &[FunctionRecord],

@@ -296,12 +296,16 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
 
     /// Reserve the terminal slots of event `id` before its admission, and
     /// `data` more for the data PDUs a connection event may receive;
-    /// `false` when they do not fit. Events leave one slot free for a
-    /// lifecycle terminal, so a `Disable` always finds room for its own.
+    /// `false` when they do not fit. Events, and the reports nothing
+    /// acknowledges, leave one slot free for a lifecycle terminal, so a
+    /// lifecycle command finds room for its own unless the consumer left
+    /// earlier terminals unread.
     fn admit_event(&self, id: EventId, data: usize) -> bool {
         self.owed(|owed| {
             let free = owed.data.iter().position(Option::is_none);
-            if !self.has_room(owed, 2 + data + LIFECYCLE_SLOT) || (data > 0 && free.is_none()) {
+            if !self.has_room(owed, 2 + data + Self::kept_for_lifecycle(owed))
+                || (data > 0 && free.is_none())
+            {
                 return false;
             }
             if data > 0 {
@@ -311,6 +315,15 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
             owed.events += 1;
             true
         })
+    }
+
+    /// The slots kept free for a lifecycle terminal: none while a closing
+    /// command holds the reservation of its own.
+    fn kept_for_lifecycle(owed: &Owed<CONNECTIONS>) -> usize {
+        match owed.admission {
+            Admission::Disabling | Admission::Quiescing => 0,
+            Admission::Disabled | Admission::Enabled | Admission::Quiesced => LIFECYCLE_SLOT,
+        }
     }
 
     /// Return the slots of event `id`, which the radio refused.
@@ -394,7 +407,9 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
                         // Acknowledged connection data: its reserved slot.
                         *left -= 1;
                         owed.reserved -= 1;
-                    } else if !self.has_room(owed, 1) {
+                    } else if !self.has_room(owed, 1 + Self::kept_for_lifecycle(owed)) {
+                        // A report nothing acknowledges never takes the slot
+                        // kept for a lifecycle terminal.
                         owed.lost = true;
                         return false;
                     }

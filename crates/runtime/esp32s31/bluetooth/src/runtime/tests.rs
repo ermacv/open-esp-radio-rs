@@ -44,7 +44,8 @@ fn a_received_pdu_loss_is_reported_in_its_place() {
 
     use super::OutcomeQueue;
 
-    let queue = OutcomeQueue::<NoopRawMutex, 2, 1>::new();
+    // One slot for reports, one kept for a lifecycle terminal.
+    let queue = OutcomeQueue::<NoopRawMutex, 3, 1>::new();
     let received = |byte| received(EventId::new(1), byte);
     for byte in 0..4 {
         queue.push(received(byte));
@@ -67,9 +68,9 @@ fn an_admitted_event_keeps_the_slots_of_its_terminal_outcomes() {
     use super::OutcomeQueue;
     use crate::BluetoothOutcome;
 
-    let queue = OutcomeQueue::<NoopRawMutex, 3, 1>::new();
+    let queue = OutcomeQueue::<NoopRawMutex, 4, 1>::new();
     assert!(queue.admit_event(EventId::new(1), 0));
-    // One slot is left beside the two reserved ones.
+    // One slot is left beside the two reserved ones and the lifecycle one.
     assert!(!queue.admit_event(EventId::new(2), 0));
     for byte in 0..3 {
         queue.push(received(EventId::new(1), byte));
@@ -101,10 +102,10 @@ fn a_connection_event_keeps_the_slots_of_its_acknowledged_data() {
     use super::OutcomeQueue;
     use crate::BluetoothOutcome;
 
-    let queue = OutcomeQueue::<NoopRawMutex, 5, 1>::new();
+    let queue = OutcomeQueue::<NoopRawMutex, 6, 1>::new();
     let connection = EventId::new(7);
-    // Its end, the acknowledgement and two data PDUs: four of five slots,
-    // the fifth kept for a lifecycle terminal.
+    // Its end, the acknowledgement and two data PDUs: four of six slots,
+    // one kept for a lifecycle terminal.
     assert!(queue.admit_event(connection, 2));
     // A second connection event has no data slot left.
     assert!(!queue.admit_event(EventId::new(8), 0));
@@ -126,8 +127,8 @@ fn a_connection_event_keeps_the_slots_of_its_acknowledged_data() {
     assert_eq!(queue.take(), Some(Ok(ended)));
     // Every slot is free again, the unused companion slot included; the
     // last one stays with a lifecycle terminal.
-    assert!(!queue.admit_event(EventId::new(9), 3));
-    assert!(queue.admit_event(EventId::new(9), 2));
+    assert!(!queue.admit_event(EventId::new(9), 4));
+    assert!(queue.admit_event(EventId::new(9), 3));
 }
 
 /// A received PDU of `byte` during event `id`.
@@ -141,4 +142,23 @@ fn received(id: oer_bluetooth_radio::EventId, byte: u8) -> crate::BluetoothOutco
         },
     })
     .expect("the PDU fits")
+}
+
+#[test]
+fn reports_never_take_the_slot_kept_for_a_lifecycle_terminal() {
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+    use oer_bluetooth_radio::EventId;
+
+    use super::{Admission, OutcomeQueue};
+
+    let queue = OutcomeQueue::<NoopRawMutex, 5, 1>::new();
+    queue.owed(|owed| owed.admission = Admission::Enabled);
+    // An admitted event's two slots, then reports until one is dropped.
+    assert!(queue.admit_event(EventId::new(7), 0));
+    queue.push(received(EventId::new(3), 0));
+    queue.push(received(EventId::new(3), 1));
+    queue.push(received(EventId::new(3), 2));
+    // Two reports fit: the fifth slot stays with the lifecycle terminal.
+    assert_eq!(queue.entries.len(), 2);
+    assert!(queue.begin(Admission::Disabling));
 }

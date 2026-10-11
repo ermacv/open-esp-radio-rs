@@ -179,7 +179,7 @@ async fn client(
     mut service: BluetoothHciService,
 ) {
     use embassy_futures::select::{Either, select};
-    use oer_esp32s31_bluetooth_system::{ServeExit, Served};
+    use oer_esp32s31_bluetooth_system::Served;
 
     let served = match select(
         system.run(radio),
@@ -193,7 +193,7 @@ async fn client(
         Either::Second(served) => served,
     };
     let Served::Stopped(exit) = served else {
-        super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n");
+        super::fail(stop_failure_reason(&served));
     };
     // No restart follows: the Host epoch closes for good.
     service.close();
@@ -201,16 +201,44 @@ async fn client(
     let Ok(_parked) = stopped else {
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n");
     };
+    super::fail(exit_reason(exit))
+}
+
+/// The report of a service that ended for `exit` and disabled the port; the
+/// Controller then stops without a restart.
+#[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+fn exit_reason(exit: oer_esp32s31_bluetooth_system::ServeExit) -> &'static core::ffi::CStr {
+    use oer_esp32s31_bluetooth_system::ServeExit;
     match exit {
         ServeExit::EpochExhausted(_) => {
-            super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-epoch-exhausted\r\n")
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-epoch-exhausted\r\n"
         }
         ServeExit::Stopped
         | ServeExit::Closed
         | ServeExit::Transport(_)
         | ServeExit::Lifecycle(_)
-        | ServeExit::Clock(_) => {
-            super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n")
+        | ServeExit::Clock(_) => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n",
+    }
+}
+
+/// The report of a service whose managed stop failed, naming why the
+/// service stopped serving, or that found the port poisoned. The caller
+/// keeps every owner as it is.
+#[cfg(any(feature = "bluetooth-radio", feature = "wifi-ble-coex"))]
+fn stop_failure_reason<F>(
+    served: &oer_esp32s31_bluetooth_system::Served<F>,
+) -> &'static core::ffi::CStr {
+    use oer_esp32s31_bluetooth_system::{ServeExit, Served};
+    match served {
+        Served::StopFailed {
+            exit: ServeExit::EpochExhausted(_),
+            ..
+        } => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-epoch-exhausted-stop-failed\r\n",
+        Served::StopFailed { .. } => {
+            c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service-stop-failed\r\n"
         }
+        Served::Poisoned(_) => c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-poisoned\r\n",
+        // A stopped service is no stop failure.
+        Served::Stopped(exit) => exit_reason(*exit),
     }
 }

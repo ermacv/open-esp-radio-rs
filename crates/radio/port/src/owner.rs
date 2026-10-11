@@ -11,7 +11,7 @@
 //!
 //! For one running phase the owner lends the port out:
 //! [`RadioPortOwner::split`] borrows it mutably and returns three parts
-//! ([`RadioPortSplit`], [`PhaseParts`]):
+//! ([`PhaseParts`]), each a [`Lent`] that carries that borrow:
 //!
 //! - the phase's one event consumer ([`RadioPortEvents`]);
 //! - the phase control, one value that is neither `Clone` nor `Copy`, for
@@ -51,6 +51,11 @@
 //! quiet air (a power-save frame announcing sleep) takes that proof
 //! instead of retrying a refusal.
 //!
+//! The borrow is in the contract's signature, not in the backend's types:
+//! `split(&mut self)` returns `PhaseParts<'_, …>`, and [`Lent`] is
+//! invariant in its lifetime, so an implementation cannot hand out parts
+//! that outlive the phase, and a part cannot be taken out of its loan.
+//!
 //! While any of them lives, the borrow checker refuses every owner call, so
 //! an operation that conflicts with work in flight never meets a client's
 //! work at run time and no backend refuses one as busy. Dropping the parts
@@ -82,6 +87,72 @@
 //! }
 //! ```
 //!
+//! Nor does a part kept past its phase:
+//!
+//! ```compile_fail,E0499
+//! # use oer_radio_port::{LifecycleCommand, RadioPortOwner};
+//! async fn keep_the_control<O: RadioPortOwner>(owner: &mut O) {
+//!     let control = owner.split().control;
+//!     let _ = owner.lifecycle(LifecycleCommand::Disable).await;
+//!     drop(control);
+//! }
+//! ```
+//!
+//! Nor an implementation whose parts would outlive the phase:
+//!
+//! ```compile_fail
+//! # use core::future::{Future, Ready, ready};
+//! # use oer_radio_port::*;
+//! # struct Owner; struct Events;
+//! # impl RadioPortEvents for Events {
+//! #     type Event = (); type Fault = ();
+//! #     fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, ()>> + '_ { ready(Ok(Err(EventsLost))) }
+//! # }
+//! impl RadioPortOwner for Owner {
+//! #   type Event = (); type Id = (); type Domain = (); type Fault = ();
+//! #   type Events = Events; type Control = (); type Clients = ();
+//! #   fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, ()>> + '_ { ready(Ok(Err(EventsLost))) }
+//! #   fn now(&self) -> impl Future<Output = PortResult<oer_time::RadioInstant<()>, ClockError, ()>> + '_ { ready(Ok(Err(ClockError::Unavailable))) }
+//! #   fn cancel(&mut self, _: ()) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ { ready(Ok(Ok(()))) }
+//! #   fn lifecycle(&mut self, _: LifecycleCommand) -> impl Future<Output = PortResult<(), LifecycleError, ()>> + '_ { ready(Ok(Ok(()))) }
+//!     // The parts claim a loan longer than the borrow of `self`.
+//!     fn split(&mut self) -> PhaseParts<'static, Events, (), ()> {
+//!         PhaseParts {
+//!             events: Lent::new(Events),
+//!             control: Lent::new(()),
+//!             clients: Lent::new(()),
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! Its compiling twin lends the parts for the borrow of `self`:
+//!
+//! ```
+//! # use core::future::{Future, Ready, ready};
+//! # use oer_radio_port::*;
+//! # struct Owner; struct Events;
+//! # impl RadioPortEvents for Events {
+//! #     type Event = (); type Fault = ();
+//! #     fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, ()>> + '_ { ready(Ok(Err(EventsLost))) }
+//! # }
+//! impl RadioPortOwner for Owner {
+//! #   type Event = (); type Id = (); type Domain = (); type Fault = ();
+//! #   type Events = Events; type Control = (); type Clients = ();
+//! #   fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, ()>> + '_ { ready(Ok(Err(EventsLost))) }
+//! #   fn now(&self) -> impl Future<Output = PortResult<oer_time::RadioInstant<()>, ClockError, ()>> + '_ { ready(Ok(Err(ClockError::Unavailable))) }
+//! #   fn cancel(&mut self, _: ()) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ { ready(Ok(Ok(()))) }
+//! #   fn lifecycle(&mut self, _: LifecycleCommand) -> impl Future<Output = PortResult<(), LifecycleError, ()>> + '_ { ready(Ok(Ok(()))) }
+//!     fn split(&mut self) -> PhaseParts<'_, Events, (), ()> {
+//!         PhaseParts {
+//!             events: Lent::new(Events),
+//!             control: Lent::new(()),
+//!             clients: Lent::new(()),
+//!         }
+//!     }
+//! }
+//! ```
+//!
 //! Nor does a second phase beside the first, which would make two event
 //! consumers:
 //!
@@ -110,7 +181,12 @@
 //! the handles; that synchronization stays inside the backend and never
 //! reaches a caller as a refusal.
 
-use core::{fmt::Debug, future::Future};
+use core::{
+    fmt::Debug,
+    future::Future,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 use oer_time::RadioInstant;
 
@@ -137,10 +213,17 @@ pub trait RadioPortOwner {
     type Domain;
     /// The cause a poisoned backend reports.
     type Fault: Copy + Debug;
-    /// The handles one running phase lends.
-    type Split<'a>: RadioPortSplit<Fault = Self::Fault>
-    where
-        Self: 'a;
+    /// The phase's one event consumer.
+    type Events: RadioPortEvents<Event = Self::Event, Fault = Self::Fault>;
+    /// The phase control: the radio-wide operations that only gate or tune
+    /// admission while clients run. Neither `Clone` nor `Copy`, with one
+    /// holder; none of its operations refuses as busy, and one that stops
+    /// admission yields a typed proof of a quiet air (see the
+    /// [module](self) documentation).
+    type Control;
+    /// The protocol's client handles, one per interface; their count is
+    /// fixed at the split. Neither `Clone` nor `Copy`.
+    type Clients;
 
     /// The next event between running phases: the terminals of the owner's
     /// own commands, and of the work a phase left in flight. It keeps
@@ -177,45 +260,53 @@ pub trait RadioPortOwner {
     ) -> impl Future<Output = PortResult<(), LifecycleError, Self::Fault>> + '_;
 
     /// Lend the port for one running phase: its event consumer, its control
-    /// and its client handles ([`PhaseParts`]), borrowing the owner until
-    /// the last of them is dropped.
-    fn split(&mut self) -> Self::Split<'_>;
+    /// and its client handles ([`PhaseParts`]), each a [`Lent`] of this
+    /// borrow of the owner, which lasts until the last of them is dropped.
+    fn split(&mut self) -> PhaseParts<'_, Self::Events, Self::Control, Self::Clients>;
 }
 
-/// The handles one running phase lends: its one event consumer, its
-/// control and the protocol's client handles.
-///
-/// Every part borrows the owner for the phase: an implementation's
-/// `Events`, `Control` and `Clients` carry the lifetime of the
-/// [`RadioPortOwner::Split`] that returns them, so no part outlives the
-/// phase and no owner call compiles while one lives.
-pub trait RadioPortSplit {
-    /// The cause a poisoned backend reports.
-    type Fault: Copy + Debug;
+/// The parts of one running phase ([`RadioPortOwner::split`]), each lent
+/// for the phase.
+pub struct PhaseParts<'a, E, C, K> {
     /// The phase's one event consumer.
-    type Events: RadioPortEvents<Fault = Self::Fault>;
-    /// The phase control: the radio-wide operations that only gate or tune
-    /// admission while clients run. Neither `Clone` nor `Copy`, with one
-    /// holder; none of its operations refuses as busy, and one that stops
-    /// admission yields a typed proof of a quiet air (see the
-    /// [module](self) documentation).
-    type Control;
-    /// The protocol's client handles, one per interface; their count is
-    /// fixed at the split.
-    type Clients;
-
-    /// The phase's parts, as separate values.
-    fn into_parts(self) -> PhaseParts<Self::Events, Self::Control, Self::Clients>;
-}
-
-/// The parts of one running phase ([`RadioPortSplit::into_parts`]).
-pub struct PhaseParts<E, C, K> {
-    /// The phase's one event consumer.
-    pub events: E,
+    pub events: Lent<'a, E>,
     /// The phase control, with one holder.
-    pub control: C,
+    pub control: Lent<'a, C>,
     /// The protocol's client handles, one per interface.
-    pub clients: K,
+    pub clients: Lent<'a, K>,
+}
+
+/// One part of a running phase, lent for the borrow `'a` of the port's
+/// owner: it reaches its part by reference and has no way to give it up,
+/// so the part lives no longer than the phase. `'a` is invariant, so a
+/// loan cannot be stretched beyond the borrow that made it.
+pub struct Lent<'a, T> {
+    part: T,
+    loan: PhantomData<fn(&'a ()) -> &'a ()>,
+}
+
+impl<T> Lent<'_, T> {
+    /// Lend `part` for the phase the owner's `split` opens.
+    pub const fn new(part: T) -> Self {
+        Self {
+            part,
+            loan: PhantomData,
+        }
+    }
+}
+
+impl<T> Deref for Lent<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.part
+    }
+}
+
+impl<T> DerefMut for Lent<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.part
+    }
 }
 
 /// The one consumer of a running phase's events.

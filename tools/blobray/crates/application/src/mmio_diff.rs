@@ -145,6 +145,13 @@ fn access(
 struct Symbols(Vec<(u64, u64, String)>);
 
 impl Symbols {
+    /// Sort the symbols by address, charging the comparisons to `c`.
+    fn sort(&mut self, c: &mut dyn RunControl) -> Result<()> {
+        charge_sort(self.0.len(), c)?;
+        self.0.sort_unstable();
+        Ok(())
+    }
+
     /// The symbol `address` lies in, and the offset into it.
     fn at(&self, address: u32) -> Option<(&str, u32)> {
         let address = u64::from(address);
@@ -191,7 +198,7 @@ fn symbols<'m>(
                     .push((symbol.value, symbol.value + symbol.size, name));
             }
         }
-        symbols.0.sort_unstable();
+        symbols.sort(control)?;
         out.push(symbols);
     }
     Ok(out)
@@ -571,6 +578,24 @@ mod tests {
                 .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "work units exhausted"))?;
             Ok(())
         }
+    }
+
+    #[test]
+    fn sorting_the_symbol_table_is_charged_by_its_comparisons() {
+        let table = || {
+            Symbols(
+                (0..1024u64)
+                    .rev()
+                    .map(|i| (4 * i, 4 * i + 4, format!("s{i}")))
+                    .collect(),
+            )
+        };
+        // One unit per symbol does not cover sorting 1024 of them.
+        let error = table().sort(&mut Units(1024)).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ResourceLimited);
+        let mut symbols = table();
+        symbols.sort(&mut Units(1024 * 11)).unwrap();
+        assert_eq!(symbols.at(8), Some(("s2", 0)));
     }
 
     #[test]

@@ -14,7 +14,7 @@ use crate::image::Function;
 use crate::sweep::destination;
 use oer_elf::rv32::{self, Role};
 use oer_riscv_decode::{Extension, Extensions, Float, Inst, Instruction, decode};
-use oer_riscv_model::{Error, ErrorCode, Result};
+use oer_riscv_model::{Error, ErrorCode, Result, RunControl};
 use oer_riscv_program::facts::ImageFacts;
 
 /// `mscratch`.
@@ -37,7 +37,11 @@ pub struct TrapEntry {
 
 /// The entries of the vector table `symbol`: each word a relocation names,
 /// by slot; an empty slot holds zero and no relocation.
-pub fn vector_table(image: &ImageFacts<'_>, symbol: &str) -> Result<Vec<Option<u32>>> {
+pub fn vector_table(
+    image: &ImageFacts<'_>,
+    symbol: &str,
+    control: &mut dyn RunControl,
+) -> Result<Vec<Option<u32>>> {
     let file = image.file();
     let table = file
         .symbols()
@@ -56,11 +60,13 @@ pub fn vector_table(image: &ImageFacts<'_>, symbol: &str) -> Result<Vec<Option<u
             .word(address)
             .ok_or_else(|| invalid(format!("vector table `{symbol}` exceeds its section")))
     };
+    control.checkpoint(size / 4)?;
     let mut slots = vec![None; (size / 4) as usize];
     let relocations = file
         .relocations(section.index)
         .map_err(|error| invalid(error.to_string()))?;
     for relocation in relocations {
+        control.checkpoint(1)?;
         let offset = relocation.at;
         if offset < start || offset >= start + size {
             continue;
@@ -92,7 +98,11 @@ pub fn vector_table(image: &ImageFacts<'_>, symbol: &str) -> Result<Vec<Option<u
 }
 
 /// Check the trap entry at `entry` of `image` and measure its frame.
-pub fn trap_entry(image: &ImageFacts<'_>, entry: u32) -> Result<TrapEntry> {
+pub fn trap_entry(
+    image: &ImageFacts<'_>,
+    entry: u32,
+    control: &mut dyn RunControl,
+) -> Result<TrapEntry> {
     let (file, functions) = (image.file(), image.functions());
     let name = |address: u32| {
         functions
@@ -118,6 +128,7 @@ pub fn trap_entry(image: &ImageFacts<'_>, entry: u32) -> Result<TrapEntry> {
         let mut steps = 0;
         let (frame, handler) = loop {
             steps += 1;
+            control.checkpoint(1)?;
             if steps > MAX_STEPS {
                 return Err(fail(state.pc, "runs longer than the check follows"));
             }

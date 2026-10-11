@@ -156,14 +156,14 @@ impl Image {
             })
             .collect();
         let dwarf = Dwarf::read(&elf)?;
-        let vtables = waker_vtables(&facts, &dwarf, &analysis)?;
+        let vtables = waker_vtables(&facts, &dwarf, &analysis, &mut control)?;
         let mut resolutions = waker_resolutions(&analysis, &dwarf, &vtables)?;
         // Calls through a static's function pointer reach the taken functions
         // of its type: the diagnostic observers' `OnceCell<fn(..)>`.
         let types = TypeFacts::read(&elf)?;
-        let taken = taken_addresses(&facts)?;
+        let taken = taken_addresses(&facts, &mut control)?;
         let pointers = function_pointer_resolutions(&analysis, &types, &taken);
-        let stack_sizes = stack_sizes(&facts)?;
+        let stack_sizes = stack_sizes(&facts, &mut control)?;
         let usage = Usage {
             memory_bytes: memory.peak(),
             work_units: control.used(),

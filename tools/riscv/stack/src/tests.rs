@@ -38,11 +38,11 @@ fn functions(elf: &[u8]) -> Result<Vec<Function>> {
 }
 
 fn stack_sizes(elf: &[u8]) -> Result<BTreeMap<u32, u64>> {
-    with_facts(elf, crate::stack_sizes)
+    with_facts(elf, |facts| crate::stack_sizes(facts, &mut || Ok(())))
 }
 
 fn taken_addresses(elf: &[u8]) -> Result<BTreeSet<u32>> {
-    with_facts(elf, crate::taken_addresses)
+    with_facts(elf, |facts| crate::taken_addresses(facts, &mut || Ok(())))
 }
 
 fn address_taken(elf: &[u8], function: u32) -> Result<bool> {
@@ -50,19 +50,25 @@ fn address_taken(elf: &[u8], function: u32) -> Result<bool> {
 }
 
 fn vector_table(elf: &[u8], symbol: &str) -> Result<Vec<Option<u32>>> {
-    with_facts(elf, |facts| crate::vector_table(facts, symbol))
+    with_facts(elf, |facts| {
+        crate::vector_table(facts, symbol, &mut || Ok(()))
+    })
 }
 
 fn trap_entry(elf: &[u8], entry: u32) -> Result<TrapEntry> {
-    with_facts(elf, |facts| crate::trap_entry(facts, entry))
+    with_facts(elf, |facts| crate::trap_entry(facts, entry, &mut || Ok(())))
 }
 
 fn interrupt_table(elf: &[u8], symbol: &str, layout: &TableLayout) -> Result<Vec<TableEntry>> {
-    with_facts(elf, |facts| crate::interrupt_table(facts, symbol, layout))
+    with_facts(elf, |facts| {
+        crate::interrupt_table(facts, symbol, layout, &mut || Ok(()))
+    })
 }
 
 fn swept(elf: &[u8]) -> Result<sweep::Swept> {
-    with_facts(elf, |facts| sweep::transfers(facts, &facts.functions()[0]))
+    with_facts(elf, |facts| {
+        sweep::transfers(facts, &facts.functions()[0], &mut || Ok(()))
+    })
 }
 
 const SP_DOWN_16: u32 = 0xff01_0113; // addi sp, sp, -16
@@ -1142,6 +1148,23 @@ fn the_interrupt_table_reads_each_binding_and_its_relocated_handler() {
 }
 
 #[test]
+fn a_corrupt_table_length_fails_on_the_table_not_the_budget() {
+    let mut elf = table_image(&[(25, 1, 0, Some(TEXT))], true);
+    let at = {
+        let file = oer_elf::Elf::parse(&elf).unwrap();
+        let table = file.symbol("__OER_INTERRUPT_TABLE").unwrap();
+        let section = file.section(table.section.unwrap()).unwrap();
+        (section.file_offset + table.address + 4 - section.address) as usize
+    };
+    elf[at..at + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    let error = with_facts(&elf, |facts| {
+        crate::interrupt_table(facts, "__OER_INTERRUPT_TABLE", &S31_TABLE, &mut Units(1000))
+    })
+    .unwrap_err();
+    assert_eq!(error.code, ErrorCode::Integrity, "{error:?}");
+}
+
+#[test]
 fn a_handler_word_without_its_relocation_fails() {
     let elf = table_image(&[(25, 1, 0, Some(TEXT))], false);
     assert!(interrupt_table(&elf, "__OER_INTERRUPT_TABLE", &S31_TABLE).is_err());
@@ -1626,8 +1649,17 @@ fn a_waker_call_reaches_its_slot_of_every_waker_vtable() {
     let elf = compiled(WAKER_PROGRAM);
     let analysis = analyze(&elf, &[], &[]).unwrap();
     let dwarf = Dwarf::read(&elf).unwrap();
-    let vtables = with_facts(&elf, |facts| waker_vtables(facts, &dwarf, &analysis)).unwrap();
+    let vtables = with_facts(&elf, |facts| {
+        waker_vtables(facts, &dwarf, &analysis, &mut || Ok(()))
+    })
+    .unwrap();
     assert_eq!(vtables.len(), 1, "{vtables:x?}");
+    // Every relocated word it reads is charged to the work budget.
+    let error = with_facts(&elf, |facts| {
+        waker_vtables(facts, &dwarf, &analysis, &mut Units(0))
+    })
+    .unwrap_err();
+    assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
     let start = functions(&elf)
         .unwrap()
         .into_iter()
@@ -2073,4 +2105,142 @@ fn the_working_memory_and_the_work_budget_bound_the_analysis() {
     let error = crate::analyze(&facts, &[], &[], &memory, &mut Units(1)).unwrap_err();
     assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
     assert!(crate::analyze(&facts, &[], &[], &memory, &mut Units(u64::MAX)).is_ok());
+}
+
+#[test]
+fn every_image_query_charges_its_reads_to_the_work_budget() {
+    let limited = |error: Error| assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+    let table = table_image(&[(25, 1, 0, Some(TEXT))], true);
+    with_facts(&table, |facts| {
+        limited(
+            crate::interrupt_table(facts, "__OER_INTERRUPT_TABLE", &S31_TABLE, &mut Units(0))
+                .unwrap_err(),
+        );
+        limited(crate::taken_addresses(facts, &mut Units(0)).unwrap_err());
+        Ok(())
+    })
+    .unwrap();
+    let (trap, _) = trap_image(&PLATFORM_ENTRY);
+    with_facts(&trap, |facts| {
+        limited(crate::trap_entry(facts, TEXT, &mut Units(0)).unwrap_err());
+        Ok(())
+    })
+    .unwrap();
+    let vectors = placed(
+        TEXT,
+        &[Symbol {
+            name: "f",
+            words: vec![RET],
+            frame: Some(0),
+        }],
+        &[TEXT, TEXT],
+        true,
+        true,
+    );
+    with_facts(&vectors, |facts| {
+        limited(crate::vector_table(facts, "table", &mut Units(0)).unwrap_err());
+        Ok(())
+    })
+    .unwrap();
+    let records = executable(&[leaf(Some(32))]);
+    with_facts(&records, |facts| {
+        limited(crate::stack_sizes(facts, &mut Units(0)).unwrap_err());
+        Ok(())
+    })
+    .unwrap();
+    // A table's entries are charged before the analysis follows them.
+    let jump_table = labelled(&[leaf(Some(32))], &[TEXT, TEXT]);
+    with_facts(&jump_table, |facts| {
+        assert_eq!(
+            image::jump_table(facts, RODATA, &mut Units(2))?,
+            Some(vec![TEXT, TEXT])
+        );
+        limited(image::jump_table(facts, RODATA, &mut Units(1)).unwrap_err());
+        Ok(())
+    })
+    .unwrap();
+    // A data object reaching past read-only data is no table, whatever its
+    // size claims: the words past the data are never charged.
+    let mut oversized = image(&[leaf(Some(32))], &[TEXT, TEXT], true);
+    let at = {
+        let file = oer_elf::Elf::parse(&oversized).unwrap();
+        let table = file.symbol("table").unwrap();
+        let symtab = file.section(file.symbol_table_section().unwrap()).unwrap();
+        // `st_size` of the table's ELF32 symbol entry.
+        (symtab.file_offset + 16 * table.index as u64 + 8) as usize
+    };
+    oversized[at..at + 4].copy_from_slice(&(1u32 << 31).to_le_bytes());
+    with_facts(&oversized, |facts| {
+        assert_eq!(image::table(facts, RODATA, &mut Units(3))?, None);
+        Ok(())
+    })
+    .unwrap();
+    let object = image(&[leaf(Some(32))], &[TEXT, TEXT], true);
+    with_facts(&object, |facts| {
+        assert_eq!(
+            image::table(facts, RODATA, &mut Units(2))?,
+            Some(vec![TEXT, TEXT])
+        );
+        limited(image::table(facts, RODATA, &mut Units(1)).unwrap_err());
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn the_sweep_charges_each_table_entry_it_reads() {
+    let sweep = |elf: &[u8], units: u64| {
+        with_facts(elf, |facts| {
+            sweep::transfers(facts, &facts.functions()[0], &mut Units(units))
+        })
+    };
+    // Two entries of a labelled table, read from its relocations.
+    let labelled = labelled(&[dispatch(false)], &[TEXT + 24, TEXT + 28]);
+    assert_eq!(
+        sweep(&labelled, 2).unwrap().jumps,
+        [(TEXT + 20, vec![TEXT + 24, TEXT + 28])]
+    );
+    let Err(error) = sweep(&labelled, 1) else {
+        panic!("the sweep read past its budget");
+    };
+    assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+    // Two entries a bounds check selects from an unlabelled table.
+    let bounded = image(&[dispatch(true)], &[TEXT + 32, TEXT + 36, 0x5000], false);
+    assert!(sweep(&bounded, 2).is_ok());
+    let Err(error) = sweep(&bounded, 1) else {
+        panic!("the sweep read past its budget");
+    };
+    assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+}
+
+#[test]
+fn the_analysis_charges_each_table_entry_it_follows() {
+    // An unresolved tail through the labelled table at `RODATA`.
+    let transfer = Transfer {
+        site: TEXT + 20,
+        target: None,
+        kind: TransferKind::Tail,
+        source: None,
+        table: Some(TableBase::Address(RODATA)),
+        load: None,
+    };
+    let observation = image::Observation {
+        depth: None,
+        complete: false,
+        resolved: Vec::new(),
+        local_jumps: Vec::new(),
+        site_depths: BTreeMap::new(),
+        site_registers: BTreeMap::new(),
+    };
+    let jump_table = labelled(&[dispatch(false)], &[TEXT + 24, TEXT + 28]);
+    with_facts(&jump_table, |facts| {
+        assert_eq!(
+            table_entries(facts, &transfer, &observation, &mut Units(2))?,
+            Some(vec![TEXT + 24, TEXT + 28])
+        );
+        let error = table_entries(facts, &transfer, &observation, &mut Units(1)).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+        Ok(())
+    })
+    .unwrap();
 }

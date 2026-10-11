@@ -20,11 +20,50 @@ fn invalid(message: impl Into<String>) -> Error {
 /// The words of the data object that starts at `address` in an unwritable
 /// section: a table whose every entry an index the language bounds-checks
 /// against the object's length may load.
-pub(crate) fn table(image: &ImageFacts<'_>, address: u32) -> Option<Vec<u32>> {
-    let size = image.data_object(address)?;
-    (0..size / 4)
-        .map(|i| image.read_only_word(address.wrapping_add(4 * i as u32)))
-        .collect()
+pub(crate) fn table(
+    image: &ImageFacts<'_>,
+    address: u32,
+    control: &mut dyn RunControl,
+) -> Result<Option<Vec<u32>>> {
+    let Some(size) = image.data_object(address) else {
+        return Ok(None);
+    };
+    words(image, address, size / 4, control)
+}
+
+/// The `count` read-only words from `base`, each charged to `control`
+/// before it is read; `None` at the first word outside read-only data.
+pub(crate) fn words(
+    image: &ImageFacts<'_>,
+    base: u32,
+    count: u64,
+    control: &mut dyn RunControl,
+) -> Result<Option<Vec<u32>>> {
+    let mut words = Vec::new();
+    for i in 0..count {
+        control.checkpoint(1)?;
+        let Some(word) = image.read_only_word(base.wrapping_add(4 * i as u32)) else {
+            return Ok(None);
+        };
+        words.push(word);
+    }
+    Ok(Some(words))
+}
+
+/// The entries of the jump table the compiler labelled at `base`, each
+/// charged to `control` as it is read.
+pub(crate) fn jump_table(
+    image: &ImageFacts<'_>,
+    base: u32,
+    control: &mut dyn RunControl,
+) -> Result<Option<Vec<u32>>> {
+    let Some(entries) = image.jump_table(base) else {
+        return Ok(None);
+    };
+    entries
+        .map(|entry| control.checkpoint(1).map(|()| entry))
+        .collect::<Result<Vec<u32>>>()
+        .map(Some)
 }
 
 fn uleb128(bytes: &[u8], at: &mut usize) -> Result<u64> {
@@ -45,13 +84,18 @@ fn uleb128(bytes: &[u8], at: &mut usize) -> Result<u64> {
 /// The compiler's frame record of each function: `.stack_sizes` entries of a
 /// 32-bit address followed by a ULEB128 size. An image without the section has
 /// no records; one function recorded twice with different sizes is an error.
-pub fn stack_sizes(image: &ImageFacts<'_>) -> Result<BTreeMap<u32, u64>> {
+pub fn stack_sizes(
+    image: &ImageFacts<'_>,
+    control: &mut dyn RunControl,
+) -> Result<BTreeMap<u32, u64>> {
     let file = image.file();
     let mut sizes = BTreeMap::new();
     let Some(section) = file.section_by_name(".stack_sizes") else {
         return Ok(sizes);
     };
     let bytes = section.data;
+    // At least five bytes per record.
+    control.checkpoint(bytes.len() as u64 / 5)?;
     let mut at = 0;
     while at < bytes.len() {
         let address = bytes

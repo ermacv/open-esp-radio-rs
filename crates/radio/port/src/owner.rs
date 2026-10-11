@@ -58,6 +58,7 @@
 //! | One running phase, one event consumer | `split(&mut self)` |
 //! | A caller reaches the backend only through the owner and its parts | the owner's private field |
 //! | Admitted work names only its own phase's work | [`Work`] borrows its client |
+//! | Admitted work ends only through the client that admitted it | [`Work`] holds that client; no client cancels a work |
 //! | A part or a token is not taken out of its loan | `Lent` and `Work` give nothing away; see below |
 //!
 //! Each line has a compile-fail test below, pinned to its error code, with a
@@ -236,10 +237,19 @@
 //! ```compile_fail,E0515
 //! # use oer_radio_port::{RadioPortClient, Work};
 //! fn keep_the_work<C: RadioPortClient>(
-//!     admit: impl for<'c> Fn(&'c C) -> Work<'c, C::Token>,
+//!     admit: impl for<'c> Fn(&'c C) -> Work<'c, C>,
 //!     client: C,
-//! ) -> Work<'static, C::Token> {
+//! ) -> Work<'static, C> {
 //!     admit(&client)
+//! }
+//! ```
+//!
+//! Nor does one client end another's work:
+//!
+//! ```compile_fail,E0599
+//! # use oer_radio_port::{RadioPortClient, Work};
+//! async fn cross_cancel<'c, C: RadioPortClient>(other: &'c C, work: Work<'c, C>) {
+//!     let _ = other.cancel(work).await;
 //! }
 //! ```
 //!
@@ -267,10 +277,13 @@
 //!     }
 //! }
 //! fn keep_the_work<'c, C: RadioPortClient>(
-//!     admit: impl Fn(&'c C) -> Work<'c, C::Token>,
+//!     admit: impl Fn(&'c C) -> Work<'c, C>,
 //!     client: &'c C,
-//! ) -> Work<'c, C::Token> {
+//! ) -> Work<'c, C> {
 //!     admit(client)
+//! }
+//! async fn own_cancel<C: RadioPortClient>(work: Work<'_, C>) {
+//!     let _ = work.cancel().await;
 //! }
 //! ```
 //!
@@ -450,9 +463,12 @@ impl<B: PortBackend> Owner<B, Disabled> {
     /// # Errors
     ///
     /// The radio's refusal, with the disabled owner, or a poisoned backend.
-    pub async fn enable(self) -> Result<Owner<B, Enabled>, Failed<B>> {
-        let mut backend = self.take();
-        match backend.enable().await {
+    pub async fn enable(mut self) -> Result<Owner<B, Enabled>, Failed<B>> {
+        // The owner holds the backend across the wait, so a dropped future
+        // drops the owner and its safety net runs.
+        let enabled = self.backend().enable().await;
+        let backend = self.take();
+        match enabled {
             Ok(Ok(())) => Ok(Owner::new(backend)),
             Ok(Err(refusal)) => Err(Failed::Refused(Owner::new(backend), refusal)),
             Err(poisoned) => Err(Failed::Poisoned(PoisonedOwner::new(backend, poisoned))),
@@ -482,11 +498,13 @@ impl<B: PortBackend> Owner<B, Enabled> {
     ///
     /// A poisoned backend.
     pub async fn disable(
-        self,
+        mut self,
         sink: &mut dyn FnMut(B::Event),
     ) -> Result<Owner<B, Disabled>, PoisonedOwner<B>> {
-        let mut backend = self.take();
-        match backend.disable(sink).await {
+        // The owner holds the backend across the wait, as `enable`'s does.
+        let disabled = self.backend().disable(sink).await;
+        let backend = self.take();
+        match disabled {
             Ok(()) => Ok(Owner::new(backend)),
             Err(poisoned) => Err(PoisonedOwner::new(backend, poisoned)),
         }
@@ -572,7 +590,9 @@ fn abandoned<B: PortBackend>(backend: &mut Option<B>) {
         return;
     };
     backend.abandon();
-    #[cfg(test)]
+    // A host test unwinding a panic drops its owners; asserting then would
+    // abort the test process and hide the first panic.
+    #[cfg(any(test, feature = "test-support"))]
     if std::thread::panicking() {
         return;
     }
@@ -646,37 +666,44 @@ pub trait RadioPortEvents {
     ) -> impl Future<Output = PortResult<Self::Event, EventsLost, Self::Fault>> + '_;
 }
 
-/// One admitted operation: what a client's submission returns. The backend
-/// mints its token, which is neither `Clone` nor `Copy`, so it names
-/// exactly one operation and only its holder ends it. A `Work` borrows the
-/// client that admitted it (`'c`, invariant), so no token outlives its
-/// phase and none can name the work of a later one.
+/// One admitted operation: what a client's submission returns. It holds
+/// the backend's token, which is neither `Clone` nor `Copy` and only the
+/// backend mints, and the client that admitted it, so it names exactly one
+/// operation, only its holder ends it, and it ends through the client that
+/// admitted it ([`Self::cancel`]). It borrows that client (`'c`), so no
+/// work outlives its phase and none can name the work of a later one.
 #[must_use = "dropping a work forgoes ending it; its terminal still arrives"]
-pub struct Work<'c, T> {
-    token: T,
-    loan: PhantomData<fn(&'c ()) -> &'c ()>,
+pub struct Work<'c, C: RadioPortClient> {
+    token: C::Token,
+    client: &'c C,
 }
 
-impl<T: RadioWork> Work<'_, T> {
-    /// Admitted work for the client borrow the backend's submission
-    /// received.
-    pub const fn new(token: T) -> Self {
-        Self {
-            token,
-            loan: PhantomData,
-        }
+impl<'c, C: RadioPortClient> Work<'c, C> {
+    /// Admitted work of `client`, which the backend's submission minted
+    /// `token` for.
+    pub const fn new(client: &'c C, token: C::Token) -> Self {
+        Self { token, client }
     }
 
     /// The key a router matches the operation's terminal event by.
-    pub fn id(&self) -> T::Id {
+    pub fn id(&self) -> <C::Token as RadioWork>::Id {
         self.token.id()
+    }
+
+    /// End the operation through the client that admitted it. Its terminal
+    /// event is the operation's own, which may be its natural end; a
+    /// refusal as [`CancelError::NotRunning`] says the air ended it first,
+    /// the world's outcome. Dropping the future may leave the work running
+    /// or ended; its terminal arrives either way.
+    pub fn cancel(self) -> impl Future<Output = PortResult<(), CancelError, C::Fault>> + 'c {
+        self.client.end(self.token)
     }
 }
 
 /// A backend's token of one admitted operation ([`Work`]).
 pub trait RadioWork {
     /// The key a router matches the operation's terminal event by. It
-    /// grants nothing: ending the work takes the token itself.
+    /// grants nothing: ending the work takes the [`Work`] itself.
     type Id: Copy + Eq;
 
     /// The routing key of this operation.
@@ -689,7 +716,7 @@ pub trait RadioWork {
 ///
 /// A client exists only for an interface the disabled port configured, and
 /// its protocol's calls name only that interface. Its submissions return a
-/// [`Work`] borrowing it.
+/// [`Work`] that borrows it and ends through it.
 pub trait RadioPortClient {
     /// The backend's token of one admitted operation of this client.
     type Token: RadioWork;
@@ -705,21 +732,10 @@ pub trait RadioPortClient {
         &self,
     ) -> impl Future<Output = PortResult<RadioInstant<Self::Domain>, ClockError, Self::Fault>> + '_;
 
-    /// End the operation `work` names: the token is the authority. Its
-    /// terminal event is the operation's own, which may be its natural end;
-    /// a refusal as [`CancelError::NotRunning`] says the air ended it
-    /// first, the world's outcome. Dropping the future may leave the work
-    /// running or ended; its terminal arrives either way.
-    fn cancel<'c>(
-        &'c self,
-        work: Work<'c, Self::Token>,
-    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + 'c {
-        self.end(work.token)
-    }
-
-    /// The backend's side of [`Self::cancel`]. Only a [`Work`] holds a
-    /// token, and nothing takes it out but `cancel`, so a caller reaches
-    /// this only through `cancel`.
+    /// The backend's side of [`Work::cancel`]: end the operation `token`
+    /// names, which this client admitted. Only a [`Work`] holds a token and
+    /// nothing takes it out but `cancel`, which calls the client that
+    /// admitted it, so a caller reaches this only through that `cancel`.
     fn end(
         &self,
         token: Self::Token,

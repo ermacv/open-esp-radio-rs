@@ -505,8 +505,8 @@ guards with one holder, never refusing as busy; a closed transmit gate is a
 owner's borrow; its `disable(self, sink)` hands the leftover terminals of
 the phase's work, with their bodies, to the sink and returns the disabled
 owner once every permit is back. A client's submission returns its admitted
-work as a token the backend mints, borrowing the client; ending the work
-takes the token. No call refuses for a state the caller controls
+work as a token the backend mints, holding the client that admitted it;
+the work ends only through that client (`work.cancel()`). No call refuses for a state the caller controls
 ([Ownership and refusals](#ownership-and-refusals)). The base `RadioPort`
 and the protocol ports move onto this shape in
 [#581](https://github.com/ermacv/open-esp-radio-rs/issues/581).

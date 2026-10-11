@@ -68,7 +68,7 @@
 //!
 //! This package owns no state and never waits.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 extern crate std;
 
 use core::{fmt::Debug, future::Future, ops::RangeInclusive};

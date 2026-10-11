@@ -23,10 +23,10 @@
 //!   stops the scheduler and ends every admitted event with what the
 //!   hardware recorded (`EventResult::Aborted` when a started item left no
 //!   status), and its `Enable` resumes the scheduler; the uninstall takes
-//!   only a disabled radio, so no admitted event outlives it.
-//! - [`BluetoothControl::quiesce`] quiesces the port, stops the scheduler,
-//!   lends the Bluetooth quiescence proof to shared-PHY maintenance, resumes
-//!   the scheduler and enables the port again.
+//!   only a disabled radio, so no admitted event outlives it. Shared-PHY
+//!   maintenance never pauses the port: it runs under the radio arbiter's
+//!   lease with the vendor grant-protect brackets, and an event that loses
+//!   RF to it ends as an ordinary outcome.
 //!
 //! The port is the [`oer_bluetooth_radio::LeRadioPort`] of the portable
 //! Controller service loop: a refused request is an answer to the Controller

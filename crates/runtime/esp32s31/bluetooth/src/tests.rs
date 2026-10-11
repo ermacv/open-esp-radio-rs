@@ -39,7 +39,6 @@ use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerFinishedListPop, BluetoothSchedulerStop, BluetoothSchedulerStopStep,
     BluetoothSchedulerStopped,
 };
-use oer_esp32s31_hal::shared_radio::{QuiescentSpan, RadioClient};
 use oer_time::Clock as _;
 use oer_time_virtual::VirtualClock;
 
@@ -603,76 +602,6 @@ fn a_refused_request_reports_the_radio_error() {
 }
 
 #[test]
-fn maintenance_runs_while_the_scheduler_is_stopped() {
-    let model = Model::default();
-    let runtime = installed(&model);
-    let span = block_on(runtime.quiesce(|proof| {
-        assert_eq!(proof.client(), RadioClient::Bluetooth);
-        proof.span()
-    }))
-    .unwrap();
-    assert_eq!(span, QuiescentSpan::Stopped);
-    assert_eq!(model.0.borrow().stops, 1);
-    // Maintenance quiesced the port and enabled it again.
-    assert_eq!(
-        taken(&runtime),
-        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Quiesced))
-    );
-    assert_eq!(
-        taken(&runtime),
-        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Enabled))
-    );
-    // The radio resumed: it admits new requests.
-    block_on(runtime.submit_request(configure()))
-        .unwrap()
-        .unwrap();
-}
-
-#[test]
-fn maintenance_waits_for_the_admitted_events_to_end() {
-    let model = Model::default();
-    let runtime = installed(&model);
-    block_on(async {
-        runtime.submit_request(configure()).await.unwrap().unwrap();
-        runtime
-            .submit_request(advertise(1, 10_000))
-            .await
-            .unwrap()
-            .unwrap();
-    });
-    // The event runs before the scheduler stops for maintenance.
-    let stops_before = model.0.borrow().stops;
-    let ended_first = block_on(async {
-        match select(
-            runtime.run(),
-            runtime.quiesce(|_| model.0.borrow().started.len()),
-        )
-        .await
-        {
-            Either::First(fault) => panic!("the runtime faulted: {fault:?}"),
-            Either::Second(started) => started.unwrap(),
-        }
-    });
-    assert_eq!(ended_first, 1);
-    assert_eq!(model.0.borrow().stops, stops_before + 1);
-    assert_eq!(
-        taken(&runtime),
-        Some(BluetoothOutcome::EventEnded {
-            id: EventId::new(1),
-            result: EventResult::Executed { anchor: None },
-        })
-    );
-    assert_eq!(
-        taken(&runtime),
-        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Quiesced))
-    );
-    assert_eq!(
-        taken(&runtime),
-        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Enabled))
-    );
-}
-
-#[test]
 fn a_disabled_port_admits_nothing_and_enable_opens_it() {
     let model = Model::default();
     let runtime = installed_disabled(&model);
@@ -764,149 +693,6 @@ fn quiesce_reports_quiesced_after_the_last_admitted_event() {
         Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Quiesced))
     );
     enable(&runtime);
-}
-
-#[test]
-fn quiesce_returns_the_poison_instead_of_waiting_for_an_end_that_never_comes() {
-    let model = Model::default();
-    let runtime = installed(&model);
-    block_on(async {
-        runtime.submit_request(configure()).await.unwrap().unwrap();
-        runtime
-            .submit_request(advertise(1, 10_000))
-            .await
-            .unwrap()
-            .unwrap();
-    });
-    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
-    let mut quiesce = core::pin::pin!(runtime.quiesce(|_| ()));
-    // The admitted event keeps the port quiescing.
-    assert!(quiesce.as_mut().poll(&mut context).is_pending());
-    // The runner then faults: the event's end never comes.
-    model.0.borrow_mut().refuse_start = true;
-    let fault = block_on(runtime.run());
-    let core::task::Poll::Ready(result) = quiesce.as_mut().poll(&mut context) else {
-        panic!("a poisoned port ends the wait")
-    };
-    assert_eq!(
-        result,
-        Err(Poisoned {
-            cause: BluetoothFault::Runner(fault),
-        })
-    );
-}
-
-#[test]
-fn quiesce_on_a_full_queue_proceeds_once_the_consumer_frees_a_slot() {
-    let model = Model::default();
-    let runtime = installed(&model);
-    // Four unread lifecycle terminals fill the four-entry queue: Quiesce has
-    // no slot for its terminal. Admitted events never fill it: they leave a
-    // slot for a lifecycle terminal.
-    for command in [
-        LifecycleCommand::Disable,
-        LifecycleCommand::Enable,
-        LifecycleCommand::Disable,
-        LifecycleCommand::Enable,
-    ] {
-        assert_eq!(block_on(runtime.run_lifecycle(command)), Ok(Ok(())));
-    }
-    assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Quiesce)),
-        Ok(Err(LifecycleError::Busy))
-    );
-    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
-    let mut quiesce = core::pin::pin!(runtime.quiesce(|_| ()));
-    assert!(quiesce.as_mut().poll(&mut context).is_pending());
-    // The consumer takes an outcome: the freed slot admits the quiesce.
-    assert_eq!(
-        taken(&runtime),
-        Some(BluetoothOutcome::Lifecycle(LifecycleEvent::Disabled))
-    );
-    run_for_a_millisecond(&runtime);
-    let mut done = None;
-    for _ in 0..8 {
-        if let core::task::Poll::Ready(result) = quiesce.as_mut().poll(&mut context) {
-            done = Some(result);
-            break;
-        }
-        let _ = taken(&runtime);
-    }
-    assert_eq!(done, Some(Ok(())));
-    // The port is enabled again once the consumer has read its outcomes.
-    while taken(&runtime).is_some() {}
-    block_on(runtime.submit_request(configure()))
-        .unwrap()
-        .unwrap();
-    block_on(runtime.submit_request(advertise(2, 30_000)))
-        .unwrap()
-        .unwrap();
-}
-
-/// Fill the four-entry queue with unread terminals and leave the port in
-/// the `Quiesced` of a quiesce whose generation is returned.
-fn quiesced_on_a_full_queue(runtime: &Runtime) -> u32 {
-    for command in [
-        LifecycleCommand::Quiesce,
-        LifecycleCommand::Disable,
-        LifecycleCommand::Enable,
-    ] {
-        assert_eq!(block_on(runtime.run_lifecycle(command)), Ok(Ok(())));
-    }
-    block_on(runtime.start_lifecycle(LifecycleCommand::Quiesce))
-        .unwrap()
-        .unwrap()
-}
-
-#[test]
-fn reopening_after_a_quiesce_never_overrides_another_owners_disable() {
-    let model = Model::default();
-    let runtime = installed(&model);
-    let generation = quiesced_on_a_full_queue(&runtime);
-    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
-    let mut reopen = core::pin::pin!(runtime.reopen(generation));
-    // No slot for Enabled: the reopen waits.
-    assert!(reopen.as_mut().poll(&mut context).is_pending());
-    // Another owner disables the port in the slot the consumer freed.
-    assert!(taken(&runtime).is_some());
-    assert_eq!(
-        block_on(runtime.run_lifecycle(LifecycleCommand::Disable)),
-        Ok(Ok(()))
-    );
-    // A slot is free again, but the port is no longer the quiesce's.
-    assert!(taken(&runtime).is_some());
-    assert_eq!(
-        reopen.as_mut().poll(&mut context),
-        core::task::Poll::Ready(Ok(()))
-    );
-    assert_eq!(
-        block_on(runtime.submit_request(configure())),
-        Ok(Err(RequestError::Disabled))
-    );
-}
-
-#[test]
-fn reopening_never_overrides_another_owners_later_quiesce() {
-    let model = Model::default();
-    let runtime = installed(&model);
-    let generation = quiesced_on_a_full_queue(&runtime);
-    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
-    let mut reopen = core::pin::pin!(runtime.reopen(generation));
-    assert!(reopen.as_mut().poll(&mut context).is_pending());
-    // Another owner enables and quiesces again: the port is Quiesced, but
-    // by that owner's command.
-    while taken(&runtime).is_some() {}
-    for command in [LifecycleCommand::Enable, LifecycleCommand::Quiesce] {
-        assert_eq!(block_on(runtime.run_lifecycle(command)), Ok(Ok(())));
-    }
-    assert_eq!(
-        reopen.as_mut().poll(&mut context),
-        core::task::Poll::Ready(Ok(()))
-    );
-    assert_eq!(
-        block_on(runtime.submit_request(configure())),
-        Ok(Err(RequestError::Disabled))
-    );
 }
 
 #[test]
@@ -1157,6 +943,49 @@ fn a_test_session_holds_the_route_until_test_end() {
 }
 
 #[test]
+fn cancelling_a_running_test_stops_the_scheduler_and_resumes_it() {
+    let model = Model::default();
+    model.0.borrow_mut().defer_execution = true;
+    let runtime = installed(&model);
+    let RadioRequest::TestReceive(test) = test_receive(4) else {
+        unreachable!()
+    };
+    block_on(
+        runtime.submit_request(RadioRequest::TestReceive(TestReceive {
+            recurring: true,
+            ..test
+        })),
+    )
+    .unwrap()
+    .unwrap();
+    settle(&runtime);
+    // The running test leaves its list only after a stop: the runner stops
+    // the scheduler, resumes it and ends the event, with the port enabled.
+    block_on(runtime.cancel_event(EventId::new(4)))
+        .unwrap()
+        .unwrap();
+    assert_eq!(model.0.borrow().stops, 0);
+    settle(&runtime);
+    assert_eq!(model.0.borrow().stops, 1);
+    assert_eq!(
+        taken(&runtime),
+        Some(BluetoothOutcome::EventEnded {
+            id: EventId::new(4),
+            result: EventResult::NotExecuted,
+        })
+    );
+    // The resumed scheduler admits the session's end and new work.
+    block_on(runtime.submit_request(RadioRequest::EndTest))
+        .unwrap()
+        .unwrap();
+    settle(&runtime);
+    block_on(runtime.submit_request(configure()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(model.0.borrow().stops, 1);
+}
+
+#[test]
 fn uninstall_restores_the_route_of_an_open_test() {
     let model = Model::default();
     let runtime = installed(&model);
@@ -1222,9 +1051,10 @@ fn stop_drains_the_prior_finished_list_before_capturing_the_final_snapshot() {
     let runtime = installed(&model);
     model.0.borrow_mut().finished =
         BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[0]);
-    block_on(runtime.quiesce(|_| ())).unwrap();
+    disable(&runtime);
     assert!(model.0.borrow().finished.is_none());
     assert_eq!(model.0.borrow().stops, 1);
+    enable(&runtime);
     block_on(runtime.submit_request(configure()))
         .unwrap()
         .unwrap();
@@ -1278,9 +1108,8 @@ fn a_wait_past_the_timer_range_is_an_error_not_a_forever_wait() {
 }
 
 /// Install returns the radio's two handles: the consumer serves through the
-/// port, the composition maintains through the control, and the control's
-/// uninstall consumes both, ends the port's stream and returns the owners
-/// for the next install.
+/// port, and the composition's control uninstalls: it consumes both, ends
+/// the port's stream and returns the owners for the next install.
 #[test]
 fn install_returns_the_port_and_the_control_whose_uninstall_takes_both() {
     use oer_bluetooth_radio::{LeRadioPort, RadioPort};
@@ -1294,11 +1123,6 @@ fn install_returns_the_port_and_the_control_whose_uninstall_takes_both() {
         assert_eq!(port.lifecycle(LifecycleCommand::Enable).await, Ok(Ok(())));
         assert_eq!(port.submit(configure()).await, Ok(Ok(())));
     });
-    // The control's maintenance quiesces and reopens the port.
-    assert_eq!(
-        block_on(control.quiesce(|proof| proof.client())),
-        Ok(RadioClient::Bluetooth)
-    );
     // The control's uninstall consumes both handles of a disabled port; the
     // owners install again.
     disable(&runtime);

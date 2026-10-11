@@ -9,7 +9,6 @@ use oer_bluetooth_radio::{
     LeRadioCapabilities, LeRadioPort, LifecycleCommand, LifecycleError, Poisoned, PortResult,
     RadioActivity, RadioOutcome, RadioPort, RadioRequest, RequestError,
 };
-use oer_esp32s31_hal::shared_radio::ClientQuiescence;
 use oer_time::Timer;
 
 use crate::runtime::Radio;
@@ -32,9 +31,9 @@ pub struct BluetoothPort<'r, R> {
     runtime: &'r R,
 }
 
-/// The composition's handle to an installed [`BluetoothRuntime`]:
-/// shared-PHY maintenance and the uninstall. [`BluetoothRuntime::install`]
-/// returns it with the port; neither is `Copy` nor `Clone`.
+/// The composition's handle to an installed [`BluetoothRuntime`], which
+/// uninstalls it. [`BluetoothRuntime::install`] returns it with the port;
+/// neither is `Copy` nor `Clone`.
 #[must_use = "an installed radio leaves only through its control's uninstall"]
 pub struct BluetoothControl<'r, R> {
     runtime: &'r R,
@@ -213,24 +212,6 @@ impl<
         >,
     >
 {
-    /// Quiesce the port, stop the scheduler, hand the Bluetooth quiescence
-    /// proof to `maintenance`, resume the scheduler and enable the port
-    /// again: shared-PHY maintenance as a layer over the port's lifecycle.
-    /// The port's consumer sees `Quiesced` and `Enabled` and must keep
-    /// taking outcomes meanwhile: a full queue refuses `Quiesce` and the
-    /// final `Enable` as busy until it frees a slot. A list transaction in
-    /// progress finishes before the stop.
-    ///
-    /// # Errors
-    ///
-    /// [`Poisoned`] when a hardware fault stopped the runtime.
-    pub async fn quiesce<Q>(
-        &self,
-        maintenance: impl FnOnce(ClientQuiescence<'_>) -> Q,
-    ) -> Result<Q, Poisoned<BluetoothFault<H::StartError>>> {
-        self.runtime.quiesce(maintenance).await
-    }
-
     /// Take the radio and its hardware out of the runtime, consuming both
     /// handles of the installed radio. The port must be disabled with every
     /// outcome up to its `Disabled` taken, so every admitted event has ended;

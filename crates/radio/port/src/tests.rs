@@ -281,10 +281,14 @@ struct Client<'m> {
     interface: u8,
 }
 struct Phase<'m>(&'m Model);
+struct Control;
+/// Admitted work: only its client's `admit` returns one.
+struct Work(Id);
 
 impl Client<'_> {
-    fn admit(&self, id: Id) {
+    fn admit(&self, id: Id) -> Work {
         self.model.running.borrow_mut().push((id, self.interface));
+        Work(id)
     }
 }
 
@@ -292,11 +296,11 @@ fn ready<T>(value: T) -> core::future::Ready<T> {
     core::future::ready(value)
 }
 
-fn end(model: &Model, id: Id, interface: Option<u8>) -> Result<(), CancelError> {
+fn end(model: &Model, id: Id) -> Result<(), CancelError> {
     let mut running = model.running.borrow_mut();
     let index = running
         .iter()
-        .position(|(running, by)| *running == id && interface.is_none_or(|own| own == *by))
+        .position(|(running, _)| *running == id)
         .ok_or(CancelError::NotRunning)?;
     running.remove(index);
     model.events.borrow_mut().push_back(id.0);
@@ -325,7 +329,7 @@ impl RadioPortOwner for Owner<'_> {
     }
 
     fn cancel(&mut self, id: Id) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
-        ready(Ok(end(self.0, id, None)))
+        ready(Ok(end(self.0, id)))
     }
 
     fn lifecycle(
@@ -343,14 +347,15 @@ impl RadioPortOwner for Owner<'_> {
 impl<'m> RadioPortSplit for Phase<'m> {
     type Fault = ();
     type Events = Events<'m>;
+    type Control = Control;
     type Clients = [Client<'m>; 2];
 
-    fn into_parts(self) -> (Events<'m>, [Client<'m>; 2]) {
+    fn into_parts(self) -> (Events<'m>, Control, [Client<'m>; 2]) {
         let client = |interface| Client {
             model: self.0,
             interface,
         };
-        (Events(self.0), [client(0), client(1)])
+        (Events(self.0), Control, [client(0), client(1)])
     }
 }
 
@@ -367,7 +372,7 @@ impl RadioPortEvents for Events<'_> {
 }
 
 impl RadioPortClient for Client<'_> {
-    type Id = Id;
+    type Work = Work;
     type Domain = Port;
     type Fault = ();
 
@@ -375,8 +380,11 @@ impl RadioPortClient for Client<'_> {
         ready(Ok(Err(ClockError::Unavailable)))
     }
 
-    fn cancel(&self, id: Id) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
-        ready(Ok(end(self.model, id, Some(self.interface))))
+    fn cancel<'a>(
+        &'a self,
+        work: &'a Work,
+    ) -> impl Future<Output = PortResult<(), CancelError, ()>> + 'a {
+        ready(Ok(end(self.model, work.0)))
     }
 }
 
@@ -399,15 +407,16 @@ fn a_phase_lends_clients_scoped_to_their_interface_and_its_leftovers_reach_the_o
     };
     let mut owner = Owner(&model);
     {
-        let (mut events, [station, access_point]) = owner.split().into_parts();
-        station.admit(Id(1));
-        access_point.admit(Id(2));
-        // A client ends only its own work.
+        let (mut events, _control, [station, access_point]) = owner.split().into_parts();
+        let joined = station.admit(Id(1));
+        let _served = access_point.admit(Id(2));
+        // A client names only work it admitted, by its value: it ends it
+        // once, and a second cancel proves the work ended.
+        assert_eq!(now_ready(station.cancel(&joined)), Ok(Ok(())));
         assert_eq!(
-            now_ready(access_point.cancel(Id(1))),
+            now_ready(station.cancel(&joined)),
             Ok(Err(CancelError::NotRunning))
         );
-        assert_eq!(now_ready(station.cancel(Id(1))), Ok(Ok(())));
         assert_eq!(now_ready(events.next_event()), Ok(Ok(1)));
     }
     // The phase ended with the access point's work in flight: the owner

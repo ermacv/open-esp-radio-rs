@@ -414,15 +414,22 @@ protocol:
 | Clock | The backend's radio time on the shared time contract, with a stated resolution and the relation of its epoch to monotonic time (`ClockInfo`); asynchronous under the same conditions as submission |
 
 **Authority.** An installed port has one owner
-(`oer_radio_port::RadioPortOwner`), which takes the lifecycle and each
-protocol's radio-wide settings on `&mut`, and lends the port out for one
+(`oer_radio_port::RadioPortOwner`), which takes on `&mut`, between running
+phases, the operations that conflict with work in flight: the lifecycle and
+each protocol's permanent channel move. It lends the port out for one
 running phase: `split` returns the phase's one event consumer
-(`RadioPortEvents`) and the protocol's client handles, each scoped to its
-interface (`RadioPortClient`). While they live, no owner call compiles, so
-an exclusive operation never meets a client's work and no backend refuses
-one as busy ([Ownership and refusals](#ownership-and-refusals)). The base
-`RadioPort` and the protocol ports move onto this shape in
-[#581](https://github.com/ermacv/open-esp-radio-rs/issues/581).
+(`RadioPortEvents`), one phase control for the radio-wide operations that
+only gate or tune admission while clients run (a Wi-Fi transmit gate,
+beacon-receive priority, EDCA, modem-sleep membership), and the protocol's
+client handles, each scoped to its interface (`RadioPortClient`), whose
+admitted work is a value only their own submissions return. While the
+parts live, no owner call compiles, so a lifecycle command or a channel
+move never meets a client's work and no backend refuses one as busy
+([Ownership and refusals](#ownership-and-refusals)). Work a phase leaves in
+flight ends through the owner's stream, which returns its bodies to their
+pools. The base `RadioPort` and the protocol ports move onto this shape in
+[#581](https://github.com/ermacv/open-esp-radio-rs/issues/581), and
+`RadioPort` then keeps no lifecycle or cancel of its own.
 
 **Correlation identities.** Each port keeps its own 32-bit identity type
 (`TxId`, `RequestId`, `EventId`), so a completion of one port cannot be

@@ -243,7 +243,7 @@ impl Corpus {
         };
         let mut references: BTreeMap<(usize, u64), Reference> = BTreeMap::new();
         for section in file.sections() {
-            for relocation in file.relocations(section.index).unwrap_or_default() {
+            for relocation in file.relocations(section.index).into_iter().flatten() {
                 if oer_elf::rv32::kind(relocation.r_type).role == Role::Hint {
                     continue;
                 }

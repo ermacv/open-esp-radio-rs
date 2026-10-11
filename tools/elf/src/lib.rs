@@ -555,16 +555,16 @@ impl<'data> Elf<'data> {
             .map(|s| section(&self.file, &s))
     }
 
-    /// The relocations of the section at `index`, in file order.
-    pub fn relocations(&self, index: usize) -> Result<Vec<Relocation>> {
+    /// The relocations of the section at `index`, in file order, read as
+    /// the caller iterates: nothing is collected.
+    pub fn relocations(&self, index: usize) -> Result<impl Iterator<Item = Relocation> + '_> {
         let header = self
             .file
             .section_by_index(object::SectionIndex(index))
             .map_err(parse_error)?;
         Ok(header
             .relocations()
-            .filter_map(|(at, r)| relocation(index, at, &r))
-            .collect())
+            .filter_map(move |(at, r)| relocation(index, at, &r)))
     }
 
     /// The value a relocation's symbol, section or absolute target plus its
@@ -663,7 +663,7 @@ impl<'data> Elf<'data> {
     pub fn code(&self, member: &str) -> Result<Vec<Code<'data>>> {
         let mut relocations: BTreeMap<usize, Vec<Relocation>> = BTreeMap::new();
         for s in self.sections() {
-            relocations.insert(s.index, self.relocations(s.index)?);
+            relocations.insert(s.index, self.relocations(s.index)?.collect());
         }
         let mut out = Vec::new();
         for s in self.symbols() {

@@ -302,7 +302,7 @@ fn check_object(
         let nonzero_bytes = section.data.iter().filter(|&&byte| byte != 0).count() as u64;
         let relocations = file
             .relocations(section.index)
-            .map_or(0, |relocations| relocations.len() as u64);
+            .map_or(0, |relocations| relocations.count() as u64);
         if nonzero_bytes == 0 && relocations == 0 {
             continue;
         }

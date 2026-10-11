@@ -275,6 +275,8 @@ struct Model {
     next_slot: core::cell::Cell<u32>,
     refuse_enable: core::cell::Cell<bool>,
     poisoned: core::cell::Cell<bool>,
+    /// `disable` answers `Pending` once before it ends.
+    slow_disable: core::cell::Cell<bool>,
     lifecycle: core::cell::RefCell<std::vec::Vec<&'static str>>,
 }
 
@@ -301,11 +303,11 @@ impl RadioWork for Token {
 }
 
 impl Client<'_> {
-    fn admit(&self) -> Work<'_, Token> {
+    fn admit(&self) -> Work<'_, Self> {
         let slot = self.model.next_slot.get();
         self.model.next_slot.set(slot + 1);
         self.model.running.borrow_mut().push((slot, self.interface));
-        Work::new(Token(slot))
+        Work::new(self, Token(slot))
     }
 }
 
@@ -362,26 +364,40 @@ impl<'m> PortBackend for Backend<'m> {
         sink: &'a mut dyn FnMut(u32),
     ) -> impl Future<Output = Result<(), Poisoned<()>>> + 'a {
         let model = self.0;
-        core::future::ready(if model.poisoned.get() {
-            Err(Poisoned { cause: () })
-        } else {
-            model.lifecycle.borrow_mut().push("disable");
-            // Disable ends every admitted work; its terminal goes to the
-            // sink before the port is disabled.
-            let slots: std::vec::Vec<u32> = model
-                .running
-                .borrow()
-                .iter()
-                .map(|(slot, _)| *slot)
-                .collect();
-            for slot in slots {
-                let _ = end(model, slot);
+        async move {
+            if model.slow_disable.get() {
+                let mut waited = false;
+                core::future::poll_fn(|_| {
+                    if waited {
+                        core::task::Poll::Ready(())
+                    } else {
+                        waited = true;
+                        core::task::Poll::Pending
+                    }
+                })
+                .await;
             }
-            while let Some(event) = model.events.borrow_mut().pop_front() {
-                sink(event);
+            if model.poisoned.get() {
+                Err(Poisoned { cause: () })
+            } else {
+                model.lifecycle.borrow_mut().push("disable");
+                // Disable ends every admitted work; its terminal goes to the
+                // sink before the port is disabled.
+                let slots: std::vec::Vec<u32> = model
+                    .running
+                    .borrow()
+                    .iter()
+                    .map(|(slot, _)| *slot)
+                    .collect();
+                for slot in slots {
+                    let _ = end(model, slot);
+                }
+                while let Some(event) = model.events.borrow_mut().pop_front() {
+                    sink(event);
+                }
+                Ok(())
             }
-            Ok(())
-        })
+        }
     }
 
     fn now(&self) -> impl Future<Output = PortResult<RadioInstant<Port>, ClockError, ()>> + '_ {
@@ -474,7 +490,7 @@ impl<'m> PortBody<Backend<'m>> for OnePhase<'_> {
             let joined_id = joined.id();
             let _served = access_point.admit();
             // A client ends its own work by its token, once.
-            assert_eq!(station.cancel(joined).await, Ok(Ok(())));
+            assert_eq!(joined.cancel().await, Ok(Ok(())));
             assert_eq!(events.next_event().await, Ok(Ok(joined_id)));
             self.cancelled.set(Some(joined_id));
         }
@@ -574,4 +590,39 @@ fn a_dropped_owner_abandons_its_backend_and_asserts_in_debug() {
     assert!(dropped.is_err());
     // The safety net stopped the backend before it asserted.
     assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
+}
+
+/// A body that drops its `disable` future after its first poll, while the
+/// backend still waits: the owner inside it is dropped mid-wait.
+struct DropTheDisable;
+
+impl<'m> PortBody<Backend<'m>> for DropTheDisable {
+    async fn run(self, owner: Owner<Backend<'m>, Disabled>) -> Ended<Backend<'m>> {
+        let Ok(enabled) = owner.enable().await else {
+            panic!("the model enables");
+        };
+        {
+            let mut sink = |_| {};
+            let mut disabling = core::pin::pin!(enabled.disable(&mut sink));
+            let first = disabling
+                .as_mut()
+                .poll(&mut core::task::Context::from_waker(
+                    core::task::Waker::noop(),
+                ));
+            assert!(first.is_pending());
+        }
+        panic!("the dropped owner's safety net asserts first")
+    }
+}
+
+#[test]
+fn an_owner_dropped_while_its_disable_waits_abandons_its_backend() {
+    let model = Model::default();
+    model.slow_disable.set(true);
+    let dropped = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| {
+        now_ready(run_port(Backend(&model), DropTheDisable))
+    }));
+    assert!(dropped.is_err());
+    // The owner held the backend across the wait: its safety net stopped it.
+    assert_eq!(*model.lifecycle.borrow(), ["enable", "abandon"]);
 }

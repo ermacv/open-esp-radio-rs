@@ -139,8 +139,19 @@ struct Relocation {
 struct Operation {
     op: SemanticOp,
     opaque_call: bool,
+    /// The function a call reaches, where its instruction or relocation
+    /// names it.
+    callee: Option<CalleeAt>,
     relocation: Option<Relocation>,
     gap: Option<SemanticGapReason>,
+}
+
+/// Where a call names its callee: an address in an image, or the
+/// relocation (by index) a relocatable object's call carries.
+#[derive(Clone, Copy)]
+enum CalleeAt {
+    Address(u32),
+    Relocation(usize),
 }
 
 fn prepare(
@@ -158,6 +169,7 @@ fn prepare(
             node.decoded.flow,
             InstructionFlow::Jump { link: true, .. } | InstructionFlow::Indirect { link: true, .. }
         ),
+        callee: None,
         relocation: None,
         gap: None,
     };
@@ -171,6 +183,14 @@ fn prepare(
     // ET_EXEC bytes already contain link edits. Retained static relocations
     // remain provenance; applying object-file relocation semantics again is wrong.
     if input.image.is_some() {
+        if let InstructionFlow::Jump {
+            displacement,
+            link: true,
+        } = node.decoded.flow
+        {
+            let target = (node.offset as u32).wrapping_add(displacement as u32);
+            result.callee = Some(CalleeAt::Address(target));
+        }
         return Ok(result);
     }
     for site in input.relocations.first_at(node.offset.saturating_sub(4))
@@ -187,10 +207,18 @@ fn prepare(
             if matches!(isa.lift(&input.bytes[start..start + 4]), SemanticOp::Upper { dest, pc_relative: true, .. } if dest == base && dest != 0)
             {
                 result.opaque_call = true;
+                result.callee = Some(CalleeAt::Relocation(site));
             }
         }
         if raw.offset != node.offset {
             continue;
+        }
+        // A `jal` or `c.jal` call names its callee by its own jump
+        // relocation (`R_RISCV_JAL`, `R_RISCV_RVC_JUMP`).
+        if matches!(node.decoded.flow, InstructionFlow::Jump { link: true, .. })
+            && input.relocations.normalized(site).kind == ReferenceKind::Branch
+        {
+            result.callee = Some(CalleeAt::Relocation(site));
         }
         let role = isa.value_relocation(raw, op);
         if role == ValueRelocation::Ignore {
@@ -1427,16 +1455,25 @@ fn evaluate(
             }
         }
         // A call's result registers name its results whatever is assumed
-        // about the registers it preserves.
+        // about the registers it preserves, unless the callee's own analysis
+        // proved every value they hold when it returns.
+        let callee = callee(op, node, input, &incoming);
         for r in CallAbi::RiscvInteger.results() {
-            state[usize::from(r)] = symbols.expression(
-                node.offset,
-                Expression::CallResult {
-                    callsite: node.offset,
-                    register: r,
-                },
-                c,
-            )?;
+            let returned = match callee {
+                Some(callee) => returned(input.returns.returns(callee, r), &mut symbols.sets, c)?,
+                None => None,
+            };
+            state[usize::from(r)] = match returned {
+                Some(value) => value,
+                None => symbols.expression(
+                    node.offset,
+                    Expression::CallResult {
+                        callsite: node.offset,
+                        register: r,
+                    },
+                    c,
+                )?,
+            };
         }
     }
     state[0] = Value::Constant(0);
@@ -1444,6 +1481,54 @@ fn evaluate(
         effects.register = Some((0, Value::Constant(0)));
     }
     Ok((state, effects))
+}
+
+/// The callee of the call `op` at `node` makes: the address or relocated
+/// global symbol its instruction names, or, in an image, the address the
+/// register it jumps through holds before the call.
+fn callee<'a>(
+    op: Operation,
+    node: &Node,
+    input: &'a FunctionInput<'_>,
+    incoming: &State,
+) -> Option<Callee<'a>> {
+    match op.callee {
+        Some(CalleeAt::Address(address)) => Some(Callee::Address(address)),
+        Some(CalleeAt::Relocation(site)) => {
+            let target = &input.relocations.normalized(site).target;
+            // Only a global symbol names one function across objects.
+            (target.binding == 1 && !target.name.is_empty()).then_some(Callee::Symbol(&target.name))
+        }
+        None if input.image.is_some() => {
+            let (base, offset, true) = node.decoded.flow.through_register()? else {
+                return None;
+            };
+            match incoming[usize::from(base)] {
+                Value::Constant(at) | Value::Image(at) => {
+                    Some(Callee::Address(at.wrapping_add(offset as u32) & !1))
+                }
+                _ => None,
+            }
+        }
+        None => None,
+    }
+}
+
+/// The value a call's result register holds: the constants its callee
+/// returns, while they fit one set of alternatives.
+fn returned(
+    values: Option<&[u32]>,
+    sets: &mut Sets<'_>,
+    c: &mut dyn RunControl,
+) -> Result<Option<Value>> {
+    let Some((&first, rest)) = values.and_then(<[u32]>::split_first) else {
+        return Ok(None);
+    };
+    let mut value = Value::Constant(first);
+    for &next in rest {
+        value = sets.join(value, Value::Constant(next), c)?;
+    }
+    Ok((value != Value::Widened && value != Value::Unknown).then_some(value))
 }
 
 #[cfg(test)]
@@ -1563,6 +1648,7 @@ mod tests {
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
             jumps: &[],
+            returns: &NoReturns,
         };
         let memory = WorkingMemory::new(1024 * 1024).unwrap();
         let mut sink = Records::default();
@@ -1696,6 +1782,7 @@ mod tests {
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
             jumps: &[],
+            returns: &NoReturns,
         };
         let memory = WorkingMemory::new(1024 * 1024).unwrap();
         let mut sink = Records::default();
@@ -1817,6 +1904,7 @@ mod tests {
                 relocations: &PreparedReferences::empty(),
                 data_ranges: &[],
                 jumps,
+                returns: &NoReturns,
             };
             let memory = WorkingMemory::new(1024 * 1024).unwrap();
             let mut sink = Records::default();
@@ -1913,6 +2001,7 @@ mod tests {
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
             jumps: &[],
+            returns: &NoReturns,
         };
         let node = Node {
             offset: 0,
@@ -1944,6 +2033,7 @@ mod tests {
                         signed: false,
                     },
                     opaque_call: false,
+                    callee: None,
                     relocation: None,
                     gap: None,
                 },
@@ -2008,6 +2098,7 @@ mod tests {
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
             jumps: &[],
+            returns: &NoReturns,
         };
         let mut node = Node {
             offset: 0,
@@ -2028,6 +2119,7 @@ mod tests {
             Operation {
                 op: SemanticOp::Link { dest: 1 },
                 opaque_call: true,
+                callee: None,
                 relocation: None,
                 gap: None,
             },
@@ -2045,6 +2137,7 @@ mod tests {
             Operation {
                 op: read(10),
                 opaque_call: false,
+                callee: None,
                 relocation: None,
                 gap: Some(SemanticGapReason::ConflictingBoundary),
             },
@@ -2072,6 +2165,7 @@ mod tests {
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
             jumps: &[],
+            returns: &NoReturns,
         };
         let nodes: Vec<_> = [0, 2]
             .into_iter()
@@ -2139,6 +2233,7 @@ mod tests {
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
             jumps: &[],
+            returns: &NoReturns,
         };
         let node = Node {
             offset: 0,
@@ -2159,6 +2254,7 @@ mod tests {
         let operation = Operation {
             op: SemanticOp::Link { dest: 1 },
             opaque_call: true,
+            callee: None,
             relocation: None,
             gap: None,
         };
@@ -2307,6 +2403,7 @@ mod tests {
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
             jumps: &[],
+            returns: &NoReturns,
         };
         let memory = WorkingMemory::new(1024 * 1024).unwrap();
         let mut sink = Records::default();

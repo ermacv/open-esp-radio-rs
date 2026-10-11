@@ -33,11 +33,19 @@ struct Assumptions {
     /// an access through a preserved register loses its address.
     #[arg(long, value_enum)]
     abi: Option<AbiArg>,
+    /// Take the constants a called function returns at every call to it,
+    /// where its own analysis proves them; a first pass analyzes every
+    /// function to collect them, so the analysis takes about twice as long.
+    #[arg(long)]
+    call_returns: bool,
 }
 
 impl Assumptions {
-    fn abi(&self) -> Option<CallAbi> {
-        self.abi.map(|AbiArg::RiscvInteger| CallAbi::RiscvInteger)
+    fn analysis(&self) -> app::library::Assumptions {
+        app::library::Assumptions {
+            abi: self.abi.map(|AbiArg::RiscvInteger| CallAbi::RiscvInteger),
+            call_returns: self.call_returns,
+        }
     }
 }
 
@@ -314,7 +322,7 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 ranges,
                 filter,
                 group_by.map(GroupKey::by),
-                assumptions.abi(),
+                assumptions.analysis(),
                 limits,
                 format,
             )
@@ -324,33 +332,40 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             functions,
             assumptions,
             limits,
-        } => function_records(inputs, functions, assumptions.abi(), limits, format),
+        } => function_records(inputs, functions, assumptions.analysis(), limits, format),
         Command::FieldAccesses {
             inputs,
             offset,
             width,
             assumptions,
             limits,
-        } => field_accesses(inputs, offset, width, assumptions.abi(), limits, format),
+        } => field_accesses(
+            inputs,
+            offset,
+            width,
+            assumptions.analysis(),
+            limits,
+            format,
+        ),
         Command::Callers {
             inputs,
             symbols,
             assumptions,
             limits,
-        } => callers(inputs, symbols, assumptions.abi(), limits, format),
+        } => callers(inputs, symbols, assumptions.analysis(), limits, format),
         Command::CallArguments {
             inputs,
             symbols,
             assumptions,
             limits,
-        } => call_arguments(inputs, symbols, assumptions.abi(), limits, format),
+        } => call_arguments(inputs, symbols, assumptions.analysis(), limits, format),
         Command::MmioDiff {
             old,
             new,
             ranges,
             assumptions,
             limits,
-        } => mmio_diff(old, new, ranges, assumptions.abi(), limits, format),
+        } => mmio_diff(old, new, ranges, assumptions.analysis(), limits, format),
         Command::Symbols {
             inputs,
             pattern,
@@ -371,7 +386,7 @@ fn field_accesses(
     inputs: Vec<OsString>,
     offset: i64,
     width: Option<u8>,
-    abi: Option<CallAbi>,
+    assumptions: app::library::Assumptions,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -397,7 +412,7 @@ fn field_accesses(
     let mut partial_causes = blobray_domain::PartialCauses::default();
     app::library::analyze_library(
         &executables,
-        abi,
+        assumptions,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
@@ -439,7 +454,8 @@ fn field_accesses(
                         },
                     )
                     .collect(),
-                abi,
+                abi: assumptions.abi,
+                call_returns: assumptions.call_returns,
                 offset,
                 width,
                 functions,
@@ -487,7 +503,7 @@ fn field_accesses(
                 blobray_cli::partial::human(&partial_causes),
             )
             .map_err(io_error)?;
-            if abi.is_none() && unknown_addresses > 0 {
+            if assumptions.abi.is_none() && unknown_addresses > 0 {
                 writeln!(
                     out,
                     "without --abi riscv-integer every register is unknown after a call the analysis cannot follow; accesses through a preserved register then have no address"
@@ -504,7 +520,7 @@ fn field_accesses(
 fn function_records(
     inputs: Vec<OsString>,
     names: Vec<String>,
-    abi: Option<CallAbi>,
+    assumptions: app::library::Assumptions,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -547,7 +563,7 @@ fn function_records(
     let mut functions = Vec::new();
     app::library::analyze_library(
         &executables,
-        abi,
+        assumptions,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
@@ -603,7 +619,8 @@ fn function_records(
                         },
                     )
                     .collect(),
-                abi,
+                abi: assumptions.abi,
+                call_returns: assumptions.call_returns,
                 functions,
                 missing,
             };
@@ -777,7 +794,7 @@ fn mmio_diff(
     old: Vec<OsString>,
     new: Vec<OsString>,
     ranges: Vec<blobray_domain::ImageRegion>,
-    abi: Option<CallAbi>,
+    assumptions: app::library::Assumptions,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -803,7 +820,7 @@ fn mmio_diff(
     let diff = app::mmio_diff::mmio_diff(
         &old,
         &new,
-        abi,
+        assumptions,
         &ranges,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
@@ -816,7 +833,8 @@ fn mmio_diff(
                 schema: blobray_cli::wire::MMIO_DIFF_SCHEMA,
                 old: described(&old_inputs, &old),
                 new: described(&new_inputs, &new),
-                abi,
+                abi: assumptions.abi,
+                call_returns: assumptions.call_returns,
                 diff,
             };
             serde_json::to_writer(&mut out, &document).map_err(json_error)?;
@@ -1182,7 +1200,7 @@ fn register_accesses(
     ranges: Vec<blobray_domain::ImageRegion>,
     filter: blobray_cli::access_groups::AccessFilter,
     group_by: Option<blobray_cli::access_groups::GroupBy>,
-    abi: Option<CallAbi>,
+    assumptions: app::library::Assumptions,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -1221,17 +1239,18 @@ fn register_accesses(
             .collect();
         write!(
             out,
-            "{{\"schema\":{},\"inputs\":{},\"abi\":{},\"records\":[",
+            "{{\"schema\":{},\"inputs\":{},\"abi\":{},\"call_returns\":{},\"records\":[",
             blobray_cli::wire::REGISTER_ACCESSES_SCHEMA,
             serde_json::to_string(&described).map_err(json_error)?,
-            serde_json::to_string(&abi).map_err(json_error)?
+            serde_json::to_string(&assumptions.abi).map_err(json_error)?,
+            assumptions.call_returns
         )
         .map_err(io_error)?;
     }
     let mut first = true;
     let summary = app::library::register_accesses(
         &executables,
-        abi,
+        assumptions,
         &ranges,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
@@ -1299,7 +1318,7 @@ fn register_accesses(
 fn call_arguments(
     inputs: Vec<OsString>,
     symbols: Vec<String>,
-    abi: Option<CallAbi>,
+    assumptions: app::library::Assumptions,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -1327,7 +1346,7 @@ fn call_arguments(
     let mut partial_causes = blobray_domain::PartialCauses::default();
     app::library::analyze_library(
         &executables,
-        abi,
+        assumptions,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
@@ -1371,7 +1390,8 @@ fn call_arguments(
                         },
                     )
                     .collect(),
-                abi,
+                abi: assumptions.abi,
+                call_returns: assumptions.call_returns,
                 symbols,
                 callers,
                 blocked,
@@ -1432,7 +1452,7 @@ fn call_arguments(
 fn callers(
     inputs: Vec<OsString>,
     symbols: Vec<String>,
-    abi: Option<CallAbi>,
+    assumptions: app::library::Assumptions,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -1455,7 +1475,7 @@ fn callers(
     let mut gaps = 0_u64;
     app::library::analyze_library(
         &executables,
-        abi,
+        assumptions,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
         &mut control,
@@ -1494,7 +1514,8 @@ fn callers(
                         },
                     )
                     .collect(),
-                abi,
+                abi: assumptions.abi,
+                call_returns: assumptions.call_returns,
                 symbols,
                 callers,
                 blocked,

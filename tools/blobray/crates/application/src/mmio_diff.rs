@@ -211,7 +211,7 @@ fn symbols<'m>(
 fn collect<'m>(
     build: &str,
     inputs: &[Executable],
-    abi: Option<CallAbi>,
+    assumptions: crate::library::Assumptions,
     ranges: &[ImageRegion],
     decoder: &dyn FunctionSemantics,
     memory: &'m WorkingMemory,
@@ -222,8 +222,13 @@ fn collect<'m>(
     let mut functions: BTreeMap<String, Accesses> = BTreeMap::new();
     let mut blocked = 0;
     let mut gaps = Vec::new();
-    crate::library::analyze_library(inputs, abi, decoder, memory, control, &mut |outcome, c| {
-        match outcome {
+    crate::library::analyze_library(
+        inputs,
+        assumptions,
+        decoder,
+        memory,
+        control,
+        &mut |outcome, c| match outcome {
             crate::library::LibraryOutcome::Analyzed(analyzed) => {
                 let name = stable_name(analyzed.function.name.as_deref());
                 admit(memory, admitted, name.len() + size_of::<Accesses>(), c)?;
@@ -268,8 +273,8 @@ fn collect<'m>(
                 });
                 Ok(())
             }
-        }
-    })?;
+        },
+    )?;
     if !functions.values().any(|function| function.analyzed) {
         let why = match (gaps.first(), blocked) {
             (Some(gap), _) => gap.reason.clone(),
@@ -447,7 +452,7 @@ fn unmatched<'m>(
 pub fn mmio_diff(
     old: &[Executable],
     new: &[Executable],
-    abi: Option<CallAbi>,
+    assumptions: crate::library::Assumptions,
     ranges: &[ImageRegion],
     decoder: &dyn FunctionSemantics,
     memory: &WorkingMemory,
@@ -464,7 +469,7 @@ pub fn mmio_diff(
     let (mut before, blocked_before, gaps_before) = collect(
         "old",
         old,
-        abi,
+        assumptions,
         ranges,
         decoder,
         memory,
@@ -474,7 +479,7 @@ pub fn mmio_diff(
     let (mut after, blocked_after, gaps_after) = collect(
         "new",
         new,
-        abi,
+        assumptions,
         ranges,
         decoder,
         memory,

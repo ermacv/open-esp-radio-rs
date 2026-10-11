@@ -19,6 +19,9 @@ pub struct FunctionInput<'a> {
     pub data_ranges: &'a [CodeRange],
     /// Indirect jumps whose targets the caller knows from the build's facts.
     pub jumps: &'a [KnownJump],
+    /// The constant results of the functions this one calls, which a call
+    /// takes for its result registers ([`CallReturns`]).
+    pub returns: &'a dyn CallReturns,
 }
 /// The targets of one indirect jump that the build's facts name, such as
 /// the entries a jump table's relocations hold: the control-flow graph
@@ -664,6 +667,7 @@ mod tests {
                 relocations: &PreparedReferences::empty(),
                 data_ranges: &[],
                 jumps,
+                returns: &NoReturns,
             };
             let memory = WorkingMemory::new(1024 * 1024).unwrap();
             let mut meter = Meter(0);
@@ -705,6 +709,7 @@ mod tests {
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
             jumps: &jumps,
+            returns: &NoReturns,
         };
         struct Budget(u64);
         impl RunControl for Budget {
@@ -748,6 +753,7 @@ mod tests {
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
             jumps: &jumps,
+            returns: &NoReturns,
         };
         // The graph's own capacity fits; the known jumps' edges do not.
         let memory = WorkingMemory::new(8 * 1024).unwrap();
@@ -816,6 +822,7 @@ mod tests {
             relocations: &PreparedReferences::empty(),
             data_ranges: &[],
             jumps: known,
+            returns: &NoReturns,
         };
         let memory = WorkingMemory::new(1024 * 1024).unwrap();
         let source = Proves {

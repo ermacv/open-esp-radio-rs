@@ -1015,8 +1015,8 @@ fn the_runner_runs_retry_delays() {
 fn the_clock_and_csl_state_belong_to_the_installed_radio() {
     let runtime = enabled::<4>();
     assert_eq!(
-        runtime.port.clock_info().epoch,
-        oer_ieee802154::RadioEpoch::Monotonic
+        runtime.port.clock_info().monotonic,
+        Some(oer_ieee802154::ClockRelation::IDENTICAL)
     );
     assert_eq!(
         block_on(runtime.port.now())

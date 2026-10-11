@@ -1394,7 +1394,7 @@ where
     ) -> impl Future<Output = PortResult<Ieee80211Instant, ClockError, LowerMacFault>> + '_ {
         ready(
             self.clock_sample()
-                .map(|sample| sample.map(|sample| sample.radio)),
+                .map(|sample| sample.map(|sample| sample.source)),
         )
     }
 
@@ -1572,7 +1572,7 @@ where
 
     /// The radio clock is the Wi-Fi MAC local time, the counter of receive
     /// timestamps: affine to the monotonic clock ([`MAC_CLOCK_INFO`]).
-    fn clock_info(&self) -> ClockInfo {
+    fn clock_info(&self) -> ClockInfo<Ieee80211Radio> {
         MAC_CLOCK_INFO
     }
 
@@ -1763,8 +1763,8 @@ where
             .filter(|(before, after)| before.generation == after.generation)
             .and_then(|(before, after)| {
                 after
-                    .radio
-                    .checked_duration_since(before.radio)
+                    .source
+                    .checked_duration_since(before.source)
                     .and_then(|elapsed| {
                         elapsed.checked_add(oer_time::RadioDuration::from_micros(1))
                     })
@@ -1776,7 +1776,7 @@ where
         Ok(reading.map(|(tsf, generation)| TsfSample {
             tsf,
             local: Ieee80211Stamp {
-                at: before.radio,
+                at: before.source,
                 generation: before.generation,
             },
             uncertainty,

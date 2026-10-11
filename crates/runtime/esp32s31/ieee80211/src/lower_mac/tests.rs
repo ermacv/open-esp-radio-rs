@@ -687,15 +687,15 @@ fn an_attempt_completes_through_the_interrupt_entry_and_the_queue() {
         Ok(Ok(Ieee80211Instant::from_micros(u64::from(MAC_AT_EPOCH))))
     );
     assert!(matches!(
-        port.clock_info().epoch,
-        oer_ieee80211_lower_mac::RadioEpoch::Affine { .. }
+        port.clock_info().monotonic.map(|relation| relation.rate()),
+        Some(oer_ieee80211_lower_mac::RelationRate::Affine { .. })
     ));
     let sample = port.clock_sample().unwrap().unwrap();
     assert_eq!(
-        sample.radio,
+        sample.source,
         Ieee80211Instant::from_micros(u64::from(MAC_AT_EPOCH))
     );
-    assert_eq!(sample.monotonic, oer_time::Instant::EPOCH);
+    assert_eq!(sample.target, oer_time::Instant::EPOCH);
 }
 
 #[test]
@@ -902,7 +902,9 @@ fn received_frames_are_copied_and_overflow_is_reported_once() {
     );
     assert_eq!(
         port.clock_info()
-            .to_monotonic_with(stamp, &sample)
+            .monotonic
+            .unwrap()
+            .project(stamp.at, stamp.generation, &sample)
             .map(|projected| projected.at),
         Ok(oer_time::Instant::EPOCH)
     );
@@ -1562,10 +1564,10 @@ fn tsf_sample_checks_radio_elapsed_and_preserves_both_generations() {
     let tsf = VifTsf::new(STA, oer_ieee80211_mac::tsf::TsfInstant::from_micros(777));
     port.set_tsf(tsf).unwrap().unwrap();
     let sample = |radio, generation| oer_ieee80211_lower_mac::Ieee80211ClockSample {
-        radio: Ieee80211Instant::from_micros(radio),
-        monotonic: oer_time::Instant::from_micros(42),
+        source: Ieee80211Instant::from_micros(radio),
+        target: oer_time::Instant::from_micros(42),
         uncertainty: oer_time::Duration::from_micros(0),
-        generation,
+        generation: crate::clock_generation(generation),
     };
     port.runtime
         .timer
@@ -1575,7 +1577,7 @@ fn tsf_sample_checks_radio_elapsed_and_preserves_both_generations() {
     let measured = port.tsf_sample(STA).unwrap().unwrap();
     assert_eq!(measured.tsf, tsf);
     assert_eq!(measured.local.at, Ieee80211Instant::from_micros(10));
-    assert_eq!(measured.local.generation, 7);
+    assert_eq!(measured.local.generation, crate::clock_generation(7));
     assert_eq!(
         measured.uncertainty,
         oer_ieee80211_lower_mac::Ieee80211Duration::from_micros(6)
@@ -1604,5 +1606,5 @@ fn tsf_sample_checks_radio_elapsed_and_preserves_both_generations() {
     let maximum = port.tsf_sample(STA).unwrap().unwrap();
     assert_eq!(maximum.uncertainty.as_micros(), u64::MAX);
     assert_eq!(maximum.generation, tsf_generation);
-    assert_eq!(maximum.local.generation, 7);
+    assert_eq!(maximum.local.generation, crate::clock_generation(7));
 }

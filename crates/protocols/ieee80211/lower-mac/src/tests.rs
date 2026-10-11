@@ -811,15 +811,16 @@ fn a_poisoned_port_reports_its_terminal_event_after_the_earlier_ones() {
 #[test]
 fn the_model_clock_is_monotonic_and_samples_one_reading() {
     let model = Model::new();
-    assert_eq!(model.clock_info().epoch, RadioEpoch::Monotonic);
+    let relation = model.clock_info().monotonic;
+    assert_eq!(relation, Some(ClockRelation::IDENTICAL));
     model.set_now(Ieee80211Instant::from_micros(1_234));
     let sample = model.clock_sample().unwrap().unwrap();
-    assert_eq!(sample.radio, Ieee80211Instant::from_micros(1_234));
-    assert_eq!(sample.monotonic.as_micros(), 1_234);
+    assert_eq!(sample.source, Ieee80211Instant::from_micros(1_234));
+    assert_eq!(sample.target.as_micros(), 1_234);
     assert_eq!(
-        model
-            .clock_info()
-            .to_monotonic_with(sample.stamp(), &sample)
+        relation
+            .unwrap()
+            .project(sample.source, sample.generation, &sample)
             .map(|projected| projected.at.as_micros()),
         Ok(1_234)
     );
@@ -951,45 +952,42 @@ fn tsf_values_of_different_interfaces_do_not_combine() {
 
 #[test]
 fn a_tsf_sample_projects_both_ways_with_the_drift_bound() {
-    const CURRENT: TsfGeneration = TsfGeneration { epoch: 2, jump: 7 };
+    let current = tsf_generation(2, 7);
     let sample = TsfSample {
         tsf: VifTsf::new(STATION, TsfInstant::from_micros(10_000_000)),
         local: Ieee80211Stamp {
             at: Ieee80211Instant::from_micros(500_000),
-            generation: 3,
+            generation: radio_generation(3),
         },
         uncertainty: Ieee80211Duration::from_micros(2),
-        generation: CURRENT,
+        generation: current,
     };
     let distance = 1_000_000;
     let drift = (distance * u64::from(TSF_DRIFT_PPM)).div_ceil(1_000_000);
     let later = Ieee80211Stamp {
         at: Ieee80211Instant::from_micros(500_000 + distance),
-        generation: 3,
+        generation: radio_generation(3),
     };
-    let projected = sample.tsf_at(later, CURRENT).unwrap();
+    let projected = sample.tsf_at(later, current).unwrap();
     assert_eq!(projected.at.at.as_micros(), 10_000_000 + distance);
     assert_eq!(projected.at.vif, STATION);
     assert_eq!(projected.uncertainty.as_micros(), 2 + drift);
     // The inverse lands on the same radio stamp.
-    let back = sample.local_at(projected.at, CURRENT).unwrap().unwrap();
+    let back = sample.local_at(projected.at, current).unwrap().unwrap();
     assert_eq!(back.at, later);
     assert_eq!(back.uncertainty.as_micros(), 2 + drift);
     // A stamp of another radio-clock generation, a TSF of another
     // interface, and a value before the TSF's start do not project.
     let stale = Ieee80211Stamp {
-        generation: 4,
+        generation: radio_generation(4),
         ..later
     };
     assert_eq!(
-        sample.tsf_at(stale, CURRENT),
+        sample.tsf_at(stale, current),
         Err(TsfProjectionError::StaleStamp)
     );
     // A sample of an earlier generation of the relation does not convert.
-    let later_generation = TsfGeneration {
-        jump: CURRENT.jump + 1,
-        ..CURRENT
-    };
+    let later_generation = tsf_generation(2, 8);
     assert_eq!(
         sample.tsf_at(later, later_generation),
         Err(TsfProjectionError::StaleSample)
@@ -1000,19 +998,19 @@ fn a_tsf_sample_projects_both_ways_with_the_drift_bound() {
     );
     assert!(
         sample
-            .local_at(VifTsf::new(ACCESS_POINT, projected.at.at), CURRENT)
+            .local_at(VifTsf::new(ACCESS_POINT, projected.at.at), current)
             .is_err()
     );
     let before_start = Ieee80211Stamp {
         at: Ieee80211Instant::from_micros(0),
-        generation: 3,
+        generation: radio_generation(3),
     };
     assert_eq!(
         TsfSample {
             tsf: VifTsf::new(STATION, TsfInstant::from_micros(10)),
             ..sample
         }
-        .tsf_at(before_start, CURRENT),
+        .tsf_at(before_start, current),
         Err(TsfProjectionError::OutOfRange)
     );
 }
@@ -1265,7 +1263,7 @@ fn tsf_relations_of_different_epochs_never_share_a_generation() {
     let mut first_jumped = first;
     first_jumped.break_relation();
     second.break_relation();
-    assert_eq!(first_jumped.generation().jump, second.generation().jump);
+    assert_eq!(first_jumped.generation().jump(), second.generation().jump());
     assert_ne!(first_jumped.generation(), second.generation());
 }
 
@@ -1599,12 +1597,18 @@ fn tsf_tolerance_failure_preserves_the_relation() {
     relation
         .set(TsfInstant::from_micros(0), TsfInstant::from_micros(0))
         .unwrap();
-    let before = relation;
+    let before = relation.generation();
     assert_eq!(
         relation.set(TsfInstant::from_micros(1), TsfInstant::from_micros(2)),
         Err(TsfTimingError::ToleranceOverflow)
     );
-    assert_eq!(relation, before);
+    // Neither the generation nor the last sample moved: the same set still
+    // fails the same way.
+    assert_eq!(relation.generation(), before);
+    assert_eq!(
+        relation.set(TsfInstant::from_micros(1), TsfInstant::from_micros(2)),
+        Err(TsfTimingError::ToleranceOverflow)
+    );
     assert_eq!(
         TsfRelation::new(8, oer_ieee80211_mac::tsf::TsfDuration::ZERO)
             .tolerance(oer_time::RadioDuration::from_micros(u64::MAX)),
@@ -1612,4 +1616,22 @@ fn tsf_tolerance_failure_preserves_the_relation() {
             (u128::from(u64::MAX) * u128::from(TSF_DRIFT_PPM)).div_ceil(1_000_000) as u64
         ))
     );
+}
+
+/// Generation `jumps` of the port's radio-clock relation.
+fn radio_generation(jumps: u32) -> Generation<Ieee80211Instant, oer_time::Instant> {
+    let mut source = GenerationSource::new(0);
+    for _ in 0..jumps {
+        source.jump();
+    }
+    source.current()
+}
+
+/// Generation `jumps` of a TSF relation opened in `epoch`.
+fn tsf_generation(epoch: u32, jumps: u32) -> TsfGeneration {
+    let mut source = GenerationSource::new(epoch);
+    for _ in 0..jumps {
+        source.jump();
+    }
+    source.current()
 }

@@ -146,8 +146,8 @@ fn unavailable_or_changed_radio_clock_retains_the_published_aggregate_and_comple
         tx.service(&mut hardware, wake),
         Err(AggregateTxError::Retry(
             AmpduRetryError::ClockGenerationChanged {
-                expected: 1,
-                observed: 2
+                expected: crate::clock_generation(1),
+                observed: crate::clock_generation(2)
             }
         ))
     );

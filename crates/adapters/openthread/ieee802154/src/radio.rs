@@ -1,13 +1,14 @@
 //! `openthread_radio::Radio` over an IEEE 802.15.4 radio port.
 
 use heapless::Deque;
+use oer_ieee802154::ClockRelation;
 use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, CorrelationIds, CslReceiver,
     EnergyScanRequest, EnhancedAckGeneration, EventsLost, FrameCounterUpdate, FrameView,
     Ieee802154Instant, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError,
-    LifecycleEvent, LinkMetrics, PendingTableHalf, ProbingInitiator, RadioCommand, RadioEpoch,
-    RadioEvent, RadioSetting, ReceivedFrame, RequestId, ScheduledReceiveRequest, SettingError,
-    TimeSync, TxMode, TxRequest, TxSecurity,
+    LifecycleEvent, LinkMetrics, PendingTableHalf, ProbingInitiator, RadioCommand, RadioEvent,
+    RadioSetting, ReceivedFrame, RequestId, ScheduledReceiveRequest, SettingError, TimeSync,
+    TxMode, TxRequest, TxSecurity,
 };
 use oer_time::Clock;
 use openthread_radio::{
@@ -427,9 +428,9 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
 
     async fn init(&mut self) -> Result<RadioCaps, Self::Error> {
         // OpenThread reads the radio time from the image's monotonic clock
-        // (`MonotonicRadioClock`), which is the port's only for a port in
-        // that epoch.
-        if self.port.clock_info().epoch != RadioEpoch::Monotonic {
+        // (`MonotonicRadioClock`), which is the port's only for a port whose
+        // clock is that clock.
+        if self.port.clock_info().monotonic != Some(ClockRelation::IDENTICAL) {
             return Err(RadioErrorKind::Other);
         }
         self.settle().await;
@@ -759,7 +760,7 @@ mod tests;
 /// `otPlatTimeGet`: the monotonic clock the composition binds the port to.
 ///
 /// [`OpenThreadRadio`]'s `init` refuses a port whose clock is not the
-/// image's monotonic clock ([`RadioEpoch::Monotonic`]), so this clock reads
+/// image's monotonic clock (a [`ClockRelation::IDENTICAL`] relation), so this clock reads
 /// the port's radio time: the epoch of its scheduled operations and receive
 /// timestamps. Pass it to the OpenThread constructor with the port
 /// [`OpenThreadRadio`] drives.

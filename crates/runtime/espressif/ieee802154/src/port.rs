@@ -271,7 +271,7 @@ where
     /// The radio clock is the runtime's clock (`esp_timer_get_time` in
     /// ESP-IDF), which the ESP32-S31 composition binds to the image's
     /// monotonic clock.
-    fn clock_info(&self) -> ClockInfo {
+    fn clock_info(&self) -> ClockInfo<oer_ieee802154::Ieee802154Radio> {
         ClockInfo::MONOTONIC_MICROS
     }
 

@@ -487,13 +487,8 @@ impl World {
                             let sample = model.clock_sample().unwrap().unwrap();
                             model
                                 .clock_info()
-                                .to_monotonic_with(
-                                    oer_ieee80211_lower_mac::Ieee80211Stamp {
-                                        at: until,
-                                        generation: sample.generation,
-                                    },
-                                    &sample,
-                                )
+                                .monotonic?
+                                .project(until, sample.generation, &sample)
                                 .ok()
                                 .map(|projected| projected.at)
                         }),

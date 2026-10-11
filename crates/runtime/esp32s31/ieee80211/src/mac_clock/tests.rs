@@ -4,7 +4,9 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_time::{Duration, Instant};
 use oer_time_virtual::VirtualClock;
 
-use super::{LocalTimeCounter, MAC_CLOCK_INFO, MacClockReader, MacClockStorage, ReceptionTimer};
+use super::{
+    LocalTimeCounter, MAC_CLOCK_RELATION, MacClockReader, MacClockStorage, ReceptionTimer,
+};
 
 /// A MAC counter that reads the virtual monotonic time plus an offset, or
 /// holds still while stopped.
@@ -54,11 +56,12 @@ fn a_reception_converts_to_its_monotonic_time() {
     clock.advance(Duration::from_micros(400)).unwrap();
     assert_eq!(mac.received_at(stamped), Some(at(1_000_000)));
     let sample = mac.sample().unwrap();
-    assert_eq!(sample.generation, 0);
-    assert_eq!(sample.monotonic, at(1_000_400));
+    assert_eq!(sample.generation, crate::clock_generation(0));
+    assert_eq!(sample.target, at(1_000_400));
     assert_eq!(
-        MAC_CLOCK_INFO
-            .to_monotonic_with(mac.stamp(stamped).unwrap(), &sample)
+        mac.stamp(stamped)
+            .map(|stamp| MAC_CLOCK_RELATION.project(stamp.at, stamp.generation, &sample))
+            .unwrap()
             .map(|projected| projected.at),
         Ok(at(1_000_000))
     );
@@ -106,12 +109,18 @@ fn a_wake_starts_a_generation_and_earlier_stamps_keep_their_sample() {
     mac.on_rf_wake();
     let after_wake = counter.raw_at(at(120_050));
     clock.advance(Duration::from_micros(30)).unwrap();
-    assert_eq!(mac.sample().unwrap().generation, 1);
+    assert_eq!(mac.sample().unwrap().generation, crate::clock_generation(1));
     // A frame from before the sleep converts in its own relation.
-    assert_eq!(mac.stamp(before_sleep).unwrap().generation, 0);
+    assert_eq!(
+        mac.stamp(before_sleep).unwrap().generation,
+        crate::clock_generation(0)
+    );
     assert_eq!(mac.received_at(before_sleep), Some(at(100_000)));
     // A frame after the wake converts in the new one.
-    assert_eq!(mac.stamp(after_wake).unwrap().generation, 1);
+    assert_eq!(
+        mac.stamp(after_wake).unwrap().generation,
+        crate::clock_generation(1)
+    );
     assert_eq!(mac.received_at(after_wake), Some(at(120_050)));
 }
 
@@ -131,9 +140,9 @@ fn a_counter_that_went_back_across_a_wake_leaves_earlier_stamps_without_a_place(
         .set(0u32.wrapping_sub(150_000).wrapping_add(7));
     mac.on_rf_wake();
     let wake = mac.sample().unwrap();
-    assert_eq!(wake.generation, 1);
+    assert_eq!(wake.generation, crate::clock_generation(1));
     // The timeline goes on at the monotonic projection of the last sample.
-    assert_eq!(wake.radio.as_micros(), 3_000_150_000);
+    assert_eq!(wake.source.as_micros(), 3_000_150_000);
     assert_eq!(mac.received_at(before_sleep), None);
     let after_wake = counter.raw_at(at(150_000));
     clock.advance(Duration::from_micros(10)).unwrap();
@@ -154,7 +163,7 @@ fn readings_any_time_apart_keep_one_generation() {
     let stamped = counter.raw_at(later);
     clock.advance(Duration::from_micros(40)).unwrap();
     assert_eq!(mac.received_at(stamped), Some(later));
-    assert_eq!(mac.sample().unwrap().generation, 0);
+    assert_eq!(mac.sample().unwrap().generation, crate::clock_generation(0));
 }
 
 #[test]
@@ -169,9 +178,9 @@ fn a_counter_jump_outside_a_wake_breaks_the_relation() {
     clock.advance_to(at(11_000));
     counter.offset.set(5_000_000);
     let sample = mac.sample().unwrap();
-    assert_eq!(sample.generation, 1);
+    assert_eq!(sample.generation, crate::clock_generation(1));
     // The timeline goes on at the projection, not at the jumped counter.
-    assert_eq!(sample.radio.as_micros(), 11_000);
+    assert_eq!(sample.source.as_micros(), 11_000);
     assert_eq!(mac.received_at(before), None);
 }
 
@@ -183,7 +192,10 @@ fn a_new_radio_start_replaces_the_clock_and_its_handles() {
     let storage = MacClockStorage::<NoopRawMutex, _, _>::new(&clock);
     let first = storage.start(&counter);
     first.on_rf_wake();
-    assert_eq!(first.sample().unwrap().generation, 1);
+    assert_eq!(
+        first.sample().unwrap().generation,
+        crate::clock_generation(1)
+    );
     let stamped = counter.raw_at(at(10_000));
 
     // The radio restarts: the new clock is fresh, in a generation the
@@ -194,8 +206,8 @@ fn a_new_radio_start_replaces_the_clock_and_its_handles() {
     assert_eq!(first.sample(), None);
     assert_eq!(first.received_at(stamped), None);
     let sample = second.sample().unwrap();
-    assert!(sample.generation > 1);
-    assert_eq!(sample.monotonic, at(20_000));
+    assert!(sample.generation.jump() > 1);
+    assert_eq!(sample.target, at(20_000));
 }
 
 #[test]
@@ -209,7 +221,7 @@ fn tx_reader_follows_rf_generation_and_refuses_a_replaced_radio_start() {
         reception: mac,
     };
     let before_sleep = MacClockReader::sample(&timer).unwrap();
-    assert_eq!(before_sleep.radio.as_micros(), 5_000);
+    assert_eq!(before_sleep.source.as_micros(), 5_000);
     assert_eq!(oer_time::Clock::now(&timer), at(0));
 
     // The power owner reports the stopped counter's wake. The TX reader
@@ -218,7 +230,7 @@ fn tx_reader_follows_rf_generation_and_refuses_a_replaced_radio_start() {
     clock.advance_to(at(20_000));
     mac.on_rf_wake();
     let after_wake = MacClockReader::sample(&timer).unwrap();
-    assert_eq!(after_wake.radio, before_sleep.radio);
+    assert_eq!(after_wake.source, before_sleep.source);
     assert_ne!(after_wake.generation, before_sleep.generation);
     assert_eq!(after_wake, mac.snapshot().unwrap().sample());
     assert_eq!(oer_time::Clock::now(&timer), at(20_000));
@@ -229,7 +241,9 @@ fn tx_reader_follows_rf_generation_and_refuses_a_replaced_radio_start() {
         timer: &clock,
         reception: restarted,
     };
-    assert!(MacClockReader::sample(&rebound).unwrap().generation > after_wake.generation);
+    assert!(
+        MacClockReader::sample(&rebound).unwrap().generation.jump() > after_wake.generation.jump()
+    );
 }
 
 #[test]

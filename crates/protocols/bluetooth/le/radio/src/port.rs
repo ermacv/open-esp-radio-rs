@@ -7,7 +7,7 @@ use core::{
 
 use oer_radio_port::{
     CancelError, ClockError, ClockInfo, EventsLost, LifecycleCommand, LifecycleError, Poisoned,
-    PortResult, RadioEpoch, RadioPort,
+    PortResult, RadioPort,
 };
 
 use crate::{
@@ -74,7 +74,7 @@ pub trait LeRadioPort: RadioPort<Id = EventId, Domain = LeRadio> {
 
     /// The resolution of the radio time [`RadioPort::now`] reads and how its
     /// epoch relates to the image's monotonic time.
-    fn clock_info(&self) -> ClockInfo;
+    fn clock_info(&self) -> ClockInfo<LeRadio>;
 
     /// Submit one request: `Ok(Err(_))` when the radio refused it. A request
     /// the capabilities exclude is refused as [`RequestError::Unsupported`].
@@ -140,10 +140,10 @@ impl LeRadioPort for NoRadio {
         LeRadioCapabilities::NONE
     }
 
-    fn clock_info(&self) -> ClockInfo {
+    fn clock_info(&self) -> ClockInfo<LeRadio> {
         ClockInfo {
             resolution: oer_time::Duration::from_micros(1),
-            epoch: RadioEpoch::Unrelated,
+            monotonic: None,
         }
     }
 

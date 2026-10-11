@@ -57,7 +57,7 @@ impl ApTsfHardware for RadioRuntimeOwner {
 /// (one access point of the role, one port core); its generations come from
 /// an epoch it takes when created (`MacClockHandle::tsf_epoch` of the radio
 /// start), so a later owner's generations never repeat an earlier one's.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct AccessPointTsf {
     relation: TsfRelation,
 }

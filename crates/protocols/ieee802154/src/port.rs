@@ -231,7 +231,7 @@ pub trait Ieee802154RadioPort: RadioPort<Id = RequestId, Domain = Ieee802154Radi
     /// synchronously without the port (OpenThread's `otPlatRadioGetNow`)
     /// takes the clock the composition binds the backend to, which this
     /// relates to monotonic time.
-    fn clock_info(&self) -> ClockInfo;
+    fn clock_info(&self) -> ClockInfo<Ieee802154Radio>;
 
     /// The portable state.
     fn state(&self) -> Result<RadioState, Poisoned<Self::Fault>>;

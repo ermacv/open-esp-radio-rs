@@ -42,6 +42,11 @@ use crate::*;
 mod air;
 pub use air::ModelAir;
 
+/// The one generation of the model's radio clock: it is the monotonic
+/// clock, so the relation never breaks.
+const MODEL_CLOCK_GENERATION: oer_radio_port::Generation<Ieee80211Instant, oer_time::Instant> =
+    oer_radio_port::GenerationSource::new(0).current();
+
 /// Non-terminal events (received frames, TBTTs) the model's queue holds
 /// before it reports a loss. A terminal event (a completion, a lifecycle
 /// terminal) holds the slot its work reserved at admission and is never
@@ -283,7 +288,6 @@ enum Lent {
 /// An interface's TSF: it advances with the model's radio clock from the
 /// value it was set to. The model's counters are exact, so its samples
 /// carry no uncertainty.
-#[derive(Clone, Copy)]
 struct ModelTsf {
     set_to: u64,
     set_at: u64,
@@ -301,7 +305,7 @@ impl Default for ModelTsf {
 }
 
 impl ModelTsf {
-    fn at(self, now: Ieee80211Instant) -> TsfInstant {
+    fn at(&self, now: Ieee80211Instant) -> TsfInstant {
         TsfInstant::from_micros(
             self.set_to
                 .wrapping_add(now.as_micros().saturating_sub(self.set_at)),
@@ -999,7 +1003,7 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
 
     /// The model's clock is the time the test sets, which a test sets to
     /// its own monotonic time.
-    fn clock_info(&self) -> ClockInfo {
+    fn clock_info(&self) -> ClockInfo<Ieee80211Radio> {
         ClockInfo::MONOTONIC_MICROS
     }
 
@@ -1200,10 +1204,10 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
         self.serving()?;
         let radio = self.now.get();
         Ok(Ok(Ieee80211ClockSample {
-            radio,
-            monotonic: oer_time::Instant::from_micros(radio.as_micros()),
+            source: radio,
+            target: oer_time::Instant::from_micros(radio.as_micros()),
             uncertainty: oer_time::Duration::ZERO,
-            generation: 0,
+            generation: MODEL_CLOCK_GENERATION,
         }))
     }
 }
@@ -1354,12 +1358,12 @@ impl<O: TxBody> LowerMacBeaconTiming for LowerMacModel<O> {
         let state = self.serving()?;
         Ok(match state.vif(vif) {
             Some(_) => {
-                let tsf = state.tsf[usize::from(vif.0)];
+                let tsf = &state.tsf[usize::from(vif.0)];
                 Ok(TsfSample {
                     tsf: VifTsf::new(vif, tsf.at(now)),
                     local: Ieee80211Stamp {
                         at: now,
-                        generation: 0,
+                        generation: MODEL_CLOCK_GENERATION,
                     },
                     uncertainty: crate::Ieee80211Duration::ZERO,
                     generation: tsf.relation.generation(),

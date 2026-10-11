@@ -251,15 +251,15 @@ Three kinds of time object exist, each in one domain:
 
 The domains in the code:
 
-| Domain | Counted by | Type | Relation to monotonic time | New generation |
+| Domain | Counted by | Type | Relation (`ClockRelation`) | New generation |
 | --- | --- | --- | --- | --- |
 | Monotonic CPU time | the system timer through `oer-time-embassy` | `oer_time::Instant` | itself | — |
-| ESP32-S31 Wi-Fi MAC local time | `WIFI_MAC_LOCAL_TIME` (`MacLocalTime`), widened by `MacTimeline`, related by `MacClockStorage`/`MacClockHandle` | `Ieee80211Instant`, `Ieee80211Stamp` | `Affine` (`MAC_CLOCK_INFO`, 1 ppm) | every radio start (`MacClockStorage::start`, never a generation an earlier start used), every RF wake, a counter break |
-| IEEE 802.11 lower-MAC host model | the test (`set_now`) | `Ieee80211Instant` | `Monotonic` | — |
-| An interface's TSF | the MAC's TSF of that interface | `TsfInstant` of `Ieee80211Tsf`, as `VifTsf` with its interface | `Affine` to the port's radio clock through `TsfSample` (`TSF_DRIFT_PPM`, 200 ppm: the access point's timer and the station's crystal) | a `TsfGeneration`: the epoch each relation's owner takes from the radio start's storage (`MacClockHandle::tsf_epoch`) when created, so owners never share one, and the jumps within it: a channel change, an interface (re)configuration, an access-point TSF restart, a station TSF set beyond the relation's bound, a TSF crossing 2^64 (the TSF is never modular). A sample of another generation does not convert (`TsfProjectionError::StaleSample`) |
-| BLE controller | the controller clock, extended from its 32-bit latch | `LeInstant`; inside the driver `SchedulerInstant` | `Unrelated` | — |
+| ESP32-S31 Wi-Fi MAC local time | `WIFI_MAC_LOCAL_TIME` (`MacLocalTime`), widened by `MacTimeline`, related by `MacClockStorage`/`MacClockHandle` | `Ieee80211Instant`, `Ieee80211Stamp` | affine to monotonic time (`MAC_CLOCK_RELATION`, 1 ppm) | a jump of the storage's `GenerationSource` (`Ieee80211ClockGeneration`): every radio start (`MacClockStorage::start`, never a generation an earlier start used), every RF wake, a counter break |
+| IEEE 802.11 lower-MAC host model | the test (`set_now`) | `Ieee80211Instant` | identical to monotonic time | — |
+| An interface's TSF | the MAC's TSF of that interface | `TsfInstant` of `Ieee80211Tsf`, as `VifTsf` with its interface | affine to the port's radio clock (`TSF_RELATION`, `TSF_DRIFT_PPM` = 200 ppm: the access point's timer and the station's crystal), sampled by `TsfSample` | a `TsfGeneration` (`Generation<TsfInstant, Ieee80211Instant>`): the epoch each relation's owner takes from the radio start's storage (`MacClockHandle::tsf_epoch`) when created, so owners never share one, and the jumps within it: a channel change, an interface (re)configuration, an access-point TSF restart, a station TSF set beyond the relation's bound, a TSF crossing 2^64 (the TSF is never modular). A sample of another generation does not convert (`TsfProjectionError::StaleSample`) |
+| BLE controller | the controller clock, extended from its 32-bit latch | `LeInstant`; inside the driver `SchedulerInstant` | none to monotonic time | — |
 | BLE modem LP timer | the modem LP timer | `BluetoothModemLpTimerInstant` (wrapping, no claimed unit) | none | — |
-| IEEE 802.15.4 | the runtime's monotonic clock | `Ieee802154Instant` | `Monotonic` | — |
+| IEEE 802.15.4 | the runtime's monotonic clock | `Ieee802154Instant` | identical to monotonic time | — |
 | FTM | the FTM exchange's timestamps | `FtmTimestampPs`, 48-bit picosecond wire values (`oer_ieee80211_mac::ftm`) | none | — |
 
 Rules:
@@ -287,14 +287,21 @@ Rules:
   exclusive endpoint; touching windows do not overlap. Scalar extraction
   belongs at named formula or representation boundaries. Monotonic
   duration is not a substitute for radio-domain arithmetic.
-- Time crosses between domains only at a boundary, through the port's
-  `ClockInfo` and a `ClockSample` with its generation and uncertainty; a
-  stamp of another generation is not converted (`EpochError::StaleSample`).
-  A span becomes monotonic only through the relation as well
-  (`ClockInfo::duration_to_monotonic`, widened by an `Affine` clock's
-  drift), and a TSF span crosses to the port's radio clock only through its
-  `TsfSample`, whose projections carry their uncertainty in the target
-  domain (`Projected<T, S>`). The S31 station's direct path carries a local
+- Time crosses between domains only through one relation type
+  (`oer-radio-port`): a `ClockRelation<A, B>` of a source domain `A` and a
+  target `B` (identical, or affine within a drift bound), a
+  `RelationSample<A, B>` of back-to-back readings with its uncertainty and
+  generation, and one projection both ways (`project`, `project_back`,
+  `project_span`) whose uncertainty is a span of the target domain
+  (`Projected<T, S>`). A port publishes its radio clock's relation to
+  monotonic time in `ClockInfo<D>::monotonic`, or `None` when none exists;
+  the TSF relation is `TSF_RELATION`, sampled by `TsfSample`. The types name
+  their pair of domains, so a relation, sample or generation of one pair
+  does not serve another. A coordinate of another generation than the
+  sample is not converted (`ProjectionError::StaleSample`).
+- A generation (`Generation<A, B>`) has no public constructor: only its
+  relation owner's `GenerationSource` makes one, opening an epoch the owner
+  takes and jumping at each break of the relation. The S31 station's direct path carries a local
   elapsed time into the access point's TSF at the nominal rate in one named
   function (`tsf_elapsed_at_nominal_rate`), as the vendor does.
 - Time-exact work stays in its domain: the station follows the access
@@ -447,11 +454,11 @@ a `Fault` that leaves an IEEE 802.15.4 radio disabled, a lifecycle
 port names it as `type Fault`); portable code passes it on without
 interpreting it.
 
-| Port | Lifecycle and cancellation | Clock epoch (ESP32-S31) |
+| Port | Lifecycle and cancellation | Clock relation to monotonic time (ESP32-S31) |
 | --- | --- | --- |
-| `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | `Affine`: the Wi-Fi MAC local time, sampled against the image's monotonic clock |
-| `Ieee802154RadioPort` | `lifecycle(Enable / Disable / Quiesce)` with `RadioEvent::Lifecycle` terminals and `cancel(RequestId)` | `Monotonic`: the runtime's `Clock`, which the engine reads fresh at each event and the time driver also reads |
-| `LeRadioPort` | `lifecycle(Enable / Disable / Quiesce)` over an installed backend and `cancel(EventId)`; install and uninstall move memory and hardware owners and stay the backend's own operations, and shared-PHY maintenance is a layer over `Quiesce` | `Unrelated`: the extended controller clock |
+| `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | affine: the Wi-Fi MAC local time, sampled against the image's monotonic clock |
+| `Ieee802154RadioPort` | `lifecycle(Enable / Disable / Quiesce)` with `RadioEvent::Lifecycle` terminals and `cancel(RequestId)` | identical: the runtime's `Clock`, which the engine reads fresh at each event and the time driver also reads |
+| `LeRadioPort` | `lifecycle(Enable / Disable / Quiesce)` over an installed backend and `cancel(EventId)`; install and uninstall move memory and hardware owners and stay the backend's own operations, and shared-PHY maintenance is a layer over `Quiesce` | none: the extended controller clock |
 
 **Shared RF path.** Protocols that share one radio name themselves with the
 portable [`RadioClient`](../crates/radio/coex/src/lib.rs) of `oer-radio-coex`

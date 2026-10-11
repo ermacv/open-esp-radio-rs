@@ -12,7 +12,7 @@ use oer_ieee80211_mac::qos::{
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_espressif_ieee80211_policy::lmac;
-use oer_ieee80211_lower_mac::{Ieee80211Duration, Ieee80211Stamp};
+use oer_ieee80211_lower_mac::{Ieee80211ClockGeneration, Ieee80211Duration, Ieee80211Stamp};
 use oer_ieee80211_upper_mac::{
     AmpduAttemptResult, AmpduRetryDecision as UpperAmpduRetryDecision,
     AmpduRetryError as UpperAmpduRetryError, AmpduRetryState as UpperAmpduRetryState,
@@ -672,8 +672,8 @@ pub enum AmpduRetryError {
     AgingThresholdOutsideEpoch,
     /// The radio relation changed while this aggregate was retained.
     ClockGenerationChanged {
-        expected: u32,
-        observed: u32,
+        expected: Ieee80211ClockGeneration,
+        observed: Ieee80211ClockGeneration,
     },
     EmptyAggregate,
     CapacityExceedsHardwareWindow {
@@ -767,7 +767,7 @@ impl AmpduRetryDecision {
 /// PHY rate.
 pub struct AmpduRetryState<const CAPACITY: usize> {
     state: UpperAmpduRetryState,
-    generation: u32,
+    generation: Ieee80211ClockGeneration,
 }
 
 impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {

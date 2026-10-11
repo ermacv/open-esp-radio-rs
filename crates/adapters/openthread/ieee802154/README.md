@@ -41,7 +41,8 @@ in (the Espressif runtime's `Ieee802154Runtime::clock`) and
 `PortRssi::new(port)` to the `OpenThread` constructor, which reads the radio
 time (`otPlatRadioGetNow`, `otPlatTimeGet`) and the port's live RSSI
 (`otPlatRadioGetRssi`) through them; `init` refuses a port whose clock is
-not the image's monotonic clock (`RadioEpoch::Monotonic`), then hand the port to
+not the image's monotonic clock (`ClockInfo::monotonic` is not
+`Some(ClockRelation::IDENTICAL)`), then hand the port to
 `OpenThreadRadio::new` with the transmit power, CCA threshold and receive
 sensitivity to report, and give the radio to the `openthread` crate. Poll
 the runtime's runner (`Ieee802154System::run`) beside it: the adapter is the

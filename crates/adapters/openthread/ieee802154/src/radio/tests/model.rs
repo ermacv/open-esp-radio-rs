@@ -11,12 +11,12 @@ use std::{collections::VecDeque, vec, vec::Vec};
 
 use embassy_futures::block_on;
 use oer_ieee802154::{
-    AcceptedCommand, CancelError, ClockError, ClockInfo, CommandError, Configuration, CslReceiver,
-    EnhancedAckGeneration, EventsLost, FcsStatus, Frame, FrameCounterUpdate, FramePending,
-    Ieee802154Capabilities, Ieee802154Instant, Ieee802154Radio, Ieee802154RadioPort, Interface,
-    LifecycleCommand, LifecycleError, LifecycleEvent, LinkMetrics, MacKeys, Poisoned, PortResult,
-    ProbingInitiator, RadioCapabilities, RadioCommand, RadioEpoch, RadioEvent, RadioPort,
-    RadioSetting, RadioState, RadioStateMachine, ReceivedFrame, RequestId, RxMetadata,
+    AcceptedCommand, CancelError, ClockError, ClockInfo, ClockRelation, CommandError,
+    Configuration, CslReceiver, EnhancedAckGeneration, EventsLost, FcsStatus, Frame,
+    FrameCounterUpdate, FramePending, Ieee802154Capabilities, Ieee802154Instant, Ieee802154Radio,
+    Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError, LifecycleEvent, LinkMetrics,
+    MacKeys, Poisoned, PortResult, ProbingInitiator, RadioCapabilities, RadioCommand, RadioEvent,
+    RadioPort, RadioSetting, RadioState, RadioStateMachine, ReceivedFrame, RequestId, RxMetadata,
     SecurityStatus, SentAcknowledgement, SettingError, TxSecurity, TxStatus,
 };
 use openthread_radio::{
@@ -48,8 +48,8 @@ struct Recorded {
 
 struct Model {
     machine: RadioStateMachine,
-    /// The epoch the model's clock counts in.
-    epoch: RadioEpoch,
+    /// The model clock's relation to the monotonic clock.
+    monotonic: Option<ClockRelation<Ieee802154Instant, oer_time::Instant>>,
     events: VecDeque<Result<ModelEvent, EventsLost>>,
     recorded: Recorded,
 }
@@ -71,7 +71,7 @@ impl ModelPort {
     fn new() -> Self {
         Self(RefCell::new(Model {
             machine: RadioStateMachine::new(CAPABILITIES),
-            epoch: RadioEpoch::Monotonic,
+            monotonic: Some(ClockRelation::IDENTICAL),
             events: VecDeque::new(),
             recorded: Recorded::default(),
         }))
@@ -252,9 +252,9 @@ impl Ieee802154RadioPort for ModelPort {
         Ok(Ok(accepted))
     }
 
-    fn clock_info(&self) -> ClockInfo {
+    fn clock_info(&self) -> ClockInfo<Ieee802154Radio> {
         ClockInfo {
-            epoch: self.0.borrow().epoch,
+            monotonic: self.0.borrow().monotonic,
             ..ClockInfo::MONOTONIC_MICROS
         }
     }
@@ -456,11 +456,16 @@ fn a_port_refusal_is_an_openthread_error() {
 }
 
 /// OpenThread reads the radio time from the image's monotonic clock, so a
-/// port whose clock counts in another epoch is refused.
+/// port whose clock is not that clock is refused: one with no relation to
+/// it, or one that only drifts with it.
 #[test]
 fn a_port_outside_the_monotonic_epoch_is_refused() {
     let port = ModelPort::new();
-    port.0.borrow_mut().epoch = RadioEpoch::Unrelated;
+    port.0.borrow_mut().monotonic = None;
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
+    assert_eq!(block_on(radio.init()), Err(RadioErrorKind::Other));
+    assert!(port.0.borrow().recorded.lifecycle.is_empty());
+    port.0.borrow_mut().monotonic = Some(ClockRelation::affine(1));
     let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
     assert_eq!(block_on(radio.init()), Err(RadioErrorKind::Other));
     assert!(port.0.borrow().recorded.lifecycle.is_empty());

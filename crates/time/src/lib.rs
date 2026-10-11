@@ -16,6 +16,8 @@
 //!   validates additional interface, instance or generation identity.
 //!   Raw microseconds imply no image-monotonic or wall-clock relationship;
 //!   the existing clock relations own conversion between domains.
+//! - [`Coordinate`] names an instant of either axis by its microseconds and
+//!   span type, the only view a clock relation takes to carry time across.
 //!
 //! Both axes represent microseconds in `u64`. Radio spans include every
 //! value from zero through `u64::MAX`; [`RadioWindow`] additionally requires
@@ -28,8 +30,10 @@
 
 use core::future::Future;
 
+mod coordinate;
 pub mod radio;
 
+pub use coordinate::Coordinate;
 pub use radio::{NonZeroRadioDuration, RadioDuration, RadioInstant, RadioWindow, WindowError};
 
 /// A point on the image's monotonic time, in microseconds since an epoch

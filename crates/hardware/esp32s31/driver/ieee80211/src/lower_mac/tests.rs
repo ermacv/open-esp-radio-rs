@@ -2626,3 +2626,18 @@ fn a_dismantled_core_rebuilds_disabled_over_the_owners_that_came_home() {
     let lendable: Vec<_> = core::iter::from_fn(|| rebuilt.tx_buffer(64)).collect();
     assert_eq!(lendable.len(), 3);
 }
+
+#[test]
+fn a_core_handed_a_radio_on_another_channel_retunes_at_enable() {
+    let mut core = core();
+    // The radio start left the PHY on channel 11; the core is configured
+    // for channel 6.
+    assert!(core.radio_tuned_to(channel(11)));
+    let mut events = Events::default();
+    assert_eq!(
+        core.lifecycle(LifecycleCommand::Enable, &mut events),
+        Ok(LifecycleStart::Retune(channel(6)))
+    );
+    // An enabling core records nothing.
+    assert!(!core.radio_tuned_to(channel(1)));
+}

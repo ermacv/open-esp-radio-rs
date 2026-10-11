@@ -742,7 +742,7 @@ where
         LowerMacCoreParts<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
         Self,
     > {
-        if self.state != PortState::Disabled || self.attempts().next().is_some() {
+        if !self.idle_disabled() {
             return Err(self);
         }
         Ok(LowerMacCoreParts {
@@ -767,6 +767,24 @@ where
     /// `Enable` still awaits its retune.
     pub const fn tuned_channel(&self) -> WifiChannel {
         self.tuned
+    }
+
+    /// Whether the core is disabled with no attempt admitted: what a
+    /// radio stop, [`Self::dismantle`] and [`Self::radio_tuned_to`] need.
+    pub fn idle_disabled(&self) -> bool {
+        self.state == PortState::Disabled && self.attempts().next().is_none()
+    }
+
+    /// Record that the radio is tuned to `channel`, as the radio start that
+    /// hands the core its hardware reports it: the next `Enable` retunes
+    /// when the configured channel differs. `false`, and nothing recorded,
+    /// unless the core is disabled and idle.
+    pub fn radio_tuned_to(&mut self, channel: WifiChannel) -> bool {
+        if !self.idle_disabled() {
+            return false;
+        }
+        self.tuned = channel;
+        true
     }
 
     /// The channel received frames are reported on.

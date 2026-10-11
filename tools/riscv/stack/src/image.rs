@@ -139,7 +139,8 @@ pub(crate) struct Observation {
     /// Transfers whose target the value analysis resolved.
     pub resolved: Vec<(u32, u32, TransferKind)>,
     /// Sites of indirect jumps whose targets the analysis found inside the
-    /// function: jump tables the linear sweep already covers.
+    /// function, and those it followed through a proven jump table, whose
+    /// entries all lie inside it: code the linear sweep already covers.
     pub local_jumps: Vec<u32>,
     /// Bytes below the entry `sp` at each transfer the analysis reached.
     pub site_depths: BTreeMap<u32, u64>,
@@ -228,7 +229,7 @@ pub(crate) fn exact_registers(registers: &[AbstractValue]) -> [Option<u32>; 32] 
 }
 
 /// The jump tables of a function's dispatches, from the facts of its image.
-pub(crate) type Tables<'a> = dyn JumpTableSource<Table = KnownJump> + 'a;
+pub(crate) type Tables<'a> = dyn JumpTableSource<Table = oer_riscv_analysis::JumpTable> + 'a;
 
 /// The bounded value analysis of one function, its control-flow graph
 /// following the indirect jumps the given jumps name and the jump tables
@@ -257,7 +258,7 @@ pub(crate) fn observing<R>(
         let references =
             PreparedReferences::new(&[], function.section as u32, &RiscvDecoder, memory, control)?;
         let mut observer = Observer::default();
-        let (summary, _) = research_following_tables(
+        let (summary, followed) = research_following_tables(
             FunctionInput {
                 image: Some(&view),
                 section: function.section as u32,
@@ -287,7 +288,11 @@ pub(crate) fn observing<R>(
             depth,
             complete,
             resolved: observer.transfers,
-            local_jumps: observer.unexpanded,
+            local_jumps: observer
+                .unexpanded
+                .into_iter()
+                .chain(followed.tables.iter().map(|table| table.site as u32))
+                .collect(),
             site_depths: observer.site_depths,
             site_registers: observer.site_registers,
         })

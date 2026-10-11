@@ -46,7 +46,8 @@ pub use contexts::{HartStack, LevelStack, Stacks, interrupt_stacks};
 pub use dwarf::{Dwarf, instances};
 pub use image::{Function, stack_sizes};
 pub use interrupts::{Field, TableEntry, TableLayout, interrupt_table};
-use oer_riscv_analysis::{JumpTableSource, KnownJump, ProvenTables};
+use oer_riscv_analysis::{JumpTable, JumpTableSource, KnownJump, ProvenTables, RecognizedTables};
+use oer_riscv_program::tables::ImageTables;
 pub use relocations::taken_addresses;
 pub use resolutions::{Assumption, Fact, Resolution, Resolutions};
 pub use summaries::{Summary, parse as parse_summaries};
@@ -323,78 +324,43 @@ fn table_jump(function: &Function, site: u32, entries: &[u32]) -> KnownJump {
     }
 }
 
-/// The tables of the dispatches a function's sweep located: each
-/// unresolved tail transfer the sweep's own jumps leave whose table base a
-/// pass's registers at the site name, and whose entries the image's facts
-/// hold.
-struct SweptTables<'a, 'f> {
-    image: &'a ImageFacts<'f>,
-    function: &'a Function,
-    transfers: &'a [Transfer],
+/// The tables of a function's dispatches: the value analysis's `Dispatch`
+/// records whose entries the image's facts prove ([`RecognizedTables`] over
+/// [`ImageTables`]), but for the sites the sweep's own jumps already follow.
+struct DispatchTables<'a> {
+    recognized: RecognizedTables<'a>,
     known: &'a [KnownJump],
 }
 
-impl JumpTableSource for SweptTables<'_, '_> {
-    type Table = KnownJump;
+impl JumpTableSource for DispatchTables<'_> {
+    type Table = JumpTable;
 
-    fn same(&self, earlier: &KnownJump, later: &KnownJump) -> bool {
-        earlier == later
+    fn same(&self, earlier: &JumpTable, later: &JumpTable) -> bool {
+        self.recognized.same(earlier, later)
     }
 
     fn tables<'m>(
         &self,
         records: &[FunctionRecord],
-        _: CodeRange,
+        extent: CodeRange,
         memory: &'m WorkingMemory,
         control: &mut dyn RunControl,
-    ) -> Result<ProvenTables<'m, KnownJump>> {
-        let mut found: ProvenTables<'m, KnownJump> = ProvenTables::none(memory);
-        for transfer in self.transfers {
-            let site = u64::from(transfer.site);
-            if transfer.kind != TransferKind::Tail
-                || transfer.target.is_some()
-                || self.known.iter().any(|jump| jump.site == site)
-                || found.tables.iter().any(|jump| jump.site == site)
-            {
-                continue;
-            }
-            let mut registers = None;
-            for record in records {
-                control.checkpoint(1)?;
-                if let FunctionRecord::CallInputs {
-                    offset,
-                    registers: inputs,
-                } = record
-                    && *offset == site
-                {
-                    registers = Some(image::exact_registers(inputs));
-                    break;
-                }
-            }
-            let Some(entries) = table_entries(self.image, transfer, registers.as_ref(), control)?
-            else {
-                continue;
-            };
-            let jump = table_jump(self.function, transfer.site, &entries);
-            // The table and the copy `jump` makes of it for the next pass.
-            let bytes = 2 * (size_of::<KnownJump>() + size_of::<u64>() * jump.targets.len());
-            found.reserved.push(
-                memory.reserve(bytes as u64, control.position())?,
-                control.position(),
-            )?;
-            found.tables.push(jump);
-        }
+    ) -> Result<ProvenTables<'m, JumpTable>> {
+        let mut found = self.recognized.tables(records, extent, memory, control)?;
+        found
+            .tables
+            .retain(|table| !self.known.iter().any(|jump| jump.site == table.site));
         Ok(found)
     }
 
-    fn jump(&self, table: &KnownJump) -> KnownJump {
-        table.clone()
+    fn jump(&self, table: &JumpTable) -> KnownJump {
+        self.recognized.jump(table)
     }
 }
 
 /// One function's facts: its sweep, then the value analysis over a graph
-/// that follows the jump tables the sweep names, and those the analysis's
-/// register values locate ([`SweptTables`]).
+/// that follows the jump tables the sweep names, and those its `Dispatch`
+/// records locate ([`DispatchTables`]).
 fn function_facts(
     elf: &ImageFacts<'_>,
     function: Function,
@@ -411,10 +377,11 @@ fn function_facts(
         .iter()
         .map(|(site, entries)| table_jump(&function, *site, entries))
         .collect();
-    let tables = SweptTables {
-        image: elf,
-        function: &function,
-        transfers: &swept.transfers,
+    let tables = DispatchTables {
+        recognized: RecognizedTables {
+            entries: &ImageTables { image: elf },
+            section: function.section as u32,
+        },
         known: &jumps,
     };
     let observation = observe(&function, &jumps, &tables, control)?;

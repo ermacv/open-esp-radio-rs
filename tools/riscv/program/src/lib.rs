@@ -327,8 +327,9 @@ pub fn code_symbol_at(
     if physical != table_section as usize {
         return Err(invalid("symbol belongs to another physical table"));
     }
+    // The entry is selected by index; its name is never read.
     let symbol = file
-        .symbol_at(usize::try_from(index).map_err(|_| invalid("symbol index overflow"))?)
+        .raw_symbol_at(usize::try_from(index).map_err(|_| invalid("symbol index overflow"))?)
         .map_err(|_| invalid("symbol index outside the table"))?;
     let section = symbol
         .section
@@ -582,6 +583,42 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(error.message, "invalid executable section bytes");
+    }
+    #[test]
+    fn a_code_symbol_resolves_whatever_bytes_its_name_holds() {
+        use object::write::{Object, StandardSection, Symbol, SymbolSection};
+        use object::{
+            Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolKind, SymbolScope,
+        };
+        let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+        let text = object.section_id(StandardSection::Text);
+        object.append_section_data(text, &[0; 8], 4);
+        object.add_symbol(Symbol {
+            name: b"f\xff".to_vec(),
+            value: 4,
+            size: 4,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Linkage,
+            weak: false,
+            section: SymbolSection::Section(text),
+            flags: SymbolFlags::None,
+        });
+        let mut bytes = object.write().unwrap();
+        // The same file as an executable (`e_type` ET_EXEC).
+        bytes[16..18].copy_from_slice(&2u16.to_le_bytes());
+        let elf = oer_elf::Elf::executable(&bytes).unwrap();
+        let table = elf.symbol_table_section().unwrap() as u32;
+        let index = elf
+            .raw_symbols()
+            .find(|s| s.name == Some(b"f\xff".as_slice()))
+            .unwrap()
+            .index as u64;
+        drop(elf);
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        assert_eq!(
+            code_symbol_at(&Source(bytes), table, index, &memory, &mut || Ok(())).unwrap(),
+            4
+        );
     }
     #[test]
     fn constants_come_only_from_segments_neither_writable_nor_executable() {

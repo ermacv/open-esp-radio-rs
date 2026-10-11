@@ -56,8 +56,12 @@ const LOCAL: &str = "\
 
 This is the local review before the branch is pushed, not the CI review.
 The branch is checked out at the repository root, not in `pr/`: run `git`
-without `-C pr` and read files from the root. Diff against the merge base
-named in the prompt. CI has not run; the push gate's fast checks (tidy,
+without `-C pr` and read files from the root. There is no `review-inputs/`:
+diff against the merge base named in the prompt and read the PR and its
+issues, if any, with `gh`. Bash runs only `git diff …`, `git log …`,
+`git show …`, `gh pr view …`, `gh pr diff …` and `gh issue view …`, without
+`cd`, pipes or redirections; any other call is denied and fails the review.
+CI has not run; the push gate's fast checks (tidy,
 formatting, Clippy and tests of the changed packages) passed. The branch may
 have no pull request yet; then no earlier review exists on GitHub, and the
 prompt lists the findings of the previous local review, if any. The prompt
@@ -272,6 +276,13 @@ fn claude(ctx: &Checkout, tree: &Path, prompt: &str) -> Result<(Report, f64)> {
             String::from_utf8_lossy(&output.stderr).trim()
         )
     })?;
+    report(&result)
+}
+
+/// The report and cost of a `claude -p` JSON result: none for an error, a
+/// missing report or any tool call the `dontAsk` policy denied, since a
+/// report written past a denial may rest on evidence the review never saw.
+fn report(result: &Value) -> Result<(Report, f64)> {
     if result["is_error"].as_bool() != Some(false) || result["structured_output"].is_null() {
         return Err(format!(
             "review: claude produced no report ({}): {}",
@@ -279,6 +290,25 @@ fn claude(ctx: &Checkout, tree: &Path, prompt: &str) -> Result<(Report, f64)> {
             result["result"].as_str().unwrap_or("no message")
         )
         .into());
+    }
+    if let Some(denials) = result["permission_denials"]
+        .as_array()
+        .filter(|denials| !denials.is_empty())
+    {
+        let denied: Vec<String> = denials
+            .iter()
+            .map(|denial| {
+                let input = &denial["tool_input"];
+                format!(
+                    "{}: {}",
+                    denial["tool_name"].as_str().unwrap_or("tool"),
+                    input["command"]
+                        .as_str()
+                        .map_or_else(|| input.to_string(), str::to_owned)
+                )
+            })
+            .collect();
+        return Err(format!("review: tool calls were denied: {}", denied.join("; ")).into());
     }
     let report = serde_json::from_value(result["structured_output"].clone())?;
     Ok((report, result["total_cost_usd"].as_f64().unwrap_or(0.0)))
@@ -393,6 +423,29 @@ mod tests {
             },
             cost_usd: 0.0,
         }
+    }
+
+    #[test]
+    fn a_denied_tool_call_fails_the_review() {
+        let mut result = serde_json::json!({
+            "is_error": false,
+            "total_cost_usd": 0.5,
+            "structured_output": {"summary": "Not verified.", "findings": []},
+            "permission_denials": [{
+                "tool_name": "Bash",
+                "tool_use_id": "t1",
+                "tool_input": {"command": "cd pr && git diff"}
+            }]
+        });
+        let error = report(&result).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "review: tool calls were denied: Bash: cd pr && git diff"
+        );
+        result["permission_denials"] = serde_json::json!([]);
+        let (report, cost) = report(&result).unwrap();
+        assert_eq!(report.summary, "Not verified.");
+        assert_eq!(cost, 0.5);
     }
 
     #[test]

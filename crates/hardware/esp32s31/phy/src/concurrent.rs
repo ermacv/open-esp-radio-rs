@@ -288,6 +288,26 @@ impl ConcurrentPhy {
         }
     }
 
+    /// Set the vendor's temperature-tracking debug policy of the registered
+    /// domain: bit 0 of `first` forces the RFPLL-cap threshold and bit 1 the
+    /// calibration threshold to `second`, as ESP-IDF's debug bytes do. A
+    /// zero threshold makes every due tracking tick run that branch. For
+    /// diagnostic images only.
+    ///
+    /// # Errors
+    ///
+    /// The domain is not registered and settled.
+    #[cfg(all(feature = "tracking-diagnostics", target_arch = "riscv32"))]
+    pub fn set_temperature_tracking_debug(
+        &mut self,
+        first: u8,
+        second: u8,
+    ) -> Result<(), ConcurrentPhyError> {
+        self.settled_mut()?
+            .set_temperature_tracking_debug(first, second);
+        Ok(())
+    }
+
     /// Borrow the registered domain when every active client is settled.
     pub(crate) fn settled(&self) -> Result<&PhyDomain, ConcurrentPhyError> {
         match &self.slot {

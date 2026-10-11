@@ -58,6 +58,14 @@ impl PhyDomain {
         self.registered.state()
     }
 
+    /// Set the vendor's temperature-tracking debug policy bytes.
+    #[cfg(all(feature = "tracking-diagnostics", target_arch = "riscv32"))]
+    pub(crate) fn set_temperature_tracking_debug(&mut self, first: u8, second: u8) {
+        self.registered
+            .target_state_mut()
+            .set_temperature_tracking_debug(first, second);
+    }
+
     /// Inspect the shared client set without exposing its raw mask.
     pub const fn client_snapshot(&self) -> PhyClientSnapshot {
         self.clients.snapshot()

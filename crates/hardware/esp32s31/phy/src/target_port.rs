@@ -1827,6 +1827,10 @@ impl<D: PhyShortDelay, T: Timer> TargetCompleter<'_, D, T> {
                 return Ok(completion);
             }
             let completion = rfpll::complete_thermal::<D>(registers, grant, action).await?;
+            if let Some((operation, event)) = crate::tracking::observation::rfpll_hold_edge(action)
+            {
+                observer.tracking_operation(operation, event);
+            }
             child
                 .advance(completion)
                 .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
@@ -1998,6 +2002,10 @@ impl<
         transition: &'port mut PhyParamTrackingCalibrationTransition<'state>,
     ) -> Result<PhyCalibrationTrackingCompletion, Self::Error> {
         self.observer.operation_started();
+        let held_edge = crate::tracking::observation::calibration_hold_edge(
+            transition.action(),
+            transition.branch(),
+        );
         let completion = match transition.action() {
             PhyCalibrationTrackingAction::SetGrantProtect { enabled } => {
                 self.grant.set_grant_protect(enabled)?;
@@ -2128,6 +2136,9 @@ impl<
                 return Err(PhyTargetPortError::UnexpectedBinding);
             }
         };
+        if let Some((operation, event)) = held_edge {
+            self.observer.tracking_operation(operation, event);
+        }
         self.observer.operation_completed();
         Ok(completion)
     }

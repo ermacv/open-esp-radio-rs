@@ -17,6 +17,9 @@ lifecycle-fault-injection = []
 rx-gain-hot-sram = []
 # Retain value-only RF measurements in registration and role start reports.
 registration-diagnostics = []
+# Let a diagnostic image set the vendor's temperature-tracking debug policy,
+# which forces the RFPLL and calibration tracking branches.
+tracking-diagnostics = []
 # Record the PHY trace points and the poison snapshot into `oer-trace`.
 trace = ["oer-trace/record"]
 

@@ -313,6 +313,16 @@ enum Step {
     Failed,
 }
 
+/// The calibration branch a step belongs to. The vendor brackets each with
+/// its own grant-protect request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyCalibrationTrackingBranch {
+    /// DCODE and RX gain calibration with the channel restoration.
+    Common,
+    /// TXDC/PWDET of the requested classes and their gain publication.
+    Transmit,
+}
+
 /// Actions of the longest calibration-tracking path, its terminal action
 /// included: the common branch and the transmit branch with both classes,
 /// each bracketed by a grant-protect request. A driver that observes this
@@ -335,6 +345,11 @@ pub struct PhyCalibrationTrackingTransition {
     channel: Option<crate::channel::PhyChipChannelOutcome>,
     tx_dc_pwdet: [Option<crate::tx::dc_power_detector::PhyTxDcPwdetOutcome>; 2],
     failure: Option<PhyCalibrationTrackingFailure>,
+    /// The branch whose grant-protect bracket is open or last opened: the
+    /// shared tail that restores gain and releases the request belongs to
+    /// the branch that acquired it, which is the common one when a common
+    /// failure skips the transmit branch.
+    grant_branch: PhyCalibrationTrackingBranch,
     step: Step,
 }
 
@@ -376,7 +391,46 @@ impl PhyCalibrationTrackingTransition {
             channel: None,
             tx_dc_pwdet: [None; 2],
             failure: None,
+            grant_branch: match step {
+                Step::TxAcquireGrant => PhyCalibrationTrackingBranch::Transmit,
+                _ => PhyCalibrationTrackingBranch::Common,
+            },
             step,
+        }
+    }
+
+    /// The branch of the current step, or `None` once the transition ended.
+    pub const fn branch(self) -> Option<PhyCalibrationTrackingBranch> {
+        match self.step {
+            Step::CommonAcquireGrant
+            | Step::CommonForceTxRxOff
+            | Step::CommonClearPbus
+            | Step::CommonDcode
+            | Step::CommonDisableBaseband
+            | Step::CommonRecalibrateRxGain
+            | Step::CommonRestoreChannel
+            | Step::CommonEnableMac
+            | Step::CommonReleaseTxRxOff
+            | Step::CommonRestoreTxGainCompensation
+            | Step::CommonReleaseGrant => Some(PhyCalibrationTrackingBranch::Common),
+            Step::Complete | Step::Failed => None,
+            Step::TxAcquireGrant
+            | Step::TxDisableHardwareFrequency
+            | Step::TxSoftwareFrequencySettle
+            | Step::TxForceTxRxOff
+            | Step::TxForceDigitalGain
+            | Step::TxReleaseDigitalGain
+            | Step::TxClearPbus
+            | Step::TxDisableBaseband
+            | Step::TxConfigureBasebandZero
+            | Step::TxCalibrateTxDcPwdet
+            | Step::TxPublishTxGain
+            | Step::TxReassertTxRxOff
+            | Step::TxRestoreBaseband
+            | Step::TxEnableMac
+            | Step::TxReleaseTxRxOff
+            | Step::TxEnableHardwareFrequency => Some(PhyCalibrationTrackingBranch::Transmit),
+            Step::RestoreTxGainCompensation | Step::ReleaseGrant => Some(self.grant_branch),
         }
     }
 
@@ -666,6 +720,9 @@ impl PhyCalibrationTrackingTransition {
             }
             _ => return Err(PhyCalibrationTrackingTransitionError::WrongCompletion),
         };
+        if self.step == Step::TxAcquireGrant {
+            self.grant_branch = PhyCalibrationTrackingBranch::Transmit;
+        }
         Ok(())
     }
 

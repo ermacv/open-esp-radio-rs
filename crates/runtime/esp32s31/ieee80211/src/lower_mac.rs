@@ -1779,9 +1779,7 @@ where
                 at: before.radio,
                 generation: before.generation,
             },
-            // The relation projection boundary represents uncertainty in
-            // microseconds of its existing scalar/monotonic relation model.
-            uncertainty: oer_time::Duration::from_micros(uncertainty.as_micros()),
+            uncertainty,
             generation,
         }))
     }

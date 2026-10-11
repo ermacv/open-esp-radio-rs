@@ -4,6 +4,7 @@
 //! that a radio sharing the antenna yields to them; the backend turns the
 //! level into its arbiter's priority. The rules here decide only the level.
 
+use oer_bluetooth_radio::LeRadio;
 use oer_bluetooth_radio::{CoexistenceLevel, RadioDuration};
 
 /// Advertising events between raised events for an advertising interval.
@@ -15,7 +16,7 @@ use oer_bluetooth_radio::{CoexistenceLevel, RadioDuration};
 /// interval of at most 40 units of 625 us raises every third event, at most
 /// 80 units every second one and a longer interval every event. The start
 /// also raises the level until the first update.
-pub(crate) const fn advertising_period(interval: RadioDuration) -> u16 {
+pub(crate) const fn advertising_period(interval: RadioDuration<LeRadio>) -> u16 {
     let units = interval.as_micros() / 625;
     if units <= 40 {
         3

@@ -23,6 +23,7 @@ use oer_bluetooth_ll::{
         parse_legacy_advertising_report,
     },
 };
+use oer_bluetooth_radio::LeRadio;
 
 use oer_bluetooth_radio::{
     AdvertisingChannel, EventId, LeInstant, LePhy, LeWindow, NonZeroRadioDuration, OutsideEpoch,
@@ -38,7 +39,7 @@ use crate::planning::{
 use crate::arbiter::{Proposal, place};
 
 /// Shortest scan window worth scheduling.
-pub const MINIMUM_SCAN_WINDOW: NonZeroRadioDuration =
+pub const MINIMUM_SCAN_WINDOW: NonZeroRadioDuration<LeRadio> =
     NonZeroRadioDuration::from_micros(NonZeroU64::new(1_250).unwrap());
 /// Distinct advertisements the duplicate filter remembers.
 pub const DUPLICATE_FILTER_CAPACITY: usize = 16;
@@ -65,8 +66,8 @@ pub(crate) struct Scanner {
     phase: Phase,
     scan_type: ScanType,
     filter_policy: ScanFilterPolicy,
-    interval: RadioDuration,
-    window: RadioDuration,
+    interval: RadioDuration<LeRadio>,
+    window: RadioDuration<LeRadio>,
     filter_duplicates: bool,
     duplicates: LegacyAdvertisingDuplicateFilter<DUPLICATE_FILTER_CAPACITY>,
     channel: AdvertisingChannel,

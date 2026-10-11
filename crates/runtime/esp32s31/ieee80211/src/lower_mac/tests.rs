@@ -1576,7 +1576,10 @@ fn tsf_sample_checks_radio_elapsed_and_preserves_both_generations() {
     assert_eq!(measured.tsf, tsf);
     assert_eq!(measured.local.at, Ieee80211Instant::from_micros(10));
     assert_eq!(measured.local.generation, 7);
-    assert_eq!(measured.uncertainty, oer_time::Duration::from_micros(6));
+    assert_eq!(
+        measured.uncertainty,
+        oer_ieee80211_lower_mac::Ieee80211Duration::from_micros(6)
+    );
     let tsf_generation = measured.generation;
 
     // Reversed readings, an overflowing uncertainty and readings of two

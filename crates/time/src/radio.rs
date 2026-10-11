@@ -71,16 +71,16 @@ impl<D> RadioInstant<D> {
     }
 
     /// The instant `duration` later, or `None` on overflow.
-    pub const fn checked_add(self, duration: RadioDuration) -> Option<Self> {
-        match self.micros.checked_add(duration.0) {
+    pub const fn checked_add(self, duration: RadioDuration<D>) -> Option<Self> {
+        match self.micros.checked_add(duration.micros) {
             Some(micros) => Some(Self::from_micros(micros)),
             None => None,
         }
     }
 
     /// The instant `duration` earlier, or `None` before epoch zero.
-    pub const fn checked_sub(self, duration: RadioDuration) -> Option<Self> {
-        match self.micros.checked_sub(duration.0) {
+    pub const fn checked_sub(self, duration: RadioDuration<D>) -> Option<Self> {
+        match self.micros.checked_sub(duration.micros) {
             Some(micros) => Some(Self::from_micros(micros)),
             None => None,
         }
@@ -100,9 +100,9 @@ impl<D> RadioInstant<D> {
     /// let later = RadioInstant::<SecondRadio>::from_micros(30);
     /// let _ = later.checked_duration_since(earlier);
     /// ```
-    pub const fn checked_duration_since(self, earlier: Self) -> Option<RadioDuration> {
+    pub const fn checked_duration_since(self, earlier: Self) -> Option<RadioDuration<D>> {
         match self.micros.checked_sub(earlier.micros) {
-            Some(micros) => Some(RadioDuration(micros)),
+            Some(micros) => Some(RadioDuration::from_micros(micros)),
             None => None,
         }
     }
@@ -151,81 +151,231 @@ impl<D> fmt::Debug for RadioInstant<D> {
     }
 }
 
-/// A non-negative radio-time span, from zero through `u64::MAX` microseconds.
+/// A non-negative span of the radio domain `D`, from zero through
+/// `u64::MAX` microseconds.
 ///
-/// This is a span within a radio domain, not a conversion to monotonic time.
-/// Arithmetic rejects unrepresentable results instead of wrapping or clamping.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// A span belongs to the domain whose instants it separates, as
+/// [`RadioInstant`] does: it adds only to an instant of that domain and
+/// combines only with spans of that domain. It is not a monotonic
+/// [`Duration`](crate::Duration); a conversion exists only where a clock
+/// relation between the two domains is defined. Arithmetic rejects
+/// unrepresentable results instead of wrapping or clamping.
+///
+/// ```
+/// use oer_time::{RadioDuration, RadioInstant};
+///
+/// enum Radio {}
+/// let start = RadioInstant::<Radio>::from_micros(10);
+/// let span = RadioDuration::<Radio>::from_micros(20);
+/// assert_eq!(start.checked_add(span), Some(RadioInstant::from_micros(30)));
+/// ```
+///
+/// A span of one domain does not move an instant of another:
+///
+/// ```compile_fail,E0308
+/// use oer_time::{RadioDuration, RadioInstant};
+///
+/// enum FirstRadio {}
+/// enum SecondRadio {}
+/// let start = RadioInstant::<FirstRadio>::from_micros(10);
+/// let _ = start.checked_add(RadioDuration::<SecondRadio>::from_micros(20));
+/// ```
+///
+/// Nor do spans of two domains combine:
+///
+/// ```compile_fail,E0308
+/// use oer_time::RadioDuration;
+///
+/// enum FirstRadio {}
+/// enum SecondRadio {}
+/// let first = RadioDuration::<FirstRadio>::from_micros(10);
+/// let _ = first.checked_add(RadioDuration::<SecondRadio>::from_micros(20));
+/// ```
 #[repr(transparent)]
-pub struct RadioDuration(u64);
+pub struct RadioDuration<D> {
+    micros: u64,
+    domain: PhantomData<fn() -> D>,
+}
 
-impl RadioDuration {
+impl<D> RadioDuration<D> {
+    /// The empty span.
+    pub const ZERO: Self = Self::from_micros(0);
+
     /// Construct a duration from microseconds.
     pub const fn from_micros(micros: u64) -> Self {
-        Self(micros)
+        Self {
+            micros,
+            domain: PhantomData,
+        }
     }
 
     /// Microseconds, for formula or representation boundaries.
     pub const fn as_micros(self) -> u64 {
-        self.0
+        self.micros
     }
 
     /// The sum, or `None` past `u64::MAX` microseconds.
     pub const fn checked_add(self, other: Self) -> Option<Self> {
-        match self.0.checked_add(other.0) {
-            Some(micros) => Some(Self(micros)),
+        match self.micros.checked_add(other.micros) {
+            Some(micros) => Some(Self::from_micros(micros)),
             None => None,
         }
     }
 
     /// The difference, or `None` when `other` is longer.
     pub const fn checked_sub(self, other: Self) -> Option<Self> {
-        match self.0.checked_sub(other.0) {
-            Some(micros) => Some(Self(micros)),
+        match self.micros.checked_sub(other.micros) {
+            Some(micros) => Some(Self::from_micros(micros)),
             None => None,
         }
     }
 
     /// The span repeated `count` times, or `None` past `u64::MAX` microseconds.
     pub const fn checked_mul(self, count: u64) -> Option<Self> {
-        match self.0.checked_mul(count) {
-            Some(micros) => Some(Self(micros)),
+        match self.micros.checked_mul(count) {
+            Some(micros) => Some(Self::from_micros(micros)),
+            None => None,
+        }
+    }
+
+    /// What remains of this span after whole `period`s, or `None` for an
+    /// empty `period`.
+    pub const fn checked_rem(self, period: Self) -> Option<Self> {
+        match self.micros.checked_rem(period.micros) {
+            Some(micros) => Some(Self::from_micros(micros)),
             None => None,
         }
     }
 }
 
-/// A radio-time span of at least one microsecond: the duration of a window
-/// that cannot be empty.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct NonZeroRadioDuration(NonZeroU64);
+impl<D> Clone for RadioDuration<D> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
 
-impl NonZeroRadioDuration {
+impl<D> Copy for RadioDuration<D> {}
+
+impl<D> Default for RadioDuration<D> {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
+impl<D> PartialEq for RadioDuration<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.micros == other.micros
+    }
+}
+
+impl<D> Eq for RadioDuration<D> {}
+
+impl<D> PartialOrd for RadioDuration<D> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<D> Ord for RadioDuration<D> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.micros.cmp(&other.micros)
+    }
+}
+
+impl<D> Hash for RadioDuration<D> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.micros.hash(state);
+    }
+}
+
+impl<D> fmt::Debug for RadioDuration<D> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("RadioDuration")
+            .field(&self.micros)
+            .finish()
+    }
+}
+
+/// A span of the radio domain `D` of at least one microsecond: the duration
+/// of a window that cannot be empty.
+#[repr(transparent)]
+pub struct NonZeroRadioDuration<D> {
+    micros: NonZeroU64,
+    domain: PhantomData<fn() -> D>,
+}
+
+impl<D> NonZeroRadioDuration<D> {
     /// Construct a duration from a non-zero count of microseconds.
     pub const fn from_micros(micros: NonZeroU64) -> Self {
-        Self(micros)
+        Self {
+            micros,
+            domain: PhantomData,
+        }
     }
 
     /// The span, or `None` when it is zero.
-    pub const fn new(duration: RadioDuration) -> Option<Self> {
-        match NonZeroU64::new(duration.0) {
-            Some(micros) => Some(Self(micros)),
+    pub const fn new(duration: RadioDuration<D>) -> Option<Self> {
+        match NonZeroU64::new(duration.micros) {
+            Some(micros) => Some(Self::from_micros(micros)),
             None => None,
         }
     }
 
     /// The span as a possibly-zero duration.
-    pub const fn get(self) -> RadioDuration {
-        RadioDuration(self.0.get())
+    pub const fn get(self) -> RadioDuration<D> {
+        RadioDuration::from_micros(self.micros.get())
     }
 
     /// The sum, or `None` past `u64::MAX` microseconds.
-    pub const fn checked_add(self, other: RadioDuration) -> Option<Self> {
-        match self.0.checked_add(other.0) {
-            Some(micros) => Some(Self(micros)),
+    pub const fn checked_add(self, other: RadioDuration<D>) -> Option<Self> {
+        match self.micros.checked_add(other.micros) {
+            Some(micros) => Some(Self::from_micros(micros)),
             None => None,
         }
+    }
+}
+
+impl<D> Clone for NonZeroRadioDuration<D> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<D> Copy for NonZeroRadioDuration<D> {}
+
+impl<D> PartialEq for NonZeroRadioDuration<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.micros == other.micros
+    }
+}
+
+impl<D> Eq for NonZeroRadioDuration<D> {}
+
+impl<D> PartialOrd for NonZeroRadioDuration<D> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<D> Ord for NonZeroRadioDuration<D> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.micros.cmp(&other.micros)
+    }
+}
+
+impl<D> Hash for NonZeroRadioDuration<D> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.micros.hash(state);
+    }
+}
+
+impl<D> fmt::Debug for NonZeroRadioDuration<D> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("NonZeroRadioDuration")
+            .field(&self.micros)
+            .finish()
     }
 }
 
@@ -242,10 +392,22 @@ pub enum WindowError {
 /// on the clock of the port of domain `D`.
 ///
 /// Construction validates the exclusive endpoint against the full radio
-/// epoch. A valid window's [`end`](Self::end) is always representable.
+/// epoch. A valid window's [`end`](Self::end) is always representable. Its
+/// duration is a span of the same domain:
+///
+/// ```compile_fail,E0308
+/// use oer_time::{RadioDuration, RadioInstant, RadioWindow};
+///
+/// enum FirstRadio {}
+/// enum SecondRadio {}
+/// let _ = RadioWindow::new(
+///     RadioInstant::<FirstRadio>::from_micros(10),
+///     RadioDuration::<SecondRadio>::from_micros(20),
+/// );
+/// ```
 pub struct RadioWindow<D> {
     start: RadioInstant<D>,
-    duration: RadioDuration,
+    duration: RadioDuration<D>,
 }
 
 impl<D> RadioWindow<D> {
@@ -253,8 +415,11 @@ impl<D> RadioWindow<D> {
     ///
     /// Zero duration returns [`WindowError::Empty`]; an unrepresentable
     /// exclusive endpoint returns [`WindowError::Overflow`].
-    pub const fn new(start: RadioInstant<D>, duration: RadioDuration) -> Result<Self, WindowError> {
-        if duration.0 == 0 {
+    pub const fn new(
+        start: RadioInstant<D>,
+        duration: RadioDuration<D>,
+    ) -> Result<Self, WindowError> {
+        if duration.micros == 0 {
             return Err(WindowError::Empty);
         }
         if start.checked_add(duration).is_none() {
@@ -266,7 +431,10 @@ impl<D> RadioWindow<D> {
     /// Reserve a non-zero `duration` from `start`, or `None` when the
     /// exclusive endpoint lies past the epoch: the only way such a window can
     /// fail.
-    pub const fn nonempty(start: RadioInstant<D>, duration: NonZeroRadioDuration) -> Option<Self> {
+    pub const fn nonempty(
+        start: RadioInstant<D>,
+        duration: NonZeroRadioDuration<D>,
+    ) -> Option<Self> {
         match Self::new(start, duration.get()) {
             Ok(window) => Some(window),
             Err(_) => None,
@@ -276,13 +444,13 @@ impl<D> RadioWindow<D> {
     /// The same window, starting `lead` earlier and ending where it ends, or
     /// `None` when the earlier start precedes the epoch: the only way it can
     /// fail, since the end stays representable.
-    pub const fn extended_before(self, lead: RadioDuration) -> Option<Self> {
+    pub const fn extended_before(self, lead: RadioDuration<D>) -> Option<Self> {
         match self.start.checked_sub(lead) {
             // `start + duration` is representable, so `lead + duration`,
             // which ends at the same instant from an earlier start, is too.
             Some(start) => Some(Self {
                 start,
-                duration: RadioDuration(self.duration.0 + lead.0),
+                duration: RadioDuration::from_micros(self.duration.micros + lead.micros),
             }),
             None => None,
         }
@@ -294,14 +462,14 @@ impl<D> RadioWindow<D> {
     }
 
     /// Reserved span.
-    pub const fn duration(self) -> RadioDuration {
+    pub const fn duration(self) -> RadioDuration<D> {
         self.duration
     }
 
     /// First instant after the window.
     pub const fn end(self) -> RadioInstant<D> {
         // `new` proved this endpoint representable; the fields are private.
-        RadioInstant::from_micros(self.start.micros + self.duration.0)
+        RadioInstant::from_micros(self.start.micros + self.duration.micros)
     }
 
     /// Whether the two windows share an instant. Touching windows do not.
@@ -355,7 +523,7 @@ mod tests {
         RadioInstant::from_micros(micros)
     }
 
-    const fn duration(micros: u64) -> RadioDuration {
+    const fn duration(micros: u64) -> RadioDuration<Port> {
         RadioDuration::from_micros(micros)
     }
 
@@ -472,12 +640,13 @@ mod tests {
 
     #[test]
     fn checked_radio_arithmetic_is_available_in_const_contexts() {
-        const SUM: Option<RadioDuration> = duration(10).checked_add(duration(20));
-        const DIFFERENCE: Option<RadioDuration> = duration(20).checked_sub(duration(10));
-        const PRODUCT: Option<RadioDuration> = duration(10).checked_mul(3);
+        const SUM: Option<RadioDuration<Port>> = duration(10).checked_add(duration(20));
+        const DIFFERENCE: Option<RadioDuration<Port>> = duration(20).checked_sub(duration(10));
+        const PRODUCT: Option<RadioDuration<Port>> = duration(10).checked_mul(3);
         const LATER: Option<RadioInstant<Port>> = instant(10).checked_add(duration(20));
         const EARLIER: Option<RadioInstant<Port>> = instant(20).checked_sub(duration(10));
-        const ELAPSED: Option<RadioDuration> = instant(u64::MAX).checked_duration_since(instant(0));
+        const ELAPSED: Option<RadioDuration<Port>> =
+            instant(u64::MAX).checked_duration_since(instant(0));
         const WINDOW: Result<RadioWindow<Port>, WindowError> =
             RadioWindow::new(instant(0), duration(u64::MAX));
         const END: RadioInstant<Port> = match WINDOW {
@@ -538,11 +707,19 @@ mod tests {
     }
 
     #[test]
+    fn a_remainder_keeps_the_domain_and_refuses_an_empty_period() {
+        assert_eq!(duration(25).checked_rem(duration(10)), Some(duration(5)));
+        assert_eq!(duration(20).checked_rem(duration(10)), Some(duration(0)));
+        assert_eq!(duration(5).checked_rem(duration(0)), None);
+        assert_eq!(RadioDuration::<Port>::default(), RadioDuration::ZERO);
+    }
+
+    #[test]
     fn a_nonempty_window_fails_only_past_the_epoch() {
         enum D {}
         let one = NonZeroRadioDuration::from_micros(NonZeroU64::MIN);
         assert_eq!(
-            NonZeroRadioDuration::new(RadioDuration::from_micros(0)),
+            NonZeroRadioDuration::new(RadioDuration::<D>::from_micros(0)),
             None
         );
         assert_eq!(

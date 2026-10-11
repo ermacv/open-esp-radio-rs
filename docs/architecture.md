@@ -273,19 +273,30 @@ Rules:
   in its owner's radio epoch, not an image-monotonic or wall-clock instant.
   Its raw microseconds establish no relationship between clocks. The owner
   retains any additional interface, instance and generation validation.
-- Radio arithmetic belongs to `oer-time`: `RadioDuration` represents every
-  non-negative `u64` microsecond span. Instant ordering and
+- Radio arithmetic belongs to `oer-time`: `RadioDuration<D>` represents
+  every non-negative `u64` microsecond span of the domain `D`, as
+  `RadioInstant<D>` does its instants. A span adds only to an instant of its
+  own domain and combines only with spans of it, and a window's span is of
+  its start's domain; other mixes do not compile. Instant ordering and
   `checked_duration_since` require the same domain; equal instants yield a
   zero span and reversed instants fail. Instant `checked_add`/`checked_sub`
   and duration `checked_add`/`checked_sub`/`checked_mul` return `None` for
   results outside the represented range, without wrapping, narrowing or
-  clamping. `RadioWindow` is non-empty and half-open, with a representable
+  clamping; duration `checked_rem` returns `None` only for an empty period.
+  `RadioWindow` is non-empty and half-open, with a representable
   exclusive endpoint; touching windows do not overlap. Scalar extraction
   belongs at named formula or representation boundaries. Monotonic
   duration is not a substitute for radio-domain arithmetic.
 - Time crosses between domains only at a boundary, through the port's
   `ClockInfo` and a `ClockSample` with its generation and uncertainty; a
   stamp of another generation is not converted (`EpochError::StaleSample`).
+  A span becomes monotonic only through the relation as well
+  (`ClockInfo::duration_to_monotonic`, widened by an `Affine` clock's
+  drift), and a TSF span crosses to the port's radio clock only through its
+  `TsfSample`, whose projections carry their uncertainty in the target
+  domain (`Projected<T, S>`). The S31 station's direct path carries a local
+  elapsed time into the access point's TSF at the nominal rate in one named
+  function (`tsf_elapsed_at_nominal_rate`), as the vendor does.
 - Time-exact work stays in its domain: the station follows the access
   point's TSF by the MAC local time between a beacon's stamp and now, not
   through monotonic time. A software handoff bound is monotonic: the HE

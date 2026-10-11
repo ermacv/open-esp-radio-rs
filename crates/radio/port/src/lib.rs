@@ -60,7 +60,7 @@
 
 use core::{fmt::Debug, future::Future, ops::RangeInclusive};
 
-use oer_time::{Duration, Instant, RadioInstant};
+use oer_time::{Duration, Instant, RadioDuration, RadioInstant};
 
 /// The base of every radio port: its event stream, its radio clock,
 /// cancellation of admitted work and its lifecycle.
@@ -439,13 +439,15 @@ impl<D> core::fmt::Debug for ClockSample<D> {
     }
 }
 
-/// A converted instant and how far the true instant may lie from it.
+/// A converted value and how far the true value may lie from it, as a span
+/// `S` of the domain it was converted into: monotonic by default, a radio
+/// domain's [`RadioDuration`] for a projection into that domain.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Projected<T> {
-    /// The converted instant.
+pub struct Projected<T, S = Duration> {
+    /// The converted value.
     pub at: T,
-    /// How far the true instant may lie from `at`, either way.
-    pub uncertainty: Duration,
+    /// How far the true value may lie from `at`, either way.
+    pub uncertainty: S,
 }
 
 impl ClockInfo {
@@ -488,21 +490,49 @@ impl ClockInfo {
         }
     }
 
+    /// The monotonic span of the radio span `span`: the clock relation is
+    /// the only conversion between a radio domain's durations and the
+    /// monotonic time.
+    ///
+    /// Exact for a [`RadioEpoch::Monotonic`] clock. An
+    /// [`RadioEpoch::Affine`] clock keeps the microseconds, and the
+    /// uncertainty is the drift over the span, rounded up to whole
+    /// microseconds; it needs no sample, since a span carries no epoch
+    /// offset. An unrelated clock has no monotonic span.
+    pub fn duration_to_monotonic<D>(
+        self,
+        span: RadioDuration<D>,
+    ) -> Result<Projected<Duration>, EpochError> {
+        let at = Duration::from_micros(span.as_micros());
+        match self.epoch {
+            RadioEpoch::Monotonic => Ok(Projected {
+                at,
+                uncertainty: Duration::ZERO,
+            }),
+            RadioEpoch::Affine { drift_ppm } => Ok(Projected {
+                at,
+                uncertainty: drift_bound(Duration::ZERO, span.as_micros(), drift_ppm)?,
+            }),
+            RadioEpoch::Unrelated => Err(EpochError::Unrelated),
+        }
+    }
+
     /// The radio stamp of the monotonic instant `at`, of the sample's
     /// generation, projected from `sample`; the inverse of
-    /// [`Self::to_monotonic_with`], with the same uncertainty.
+    /// [`Self::to_monotonic_with`], with the same uncertainty as a span of
+    /// the radio domain it projects into.
     pub fn from_monotonic_with<D>(
         self,
         at: Instant,
         sample: &ClockSample<D>,
-    ) -> Result<Projected<RadioStamp<D>>, EpochError> {
+    ) -> Result<Projected<RadioStamp<D>, RadioDuration<D>>, EpochError> {
         match self.epoch {
             RadioEpoch::Monotonic => Ok(Projected {
                 at: RadioStamp {
                     at: RadioInstant::from_micros(at.as_micros()),
                     generation: sample.generation,
                 },
-                uncertainty: Duration::ZERO,
+                uncertainty: RadioDuration::ZERO,
             }),
             RadioEpoch::Affine { drift_ppm } => {
                 let (at, distance) = shift(
@@ -515,7 +545,11 @@ impl ClockInfo {
                         at: RadioInstant::from_micros(at),
                         generation: sample.generation,
                     },
-                    uncertainty: drift_bound(sample.uncertainty, distance, drift_ppm)?,
+                    // The relation carries its bound into the radio domain,
+                    // at the same nominal rate the drift widens.
+                    uncertainty: RadioDuration::from_micros(
+                        drift_bound(sample.uncertainty, distance, drift_ppm)?.as_micros(),
+                    ),
                 })
             }
             RadioEpoch::Unrelated => Err(EpochError::Unrelated),

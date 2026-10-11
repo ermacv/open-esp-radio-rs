@@ -47,6 +47,9 @@ pub enum Ieee80211Radio {}
 /// An instant on the IEEE 802.11 lower-MAC port's clock.
 pub type Ieee80211Instant = oer_time::RadioInstant<Ieee80211Radio>;
 
+/// A span of the port's radio clock.
+pub type Ieee80211Duration = oer_time::RadioDuration<Ieee80211Radio>;
+
 /// An instant on the IEEE 802.11 lower-MAC port's clock with the generation
 /// of its relation to the monotonic clock.
 pub type Ieee80211Stamp = oer_radio_port::RadioStamp<Ieee80211Radio>;

@@ -41,7 +41,8 @@ vendor:
 [`oer-espressif-ieee80211-policy`](../../espressif/ieee80211/policy/README.md)
 supplies the Espressif values recovered from the vendor stack.
 
-A-MPDU lifetime and aging margin are `RadioDuration`s. Aging uses the
+A-MPDU lifetime and aging margin are spans of the port's radio clock
+(`Ieee80211Duration`). Aging uses the
 same radio epoch as the commit instant and starts strictly after
 `commit + lifetime - margin`; the exact first aged instant is checked before
 admission. An unrepresentable threshold is `AgingThresholdOutsideEpoch`.

@@ -6,6 +6,7 @@
 //! reservation. A proposal that cannot start by its latest start is not
 //! placed, and the role skips that event.
 
+use oer_bluetooth_radio::LeRadio;
 use oer_bluetooth_radio::{LeInstant, LeWindow, NonZeroRadioDuration, OutsideEpoch, RadioTiming};
 
 /// One event a role wants to schedule.
@@ -13,7 +14,7 @@ use oer_bluetooth_radio::{LeInstant, LeWindow, NonZeroRadioDuration, OutsideEpoc
 pub(crate) struct Proposal {
     pub(crate) earliest: LeInstant,
     pub(crate) latest: LeInstant,
-    pub(crate) duration: NonZeroRadioDuration,
+    pub(crate) duration: NonZeroRadioDuration<LeRadio>,
 }
 
 /// The earliest start in `[earliest, latest]` whose reservation
@@ -69,7 +70,7 @@ pub(crate) fn place(
 /// The window or its reservation lies outside the radio epoch.
 pub(crate) fn reservation(
     start: LeInstant,
-    duration: NonZeroRadioDuration,
+    duration: NonZeroRadioDuration<LeRadio>,
     timing: RadioTiming,
 ) -> Result<LeWindow, OutsideEpoch> {
     let window = LeWindow::nonempty(start, duration).ok_or(OutsideEpoch)?;
@@ -109,7 +110,7 @@ mod tests {
         }
     }
 
-    fn micros(micros: u64) -> NonZeroRadioDuration {
+    fn micros(micros: u64) -> NonZeroRadioDuration<oer_bluetooth_radio::LeRadio> {
         NonZeroRadioDuration::from_micros(NonZeroU64::new(micros).unwrap())
     }
 

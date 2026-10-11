@@ -28,7 +28,7 @@ Module map:
 - `ftm`, `twt`: bounded requester state and deadlines; their presence does not
   establish a chip timestamp or wake-schedule implementation. The TWT wake
   plan is computed in `TsfInstant`s of one TSF generation the caller tracks;
-  its intervals and guards are `RadioDuration`s. A guard before the epoch is
+  its intervals and guards are `TsfDuration`s. A guard before the epoch is
   `BeforeTsfEpoch`, and an endpoint beyond the epoch is `BeyondTsfRange`;
 - `request`: caller-visible station configuration and selection values.
 

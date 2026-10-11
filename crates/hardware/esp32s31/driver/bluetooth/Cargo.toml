@@ -17,6 +17,7 @@ validation-probes = [
 
 [dependencies]
 oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
+oer-bluetooth-radio = { path = "../../../../protocols/bluetooth/le/radio" }
 oer-esp32s31-hal = { path = "../../hal" }
 oer-esp32s31-bluetooth-memory = { path = "memory" }
 oer-esp32s31-phy = { path = "../../phy" }

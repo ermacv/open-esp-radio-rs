@@ -71,11 +71,7 @@ fn first_event() -> PeripheralConnectionFirstEvent {
         receive_time: PeripheralConnectionReceiveTime::from_controller_ticks(24_000),
         event_span: PeripheralConnectionEventSpan::new(23_000).unwrap(),
         window: PeripheralConnectionSchedulerWindow::new(25_000, 26_000).unwrap(),
-        receive_wait: PeripheralConnectionReceiveWait::new(
-            oer_time::RadioDuration::from_micros(1_250),
-            oer_time::RadioDuration::from_micros(50),
-        )
-        .unwrap(),
+        receive_wait: PeripheralConnectionReceiveWait::new(1_250, 50).unwrap(),
         default_tx_power: crate::LeTxPower::from_dbm(0).expect("provider level"),
         priority: PeripheralConnectionSchedulerPriority::FIRST_EVENT,
         coexistence: lanes(9, 4),
@@ -89,10 +85,8 @@ fn recurring_event(receive_wait_micros: u32) -> PeripheralConnectionRecurringEve
         channel: PeripheralConnectionDataChannel::new(20).unwrap(),
         event_span: PeripheralConnectionEventSpan::new(23_000).unwrap(),
         window: PeripheralConnectionSchedulerWindow::new(50_000, 51_000).unwrap(),
-        receive_wait: PeripheralConnectionRecurringReceiveWait::new(
-            oer_time::RadioDuration::from_micros(u64::from(receive_wait_micros)),
-        )
-        .unwrap(),
+        receive_wait: PeripheralConnectionRecurringReceiveWait::new(u64::from(receive_wait_micros))
+            .unwrap(),
         priority: PeripheralConnectionSchedulerPriority::RECURRING_BASELINE,
         coexistence: lanes(4, 4),
         raw_sequence_lead: 100,
@@ -497,33 +491,16 @@ fn physical_receive_waits_and_event_spans_refuse_the_first_unrepresentable_value
         PeripheralConnectionReceiveWait as First,
         PeripheralConnectionRecurringReceiveWait as Recurring,
     };
-    use oer_time::RadioDuration as D;
-    assert_eq!(
-        First::new(D::from_micros(65_473), D::from_micros(0))
-            .unwrap()
-            .total_micros(),
-        65_534
-    );
-    assert_eq!(First::new(D::from_micros(65_474), D::from_micros(0)), None);
-    assert_eq!(First::new(D::from_micros(0), D::from_micros(0)), None);
-    assert_eq!(
-        First::new(D::from_micros(1), D::from_micros(u64::MAX)),
-        None
-    );
-    assert_eq!(
-        First::new(D::from_micros(u64::from(u32::MAX) + 1), D::from_micros(0)),
-        None
-    );
+    assert_eq!(First::new(65_473, 0).unwrap().total_micros(), 65_534);
+    assert_eq!(First::new(65_474, 0), None);
+    assert_eq!(First::new(0, 0), None);
+    assert_eq!(First::new(1, u64::MAX), None);
+    assert_eq!(First::new(u64::from(u32::MAX) + 1, 0), None);
     for valid in [0, 65_534, 65_536, 131_070] {
-        assert_eq!(
-            Recurring::new(D::from_micros(valid))
-                .unwrap()
-                .total_micros(),
-            valid as u32
-        );
+        assert_eq!(Recurring::new(valid).unwrap().total_micros(), valid as u32);
     }
     for invalid in [65_535, 131_071, u64::from(u32::MAX) + 1, u64::MAX] {
-        assert_eq!(Recurring::new(D::from_micros(invalid)), None);
+        assert_eq!(Recurring::new(invalid), None);
     }
     assert!(PeripheralConnectionEventSpan::new(i32::MAX as u32).is_some());
     assert_eq!(

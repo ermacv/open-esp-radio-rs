@@ -23,7 +23,7 @@ use crate::{
     },
 };
 
-use oer_ieee80211_mac::tsf::TsfInstant;
+use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
 
 use super::{
     ConnectedControlCore, ConnectedControlError, ConnectedControlTx, ConnectedDisconnectReason,
@@ -123,7 +123,7 @@ impl JoinBeacon {
         };
         access_point_tsf_after(
             self.beacon.timestamp_tsf,
-            now.saturating_duration_since(received_at).as_micros(),
+            tsf_elapsed_at_nominal_rate(now.saturating_duration_since(received_at).as_micros()),
         )
         .map(Some)
         .ok_or(JoinTsfUnrepresentable)
@@ -135,14 +135,32 @@ impl JoinBeacon {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct JoinTsfUnrepresentable;
 
-/// The access point TSF `timestamp_tsf` advanced by `elapsed_micros`, the
-/// time since its frame arrived; `None` when the sum crosses 2^64, which the
-/// TSF never does (`docs/architecture.md`, radio time domains).
+/// The access point TSF `timestamp_tsf` advanced by `elapsed`, the time
+/// since its frame arrived; `None` when the sum crosses 2^64, which the TSF
+/// never does (`docs/architecture.md`, radio time domains).
 pub const fn access_point_tsf_after(
     timestamp_tsf: TsfInstant,
-    elapsed_micros: u64,
+    elapsed: TsfDuration,
 ) -> Option<TsfInstant> {
-    timestamp_tsf.checked_add(oer_time::RadioDuration::from_micros(elapsed_micros))
+    timestamp_tsf.checked_add(elapsed)
+}
+
+/// The access point's TSF span of `elapsed_micros`, an elapsed time a local
+/// counter of this station measured (the monotonic clock or the MAC local
+/// time), taken at the TSF's nominal rate of one microsecond per counter
+/// microsecond.
+///
+/// No relation between the local counter and the access point's TSF exists
+/// here; the span ignores their drift, of at most
+/// [`TSF_DRIFT_PPM`](oer_ieee80211_lower_mac::TSF_DRIFT_PPM) of it. This is
+/// the only place the station's direct path carries a local span into the
+/// TSF, as the vendor does.
+///
+/// SOURCE: complete pinned `libpp.a[if_hwctrl.o]::ic_update_sta_tsf` adds
+/// the difference of a free-running microsecond counter to the node's
+/// timestamp unscaled.
+pub const fn tsf_elapsed_at_nominal_rate(elapsed_micros: u64) -> TsfDuration {
+    TsfDuration::from_micros(elapsed_micros)
 }
 
 /// Whether the station can follow a beacon's TSF after any time its 32-bit
@@ -153,7 +171,7 @@ pub const fn access_point_tsf_after(
 /// within one counter period. The receive path drops such a beacon whole:
 /// its TSF, TBTT schedule, TIM and liveness all come from one frame.
 pub const fn beacon_tsf_followable(timestamp_tsf: TsfInstant) -> bool {
-    access_point_tsf_after(timestamp_tsf, u32::MAX as u64).is_some()
+    access_point_tsf_after(timestamp_tsf, tsf_elapsed_at_nominal_rate(u32::MAX as u64)).is_some()
 }
 
 /// Power management of one association and the inputs waiting for it.

@@ -91,7 +91,10 @@ Rules a caller relies on:
 - **Limits.** `SubmitError::Unsupported` and `SettingError::Unsupported`
   mean a value outside the declared limits and nothing else.
 
-TSF arithmetic uses `RadioDuration`. `VifTsf::checked_duration_since`
+TSF arithmetic uses `TsfDuration` (`RadioDuration<Ieee80211Tsf>`), and the
+port's radio clock `Ieee80211Duration`; a `TsfSample`'s uncertainty is a span
+of the radio clock, and its projections carry theirs in the target domain.
+`VifTsf::checked_duration_since`
 first checks the interface, then rejects reversed time; checked addition rejects
 an endpoint beyond the TSF epoch. `TsfRelation` validates elapsed time, drift
 uncertainty and the expected TSF before changing its relation or generation.

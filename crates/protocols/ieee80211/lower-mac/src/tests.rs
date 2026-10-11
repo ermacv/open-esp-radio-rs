@@ -958,7 +958,7 @@ fn a_tsf_sample_projects_both_ways_with_the_drift_bound() {
             at: Ieee80211Instant::from_micros(500_000),
             generation: 3,
         },
-        uncertainty: oer_time::Duration::from_micros(2),
+        uncertainty: Ieee80211Duration::from_micros(2),
         generation: CURRENT,
     };
     let distance = 1_000_000;
@@ -1176,7 +1176,7 @@ fn the_channel_setting_needs_a_disabled_port_and_live_retuning_does_not() {
 
 #[test]
 fn a_tsf_relation_keeps_its_generation_through_drift_after_missed_beacons() {
-    let mut relation = TsfRelation::new(4, oer_time::Duration::from_micros(1));
+    let mut relation = TsfRelation::new(4, oer_ieee80211_mac::tsf::TsfDuration::from_micros(1));
     let tsf = TsfInstant::from_micros;
     let interval = 102_400;
     assert_eq!(
@@ -1210,7 +1210,7 @@ fn a_tsf_relation_keeps_its_generation_through_drift_after_missed_beacons() {
 
 #[test]
 fn a_tsf_relation_starts_a_generation_at_a_jump_between_consecutive_beacons() {
-    let mut relation = TsfRelation::new(4, oer_time::Duration::from_micros(1));
+    let mut relation = TsfRelation::new(4, oer_ieee80211_mac::tsf::TsfDuration::from_micros(1));
     let tsf = TsfInstant::from_micros;
     let interval = 102_400;
     relation.set(tsf(0), tsf(1_000_000)).unwrap();
@@ -1237,7 +1237,7 @@ fn a_tsf_relation_starts_a_generation_at_a_jump_between_consecutive_beacons() {
 
 #[test]
 fn a_tsf_crossing_2_pow_64_starts_a_generation() {
-    let mut relation = TsfRelation::new(5, oer_time::Duration::from_micros(1));
+    let mut relation = TsfRelation::new(5, oer_ieee80211_mac::tsf::TsfDuration::from_micros(1));
     let tsf = TsfInstant::from_micros;
     relation.set(tsf(0), tsf(u64::MAX - 100)).unwrap();
     // A set across 2^64: a few microseconds on the air, a jump in order.
@@ -1257,8 +1257,8 @@ fn a_tsf_crossing_2_pow_64_starts_a_generation() {
 
 #[test]
 fn tsf_relations_of_different_epochs_never_share_a_generation() {
-    let first = TsfRelation::new(1, oer_time::Duration::ZERO);
-    let mut second = TsfRelation::new(2, oer_time::Duration::ZERO);
+    let first = TsfRelation::new(1, oer_ieee80211_mac::tsf::TsfDuration::ZERO);
+    let mut second = TsfRelation::new(2, oer_ieee80211_mac::tsf::TsfDuration::ZERO);
     assert_ne!(first.generation(), second.generation());
     // Jumps count within an epoch: the second relation's first jump is not
     // the first relation's.
@@ -1592,7 +1592,10 @@ fn tsf_elapsed_preserves_the_full_range_and_refuses_reversal() {
 
 #[test]
 fn tsf_tolerance_failure_preserves_the_relation() {
-    let mut relation = TsfRelation::new(7, oer_time::Duration::from_micros(u64::MAX));
+    let mut relation = TsfRelation::new(
+        7,
+        oer_ieee80211_mac::tsf::TsfDuration::from_micros(u64::MAX),
+    );
     relation
         .set(TsfInstant::from_micros(0), TsfInstant::from_micros(0))
         .unwrap();
@@ -1603,7 +1606,7 @@ fn tsf_tolerance_failure_preserves_the_relation() {
     );
     assert_eq!(relation, before);
     assert_eq!(
-        TsfRelation::new(8, oer_time::Duration::ZERO)
+        TsfRelation::new(8, oer_ieee80211_mac::tsf::TsfDuration::ZERO)
             .tolerance(oer_time::RadioDuration::from_micros(u64::MAX)),
         Ok(oer_time::RadioDuration::from_micros(
             (u128::from(u64::MAX) * u128::from(TSF_DRIFT_PPM)).div_ceil(1_000_000) as u64

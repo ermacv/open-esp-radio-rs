@@ -28,6 +28,7 @@ use oer_bluetooth_ll::{
     data_length::{LeDataLength, LeDataLengths},
     dtm::DTM_MAX_PAYLOAD,
 };
+use oer_bluetooth_radio::LeRadio;
 use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, CancelError, EventId, LeInstant, OutsideEpoch,
     RadioActivity, RadioDuration, RadioOutcome, RadioRequest, RadioTiming, RequestError,
@@ -65,7 +66,7 @@ pub struct LeControllerConfig {
 
 /// Slack between planning an event and the earliest instant the backend
 /// admits, covering the time until the request reaches it.
-pub const PLANNING_SLACK: RadioDuration = RadioDuration::from_micros(500);
+pub const PLANNING_SLACK: RadioDuration<LeRadio> = RadioDuration::from_micros(500);
 
 /// Placement attempts per [`LeController::next_request`]; each failed
 /// attempt skips one event of a role.
@@ -1209,7 +1210,7 @@ pub(crate) fn allocate_event(next: &mut u32) -> EventId {
 }
 
 /// Preview xorshift64* without committing it before a plan is validated.
-fn advertising_delay(mut prng: u64) -> (u64, RadioDuration) {
+fn advertising_delay(mut prng: u64) -> (u64, RadioDuration<LeRadio>) {
     prng ^= prng >> 12;
     prng ^= prng << 25;
     prng ^= prng >> 27;

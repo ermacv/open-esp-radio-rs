@@ -123,7 +123,9 @@ fn ieee802154_foundation(mut radio: EspHalRadioPlatform) -> Option<Ieee802154Fou
         RadioHardware::take(radio.analog_bus_ownership()?)?.into_concurrent(());
     let shared: &'static _ = SHARED.try_init(shared)?;
     let mut lease = shared.try_acquire().ok()?;
-    let powered = Ieee802154Cold::from_partition(partitions.ieee802154)
+    // The terminal probe never leaves common power, so its proof ends with
+    // the boot.
+    let (powered, _power) = Ieee802154Cold::from_partition(partitions.ieee802154)
         .power_up(&mut lease, &mut EspHalRadioClocks::new())
         .ok()?;
     let clocked = powered

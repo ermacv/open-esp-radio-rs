@@ -32,7 +32,7 @@ pub mod station;
 
 pub use access_point::{AccessPoint, AccessPointClients, AccessPointTraffic};
 pub use station::{
-    AirObservation, InducedProtection, ProtectionPeer, RoleOperation, StationIcmp,
+    AirObservation, InducedProtection, ProtectionPeer, RestartRf, RoleOperation, StationIcmp,
     StationReconnect, StationSleep, StationTcp, StationUdp,
 };
 

@@ -224,11 +224,15 @@ fn role_operations_own_their_parameters() {
             "image = 'correctness'\n[workload]\nkind = 'role'\nlink = {{ phy = 'ht40' }}\ntimeout_seconds = 60\noperation = {operation}\n"
         )
     };
-    valid(&role("{ kind = 'restart', cycles = 3 }"));
+    valid(&role(
+        "{ kind = 'restart', cycles = 3, rf = 'closed-and-woken' }",
+    ));
     valid(&role(
         "{ kind = 'roundtrip', channel = 6, dwell_seconds = 5, snapshot_length = 128 }",
     ));
-    invalid(&role("{ kind = 'restart', cycles = 11 }"));
+    invalid(&role(
+        "{ kind = 'restart', cycles = 11, rf = 'closed-and-woken' }",
+    ));
     invalid(&role("{ kind = 'monitor', channel = 14 }"));
     assert!(toml::from_str::<WifiScenario>(&role("{ kind = 'scan', cycles = 3 }")).is_err());
 }

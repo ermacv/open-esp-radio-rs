@@ -7,6 +7,7 @@ use oer_esp32s31_hal::{
 use oer_time_virtual::VirtualClock;
 
 use super::*;
+use crate::concurrent::ConcurrentAcquire;
 use crate::{
     PhyConfig, PhyState, RegisteredPhyState,
     concurrent::ConcurrentPhy,
@@ -55,12 +56,12 @@ fn joining_an_unregistered_domain_changes_nothing() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
-    assert_eq!(
-        join_bluetooth(&mut lease, &task, &VirtualClock::<8>::new()).map(|(_, acquired)| acquired),
-        Err(BluetoothPhyClientError::Phy(
-            ConcurrentPhyError::NotRegistered
-        ))
-    );
+    let _ = task;
+    // Nothing prepared the domain, so no client can enter it.
+    assert!(matches!(
+        crate::concurrent::phy_ready(&mut lease).map(|_| ()),
+        Err(ConcurrentPhyError::NotRegistered)
+    ));
     assert!(!lease.holds_btbb(RadioClient::Bluetooth));
 }
 
@@ -72,9 +73,12 @@ fn a_stale_registration_is_rejected_before_the_client_set_changes() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
+    let _ = &task;
+    // The ready proof refuses a registration that no longer describes the
+    // lease, before any client or BTBB change.
     assert_eq!(
-        join_bluetooth(&mut lease, &task, &VirtualClock::<8>::new()).map(|(_, acquired)| acquired),
-        Err(BluetoothPhyClientError::StaleRegistration)
+        crate::concurrent::phy_ready(&mut lease).map(|_| ()),
+        Err(ConcurrentPhyError::EpochMismatch)
     );
     assert!(!bluetooth_is_client(&lease));
     assert!(!lease.holds_btbb(RadioClient::Bluetooth));
@@ -88,7 +92,7 @@ fn leaving_without_the_btbb_reference_keeps_the_membership_and_the_client() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(
+        enter_client(
             &mut lease,
             RadioClient::Bluetooth,
             &VirtualClock::<8>::new()
@@ -106,4 +110,31 @@ fn leaving_without_the_btbb_reference_keeps_the_membership_and_the_client() {
     );
     let _membership = failure.into_membership();
     assert!(bluetooth_is_client(&lease));
+}
+
+/// Enter `client` with a proof for the lease's registration.
+fn enter_client(
+    lease: &mut oer_esp32s31_hal::shared_radio::SharedRadioLease<
+        '_,
+        crate::concurrent::ConcurrentPhy,
+    >,
+    client: oer_esp32s31_hal::shared_radio::RadioClient,
+    clock: &impl oer_time::Clock,
+) -> Result<crate::concurrent::ConcurrentAcquire, crate::concurrent::ConcurrentPhyError> {
+    crate::concurrent::acquire_client(lease, client, clock)
+}
+
+/// Join with a proof for the lease's registration.
+fn join_bluetooth_prepared(
+    lease: &mut oer_esp32s31_hal::shared_radio::SharedRadioLease<
+        '_,
+        crate::concurrent::ConcurrentPhy,
+    >,
+    task: &TaskOwner,
+    clock: &impl oer_time::Clock,
+) -> Result<(BluetoothPhyMembership, ConcurrentAcquire), BluetoothPhyClientError> {
+    let ready = crate::concurrent::PhyReady::for_test(lease);
+    join_bluetooth(ready, task, clock)
+        .map(|joined| (joined.membership, joined.acquired))
+        .map_err(|refused| refused.error)
 }

@@ -1,12 +1,15 @@
 //! Reusable role-neutral Wi-Fi bring-up as a client of the radio arbiter.
 //!
 //! This boundary owns the production ordering shared by standalone firmware
-//! and HIL once the shared PHY domain is registered with RF open: common
-//! radio power, the Wi-Fi module clocks and initialized status, the Wi-Fi PHY
+//! and HIL, in two halves. The composition that owns the arbiter first
+//! prepares the shared PHY (registration, or wake of closed RF) and enables
+//! coexistence. [`power_up_esp32s31_wifi`] then enters common radio power and
+//! enables the Wi-Fi module clocks and initialized status, and
+//! [`start_esp32s31_wifi`] proves the domain ready and enters the Wi-Fi PHY
 //! client with its initial tracking, the Wi-Fi RX enable and the initial
-//! channel. Registration, RF close and wake belong to the composition that
-//! owns the arbiter. Board token construction and diagnostics remain caller
-//! policy.
+//! channel. After a full common-power cycle, Wi-Fi works again only when the
+//! RF wake and coexistence precede the repeated power entry (#644). Board
+//! token construction and diagnostics remain caller policy.
 
 use crate::channel::lower_wifi_channel;
 
@@ -14,14 +17,15 @@ use oer_esp32s31_hal::{
     ieee80211::client::{WifiClocked, WifiCold, WifiPowered},
     root::WifiPartition,
     shared_radio::{
-        CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
+        CommonPower, CommonRadioPowerError, ModemClockError, PlatformClockProvider,
+        SharedRadioLease, WifiClient,
     },
 };
 
 use oer_esp32s31_phy::{
     ConcurrentPhyTrackingError, ConcurrentWifiChannelError, PhyShortDelay, PhyTargetObserver,
     PhyTxTargetPowerProfile,
-    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
+    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, phy_ready},
     maintain_concurrent_phy, select_concurrent_wifi_channel,
     tracking::PhyParamTrackingOutcome,
     wifi_client::{WifiPhyMembership, join_wifi, set_wifi_rx},
@@ -91,13 +95,63 @@ pub enum WifiColdStartError {
     InitialChannel(ConcurrentWifiChannelError),
 }
 
-/// The Wi-Fi owners a failed bring-up returns, at the stage it reached.
-#[must_use = "a failed Wi-Fi bring-up still owns the Wi-Fi partition"]
-pub enum WifiColdStartFrontier<W> {
+/// Wi-Fi inside common power with its module clocks on and its
+/// initialized status set: the half of the bring-up before the shared PHY
+/// is prepared for it.
+#[must_use = "the initialized Wi-Fi client must start or leave common power"]
+pub struct WifiInitialized<W> {
+    clocked: WifiClocked,
+    platform: W,
+}
+
+impl<W> WifiInitialized<W> {
+    /// The clocked client and Wi-Fi's MAC platform.
+    pub fn into_parts(self) -> (WifiClocked, W) {
+        (self.clocked, self.platform)
+    }
+}
+
+/// The Wi-Fi owners a failed power-up returns, at the stage it reached,
+/// with the power proof once power was entered.
+#[must_use = "a failed Wi-Fi power-up still owns the Wi-Fi partition"]
+pub enum WifiPowerUpFrontier<W> {
     /// Nothing changed; the partition is unpowered.
     Cold { cold: WifiCold, platform: W },
     /// Common power is held; the Wi-Fi clocks are off.
-    Powered { powered: WifiPowered, platform: W },
+    Powered {
+        powered: WifiPowered,
+        power: CommonPower<WifiClient>,
+        platform: W,
+    },
+    /// The Wi-Fi clocks are on; the initialized status did not change.
+    Clocked {
+        clocked: WifiClocked,
+        power: CommonPower<WifiClient>,
+        platform: W,
+    },
+}
+
+/// Failed power-up retaining the Wi-Fi owners at their exact stage.
+#[must_use = "a failed Wi-Fi power-up still owns the Wi-Fi partition"]
+pub struct WifiPowerUpFailure<W> {
+    error: WifiColdStartError,
+    frontier: WifiPowerUpFrontier<W>,
+}
+
+impl<W> WifiPowerUpFailure<W> {
+    pub const fn error(&self) -> WifiColdStartError {
+        self.error
+    }
+
+    pub fn into_frontier(self) -> WifiPowerUpFrontier<W> {
+        self.frontier
+    }
+}
+
+/// The Wi-Fi owners a failed start returns, at the stage it reached. The
+/// power proof stays with the composition, which holds it in coexistence.
+#[must_use = "a failed Wi-Fi bring-up still owns the Wi-Fi partition"]
+pub enum WifiColdStartFrontier<W> {
     /// The Wi-Fi clocks are on; Wi-Fi is not a PHY client.
     Clocked { clocked: WifiClocked, platform: W },
     /// Wi-Fi is a PHY client with its baseband receive path disabled, unless
@@ -136,42 +190,29 @@ impl<W> WifiColdStartFailure<W> {
     }
 }
 
-/// Bring Wi-Fi up as a client of the registered, RF-open shared PHY domain.
+/// Enter common radio power, enable the Wi-Fi module clocks and set the
+/// initialized status: the first half of the bring-up. The returned proof
+/// is what the client's release consumes.
 ///
-/// `platform` and `clocks` are the radio system's PHY platform token and
-/// clock sources; `wifi_platform` is Wi-Fi's own MAC platform, kept with the
-/// returned owner. Initial tracking follows the domain's admission policy
-/// without quiescence proofs.
+/// # Errors
 ///
-/// # Cancellation
-///
-/// Once polled, drive this future to a terminal result: cancelling during
-/// tracking or the channel transaction leaves the shared PHY ambiguous.
-#[must_use = "Wi-Fi bring-up must be driven to a terminal result"]
+/// A step failed; the failure returns the owners at the stage reached.
 #[allow(
-    clippy::too_many_arguments,
-    reason = "the arbiter lease, both platforms and the clock sources are distinct owners"
+    clippy::result_large_err,
+    reason = "failure must return the complete Wi-Fi frontier"
 )]
-pub async fn start_esp32s31_wifi<P, W, D, O>(
+pub fn power_up_esp32s31_wifi<W>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    platform: &mut P,
     clocks: &impl PlatformClockProvider,
     partition: WifiPartition,
     wifi_platform: W,
-    config: WifiColdStartConfig,
-    mut observer: O,
-    timer: &impl oer_time::Timer,
-) -> Result<WifiColdStart<W>, WifiColdStartFailure<W>>
-where
-    D: PhyShortDelay,
-    O: PhyTargetObserver + Clone,
-{
-    let powered = match WifiCold::from_partition(partition).power_up(lease, clocks) {
+) -> Result<(WifiInitialized<W>, CommonPower<WifiClient>), WifiPowerUpFailure<W>> {
+    let (powered, power) = match WifiCold::from_partition(partition).power_up(lease, clocks) {
         Ok(powered) => powered,
         Err(failure) => {
-            return Err(WifiColdStartFailure {
+            return Err(WifiPowerUpFailure {
                 error: WifiColdStartError::Power(failure.error()),
-                frontier: WifiColdStartFrontier::Cold {
+                frontier: WifiPowerUpFrontier::Cold {
                     cold: failure.into_owner(),
                     platform: wifi_platform,
                 },
@@ -181,25 +222,71 @@ where
     let mut clocked = match powered.enable_clocks(lease, clocks) {
         Ok(clocked) => clocked,
         Err(failure) => {
-            return Err(WifiColdStartFailure {
+            return Err(WifiPowerUpFailure {
                 error: WifiColdStartError::Clocks(failure.error()),
-                frontier: WifiColdStartFrontier::Powered {
+                frontier: WifiPowerUpFrontier::Powered {
                     powered: failure.into_owner(),
+                    power,
                     platform: wifi_platform,
                 },
             });
         }
     };
     if let Err(error) = clocked.set_initialized(lease, true) {
-        return Err(WifiColdStartFailure {
+        return Err(WifiPowerUpFailure {
             error: WifiColdStartError::Clocks(error),
-            frontier: WifiColdStartFrontier::Clocked {
+            frontier: WifiPowerUpFrontier::Clocked {
                 clocked,
+                power,
                 platform: wifi_platform,
             },
         });
     }
-    let (membership, acquired) = match join_wifi(lease, &clocked, timer) {
+    Ok((
+        WifiInitialized {
+            clocked,
+            platform: wifi_platform,
+        },
+        power,
+    ))
+}
+
+/// Bring the initialized Wi-Fi client up on the shared PHY domain the radio
+/// system prepared: the second half of the bring-up.
+///
+/// `platform` is the radio system's PHY platform token. Initial tracking
+/// follows the domain's admission policy without quiescence proofs.
+///
+/// # Cancellation
+///
+/// Once polled, drive this future to a terminal result: cancelling during
+/// tracking or the channel transaction leaves the shared PHY ambiguous.
+#[must_use = "Wi-Fi bring-up must be driven to a terminal result"]
+pub async fn start_esp32s31_wifi<P, W, D, O>(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    platform: &mut P,
+    initialized: WifiInitialized<W>,
+    config: WifiColdStartConfig,
+    mut observer: O,
+    timer: &impl oer_time::Timer,
+) -> Result<WifiColdStart<W>, WifiColdStartFailure<W>>
+where
+    D: PhyShortDelay,
+    O: PhyTargetObserver + Clone,
+{
+    let WifiInitialized {
+        mut clocked,
+        platform: wifi_platform,
+    } = initialized;
+    // The radio system prepared the domain; prove it ready under the lease
+    // the join uses.
+    let joined = match phy_ready(lease) {
+        Ok(ready) => join_wifi(ready, &clocked, timer)
+            .map(|joined| (joined.membership, joined.acquired))
+            .map_err(|refused| refused.error),
+        Err(error) => Err(error),
+    };
+    let (membership, acquired) = match joined {
         Ok(joined) => joined,
         Err(error) => {
             return Err(WifiColdStartFailure {

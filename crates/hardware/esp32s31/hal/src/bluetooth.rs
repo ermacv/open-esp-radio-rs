@@ -27,8 +27,9 @@ use oer_esp32s31_pac::{
 use crate::{
     root::BluetoothPartition,
     shared_radio::{
-        BtbbAcquired, BtbbError, ClientQuiescence, CommonRadioPowerError, EmptyQuiescentWindow,
-        LowPowerClockError, ModemClockError, PlatformClockProvider, SharedRadioLease,
+        BluetoothClient, BtbbAcquired, BtbbError, ClientQuiescence, CoexAbsent, CommonPower,
+        CommonPowerExitFailure, CommonRadioPowerError, EmptyQuiescentWindow, LowPowerClockError,
+        ModemClockError, PlatformClockProvider, SharedRadioLease,
     },
 };
 
@@ -144,11 +145,14 @@ impl ColdOwner {
         self,
         lease: &mut SharedRadioLease<'_, T>,
         clocks: &impl PlatformClockProvider,
-    ) -> Result<PoweredOwner, PowerTransitionFailure<Self>> {
+    ) -> Result<(PoweredOwner, CommonPower<BluetoothClient>), PowerTransitionFailure<Self>> {
         match lease.enter_common_power(&self.partition.task, clocks) {
-            Ok(()) => Ok(PoweredOwner {
-                partition: self.partition,
-            }),
+            Ok(power) => Ok((
+                PoweredOwner {
+                    partition: self.partition,
+                },
+                power,
+            )),
             Err(error) => Err(PowerTransitionFailure { owner: self, error }),
         }
     }
@@ -165,21 +169,27 @@ pub struct PoweredOwner {
 }
 
 impl PoweredOwner {
-    /// Leave common radio power; the last client restores the cold baseline.
+    /// Leave common radio power, outside coexistence (`coex`); the last
+    /// client restores the cold baseline.
     ///
     /// # Errors
     ///
     /// The baseline did not read back; the client stays entered and the
-    /// unchanged owner is returned for a retry.
+    /// unchanged owner and proof are returned for a retry.
     pub fn power_down<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
-    ) -> Result<ColdOwner, PowerTransitionFailure<Self>> {
-        match lease.exit_common_power(&self.partition.task) {
+        power: CommonPower<BluetoothClient>,
+        coex: &CoexAbsent<BluetoothClient>,
+    ) -> Result<ColdOwner, PowerTransitionFailure<(Self, CommonPower<BluetoothClient>)>> {
+        match lease.exit_common_power(&self.partition.task, power, coex) {
             Ok(()) => Ok(ColdOwner {
                 partition: self.partition,
             }),
-            Err(error) => Err(PowerTransitionFailure { owner: self, error }),
+            Err(CommonPowerExitFailure { power, error }) => Err(PowerTransitionFailure {
+                owner: (self, power),
+                error,
+            }),
         }
     }
 

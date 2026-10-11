@@ -315,8 +315,6 @@ impl ExternalCoexConfig {
 pub enum ExternalCoexError {
     /// External coexistence already runs.
     AlreadyActive,
-    /// External coexistence does not run.
-    NotActive,
     /// The coexistence module clock could not change.
     Clock(crate::shared_radio::ModemClockError),
 }

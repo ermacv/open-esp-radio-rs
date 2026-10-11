@@ -215,6 +215,7 @@ pub(super) type MonitorStoppedResources = MonitorStoppedExecutionResources<
 pub(super) type ProductionMonitorTask = MonitorTask<
     'static,
     oer_esp32s31_ieee80211_esp_hal::EspHalWifiPlatform,
+    crate::supervisor::WifiMembership,
     EspHalMacInterruptRoute,
     CriticalSectionRawMutex,
     CaptureSink,
@@ -225,6 +226,7 @@ pub(super) type ProductionMonitorTask = MonitorTask<
 pub(super) type ProductionMonitorBuildFailure = MonitorTaskBuildFailure<
     'static,
     oer_esp32s31_ieee80211_esp_hal::EspHalWifiPlatform,
+    crate::supervisor::WifiMembership,
     EspHalMacInterruptRoute,
     CriticalSectionRawMutex,
     CaptureSink,

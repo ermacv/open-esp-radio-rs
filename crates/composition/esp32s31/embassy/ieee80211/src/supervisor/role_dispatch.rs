@@ -416,6 +416,7 @@ impl WifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner 
                         _,
                         _,
                         _,
+                        _,
                         EmbassyClock,
                         _,
                         _,
@@ -523,21 +524,32 @@ impl WifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner 
                 }
             };
             let (wifi, resources) = frontier.into_parts();
-            let (released, rf) = {
+            let (released, coex, rf) = {
                 let mut guard = self.radio.lock().await;
                 // The vendor `wifi_hw_stop` disables coexistence before the
-                // PHY; a timer that cannot be withdrawn stops the radio.
-                if let Err(error) = guard.disable_coex() {
-                    let fault = ProductionRadioLifecycleFault::CoexDisable {
-                        _error: error,
-                        _resources: resources,
-                    };
-                    enforce_lifecycle(&fault, true);
-                    crate::WatchdogConfig::complete(protection);
-                    return Err(RADIO_LIFECYCLE_FAULT.init(fault));
-                }
+                // PHY, so the client releases outside coexistence; a timer
+                // that cannot be withdrawn stops the radio.
+                let (membership, wifi) = wifi.leave_membership();
+                let WifiMembership { power, coexisting } = membership;
+                let coex = match guard.disable_coex(coexisting) {
+                    Ok(absent) => absent,
+                    Err(CoexLeaveFailure { proof, error }) => {
+                        let fault = ProductionRadioLifecycleFault::CoexDisable {
+                            _error: error,
+                            _membership: WifiMembership {
+                                power,
+                                coexisting: proof,
+                            },
+                            _wifi: wifi,
+                            _resources: resources,
+                        };
+                        enforce_lifecycle(&fault, true);
+                        crate::WatchdogConfig::complete(protection);
+                        return Err(RADIO_LIFECYCLE_FAULT.init(fault));
+                    }
+                };
                 let (lease, _, _) = guard.parts();
-                let released = match wifi.release(lease) {
+                let released = match wifi.release(lease, power, &coex) {
                     Ok(released) => released,
                     Err(failure) => {
                         let ambiguous = !matches!(
@@ -549,6 +561,7 @@ impl WifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner 
                         return Err(RADIO_LIFECYCLE_FAULT.init(
                             ProductionRadioLifecycleFault::Release {
                                 _failure: failure,
+                                _coex: coex,
                                 _resources: resources,
                             },
                         ));
@@ -564,6 +577,7 @@ impl WifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner 
                             _error: error,
                             _partition: released.partition,
                             _platform: released.platform,
+                            _coex: coex,
                             _resources: resources,
                         };
                         enforce_lifecycle(
@@ -574,7 +588,7 @@ impl WifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner 
                         return Err(RADIO_LIFECYCLE_FAULT.init(fault));
                     }
                 };
-                (released, rf)
+                (released, coex, rf)
             };
             crate::WatchdogConfig::complete(protection);
             let protection = self.watchdog.startup();
@@ -582,6 +596,7 @@ impl WifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner 
                 self.radio,
                 released.partition,
                 released.platform,
+                coex,
                 self.radio_start,
             )) {
                 Ok((_phy, wifi, mac_clock)) => {

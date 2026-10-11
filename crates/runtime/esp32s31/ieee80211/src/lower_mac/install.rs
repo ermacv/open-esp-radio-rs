@@ -15,7 +15,9 @@
 //!
 //! Clocks and the PHY stay with the radio system: the port never holds a
 //! `PlatformClockGuard`, so it releases nothing here, and the radio stop's
-//! own release ([`WifiStopped::release`]) ends them explicitly.
+//! own release ([`WifiStopped::release`]) ends them explicitly. The
+//! composition's membership `Membership` (its part in coexistence) passes
+//! through beside the port unchanged, in the held owner.
 
 use oer_esp32s31_hal::{
     ieee80211::arena::{RadioAccess, RadioOwnerArena, RadioOwnerArenaError},
@@ -92,23 +94,23 @@ where
 /// while the port runs: it routes the MAC and power interrupts to the port
 /// and returns the setup at uninstall.
 #[must_use = "the radio stop needs the held Wi-Fi owner back"]
-pub struct Esp32s31WifiPortHeld<W> {
-    owner: WifiRoleOwner<W>,
+pub struct Esp32s31WifiPortHeld<W, Membership> {
+    owner: WifiRoleOwner<W, Membership>,
 }
 
 /// An installed port: its handles, the owner held for the radio stop and
 /// the interrupt setup for the composition's route.
-pub struct Esp32s31WifiPortInstalled<'r, L, W> {
+pub struct Esp32s31WifiPortInstalled<'r, L, W, Membership> {
     pub port: Esp32s31LowerMacPort<'r, L>,
     pub control: Esp32s31LowerMacControl<'r, L>,
-    pub held: Esp32s31WifiPortHeld<W>,
+    pub held: Esp32s31WifiPortHeld<W, Membership>,
     pub interrupt_setup: MacInterruptSetup,
 }
 
 /// Why the port could not be installed, with every owner it was given.
-pub struct Esp32s31WifiPortInstallFailure<W, C, R> {
+pub struct Esp32s31WifiPortInstallFailure<W, Membership, C, R> {
     pub error: Esp32s31WifiPortInstallError,
-    pub wifi: WifiStopped<W>,
+    pub wifi: WifiStopped<W, Membership>,
     pub core: C,
     pub retune: R,
 }
@@ -124,17 +126,17 @@ pub enum Esp32s31WifiPortInstallError {
 }
 
 /// The stopped Wi-Fi and the core's parts back from an uninstalled port.
-pub struct Esp32s31WifiPortUninstalled<W, Parts> {
-    pub wifi: WifiStopped<W>,
+pub struct Esp32s31WifiPortUninstalled<W, Membership, Parts> {
+    pub wifi: WifiStopped<W, Membership>,
     pub core: Parts,
 }
 
 /// Why the port could not be taken apart.
-pub enum Esp32s31WifiPortUninstallFailure<'r, 'arena, L, W, Core> {
+pub enum Esp32s31WifiPortUninstallFailure<'r, 'arena, L, W, Membership, Core> {
     /// The core is not disabled and idle, or a retune holds its registers:
     /// the port is still installed, returned as it was, and the radio stop
     /// retries once its `Disable` has settled.
-    Running(Esp32s31WifiPortInstalled<'r, L, W>),
+    Running(Esp32s31WifiPortInstalled<'r, L, W, Membership>),
     /// The core left the runtime, but a register transaction is still
     /// borrowed: the hardware, the disabled core, the held owner and the
     /// setup are back, for a retry of the reclaim or a reinstall.
@@ -142,7 +144,7 @@ pub enum Esp32s31WifiPortUninstallFailure<'r, 'arena, L, W, Core> {
         error: RadioOwnerArenaError,
         hardware: CooperativeRadioHardware<'arena>,
         core: Core,
-        held: Esp32s31WifiPortHeld<W>,
+        held: Esp32s31WifiPortHeld<W, Membership>,
         interrupt_setup: MacInterruptSetup,
     },
 }
@@ -171,6 +173,7 @@ pub fn install_esp32s31_wifi_port<
     T,
     R,
     W,
+    Membership,
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
@@ -197,7 +200,7 @@ pub fn install_esp32s31_wifi_port<
         AMPDU_BUFFERS,
         O,
     >,
-    wifi: WifiStopped<W>,
+    wifi: WifiStopped<W, Membership>,
     arena: &'arena RadioOwnerArena,
     core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     retune: R,
@@ -222,9 +225,11 @@ pub fn install_esp32s31_wifi_port<
             O,
         >,
         W,
+        Membership,
     >,
     Esp32s31WifiPortInstallFailure<
         W,
+        Membership,
         LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
         R,
     >,
@@ -319,6 +324,7 @@ pub fn uninstall_esp32s31_wifi_port<
     T,
     R,
     W,
+    Membership,
     const BUFFER_SIZE: usize,
     const TX_BUFFERS: usize,
     const EVENTS: usize,
@@ -348,10 +354,12 @@ pub fn uninstall_esp32s31_wifi_port<
             O,
         >,
         W,
+        Membership,
     >,
 ) -> Result<
     Esp32s31WifiPortUninstalled<
         W,
+        Membership,
         LowerMacCoreParts<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     >,
     Esp32s31WifiPortUninstallFailure<
@@ -375,6 +383,7 @@ pub fn uninstall_esp32s31_wifi_port<
             O,
         >,
         W,
+        Membership,
         LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     >,
 >

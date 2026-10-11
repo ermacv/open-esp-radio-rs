@@ -101,23 +101,23 @@ impl<const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: u
 ///
 /// The interrupt epoch is deliberately already materialized. Logical role
 /// changes never uninstall its CPU route while the MAC remains powered.
-pub struct MonitorRadio<'runtime, P, R, M: RawMutex>
+pub struct MonitorRadio<'runtime, P, Membership, R, M: RawMutex>
 where
     R: MacInterruptRoute<Platform = P>,
     P: Sized,
 {
-    pub owner: WifiRoleOwner<P>,
+    pub owner: WifiRoleOwner<P, Membership>,
     pub registers: RadioRuntimeOwner,
     pub interrupts: InterruptEpoch<'runtime, R, M>,
 }
 
-impl<'runtime, P, R, M: RawMutex> MonitorRadio<'runtime, P, R, M>
+impl<'runtime, P, Membership, R, M: RawMutex> MonitorRadio<'runtime, P, Membership, R, M>
 where
     R: MacInterruptRoute<Platform = P>,
     P: Sized,
 {
     pub fn new(
-        owner: WifiRoleOwner<P>,
+        owner: WifiRoleOwner<P, Membership>,
         registers: RadioRuntimeOwner,
         interrupts: InterruptEpoch<'runtime, R, M>,
     ) -> Self {
@@ -181,6 +181,7 @@ pub enum MonitorBuildError {
 struct MonitorBuildFailure<
     'runtime,
     P,
+    Membership,
     R,
     M: RawMutex,
     S,
@@ -194,7 +195,7 @@ struct MonitorBuildFailure<
 {
     pub error: MonitorBuildError,
     pub plan: WifiStandaloneMonitorPlan,
-    pub radio: MonitorRadio<'runtime, P, R, M>,
+    pub radio: MonitorRadio<'runtime, P, Membership, R, M>,
     pub resources: MonitorResources<S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
 
@@ -225,6 +226,7 @@ pub enum MonitorChannelSwitchError {
 struct MonitorOwner<
     'runtime,
     P,
+    Membership,
     R,
     M: RawMutex,
     S,
@@ -247,7 +249,7 @@ struct MonitorOwner<
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
     >,
-    context: WifiRuntimeContext,
+    context: WifiRuntimeContext<Membership>,
     report: MonitorBuildReport,
     plan: WifiStandaloneMonitorPlan,
     memory: MonitorStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
@@ -258,13 +260,14 @@ struct MonitorOwner<
 impl<
     'runtime,
     P,
+    Membership,
     R,
     M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
-> MonitorOwner<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+> MonitorOwner<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
     R: MacInterruptRoute<Platform = P>,
     P: Sized,
@@ -291,8 +294,10 @@ where
     fn try_into_stopped(
         self,
         control: &'runtime MonitorControlResources<M>,
-    ) -> Result<MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>, Self>
-    {
+    ) -> Result<
+        MonitorStopped<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        Self,
+    > {
         if self.quarantined || self.service.is_quarantined() {
             return Err(self);
         }
@@ -429,6 +434,7 @@ where
 fn prepare_esp32s31_monitor<
     'runtime,
     P,
+    Membership,
     R,
     M: RawMutex,
     S,
@@ -437,11 +443,11 @@ fn prepare_esp32s31_monitor<
     const DMA_STORAGE_SIZE: usize,
 >(
     plan: WifiStandaloneMonitorPlan,
-    mut radio: MonitorRadio<'runtime, P, R, M>,
+    mut radio: MonitorRadio<'runtime, P, Membership, R, M>,
     mut resources: MonitorResources<S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 ) -> Result<
-    MonitorOwner<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    MonitorBuildFailure<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    MonitorOwner<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    MonitorBuildFailure<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 >
 where
     R: MacInterruptRoute<Platform = P>,
@@ -642,6 +648,7 @@ where
 pub struct MonitorStopped<
     'runtime,
     P,
+    Membership,
     R,
     M: RawMutex,
     S,
@@ -653,7 +660,7 @@ pub struct MonitorStopped<
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
-    pub radio: MonitorRadio<'runtime, P, R, M>,
+    pub radio: MonitorRadio<'runtime, P, Membership, R, M>,
     pub plan: WifiStandaloneMonitorPlan,
     pub resources:
         MonitorStoppedExecutionResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
@@ -663,6 +670,7 @@ pub struct MonitorStopped<
 pub struct MonitorTaskBuildFailure<
     'runtime,
     P,
+    Membership,
     R,
     M: RawMutex,
     S,
@@ -676,7 +684,7 @@ pub struct MonitorTaskBuildFailure<
 {
     pub error: MonitorBuildError,
     pub plan: WifiStandaloneMonitorPlan,
-    pub radio: MonitorRadio<'runtime, P, R, M>,
+    pub radio: MonitorRadio<'runtime, P, Membership, R, M>,
     pub resources:
         MonitorExecutionResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
@@ -689,6 +697,7 @@ pub struct MonitorTaskBuildFailure<
 pub struct MonitorTask<
     'runtime,
     P,
+    Membership,
     R,
     M: RawMutex,
     S,
@@ -700,7 +709,7 @@ pub struct MonitorTask<
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
-    owner: MonitorOwner<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    owner: MonitorOwner<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     control: MonitorCommandReceiver<'runtime, M>,
 }
 
@@ -724,13 +733,14 @@ pub enum MonitorTaskExit<S, T, E> {
 impl<
     'runtime,
     P,
+    Membership,
     R,
     M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
-> MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+> MonitorTask<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
     R: MacInterruptRoute<Platform = P>,
     P: Sized,
@@ -849,13 +859,14 @@ where
 impl<
     'runtime,
     P,
+    Membership,
     R,
     M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
-> MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+> MonitorTask<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
     R: MacInterruptRoute<Platform = P>,
     P: Sized,
@@ -904,7 +915,7 @@ where
         mut self,
         timer: &impl Timer,
     ) -> MonitorTaskExit<
-        MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        MonitorStopped<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         Self,
         R::Error,
     > {
@@ -924,7 +935,7 @@ where
         policy: MonitorChannelPolicy,
         observer: &mut O,
     ) -> MonitorTaskExit<
-        MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        MonitorStopped<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         Self,
         R::Error,
     >
@@ -963,8 +974,10 @@ where
     )]
     pub fn try_into_stopped(
         self,
-    ) -> Result<MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>, Self>
-    {
+    ) -> Result<
+        MonitorStopped<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        Self,
+    > {
         let Self { owner, mut control } = self;
         let control_resources = control.resources();
         match owner.try_into_stopped(control_resources) {
@@ -1005,6 +1018,7 @@ where
 pub fn prepare_esp32s31_monitor_task<
     'runtime,
     P,
+    Membership,
     R,
     M: RawMutex,
     S,
@@ -1013,14 +1027,24 @@ pub fn prepare_esp32s31_monitor_task<
     const DMA_STORAGE_SIZE: usize,
 >(
     plan: WifiStandaloneMonitorPlan,
-    radio: MonitorRadio<'runtime, P, R, M>,
+    radio: MonitorRadio<'runtime, P, Membership, R, M>,
     resources: MonitorExecutionResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 ) -> Result<
     (
         MonitorController<'runtime, M>,
-        MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        MonitorTask<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     ),
-    MonitorTaskBuildFailure<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    MonitorTaskBuildFailure<
+        'runtime,
+        P,
+        Membership,
+        R,
+        M,
+        S,
+        COUNT,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+    >,
 >
 where
     R: MacInterruptRoute<Platform = P>,

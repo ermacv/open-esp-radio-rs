@@ -125,6 +125,120 @@ impl PlatformClockRefs {
 /// Protocol clients that can share the powered radio.
 pub use oer_radio_coex::RadioClient;
 
+mod sealed {
+    pub trait RadioClientKind {}
+}
+
+/// One protocol client of the shared radio, as a type.
+pub trait RadioClientKind: sealed::RadioClientKind + 'static {
+    const CLIENT: RadioClient;
+}
+
+/// The IEEE 802.11 client.
+#[derive(Debug)]
+pub enum WifiClient {}
+/// The Bluetooth LE client.
+#[derive(Debug)]
+pub enum BluetoothClient {}
+/// The IEEE 802.15.4 client.
+#[derive(Debug)]
+pub enum Ieee802154Client {}
+
+impl sealed::RadioClientKind for WifiClient {}
+impl RadioClientKind for WifiClient {
+    const CLIENT: RadioClient = RadioClient::Wifi;
+}
+impl sealed::RadioClientKind for BluetoothClient {}
+impl RadioClientKind for BluetoothClient {
+    const CLIENT: RadioClient = RadioClient::Bluetooth;
+}
+impl sealed::RadioClientKind for Ieee802154Client {}
+impl RadioClientKind for Ieee802154Client {
+    const CLIENT: RadioClient = RadioClient::Ieee802154;
+}
+
+/// Proof that client `K` holds common radio power.
+///
+/// Only entering common power creates it, and leaving consumes it, so a
+/// client leaves only power it holds, and only outside coexistence
+/// ([`crate::shared_radio::CoexAbsent`]). Dropping it keeps the client in
+/// common power until a chip reset.
+///
+/// A client leaves with its own proof:
+///
+/// ```
+/// use oer_esp32s31_hal::shared_radio::{CoexAbsent, CommonPower, SharedRadioLease, WifiClient};
+/// use oer_esp32s31_pac::WifiRadioRegisters;
+///
+/// fn leave(
+///     lease: &mut SharedRadioLease<'_>,
+///     wifi: &WifiRadioRegisters,
+///     power: CommonPower<WifiClient>,
+///     coex: &CoexAbsent<WifiClient>,
+/// ) {
+///     let _ = lease.exit_common_power(wifi, power, coex);
+/// }
+/// ```
+///
+/// Not with another client's:
+///
+/// ```compile_fail,E0308
+/// use oer_esp32s31_hal::shared_radio::{CoexAbsent, CommonPower, SharedRadioLease, WifiClient};
+/// use oer_esp32s31_pac::BluetoothTaskRegisters;
+///
+/// fn leave(
+///     lease: &mut SharedRadioLease<'_>,
+///     bluetooth: &BluetoothTaskRegisters,
+///     power: CommonPower<WifiClient>,
+///     coex: &CoexAbsent<WifiClient>,
+/// ) {
+///     let _ = lease.exit_common_power(bluetooth, power, coex);
+/// }
+/// ```
+///
+/// And a proof cannot be made without entering power:
+///
+/// ```compile_fail,E0451
+/// use oer_esp32s31_hal::shared_radio::{CommonPower, WifiClient};
+///
+/// let _power: CommonPower<WifiClient> = CommonPower { _client: core::marker::PhantomData };
+/// ```
+#[must_use = "common power is left through the client's power_down"]
+#[derive(Debug)]
+pub struct CommonPower<K: RadioClientKind> {
+    _client: core::marker::PhantomData<fn() -> K>,
+}
+
+impl<K: RadioClientKind> CommonPower<K> {
+    const fn entered() -> Self {
+        Self {
+            _client: core::marker::PhantomData,
+        }
+    }
+
+    /// The client that holds power.
+    pub const fn client(&self) -> RadioClient {
+        K::CLIENT
+    }
+
+    /// A proof without entering power, for host tests of the later stages.
+    /// It proves no power, so only test and validation builds have it.
+    #[cfg(any(test, feature = "validation-probes"))]
+    pub const fn for_validation() -> Self {
+        Self::entered()
+    }
+}
+
+/// Leaving common power failed; the client stays entered and keeps its
+/// proof for a retry.
+#[derive(Debug)]
+pub struct CommonPowerExitFailure<K: RadioClientKind> {
+    /// The proof of the client, which still holds power.
+    pub power: CommonPower<K>,
+    /// Why the client could not leave.
+    pub error: CommonRadioPowerError,
+}
+
 /// The membership bit of `client` in [`CommonRadioPower`].
 const fn client_bit(client: RadioClient) -> u8 {
     match client {
@@ -139,8 +253,6 @@ const fn client_bit(client: RadioClient) -> u8 {
 pub enum CommonRadioPowerError {
     /// The client already holds common power.
     AlreadyEntered,
-    /// The client does not hold common power.
-    NotEntered,
     /// The first client's power sequence failed a read-back checkpoint.
     Power(crate::power::PowerError),
     /// The last client's cold-power baseline did not read back.
@@ -221,12 +333,12 @@ impl CommonRadioPower {
     /// A failed sequence admits no client. It keeps the original baseline
     /// and any platform reference already taken, so a retry restarts from
     /// the same cold state without taking a reference twice.
-    pub(crate) fn enter(
+    pub(crate) fn enter<K: RadioClientKind>(
         &mut self,
         port: &mut impl ClockPort,
         platform: &impl PlatformClockProvider,
-        client: RadioClient,
-    ) -> Result<(), CommonRadioPowerError> {
+    ) -> Result<CommonPower<K>, CommonRadioPowerError> {
+        let client = K::CLIENT;
         if self.holds(client) {
             return Err(CommonRadioPowerError::AlreadyEntered);
         }
@@ -242,27 +354,29 @@ impl CommonRadioPower {
             self.wifi_resets_pulsed = true;
         }
         self.clients |= client_bit(client);
-        Ok(())
+        Ok(CommonPower::entered())
     }
 
     /// Leave common power; the last client gives back the analog-I2C
     /// reference, restores the cold baseline and then gives back the 160 MHz
     /// and MPLL references, as the vendor closes a gate before releasing its source.
     ///
-    /// A failed step keeps `client` entered so the exit can be retried.
-    pub(crate) fn exit(
+    /// A failed step keeps the client entered and returns its proof so the
+    /// exit can be retried.
+    pub(crate) fn exit<K: RadioClientKind>(
         &mut self,
         port: &mut impl ClockPort,
-        client: RadioClient,
-    ) -> Result<(), CommonRadioPowerError> {
-        if !self.holds(client) {
-            return Err(CommonRadioPowerError::NotEntered);
-        }
+        power: CommonPower<K>,
+    ) -> Result<(), CommonPowerExitFailure<K>> {
+        let client = power.client();
         if self.clients == client_bit(client) {
             self.refs.release(PlatformClock::AnalogI2cMaster);
-            self.power
-                .restore(port)
-                .map_err(CommonRadioPowerError::Restore)?;
+            if let Err(checkpoint) = self.power.restore(port) {
+                return Err(CommonPowerExitFailure {
+                    power,
+                    error: CommonRadioPowerError::Restore(checkpoint),
+                });
+            }
             self.refs.release(PlatformClock::Pll160m);
             self.refs.release(PlatformClock::Mpll);
         }

@@ -379,14 +379,104 @@ impl ConcurrentPhy {
     }
 }
 
-/// Enter `client` into the shared domain.
+/// Proof that the shared PHY domain is ready for a client to enter it:
+/// registered, RF open and settled, and its registration describes the
+/// lease. It borrows that lease exclusively, so nothing can close RF or start
+/// tracking before the client's join consumes it; the join gives the lease
+/// back. Whoever prepared the domain (the radio system's preparation, or
+/// another client before), a client enters only a domain that is ready.
+///
+/// It cannot be copied for a second client:
+///
+/// ```compile_fail,E0599
+/// use oer_esp32s31_phy::concurrent::PhyReady;
+/// fn clone<'l, 'r>(ready: &PhyReady<'l, 'r>) -> PhyReady<'l, 'r> {
+///     ready.clone()
+/// }
+/// ```
+///
+/// And a client cannot make one from a lease without the check:
+///
+/// ```compile_fail,E0451
+/// use oer_esp32s31_hal::shared_radio::SharedRadioLease;
+/// use oer_esp32s31_phy::concurrent::{ConcurrentPhy, PhyReady};
+/// fn forge<'l, 'r>(lease: &'l mut SharedRadioLease<'r, ConcurrentPhy>) -> PhyReady<'l, 'r> {
+///     PhyReady { lease }
+/// }
+/// ```
+#[must_use = "a ready PHY is consumed by the client's join"]
+pub struct PhyReady<'l, 'r> {
+    lease: &'l mut SharedRadioLease<'r, ConcurrentPhy>,
+}
+
+impl core::fmt::Debug for PhyReady<'_, '_> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("PhyReady")
+    }
+}
+
+impl<'l, 'r> PhyReady<'l, 'r> {
+    #[cfg(test)]
+    pub(crate) fn for_test(lease: &'l mut SharedRadioLease<'r, ConcurrentPhy>) -> Self {
+        Self { lease }
+    }
+
+    /// The lease, for the join that consumes the proof.
+    pub(crate) fn into_lease(self) -> &'l mut SharedRadioLease<'r, ConcurrentPhy> {
+        self.lease
+    }
+}
+
+/// A client entered the shared domain; the lease its [`PhyReady`] borrowed
+/// comes back. [`ConcurrentAcquire::TrackingDue`] means the domain must run
+/// its tracking before the client uses RF.
+#[must_use = "the membership must be kept and left"]
+pub struct Joined<'l, 'r, M> {
+    pub membership: M,
+    pub acquired: ConcurrentAcquire,
+    pub lease: &'l mut SharedRadioLease<'r, ConcurrentPhy>,
+}
+
+/// The domain refused the client; nothing changed and the lease comes back.
+pub struct JoinRefused<'l, 'r, E> {
+    pub error: E,
+    pub lease: &'l mut SharedRadioLease<'r, ConcurrentPhy>,
+}
+
+impl<E: core::fmt::Debug> core::fmt::Debug for JoinRefused<'_, '_, E> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("JoinRefused")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Prove the shared domain ready for a client under `lease`.
 ///
 /// # Errors
 ///
-/// The domain is not registered and settled, or the client set rejects the
-/// client (already acquired, clock error). The domain is unchanged.
+/// The domain is not registered, RF is closed, tracking is pending, the
+/// domain is poisoned, or its registration no longer describes the lease.
+pub fn phy_ready<'l, 'r>(
+    lease: &'l mut SharedRadioLease<'r, ConcurrentPhy>,
+) -> Result<PhyReady<'l, 'r>, ConcurrentPhyError> {
+    let epoch = lease.registration_epoch();
+    let domain = lease.attachment().settled()?;
+    if !domain.clients.describes_epoch(epoch) {
+        return Err(ConcurrentPhyError::EpochMismatch);
+    }
+    Ok(PhyReady { lease })
+}
+
+/// Enter `client` into the shared domain `ready` proves ready.
+///
+/// # Errors
+///
+/// The client set rejects the client (already acquired, clock error). The
+/// domain is unchanged.
 // CAPABILITY: phy-protocol-consumer-initial-tracking-before-client-handoff-wifi, phy-protocol-consumer-initial-tracking-before-client-handoff-bluetooth, phy-protocol-consumer-initial-tracking-before-client-handoff-ieee802154, whole-radio-exclusive-ownership-and-client-handoff-protocol-specific-phy-handoff
-pub fn acquire_client(
+pub(crate) fn acquire_client(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     client: RadioClient,
     clock: &impl oer_time::Clock,

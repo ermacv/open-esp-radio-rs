@@ -68,7 +68,7 @@ impl<O> ProductionStationEnginePort<O> {
 }
 
 pub(super) fn production_station_runtime<'state>(
-    role: WifiRoleOwner<EspHalWifiPlatform>,
+    role: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
     interrupt_epoch: MacInterruptEpoch,
     dma: StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     tx_storage: &'static mut TxStorage,

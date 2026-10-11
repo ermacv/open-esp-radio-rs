@@ -397,6 +397,9 @@ pub enum RoleOperation {
     Restart {
         #[serde(default = "one_cycle")]
         cycles: u8,
+        /// What the restart does to shared RF: Wi-Fi as the last PHY client
+        /// closes and wakes it, beside another client RF stays open.
+        rf: RestartRf,
     },
     Scan {},
     Monitor {
@@ -422,6 +425,17 @@ pub enum RoleOperation {
     },
 }
 
+/// What an idle radio restart does to shared RF.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RestartRf {
+    /// Wi-Fi is the image's only PHY client: its release closes RF and the
+    /// rejoin wakes it.
+    ClosedAndWoken,
+    /// Another client (the Bluetooth LE application) keeps RF open.
+    KeptOpen,
+}
+
 const fn one_cycle() -> u8 {
     1
 }
@@ -437,7 +451,7 @@ const fn default_snapshot_length() -> u16 {
 impl RoleOperation {
     pub(super) fn validate(self) -> Result<()> {
         match self {
-            Self::Restart { cycles } => bounded(cycles, 1, 10, "cycles"),
+            Self::Restart { cycles, .. } => bounded(cycles, 1, 10, "cycles"),
             Self::Monitor {
                 channel,
                 dwell_seconds,

@@ -157,7 +157,7 @@ async fn thread_task(
     let (radio, partitions) = shared_radio::start(spawner, platform, RadioStart::new())
         .expect("the shared radio starts once");
     let defaults = Ieee802154PibDefaults::default();
-    let parked = Ieee802154Parked::new(partitions.ieee802154, defaults)
+    let parked = Ieee802154Parked::new(partitions.ieee802154, partitions.ieee802154_coex, defaults)
         .expect("the IEEE 802.15.4 engine frames are taken once");
     // Bring-up registers and calibrates the shared PHY; pin its future.
     let started = {

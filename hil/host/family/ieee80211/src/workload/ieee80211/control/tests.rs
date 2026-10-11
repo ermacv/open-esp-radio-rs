@@ -22,7 +22,7 @@ fn radio_restart_requires_the_next_generation_and_a_closed_and_woken_rf() {
         generation: 8,
         rf: WifiRadioRestartRf::ClosedAndWoken,
     };
-    assert!(require_radio_restart(stopped, restarted).is_ok());
+    assert!(require_radio_restart(stopped, restarted, WifiRadioRestartRf::ClosedAndWoken).is_ok());
     assert!(
         require_radio_restart(
             stopped,
@@ -30,6 +30,7 @@ fn radio_restart_requires_the_next_generation_and_a_closed_and_woken_rf() {
                 generation: 7,
                 ..restarted
             },
+            WifiRadioRestartRf::ClosedAndWoken,
         )
         .is_err()
     );
@@ -40,6 +41,7 @@ fn radio_restart_requires_the_next_generation_and_a_closed_and_woken_rf() {
                 rf: WifiRadioRestartRf::KeptOpen,
                 ..restarted
             },
+            WifiRadioRestartRf::ClosedAndWoken,
         )
         .is_err(),
         "the last PHY client's release must close RF"
@@ -203,7 +205,9 @@ fn three_restart_cycles_require_continuous_role_generations() {
             generation: role_generation.wrapping_add(1),
             rf: WifiRadioRestartRf::ClosedAndWoken,
         };
-        assert!(require_radio_restart(stopped, restarted).is_ok());
+        assert!(
+            require_radio_restart(stopped, restarted, WifiRadioRestartRf::ClosedAndWoken).is_ok()
+        );
         let started = WifiRoleTransitionEvidence {
             previous: WifiRole::Idle,
             current: WifiRole::Station,

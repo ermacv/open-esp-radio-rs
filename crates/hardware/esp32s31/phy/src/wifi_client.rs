@@ -20,7 +20,8 @@ use oer_esp32s31_hal::{
 
 use crate::{
     concurrent::{
-        ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
+        ConcurrentPhy, ConcurrentPhyError, JoinRefused, Joined, PhyReady, acquire_client,
+        release_client,
     },
     state::client::RadioClient,
 };
@@ -45,23 +46,30 @@ impl fmt::Debug for WifiPhyMembership {
 
 /// Enter Wi-Fi into the shared PHY domain: `esp_phy_enable(PHY_MODEM_WIFI)`.
 ///
-/// `clocked` proves the Wi-Fi module clocks. The returned
+/// `ready` proves the domain prepared and `clocked` the Wi-Fi module
+/// clocks. The returned
 /// [`ConcurrentAcquire::TrackingDue`] means the domain must run its tracking
 /// before the MAC may use RF.
 ///
 /// # Errors
 ///
-/// The domain is not registered and settled, or the client set rejects the
-/// client; nothing changed.
+/// The client set rejects the client; nothing changed.
 // CAPABILITY: phy-protocol-consumer-protocol-client-ownership-wifi
-pub fn join_wifi(
-    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+pub fn join_wifi<'l, 'r>(
+    ready: PhyReady<'l, 'r>,
     clocked: &WifiClocked,
     clock: &impl oer_time::Clock,
-) -> Result<(WifiPhyMembership, ConcurrentAcquire), ConcurrentPhyError> {
+) -> Result<Joined<'l, 'r, WifiPhyMembership>, JoinRefused<'l, 'r, ConcurrentPhyError>> {
     let _ = clocked;
-    let acquired = acquire_client(lease, RadioClient::Wifi, clock)?;
-    Ok((WifiPhyMembership { _private: () }, acquired))
+    let lease = ready.into_lease();
+    match acquire_client(lease, RadioClient::Wifi, clock) {
+        Ok(acquired) => Ok(Joined {
+            membership: WifiPhyMembership { _private: () },
+            acquired,
+            lease,
+        }),
+        Err(error) => Err(JoinRefused { error, lease }),
+    }
 }
 
 /// Enable (`true`) or disable (`false`) the Wi-Fi baseband receive path of
@@ -202,25 +210,33 @@ pub fn suspend_wifi(
 
 /// Wake Wi-Fi's RF: the vendor modem wake's `wifi_rf_phy_enable`, which is
 /// `esp_phy_enable(PHY_MODEM_WIFI)`. The radio system must have woken closed
-/// RF first. The returned [`ConcurrentAcquire::TrackingDue`] means the domain
+/// RF first, which `ready` proves. The returned [`ConcurrentAcquire::TrackingDue`] means the domain
 /// must run its tracking before the MAC uses RF.
 ///
 /// # Errors
 ///
 /// As [`join_wifi`]; the suspended client is returned.
-pub fn resume_wifi(
-    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+pub fn resume_wifi<'l, 'r>(
+    ready: PhyReady<'l, 'r>,
     clocks: &WifiClocksOn,
     suspended: WifiPhySuspended,
     clock: &impl oer_time::Clock,
-) -> Result<(WifiPhyMembership, ConcurrentAcquire), WifiPhySuspendedFailure> {
+) -> Result<Joined<'l, 'r, WifiPhyMembership>, JoinRefused<'l, 'r, WifiPhySuspendedFailure>> {
     let _ = clocks;
+    let lease = ready.into_lease();
     match acquire_client(lease, RadioClient::Wifi, clock) {
         Ok(acquired) => {
             let WifiPhySuspended { _private: () } = suspended;
-            Ok((WifiPhyMembership { _private: () }, acquired))
+            Ok(Joined {
+                membership: WifiPhyMembership { _private: () },
+                acquired,
+                lease,
+            })
         }
-        Err(error) => Err(WifiPhySuspendedFailure { suspended, error }),
+        Err(error) => Err(JoinRefused {
+            error: WifiPhySuspendedFailure { suspended, error },
+            lease,
+        }),
     }
 }
 

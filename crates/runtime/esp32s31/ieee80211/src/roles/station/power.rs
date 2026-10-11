@@ -271,7 +271,10 @@ mod agent {
     use embassy_sync::blocking_mutex::raw::RawMutex;
 
     use oer_esp32s31_ieee80211::runtime::{WifiRfSleepError, WifiRoleOwner};
-    use oer_esp32s31_phy::{ConcurrentRfError, concurrent::ConcurrentAcquire};
+    use oer_esp32s31_phy::{
+        ConcurrentRfError,
+        concurrent::{ConcurrentAcquire, phy_ready},
+    };
 
     use super::{PowerCoexSource, StationPowerFailure, StationPowerLink, StationRfPowerError};
     use crate::datapath::irq::EmbassyPowerIrqRuntime;
@@ -284,12 +287,12 @@ mod agent {
     }
 
     /// The station's RF, through its role's PHY client.
-    pub struct StationRf<'role, W> {
-        role: &'role mut WifiRoleOwner<W>,
+    pub struct StationRf<'role, W, Membership> {
+        role: &'role mut WifiRoleOwner<W, Membership>,
     }
 
-    impl<'role, W> StationRf<'role, W> {
-        pub fn new(role: &'role mut WifiRoleOwner<W>) -> Self {
+    impl<'role, W, Membership> StationRf<'role, W, Membership> {
+        pub fn new(role: &'role mut WifiRoleOwner<W, Membership>) -> Self {
             Self { role }
         }
 
@@ -299,8 +302,8 @@ mod agent {
         }
     }
 
-    impl<W, P, C: PlatformClockProvider, T: oer_time::Timer> StationRfPower<P, C, T>
-        for StationRf<'_, W>
+    impl<W, Membership, P, C: PlatformClockProvider, T: oer_time::Timer> StationRfPower<P, C, T>
+        for StationRf<'_, W, Membership>
     {
         async fn sleep(
             &mut self,
@@ -332,10 +335,11 @@ mod agent {
                 .await
                 .map_err(|_| StationRfPowerError::Prepare)?;
             let timer = radio.timer();
+            let ready = phy_ready(radio.lease()).map_err(|_| StationRfPowerError::Prepare)?;
             let acquired = self
                 .role
                 .context_mut()
-                .resume_rf(radio.lease(), timer)
+                .resume_rf(ready, timer)
                 .map_err(rf_error)?;
             if acquired == ConcurrentAcquire::TrackingDue {
                 radio

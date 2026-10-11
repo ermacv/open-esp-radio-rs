@@ -24,6 +24,8 @@ protocol compositions are clients of the system:
   to `new` and the retained cache given to `RadioSystem::with_calibration_cache`,
   or wakes its closed RF. It reports `RadioPhyPrepared::Registered` with the
   registration's calibration path and fresh cache, `Woken` or `AlreadyOpen`.
+  It needs no client's common power: the domain takes its own modem clock
+  modules.
   The domain stays registered across RF close and wake, as ESP-IDF's
   calibrated PHY does, so only the first preparation registers.
 - `RadioGuard::calibration_cache` captures the registered domain's current
@@ -58,10 +60,18 @@ protocol compositions are clients of the system:
   lifetime of the radio. Each phase change publishes the phase to
   `RadioSystem::wifi_coex_phase` and `bluetooth_coex_phase`, which keep only
   the latest unread phase.
-  `enable_coex` and `disable_coex` count the enabled radios as `coex_enable`
-  does: the second radio starts coexistence (`RadioSystem::wifi_coex_started`,
-  `bluetooth_coex_started` with `true`), falling back to one radio stops it
-  for Bluetooth, and the last disable withdraws every request.
+  Each client takes part with the coexistence state the radio split issued
+  it: `enable_coex` turns its `CoexAbsent` into a `Coexisting`, and
+  `disable_coex` turns it back, so a client takes part at most once and
+  leaves common power only while it shows its `CoexAbsent`. External
+  coexistence takes part with the `ExternalCoexistence` of
+  `start_external_coex`. The arbiter's participant set follows these states,
+  as `coex_enable` counts radios: the second participant starts coexistence
+  (`RadioSystem::wifi_coex_started`, `bluetooth_coex_started` with `true`),
+  falling back to one stops it for Bluetooth, and the last leave withdraws
+  every request. A leave whose timer cannot be withdrawn keeps the
+  participant and returns its state (`CoexLeaveFailure`); a retry withdraws
+  the requests again.
   `set_coex_wifi_channel` records the Wi-Fi channel for Bluetooth
   (`RadioSystem::bluetooth_wifi_channel`, `RadioGuard::coex_wifi_channel`),
   and `end_bluetooth_preemption` reports the end of a Bluetooth preemption
@@ -84,27 +94,40 @@ creates it once and spawns `run_tracking` and `run_coex_schedule`.
 
 Each protocol is one portable `RadioClient` of
 [`oer-radio-coex`](../../../radio/coex/README.md) and joins the shared radio
-the same way, under one `RadioGuard`:
+through affine proofs, under one `RadioGuard`; a step without its proof
+does not compile:
 
-1. `RadioGuard::prepare_phy` makes the shared PHY ready (first-client half of
-   `esp_phy_enable`).
-2. `join_<client>` of `oer-esp32s31-phy` enters the PHY client set and
-   returns the client's affine `<Client>PhyMembership` with its
-   `ConcurrentAcquire` (whether tracking is due before RF use). Holding the
-   membership is the proof of membership; `leave_<client>` consumes it, and
-   after the last client left `RadioGuard::close_phy_if_idle` closes RF.
-3. The client enables coexistence and publishes its status word
-   (`CoexStatusType::from(client)`); its operation priorities are portable
-   `CoexPriority` values that the backend maps onto its events and PTI.
+- **Common power.** The client's HAL owner enters it (`power_up`) and
+  returns its `CommonPower<K>` proof; only `power_down` consumes it, and only
+  while the client shows its `CoexAbsent<K>`.
+- **The shared PHY.** `RadioGuard::prepare_phy` registers the domain or
+  wakes its closed RF. `phy_ready` of `oer-esp32s31-phy` then proves the
+  domain ready (registered, RF open, settled) by borrowing the lease, and
+  `join_<client>` consumes that `PhyReady`: it enters the PHY client set,
+  returns the client's affine `<Client>PhyMembership` with its
+  `ConcurrentAcquire` (whether tracking is due before RF use) and gives the
+  lease back. `leave_<client>` consumes the membership, and after the last
+  client left `RadioGuard::close_phy_if_idle` closes RF.
+- **Coexistence.** `RadioGuard::enable_coex` turns the client's `CoexAbsent`
+  into `Coexisting`; the client publishes its status word
+  (`CoexStatusType::from(client)`), and its operation priorities are portable
+  `CoexPriority` values that the backend maps onto its events and PTI.
+- **Install.** The port's install consumes the membership with the client's
+  other owners, so the installed port holds it for its lifetime.
+
+The order is each client's: no proof depends on another client's power.
+Wi-Fi prepares the PHY and enables coexistence before it enters power; after
+a full common-power cycle it works again only in that order, which the
+power-first order breaks on a cold RF restart (#644). Bluetooth enters power
+first and enables coexistence after its PHY engine, as the vendor Controller
+does. IEEE 802.15.4 enters power first and takes part in coexistence on
+request. Teardown leaves coexistence before power.
 
 | `RadioClient` | Join | Membership | Leave | Coexistence |
 | --- | --- | --- | --- | --- |
-| `Wifi` | Wi-Fi cold start calls `join_wifi` after `prepare_phy` | `WifiPhyMembership`; `suspend_wifi` turns it into `WifiPhySuspended` for modem sleep and `resume_wifi` back | `leave_wifi`, `leave_suspended_wifi` | `enable_coex`, status word `Wifi`, `request_wifi_coex` |
-| `Bluetooth` | The Controller's `join_phy` calls `join_bluetooth` after `prepare_phy` | `BluetoothPhyMembership`, held by the joined Controller epoch | `leave_bluetooth` | `enable_coex`, status word `Ble`, `request_bluetooth_coex`; event priorities from `CoexistenceLevel` (`Baseline`, `Elevated`, `Critical` = `CoexPriority::Normal`, `Elevated`, `Critical`) |
-| `Ieee802154` | `RadioGuard::join_ieee802154` runs `prepare_phy` and `join_ieee802154` | `Ieee802154PhyMembership` | `RadioGuard::leave_ieee802154` | `enable_ieee802154_coex`, status word `Ieee802154`; MAC PTI per scene from `Ieee802154CoexLevel` (`Idle`, `Low`, `Middle`, `High` = `CoexPriority::Idle`, `Normal`, `Elevated`, `Critical`) |
-
-The three compositions still sequence these steps themselves; the table is
-the shape a portable join/leave port would take, not yet a shared trait.
+| `Wifi` | `prepare_phy`, then `power_up_esp32s31_wifi`, then `start_esp32s31_wifi` proves the domain ready and calls `join_wifi` | `WifiPhyMembership`; `suspend_wifi` turns it into `WifiPhySuspended` for modem sleep and `resume_wifi` back with a new `PhyReady` | `leave_wifi`, `leave_suspended_wifi` | `enable_coex` before power, as `wifi_hw_start` enables it right after `esp_phy_enable`; `WifiStopped` carries the power proof and the `Coexisting` as its membership `M` (`with_membership`, `leave_membership`), and only `WifiStopped<W, ()>` releases; status word `Wifi`, `request_wifi_coex` |
+| `Bluetooth` | The Controller's `join_phy` calls `join_bluetooth` with the `PhyReady` | `BluetoothPhyMembership`, held by the joined Controller epoch | `leave_bluetooth` | `enable_coex` after the BLE PHY engine, held by `BluetoothSystem`; status word `Ble`, `request_bluetooth_coex`; event priorities from `CoexistenceLevel` (`Baseline`, `Elevated`, `Critical` = `CoexPriority::Normal`, `Elevated`, `Critical`) |
+| `Ieee802154` | `RadioGuard::join_ieee802154` runs `prepare_phy`, `phy_ready` and `join_ieee802154` | `Ieee802154PhyMembership` | `RadioGuard::leave_ieee802154` | Optional, as ESP-IDF's `esp_coex_wifi_i154_enable`: `enable_ieee802154_coex`, status word `Ieee802154`; `stop` leaves coexistence itself; MAC PTI per scene from `Ieee802154CoexLevel` (`Idle`, `Low`, `Middle`, `High` = `CoexPriority::Idle`, `Normal`, `Elevated`, `Critical`) |
 
 ## Limits
 

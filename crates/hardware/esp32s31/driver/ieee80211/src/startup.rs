@@ -9,7 +9,7 @@
 use crate::{
     cold_start::{
         WifiColdStartConfig as Esp32s31WifiStartConfig,
-        WifiColdStartFailure as Esp32s31WifiStartFailure, start_esp32s31_wifi,
+        WifiColdStartFailure as Esp32s31WifiStartFailure, WifiInitialized, start_esp32s31_wifi,
     },
     mac_start::{
         WifiMacPlatform, WifiMacStartConfig, WifiMacStartFailure, start_esp32s31_wifi_mac,
@@ -17,10 +17,7 @@ use crate::{
     runtime::{WifiStopped, enter_esp32s31_wifi_runtime},
 };
 
-use oer_esp32s31_hal::{
-    root::WifiPartition,
-    shared_radio::{PlatformClockProvider, SharedRadioLease},
-};
+use oer_esp32s31_hal::shared_radio::SharedRadioLease;
 
 use oer_esp32s31_phy::{PhyShortDelay, PhyTargetObserver, concurrent::ConcurrentPhy};
 
@@ -59,28 +56,23 @@ impl<W> RadioStartFailure<W> {
     }
 }
 
-/// Bring Wi-Fi up on the registered, RF-open shared PHY domain and perform
-/// the common MAC initialization without choosing a Wi-Fi role. Role
+/// Bring the initialized Wi-Fi client up on the shared PHY domain the radio
+/// system prepared and perform the common MAC initialization without
+/// choosing a Wi-Fi role. Role
 /// topology is validated for each supervisor epoch immediately before that
 /// epoch consumes this stopped owner.
 ///
 /// # Cancellation
 ///
 /// Once polled, drive this future to a terminal result.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the arbiter lease, both platforms and the clock sources are distinct owners"
-)]
 pub async fn start_esp32s31_radio<P, W, D, O>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
-    clocks: &impl PlatformClockProvider,
-    partition: WifiPartition,
-    wifi_platform: W,
+    initialized: WifiInitialized<W>,
     config: RadioStartConfig,
     observer: O,
     timer: &impl oer_time::Timer,
-) -> Result<WifiStopped<W>, RadioStartFailure<W>>
+) -> Result<WifiStopped<W, ()>, RadioStartFailure<W>>
 where
     W: WifiMacPlatform,
     D: PhyShortDelay,
@@ -89,9 +81,7 @@ where
     let wifi = start_esp32s31_wifi::<P, W, D, O>(
         lease,
         platform,
-        clocks,
-        partition,
-        wifi_platform,
+        initialized,
         config.wifi,
         observer,
         timer,

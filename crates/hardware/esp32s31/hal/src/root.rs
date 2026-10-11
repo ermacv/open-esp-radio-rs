@@ -18,7 +18,10 @@ use oer_esp32s31_pac::{
 
 use crate::{
     phy::{registration::PhyRegistration, restore::PhyRouteState},
-    shared_radio::{SharedRadio, SharedRadioReleaseError},
+    shared_radio::{
+        BluetoothClient, CoexAbsent, Ieee802154Client, SharedRadio, SharedRadioReleaseError,
+        WifiClient,
+    },
 };
 
 /// Proof that its holder owns the chip's analog-I2C master (regi2c) for the
@@ -189,10 +192,15 @@ impl Ieee802154RadioPartition {
 ///
 /// Each field can move to its own protocol route; the shared radio stays with
 /// the [`SharedRadio`] arbiter returned beside it.
+/// Each protocol also receives its coexistence state, outside coexistence;
+/// it returns with the partition when the split reunites.
 pub struct ConcurrentPartitions {
     pub wifi: WifiPartition,
+    pub wifi_coex: CoexAbsent<WifiClient>,
     pub bluetooth: BluetoothPartition,
+    pub bluetooth_coex: CoexAbsent<BluetoothClient>,
     pub ieee802154: Ieee802154RadioPartition,
+    pub ieee802154_coex: CoexAbsent<Ieee802154Client>,
 }
 
 /// Why a concurrent split cannot become the neutral root again.
@@ -263,6 +271,9 @@ impl RadioHardware {
                     interrupts: bluetooth_interrupts,
                 },
                 ieee802154: Ieee802154RadioPartition { mac: ieee802154 },
+                wifi_coex: CoexAbsent::issued(),
+                bluetooth_coex: CoexAbsent::issued(),
+                ieee802154_coex: CoexAbsent::issued(),
             },
         )
     }
@@ -303,8 +314,11 @@ impl RadioHardware {
         } = registers.into_parts();
         let ConcurrentPartitions {
             wifi,
+            wifi_coex: _,
             bluetooth,
+            bluetooth_coex: _,
             ieee802154,
+            ieee802154_coex: _,
         } = partitions;
         Ok((
             Self::returned(

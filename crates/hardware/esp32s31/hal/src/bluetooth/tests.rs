@@ -12,19 +12,28 @@ use super::{
 };
 
 /// The other partitions of a concurrent split.
-type Others = (WifiPartition, Ieee802154RadioPartition);
+type Others = (
+    WifiPartition,
+    Ieee802154RadioPartition,
+    crate::shared_radio::CoexAbsent<crate::shared_radio::WifiClient>,
+    crate::shared_radio::CoexAbsent<crate::shared_radio::BluetoothClient>,
+    crate::shared_radio::CoexAbsent<crate::shared_radio::Ieee802154Client>,
+);
 
 /// A concurrent split whose Bluetooth partition is assumed clocked.
 fn clocked() -> (SharedRadio, Others, ClockedOwner) {
     let (shared, partitions) = RadioHardware::for_validation().into_concurrent(());
     let ConcurrentPartitions {
         wifi,
+        wifi_coex,
         bluetooth,
+        bluetooth_coex,
         ieee802154,
+        ieee802154_coex,
     } = partitions;
     (
         shared,
-        (wifi, ieee802154),
+        (wifi, ieee802154, wifi_coex, bluetooth_coex, ieee802154_coex),
         ClockedOwner::for_validation(bluetooth),
     )
 }
@@ -124,15 +133,19 @@ fn public_and_hci_random_forms_converge_on_one_controller_identity() {
 
 #[test]
 fn untouched_task_owner_returns_the_partition_to_the_neutral_root() {
-    let (shared, (wifi, ieee802154), clocked) = clocked();
+    let (shared, (wifi, ieee802154, wifi_coex, bluetooth_coex, ieee802154_coex), clocked) =
+        clocked();
     let (task, interrupts) = clocked.separate_interrupt_owner();
     let clocked = task
         .into_clocked(interrupts)
         .expect("an untouched task owner can be reunited");
     let partitions = ConcurrentPartitions {
         wifi,
+        wifi_coex,
         bluetooth: clocked.into_partition_for_validation(),
+        bluetooth_coex,
         ieee802154,
+        ieee802154_coex,
     };
 
     // Reuniting the split proves that the finite HAL borrows neither moved

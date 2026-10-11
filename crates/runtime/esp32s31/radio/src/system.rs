@@ -19,14 +19,17 @@ use oer_esp32s31_hal::{
     ieee80211::client::WifiClocksOn,
     ieee802154::Ieee802154Clocked,
     root::{ConcurrentPartitions, RadioHardware},
-    shared_radio::{PlatformClockProvider, SharedRadio, SharedRadioLease},
+    shared_radio::{
+        CoexAbsent, Coexisting, ExternalCoexistence, Ieee802154Client, PlatformClockProvider,
+        RadioClientKind, SharedRadio, SharedRadioLease,
+    },
 };
 use oer_esp32s31_phy::RomShortDelay;
 use oer_esp32s31_phy::{
     ConcurrentPhyRegisterFailure, ConcurrentPhyRegistration, ConcurrentPhyTrackingError,
     ConcurrentRfError, ConcurrentTrackingTick, NoopPhyTargetObserver, PhyCalibrationCache,
     PhyCalibrationIdentity, PhyRegisterConfig, PhyTargetObserver, close_concurrent_rf,
-    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
+    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, phy_ready},
     ieee802154_client::{
         Ieee802154PhyClientError, Ieee802154PhyLeaveFailure, Ieee802154PhyMembership,
         join_ieee802154, leave_ieee802154,
@@ -40,6 +43,7 @@ use oer_esp32s31_phy::{
 };
 use oer_time::{Duration, Instant, Timer};
 
+use crate::coexistence::CoexLeaveFailure;
 use crate::lease::{LeaseReleaseNotice, LeaseWaiters};
 
 /// Lease waiters registered apart: one per concurrently waiting radio task
@@ -95,8 +99,6 @@ pub struct RadioResources<P, C> {
     coex: CoexCore,
     /// The coexistence schedule and its phase timer state.
     schedule: CoexScheduleExecutor,
-    /// Radios that enabled coexistence (`coex_core_enable` count).
-    coex_clients: u8,
     /// The Wi-Fi channel `coex_wifi_channel_set` last recorded.
     wifi_channel: CoexWifiChannel,
 }
@@ -153,12 +155,14 @@ impl WifiCoexViewCell {
 }
 
 /// Why external coexistence could not stop.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExternalCoexStopError {
-    /// The arbiter's external coexistence could not stop.
-    External(ExternalCoexError),
-    /// Disabling coexistence could not withdraw a request timer.
-    Coex(CoexError),
+#[derive(Debug)]
+pub enum ExternalCoexStopFailure {
+    /// Disabling coexistence could not withdraw a request timer; external
+    /// coexistence still takes part and the proof returns for a retry.
+    Coex(CoexLeaveFailure<ExternalCoexistence, CoexError>),
+    /// The registers stopped and external coexistence left, but the planner
+    /// rejected releasing its module clock.
+    Clock(ExternalCoexError),
 }
 
 /// When a Bluetooth preemption ends, as `coex_iso_end_int_handle` reports it
@@ -360,7 +364,6 @@ impl<P, C: PlatformClockProvider, T: Timer> RadioSystem<P, C, T> {
                     retained_cache: None,
                     coex: CoexCore::new(),
                     schedule: CoexScheduleExecutor::new(),
-                    coex_clients: 0,
                     wifi_channel: CoexWifiChannel::default(),
                 }),
                 identity,
@@ -644,7 +647,7 @@ impl<P, C, T> Drop for RadioGuard<'_, P, C, T> {
     fn drop(&mut self) {
         let schedule = self.resources.schedule.schedule();
         self.coex.wifi_view.set(WifiCoexView {
-            active: self.resources.coex_clients >= 2
+            active: self.lease.coex_participant_count() >= 2
                 && schedule.status().others_publish(CoexStatusType::Wifi),
             current_period: schedule.current_period(),
             flexible_period: schedule.flexible_period(),
@@ -683,6 +686,11 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     /// ESP-IDF's calibrated PHY does, so only the first preparation
     /// registers.
     ///
+    /// It needs no client's common power: the PHY domain takes its own
+    /// modem clock modules. Wi-Fi prepares it before entering power, which
+    /// a cold RF restart requires (#644). A client then proves the domain
+    /// ready (`phy_ready`) under the lease it joins with.
+    ///
     /// # Errors
     ///
     /// Registration or wake was rejected before any register access, or
@@ -701,38 +709,39 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
             ..
         } = &mut *self.resources;
         let lease = &mut self.lease;
-        if lease.attachment().rf_closed() {
-            return wake_concurrent_rf::<RomShortDelay>(timer, lease, clocks)
+        let prepared = if lease.attachment().rf_closed() {
+            wake_concurrent_rf::<RomShortDelay>(timer, lease, clocks)
                 .await
-                .map(|()| RadioPhyPrepared::Woken)
-                .map_err(RadioPhyError::Wake);
-        }
-        if lease.attachment().client_snapshot().is_some() {
-            return Ok(RadioPhyPrepared::AlreadyOpen);
-        }
-        let config = match retained_cache.take() {
-            Some(cache) => PhyRegisterConfig::new(identity).with_calibration_cache(cache),
-            None => PhyRegisterConfig::new(identity),
+                .map_err(RadioPhyError::Wake)?;
+            RadioPhyPrepared::Woken
+        } else if lease.attachment().client_snapshot().is_some() {
+            RadioPhyPrepared::AlreadyOpen
+        } else {
+            let config = match retained_cache.take() {
+                Some(cache) => PhyRegisterConfig::new(identity).with_calibration_cache(cache),
+                None => PhyRegisterConfig::new(identity),
+            };
+            match register_concurrent_phy::<P, RomShortDelay, _>(
+                timer,
+                lease,
+                platform,
+                clocks,
+                config,
+                NoopPhyTargetObserver,
+            )
+            .await
+            {
+                Ok(registration) => RadioPhyPrepared::Registered(registration),
+                Err(ConcurrentPhyRegisterFailure::Rejected(
+                    ConcurrentPhyError::AlreadyRegistered,
+                )) => RadioPhyPrepared::AlreadyOpen,
+                Err(ConcurrentPhyRegisterFailure::Rejected(error)) => {
+                    return Err(RadioPhyError::Registration(error));
+                }
+                Err(_) => return Err(RadioPhyError::RegistrationFailed),
+            }
         };
-        match register_concurrent_phy::<P, RomShortDelay, _>(
-            timer,
-            lease,
-            platform,
-            clocks,
-            config,
-            NoopPhyTargetObserver,
-        )
-        .await
-        {
-            Ok(registration) => Ok(RadioPhyPrepared::Registered(registration)),
-            Err(ConcurrentPhyRegisterFailure::Rejected(ConcurrentPhyError::AlreadyRegistered)) => {
-                Ok(RadioPhyPrepared::AlreadyOpen)
-            }
-            Err(ConcurrentPhyRegisterFailure::Rejected(error)) => {
-                Err(RadioPhyError::Registration(error))
-            }
-            Err(_) => Err(RadioPhyError::RegistrationFailed),
-        }
+        Ok(prepared)
     }
 
     /// Capture the registered domain's current calibration state as a cache
@@ -795,7 +804,11 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     ) -> Result<(Ieee802154PhyMembership, ConcurrentAcquire), Ieee802154JoinError> {
         // The client needs RF open, not the registration report.
         let _prepared = self.prepare_phy().await.map_err(Ieee802154JoinError::Phy)?;
-        join_ieee802154(&mut self.lease, clocked, self.timer).map_err(Ieee802154JoinError::Client)
+        let ready = phy_ready(&mut self.lease)
+            .map_err(|error| Ieee802154JoinError::Client(Ieee802154PhyClientError::Phy(error)))?;
+        join_ieee802154(ready, clocked, self.timer)
+            .map(|joined| (joined.membership, joined.acquired))
+            .map_err(|refused| Ieee802154JoinError::Client(refused.error))
     }
 
     /// Leave the shared PHY, as the vendor `esp_ieee802154_disable` does
@@ -862,14 +875,44 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
         track_concurrent_phy::<P, RomShortDelay, _>(lease, platform, timer, observer).await
     }
 
-    /// Enable coexistence for one radio, as `coex_enable` does. Each radio
-    /// enables it once; the first enables requests, and every later one
-    /// starts coexistence: Wi-Fi's start wait and Bluetooth's start wait
-    /// wake, as the vendor calls its start callbacks.
-    pub fn enable_coex(&mut self) {
-        let clients = self.resources.coex_clients.saturating_add(1);
-        self.resources.coex_clients = clients;
-        if clients == 1 {
+    /// Enable coexistence for client `K`, as `coex_enable` does: its state
+    /// turns from [`CoexAbsent`] into [`Coexisting`]. The first radio enables
+    /// requests, and every later one starts coexistence: Wi-Fi's start wait
+    /// and Bluetooth's start wait wake, as the vendor calls its start
+    /// callbacks.
+    pub fn enable_coex<K: RadioClientKind>(&mut self, absent: CoexAbsent<K>) -> Coexisting<K> {
+        let (coexisting, count) = self.lease.enter_coex(absent);
+        self.apply_coex_entry(count);
+        coexisting
+    }
+
+    /// Disable coexistence for client `K`, as `coex_disable` does, and give
+    /// its [`CoexAbsent`] back. When one radio remains, coexistence stops
+    /// and Bluetooth's start wait reports the stop; when none remains, every
+    /// programmed request is withdrawn and requests are disabled.
+    ///
+    /// # Errors
+    ///
+    /// A timer could not be withdrawn; the client still takes part, the core
+    /// keeps the timer as uncertain, and the client keeps its
+    /// [`Coexisting`], so it cannot leave power.
+    pub fn disable_coex<K: RadioClientKind>(
+        &mut self,
+        coexisting: Coexisting<K>,
+    ) -> Result<CoexAbsent<K>, CoexLeaveFailure<Coexisting<K>, CoexError>> {
+        if let Err(error) = self.withdraw_last_coex() {
+            return Err(CoexLeaveFailure {
+                proof: coexisting,
+                error,
+            });
+        }
+        let (absent, remaining) = self.lease.leave_coex(coexisting);
+        self.apply_coex_exit(remaining);
+        Ok(absent)
+    }
+
+    fn apply_coex_entry(&mut self, count: u32) {
+        if count == 1 {
             // `coex_pre_init` selects the policy timers' clock before any
             // radio can request the air.
             CoexArbiterPorts::new(&mut self.lease).configure_timer_clock();
@@ -880,30 +923,20 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
         }
     }
 
-    /// Disable coexistence for one radio, as `coex_disable` does. When one
-    /// radio remains, coexistence stops and Bluetooth's start wait reports
-    /// the stop; when none remains, every programmed request is withdrawn
-    /// and requests are disabled. Without an enabled radio nothing changes.
-    ///
-    /// # Errors
-    ///
-    /// A timer could not be disabled; the core keeps it as uncertain.
-    pub fn disable_coex(&mut self) -> Result<(), CoexError> {
-        let Some(clients) = self.resources.coex_clients.checked_sub(1) else {
-            return Ok(());
-        };
-        self.resources.coex_clients = clients;
-        match clients {
-            0 => {
-                let ports = CoexArbiterPorts::new(&mut self.lease);
-                let (mut timer, _) = ports.ports();
-                self.resources.coex.disable(&mut timer)
-            }
-            1 => {
-                self.coex.bluetooth_started.signal(false);
-                Ok(())
-            }
-            _ => Ok(()),
+    /// Withdraw every request before the last participant leaves.
+    fn withdraw_last_coex(&mut self) -> Result<(), CoexError> {
+        if self.lease.coex_participant_count() == 1 {
+            let ports = CoexArbiterPorts::new(&mut self.lease);
+            let (mut timer, _) = ports.ports();
+            self.resources.coex.disable(&mut timer)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn apply_coex_exit(&mut self, remaining: u32) {
+        if remaining == 1 {
+            self.coex.bluetooth_started.signal(false);
         }
     }
 
@@ -911,7 +944,7 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     /// that radio's bitmap answers it: coexistence started (a second radio
     /// enabled it) and another radio publishes schedule status.
     pub fn coex_active_for(&self, radio: CoexStatusType) -> bool {
-        self.resources.coex_clients >= 2
+        self.lease.coex_participant_count() >= 2
             && self
                 .resources
                 .schedule
@@ -924,9 +957,13 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     /// `esp_coex_wifi_i154_enable` does: enable coexistence for the radio
     /// ([`Self::enable_coex`]) and publish its schedule status, the bit
     /// `esp_coex_ieee802154_status_enable` sets.
-    pub fn enable_ieee802154_coex(&mut self) {
-        self.enable_coex();
+    pub fn enable_ieee802154_coex(
+        &mut self,
+        absent: CoexAbsent<Ieee802154Client>,
+    ) -> Coexisting<Ieee802154Client> {
+        let coexisting = self.enable_coex(absent);
         self.set_coex_status_bits(CoexStatusType::Ieee802154, IEEE802154_COEX_STATUS);
+        coexisting
     }
 
     /// Withdraw IEEE 802.15.4's schedule status, the bit
@@ -935,10 +972,22 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     ///
     /// # Errors
     ///
-    /// As [`Self::disable_coex`].
-    pub fn disable_ieee802154_coex(&mut self) -> Result<(), CoexError> {
+    /// As [`Self::disable_coex`]; IEEE 802.15.4 still takes part and its
+    /// status is published again.
+    pub fn disable_ieee802154_coex(
+        &mut self,
+        coexisting: Coexisting<Ieee802154Client>,
+    ) -> Result<
+        CoexAbsent<Ieee802154Client>,
+        CoexLeaveFailure<Coexisting<Ieee802154Client>, CoexError>,
+    > {
         self.clear_coex_status_bits(CoexStatusType::Ieee802154, IEEE802154_COEX_STATUS);
-        self.disable_coex()
+        let left = self.disable_coex(coexisting);
+        if left.is_err() {
+            // It still takes part: publish its status again.
+            self.set_coex_status_bits(CoexStatusType::Ieee802154, IEEE802154_COEX_STATUS);
+        }
+        left
     }
 
     /// Start external coexistence, as ESP-IDF's
@@ -948,6 +997,9 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     /// coexistence is enabled for the external radio and its schedule status
     /// bits 1 and 2 are published, as `esp_coex_external_set` does.
     ///
+    /// The returned [`ExternalCoexistence`] takes part in coexistence until
+    /// [`Self::stop_external_coex`].
+    ///
     /// # Errors
     ///
     /// External coexistence already runs, or the module clock failed; nothing
@@ -955,12 +1007,12 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     pub fn start_external_coex(
         &mut self,
         config: ExternalCoexConfig,
-    ) -> Result<(), ExternalCoexError> {
+    ) -> Result<ExternalCoexistence, ExternalCoexError> {
         let (lease, _, clocks) = self.parts();
-        lease.start_external_coex(config, clocks)?;
-        self.enable_coex();
+        let (external, count) = lease.start_external_coex(config, clocks)?;
+        self.apply_coex_entry(count);
         self.set_coex_status_bits(CoexStatusType::ExternalCoex, EXTERNAL_COEX_STATUS);
-        Ok(())
+        Ok(external)
     }
 
     /// Stop external coexistence, as `esp_coex_external_stop` does: withdraw
@@ -970,20 +1022,25 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     ///
     /// # Errors
     ///
-    /// External coexistence does not run, a coexistence timer could not be
-    /// withdrawn, or the planner rejected releasing the module clock.
-    pub fn stop_external_coex(&mut self) -> Result<(), ExternalCoexStopError> {
-        if self.lease.external_coex().is_none() {
-            return Err(ExternalCoexStopError::External(
-                ExternalCoexError::NotActive,
-            ));
-        }
+    /// A coexistence timer could not be withdrawn (the proof returns for a
+    /// retry), or the planner rejected releasing the module clock.
+    pub fn stop_external_coex(
+        &mut self,
+        external: ExternalCoexistence,
+    ) -> Result<(), ExternalCoexStopFailure> {
         self.clear_coex_status_bits(CoexStatusType::ExternalCoex, EXTERNAL_COEX_STATUS);
-        self.disable_coex().map_err(ExternalCoexStopError::Coex)?;
-        let (lease, _, _) = self.parts();
-        lease
-            .stop_external_coex()
-            .map_err(ExternalCoexStopError::External)
+        if let Err(error) = self.withdraw_last_coex() {
+            // It still takes part: publish its status again.
+            self.set_coex_status_bits(CoexStatusType::ExternalCoex, EXTERNAL_COEX_STATUS);
+            return Err(ExternalCoexStopFailure::Coex(CoexLeaveFailure {
+                proof: external,
+                error,
+            }));
+        }
+        let stopped = self.lease.stop_external_coex(external);
+        // External coexistence left the participant set either way.
+        self.apply_coex_exit(self.lease.coex_participant_count());
+        stopped.map(|_| ()).map_err(ExternalCoexStopFailure::Clock)
     }
 
     /// Record the Wi-Fi channel, as `coex_wifi_channel_set` does, and wake
@@ -1163,12 +1220,21 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
                 suspended,
             });
         }
-        resume_wifi(&mut self.lease, clocks, suspended, self.timer).map_err(|failure| {
-            WifiWakeFailure {
-                error: WifiWakeError::Client(failure.error()),
-                suspended: failure.into_suspended(),
+        let ready = match phy_ready(&mut self.lease) {
+            Ok(ready) => ready,
+            Err(error) => {
+                return Err(WifiWakeFailure {
+                    error: WifiWakeError::Client(error),
+                    suspended,
+                });
             }
-        })
+        };
+        resume_wifi(ready, clocks, suspended, self.timer)
+            .map(|joined| (joined.membership, joined.acquired))
+            .map_err(|refused| WifiWakeFailure {
+                error: WifiWakeError::Client(refused.error.error()),
+                suspended: refused.error.into_suspended(),
+            })
     }
 }
 

@@ -30,18 +30,18 @@ pub trait StandaloneEspNowChannelControl<H> {
 /// only to the opt-in off-channel run method; connected ESP-NOW has no path to
 /// construct or consume it. Its retunes wait on the radio's timer `D`.
 #[cfg(target_arch = "riscv32")]
-pub struct StandaloneEspNowPhyChannelControl<'context, 'observer, P, C, D, O> {
-    context: &'context mut oer_esp32s31_ieee80211::runtime::WifiRuntimeContext,
+pub struct StandaloneEspNowPhyChannelControl<'context, 'observer, Membership, P, C, D, O> {
+    context: &'context mut oer_esp32s31_ieee80211::runtime::WifiRuntimeContext<Membership>,
     radio: &'context oer_esp32s31_radio_runtime::RadioSystem<P, C, D>,
     observer: &'observer mut O,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'context, 'observer, P, C, D, O>
-    StandaloneEspNowPhyChannelControl<'context, 'observer, P, C, D, O>
+impl<'context, 'observer, Membership, P, C, D, O>
+    StandaloneEspNowPhyChannelControl<'context, 'observer, Membership, P, C, D, O>
 {
     pub fn new(
-        context: &'context mut oer_esp32s31_ieee80211::runtime::WifiRuntimeContext,
+        context: &'context mut oer_esp32s31_ieee80211::runtime::WifiRuntimeContext<Membership>,
         radio: &'context oer_esp32s31_radio_runtime::RadioSystem<P, C, D>,
         observer: &'observer mut O,
     ) -> Self {
@@ -58,8 +58,9 @@ impl<'context, 'observer, P, C, D, O>
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<P, C, D, O> StandaloneEspNowChannelControl<oer_esp32s31_hal::owner::RadioRuntimeOwner>
-    for StandaloneEspNowPhyChannelControl<'_, '_, P, C, D, O>
+impl<Membership, P, C, D, O>
+    StandaloneEspNowChannelControl<oer_esp32s31_hal::owner::RadioRuntimeOwner>
+    for StandaloneEspNowPhyChannelControl<'_, '_, Membership, P, C, D, O>
 where
     C: oer_esp32s31_hal::shared_radio::PlatformClockProvider,
     D: oer_time::Timer,

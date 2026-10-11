@@ -18,6 +18,13 @@ pub trait Publisher<'pool, const CAPACITY: usize, const SLOTS: usize> {
     /// The caller can forward the result while preserving rejection ownership:
     ///
     /// ```no_run
+    /// # #![cfg_attr(target_arch = "riscv32", no_std)]
+    /// # #![cfg_attr(target_arch = "riscv32", no_main)]
+    /// # #[cfg(target_arch = "riscv32")]
+    /// # #[panic_handler]
+    /// # fn panic(_: &core::panic::PanicInfo) -> ! {
+    /// #     loop {}
+    /// # }
     /// use oer_esp32s31_ieee80211::rx::transaction::Publisher;
     /// use oer_esp32s31_ieee80211_mac::rx::pool::NetworkRxFrame;
     ///
@@ -32,6 +39,13 @@ pub trait Publisher<'pool, const CAPACITY: usize, const SLOTS: usize> {
     /// After transfer, only an `Err` result can restore the caller's frame:
     ///
     /// ```compile_fail,E0382
+    /// # #![cfg_attr(target_arch = "riscv32", no_std)]
+    /// # #![cfg_attr(target_arch = "riscv32", no_main)]
+    /// # #[cfg(target_arch = "riscv32")]
+    /// # #[panic_handler]
+    /// # fn panic(_: &core::panic::PanicInfo) -> ! {
+    /// #     loop {}
+    /// # }
     /// use oer_esp32s31_ieee80211::rx::transaction::Publisher;
     /// use oer_esp32s31_ieee80211_mac::rx::pool::NetworkRxFrame;
     ///

@@ -135,7 +135,7 @@ pub(in crate::product_hil) async fn run_session(
     // Coexistence with Wi-Fi, as a Thread border router enters it.
     let mut coexistence = Ieee802154SessionCoexistence::default();
     if config.wifi_coexistence && started == Ieee802154SessionResult::Done {
-        system.enable_wifi_coexistence(client.radio).await;
+        system = system.enable_wifi_coexistence(client.radio).await;
         coexistence.enabled = true;
     }
     publish_event_reliably(
@@ -205,8 +205,14 @@ pub(in crate::product_hil) async fn run_session(
     let Some((stop_request, mut system)) = served else {
         return;
     };
-    if coexistence.enabled && system.disable_wifi_coexistence(client.radio).await.is_err() {
-        coexistence.disable_failed = true;
+    if coexistence.enabled {
+        system = match system.disable_wifi_coexistence(client.radio).await {
+            Ok(system) => system,
+            Err((system, _)) => {
+                coexistence.disable_failed = true;
+                system
+            }
+        };
     }
 
     let _ = session.rest_disabled().await;

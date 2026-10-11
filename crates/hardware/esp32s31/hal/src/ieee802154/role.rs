@@ -59,8 +59,9 @@ use crate::{
     },
     root::Ieee802154RadioPartition,
     shared_radio::{
-        BtbbAcquired, BtbbError, ClientQuiescence, CommonRadioPowerError, EmptyQuiescentWindow,
-        ModemClockError, PlatformClockProvider, SharedRadioLease,
+        BtbbAcquired, BtbbError, ClientQuiescence, CoexAbsent, CommonPower, CommonPowerExitFailure,
+        CommonRadioPowerError, EmptyQuiescentWindow, Ieee802154Client, ModemClockError,
+        PlatformClockProvider, SharedRadioLease,
     },
 };
 
@@ -177,9 +178,12 @@ impl Ieee802154Cold {
         self,
         lease: &mut SharedRadioLease<'_, T>,
         clocks: &impl PlatformClockProvider,
-    ) -> Result<Ieee802154Powered, Ieee802154PowerTransitionFailure<Self>> {
+    ) -> Result<
+        (Ieee802154Powered, CommonPower<Ieee802154Client>),
+        Ieee802154PowerTransitionFailure<Self>,
+    > {
         match lease.enter_common_power(&self.mac.task, clocks) {
-            Ok(()) => Ok(Ieee802154Powered { mac: self.mac }),
+            Ok(power) => Ok((Ieee802154Powered { mac: self.mac }, power)),
             Err(error) => Err(Ieee802154PowerTransitionFailure { owner: self, error }),
         }
     }
@@ -195,19 +199,32 @@ pub struct Ieee802154Powered {
 }
 
 impl Ieee802154Powered {
-    /// Leave common radio power; the last client restores the cold baseline.
+    /// Leave common radio power, outside coexistence (`coex`); the last
+    /// client restores the cold baseline.
     ///
     /// # Errors
     ///
     /// The baseline did not read back; the client stays entered and the
-    /// unchanged owner is returned for a retry.
+    /// unchanged owner and proof are returned for a retry.
+    #[allow(
+        clippy::type_complexity,
+        reason = "the failure returns the owner beside its power proof"
+    )]
     pub fn power_down<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
-    ) -> Result<Ieee802154Cold, Ieee802154PowerTransitionFailure<Self>> {
-        match lease.exit_common_power(&self.mac.task) {
+        power: CommonPower<Ieee802154Client>,
+        coex: &CoexAbsent<Ieee802154Client>,
+    ) -> Result<
+        Ieee802154Cold,
+        Ieee802154PowerTransitionFailure<(Self, CommonPower<Ieee802154Client>)>,
+    > {
+        match lease.exit_common_power(&self.mac.task, power, coex) {
             Ok(()) => Ok(Ieee802154Cold { mac: self.mac }),
-            Err(error) => Err(Ieee802154PowerTransitionFailure { owner: self, error }),
+            Err(CommonPowerExitFailure { power, error }) => Err(Ieee802154PowerTransitionFailure {
+                owner: (self, power),
+                error,
+            }),
         }
     }
 }

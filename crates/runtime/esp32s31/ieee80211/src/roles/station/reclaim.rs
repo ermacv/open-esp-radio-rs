@@ -193,9 +193,20 @@ where
 /// this value merely proves the epoch reported inactive before it moved. It
 /// retains every exact resource required either to reassemble `WifiStopped`
 /// or to restart the returned station phase later.
-pub struct StationRuntimeReclaimed<'storage, 'security, P, I, D, T, B, S, const RECORDS: usize> {
+pub struct StationRuntimeReclaimed<
+    'storage,
+    'security,
+    P,
+    Membership,
+    I,
+    D,
+    T,
+    B,
+    S,
+    const RECORDS: usize,
+> {
     registers: RadioRuntimeOwner,
-    role: WifiRoleOwner<P>,
+    role: WifiRoleOwner<P, Membership>,
     interrupt: I,
     storage: StationStorageResources<'storage, D, T, RECORDS>,
     board: B,
@@ -204,15 +215,15 @@ pub struct StationRuntimeReclaimed<'storage, 'security, P, I, D, T, B, S, const 
     primary_channel: Option<WifiChannel>,
 }
 
-impl<'storage, 'security, P, I, D, T, B, S, const RECORDS: usize>
-    StationRuntimeReclaimed<'storage, 'security, P, I, D, T, B, S, RECORDS>
+impl<'storage, 'security, P, Membership, I, D, T, B, S, const RECORDS: usize>
+    StationRuntimeReclaimed<'storage, 'security, P, Membership, I, D, T, B, S, RECORDS>
 {
     #[allow(clippy::type_complexity)]
     pub fn into_parts(
         self,
     ) -> (
         RadioRuntimeOwner,
-        WifiRoleOwner<P>,
+        WifiRoleOwner<P, Membership>,
         I,
         StationStorageResources<'storage, D, T, RECORDS>,
         B,
@@ -773,6 +784,7 @@ pub fn try_reclaim_esp32s31_station_runtime<
     'security,
     'arena,
     P,
+    Membership,
     I,
     D,
     T,
@@ -790,7 +802,7 @@ pub fn try_reclaim_esp32s31_station_runtime<
 >(
     owner: StationServiceOwner<
         'security,
-        StationRuntimeResources<'role, 'storage, WifiRoleOwner<P>, I, D, T, B, RECORDS>,
+        StationRuntimeResources<'role, 'storage, WifiRoleOwner<P, Membership>, I, D, T, B, RECORDS>,
         StationServicePhase<
             RadioRuntimeOwner,
             S,
@@ -806,6 +818,7 @@ pub fn try_reclaim_esp32s31_station_runtime<
         'storage,
         'security,
         P,
+        Membership,
         I,
         D,
         T,
@@ -816,7 +829,16 @@ pub fn try_reclaim_esp32s31_station_runtime<
     StationRuntimeReclaimFailure<
         StationServiceOwner<
             'security,
-            StationRuntimeResources<'role, 'storage, WifiRoleOwner<P>, I, D, T, B, RECORDS>,
+            StationRuntimeResources<
+                'role,
+                'storage,
+                WifiRoleOwner<P, Membership>,
+                I,
+                D,
+                T,
+                B,
+                RECORDS,
+            >,
             StationServicePhase<
                 RadioRuntimeOwner,
                 S,

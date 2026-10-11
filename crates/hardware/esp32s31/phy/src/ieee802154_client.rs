@@ -33,7 +33,8 @@ use oer_esp32s31_hal::{
 };
 
 use crate::concurrent::{
-    ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, acquire_client, release_client,
+    ConcurrentPhy, ConcurrentPhyError, JoinRefused, Joined, PhyReady, acquire_client,
+    release_client,
 };
 
 /// IEEE 802.15.4 holds a client bit in the shared PHY domain and a reference
@@ -60,8 +61,6 @@ impl fmt::Debug for Ieee802154PhyMembership {
 pub enum Ieee802154PhyClientError {
     /// The PHY domain rejected the operation.
     Phy(ConcurrentPhyError),
-    /// The settled registration no longer describes the shared PHY.
-    StaleRegistration,
     /// The BTBB reference is not in the state the operation requires.
     Btbb(BtbbError),
 }
@@ -78,33 +77,49 @@ pub enum Ieee802154PhyClientError {
 ///
 /// # Errors
 ///
-/// Every check runs before the client set or BTBB changes: the domain is not
-/// registered and settled, its registration no longer describes the lease,
-/// IEEE 802.15.4 already holds BTBB, or the client set rejects the client.
+/// Every check runs before the client set or BTBB changes: IEEE 802.15.4 already
+/// holds BTBB, or the client set rejects the client. The lease comes back
+/// either way.
 // CAPABILITY: ieee802154-registered-timing-entry, phy-protocol-consumer-protocol-client-ownership-ieee802154
-pub fn join_ieee802154(
-    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+pub fn join_ieee802154<'l, 'r>(
+    ready: PhyReady<'l, 'r>,
     clocked: &Ieee802154Clocked,
     clock: &impl oer_time::Clock,
-) -> Result<(Ieee802154PhyMembership, ConcurrentAcquire), Ieee802154PhyClientError> {
-    let epoch = lease.registration_epoch();
-    let domain = lease
-        .attachment()
-        .settled()
-        .map_err(Ieee802154PhyClientError::Phy)?;
-    if !domain.clients.describes_epoch(epoch) {
-        return Err(Ieee802154PhyClientError::StaleRegistration);
-    }
-    let gain_parameter = domain
-        .registered
-        .state()
-        .register_init_parameters()
-        .parameter_120;
+) -> Result<Joined<'l, 'r, Ieee802154PhyMembership>, JoinRefused<'l, 'r, Ieee802154PhyClientError>>
+{
+    let lease = ready.into_lease();
+    // The ready proof checked that the settled registration describes the
+    // lease.
+    let gain_parameter = match lease.attachment().settled() {
+        Ok(domain) => {
+            domain
+                .registered
+                .state()
+                .register_init_parameters()
+                .parameter_120
+        }
+        Err(error) => {
+            return Err(JoinRefused {
+                error: Ieee802154PhyClientError::Phy(error),
+                lease,
+            });
+        }
+    };
     if lease.holds_btbb(RadioClient::Ieee802154) {
-        return Err(Ieee802154PhyClientError::Btbb(BtbbError::AlreadyAcquired));
+        return Err(JoinRefused {
+            error: Ieee802154PhyClientError::Btbb(BtbbError::AlreadyAcquired),
+            lease,
+        });
     }
-    let acquired = acquire_client(lease, RadioClient::Ieee802154, clock)
-        .map_err(Ieee802154PhyClientError::Phy)?;
+    let acquired = match acquire_client(lease, RadioClient::Ieee802154, clock) {
+        Ok(acquired) => acquired,
+        Err(error) => {
+            return Err(JoinRefused {
+                error: Ieee802154PhyClientError::Phy(error),
+                lease,
+            });
+        }
+    };
 
     #[allow(
         unsafe_code,
@@ -122,9 +137,16 @@ pub fn join_ieee802154(
         // Both rejections were checked above; undo the client bit when the
         // domain still permits it.
         let _ = release_client(lease, RadioClient::Ieee802154);
-        return Err(Ieee802154PhyClientError::Btbb(error));
+        return Err(JoinRefused {
+            error: Ieee802154PhyClientError::Btbb(error),
+            lease,
+        });
     }
-    Ok((Ieee802154PhyMembership { _private: () }, acquired))
+    Ok(Joined {
+        membership: Ieee802154PhyMembership { _private: () },
+        acquired,
+        lease,
+    })
 }
 
 /// Failed leave retaining the membership.
@@ -191,7 +213,31 @@ pub fn leave_ieee802154(
 }
 
 /// The owners of one operational IEEE 802.15.4 MAC epoch together with its
-/// PHY membership.
+/// PHY membership: the MAC is installed only with the membership a join
+/// issued.
+///
+/// ```
+/// use oer_esp32s31_hal::ieee802154::Ieee802154FoundationConfigured;
+/// use oer_esp32s31_phy::ieee802154_client::{
+///     Ieee802154PhyMembership, RegisteredIeee802154Operational,
+/// };
+/// fn install(
+///     foundation: Ieee802154FoundationConfigured,
+///     membership: Ieee802154PhyMembership,
+/// ) -> RegisteredIeee802154Operational {
+///     RegisteredIeee802154Operational::new(foundation, membership)
+/// }
+/// ```
+///
+/// Not without it:
+///
+/// ```compile_fail,E0061
+/// use oer_esp32s31_hal::ieee802154::Ieee802154FoundationConfigured;
+/// use oer_esp32s31_phy::ieee802154_client::RegisteredIeee802154Operational;
+/// fn install(foundation: Ieee802154FoundationConfigured) -> RegisteredIeee802154Operational {
+///     RegisteredIeee802154Operational::new(foundation)
+/// }
+/// ```
 #[must_use = "the operational owners must return to their registered route"]
 pub struct RegisteredIeee802154Operational {
     /// Task-side MAC registers.
@@ -218,7 +264,31 @@ impl RegisteredIeee802154Operational {
     }
 }
 
-/// PHY membership retained while the MAC is operational.
+/// PHY membership retained while the MAC is operational. The membership
+/// comes back only with the foundation owners
+/// ([`RegisteredIeee802154Operational::into_foundation`]), so IEEE 802.15.4
+/// leaves the PHY only after its operational MAC was taken apart:
+///
+/// ```
+/// use oer_esp32s31_hal::ieee802154::mac::{Ieee802154InterruptSetupOwner, Ieee802154TaskOwner};
+/// use oer_esp32s31_phy::ieee802154_client::RegisteredIeee802154OperationalRoute;
+/// fn uninstall(
+///     route: RegisteredIeee802154OperationalRoute,
+///     task: Ieee802154TaskOwner,
+///     interrupts: Ieee802154InterruptSetupOwner,
+/// ) {
+///     if let Ok((_foundation, _membership)) = route.into_foundation(task, interrupts) {}
+/// }
+/// ```
+///
+/// ```compile_fail,E0616
+/// use oer_esp32s31_phy::ieee802154_client::{
+///     Ieee802154PhyMembership, RegisteredIeee802154OperationalRoute,
+/// };
+/// fn leave_early(route: RegisteredIeee802154OperationalRoute) -> Ieee802154PhyMembership {
+///     route.membership
+/// }
+/// ```
 #[must_use = "the registered operational route must reunite with its owners"]
 pub struct RegisteredIeee802154OperationalRoute {
     membership: Ieee802154PhyMembership,

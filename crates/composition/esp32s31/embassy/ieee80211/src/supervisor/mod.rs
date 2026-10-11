@@ -26,7 +26,10 @@ use oer_esp32s31_coex::CoexError;
 
 use crate::{
     composition::{
-        start::{RadioStartConfig, RadioStartFailure, start_esp32s31_radio},
+        start::{
+            RadioStartConfig, RadioStartFailure, WifiPowerUpFailure, power_up_esp32s31_wifi,
+            start_esp32s31_radio,
+        },
         supervisor::{
             RadioSupervisorTask, StationSupervisorEpoch, StationSupervisorHooks,
             WifiSupervisorStopped, drive_esp32s31_monitor_role, prepare_esp32s31_radio_supervisor,
@@ -88,7 +91,11 @@ use oer_esp32s31_ieee80211_runtime::roles::monitor::{
 #[cfg(feature = "diagnostics")]
 use oer_ieee80211_sta::station::StaBackoffReason;
 
-use oer_esp32s31_hal::{owner::RadioRuntimeOwner, root::WifiPartition};
+use oer_esp32s31_hal::{
+    owner::RadioRuntimeOwner,
+    root::WifiPartition,
+    shared_radio::{CoexAbsent, Coexisting, CommonPower, WifiClient},
+};
 
 use oer_esp32s31_ieee80211_ap::{engine::ApEngine, transaction::ApMac, tx::ApTxConfig};
 
@@ -128,7 +135,7 @@ use oer_esp32s31_ieee80211_esp_hal::EspHalWifiPlatform;
 
 use oer_esp32s31_phy::{ConcurrentRfError, tracking::fail_stop::SharedPhyFailStop};
 
-use oer_esp32s31_radio_runtime::RadioPhyError;
+use oer_esp32s31_radio_runtime::{CoexLeaveFailure, RadioPhyError};
 
 use oer_esp32s31_ieee80211_mac::{
     init::activate_promiscuous_receive,
@@ -231,10 +238,16 @@ pub(super) type RxStorage =
 pub(super) type ControlTx =
     ControlTransmitter<'static, PhyTxTargetPowerProfile, fn() -> u32, MacTimer, TX_BUFFER_SIZE>;
 pub(super) type TxStorage = StaTxEpoch<ControlTx>;
+/// What the Wi-Fi client carries of the shared radio from its start to the
+/// radio stop: its common power proof and its part in coexistence.
+pub(super) struct WifiMembership {
+    power: CommonPower<WifiClient>,
+    coexisting: Coexisting<WifiClient>,
+}
 pub(super) type ProductionStationRuntime<'state> = StationRuntimeResources<
     'state,
     'static,
-    WifiRoleOwner<EspHalWifiPlatform>,
+    WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
     MacInterruptEpoch,
     StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     &'static mut TxStorage,
@@ -434,9 +447,9 @@ struct ProductionWifiReusableResources<'security> {
 /// context across STA/AP/monitor/scan cutovers. A logical role stop therefore
 /// cannot accidentally mask a still-running MAC or remap its interrupt.
 enum ProductionWifiOwner {
-    Cold(WifiStopped<EspHalWifiPlatform>),
+    Cold(WifiStopped<EspHalWifiPlatform, WifiMembership>),
     Live {
-        owner: WifiRoleOwner<EspHalWifiPlatform>,
+        owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
         registers: RadioRuntimeOwner,
         interrupts: MacInterruptEpoch,
     },
@@ -452,7 +465,7 @@ impl ProductionWifiOwner {
 }
 
 struct ProductionWifiMaterialized<L> {
-    owner: WifiRoleOwner<EspHalWifiPlatform>,
+    owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
     registers: RadioRuntimeOwner,
     interrupts: MacInterruptEpoch,
     resources: L,
@@ -486,7 +499,7 @@ fn materialize_production_wifi<L>(
 }
 
 fn park_production_wifi(
-    owner: WifiRoleOwner<EspHalWifiPlatform>,
+    owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
     registers: RadioRuntimeOwner,
     interrupts: MacInterruptEpoch,
 ) -> ProductionWifiOwner {
@@ -553,12 +566,21 @@ enum JoinFailure {
         error: RadioPhyError,
         _partition: WifiPartition,
         _platform: EspHalWifiPlatform,
+        _coex: CoexAbsent<WifiClient>,
+    },
+    PowerUp {
+        _failure: WifiPowerUpFailure<EspHalWifiPlatform>,
+        _coex: CoexLeft,
     },
     Start {
         _failure: RadioStartFailure<EspHalWifiPlatform>,
-        _coex: Result<(), CoexError>,
+        _power: CommonPower<WifiClient>,
+        _coex: CoexLeft,
     },
 }
+
+/// Coexistence left after a failed start, or still on.
+type CoexLeft = Result<CoexAbsent<WifiClient>, CoexLeaveFailure<Coexisting<WifiClient>, CoexError>>;
 
 enum ProductionRadioLifecycleFault {
     Join {
@@ -570,16 +592,20 @@ enum ProductionRadioLifecycleFault {
     },
     Release {
         _failure: WifiReleaseFailure<EspHalWifiPlatform>,
+        _coex: CoexAbsent<WifiClient>,
         _resources: ProductionRadioResources,
     },
     RfClose {
         _error: ConcurrentRfError,
         _partition: WifiPartition,
         _platform: EspHalWifiPlatform,
+        _coex: CoexAbsent<WifiClient>,
         _resources: ProductionRadioResources,
     },
     CoexDisable {
         _error: CoexError,
+        _membership: WifiMembership,
+        _wifi: WifiStopped<EspHalWifiPlatform, ()>,
         _resources: ProductionRadioResources,
     },
 }
@@ -653,7 +679,7 @@ enum ProductionStationReclaimFault<'security> {
     },
     InterruptInvariant {
         _registers: RadioRuntimeOwner,
-        _role: WifiRoleOwner<EspHalWifiPlatform>,
+        _role: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
         _interrupt: MacInterruptEpoch,
         _storage: ProductionStationStorage,
         _board: ProductionStationBoardResources,
@@ -696,7 +722,7 @@ enum ProductionWifiFault {
         _stopped: ProductionSupervisorStopped,
     },
     StandaloneScanInitialRx {
-        _owner: WifiRoleOwner<EspHalWifiPlatform>,
+        _owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
         _registers: RadioRuntimeOwner,
         _interrupts: MacInterruptEpoch,
         _physical: ProductionWifiPhysicalResources,
@@ -796,7 +822,7 @@ impl ProductionWifiFault {
 
 enum ProductionStandaloneScanReturnFault {
     TxRestore {
-        _owner: WifiRoleOwner<EspHalWifiPlatform>,
+        _owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
         _registers: RadioRuntimeOwner,
         _interrupts: MacInterruptEpoch,
         _dma: StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
@@ -810,7 +836,7 @@ enum ProductionStandaloneScanReturnFault {
         _returned_control: ControlTx,
     },
     ReceiveNotLive {
-        _owner: WifiRoleOwner<EspHalWifiPlatform>,
+        _owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
         _registers: RadioRuntimeOwner,
         _interrupts: MacInterruptEpoch,
         _dma: StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
@@ -825,7 +851,7 @@ enum ProductionStandaloneScanReturnFault {
 
 struct ProductionInitialRxFault {
     _error: RxRingError,
-    _owner: WifiRoleOwner<EspHalWifiPlatform>,
+    _owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
     _registers: RadioRuntimeOwner,
     _interrupts: MacInterruptEpoch,
     _dma: StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
@@ -840,7 +866,7 @@ struct ProductionInitialRxFault {
 }
 
 struct ProductionStationResumeFault {
-    _owner: WifiRoleOwner<EspHalWifiPlatform>,
+    _owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
     _registers: RadioRuntimeOwner,
     _interrupts: MacInterruptEpoch,
     _storage: ProductionStationStorage,
@@ -946,6 +972,7 @@ mod role_dispatch;
 pub async fn new(
     radio: &'static SharedRadio,
     partition: WifiPartition,
+    coex: CoexAbsent<WifiClient>,
     platform: EspHalWifiPlatform,
     trng: Trng,
     config: crate::RadioConfig,
@@ -980,10 +1007,17 @@ pub async fn new(
         WifiMacStartConfig::new(MAC_HANDSHAKE_SAMPLE_LIMIT, station_mac, access_point_mac),
     );
     let protection = watchdog.startup();
-    let started = await_stack_boundary!(join_shared_radio(radio, partition, platform, radio_start));
+    let started = await_stack_boundary!(join_shared_radio(
+        radio,
+        partition,
+        platform,
+        coex,
+        radio_start
+    ));
     crate::WatchdogConfig::complete(protection);
     let (phy, wifi, mac_clock) = started.map_err(|failure| {
         let error = match &failure {
+            JoinFailure::PowerUp { .. } => NewError::RadioStart,
             JoinFailure::Prepare { error, .. } => NewError::Phy(*error),
             JoinFailure::Start { .. } => NewError::RadioStart,
         };
@@ -1165,19 +1199,25 @@ pub async fn new(
     })
 }
 
-/// Prepare the shared PHY for Wi-Fi and bring Wi-Fi up on it, under one
-/// arbiter lease, with a fresh MAC clock started on the partition's MAC
-/// local time. A failure returns the Wi-Fi owners it reached, after the
-/// shared-PHY terminal policy was applied to it.
+/// Bring Wi-Fi up on the shared radio under one arbiter lease: prepare the
+/// shared PHY (registration, or wake of closed RF), enable coexistence,
+/// which `wifi_hw_start` enables right after `esp_phy_enable`, then enter
+/// common power and start Wi-Fi's PHY client and MAC. After a full
+/// common-power cycle Wi-Fi works again only when the RF wake and
+/// coexistence precede the repeated power entry (#644). The MAC clock starts
+/// fresh on the partition's MAC local time. A failure returns the Wi-Fi
+/// owners it reached, after the shared-PHY terminal policy was applied to
+/// it.
 async fn join_shared_radio(
     radio: &'static SharedRadio,
     partition: WifiPartition,
     platform: EspHalWifiPlatform,
+    coex: CoexAbsent<WifiClient>,
     radio_start: RadioStartConfig,
 ) -> Result<
     (
         oer_esp32s31_radio_runtime::RadioPhyPrepared,
-        WifiStopped<EspHalWifiPlatform>,
+        WifiStopped<EspHalWifiPlatform, WifiMembership>,
         StationMacClock,
     ),
     JoinFailure,
@@ -1191,6 +1231,7 @@ async fn join_shared_radio(
                 error,
                 _partition: partition,
                 _platform: platform,
+                _coex: coex,
             };
             crate::lifecycle_policy::enforce(
                 &failure,
@@ -1199,25 +1240,42 @@ async fn join_shared_radio(
             return Err(failure);
         }
     };
-    // The vendor `wifi_hw_start` enables coexistence right after the PHY.
-    guard.enable_coex();
-    let (lease, radio_platform, clocks) = guard.parts();
+    let coexisting = guard.enable_coex(coex);
+    let (lease, _, clocks) = guard.parts();
+    let (initialized, power) = match power_up_esp32s31_wifi(lease, clocks, partition, platform) {
+        Ok(powered) => powered,
+        Err(failure) => {
+            let failure = JoinFailure::PowerUp {
+                _failure: failure,
+                _coex: guard.disable_coex(coexisting),
+            };
+            crate::lifecycle_policy::enforce(
+                &failure,
+                SharedPhyFailStop::from_ambiguous_lifecycle(false),
+            );
+            return Err(failure);
+        }
+    };
+    let (lease, radio_platform, _) = guard.parts();
     match await_stack_boundary!(start_esp32s31_radio::<_, _, RomShortDelay, _>(
         lease,
         radio_platform,
-        clocks,
-        partition,
-        platform,
+        initialized,
         radio_start,
         NoopPhyTargetObserver,
         &EmbassyClock,
     )) {
-        Ok(wifi) => Ok((phy, wifi, mac_clock)),
+        Ok(wifi) => Ok((
+            phy,
+            wifi.with_membership(WifiMembership { power, coexisting }),
+            mac_clock,
+        )),
         Err(failure) => {
             let ambiguous = failure.phy_hardware_ambiguous();
             let failure = JoinFailure::Start {
                 _failure: failure,
-                _coex: guard.disable_coex(),
+                _power: power,
+                _coex: guard.disable_coex(coexisting),
             };
             crate::lifecycle_policy::enforce(
                 &failure,

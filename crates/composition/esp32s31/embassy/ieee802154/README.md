@@ -194,8 +194,12 @@ Next to Wi-Fi, as in a Thread border router,
 coexistence (`esp_coex_wifi_i154_enable`: `coex_enable` and the schedule
 status bit) through `RadioGuard::enable_ieee802154_coex`; the image must
 run the radio system's coexistence schedule, as its Wi-Fi composition does.
-`disable_wifi_coexistence` leaves it again, and `stop` refuses while it
-takes part, since leaving can fail after it changed the coexistence state.
+The system holds IEEE 802.15.4's common power proof and its coexistence
+state from the radio split (`CoexAbsent`, or `Coexisting` while it takes
+part); leaving power requires the `CoexAbsent`, so it cannot leave power
+while in coexistence. `disable_wifi_coexistence` leaves it again, and `stop` leaves
+it itself before the PHY; a leave whose timer cannot be withdrawn returns
+the system unchanged with the error.
 
 RF stays open for the client's lifetime, as in ESP-IDF builds without
 tickless idle and modem retention, where `IEEE802154_RF_ENABLE` and

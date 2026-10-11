@@ -234,13 +234,7 @@ fn collect<'m>(
                     &mut |o, c| {
                         let input = &symbols[analyzed.function.input as usize];
                         if let Some(access) = access(o, ranges, input, &mut entry.unresolved) {
-                            admit(
-                                memory,
-                                admitted,
-                                size_of::<MmioAccess>()
-                                    + access.stored.len() * size_of::<MmioStoredBits>(),
-                                c,
-                            )?;
+                            admit(memory, admitted, access_bytes(&access), c)?;
                             entry.accesses.push(access);
                         }
                         Ok(())
@@ -283,6 +277,30 @@ fn collect<'m>(
     Ok((functions, blocked, gaps))
 }
 
+/// The bytes one access holds: itself, its stored runs and the names of
+/// the symbols they store.
+fn access_bytes(access: &MmioAccess) -> usize {
+    size_of::<MmioAccess>()
+        + access.stored.len() * size_of::<MmioStoredBits>()
+        + access
+            .stored
+            .iter()
+            .map(|run| match &run.source {
+                MmioStoredSource::Constant {
+                    symbol: Some(symbol),
+                    ..
+                } => symbol.name.len(),
+                _ => 0,
+            })
+            .sum::<usize>()
+}
+
+/// Charge sorting `count` items: about `count · log2 count` comparisons.
+fn charge_sort(count: usize, c: &mut dyn RunControl) -> Result<()> {
+    let log = usize::BITS - count.max(1).leading_zeros();
+    c.checkpoint((count as u64).saturating_mul(u64::from(log)))
+}
+
 fn admit<'m>(
     memory: &'m WorkingMemory,
     admitted: &mut Vec<MemoryReservation<'m>>,
@@ -317,24 +335,43 @@ fn keyed(
 
 /// Mark the unmatched accesses of `old` and `new` that equal ones of the
 /// other side under `key`, as multisets.
+/// The keys of each side's unmatched accesses, which it builds, admits in
+/// `memory` and charges to `c`, are released when it returns.
 fn pair(
     old: &[MmioAccess],
     new: &[MmioAccess],
     matched: &mut [Vec<bool>; 2],
     key: &dyn Fn(&MmioAccess) -> MmioAccess,
+    memory: &WorkingMemory,
     c: &mut dyn RunControl,
 ) -> Result<()> {
-    let open = |accesses: &[MmioAccess], done: &[bool]| -> Vec<(MmioAccess, usize)> {
-        let mut keys: Vec<_> = accesses
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| !done[*i])
-            .map(|(i, access)| (key(access), i))
-            .collect();
-        keys.sort_unstable();
-        keys
+    let mut keys = Vec::new();
+    let mut open = |accesses: &[MmioAccess],
+                    done: &[bool],
+                    c: &mut dyn RunControl|
+     -> Result<Vec<(MmioAccess, usize)>> {
+        let open = done.iter().filter(|done| !**done).count();
+        let bytes = open * size_of::<(MmioAccess, usize)>()
+            + accesses
+                .iter()
+                .zip(done)
+                .filter(|(_, done)| !**done)
+                .map(|(access, _)| access_bytes(access))
+                .sum::<usize>();
+        admit(memory, &mut keys, bytes, c)?;
+        let mut pending = Vec::with_capacity(open);
+        for (i, access) in accesses.iter().enumerate() {
+            if !done[i] {
+                c.checkpoint(1)?;
+                pending.push((key(access), i));
+            }
+        }
+        charge_sort(pending.len(), c)?;
+        pending.sort_unstable();
+        Ok(pending)
     };
-    let (before, after) = (open(old, &matched[0]), open(new, &matched[1]));
+    let before = open(old, &matched[0], c)?;
+    let after = open(new, &matched[1], c)?;
     let mut j = 0;
     for (access, i) in &before {
         c.checkpoint(1)?;
@@ -356,36 +393,43 @@ fn pair(
 /// object moved between the builds), then the same stored value whatever
 /// symbol it lands in. Matching by symbol before value keeps a value that
 /// one moved object took over from another from stealing either's pair.
-fn unmatched(
+/// What it returns is admitted in `admitted`.
+fn unmatched<'m>(
     old: &[MmioAccess],
     new: &[MmioAccess],
+    memory: &'m WorkingMemory,
+    admitted: &mut Vec<MemoryReservation<'m>>,
     c: &mut dyn RunControl,
 ) -> Result<(Vec<MmioAccess>, Vec<MmioAccess>)> {
+    let _matched = memory.reserve((old.len() + new.len()) as u64, c.position())?;
     let mut matched = [vec![false; old.len()], vec![false; new.len()]];
-    pair(old, new, &mut matched, &|access| access.clone(), c)?;
+    pair(old, new, &mut matched, &|access| access.clone(), memory, c)?;
     let by_symbol = |access: &MmioAccess| {
         keyed(access, |value, symbol| MmioStoredSource::Constant {
             value: if symbol.is_some() { 0 } else { value },
             symbol: symbol.clone(),
         })
     };
-    pair(old, new, &mut matched, &by_symbol, c)?;
+    pair(old, new, &mut matched, &by_symbol, memory, c)?;
     let by_value = |access: &MmioAccess| {
         keyed(access, |value, _| MmioStoredSource::Constant {
             value,
             symbol: None,
         })
     };
-    pair(old, new, &mut matched, &by_value, c)?;
-    let rest = |accesses: &[MmioAccess], done: &[bool]| {
-        accesses
-            .iter()
-            .zip(done)
-            .filter(|(_, done)| !**done)
-            .map(|(access, _)| access.clone())
-            .collect()
+    pair(old, new, &mut matched, &by_value, memory, c)?;
+    let mut rest = |accesses: &[MmioAccess],
+                    done: &[bool],
+                    c: &mut dyn RunControl|
+     -> Result<Vec<MmioAccess>> {
+        let mut out = Vec::new();
+        for (access, _) in accesses.iter().zip(done).filter(|(_, done)| !**done) {
+            admit(memory, admitted, access_bytes(access), c)?;
+            out.push(access.clone());
+        }
+        Ok(out)
     };
-    Ok((rest(old, &matched[0]), rest(new, &matched[1])))
+    Ok((rest(old, &matched[0], c)?, rest(new, &matched[1], c)?))
 }
 
 /// Compare the MMIO behavior of the builds `old` and `new` inside `ranges`.
@@ -434,7 +478,17 @@ pub fn mmio_diff(
         map.values().filter(|f| !f.accesses.is_empty()).count() as u64
     };
     let functions = [with_accesses(&before), with_accesses(&after)];
-    let mut names: Vec<String> = before.keys().chain(after.keys()).cloned().collect();
+    let mut names: Vec<String> = Vec::new();
+    for name in before.keys().chain(after.keys()) {
+        admit(
+            memory,
+            &mut admitted,
+            name.len() + size_of::<String>(),
+            control,
+        )?;
+        names.push(name.clone());
+    }
+    charge_sort(names.len(), control)?;
     names.sort_unstable();
     names.dedup();
     let mut changes = Vec::new();
@@ -445,10 +499,12 @@ pub fn mmio_diff(
         let state = [old.state(), new.state()];
         // A blocked function's accesses are unknown: only its state compares.
         let compared = !state.contains(&MmioFunctionState::Blocked);
+        charge_sort(old.accesses.len(), control)?;
         old.accesses.sort_unstable();
+        charge_sort(new.accesses.len(), control)?;
         new.accesses.sort_unstable();
         let (removed, added) = if compared {
-            unmatched(&old.accesses, &new.accesses, control)?
+            unmatched(&old.accesses, &new.accesses, memory, &mut admitted, control)?
         } else {
             (Vec::new(), Vec::new())
         };
@@ -474,6 +530,7 @@ pub fn mmio_diff(
             unresolved: [old.unresolved, new.unresolved],
         });
     }
+    admit(memory, &mut admitted, size_of_val(ranges), control)?;
     Ok(MmioDiff {
         ranges: ranges.to_vec(),
         functions,
@@ -481,4 +538,65 @@ pub fn mmio_diff(
         blocked: [blocked_before, blocked_after],
         gaps: [gaps_before, gaps_after],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A store of `value` to `address`.
+    fn store(address: u32, value: u32) -> MmioAccess {
+        MmioAccess {
+            location: MmioLocation::At { address },
+            operation: MmioOperation::Store,
+            width: Some(4),
+            mask: None,
+            stored: vec![MmioStoredBits {
+                low: 0,
+                width: 32,
+                source: MmioStoredSource::Constant {
+                    value,
+                    symbol: None,
+                },
+            }],
+        }
+    }
+
+    struct Units(u64);
+    impl RunControl for Units {
+        fn checkpoint(&mut self, units: u64) -> Result<()> {
+            self.0 = self
+                .0
+                .checked_sub(units)
+                .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "work units exhausted"))?;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn the_comparison_admits_its_keys_and_charges_their_sort() {
+        // Disjoint sides: every key is built, sorted and left unmatched.
+        let old: Vec<_> = (0..512).map(|i| store(0x2000_0000 + 4 * i, 0)).collect();
+        let new: Vec<_> = (0..512).map(|i| store(0x2000_0000 + 4 * i, 1)).collect();
+        let compare = |memory: &WorkingMemory, control: &mut dyn RunControl| {
+            let mut admitted = Vec::new();
+            unmatched(&old, &new, memory, &mut admitted, control)
+                .map(|(removed, added)| (removed.len(), added.len(), admitted.len()))
+        };
+        let memory = WorkingMemory::new(1 << 30).unwrap();
+        let (removed, added, admitted) = compare(&memory, &mut || Ok(())).unwrap();
+        assert_eq!((removed, added), (512, 512));
+        assert_eq!(admitted, 1024, "each returned access is admitted");
+        let needed = memory.peak();
+        assert!(needed >= 1024 * size_of::<MmioAccess>() as u64);
+        // Less memory than the keys and results need fails inside the
+        // comparison.
+        let error = compare(&WorkingMemory::new(needed - 1).unwrap(), &mut || Ok(())).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+        // Sorting the keys is charged: the units that cover building and
+        // walking every key (three passes of 1024 keys and 512 steps, and
+        // 1024 results) do not cover sorting them.
+        let error = compare(&memory, &mut Units(6000)).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+    }
 }

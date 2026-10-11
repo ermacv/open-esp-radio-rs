@@ -321,6 +321,44 @@ disjoint direct phases and clock-free path counts. They do not install callbacks
 inside the minimum-search loop. Search traces and elapsed HIL timing remain
 separate measurement scopes.
 
+## Measured RF hold of a tracking tick
+
+The vendor admission tracks with the protocols live (see [Concurrent clients](#concurrent-clients)). How long one tick takes the air from them was measured on the ESP32-S31 (#591):
+- tracking branches forced with the vendor's debug policy and a zero threshold, so every due tick runs them: the worst case, not the ordinary tick;
+- timed on the device by the HIL `phy/tracking/hold` probe (`diagnostic-*-tracking-hold` images);
+- each grant-protect bracket and the Wi-Fi baseband-off window are wall-time intervals;
+- "traffic" ticks ran while the client's traffic did, "idle" ticks after it;
+- every run used board `s31-a` of the shared stand, and each row names its image class and image digest.
+
+A grant-protect interval is the time the request was programmed, not an observation of RF exclusion. During a calibration bracket the RF path is busy measuring, so this port neither receives nor transmits whatever the arbiter grants.
+
+| Clients | Run | Image | Load | RFPLL | Common bracket | Transmit bracket | Baseband off | Whole tick |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Wi-Fi station, HT40 60 Mbit/s UDP RX, 3 repetitions | `1791759661099-0011c391` | `diagnostic-phy-tracking-hold` `b281d64e` | traffic | ≤ 0.85 ms | ≤ 13.1 ms | ≤ 7.0 ms | ≤ 12.5 ms | ≤ 20.2 ms |
+| | | | idle | ≤ 0.43 ms | ≤ 6.3 ms | ≤ 6.9 ms | ≤ 6.8 ms | ≤ 13.3 ms |
+| Wi-Fi station, HT20 30 Mbit/s UDP RX, 3 repetitions | `1791753759769-0008226d` | `diagnostic-phy-tracking-hold` `fb71b5c2` | traffic | ≤ 0.94 ms | ≤ 18.0 ms | ≤ 6.9 ms | ≤ 17.5 ms | ≤ 25.0 ms |
+| | | | idle | ≤ 0.52 ms | ≤ 7.6 ms | ≤ 7.0 ms | ≤ 7.0 ms | ≤ 14.6 ms |
+| Wi-Fi + Bluetooth LE, HT20 UDP RX and an ATT echo load, 2 runs | `1791751941433-000567d5`, `1791752142909-00059e19` | `diagnostic-wifi-ble-coex-tracking-hold` `21f9bdf7`, `0c6b50cf` | traffic | ≤ 0.94 ms | ≤ 16.1 ms | ≤ 13.4 ms | ≤ 15.5 ms | ≤ 30.1 ms |
+| | | | idle | ≤ 0.94 ms | ≤ 7.1 ms | ≤ 13.6 ms | ≤ 13.5 ms | ≤ 21.4 ms |
+| IEEE 802.15.4 receiving, 2 boots | `1791753069611-00072f04` | `diagnostic-ieee802154-tracking-hold` `e46ac6b5` | idle | ≤ 0.84 ms | ≤ 6.4 ms | ≤ 7.2 ms | ≤ 7.1 ms | ≤ 14.0 ms |
+
+What the runs show:
+- **RFPLL.** The correction, the branch an ordinary tick runs most often, holds the air under 1 ms.
+- **Common bracket.** DCODE and RX gain calibration is the bracket traffic stretches, from ~6 ms idle to 11–18 ms: interrupts compete with its polled measurements.
+- **Transmit bracket.** Stable at ~7 ms per class, ~13 ms with both classes.
+- **Bound.** The worst single bracket observed is 18.0 ms and the worst whole tick 30.1 ms.
+- **Spread.** Run-to-run spread under traffic is larger than the effect of the traffic rate. The figures are observed maxima of these runs, not a guaranteed bound.
+
+Against the protocols' tolerances:
+
+| Protocol | Tolerance | Against the observed hold |
+| --- | --- | --- |
+| Wi-Fi | An ordinary attempt aborts after the 250 ms publication watchdog (`TX_COMPLETION_TIMEOUT`); beacons come every ~102 ms | The whole tick is 8× below the watchdog; a tick misses at most one beacon; a frame received during it is retried by its sender |
+| Bluetooth LE | The supervision timeout is at least 100 ms | A tick misses at most a few connection events (four at a 7.5 ms interval); the link survives |
+| IEEE 802.15.4 | A sender's MAC retries span about 10–15 ms: 4 attempts, an 864 µs ACK wait, CSMA-CA backoff | A calibration bracket (6–18 ms) is of the same order: a frame that arrives during one can exhaust its sender's retries. The RFPLL correction (< 1 ms) cannot |
+
+The IEEE 802.15.4 row is the open risk: a calibration branch runs when a temperature reference has drifted past its threshold, not on every tick, and higher layers (OpenThread) retry above the MAC. #254 measures the delivery directly with a numbered peer stream.
+
 ## Restoration and failure
 
 The physical operation owns register access across all nested waits. The

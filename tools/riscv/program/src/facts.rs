@@ -14,8 +14,9 @@ pub struct ImageFacts<'a> {
     /// Admits `functions` with every name it holds.
     _functions: MemoryReservation<'a>,
     executable: AdmittedVec<'a, (u32, u32)>,
-    /// Allocated sections with file contents, neither writable nor
-    /// executable: address, size and bytes.
+    /// Allocated sections with file contents, neither executable nor
+    /// writable unless a read-only window covers them: address, size and
+    /// bytes.
     read_only: AdmittedVec<'a, (u64, u64, &'a [u8])>,
     /// Sized data objects whose size is a multiple of a word: the first
     /// symbol at each address, by address.
@@ -49,8 +50,15 @@ fn last_by_key<K: Ord + Copy, T: Copy>(values: &mut AdmittedVec<'_, T>, key: imp
 }
 
 impl<'a> ImageFacts<'a> {
-    /// Read the facts of the static little-endian RV32 executable `bytes`.
-    pub fn new(bytes: &'a [u8], memory: &'a WorkingMemory, c: &mut dyn RunControl) -> Result<Self> {
+    /// Read the facts of the static little-endian RV32 executable `bytes`,
+    /// whose sections inside the caller's `read_only` windows hold constants
+    /// whatever their flags say.
+    pub fn new(
+        bytes: &'a [u8],
+        read_only: &[ReadOnlyWindow],
+        memory: &'a WorkingMemory,
+        c: &mut dyn RunControl,
+    ) -> Result<Self> {
         c.bytes(bytes.len())?;
         let file = oer_elf::Elf::executable(bytes)
             .map_err(|_| invalid("a static little-endian RV32 executable is required"))?;
@@ -79,13 +87,13 @@ impl<'a> ImageFacts<'a> {
             bytes,
             file,
         };
-        facts.sections(c)?;
+        facts.sections(read_only, c)?;
         facts.symbols(memory, c)?;
         Ok(facts)
     }
 
     /// Executable ranges, read-only sections and relocated words.
-    fn sections(&mut self, c: &mut dyn RunControl) -> Result<()> {
+    fn sections(&mut self, read_only: &[ReadOnlyWindow], c: &mut dyn RunControl) -> Result<()> {
         let file = &self.file;
         for section in file.sections() {
             c.checkpoint(1)?;
@@ -96,7 +104,11 @@ impl<'a> ImageFacts<'a> {
                     .map_err(|_| invalid("section beyond RV32"))?;
                 self.executable.push((start, end), c.position())?;
             }
-            if section.allocated && !section.writable && !section.executable {
+            if section.allocated
+                && !section.executable
+                && (!section.writable
+                    || ReadOnlyWindow::cover(read_only, section.address, section.size))
+            {
                 self.read_only
                     .push((section.address, section.size, section.data), c.position())?;
             }
@@ -210,9 +222,11 @@ impl<'a> ImageFacts<'a> {
     }
 
     /// The little-endian word at `address` of an allocated section with file
-    /// contents that is neither writable nor executable, such as `.rodata`:
-    /// code loaded into RAM may hold tables the program rewrites, such as a
-    /// vector table in an `AX` section.
+    /// contents that is neither writable nor executable, such as `.rodata`,
+    /// or writable and covered whole by a read-only window given to
+    /// [`ImageFacts::new`], such as ESP-IDF's flash rodata: code loaded into
+    /// RAM may hold tables the program rewrites, such as a vector table in an
+    /// `AX` section.
     pub fn read_only_word(&self, address: u32) -> Option<u32> {
         let address = u64::from(address);
         self.read_only.iter().find_map(|&(start, size, data)| {
@@ -274,5 +288,38 @@ impl<'a> ImageFacts<'a> {
             .take_while(|&(&(address, _), expected)| address == expected)
             .map(|(&(_, holds), _)| holds);
         (self.word(base).is_some() && base < end).then_some(entries)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{A, PF_R, PF_W, W, image};
+
+    /// The read-only word at 0x3000 of an image whose one data section
+    /// there has `flags`, under `windows`.
+    fn word(flags: u32, windows: &[ReadOnlyWindow]) -> Option<u32> {
+        let bytes = image(
+            &[(0x3000, 0, 8, 8, PF_R | PF_W)],
+            None,
+            &[(1, flags, 0x3000, 0, 8)],
+            &[0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0],
+        );
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let facts = ImageFacts::new(&bytes, windows, &memory, &mut || Ok(())).unwrap();
+        facts.read_only_word(0x3000)
+    }
+
+    #[test]
+    fn a_writable_section_is_read_only_only_inside_a_window_covering_it() {
+        assert_eq!(word(A, &[]), Some(0x4433_2211));
+        assert_eq!(word(A | W, &[]), None);
+        let window = |length| ReadOnlyWindow {
+            start: 0x3000,
+            length,
+        };
+        assert_eq!(word(A | W, &[window(0x1000)]), Some(0x4433_2211));
+        // A window covering part of the section leaves it writable.
+        assert_eq!(word(A | W, &[window(4)]), None);
     }
 }

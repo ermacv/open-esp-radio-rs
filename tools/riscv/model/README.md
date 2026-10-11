@@ -36,8 +36,10 @@ graph observations.
 
 [Image values](src/image.rs) record the ELF floating-point calling
 convention (`RiscvAbi`) separately from the RV32 integer-analysis target,
-load segments (`ImageSegment`) and borrowed executable sections with their
-validated data intervals (`ExecutableSectionView`). The
+load segments (`ImageSegment`), borrowed executable sections with their
+validated data intervals (`ExecutableSectionView`) and the windows a caller
+asserts read-only at run time whatever an image's section flags say
+(`ReadOnlyWindow`). The
 [byte-source port](src/source.rs) `ByteSource` gives stable positional,
 bounded reads of captured content; `hash_source` identifies it.
 

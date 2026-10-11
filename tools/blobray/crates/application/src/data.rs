@@ -56,7 +56,7 @@ fn read(
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<DataExport> {
-    blobray_artifacts::with_prepared_object(source, &payload, memory, control, |object, c| {
+    blobray_artifacts::with_prepared_object(source, &payload, &[], memory, control, |object, c| {
         if let Some(symbol) = &request.symbol {
             object.validate_data_symbol(&request.object, symbol)?;
         }

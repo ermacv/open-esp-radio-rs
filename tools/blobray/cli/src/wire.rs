@@ -7,7 +7,7 @@ use blobray_domain::{
     TargetAuditRecord, TargetAuditSummary,
 };
 use oer_riscv_model::{
-    ArtifactId, CallAbi, Error, FunctionCoverage, FunctionRecord, SemanticSummary,
+    ArtifactId, CallAbi, Error, FunctionCoverage, FunctionRecord, ReadOnlyWindow, SemanticSummary,
 };
 use serde::{Deserialize, Serialize};
 
@@ -31,9 +31,9 @@ pub struct TargetAuditDocument {
 }
 
 /// Schema of the `register-accesses` document
-/// (`{"schema":7,"inputs":[...],"abi":...,"call_returns":...,"records":[...],"groups":[...],"summary":{...}}`;
+/// (`{"schema":8,"inputs":[...],"abi":...,"call_returns":...,"read_only":[...],"records":[...],"groups":[...],"summary":{...}}`;
 /// `groups` only with `--group-by`).
-pub const REGISTER_ACCESSES_SCHEMA: u32 = 7;
+pub const REGISTER_ACCESSES_SCHEMA: u32 = 8;
 
 /// One analyzed input of a `register-accesses` document, by position.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -53,6 +53,8 @@ pub struct RegisterAccessDocument {
     pub abi: Option<CallAbi>,
     /// Whether calls took the constants their callees return.
     pub call_returns: bool,
+    /// The windows the analysis took as read-only.
+    pub read_only: Vec<ReadOnlyWindow>,
     /// The records the request's filter selected: its observations, every
     /// blocked function it names and every gap.
     pub records: Vec<RegisterAccess>,
@@ -64,10 +66,10 @@ pub struct RegisterAccessDocument {
 }
 
 /// Schema of the `function-records` document
-/// (`{"schema":6,"inputs":[...],"abi":...,"call_returns":...,"functions":[...],"missing":[...]}`).
-pub const FUNCTION_RECORDS_SCHEMA: u32 = 6;
-pub const FIELD_ACCESSES_SCHEMA: u32 = 4;
-pub const CALLERS_SCHEMA: u32 = 2;
+/// (`{"schema":7,"inputs":[...],"abi":...,"call_returns":...,"read_only":[...],"functions":[...],"missing":[...]}`).
+pub const FUNCTION_RECORDS_SCHEMA: u32 = 7;
+pub const FIELD_ACCESSES_SCHEMA: u32 = 5;
+pub const CALLERS_SCHEMA: u32 = 3;
 
 /// Every memory access of the analyzed functions that lands on one field
 /// offset, as a field of its root ([`crate::field`]), and the functions no
@@ -81,6 +83,8 @@ pub struct FieldAccessesDocument {
     pub abi: Option<CallAbi>,
     /// Whether calls took the constants their callees return.
     pub call_returns: bool,
+    /// The windows the analysis took as read-only.
+    pub read_only: Vec<ReadOnlyWindow>,
     /// The field's displacement from the last loaded pointer or the root.
     pub offset: i64,
     /// The access width the request selects, if any.
@@ -121,6 +125,8 @@ pub struct FunctionRecordsDocument {
     pub abi: Option<CallAbi>,
     /// Whether calls took the constants their callees return.
     pub call_returns: bool,
+    /// The windows the analysis took as read-only.
+    pub read_only: Vec<ReadOnlyWindow>,
     pub functions: Vec<NamedFunction>,
     /// Requested names that no analyzed or blocked function carries.
     pub missing: Vec<String>,
@@ -162,6 +168,8 @@ pub struct CallersDocument {
     pub abi: Option<CallAbi>,
     /// Whether calls took the constants their callees return.
     pub call_returns: bool,
+    /// The windows the analysis took as read-only.
+    pub read_only: Vec<ReadOnlyWindow>,
     /// The requested symbol names.
     pub symbols: Vec<String>,
     /// The referencing functions, in input, object and symbol order.
@@ -181,8 +189,8 @@ pub struct Caller {
 }
 
 /// Schema of the `call-arguments` document
-/// (`{"schema":3,"inputs":[...],"abi":...,"call_returns":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N}`).
-pub const CALL_ARGUMENTS_SCHEMA: u32 = 3;
+/// (`{"schema":4,"inputs":[...],"abi":...,"call_returns":...,"read_only":[...],"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N}`).
+pub const CALL_ARGUMENTS_SCHEMA: u32 = 4;
 
 /// The argument registers at every call site of the named functions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -194,6 +202,8 @@ pub struct CallArgumentsDocument {
     pub abi: Option<CallAbi>,
     /// Whether calls took the constants their callees return.
     pub call_returns: bool,
+    /// The windows the analysis took as read-only.
+    pub read_only: Vec<ReadOnlyWindow>,
     /// The requested function names.
     pub symbols: Vec<String>,
     /// The calling functions with their call sites, in input, object and
@@ -219,7 +229,7 @@ pub struct CallingFunction {
 }
 
 /// Schema of the `mmio-diff` document.
-pub const MMIO_DIFF_SCHEMA: u32 = 2;
+pub const MMIO_DIFF_SCHEMA: u32 = 3;
 
 /// The MMIO difference of two builds.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -231,6 +241,8 @@ pub struct MmioDiffDocument {
     pub abi: Option<CallAbi>,
     /// Whether calls took the constants their callees return.
     pub call_returns: bool,
+    /// The windows the analysis took as read-only.
+    pub read_only: Vec<ReadOnlyWindow>,
     #[serde(flatten)]
     pub diff: blobray_domain::MmioDiff,
 }

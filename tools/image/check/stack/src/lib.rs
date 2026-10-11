@@ -155,10 +155,10 @@ impl Image {
             let _copy = memory.reserve(elf.len() as u64, control.position())?;
             Rc::from(elf)
         };
-        let facts = ImageFacts::new(&elf, &memory, &mut control)?;
+        let facts = ImageFacts::new(&elf, &[], &memory, &mut control)?;
         let companions = companions
             .iter()
-            .map(|companion| ImageFacts::new(companion, &memory, &mut control))
+            .map(|companion| ImageFacts::new(companion, &[], &memory, &mut control))
             .collect::<oer_riscv_model::Result<Vec<_>>>()?;
         let companions: Vec<&ImageFacts<'_>> = companions.iter().collect();
         // What the image keeps of the analysis, admitted while it counts

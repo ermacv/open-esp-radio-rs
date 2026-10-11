@@ -3,11 +3,9 @@
 `oer-riscv-program` reads one borrowed static RV32 ELF executable, through
 [`oer-elf`](../../elf/README.md) only, for the program model of
 [`oer-riscv-model`](../model/README.md): its ELF
-floating-point ABI (`abi`), its validated load segments and the
-`ProgramView` that serves file-backed constants as `ImageMemory` (bytes of
-readable segments that are neither writable nor executable: code loaded into
-RAM may hold tables the program rewrites, such as an interrupt vector table)
-to the [analysis](../analysis/README.md), its code symbols
+floating-point ABI (`abi`), the `ProgramView` of its memory and the file-backed
+constants it serves as `ImageMemory` to the
+[analysis](../analysis/README.md), its code symbols
 (`code_symbols`, `code_symbol_at`) and its executable sections. It performs
 no loading, relocation or execution, and has no filesystem access.
 
@@ -20,6 +18,24 @@ link kept (each checked against the word it relocates) and the compiler's
 section. Lookups never parse again. The stack analyzer reads images through
 it.
 
+`ProgramView` lays an image's memory out by its sections, as a firmware
+packer such as esptool loads it: every allocated section with file contents.
+A section's own flags say whether it is code or writable data, whatever the
+flags of the load segment holding it, so an ESP-IDF image whose one segment
+holds IRAM code and DRAM data (RWE) loads; a reservation without contents
+(`NOBITS`, such as `.flash_rodata_dummy`) is no memory and may overlap code.
+Each loaded section must still be the bytes a `PT_LOAD` segment carries at
+its address, and code must lie in an executable segment, so the bytes
+analyzed are the bytes loaded. Loaded sections must not overlap, code must
+not be writable, and dynamic loading and runtime relocations are refused. A
+thread-local template (`.tdata`) is ordinary data; thread-local storage is
+never memory. Constants are the bytes of a section neither executable nor
+writable, or of a writable one that a `ReadOnlyWindow` the caller asserts
+read-only covers whole (flash mapped for reading, whose sections ESP-IDF flags writable);
+code loaded into RAM may hold tables the program rewrites, such as an
+interrupt vector table, so it never holds constants. `ImageFacts` takes the
+same windows for its read-only words.
+
 `tables::ObjectTables` implements the model's `TableEntries` port for a
 relocatable object: a table's entries are the labels its read-only data's
 `R_RISCV_32` RELA words name, as many as the dispatch's bounds check states
@@ -31,9 +47,9 @@ sized read-only data object is its words; with a bound, the bound's count
 of read-only words.
 
 `execution_segments` lends validated static RV32 ELF segment bytes to a caller's
-admitted loader. It shares `ProgramView` validation with static image research,
-including overlapping mappings, permissions, dynamic/TLS rejection and input
-capacity. Borrowed bytes expire after the callback; application owns any copied
+admitted loader. Execution loads the segments themselves, so its profile stays
+over them: overlapping mappings, writable code, dynamic loading, thread-local
+storage and runtime relocations are refused, and input capacity is admitted. Borrowed bytes expire after the callback; application owns any copied
 mutable memory. This port performs no relocation, model selection or execution.
 
 `executable_sections` lends validated static RV32 executable sections independently

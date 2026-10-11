@@ -47,7 +47,7 @@ fn accesses(
 fn accesses_with(
     inputs: &[Executable],
     ranges: &[ImageRegion],
-    assumptions: Assumptions,
+    assumptions: Assumptions<'_>,
 ) -> Result<(RegisterAccessSummary, Vec<RegisterAccess>)> {
     let memory = WorkingMemory::new(64 * 1024 * 1024).unwrap();
     let mut control = Limits::new(DEFAULT_WORK_UNITS, std::time::Duration::from_secs(60));
@@ -1471,6 +1471,7 @@ fn a_call_takes_the_constants_its_callee_returns() {
             Assumptions {
                 abi: None,
                 call_returns,
+                read_only: &[],
             },
         )
         .unwrap();
@@ -1560,6 +1561,7 @@ fn returned_addresses(inputs: &[Executable], name: &str) -> Vec<u32> {
         Assumptions {
             abi: None,
             call_returns: true,
+            read_only: &[],
         },
     )
     .unwrap();
@@ -1662,5 +1664,44 @@ fn a_callee_that_branches_out_returns_nothing() {
     assert_eq!(
         returned_addresses(&[Executable::new(image)], "caller"),
         Vec::<u32>::new()
+    );
+}
+
+#[test]
+fn the_read_only_windows_are_recorded_and_bounded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("image.elf");
+    std::fs::write(&path, support::executable(&[0x0000_8067])).unwrap();
+    let run = |window: &str| {
+        Command::new(env!("CARGO_BIN_EXE_blobray"))
+            .args([
+                "--format",
+                "json",
+                "register-accesses",
+                "--read-only",
+                window,
+            ])
+            .arg("--input")
+            .arg(format!("image={}", path.display()))
+            .output()
+            .unwrap()
+    };
+    let output = run("0x40000000:0x100");
+    assert!(output.status.success(), "{output:?}");
+    let document: blobray_cli::wire::RegisterAccessDocument =
+        serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        document.read_only,
+        [ReadOnlyWindow {
+            start: 0x4000_0000,
+            length: 0x100,
+        }]
+    );
+    // A window past the RV32 address space is refused.
+    let refused = run("0xffffff00:0x200");
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("exceeds the RV32 address space"),
+        "{refused:?}"
     );
 }

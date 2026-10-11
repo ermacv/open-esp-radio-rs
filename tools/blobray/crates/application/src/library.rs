@@ -91,13 +91,17 @@ fn blocks_function(error: &Error) -> bool {
 /// level deep.
 pub fn analyze_library(
     inputs: &[Executable],
-    assumptions: Assumptions,
+    assumptions: Assumptions<'_>,
     decoder: &dyn FunctionSemantics,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
     visit: &mut Visit<'_>,
 ) -> Result<()> {
-    let Assumptions { abi, call_returns } = assumptions;
+    let Assumptions {
+        abi,
+        call_returns,
+        read_only,
+    } = assumptions;
     let mut ledger = Ledger::new(memory, control)?;
     let mut table = ReturnTable::default();
     for (index, executable) in inputs.iter().enumerate().filter(|_| call_returns) {
@@ -117,6 +121,7 @@ pub fn analyze_library(
                 input,
                 member,
                 abi,
+                read_only,
                 &NoReturns,
                 Some(&mut collect),
                 decoder,
@@ -135,7 +140,9 @@ pub fn analyze_library(
         position.artifact(executable.id());
         control.set_position(position);
         let container = visit_members(executable, memory, control, &mut |member, c| {
-            analyze_object(input, member, abi, &table, None, decoder, memory, c, visit)
+            analyze_object(
+                input, member, abi, read_only, &table, None, decoder, memory, c, visit,
+            )
         })?;
         let gap = |reason: &str, visit: &mut Visit<'_>, c: &mut dyn RunControl| {
             visit(
@@ -331,7 +338,7 @@ fn insert<K: Ord>(
 
 /// The explicit assumptions of a library analysis; none by default.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Assumptions {
+pub struct Assumptions<'a> {
     /// With it, a call the analysis cannot follow keeps the registers this
     /// calling convention preserves; without it, every register is unknown
     /// after such a call.
@@ -341,6 +348,10 @@ pub struct Assumptions {
     /// analyzes every function to collect those constants
     /// ([`ReturnTable`]), so the analysis takes about twice as long.
     pub call_returns: bool,
+    /// Address ranges read-only at run time whatever a linked image's
+    /// section flags say, such as flash mapped for reading: constants are
+    /// read from the file-backed bytes inside them.
+    pub read_only: &'a [ReadOnlyWindow],
 }
 
 /// The sections and function symbols of one object.
@@ -473,6 +484,7 @@ fn analyze_object(
     input: u64,
     member: Member<'_>,
     abi: Option<oer_riscv_model::CallAbi>,
+    read_only: &[ReadOnlyWindow],
     returns: &dyn CallReturns,
     mut collect: Option<&mut Collect<'_, '_>>,
     decoder: &dyn FunctionSemantics,
@@ -574,8 +586,13 @@ fn analyze_object(
         return Ok(());
     }
     let mut entered = false;
-    let result =
-        blobray_artifacts::with_prepared_object(bytes, &payload, memory, control, |prepared, c| {
+    let result = blobray_artifacts::with_prepared_object(
+        bytes,
+        &payload,
+        read_only,
+        memory,
+        control,
+        |prepared, c| {
             entered = true;
             let bytes = prepared.bytes();
             let mut unreadable = |error: Error, c: &mut dyn RunControl| {
@@ -598,10 +615,12 @@ fn analyze_object(
                     Ok(tables) => object_tables = Some(tables),
                     Err(error) => unreadable(error, c)?,
                 },
-                Some(2) => match oer_riscv_program::facts::ImageFacts::new(bytes, memory, c) {
-                    Ok(facts) => image_facts = Some(facts),
-                    Err(error) => unreadable(error, c)?,
-                },
+                Some(2) => {
+                    match oer_riscv_program::facts::ImageFacts::new(bytes, read_only, memory, c) {
+                        Ok(facts) => image_facts = Some(facts),
+                        Err(error) => unreadable(error, c)?,
+                    }
+                }
                 _ => {}
             }
             let image_tables = image_facts
@@ -697,7 +716,8 @@ fn analyze_object(
                 }
             }
             Ok(())
-        });
+        },
+    );
     match result {
         Err(error) if !entered && blocks_function(&error) => {
             reject(&mut collect, control)?;
@@ -720,7 +740,7 @@ fn analyze_object(
 /// inside `ranges` when it is nonempty, with blocked functions and gaps.
 pub fn register_accesses(
     inputs: &[Executable],
-    assumptions: Assumptions,
+    assumptions: Assumptions<'_>,
     ranges: &[ImageRegion],
     decoder: &dyn FunctionSemantics,
     memory: &WorkingMemory,

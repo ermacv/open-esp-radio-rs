@@ -21,7 +21,7 @@ of these selectors:
 | --- | --- | --- |
 | `section` | `section`, `offset`, `length` | Explicit section-relative bytes |
 | `symbol` | `symbol`, `length` (integer or null) | Exact static or dynamic SymbolId of this object; null uses its declared size |
-| `image` | `address`, `length` | Virtual address in a file-backed load mapping of an executable ELF |
+| `image` | `address`, `length` | Virtual address in a loaded section of an executable ELF |
 
 The prepared-object profile requires little-endian RV32 ET_REL/ET_EXEC with at most one each
 of SHT_SYMTAB and SHT_DYNSYM; table-free section/range selection is supported; names
@@ -118,7 +118,7 @@ evaluation. The human groups print them high bits first, for example
 their load width (`load 1B 0xa[7:0]`); entries with different sources stay
 apart, keyed by the sources themselves.
 
-The JSON document streams `{"schema":7,"inputs":[...],"abi":...,"call_returns":...,"records":[...],"groups":[...],"summary":{...}}`;
+The JSON document streams `{"schema":8,"inputs":[...],"abi":...,"call_returns":...,"read_only":[...],"records":[...],"groups":[...],"summary":{...}}`;
 `records` holds the selected records and `groups` appears only with
 `--group-by`.
 `inputs` lists each input's role and SHA-256. A record is an `observation` (the

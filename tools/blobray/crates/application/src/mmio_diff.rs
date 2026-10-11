@@ -211,7 +211,7 @@ fn symbols<'m>(
 fn collect<'m>(
     build: &str,
     inputs: &[Executable],
-    assumptions: crate::library::Assumptions,
+    assumptions: crate::library::Assumptions<'_>,
     ranges: &[ImageRegion],
     decoder: &dyn FunctionSemantics,
     memory: &'m WorkingMemory,
@@ -452,7 +452,7 @@ fn unmatched<'m>(
 pub fn mmio_diff(
     old: &[Executable],
     new: &[Executable],
-    assumptions: crate::library::Assumptions,
+    assumptions: crate::library::Assumptions<'_>,
     ranges: &[ImageRegion],
     decoder: &dyn FunctionSemantics,
     memory: &WorkingMemory,

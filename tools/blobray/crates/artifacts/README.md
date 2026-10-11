@@ -49,9 +49,12 @@ boundaries or interpret ISA relocations. Reserved null symbols remain explicit
 structural records instead of fabricated external definitions.
 
 Static ET_EXEC functions use image virtual addresses and a borrowed `ImageMemory`
-view over validated load segments. Input buffers and the segment table retain
-working-capacity reservations until the consumer returns. Read-only file-backed
-loads can provide constants; mutable, unmapped and zero-fill ranges cannot.
+view over the image's loaded sections, each the bytes a load segment carries
+([static RV32 images](../../../riscv/program/README.md)). Input buffers and the
+section table retain working-capacity reservations until the consumer returns.
+Sections neither writable nor executable provide constants, and writable ones
+inside the caller's read-only windows (`with_prepared_object`'s `read_only`);
+other writable, executable, unmapped and zero-fill ranges cannot.
 ELF ILP32/ILP32F/ILP32D ABI is recorded independently of ISA semantic coverage.
 Static relocation metadata is retained without reapplying edits to linked bytes.
 
@@ -87,7 +90,7 @@ records, from which data export counts the relocations overlapping a range;
 artifacts neither applies RISC-V relocations nor chooses targets.
 
 `PreparedObject::executable_bytes` lends a bounded 2/4-byte prefix from an executable
-file-backed load mapping. ISA consumers validate instruction meaning through their
+loaded section. ISA consumers validate instruction meaning through their
 decoder; artifact acquisition never supplies branch semantics.
 
 `inspect_link_definition` lends no program view: it validates a standalone static

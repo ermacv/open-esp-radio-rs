@@ -47,6 +47,7 @@ use oer_ieee80211_lower_mac::{Channel, LowerMacAirReservation, LowerMacLiveRetun
 use oer_ieee80211_sta::attempt::AssociationAttemptOutcome;
 use oer_ieee80211_sta_service::port::{
     PortAttemptError, PortDisconnect, PortLinkError, PortStation, PortStationEnv, PortStationEvent,
+    PortStationOwner,
 };
 use oer_ieee80211_upper_mac_service::absence::{
     AbsenceError, AbsenceState, AbsenceWindow, PortAbsence,
@@ -185,6 +186,10 @@ where
 {
     /// `None` only while the station joins.
     station: Option<PortStation<'p, S>>,
+    /// The port's lifecycle authority: the pair decides the channel for
+    /// both interfaces. `None` only while lent to the station for a scan
+    /// alone.
+    owner: Option<PortStationOwner<'p, S>>,
     access_point: PortAccessPoint<'p, A>,
     coordinator: ChannelCoordinator<'p>,
     timer: T,
@@ -205,6 +210,7 @@ where
 {
     fn from_parts(
         station: PortStation<'p, S>,
+        owner: PortStationOwner<'p, S>,
         access_point: PortAccessPoint<'p, A>,
         coordinator: ChannelCoordinator<'p>,
         search: Search,
@@ -212,6 +218,7 @@ where
     ) -> Self {
         Self {
             station: Some(station),
+            owner: Some(owner),
             access_point,
             coordinator,
             timer,
@@ -222,6 +229,27 @@ where
             running: false,
             search,
         }
+    }
+
+    /// Take the port's lifecycle authority back from the station after a
+    /// scan alone, whatever its outcome.
+    fn reclaim_owner(
+        &mut self,
+        mut outcome: AssociationAttemptOutcome<
+            PortStation<'p, S>,
+            PortStation<'p, S>,
+            PortAttemptError<S>,
+        >,
+    ) -> AssociationAttemptOutcome<PortStation<'p, S>, PortStation<'p, S>, PortAttemptError<S>>
+    {
+        let station = match &mut outcome {
+            AssociationAttemptOutcome::Connected { connected, .. } => connected,
+            AssociationAttemptOutcome::Failed(failure) => &mut failure.owner,
+        };
+        if let Some(owner) = station.link_mut().take_owner() {
+            self.owner = Some(owner);
+        }
+        outcome
     }
 
     pub fn station(&self) -> &PortStation<'p, S> {
@@ -254,8 +282,13 @@ where
         if self.running {
             return Err(PortStaApError::AccessPointRunning);
         }
-        let station = self.station.take().ok_or(PortStaApError::NoStation)?;
-        let station = match station.connect().await {
+        let mut station = self.station.take().ok_or(PortStaApError::NoStation)?;
+        // The station scans alone: it decides the channel until it joins.
+        if let Some(owner) = self.owner.take() {
+            station.link_mut().lend_owner(owner);
+        }
+        let outcome = station.connect().await;
+        let station = match self.reclaim_owner(outcome) {
             AssociationAttemptOutcome::Connected { connected, .. } => connected,
             AssociationAttemptOutcome::Failed(failure) => {
                 let (station, _, _, error, _) = failure.into_parts();
@@ -614,11 +647,12 @@ where
         access_point_switch: bool,
     ) -> Result<(), PortStaApError<S, A>> {
         let station = self.station.as_mut().ok_or(PortStaApError::NoStation)?;
-        station
-            .link_mut()
+        self.owner
+            .as_mut()
+            .ok_or(PortStaApError::Station(PortLinkError::NotOwner))?
             .move_channel(channel)
             .await
-            .map_err(PortStaApError::Station)?;
+            .map_err(|error| PortStaApError::Station(error.into()))?;
         if access_point_switch {
             self.access_point
                 .channel_switched()
@@ -661,6 +695,7 @@ where
     /// `upstream_loss` bounds the wait for a lost upstream.
     pub fn new(
         station: PortStation<'p, S>,
+        owner: PortStationOwner<'p, S>,
         access_point: PortAccessPoint<'p, A>,
         policy: ApFollowPolicy,
         upstream_loss: UpstreamLossPolicy,
@@ -668,6 +703,7 @@ where
     ) -> Self {
         Self::from_parts(
             station,
+            owner,
             access_point,
             ChannelCoordinator::new(policy, ApSearchPolicy::new(&[])),
             CurrentChannel { upstream_loss },
@@ -737,7 +773,12 @@ where
         let mut station = self.station.take().ok_or(PortStaApError::NoStation)?;
         // A full scan, not the candidate the lost upstream left.
         station.set_refresh(true);
-        match station.connect().await {
+        // The station scans alone: it decides the channel until it joins.
+        if let Some(owner) = self.owner.take() {
+            station.link_mut().lend_owner(owner);
+        }
+        let outcome = station.connect().await;
+        match self.reclaim_owner(outcome) {
             AssociationAttemptOutcome::Connected { connected, .. } => {
                 let channel = connected
                     .connection()
@@ -775,12 +816,12 @@ where
     /// use oer_ieee80211_ap::coordinator::ChannelCoordinator;
     /// use oer_ieee80211_ap_service::port::{PortAccessPoint, PortApEnv};
     /// use oer_ieee80211_lower_mac::LowerMacAirReservation;
-    /// use oer_ieee80211_sta_service::port::{PortStation, PortStationEnv};
+    /// use oer_ieee80211_sta_service::port::{PortStation, PortStationEnv, PortStationOwner};
     /// use oer_ieee80211_sta_ap_service::PortStaAp;
     /// use oer_time::Timer;
-    /// fn build<'p, S, A, T>(station: PortStation<'p, S>, ap: PortAccessPoint<'p, A>, coordinator: ChannelCoordinator<'p>, timer: T)
+    /// fn build<'p, S, A, T>(station: PortStation<'p, S>, owner: PortStationOwner<'p, S>, ap: PortAccessPoint<'p, A>, coordinator: ChannelCoordinator<'p>, timer: T)
     /// where S: PortStationEnv, A: PortApEnv<Port = S::Port>, T: Timer, S::Port: LowerMacAirReservation {
-    ///     let _ = PortStaAp::new_with_search(station, ap, coordinator, timer);
+    ///     let _ = PortStaAp::new_with_search(station, owner, ap, coordinator, timer);
     /// }
     /// ```
     ///
@@ -790,21 +831,29 @@ where
     /// use oer_ieee80211_ap::coordinator::ChannelCoordinator;
     /// use oer_ieee80211_ap_service::port::{PortAccessPoint, PortApEnv};
     /// use oer_ieee80211_lower_mac::LowerMacLiveRetune;
-    /// use oer_ieee80211_sta_service::port::{PortStation, PortStationEnv};
+    /// use oer_ieee80211_sta_service::port::{PortStation, PortStationEnv, PortStationOwner};
     /// use oer_ieee80211_sta_ap_service::PortStaAp;
     /// use oer_time::Timer;
-    /// fn build<'p, S, A, T>(station: PortStation<'p, S>, ap: PortAccessPoint<'p, A>, coordinator: ChannelCoordinator<'p>, timer: T)
+    /// fn build<'p, S, A, T>(station: PortStation<'p, S>, owner: PortStationOwner<'p, S>, ap: PortAccessPoint<'p, A>, coordinator: ChannelCoordinator<'p>, timer: T)
     /// where S: PortStationEnv, A: PortApEnv<Port = S::Port>, T: Timer, S::Port: LowerMacLiveRetune {
-    ///     let _ = PortStaAp::new_with_search(station, ap, coordinator, timer);
+    ///     let _ = PortStaAp::new_with_search(station, owner, ap, coordinator, timer);
     /// }
     /// ```
     pub fn new_with_search(
         station: PortStation<'p, S>,
+        owner: PortStationOwner<'p, S>,
         access_point: PortAccessPoint<'p, A>,
         coordinator: ChannelCoordinator<'p>,
         timer: T,
     ) -> Self {
-        Self::from_parts(station, access_point, coordinator, ProtectedSearch, timer)
+        Self::from_parts(
+            station,
+            owner,
+            access_point,
+            coordinator,
+            ProtectedSearch,
+            timer,
+        )
     }
 
     /// Serve both interfaces until `deadline`. After `StationEnded`, listen

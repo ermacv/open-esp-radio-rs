@@ -35,6 +35,7 @@ pub mod absence;
 pub mod aggregate;
 pub mod client;
 pub mod frame;
+pub mod owner;
 pub mod reorder;
 pub mod router;
 pub mod rx_hold;

@@ -35,6 +35,16 @@ use oer_time::{Instant, Timer};
 pub type PortRouter<'p, X> =
     oer_ieee80211_upper_mac_service::PortRouter<'p, <X as PortClientEnv>::Port>;
 
+/// The lifecycle authority of a station's port
+/// ([`oer_ieee80211_upper_mac_service::owner`]).
+pub type PortStationOwner<'p, X> = oer_ieee80211_upper_mac_service::owner::PortOwner<
+    'p,
+    'p,
+    <X as PortClientEnv>::Port,
+    PORT_EXCHANGES,
+    PORT_BACKLOG,
+>;
+
 /// The types one station over the port is built from.
 ///
 /// An integrator names its port and transmit policy ([`PortClientEnv`]:
@@ -161,6 +171,8 @@ pub enum PortLinkError<F> {
     ReceptionUnsupported,
     /// A phase ran without the state an earlier phase establishes.
     MissingState,
+    /// The station would move a port whose lifecycle another owner holds.
+    NotOwner,
     /// The radio system refused a coexistence effect.
     Coexistence,
 }
@@ -204,6 +216,9 @@ impl<F> From<PortClientError<F>> for PortLinkError<F> {
 /// station adds.
 pub struct PortLink<'p, X: PortStationEnv> {
     client: PortClient<'p, X, PORT_EXCHANGES, PORT_BACKLOG>,
+    /// The port's lifecycle authority, when the station owns its channel;
+    /// `None` when another owner decides it.
+    owner: Option<PortStationOwner<'p, X>>,
     config: PortStationConfig,
     coex: X::Coex,
     rate: <X::RateControl as RateControl>::Config,
@@ -212,7 +227,10 @@ pub struct PortLink<'p, X: PortStationEnv> {
 impl<'p, X: PortStationEnv> PortLink<'p, X> {
     /// A link of `config.vif` over the port of `router`, which allocates
     /// the attempt identities and queues the interface's frames for the
-    /// link; another client of the interface is refused.
+    /// link; another client of the interface is refused. The link holds no
+    /// lifecycle authority: another owner decides the port's channel and the
+    /// station joins on the granted one, unless [`with_owner`](Self::with_owner)
+    /// gives it the port's owner.
     pub fn new(
         router: &'p PortRouter<'p, X>,
         planner: TxPlanner<X::Budget>,
@@ -236,6 +254,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
                     retry_limit: config.retry_limit,
                 },
             )?,
+            owner: None,
             config,
             coex,
             rate,
@@ -376,21 +395,52 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         Ok(self.client.configure(bssid, receive)?)
     }
 
+    /// The link with the port's lifecycle authority: the station decides
+    /// the port's channel (it scans and tunes).
+    #[must_use]
+    pub fn with_owner(mut self, owner: PortStationOwner<'p, X>) -> Self {
+        self.owner = Some(owner);
+        self
+    }
+
+    /// The port's lifecycle authority the link holds, if the station owns
+    /// its channel.
+    pub fn owner_mut(&mut self) -> Option<&mut PortStationOwner<'p, X>> {
+        self.owner.as_mut()
+    }
+
+    /// Hand the link the port's lifecycle authority, for a phase in which
+    /// the station decides the channel (a scan alone); the one who lent it
+    /// takes it back with [`take_owner`](Self::take_owner).
+    pub fn lend_owner(&mut self, owner: PortStationOwner<'p, X>) {
+        debug_assert!(self.owner.is_none(), "a port has one owner");
+        self.owner = Some(owner);
+    }
+
+    /// Give the port's lifecycle authority back.
+    pub fn take_owner(&mut self) -> Option<PortStationOwner<'p, X>> {
+        self.owner.take()
+    }
+
     /// Move the enabled port to `channel` through a full lifecycle
-    /// ([`PortClient::move_channel`](oer_ieee80211_upper_mac_service::client::PortClient::move_channel)).
+    /// ([`PortOwner::move_channel`](oer_ieee80211_upper_mac_service::owner::PortOwner::move_channel));
+    /// `NotOwner` when another owner decides the channel.
     pub async fn move_channel(
         &mut self,
         channel: Channel,
     ) -> Result<(), PortLinkError<PortFault<X>>> {
-        Ok(self.client.move_channel(channel).await?)
+        let owner = self.owner.as_mut().ok_or(PortLinkError::NotOwner)?;
+        Ok(owner.move_channel(channel).await?)
     }
 
-    /// Run one lifecycle command to its terminal event.
+    /// Run one lifecycle command to its terminal event; `NotOwner` when
+    /// another owner holds the port's lifecycle.
     pub async fn lifecycle(
         &mut self,
         command: LifecycleCommand,
     ) -> Result<(), PortLinkError<PortFault<X>>> {
-        Ok(self.client.lifecycle(command).await?)
+        let owner = self.owner.as_mut().ok_or(PortLinkError::NotOwner)?;
+        Ok(owner.lifecycle(command).await?)
     }
 }
 

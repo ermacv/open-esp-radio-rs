@@ -297,6 +297,17 @@ struct World {
     frames: &'static TestFrames,
 }
 
+/// A lifecycle command of the port's owner before the router takes the
+/// port's events: run to its terminal event, which it takes itself, so the
+/// station's owner meets only its own terminals.
+fn owner_command(model: &Model, command: LifecycleCommand) {
+    ready(model.lifecycle(command)).unwrap().unwrap();
+    assert!(matches!(
+        ready(oer_ieee80211_lower_mac::RadioPort::next_event(model)),
+        Ok(Ok(oer_ieee80211_lower_mac::model::ModelEvent::Lifecycle(_)))
+    ));
+}
+
 impl World {
     fn new() -> Self {
         let model = Model::new();
@@ -305,9 +316,7 @@ impl World {
             .apply(LowerMacSetting::Channel(channel(1)))
             .unwrap()
             .unwrap();
-        ready(model.lifecycle(LifecycleCommand::Enable))
-            .unwrap()
-            .unwrap();
+        owner_command(&model, LifecycleCommand::Enable);
         // Every published attempt succeeds at once.
         model.respond(core::iter::repeat_n(ModelOutcome::Success, 100_000));
         let model: &'static Model = Box::leak(Box::new(model));
@@ -340,7 +349,7 @@ impl World {
     }
 
     fn link_at(&self, data_rate: PhyRate) -> PortLink<'static, Env<'_>> {
-        PortLink::new(
+        let link = PortLink::new(
             self.router,
             TxPlanner::new(
                 [EdcaContention::new(4, 10); 4],
@@ -367,7 +376,13 @@ impl World {
                 retry_limit: 7,
             },
         )
-        .expect("the station's interface is free")
+        .expect("the station's interface is free");
+        // The station is the port's only client: it owns the channel, while
+        // the router still has the authority to give.
+        match self.router.owner() {
+            Some(owner) => link.with_owner(owner),
+            None => link,
+        }
     }
 
     fn station<'a>(&'a self, security: StaAttemptSecurity<'a>) -> PortStation<'a, Env<'a>> {
@@ -419,10 +434,17 @@ impl World {
             if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
                 return output;
             }
+            let pending = self.model.queued_events();
             if routing.as_mut().poll(&mut context).is_ready() {
                 // The router ended on the terminal poisoned event; the
                 // station learns of it at its next poll.
                 routing.set(self.router.run());
+                continue;
+            }
+            if self.model.queued_events() < pending {
+                // The router took events the station may be waiting for:
+                // not quiet.
+                quiet = false;
                 continue;
             }
             if ap.step(self.model, self.timer.now().as_micros()) {
@@ -1695,10 +1717,16 @@ fn drive_lifecycle<T>(
         if let Poll::Ready(exit) = future.as_mut().poll(&mut context) {
             return exit;
         }
+        let pending = world.model.queued_events();
         if routing.as_mut().poll(&mut context).is_ready() {
             // The router ended on the terminal poisoned event; the station
             // learns of it at its next poll.
             routing.set(world.router.run());
+        }
+        if world.model.queued_events() < pending {
+            // The router took events the lifecycle may be waiting for.
+            quiet = false;
+            continue;
         }
         if step(world, ap) {
             continue;
@@ -1890,9 +1918,7 @@ fn a_port_its_owner_disabled_faults_the_station_s_join() {
         // The owner disabled the port: the station's scan meets a refused
         // lifecycle command.
         let disable = |world: &World| {
-            ready(world.model.lifecycle(LifecycleCommand::Disable))
-                .unwrap()
-                .unwrap();
+            owner_command(world.model, LifecycleCommand::Disable);
         };
         let (reason, state) = lose_the_port(
             disable,
@@ -1962,9 +1988,7 @@ fn a_run_after_a_fault_opens_the_stream_disconnected() {
     on_large_stack(|| {
         let world = World::new();
         // The owner disabled the port: the first run faults in its join.
-        ready(world.model.lifecycle(LifecycleCommand::Disable))
-            .unwrap()
-            .unwrap();
+        owner_command(world.model, LifecycleCommand::Disable);
         let mut ap = ScriptedAp::new(ApSecurity::Open);
         let connections = Cell::new(0);
         let disconnects = RefCell::new(Vec::new());
@@ -1975,7 +1999,7 @@ fn a_run_after_a_fault_opens_the_stream_disconnected() {
                 Application {
                     connections: &connections,
                     disconnects: &disconnects,
-                    stop_after: 1,
+                    stop_after: u32::MAX,
                     stop: &stop,
                     poison_on_stop: None,
                 },
@@ -1997,9 +2021,12 @@ fn a_run_after_a_fault_opens_the_stream_disconnected() {
         assert!(matches!(faulted.state, StationLinkState::Faulted(r) if r == reason));
 
         // The owner restores the port and runs the same station again.
-        let (station, _) = fault.into_parts();
-        ready(world.model.lifecycle(LifecycleCommand::Enable))
-            .unwrap()
+        let (mut station, _) = fault.into_parts();
+        world
+            .drive(
+                &mut ap,
+                station.link_mut().lifecycle(LifecycleCommand::Enable),
+            )
             .unwrap();
         let mut states = Vec::new();
         let mut seen = faulted.revision;
@@ -2008,6 +2035,10 @@ fn a_run_after_a_fault_opens_the_stream_disconnected() {
             if snapshot.revision > seen {
                 seen = snapshot.revision;
                 states.push(snapshot.state);
+            }
+            // Stop once the stream showed the new connection.
+            if matches!(snapshot.state, StationLinkState::Connected(_)) {
+                stop.set(true);
             }
             false
         });
@@ -2023,6 +2054,37 @@ fn a_run_after_a_fault_opens_the_stream_disconnected() {
                 .any(|state| matches!(state, StationLinkState::Connected(_))),
             "{states:?}"
         );
+    });
+}
+
+#[test]
+fn a_port_that_fails_to_enable_on_a_channel_move_faults_the_connection() {
+    on_large_stack(|| {
+        // The access point announces channel 11 once the station is up; the
+        // port cannot come back up after the move.
+        let mut announced = false;
+        let (reason, state) = lose_the_port(
+            |_| {},
+            false,
+            |world, ap, application| {
+                if !announced && application.connections.get() == 1 {
+                    ap.beacon_extra = vec![37, 3, 0, 11, 2];
+                    ap.next_beacon_micros = Some(world.timer.now().as_micros());
+                    world.model.fail_next_enable();
+                    announced = true;
+                    return true;
+                }
+                false
+            },
+            |error| {
+                matches!(
+                    error,
+                    PortStationError::Link(PortLinkError::LifecycleFailed)
+                )
+            },
+        );
+        assert_eq!(reason, port_lost(StaFaultPhase::Connected));
+        assert!(matches!(state, StationLinkState::Faulted(r) if Some(r) == reason));
     });
 }
 
@@ -2789,7 +2851,13 @@ fn the_lifecycle_follows_its_access_point_to_the_announced_channel_body() {
             if let Poll::Ready(exit) = future.as_mut().poll(&mut context) {
                 break exit;
             }
+            let pending = world.model.queued_events();
             assert!(routing.as_mut().poll(&mut context).is_pending());
+            if world.model.queued_events() < pending {
+                // The router took events the station may be waiting for.
+                quiet = false;
+                continue;
+            }
             let now = world.timer.now().as_micros();
             if announced_at.is_none() && connections.get() == 1 {
                 ap.beacon_extra = vec![37, 3, 0, 11, 2];

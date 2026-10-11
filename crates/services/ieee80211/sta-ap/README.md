@@ -36,8 +36,12 @@ The actions it carries out:
 - **Start the access point.** It starts again once the port is on a channel it may serve.
 - **Leave the upstream.** This is the alternative policy: the station leaves, and the access point keeps its channel.
 
-Permanent moves use the shared upper-MAC `PortClient::move_channel`: the
-channel setting needs a disabled port on every backend, so the move always
+The pair holds the port's `PortOwner` and moves the port itself
+(`PortOwner::move_channel`); its station joins on the granted channel and
+holds no lifecycle authority, except while it scans alone (the access point
+stopped after an upstream loss), when the pair lends it the owner and takes
+it back after the join. The channel setting needs a disabled port on every
+backend, so the move always
 disables the port, sets the channel and enables it again, and both
 interfaces see the lifecycle. The S31 channel setting breaks both
 VIFs' TSF relations; an announced CSA move tolerates that change. Temporary

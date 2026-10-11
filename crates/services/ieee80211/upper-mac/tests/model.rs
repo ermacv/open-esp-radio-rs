@@ -956,15 +956,16 @@ fn a_client_configures_its_interface_in_its_role() {
 fn a_channel_move_runs_the_port_lifecycle_around_the_channel_setting() {
     let model = enabled_station();
     let router = Router::new(&model, 1);
-    let mut client = client(&router, VifRole::Station);
+    let client = client(&router, VifRole::Station);
     let eleven = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
     // The enabled port refuses the setting itself: no hidden fallback.
     assert_eq!(
         client.apply(LowerMacSetting::Channel(eleven)),
         Err(PortClientError::Setting(SettingError::PortEnabled))
     );
+    let mut owner = router.owner().unwrap();
     let lifecycle = model.lifecycle_requests();
-    assert_eq!(run(exchange(&router, client.move_channel(eleven))), Ok(()));
+    assert_eq!(run(exchange(&router, owner.move_channel(eleven))), Ok(()));
     assert_eq!(model.channel(), Some(eleven));
     // `Disable`, then `Enable`, each to its terminal.
     assert_eq!(model.lifecycle_requests(), lifecycle + 2);
@@ -980,11 +981,11 @@ fn a_channel_move_refuses_an_unsupported_channel_without_touching_the_port() {
     // A 2.4 GHz backend, as S31.
     model.restrict_bands(oer_ieee80211_lower_mac::BandSet::GHZ2_4);
     let router = Router::new(&model, 1);
-    let mut client = client(&router, VifRole::Station);
+    let mut owner = router.owner().unwrap();
     let lifecycle = model.lifecycle_requests();
     let unsupported = Channel::ghz5(36, ChannelWidth::Mhz20).unwrap();
     assert!(!model.capabilities().supports_channel(unsupported));
-    let refused = run(exchange(&router, client.move_channel(unsupported)));
+    let refused = run(exchange(&router, owner.move_channel(unsupported)));
     assert_eq!(
         refused,
         Err(PortClientError::Setting(SettingError::UnsupportedChannel))
@@ -1001,25 +1002,77 @@ fn a_channel_move_refuses_an_unsupported_channel_without_touching_the_port() {
 fn a_channel_move_on_a_disabled_port_is_a_lost_port_and_leaves_it_disabled() {
     let model = enabled_station();
     let router = Router::new(&model, 1);
-    let mut client = client(&router, VifRole::Station);
+    let client = client(&router, VifRole::Station);
+    let mut owner = router.owner().unwrap();
     run(exchange(
         &router,
-        client.lifecycle(LifecycleCommand::Disable),
+        owner.lifecycle(LifecycleCommand::Disable),
     ))
     .unwrap();
     let eleven = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
-    let refused = run(exchange(&router, client.move_channel(eleven)));
+    let refused = run(exchange(&router, owner.move_channel(eleven)));
     assert_eq!(
         refused,
         Err(PortClientError::Lifecycle(LifecycleError::AlreadyInState))
     );
     assert!(refused.unwrap_err().is_port_lost());
-    // The client never enables the port on its own.
+    // The owner never enables the port on its own.
     assert_eq!(
         model.channel(),
         Some(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap())
     );
     assert_eq!(client.apply(LowerMacSetting::Channel(eleven)), Ok(()));
+}
+
+#[test]
+fn a_port_has_one_owner() {
+    let model = enabled_station();
+    let router = Router::new(&model, 1);
+    {
+        let owner = router.owner();
+        assert!(owner.is_some());
+        // However many times asked, and after the first is gone: the
+        // lifecycle authority is handed out once.
+        assert!(router.owner().is_none());
+    }
+    assert!(router.owner().is_none());
+}
+
+#[test]
+fn a_failed_enable_after_a_move_is_its_owner_s_and_the_port_stays_disabled() {
+    let model = enabled_station();
+    let router = Router::new(&model, 1);
+    let mut owner = router.owner().unwrap();
+    model.fail_next_enable();
+    let eleven = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
+    let failed = run(exchange(&router, owner.move_channel(eleven)));
+    assert_eq!(failed, Err(PortClientError::LifecycleFailed));
+    assert!(failed.unwrap_err().is_port_lost());
+    // The next command meets its own terminal, not a stale one.
+    assert_eq!(
+        run(exchange(&router, owner.lifecycle(LifecycleCommand::Enable))),
+        Ok(())
+    );
+    assert_eq!(model.channel(), Some(eleven));
+}
+
+#[test]
+fn a_command_dropped_while_it_waits_leaves_no_terminal_for_the_next() {
+    let model = enabled_station();
+    let router = Router::new(&model, 1);
+    let mut owner = router.owner().unwrap();
+    {
+        // The port takes `Disable`; its waiter is dropped before the
+        // router queues the terminal.
+        let mut disable = core::pin::pin!(owner.lifecycle(LifecycleCommand::Disable));
+        assert!(poll_once(disable.as_mut()).is_pending());
+    }
+    model.fail_next_enable();
+    // `Enable` meets its own `Failed`, not the stale `Disabled`.
+    assert_eq!(
+        run(exchange(&router, owner.lifecycle(LifecycleCommand::Enable))),
+        Err(PortClientError::LifecycleFailed)
+    );
 }
 
 #[test]

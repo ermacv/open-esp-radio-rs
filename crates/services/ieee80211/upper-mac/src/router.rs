@@ -16,7 +16,7 @@
 //!   one port a frame goes where its addresses put it
 //!   ([`classify_sta_ap_rx`]);
 //! - lifecycle terminals go to a queue of their own, which the port's owner
-//!   reads ([`EventRouter::lifecycle`]);
+//!   reads ([`PortOwner::lifecycle`](crate::owner::PortOwner::lifecycle));
 //! - [`EventsLost`] is reported in order by every receive and extension
 //!   queue: the port reserves the slot of every completion and lifecycle
 //!   terminal, so only received frames and TBTTs are in a gap;
@@ -233,6 +233,8 @@ struct State<E, T, F, const WAITERS: usize, const RX: usize> {
     poisoned: Option<Poisoned<F>>,
     ids: CorrelationIds,
     unclaimed: u32,
+    /// The port's [`PortOwner`](crate::owner::PortOwner) was handed out.
+    owned: bool,
 }
 
 /// The single consumer of a lower-MAC port's events, dispatching them by
@@ -262,6 +264,7 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
                 poisoned: None,
                 ids: CorrelationIds::starting_at(first_id),
                 unclaimed: 0,
+                owned: false,
             }),
         }
     }
@@ -538,9 +541,20 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
         .await
     }
 
-    /// The next lifecycle terminal; `None` once the port is poisoned and
-    /// the queue is empty.
-    pub async fn lifecycle(&self) -> Option<Result<LifecycleEvent, EventsLost>> {
+    /// The port's one lifecycle authority; `None` once it was handed out.
+    /// Only it sends lifecycle commands and moves the channel, and only it
+    /// reads their terminals, so each command meets its own terminal.
+    pub fn owner(&self) -> Option<crate::owner::PortOwner<'_, 'p, P, WAITERS, RX>> {
+        let mut state = self.state.borrow_mut();
+        if core::mem::replace(&mut state.owned, true) {
+            return None;
+        }
+        Some(crate::owner::PortOwner::new(self))
+    }
+
+    /// The next lifecycle terminal, for the [`PortOwner`](crate::owner::PortOwner)
+    /// alone; `None` once the port is poisoned and the queue is empty.
+    pub(crate) async fn lifecycle(&self) -> Option<Result<LifecycleEvent, EventsLost>> {
         poll_fn(|context| {
             let mut state = self.state.borrow_mut();
             let poisoned = state.poisoned.is_some();

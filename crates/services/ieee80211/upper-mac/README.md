@@ -16,7 +16,7 @@ the backend's runner, takes every event and dispatches it:
 - received frames go to the bounded receive queue
   of the interface they belong to (`received(vif)`), extension events such
   as TBTTs to the interface each names (`extension(vif)`), and lifecycle terminals to
-  `lifecycle()`, each reporting its own `EventsLost` in place of the first
+  the port's one `PortOwner`, each reporting its own `EventsLost` in place of the first
   entry it dropped. Every client attaches its interface (`attach(vif, role,
   address)`, up to `ROUTER_VIFS`, released when the `Attachment` drops): the
   only attached interface takes every frame, and a station and an access
@@ -78,10 +78,23 @@ interface, refusing one another client holds; configuring the interface's
 BSS (`configure`) routes that BSS's frames to it. The client reads its
 interface's receive and extension queues as `PortInput`s (`Frame(PortFrame)` in the port's own
 `RxBuffer`, `Tbtt`, `EventsLost`, `Poisoned`), transmits MPDUs and A-MPDUs
-through its `UpperMacTx`, and applies settings, the BSS's EDCA parameters,
-its interface configuration, permanent channel moves (`move_channel`:
-`Disable`, `Channel`, `Enable`) and lifecycle commands, with every
-failure a `PortClientError`. `PortMsdu` is the MSDU a service hands its
+through its `UpperMacTx`, and applies settings, the BSS's EDCA parameters
+and its interface configuration, with every failure a `PortClientError`.
+A client sends no lifecycle command. The port's lifecycle and channel
+belong to its owner: `EventRouter::owner` hands out the one
+`owner::PortOwner`, neither `Clone` nor `Copy`, which runs lifecycle
+commands and permanent channel moves (`move_channel`: `Disable`,
+`Channel`, `Enable`) and alone reads their terminals. With one issuer,
+each command meets its own terminal; a command whose future was dropped
+leaves its terminal to be discarded before the next. The owner is held by
+whoever decides the port's channel (a lone station's lifecycle, the
+STA+AP pair, the runtime that installs the port) and moves only by value.
+A client still reaches the raw port through `PortClient::port()` for its
+extensions (keys, TBTTs, capabilities) until #580 replaces it with
+operations scoped to the client's own interface; calling the port's
+lifecycle or another interface's settings through it breaks this
+contract. A conforming port under one owner never loses a lifecycle
+terminal, so `LifecycleLost` leaves the contract with #578. `PortMsdu` is the MSDU a service hands its
 application: the port's buffer, or parts to copy. A service sends no copy of a frame from a queue
 of its own: it takes the network's owners from its source
 (`oer-ieee80211-datapath`'s `DestinationTxQueues`) when it sends them, and

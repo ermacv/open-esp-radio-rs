@@ -163,7 +163,7 @@ type CurrentPair =
     PortStaAp<'static, Env<DisabledRetune>, Env<DisabledRetune>, &'static VirtualTimer>;
 
 struct Setup {
-    upstream: PortAccessPoint<'static, Env>,
+    upstream: Upstream,
     pair: CurrentPair,
     client: PortStation<'static, Env>,
     port: &'static DisabledRetune,
@@ -171,17 +171,18 @@ struct Setup {
 }
 
 fn setup(world: &World) -> Setup {
-    let mut upstream = access_point(
-        world.upstream.1,
-        world.timer,
-        UPSTREAM,
-        UPSTREAM_SSID,
-        ghz2_4(6),
-        leak(TestFrames::new()),
-    );
-    world
-        .drive(upstream.client_mut().move_channel(ghz2_4(6)))
-        .unwrap();
+    let mut upstream = Upstream {
+        ap: access_point(
+            world.upstream.1,
+            world.timer,
+            UPSTREAM,
+            UPSTREAM_SSID,
+            ghz2_4(6),
+            leak(TestFrames::new()),
+        ),
+        owner: world.upstream.1.owner().unwrap(),
+    };
+    world.drive(upstream.owner.move_channel(ghz2_4(6))).unwrap();
     upstream.start(ghz2_4(6)).unwrap();
     let port = leak(DisabledRetune {
         model: world.pair.0,
@@ -195,7 +196,9 @@ fn setup(world: &World) -> Setup {
             PAIR_STATION,
             UPSTREAM_SSID,
             leak(TestFrames::new()),
+            None,
         ),
+        router.owner().unwrap(),
         access_point(
             router,
             world.timer,
@@ -226,6 +229,7 @@ fn setup(world: &World) -> Setup {
         CLIENT,
         PAIR_SSID,
         world.client_frames,
+        world.client.1.owner(),
     );
     let until = world.after(4_000);
     let (_, (served, client)) = world.drive_with_pair_router(
@@ -459,7 +463,7 @@ fn an_upstream_lost_past_the_policy_restarts_the_access_point_on_its_new_channel
         // The upstream comes back where the pair, on channel 6, cannot hear it.
         world
             .drive_with_pair_router(
-                setup.upstream.client_mut().move_channel(ghz2_4(11)),
+                setup.upstream.owner.move_channel(ghz2_4(11)),
                 setup.router,
                 || {},
             )

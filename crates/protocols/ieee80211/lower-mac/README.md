@@ -103,6 +103,40 @@ of one generation, with one microsecond for counter resolution. A reversed
 sample or an unrepresentable uncertainty is an explicit `InvalidSampleTiming`
 refusal; unavailable or different-generation samples are `StaleClock`.
 
+## On the owner shape
+
+The module `owner` states the lower-MAC port on the shared owner shape of
+`oer-radio-port`: a backend implements `LowerMacBackend`, a `PortBackend`
+whose disabled-only settings are `LowerMacSetup` (the channel, as a
+`SupportedChannel`, and each interface's address), whose phase control is
+`LowerMacControl` (the transmit gate, closed by an awaited `close_gate`
+whose `TxGated` guard reopens it, EDCA as a `SupportedEdca`, the beacon
+receive priority) and whose clients are `LowerMacClient<'id>`s, one per
+configured interface, branded by the install. A client awaits the grant
+of the queue an access category occupies (`LowerMacClient::Queue`, a
+`QueueGrant`) and a transmit buffer (`LowerMacClient::TxBuffer`), waited
+for, never refused. Both are the backend's own types: this package states
+only the contract, so no caller forges one, and the backend proves it with
+compile-fail tests of its types. A client's attempt (`PhaseAttempt`)
+carries both, a rate checked on the phase's channel (`PhaseRate`) and the
+values the capabilities marker `K: Ieee80211Capabilities` checks
+(`SupportedPower`, `SupportedBackoff`, `SupportedCoex`); the buffer request
+(`LowerMacClient::tx_buffer`) checks the MPDU's length (`MpduLength`). A
+submission moves them into the backend and returns its `Work`; the
+backend gives them back when it takes the attempt's terminal, before it
+hands the event out, so no caller holds them and a dropped handle or event
+loses none. The body receives each role's key and Block Ack slots once;
+keys and agreements hold a slot of their client's own kind and give it
+back when removed: a station's key is not an access point's.
+
+The module's table maps every refusal of `Ieee80211LowerMacPort` to its
+type, and lists the world's outcomes that stay. The protocol ports still
+implement `Ieee80211LowerMacPort`. The keeper of the transmit permits and
+their guards (`TxPermits`, `QueuePermit`, `BufferPermit`) and an in-memory
+backend on the owner shape (`OwnedModel`, driven through `ModelHandle`)
+wait, so they live in `oer-ieee80211-runtime`'s `lower_mac_owner`, not in
+this sans-IO package.
+
 ## Capability model
 
 Structural optional features are extension traits over the base port. An

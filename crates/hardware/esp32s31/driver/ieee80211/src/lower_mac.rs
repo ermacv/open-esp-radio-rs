@@ -229,6 +229,9 @@ pub const fn esp32s31_lower_mac_capabilities(buffer_size: usize) -> LowerMacCapa
         rx_block_ack_agreements: RESOURCES.rx_block_ack_entries,
         rx_block_ack_max_tid: RESOURCES.rx_block_ack_max_tid,
         rx_block_ack_max_window: RESOURCES.rx_block_ack_max_window,
+        // The bounds `EdcaContentionParameters::new` checks.
+        edca_max_aifsn: 0x0f,
+        edca_max_cw_exponent: oer_esp32s31_ieee80211_mac::edca::MAX_HARDWARE_ECW_EXPONENT,
     }
 }
 

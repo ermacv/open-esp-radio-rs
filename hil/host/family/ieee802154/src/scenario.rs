@@ -23,6 +23,18 @@ pub enum Ieee802154Scenario {
     LiveRssi(LiveRssi),
     ThreadExchange(ThreadExchange),
     RouteProbe(RouteProbe),
+    TrackingHold(TrackingHold),
+}
+
+/// The RF hold of forced shared-PHY tracking ticks with the IEEE 802.15.4
+/// client receiving (#591).
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrackingHold {
+    pub boots: u8,
+    pub channel: u8,
+    /// Timed ticks of each branch set per boot.
+    pub ticks: u16,
 }
 
 /// The same-bit arrival and level-retrigger probe of the source-132 route.
@@ -141,6 +153,11 @@ impl ScenarioFamily for Ieee802154Scenario {
                 bounded(diagnostic.poll_limit, 1, 1_000_000, "poll_limit")?;
                 bounded(diagnostic.timer_threshold, 1, 1_000, "timer_threshold")
             }
+            Self::TrackingHold(hold) => {
+                bounded(hold.boots, 1, 20, "boots")?;
+                bounded(hold.channel, 11, 26, "channel")?;
+                bounded(hold.ticks, 1, 10, "ticks")
+            }
             Self::BackgroundMaintenance(maintenance) => {
                 bounded(maintenance.boots, 1, 20, "boots")?;
                 bounded(maintenance.channel, 11, 26, "channel")?;
@@ -240,7 +257,8 @@ impl ScenarioFamily for Ieee802154Scenario {
             | Self::EdEvent(_)
             | Self::RouteProbe(_)
             | Self::AirCheck(_)
-            | Self::BackgroundMaintenance(_) => None,
+            | Self::BackgroundMaintenance(_)
+            | Self::TrackingHold(_) => None,
         }
     }
 
@@ -258,6 +276,7 @@ impl ScenarioFamily for Ieee802154Scenario {
                 ImageClass::DiagnosticIeee802154RadioTrace
             }
             Self::ThreadExchange(_) => ImageClass::DiagnosticIeee802154Thread,
+            Self::TrackingHold(_) => ImageClass::DiagnosticIeee802154TrackingHold,
         });
         plan.requirements.peer = self.peer_image().is_some();
         plan
@@ -275,6 +294,7 @@ impl ScenarioFamily for Ieee802154Scenario {
                 vec![AirUse::Ieee802154Channel(scenario.channel)]
             }
             Self::LiveRssi(scenario) => vec![AirUse::Ieee802154Channel(scenario.channel)],
+            Self::TrackingHold(scenario) => vec![AirUse::Ieee802154Channel(scenario.channel)],
             Self::ChannelEnergy(scenario) => vec![
                 AirUse::Ieee802154Channel(scenario.channel),
                 AirUse::Ieee802154Channel(scenario.far_channel),
@@ -308,6 +328,15 @@ impl Workload for Ieee802154Scenario {
                     boots,
                     poll_limit,
                     timer_threshold,
+                },
+                output,
+                context,
+            ),
+            Self::TrackingHold(hold) => ieee802154::tracking_hold::run(
+                ieee802154::tracking_hold::Config {
+                    boots: hold.boots,
+                    channel: hold.channel,
+                    ticks: hold.ticks,
                 },
                 output,
                 context,
@@ -405,6 +434,21 @@ mod tests {
             ))
             .unwrap();
             assert!(excessive.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn the_tracking_hold_needs_no_peer_and_bounds_its_ticks() {
+        let table = "kind = 'tracking-hold'\nboots = 1\nchannel = 15\nticks = 3";
+        let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
+        scenario.validate().unwrap();
+        let plan = scenario.plan();
+        assert_eq!(plan.image, ImageClass::DiagnosticIeee802154TrackingHold);
+        assert!(!plan.requirements.peer);
+        for invalid in ["ticks = 0", "ticks = 11"] {
+            let scenario: Ieee802154Scenario =
+                toml::from_str(&table.replace("ticks = 3", invalid)).unwrap();
+            assert!(scenario.validate().is_err(), "{invalid}");
         }
     }
 

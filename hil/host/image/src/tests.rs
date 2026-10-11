@@ -84,7 +84,7 @@ fn the_radio_less_classes_need_no_driver_observation() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(oer_hil_schema::image::ImageClass::ALL.len(), 29);
+    assert_eq!(oer_hil_schema::image::ImageClass::ALL.len(), 32);
     assert_eq!(
         oer_hil_schema::image::ImageClass::SystemPanicReset.runtime_features(),
         "system-panic-reset"

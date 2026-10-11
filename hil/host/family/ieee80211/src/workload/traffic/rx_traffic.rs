@@ -3,7 +3,14 @@
 use crate::link::WifiCapture as _;
 use oer_hil_net_traffic::NetworkSession as _;
 use oer_hil_workload::context::Context;
-use std::{env, fs, net::Ipv4Addr, path::Path, time::Duration};
+use std::{
+    env, fs,
+    net::Ipv4Addr,
+    path::Path,
+    time::{Duration, Instant},
+};
+
+use oer_hil_workload::phy_tracking_hold::{self as tracking_hold, Load};
 
 use oer_hil_protocol::{
     network::Completion, network::Direction, network::FlowConfig, network::SessionConfig,
@@ -51,6 +58,9 @@ pub struct Config {
     pub maximum_idle_channel_utilization_255: Option<u8>,
     /// Suspend the shared PHY's periodic tracking for the session.
     pub suspend_phy_tracking: bool,
+    /// Time this many forced tracking ticks of each branch set during the
+    /// traffic and after it (`oer_hil_workload::phy_tracking_hold`).
+    pub phy_tracking_hold: Option<u16>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -242,6 +252,12 @@ pub fn run(
         Ok(tracking) => tracking,
         Err(error) => return capture.finish_with(Err(error)),
     };
+    // The timed ticks are the only tracking while the hold is measured.
+    if options.phy_tracking_hold.is_some()
+        && let Err(error) = tracking_hold::suspend(&capture)
+    {
+        return capture.finish_with(Err(error));
+    }
     let session = capture.start_session(SessionConfig {
         network_interface: oer_hil_protocol::wifi::WifiNetworkInterface::Station,
         transport: Transport::Udp,
@@ -263,16 +279,34 @@ pub fn run(
         ],
         link_requirements: SessionLinkRequirements::NONE,
     })?;
-    let host_result = send_paced_udp(
-        host_route.source(),
-        PacedUdpConfig {
-            address: options.address,
-            port: options.port,
-            rate_bps: options.rate_bps,
-            duration: options.duration,
-            payload: options.payload,
-        },
-    );
+    let send = || {
+        send_paced_udp(
+            host_route.source(),
+            PacedUdpConfig {
+                address: options.address,
+                port: options.port,
+                rate_bps: options.rate_bps,
+                duration: options.duration,
+                payload: options.payload,
+            },
+        )
+    };
+    // Ticks timed while the host's traffic runs: the traffic's interrupts
+    // compete with the tick on the device.
+    let (host_result, mut hold_samples) = match options.phy_tracking_hold {
+        Some(ticks) => std::thread::scope(|scope| {
+            let deadline = Instant::now() + options.duration;
+            let capture = &capture;
+            let traffic_hold = scope
+                .spawn(move || tracking_hold::measure(capture, ticks, Load::Traffic, deadline));
+            let host = send();
+            let hold = traffic_hold
+                .join()
+                .unwrap_or_else(|_| Err("the tracking hold thread panicked".into()));
+            (host, Some(hold))
+        }),
+        None => (send(), None),
+    };
     let host = host_result?;
     host_route.verify_socket_source(host.source)?;
     host_route.record(output, options.address, host.source)?;
@@ -287,6 +321,26 @@ pub fn run(
     };
     if let Err(error) = capture.acknowledge_session(session) {
         return capture.finish_with(Err(error));
+    }
+    if let (Some(ticks), Some(samples)) = (options.phy_tracking_hold, hold_samples.take()) {
+        // The same ticks on the idle link, then the timer runs again.
+        let idle = samples.and_then(|mut samples| {
+            let deadline = Instant::now() + tracking_hold::window(ticks);
+            samples.extend(tracking_hold::measure(
+                &capture,
+                ticks,
+                Load::Idle,
+                deadline,
+            )?);
+            Ok(samples)
+        });
+        let resumed = tracking_hold::resume(&capture);
+        if let Err(error) = idle
+            .and_then(|samples| tracking_hold::record(&context.results, &samples))
+            .and(resumed)
+        {
+            return capture.finish_with(Err(error));
+        }
     }
     if let Err(error) = super::phy_tracking::finish(&capture, &context.results, tracking) {
         return capture.finish_with(Err(error));
@@ -602,6 +656,7 @@ impl Default for Config {
             phy: PhyExpectation::He20,
             maximum_idle_channel_utilization_255: None,
             suspend_phy_tracking: false,
+            phy_tracking_hold: None,
         }
     }
 }

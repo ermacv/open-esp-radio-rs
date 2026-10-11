@@ -104,6 +104,7 @@
     "ieee802154/live-rssi": false,
     "ieee802154/thread-exchange": false,
     "ieee802154/route-probe": false,
+    "ieee802154/tracking-hold": true,
     "phy/vendor-calibration": false
   },
   "build": {

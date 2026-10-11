@@ -48,6 +48,16 @@ pub enum ImageClass {
     /// The IEEE 802.15.4 same-bit and level-retrigger route probe.
     DiagnosticIeee802154Route,
     DiagnosticMemoryBenchmark,
+    /// The correctness Wi-Fi image that times one forced shared-PHY tracking
+    /// tick on request (`phy/tracking/hold`): the RF hold of tracking with
+    /// Wi-Fi as a client.
+    DiagnosticPhyTrackingHold,
+    /// The IEEE 802.15.4 radio image that times a forced tracking tick: the
+    /// RF hold with the Bluetooth/IEEE 802.15.4 class as a client.
+    DiagnosticIeee802154TrackingHold,
+    /// The joint Wi-Fi/Bluetooth LE image that times a forced tracking tick:
+    /// the RF hold with both tracking classes as clients.
+    DiagnosticWifiBleCoexTrackingHold,
     /// The system watchdog image that, on request, switches its USB
     /// Serial/JTAG off its pads: the board leaves USB, for the stand's
     /// recovery scenario.
@@ -75,7 +85,7 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 32] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -104,6 +114,9 @@ impl ImageClass {
         Self::DiagnosticIeee802154Thread,
         Self::DiagnosticIeee802154Route,
         Self::DiagnosticMemoryBenchmark,
+        Self::DiagnosticPhyTrackingHold,
+        Self::DiagnosticIeee802154TrackingHold,
+        Self::DiagnosticWifiBleCoexTrackingHold,
         Self::DiagnosticUsbJtagOff,
     ];
 
@@ -131,6 +144,9 @@ impl ImageClass {
                 | Self::DiagnosticIeee802154Thread
                 | Self::DiagnosticIeee802154Route
                 | Self::DiagnosticMemoryBenchmark
+                | Self::DiagnosticPhyTrackingHold
+                | Self::DiagnosticIeee802154TrackingHold
+                | Self::DiagnosticWifiBleCoexTrackingHold
                 | Self::DiagnosticUsbJtagOff
         )
     }
@@ -165,6 +181,9 @@ impl ImageClass {
             Self::DiagnosticIeee802154Thread => "diagnostic-ieee802154-thread",
             Self::DiagnosticIeee802154Route => "diagnostic-ieee802154-route",
             Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
+            Self::DiagnosticPhyTrackingHold => "diagnostic-phy-tracking-hold",
+            Self::DiagnosticIeee802154TrackingHold => "diagnostic-ieee802154-tracking-hold",
+            Self::DiagnosticWifiBleCoexTrackingHold => "diagnostic-wifi-ble-coex-tracking-hold",
             Self::DiagnosticUsbJtagOff => "diagnostic-usb-jtag-off",
         }
     }
@@ -204,6 +223,13 @@ impl ImageClass {
             Self::DiagnosticRxDelivery => "open-radio-hil,rx-delivery-telemetry",
             Self::DiagnosticIeee802154EventStatus => "open-radio-hil,ieee802154-event-status-probe",
             Self::DiagnosticMemoryBenchmark => "open-radio-hil,memory-benchmark",
+            Self::DiagnosticPhyTrackingHold => {
+                "open-radio-hil,driver-observation,phy-tracking-hold"
+            }
+            Self::DiagnosticIeee802154TrackingHold => {
+                "open-radio-hil,ieee802154-radio,phy-tracking-hold"
+            }
+            Self::DiagnosticWifiBleCoexTrackingHold => "wifi-ble-coex,phy-tracking-hold",
             Self::DiagnosticIeee802154EdEvent => "open-radio-hil,ieee802154-ed-event-probe",
             Self::DiagnosticIeee802154Radio => "open-radio-hil,ieee802154-radio",
             Self::DiagnosticIeee802154RadioTrace => {
@@ -238,6 +264,7 @@ impl ImageClass {
                 | Self::BootSmoke
                 | Self::Performance
                 | Self::WifiBleCoex
+                | Self::DiagnosticWifiBleCoexTrackingHold
                 | Self::DiagnosticRxOwnership
                 | Self::DiagnosticStationExit
                 | Self::DiagnosticTaskResidence
@@ -254,6 +281,8 @@ impl ImageClass {
             Self::Correctness
                 | Self::Performance
                 | Self::WifiBleCoex
+                | Self::DiagnosticPhyTrackingHold
+                | Self::DiagnosticWifiBleCoexTrackingHold
                 | Self::DiagnosticMacIrq
                 | Self::DiagnosticTxWait
                 | Self::DiagnosticRxClock

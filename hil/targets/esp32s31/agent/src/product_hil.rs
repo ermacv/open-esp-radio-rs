@@ -24,6 +24,8 @@ use esp_hal::{
 };
 
 use network::{Iface, Resources as NetworkResources, Runner as NetworkRunner};
+#[cfg(feature = "phy-tracking-hold")]
+mod phy_tracking_hold;
 #[cfg(feature = "station-exit-evidence")]
 use oer::wifi::StaLifecycleStage;
 
@@ -1122,8 +1124,24 @@ pub fn diagnostic_snapshot() -> (u32, u32) {
 /// The timer stops between ticks while a HIL experiment suspends it.
 #[embassy_executor::task]
 async fn phy_tracking_task(radio: &'static SharedRadio) {
+    #[cfg(feature = "phy-tracking-hold")]
+    let _server = crate::phy_tracking::HoldServer::register();
     loop {
         while crate::phy_tracking::suspended() {
+            #[cfg(feature = "phy-tracking-hold")]
+            {
+                use embassy_futures::select::{Either, select};
+                if let Either::Second(request) = select(
+                    crate::phy_tracking::changed(),
+                    crate::phy_tracking::hold_requested(),
+                )
+                .await
+                {
+                    let evidence = phy_tracking_hold::measure(radio, request).await;
+                    crate::phy_tracking::hold_measured(evidence);
+                }
+            }
+            #[cfg(not(feature = "phy-tracking-hold"))]
             crate::phy_tracking::changed().await;
         }
         if let Err(error) = radio

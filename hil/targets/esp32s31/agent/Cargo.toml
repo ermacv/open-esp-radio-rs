@@ -17,6 +17,8 @@ trace-journal = []
 trace-snapshots = []
 # Record the PHY trace points and capture its poison snapshot.
 phy-trace = ["oer-esp32s31-phy?/trace", "trace-snapshots"]
+# Time one forced shared-PHY tracking tick on request (`phy/tracking/hold`).
+phy-tracking-hold = ["oer-esp32s31-phy?/tracking-diagnostics"]
 # Experimental direct RX-gain transaction SRAM placement for an otherwise
 # identical diagnostic image.
 phy-rx-hot-sram = ["oer-esp32s31-phy?/rx-gain-hot-sram", "oer-esp32s31-ieee80211-system?/phy-rx-hot-sram"]

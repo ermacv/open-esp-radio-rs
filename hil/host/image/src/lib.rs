@@ -418,6 +418,7 @@ fn audit_radio_observers<'a>(
     let aggregate_required = matches!(
         class,
         ImageClass::Correctness
+            | ImageClass::DiagnosticPhyTrackingHold
             | ImageClass::DiagnosticMacIrq
             | ImageClass::DiagnosticTxWait
             | ImageClass::DiagnosticTaskPoll

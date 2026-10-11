@@ -314,6 +314,7 @@ fn station_udp_traffic(
                 minimum_rate_bps: criteria.minimum_rx_bps,
                 maximum_idle_channel_utilization_255: criteria.maximum_idle_channel_utilization_255,
                 suspend_phy_tracking: workload.suspend_phy_tracking,
+                phy_tracking_hold: workload.phy_tracking_hold,
                 ..Default::default()
             },
             output,

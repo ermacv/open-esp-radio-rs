@@ -10,7 +10,13 @@
 
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
-use std::{net::Ipv4Addr, path::Path, time::Duration};
+use std::{
+    net::Ipv4Addr,
+    path::Path,
+    time::{Duration, Instant},
+};
+
+use oer_hil_workload::phy_tracking_hold::{self as tracking_hold, Load};
 
 use oer_hil_family_bluetooth::workload::bluetooth::coexistence::Echo;
 use oer_hil_family_ieee80211_fixture::host_network::BenchmarkIpv4Route;
@@ -61,6 +67,12 @@ pub struct CoexistenceScenario {
     pub minimum_rx_bps: u64,
     /// The minimum completed ATT write/read echoes in the interval.
     pub minimum_echoes: u32,
+    /// Time this many forced shared-PHY tracking ticks of each branch set
+    /// while both radios run, and again once their traffic ended (#591):
+    /// the RF hold with both tracking classes as clients. It selects the
+    /// `diagnostic-wifi-ble-coex-tracking-hold` image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phy_tracking_hold: Option<u16>,
 }
 
 impl ScenarioFamily for CoexistenceScenario {
@@ -72,6 +84,17 @@ impl ScenarioFamily for CoexistenceScenario {
         }
         if self.minimum_echoes == 0 {
             return Err("minimum_echoes must be positive".into());
+        }
+        if let Some(ticks) = self.phy_tracking_hold {
+            bounded(ticks, 1, 10, "phy_tracking_hold")?;
+            let window = tracking_hold::window(ticks);
+            if u64::from(self.duration_seconds) < window.as_secs() {
+                return Err(format!(
+                    "phy_tracking_hold of {ticks} ticks needs at least {} s of traffic",
+                    window.as_secs()
+                )
+                .into());
+            }
         }
         Ok(())
     }
@@ -88,7 +111,11 @@ impl ScenarioFamily for CoexistenceScenario {
                 link: Some(self.phy),
                 ..WifiLabUse::default()
             },
-            ..Plan::target_only(ImageClass::WifiBleCoex)
+            ..Plan::target_only(if self.phy_tracking_hold.is_some() {
+                ImageClass::DiagnosticWifiBleCoexTrackingHold
+            } else {
+                ImageClass::WifiBleCoex
+            })
         }
     }
 
@@ -123,6 +150,11 @@ impl Workload for CoexistenceScenario {
             )?;
             let route = BenchmarkIpv4Route::discover(ready.address, &context.lab.station_fixture)?;
             let mut echo = Echo::connect(capture, adapter, output, &context.results)?;
+            // The timed ticks are the only tracking while the hold is
+            // measured.
+            if self.phy_tracking_hold.is_some() {
+                tracking_hold::suspend(capture)?;
+            }
             let session = capture.start_session(SessionConfig {
                 network_interface: oer_hil_protocol::wifi::WifiNetworkInterface::Station,
                 transport: Transport::Udp,
@@ -145,9 +177,17 @@ impl Workload for CoexistenceScenario {
                 link_requirements: SessionLinkRequirements::NONE,
             })?;
             // The echo load runs on its own thread for the interval the host
-            // offers UDP; the capture serves it only after the interval.
-            let (host, echoes) = std::thread::scope(|scope| {
+            // offers UDP; the capture serves it only after the interval. A
+            // tracking hold is timed on a third thread over the same
+            // interval.
+            let (host, echoes, traffic_hold) = std::thread::scope(|scope| {
                 let echoes = scope.spawn(|| echo.run(duration));
+                let deadline = Instant::now() + duration;
+                let hold = self.phy_tracking_hold.map(|ticks| {
+                    scope.spawn(move || {
+                        tracking_hold::measure(capture, ticks, Load::Traffic, deadline)
+                    })
+                });
                 let host = send_paced_udp(
                     route.source(),
                     PacedUdpConfig {
@@ -158,7 +198,11 @@ impl Workload for CoexistenceScenario {
                         payload: usize::from(self.payload_bytes),
                     },
                 );
-                (host, echoes.join())
+                let hold = hold.map(|hold| {
+                    hold.join()
+                        .unwrap_or_else(|_| Err("the tracking hold thread panicked".into()))
+                });
+                (host, echoes.join(), hold)
             });
             let echoes = echoes.map_err(|_| "echo load panicked")??;
             route.verify_socket_source(host?.source)?;
@@ -166,6 +210,23 @@ impl Workload for CoexistenceScenario {
                 capture.wait_for_session(session, duration + Duration::from_secs(10))?;
             capture.acknowledge_session(session)?;
             echo.finish()?;
+            if let (Some(ticks), Some(samples)) = (self.phy_tracking_hold, traffic_hold) {
+                // The same ticks once both radios' traffic ended, then the
+                // timer runs again.
+                let idle = samples.and_then(|mut samples| {
+                    let deadline = Instant::now() + tracking_hold::window(ticks);
+                    samples.extend(tracking_hold::measure(
+                        capture,
+                        ticks,
+                        Load::Idle,
+                        deadline,
+                    )?);
+                    Ok(samples)
+                });
+                let resumed = tracking_hold::resume(capture);
+                idle.and_then(|samples| tracking_hold::record(&context.results, &samples))
+                    .and(resumed)?;
+            }
             let rx_bps = structured
                 .transport
                 .rx_bytes

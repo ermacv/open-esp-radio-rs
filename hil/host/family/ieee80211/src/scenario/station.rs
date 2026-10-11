@@ -29,6 +29,11 @@ pub struct StationUdp {
     /// the arm without tracking of a PHY maintenance experiment.
     #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub suspend_phy_tracking: bool,
+    /// Time this many forced shared-PHY tracking ticks of each branch set
+    /// during the traffic and again on the idle link after it (#591). It
+    /// needs the `diagnostic-phy-tracking-hold` image and a receiving offer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phy_tracking_hold: Option<u16>,
     #[serde(default)]
     pub criteria: StationUdpCriteria,
 }
@@ -114,6 +119,28 @@ impl StationUdp {
             .into());
         }
         let direction = self.offer.direction();
+        if let Some(ticks) = self.phy_tracking_hold {
+            bounded(ticks, 1, 10, "phy_tracking_hold")?;
+            if image != ImageClass::DiagnosticPhyTrackingHold {
+                return Err(
+                    "phy_tracking_hold requires the diagnostic-phy-tracking-hold image".into(),
+                );
+            }
+            let window = oer_hil_workload::phy_tracking_hold::window(ticks);
+            if u64::from(self.duration_seconds) < window.as_secs() {
+                return Err(format!(
+                    "phy_tracking_hold of {ticks} ticks needs at least {} s of traffic",
+                    window.as_secs()
+                )
+                .into());
+            }
+            if direction != Direction::Rx || self.suspend_phy_tracking {
+                return Err(
+                    "phy_tracking_hold runs beside a receive-only offer, with tracking not suspended by the scenario"
+                        .into(),
+                );
+            }
+        }
         let criteria = self.criteria;
         criteria.floors().validate(self.offer)?;
         driver_observed_criteria(

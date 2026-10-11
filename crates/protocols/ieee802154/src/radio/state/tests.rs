@@ -1,7 +1,8 @@
 use super::*;
 use crate::{
     Configuration, EnergyScanRequest, FcsStatus, FramePending, FrameView, Interface,
-    InterfaceSetting, RadioFault, ReceivedFrame, RxMetadata, SecurityStatus, TxRequest,
+    InterfaceSetting, RadioFault, ReceivedFrame, RxMetadata, SecurityStatus, TransmitPowerLevels,
+    TxRequest,
 };
 
 const ID: RequestId = RequestId::new(7);
@@ -23,6 +24,14 @@ fn metadata(channel: Channel) -> RxMetadata {
         interface: Some(Interface::PRIMARY),
     }
 }
+
+const POWER: TransmitPowerCapability = TransmitPowerCapability {
+    levels: match TransmitPowerLevels::new(&[-10, 0, 3, 10]) {
+        Ok(levels) => levels,
+        Err(_) => panic!("valid levels"),
+    },
+    reset_dbm: 10,
+};
 
 fn enabled(capabilities: RadioCapabilities) -> RadioStateMachine {
     let mut machine = RadioStateMachine::new(capabilities);
@@ -65,10 +74,9 @@ fn finite_enable_receive_sleep_disable_path_is_exact() {
 
 #[test]
 fn transmit_correlates_completion_and_restores_receive() {
-    let capabilities = RadioCapabilities::CSMA_CA
-        | RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT
-        | RadioCapabilities::TRANSMIT_POWER;
-    let mut machine = enabled(capabilities);
+    let capabilities = RadioCapabilities::CSMA_CA | RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT;
+    let mut machine = RadioStateMachine::new(capabilities).with_transmit_power(POWER);
+    machine.enable().unwrap();
     machine
         .admit(RadioCommand::Receive {
             id: RequestId::new(1),
@@ -690,4 +698,82 @@ fn lifecycle_terminals_keep_the_state() {
         Ok(())
     );
     assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
+}
+
+fn transmission(transmit_power_dbm: Option<i8>, security: TxSecurity) -> TxRequest<'static> {
+    TxRequest {
+        id: ID,
+        frame: FrameView::new(&[0x41, 0x88, 0x2a]).unwrap(),
+        channel: channel(20),
+        mode: TxMode::Direct,
+        transmit_power_dbm,
+        max_frame_retries: 0,
+        security,
+        interface: Interface::PRIMARY,
+        time_sync: None,
+    }
+}
+
+/// A request's transmit power is checked against the published levels: a
+/// power outside them, or any power without them, is refused and the radio
+/// stays where it was.
+#[test]
+fn a_request_power_outside_the_capability_is_refused() {
+    let mut machine = RadioStateMachine::new(RadioCapabilities::NONE).with_transmit_power(POWER);
+    machine.enable().unwrap();
+    assert_eq!(
+        machine.admit(RadioCommand::Transmit(transmission(
+            Some(11),
+            TxSecurity::Radio
+        ))),
+        Err(CommandError::TransmitPower(
+            TransmitPowerError::OutOfRange {
+                requested_dbm: 11,
+                lowest_dbm: -10,
+                highest_dbm: 10,
+            }
+        ))
+    );
+    assert_eq!(machine.state(), RadioState::Resting(RestingState::Sleeping));
+    machine
+        .admit(RadioCommand::Transmit(transmission(
+            Some(-10),
+            TxSecurity::Radio,
+        )))
+        .unwrap();
+
+    let mut fixed = enabled(RadioCapabilities::NONE);
+    assert_eq!(
+        fixed.admit(RadioCommand::Transmit(transmission(
+            Some(0),
+            TxSecurity::Radio
+        ))),
+        Err(CommandError::TransmitPower(TransmitPowerError::Unsupported))
+    );
+    fixed
+        .admit(RadioCommand::Transmit(transmission(
+            None,
+            TxSecurity::Radio,
+        )))
+        .unwrap();
+}
+
+/// A request that carries its own CCM* key needs the security offload.
+#[test]
+fn a_request_key_needs_the_security_offload() {
+    let key = TxSecurity::Key {
+        key: [7; 16],
+        address: [1; 8],
+    };
+    let mut machine = enabled(RadioCapabilities::NONE);
+    assert_eq!(
+        machine.admit(RadioCommand::Transmit(transmission(None, key))),
+        Err(CommandError::Unsupported {
+            command: CommandKind::Transmit,
+            required: RadioCapabilities::SECURITY_OFFLOAD,
+        })
+    );
+    enabled(RadioCapabilities::SECURITY_OFFLOAD)
+        .admit(RadioCommand::Transmit(transmission(None, key)))
+        .unwrap();
 }

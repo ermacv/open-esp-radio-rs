@@ -5,10 +5,10 @@ use oer_ieee802154::ClockRelation;
 use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, CorrelationIds, CslReceiver,
     EnergyScanRequest, EnhancedAckGeneration, EventsLost, FrameCounterUpdate, FrameView,
-    Ieee802154Instant, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError,
-    LifecycleEvent, LinkMetrics, PendingTableHalf, ProbingInitiator, RadioCommand, RadioEvent,
-    RadioSetting, ReceivedFrame, RequestId, ScheduledReceiveRequest, SettingError, TimeSync,
-    TxMode, TxRequest, TxSecurity,
+    Ieee802154Capabilities, Ieee802154Instant, Ieee802154RadioPort, Interface, LifecycleCommand,
+    LifecycleError, LifecycleEvent, LinkMetrics, PendingTableHalf, ProbingInitiator, RadioCommand,
+    RadioEvent, RadioSetting, ReceivedFrame, RequestId, ScheduledReceiveRequest, SettingError,
+    TimeSync, TxMode, TxRequest, TxSecurity,
 };
 use oer_time::Clock;
 use openthread_radio::{
@@ -18,9 +18,9 @@ use openthread_radio::{
 };
 
 use crate::frames::{
-    CSL_ACCURACY_PPM, CSL_UNCERTAINTY, TransmitFailure, csl_period, extended_address,
-    pending_changes, pending_mode, probing_initiator, psdu_mac, radio_time, scan_micros,
-    sent_ack_security, transmit_failure, tx_security, write_applied_security, write_psdu,
+    TransmitFailure, csl_period, extended_address, pending_changes, pending_mode,
+    probing_initiator, psdu_mac, radio_time, scan_micros, sent_ack_security, transmit_failure,
+    tx_security, write_applied_security, write_psdu,
 };
 
 /// The PHY capabilities the radio reports, as ESP-IDF's OpenThread port
@@ -32,38 +32,6 @@ pub const OPEN_THREAD_RADIO_CAPABILITIES: Capabilities = Capabilities::ACK_TIMEO
     .union(Capabilities::TRANSMIT_SEC)
     .union(Capabilities::RECEIVE_TIMING)
     .union(Capabilities::TRANSMIT_TIMING);
-
-/// Figures the radio reports to OpenThread.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct OpenThreadRadioDefaults {
-    /// Transmit power in dBm.
-    pub tx_power_dbm: i8,
-    /// CCA energy threshold in dBm.
-    pub cca_threshold_dbm: i8,
-    /// Receive sensitivity in dBm.
-    pub receive_sensitivity_dbm: i8,
-}
-
-impl OpenThreadRadioDefaults {
-    /// The Kconfig default `CONFIG_IEEE802154_CCA_THRESHOLD` of ESP-IDF
-    /// (`esp_ieee802154_get_cca_threshold`), in dBm.
-    pub const ESP_IDF_CCA_THRESHOLD_DBM: i8 = -75;
-
-    /// The figures ESP-IDF's OpenThread port reports for a chip whose
-    /// driver gives every channel `tx_power_dbm` (`ieee802154_pib_init`
-    /// takes the highest level of the chip's transmit power table,
-    /// `esp_ieee802154_get_txpower`) and whose receive sensitivity is
-    /// `receive_sensitivity_dbm` (`IEEE802154_RX_SENSITIVITY` of the chip's
-    /// `ieee802154_ll.h`, `esp_ieee802154_get_receive_sensitivity`), with
-    /// the Kconfig CCA threshold [`Self::ESP_IDF_CCA_THRESHOLD_DBM`].
-    pub const fn esp_idf(tx_power_dbm: i8, receive_sensitivity_dbm: i8) -> Self {
-        Self {
-            tx_power_dbm,
-            cca_threshold_dbm: Self::ESP_IDF_CCA_THRESHOLD_DBM,
-            receive_sensitivity_dbm,
-        }
-    }
-}
 
 /// An IEEE 802.15.4 radio port as an OpenThread radio.
 ///
@@ -79,7 +47,6 @@ impl OpenThreadRadioDefaults {
 // CAPABILITY: ieee802154-product-stacks-thread
 pub struct OpenThreadRadio<'r, P: Ieee802154RadioPort, const QUEUE: usize> {
     port: &'r P,
-    defaults: OpenThreadRadioDefaults,
     /// Received-frame events.
     received: Deque<P::Event, QUEUE>,
     /// Received frames were lost since OpenThread last received.
@@ -89,6 +56,8 @@ pub struct OpenThreadRadio<'r, P: Ieee802154RadioPort, const QUEUE: usize> {
     ids: CorrelationIds,
     /// The CCA threshold the radio holds, in dBm.
     cca_threshold: Option<i8>,
+    /// The port's highest transmit power in dBm, read by `init`.
+    highest_power_dbm: Option<i8>,
     /// The source-match table the radio holds.
     src_match: SrcMatchConfig,
 }
@@ -125,16 +94,18 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
     /// Drive `port`, which the composition started. OpenThread reads the
     /// radio clock through [`MonotonicRadioClock`] over the monotonic clock
     /// the composition binds the port to, and the live RSSI through
-    /// [`PortRssi`]; the composition passes both to its constructor.
-    pub const fn new(port: &'r P, defaults: OpenThreadRadioDefaults) -> Self {
+    /// [`PortRssi`]; the composition passes both to its constructor. The
+    /// transmit power, CCA threshold and receive sensitivity OpenThread
+    /// starts from are the port's [`Ieee802154Capabilities`].
+    pub const fn new(port: &'r P) -> Self {
         Self {
             port,
-            defaults,
             received: Deque::new(),
             receive_lost: false,
             pending: None,
             ids: CorrelationIds::starting_at(1),
             cca_threshold: None,
+            highest_power_dbm: None,
             src_match: SrcMatchConfig::new(),
         }
     }
@@ -154,10 +125,9 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
 
     /// Give the radio OpenThread's CCA threshold, as the port's
     /// `otPlatRadioSetCcaEnergyDetectThreshold` does, when it changed.
-    async fn apply_cca_threshold(&mut self, threshold: i8) -> Result<(), RadioErrorKind> {
+    fn apply_cca_threshold(&mut self, threshold: i8) -> Result<(), RadioErrorKind> {
         if self.cca_threshold != Some(threshold) {
-            self.configure(Configuration::CcaThresholdDbm(threshold))
-                .await?;
+            self.apply(RadioSetting::CcaThresholdDbm(threshold))?;
             self.cca_threshold = Some(threshold);
         }
         Ok(())
@@ -346,7 +316,7 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
             return (Err(RadioErrorKind::TxInvalid), None);
         };
         if let Some(threshold) = cca_threshold
-            && let Err(error) = self.apply_cca_threshold(threshold).await
+            && let Err(error) = self.apply_cca_threshold(threshold)
         {
             return (Err(error), None);
         }
@@ -367,7 +337,12 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
                 frame,
                 channel,
                 mode,
-                transmit_power_dbm: Some(power),
+                // OpenThread's power is an upper bound: above the port's
+                // levels the radio sends at its highest.
+                transmit_power_dbm: Some(match self.highest_power_dbm {
+                    Some(highest) => power.min(highest),
+                    None => power,
+                }),
                 max_frame_retries: 0,
                 security,
                 interface: Interface::PRIMARY,
@@ -433,6 +408,19 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
         if self.port.clock_info().monotonic != Some(ClockRelation::IDENTICAL) {
             return Err(RadioErrorKind::Other);
         }
+        // OpenThread starts from the port's transmit power, CCA threshold,
+        // sensitivity and CSL timing.
+        let Ieee802154Capabilities {
+            transmit_power: Some(transmit_power),
+            cca_threshold: Some(cca_threshold),
+            receive_sensitivity_dbm,
+            csl: Some(csl),
+            ..
+        } = self.port.capabilities()
+        else {
+            return Err(RadioErrorKind::Other);
+        };
+        self.highest_power_dbm = Some(transmit_power.levels.highest_dbm());
         self.settle().await;
         self.enable().await?;
         // The radio secures frames and enhanced ACKs with OpenThread's keys,
@@ -445,12 +433,11 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
         // Link margins are measured from the receive sensitivity the radio
         // reports; ESP-IDF's port leaves the noise floor at zero.
         self.apply(RadioSetting::EnhancedAck(Some(EnhancedAckGeneration {
-            noise_floor_dbm: self.defaults.receive_sensitivity_dbm,
+            noise_floor_dbm: receive_sensitivity_dbm,
         })))?;
         // The radio holds the threshold OpenThread starts from.
         self.cca_threshold = None;
-        self.apply_cca_threshold(self.defaults.cca_threshold_dbm)
-            .await?;
+        self.apply_cca_threshold(cca_threshold.reset_dbm)?;
         // And the empty source-match table it starts from: every poll is
         // answered with frame pending.
         self.src_match = SrcMatchConfig::new();
@@ -464,11 +451,11 @@ impl<P: Ieee802154RadioPort, const QUEUE: usize> Radio for OpenThreadRadio<'_, P
         Ok(RadioCaps {
             phy: OPEN_THREAD_RADIO_CAPABILITIES,
             mac: MacCapabilities::all(),
-            receive_sensitivity: self.defaults.receive_sensitivity_dbm,
-            default_tx_power: self.defaults.tx_power_dbm,
-            default_cca_threshold: self.defaults.cca_threshold_dbm,
-            csl_accuracy: CSL_ACCURACY_PPM,
-            csl_uncertainty: CSL_UNCERTAINTY,
+            receive_sensitivity: receive_sensitivity_dbm,
+            default_tx_power: transmit_power.reset_dbm,
+            default_cca_threshold: cca_threshold.reset_dbm,
+            csl_accuracy: csl.accuracy_ppm,
+            csl_uncertainty: csl.uncertainty_10us,
         })
     }
 

@@ -4,10 +4,10 @@
 
 //! The [`openthread`] crate's `Radio` over any IEEE 802.15.4 radio port
 //! ([`oer_ieee802154::Ieee802154RadioPort`]), such as the Espressif
-//! IEEE 802.15.4 runtime. The composition supplies what the port does not
-//! carry: the transmit power and receive sensitivity OpenThread is told
-//! ([`OpenThreadRadioDefaults`]), the synchronous live RSSI read, and the
-//! mapping of a role change's coexistence priority
+//! IEEE 802.15.4 runtime. OpenThread starts from the transmit power, CCA
+//! threshold and receive sensitivity of the port's capabilities. The
+//! composition supplies what the port does not carry: the synchronous live
+//! RSSI read, and the mapping of a role change's coexistence priority
 //! ([`frames::role_txrx_priority`]) to its radio's coexistence levels.
 //!
 //! It builds on `openthread-radio`, the C-free trait crate of the
@@ -33,7 +33,4 @@ pub mod frames;
 
 mod radio;
 
-pub use radio::{
-    MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
-    PortRssi,
-};
+pub use radio::{MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PortRssi};

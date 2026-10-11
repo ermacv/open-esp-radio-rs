@@ -12,9 +12,10 @@
 //! lock as owned values through a bounded queue that any executor may await.
 //! [`Ieee802154Runtime::install`] returns the installed radio's two
 //! handles. The [`Ieee802154Port`] is the [`Ieee802154RadioPort`](oer_ieee802154::Ieee802154RadioPort) of the
-//! protocol's one event consumer: commands, events, the clock, the state and
-//! the settings the interrupt handler reads (MAC keys, CSL, the
-//! enhanced-ACK generator, armed transmit security). The
+//! protocol's one event consumer: commands, events, the clock, the state,
+//! the capabilities and the settings (MAC keys, CSL and the enhanced-ACK
+//! generator the interrupt handler reads, and the transmit power and CCA
+//! the next operation publishes). The
 //! [`Ieee802154Control`] stays with the composition: shared-PHY maintenance,
 //! coexistence, statistics, the frame-pending table and the uninstall, which
 //! consumes both. Neither handle exists without an installed radio, so no
@@ -42,8 +43,9 @@
 //! `Quiesced`), leaves receive mode and lends the hardware out;
 //! [`Ieee802154Control::resume`] takes it back, enters receive mode again
 //! and enables the port (`Enabled`). A quiesced port holds the radio
-//! still: it refuses every command and setting that writes the hardware
-//! as quiesced and admits software configuration; while the hardware is lent, lifecycle commands are refused
+//! still: it refuses every command that writes the hardware as quiesced and
+//! admits software configuration and every setting, none of which writes
+//! the hardware; while the hardware is lent, lifecycle commands are refused
 //! as busy too.
 
 #[cfg(test)]
@@ -1041,13 +1043,11 @@ impl<
     }
 }
 
-/// Apply one portable setting to the radio under the runtime's lock.
-///
-/// `hardware` is `None` while a pause holds it: a setting that writes it is
-/// refused as quiesced.
-fn apply_setting<L: Ieee802154LowLevel + ?Sized, R: Ieee802154Random>(
+/// Apply one portable setting to the radio under the runtime's lock. Every
+/// setting changes software state the interrupt context or the next
+/// operation reads, so none is refused as quiesced.
+fn apply_setting<R: Ieee802154Random>(
     radio: &mut Ieee802154Radio<'_, R>,
-    hardware: Option<&mut L>,
     setting: RadioSetting<'_>,
 ) -> Result<(), SettingError> {
     fn keys<'r, R: Ieee802154Random>(
@@ -1111,12 +1111,17 @@ fn apply_setting<L: Ieee802154LowLevel + ?Sized, R: Ieee802154Random>(
             .ok_or(SettingError::EnhancedAckDisabled)?
             .probing()
             .replace(initiators),
-        // `esp_ieee802154_set_transmit_security`; the transmission's later
-        // attempts arm it again.
-        RadioSetting::TransmitSecurity(arming) => {
-            let hardware = hardware.ok_or(SettingError::Quiesced)?;
-            radio.set_transmit_security(hardware, arming.frame, &arming.key, &arming.address);
-        }
+        // The PIB settings the next operation publishes.
+        RadioSetting::TransmitPowerDbm(power) => radio
+            .set_transmit_power(None, power)
+            .map_err(SettingError::TransmitPower)?,
+        RadioSetting::ChannelTransmitPowerDbm { channel, power_dbm } => radio
+            .set_transmit_power(Some(channel), power_dbm)
+            .map_err(SettingError::TransmitPower)?,
+        RadioSetting::CcaThresholdDbm(threshold) => radio
+            .set_cca_threshold(threshold)
+            .map_err(SettingError::CcaThreshold)?,
+        RadioSetting::CcaMode(mode) => radio.set_cca_mode(mode),
     }
     Ok(())
 }

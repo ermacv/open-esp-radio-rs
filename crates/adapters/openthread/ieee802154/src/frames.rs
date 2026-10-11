@@ -147,14 +147,6 @@ pub const fn radio_time(now: u64, low: u32) -> u64 {
     now.wrapping_add_signed(offset as i64)
 }
 
-/// The CSL drift of ESP-IDF's OpenThread port, in ± ppm
-/// (`CONFIG_OPENTHREAD_CSL_ACCURACY` default).
-pub const CSL_ACCURACY_PPM: u8 = 50;
-
-/// The CSL uncertainty of ESP-IDF's OpenThread port, in units of 10
-/// microseconds (`CONFIG_OPENTHREAD_CSL_UNCERTAIN` default).
-pub const CSL_UNCERTAINTY: u8 = 50;
-
 /// A CSL period as OpenThread passes it (`otPlatRadioEnableCsl`, units of
 /// ten symbols) for the radio's 16-bit CSL IE field, as the port's
 /// `otMacFrameSetCslIe` truncates it.

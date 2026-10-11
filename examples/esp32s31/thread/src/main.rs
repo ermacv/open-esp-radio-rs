@@ -21,13 +21,11 @@ use esp_hal::{
 };
 use log::{error, info};
 use oer::systems::esp32s31::embassy::ieee802154::{
-    self as ieee802154, EspHalRadioPlatform, IEEE802154_DEFAULT_TX_POWER_DBM,
-    IEEE802154_RECEIVE_SENSITIVITY_DBM, Ieee802154CoexConfig, Ieee802154CoexLevel,
+    self as ieee802154, EspHalRadioPlatform, Ieee802154CoexConfig, Ieee802154CoexLevel,
     Ieee802154Parked, Ieee802154PibDefaults, Ieee802154System, Ieee802154SystemClock,
     Ieee802154SystemPort, Ieee802154SystemRuntime,
     openthread::{
-        MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio,
-        OpenThreadRadioDefaults, PortRssi,
+        MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PortRssi,
         frames::{RoleCoexPriority, role_txrx_priority},
     },
     start,
@@ -190,13 +188,7 @@ async fn thread_task(
         OT_UDP.init(OtUdpResources::new()),
     )
     .expect("OpenThread must initialize once");
-    let thread_radio = OpenThreadRadio::new(
-        port,
-        OpenThreadRadioDefaults::esp_idf(
-            IEEE802154_DEFAULT_TX_POWER_DBM,
-            IEEE802154_RECEIVE_SENSITIVITY_DBM,
-        ),
-    );
+    let thread_radio = OpenThreadRadio::new(port);
     spawner.spawn(openthread_task(ot.clone(), thread_radio).expect("OpenThread task storage"));
     spawner.spawn(runner_task(system.runtime()).expect("runner task storage"));
     spawner.spawn(role_task(ot.clone(), system, radio).expect("role task storage"));

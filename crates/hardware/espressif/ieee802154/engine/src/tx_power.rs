@@ -133,6 +133,17 @@ impl<'levels> Ieee802154TxPowerLevels<'levels> {
     }
 }
 
+impl Ieee802154TxPowerLevels<'static> {
+    /// The levels as the port publishes them.
+    pub const fn portable(self) -> oer_ieee802154::TransmitPowerLevels {
+        // Both validations accept a non-empty, non-decreasing sequence.
+        match oer_ieee802154::TransmitPowerLevels::new(self.levels_dbm) {
+            Ok(levels) => levels,
+            Err(_) => unreachable!(),
+        }
+    }
+}
+
 /// Internal field code selected from one validated provider level set.
 ///
 /// The type is public so a chip HAL can write the code; its constructor is

@@ -60,10 +60,7 @@ feature at `oer::systems::esp32s31::embassy::ieee802154`, alone:
 the `SharedRadio` and spawn its PHY tracking and coexistence schedule;
 `Ieee802154Parked::new` takes the radio's IEEE 802.15.4 partition and the
 `Ieee802154PibDefaults`, and `start` joins the shared radio with them.
-`Ieee802154MacOwners` names the runtime's owners.
-`IEEE802154_DEFAULT_TX_POWER_DBM` and `IEEE802154_RECEIVE_SENSITIVITY_DBM`
-are the chip figures ESP-IDF reports to an upper stack (the highest BTBB
-power level every channel starts at, and `IEEE802154_RX_SENSITIVITY`), and
+`Ieee802154MacOwners` names the runtime's owners, and
 `Ieee802154CoexConfig` and `Ieee802154CoexLevel` the scene levels
 `Ieee802154System::update_coexistence` takes. With the facade's
 `openthread` feature, the
@@ -73,8 +70,16 @@ is at `ieee802154::openthread`; the
 
 The runtime is a process singleton. The port `start` returns
 (`Ieee802154SystemPort`) is the client's `Ieee802154RadioPort`: it accepts portable `RadioCommand`s,
-yields `Ieee802154RadioEvent`s and applies `RadioSetting`s. The
-engine resolves transmit power through the recovered ESP32-S31 BTBB level set.
+yields `Ieee802154RadioEvent`s and applies `RadioSetting`s. Its
+`Ieee802154Capabilities` carry the figures ESP-IDF reports to an upper
+stack: the recovered ESP32-S31 BTBB transmit power levels, every channel
+starting at the highest; the CCA thresholds of ESP-IDF's
+`CONFIG_IEEE802154_CCA_THRESHOLD` range, −120 to 0 dBm, starting from the
+`Ieee802154PibDefaults`; and `IEEE802154_RX_SENSITIVITY`, −104 dBm. A
+transmit power or CCA threshold outside them is refused, never clamped; one
+inside selects the greatest power level not above it. These settings, like
+every `RadioSetting`, change software state only, so a quiesced port admits
+them.
 Enhanced ACKs follow ESP-IDF's OpenThread port: `start` installs no
 generator, so 2015 frames are delivered without an ACK, as with the vendor's
 default generator. `RadioSetting::EnhancedAck` installs a generator and
@@ -97,8 +102,9 @@ A request's `TxSecurity` carries the port's transmit information:
 which goes out as given. The transmit completion reports the frame counter
 and key index the radio wrote, which the port leaves in the stack's frame,
 and each received frame reports the frame-pending bit and the security of
-the acknowledgement it was sent. Security the upper layer arms with
-`RadioSetting::TransmitSecurity` takes precedence for the next transmission, and
+the acknowledgement it was sent. A request that carries its own CCM* key
+(`TxSecurity::Key`, as `esp_ieee802154_set_transmit_security` arms it) is
+secured with that key and nonce address instead of the MAC keys, and
 without keys a secured frame goes out as given. Frames in
 other key identifier modes reuse the address of the last mode 1
 transmission, as the port's shared `s_security_addr` does; unlike the port,

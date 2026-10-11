@@ -320,8 +320,10 @@ struct Cx<'a, L: ?Sized, E: ?Sized> {
 // CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154Engine<'storage> {
     buffers: &'storage mut Ieee802154EngineBuffers,
-    levels: Ieee802154TxPowerLevels<'storage>,
+    levels: Ieee802154TxPowerLevels<'static>,
     pib: Ieee802154Pib,
+    /// The defaults the last PIB initialization restored.
+    defaults: Ieee802154PibDefaults,
     pending_tables: [PendingTable<PENDING_TABLE_SIZE>; Ieee802154MultipanIndex::COUNT as usize],
     multipan: Option<Ieee802154Interfaces>,
     rx_when_idle_mask: u8,
@@ -345,13 +347,14 @@ impl<'storage> Ieee802154Engine<'storage> {
     /// `bt_bb_get_tx_pwr_table`.
     pub fn new(
         buffers: &'storage mut Ieee802154EngineBuffers,
-        levels: Ieee802154TxPowerLevels<'storage>,
+        levels: Ieee802154TxPowerLevels<'static>,
         defaults: Ieee802154PibDefaults,
     ) -> Self {
         Self {
             buffers,
             levels,
             pib: Ieee802154Pib::new(defaults, levels),
+            defaults,
             pending_tables: [const { PendingTable::new() };
                 Ieee802154MultipanIndex::COUNT as usize],
             multipan: None,
@@ -374,7 +377,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     // CAPABILITY: ieee802154-filtering-addressing-and-mac-automation-four-multi-pan-contexts
     pub fn new_multipan(
         buffers: &'storage mut Ieee802154EngineBuffers,
-        levels: Ieee802154TxPowerLevels<'storage>,
+        levels: Ieee802154TxPowerLevels<'static>,
         defaults: Ieee802154PibDefaults,
         interfaces: Ieee802154Interfaces,
     ) -> Self {
@@ -390,6 +393,16 @@ impl<'storage> Ieee802154Engine<'storage> {
     /// applies from the next [`Self::mac_init`], where the vendor sets it.
     pub fn set_coexistence(&mut self, coexistence: Ieee802154Coexistence) {
         self.coexistence = coexistence;
+    }
+
+    /// The defaults the last PIB initialization restored.
+    pub const fn pib_defaults(&self) -> Ieee802154PibDefaults {
+        self.defaults
+    }
+
+    /// The transmit-power provider levels.
+    pub const fn tx_power_levels(&self) -> Ieee802154TxPowerLevels<'static> {
+        self.levels
     }
 
     /// The coexistence the engine publishes.
@@ -734,6 +747,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         defaults: Ieee802154PibDefaults,
     ) {
         self.pib = Ieee802154Pib::new(defaults, self.levels);
+        self.defaults = defaults;
         self.clear_txrx_statistics();
         ll::mac_init_registers(ll, &self.coexistence);
         self.rx_buffer_clear();

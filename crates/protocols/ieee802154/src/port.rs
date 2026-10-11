@@ -15,10 +15,13 @@
 //! lifecycle are the shared [`RadioPort`] base of `oer-radio-port`, with
 //! its refusals, poisoning ([`Poisoned`]), event loss and clock relation.
 //! Its
-//! [`RadioSetting`] values carry the state the backend reads from its own
+//! [`RadioSetting`] values carry the radio configuration outside the
+//! command state machine: the state the backend reads from its own
 //! interrupt context (MAC keys and frame counters, the CSL receiver, the
-//! enhanced-ACK generator and armed transmit security); a backend changes
-//! them atomically with respect to that context and in any radio state.
+//! enhanced-ACK generator), and the transmit power and clear-channel
+//! assessment the next operation publishes, checked against the
+//! [`Ieee802154Capabilities`]. A backend changes them atomically with
+//! respect to that context and in any radio state.
 //!
 //! This module only declares the port; it never waits on it.
 
@@ -31,9 +34,13 @@ use crate::mac::link_metrics::ProbingInitiator;
 use crate::radio::{
     Ieee802154Radio, RequestId,
     capabilities::RadioCapabilities,
-    command::RadioCommand,
+    channel::Channel,
+    command::{CcaMode, RadioCommand},
     event::RadioEvent,
     interface::Interface,
+    power::{
+        CcaThresholdCapability, CcaThresholdError, TransmitPowerCapability, TransmitPowerError,
+    },
     state::{AcceptedCommand, CommandError, RadioState},
 };
 
@@ -45,6 +52,30 @@ pub struct Ieee802154Capabilities {
     /// Its addressing interfaces: one without
     /// [`RadioCapabilities::MULTI_PAN`].
     pub interfaces: u8,
+    /// The transmit power it radiates, for [`RadioSetting::TransmitPowerDbm`],
+    /// [`RadioSetting::ChannelTransmitPowerDbm`] and a request's
+    /// [`TxRequest::transmit_power_dbm`](crate::TxRequest::transmit_power_dbm);
+    /// `None` when the power is fixed.
+    pub transmit_power: Option<TransmitPowerCapability>,
+    /// The clear-channel assessment energy thresholds it accepts
+    /// ([`RadioSetting::CcaThresholdDbm`]); `None` when it has none.
+    pub cca_threshold: Option<CcaThresholdCapability>,
+    /// Its receive sensitivity in dBm: the weakest signal it receives.
+    pub receive_sensitivity_dbm: i8,
+    /// The timing a CSL peer relies on ([`RadioSetting::Csl`]); `None`
+    /// when it publishes none.
+    pub csl: Option<CslCapability>,
+}
+
+/// The timing of a backend's Coordinated Sampled Listening, as a CSL
+/// receiver reports it to its peers (`otPlatRadioGetCslAccuracy`,
+/// `otPlatRadioGetCslUncertainty`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CslCapability {
+    /// The drift of the clock that times the samples, in ± ppm.
+    pub accuracy_ppm: u8,
+    /// The fixed uncertainty of a sample time, in units of 10 microseconds.
+    pub uncertainty_10us: u8,
 }
 
 /// How a frame counter changes.
@@ -79,20 +110,6 @@ pub struct EnhancedAckGeneration {
     /// The noise floor in dBm Link Metrics probing measures link margins
     /// from.
     pub noise_floor_dbm: i8,
-}
-
-/// The security the next transmission is sent with, armed by the upper
-/// layer (`esp_ieee802154_set_transmit_security`): the transmission and its
-/// later attempts are secured with `key` and the nonce source `address`,
-/// taking precedence over the radio's MAC keys.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct TransmitSecurityArming<'frame> {
-    /// The secured frame as a `[PHR, PSDU...]` image.
-    pub frame: &'frame [u8],
-    /// The key.
-    pub key: [u8; 16],
-    /// The extended address of the nonce, in frame byte order.
-    pub address: [u8; 8],
 }
 
 /// A radio setting outside the command state machine.
@@ -137,8 +154,26 @@ pub enum RadioSetting<'a> {
     /// Replace the Link Metrics probing initiators, most recently added
     /// first ([`EnhAckProbing::replace`](crate::EnhAckProbing::replace)).
     EnhancedAckProbing(&'a [ProbingInitiator]),
-    /// Arm the security of the next transmission.
-    TransmitSecurity(TransmitSecurityArming<'a>),
+    /// Set the transmit power of every channel in dBm
+    /// (`esp_ieee802154_set_txpower`, `otPlatRadioSetTransmitPower`).
+    TransmitPowerDbm(i8),
+    /// Set the transmit power of one channel in dBm
+    /// (`esp_ieee802154_set_power_with_channel`).
+    ChannelTransmitPowerDbm {
+        /// The channel whose power changes.
+        channel: Channel,
+        /// Transmit power in dBm.
+        power_dbm: i8,
+    },
+    /// Set the energy threshold of clear-channel assessment in dBm
+    /// (`esp_ieee802154_set_cca_threshold`,
+    /// `otPlatRadioSetCcaEnergyDetectThreshold`).
+    CcaThresholdDbm(i8),
+    /// Set how clear-channel assessment decides that the channel is busy
+    /// (`esp_ieee802154_set_cca_mode`); refused
+    /// [`SettingError::Unsupported`] without
+    /// [`RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT`].
+    CcaMode(CcaMode),
 }
 
 /// Why the backend refused a [`RadioSetting`]; nothing changed.
@@ -162,6 +197,10 @@ pub enum SettingError {
         /// The IE bytes the backend holds at most.
         capacity: usize,
     },
+    /// The transmit power was refused.
+    TransmitPower(TransmitPowerError),
+    /// The CCA threshold was refused.
+    CcaThreshold(CcaThresholdError),
     /// The backend does not implement the setting.
     Unsupported,
 }
@@ -199,7 +238,8 @@ pub enum SettingError {
 /// receive and sleep, addresses and PAN identifiers) as
 /// [`CommandError::Quiesced`] and a setting that writes it as
 /// [`SettingError::Quiesced`]. A configuration the next operation publishes
-/// (pending mode and table, CCA, transmit power, promiscuity), the state,
+/// (pending mode and table, promiscuity, and the CCA and transmit-power
+/// settings), the state,
 /// frame counters, recent RSSI and software settings stay available. Shared PHY
 /// maintenance is this state too: the backend quiesces the port, holds its
 /// hardware and enables it again, refusing lifecycle commands as `Busy`

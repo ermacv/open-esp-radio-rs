@@ -22,13 +22,8 @@ use openthread_radio::{
     RadioErrorKind, RadioRssi as _, SrcMatchConfig, TxFrame,
 };
 
-use super::{
-    MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
-    PortRssi,
-};
-use crate::frames::{
-    CSL_ACCURACY_PPM, CSL_UNCERTAINTY, extended_pending_address, short_pending_address,
-};
+use super::{MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PortRssi};
+use crate::frames::{extended_pending_address, short_pending_address};
 
 mod model;
 
@@ -70,12 +65,6 @@ impl Ieee802154Random for FixedRandom {
 /// The radio clock of the bench: the runtime's clock starts here, and
 /// OpenThread reads the same time.
 const NOW_MICROS: u64 = 1_000;
-
-const DEFAULTS: OpenThreadRadioDefaults = OpenThreadRadioDefaults {
-    tx_power_dbm: 21,
-    cca_threshold_dbm: -75,
-    receive_sensitivity_dbm: -104,
-};
 
 /// 2006 data frame to short address 0x5678 of PAN 0x1234 requesting an ACK,
 /// sequence one, with the FCS OpenThread leaves room for.
@@ -122,7 +111,7 @@ fn radio() -> (&'static Bench, Thread) {
         port,
         control: core::cell::RefCell::new(control),
     }));
-    (bench, OpenThreadRadio::new(&bench.port, DEFAULTS))
+    (bench, OpenThreadRadio::new(&bench.port))
 }
 
 /// A radio OpenThread has initialized.
@@ -157,8 +146,7 @@ fn init_enables_the_radio_and_reports_the_port_capabilities() {
     assert_eq!(caps.default_tx_power, 21);
     assert_eq!(caps.default_cca_threshold, -75);
     assert_eq!(caps.receive_sensitivity, -104);
-    assert_eq!(caps.csl_accuracy, CSL_ACCURACY_PPM);
-    assert_eq!(caps.csl_uncertainty, CSL_UNCERTAINTY);
+    assert_eq!((caps.csl_accuracy, caps.csl_uncertainty), (50, 50));
     assert_eq!(runtime.port.frame_counter(Interface::PRIMARY), Ok(Some(0)));
     // A second init finds the radio enabled.
     assert!(block_on(radio.init()).is_ok());

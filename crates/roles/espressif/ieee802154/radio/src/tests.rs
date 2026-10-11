@@ -19,11 +19,12 @@ use oer_espressif_ieee802154_engine::{
     },
 };
 use oer_ieee802154::{
-    AppliedSecurity, AutoPendingMode, CSL_IE_TEMPLATE, CancelError, CcaMode, Channel, CommandError,
-    Configuration, EnergyScanRequest, FrameAddress, FramePending, FrameView, Ieee802154Instant,
-    Interface, InterfaceSetting, MacKeys, PendingTableHalf, RadioCommand, RadioEvent, RadioState,
-    RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode, TxRequest,
-    TxSecurity, TxStatus, csl_phase,
+    AppliedSecurity, AutoPendingMode, CSL_IE_TEMPLATE, CancelError, CcaMode,
+    CcaThresholdCapability, CcaThresholdError, Channel, CommandError, Configuration,
+    EnergyScanRequest, FrameAddress, FramePending, FrameView, Ieee802154Instant, Interface,
+    InterfaceSetting, MacKeys, PendingTableHalf, RadioCommand, RadioEvent, RadioState, RequestId,
+    RestingState, ScheduledReceiveRequest, SentAcknowledgement, TransmitPowerError, TxMode,
+    TxRequest, TxSecurity, TxStatus, csl_phase,
 };
 
 use super::{
@@ -415,7 +416,7 @@ fn energy_scans_and_cca_report_results_and_aborts() {
 }
 
 #[test]
-fn configuration_reaches_the_identity_and_the_pib() {
+fn configuration_and_settings_reach_the_identity_and_the_pib() {
     let mut bench = Bench::enabled();
     for configuration in [
         Configuration::PanId(0x1234),
@@ -423,13 +424,6 @@ fn configuration_reaches_the_identity_and_the_pib() {
         Configuration::ExtendedAddress([1, 2, 3, 4, 5, 6, 7, 8]),
         Configuration::Promiscuous(false),
         Configuration::AutomaticAcknowledgement(false),
-        Configuration::TransmitPowerDbm(0),
-        Configuration::ChannelTransmitPowerDbm {
-            channel: channel(15),
-            power_dbm: -3,
-        },
-        Configuration::CcaThresholdDbm(-70),
-        Configuration::CcaMode(CcaMode::CarrierAndEnergyDetection),
         Configuration::PanCoordinator(true),
     ] {
         bench
@@ -439,6 +433,13 @@ fn configuration_reaches_the_identity_and_the_pib() {
             })
             .unwrap();
     }
+    bench.radio.set_transmit_power(None, 0).unwrap();
+    bench
+        .radio
+        .set_transmit_power(Some(channel(15)), -3)
+        .unwrap();
+    bench.radio.set_cca_threshold(-70).unwrap();
+    bench.radio.set_cca_mode(CcaMode::CarrierAndEnergyDetection);
     assert_eq!(
         (
             bench.hw.panid[0],
@@ -458,35 +459,53 @@ fn configuration_reaches_the_identity_and_the_pib() {
     assert!(pib.coordinator());
 }
 
-/// CCA and per-channel power need their capabilities; the coordinator role
-/// does not.
+/// The radio publishes the engine's transmit-power levels, starting at the
+/// highest, the Kconfig CCA threshold range starting from the PIB defaults,
+/// and the chip's receive sensitivity.
 #[test]
-fn configuration_needs_the_capability_of_its_setting() {
-    use oer_ieee802154::{RadioCapabilities, RadioStateMachine};
-    let mut machine = RadioStateMachine::new(RadioCapabilities::NONE);
-    machine.enable().unwrap();
-    let configure = |configuration| RadioCommand::Configure {
-        id: RequestId::new(2),
-        configuration,
-    };
-    assert!(
-        machine
-            .admit(configure(Configuration::CcaThresholdDbm(-70)))
-            .is_err()
+fn the_radio_publishes_its_power_cca_and_sensitivity() {
+    let bench = Bench::enabled();
+    let capabilities = bench.radio.port_capabilities();
+    let power = capabilities.transmit_power.unwrap();
+    assert_eq!(power.levels.levels_dbm(), &LEVELS);
+    assert_eq!(power.reset_dbm, 10);
+    assert_eq!(
+        capabilities.cca_threshold,
+        Some(CcaThresholdCapability {
+            lowest_dbm: -120,
+            highest_dbm: 0,
+            reset_dbm: -75,
+        })
     );
-    assert!(
-        machine
-            .admit(configure(Configuration::ChannelTransmitPowerDbm {
-                channel: channel(15),
-                power_dbm: 0,
-            }))
-            .is_err()
+    assert_eq!(capabilities.receive_sensitivity_dbm, -104);
+}
+
+/// A transmit power or CCA threshold outside the published capability is
+/// refused, returning it, and the PIB keeps its value.
+#[test]
+fn a_power_or_threshold_outside_the_capability_is_refused() {
+    let mut bench = Bench::enabled();
+    for (channel, power_dbm) in [(None, 11), (Some(channel(15)), -10)] {
+        assert_eq!(
+            bench.radio.set_transmit_power(channel, power_dbm),
+            Err(TransmitPowerError::OutOfRange {
+                requested_dbm: power_dbm,
+                lowest_dbm: -9,
+                highest_dbm: 10,
+            })
+        );
+    }
+    assert_eq!(
+        bench.radio.set_cca_threshold(1),
+        Err(CcaThresholdError::OutOfRange {
+            requested_dbm: 1,
+            lowest_dbm: -120,
+            highest_dbm: 0,
+        })
     );
-    assert!(
-        machine
-            .admit(configure(Configuration::PanCoordinator(true)))
-            .is_ok()
-    );
+    let pib = bench.radio.engine().pib();
+    assert_eq!(pib.power_table(), [10; 16]);
+    assert_eq!(pib.cca_threshold(), -75);
 }
 
 /// A 2015 data frame requesting an ACK, short addresses, secured at
@@ -810,6 +829,10 @@ fn a_frame_received_during_a_backoff_is_delivered() {
 
 impl Bench {
     fn transmit_retried(&mut self, mac: &[u8], mode: TxMode, retries: u8) {
+        self.transmit_keyed(mac, mode, retries, TxSecurity::default());
+    }
+
+    fn transmit_keyed(&mut self, mac: &[u8], mode: TxMode, retries: u8, security: TxSecurity) {
         self.submit(RadioCommand::Transmit(TxRequest {
             id: RequestId::new(3),
             frame: FrameView::new(mac).unwrap(),
@@ -817,7 +840,7 @@ impl Bench {
             mode,
             transmit_power_dbm: None,
             max_frame_retries: retries,
-            security: Default::default(),
+            security,
             interface: Interface::PRIMARY,
             time_sync: None,
         }))
@@ -909,21 +932,16 @@ fn a_retried_frame_can_succeed() {
     ));
 }
 
-/// Security armed for the transmission is armed again before each later
-/// attempt, since the engine clears it when an attempt ends.
+/// The key a request carries is armed for its first attempt and again
+/// before each later one, since the engine clears it when an attempt ends.
 #[test]
-fn transmit_security_is_armed_again_for_each_retry() {
+fn a_request_key_is_armed_for_each_attempt() {
     // 2006 data frame requesting an ACK, secured at ENC-MIC-32 key mode 0.
     let secured = [
         0x69, 0x98, 0x01, 0x34, 0x12, 0xff, 0xff, 0x78, 0x56, 0x05, 1, 2, 3, 4, 0xaa, 0, 0, 0, 0,
     ];
     let mut bench = Bench::enabled();
-    let mut image = vec![secured.len() as u8 + 2];
-    image.extend_from_slice(&secured);
-    bench
-        .radio
-        .set_transmit_security(&mut bench.hw, &image, &[7; 16], &[9; 8]);
-    bench.transmit_retried(&secured, TxMode::Direct, 1);
+    bench.transmit_keyed(&secured, TxMode::Direct, 1, KEY);
     assert!(bench.hw.transmit_security);
     bench.no_ack();
     assert!(!bench.hw.transmit_security, "the failed attempt cleared it");
@@ -933,6 +951,12 @@ fn transmit_security_is_armed_again_for_each_retry() {
         .delay_elapsed(&mut bench.hw, &bench.clock, &mut bench.sink);
     assert!(bench.hw.transmit_security, "the retry armed it again");
 }
+
+/// The CCM* key and nonce source a request carries.
+const KEY: TxSecurity = TxSecurity::Key {
+    key: [7; 16],
+    address: [9; 8],
+};
 
 /// A 2006 data frame requesting an ACK, secured at ENC-MIC-32 in key
 /// identifier mode 1 with a zero counter and key index, then a payload byte
@@ -989,19 +1013,13 @@ fn the_radio_secures_each_attempt_with_its_mac_keys() {
     assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 102);
 }
 
-/// Security the upper layer arms wins over the MAC keys; without keys a
-/// secured frame goes out as given.
+/// The key a request carries wins over the MAC keys, which keep their
+/// counter; without keys a secured frame goes out as given.
 #[test]
-fn armed_security_or_no_keys_leave_the_frame_as_given() {
-    let mut image = vec![SECURED_MODE_1.len() as u8 + 2];
-    image.extend_from_slice(&SECURED_MODE_1);
-
+fn a_request_key_or_no_keys_leave_the_frame_as_given() {
     let mut bench = Bench::enabled();
     *bench.radio.mac_keys() = Some(MacKeys::new(4, [1; 16], [2; 16], [3; 16], 100));
-    bench
-        .radio
-        .set_transmit_security(&mut bench.hw, &image, &[7; 16], &[9; 8]);
-    bench.transmit_retried(&SECURED_MODE_1, TxMode::Direct, 0);
+    bench.transmit_keyed(&SECURED_MODE_1, TxMode::Direct, 0, KEY);
     assert!(bench.hw.transmit_security);
     assert_eq!(bench.transmitted_security(), ([0, 0, 0, 0], 0));
     assert_eq!(bench.radio.mac_keys().unwrap().frame_counter(), 100);

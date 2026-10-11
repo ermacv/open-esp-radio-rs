@@ -103,3 +103,31 @@ fn enhanced_or_zigbee_pending_on_any_interface_selects_the_enhanced_lookup() {
         );
     }
 }
+
+/// The defaults accept a CCA threshold of the Kconfig range, its ends
+/// included, and refuse one outside it.
+#[test]
+fn defaults_hold_a_threshold_of_the_kconfig_range() {
+    for threshold in [-120, -75, 0] {
+        let defaults = Ieee802154PibDefaults::new(Ieee802154CcaMode::Carrier, threshold).unwrap();
+        assert_eq!(defaults.cca_threshold_dbm(), threshold);
+        assert_eq!(defaults.cca_mode(), Ieee802154CcaMode::Carrier);
+    }
+    for threshold in [-121, 1] {
+        assert_eq!(
+            Ieee802154PibDefaults::new(Ieee802154CcaMode::Carrier, threshold),
+            Err(oer_ieee802154::CcaThresholdError::OutOfRange {
+                requested_dbm: threshold,
+                lowest_dbm: -120,
+                highest_dbm: 0,
+            })
+        );
+    }
+    assert_eq!(Ieee802154PibDefaults::default().cca_threshold_dbm(), -75);
+}
+
+/// The port publishes the provider levels it resolves power through.
+#[test]
+fn provider_levels_are_published_as_the_port_levels() {
+    assert_eq!(levels().portable().levels_dbm(), &LEVELS);
+}

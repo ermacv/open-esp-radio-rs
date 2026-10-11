@@ -11,20 +11,21 @@ use std::{collections::VecDeque, vec, vec::Vec};
 
 use embassy_futures::block_on;
 use oer_ieee802154::{
-    AcceptedCommand, CancelError, ClockError, ClockInfo, ClockRelation, CommandError,
-    Configuration, CslReceiver, EnhancedAckGeneration, EventsLost, FcsStatus, Frame,
+    AcceptedCommand, CancelError, CcaThresholdCapability, ClockError, ClockInfo, ClockRelation,
+    CommandError, CslCapability, CslReceiver, EnhancedAckGeneration, EventsLost, FcsStatus, Frame,
     FrameCounterUpdate, FramePending, Ieee802154Capabilities, Ieee802154Instant, Ieee802154Radio,
     Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleError, LifecycleEvent, LinkMetrics,
     MacKeys, Poisoned, PortResult, ProbingInitiator, RadioCapabilities, RadioCommand, RadioEvent,
     RadioPort, RadioSetting, RadioState, RadioStateMachine, ReceivedFrame, RequestId, RxMetadata,
-    SecurityStatus, SentAcknowledgement, SettingError, TxSecurity, TxStatus,
+    SecurityStatus, SentAcknowledgement, SettingError, TransmitPowerCapability,
+    TransmitPowerLevels, TxSecurity, TxStatus,
 };
 use openthread_radio::{
     CslConfig, EnhAckProbingConfig, EnhAckProbingInitiator, FrameCounterUpdate as OtCounter,
     MacKeys as OtKeys, Radio, RadioErrorKind, TxFrame,
 };
 
-use super::super::{OpenThreadRadio, OpenThreadRadioDefaults};
+use super::super::OpenThreadRadio;
 
 /// The model's owned event.
 #[derive(Clone, Debug)]
@@ -40,14 +41,17 @@ struct Recorded {
     commands: Vec<RadioCommand<'static>>,
     lifecycle: Vec<LifecycleCommand>,
     transmitted: Vec<(Vec<u8>, u8, TxSecurity)>,
+    powers: Vec<Option<i8>>,
     keys: Option<MacKeys>,
     csl: CslReceiver,
     enhanced_ack: Option<EnhancedAckGeneration>,
     probing: Vec<ProbingInitiator>,
+    cca_threshold: Option<i8>,
 }
 
 struct Model {
     machine: RadioStateMachine,
+    capabilities: Ieee802154Capabilities,
     /// The model clock's relation to the monotonic clock.
     monotonic: Option<ClockRelation<Ieee802154Instant, oer_time::Instant>>,
     events: VecDeque<Result<ModelEvent, EventsLost>>,
@@ -62,15 +66,39 @@ const CAPABILITIES: RadioCapabilities = RadioCapabilities::CLEAR_CHANNEL_ASSESSM
     .union(RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT)
     .union(RadioCapabilities::SCHEDULED_TRANSMIT)
     .union(RadioCapabilities::SCHEDULED_RECEIVE)
-    .union(RadioCapabilities::TRANSMIT_POWER)
     .union(RadioCapabilities::PROMISCUOUS)
     .union(RadioCapabilities::SOURCE_MATCH)
     .union(RadioCapabilities::TIME_SYNC);
 
+const TRANSMIT_POWER: TransmitPowerCapability = TransmitPowerCapability {
+    levels: match TransmitPowerLevels::new(&[-8, 0, 8]) {
+        Ok(levels) => levels,
+        Err(_) => panic!("valid levels"),
+    },
+    reset_dbm: 8,
+};
+
+const PORT_CAPABILITIES: Ieee802154Capabilities = Ieee802154Capabilities {
+    operations: CAPABILITIES,
+    interfaces: 1,
+    transmit_power: Some(TRANSMIT_POWER),
+    cca_threshold: Some(CcaThresholdCapability {
+        lowest_dbm: -120,
+        highest_dbm: 0,
+        reset_dbm: -75,
+    }),
+    receive_sensitivity_dbm: -97,
+    csl: Some(CslCapability {
+        accuracy_ppm: 20,
+        uncertainty_10us: 7,
+    }),
+};
+
 impl ModelPort {
     fn new() -> Self {
         Self(RefCell::new(Model {
-            machine: RadioStateMachine::new(CAPABILITIES),
+            machine: RadioStateMachine::new(CAPABILITIES).with_transmit_power(TRANSMIT_POWER),
+            capabilities: PORT_CAPABILITIES,
             monotonic: Some(ClockRelation::IDENTICAL),
             events: VecDeque::new(),
             recorded: Recorded::default(),
@@ -195,10 +223,7 @@ impl Ieee802154RadioPort for ModelPort {
     }
 
     fn capabilities(&self) -> Ieee802154Capabilities {
-        Ieee802154Capabilities {
-            operations: CAPABILITIES,
-            interfaces: 1,
-        }
+        self.0.borrow().capabilities
     }
 
     fn submit(
@@ -218,6 +243,7 @@ impl Ieee802154RadioPort for ModelPort {
                     request.channel.get(),
                     request.security,
                 ));
+                model.recorded.powers.push(request.transmit_power_dbm);
                 Self::complete(
                     &mut model,
                     RadioEvent::TransmitDone {
@@ -264,8 +290,17 @@ impl Ieee802154RadioPort for ModelPort {
     }
 
     fn apply(&self, setting: RadioSetting<'_>) -> PortResult<(), SettingError, Infallible> {
-        let recorded = &mut self.0.borrow_mut().recorded;
+        let model = &mut *self.0.borrow_mut();
+        let recorded = &mut model.recorded;
         match setting {
+            RadioSetting::CcaThresholdDbm(threshold) => {
+                if let Err(error) =
+                    CcaThresholdCapability::check(model.capabilities.cca_threshold, threshold)
+                {
+                    return Ok(Err(SettingError::CcaThreshold(error)));
+                }
+                recorded.cca_threshold = Some(threshold);
+            }
             RadioSetting::MacKeys {
                 key_id,
                 previous,
@@ -309,8 +344,6 @@ impl Ieee802154RadioPort for ModelPort {
     }
 }
 
-const DEFAULTS: OpenThreadRadioDefaults = OpenThreadRadioDefaults::esp_idf(8, -97);
-
 /// A frame without an ACK request, with the FCS OpenThread counts.
 const PSDU: [u8; 11] = [0x41, 0x98, 0x01, 0x34, 0x12, 0x78, 0x56, 0xaa, 0xbb, 0, 0];
 
@@ -319,16 +352,18 @@ const PSDU: [u8; 11] = [0x41, 0x98, 0x01, 0x34, 0x12, 0x78, 0x56, 0xaa, 0xbb, 0,
 #[test]
 fn the_adapter_drives_a_host_model_port() {
     let port = ModelPort::new();
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port);
 
     let caps = block_on(radio.init()).unwrap();
     assert_eq!(
         (
             caps.default_tx_power,
             caps.default_cca_threshold,
-            caps.receive_sensitivity
+            caps.receive_sensitivity,
+            caps.csl_accuracy,
+            caps.csl_uncertainty
         ),
-        (8, -75, -97)
+        (8, -75, -97, 20, 7)
     );
     {
         let model = port.0.borrow();
@@ -344,13 +379,8 @@ fn the_adapter_drives_a_host_model_port() {
                 noise_floor_dbm: -97
             })
         );
-        assert!(model.recorded.commands.iter().any(|command| matches!(
-            command,
-            RadioCommand::Configure {
-                configuration: Configuration::CcaThresholdDbm(-75),
-                ..
-            }
-        )));
+        // The threshold the radio starts with, set as a setting.
+        assert_eq!(model.recorded.cca_threshold, Some(-75));
     }
 
     block_on(radio.set_csl(CslConfig {
@@ -445,7 +475,7 @@ fn the_adapter_drives_a_host_model_port() {
 #[test]
 fn a_port_refusal_is_an_openthread_error() {
     let port = ModelPort::new();
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port);
     // Not enabled yet: the model refuses receive mode.
     assert_eq!(
         block_on(radio.set_receive(15)),
@@ -462,11 +492,11 @@ fn a_port_refusal_is_an_openthread_error() {
 fn a_port_outside_the_monotonic_epoch_is_refused() {
     let port = ModelPort::new();
     port.0.borrow_mut().monotonic = None;
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port);
     assert_eq!(block_on(radio.init()), Err(RadioErrorKind::Other));
     assert!(port.0.borrow().recorded.lifecycle.is_empty());
     port.0.borrow_mut().monotonic = Some(ClockRelation::affine(1));
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port);
     assert_eq!(block_on(radio.init()), Err(RadioErrorKind::Other));
     assert!(port.0.borrow().recorded.lifecycle.is_empty());
 }
@@ -476,7 +506,7 @@ fn a_port_outside_the_monotonic_epoch_is_refused() {
 #[test]
 fn lost_events_are_a_failed_reception() {
     let port = ModelPort::new();
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port);
     block_on(radio.init()).unwrap();
     block_on(radio.set_receive(15)).unwrap();
     port.arrive(&PSDU[..9], 15);
@@ -496,7 +526,7 @@ fn lost_events_are_a_failed_reception() {
 #[test]
 fn init_takes_the_enable_terminal_event() {
     let port = ModelPort::new();
-    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port, DEFAULTS);
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port);
     block_on(radio.init()).unwrap();
     assert!(port.0.borrow().events.is_empty());
     assert_eq!(
@@ -504,4 +534,48 @@ fn init_takes_the_enable_terminal_event() {
         [LifecycleCommand::Enable]
     );
     block_on(radio.init()).unwrap();
+}
+
+/// OpenThread starts from the port's capabilities, so a port that publishes
+/// no transmit-power, CCA threshold or CSL capability is refused before it
+/// is enabled.
+#[test]
+fn a_port_without_power_cca_or_csl_capabilities_is_refused() {
+    for capabilities in [
+        Ieee802154Capabilities {
+            transmit_power: None,
+            ..PORT_CAPABILITIES
+        },
+        Ieee802154Capabilities {
+            cca_threshold: None,
+            ..PORT_CAPABILITIES
+        },
+        Ieee802154Capabilities {
+            csl: None,
+            ..PORT_CAPABILITIES
+        },
+    ] {
+        let port = ModelPort::new();
+        port.0.borrow_mut().capabilities = capabilities;
+        let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port);
+        assert_eq!(block_on(radio.init()), Err(RadioErrorKind::Other));
+        assert!(port.0.borrow().recorded.lifecycle.is_empty());
+    }
+}
+
+/// OpenThread's frame power is an upper bound: above the port's levels the
+/// frame goes out at the highest, below them it fails without reaching the
+/// port, as does a CCA threshold outside the port's range. The radio keeps
+/// serving.
+#[test]
+fn a_frame_power_is_capped_at_the_highest_level() {
+    let port = ModelPort::new();
+    let mut radio = OpenThreadRadio::<'_, _, 4>::new(&port);
+    block_on(radio.init()).unwrap();
+    assert!(block_on(radio.transmit(&PSDU, 15, -9, None, None)).is_err());
+    assert!(block_on(radio.transmit(&PSDU, 15, 0, Some(5), None)).is_err());
+    assert!(port.0.borrow().recorded.transmitted.is_empty());
+    assert_eq!(port.0.borrow().recorded.cca_threshold, Some(-75));
+    block_on(radio.transmit(&PSDU, 15, 20, None, None)).unwrap();
+    assert_eq!(port.0.borrow().recorded.powers, [Some(8)]);
 }

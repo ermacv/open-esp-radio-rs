@@ -7,9 +7,10 @@ use super::{
     RequestId,
     capabilities::RadioCapabilities,
     channel::Channel,
-    command::{CommandKind, Configuration, InterfaceSetting, RadioCommand, TxMode},
+    command::{CommandKind, Configuration, InterfaceSetting, RadioCommand, TxMode, TxSecurity},
     event::{RadioEvent, TxStatus},
     interface::Interface,
+    power::{TransmitPowerCapability, TransmitPowerError},
 };
 
 /// Stable state to which an asynchronous operation returns.
@@ -109,6 +110,8 @@ pub enum CommandError {
         /// The radio's interface count.
         interfaces: u8,
     },
+    /// The request's transmit power was refused.
+    TransmitPower(TransmitPowerError),
     /// The controller did not publish the required capability.
     Unsupported {
         /// Rejected operation kind.
@@ -162,6 +165,7 @@ pub enum EventError {
 ///     state: RadioState::Disabled,
 ///     capabilities: RadioCapabilities::NONE,
 ///     interfaces: 1,
+///     transmit_power: None,
 /// };
 /// ```
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -169,6 +173,7 @@ pub struct RadioStateMachine {
     state: RadioState,
     capabilities: RadioCapabilities,
     interfaces: u8,
+    transmit_power: Option<TransmitPowerCapability>,
 }
 
 impl RadioStateMachine {
@@ -193,7 +198,21 @@ impl RadioStateMachine {
             state: RadioState::Disabled,
             capabilities,
             interfaces,
+            transmit_power: None,
         }
+    }
+
+    /// The same contract admitting a request's transmit power under
+    /// `capability`; without one, a request that names a power is refused
+    /// [`TransmitPowerError::Unsupported`].
+    pub const fn with_transmit_power(mut self, capability: TransmitPowerCapability) -> Self {
+        self.transmit_power = Some(capability);
+        self
+    }
+
+    /// The transmit power a request may name.
+    pub const fn transmit_power(&self) -> Option<TransmitPowerCapability> {
+        self.transmit_power
     }
 
     /// Return the immutable backend capability set.
@@ -369,15 +388,17 @@ impl RadioStateMachine {
                         required: RadioCapabilities::TIME_SYNC,
                     });
                 }
-                if request.transmit_power_dbm.is_some()
-                    && !self
-                        .capabilities
-                        .contains(RadioCapabilities::TRANSMIT_POWER)
+                if let Some(power) = request.transmit_power_dbm
+                    && let Err(error) = TransmitPowerCapability::check(self.transmit_power, power)
                 {
-                    return Err(CommandError::Unsupported {
-                        command: kind,
-                        required: RadioCapabilities::TRANSMIT_POWER,
-                    });
+                    return Err(CommandError::TransmitPower(error));
+                }
+                if matches!(request.security, TxSecurity::Key { .. }) {
+                    require_capability(
+                        self.capabilities,
+                        kind,
+                        RadioCapabilities::SECURITY_OFFLOAD,
+                    )?;
                 }
                 RadioState::Transmitting {
                     id,
@@ -572,12 +593,6 @@ const fn required_configuration_capability(configuration: Configuration) -> Radi
     match configuration {
         Configuration::Promiscuous(_) => RadioCapabilities::PROMISCUOUS,
         Configuration::AutomaticAcknowledgement(_) => RadioCapabilities::AUTOMATIC_ACKNOWLEDGEMENT,
-        Configuration::TransmitPowerDbm(_) | Configuration::ChannelTransmitPowerDbm { .. } => {
-            RadioCapabilities::TRANSMIT_POWER
-        }
-        Configuration::CcaThresholdDbm(_) | Configuration::CcaMode(_) => {
-            RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT
-        }
         Configuration::PendingMode(_)
         | Configuration::AddPendingAddress(_)
         | Configuration::RemovePendingAddress(_)

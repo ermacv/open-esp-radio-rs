@@ -398,13 +398,16 @@ as the port exists.
 `install` returns two handles that borrow its runtime, and no other value
 reaches the installed backend: the port, for the protocol's one event
 consumer, and the control, for the composition, which carries the backend's
-own operations (coexistence, statistics, diagnostic hardware reads and
-shared-PHY maintenance). The control's `uninstall` consumes both, so "not
-installed" is unrepresentable and no port call refuses as such. The
-interrupt entries and the runner stay on the runtime itself. Shared-PHY
-maintenance is a layer over `Quiesce`: the consumer sees `Quiesced` and
-`Enabled`, and meanwhile the port refuses what would touch the held
-hardware as each port's contract states for its quiesced state. A port's
+own operations (coexistence, statistics, diagnostic hardware reads and,
+for Bluetooth LE, shared-PHY maintenance). The control's `uninstall`
+consumes both, so "not installed" is unrepresentable and no port call
+refuses as such. The interrupt entries and the runner stay on the runtime
+itself. The Bluetooth LE backend's shared-PHY maintenance is a layer over
+`Quiesce`: the consumer sees `Quiesced` and `Enabled`, and meanwhile the
+port refuses what would touch the held hardware as its contract states for
+its quiesced state. The IEEE 802.15.4 backend never pauses for it: PHY
+tracking runs with the MAC receiving, and an operation that loses RF ends
+with its ordinary terminal event. A port's
 event stream lives as long as the port: `uninstall` discards the events it
 did not deliver, the terminal events still owed and a pending loss, and the
 next install's port starts with an empty stream; every event guarantee

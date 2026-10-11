@@ -28,11 +28,11 @@ use oer_hil_link::peer::{PeerLink, PeerTranscript};
 use oer_hil_protocol::{
     ieee802154::Ieee802154AirTxOutcome, ieee802154::Ieee802154SessionCoexistence,
     ieee802154::Ieee802154SessionConfig, ieee802154::Ieee802154SessionFrame,
-    ieee802154::Ieee802154SessionMaintenancePolicy, ieee802154::Ieee802154SessionPendingMode,
-    ieee802154::Ieee802154SessionPendingRequest, ieee802154::Ieee802154SessionPhyMaintenance,
-    ieee802154::Ieee802154SessionReceiveEvidence, ieee802154::Ieee802154SessionResult,
-    ieee802154::Ieee802154SessionTransmitEvidence, ieee802154::Ieee802154SessionTransmitRequest,
-    ieee802154::Ieee802154SessionTxMode, ieee802154::ieee802154_frame_crc32c,
+    ieee802154::Ieee802154SessionPendingMode, ieee802154::Ieee802154SessionPendingRequest,
+    ieee802154::Ieee802154SessionPhyMaintenance, ieee802154::Ieee802154SessionReceiveEvidence,
+    ieee802154::Ieee802154SessionResult, ieee802154::Ieee802154SessionTransmitEvidence,
+    ieee802154::Ieee802154SessionTransmitRequest, ieee802154::Ieee802154SessionTxMode,
+    ieee802154::ieee802154_frame_crc32c,
 };
 use oer_hil_workload::{
     boots::{boot_directory, for_each_boot},
@@ -231,7 +231,6 @@ fn exchange<L: PeerLink>(
                     short_address: DEVICE_SHORT,
                     extended_address: DEVICE_EXTENDED,
                     promiscuous: false,
-                    maintenance_policy: Ieee802154SessionMaintenancePolicy::Vendor,
                     background_maintenance: false,
                     enhanced_ack: true,
                     wifi_coexistence: config.wifi_coexistence,

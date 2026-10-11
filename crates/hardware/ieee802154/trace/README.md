@@ -21,7 +21,6 @@ them while the FPU is off.
 | `ieee802154.6` | 5 | `PowerSequence` | A chip HAL starts a transmission: the power-sequencing delays |
 | `ieee802154.7` | 5 | `DcdcControl` | With `PowerSequence`: the DC-DC control and which power words have reserved bits set |
 | `ieee802154.8` | 6 | `Timer` | The engine arms or stops a MAC timer, or handles its overflow |
-| `ieee802154.9` | 7 | `Lease` | The runtime pauses or resumes the radio around shared PHY work |
 
 The Domain::Ieee802154 range has twelve channels (mask bits 52 to 63);
 8 to 11 are unassigned. The two power events share one channel because they

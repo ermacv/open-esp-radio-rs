@@ -19,7 +19,6 @@
 //! | 4     | [`Interrupt`]                          | one per MAC interrupt                 |
 //! | 5     | [`PowerSequence`], [`DcdcControl`]     | one pair per transmission start       |
 //! | 6     | [`Timer`]                              | one per timer arm, stop or overflow   |
-//! | 7     | [`Lease`]                              | one per runtime pause or resume       |
 
 use core::fmt;
 
@@ -798,80 +797,6 @@ impl fmt::Display for Timer {
     }
 }
 
-/// Why the runtime kept the radio.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum PauseRefusal {
-    /// A transmission, energy scan or CCA was running.
-    Busy = 1,
-    /// The event queue had no room for the `Quiesced` and `Enabled` the
-    /// pause owes the consumer.
-    EventQueueFull = 2,
-}
-
-impl PauseRefusal {
-    const fn from_raw(raw: u32) -> Option<Self> {
-        Some(match raw {
-            1 => Self::Busy,
-            2 => Self::EventQueueFull,
-            _ => return None,
-        })
-    }
-}
-
-/// The runtime lent the MAC hardware out or took it back, around shared
-/// PHY maintenance. `receiving` is the channel receive mode left or
-/// re-entered.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Lease {
-    Paused { receiving: Option<u8> },
-    PauseRefused(PauseRefusal),
-    Resumed { receiving: Option<u8> },
-}
-
-impl Event for Lease {
-    const KIND: Kind = kind(9);
-    const CHANNEL: Channel = channel(7);
-
-    fn encode(&self) -> [u32; 2] {
-        let channel =
-            |receiving: Option<u8>| receiving.map_or(0, |channel| 1 << 8 | channel as u32);
-        match *self {
-            Self::Paused { receiving } => [0, channel(receiving)],
-            Self::PauseRefused(refusal) => [1, refusal as u32],
-            Self::Resumed { receiving } => [2, channel(receiving)],
-        }
-    }
-
-    fn decode(words: [u32; 2]) -> Option<Self> {
-        let channel = |word: u32| match word >> 8 {
-            0 if word == 0 => Some(None),
-            1 => Some(Some(word as u8)),
-            _ => None,
-        };
-        Some(match words {
-            [0, word] => Self::Paused {
-                receiving: channel(word)?,
-            },
-            [1, refusal] => Self::PauseRefused(PauseRefusal::from_raw(refusal)?),
-            [2, word] => Self::Resumed {
-                receiving: channel(word)?,
-            },
-            _ => return None,
-        })
-    }
-}
-
-impl fmt::Display for Lease {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Paused { receiving } => write!(f, "ieee802154 paused, receiving {receiving:?}"),
-            Self::PauseRefused(refusal) => write!(f, "ieee802154 pause refused {refusal:?}"),
-            Self::Resumed { receiving } => write!(f, "ieee802154 resumed, receiving {receiving:?}"),
-        }
-    }
-}
-
 oer_trace::event_set!(
     pub Ieee802154Trace: StateChange,
     TxOutcome,
@@ -881,7 +806,6 @@ oer_trace::event_set!(
     PowerSequence,
     DcdcControl,
     Timer,
-    Lease,
 );
 
 #[cfg(test)]

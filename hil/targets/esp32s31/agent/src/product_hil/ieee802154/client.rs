@@ -6,12 +6,9 @@ use esp_hal::time::Instant;
 use oer_esp32s31_ieee802154_system::{
     Ieee802154Parked, Ieee802154System, Ieee802154SystemPort, start,
 };
-use oer_esp32s31_phy::concurrent::MaintenancePolicy;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_espressif_ieee802154_engine::pib::Ieee802154PibDefaults;
-use oer_hil_protocol::{
-    ieee802154::Ieee802154AirTxOutcome, ieee802154::Ieee802154SessionMaintenancePolicy,
-};
+use oer_hil_protocol::ieee802154::Ieee802154AirTxOutcome;
 use oer_ieee802154::TxStatus;
 
 pub(super) fn now_micros() -> u64 {
@@ -55,18 +52,6 @@ impl Client {
     ) -> Option<(Ieee802154System, Ieee802154SystemPort)> {
         let started = pin!(start(self.radio, parked, self.defaults));
         started.await.ok()
-    }
-
-    /// Set the shared domain's tracking admission for this session.
-    pub(super) async fn set_maintenance_policy(&self, policy: Ieee802154SessionMaintenancePolicy) {
-        let mut guard = self.radio.lock().await;
-        guard
-            .lease()
-            .attachment_mut()
-            .set_maintenance_policy(match policy {
-                Ieee802154SessionMaintenancePolicy::Vendor => MaintenancePolicy::Vendor,
-                Ieee802154SessionMaintenancePolicy::Quiesced => MaintenancePolicy::Quiesced,
-            });
     }
 
     /// Stop the client and take its port back. Teardown holds the RF close

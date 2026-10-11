@@ -167,12 +167,6 @@ fn every_ieee802154_event_decodes_to_what_it_encoded() {
             op: TimerOp::Stopped,
         });
     }
-    for receiving in [None, Some(11), Some(26)] {
-        round_trip(Lease::Paused { receiving });
-        round_trip(Lease::Resumed { receiving });
-    }
-    round_trip(Lease::PauseRefused(PauseRefusal::EventQueueFull));
-    round_trip(Lease::PauseRefused(PauseRefusal::Busy));
 }
 
 #[test]
@@ -234,13 +228,6 @@ fn words_no_ieee802154_event_encodes_fail_to_decode() {
     assert_eq!(Timer::decode([4 << 16, 0]), None);
     assert_eq!(Timer::decode([1 << 8, 1]), None);
     assert_eq!(Timer::decode([2 << 8, 1]), None);
-    assert_eq!(Lease::decode([0, 1]), None);
-    assert_eq!(Lease::decode([0, 2 << 8]), None);
-    assert_eq!(Lease::decode([1, 0]), None);
-    assert_eq!(Lease::decode([1, 3]), None);
-    assert_eq!(Lease::decode([3, 0]), None);
-    assert_eq!(Lease::decode([3, 1]), None);
-    assert_eq!(Lease::decode([4, 0]), None);
 }
 
 #[test]
@@ -254,7 +241,6 @@ fn every_event_has_its_own_kind_and_power_events_share_a_channel() {
         PowerSequence::KIND,
         DcdcControl::KIND,
         Timer::KIND,
-        Lease::KIND,
     ];
     for (index, kind) in kinds.iter().enumerate() {
         assert_eq!(kind.domain, Domain::Ieee802154);
@@ -268,7 +254,6 @@ fn every_event_has_its_own_kind_and_power_events_share_a_channel() {
         Interrupt::CHANNEL,
         PowerSequence::CHANNEL,
         Timer::CHANNEL,
-        Lease::CHANNEL,
     ];
     for (index, channel) in channels.iter().enumerate() {
         assert!(channels[index + 1..].iter().all(|other| other != channel));

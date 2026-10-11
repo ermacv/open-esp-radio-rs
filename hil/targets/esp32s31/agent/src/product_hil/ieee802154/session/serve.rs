@@ -11,8 +11,8 @@ use oer_esp32s31_ieee802154_system::{Ieee802154PhyMaintenance, Ieee802154System}
 use oer_esp32s31_phy::ConcurrentTrackingTick;
 use oer_hil_protocol::{
     base::RejectReason, ieee802154::Ieee802154SessionConfig,
-    ieee802154::Ieee802154SessionMaintenanceCounts, ieee802154::Ieee802154SessionMaintenancePolicy,
-    ieee802154::Ieee802154SessionPhyMaintenance, ieee802154::Ieee802154SessionResult,
+    ieee802154::Ieee802154SessionMaintenanceCounts, ieee802154::Ieee802154SessionPhyMaintenance,
+    ieee802154::Ieee802154SessionResult,
 };
 use oer_ieee802154::RadioCommand;
 
@@ -121,7 +121,6 @@ async fn serve(
                     Ok(Ieee802154PhyMaintenance::AwaitingOtherClients) => {
                         Ieee802154SessionPhyMaintenance::AwaitingOtherClients
                     }
-                    Ok(Ieee802154PhyMaintenance::Busy) => Ieee802154SessionPhyMaintenance::Busy,
                     Err(_) => Ieee802154SessionPhyMaintenance::Failed,
                 };
                 publish_event_reliably(
@@ -170,21 +169,6 @@ async fn serve(
     }
 }
 
-const fn count(
-    mut counts: Ieee802154SessionMaintenanceCounts,
-    outcome: Ieee802154PhyMaintenance,
-) -> Ieee802154SessionMaintenanceCounts {
-    match outcome {
-        Ieee802154PhyMaintenance::NotDue => counts.not_due = counts.not_due.saturating_add(1),
-        Ieee802154PhyMaintenance::Tracked => counts.tracked = counts.tracked.saturating_add(1),
-        Ieee802154PhyMaintenance::AwaitingOtherClients => {
-            counts.awaiting_other_clients = counts.awaiting_other_clients.saturating_add(1)
-        }
-        Ieee802154PhyMaintenance::Busy => counts.busy = counts.busy.saturating_add(1),
-    }
-    counts
-}
-
 /// The radio's periodic tracking (`RadioSystem::run_tracking_until`) until
 /// `stop` resolves, with each tick counted. A running tick always
 /// completes. Returns whether every tick succeeded; the session's client
@@ -228,18 +212,8 @@ pub(super) async fn serve_session(
     if config.background_maintenance {
         let stop = Signal::<CriticalSectionRawMutex, ()>::new();
         let maintenance = async {
-            let maintained = match config.maintenance_policy {
-                // The domain's own periodic loop, as the vendor timer runs it.
-                Ieee802154SessionMaintenancePolicy::Vendor => {
-                    track_until(client.radio, stop.wait(), counts).await
-                }
-                Ieee802154SessionMaintenancePolicy::Quiesced => system
-                    .maintain_phy_until(client.radio, stop.wait(), |outcome| {
-                        counts.set(count(counts.get(), outcome))
-                    })
-                    .await
-                    .is_ok(),
-            };
+            // The domain's own periodic loop, as the vendor timer runs it.
+            let maintained = track_until(client.radio, stop.wait(), counts).await;
             if !maintained {
                 let mut failed = counts.get();
                 failed.failed = true;

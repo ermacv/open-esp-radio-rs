@@ -131,9 +131,6 @@ pub(in crate::product_hil) async fn run_session(
         received: Received::default(),
         lost: false,
     };
-    client
-        .set_maintenance_policy(config.maintenance_policy)
-        .await;
     let started = match session.configure(config).await {
         Ok(()) => Ieee802154SessionResult::Done,
         Err(result) => result,

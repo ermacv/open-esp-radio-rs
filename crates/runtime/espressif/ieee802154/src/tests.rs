@@ -28,9 +28,8 @@ use oer_time::Duration;
 use oer_time_virtual::VirtualClock;
 
 use super::{
-    Hardware, IEEE802154_RADIO_CAPABILITIES, Ieee802154Control, Ieee802154Port,
-    Ieee802154RadioEvent, Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts,
-    Ieee802154TxRxStatistics,
+    IEEE802154_RADIO_CAPABILITIES, Ieee802154Control, Ieee802154Port, Ieee802154RadioEvent,
+    Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts, Ieee802154TxRxStatistics,
 };
 
 static LEVELS: [i8; 1] = [0];
@@ -373,10 +372,6 @@ fn lifecycle_commands_end_with_terminal_events() {
         block_on(runtime.port.lifecycle(LifecycleCommand::Disable)),
         Ok(Err(LifecycleError::AlreadyInState))
     );
-    // The runtime's own identities lie in the backend-reserved range.
-    assert!(oer_ieee802154::Correlation::is_backend_reserved(
-        super::PAUSE_REQUEST
-    ));
 }
 
 /// `Disable` with a transmission in flight ends it with its terminal
@@ -631,226 +626,6 @@ fn the_pending_mode_reaches_the_pib_of_the_installed_radio() {
             .pending_mode(oer_espressif_ieee802154_engine::types::Ieee802154MultipanIndex::CONTEXT0)
     });
     assert_eq!(mode, oer_ieee802154::AutoPendingMode::Enhanced);
-}
-
-/// A pause is a layer over the port's lifecycle: it quiesces the enabled
-/// port, leaves receive mode and lends the hardware out; meanwhile the port
-/// refuses commands as quiesced, lifecycle commands as busy and a hardware
-/// setting as quiesced, and the resume enters receive mode again and
-/// enables the port.
-#[test]
-fn pausing_leaves_receive_mode_and_resuming_enters_it_again() {
-    let mut runtime = enabled::<4>();
-    runtime
-        .port
-        .submit(RadioCommand::Receive {
-            id: RequestId::new(2),
-            channel: channel(15),
-        })
-        .unwrap()
-        .unwrap();
-    runtime.with_model(|hardware| hardware.recent_rssi = -61);
-    let mut paused = runtime.control.pause().unwrap();
-    assert_eq!(paused.receiving(), Some(channel(15)));
-    assert_eq!(state(&runtime), RadioState::Resting(RestingState::Sleeping));
-    let _hardware: &mut Ieee802154LlModel = paused.hardware_mut();
-    assert_eq!(
-        next(&runtime),
-        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced))
-    );
-    // Nothing reaches the lent hardware.
-    assert_eq!(
-        runtime.port.submit(RadioCommand::Sleep {
-            id: RequestId::new(3)
-        }),
-        Ok(Err(CommandError::Quiesced))
-    );
-    // A configuration the next operation publishes needs no hardware.
-    assert!(matches!(
-        runtime.port.submit(RadioCommand::Configure {
-            id: RequestId::new(8),
-            configuration: oer_ieee802154::Configuration::PendingMode(
-                oer_ieee802154::AutoPendingMode::Enhanced,
-            ),
-        }),
-        Ok(Ok(_))
-    ));
-    assert_eq!(
-        block_on(runtime.port.lifecycle(LifecycleCommand::Disable)),
-        Ok(Err(LifecycleError::Busy))
-    );
-    assert_eq!(
-        block_on(runtime.port.cancel(RequestId::new(2))),
-        Ok(Err(CancelError::NotRunning))
-    );
-    assert_eq!(
-        runtime.port.apply(RadioSetting::CcaThresholdDbm(-70)),
-        Ok(Ok(()))
-    );
-    // A software setting, the state and the RSSI it read stay available.
-    assert_eq!(
-        runtime.port.apply(RadioSetting::Csl(CslReceiver {
-            period: 100,
-            sample_time: 5_000,
-        })),
-        Ok(Ok(()))
-    );
-    assert_eq!(runtime.port.recent_rssi(), Ok(-61));
-    runtime.on_interrupt();
-
-    runtime.control.resume(paused);
-    assert_eq!(
-        state(&runtime),
-        RadioState::Resting(RestingState::Receiving {
-            channel: channel(15)
-        })
-    );
-    assert_eq!(
-        next(&runtime),
-        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
-    );
-    assert!(runtime.events.take().is_none());
-    // Admission is open again.
-    runtime.port.submit(transmit(4)).unwrap().unwrap();
-}
-
-#[test]
-fn a_sleeping_radio_resumes_asleep() {
-    let mut runtime = enabled::<4>();
-    let paused = runtime.control.pause().unwrap();
-    assert_eq!(paused.receiving(), None);
-    runtime.control.resume(paused);
-    assert_eq!(state(&runtime), RadioState::Resting(RestingState::Sleeping));
-    assert_eq!(
-        next(&runtime),
-        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced))
-    );
-    assert_eq!(
-        next(&runtime),
-        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
-    );
-}
-
-/// A port the consumer quiesced or disabled stays so: the pause and the
-/// resume report nothing.
-#[test]
-fn a_quiesced_or_disabled_port_pauses_without_events() {
-    let mut runtime = enabled::<4>();
-    block_on(runtime.port.lifecycle(LifecycleCommand::Quiesce))
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        next(&runtime),
-        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced))
-    );
-    let paused = runtime.control.pause().unwrap();
-    runtime.control.resume(paused);
-    assert!(runtime.events.take().is_none());
-    assert_eq!(
-        runtime.port.submit(transmit(4)),
-        Ok(Err(CommandError::Quiesced))
-    );
-
-    // A disabled radio gets no event that would end the window: its
-    // commands stay refused as disabled.
-    let mut runtime = installed::<4>();
-    let paused = runtime.control.pause().unwrap();
-    assert_eq!(
-        runtime.port.submit(RadioCommand::Sleep {
-            id: RequestId::new(5)
-        }),
-        Ok(Err(CommandError::Disabled))
-    );
-    runtime.control.resume(paused);
-    assert!(runtime.events.take().is_none());
-    assert_eq!(state(&runtime), RadioState::Disabled);
-}
-
-/// A pause claims the slots of `Quiesced` and of the resume's `Enabled`
-/// before leaving receive mode: a frame the stop flushes into a nearly full
-/// queue is reported lost instead of taking the `Enabled` slot (#456).
-#[test]
-fn a_frame_flushed_by_the_pause_never_takes_the_resumes_slot() {
-    // The fault slot and three free ones.
-    let mut runtime = enabled::<4>();
-    runtime
-        .port
-        .submit(RadioCommand::Receive {
-            id: RequestId::new(2),
-            channel: channel(11),
-        })
-        .unwrap()
-        .unwrap();
-    // One frame the consumer has not taken yet.
-    runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
-    // A second frame the MAC received, not yet serviced: leaving receive
-    // mode flushes it.
-    runtime.with_installed(|radio, hardware, _| {
-        let Hardware::Held(hardware) = hardware else {
-            panic!("the radio holds its hardware");
-        };
-        let address = hardware.rx_address.expect("a receive buffer is published");
-        assert!(radio.engine().model_dma_write(address, &received_image()));
-        hardware.raise(&[Ieee802154Event::RxDone]);
-    });
-    let paused = runtime.control.pause().unwrap();
-    runtime.control.resume(paused);
-    assert!(matches!(
-        next(&runtime),
-        Ok(Ieee802154RadioEvent::Received(_))
-    ));
-    assert_eq!(
-        next(&runtime),
-        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced))
-    );
-    assert_eq!(next(&runtime), Err(EventsLost));
-    assert_eq!(
-        next(&runtime),
-        Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled))
-    );
-}
-
-#[test]
-fn a_running_operation_or_a_full_queue_refuses_the_pause() {
-    use super::Ieee802154PauseError;
-    let mut runtime = enabled::<4>();
-    runtime.port.submit(transmit(5)).unwrap().unwrap();
-    assert_eq!(
-        runtime.control.pause().err(),
-        Some(Ieee802154PauseError::Busy)
-    );
-    assert!(matches!(state(&runtime), RadioState::Transmitting { .. }));
-
-    // The fault slot and two free ones; a queued frame leaves one.
-    let mut runtime = enabled::<3>();
-    runtime
-        .port
-        .submit(RadioCommand::Receive {
-            id: RequestId::new(2),
-            channel: channel(11),
-        })
-        .unwrap()
-        .unwrap();
-    runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
-    assert_eq!(
-        runtime.control.pause().err(),
-        Some(Ieee802154PauseError::EventQueueFull)
-    );
-    // Nothing changed: the radio still receives.
-    assert_eq!(
-        state(&runtime),
-        RadioState::Resting(RestingState::Receiving {
-            channel: channel(11)
-        })
-    );
-    assert!(matches!(
-        next(&runtime),
-        Ok(Ieee802154RadioEvent::Received(_))
-    ));
-    assert!(runtime.control.pause().is_ok_and(|paused| {
-        runtime.control.resume(paused);
-        true
-    }));
 }
 
 /// An installed generator answers a 2015 frame with an enhanced ACK; the
@@ -1148,20 +923,13 @@ fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
     assert_eq!(runtime.port.frame_counter(second), Ok(None));
 }
 
-/// Pausing and resuming record the lease with the receive channel, and a
-/// received frame the full queue drops is recorded as dropped.
+/// A received frame the full queue drops is recorded as dropped.
 #[test]
-fn the_lease_and_a_dropped_frame_are_traced() {
-    use oer_ieee802154_trace::{Lease, PauseRefusal, RxDrop, RxOutcome, RxResult};
-    let leases = || -> std::vec::Vec<Lease> {
-        super::trace::take_recorded()
-            .iter()
-            .filter_map(|record| record.decode::<Lease>())
-            .collect()
-    };
+fn a_dropped_frame_is_traced() {
+    use oer_ieee802154_trace::{RxDrop, RxOutcome, RxResult};
 
     // The fault slot and two free ones.
-    let mut runtime = enabled::<3>();
+    let runtime = enabled::<3>();
     runtime
         .port
         .submit(RadioCommand::Receive {
@@ -1170,26 +938,8 @@ fn the_lease_and_a_dropped_frame_are_traced() {
         })
         .unwrap()
         .unwrap();
-    leases();
-    let paused = runtime.control.pause().unwrap();
-    runtime.control.resume(paused);
-    let mut busy = enabled::<3>();
-    busy.port.submit(transmit(5)).unwrap().unwrap();
-    assert!(busy.control.pause().is_err());
-    assert_eq!(
-        leases(),
-        [
-            Lease::Paused {
-                receiving: Some(15)
-            },
-            Lease::Resumed {
-                receiving: Some(15)
-            },
-            Lease::PauseRefused(PauseRefusal::Busy),
-        ]
-    );
-    // The consumer takes the pause's `Quiesced` and `Enabled`.
     while runtime.events.take().is_some() {}
+    super::trace::take_recorded();
 
     for _ in 0..3 {
         runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);

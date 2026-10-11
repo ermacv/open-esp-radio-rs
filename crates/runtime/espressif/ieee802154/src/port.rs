@@ -20,8 +20,8 @@ use oer_ieee802154::{
 use oer_time::Timer;
 
 use crate::{
-    Hardware, Ieee802154PauseError, Ieee802154RadioEvent, Ieee802154Random, Ieee802154Runtime,
-    Ieee802154RuntimeParts, Ieee802154RuntimePaused, Ieee802154TxRxStatistics, apply_setting,
+    Ieee802154RadioEvent, Ieee802154Random, Ieee802154Runtime, Ieee802154RuntimeParts,
+    Ieee802154TxRxStatistics, apply_setting,
 };
 
 /// The radio port of an installed [`Ieee802154Runtime`], for the protocol's
@@ -122,14 +122,10 @@ impl<
     }
 
     /// Run `entry` on the radio's hardware under the runtime's lock, for a
-    /// diagnostic read such as the MAC power sequence; `None` while a pause
-    /// holds the hardware.
-    pub fn with_hardware<O>(&self, entry: impl FnOnce(&mut H) -> O) -> Option<O> {
+    /// diagnostic read such as the MAC power sequence.
+    pub fn with_hardware<O>(&self, entry: impl FnOnce(&mut H) -> O) -> O {
         self.runtime
-            .with_installed(|_, hardware, _| match hardware {
-                Hardware::Held(hardware) => Some(entry(hardware)),
-                Hardware::Lent { .. } => None,
-            })
+            .with_installed(|_, hardware, _| entry(hardware))
     }
 
     /// End the operation in flight, disable the radio and take the engine
@@ -140,7 +136,7 @@ impl<
     ///
     /// # Panics
     ///
-    /// `port` belongs to another runtime, or the radio is paused.
+    /// `port` belongs to another runtime.
     pub fn uninstall(
         self,
         port: Ieee802154Port<'_, Ieee802154Runtime<'storage, M, H, T, R, EVENTS>>,
@@ -162,43 +158,6 @@ impl<
     const EVENTS: usize,
 > Ieee802154Control<'_, Ieee802154Runtime<'storage, M, H, T, R, EVENTS>>
 {
-    /// Stop the MAC for shared PHY maintenance, as a layer over the port's
-    /// lifecycle: an enabled port the consumer has not quiesced is quiesced
-    /// (the consumer takes `Quiesced`), a receiving radio leaves receive
-    /// mode, and the hardware is lent out. The caller then closes the
-    /// platform CPU route.
-    ///
-    /// Until [`Self::resume`], the port holds the radio still as a quiesced
-    /// port does: it refuses commands that write the hardware as
-    /// [`CommandError::Quiesced`] (a disabled radio's as
-    /// [`CommandError::Disabled`]) and a setting that
-    /// writes the hardware as [`SettingError::Quiesced`]; lifecycle commands
-    /// are refused as [`LifecycleError::Busy`]. Its state, frame counters,
-    /// recent RSSI and software settings stay available.
-    ///
-    /// # Errors
-    ///
-    /// An operation with a pending terminal event is running, or the event
-    /// queue has no room for the `Quiesced` and `Enabled` the pause owes;
-    /// nothing changes.
-    ///
-    /// # Panics
-    ///
-    /// The radio is paused already.
-    pub fn pause(&mut self) -> Result<Ieee802154RuntimePaused<H>, Ieee802154PauseError> {
-        self.runtime.pause()
-    }
-
-    /// Take a paused radio's hardware back, enter receive mode again if it
-    /// was receiving and enable the port the pause quiesced (the consumer
-    /// takes `Enabled`). Open the platform CPU route afterwards.
-    ///
-    /// # Panics
-    ///
-    /// The radio is not paused.
-    pub fn resume(&mut self, paused: Ieee802154RuntimePaused<H>) {
-        self.runtime.resume(paused);
-    }
 }
 
 impl<M: RawMutex, H, T: Timer, R: Ieee802154Random, const EVENTS: usize> RadioPort
@@ -292,15 +251,11 @@ where
     }
 
     /// The live RSSI (`esp_ieee802154_get_recent_rssi`), read from the
-    /// hardware whatever the radio's state, as the vendor reads it; while a
-    /// pause holds the hardware, the value it read last.
+    /// hardware whatever the radio's state, as the vendor reads it.
     // CAPABILITY: ieee802154-phy-and-rf-rssi
     fn recent_rssi(&self) -> Result<i8, Poisoned<Infallible>> {
         Ok(self
             .runtime
-            .with_installed(|_, hardware, _| match hardware {
-                Hardware::Held(hardware) => hardware.recent_rssi(),
-                Hardware::Lent { recent_rssi } => *recent_rssi,
-            }))
+            .with_installed(|_, hardware, _| hardware.recent_rssi()))
     }
 }

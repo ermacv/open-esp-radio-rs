@@ -511,8 +511,6 @@ fn ieee802154_session(capture: &SerialCapture) -> Result<()> {
                     short_address: reference::SHORT_ADDRESS,
                     extended_address: reference::EXTENDED_ADDRESS,
                     promiscuous: false,
-                    maintenance_policy:
-                        oer_hil_protocol::ieee802154::Ieee802154SessionMaintenancePolicy::Vendor,
                     background_maintenance: false,
                     enhanced_ack: false,
                     wifi_coexistence: false,

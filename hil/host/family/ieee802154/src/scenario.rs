@@ -83,28 +83,6 @@ pub struct BackgroundMaintenance {
     pub channel: u8,
     /// Tracking periods the session runs.
     pub periods: u8,
-    pub policy: MaintenancePolicy,
-}
-
-/// Shared PHY tracking admission under test.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum MaintenancePolicy {
-    Vendor,
-    Quiesced,
-}
-
-impl MaintenancePolicy {
-    const fn session(self) -> oer_hil_protocol::ieee802154::Ieee802154SessionMaintenancePolicy {
-        match self {
-            Self::Vendor => {
-                oer_hil_protocol::ieee802154::Ieee802154SessionMaintenancePolicy::Vendor
-            }
-            Self::Quiesced => {
-                oer_hil_protocol::ieee802154::Ieee802154SessionMaintenancePolicy::Quiesced
-            }
-        }
-    }
 }
 
 /// An exchange with the IEEE 802.15.4 reference peer.
@@ -338,7 +316,6 @@ impl Workload for Ieee802154Scenario {
                 ieee802154::background_maintenance::Config {
                     boots: maintenance.boots,
                     channel: maintenance.channel,
-                    policy: maintenance.policy.session(),
                     periods: maintenance.periods,
                 },
                 output,

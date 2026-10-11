@@ -467,8 +467,6 @@ pub struct Ieee802154SessionConfig {
     /// Extended address in over-the-air byte order.
     pub extended_address: [u8; 8],
     pub promiscuous: bool,
-    /// Admission of shared PHY tracking in this session.
-    pub maintenance_policy: Ieee802154SessionMaintenancePolicy,
     /// Track the shared PHY in the background once per tracking period,
     /// instead of on `MaintainIeee802154SessionPhy` requests.
     pub background_maintenance: bool,
@@ -488,16 +486,6 @@ pub struct Ieee802154SessionCoexistence {
     pub enabled: bool,
     /// Leaving coexistence at the stop failed.
     pub disable_failed: bool,
-}
-
-/// When shared PHY tracking may start.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Schema)]
-pub enum Ieee802154SessionMaintenancePolicy {
-    /// ESP-IDF's admission: tracking runs with the radio running.
-    #[default]
-    Vendor,
-    /// The device pauses its MAC and proves quiescence first.
-    Quiesced,
 }
 
 impl Ieee802154SessionConfig {
@@ -660,12 +648,10 @@ pub struct Ieee802154SessionRecentRssi {
 pub enum Ieee802154SessionPhyMaintenance {
     /// No tracking was due.
     NotDue,
-    /// Tracking ran inside the device's quiescence window.
+    /// Tracking ran with the radio running.
     Tracked,
     /// Tracking is due, but another radio client is active.
     AwaitingOtherClients,
-    /// An operation was running.
-    Busy,
     /// The domain rejected the maintenance or tracking failed.
     #[default]
     Failed,
@@ -677,7 +663,6 @@ pub struct Ieee802154SessionMaintenanceCounts {
     pub not_due: u16,
     pub tracked: u16,
     pub awaiting_other_clients: u16,
-    pub busy: u16,
     /// An attempt failed and background maintenance ended.
     pub failed: bool,
 }

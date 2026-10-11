@@ -179,10 +179,6 @@ pub enum RadioSetting<'a> {
 /// Why the backend refused a [`RadioSetting`]; nothing changed.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SettingError {
-    /// The quiesced port holds the radio still
-    /// ([`LifecycleCommand::Quiesce`]): a setting that writes the hardware
-    /// waits for the port's `Enabled`.
-    Quiesced,
     /// The setting names an interface the radio does not have.
     UnknownInterface {
         /// The rejected interface.
@@ -213,8 +209,9 @@ pub enum SettingError {
 /// `Err` is a refusal and nothing changed; the outer one is [`Poisoned`],
 /// after which only a reset restores the port. The other calls return only
 /// the poison. The port value exists only while its backend is installed,
-/// so no call is refused as not installed; shared PHY maintenance is a
-/// layer over [`LifecycleCommand::Quiesce`].
+/// so no call is refused as not installed. Shared PHY maintenance never
+/// pauses the port: an operation that loses RF ends with its ordinary
+/// terminal event.
 ///
 /// # Events
 ///
@@ -236,17 +233,10 @@ pub enum SettingError {
 /// operation in flight ended it reports `Quiesced`, and until `Enabled` the
 /// port refuses every command that writes the hardware (operations,
 /// receive and sleep, addresses and PAN identifiers) as
-/// [`CommandError::Quiesced`] and a setting that writes it as
-/// [`SettingError::Quiesced`]. A configuration the next operation publishes
-/// (pending mode and table, promiscuity, and the CCA and transmit-power
-/// settings), the state,
-/// frame counters, recent RSSI and software settings stay available. Shared PHY
-/// maintenance is this state too: the backend quiesces the port, holds its
-/// hardware and enables it again, refusing lifecycle commands as `Busy`
-/// meanwhile; a disabled port gets neither event, keeps refusing commands
-/// as [`CommandError::Disabled`] and refuses a hardware setting as
-/// [`SettingError::Quiesced`] until the maintenance ends. A backend without a quiesce refuses `Quiesce` as
-/// `InvalidState`. [`RadioPort::cancel`] ends the running transmission,
+/// [`CommandError::Quiesced`]. A configuration the next operation publishes
+/// (pending mode and table, promiscuity), every [`RadioSetting`], the
+/// state, frame counters and recent RSSI stay available. A backend without
+/// a quiesce refuses `Quiesce` as `InvalidState`. [`RadioPort::cancel`] ends the running transmission,
 /// energy scan, clear-channel assessment or scheduled receive window
 /// through its own terminal event
 /// ([`RadioStateMachine::admit_cancel`](crate::RadioStateMachine::admit_cancel)).

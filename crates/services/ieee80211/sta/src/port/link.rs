@@ -393,3 +393,25 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         Ok(self.client.lifecycle(command).await?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use oer_ieee80211_lower_mac::{LifecycleError, Poisoned, SettingError};
+
+    use super::PortLinkError;
+
+    #[test]
+    fn a_poisoned_port_and_every_lifecycle_failure_lose_the_port() {
+        let lost: [PortLinkError<()>; 4] = [
+            PortLinkError::Poisoned(Poisoned { cause: () }),
+            PortLinkError::Lifecycle(LifecycleError::AlreadyInState),
+            PortLinkError::LifecycleFailed,
+            PortLinkError::LifecycleLost,
+        ];
+        assert!(lost.iter().all(PortLinkError::is_port_lost));
+        // A refused setting or a missing state leaves the port to the
+        // station's own retry.
+        assert!(!PortLinkError::<()>::Setting(SettingError::UnsupportedChannel).is_port_lost());
+        assert!(!PortLinkError::<()>::MissingState.is_port_lost());
+    }
+}

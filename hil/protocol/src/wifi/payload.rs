@@ -677,6 +677,8 @@ pub enum StationAttemptFailureReason {
 /// `oer_ieee80211_sta::station::StaFaultPhase`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub enum StationFaultPhase {
+    /// The link had not connected in this attempt.
+    Attempt,
     /// Bringing up the connected epoch.
     Start,
     /// The running connected epoch.
@@ -694,6 +696,8 @@ pub enum StationFaultCause {
     Configuration,
     Resources,
     RfState,
+    /// The lower-MAC port the station is a client of was lost.
+    PortLost,
 }
 
 /// Reliable target-observed station lifecycle edge.

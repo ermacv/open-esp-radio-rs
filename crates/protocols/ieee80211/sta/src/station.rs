@@ -60,7 +60,10 @@ impl<E> StaAttemptFailure<E> {
 /// Station phase whose transition faulted.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaFaultPhase {
-    /// Bringing up the connected epoch: its policy, driver, interrupts,
+    /// The link had not connected in this attempt: it was joining, or
+    /// entering its connection over a port it does not own.
+    Attempt,
+    /// Bringing up the connected epoch on hardware the station owns: its policy, driver, interrupts,
     /// static resources, transmit owner and security installation.
     Start,
     /// The running connected epoch.
@@ -82,6 +85,10 @@ pub enum StaFaultCause {
     Resources,
     /// The radio's RF power state.
     RfState,
+    /// The lower-MAC port the station is a client of was lost: it is
+    /// poisoned, or it refused or failed a lifecycle command. The station
+    /// held no hardware; only the port's owner restores the port.
+    PortLost,
 }
 
 /// Portable reason of a station fault: the backend's own fault type names

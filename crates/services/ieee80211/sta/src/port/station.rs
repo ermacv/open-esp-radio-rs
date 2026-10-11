@@ -1,7 +1,8 @@
 //! One station over the lower-MAC port: its attempt phases, its connection
 //! and its lifecycle backend.
 
-use core::{convert::Infallible, marker::PhantomData};
+use core::marker::PhantomData;
+use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_ieee80211_upper_mac::rate_control::{RateControl, link_metric};
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortFault, PortMsdu, PortRxBuffer};
@@ -45,8 +46,8 @@ use oer_ieee80211_sta::{
     scan::{StaCandidateScanExit, StaScanConfig, StaScanError, StaScanPlanError},
     station::{
         StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffOutcome,
-        StaBackoffReason, StaFailureDisposition, StaLifecycleBackend, StaLifecycleStage,
-        StaNextCandidate,
+        StaBackoffReason, StaFailureDisposition, StaFault, StaFaultCause, StaFaultPhase,
+        StaFaultReason, StaLifecycleBackend, StaLifecycleStage, StaNextCandidate,
     },
 };
 use oer_time::{Clock, Duration, Timer};
@@ -57,6 +58,7 @@ use crate::{
     scan::{StaCandidateScanService, StaScanBackend},
 };
 
+use super::link_status::StationLinkPublisher;
 use super::{
     connected::{
         ConnectionContext, PortChannelSwitch, PortConnection, PortConnectionBuffers,
@@ -1264,7 +1266,50 @@ pub trait PortStationApplication<B> {
     fn disconnected(&mut self, _reason: PortDisconnect) {}
 }
 
-/// The [`StaLifecycleBackend`] of a [`PortStation`].
+/// A station that lost its port, the [`StaLifecycleBackend::Fault`] of a
+/// [`PortStationLifecycle`].
+///
+/// It keeps the station, which no further attempt may take: only the
+/// port's owner restores a lost port, by installing it again.
+pub struct PortStationFault<'p, X: PortStationEnv> {
+    station: PortStation<'p, X>,
+    reason: StaFaultReason,
+    error: PortAttemptError<X>,
+}
+
+impl<'p, X: PortStationEnv> PortStationFault<'p, X> {
+    /// `error`, which lost the port, met the station in `phase`.
+    const fn new(
+        station: PortStation<'p, X>,
+        phase: StaFaultPhase,
+        error: PortAttemptError<X>,
+    ) -> Self {
+        Self {
+            station,
+            reason: StaFaultReason::new(phase, StaFaultCause::PortLost),
+            error,
+        }
+    }
+
+    /// The failure that lost the port.
+    pub const fn error(&self) -> &PortAttemptError<X> {
+        &self.error
+    }
+
+    /// The station and the failure that lost its port.
+    pub fn into_parts(self) -> (PortStation<'p, X>, PortAttemptError<X>) {
+        (self.station, self.error)
+    }
+}
+
+impl<X: PortStationEnv> StaFault for PortStationFault<'_, X> {
+    fn reason(&self) -> StaFaultReason {
+        self.reason
+    }
+}
+
+/// The [`StaLifecycleBackend`] of a [`PortStation`], and the one publisher
+/// of its link stream.
 ///
 /// Each attempt runs the `StaAttempt` transaction over [`PortAttemptPort`]
 /// and then serves the connection until the association ends or the
@@ -1272,16 +1317,35 @@ pub trait PortStationApplication<B> {
 /// frames, receives for one `poll` interval at a time and hands every frame
 /// to the application. A connection the access point ended returns the
 /// station for the next attempt with the same candidate.
-pub struct PortStationLifecycle<'p, X: PortStationEnv, A> {
+///
+/// A lost port ([`PortStationError::is_port_lost`]: the port poisoned, or
+/// refused or failed a lifecycle command) ends the lifecycle with a
+/// [`PortStationFault`]. Its reason is `StaFaultCause::PortLost` in the
+/// phase the link was in: `Attempt` before it connected (joining, or
+/// entering the connection), `Connected` while serving it, `Teardown` while
+/// leaving it. The station holds no hardware, so `Start`, the bring-up of
+/// hardware a station owns, is never its phase.
+/// The link stream reports each edge, a fault as the last of its run; a
+/// later run, once the port's owner restored the port, opens the stream
+/// with `Disconnected(None)`.
+/// Dropping the lifecycle closes the stream.
+pub struct PortStationLifecycle<'p, 's, X: PortStationEnv, A, M: RawMutex> {
     application: A,
+    link: StationLinkPublisher<'s, M>,
+    /// The last run ended faulted: the next one opens the stream again.
+    faulted: bool,
     poll: Duration,
     _station: PhantomData<fn() -> PortStation<'p, X>>,
 }
 
-impl<X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> PortStationLifecycle<'_, X, A> {
-    pub const fn new(application: A, poll: Duration) -> Self {
+impl<'s, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>, M: RawMutex>
+    PortStationLifecycle<'_, 's, X, A, M>
+{
+    pub const fn new(application: A, link: StationLinkPublisher<'s, M>, poll: Duration) -> Self {
         Self {
             application,
+            link,
+            faulted: false,
             poll,
             _station: PhantomData,
         }
@@ -1294,20 +1358,62 @@ impl<X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> PortStationL
     pub fn application_mut(&mut self) -> &mut A {
         &mut self.application
     }
+
+    /// The fault's last edge on the link stream, and the lifecycle's end.
+    fn faulted<'p>(
+        &mut self,
+        fault: PortStationFault<'p, X>,
+    ) -> StaAttemptOutcome<PortStation<'p, X>, PortAttemptError<X>, PortStationFault<'p, X>> {
+        self.link.faulted(fault.reason());
+        self.faulted = true;
+        StaAttemptOutcome::Faulted { fault }
+    }
+
+    /// The connection failed with `error`: the station leaves it, then
+    /// ends faulted when the port is lost and tries again otherwise.
+    async fn connected_failure<'p>(
+        &mut self,
+        mut station: PortStation<'p, X>,
+        error: PortLinkError<PortFault<X>>,
+    ) -> StaAttemptOutcome<PortStation<'p, X>, PortAttemptError<X>, PortStationFault<'p, X>> {
+        let _ = station.end_connection(false).await;
+        self.link.disconnected(PortDisconnect::Local);
+        let error = PortStationError::Link(error);
+        if error.is_port_lost() {
+            return self.faulted(PortStationFault::new(
+                station,
+                StaFaultPhase::Connected,
+                error,
+            ));
+        }
+        StaAttemptOutcome::Failed {
+            owner: station,
+            failure: StaAttemptFailure::new(
+                StaLifecycleStage::Connected,
+                StaFailureDisposition::RefreshCandidate,
+                error,
+            ),
+        }
+    }
 }
 
-impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifecycleBackend
-    for PortStationLifecycle<'p, X, A>
+impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>, M: RawMutex>
+    StaLifecycleBackend for PortStationLifecycle<'p, '_, X, A, M>
 {
     type Owner = PortStation<'p, X>;
     type Error = PortAttemptError<X>;
-    type Fault = Infallible;
+    type Fault = PortStationFault<'p, X>;
 
     async fn run_attempt(
         &mut self,
         mut owner: Self::Owner,
         context: StaAttemptContext,
     ) -> StaAttemptOutcome<Self::Owner, Self::Error, Self::Fault> {
+        if core::mem::take(&mut self.faulted) {
+            // A new run after a fault, once the port's owner restored the
+            // port: the stream leaves the fault.
+            self.link.restarted();
+        }
         if self.application.stop_requested() {
             return StaAttemptOutcome::Stopped { owner };
         }
@@ -1319,6 +1425,15 @@ impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifec
             AssociationAttemptOutcome::Failed(failure) => {
                 let lifecycle_stage = failure.lifecycle_stage();
                 let (owner, _, disposition, error, _) = failure.into_parts();
+                if error.is_port_lost() {
+                    // The link never connected in this attempt, whichever
+                    // step met the loss.
+                    return self.faulted(PortStationFault::new(
+                        owner,
+                        StaFaultPhase::Attempt,
+                        error,
+                    ));
+                }
                 return StaAttemptOutcome::Failed {
                     owner,
                     failure: StaAttemptFailure::new(lifecycle_stage, disposition, error),
@@ -1327,13 +1442,28 @@ impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifec
         };
         if let Some(connection) = station.connection() {
             self.application.connected(connection.config());
+            self.link.connected(*connection.config());
         }
         // The station is the port's only client: the lifecycle owns the
         // port's channel and follows its BSS's announced moves.
         let mut switch: Option<PortChannelSwitch> = None;
         loop {
             if self.application.stop_requested() {
-                let _ = station.disconnect().await;
+                let left = station.disconnect().await;
+                self.link.disconnected(PortDisconnect::Local);
+                let Err(error) = left else {
+                    return StaAttemptOutcome::Stopped { owner: station };
+                };
+                let error = PortStationError::Link(error);
+                if error.is_port_lost() {
+                    return self.faulted(PortStationFault::new(
+                        station,
+                        StaFaultPhase::Teardown,
+                        error,
+                    ));
+                }
+                // The station left; the access point learns it from the
+                // missing station.
                 return StaAttemptOutcome::Stopped { owner: station };
             }
             let now = station.timer.now();
@@ -1344,13 +1474,14 @@ impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifec
                     Err(error) => Err(error),
                 };
                 if let Err(error) = switched {
-                    let _ = station.end_connection(false).await;
-                    return connected_failure(station, error);
+                    return self.connected_failure(station, error).await;
                 }
             }
             let deadline = now.checked_add(self.poll);
             let Some(deadline) = deadline else {
-                return connected_failure(station, PortLinkError::MissingState);
+                return self
+                    .connected_failure(station, PortLinkError::MissingState)
+                    .await;
             };
             let deadline = switch.map_or(deadline, |switch| switch.at.min(deadline));
             let application = &mut self.application;
@@ -1362,16 +1493,15 @@ impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifec
                 Ok(Some(PortStationEvent::ChannelSwitch(announced))) => switch = Some(announced),
                 Ok(Some(PortStationEvent::Ended(reason))) => {
                     self.application.disconnected(reason);
+                    self.link.disconnected(reason);
                     return StaAttemptOutcome::Disconnected {
                         owner: station,
                         next_candidate: StaNextCandidate::Reuse,
                     };
                 }
-                Err(error) => {
-                    let _ = station.end_connection(false).await;
-                    return connected_failure(station, error);
-                }
+                Err(error) => return self.connected_failure(station, error).await,
             }
+            self.link.tx_block_ack(operational_tids(&station));
         }
     }
 
@@ -1404,17 +1534,17 @@ impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifec
     }
 }
 
-fn connected_failure<'p, X: PortStationEnv>(
-    owner: PortStation<'p, X>,
-    error: PortLinkError<PortFault<X>>,
-) -> StaAttemptOutcome<PortStation<'p, X>, PortAttemptError<X>, Infallible> {
-    let error = PortStationError::Link(error);
-    StaAttemptOutcome::Failed {
-        owner,
-        failure: StaAttemptFailure::new(
-            StaLifecycleStage::Connected,
-            error.disposition(StaFailureDisposition::RefreshCandidate),
-            error,
-        ),
-    }
+/// One bit per TID whose TX Block Ack agreement of the station's
+/// connection is operational.
+fn operational_tids<X: PortStationEnv>(station: &PortStation<'_, X>) -> u8 {
+    let Some(originator) = station.connection().and_then(PortConnection::tx_block_ack) else {
+        return 0;
+    };
+    (0..8).fold(0, |tids, tid| {
+        if originator.operational(tid).is_some() {
+            tids | 1 << tid
+        } else {
+            tids
+        }
+    })
 }

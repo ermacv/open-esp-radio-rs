@@ -9,6 +9,7 @@ description = "Executor-independent Wi-Fi station join, scan, attempt and lifecy
 readme = "README.md"
 
 [dependencies]
+embassy-sync = "0.8.0"
 oer-time = { path = "../../../time" }
 oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac" }
 oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath" }

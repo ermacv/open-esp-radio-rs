@@ -85,10 +85,17 @@ impl Harness {
         assert_eq!(events.len(), 1);
         assert_eq!(&events[0][..5], &[0x3e, 19, 0x01, SUCCESS, 0]);
 
+        // Other roles keep the first event's reservation free before it is
+        // planned.
+        let reserved = harness.core.planned_connection(super::TIMING).unwrap();
         // The first event listens across the transmit window.
         let Some(Request::ConnectionEvent(first)) = harness.step().unwrap() else {
             panic!("the first event");
         };
+        assert_eq!(
+            reserved,
+            Some(super::TIMING.reservation(first.window).unwrap())
+        );
         let anchor = INDICATION_AT + 352 + 1_250;
         assert_eq!(first.window.start().as_micros(), anchor - 17);
         assert_eq!(
@@ -445,6 +452,45 @@ fn supervision_follows_the_timeout_a_connection_update_sets() {
         match harness.step().unwrap() {
             Some(Request::ConnectionEvent(event)) => harness.end_at(event.id, None),
             other => panic!("the connection is still supervised: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn the_reserved_next_event_follows_a_connection_update() {
+    let (mut harness, first) = Harness::connected();
+    // LL_CONNECTION_UPDATE_IND: WinSize 1, WinOffset 2, Interval 40 (50 ms
+    // instead of 30 ms), Latency 0, Timeout 200, Instant 2.
+    let mut update = std::vec![0x03, 12, 0x00, 1];
+    update.extend_from_slice(&2_u16.to_le_bytes());
+    update.extend_from_slice(&40_u16.to_le_bytes());
+    update.extend_from_slice(&0_u16.to_le_bytes());
+    update.extend_from_slice(&200_u16.to_le_bytes());
+    update.extend_from_slice(&2_u16.to_le_bytes());
+    harness.receive(first, &update);
+    harness.end_at(first, Some(INDICATION_AT + 2_000));
+    let planned = |harness: &Harness| harness.core.planned_connection(super::TIMING).unwrap();
+    let reserved = |event: &oer_bluetooth_radio::ConnectionEvent| {
+        Some(super::TIMING.reservation(event.window).unwrap())
+    };
+    // Before the instant, the old interval; then, with that event in
+    // flight, the instant itself; then the updated interval. Missed events
+    // keep the reference, so each reservation is the real next one.
+    for event in 1..=3 {
+        let expected = planned(&harness);
+        let Some(Request::ConnectionEvent(next)) = harness.step().unwrap() else {
+            panic!("event {event}");
+        };
+        assert_eq!(reserved(&next), expected, "event {event}");
+        if event < 3 {
+            // Event 1 in flight reserves the instant, event 2.
+            let in_flight = planned(&harness);
+            harness.end_at(next.id, None);
+            let Some(Request::ConnectionEvent(after)) = harness.step().unwrap() else {
+                panic!("the event after {event}");
+            };
+            assert_eq!(reserved(&after), in_flight, "after {event}");
+            harness.end_at(after.id, None);
         }
     }
 }

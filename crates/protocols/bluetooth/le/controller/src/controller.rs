@@ -976,6 +976,15 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         self.peripheral.acl_ready() || !self.peripheral.is_active()
     }
 
+    /// The reservation the connection lends other roles; for host tests.
+    #[cfg(test)]
+    pub(crate) fn planned_connection(
+        &self,
+        timing: RadioTiming,
+    ) -> Result<Option<oer_bluetooth_radio::LeWindow>, EpochExhausted> {
+        self.peripheral.planned(timing)
+    }
+
     /// Take one Host ACL packet for the connection.
     pub fn acl(&mut self, packet: AclPacket<'_>) {
         self.peripheral

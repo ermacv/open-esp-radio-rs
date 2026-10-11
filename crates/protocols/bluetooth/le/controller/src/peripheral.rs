@@ -48,10 +48,10 @@ use oer_bluetooth_ll::{
     LeDeviceAddressKind,
     connection::{
         LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeChannelSelectionAlgorithm, LeConnectionTiming,
-        LeLegacyConnectionRequest, LePeripheralConnection, LePeripheralConnectionEventCompleted,
-        LePeripheralConnectionEventDelta, LePeripheralConnectionEventInFlight,
-        LePeripheralConnectionEventPeerActivity, LePeripheralConnectionEventPrepared,
-        LePeripheralConnectionState,
+        LeFollowingEvent, LeLegacyConnectionRequest, LePeripheralConnection,
+        LePeripheralConnectionEventCompleted, LePeripheralConnectionEventDelta,
+        LePeripheralConnectionEventInFlight, LePeripheralConnectionEventPeerActivity,
+        LePeripheralConnectionEventPrepared, LePeripheralConnectionState,
     },
     control::{
         LeChannelMapUpdate, LeConnectionUpdate, LePeripheralControl, LePeripheralControlError,
@@ -399,21 +399,61 @@ impl Peripheral {
         if connection.closing.is_some() {
             return Ok(None);
         }
-        let interval =
-            RadioDuration::from_micros(u64::from(connection.request.timing().interval_micros()));
-        let previous = connection
-            .event
-            .map_or(connection.phase.since_reference, |event| {
-                event.since_reference
-            });
+        // The event one interval after the last one, as the Link Layer will
+        // prepare it: an update's instant moves it by the updated window
+        // offset and listens across the updated transmit window.
+        let (previous, following, transmit_window) = match (&connection.link, connection.event) {
+            // The first event is the next one.
+            (Link::Created(_), _) => {
+                let plan = timing::first(
+                    connection.phase.reference,
+                    connection.phase.transmit_window,
+                    timing.connection,
+                )
+                .map_err(|mut cause| {
+                    cause.operation = O::FutureReservation;
+                    cause
+                })?;
+                return timing
+                    .reservation(plan.window)
+                    .map(Some)
+                    .map_err(|OutsideEpoch| error(O::FutureReservation, C::Reservation));
+            }
+            (Link::InFlight(in_flight), Some(event)) => (
+                event.since_reference,
+                in_flight.following_event(),
+                event.transmit_window,
+            ),
+            (Link::Completed(completed), _) => (
+                connection.phase.since_reference,
+                completed.following_event(),
+                connection.phase.transmit_window,
+            ),
+            (Link::InFlight(_), None) | (Link::Moved, _) => {
+                unreachable!(
+                    "an event in flight is outstanding, and a link moves only within planning"
+                )
+            }
+        };
+        let (span, transmit_window) = match following {
+            LeFollowingEvent::Unchanged(timing) => {
+                (u64::from(timing.interval_micros()), transmit_window)
+            }
+            // An interval of at most 4 s and an offset of at most 82 s.
+            LeFollowingEvent::Instant { previous, updated } => (
+                u64::from(previous.interval_micros())
+                    + u64::from(updated.window_offset_units()) * 1_250,
+                RadioDuration::from_micros(u64::from(updated.window_size_units()) * 1_250),
+            ),
+        };
         // A span past `u64::MAX` cannot lie in the epoch either.
         let since_reference = previous
-            .checked_add(interval)
+            .checked_add(RadioDuration::from_micros(span))
             .ok_or(error(O::FutureReservation, C::Recurrence))?;
         let plan = timing::recurring(
             connection.phase.reference,
             since_reference,
-            connection.phase.transmit_window,
+            transmit_window,
             connection.request.sleep_clock_accuracy().worst_case_ppm(),
             timing.connection,
         )?;

@@ -571,7 +571,15 @@ fn connection_update_commits_timing_only_at_the_exact_instant() {
             .into_connection();
     }
 
-    let completed = complete_missed(connection);
+    // The event before the instant previews it, in flight and closed.
+    let in_flight = connection.prepare_event().into_submitted();
+    let following = super::LeFollowingEvent::Instant {
+        previous: request.timing(),
+        updated,
+    };
+    assert_eq!(in_flight.following_event(), following);
+    let completed = in_flight.complete(LePeripheralConnectionEventPeerActivity::Missed);
+    assert_eq!(completed.following_event(), following);
     let provisional =
         completed.prepare_recurring_event(LePeripheralConnectionEventDelta::new(1).unwrap());
     let transition = provisional.connection_timing_transition().unwrap();

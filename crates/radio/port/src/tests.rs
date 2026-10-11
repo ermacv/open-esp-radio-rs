@@ -271,7 +271,8 @@ fn a_radio_span_converts_only_through_a_relation() {
 struct Model {
     /// Admitted work by identity, with the interface that admitted it.
     running: core::cell::RefCell<std::vec::Vec<(Id, u8)>>,
-    events: core::cell::RefCell<std::collections::VecDeque<u32>>,
+    /// Terminal events, each carrying the port identity of its work.
+    events: core::cell::RefCell<std::collections::VecDeque<(u8, Id)>>,
 }
 
 struct Owner<'m>(&'m Model);
@@ -280,8 +281,8 @@ struct Client<'m> {
     model: &'m Model,
     interface: u8,
 }
-/// The phase control borrows the owner, as every part does.
-struct Control<'m>(core::marker::PhantomData<&'m Model>);
+/// The model's phase control; its loan is the `Lent` that carries it.
+struct Control(());
 
 impl Client<'_> {
     fn admit(&self, id: Id) {
@@ -302,20 +303,20 @@ fn end(model: &Model, id: Id, interface: u8) -> Result<(), CancelError> {
         .position(|(running, by)| *running == id && *by == interface)
         .ok_or(CancelError::NotRunning)?;
     running.remove(index);
-    model.events.borrow_mut().push_back(id.0);
+    model.events.borrow_mut().push_back((interface, id));
     Ok(())
 }
 
 impl<'m> RadioPortOwner for Owner<'m> {
-    type Event = u32;
+    type Event = (u8, Id);
     type Id = (u8, Id);
     type Domain = Port;
     type Fault = ();
     type Events = Events<'m>;
-    type Control = Control<'m>;
+    type Control = Control;
     type Clients = [Client<'m>; 2];
 
-    fn next_event(&mut self) -> impl Future<Output = PortResult<u32, EventsLost, ()>> + '_ {
+    fn next_event(&mut self) -> impl Future<Output = PortResult<(u8, Id), EventsLost, ()>> + '_ {
         ready(match self.0.events.borrow_mut().pop_front() {
             Some(event) => Ok(Ok(event)),
             None => Ok(Err(EventsLost)),
@@ -340,22 +341,22 @@ impl<'m> RadioPortOwner for Owner<'m> {
         ready(Ok(Ok(())))
     }
 
-    fn split(&mut self) -> PhaseParts<'_, Events<'m>, Control<'m>, [Client<'m>; 2]> {
+    fn split(&mut self) -> PhaseParts<'_, Events<'m>, Control, [Client<'m>; 2]> {
         let model = self.0;
         let client = |interface| Client { model, interface };
         PhaseParts {
             events: Lent::new(Events(model)),
-            control: Lent::new(Control(core::marker::PhantomData)),
+            control: Lent::new(Control(())),
             clients: Lent::new([client(0), client(1)]),
         }
     }
 }
 
 impl RadioPortEvents for Events<'_> {
-    type Event = u32;
+    type Event = (u8, Id);
     type Fault = ();
 
-    fn next_event(&mut self) -> impl Future<Output = PortResult<u32, EventsLost, ()>> + '_ {
+    fn next_event(&mut self) -> impl Future<Output = PortResult<(u8, Id), EventsLost, ()>> + '_ {
         ready(match self.0.events.borrow_mut().pop_front() {
             Some(event) => Ok(Ok(event)),
             None => Ok(Err(EventsLost)),
@@ -415,7 +416,7 @@ fn a_phase_lends_clients_scoped_to_their_interface_and_its_leftovers_reach_the_o
             now_ready(station.cancel(Id(1))),
             Ok(Err(CancelError::NotRunning))
         );
-        assert_eq!(now_ready(events.next_event()), Ok(Ok(1)));
+        assert_eq!(now_ready(events.next_event()), Ok(Ok((0, Id(1)))));
         // The router records the port identity the client forms.
         access_point.port_id(Id(2))
     };
@@ -423,7 +424,7 @@ fn a_phase_lends_clients_scoped_to_their_interface_and_its_leftovers_reach_the_o
     // ends it by its port identity and takes its terminal, then runs an
     // exclusive command.
     assert_eq!(now_ready(owner.cancel(leftover)), Ok(Ok(())));
-    assert_eq!(now_ready(owner.next_event()), Ok(Ok(2)));
+    assert_eq!(now_ready(owner.next_event()), Ok(Ok(leftover)));
     assert_eq!(
         now_ready(owner.lifecycle(LifecycleCommand::Disable)),
         Ok(Ok(()))
@@ -437,7 +438,11 @@ fn clients_of_one_kind_choose_the_same_identity_without_colliding() {
         events: core::cell::RefCell::default(),
     };
     let mut owner = Owner(&model);
-    let PhaseParts { clients, .. } = owner.split();
+    let PhaseParts {
+        mut events,
+        clients,
+        ..
+    } = owner.split();
     let [first, second] = &*clients;
     // The port identities the clients form stay apart.
     assert_ne!(first.port_id(Id(7)), second.port_id(Id(7)));
@@ -454,4 +459,11 @@ fn clients_of_one_kind_choose_the_same_identity_without_colliding() {
     );
     assert_eq!(model.running.borrow().as_slice(), [(Id(7), 1)]);
     assert_eq!(now_ready(second.cancel(Id(7))), Ok(Ok(())));
+    // Each terminal carries its port identity: the two `Id(7)` terminals
+    // route to their own clients.
+    assert_eq!(now_ready(events.next_event()), Ok(Ok(first.port_id(Id(7)))));
+    assert_eq!(
+        now_ready(events.next_event()),
+        Ok(Ok(second.port_id(Id(7))))
+    );
 }

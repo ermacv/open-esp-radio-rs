@@ -2,7 +2,7 @@
 //!
 //! Every tested revision is checked out, detached, in the bisection's own
 //! worktree below `target/hil/bisect/<id>/`, and runs its scenario with the
-//! runner that speaks its HIL wire ([`crate::revision::Revision`]): this
+//! runner that speaks its HIL wire, as [`crate::revision`] launches it: this
 //! checkout's with the revision's firmware for the same wire, otherwise the
 //! revision's own inside the bisection's whole-stand lease.
 //!

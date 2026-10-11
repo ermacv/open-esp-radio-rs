@@ -14,12 +14,13 @@
 //!
 //! - [`RadioPort`]: the base trait, with the event stream, the radio clock,
 //!   cancellation and the lifecycle.
-//! - [`Owner`] over a [`PortBackend`], with its states [`Disabled`] and
-//!   [`Enabled`], its transitions [`Enabling`] and [`Disabling`] and its
-//!   exit [`PoisonedOwner`]; [`PhaseParts`] and [`Lent`], one running
-//!   phase's event consumer ([`RadioPortEvents`]), control and clients
-//!   ([`RadioPortClient`]); [`Work`], one admitted operation. Every rule a
-//!   caller controls is a type.
+//! - [`run_port`], [`PortBody`] and [`Ended`]: a port lives in one body
+//!   that must end through its owner's uninstall or a fail-stop; [`Owner`]
+//!   over a [`PortBackend`], in the states [`Disabled`] and [`Enabled`],
+//!   with [`Failed`] and [`PoisonedOwner`]; [`PhaseParts`] and [`Lent`],
+//!   one running phase's event consumer ([`RadioPortEvents`]), control and
+//!   clients ([`RadioPortClient`]); [`Work`], one admitted operation. Every
+//!   rule a caller controls is a type.
 //! - [`Poisoned`] and [`PortResult`]: the only outer error of a port call,
 //!   carrying the backend's cause; every refusal is the inner `Err`.
 //! - [`EventsLost`]: the one loss marker, with its ordering rule.
@@ -67,6 +68,9 @@
 //!
 //! This package owns no state and never waits.
 
+#[cfg(test)]
+extern crate std;
+
 use core::{fmt::Debug, future::Future, ops::RangeInclusive};
 
 use oer_time::RadioInstant;
@@ -77,8 +81,8 @@ mod owner;
 mod relation;
 
 pub use owner::{
-    DisableStep, Disabled, Disabling, EnableStep, Enabled, Enabling, Lent, Owner, PhaseParts,
-    PoisonedOwner, PortBackend, RadioPortClient, RadioPortEvents, RadioWork, Step, Work,
+    Disabled, EnableResult, Enabled, Ended, Failed, Lent, Owner, PhaseParts, PoisonedOwner,
+    PortBackend, PortBody, RadioPortClient, RadioPortEvents, RadioWork, Work, run_port,
 };
 pub use relation::{
     ClockInfo, ClockRelation, ClockSample, Generation, GenerationSource, Projected,

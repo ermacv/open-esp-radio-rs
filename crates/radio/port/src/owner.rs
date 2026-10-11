@@ -6,75 +6,110 @@
 //!
 //! # Shape
 //!
-//! A backend implements [`PortBackend`]; its install wraps the backend in an
-//! [`Owner`] in the [`Disabled`] state, and no caller ever holds the backend
-//! itself. The owner's state is its type:
+//! A port lives inside one body ([`PortBody`]) that [`run_port`] runs over a
+//! backend ([`PortBackend`]); no caller ever holds the backend. The body
+//! receives an [`Owner`] in the [`Disabled`] state and must return
+//! [`Ended`], which only the uninstalls and the `fail_stop`s construct, so
+//! a body that drops or forgets its owner does not compile. The owner's
+//! state is its type:
 //!
 //! ```text
-//! Owner<B, Disabled> ── enable(self) ──▶ Enabling<B> ── next() … ─▶ Owner<B, Enabled>
-//!        ▲                                         └──────────────▶ Owner<B, Disabled> + failure
-//!        └──────────── Disabling<B> ◀── disable(self) ── Owner<B, Enabled>
-//! any step that meets a poisoned backend ──▶ PoisonedOwner<B>
+//! Owner<B, Disabled> ── enable(self).await ──▶ Ok(Owner<B, Enabled>)
+//!        ▲                                    Err(Failed::Refused(Owner<B, Disabled>, refusal))
+//!        │                                    Err(Failed::Poisoned(PoisonedOwner<B>))
+//!        └── Ok ── disable(self, sink).await ── Owner<B, Enabled>
+//!                  Err(PoisonedOwner<B>)
+//! uninstall / fail_stop ──▶ Ended<B>
 //! ```
 //!
 //! - [`Owner<B, Disabled>`](Owner) lends the protocol's disabled-only
 //!   settings ([`Owner::setup`]: a permanent channel move, interface
-//!   configuration), and is the only state the backend's uninstall takes.
+//!   configuration, port-lifetime resources such as keys and agreements,
+//!   whose tokens the owner keeps and lends into each phase), and is the
+//!   only state that uninstalls.
 //! - [`Owner<B, Enabled>`](Owner) lends one running phase at a time
 //!   ([`Owner::split`]): the phase's one event consumer, its control and
 //!   its interface-scoped clients, each a [`Lent`] of the owner's borrow.
-//! - [`Enabling`] and [`Disabling`] are the transitions. Their
-//!   [`next`](Enabling::next) yields the events the port reports before the
-//!   command's end, the leftover terminals of a phase's work included, and
-//!   then the next owner. They hold the backend between calls, so dropping
-//!   a `next` future loses nothing.
-//! - [`PoisonedOwner`] is the one exit of a poisoned backend: its cause and
-//!   the backend's uninstall.
-//!
-//! Rust has no linear types: dropping an owner, a transition or a poisoned
-//! owner abandons the backend without its uninstall, and the hardware stays
-//! as it was. Each is `#[must_use]`.
+//! - The transitions take the owner by value and are bounded by contract:
+//!   each ends within its backend's bound, or as poisoned. An unbounded wait
+//!   (the radio arbiter's lease) is a separate, cancel-safe step before the
+//!   transition, which takes its result. `disable` hands every leftover
+//!   terminal of a phase's work, with what it returns, to its `sink`, and
+//!   ends only when every permit is back.
+//! - [`PoisonedOwner`] is the one exit of a poisoned backend: its cause,
+//!   its uninstall or its fail-stop.
 //!
 //! A command never meets another command, a phase never meets a lifecycle
-//! command and a disabled-only setting never meets an enabled port: there is
-//! no lifecycle refusal and no "port enabled" or "port disabled" refusal.
-//! A failed `Enable` (the radio refused it) is the world's outcome and
-//! leaves an `Owner<B, Disabled>`.
+//! command, a disabled-only setting never meets an enabled port and an
+//! enabled port is never uninstalled: there is no lifecycle refusal and no
+//! "port enabled", "port disabled" or "port running" refusal. A refused
+//! `Enable` (the radio refused it) is the world's outcome and returns the
+//! disabled owner.
 //!
 //! # What types guarantee
 //!
 //! | Guarantee | Enforced by |
 //! | --- | --- |
-//! | A disabled port lends no phase; an enabled one no disabled-only setting | the state parameter |
-//! | One lifecycle command at a time; no phase or setting while one runs | `enable`/`disable` take the owner by value |
+//! | A port ends through an uninstall or a fail-stop | the body returns [`Ended`], which only they construct |
+//! | A caller holds an owner only inside a body | [`Owner`] has no public constructor |
+//! | A disabled port lends no phase; an enabled one no disabled-only setting and no uninstall | the state parameter |
+//! | One lifecycle command at a time; no phase or setting while one runs | the transitions take the owner by value |
 //! | A phase's parts end before any owner call or transition | [`Lent`], invariant in the owner's borrow |
 //! | One running phase, one event consumer | `split(&mut self)` |
 //! | A caller reaches the backend only through the owner and its parts | the owner's private field |
-//! | A transition is not resolved before its end | `next` alone hands out the next owner |
-//! | A part is not taken out of its loan | `Lent` gives no part away; see below |
+//! | Admitted work names only its own phase's work | [`Work`] borrows its client |
+//! | A part or a token is not taken out of its loan | `Lent` and `Work` give nothing away; see below |
 //!
-//! Each line has a compile-fail test below or in the crate's tests.
+//! Each line has a compile-fail test below, pinned to its error code, with a
+//! compiling twin.
 //!
 //! # What each backend proves
 //!
-//! The language cannot express two rules, so every backend proves them of
-//! its own types with compile-fail tests:
+//! The language cannot express three rules, so every backend proves them of
+//! its own types:
 //!
-//! - its backend, its phase parts and every token it mints (admitted work,
+//! - its phase parts and every token it mints (admitted work, permits,
 //!   leases, installed keys and agreements, validated values) are not
 //!   `Clone`, `Copy` or `Default` and have no public constructor, so a
-//!   mutable reference cannot exchange a part out of its loan;
+//!   mutable reference cannot exchange a part out of its loan
+//!   (compile-fail tests);
 //! - everything that can act on the port borrows the phase part it came
-//!   from, so it lives no longer than the phase; received data and returned
-//!   bodies act on nothing and may outlive it.
+//!   from (compile-fail tests); received data and returned bodies act on
+//!   nothing and may outlive it;
+//! - everything the hardware touches (descriptors, DMA buffers, key tables)
+//!   is `'static` and owned by the port, so no abandoned owner is ever a
+//!   memory-safety issue.
+//!
+//! # Port-lifetime and phase-scoped tokens
+//!
+//! A resource that outlives a phase (an installed key, an agreement, a
+//! configured interface) has its token kept by the owner and lent into each
+//! phase. Admitted work and the permits and leases it holds are
+//! phase-scoped: [`Work`] borrows its client. A submission consumes a
+//! permit (a transmit slot, a terminal-event cell) and its terminal returns
+//! it, so no queue overflows and no terminal is lost; only unsolicited
+//! reception may lose events. A `'static` sans-IO core holds no
+//! phase-scoped token: the phase keeps a boundary table from the core's own
+//! identity to the token, which carries out the core's decisions.
+//!
+//! # Drop
+//!
+//! Rust's types are affine: an owner can be dropped and `mem::forget` is
+//! safe. A body cannot do either and still end, and it runs as an executor
+//! task that is not cancelled; inside it, the phase's parts run under
+//! `join` over disjoint borrows. An owner is dropped only by a panic (on the
+//! target, a reset) or by a body raced outside its task. Its `Drop` is a
+//! safety net, as [`PlatformClockGuard`]'s: it calls
+//! [`PortBackend::abandon`] (close transmission, mask interrupts, refuse any
+//! new install until a reset) and asserts in debug builds; it is never the
+//! shutdown.
 //!
 //! # Several executor tasks
 //!
-//! A borrow does not cross executor tasks, which need `'static` futures.
-//! Where several tasks need one port, the owner is an actor: one task holds
-//! it, and the others send it requests and await its replies. A handle
-//! shared between tasks over an internal mutex is not a form of this
-//! contract.
+//! A borrow does not cross executor tasks. The port's parts stay inside its
+//! body's task; another task (a network stack) talks to the body as to an
+//! actor, by owned requests and replies. A handle shared between tasks over
+//! an internal mutex is not a form of this contract.
 //!
 //! # Inside the backend
 //!
@@ -83,6 +118,40 @@
 //! caller as a refusal.
 //!
 //! # Compile-fail tests
+//!
+//! A body cannot end without an uninstall or a fail-stop:
+//!
+//! ```compile_fail,E0451
+//! # use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody};
+//! struct Forget;
+//! impl<B: PortBackend> PortBody<B> for Forget {
+//!     async fn run(self, owner: Owner<B, Disabled>) -> Ended<B> {
+//!         drop(owner);
+//!         Ended { uninstalled: None }
+//!     }
+//! }
+//! ```
+//!
+//! Its compiling twin ends through the owner:
+//!
+//! ```
+//! # use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody};
+//! struct FailStop;
+//! impl<B: PortBackend> PortBody<B> for FailStop {
+//!     async fn run(self, owner: Owner<B, Disabled>) -> Ended<B> {
+//!         owner.fail_stop()
+//!     }
+//! }
+//! ```
+//!
+//! No caller makes an owner outside a body:
+//!
+//! ```compile_fail,E0624
+//! # use oer_radio_port::{Disabled, Owner, PortBackend};
+//! fn forge<B: PortBackend>(backend: B) -> Owner<B, Disabled> {
+//!     Owner::new(backend)
+//! }
+//! ```
 //!
 //! A disabled port lends no phase:
 //!
@@ -93,7 +162,7 @@
 //! }
 //! ```
 //!
-//! An enabled port takes no disabled-only setting:
+//! An enabled port takes no disabled-only setting and no uninstall:
 //!
 //! ```compile_fail,E0599
 //! # use oer_radio_port::{Enabled, Owner, PortBackend};
@@ -102,14 +171,22 @@
 //! }
 //! ```
 //!
+//! ```compile_fail,E0599
+//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! fn uninstall_while_enabled<B: PortBackend>(owner: Owner<B, Enabled>, control: B::Uninstall) {
+//!     let _ = owner.uninstall(control);
+//! }
+//! ```
+//!
 //! An owner is gone once its command starts, so a second command cannot
 //! start beside it:
 //!
 //! ```compile_fail,E0382
 //! # use oer_radio_port::{Disabled, Owner, PortBackend};
-//! fn two_commands<B: PortBackend>(owner: Owner<B, Disabled>) {
-//!     let _enabling = owner.enable();
+//! async fn two_commands<B: PortBackend>(owner: Owner<B, Disabled>) {
+//!     let enabling = owner.enable();
 //!     let _ = owner.enable();
+//!     let _ = enabling.await;
 //! }
 //! ```
 //!
@@ -117,9 +194,9 @@
 //!
 //! ```compile_fail,E0505
 //! # use oer_radio_port::{Enabled, Owner, PortBackend};
-//! fn keep_the_control<B: PortBackend>(mut owner: Owner<B, Enabled>) {
+//! async fn keep_the_control<B: PortBackend>(mut owner: Owner<B, Enabled>) {
 //!     let control = owner.split().control;
-//!     let _disabling = owner.disable();
+//!     let _ = owner.disable(&mut |_| {}).await;
 //!     drop(control);
 //! }
 //! ```
@@ -139,8 +216,8 @@
 //!
 //! ```compile_fail,E0616
 //! # use oer_radio_port::{Enabled, Owner, PortBackend};
-//! fn reach_the_backend<B: PortBackend>(owner: &mut Owner<B, Enabled>) -> &mut B {
-//!     &mut owner.backend
+//! fn reach_the_backend<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//!     let _ = &mut owner.backend;
 //! }
 //! ```
 //!
@@ -166,10 +243,29 @@
 //! }
 //! ```
 //!
-//! Its compiling twin keeps the work only as long as the client:
+//! The compiling twin of the lifecycle tests runs a phase between the
+//! commands and keeps the work only as long as its client:
 //!
 //! ```
-//! # use oer_radio_port::{RadioPortClient, Work};
+//! # use oer_radio_port::{Disabled, Ended, Owner, PortBackend, PortBody, RadioPortClient, Work};
+//! struct OnePhase;
+//! impl<B: PortBackend> PortBody<B> for OnePhase {
+//!     async fn run(self, mut owner: Owner<B, Disabled>) -> Ended<B> {
+//!         let _ = owner.setup();
+//!         let mut enabled = match owner.enable().await {
+//!             Ok(enabled) => enabled,
+//!             Err(failed) => return failed.fail_stop(),
+//!         };
+//!         {
+//!             let phase = enabled.split();
+//!             drop(phase);
+//!         }
+//!         match enabled.disable(&mut |_| {}).await {
+//!             Ok(disabled) => disabled.fail_stop(),
+//!             Err(poisoned) => poisoned.fail_stop(),
+//!         }
+//!     }
+//! }
 //! fn keep_the_work<'c, C: RadioPortClient>(
 //!     admit: impl Fn(&'c C) -> Work<'c, C::Token>,
 //!     client: &'c C,
@@ -178,29 +274,8 @@
 //! }
 //! ```
 //!
-//! Each has a compiling twin:
-//!
-//! ```
-//! # use oer_radio_port::{Disabled, EnableStep, Owner, PortBackend};
-//! async fn phase_after_enable<B: PortBackend>(mut owner: Owner<B, Disabled>) {
-//!     let _ = owner.setup();
-//!     let Ok(mut enabling) = owner.enable() else { return };
-//!     let mut enabled = loop {
-//!         match enabling.next().await {
-//!             EnableStep::Event(_) => {}
-//!             EnableStep::Enabled(enabled) => break enabled,
-//!             EnableStep::Failed(..) | EnableStep::Poisoned(_) => return,
-//!         }
-//!     };
-//!     {
-//!         let phase = enabled.split();
-//!         drop(phase);
-//!     }
-//!     let _disabling = enabled.disable();
-//! }
-//! ```
-//!
 //! [ownership and refusals]: https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/architecture.md#ownership-and-refusals
+//! [`PlatformClockGuard`]: https://github.com/ermacv/open-esp-radio-rs/blob/main/crates/hardware/esp32s31/hal/src/power/clock/executor.rs
 
 use core::{
     fmt::Debug,
@@ -219,12 +294,13 @@ pub enum Disabled {}
 /// The state of an owner whose port runs.
 pub enum Enabled {}
 
-/// What a backend implements; callers never hold it. A backend's install
-/// wraps it with [`Owner::install`], which a caller cannot do without a
-/// backend value.
-///
-/// The methods are the backend's side of the [`Owner`]'s transitions and
-/// loans; the owner calls each only in the state its documentation names.
+/// The result of a backend's `Enable`: the radio's refusal inside, a
+/// poisoned backend outside.
+pub type EnableResult<R, F> = Result<Result<(), R>, Poisoned<F>>;
+
+/// What a backend implements; callers never hold it. [`run_port`] wraps it
+/// in the body's owner, and the owner calls each method only in the state
+/// its documentation names.
 pub trait PortBackend: Sized {
     /// One owned event.
     type Event;
@@ -232,9 +308,9 @@ pub trait PortBackend: Sized {
     type Domain;
     /// The cause a poisoned backend reports.
     type Fault: Copy + Debug;
-    /// Why the radio did not enable (a refused retune): the world's
+    /// Why the radio refused `Enable` (a refused retune): the world's
     /// outcome, after which the port is disabled.
-    type EnableFailure;
+    type Refusal;
     /// The protocol's disabled-only settings, lent by [`Owner::setup`].
     type Setup<'a>
     where
@@ -244,7 +320,9 @@ pub trait PortBackend: Sized {
     where
         Self: 'a;
     /// The phase control: the radio-wide operations that only gate or tune
-    /// admission while clients run, as guards on its sub-resources.
+    /// admission while clients run, as guards on its sub-resources; each
+    /// guard proves only its own state (a closed transmit gate proves this
+    /// port publishes nothing, `TxGated`, not that the air is quiet).
     type Control<'a>
     where
         Self: 'a;
@@ -252,31 +330,22 @@ pub trait PortBackend: Sized {
     type Clients<'a>
     where
         Self: 'a;
-    /// What the backend's uninstall takes beside it (the composition's
-    /// control) and what it returns (its hardware owners).
+    /// What the uninstall takes beside the backend (the composition's
+    /// control).
     type Uninstall;
     /// The hardware owners the uninstall returns.
     type Uninstalled;
 
-    /// Admit `Enable` on a disabled port.
-    fn admit_enable(&mut self) -> Result<(), Poisoned<Self::Fault>>;
+    /// Enable the disabled port, within the backend's bound.
+    fn enable(&mut self) -> impl Future<Output = EnableResult<Self::Refusal, Self::Fault>> + '_;
 
-    /// Admit `Disable` on an enabled port, which ends every admitted work
-    /// with its terminal event first.
-    fn admit_disable(&mut self) -> Result<(), Poisoned<Self::Fault>>;
-
-    /// The next step of an admitted `Enable`: an event, or its end.
-    fn next_enabling(
-        &mut self,
-    ) -> impl Future<
-        Output = Result<Step<Self::Event, Result<(), Self::EnableFailure>>, Poisoned<Self::Fault>>,
-    > + '_;
-
-    /// The next step of an admitted `Disable`: an event (a leftover terminal
-    /// with its bodies), or its end.
-    fn next_disabling(
-        &mut self,
-    ) -> impl Future<Output = Result<Step<Self::Event, ()>, Poisoned<Self::Fault>>> + '_;
+    /// Disable the enabled port within the backend's bound: end every
+    /// admitted work, hand its terminal event with what it returns to
+    /// `sink`, and return when every permit is back.
+    fn disable<'a>(
+        &'a mut self,
+        sink: &'a mut dyn FnMut(Self::Event),
+    ) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>> + 'a;
 
     /// The radio clock.
     fn now(
@@ -286,63 +355,115 @@ pub trait PortBackend: Sized {
     /// Lend the disabled-only settings.
     fn setup(&mut self) -> Lent<'_, Self::Setup<'_>>;
 
-    /// Lend one running phase of an enabled port.
+    /// Lend one running phase of the enabled port.
     fn split(&mut self) -> PhaseParts<'_, Self::Events<'_>, Self::Control<'_>, Self::Clients<'_>>;
 
-    /// Take the disabled or poisoned backend apart.
+    /// Take the disabled or poisoned backend apart with the composition's
+    /// `control`.
     fn uninstall(self, control: Self::Uninstall) -> Self::Uninstalled;
+
+    /// Stop the backend at once, synchronously: close transmission, mask its
+    /// interrupts and refuse any new install until a reset. A fail-stop and
+    /// a dropped owner call it; the hardware stays installed and
+    /// unreachable.
+    fn abandon(&mut self);
 }
 
-/// One step of a backend's transition: an event before the command's end,
-/// or the end.
-pub enum Step<E, R> {
-    /// An event the port reports before the command ends.
-    Event(E),
-    /// The command ended.
-    Ended(R),
+/// The one lifetime of a port, from its install to its [`Ended`]; see the
+/// [module](self) documentation.
+pub trait PortBody<B: PortBackend> {
+    /// Run the port: the owner arrives disabled and leaves through an
+    /// uninstall or a fail-stop.
+    fn run(self, owner: Owner<B, Disabled>) -> impl Future<Output = Ended<B>>;
+}
+
+/// Run `body` over a just-installed, disabled `backend`. A backend's install
+/// calls it, in the executor task that runs the port, and receives its end.
+pub async fn run_port<B: PortBackend>(backend: B, body: impl PortBody<B>) -> Ended<B> {
+    body.run(Owner::new(backend)).await
+}
+
+/// How a port's body ended: its hardware owners, after an uninstall, or
+/// nothing after a fail-stop, which leaves the hardware installed until a
+/// reset. Only the uninstalls and the `fail_stop`s construct it.
+#[must_use = "an ended port returns its hardware owners"]
+pub struct Ended<B: PortBackend> {
+    uninstalled: Option<B::Uninstalled>,
+}
+
+impl<B: PortBackend> Ended<B> {
+    /// The hardware owners an uninstall returned, or `None` after a
+    /// fail-stop.
+    pub fn into_uninstalled(self) -> Option<B::Uninstalled> {
+        self.uninstalled
+    }
 }
 
 /// The one authority over an installed port, in state `S`; see the
 /// [module](self) documentation.
-#[must_use = "an owner leaves only through a transition or its backend's uninstall"]
-pub struct Owner<B, S> {
-    backend: B,
+#[must_use = "an owner leaves only through a transition, an uninstall or a fail-stop"]
+pub struct Owner<B: PortBackend, S> {
+    /// `None` only once a consuming method took it.
+    backend: Option<B>,
     state: PhantomData<S>,
 }
 
-impl<B: PortBackend> Owner<B, Disabled> {
-    /// Wrap a just-installed, disabled backend. A backend's install calls
-    /// it; a caller has no backend value to pass.
-    pub const fn install(backend: B) -> Self {
+impl<B: PortBackend, S> Owner<B, S> {
+    fn new(backend: B) -> Self {
         Self {
-            backend,
+            backend: Some(backend),
             state: PhantomData,
         }
     }
 
-    /// Lend the protocol's disabled-only settings.
-    pub fn setup(&mut self) -> Lent<'_, B::Setup<'_>> {
-        self.backend.setup()
+    fn backend(&mut self) -> &mut B {
+        self.backend.as_mut().expect(HELD)
     }
 
-    /// Start `Enable`; [`Enabling::next`] ends it.
+    fn take(mut self) -> B {
+        self.backend.take().expect(HELD)
+    }
+
+    /// The radio clock.
+    pub fn now(
+        &self,
+    ) -> impl Future<Output = PortResult<RadioInstant<B::Domain>, ClockError, B::Fault>> + '_ {
+        self.backend.as_ref().expect(HELD).now()
+    }
+
+    /// Stop the backend at once and end the port without its uninstall:
+    /// the hardware stays installed and unreachable until a reset.
+    pub fn fail_stop(self) -> Ended<B> {
+        self.take().abandon();
+        Ended { uninstalled: None }
+    }
+}
+
+impl<B: PortBackend> Owner<B, Disabled> {
+    /// Lend the protocol's disabled-only settings.
+    pub fn setup(&mut self) -> Lent<'_, B::Setup<'_>> {
+        self.backend().setup()
+    }
+
+    /// Enable the port, within the backend's bound.
     ///
     /// # Errors
     ///
-    /// A poisoned backend, which only its uninstall leaves.
-    #[allow(clippy::result_large_err, reason = "the owner moves on by value")]
-    pub fn enable(mut self) -> Result<Enabling<B>, PoisonedOwner<B>> {
-        match self.backend.admit_enable() {
-            Ok(()) => Ok(Enabling {
-                backend: Some(self.backend),
-            }),
-            Err(poisoned) => Err(PoisonedOwner::new(self.backend, poisoned)),
+    /// The radio's refusal, with the disabled owner, or a poisoned backend.
+    pub async fn enable(self) -> Result<Owner<B, Enabled>, Failed<B>> {
+        let mut backend = self.take();
+        match backend.enable().await {
+            Ok(Ok(())) => Ok(Owner::new(backend)),
+            Ok(Err(refusal)) => Err(Failed::Refused(Owner::new(backend), refusal)),
+            Err(poisoned) => Err(Failed::Poisoned(PoisonedOwner::new(backend, poisoned))),
         }
     }
 
     /// Take the disabled backend apart with the composition's `control`.
-    pub fn uninstall(self, control: B::Uninstall) -> B::Uninstalled {
-        self.backend.uninstall(control)
+    pub fn uninstall(self, control: B::Uninstall) -> Ended<B> {
+        Ended {
+            uninstalled: Some(self.take().uninstall(control)),
+        }
     }
 }
 
@@ -350,143 +471,71 @@ impl<B: PortBackend> Owner<B, Enabled> {
     /// Lend one running phase: its event consumer, its control and its
     /// clients, each a [`Lent`] of this borrow.
     pub fn split(&mut self) -> PhaseParts<'_, B::Events<'_>, B::Control<'_>, B::Clients<'_>> {
-        self.backend.split()
+        self.backend().split()
     }
 
-    /// Start `Disable`; [`Disabling::next`] yields the leftover terminals
-    /// and ends it.
+    /// Disable the port within the backend's bound: every leftover terminal
+    /// of a phase's work, with what it returns, goes to `sink`, and the port
+    /// is disabled once every permit is back.
     ///
     /// # Errors
     ///
-    /// A poisoned backend, which only its uninstall leaves.
-    #[allow(clippy::result_large_err, reason = "the owner moves on by value")]
-    pub fn disable(mut self) -> Result<Disabling<B>, PoisonedOwner<B>> {
-        match self.backend.admit_disable() {
-            Ok(()) => Ok(Disabling {
-                backend: Some(self.backend),
-            }),
-            Err(poisoned) => Err(PoisonedOwner::new(self.backend, poisoned)),
+    /// A poisoned backend.
+    pub async fn disable(
+        self,
+        sink: &mut dyn FnMut(B::Event),
+    ) -> Result<Owner<B, Disabled>, PoisonedOwner<B>> {
+        let mut backend = self.take();
+        match backend.disable(sink).await {
+            Ok(()) => Ok(Owner::new(backend)),
+            Err(poisoned) => Err(PoisonedOwner::new(backend, poisoned)),
         }
     }
 }
 
-impl<B: PortBackend, S> Owner<B, S> {
-    /// The radio clock.
-    pub fn now(
-        &self,
-    ) -> impl Future<Output = PortResult<RadioInstant<B::Domain>, ClockError, B::Fault>> + '_ {
-        self.backend.now()
+impl<B: PortBackend, S> Drop for Owner<B, S> {
+    fn drop(&mut self) {
+        abandoned(&mut self.backend);
     }
 }
 
-/// An admitted `Enable` until its end. It holds the backend between calls of
-/// [`Self::next`], so dropping a `next` future loses nothing.
-#[must_use = "an enabling port resolves only through next"]
-pub struct Enabling<B> {
-    backend: Option<B>,
-}
-
-/// One step of [`Enabling::next`].
-pub enum EnableStep<B: PortBackend> {
-    /// An event the port reported before the command ended.
-    Event(B::Event),
-    /// The port is enabled.
-    Enabled(Owner<B, Enabled>),
-    /// The radio did not enable; the port is disabled.
-    Failed(Owner<B, Disabled>, B::EnableFailure),
+/// Why `Enable` did not leave an enabled owner.
+pub enum Failed<B: PortBackend> {
+    /// The radio refused; the port is disabled.
+    Refused(Owner<B, Disabled>, B::Refusal),
     /// The backend is poisoned.
     Poisoned(PoisonedOwner<B>),
 }
 
-impl<B: PortBackend> Enabling<B> {
-    /// The next event, or the command's end with the next owner.
-    ///
-    /// # Panics
-    ///
-    /// Called again after it returned the next owner, as a completed future
-    /// polled again does.
-    pub async fn next(&mut self) -> EnableStep<B> {
-        let backend = self.backend.as_mut().expect(RESOLVED);
-        let step = backend.next_enabling().await;
-        match step {
-            Ok(Step::Event(event)) => EnableStep::Event(event),
-            Ok(Step::Ended(Ok(()))) => EnableStep::Enabled(Owner {
-                backend: self.backend.take().expect(RESOLVED),
-                state: PhantomData,
-            }),
-            Ok(Step::Ended(Err(failure))) => EnableStep::Failed(
-                Owner {
-                    backend: self.backend.take().expect(RESOLVED),
-                    state: PhantomData,
-                },
-                failure,
-            ),
-            Err(poisoned) => EnableStep::Poisoned(PoisonedOwner::new(
-                self.backend.take().expect(RESOLVED),
-                poisoned,
-            )),
+impl<B: PortBackend> Failed<B> {
+    /// Stop the backend at once and end the port.
+    pub fn fail_stop(self) -> Ended<B> {
+        match self {
+            Self::Refused(owner, _) => owner.fail_stop(),
+            Self::Poisoned(poisoned) => poisoned.fail_stop(),
         }
     }
 }
 
-/// An admitted `Disable` until its end. It holds the backend between calls
-/// of [`Self::next`], so dropping a `next` future loses nothing.
-#[must_use = "a disabling port resolves only through next"]
-pub struct Disabling<B> {
-    backend: Option<B>,
-}
-
-/// One step of [`Disabling::next`].
-pub enum DisableStep<B: PortBackend> {
-    /// An event the port reported before the command ended: a leftover
-    /// terminal of a phase's work, with what it returns.
-    Event(B::Event),
-    /// The port is disabled.
-    Disabled(Owner<B, Disabled>),
-    /// The backend is poisoned.
-    Poisoned(PoisonedOwner<B>),
-}
-
-impl<B: PortBackend> Disabling<B> {
-    /// The next event, or the command's end with the next owner.
-    ///
-    /// # Panics
-    ///
-    /// Called again after it returned the next owner, as a completed future
-    /// polled again does.
-    pub async fn next(&mut self) -> DisableStep<B> {
-        let backend = self.backend.as_mut().expect(RESOLVED);
-        let step = backend.next_disabling().await;
-        match step {
-            Ok(Step::Event(event)) => DisableStep::Event(event),
-            Ok(Step::Ended(())) => DisableStep::Disabled(Owner {
-                backend: self.backend.take().expect(RESOLVED),
-                state: PhantomData,
-            }),
-            Err(poisoned) => DisableStep::Poisoned(PoisonedOwner::new(
-                self.backend.take().expect(RESOLVED),
-                poisoned,
-            )),
-        }
-    }
-}
-
-const RESOLVED: &str = "a resolved transition is not stepped again";
-
-/// The one exit of a poisoned backend: its state is unknown, and only its
-/// uninstall leaves it.
-#[must_use = "a poisoned backend leaves only through its uninstall"]
+/// The one exit of a poisoned backend: its state is unknown, and it leaves
+/// through its uninstall or a fail-stop.
+#[must_use = "a poisoned backend leaves only through its uninstall or a fail-stop"]
 pub struct PoisonedOwner<B: PortBackend> {
-    backend: B,
+    /// `None` only once a consuming method took it.
+    backend: Option<B>,
     cause: B::Fault,
 }
 
 impl<B: PortBackend> PoisonedOwner<B> {
     fn new(backend: B, poisoned: Poisoned<B::Fault>) -> Self {
         Self {
-            backend,
+            backend: Some(backend),
             cause: poisoned.cause,
         }
+    }
+
+    fn take(mut self) -> B {
+        self.backend.take().expect(HELD)
     }
 
     /// Why the backend's state is unknown.
@@ -495,9 +544,42 @@ impl<B: PortBackend> PoisonedOwner<B> {
     }
 
     /// Take the backend apart with the composition's `control`.
-    pub fn uninstall(self, control: B::Uninstall) -> B::Uninstalled {
-        self.backend.uninstall(control)
+    pub fn uninstall(self, control: B::Uninstall) -> Ended<B> {
+        Ended {
+            uninstalled: Some(self.take().uninstall(control)),
+        }
     }
+
+    /// Stop the backend at once and end the port without its uninstall.
+    pub fn fail_stop(self) -> Ended<B> {
+        self.take().abandon();
+        Ended { uninstalled: None }
+    }
+}
+
+impl<B: PortBackend> Drop for PoisonedOwner<B> {
+    fn drop(&mut self) {
+        abandoned(&mut self.backend);
+    }
+}
+
+const HELD: &str = "an owner holds its backend until a consuming method";
+
+/// The safety net of a dropped owner: abandon the backend it still holds,
+/// and assert in debug builds, as `PlatformClockGuard` does.
+fn abandoned<B: PortBackend>(backend: &mut Option<B>) {
+    let Some(mut backend) = backend.take() else {
+        return;
+    };
+    backend.abandon();
+    #[cfg(test)]
+    if std::thread::panicking() {
+        return;
+    }
+    debug_assert!(
+        false,
+        "a port owner was dropped without an uninstall or a fail-stop"
+    );
 }
 
 /// The parts of one running phase ([`Owner::split`]), each lent for the
@@ -547,7 +629,7 @@ impl<T> DerefMut for Lent<'_, T> {
 }
 
 /// The one consumer of a running phase's events: a router that hands each
-/// terminal event to the holder of its work ([`RadioWork::id`]).
+/// terminal event to the holder of its work ([`Work::id`]).
 pub trait RadioPortEvents {
     /// One owned event.
     type Event;
@@ -556,15 +638,16 @@ pub trait RadioPortEvents {
 
     /// The next event. Taking it only dequeues it; dropping the future
     /// loses no event. `Ok(Err(EventsLost))` takes the place of the first
-    /// dropped event. A poisoned backend returns [`Poisoned`] after every
-    /// event it produced before the fault, and again at every later call.
+    /// dropped event, which only unsolicited reception may lose. A poisoned
+    /// backend returns [`Poisoned`] after every event it produced before
+    /// the fault, and again at every later call.
     fn next_event(
         &mut self,
     ) -> impl Future<Output = PortResult<Self::Event, EventsLost, Self::Fault>> + '_;
 }
 
 /// One admitted operation: what a client's submission returns. The backend
-/// mints its `token`, which is neither `Clone` nor `Copy`, so it names
+/// mints its token, which is neither `Clone` nor `Copy`, so it names
 /// exactly one operation and only its holder ends it. A `Work` borrows the
 /// client that admitted it (`'c`, invariant), so no token outlives its
 /// phase and none can name the work of a later one.
@@ -601,7 +684,7 @@ pub trait RadioWork {
 }
 
 /// What every client handle of a running phase does beside its protocol's
-/// own submissions, settings and leases: read the radio clock and end its
+/// own submissions, settings and permits: read the radio clock and end its
 /// own work.
 ///
 /// A client exists only for an interface the disabled port configured, and

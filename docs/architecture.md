@@ -349,7 +349,7 @@ an API would return and ask who controls the state behind it.
 | The caller's own commands | a typestate: the value's type is its state, and a transition takes it by value | an owner `Disabled`/`Enabled`; a transmit gate closed |
 | The caller's own earlier submission or resource | a token: minted by the owner of the resource, neither `Clone` nor `Copy`, given back to end it | admitted work, a queue lease, an installed key, a Block Ack agreement, a Bluetooth LE set |
 | The caller's own capacity | a pool of tokens handed out once; "full" is an empty pool the caller holds, not a refusal | key slots, accept-list entries |
-| The caller's own values | a validated type that only the capabilities construct, which the call takes instead of the raw value | a supported channel, rate or transmit power |
+| The caller's own values | a validated type branded by the backend's type (`SupportedChannel<B>`), which only that backend's capabilities construct and the call takes instead of the raw value; a lifetime brand only for a capability that varies at run time | a supported channel, rate or transmit power |
 | The world (the air, time, the hardware, a peer, the arbiter) | a typed outcome or refusal | a poisoned backend, lost events, a clock that could not be read, a coexistence rejection, a cancel that finds the work already ended |
 
 A refusal such as `Busy`, `Disabled`, `AlreadyInState`, `Unknown…`,
@@ -370,11 +370,60 @@ what enforces it:
   it came from;
 - a guarantee that is neither is not claimed.
 
-Typestate transitions that wait (an enable, a disable) are values that hold
-the owner between steps, so dropping a step's future loses nothing; only
-the last step hands out the next state. A borrow binds a loan to its
-lender: a loan type is invariant in the lender's borrow, and the lender's
-signature, not the borrower's types, fixes it.
+Regulatory legality is policy, not capability: a channel the region allows
+is its own validated type
+([#323](https://github.com/ermacv/open-esp-radio-rs/issues/323)).
+
+**Port-lifetime and phase-scoped tokens.** A resource that outlives a phase
+(an installed key, a Block Ack agreement, a configured interface, a
+Bluetooth LE set) has its token owned by the port's owner, set up while it
+is disabled and lent into each phase, so a phase that ends (a channel move)
+neither loses nor re-installs it. Admitted work and the leases it holds (a
+transmit queue, an operation slot) are phase-scoped: they borrow the phase
+and end with it. Each protocol's refusal-to-type table says which its
+tokens are.
+
+**Sans-IO cores.** A sans-IO core is `'static` and holds no borrow, so it
+never stores a phase-scoped token. The phase keeps a boundary table, a
+phase value created after the split and dropped before the disable, that
+maps the core's own identity (a Bluetooth LE `EventId`) to the token; the
+core decides, and the table carries out its decision with the token. Every
+protocol with a sans-IO core uses this one pattern.
+
+**Proofs say exactly what they prove.** A guard proves its own state and no
+more: a closed transmit gate proves that this port publishes no
+transmission (`TxGated`), not that the air is quiet; reception runs, and
+other radios and peers still transmit.
+
+**A resource's lifetime is a body.** An owner of hardware lives inside one
+body that must return a proof of its end (`Ended`), which only its
+uninstall or a fail-stop constructs; a body that drops or forgets the owner
+does not compile. The body runs as an executor task, which is not
+cancelled, and its parts run inside it under `join` over disjoint borrows.
+Its transitions take the owner by value and are bounded by contract: each
+ends within its bound or as poisoned, and an unbounded wait (an arbiter's
+lease) is a separate cancel-safe step before it. A transition that ends
+work hands every leftover terminal to a sink it takes and completes only
+when every permit is back. Capacity is permits: a submission consumes one
+and its terminal returns it, so no queue overflows and no terminal is lost;
+only unsolicited reception may lose events. A `Drop` of an owner is a
+safety net, as `PlatformClockGuard`'s: it stops the hardware synchronously,
+refuses a new install until a reset and asserts in debug builds; it is
+never the shutdown. Everything the hardware touches is `'static` and owned
+by the resource, so no abandoned owner is a memory-safety issue. Composition
+crates disallow `core::future::pending` in their own `clippy.toml`, so a
+body does not end by pending forever.
+
+**Compile-time values.** Capabilities that are the same for every instance
+of a backend type are associated constants, and a literal value is checked
+with `const { assert!(..) }`; a value from outside (configuration, a scan)
+is parsed once at the boundary into its validated type; a capability of
+one instance carries that install's generative lifetime, which stays inside
+its body; counts and capacities are const generics.
+
+A borrow binds a loan to its lender: a loan type is invariant in the
+lender's borrow, and the lender's signature, not the borrower's types,
+fixes it.
 
 A radio port applies these rules through its owner, its phases and its
 tokens ([Radio ports](#radio-ports)).
@@ -440,22 +489,24 @@ protocol:
 | Lifecycle | Enable, disable, quiesce and cancel of submitted work, each with a terminal event; `Disable` ends the work in flight first |
 | Clock | The backend's radio time on the shared time contract, with a stated resolution and the relation of its epoch to monotonic time (`ClockInfo`); asynchronous under the same conditions as submission |
 
-**Authority.** An installed port is an `oer_radio_port::Owner` over the
-backend, whose type is its state. An `Owner<B, Disabled>` lends the
-protocol's disabled-only settings (a permanent channel move, interface
-configuration) and is the only state the backend's uninstall takes; its
-`enable` takes it by value and returns an `Enabling` that steps through the
-port's events to an `Owner<B, Enabled>` or, when the radio refused, back to
-a disabled owner with the cause. An `Owner<B, Enabled>` lends one running
-phase at a time (`split`): the phase's one event consumer, its control (the
-radio-wide operations that only gate or tune admission, as guards with one
-holder, never refusing as busy) and its interface-scoped clients, each a
-`Lent` of the owner's borrow; its `disable` returns a `Disabling` that
-yields the leftover terminals of the phase's work, with their bodies, and
-then the disabled owner. A poisoned backend leaves through a
-`PoisonedOwner` and its uninstall. A client's submission returns its
-admitted work as a token the backend mints; ending the work takes the
-token. No call refuses for a state the caller controls
+**Authority.** An installed port lives in one body (`oer_radio_port::PortBody`,
+run by `run_port`) that must return `Ended`, which only the owner's
+uninstall or a fail-stop constructs. The body's `Owner` has the port's state
+as its type. An `Owner<B, Disabled>` lends the protocol's disabled-only
+settings (a permanent channel move, interface configuration, and the
+port-lifetime resources such as keys and agreements, whose tokens it keeps
+and lends into each phase) and is the only state that uninstalls; its
+`enable(self)` returns an `Owner<B, Enabled>`, the disabled owner with the
+radio's refusal, or a `PoisonedOwner`. An `Owner<B, Enabled>` lends one
+running phase at a time (`split`): the phase's one event consumer, its
+control (the radio-wide operations that only gate or tune admission, as
+guards with one holder, never refusing as busy; a closed transmit gate is a
+`TxGated` proof) and its interface-scoped clients, each a `Lent` of the
+owner's borrow; its `disable(self, sink)` hands the leftover terminals of
+the phase's work, with their bodies, to the sink and returns the disabled
+owner once every permit is back. A client's submission returns its admitted
+work as a token the backend mints, borrowing the client; ending the work
+takes the token. No call refuses for a state the caller controls
 ([Ownership and refusals](#ownership-and-refusals)). The base `RadioPort`
 and the protocol ports move onto this shape in
 [#581](https://github.com/ermacv/open-esp-radio-rs/issues/581).

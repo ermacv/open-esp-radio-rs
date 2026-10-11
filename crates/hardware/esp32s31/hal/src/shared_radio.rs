@@ -605,8 +605,9 @@ impl<T> SharedRadioLease<'_, T> {
     /// Wi-Fi baseband and MAC resets, so it never runs while another client
     /// holds power.
     ///
-    /// The first client also takes the platform's 160 MHz and analog-I2C
-    /// references from `clocks`; ESP-HAL alone writes those shared gates.
+    /// The first client also takes the platform's 160 MHz, MPLL and
+    /// analog-I2C references from `clocks`; ESP-HAL alone writes those shared
+    /// gates.
     ///
     /// # Errors
     ///

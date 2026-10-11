@@ -3,7 +3,7 @@
 //!
 //! The restricted PAC exposes straight-line configuration and baseline
 //! transactions. This module decides when common power takes and gives back the
-//! platform-owned 160 MHz and analog-I2C references, which state it restores
+//! platform-owned 160 MHz, analog-I2C and MPLL references, which state it restores
 //! on release and when the captured cold-power baseline may be committed.
 //! Every value here is route-scoped: a route gives back its references and
 //! restores the baseline before the neutral root is reconstructed.

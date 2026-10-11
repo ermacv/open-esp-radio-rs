@@ -83,6 +83,10 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
     add(phy::StartupArtifact::KEY, traffic);
     add(phy::RxHotSram::KEY, enabled("phy-rx-hot-sram"));
     add(phy::TrackingHoldProbe::KEY, enabled("phy-tracking-hold"));
+    add(
+        system::InterruptLatencyProbe::KEY,
+        enabled("interrupt-latency-probe"),
+    );
     for key in [
         network::Udp::KEY,
         network::Tcp::KEY,
@@ -177,6 +181,7 @@ pub const READ_FEATURES: &[&str] = &[
     "wifi-ble-coex",
     "phy-fault-injection",
     "phy-tracking-hold",
+    "interrupt-latency-probe",
     "driver-observation",
     "rx-delivery-telemetry",
     "rx-ownership-telemetry",

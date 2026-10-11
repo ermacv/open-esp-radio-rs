@@ -133,6 +133,10 @@ oer_espressif_staged_runtime::interrupt_table! {
     #[cfg(feature = "pc-profile")]
     /// The PC profiler's request that core 1 samples its PC.
     profile_core1: ProfileCore1Sample = FROM_CPU_INTR3 => pc_profile::sample_core1, Priority8, AppCpu;
+    #[cfg(feature = "interrupt-latency-probe")]
+    /// The interrupt-latency probe's line (#643), at the radio MAC
+    /// interrupts' level on their core.
+    interrupt_latency: InterruptLatencyProbe = FROM_CPU_INTR3 => system::interrupt_latency::handler, Priority1, ProCpu;
     #[cfg(feature = "open-radio-hil")]
     /// Wakes the core-1 Embassy executor.
     app_wake: AppExecutorWake = FROM_CPU_INTR1 => oer_espressif_executor_embassy::wake_handler::<1>, Priority1, AppCpu;
@@ -458,6 +462,8 @@ extern "C" fn runtime_main() -> ! {
         hang_watchdog::start(systimer.alarm0, interrupts.hang_check);
         #[cfg(feature = "pc-profile")]
         pc_profile::init(systimer.alarm1, interrupts.profile_sample);
+        #[cfg(feature = "interrupt-latency-probe")]
+        system::interrupt_latency::enable(interrupts.interrupt_latency);
         source_gate::install(OneShotTimer::new(systimer.alarm2), interrupts.source_gate);
     }
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]

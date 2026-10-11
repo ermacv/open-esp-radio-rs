@@ -187,6 +187,10 @@ connected-datapath-poll-telemetry = [
 task-residence-telemetry = ["connected-datapath-poll-telemetry", "pc-profile"]
 # Statistical PC profile of both harts over each UDP RX window.
 pc-profile = []
+# Time a software interrupt raised at the radio interrupts' level from its
+# raise to its handler (`system/interrupt-latency`, #643). It takes the
+# profiler's software interrupt line, so it excludes `pc-profile`.
+interrupt-latency-probe = ["open-radio-hil"]
 # Same-image home for hardware-address and memory-transfer probes. It retains
 # residence timing, but must never be used as the production CPU budget.
 tx-architecture-probes = [

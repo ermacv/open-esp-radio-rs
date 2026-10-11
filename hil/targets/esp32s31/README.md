@@ -70,6 +70,13 @@ carry the feature, one per client set:
 The host step is `oer_hil_workload::phy_tracking_hold`. Product images compile
 neither the request nor the policy setter.
 
+The `interrupt-latency-probe` feature (image `diagnostic-interrupt-latency`)
+times a FROM_CPU software interrupt raised at the radio MAC interrupts' level
+on core 0, from its raise to its handler's entry, in CPU cycles
+(`system/interrupt-latency/measure`, #643). It takes the profiler's line 3,
+so it excludes `pc-profile`. The host step is
+`oer_hil_workload::interrupt_latency`.
+
 `runtime/src/product_hil/network` owns stack setup, IPv4 configuration, socket
 API bindings and diagnostic wrappers. All implementations use the same traffic
 workers and public production radio constructor. Radio behaviour belongs in

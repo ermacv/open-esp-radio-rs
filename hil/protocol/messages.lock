@@ -135,6 +135,9 @@ phy/tracking/hold/measure dde336f2a2b646b9 endpoint
 phy/tracking/state b95b96002f5ea5d3 topic
 system/hang/inject 2a42c5b154094a25 endpoint
 system/hang/injected ab4b470f0e8147f6 topic
+system/interrupt-latency 0f789db2ef7d8e84 property
+system/interrupt-latency/measure 97d378e1cf9d4610 endpoint
+system/interrupt-latency/measured b6a32be4bcdaff2c topic
 system/interrupt-stacks cc93bc9290533df4 topic
 system/interrupt-stacks/get 651c27a44d5bc802 endpoint
 system/ipc-call 2d19c0acb90b2ce9 property

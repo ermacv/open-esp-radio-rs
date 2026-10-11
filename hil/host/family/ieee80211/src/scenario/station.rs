@@ -34,6 +34,12 @@ pub struct StationUdp {
     /// needs the `diagnostic-phy-tracking-hold` image and a receiving offer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phy_tracking_hold: Option<u16>,
+    /// Take this many samples of a software interrupt's latency at the radio
+    /// interrupts' level during the traffic and again on the idle link
+    /// (#643). It needs the `diagnostic-interrupt-latency` image and a
+    /// receiving offer, and excludes `phy_tracking_hold`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interrupt_latency_probe: Option<u16>,
     #[serde(default)]
     pub criteria: StationUdpCriteria,
 }
@@ -137,6 +143,21 @@ impl StationUdp {
             if direction != Direction::Rx || self.suspend_phy_tracking {
                 return Err(
                     "phy_tracking_hold runs beside a receive-only offer, with tracking not suspended by the scenario"
+                        .into(),
+                );
+            }
+        }
+        if let Some(samples) = self.interrupt_latency_probe {
+            bounded(samples, 1, 1024, "interrupt_latency_probe")?;
+            if image != ImageClass::DiagnosticInterruptLatency {
+                return Err(
+                    "interrupt_latency_probe requires the diagnostic-interrupt-latency image"
+                        .into(),
+                );
+            }
+            if direction != Direction::Rx || self.phy_tracking_hold.is_some() {
+                return Err(
+                    "interrupt_latency_probe runs beside a receive-only offer and excludes phy_tracking_hold"
                         .into(),
                 );
             }

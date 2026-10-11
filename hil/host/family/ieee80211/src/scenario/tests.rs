@@ -563,3 +563,26 @@ fn a_station_tracking_hold_needs_its_image_window_and_receive_offer() {
         invalid(&broken);
     }
 }
+
+/// The interrupt-latency probe needs its image and a receive-only offer, and
+/// excludes the tracking hold.
+#[test]
+fn a_station_interrupt_latency_probe_needs_its_image_and_receive_offer() {
+    let probe = UDP_RX.replace("'correctness'", "'diagnostic-interrupt-latency'");
+    valid(&format!("{probe}interrupt_latency_probe = 512\n"));
+    for broken in [
+        format!("{UDP_RX}interrupt_latency_probe = 512\n"),
+        format!("{probe}interrupt_latency_probe = 0\n"),
+        format!("{probe}interrupt_latency_probe = 1025\n"),
+        format!(
+            "{}interrupt_latency_probe = 512\n",
+            probe.replace(
+                "offer = { rx_bps = 50000000 }",
+                "offer = { rx_bps = 50000000, tx_bps = 50000000 }"
+            )
+        ),
+        format!("{probe}interrupt_latency_probe = 512\nphy_tracking_hold = 2\n"),
+    ] {
+        invalid(&broken);
+    }
+}

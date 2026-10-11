@@ -151,7 +151,7 @@ pub trait Ieee80211LowerMacPort: RadioPort<Id = TxId, Domain = Ieee80211Radio> {
 
     /// The resolution of [`RadioPort::now`] and how its epoch relates to the
     /// image's monotonic time.
-    fn clock_info(&self) -> ClockInfo;
+    fn clock_info(&self) -> ClockInfo<Ieee80211Radio>;
 
     /// Lend a buffer for an MPDU of `len` bytes. `Ok(None)` when every
     /// buffer is in use or `len` exceeds
@@ -182,7 +182,8 @@ pub trait Ieee80211LowerMacPort: RadioPort<Id = TxId, Domain = Ieee80211Radio> {
 
     /// The radio clock and the monotonic clock read back to back, in the
     /// current generation of their relation. A caller converts a receive
-    /// stamp with it ([`ClockInfo::to_monotonic_with`]); a stamp of an
-    /// earlier generation does not convert.
+    /// stamp with it through the relation the port's `clock_info` states
+    /// ([`ClockRelation::project`](crate::ClockRelation::project)); a stamp
+    /// of an earlier generation does not convert.
     fn clock_sample(&self) -> PortResult<Ieee80211ClockSample, ClockError, Self::Fault>;
 }

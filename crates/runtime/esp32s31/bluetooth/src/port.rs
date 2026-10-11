@@ -7,7 +7,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_radio::{
     CancelError, ClockError, ClockInfo, EventId, EventsLost, LeInstant, LeRadio,
     LeRadioCapabilities, LeRadioPort, LifecycleCommand, LifecycleError, Poisoned, PortResult,
-    RadioActivity, RadioEpoch, RadioOutcome, RadioPort, RadioRequest, RequestError,
+    RadioActivity, RadioOutcome, RadioPort, RadioRequest, RequestError,
 };
 use oer_esp32s31_hal::shared_radio::ClientQuiescence;
 use oer_time::Timer;
@@ -159,10 +159,10 @@ impl<
     /// The radio time is the controller clock, extended from the 32-bit
     /// controller-time latch the radio samples; the runtime keeps no
     /// measured relation between it and the image's monotonic clock.
-    fn clock_info(&self) -> ClockInfo {
+    fn clock_info(&self) -> ClockInfo<LeRadio> {
         ClockInfo {
-            resolution: ClockInfo::MONOTONIC_MICROS.resolution,
-            epoch: RadioEpoch::Unrelated,
+            resolution: ClockInfo::<LeRadio>::MONOTONIC_MICROS.resolution,
+            monotonic: None,
         }
     }
 

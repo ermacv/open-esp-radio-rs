@@ -54,6 +54,9 @@ pub type Ieee80211Duration = oer_time::RadioDuration<Ieee80211Radio>;
 /// of its relation to the monotonic clock.
 pub type Ieee80211Stamp = oer_radio_port::RadioStamp<Ieee80211Radio>;
 
+/// A generation of the port's radio-clock relation to monotonic time.
+pub type Ieee80211ClockGeneration = oer_radio_port::Generation<Ieee80211Instant, oer_time::Instant>;
+
 /// A paired reading of the IEEE 802.11 lower-MAC port's clock and the
 /// monotonic clock.
 pub type Ieee80211ClockSample = oer_radio_port::ClockSample<Ieee80211Radio>;
@@ -70,14 +73,14 @@ pub use extensions::{
     AirReservation, AirReservationAttempt, AmpduAttempt, AmpduBuffer, AmpduCapabilities,
     AmpduPayload, BeaconTimingCapabilities, LowerMacAirReservation, LowerMacAmpdu,
     LowerMacBeaconTiming, LowerMacCancelPublished, LowerMacLiveRetune, LowerMacMonitor,
-    MAX_AIR_RESERVATION, MonitorCapabilities, TSF_DRIFT_PPM, TbttEvent, TbttSchedule,
+    MAX_AIR_RESERVATION, MonitorCapabilities, TSF_DRIFT_PPM, TSF_RELATION, TbttEvent, TbttSchedule,
     TsfArithmeticError, TsfGeneration, TsfProjectionError, TsfRelation, TsfSample, TsfSetKind,
     TsfTimingError, TsfVifMismatch, VifTsf,
 };
 pub use oer_radio_port::{
-    CancelError, ClockError, ClockInfo, Correlation, CorrelationIds, EpochError, EventsLost,
-    LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, PortResult, Projected, RadioEpoch,
-    RadioPort,
+    CancelError, ClockError, ClockInfo, ClockRelation, Correlation, CorrelationIds, EventsLost,
+    Generation, GenerationSource, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned,
+    PortResult, Projected, ProjectionError, RadioPort, RelationRate,
 };
 pub use port::{Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};

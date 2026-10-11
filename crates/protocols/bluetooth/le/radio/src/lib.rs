@@ -47,7 +47,7 @@ pub use channel::{
 pub use oer_radio_coex::CoexPriority;
 pub use oer_radio_port::{
     CancelError, ClockError, ClockInfo, Correlation, CorrelationIds, EventsLost, LifecycleCommand,
-    LifecycleError, LifecycleEvent, Poisoned, PortResult, RadioEpoch, RadioPort,
+    LifecycleError, LifecycleEvent, Poisoned, PortResult, RadioPort,
 };
 pub use oer_time::{NonZeroRadioDuration, RadioDuration, WindowError};
 

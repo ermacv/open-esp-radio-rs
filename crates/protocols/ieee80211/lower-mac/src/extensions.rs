@@ -263,12 +263,14 @@ pub struct TsfSample {
 /// The generation of a TSF relation: the epoch its owner took when it was
 /// created, from a source shared by every owner of one radio start, and the
 /// jumps since. Two owners never share an epoch, so a generation names one
-/// stretch of one relation.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct TsfGeneration {
-    pub epoch: u32,
-    pub jump: u32,
-}
+/// stretch of one relation. Only the relation's [`TsfRelation`] makes one.
+pub type TsfGeneration = oer_radio_port::Generation<TsfInstant, crate::Ieee80211Instant>;
+
+/// How an interface's TSF advances against the port's radio clock: at its
+/// rate within [`TSF_DRIFT_PPM`] (the access point's timer and the
+/// station's crystal).
+pub const TSF_RELATION: oer_radio_port::ClockRelation<TsfInstant, crate::Ieee80211Instant> =
+    oer_radio_port::ClockRelation::affine(TSF_DRIFT_PPM);
 
 /// The relation of one interface's TSF to the radio clock across TSF sets:
 /// its generation and its last sample, the value the TSF was last set to.
@@ -282,9 +284,9 @@ pub struct TsfGeneration {
 /// here: a set to a value across 2^64, or one after the counter passed 2^64
 /// since the last sample (a reading below it), is a jump, so the instants of
 /// one generation always compare in order.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct TsfRelation {
-    generation: TsfGeneration,
+    generations: oer_radio_port::GenerationSource<TsfInstant, crate::Ieee80211Instant>,
     last_sample: Option<TsfInstant>,
     sample_uncertainty: TsfDuration,
 }
@@ -311,7 +313,7 @@ impl TsfRelation {
     /// `sample_uncertainty` (the backend's TSF counter resolution).
     pub const fn new(epoch: u32, sample_uncertainty: TsfDuration) -> Self {
         Self {
-            generation: TsfGeneration { epoch, jump: 0 },
+            generations: oer_radio_port::GenerationSource::new(epoch),
             last_sample: None,
             sample_uncertainty,
         }
@@ -319,13 +321,13 @@ impl TsfRelation {
 
     /// The current generation.
     pub const fn generation(&self) -> TsfGeneration {
-        self.generation
+        self.generations.current()
     }
 
     /// Start a new generation without a sample: the TSF jumped (a new
     /// association, a channel change, a timer restart).
     pub fn break_relation(&mut self) {
-        self.generation.jump = self.generation.jump.wrapping_add(1);
+        self.generations.jump();
         self.last_sample = None;
     }
 
@@ -384,11 +386,21 @@ pub enum TsfProjectionError {
     OutOfRange,
 }
 
-/// The sample is the relation between its interface's TSF and the port's
-/// radio clock: the two count microseconds at the same nominal rate within
-/// [`TSF_DRIFT_PPM`], so its projections, and only they, carry a span of
-/// one domain into the other, widened by that drift.
+/// The sample is one reading of the relation between its interface's TSF
+/// (the source) and the port's radio clock (the target); its projections
+/// are those of [`TSF_RELATION`], with the interface and the radio clock's
+/// own generation checked on top.
 impl TsfSample {
+    /// The relation sample of this reading, without its interface.
+    fn relation(&self) -> oer_radio_port::RelationSample<TsfInstant, crate::Ieee80211Instant> {
+        oer_radio_port::RelationSample {
+            source: self.tsf.at,
+            target: self.local.at,
+            uncertainty: self.uncertainty,
+            generation: self.generation,
+        }
+    }
+
     /// The TSF of this sample's interface when the port's radio clock read
     /// `local`, with the sample's uncertainty plus the drift over the
     /// distance from the sample; `current` is the relation's generation now.
@@ -401,14 +413,10 @@ impl TsfSample {
         if local.generation != self.local.generation {
             return Err(TsfProjectionError::StaleStamp);
         }
-        let (at, distance) = shift(
-            self.tsf.at.as_micros(),
-            self.local.at.as_micros(),
-            local.at.as_micros(),
-        )?;
+        let projected = TSF_RELATION.project_back(local.at, &self.relation())?;
         Ok(oer_radio_port::Projected {
-            at: VifTsf::new(self.tsf.vif, TsfInstant::from_micros(at)),
-            uncertainty: TsfDuration::from_micros(drift_bound(self.uncertainty, distance)?),
+            at: VifTsf::new(self.tsf.vif, projected.at.at),
+            uncertainty: projected.uncertainty,
         })
     }
 
@@ -434,20 +442,13 @@ impl TsfSample {
         }
         Ok((|| {
             self.check(current)?;
-            let (at, distance) = shift(
-                self.local.at.as_micros(),
-                self.tsf.at.as_micros(),
-                tsf.at.as_micros(),
-            )?;
+            let projected = TSF_RELATION.project(tsf.at, current, &self.relation())?;
             Ok(oer_radio_port::Projected {
                 at: crate::Ieee80211Stamp {
-                    at: crate::Ieee80211Instant::from_micros(at),
+                    at: projected.at,
                     generation: self.local.generation,
                 },
-                uncertainty: crate::Ieee80211Duration::from_micros(drift_bound(
-                    self.uncertainty,
-                    distance,
-                )?),
+                uncertainty: projected.uncertainty,
             })
         })())
     }
@@ -462,29 +463,13 @@ impl TsfSample {
     }
 }
 
-/// `target_base` moved by `at - source_base`, and that distance.
-fn shift(target_base: u64, source_base: u64, at: u64) -> Result<(u64, u64), TsfProjectionError> {
-    let shifted = if at >= source_base {
-        target_base.checked_add(at - source_base)
-    } else {
-        target_base.checked_sub(source_base - at)
-    };
-    shifted
-        .map(|shifted| (shifted, at.abs_diff(source_base)))
-        .ok_or(TsfProjectionError::OutOfRange)
-}
-
-/// The sample's `uncertainty` plus [`TSF_DRIFT_PPM`] of `distance`, rounded
-/// up, in microseconds of either clock of the relation.
-fn drift_bound(
-    uncertainty: crate::Ieee80211Duration,
-    distance: u64,
-) -> Result<u64, TsfProjectionError> {
-    let drift = (u128::from(distance) * u128::from(TSF_DRIFT_PPM)).div_ceil(1_000_000);
-    u64::try_from(drift)
-        .ok()
-        .and_then(|drift| uncertainty.as_micros().checked_add(drift))
-        .ok_or(TsfProjectionError::OutOfRange)
+impl From<oer_radio_port::ProjectionError> for TsfProjectionError {
+    fn from(error: oer_radio_port::ProjectionError) -> Self {
+        match error {
+            oer_radio_port::ProjectionError::StaleSample => Self::StaleSample,
+            oer_radio_port::ProjectionError::OutOfRange => Self::OutOfRange,
+        }
+    }
 }
 
 /// Which roles the beacon-timing operations serve.

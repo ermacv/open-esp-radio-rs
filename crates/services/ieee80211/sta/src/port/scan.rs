@@ -179,7 +179,8 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
         let port = self.link.port();
         let sample = port.clock_sample().ok()?.ok()?;
         port.clock_info()
-            .to_monotonic_with(stamp, &sample)
+            .monotonic?
+            .project(stamp.at, stamp.generation, &sample)
             .ok()
             .map(|projected| projected.at)
     }

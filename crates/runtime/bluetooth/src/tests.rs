@@ -245,7 +245,7 @@ impl RadioPort for ModelRadio {
 }
 
 impl LeRadioPort for ModelRadio {
-    fn clock_info(&self) -> ClockInfo {
+    fn clock_info(&self) -> ClockInfo<oer_bluetooth_radio::LeRadio> {
         ClockInfo::MONOTONIC_MICROS
     }
 
@@ -488,7 +488,7 @@ impl LeRadioPort for PoisonedRadio {
         LeRadioCapabilities::NONE
     }
 
-    fn clock_info(&self) -> ClockInfo {
+    fn clock_info(&self) -> ClockInfo<oer_bluetooth_radio::LeRadio> {
         NoRadio.clock_info()
     }
 

@@ -26,7 +26,9 @@ use oer_esp32s31_ieee80211_mac::tx::runtime::{
 use oer_esp32s31_ieee80211_mac::tx::{
     HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyTxQueue, TxHardware,
 };
-use oer_ieee80211_lower_mac::{Ieee80211Instant, Ieee80211Stamp};
+use oer_ieee80211_lower_mac::{
+    GenerationSource, Ieee80211ClockGeneration, Ieee80211Instant, Ieee80211Stamp,
+};
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_memory::{HardwareOwnedTxDma, PinnedDmaTxPool, PinnedDmaTxRadioLease, PreparedTxDma};
 use oer_time::RadioDuration;
@@ -66,8 +68,9 @@ const RESOURCES_FAILED: u32 = 8;
 const STATUS_COMPLETED: u8 = 0;
 /// The time the probe commits an aggregate, from which its MSDUs age.
 const COMMITTED_MICROS: u64 = 0;
-/// The MAC clock generation every probe sample belongs to.
-const CLOCK_GENERATION: u32 = 1;
+/// The MAC clock generation every probe sample belongs to: the first of
+/// the probe's one relation.
+const CLOCK_GENERATION: Ieee80211ClockGeneration = GenerationSource::new(1).current();
 
 /// A MAC clock sample `micros` after the probe's epoch.
 fn radio_stamp(micros: u64) -> Ieee80211Stamp {

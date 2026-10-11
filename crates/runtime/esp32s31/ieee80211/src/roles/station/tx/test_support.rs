@@ -231,10 +231,10 @@ impl crate::mac_clock::MacClockReader for Timer {
         self.available
             .get()
             .then(|| oer_ieee80211_lower_mac::Ieee80211ClockSample {
-                radio: self.radio.get(),
-                monotonic: oer_time::Clock::now(self),
+                source: self.radio.get(),
+                target: oer_time::Clock::now(self),
                 uncertainty: oer_time::Duration::from_micros(0),
-                generation: self.generation.get(),
+                generation: crate::clock_generation(self.generation.get()),
             })
     }
 }

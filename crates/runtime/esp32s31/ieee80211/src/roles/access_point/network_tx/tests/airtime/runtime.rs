@@ -438,10 +438,12 @@ fn run(case: Case) {
             if case == Case::RadioGeneration {
                 let (_, ordinary) = control.mac.try_aggregate_adapter().unwrap();
                 ordinary.timer().generation.set(2);
-                assert!(matches!(owner.service(&mut aggregate, &mut control, &mut hardware, complete),
+                assert!(
+                    matches!(owner.service(&mut aggregate, &mut control, &mut hardware, complete),
                     Err(AccessPointDatapathError::Aggregate(
                         oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError::Retry(
-                            oer_esp32s31_ieee80211_mac::tx::runtime::AmpduRetryError::ClockGenerationChanged { expected: 1, observed: 2 })))));
+                            oer_esp32s31_ieee80211_mac::tx::runtime::AmpduRetryError::ClockGenerationChanged { expected, observed }))) if expected == crate::clock_generation(1) && observed == crate::clock_generation(2))
+                );
                 assert!(hardware.aggregate_completion.is_some());
                 assert_eq!(hardware.ht_publications, 1);
                 assert_eq!(hardware.legacy_publications, 0);
@@ -469,8 +471,8 @@ fn run(case: Case) {
                     ordinary.timer().generation.set(2);
                     oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError::Retry(
                         oer_esp32s31_ieee80211_mac::tx::runtime::AmpduRetryError::ClockGenerationChanged {
-                            expected: 1,
-                            observed: 2,
+                            expected: crate::clock_generation(1),
+                            observed: crate::clock_generation(2),
                         },
                     )
                 };

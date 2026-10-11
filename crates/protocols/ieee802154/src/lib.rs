@@ -66,7 +66,7 @@ pub use mac::pending::{AckPending, AutoPendingMode, PendingTable, PendingTableFu
 pub use mac::retransmission::{AttemptFailure, FrameRetries, RetryStart};
 pub use mac::security::{MacKeys, TransmitSecurity};
 pub use mac::time_sync::TimeSync;
-pub use oer_radio_port::{Correlation, CorrelationIds, RadioEpoch};
+pub use oer_radio_port::{ClockRelation, Correlation, CorrelationIds};
 pub use port::{
     CancelError, ClockError, ClockInfo, CslReceiver, EnhancedAckGeneration, EventsLost,
     FrameCounterUpdate, Ieee802154Capabilities, Ieee802154RadioPort, LifecycleCommand,

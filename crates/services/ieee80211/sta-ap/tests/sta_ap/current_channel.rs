@@ -64,7 +64,7 @@ impl Ieee80211LowerMacPort for DisabledRetune {
         self.model.capabilities()
     }
 
-    fn clock_info(&self) -> ClockInfo {
+    fn clock_info(&self) -> ClockInfo<Ieee80211Radio> {
         self.model.clock_info()
     }
 

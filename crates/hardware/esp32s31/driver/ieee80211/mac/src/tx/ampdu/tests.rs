@@ -466,18 +466,15 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
         .submit(&mut hardware, cookie, LegacyTxQueue::BestEffort, config)
         .unwrap();
     let stale = oer_ieee80211_lower_mac::Ieee80211Stamp {
-        generation: 2,
+        generation: crate::clock_generation(2),
         ..radio_stamp(0)
     };
     assert!(matches!(
         owner.observe_retry_completion(&mut hardware, cookie, &mut retry, stale, true),
         Err(crate::tx::ampdu::RetainedAmpduRetryCompletionError::Retry(
-            crate::tx::runtime::AmpduRetryError::ClockGenerationChanged {
-                expected: 1,
-                observed: 2
-            }
+            crate::tx::runtime::AmpduRetryError::ClockGenerationChanged { expected, observed }
         ))
-    ));
+     if expected == crate::clock_generation(1) && observed == crate::clock_generation(2)));
     assert!(
         hardware.completion.is_some(),
         "stale timing cannot consume the hardware completion"
@@ -1543,6 +1540,6 @@ mod exchange_budget;
 fn radio_stamp(micros: u64) -> oer_ieee80211_lower_mac::Ieee80211Stamp {
     oer_ieee80211_lower_mac::Ieee80211Stamp {
         at: oer_ieee80211_lower_mac::Ieee80211Instant::from_micros(micros),
-        generation: 1,
+        generation: crate::clock_generation(1),
     }
 }

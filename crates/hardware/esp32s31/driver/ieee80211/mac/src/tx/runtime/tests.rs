@@ -921,7 +921,7 @@ fn an_ended_agreement_still_discards_aged_or_completes_acknowledged_mpdus() {
 fn radio_stamp(micros: u64) -> oer_ieee80211_lower_mac::Ieee80211Stamp {
     oer_ieee80211_lower_mac::Ieee80211Stamp {
         at: oer_ieee80211_lower_mac::Ieee80211Instant::from_micros(micros),
-        generation: 1,
+        generation: crate::clock_generation(1),
     }
 }
 
@@ -935,12 +935,12 @@ fn radio_generation_failure_preserves_retry_counts_and_frame_selection() {
     )
     .unwrap();
     let stale = oer_ieee80211_lower_mac::Ieee80211Stamp {
-        generation: 2,
+        generation: crate::clock_generation(2),
         ..radio_stamp(6_000)
     };
     let expected = AmpduRetryError::ClockGenerationChanged {
-        expected: 1,
-        observed: 2,
+        expected: crate::clock_generation(1),
+        observed: crate::clock_generation(2),
     };
     assert_eq!(
         retry.observe(completion(0, 100, 0b01), 2, stale, true),

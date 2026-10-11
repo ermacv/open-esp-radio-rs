@@ -10,11 +10,11 @@
 //! stand file (and of an older device registry), so it neither waits for nor
 //! disturbs the shared arbiter, whose schema it may not read, and the
 //! worktree's run directory links to the shared store. An older runner
-//! reads the same settings under older names ([`ARBITER_DIRECTORY`],
-//! [`OWNER`]) and may keep its runs in a directory of its own below the
-//! worktree's `target/hil`: such a run is moved out beside the worktree
-//! before the worktree goes. [`Revision`] is that
-//! launch, shared by [`run`] and every [`crate::bisect`] step; every run goes
+//! reads the same settings under older names (`OER_HIL_ARBITER_DIR`,
+//! `OER_HIL_OWNER`) and may keep its runs in a directory of its own below
+//! the worktree's `target/hil`: such a run is moved out beside the worktree
+//! before the worktree goes. One launch on a revision is shared by [`run`]
+//! and every [`crate::bisect`] step; every run goes
 //! through [`crate::launch::launch_run`], and its run is the one its receipt
 //! names.
 //!

@@ -25,7 +25,7 @@ minimum = 0x0
 maximum = 0xFFFF
 
 [[peripherals.registers.register.fields]]
-name = "LOW_CONTROL_OPAQUE"
+name = "BIT_16_OPAQUE"
 bitOffset = 16
 bitWidth = 1
 
@@ -121,5 +121,5 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.LOW_CONTROL_OPAQUE"
+entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.BIT_16_OPAQUE"
 naming = "opaque"

@@ -6433,72 +6433,64 @@ pub mod phy_baseband_config {
         pub type R = crate::R<AdcRateAndFrontEndControlSpec>;
         #[doc = "Register `ADC_RATE_AND_FRONT_END_CONTROL` writer"]
         pub type W = crate::W<AdcRateAndFrontEndControlSpec>;
-        #[doc = "Field `ADC_RATE_LOW_OPAQUE` reader - Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
-        pub type AdcRateLowOpaqueR = crate::BitReader;
-        #[doc = "Field `ADC_RATE_LOW_OPAQUE` writer - Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
-        pub type AdcRateLowOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `ADC_RATE_HIGH_OPAQUE` reader - Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
-        pub type AdcRateHighOpaqueR = crate::BitReader;
-        #[doc = "Field `ADC_RATE_HIGH_OPAQUE` writer - Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
-        pub type AdcRateHighOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `DAC_RATE_LOW_OPAQUE` reader - Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set."]
-        pub type DacRateLowOpaqueR = crate::BitReader;
-        #[doc = "Field `DAC_RATE_LOW_OPAQUE` writer - Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set."]
-        pub type DacRateLowOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `DAC_RATE_HIGH_OPAQUE` reader - Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set."]
-        pub type DacRateHighOpaqueR = crate::BitReader;
-        #[doc = "Field `DAC_RATE_HIGH_OPAQUE` writer - Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set."]
-        pub type DacRateHighOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_0_OPAQUE` reader - Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
+        pub type Bit0OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_0_OPAQUE` writer - Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
+        pub type Bit0OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_1_OPAQUE` reader - Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
+        pub type Bit1OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_1_OPAQUE` writer - Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
+        pub type Bit1OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_2_OPAQUE` reader - Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set."]
+        pub type Bit2OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_2_OPAQUE` writer - Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set."]
+        pub type Bit2OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_3_OPAQUE` reader - Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set."]
+        pub type Bit3OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_3_OPAQUE` writer - Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set."]
+        pub type Bit3OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 0 - Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
             #[inline(always)]
-            pub fn adc_rate_low_opaque(&self) -> AdcRateLowOpaqueR {
-                AdcRateLowOpaqueR::new((self.bits & 1) != 0)
+            pub fn bit_0_opaque(&self) -> Bit0OpaqueR {
+                Bit0OpaqueR::new((self.bits & 1) != 0)
             }
             #[doc = "Bit 1 - Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
             #[inline(always)]
-            pub fn adc_rate_high_opaque(&self) -> AdcRateHighOpaqueR {
-                AdcRateHighOpaqueR::new(((self.bits >> 1) & 1) != 0)
+            pub fn bit_1_opaque(&self) -> Bit1OpaqueR {
+                Bit1OpaqueR::new(((self.bits >> 1) & 1) != 0)
             }
             #[doc = "Bit 2 - Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set."]
             #[inline(always)]
-            pub fn dac_rate_low_opaque(&self) -> DacRateLowOpaqueR {
-                DacRateLowOpaqueR::new(((self.bits >> 2) & 1) != 0)
+            pub fn bit_2_opaque(&self) -> Bit2OpaqueR {
+                Bit2OpaqueR::new(((self.bits >> 2) & 1) != 0)
             }
             #[doc = "Bit 3 - Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set."]
             #[inline(always)]
-            pub fn dac_rate_high_opaque(&self) -> DacRateHighOpaqueR {
-                DacRateHighOpaqueR::new(((self.bits >> 3) & 1) != 0)
+            pub fn bit_3_opaque(&self) -> Bit3OpaqueR {
+                Bit3OpaqueR::new(((self.bits >> 3) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bit 0 - Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set."]
             #[inline(always)]
-            pub fn adc_rate_low_opaque(
-                &mut self,
-            ) -> AdcRateLowOpaqueW<'_, AdcRateAndFrontEndControlSpec> {
-                AdcRateLowOpaqueW::new(self, 0)
+            pub fn bit_0_opaque(&mut self) -> Bit0OpaqueW<'_, AdcRateAndFrontEndControlSpec> {
+                Bit0OpaqueW::new(self, 0)
             }
             #[doc = "Bit 1 - Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set."]
             #[inline(always)]
-            pub fn adc_rate_high_opaque(
-                &mut self,
-            ) -> AdcRateHighOpaqueW<'_, AdcRateAndFrontEndControlSpec> {
-                AdcRateHighOpaqueW::new(self, 1)
+            pub fn bit_1_opaque(&mut self) -> Bit1OpaqueW<'_, AdcRateAndFrontEndControlSpec> {
+                Bit1OpaqueW::new(self, 1)
             }
             #[doc = "Bit 2 - Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set."]
             #[inline(always)]
-            pub fn dac_rate_low_opaque(
-                &mut self,
-            ) -> DacRateLowOpaqueW<'_, AdcRateAndFrontEndControlSpec> {
-                DacRateLowOpaqueW::new(self, 2)
+            pub fn bit_2_opaque(&mut self) -> Bit2OpaqueW<'_, AdcRateAndFrontEndControlSpec> {
+                Bit2OpaqueW::new(self, 2)
             }
             #[doc = "Bit 3 - Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set."]
             #[inline(always)]
-            pub fn dac_rate_high_opaque(
-                &mut self,
-            ) -> DacRateHighOpaqueW<'_, AdcRateAndFrontEndControlSpec> {
-                DacRateHighOpaqueW::new(self, 3)
+            pub fn bit_3_opaque(&mut self) -> Bit3OpaqueW<'_, AdcRateAndFrontEndControlSpec> {
+                Bit3OpaqueW::new(self, 3)
             }
         }
         #[doc = "Project-assigned name. Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -6602,24 +6594,22 @@ pub mod phy_baseband_config {
         pub type R = crate::R<FrontEndAndToneStopControlSpec>;
         #[doc = "Register `FRONT_END_AND_TONE_STOP_CONTROL` writer"]
         pub type W = crate::W<FrontEndAndToneStopControlSpec>;
-        #[doc = "Field `FRONT_END_INIT_ENABLE_OPAQUE` reader - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
-        pub type FrontEndInitEnableOpaqueR = crate::BitReader;
-        #[doc = "Field `FRONT_END_INIT_ENABLE_OPAQUE` writer - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
-        pub type FrontEndInitEnableOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_2_OPAQUE` reader - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
+        pub type Bit2OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_2_OPAQUE` writer - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
+        pub type Bit2OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 2 - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
             #[inline(always)]
-            pub fn front_end_init_enable_opaque(&self) -> FrontEndInitEnableOpaqueR {
-                FrontEndInitEnableOpaqueR::new(((self.bits >> 2) & 1) != 0)
+            pub fn bit_2_opaque(&self) -> Bit2OpaqueR {
+                Bit2OpaqueR::new(((self.bits >> 2) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bit 2 - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
             #[inline(always)]
-            pub fn front_end_init_enable_opaque(
-                &mut self,
-            ) -> FrontEndInitEnableOpaqueW<'_, FrontEndAndToneStopControlSpec> {
-                FrontEndInitEnableOpaqueW::new(self, 2)
+            pub fn bit_2_opaque(&mut self) -> Bit2OpaqueW<'_, FrontEndAndToneStopControlSpec> {
+                Bit2OpaqueW::new(self, 2)
             }
         }
         #[doc = "Project-assigned name. Word whose bit 2 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -6643,24 +6633,22 @@ pub mod phy_baseband_config {
         pub type R = crate::R<RxDcoControlSpec>;
         #[doc = "Register `RX_DCO_CONTROL` writer"]
         pub type W = crate::W<RxDcoControlSpec>;
-        #[doc = "Field `CALIBRATION_CONTROL_OPAQUE` reader - Opaque: meaning not established. Two-bit calibration control; meaning unknown."]
-        pub type CalibrationControlOpaqueR = crate::FieldReader;
-        #[doc = "Field `CALIBRATION_CONTROL_OPAQUE` writer - Opaque: meaning not established. Two-bit calibration control; meaning unknown."]
-        pub type CalibrationControlOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `BITS_22_23_OPAQUE` reader - Opaque: meaning not established. Two-bit calibration control; meaning unknown."]
+        pub type Bits22_23OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_22_23_OPAQUE` writer - Opaque: meaning not established. Two-bit calibration control; meaning unknown."]
+        pub type Bits22_23OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         impl R {
             #[doc = "Bits 22:23 - Opaque: meaning not established. Two-bit calibration control; meaning unknown."]
             #[inline(always)]
-            pub fn calibration_control_opaque(&self) -> CalibrationControlOpaqueR {
-                CalibrationControlOpaqueR::new(((self.bits >> 22) & 3) as u8)
+            pub fn bits_22_23_opaque(&self) -> Bits22_23OpaqueR {
+                Bits22_23OpaqueR::new(((self.bits >> 22) & 3) as u8)
             }
         }
         impl W {
             #[doc = "Bits 22:23 - Opaque: meaning not established. Two-bit calibration control; meaning unknown."]
             #[inline(always)]
-            pub fn calibration_control_opaque(
-                &mut self,
-            ) -> CalibrationControlOpaqueW<'_, RxDcoControlSpec> {
-                CalibrationControlOpaqueW::new(self, 22)
+            pub fn bits_22_23_opaque(&mut self) -> Bits22_23OpaqueW<'_, RxDcoControlSpec> {
+                Bits22_23OpaqueW::new(self, 22)
             }
         }
         #[doc = "Project-assigned name. Word whose bits 23:22 phy_iq_swap_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_dco_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_dco_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -6692,10 +6680,10 @@ pub mod phy_baseband_config {
         pub type RxIqCorrectionModeHighR = crate::BitReader;
         #[doc = "Field `RX_IQ_CORRECTION_MODE_HIGH` writer - Project-assigned name. RX IQ correction mode, high bit."]
         pub type RxIqCorrectionModeHighW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `FRONT_END_INIT_HIGH_OPAQUE` reader - Opaque: meaning not established. Front-end initialization bit; meaning unknown."]
-        pub type FrontEndInitHighOpaqueR = crate::BitReader;
-        #[doc = "Field `FRONT_END_INIT_HIGH_OPAQUE` writer - Opaque: meaning not established. Front-end initialization bit; meaning unknown."]
-        pub type FrontEndInitHighOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_31_OPAQUE` reader - Opaque: meaning not established. Front-end initialization bit; meaning unknown."]
+        pub type Bit31OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_31_OPAQUE` writer - Opaque: meaning not established. Front-end initialization bit; meaning unknown."]
+        pub type Bit31OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 29 - Project-assigned name. RX IQ correction mode, low bit."]
             #[inline(always)]
@@ -6709,8 +6697,8 @@ pub mod phy_baseband_config {
             }
             #[doc = "Bit 31 - Opaque: meaning not established. Front-end initialization bit; meaning unknown."]
             #[inline(always)]
-            pub fn front_end_init_high_opaque(&self) -> FrontEndInitHighOpaqueR {
-                FrontEndInitHighOpaqueR::new(((self.bits >> 31) & 1) != 0)
+            pub fn bit_31_opaque(&self) -> Bit31OpaqueR {
+                Bit31OpaqueR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
@@ -6730,10 +6718,8 @@ pub mod phy_baseband_config {
             }
             #[doc = "Bit 31 - Opaque: meaning not established. Front-end initialization bit; meaning unknown."]
             #[inline(always)]
-            pub fn front_end_init_high_opaque(
-                &mut self,
-            ) -> FrontEndInitHighOpaqueW<'_, IqCorrectionControlSpec> {
-                FrontEndInitHighOpaqueW::new(self, 31)
+            pub fn bit_31_opaque(&mut self) -> Bit31OpaqueW<'_, IqCorrectionControlSpec> {
+                Bit31OpaqueW::new(self, 31)
             }
         }
         #[doc = "Project-assigned name. Word whose bits 31:29 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -6757,36 +6743,36 @@ pub mod phy_baseband_config {
         pub type R = crate::R<RxIqScaleSpec>;
         #[doc = "Register `RX_IQ_SCALE` writer"]
         pub type W = crate::W<RxIqScaleSpec>;
-        #[doc = "Field `SCALE_LOW_OPAQUE` reader - Opaque: meaning not established. Low RX IQ scale byte."]
-        pub type ScaleLowOpaqueR = crate::FieldReader;
-        #[doc = "Field `SCALE_LOW_OPAQUE` writer - Opaque: meaning not established. Low RX IQ scale byte."]
-        pub type ScaleLowOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `SCALE_HIGH_OPAQUE` reader - Opaque: meaning not established. High RX IQ scale byte."]
-        pub type ScaleHighOpaqueR = crate::FieldReader;
-        #[doc = "Field `SCALE_HIGH_OPAQUE` writer - Opaque: meaning not established. High RX IQ scale byte."]
-        pub type ScaleHighOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `BITS_0_7_OPAQUE` reader - Opaque: meaning not established. Low RX IQ scale byte."]
+        pub type Bits0_7OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_0_7_OPAQUE` writer - Opaque: meaning not established. Low RX IQ scale byte."]
+        pub type Bits0_7OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `BITS_8_15_OPAQUE` reader - Opaque: meaning not established. High RX IQ scale byte."]
+        pub type Bits8_15OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_8_15_OPAQUE` writer - Opaque: meaning not established. High RX IQ scale byte."]
+        pub type Bits8_15OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         impl R {
             #[doc = "Bits 0:7 - Opaque: meaning not established. Low RX IQ scale byte."]
             #[inline(always)]
-            pub fn scale_low_opaque(&self) -> ScaleLowOpaqueR {
-                ScaleLowOpaqueR::new((self.bits & 0xff) as u8)
+            pub fn bits_0_7_opaque(&self) -> Bits0_7OpaqueR {
+                Bits0_7OpaqueR::new((self.bits & 0xff) as u8)
             }
             #[doc = "Bits 8:15 - Opaque: meaning not established. High RX IQ scale byte."]
             #[inline(always)]
-            pub fn scale_high_opaque(&self) -> ScaleHighOpaqueR {
-                ScaleHighOpaqueR::new(((self.bits >> 8) & 0xff) as u8)
+            pub fn bits_8_15_opaque(&self) -> Bits8_15OpaqueR {
+                Bits8_15OpaqueR::new(((self.bits >> 8) & 0xff) as u8)
             }
         }
         impl W {
             #[doc = "Bits 0:7 - Opaque: meaning not established. Low RX IQ scale byte."]
             #[inline(always)]
-            pub fn scale_low_opaque(&mut self) -> ScaleLowOpaqueW<'_, RxIqScaleSpec> {
-                ScaleLowOpaqueW::new(self, 0)
+            pub fn bits_0_7_opaque(&mut self) -> Bits0_7OpaqueW<'_, RxIqScaleSpec> {
+                Bits0_7OpaqueW::new(self, 0)
             }
             #[doc = "Bits 8:15 - Opaque: meaning not established. High RX IQ scale byte."]
             #[inline(always)]
-            pub fn scale_high_opaque(&mut self) -> ScaleHighOpaqueW<'_, RxIqScaleSpec> {
-                ScaleHighOpaqueW::new(self, 8)
+            pub fn bits_8_15_opaque(&mut self) -> Bits8_15OpaqueW<'_, RxIqScaleSpec> {
+                Bits8_15OpaqueW::new(self, 8)
             }
         }
         #[doc = "Project-assigned name. Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_iq_scale::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_iq_scale::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -6810,24 +6796,22 @@ pub mod phy_baseband_config {
         pub type R = crate::R<FrontEndClearControlSpec>;
         #[doc = "Register `FRONT_END_CLEAR_CONTROL` writer"]
         pub type W = crate::W<FrontEndClearControlSpec>;
-        #[doc = "Field `INIT_CLEAR_FIRST_OPAQUE` reader - Opaque: meaning not established. Front-end initialization clear bit; meaning unknown."]
-        pub type InitClearFirstOpaqueR = crate::BitReader;
-        #[doc = "Field `INIT_CLEAR_FIRST_OPAQUE` writer - Opaque: meaning not established. Front-end initialization clear bit; meaning unknown."]
-        pub type InitClearFirstOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_8_OPAQUE` reader - Opaque: meaning not established. Front-end initialization clear bit; meaning unknown."]
+        pub type Bit8OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_8_OPAQUE` writer - Opaque: meaning not established. Front-end initialization clear bit; meaning unknown."]
+        pub type Bit8OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 8 - Opaque: meaning not established. Front-end initialization clear bit; meaning unknown."]
             #[inline(always)]
-            pub fn init_clear_first_opaque(&self) -> InitClearFirstOpaqueR {
-                InitClearFirstOpaqueR::new(((self.bits >> 8) & 1) != 0)
+            pub fn bit_8_opaque(&self) -> Bit8OpaqueR {
+                Bit8OpaqueR::new(((self.bits >> 8) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bit 8 - Opaque: meaning not established. Front-end initialization clear bit; meaning unknown."]
             #[inline(always)]
-            pub fn init_clear_first_opaque(
-                &mut self,
-            ) -> InitClearFirstOpaqueW<'_, FrontEndClearControlSpec> {
-                InitClearFirstOpaqueW::new(self, 8)
+            pub fn bit_8_opaque(&mut self) -> Bit8OpaqueW<'_, FrontEndClearControlSpec> {
+                Bit8OpaqueW::new(self, 8)
             }
         }
         #[doc = "Project-assigned name. Word whose bit 8 phy_fe_reg_init clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_clear_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_clear_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -6851,22 +6835,22 @@ pub mod phy_baseband_config {
         pub type R = crate::R<FeBbClockControlSpec>;
         #[doc = "Register `FE_BB_CLOCK_CONTROL` writer"]
         pub type W = crate::W<FeBbClockControlSpec>;
-        #[doc = "Field `FE_BB_ENABLE_OPAQUE` reader - Opaque: meaning not established. Two-bit front-end and baseband clock enable; individual meanings unknown."]
-        pub type FeBbEnableOpaqueR = crate::FieldReader;
-        #[doc = "Field `FE_BB_ENABLE_OPAQUE` writer - Opaque: meaning not established. Two-bit front-end and baseband clock enable; individual meanings unknown."]
-        pub type FeBbEnableOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `BITS_0_1_OPAQUE` reader - Opaque: meaning not established. Two-bit front-end and baseband clock enable; individual meanings unknown."]
+        pub type Bits0_1OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_0_1_OPAQUE` writer - Opaque: meaning not established. Two-bit front-end and baseband clock enable; individual meanings unknown."]
+        pub type Bits0_1OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         impl R {
             #[doc = "Bits 0:1 - Opaque: meaning not established. Two-bit front-end and baseband clock enable; individual meanings unknown."]
             #[inline(always)]
-            pub fn fe_bb_enable_opaque(&self) -> FeBbEnableOpaqueR {
-                FeBbEnableOpaqueR::new((self.bits & 3) as u8)
+            pub fn bits_0_1_opaque(&self) -> Bits0_1OpaqueR {
+                Bits0_1OpaqueR::new((self.bits & 3) as u8)
             }
         }
         impl W {
             #[doc = "Bits 0:1 - Opaque: meaning not established. Two-bit front-end and baseband clock enable; individual meanings unknown."]
             #[inline(always)]
-            pub fn fe_bb_enable_opaque(&mut self) -> FeBbEnableOpaqueW<'_, FeBbClockControlSpec> {
-                FeBbEnableOpaqueW::new(self, 0)
+            pub fn bits_0_1_opaque(&mut self) -> Bits0_1OpaqueW<'_, FeBbClockControlSpec> {
+                Bits0_1OpaqueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. Word whose bits 1:0 phy_open_fe_bb_clk sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -6890,40 +6874,36 @@ pub mod phy_baseband_config {
         pub type R = crate::R<PowerDetectorControlSpec>;
         #[doc = "Register `POWER_DETECTOR_CONTROL` writer"]
         pub type W = crate::W<PowerDetectorControlSpec>;
-        #[doc = "Field `CALIBRATION_FIELD_OPAQUE` reader - Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50."]
-        pub type CalibrationFieldOpaqueR = crate::FieldReader;
-        #[doc = "Field `CALIBRATION_FIELD_OPAQUE` writer - Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50."]
-        pub type CalibrationFieldOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `INITIALIZATION_MODE_OPAQUE` reader - Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
-        pub type InitializationModeOpaqueR = crate::FieldReader;
-        #[doc = "Field `INITIALIZATION_MODE_OPAQUE` writer - Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
-        pub type InitializationModeOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `BITS_4_11_OPAQUE` reader - Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50."]
+        pub type Bits4_11OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_4_11_OPAQUE` writer - Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50."]
+        pub type Bits4_11OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `BITS_20_22_OPAQUE` reader - Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
+        pub type Bits20_22OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_20_22_OPAQUE` writer - Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
+        pub type Bits20_22OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         impl R {
             #[doc = "Bits 4:11 - Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50."]
             #[inline(always)]
-            pub fn calibration_field_opaque(&self) -> CalibrationFieldOpaqueR {
-                CalibrationFieldOpaqueR::new(((self.bits >> 4) & 0xff) as u8)
+            pub fn bits_4_11_opaque(&self) -> Bits4_11OpaqueR {
+                Bits4_11OpaqueR::new(((self.bits >> 4) & 0xff) as u8)
             }
             #[doc = "Bits 20:22 - Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
             #[inline(always)]
-            pub fn initialization_mode_opaque(&self) -> InitializationModeOpaqueR {
-                InitializationModeOpaqueR::new(((self.bits >> 20) & 7) as u8)
+            pub fn bits_20_22_opaque(&self) -> Bits20_22OpaqueR {
+                Bits20_22OpaqueR::new(((self.bits >> 20) & 7) as u8)
             }
         }
         impl W {
             #[doc = "Bits 4:11 - Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50."]
             #[inline(always)]
-            pub fn calibration_field_opaque(
-                &mut self,
-            ) -> CalibrationFieldOpaqueW<'_, PowerDetectorControlSpec> {
-                CalibrationFieldOpaqueW::new(self, 4)
+            pub fn bits_4_11_opaque(&mut self) -> Bits4_11OpaqueW<'_, PowerDetectorControlSpec> {
+                Bits4_11OpaqueW::new(self, 4)
             }
             #[doc = "Bits 20:22 - Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
             #[inline(always)]
-            pub fn initialization_mode_opaque(
-                &mut self,
-            ) -> InitializationModeOpaqueW<'_, PowerDetectorControlSpec> {
-                InitializationModeOpaqueW::new(self, 20)
+            pub fn bits_20_22_opaque(&mut self) -> Bits20_22OpaqueW<'_, PowerDetectorControlSpec> {
+                Bits20_22OpaqueW::new(self, 20)
             }
         }
         #[doc = "Project-assigned name. Power-detector control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -6948,40 +6928,38 @@ pub mod phy_baseband_config {
         pub type R = crate::R<PowerDetectorSarControlStatusSpec>;
         #[doc = "Register `POWER_DETECTOR_SAR_CONTROL_STATUS` writer"]
         pub type W = crate::W<PowerDetectorSarControlStatusSpec>;
-        #[doc = "Field `SAR_CONFIG_CLEAR_OPAQUE` reader - Opaque: meaning not established. Bit phy_pwdet_sar2_init clears."]
-        pub type SarConfigClearOpaqueR = crate::BitReader;
-        #[doc = "Field `SAR_CONFIG_CLEAR_OPAQUE` writer - Opaque: meaning not established. Bit phy_pwdet_sar2_init clears."]
-        pub type SarConfigClearOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `SAR_MODE_OPAQUE` reader - Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets."]
-        pub type SarModeOpaqueR = crate::FieldReader;
-        #[doc = "Field `SAR_MODE_OPAQUE` writer - Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets."]
-        pub type SarModeOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `BIT_9_OPAQUE` reader - Opaque: meaning not established. Bit phy_pwdet_sar2_init clears."]
+        pub type Bit9OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_9_OPAQUE` writer - Opaque: meaning not established. Bit phy_pwdet_sar2_init clears."]
+        pub type Bit9OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BITS_12_13_OPAQUE` reader - Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets."]
+        pub type Bits12_13OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_12_13_OPAQUE` writer - Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets."]
+        pub type Bits12_13OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         impl R {
             #[doc = "Bit 9 - Opaque: meaning not established. Bit phy_pwdet_sar2_init clears."]
             #[inline(always)]
-            pub fn sar_config_clear_opaque(&self) -> SarConfigClearOpaqueR {
-                SarConfigClearOpaqueR::new(((self.bits >> 9) & 1) != 0)
+            pub fn bit_9_opaque(&self) -> Bit9OpaqueR {
+                Bit9OpaqueR::new(((self.bits >> 9) & 1) != 0)
             }
             #[doc = "Bits 12:13 - Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets."]
             #[inline(always)]
-            pub fn sar_mode_opaque(&self) -> SarModeOpaqueR {
-                SarModeOpaqueR::new(((self.bits >> 12) & 3) as u8)
+            pub fn bits_12_13_opaque(&self) -> Bits12_13OpaqueR {
+                Bits12_13OpaqueR::new(((self.bits >> 12) & 3) as u8)
             }
         }
         impl W {
             #[doc = "Bit 9 - Opaque: meaning not established. Bit phy_pwdet_sar2_init clears."]
             #[inline(always)]
-            pub fn sar_config_clear_opaque(
-                &mut self,
-            ) -> SarConfigClearOpaqueW<'_, PowerDetectorSarControlStatusSpec> {
-                SarConfigClearOpaqueW::new(self, 9)
+            pub fn bit_9_opaque(&mut self) -> Bit9OpaqueW<'_, PowerDetectorSarControlStatusSpec> {
+                Bit9OpaqueW::new(self, 9)
             }
             #[doc = "Bits 12:13 - Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets."]
             #[inline(always)]
-            pub fn sar_mode_opaque(
+            pub fn bits_12_13_opaque(
                 &mut self,
-            ) -> SarModeOpaqueW<'_, PowerDetectorSarControlStatusSpec> {
-                SarModeOpaqueW::new(self, 12)
+            ) -> Bits12_13OpaqueW<'_, PowerDetectorSarControlStatusSpec> {
+                Bits12_13OpaqueW::new(self, 12)
             }
         }
         #[doc = "Project-assigned name. Power-detector SAR control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_control_status::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_sar_control_status::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7162,22 +7140,22 @@ pub mod phy_baseband_config {
         pub type R = crate::R<Word0888OpaqueSpec>;
         #[doc = "Register `WORD_0888_OPAQUE` writer"]
         pub type W = crate::W<Word0888OpaqueSpec>;
-        #[doc = "Field `IQ_SWAP_OPAQUE` reader - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
-        pub type IqSwapOpaqueR = crate::BitReader;
-        #[doc = "Field `IQ_SWAP_OPAQUE` writer - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
-        pub type IqSwapOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_29_OPAQUE` reader - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
+        pub type Bit29OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_29_OPAQUE` writer - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
+        pub type Bit29OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 29 - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
             #[inline(always)]
-            pub fn iq_swap_opaque(&self) -> IqSwapOpaqueR {
-                IqSwapOpaqueR::new(((self.bits >> 29) & 1) != 0)
+            pub fn bit_29_opaque(&self) -> Bit29OpaqueR {
+                Bit29OpaqueR::new(((self.bits >> 29) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bit 29 - Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."]
             #[inline(always)]
-            pub fn iq_swap_opaque(&mut self) -> IqSwapOpaqueW<'_, Word0888OpaqueSpec> {
-                IqSwapOpaqueW::new(self, 29)
+            pub fn bit_29_opaque(&mut self) -> Bit29OpaqueW<'_, Word0888OpaqueSpec> {
+                Bit29OpaqueW::new(self, 29)
             }
         }
         #[doc = "Opaque: meaning not established. Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0888_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0888_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7201,22 +7179,22 @@ pub mod phy_baseband_config {
         pub type R = crate::R<Word0894OpaqueSpec>;
         #[doc = "Register `WORD_0894_OPAQUE` writer"]
         pub type W = crate::W<Word0894OpaqueSpec>;
-        #[doc = "Field `FE_INIT_ENABLE_OPAQUE` reader - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
-        pub type FeInitEnableOpaqueR = crate::BitReader;
-        #[doc = "Field `FE_INIT_ENABLE_OPAQUE` writer - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
-        pub type FeInitEnableOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_22_OPAQUE` reader - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
+        pub type Bit22OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_22_OPAQUE` writer - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
+        pub type Bit22OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 22 - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
             #[inline(always)]
-            pub fn fe_init_enable_opaque(&self) -> FeInitEnableOpaqueR {
-                FeInitEnableOpaqueR::new(((self.bits >> 22) & 1) != 0)
+            pub fn bit_22_opaque(&self) -> Bit22OpaqueR {
+                Bit22OpaqueR::new(((self.bits >> 22) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bit 22 - Opaque: meaning not established. Front-end initialization enable; meaning unknown."]
             #[inline(always)]
-            pub fn fe_init_enable_opaque(&mut self) -> FeInitEnableOpaqueW<'_, Word0894OpaqueSpec> {
-                FeInitEnableOpaqueW::new(self, 22)
+            pub fn bit_22_opaque(&mut self) -> Bit22OpaqueW<'_, Word0894OpaqueSpec> {
+                Bit22OpaqueW::new(self, 22)
             }
         }
         #[doc = "Opaque: meaning not established. Word whose bit 22 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0894_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0894_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7240,36 +7218,36 @@ pub mod phy_baseband_config {
         pub type R = crate::R<DacScaleSpec>;
         #[doc = "Register `DAC_SCALE` writer"]
         pub type W = crate::W<DacScaleSpec>;
-        #[doc = "Field `SCALE_LOW_OPAQUE` reader - Opaque: meaning not established. Second DAC scale byte."]
-        pub type ScaleLowOpaqueR = crate::FieldReader;
-        #[doc = "Field `SCALE_LOW_OPAQUE` writer - Opaque: meaning not established. Second DAC scale byte."]
-        pub type ScaleLowOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `SCALE_HIGH_OPAQUE` reader - Opaque: meaning not established. First DAC scale byte."]
-        pub type ScaleHighOpaqueR = crate::FieldReader;
-        #[doc = "Field `SCALE_HIGH_OPAQUE` writer - Opaque: meaning not established. First DAC scale byte."]
-        pub type ScaleHighOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `BITS_8_15_OPAQUE` reader - Opaque: meaning not established. Second DAC scale byte."]
+        pub type Bits8_15OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_8_15_OPAQUE` writer - Opaque: meaning not established. Second DAC scale byte."]
+        pub type Bits8_15OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `BITS_16_23_OPAQUE` reader - Opaque: meaning not established. First DAC scale byte."]
+        pub type Bits16_23OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_16_23_OPAQUE` writer - Opaque: meaning not established. First DAC scale byte."]
+        pub type Bits16_23OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         impl R {
             #[doc = "Bits 8:15 - Opaque: meaning not established. Second DAC scale byte."]
             #[inline(always)]
-            pub fn scale_low_opaque(&self) -> ScaleLowOpaqueR {
-                ScaleLowOpaqueR::new(((self.bits >> 8) & 0xff) as u8)
+            pub fn bits_8_15_opaque(&self) -> Bits8_15OpaqueR {
+                Bits8_15OpaqueR::new(((self.bits >> 8) & 0xff) as u8)
             }
             #[doc = "Bits 16:23 - Opaque: meaning not established. First DAC scale byte."]
             #[inline(always)]
-            pub fn scale_high_opaque(&self) -> ScaleHighOpaqueR {
-                ScaleHighOpaqueR::new(((self.bits >> 16) & 0xff) as u8)
+            pub fn bits_16_23_opaque(&self) -> Bits16_23OpaqueR {
+                Bits16_23OpaqueR::new(((self.bits >> 16) & 0xff) as u8)
             }
         }
         impl W {
             #[doc = "Bits 8:15 - Opaque: meaning not established. Second DAC scale byte."]
             #[inline(always)]
-            pub fn scale_low_opaque(&mut self) -> ScaleLowOpaqueW<'_, DacScaleSpec> {
-                ScaleLowOpaqueW::new(self, 8)
+            pub fn bits_8_15_opaque(&mut self) -> Bits8_15OpaqueW<'_, DacScaleSpec> {
+                Bits8_15OpaqueW::new(self, 8)
             }
             #[doc = "Bits 16:23 - Opaque: meaning not established. First DAC scale byte."]
             #[inline(always)]
-            pub fn scale_high_opaque(&mut self) -> ScaleHighOpaqueW<'_, DacScaleSpec> {
-                ScaleHighOpaqueW::new(self, 16)
+            pub fn bits_16_23_opaque(&mut self) -> Bits16_23OpaqueW<'_, DacScaleSpec> {
+                Bits16_23OpaqueW::new(self, 16)
             }
         }
         #[doc = "Project-assigned name. Word whose bits 23:16 and then 15:8 phy_dac_scale_set replaces with 0xFF or 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`dac_scale::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dac_scale::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7293,36 +7271,36 @@ pub mod phy_baseband_config {
         pub type R = crate::R<Word0c08OpaqueSpec>;
         #[doc = "Register `WORD_0C08_OPAQUE` writer"]
         pub type W = crate::W<Word0c08OpaqueSpec>;
-        #[doc = "Field `INIT_FIRST_OPAQUE` reader - Opaque: meaning not established. First bit; meaning unknown."]
-        pub type InitFirstOpaqueR = crate::BitReader;
-        #[doc = "Field `INIT_FIRST_OPAQUE` writer - Opaque: meaning not established. First bit; meaning unknown."]
-        pub type InitFirstOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `INIT_SECOND_OPAQUE` reader - Opaque: meaning not established. Second bit; meaning unknown."]
-        pub type InitSecondOpaqueR = crate::BitReader;
-        #[doc = "Field `INIT_SECOND_OPAQUE` writer - Opaque: meaning not established. Second bit; meaning unknown."]
-        pub type InitSecondOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_25_OPAQUE` reader - Opaque: meaning not established. First bit; meaning unknown."]
+        pub type Bit25OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_25_OPAQUE` writer - Opaque: meaning not established. First bit; meaning unknown."]
+        pub type Bit25OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_26_OPAQUE` reader - Opaque: meaning not established. Second bit; meaning unknown."]
+        pub type Bit26OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_26_OPAQUE` writer - Opaque: meaning not established. Second bit; meaning unknown."]
+        pub type Bit26OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 25 - Opaque: meaning not established. First bit; meaning unknown."]
             #[inline(always)]
-            pub fn init_first_opaque(&self) -> InitFirstOpaqueR {
-                InitFirstOpaqueR::new(((self.bits >> 25) & 1) != 0)
+            pub fn bit_25_opaque(&self) -> Bit25OpaqueR {
+                Bit25OpaqueR::new(((self.bits >> 25) & 1) != 0)
             }
             #[doc = "Bit 26 - Opaque: meaning not established. Second bit; meaning unknown."]
             #[inline(always)]
-            pub fn init_second_opaque(&self) -> InitSecondOpaqueR {
-                InitSecondOpaqueR::new(((self.bits >> 26) & 1) != 0)
+            pub fn bit_26_opaque(&self) -> Bit26OpaqueR {
+                Bit26OpaqueR::new(((self.bits >> 26) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bit 25 - Opaque: meaning not established. First bit; meaning unknown."]
             #[inline(always)]
-            pub fn init_first_opaque(&mut self) -> InitFirstOpaqueW<'_, Word0c08OpaqueSpec> {
-                InitFirstOpaqueW::new(self, 25)
+            pub fn bit_25_opaque(&mut self) -> Bit25OpaqueW<'_, Word0c08OpaqueSpec> {
+                Bit25OpaqueW::new(self, 25)
             }
             #[doc = "Bit 26 - Opaque: meaning not established. Second bit; meaning unknown."]
             #[inline(always)]
-            pub fn init_second_opaque(&mut self) -> InitSecondOpaqueW<'_, Word0c08OpaqueSpec> {
-                InitSecondOpaqueW::new(self, 26)
+            pub fn bit_26_opaque(&mut self) -> Bit26OpaqueW<'_, Word0c08OpaqueSpec> {
+                Bit26OpaqueW::new(self, 26)
             }
         }
         #[doc = "Opaque: meaning not established. Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c08_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c08_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7403,22 +7381,22 @@ pub mod phy_baseband_config {
         pub type R = crate::R<Word0c20OpaqueSpec>;
         #[doc = "Register `WORD_0C20_OPAQUE` writer"]
         pub type W = crate::W<Word0c20OpaqueSpec>;
-        #[doc = "Field `INIT_LOW_OPAQUE` reader - Opaque: meaning not established. Low byte; meaning unknown."]
-        pub type InitLowOpaqueR = crate::FieldReader;
-        #[doc = "Field `INIT_LOW_OPAQUE` writer - Opaque: meaning not established. Low byte; meaning unknown."]
-        pub type InitLowOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `BITS_0_7_OPAQUE` reader - Opaque: meaning not established. Low byte; meaning unknown."]
+        pub type Bits0_7OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_0_7_OPAQUE` writer - Opaque: meaning not established. Low byte; meaning unknown."]
+        pub type Bits0_7OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         impl R {
             #[doc = "Bits 0:7 - Opaque: meaning not established. Low byte; meaning unknown."]
             #[inline(always)]
-            pub fn init_low_opaque(&self) -> InitLowOpaqueR {
-                InitLowOpaqueR::new((self.bits & 0xff) as u8)
+            pub fn bits_0_7_opaque(&self) -> Bits0_7OpaqueR {
+                Bits0_7OpaqueR::new((self.bits & 0xff) as u8)
             }
         }
         impl W {
             #[doc = "Bits 0:7 - Opaque: meaning not established. Low byte; meaning unknown."]
             #[inline(always)]
-            pub fn init_low_opaque(&mut self) -> InitLowOpaqueW<'_, Word0c20OpaqueSpec> {
-                InitLowOpaqueW::new(self, 0)
+            pub fn bits_0_7_opaque(&mut self) -> Bits0_7OpaqueW<'_, Word0c20OpaqueSpec> {
+                Bits0_7OpaqueW::new(self, 0)
             }
         }
         #[doc = "Opaque: meaning not established. Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_0c20_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_0c20_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7481,22 +7459,22 @@ pub mod phy_baseband_config {
         pub type R = crate::R<Word7920OpaqueSpec>;
         #[doc = "Register `WORD_7920_OPAQUE` writer"]
         pub type W = crate::W<Word7920OpaqueSpec>;
-        #[doc = "Field `CLEAR_OPAQUE` reader - Opaque: meaning not established. Four bits phy_rxevm_init_cfg clears; meaning unknown."]
-        pub type ClearOpaqueR = crate::FieldReader;
-        #[doc = "Field `CLEAR_OPAQUE` writer - Opaque: meaning not established. Four bits phy_rxevm_init_cfg clears; meaning unknown."]
-        pub type ClearOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `BITS_12_15_OPAQUE` reader - Opaque: meaning not established. Four bits phy_rxevm_init_cfg clears; meaning unknown."]
+        pub type Bits12_15OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_12_15_OPAQUE` writer - Opaque: meaning not established. Four bits phy_rxevm_init_cfg clears; meaning unknown."]
+        pub type Bits12_15OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         impl R {
             #[doc = "Bits 12:15 - Opaque: meaning not established. Four bits phy_rxevm_init_cfg clears; meaning unknown."]
             #[inline(always)]
-            pub fn clear_opaque(&self) -> ClearOpaqueR {
-                ClearOpaqueR::new(((self.bits >> 12) & 0x0f) as u8)
+            pub fn bits_12_15_opaque(&self) -> Bits12_15OpaqueR {
+                Bits12_15OpaqueR::new(((self.bits >> 12) & 0x0f) as u8)
             }
         }
         impl W {
             #[doc = "Bits 12:15 - Opaque: meaning not established. Four bits phy_rxevm_init_cfg clears; meaning unknown."]
             #[inline(always)]
-            pub fn clear_opaque(&mut self) -> ClearOpaqueW<'_, Word7920OpaqueSpec> {
-                ClearOpaqueW::new(self, 12)
+            pub fn bits_12_15_opaque(&mut self) -> Bits12_15OpaqueW<'_, Word7920OpaqueSpec> {
+                Bits12_15OpaqueW::new(self, 12)
             }
         }
         #[doc = "Opaque: meaning not established. Word whose bits 15:12 phy_rxevm_init_cfg clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_7920_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_7920_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7520,50 +7498,50 @@ pub mod phy_baseband_config {
         pub type R = crate::R<RxEvmControlSpec>;
         #[doc = "Register `RX_EVM_CONTROL` writer"]
         pub type W = crate::W<RxEvmControlSpec>;
-        #[doc = "Field `ENABLE_LOW_OPAQUE` reader - Opaque: meaning not established. Set with bit 2 when phy_rxevm_init_cfg enables the measurement."]
-        pub type EnableLowOpaqueR = crate::BitReader;
-        #[doc = "Field `ENABLE_LOW_OPAQUE` writer - Opaque: meaning not established. Set with bit 2 when phy_rxevm_init_cfg enables the measurement."]
-        pub type EnableLowOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MEMORY_RESET_OPAQUE` reader - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
-        pub type MemoryResetOpaqueR = crate::BitReader;
-        #[doc = "Field `MEMORY_RESET_OPAQUE` writer - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
-        pub type MemoryResetOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `ENABLE_HIGH_OPAQUE` reader - Opaque: meaning not established. Set with bit 0 when phy_rxevm_init_cfg enables the measurement."]
-        pub type EnableHighOpaqueR = crate::BitReader;
-        #[doc = "Field `ENABLE_HIGH_OPAQUE` writer - Opaque: meaning not established. Set with bit 0 when phy_rxevm_init_cfg enables the measurement."]
-        pub type EnableHighOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_0_OPAQUE` reader - Opaque: meaning not established. Set with bit 2 when phy_rxevm_init_cfg enables the measurement."]
+        pub type Bit0OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_0_OPAQUE` writer - Opaque: meaning not established. Set with bit 2 when phy_rxevm_init_cfg enables the measurement."]
+        pub type Bit0OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_1_OPAQUE` reader - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
+        pub type Bit1OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_1_OPAQUE` writer - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
+        pub type Bit1OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_2_OPAQUE` reader - Opaque: meaning not established. Set with bit 0 when phy_rxevm_init_cfg enables the measurement."]
+        pub type Bit2OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_2_OPAQUE` writer - Opaque: meaning not established. Set with bit 0 when phy_rxevm_init_cfg enables the measurement."]
+        pub type Bit2OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 0 - Opaque: meaning not established. Set with bit 2 when phy_rxevm_init_cfg enables the measurement."]
             #[inline(always)]
-            pub fn enable_low_opaque(&self) -> EnableLowOpaqueR {
-                EnableLowOpaqueR::new((self.bits & 1) != 0)
+            pub fn bit_0_opaque(&self) -> Bit0OpaqueR {
+                Bit0OpaqueR::new((self.bits & 1) != 0)
             }
             #[doc = "Bit 1 - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
             #[inline(always)]
-            pub fn memory_reset_opaque(&self) -> MemoryResetOpaqueR {
-                MemoryResetOpaqueR::new(((self.bits >> 1) & 1) != 0)
+            pub fn bit_1_opaque(&self) -> Bit1OpaqueR {
+                Bit1OpaqueR::new(((self.bits >> 1) & 1) != 0)
             }
             #[doc = "Bit 2 - Opaque: meaning not established. Set with bit 0 when phy_rxevm_init_cfg enables the measurement."]
             #[inline(always)]
-            pub fn enable_high_opaque(&self) -> EnableHighOpaqueR {
-                EnableHighOpaqueR::new(((self.bits >> 2) & 1) != 0)
+            pub fn bit_2_opaque(&self) -> Bit2OpaqueR {
+                Bit2OpaqueR::new(((self.bits >> 2) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bit 0 - Opaque: meaning not established. Set with bit 2 when phy_rxevm_init_cfg enables the measurement."]
             #[inline(always)]
-            pub fn enable_low_opaque(&mut self) -> EnableLowOpaqueW<'_, RxEvmControlSpec> {
-                EnableLowOpaqueW::new(self, 0)
+            pub fn bit_0_opaque(&mut self) -> Bit0OpaqueW<'_, RxEvmControlSpec> {
+                Bit0OpaqueW::new(self, 0)
             }
             #[doc = "Bit 1 - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
             #[inline(always)]
-            pub fn memory_reset_opaque(&mut self) -> MemoryResetOpaqueW<'_, RxEvmControlSpec> {
-                MemoryResetOpaqueW::new(self, 1)
+            pub fn bit_1_opaque(&mut self) -> Bit1OpaqueW<'_, RxEvmControlSpec> {
+                Bit1OpaqueW::new(self, 1)
             }
             #[doc = "Bit 2 - Opaque: meaning not established. Set with bit 0 when phy_rxevm_init_cfg enables the measurement."]
             #[inline(always)]
-            pub fn enable_high_opaque(&mut self) -> EnableHighOpaqueW<'_, RxEvmControlSpec> {
-                EnableHighOpaqueW::new(self, 2)
+            pub fn bit_2_opaque(&mut self) -> Bit2OpaqueW<'_, RxEvmControlSpec> {
+                Bit2OpaqueW::new(self, 2)
             }
         }
         #[doc = "Project-assigned name. RX EVM measurement control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7587,10 +7565,10 @@ pub mod phy_baseband_config {
         pub type R = crate::R<RxEvmConfigSpec>;
         #[doc = "Register `RX_EVM_CONFIG` writer"]
         pub type W = crate::W<RxEvmConfigSpec>;
-        #[doc = "Field `MODE_OPAQUE` reader - Opaque: meaning not established. Five bits phy_rxevm_init_cfg sets to 0x18."]
-        pub type ModeOpaqueR = crate::FieldReader;
-        #[doc = "Field `MODE_OPAQUE` writer - Opaque: meaning not established. Five bits phy_rxevm_init_cfg sets to 0x18."]
-        pub type ModeOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `BITS_2_6_OPAQUE` reader - Opaque: meaning not established. Five bits phy_rxevm_init_cfg sets to 0x18."]
+        pub type Bits2_6OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_2_6_OPAQUE` writer - Opaque: meaning not established. Five bits phy_rxevm_init_cfg sets to 0x18."]
+        pub type Bits2_6OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
         #[doc = "Field `SECOND_PARAMETER` reader - Project-assigned name. The second argument of phy_rxevm_init_cfg."]
         pub type SecondParameterR = crate::FieldReader;
         #[doc = "Field `SECOND_PARAMETER` writer - Project-assigned name. The second argument of phy_rxevm_init_cfg."]
@@ -7602,8 +7580,8 @@ pub mod phy_baseband_config {
         impl R {
             #[doc = "Bits 2:6 - Opaque: meaning not established. Five bits phy_rxevm_init_cfg sets to 0x18."]
             #[inline(always)]
-            pub fn mode_opaque(&self) -> ModeOpaqueR {
-                ModeOpaqueR::new(((self.bits >> 2) & 0x1f) as u8)
+            pub fn bits_2_6_opaque(&self) -> Bits2_6OpaqueR {
+                Bits2_6OpaqueR::new(((self.bits >> 2) & 0x1f) as u8)
             }
             #[doc = "Bits 15:21 - Project-assigned name. The second argument of phy_rxevm_init_cfg."]
             #[inline(always)]
@@ -7619,8 +7597,8 @@ pub mod phy_baseband_config {
         impl W {
             #[doc = "Bits 2:6 - Opaque: meaning not established. Five bits phy_rxevm_init_cfg sets to 0x18."]
             #[inline(always)]
-            pub fn mode_opaque(&mut self) -> ModeOpaqueW<'_, RxEvmConfigSpec> {
-                ModeOpaqueW::new(self, 2)
+            pub fn bits_2_6_opaque(&mut self) -> Bits2_6OpaqueW<'_, RxEvmConfigSpec> {
+                Bits2_6OpaqueW::new(self, 2)
             }
             #[doc = "Bits 15:21 - Project-assigned name. The second argument of phy_rxevm_init_cfg."]
             #[inline(always)]
@@ -7654,22 +7632,22 @@ pub mod phy_baseband_config {
         pub type R = crate::R<RxEvmMemoryResetSpec>;
         #[doc = "Register `RX_EVM_MEMORY_RESET` writer"]
         pub type W = crate::W<RxEvmMemoryResetSpec>;
-        #[doc = "Field `RESET_OPAQUE` reader - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
-        pub type ResetOpaqueR = crate::BitReader;
-        #[doc = "Field `RESET_OPAQUE` writer - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
-        pub type ResetOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_8_OPAQUE` reader - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
+        pub type Bit8OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_8_OPAQUE` writer - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
+        pub type Bit8OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 8 - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
             #[inline(always)]
-            pub fn reset_opaque(&self) -> ResetOpaqueR {
-                ResetOpaqueR::new(((self.bits >> 8) & 1) != 0)
+            pub fn bit_8_opaque(&self) -> Bit8OpaqueR {
+                Bit8OpaqueR::new(((self.bits >> 8) & 1) != 0)
             }
         }
         impl W {
             #[doc = "Bit 8 - Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem."]
             #[inline(always)]
-            pub fn reset_opaque(&mut self) -> ResetOpaqueW<'_, RxEvmMemoryResetSpec> {
-                ResetOpaqueW::new(self, 8)
+            pub fn bit_8_opaque(&mut self) -> Bit8OpaqueW<'_, RxEvmMemoryResetSpec> {
+                Bit8OpaqueW::new(self, 8)
             }
         }
         #[doc = "Project-assigned name. Word whose bit 8 phy_rxevm_reset_mem pulses.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_memory_reset::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_memory_reset::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -7928,7 +7906,7 @@ pub mod pcr_radio {
         _reserved1: [u8; 0x04],
         tsens_clk_conf: TsensClkConf,
         _reserved2: [u8; 0xb8],
-        register_014c_opaque: Register014cOpaque,
+        word_014c_opaque: Word014cOpaque,
     }
     impl RegisterBlock {
         #[doc = "0x88 - SAR ADC clock and reset."]
@@ -7943,8 +7921,8 @@ pub mod pcr_radio {
         }
         #[doc = "0x14c - Opaque: meaning not established. Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A."]
         #[inline(always)]
-        pub const fn register_014c_opaque(&self) -> &Register014cOpaque {
-            &self.register_014c_opaque
+        pub const fn word_014c_opaque(&self) -> &Word014cOpaque {
+            &self.word_014c_opaque
         }
     }
     #[doc = "SARADC_CONF (rw) register accessor: SAR ADC clock and reset.\n\nYou can [`read`](crate::Reg::read) this register and get [`saradc_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`saradc_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@saradc_conf`] module"]
@@ -8073,42 +8051,42 @@ pub mod pcr_radio {
         #[doc = "`reset()` method sets TSENS_CLK_CONF to value 0"]
         impl crate::Resettable for TsensClkConfSpec {}
     }
-    #[doc = "REGISTER_014C_OPAQUE (rw) register accessor: Opaque: meaning not established. Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A.\n\nYou can [`read`](crate::Reg::read) this register and get [`register_014c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`register_014c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@register_014c_opaque`] module"]
-    #[doc(alias = "REGISTER_014C_OPAQUE")]
-    pub type Register014cOpaque = crate::Reg<register_014c_opaque::Register014cOpaqueSpec>;
+    #[doc = "WORD_014C_OPAQUE (rw) register accessor: Opaque: meaning not established. Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_014c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_014c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@word_014c_opaque`] module"]
+    #[doc(alias = "WORD_014C_OPAQUE")]
+    pub type Word014cOpaque = crate::Reg<word_014c_opaque::Word014cOpaqueSpec>;
     #[doc = "Opaque: meaning not established. Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A."]
-    pub mod register_014c_opaque {
-        #[doc = "Register `REGISTER_014C_OPAQUE` reader"]
-        pub type R = crate::R<Register014cOpaqueSpec>;
-        #[doc = "Register `REGISTER_014C_OPAQUE` writer"]
-        pub type W = crate::W<Register014cOpaqueSpec>;
-        #[doc = "Field `LOW_BYTE_OPAQUE` reader - Opaque: meaning not established. Low byte; meaning unknown."]
-        pub type LowByteOpaqueR = crate::FieldReader;
-        #[doc = "Field `LOW_BYTE_OPAQUE` writer - Opaque: meaning not established. Low byte; meaning unknown."]
-        pub type LowByteOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+    pub mod word_014c_opaque {
+        #[doc = "Register `WORD_014C_OPAQUE` reader"]
+        pub type R = crate::R<Word014cOpaqueSpec>;
+        #[doc = "Register `WORD_014C_OPAQUE` writer"]
+        pub type W = crate::W<Word014cOpaqueSpec>;
+        #[doc = "Field `BITS_0_7_OPAQUE` reader - Opaque: meaning not established. Low byte; meaning unknown."]
+        pub type Bits0_7OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_0_7_OPAQUE` writer - Opaque: meaning not established. Low byte; meaning unknown."]
+        pub type Bits0_7OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         impl R {
             #[doc = "Bits 0:7 - Opaque: meaning not established. Low byte; meaning unknown."]
             #[inline(always)]
-            pub fn low_byte_opaque(&self) -> LowByteOpaqueR {
-                LowByteOpaqueR::new((self.bits & 0xff) as u8)
+            pub fn bits_0_7_opaque(&self) -> Bits0_7OpaqueR {
+                Bits0_7OpaqueR::new((self.bits & 0xff) as u8)
             }
         }
         impl W {
             #[doc = "Bits 0:7 - Opaque: meaning not established. Low byte; meaning unknown."]
             #[inline(always)]
-            pub fn low_byte_opaque(&mut self) -> LowByteOpaqueW<'_, Register014cOpaqueSpec> {
-                LowByteOpaqueW::new(self, 0)
+            pub fn bits_0_7_opaque(&mut self) -> Bits0_7OpaqueW<'_, Word014cOpaqueSpec> {
+                Bits0_7OpaqueW::new(self, 0)
             }
         }
-        #[doc = "Opaque: meaning not established. Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A.\n\nYou can [`read`](crate::Reg::read) this register and get [`register_014c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`register_014c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Register014cOpaqueSpec;
-        impl crate::RegisterSpec for Register014cOpaqueSpec {
+        #[doc = "Opaque: meaning not established. Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A.\n\nYou can [`read`](crate::Reg::read) this register and get [`word_014c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`word_014c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Word014cOpaqueSpec;
+        impl crate::RegisterSpec for Word014cOpaqueSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`register_014c_opaque::R`](R) reader structure"]
-        impl crate::Readable for Register014cOpaqueSpec {}
-        #[doc = "`write(|w| ..)` method takes [`register_014c_opaque::W`](W) writer structure"]
-        impl crate::Writable for Register014cOpaqueSpec {
+        #[doc = "`read()` method returns [`word_014c_opaque::R`](R) reader structure"]
+        impl crate::Readable for Word014cOpaqueSpec {}
+        #[doc = "`write(|w| ..)` method takes [`word_014c_opaque::W`](W) writer structure"]
+        impl crate::Writable for Word014cOpaqueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -8157,10 +8135,10 @@ pub mod wifi_mac_aux_tsf_control {
         pub type R = crate::R<SoftapControlSpec>;
         #[doc = "Register `SOFTAP_CONTROL` writer"]
         pub type W = crate::W<SoftapControlSpec>;
-        #[doc = "Field `HIGH_CONTROL_OPAQUE` reader - Opaque: meaning not established."]
-        pub type HighControlOpaqueR = crate::BitReader;
-        #[doc = "Field `HIGH_CONTROL_OPAQUE` writer - Opaque: meaning not established."]
-        pub type HighControlOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_30_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bit30OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_30_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bit30OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `TSF_ENABLE` reader - Project-assigned name."]
         pub type TsfEnableR = crate::BitReader;
         #[doc = "Field `TSF_ENABLE` writer - Project-assigned name."]
@@ -8168,8 +8146,8 @@ pub mod wifi_mac_aux_tsf_control {
         impl R {
             #[doc = "Bit 30 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn high_control_opaque(&self) -> HighControlOpaqueR {
-                HighControlOpaqueR::new(((self.bits >> 30) & 1) != 0)
+            pub fn bit_30_opaque(&self) -> Bit30OpaqueR {
+                Bit30OpaqueR::new(((self.bits >> 30) & 1) != 0)
             }
             #[doc = "Bit 31 - Project-assigned name."]
             #[inline(always)]
@@ -8180,8 +8158,8 @@ pub mod wifi_mac_aux_tsf_control {
         impl W {
             #[doc = "Bit 30 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn high_control_opaque(&mut self) -> HighControlOpaqueW<'_, SoftapControlSpec> {
-                HighControlOpaqueW::new(self, 30)
+            pub fn bit_30_opaque(&mut self) -> Bit30OpaqueW<'_, SoftapControlSpec> {
+                Bit30OpaqueW::new(self, 30)
             }
             #[doc = "Bit 31 - Project-assigned name."]
             #[inline(always)]
@@ -8587,10 +8565,10 @@ pub mod wifi_mac_interrupt {
         pub type RxAssociatedAuxiliary5R = crate::BitReader;
         #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` writer - Project-assigned name. Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
         pub type RxAssociatedAuxiliary5W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `COLD_RX_ENABLE_6_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable6OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_6_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable6OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_6_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit6OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_6_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit6OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `TX_COMPLETE` reader - Project-assigned name. Enable for the TX-complete event."]
         pub type TxCompleteR = crate::BitReader;
         #[doc = "Field `TX_COMPLETE` writer - Project-assigned name. Enable for the TX-complete event."]
@@ -8607,14 +8585,14 @@ pub mod wifi_mac_interrupt {
         pub type WatchdogR = crate::BitReader;
         #[doc = "Field `WATCHDOG` writer - Project-assigned name. Enable for the MAC watchdog event."]
         pub type WatchdogW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `COLD_RX_ENABLE_12_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable12OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_12_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable12OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `COLD_RX_ENABLE_13_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable13OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_13_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable13OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_12_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit12OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_12_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit12OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_13_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit13OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_13_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit13OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `RX_SUCCESS` reader - Project-assigned name. Enable for successful receive completion."]
         pub type RxSuccessR = crate::BitReader;
         #[doc = "Field `RX_SUCCESS` writer - Project-assigned name. Enable for successful receive completion."]
@@ -8631,22 +8609,22 @@ pub mod wifi_mac_interrupt {
         pub type TxTimeoutR = crate::BitReader;
         #[doc = "Field `TX_TIMEOUT` writer - Project-assigned name. Enable for the hardware TX queue timeout/abort event."]
         pub type TxTimeoutW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BITS_20_OPAQUE` reader - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
-        pub type Bits20OpaqueR = crate::BitReader;
-        #[doc = "Field `BITS_20_OPAQUE` writer - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
-        pub type Bits20OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `COLD_RX_ENABLE_21_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable21OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_21_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable21OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BITS_22_OPAQUE` reader - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
-        pub type Bits22OpaqueR = crate::BitReader;
-        #[doc = "Field `BITS_22_OPAQUE` writer - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
-        pub type Bits22OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `COLD_RX_ENABLE_23_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable23OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_23_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable23OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_20_OPAQUE` reader - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
+        pub type Bit20OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_20_OPAQUE` writer - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
+        pub type Bit20OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_21_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit21OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_21_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit21OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_22_OPAQUE` reader - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
+        pub type Bit22OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_22_OPAQUE` writer - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
+        pub type Bit22OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_23_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit23OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_23_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit23OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - Project-assigned name. Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
         pub type RxAssociatedAuxiliary24R = crate::BitReader;
         #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` writer - Project-assigned name. Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
@@ -8655,14 +8633,14 @@ pub mod wifi_mac_interrupt {
         pub type Bits25_26OpaqueR = crate::FieldReader;
         #[doc = "Field `BITS_25_26_OPAQUE` writer - Opaque: meaning not established. Interrupt-enable bits whose event identities remain unknown."]
         pub type Bits25_26OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `COLD_RX_ENABLE_27_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable27OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_27_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable27OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `COLD_RX_ENABLE_28_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable28OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_28_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
-        pub type ColdRxEnable28OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_27_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit27OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_27_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit27OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_28_OPAQUE` reader - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit28OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_28_OPAQUE` writer - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
+        pub type Bit28OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `BITS_29_31_OPAQUE` reader - Opaque: meaning not established. Interrupt-enable bits whose event identities remain unknown."]
         pub type Bits29_31OpaqueR = crate::FieldReader;
         #[doc = "Field `BITS_29_31_OPAQUE` writer - Opaque: meaning not established. Interrupt-enable bits whose event identities remain unknown."]
@@ -8680,8 +8658,8 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 6 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_6_opaque(&self) -> ColdRxEnable6OpaqueR {
-                ColdRxEnable6OpaqueR::new(((self.bits >> 6) & 1) != 0)
+            pub fn bit_6_opaque(&self) -> Bit6OpaqueR {
+                Bit6OpaqueR::new(((self.bits >> 6) & 1) != 0)
             }
             #[doc = "Bit 7 - Project-assigned name. Enable for the TX-complete event."]
             #[inline(always)]
@@ -8705,13 +8683,13 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 12 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_12_opaque(&self) -> ColdRxEnable12OpaqueR {
-                ColdRxEnable12OpaqueR::new(((self.bits >> 12) & 1) != 0)
+            pub fn bit_12_opaque(&self) -> Bit12OpaqueR {
+                Bit12OpaqueR::new(((self.bits >> 12) & 1) != 0)
             }
             #[doc = "Bit 13 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_13_opaque(&self) -> ColdRxEnable13OpaqueR {
-                ColdRxEnable13OpaqueR::new(((self.bits >> 13) & 1) != 0)
+            pub fn bit_13_opaque(&self) -> Bit13OpaqueR {
+                Bit13OpaqueR::new(((self.bits >> 13) & 1) != 0)
             }
             #[doc = "Bit 14 - Project-assigned name. Enable for successful receive completion."]
             #[inline(always)]
@@ -8735,23 +8713,23 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 20 - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
             #[inline(always)]
-            pub fn bits_20_opaque(&self) -> Bits20OpaqueR {
-                Bits20OpaqueR::new(((self.bits >> 20) & 1) != 0)
+            pub fn bit_20_opaque(&self) -> Bit20OpaqueR {
+                Bit20OpaqueR::new(((self.bits >> 20) & 1) != 0)
             }
             #[doc = "Bit 21 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_21_opaque(&self) -> ColdRxEnable21OpaqueR {
-                ColdRxEnable21OpaqueR::new(((self.bits >> 21) & 1) != 0)
+            pub fn bit_21_opaque(&self) -> Bit21OpaqueR {
+                Bit21OpaqueR::new(((self.bits >> 21) & 1) != 0)
             }
             #[doc = "Bit 22 - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
             #[inline(always)]
-            pub fn bits_22_opaque(&self) -> Bits22OpaqueR {
-                Bits22OpaqueR::new(((self.bits >> 22) & 1) != 0)
+            pub fn bit_22_opaque(&self) -> Bit22OpaqueR {
+                Bit22OpaqueR::new(((self.bits >> 22) & 1) != 0)
             }
             #[doc = "Bit 23 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_23_opaque(&self) -> ColdRxEnable23OpaqueR {
-                ColdRxEnable23OpaqueR::new(((self.bits >> 23) & 1) != 0)
+            pub fn bit_23_opaque(&self) -> Bit23OpaqueR {
+                Bit23OpaqueR::new(((self.bits >> 23) & 1) != 0)
             }
             #[doc = "Bit 24 - Project-assigned name. Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
             #[inline(always)]
@@ -8765,13 +8743,13 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 27 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_27_opaque(&self) -> ColdRxEnable27OpaqueR {
-                ColdRxEnable27OpaqueR::new(((self.bits >> 27) & 1) != 0)
+            pub fn bit_27_opaque(&self) -> Bit27OpaqueR {
+                Bit27OpaqueR::new(((self.bits >> 27) & 1) != 0)
             }
             #[doc = "Bit 28 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_28_opaque(&self) -> ColdRxEnable28OpaqueR {
-                ColdRxEnable28OpaqueR::new(((self.bits >> 28) & 1) != 0)
+            pub fn bit_28_opaque(&self) -> Bit28OpaqueR {
+                Bit28OpaqueR::new(((self.bits >> 28) & 1) != 0)
             }
             #[doc = "Bits 29:31 - Opaque: meaning not established. Interrupt-enable bits whose event identities remain unknown."]
             #[inline(always)]
@@ -8792,8 +8770,8 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 6 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_6_opaque(&mut self) -> ColdRxEnable6OpaqueW<'_, EnableSpec> {
-                ColdRxEnable6OpaqueW::new(self, 6)
+            pub fn bit_6_opaque(&mut self) -> Bit6OpaqueW<'_, EnableSpec> {
+                Bit6OpaqueW::new(self, 6)
             }
             #[doc = "Bit 7 - Project-assigned name. Enable for the TX-complete event."]
             #[inline(always)]
@@ -8817,13 +8795,13 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 12 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_12_opaque(&mut self) -> ColdRxEnable12OpaqueW<'_, EnableSpec> {
-                ColdRxEnable12OpaqueW::new(self, 12)
+            pub fn bit_12_opaque(&mut self) -> Bit12OpaqueW<'_, EnableSpec> {
+                Bit12OpaqueW::new(self, 12)
             }
             #[doc = "Bit 13 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_13_opaque(&mut self) -> ColdRxEnable13OpaqueW<'_, EnableSpec> {
-                ColdRxEnable13OpaqueW::new(self, 13)
+            pub fn bit_13_opaque(&mut self) -> Bit13OpaqueW<'_, EnableSpec> {
+                Bit13OpaqueW::new(self, 13)
             }
             #[doc = "Bit 14 - Project-assigned name. Enable for successful receive completion."]
             #[inline(always)]
@@ -8847,23 +8825,23 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 20 - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
             #[inline(always)]
-            pub fn bits_20_opaque(&mut self) -> Bits20OpaqueW<'_, EnableSpec> {
-                Bits20OpaqueW::new(self, 20)
+            pub fn bit_20_opaque(&mut self) -> Bit20OpaqueW<'_, EnableSpec> {
+                Bit20OpaqueW::new(self, 20)
             }
             #[doc = "Bit 21 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_21_opaque(&mut self) -> ColdRxEnable21OpaqueW<'_, EnableSpec> {
-                ColdRxEnable21OpaqueW::new(self, 21)
+            pub fn bit_21_opaque(&mut self) -> Bit21OpaqueW<'_, EnableSpec> {
+                Bit21OpaqueW::new(self, 21)
             }
             #[doc = "Bit 22 - Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown."]
             #[inline(always)]
-            pub fn bits_22_opaque(&mut self) -> Bits22OpaqueW<'_, EnableSpec> {
-                Bits22OpaqueW::new(self, 22)
+            pub fn bit_22_opaque(&mut self) -> Bit22OpaqueW<'_, EnableSpec> {
+                Bit22OpaqueW::new(self, 22)
             }
             #[doc = "Bit 23 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_23_opaque(&mut self) -> ColdRxEnable23OpaqueW<'_, EnableSpec> {
-                ColdRxEnable23OpaqueW::new(self, 23)
+            pub fn bit_23_opaque(&mut self) -> Bit23OpaqueW<'_, EnableSpec> {
+                Bit23OpaqueW::new(self, 23)
             }
             #[doc = "Bit 24 - Project-assigned name. Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
             #[inline(always)]
@@ -8879,13 +8857,13 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 27 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_27_opaque(&mut self) -> ColdRxEnable27OpaqueW<'_, EnableSpec> {
-                ColdRxEnable27OpaqueW::new(self, 27)
+            pub fn bit_27_opaque(&mut self) -> Bit27OpaqueW<'_, EnableSpec> {
+                Bit27OpaqueW::new(self, 27)
             }
             #[doc = "Bit 28 - Opaque: meaning not established. Unknown event enabled by the complete cold receive mask."]
             #[inline(always)]
-            pub fn cold_rx_enable_28_opaque(&mut self) -> ColdRxEnable28OpaqueW<'_, EnableSpec> {
-                ColdRxEnable28OpaqueW::new(self, 28)
+            pub fn bit_28_opaque(&mut self) -> Bit28OpaqueW<'_, EnableSpec> {
+                Bit28OpaqueW::new(self, 28)
             }
             #[doc = "Bits 29:31 - Opaque: meaning not established. Interrupt-enable bits whose event identities remain unknown."]
             #[inline(always)]
@@ -8955,8 +8933,8 @@ pub mod wifi_mac_interrupt {
         pub type Bits0_4OpaqueR = crate::FieldReader;
         #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` reader - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
         pub type RxAssociatedAuxiliary5R = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_6_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
-        pub type ColdRxEnable6OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_6_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type Bit6OpaqueR = crate::BitReader;
         #[doc = "Field `TX_COMPLETE` reader - Project-assigned name. At least one hardware TX queue completed."]
         pub type TxCompleteR = crate::BitReader;
         #[doc = "Field `BSS_COLOR_COLLISION` reader - Project-assigned name. HE BSS-color collision event."]
@@ -8965,10 +8943,10 @@ pub mod wifi_mac_interrupt {
         pub type Bits9_10OpaqueR = crate::FieldReader;
         #[doc = "Field `WATCHDOG` reader - Project-assigned name. MAC watchdog event cleared by the complete dedicated leaf."]
         pub type WatchdogR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_12_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
-        pub type ColdRxEnable12OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_13_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
-        pub type ColdRxEnable13OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_12_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type Bit12OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_13_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type Bit13OpaqueR = crate::BitReader;
         #[doc = "Field `RX_SUCCESS` reader - Project-assigned name. Successfully received frame is ready for the RX completion path."]
         pub type RxSuccessR = crate::BitReader;
         #[doc = "Field `STA_BEACON_FILTER` reader - Project-assigned name. Masked station beacon-filter event. The paired ENABLE field identity is recovered from the complete disable leaf; no task-side dispatch is claimed here."]
@@ -8977,22 +8955,22 @@ pub mod wifi_mac_interrupt {
         pub type Bits16_18OpaqueR = crate::FieldReader;
         #[doc = "Field `TX_TIMEOUT` reader - Project-assigned name. Hardware TX queue timeout/abort event."]
         pub type TxTimeoutR = crate::BitReader;
-        #[doc = "Field `BITS_20_OPAQUE` reader - Opaque: meaning not established. Masked event bit whose identity remains unknown."]
-        pub type Bits20OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_21_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
-        pub type ColdRxEnable21OpaqueR = crate::BitReader;
-        #[doc = "Field `BITS_22_OPAQUE` reader - Opaque: meaning not established. Masked event bit whose identity remains unknown."]
-        pub type Bits22OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_23_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
-        pub type ColdRxEnable23OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_20_OPAQUE` reader - Opaque: meaning not established. Masked event bit whose identity remains unknown."]
+        pub type Bit20OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_21_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type Bit21OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_22_OPAQUE` reader - Opaque: meaning not established. Masked event bit whose identity remains unknown."]
+        pub type Bit22OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_23_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type Bit23OpaqueR = crate::BitReader;
         #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
         pub type RxAssociatedAuxiliary24R = crate::BitReader;
         #[doc = "Field `BITS_25_26_OPAQUE` reader - Opaque: meaning not established. Masked event bits whose identities remain unknown."]
         pub type Bits25_26OpaqueR = crate::FieldReader;
-        #[doc = "Field `COLD_RX_ENABLE_27_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
-        pub type ColdRxEnable27OpaqueR = crate::BitReader;
-        #[doc = "Field `COLD_RX_ENABLE_28_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
-        pub type ColdRxEnable28OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_27_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type Bit27OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_28_OPAQUE` reader - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type Bit28OpaqueR = crate::BitReader;
         #[doc = "Field `BITS_29_31_OPAQUE` reader - Opaque: meaning not established. Masked event bits whose identities remain unknown."]
         pub type Bits29_31OpaqueR = crate::FieldReader;
         impl R {
@@ -9008,8 +8986,8 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 6 - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
             #[inline(always)]
-            pub fn cold_rx_enable_6_opaque(&self) -> ColdRxEnable6OpaqueR {
-                ColdRxEnable6OpaqueR::new(((self.bits >> 6) & 1) != 0)
+            pub fn bit_6_opaque(&self) -> Bit6OpaqueR {
+                Bit6OpaqueR::new(((self.bits >> 6) & 1) != 0)
             }
             #[doc = "Bit 7 - Project-assigned name. At least one hardware TX queue completed."]
             #[inline(always)]
@@ -9033,13 +9011,13 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 12 - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
             #[inline(always)]
-            pub fn cold_rx_enable_12_opaque(&self) -> ColdRxEnable12OpaqueR {
-                ColdRxEnable12OpaqueR::new(((self.bits >> 12) & 1) != 0)
+            pub fn bit_12_opaque(&self) -> Bit12OpaqueR {
+                Bit12OpaqueR::new(((self.bits >> 12) & 1) != 0)
             }
             #[doc = "Bit 13 - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
             #[inline(always)]
-            pub fn cold_rx_enable_13_opaque(&self) -> ColdRxEnable13OpaqueR {
-                ColdRxEnable13OpaqueR::new(((self.bits >> 13) & 1) != 0)
+            pub fn bit_13_opaque(&self) -> Bit13OpaqueR {
+                Bit13OpaqueR::new(((self.bits >> 13) & 1) != 0)
             }
             #[doc = "Bit 14 - Project-assigned name. Successfully received frame is ready for the RX completion path."]
             #[inline(always)]
@@ -9063,23 +9041,23 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 20 - Opaque: meaning not established. Masked event bit whose identity remains unknown."]
             #[inline(always)]
-            pub fn bits_20_opaque(&self) -> Bits20OpaqueR {
-                Bits20OpaqueR::new(((self.bits >> 20) & 1) != 0)
+            pub fn bit_20_opaque(&self) -> Bit20OpaqueR {
+                Bit20OpaqueR::new(((self.bits >> 20) & 1) != 0)
             }
             #[doc = "Bit 21 - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
             #[inline(always)]
-            pub fn cold_rx_enable_21_opaque(&self) -> ColdRxEnable21OpaqueR {
-                ColdRxEnable21OpaqueR::new(((self.bits >> 21) & 1) != 0)
+            pub fn bit_21_opaque(&self) -> Bit21OpaqueR {
+                Bit21OpaqueR::new(((self.bits >> 21) & 1) != 0)
             }
             #[doc = "Bit 22 - Opaque: meaning not established. Masked event bit whose identity remains unknown."]
             #[inline(always)]
-            pub fn bits_22_opaque(&self) -> Bits22OpaqueR {
-                Bits22OpaqueR::new(((self.bits >> 22) & 1) != 0)
+            pub fn bit_22_opaque(&self) -> Bit22OpaqueR {
+                Bit22OpaqueR::new(((self.bits >> 22) & 1) != 0)
             }
             #[doc = "Bit 23 - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
             #[inline(always)]
-            pub fn cold_rx_enable_23_opaque(&self) -> ColdRxEnable23OpaqueR {
-                ColdRxEnable23OpaqueR::new(((self.bits >> 23) & 1) != 0)
+            pub fn bit_23_opaque(&self) -> Bit23OpaqueR {
+                Bit23OpaqueR::new(((self.bits >> 23) & 1) != 0)
             }
             #[doc = "Bit 24 - Project-assigned name. Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
             #[inline(always)]
@@ -9093,13 +9071,13 @@ pub mod wifi_mac_interrupt {
             }
             #[doc = "Bit 27 - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
             #[inline(always)]
-            pub fn cold_rx_enable_27_opaque(&self) -> ColdRxEnable27OpaqueR {
-                ColdRxEnable27OpaqueR::new(((self.bits >> 27) & 1) != 0)
+            pub fn bit_27_opaque(&self) -> Bit27OpaqueR {
+                Bit27OpaqueR::new(((self.bits >> 27) & 1) != 0)
             }
             #[doc = "Bit 28 - Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
             #[inline(always)]
-            pub fn cold_rx_enable_28_opaque(&self) -> ColdRxEnable28OpaqueR {
-                ColdRxEnable28OpaqueR::new(((self.bits >> 28) & 1) != 0)
+            pub fn bit_28_opaque(&self) -> Bit28OpaqueR {
+                Bit28OpaqueR::new(((self.bits >> 28) & 1) != 0)
             }
             #[doc = "Bits 29:31 - Opaque: meaning not established. Masked event bits whose identities remain unknown."]
             #[inline(always)]
@@ -9733,10 +9711,10 @@ pub mod wifi_mac_rtc_timer_update {
         pub type StaTsfWakeupEnableR = crate::BitReader;
         #[doc = "Field `STA_TSF_WAKEUP_ENABLE` writer - Project-assigned name. hal_set_sta_tsf_wakeup sets or clears this bit in the same branch as STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE."]
         pub type StaTsfWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `RTC_UPDATE_ENABLE_OPAQUE` reader - Opaque: meaning not established. Set when the leaf's enable argument is nonzero."]
-        pub type RtcUpdateEnableOpaqueR = crate::BitReader;
-        #[doc = "Field `RTC_UPDATE_ENABLE_OPAQUE` writer - Opaque: meaning not established. Set when the leaf's enable argument is nonzero."]
-        pub type RtcUpdateEnableOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BIT_27_OPAQUE` reader - Opaque: meaning not established. Set when the leaf's enable argument is nonzero."]
+        pub type Bit27OpaqueR = crate::BitReader;
+        #[doc = "Field `BIT_27_OPAQUE` writer - Opaque: meaning not established. Set when the leaf's enable argument is nonzero."]
+        pub type Bit27OpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 21 - Project-assigned name. hal_set_sta_tsf_wakeup sets or clears this bit in the same branch as STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE."]
             #[inline(always)]
@@ -9745,8 +9723,8 @@ pub mod wifi_mac_rtc_timer_update {
             }
             #[doc = "Bit 27 - Opaque: meaning not established. Set when the leaf's enable argument is nonzero."]
             #[inline(always)]
-            pub fn rtc_update_enable_opaque(&self) -> RtcUpdateEnableOpaqueR {
-                RtcUpdateEnableOpaqueR::new(((self.bits >> 27) & 1) != 0)
+            pub fn bit_27_opaque(&self) -> Bit27OpaqueR {
+                Bit27OpaqueR::new(((self.bits >> 27) & 1) != 0)
             }
         }
         impl W {
@@ -9757,8 +9735,8 @@ pub mod wifi_mac_rtc_timer_update {
             }
             #[doc = "Bit 27 - Opaque: meaning not established. Set when the leaf's enable argument is nonzero."]
             #[inline(always)]
-            pub fn rtc_update_enable_opaque(&mut self) -> RtcUpdateEnableOpaqueW<'_, ControlSpec> {
-                RtcUpdateEnableOpaqueW::new(self, 27)
+            pub fn bit_27_opaque(&mut self) -> Bit27OpaqueW<'_, ControlSpec> {
+                Bit27OpaqueW::new(self, 27)
             }
         }
         #[doc = "Project-assigned name. Enabled hal_timer_update_by_rtc sets bit 27. hal_set_sta_tsf_wakeup sets or clears bit 21 together with the STA TSF wakeup bit at 0x600ad858.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -10426,22 +10404,22 @@ pub mod wifi_mac_sta_beacon_filter {
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
-        #[doc = "Field `ENABLES_OPAQUE` reader - Opaque: meaning not established."]
-        pub type EnablesOpaqueR = crate::FieldReader;
-        #[doc = "Field `ENABLES_OPAQUE` writer - Opaque: meaning not established."]
-        pub type EnablesOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
+        #[doc = "Field `BITS_0_2_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_2OpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_0_2_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_2OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:2 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn enables_opaque(&self) -> EnablesOpaqueR {
-                EnablesOpaqueR::new((self.bits & 7) as u8)
+            pub fn bits_0_2_opaque(&self) -> Bits0_2OpaqueR {
+                Bits0_2OpaqueR::new((self.bits & 7) as u8)
             }
         }
         impl W {
             #[doc = "Bits 0:2 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn enables_opaque(&mut self) -> EnablesOpaqueW<'_, ControlSpec> {
-                EnablesOpaqueW::new(self, 0)
+            pub fn bits_0_2_opaque(&mut self) -> Bits0_2OpaqueW<'_, ControlSpec> {
+                Bits0_2OpaqueW::new(self, 0)
             }
         }
         #[doc = "Project-assigned name. hal_enable_sta_beacon_filter sets bits 2:0 after enabling the matching interrupt; hal_disable_sta_beacon_filter clears them before disabling that interrupt.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -10816,10 +10794,10 @@ pub mod wifi_mac_tx_common {
         pub type R = crate::R<CcaControlSpec>;
         #[doc = "Register `CCA_CONTROL` writer"]
         pub type W = crate::W<CcaControlSpec>;
-        #[doc = "Field `CONTROL_LOW_OPAQUE` reader - Opaque: meaning not established."]
-        pub type ControlLowOpaqueR = crate::FieldReader<u32>;
-        #[doc = "Field `CONTROL_LOW_OPAQUE` writer - Opaque: meaning not established."]
-        pub type ControlLowOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32>;
+        #[doc = "Field `BITS_0_27_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits0_27OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_0_27_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits0_27OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32>;
         #[doc = "Field `PHY_AUX_FORCE` reader - Project-assigned name. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
         pub type PhyAuxForceR = crate::FieldReader;
         #[doc = "Field `PHY_AUX_FORCE` writer - Project-assigned name. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
@@ -10831,8 +10809,8 @@ pub mod wifi_mac_tx_common {
         impl R {
             #[doc = "Bits 0:27 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn control_low_opaque(&self) -> ControlLowOpaqueR {
-                ControlLowOpaqueR::new(self.bits & 0x0fff_ffff)
+            pub fn bits_0_27_opaque(&self) -> Bits0_27OpaqueR {
+                Bits0_27OpaqueR::new(self.bits & 0x0fff_ffff)
             }
             #[doc = "Bits 28:29 - Project-assigned name. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
             #[inline(always)]
@@ -10848,8 +10826,8 @@ pub mod wifi_mac_tx_common {
         impl W {
             #[doc = "Bits 0:27 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn control_low_opaque(&mut self) -> ControlLowOpaqueW<'_, CcaControlSpec> {
-                ControlLowOpaqueW::new(self, 0)
+            pub fn bits_0_27_opaque(&mut self) -> Bits0_27OpaqueW<'_, CcaControlSpec> {
+                Bits0_27OpaqueW::new(self, 0)
             }
             #[doc = "Bits 28:29 - Project-assigned name. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
             #[inline(always)]
@@ -10889,8 +10867,8 @@ pub mod wifi_mac_tx_common {
         pub type CollisionQueue2W<'a, REG> = crate::BitWriter1C<'a, REG>;
         #[doc = "Field `COLLISION_QUEUE_3` writer - Project-assigned name."]
         pub type CollisionQueue3W<'a, REG> = crate::BitWriter1C<'a, REG>;
-        #[doc = "Field `LOW_STATE_OPAQUE` writer - Opaque: meaning not established."]
-        pub type LowStateOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `BITS_4_15_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits4_15OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
         #[doc = "Field `TIMEOUT_QUEUE_0` writer - Project-assigned name."]
         pub type TimeoutQueue0W<'a, REG> = crate::BitWriter1C<'a, REG>;
         #[doc = "Field `TIMEOUT_QUEUE_1` writer - Project-assigned name."]
@@ -10899,8 +10877,8 @@ pub mod wifi_mac_tx_common {
         pub type TimeoutQueue2W<'a, REG> = crate::BitWriter1C<'a, REG>;
         #[doc = "Field `TIMEOUT_QUEUE_3` writer - Project-assigned name."]
         pub type TimeoutQueue3W<'a, REG> = crate::BitWriter1C<'a, REG>;
-        #[doc = "Field `HIGH_STATE_OPAQUE` writer - Opaque: meaning not established."]
-        pub type HighStateOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `BITS_20_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits20_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
         impl W {
             #[doc = "Bit 0 - Project-assigned name."]
             #[inline(always)]
@@ -10924,8 +10902,8 @@ pub mod wifi_mac_tx_common {
             }
             #[doc = "Bits 4:15 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn low_state_opaque(&mut self) -> LowStateOpaqueW<'_, QueueStateClearSpec> {
-                LowStateOpaqueW::new(self, 4)
+            pub fn bits_4_15_opaque(&mut self) -> Bits4_15OpaqueW<'_, QueueStateClearSpec> {
+                Bits4_15OpaqueW::new(self, 4)
             }
             #[doc = "Bit 16 - Project-assigned name."]
             #[inline(always)]
@@ -10949,8 +10927,8 @@ pub mod wifi_mac_tx_common {
             }
             #[doc = "Bits 20:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn high_state_opaque(&mut self) -> HighStateOpaqueW<'_, QueueStateClearSpec> {
-                HighStateOpaqueW::new(self, 20)
+            pub fn bits_20_31_opaque(&mut self) -> Bits20_31OpaqueW<'_, QueueStateClearSpec> {
+                Bits20_31OpaqueW::new(self, 20)
             }
         }
         #[doc = "Project-assigned name. Queue collision/timeout state acknowledgement.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_state_clear::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -10979,8 +10957,8 @@ pub mod wifi_mac_tx_common {
         pub type CollisionQueue2R = crate::BitReader;
         #[doc = "Field `COLLISION_QUEUE_3` reader - Project-assigned name."]
         pub type CollisionQueue3R = crate::BitReader;
-        #[doc = "Field `LOW_STATE_OPAQUE` reader - Opaque: meaning not established."]
-        pub type LowStateOpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `BITS_4_15_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits4_15OpaqueR = crate::FieldReader<u16>;
         #[doc = "Field `TIMEOUT_QUEUE_0` reader - Project-assigned name."]
         pub type TimeoutQueue0R = crate::BitReader;
         #[doc = "Field `TIMEOUT_QUEUE_1` reader - Project-assigned name."]
@@ -10989,8 +10967,8 @@ pub mod wifi_mac_tx_common {
         pub type TimeoutQueue2R = crate::BitReader;
         #[doc = "Field `TIMEOUT_QUEUE_3` reader - Project-assigned name."]
         pub type TimeoutQueue3R = crate::BitReader;
-        #[doc = "Field `MIDDLE_STATE_OPAQUE` reader - Opaque: meaning not established."]
-        pub type MiddleStateOpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_20_23_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits20_23OpaqueR = crate::FieldReader;
         #[doc = "Field `TRIGGER_FLOW_QUEUE_0` reader - Project-assigned name. Queue zero is participating in the hardware Trigger-based transmit flow."]
         pub type TriggerFlowQueue0R = crate::BitReader;
         #[doc = "Field `TRIGGER_FLOW_QUEUE_1` reader - Project-assigned name."]
@@ -10999,8 +10977,8 @@ pub mod wifi_mac_tx_common {
         pub type TriggerFlowQueue2R = crate::BitReader;
         #[doc = "Field `TRIGGER_FLOW_QUEUE_3` reader - Project-assigned name."]
         pub type TriggerFlowQueue3R = crate::BitReader;
-        #[doc = "Field `TRIGGER_FLOW_HIGH_OPAQUE` reader - Opaque: meaning not established. The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved."]
-        pub type TriggerFlowHighOpaqueR = crate::FieldReader;
+        #[doc = "Field `BITS_28_31_OPAQUE` reader - Opaque: meaning not established. The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved."]
+        pub type Bits28_31OpaqueR = crate::FieldReader;
         impl R {
             #[doc = "Bit 0 - Project-assigned name."]
             #[inline(always)]
@@ -11024,8 +11002,8 @@ pub mod wifi_mac_tx_common {
             }
             #[doc = "Bits 4:15 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn low_state_opaque(&self) -> LowStateOpaqueR {
-                LowStateOpaqueR::new(((self.bits >> 4) & 0x0fff) as u16)
+            pub fn bits_4_15_opaque(&self) -> Bits4_15OpaqueR {
+                Bits4_15OpaqueR::new(((self.bits >> 4) & 0x0fff) as u16)
             }
             #[doc = "Bit 16 - Project-assigned name."]
             #[inline(always)]
@@ -11049,8 +11027,8 @@ pub mod wifi_mac_tx_common {
             }
             #[doc = "Bits 20:23 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn middle_state_opaque(&self) -> MiddleStateOpaqueR {
-                MiddleStateOpaqueR::new(((self.bits >> 20) & 0x0f) as u8)
+            pub fn bits_20_23_opaque(&self) -> Bits20_23OpaqueR {
+                Bits20_23OpaqueR::new(((self.bits >> 20) & 0x0f) as u8)
             }
             #[doc = "Bit 24 - Project-assigned name. Queue zero is participating in the hardware Trigger-based transmit flow."]
             #[inline(always)]
@@ -11074,8 +11052,8 @@ pub mod wifi_mac_tx_common {
             }
             #[doc = "Bits 28:31 - Opaque: meaning not established. The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved."]
             #[inline(always)]
-            pub fn trigger_flow_high_opaque(&self) -> TriggerFlowHighOpaqueR {
-                TriggerFlowHighOpaqueR::new(((self.bits >> 28) & 0x0f) as u8)
+            pub fn bits_28_31_opaque(&self) -> Bits28_31OpaqueR {
+                Bits28_31OpaqueR::new(((self.bits >> 28) & 0x0f) as u8)
             }
         }
         #[doc = "Project-assigned name. Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -11111,10 +11089,10 @@ pub mod wifi_mac_tx_common {
         pub type Queue3R = crate::BitReader;
         #[doc = "Field `QUEUE_3` writer - Project-assigned name."]
         pub type Queue3W<'a, REG> = crate::BitWriter1C<'a, REG>;
-        #[doc = "Field `HIGH_STATE_OPAQUE` reader - Opaque: meaning not established."]
-        pub type HighStateOpaqueR = crate::FieldReader<u32>;
-        #[doc = "Field `HIGH_STATE_OPAQUE` writer - Opaque: meaning not established."]
-        pub type HighStateOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32, crate::Safe>;
+        #[doc = "Field `BITS_4_31_OPAQUE` reader - Opaque: meaning not established."]
+        pub type Bits4_31OpaqueR = crate::FieldReader<u32>;
+        #[doc = "Field `BITS_4_31_OPAQUE` writer - Opaque: meaning not established."]
+        pub type Bits4_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32, crate::Safe>;
         impl R {
             #[doc = "Bit 0 - Project-assigned name."]
             #[inline(always)]
@@ -11138,8 +11116,8 @@ pub mod wifi_mac_tx_common {
             }
             #[doc = "Bits 4:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn high_state_opaque(&self) -> HighStateOpaqueR {
-                HighStateOpaqueR::new((self.bits >> 4) & 0x0fff_ffff)
+            pub fn bits_4_31_opaque(&self) -> Bits4_31OpaqueR {
+                Bits4_31OpaqueR::new((self.bits >> 4) & 0x0fff_ffff)
             }
         }
         impl W {
@@ -11165,8 +11143,8 @@ pub mod wifi_mac_tx_common {
             }
             #[doc = "Bits 4:31 - Opaque: meaning not established."]
             #[inline(always)]
-            pub fn high_state_opaque(&mut self) -> HighStateOpaqueW<'_, CompleteClearSpec> {
-                HighStateOpaqueW::new(self, 4)
+            pub fn bits_4_31_opaque(&mut self) -> Bits4_31OpaqueW<'_, CompleteClearSpec> {
+                Bits4_31OpaqueW::new(self, 4)
             }
         }
         #[doc = "Project-assigned name. Preserved-image acknowledgement for ordinary queue completion bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`complete_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -12330,7 +12308,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FE_BB_CLOCK_CONTROL fields `[FE_BB_ENABLE_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FE_BB_CLOCK_CONTROL fields `[BITS_0_1_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn open_phy_fe_bb_clock(registers: &crate::PhyBasebandConfig) {
         registers.fe_bb_clock_control().modify(|reader, writer| {
@@ -12339,8 +12317,8 @@ pub mod field_or_modify {
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
                 writer
-                    .fe_bb_enable_opaque()
-                    .bits(reader.fe_bb_enable_opaque().bits() | (input & 0x00000003) as u8)
+                    .bits_0_1_opaque()
+                    .bits(reader.bits_0_1_opaque().bits() | (input & 0x00000003) as u8)
             }
         });
     }
@@ -12358,7 +12336,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.WORD_0C08_OPAQUE fields `[INIT_FIRST_OPAQUE, INIT_SECOND_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.WORD_0C08_OPAQUE fields `[BIT_25_OPAQUE, BIT_26_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn set_phy_front_end_init_0c08(registers: &crate::PhyBasebandConfig) {
         registers.word_0c08_opaque().modify(|reader, writer| {
@@ -12366,14 +12344,14 @@ pub mod field_or_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer
-                .init_first_opaque()
-                .bit(reader.init_first_opaque().bit() || ((input >> 25) & 0x00000001) != 0)
-                .init_second_opaque()
-                .bit(reader.init_second_opaque().bit() || ((input >> 26) & 0x00000001) != 0)
+                .bit_25_opaque()
+                .bit(reader.bit_25_opaque().bit() || ((input >> 25) & 0x00000001) != 0)
+                .bit_26_opaque()
+                .bit(reader.bit_26_opaque().bit() || ((input >> 26) & 0x00000001) != 0)
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.WORD_0894_OPAQUE fields `[FE_INIT_ENABLE_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.WORD_0894_OPAQUE fields `[BIT_22_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_phy_front_end_0894(registers: &crate::PhyBasebandConfig) {
         registers.word_0894_opaque().modify(|reader, writer| {
@@ -12381,12 +12359,12 @@ pub mod field_or_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer
-                .fe_init_enable_opaque()
-                .bit(reader.fe_init_enable_opaque().bit() || (input & 0x00000001) != 0)
+                .bit_22_opaque()
+                .bit(reader.bit_22_opaque().bit() || (input & 0x00000001) != 0)
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FRONT_END_AND_TONE_STOP_CONTROL fields `[FRONT_END_INIT_ENABLE_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FRONT_END_AND_TONE_STOP_CONTROL fields `[BIT_2_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn enable_phy_front_end_init(registers: &crate::PhyBasebandConfig) {
         registers
@@ -12396,12 +12374,12 @@ pub mod field_or_modify {
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
                 writer
-                    .front_end_init_enable_opaque()
-                    .bit(reader.front_end_init_enable_opaque().bit() || (input & 0x00000001) != 0)
+                    .bit_2_opaque()
+                    .bit(reader.bit_2_opaque().bit() || (input & 0x00000001) != 0)
             });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.IQ_CORRECTION_CONTROL fields `[RX_IQ_CORRECTION_MODE_LOW, RX_IQ_CORRECTION_MODE_HIGH, FRONT_END_INIT_HIGH_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.IQ_CORRECTION_CONTROL fields `[RX_IQ_CORRECTION_MODE_LOW, RX_IQ_CORRECTION_MODE_HIGH, BIT_31_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn set_phy_rx_iq_correction_modes(registers: &crate::PhyBasebandConfig) {
         registers.iq_correction_control().modify(|reader, writer| {
@@ -12413,8 +12391,8 @@ pub mod field_or_modify {
                 .bit(reader.rx_iq_correction_mode_low().bit() || ((input >> 29) & 0x00000001) != 0)
                 .rx_iq_correction_mode_high()
                 .bit(reader.rx_iq_correction_mode_high().bit() || ((input >> 30) & 0x00000001) != 0)
-                .front_end_init_high_opaque()
-                .bit(reader.front_end_init_high_opaque().bit() || ((input >> 31) & 0x00000001) != 0)
+                .bit_31_opaque()
+                .bit(reader.bit_31_opaque().bit() || ((input >> 31) & 0x00000001) != 0)
         });
     }
 
@@ -12433,7 +12411,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.WORD_0888_OPAQUE fields `[IQ_SWAP_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.WORD_0888_OPAQUE fields `[BIT_29_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn set_phy_front_end_iq_swap(registers: &crate::PhyBasebandConfig) {
         registers.word_0888_opaque().modify(|reader, writer| {
@@ -12441,8 +12419,8 @@ pub mod field_or_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer
-                .iq_swap_opaque()
-                .bit(reader.iq_swap_opaque().bit() || (input & 0x00000001) != 0)
+                .bit_29_opaque()
+                .bit(reader.bit_29_opaque().bit() || (input & 0x00000001) != 0)
         });
     }
 
@@ -12459,7 +12437,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.POWER_DETECTOR_SAR_CONTROL_STATUS fields `[SAR_MODE_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.POWER_DETECTOR_SAR_CONTROL_STATUS fields `[BITS_12_13_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn set_phy_power_detector_sar_mode(registers: &crate::PhyBasebandConfig) {
         registers
@@ -12469,9 +12447,9 @@ pub mod field_or_modify {
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
                 unsafe {
-                    writer
-                        .sar_mode_opaque()
-                        .bits(reader.sar_mode_opaque().bits() | ((input >> 12) & 0x00000003) as u8)
+                    writer.bits_12_13_opaque().bits(
+                        reader.bits_12_13_opaque().bits() | ((input >> 12) & 0x00000003) as u8,
+                    )
                 }
             });
     }
@@ -12532,7 +12510,7 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.RX_EVM_CONTROL fields `[MEMORY_RESET_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.RX_EVM_CONTROL fields `[BIT_1_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn assert_phy_rx_evm_memory_reset(registers: &crate::PhyBasebandConfig) {
         registers.rx_evm_control().modify(|reader, writer| {
@@ -12540,12 +12518,12 @@ pub mod field_or_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer
-                .memory_reset_opaque()
-                .bit(reader.memory_reset_opaque().bit() || ((input >> 1) & 0x00000001) != 0)
+                .bit_1_opaque()
+                .bit(reader.bit_1_opaque().bit() || ((input >> 1) & 0x00000001) != 0)
         });
     }
 
-    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.RX_EVM_MEMORY_RESET fields `[RESET_OPAQUE]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.RX_EVM_MEMORY_RESET fields `[BIT_8_OPAQUE]` while preserving the fresh register observation.
     #[inline]
     pub fn assert_phy_rx_evm_memory_reset_2(registers: &crate::PhyBasebandConfig) {
         registers.rx_evm_memory_reset().modify(|reader, writer| {
@@ -12553,8 +12531,8 @@ pub mod field_or_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer
-                .reset_opaque()
-                .bit(reader.reset_opaque().bit() || (input & 0x00000001) != 0)
+                .bit_8_opaque()
+                .bit(reader.bit_8_opaque().bit() || (input & 0x00000001) != 0)
         });
     }
 }
@@ -12748,7 +12726,7 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[ADC_RATE_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[BIT_1_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_adc_rate_high(registers: &crate::PhyBasebandConfig, input: u32) {
         registers
@@ -12756,11 +12734,11 @@ pub mod field_replace_modify {
             .modify(|_, writer| {
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                writer.adc_rate_high_opaque().bit((input & 0x00000001) != 0)
+                writer.bit_1_opaque().bit((input & 0x00000001) != 0)
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[ADC_RATE_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[BIT_0_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_adc_rate_low(registers: &crate::PhyBasebandConfig, input: u32) {
         registers
@@ -12768,11 +12746,11 @@ pub mod field_replace_modify {
             .modify(|_, writer| {
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                writer.adc_rate_low_opaque().bit((input & 0x00000001) != 0)
+                writer.bit_0_opaque().bit((input & 0x00000001) != 0)
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[DAC_RATE_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[BIT_3_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_dac_rate_high(registers: &crate::PhyBasebandConfig) {
         registers
@@ -12781,11 +12759,11 @@ pub mod field_replace_modify {
                 let input = 0x00000000_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                writer.dac_rate_high_opaque().bit((input & 0x00000001) != 0)
+                writer.bit_3_opaque().bit((input & 0x00000001) != 0)
             });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[DAC_RATE_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL fields `[BIT_2_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_dac_rate_low(registers: &crate::PhyBasebandConfig) {
         registers
@@ -12794,7 +12772,7 @@ pub mod field_replace_modify {
                 let input = 0x00000000_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                writer.dac_rate_low_opaque().bit((input & 0x00000001) != 0)
+                writer.bit_2_opaque().bit((input & 0x00000001) != 0)
             });
     }
 
@@ -12809,42 +12787,36 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.WORD_0C08_OPAQUE fields `[INIT_FIRST_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.WORD_0C08_OPAQUE fields `[BIT_25_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_front_end_init_0c08_first(registers: &crate::PhyBasebandConfig) {
         registers.word_0c08_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.init_first_opaque().bit((input & 0x00000001) != 0)
+            writer.bit_25_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.RX_DCO_CONTROL fields `[CALIBRATION_CONTROL_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.RX_DCO_CONTROL fields `[BITS_22_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_rx_dco_calibration_control(registers: &crate::PhyBasebandConfig) {
         registers.rx_dco_control().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .calibration_control_opaque()
-                    .bits((input & 0x00000003) as u8)
-            }
+            unsafe { writer.bits_22_23_opaque().bits((input & 0x00000003) as u8) }
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.FRONT_END_CLEAR_CONTROL fields `[INIT_CLEAR_FIRST_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.FRONT_END_CLEAR_CONTROL fields `[BIT_8_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_front_end_clear_first(registers: &crate::PhyBasebandConfig) {
         registers.front_end_clear_control().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer
-                .init_clear_first_opaque()
-                .bit((input & 0x00000001) != 0)
+            writer.bit_8_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -12859,45 +12831,45 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.RX_IQ_SCALE fields `[SCALE_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.RX_IQ_SCALE fields `[BITS_8_15_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_rx_iq_scale_high(registers: &crate::PhyBasebandConfig, input: u32) {
         registers.rx_iq_scale().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.scale_high_opaque().bits((input & 0x000000ff) as u8) }
+            unsafe { writer.bits_8_15_opaque().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.RX_IQ_SCALE fields `[SCALE_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.RX_IQ_SCALE fields `[BITS_0_7_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_rx_iq_scale_low(registers: &crate::PhyBasebandConfig, input: u32) {
         registers.rx_iq_scale().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.scale_low_opaque().bits((input & 0x000000ff) as u8) }
+            unsafe { writer.bits_0_7_opaque().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.WORD_0888_OPAQUE fields `[IQ_SWAP_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.WORD_0888_OPAQUE fields `[BIT_29_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_front_end_iq_swap(registers: &crate::PhyBasebandConfig) {
         registers.word_0888_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.iq_swap_opaque().bit((input & 0x00000001) != 0)
+            writer.bit_29_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.WORD_0C20_OPAQUE fields `[INIT_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.WORD_0C20_OPAQUE fields `[BITS_0_7_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_front_end_init_0c20(registers: &crate::PhyBasebandConfig) {
         registers.word_0c20_opaque().modify(|_, writer| {
             let input = 0x00000057_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.init_low_opaque().bits((input & 0x000000ff) as u8) }
+            unsafe { writer.bits_0_7_opaque().bits((input & 0x000000ff) as u8) }
         });
     }
 
@@ -12912,32 +12884,24 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.POWER_DETECTOR_CONTROL fields `[CALIBRATION_FIELD_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.POWER_DETECTOR_CONTROL fields `[BITS_4_11_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_power_detector_calibration_field(registers: &crate::PhyBasebandConfig) {
         registers.power_detector_control().modify(|_, writer| {
             let input = 0x00000050_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .calibration_field_opaque()
-                    .bits((input & 0x000000ff) as u8)
-            }
+            unsafe { writer.bits_4_11_opaque().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.POWER_DETECTOR_CONTROL fields `[INITIALIZATION_MODE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.POWER_DETECTOR_CONTROL fields `[BITS_20_22_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_power_detector_mode(registers: &crate::PhyBasebandConfig, input: u32) {
         registers.power_detector_control().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .initialization_mode_opaque()
-                    .bits((input & 0x00000007) as u8)
-            }
+            unsafe { writer.bits_20_22_opaque().bits((input & 0x00000007) as u8) }
         });
     }
 
@@ -12951,27 +12915,27 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.DAC_SCALE fields `[SCALE_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.DAC_SCALE fields `[BITS_16_23_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_dac_scale_high(registers: &crate::PhyBasebandConfig, input: u32) {
         registers.dac_scale().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.scale_high_opaque().bits((input & 0x000000ff) as u8) }
+            unsafe { writer.bits_16_23_opaque().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.DAC_SCALE fields `[SCALE_LOW_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.DAC_SCALE fields `[BITS_8_15_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_dac_scale_low(registers: &crate::PhyBasebandConfig, input: u32) {
         registers.dac_scale().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.scale_low_opaque().bits((input & 0x000000ff) as u8) }
+            unsafe { writer.bits_8_15_opaque().bits((input & 0x000000ff) as u8) }
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.POWER_DETECTOR_SAR_CONTROL_STATUS fields `[SAR_CONFIG_CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.POWER_DETECTOR_SAR_CONTROL_STATUS fields `[BIT_9_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_power_detector_sar_config(registers: &crate::PhyBasebandConfig) {
         registers
@@ -12980,20 +12944,18 @@ pub mod field_replace_modify {
                 let input = 0x00000000_u32;
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
-                writer
-                    .sar_config_clear_opaque()
-                    .bit((input & 0x00000001) != 0)
+                writer.bit_9_opaque().bit((input & 0x00000001) != 0)
             });
     }
 
-    /// Replace PCR_RADIO.REGISTER_014C_OPAQUE fields `[LOW_BYTE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PCR_RADIO.WORD_014C_OPAQUE fields `[BITS_0_7_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_pcr_register_014c_low_byte(registers: &crate::PcrRadio) {
-        registers.register_014c_opaque().modify(|_, writer| {
+        registers.word_014c_opaque().modify(|_, writer| {
             let input = 0x0000000a_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.low_byte_opaque().bits((input & 0x000000ff) as u8) }
+            unsafe { writer.bits_0_7_opaque().bits((input & 0x000000ff) as u8) }
         });
     }
 
@@ -13028,14 +12990,14 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONFIG fields `[MODE_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONFIG fields `[BITS_2_6_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_rx_evm_mode(registers: &crate::PhyBasebandConfig) {
         registers.rx_evm_config().modify(|_, writer| {
             let input = 0x00000018_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.mode_opaque().bits((input & 0x0000001f) as u8) }
+            unsafe { writer.bits_2_6_opaque().bits((input & 0x0000001f) as u8) }
         });
     }
 
@@ -13059,52 +13021,52 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONTROL fields `[ENABLE_LOW_OPAQUE, MEMORY_RESET_OPAQUE, ENABLE_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONTROL fields `[BIT_0_OPAQUE, BIT_1_OPAQUE, BIT_2_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn set_phy_rx_evm_enable(registers: &crate::PhyBasebandConfig, input: u32) {
         registers.rx_evm_control().modify(|_, writer| {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer
-                .enable_low_opaque()
+                .bit_0_opaque()
                 .bit((input & 0x00000001) != 0)
-                .memory_reset_opaque()
+                .bit_1_opaque()
                 .bit(((input >> 1) & 0x00000001) != 0)
-                .enable_high_opaque()
+                .bit_2_opaque()
                 .bit(((input >> 2) & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.WORD_7920_OPAQUE fields `[CLEAR_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.WORD_7920_OPAQUE fields `[BITS_12_15_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_rx_evm_word_7920(registers: &crate::PhyBasebandConfig) {
         registers.word_7920_opaque().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.clear_opaque().bits((input & 0x0000000f) as u8) }
+            unsafe { writer.bits_12_15_opaque().bits((input & 0x0000000f) as u8) }
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONTROL fields `[MEMORY_RESET_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONTROL fields `[BIT_1_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn release_phy_rx_evm_memory_reset(registers: &crate::PhyBasebandConfig) {
         registers.rx_evm_control().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.memory_reset_opaque().bit((input & 0x00000001) != 0)
+            writer.bit_1_opaque().bit((input & 0x00000001) != 0)
         });
     }
 
-    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_MEMORY_RESET fields `[RESET_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_MEMORY_RESET fields `[BIT_8_OPAQUE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn release_phy_rx_evm_memory_reset_2(registers: &crate::PhyBasebandConfig) {
         registers.rx_evm_memory_reset().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer.reset_opaque().bit((input & 0x00000001) != 0)
+            writer.bit_8_opaque().bit((input & 0x00000001) != 0)
         });
     }
 }

@@ -44,7 +44,7 @@ bitOffset = 4
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "POLICY_BIT_5_OPAQUE"
+name = "BIT_5_OPAQUE"
 bitOffset = 5
 bitWidth = 1
 
@@ -121,7 +121,7 @@ bitOffset = 19
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_20_31_OPAQUE"
 bitOffset = 20
 bitWidth = 12
 
@@ -284,7 +284,7 @@ entity = "WIFI_MAC_RX_FILTER.POLICY%s.ABORT_GROUP"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_FILTER.POLICY%s.POLICY_BIT_5_OPAQUE"
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.BIT_5_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -336,7 +336,7 @@ entity = "WIFI_MAC_RX_FILTER.POLICY%s.SECURITY_TKIP_ERROR_FORCE_ON"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_FILTER.POLICY%s.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.BITS_20_31_OPAQUE"
 naming = "opaque"
 
 [[review]]

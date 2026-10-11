@@ -356,3 +356,7 @@ description = "espressif/esp32-wifi-lib commit af55a0ca258ce9d791d1661d7c2bbb65f
 [[sources]]
 id = "BLOB_LIBPP_MAC_LOCAL_TIME"
 description = "libpp.a sha256 0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4 (verification/esp32s31/artifacts.toml libpp); complete lmac.o lmacAdjustTimestamp, analyzed in process by `blobray function-records` with complete coverage and value semantics. With p the word at argument+0x34, it reads *p, and when bit 5 is set it loads 0x2010d800 at offset 0x18; when bit 22 of *p is clear it computes 0x2010d800 minus the word at p+0x18 as the frame's age, compares it unsigned, and stores 0x2010d800 minus ((g[0]-g[4]) << 10) back to p+0x18, a TU-scaled sleep interval from a module-local block g. `blobray register-accesses --range 0x2010d800:0x200` over the same archive shows the 0x2010d800 loads of pm_twt_set_target_wdev_time, ic_update_sta_tsf, pm_get_null_max_tx_time and pm_coex_recalculate_wifi_time_slice. The word is therefore the MAC's local time and the receive timestamp counts in it; its unit, rate and relation to the system timer are not established by these functions."
+
+[[sources]]
+id = "BLOB_LIBPP_HAL_SET_PRI20_CHAN_OFFSET"
+description = "espressif/esp32-wifi-lib commit af55a0ca258ce9d791d1661d7c2bbb65f08c0c21, esp32s31/libpp.a sha256 0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4; complete hal_set_pri20_chan_offset body, size 0x14, replaces exactly 0x20104400 bits 3:0 with the low four bits of its primary-20 channel-offset argument in one fresh-read RMW."

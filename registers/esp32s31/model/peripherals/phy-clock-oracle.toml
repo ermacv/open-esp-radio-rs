@@ -10,7 +10,7 @@ baseAddress = 0x20100000
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "FE_CLOCK_GATE_OPAQUE"
+name = "WORD_0400_OPAQUE"
 description = "ROM writes 0x1e7 to open and the blob writes zero to close."
 addressOffset = 0x400
 size = 32
@@ -97,14 +97,14 @@ maximum = 0xFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "FE_BB_CLOCK_CONTROL_OPAQUE"
+name = "WORD_0800_OPAQUE"
 description = "ROM sets bits 1:0 and the blob clears them."
 addressOffset = 0x800
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "ROM_FE_BB_ENABLE_OPAQUE"
+name = "BITS_0_1_OPAQUE"
 description = "Two-bit open/close mask; individual meanings are unknown."
 bitOffset = 0
 bitWidth = 2
@@ -124,7 +124,7 @@ name = "OPEN"
 value = 3
 
 [[peripherals.registers.register.fields]]
-name = "PHY_CALIBRATION_CLOCK_OPAQUE"
+name = "BIT_2_OPAQUE"
 description = "The phy_bb_init parent sets bit 2 before calibration; the individual hardware meaning remains unknown."
 bitOffset = 2
 bitWidth = 1
@@ -132,7 +132,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "BB_CLOCK_GATE_OPAQUE"
+name = "WORD_7C80_OPAQUE"
 description = "ROM writes all ones to open and the blob writes zero to close."
 addressOffset = 0x7C80
 size = 32
@@ -170,7 +170,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_CLOCK_ORACLE.FE_CLOCK_GATE_OPAQUE"
+entity = "PHY_CLOCK_ORACLE.WORD_0400_OPAQUE"
 naming = "opaque"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
@@ -181,7 +181,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_CLOCK_ORACLE.FE_CLOCK_GATE_OPAQUE.STATE"
+entity = "PHY_CLOCK_ORACLE.WORD_0400_OPAQUE.STATE"
 naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
@@ -233,7 +233,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE"
+entity = "PHY_CLOCK_ORACLE.WORD_0800_OPAQUE"
 naming = "opaque"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
@@ -244,7 +244,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE.ROM_FE_BB_ENABLE_OPAQUE"
+entity = "PHY_CLOCK_ORACLE.WORD_0800_OPAQUE.BITS_0_1_OPAQUE"
 naming = "opaque"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
@@ -255,7 +255,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE.PHY_CALIBRATION_CLOCK_OPAQUE"
+entity = "PHY_CLOCK_ORACLE.WORD_0800_OPAQUE.BIT_2_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_BB_INIT"]
 provenance = "observed"
@@ -263,7 +263,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_CLOCK_ORACLE.BB_CLOCK_GATE_OPAQUE"
+entity = "PHY_CLOCK_ORACLE.WORD_7C80_OPAQUE"
 naming = "opaque"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
@@ -274,7 +274,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_CLOCK_ORACLE.BB_CLOCK_GATE_OPAQUE.STATE"
+entity = "PHY_CLOCK_ORACLE.WORD_7C80_OPAQUE.STATE"
 naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",

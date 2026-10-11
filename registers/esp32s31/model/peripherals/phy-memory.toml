@@ -21,7 +21,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "GAIN_COMMAND_LOW_ZERO_OPAQUE"
+name = "BITS_0_10_OPAQUE"
 description = "Gain-memory writes clear bits 10:0; their individual meanings are unknown."
 bitOffset = 0
 bitWidth = 11
@@ -68,7 +68,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_0_31_OPAQUE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -86,7 +86,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_0_31_OPAQUE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -104,7 +104,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_0_31_OPAQUE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -188,7 +188,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_MEMORY.COMMAND.GAIN_COMMAND_LOW_ZERO_OPAQUE"
+entity = "PHY_MEMORY.COMMAND.BITS_0_10_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 provenance = "observed"
@@ -275,16 +275,19 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_MEMORY.DATA_0.BITS_0_31_OPAQUE"
-naming = "opaque"
+entity = "PHY_MEMORY.DATA_0.VALUE"
+naming = "descriptive"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 
 [[review]]
-entity = "PHY_MEMORY.DATA_1.BITS_0_31_OPAQUE"
-naming = "opaque"
+entity = "PHY_MEMORY.DATA_1.VALUE"
+naming = "descriptive"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 
 [[review]]
-entity = "PHY_MEMORY.DATA_2.BITS_0_31_OPAQUE"
-naming = "opaque"
+entity = "PHY_MEMORY.DATA_2.VALUE"
+naming = "descriptive"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 
 [[review]]
 entity = "PHY_MEMORY.GROUP_BOUNDARY%s.EVEN_GROUP_FIRST_ENTRY"

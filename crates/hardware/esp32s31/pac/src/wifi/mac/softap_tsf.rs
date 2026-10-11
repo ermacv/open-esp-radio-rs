@@ -18,13 +18,7 @@ impl WifiRadioRegisters {
             .wifi_mac
             .wifi_mac_aux_tsf_control
             .softap_control();
-        control.modify(|_, writer| {
-            writer
-                .tsf_enable()
-                .clear_bit()
-                .high_control_opaque()
-                .clear_bit()
-        });
+        control.modify(|_, writer| writer.tsf_enable().clear_bit().bit_30_opaque().clear_bit());
 
         let load = &self.peripherals.wifi_mac.wifi_mac_sta_tsf_load;
         crate::generated::station_tsf_value_low(load, crate::generated::StationTsfLowWord::new(0));
@@ -35,13 +29,7 @@ impl WifiRadioRegisters {
         load.control()
             .modify(|_, writer| writer.load_softap_tsf().set_bit());
 
-        control.modify(|_, writer| {
-            writer
-                .tsf_enable()
-                .set_bit()
-                .high_control_opaque()
-                .set_bit()
-        });
+        control.modify(|_, writer| writer.tsf_enable().set_bit().bit_30_opaque().set_bit());
     }
 
     /// Stop the SoftAP TSF domain using the complete vendor leaf transaction.
@@ -55,12 +43,6 @@ impl WifiRadioRegisters {
             .wifi_mac
             .wifi_mac_aux_tsf_control
             .softap_control()
-            .modify(|_, writer| {
-                writer
-                    .tsf_enable()
-                    .clear_bit()
-                    .high_control_opaque()
-                    .clear_bit()
-            });
+            .modify(|_, writer| writer.tsf_enable().clear_bit().bit_30_opaque().clear_bit());
     }
 }

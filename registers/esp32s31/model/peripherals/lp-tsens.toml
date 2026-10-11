@@ -86,13 +86,13 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "PHY_CONVERSION_ENABLE_OPAQUE"
+name = "BIT_9_OPAQUE"
 description = "Blob-evidenced conversion-path enable; the individual hardware meaning remains unknown."
 bitOffset = 9
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "PHY_READOUT_ENABLE_OPAQUE"
+name = "BIT_23_OPAQUE"
 description = "Blob-evidenced readout-path enable; the individual hardware meaning remains unknown."
 bitOffset = 23
 bitWidth = 1
@@ -201,7 +201,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "LP_TSENS.CLK_CONF.PHY_CONVERSION_ENABLE_OPAQUE"
+entity = "LP_TSENS.CLK_CONF.BIT_9_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 provenance = "observed"
@@ -209,7 +209,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "LP_TSENS.CLK_CONF.PHY_READOUT_ENABLE_OPAQUE"
+entity = "LP_TSENS.CLK_CONF.BIT_23_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 provenance = "observed"

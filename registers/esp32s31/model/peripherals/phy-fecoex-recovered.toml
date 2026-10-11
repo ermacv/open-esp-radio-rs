@@ -15,7 +15,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_IMAGE_OPAQUE"
+name = "BITS_0_15_OPAQUE"
 description = "Fixed 0x0010 image published by the second coex_pti_v2 RMW."
 bitOffset = 0
 bitWidth = 16
@@ -30,7 +30,7 @@ description = "The only low-halfword image proved by coex_pti_v2."
 value = 0x0010
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_IMAGE_OPAQUE"
+name = "BITS_16_31_OPAQUE"
 description = "Fixed 0x0640 image published by the first coex_pti_v2 RMW."
 bitOffset = 16
 bitWidth = 16
@@ -64,9 +64,9 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_FECOEX_RECOVERED.BT_COEX_PTI_CONFIG.LOW_IMAGE_OPAQUE"
+entity = "PHY_FECOEX_RECOVERED.BT_COEX_PTI_CONFIG.BITS_0_15_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_FECOEX_RECOVERED.BT_COEX_PTI_CONFIG.HIGH_IMAGE_OPAQUE"
+entity = "PHY_FECOEX_RECOVERED.BT_COEX_PTI_CONFIG.BITS_16_31_OPAQUE"
 naming = "opaque"

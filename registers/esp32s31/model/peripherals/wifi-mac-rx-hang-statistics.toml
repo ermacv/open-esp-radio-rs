@@ -14,7 +14,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_15_OPAQUE"
 bitOffset = 0
 bitWidth = 16
 
@@ -71,7 +71,7 @@ entity = "WIFI_MAC_RX_HANG_STATISTICS.HANG"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_HANG_STATISTICS.HANG.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_HANG_STATISTICS.HANG.BITS_0_15_OPAQUE"
 naming = "opaque"
 
 [[review]]

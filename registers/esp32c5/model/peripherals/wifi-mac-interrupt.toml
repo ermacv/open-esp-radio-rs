@@ -31,7 +31,7 @@ bitOffset = 5
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_6_OPAQUE"
+name = "BIT_6_OPAQUE"
 description = "Unknown event enabled by the complete cold receive mask."
 bitOffset = 6
 bitWidth = 1
@@ -61,13 +61,13 @@ bitOffset = 11
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_12_OPAQUE"
+name = "BIT_12_OPAQUE"
 description = "Unknown event enabled by the complete cold receive mask."
 bitOffset = 12
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_13_OPAQUE"
+name = "BIT_13_OPAQUE"
 description = "Unknown event enabled by the complete cold receive mask."
 bitOffset = 13
 bitWidth = 1
@@ -97,25 +97,25 @@ bitOffset = 19
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "BITS_20_OPAQUE"
+name = "BIT_20_OPAQUE"
 description = "Interrupt-enable bit whose event identity remains unknown."
 bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_21_OPAQUE"
+name = "BIT_21_OPAQUE"
 description = "Unknown event enabled by the complete cold receive mask."
 bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "BITS_22_OPAQUE"
+name = "BIT_22_OPAQUE"
 description = "Interrupt-enable bit whose event identity remains unknown."
 bitOffset = 22
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_23_OPAQUE"
+name = "BIT_23_OPAQUE"
 description = "Unknown event enabled by the complete cold receive mask."
 bitOffset = 23
 bitWidth = 1
@@ -133,13 +133,13 @@ bitOffset = 25
 bitWidth = 2
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_27_OPAQUE"
+name = "BIT_27_OPAQUE"
 description = "Unknown event enabled by the complete cold receive mask."
 bitOffset = 27
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_28_OPAQUE"
+name = "BIT_28_OPAQUE"
 description = "Unknown event enabled by the complete cold receive mask."
 bitOffset = 28
 bitWidth = 1
@@ -190,7 +190,7 @@ bitOffset = 5
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_6_OPAQUE"
+name = "BIT_6_OPAQUE"
 description = "Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."
 bitOffset = 6
 bitWidth = 1
@@ -220,13 +220,13 @@ bitOffset = 11
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_12_OPAQUE"
+name = "BIT_12_OPAQUE"
 description = "Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."
 bitOffset = 12
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_13_OPAQUE"
+name = "BIT_13_OPAQUE"
 description = "Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."
 bitOffset = 13
 bitWidth = 1
@@ -256,25 +256,25 @@ bitOffset = 19
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "BITS_20_OPAQUE"
+name = "BIT_20_OPAQUE"
 description = "Masked event bit whose identity remains unknown."
 bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_21_OPAQUE"
+name = "BIT_21_OPAQUE"
 description = "Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."
 bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "BITS_22_OPAQUE"
+name = "BIT_22_OPAQUE"
 description = "Masked event bit whose identity remains unknown."
 bitOffset = 22
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_23_OPAQUE"
+name = "BIT_23_OPAQUE"
 description = "Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."
 bitOffset = 23
 bitWidth = 1
@@ -292,13 +292,13 @@ bitOffset = 25
 bitWidth = 2
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_27_OPAQUE"
+name = "BIT_27_OPAQUE"
 description = "Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."
 bitOffset = 27
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COLD_RX_ENABLE_28_OPAQUE"
+name = "BIT_28_OPAQUE"
 description = "Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."
 bitOffset = 28
 bitWidth = 1
@@ -376,7 +376,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_6_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.ENABLE.BIT_6_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
@@ -430,7 +430,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_12_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.ENABLE.BIT_12_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
@@ -440,7 +440,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_13_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.ENABLE.BIT_13_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
@@ -493,7 +493,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.ENABLE.BITS_20_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.ENABLE.BIT_20_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_ENABLE_MAC",
@@ -504,7 +504,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_21_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.ENABLE.BIT_21_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
@@ -514,7 +514,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.ENABLE.BITS_22_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.ENABLE.BIT_22_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_ENABLE_MAC",
@@ -525,7 +525,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_23_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.ENABLE.BIT_23_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
@@ -556,7 +556,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_27_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.ENABLE.BIT_27_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
@@ -566,7 +566,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_28_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.ENABLE.BIT_28_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
@@ -630,7 +630,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.STATUS.COLD_RX_ENABLE_6_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.STATUS.BIT_6_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
@@ -683,7 +683,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.STATUS.COLD_RX_ENABLE_12_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.STATUS.BIT_12_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
@@ -694,7 +694,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.STATUS.COLD_RX_ENABLE_13_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.STATUS.BIT_13_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
@@ -747,7 +747,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.STATUS.BITS_20_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.STATUS.BIT_20_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
@@ -758,7 +758,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.STATUS.COLD_RX_ENABLE_21_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.STATUS.BIT_21_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
@@ -769,7 +769,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.STATUS.BITS_22_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.STATUS.BIT_22_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
@@ -780,7 +780,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.STATUS.COLD_RX_ENABLE_23_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.STATUS.BIT_23_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
@@ -813,7 +813,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.STATUS.COLD_RX_ENABLE_27_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.STATUS.BIT_27_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
@@ -824,7 +824,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.STATUS.COLD_RX_ENABLE_28_OPAQUE"
+entity = "WIFI_MAC_INTERRUPT.STATUS.BIT_28_OPAQUE"
 naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",

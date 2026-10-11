@@ -312,7 +312,7 @@ access = "read-write"
 resetValue = 0
 
 [[peripherals.registers.register.fields]]
-name = "COLD_START_CLEAR_OPAQUE"
+name = "BIT_0_OPAQUE"
 bitOffset = 0
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -320,10 +320,10 @@ name = "WIFI_ENABLE"
 bitOffset = 1
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "BSS_CBW_40_DIGITAL_OPAQUE"
-description = "Reviewed digital BSS 40 MHz channel-width control; zero disables and one enables the recovered path."
+name = "BSS_CBW_40_DIGITAL"
+description = "Digital BSS 40 MHz channel-width control that complete phy_bb_bss_cbw40_dig publishes; zero disables and one enables the recovered path."
 bitOffset = 2
-bitWidth = 2
+bitWidth = 1
 [peripherals.registers.register.fields.writeConstraint]
 useEnumeratedValues = true
 [[peripherals.registers.register.fields.enumeratedValues]]
@@ -335,7 +335,12 @@ value = 0
 name = "ENABLED"
 value = 1
 [[peripherals.registers.register.fields]]
-name = "BB_AGC_UPDATE_ENABLE_OPAQUE"
+name = "BIT_3_OPAQUE"
+description = "Cleared by complete phy_bb_bss_cbw40_dig together with BSS_CBW_40_DIGITAL."
+bitOffset = 3
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "BITS_11_13_OPAQUE"
 description = "Reviewed baseband AGC update mode used by initialization and subsequent register updates."
 bitOffset = 11
 bitWidth = 3
@@ -350,7 +355,7 @@ value = 1
 name = "REGISTER_UPDATES_ENABLED"
 value = 7
 [[peripherals.registers.register.fields]]
-name = "MAC_BASEBAND_ENABLE_OPAQUE"
+name = "BIT_28_OPAQUE"
 bitOffset = 28
 bitWidth = 1
 
@@ -643,7 +648,7 @@ naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 
 [[review]]
-entity = "MODEM_SYSCON_RADIO.WIFI_BB_CFG.COLD_START_CLEAR_OPAQUE"
+entity = "MODEM_SYSCON_RADIO.WIFI_BB_CFG.BIT_0_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -652,13 +657,19 @@ naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 
 [[review]]
-entity = "MODEM_SYSCON_RADIO.WIFI_BB_CFG.BSS_CBW_40_DIGITAL_OPAQUE"
+entity = "MODEM_SYSCON_RADIO.WIFI_BB_CFG.BSS_CBW_40_DIGITAL"
+naming = "descriptive"
+sources = ["ROM_REV0_RADIO_ACCESSOR_FIELDS"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.WIFI_BB_CFG.BIT_3_OPAQUE"
+naming = "opaque"
+sources = ["ROM_REV0_RADIO_ACCESSOR_FIELDS"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.WIFI_BB_CFG.BITS_11_13_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "MODEM_SYSCON_RADIO.WIFI_BB_CFG.BB_AGC_UPDATE_ENABLE_OPAQUE"
-naming = "opaque"
-
-[[review]]
-entity = "MODEM_SYSCON_RADIO.WIFI_BB_CFG.MAC_BASEBAND_ENABLE_OPAQUE"
+entity = "MODEM_SYSCON_RADIO.WIFI_BB_CFG.BIT_28_OPAQUE"
 naming = "opaque"

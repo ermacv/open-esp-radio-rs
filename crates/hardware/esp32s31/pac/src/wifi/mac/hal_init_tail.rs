@@ -31,18 +31,18 @@ impl WifiRadioRegisters {
             .wifi_mac
             .wifi_mac_txrx_prefix
             .feature_edges()
-            .modify(|_, w| w.third_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_28_opaque().set_bit());
 
         let csi = self.peripherals.wifi_mac.wifi_mac_rx_csi_control.control();
         // Keep the fresh-read byte replacements separate and in blob order.
-        csi.modify(|_, w| w.hal_init_low_byte_opaque().initialized());
-        csi.modify(|_, w| w.hal_init_second_byte_opaque().initialized());
+        csi.modify(|_, w| w.bits_0_7_opaque().initialized());
+        csi.modify(|_, w| w.bits_8_15_opaque().initialized());
 
         self.peripherals
             .wifi_mac
             .wifi_mac_rx_dma
             .rx_control()
-            .modify(|_, w| w.hardware_beacon_reload_opaque().set_bit());
+            .modify(|_, w| w.bit_27_opaque().set_bit());
 
         let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
         rtc.control()

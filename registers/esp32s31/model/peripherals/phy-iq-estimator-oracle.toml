@@ -18,7 +18,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CONFIG_MODE_OPAQUE"
+name = "BITS_26_27_OPAQUE"
 description = "Two-bit field set to encoding one by phy_iq_est_enable."
 bitOffset = 26
 bitWidth = 2
@@ -47,7 +47,7 @@ bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_WINDOW_OPAQUE"
+name = "BITS_2_16_OPAQUE"
 description = "Fifteen-bit caller value shifted left by two."
 bitOffset = 2
 bitWidth = 15
@@ -57,7 +57,7 @@ minimum = 0x0
 maximum = 0x7FFF
 
 [[peripherals.registers.register.fields]]
-name = "MODE_OPAQUE"
+name = "BITS_19_20_OPAQUE"
 description = "Complete phy_iq_est_enable replaces the field with encoding two."
 bitOffset = 19
 bitWidth = 2
@@ -195,7 +195,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "ACTIVITY_OPAQUE"
+name = "BITS_20_21_OPAQUE"
 description = "Nonzero is treated as IQ-estimator activity and as an RX-saturation sample."
 bitOffset = 20
 bitWidth = 2
@@ -219,7 +219,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONFIG.CONFIG_MODE_OPAQUE"
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONFIG.BITS_26_27_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
 provenance = "observed"
@@ -235,7 +235,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL.CONTROL_WINDOW_OPAQUE"
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL.BITS_2_16_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
 provenance = "observed"
@@ -243,7 +243,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL.MODE_OPAQUE"
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL.BITS_19_20_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
 provenance = "observed"
@@ -382,7 +382,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_ACTIVITY_STATUS.ACTIVITY_OPAQUE"
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_ACTIVITY_STATUS.BITS_20_21_OPAQUE"
 naming = "opaque"
 sources = [
     "ROM_REV0_PHY_IQ_ESTIMATOR",

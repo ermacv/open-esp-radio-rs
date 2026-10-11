@@ -92,8 +92,9 @@ See the [PAC provenance map](../../crates/hardware/esp32s31/pac/README.md).
 
 Source provenance catalogs retain their exact source IDs, revisions and hashes.
 Reserved fields remain absent. A register or field whose meaning is not
-established ends in `_OPAQUE` and is reviewed with `naming = "opaque"`; see
-[name origin](../../tools/registers/model/README.md). Neighboring-chip
+established is named by its position alone (`WORD_<offset>_OPAQUE`,
+`BIT_<n>_OPAQUE`, `BITS_<low>_<high>_OPAQUE`) and reviewed with
+`naming = "opaque"`; see [name origin](../../tools/registers/model/README.md). Neighboring-chip
 similarity is not sufficient evidence for an ESP32-S31 address or bit. Reviewed
 source assertions, vendor comparison and dated hardware observations retain
 their distinct strength. Publication verifies consistency and reproducibility;

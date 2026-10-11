@@ -422,20 +422,20 @@ impl MacInterruptSnapshot {
         let auxiliary_event =
             self.0.rx_associated_auxiliary_5() || self.0.rx_associated_auxiliary_24();
         let unhandled_event = self.0.bits_0_4_opaque() != 0
-            || self.0.cold_rx_enable_6_opaque()
+            || self.0.bit_6_opaque()
             || self.0.bits_9_10_opaque() != 0
             || self.0.watchdog()
-            || self.0.cold_rx_enable_12_opaque()
-            || self.0.cold_rx_enable_13_opaque()
+            || self.0.bit_12_opaque()
+            || self.0.bit_13_opaque()
             || self.0.sta_beacon_filter()
             || self.0.bits_16_18_opaque() != 0
-            || self.0.bits_20_opaque()
-            || self.0.cold_rx_enable_21_opaque()
-            || self.0.bits_22_opaque()
-            || self.0.cold_rx_enable_23_opaque()
+            || self.0.bit_20_opaque()
+            || self.0.bit_21_opaque()
+            || self.0.bit_22_opaque()
+            || self.0.bit_23_opaque()
             || self.0.bits_25_26_opaque() != 0
-            || self.0.cold_rx_enable_27_opaque()
-            || self.0.cold_rx_enable_28_opaque()
+            || self.0.bit_27_opaque()
+            || self.0.bit_28_opaque()
             || self.0.bits_29_31_opaque() != 0;
         MacInterruptObservation::from_semantic_events(work_events, auxiliary_event, unhandled_event)
     }

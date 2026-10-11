@@ -1639,8 +1639,9 @@ fn validate_review_annotations(
     naming: NamingRequirement,
 ) -> Result<()> {
     let mut known_entities = BTreeMap::new();
+    let mut positions = BTreeMap::new();
     for peripheral in fragments.iter().flat_map(|fragment| &fragment.peripherals) {
-        collect_review_entities(peripheral, &mut known_entities);
+        collect_review_entities(peripheral, &mut known_entities, &mut positions);
     }
     let mut entities = BTreeMap::new();
     for annotation in fragments.iter().flat_map(|fragment| &fragment.review) {
@@ -1692,7 +1693,7 @@ fn validate_review_annotations(
         let annotation = entities.get(entity.as_str()).copied();
         let stated = annotation.is_some_and(|annotation| annotation.naming.is_some());
         if kind.is_named_bits() && (stated || naming == NamingRequirement::Complete) {
-            validate_naming(entity, annotation)?;
+            validate_naming(entity, annotation, &positions[entity])?;
         }
     }
     Ok(())
@@ -1743,13 +1744,42 @@ fn positional_reason(leaf: &str) -> Option<&'static str> {
     None
 }
 
+/// The only name an opaque register or field may carry: its position.
+/// A register is `WORD_<offset>_OPAQUE` with its four-digit hexadecimal
+/// offset in its parent, a field `BIT_<n>_OPAQUE` or
+/// `BITS_<low>_<high>_OPAQUE`; an array inserts `_%s` before the suffix and
+/// names the position of its first element.
+fn opaque_position_name(position: Position, array: bool) -> String {
+    let index = if array { "_%s" } else { "" };
+    match position {
+        Position::Register { offset } => format!("WORD_{offset:04X}{index}{OPAQUE_SUFFIX}"),
+        Position::Field { offset, width: 1 } => format!("BIT_{offset}{index}{OPAQUE_SUFFIX}"),
+        Position::Field { offset, width } => format!(
+            "BITS_{offset}_{}{index}{OPAQUE_SUFFIX}",
+            offset + width.saturating_sub(1)
+        ),
+    }
+}
+
+/// Where a register or field lies: a register's offset in its parent, a
+/// field's lowest bit and width.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Position {
+    Register { offset: u32 },
+    Field { offset: u32, width: u32 },
+}
+
 /// A register or field name claims no more meaning than its origin supports:
 /// every one is reviewed as vendor, descriptive or opaque; an opaque entity,
-/// and only an opaque one, ends in [`OPAQUE_SUFFIX`], no name spells unknown
-/// meaning another way, and a vendor name cites the source it was taken from.
-/// A name of ours that states position or a writer's action instead of
-/// meaning is opaque.
-fn validate_naming(entity: &str, annotation: Option<&ReviewAnnotation>) -> Result<()> {
+/// and only an opaque one, ends in [`OPAQUE_SUFFIX`] and is named by its
+/// position (`opaque_name`), no name spells unknown meaning another way,
+/// and a vendor name cites the source it was taken from. A name of ours that
+/// states position or a writer's action instead of meaning is opaque.
+fn validate_naming(
+    entity: &str,
+    annotation: Option<&ReviewAnnotation>,
+    opaque_name: &str,
+) -> Result<()> {
     use oer_register_contracts::NameOrigin;
 
     let leaf = entity.rsplit('.').next().unwrap_or(entity);
@@ -1761,6 +1791,7 @@ fn validate_naming(entity: &str, annotation: Option<&ReviewAnnotation>) -> Resul
             "register entity {entity:?} names unknown meaning with {word:?}; end it in {OPAQUE_SUFFIX:?} and review it as opaque"
         )));
     }
+    let positional = opaque_name;
     let opaque_name = leaf.ends_with(OPAQUE_SUFFIX);
     if !opaque_name && leaf.contains(&OPAQUE_SUFFIX[1..]) {
         return Err(Error::message(format!(
@@ -1782,6 +1813,9 @@ fn validate_naming(entity: &str, annotation: Option<&ReviewAnnotation>) -> Resul
     match Some(naming) {
         Some(NameOrigin::Opaque) if !opaque_name => Err(Error::message(format!(
             "register entity {entity:?} is reviewed as opaque but its name does not end in {OPAQUE_SUFFIX:?}"
+        ))),
+        Some(NameOrigin::Opaque) if leaf != positional => Err(Error::message(format!(
+            "register entity {entity:?} is opaque but not named by its position; name it {positional:?}"
         ))),
         Some(NameOrigin::Vendor | NameOrigin::Descriptive) | None if opaque_name => {
             Err(Error::message(format!(
@@ -1892,9 +1926,12 @@ impl ReviewEntityKind {
     }
 }
 
+/// Every reviewable entity of `peripheral` with its kind, and the opaque
+/// name of each register and field in `positions`.
 fn collect_review_entities(
     peripheral: &Peripheral,
     entities: &mut BTreeMap<String, ReviewEntityKind>,
+    positions: &mut BTreeMap<String, String>,
 ) {
     entities.insert(peripheral.name.clone(), ReviewEntityKind::Peripheral);
     for interrupt in &peripheral.interrupt {
@@ -1904,7 +1941,7 @@ fn collect_review_entities(
         );
     }
     if let Some(children) = &peripheral.registers {
-        collect_child_review_entities(&peripheral.name, children, entities);
+        collect_child_review_entities(&peripheral.name, children, entities, positions);
     }
 }
 
@@ -1912,16 +1949,36 @@ fn collect_child_review_entities(
     parent: &str,
     children: &[RegisterCluster],
     entities: &mut BTreeMap<String, ReviewEntityKind>,
+    positions: &mut BTreeMap<String, String>,
 ) {
     for child in children {
         match child {
             RegisterCluster::Register(register) => {
                 let path = format!("{parent}.{}", register.name);
                 entities.insert(path.clone(), ReviewEntityKind::Register);
+                positions.insert(
+                    path.clone(),
+                    opaque_position_name(
+                        Position::Register {
+                            offset: register.address_offset,
+                        },
+                        matches!(register, MaybeArray::Array(..)),
+                    ),
+                );
                 if let Some(fields) = &register.fields {
                     for field in fields {
                         let field_path = format!("{path}.{}", field.name);
                         entities.insert(field_path.clone(), ReviewEntityKind::Field);
+                        positions.insert(
+                            field_path.clone(),
+                            opaque_position_name(
+                                Position::Field {
+                                    offset: field.bit_offset(),
+                                    width: field.bit_width(),
+                                },
+                                matches!(field, MaybeArray::Array(..)),
+                            ),
+                        );
                         for values in &field.enumerated_values {
                             for value in &values.values {
                                 entities.insert(
@@ -1936,7 +1993,7 @@ fn collect_child_review_entities(
             RegisterCluster::Cluster(cluster) => {
                 let path = format!("{parent}.{}", cluster.name);
                 entities.insert(path.clone(), ReviewEntityKind::Cluster);
-                collect_child_review_entities(&path, &cluster.children, entities);
+                collect_child_review_entities(&path, &cluster.children, entities, positions);
             }
         }
     }
@@ -3274,10 +3331,10 @@ locator = "identity"
 
     #[test]
     fn opaque_naming_and_the_opaque_suffix_require_each_other() {
-        let opaque = "[[review]]\nentity = \"RADIO.CONTROL_OPAQUE\"\nnaming = \"opaque\"\n";
-        assert_eq!(naming_error("CONTROL_OPAQUE", opaque), None);
+        let opaque = "[[review]]\nentity = \"RADIO.WORD_0000_OPAQUE\"\nnaming = \"opaque\"\n";
+        assert_eq!(naming_error("WORD_0000_OPAQUE", opaque), None);
         assert!(
-            naming_error("CONTROL_OPAQUE", "")
+            naming_error("WORD_0000_OPAQUE", "")
                 .unwrap()
                 .contains("not reviewed with naming = \"opaque\"")
         );
@@ -3336,9 +3393,6 @@ locator = "identity"
                     .contains("instead of a meaning"),
                 "{name}"
             );
-            let opaque = format!("{name}_OPAQUE");
-            let review = format!("[[review]]\nentity = \"RADIO.{opaque}\"\nnaming = \"opaque\"\n");
-            assert_eq!(naming_error(&opaque, &review), None, "{opaque}");
         }
         // Words and indices that carry meaning stay descriptive.
         for name in [
@@ -3356,6 +3410,42 @@ locator = "identity"
             naming_error("OPAQUE_25", "")
                 .unwrap()
                 .contains("spells opaque inside")
+        );
+    }
+
+    #[test]
+    fn an_opaque_name_is_its_position() {
+        let opaque = |entity: &str| {
+            format!("[[review]]\nentity = \"RADIO.{entity}\"\nnaming = \"opaque\"\n")
+        };
+        // A hint of meaning, or a position other than its own, is refused
+        // with the name the geometry gives.
+        for name in ["NOISE_FLOOR_STATUS_OPAQUE", "WORD_0004_OPAQUE"] {
+            assert!(
+                naming_error(name, &opaque(name))
+                    .unwrap()
+                    .contains("not named by its position; name it \"WORD_0000_OPAQUE\""),
+                "{name}"
+            );
+        }
+        // LEVEL is bits 3:0 of the fixture register.
+        let field = |name: &str| {
+            let fragment: RegisterModelFragment = toml_edit::de::from_str(&format!(
+                "schema = 2\n\n[[peripherals]]\nname = \"RADIO\"\nbaseAddress = 0x1000\n\n[[peripherals.registers]]\n[peripherals.registers.register]\nname = \"CONTROL\"\naddressOffset = 0x0\nsize = 32\n\n[[peripherals.registers.register.fields]]\nname = \"{name}\"\nbitOffset = 0\nbitWidth = 4\n\n[[peripherals.registers.register.fields]]\nname = \"BIT_4_OPAQUE\"\nbitOffset = 4\nbitWidth = 1\n\n[[peripherals.registers]]\n[peripherals.registers.register]\nname = \"WORD_0010_%s_OPAQUE\"\naddressOffset = 0x10\nsize = 32\ndim = 2\ndimIncrement = 4\ndimIndex = \"0,1\"\n\n[[review]]\nentity = \"RADIO.CONTROL\"\nnaming = \"descriptive\"\n\n{}{}{}",
+                opaque(&format!("CONTROL.{name}")),
+                opaque("CONTROL.BIT_4_OPAQUE"),
+                opaque("WORD_0010_%s_OPAQUE"),
+            ))
+            .unwrap();
+            validate_review_annotations(&[fragment], NamingRequirement::Complete)
+                .err()
+                .map(|error| error.to_string())
+        };
+        assert_eq!(field("BITS_0_3_OPAQUE"), None);
+        assert!(
+            field("LEVEL_OPAQUE")
+                .unwrap()
+                .contains("name it \"BITS_0_3_OPAQUE\"")
         );
     }
 

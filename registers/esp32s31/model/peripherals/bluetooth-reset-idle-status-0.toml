@@ -18,7 +18,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_4_OPAQUE"
+name = "BITS_0_3_OPAQUE"
 description = "The reset-idle predicate fails when this exact field is nonzero."
 bitOffset = 0
 bitWidth = 4
@@ -39,7 +39,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_RESET_IDLE_STATUS_0.STATUS.LOW_4_OPAQUE"
+entity = "BLUETOOTH_RESET_IDLE_STATUS_0.STATUS.BITS_0_3_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BBMAC_IDLE_FOR_SWRST"]
 provenance = "observed"

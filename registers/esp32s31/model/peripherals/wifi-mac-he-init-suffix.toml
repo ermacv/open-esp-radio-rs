@@ -92,7 +92,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_ADDRESS_OPAQUE"
+name = "BITS_16_23_OPAQUE"
 bitOffset = 16
 bitWidth = 8
 
@@ -201,7 +201,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "MODE_OPAQUE"
+name = "BEACON_FILTER_FRAME_CRC_STATE"
 bitOffset = 30
 bitWidth = 2
 
@@ -455,7 +455,7 @@ bitOffset = 13
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
-name = "MIDDLE_OPAQUE"
+name = "BITS_21_25_OPAQUE"
 bitOffset = 21
 bitWidth = 5
 
@@ -549,7 +549,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "ENABLE_OPAQUE"
+name = "BIT_31_OPAQUE"
 bitOffset = 31
 bitWidth = 1
 
@@ -673,7 +673,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_21_31_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -1163,7 +1163,7 @@ entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.PARTIAL_BSS_COLOR_ENABLE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_HIGH.HIGH_ADDRESS_OPAQUE"
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_HIGH.BITS_16_23_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -1191,8 +1191,9 @@ entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_HIGH.HIGH_ENABLE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_INIT_SUFFIX.TX_MODE_CONTROL.MODE_OPAQUE"
-naming = "opaque"
+entity = "WIFI_MAC_HE_INIT_SUFFIX.TX_MODE_CONTROL.BEACON_FILTER_FRAME_CRC_STATE"
+naming = "descriptive"
+sources = ["ROM_REV0_RADIO_ACCESSOR_FIELDS"]
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.DUMP_COMPLETE_HESIGB.ENABLE"
@@ -1231,7 +1232,7 @@ entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.NFRP_BUFFER_THRESHOLD"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.MIDDLE_OPAQUE"
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.BITS_21_25_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -1259,7 +1260,7 @@ entity = "WIFI_MAC_HE_INIT_SUFFIX.FEATURE_EDGES.ENABLE_1"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_INIT_SUFFIX.SHARED_ENABLE_CONTROL.ENABLE_OPAQUE"
+entity = "WIFI_MAC_HE_INIT_SUFFIX.SHARED_ENABLE_CONTROL.BIT_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -1307,5 +1308,5 @@ entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_SCRATCH%s.NEXT_LINK"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_SCRATCH%s.HIGH_OPAQUE"
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_SCRATCH%s.BITS_21_31_OPAQUE"
 naming = "opaque"

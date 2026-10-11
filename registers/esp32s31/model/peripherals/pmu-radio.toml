@@ -42,7 +42,7 @@ access = "read-write"
 resetValue = 0
 
 [[peripherals.registers.register.fields]]
-name = "ROM_OPEN_FE_BB_LOW_OPAQUE"
+name = "BITS_0_3_OPAQUE"
 description = "Low-nibble image set by complete rev0 ROM phy_open_fe_bb_clk; individual bit semantics remain unknown."
 bitOffset = 0
 bitWidth = 4
@@ -207,7 +207,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PMU_RADIO.HP_ACTIVE_HP_CK_POWER.ROM_OPEN_FE_BB_LOW_OPAQUE"
+entity = "PMU_RADIO.HP_ACTIVE_HP_CK_POWER.BITS_0_3_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_OPEN_FE_BB_CLK"]
 provenance = "observed"

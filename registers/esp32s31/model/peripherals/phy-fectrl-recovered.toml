@@ -8,7 +8,7 @@ baseAddress = 0x20100800
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "ANTENNA_CONFIG_WORD_0_OPAQUE"
+name = "WORD_0034_OPAQUE"
 description = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."
 addressOffset = 0x34
 size = 32
@@ -17,7 +17,7 @@ access = "read-write"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "ANTENNA_CONFIG_WORD_1_OPAQUE"
+name = "WORD_0038_OPAQUE"
 description = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."
 addressOffset = 0x38
 size = 32
@@ -26,7 +26,7 @@ access = "read-write"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "ANTENNA_CONFIG_WORD_2_OPAQUE"
+name = "WORD_003C_OPAQUE"
 description = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."
 addressOffset = 0x3C
 size = 32
@@ -35,7 +35,7 @@ access = "read-write"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "ANTENNA_CONFIG_WORD_3_OPAQUE"
+name = "WORD_0040_OPAQUE"
 description = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."
 addressOffset = 0x40
 size = 32
@@ -52,21 +52,21 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_0_OPAQUE"
+entity = "PHY_FECTRL_RECOVERED.WORD_0034_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
-entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_1_OPAQUE"
+entity = "PHY_FECTRL_RECOVERED.WORD_0038_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
-entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_2_OPAQUE"
+entity = "PHY_FECTRL_RECOVERED.WORD_003C_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
-entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_3_OPAQUE"
+entity = "PHY_FECTRL_RECOVERED.WORD_0040_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]

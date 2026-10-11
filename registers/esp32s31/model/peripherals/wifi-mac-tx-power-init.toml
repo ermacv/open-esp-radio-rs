@@ -37,7 +37,7 @@ minimum = 0x0
 maximum = 0x3F
 
 [[peripherals.registers.register.fields]]
-name = "FORMAT_OPAQUE"
+name = "BITS_22_23_OPAQUE"
 description = "Zero for the six legacy response words and two for the four HE response words."
 bitOffset = 22
 bitWidth = 2
@@ -227,7 +227,7 @@ entity = "WIFI_MAC_TX_POWER_INIT.IMMEDIATE_RESPONSE%s.RATE_INDEX"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TX_POWER_INIT.IMMEDIATE_RESPONSE%s.FORMAT_OPAQUE"
+entity = "WIFI_MAC_TX_POWER_INIT.IMMEDIATE_RESPONSE%s.BITS_22_23_OPAQUE"
 naming = "opaque"
 
 [[review]]

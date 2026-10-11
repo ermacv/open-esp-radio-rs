@@ -1191,3 +1191,223 @@ fn a_switch_reached_only_through_another_tables_case_is_followed_too() {
     );
     assert!(coverage.control_flow, "both dispatches are followed");
 }
+
+/// A static image: `dispatch` at 0x1000 indexes its compiler jump table
+/// `.LJTI0_0` at 0x2000 by `a0` with no bounds check, as a Rust `async`
+/// state machine does: `lui/addi a5, 0x2000; slli a4, a0, 2; add; lw a5;
+/// jalr zero, 0(a5)`, cases at 0x1018, 0x1020 and 0x1028. With `relocated`,
+/// the table's words keep their `R_RISCV_32` relocations, as an
+/// `--emit-relocs` link keeps them.
+fn switch_image(relocated: bool) -> Vec<u8> {
+    use object::elf;
+    use object::write::elf::{FileHeader, ProgramHeader, Rel, SectionHeader, Sym, Writer};
+    let words: [u32; 12] = [
+        0x0000_27b7, // 0x1000 lui a5, 0x2
+        0x0007_8793, // 0x1004 addi a5, a5, 0
+        0x0025_1713, // 0x1008 slli a4, a0, 2
+        0x00f7_0733, // 0x100c add a4, a4, a5
+        0x0007_2783, // 0x1010 lw a5, 0(a4)
+        0x0007_8067, // 0x1014 jalr zero, 0(a5)
+        0x00a0_0513, // 0x1018 case 0
+        0x0000_8067,
+        0x00b0_0513, // 0x1020 case 1
+        0x0000_8067,
+        0x00c0_0513, // 0x1028 case 2
+        0x0000_8067,
+    ];
+    let code: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+    let cases = [0x1018u32, 0x1020, 0x1028];
+    let table: Vec<u8> = cases.iter().flat_map(|case| case.to_le_bytes()).collect();
+    let mut out = Vec::new();
+    let mut w = Writer::new(object::Endianness::Little, false, &mut out);
+    w.reserve_file_header();
+    w.reserve_program_headers(2);
+    let text_name = w.add_section_name(b".text");
+    let text = w.reserve_section_index();
+    let text_offset = w.reserve(code.len(), 4);
+    let rodata_name = w.add_section_name(b".rodata");
+    let rodata = w.reserve_section_index();
+    let rodata_offset = w.reserve(table.len(), 4);
+    w.reserve_null_symbol_index();
+    let label_name = w.add_string(b".LJTI0_0");
+    w.reserve_symbol_index(None);
+    let function_name = w.add_string(b"dispatch");
+    let function = w.reserve_symbol_index(None);
+    w.reserve_symtab_section_index();
+    w.reserve_symtab();
+    w.reserve_strtab_section_index();
+    w.reserve_strtab();
+    let rela_name = w.add_section_name(b".rela.rodata");
+    let (rela, rela_offset) = if relocated {
+        (
+            Some(w.reserve_section_index()),
+            w.reserve_relocations(cases.len(), true),
+        )
+    } else {
+        (None, 0)
+    };
+    w.reserve_shstrtab_section_index();
+    w.reserve_shstrtab();
+    w.reserve_section_headers();
+    w.write_file_header(&FileHeader {
+        os_abi: 0,
+        abi_version: 0,
+        e_type: elf::ET_EXEC,
+        e_machine: elf::EM_RISCV,
+        e_entry: 0x1000,
+        e_flags: 0,
+    })
+    .unwrap();
+    w.write_align_program_headers();
+    for (offset, address, size, flags) in [
+        (text_offset, 0x1000, code.len(), elf::PF_R | elf::PF_X),
+        (rodata_offset, 0x2000, table.len(), elf::PF_R),
+    ] {
+        w.write_program_header(&ProgramHeader {
+            p_type: elf::PT_LOAD,
+            p_flags: flags,
+            p_offset: offset as u64,
+            p_vaddr: address,
+            p_paddr: address,
+            p_filesz: size as u64,
+            p_memsz: size as u64,
+            p_align: 4,
+        });
+    }
+    w.write_align(4);
+    w.write(&code);
+    w.write_align(4);
+    w.write(&table);
+    w.write_null_symbol();
+    w.write_symbol(&Sym {
+        name: Some(label_name),
+        section: Some(rodata),
+        st_info: (elf::STB_LOCAL << 4) | elf::STT_NOTYPE,
+        st_other: 0,
+        st_shndx: 0,
+        st_value: 0x2000,
+        st_size: 0,
+    });
+    w.write_symbol(&Sym {
+        name: Some(function_name),
+        section: Some(text),
+        st_info: (elf::STB_GLOBAL << 4) | elf::STT_FUNC,
+        st_other: 0,
+        st_shndx: 0,
+        st_value: 0x1000,
+        st_size: code.len() as u64,
+    });
+    w.write_strtab();
+    if relocated {
+        w.write_align_relocation();
+        for (entry, case) in cases.iter().enumerate() {
+            w.write_relocation(
+                true,
+                &Rel {
+                    r_offset: 0x2000 + 4 * entry as u64,
+                    r_sym: function.0,
+                    r_type: elf::R_RISCV_32,
+                    r_addend: i64::from(case - 0x1000),
+                },
+            );
+        }
+    }
+    w.write_shstrtab();
+    w.write_null_section_header();
+    for (name, address, offset, size, flags) in [
+        (
+            text_name,
+            0x1000,
+            text_offset,
+            code.len(),
+            elf::SHF_ALLOC | elf::SHF_EXECINSTR,
+        ),
+        (
+            rodata_name,
+            0x2000,
+            rodata_offset,
+            table.len(),
+            elf::SHF_ALLOC,
+        ),
+    ] {
+        w.write_section_header(&SectionHeader {
+            name: Some(name),
+            sh_type: elf::SHT_PROGBITS,
+            sh_flags: u64::from(flags),
+            sh_addr: address,
+            sh_offset: offset as u64,
+            sh_size: size as u64,
+            sh_link: 0,
+            sh_info: 0,
+            sh_addralign: 4,
+            sh_entsize: 0,
+        });
+    }
+    w.write_symtab_section_header(2);
+    w.write_strtab_section_header();
+    if rela.is_some() {
+        let symtab = w.symtab_index();
+        w.write_relocation_section_header(
+            rela_name,
+            rodata,
+            symtab,
+            rela_offset,
+            cases.len(),
+            true,
+        );
+    }
+    w.write_shstrtab_section_header();
+    assert_eq!(w.reserved_len(), w.len());
+    out
+}
+
+#[test]
+fn an_image_follows_its_labelled_table_only_with_the_links_relocations() {
+    let dir = tempfile::tempdir().unwrap();
+    let records = |name: &str, image: Vec<u8>| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, image).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+            .args([
+                "--format",
+                "json",
+                "function-records",
+                "--function",
+                "dispatch",
+                "--input",
+            ])
+            .arg(format!("image={}", path.display()))
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let document: blobray_cli::wire::FunctionRecordsDocument =
+            serde_json::from_slice(&output.stdout).unwrap();
+        match document.functions.into_iter().next().unwrap() {
+            blobray_cli::wire::NamedFunction::Analyzed {
+                coverage,
+                semantics,
+                jump_tables,
+                ..
+            } => (coverage.control_flow && semantics.complete, jump_tables),
+            other => panic!("{other:?}"),
+        }
+    };
+    // No bounds check: the label and the kept relocations delimit the table.
+    let (complete, tables) = records("relocated.elf", switch_image(true));
+    assert!(
+        complete,
+        "every case is reached, and the followed jump is no opaque transfer"
+    );
+    assert_eq!(
+        tables,
+        [blobray_domain::JumpTable {
+            site: 0x1014,
+            first_case: Some(0),
+            entries: vec![0x1018, 0x1020, 0x1028],
+        }]
+    );
+    // The same image linked without its relocations proves no table.
+    let (complete, tables) = records("stripped.elf", switch_image(false));
+    assert!(!complete, "the dispatch stays a gap");
+    assert!(tables.is_empty());
+}

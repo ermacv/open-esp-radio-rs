@@ -39,6 +39,11 @@ impl FunctionRecord {
                 low: left,
                 high: right,
                 ..
+            }
+            | Self::Dispatch {
+                base: left,
+                index: right,
+                ..
             } => left.allocated_bytes() + right.allocated_bytes(),
             Self::Expression { expression, .. } => expression.allocated_bytes(),
             Self::CallInputs { registers, .. } => {

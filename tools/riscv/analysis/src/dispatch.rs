@@ -3,14 +3,14 @@
 //!
 //! A compiler dispatches a RV32 `switch` as
 //! `lui/addi table; slli index, 2; add; lw target; jalr zero, 0(target)`
-//! with the table in read-only data. After a pass the jump's base register
-//! holds `load4[(index << 2) + base]` in the analysis' `CallInputs` at the
-//! jump, the base a symbol of an object or an image address; the bounds
-//! check whose in-range edge is the only way into the dispatch block, such
-//! as `bltu limit, index`, fixes the entry count, and the build's facts
-//! name each entry. A dispatch whose table the facts do not prove, whose
-//! index has no bound, or whose entries leave the function stays an
-//! indirect gap.
+//! with the table in read-only data. The value analysis records such a jump
+//! as a `Dispatch` record: its base, a symbol of an object or an image
+//! address, and its index, possibly unknown. Where
+//! the index is known, the bounds check whose in-range edge is the only way
+//! into the dispatch block, such as `bltu limit, index`, fixes the entry
+//! count; without one, only a table the build's facts delimit (an image's
+//! labelled table) is proven. A dispatch whose table the facts do not
+//! prove, or whose entries leave the function, stays an indirect gap.
 use crate::KnownJump;
 use crate::tables::{JumpTableSource, ProvenTables};
 use oer_riscv_model::*;
@@ -44,6 +44,10 @@ pub struct RecognizedTables<'e> {
 impl JumpTableSource for RecognizedTables<'_> {
     type Table = JumpTable;
 
+    fn same(&self, earlier: &JumpTable, later: &JumpTable) -> bool {
+        earlier.site == later.site && earlier.entries == later.entries
+    }
+
     fn tables<'m>(
         &self,
         records: &[FunctionRecord],
@@ -65,11 +69,11 @@ impl JumpTableSource for RecognizedTables<'_> {
     }
 }
 
-/// The jump-table dispatches among one function's first-pass `records`, with
-/// their case targets in index order, for a function of `section` spanning
-/// `extent`. The expression and block indexes it builds are admitted in
-/// `memory` and every record it visits is charged to `c`; a return
-/// (`jalr zero, 0(ra)`) is never a dispatch and costs no further search.
+/// The tables of the `Dispatch` records among the `records` of one pass over
+/// a function of `section` spanning `extent`, with their case targets in
+/// index order. The value analysis records no dispatch for a return. The
+/// expression and block indexes this builds are admitted in `memory` and
+/// every record it visits is charged to `c`.
 pub fn jump_tables<'r, 'm>(
     records: &'r [FunctionRecord],
     section: u32,
@@ -80,7 +84,8 @@ pub fn jump_tables<'r, 'm>(
 ) -> Result<ProvenTables<'m, JumpTable>> {
     let mut expressions: AdmittedVec<'_, &'r Expression> = AdmittedVec::new(memory);
     let mut blocks: AdmittedVec<'_, (u64, u64)> = AdmittedVec::new(memory);
-    let mut sites: AdmittedVec<'_, (u64, u8)> = AdmittedVec::new(memory);
+    let mut dispatches: AdmittedVec<'_, (u64, &'r AbstractValue, &'r AbstractValue)> =
+        AdmittedVec::new(memory);
     for record in records {
         c.checkpoint(1)?;
         match record {
@@ -95,40 +100,31 @@ pub fn jump_tables<'r, 'm>(
             FunctionRecord::Block { start, end, .. } => {
                 blocks.push((*start, *end), c.position())?
             }
-            FunctionRecord::Instruction {
+            // A table of words.
+            FunctionRecord::Dispatch {
                 offset,
-                decoded:
-                    DecodedOp {
-                        flow:
-                            InstructionFlow::Indirect {
-                                base,
-                                offset: 0,
-                                link: false,
-                            },
-                        ..
-                    },
-                ..
-            } if *base != CallAbi::RiscvInteger.return_address() => {
-                sites.push((*offset, *base), c.position())?
-            }
+                base,
+                index,
+                scale: 2,
+            } => dispatches.push((*offset, base, index), c.position())?,
             _ => {}
         }
     }
     let inside = |target: u64| target >= extent.start && target < extent.start + extent.length;
-    // One table per dispatch site at most, and the second pass's jump per
-    // table: both are reserved before the list is allocated at its exact
-    // capacity, so it never grows.
+    // One table per dispatch at most, and the next pass's jump per table:
+    // both are reserved before the list is allocated at its exact capacity,
+    // so it never grows.
     let mut reserved = AdmittedVec::new(memory);
     let per_site = (std::mem::size_of::<JumpTable>() + std::mem::size_of::<KnownJump>()) as u64;
     reserved.push(
-        memory.reserve(sites.len() as u64 * per_site, c.position())?,
+        memory.reserve(dispatches.len() as u64 * per_site, c.position())?,
         c.position(),
     )?;
     let mut jumps = Vec::new();
     jumps
-        .try_reserve_exact(sites.len())
+        .try_reserve_exact(dispatches.len())
         .map_err(|_| Error::new(ErrorCode::ResourceLimited, "jump table allocation refused"))?;
-    for &(site, base) in sites.iter() {
+    for &(site, table, index) in dispatches.iter() {
         let mut block = None;
         for &(start, end) in blocks.iter() {
             c.checkpoint(1)?;
@@ -140,45 +136,32 @@ pub fn jump_tables<'r, 'm>(
         let Some(start) = block else {
             continue;
         };
-        // The base register's value at the jump, from the analysis' record of
-        // a relocatable object's dispatch: one the graph leaves without a
-        // target on the first pass, and one this recognizer expanded on the
-        // passes that follow, so each pass proves its tables again.
-        let mut target = None;
-        for record in records {
-            c.checkpoint(1)?;
-            if let FunctionRecord::CallInputs { offset, registers } = record
-                && *offset == site
-            {
-                target = registers.get(usize::from(base));
-                break;
-            }
-        }
-        let Some(Expression::Load {
-            address, width: 4, ..
-        }) = target.and_then(|value| expression_of(value, &expressions))
-        else {
-            continue;
+        // An index the pass does not know states no bound: a check against
+        // an unknown value is not a check against it. Without a bound, only
+        // a table the build's facts delimit, such as an image's labelled
+        // jump table, is proven.
+        let bound = if *index == AbstractValue::Unknown {
+            None
+        } else {
+            guarding_bound(records, index, start, c)?
         };
-        let Some((index, table)) = scaled_table(address, &expressions) else {
-            continue;
-        };
-        let Some(entries) = guarding_bound(records, index, start, c)? else {
-            continue;
-        };
-        let Some(words) = facts.entries(table, Some(entries), section, memory, c)? else {
+        let Some(words) = facts.entries(table, bound, section, memory, c)? else {
             continue;
         };
         // The sorted copy of the entries the next pass follows as a
         // `KnownJump` is reserved here, before it is made.
-        let bytes = u64::from(entries) * std::mem::size_of::<u64>() as u64;
+        let bytes = words.entries.len() as u64 * std::mem::size_of::<u64>() as u64;
         reserved.push(memory.reserve(bytes, c.position())?, c.position())?;
         let targets = words.entries;
         reserved.push(words.reserved, c.position())?;
         if !targets.iter().all(|&target| inside(target)) {
             continue;
         }
-        if targets.len() == entries as usize {
+        let complete = match bound {
+            Some(entries) => targets.len() == entries as usize,
+            None => !targets.is_empty(),
+        };
+        if complete {
             jumps.push(JumpTable {
                 site,
                 first_case: first_case(index, &expressions),
@@ -206,43 +189,6 @@ fn expression_of<'a>(
 ) -> Option<&'a Expression> {
     match value {
         AbstractValue::Expression { id } => expressions.get(*id as usize).copied(),
-        _ => None,
-    }
-}
-
-/// `(index, table base)` when `value` is `(index << 2) + base`, the base a
-/// symbol of an object or an image address.
-fn scaled_table<'a>(
-    value: &'a AbstractValue,
-    expressions: &[&'a Expression],
-) -> Option<(&'a AbstractValue, &'a AbstractValue)> {
-    let Expression::Integer { op, left, right } = expression_of(value, expressions)? else {
-        return None;
-    };
-    let base = |value: &'a AbstractValue| match value {
-        AbstractValue::Symbol { .. }
-        | AbstractValue::Constant { .. }
-        | AbstractValue::ImageAddress { .. } => Some(value),
-        _ => None,
-    };
-    let index = |value: &'a AbstractValue| match expression_of(value, expressions)? {
-        Expression::Integer {
-            op: IntegerOp::Shl,
-            left,
-            right,
-        } if constant(right) == Some(2) => Some(left),
-        _ => None,
-    };
-    match op {
-        IntegerOp::Add => {
-            let (scaled, table) = match (index(left), index(right)) {
-                (Some(scaled), None) => (scaled, base(right)?),
-                (None, Some(scaled)) => (scaled, base(left)?),
-                _ => return None,
-            };
-            Some((scaled, table))
-        }
-        IntegerOp::ShiftAdd2 => Some((left, base(right)?)),
         _ => None,
     }
 }
@@ -356,9 +302,8 @@ fn unextended<'a>(value: &'a AbstractValue, expressions: &[&'a Expression]) -> &
 /// unrecognized index never claims case values.
 fn first_case(index: &AbstractValue, expressions: &[&Expression]) -> Option<i64> {
     let index = unextended(index, expressions);
-    let Some(expression) = expression_of(index, expressions) else {
-        return Some(0);
-    };
+    // An index the pass does not know claims no case value.
+    let expression = expression_of(index, expressions)?;
     match expression {
         Expression::Integer {
             op: IntegerOp::Add,

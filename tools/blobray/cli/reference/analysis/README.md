@@ -52,7 +52,7 @@ the operation, and a completed analysis is never discarded for them. A
 relocation to a `.L` local label in a read-only string section
 (`SHF_STRINGS`) shows the escaped text there in quotes; labels of other data,
 such as jump tables, get no text. The JSON document is
-`{"schema":3,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
+`{"schema":4,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,
 expressions, values, memory accesses, conditions and return values); a
@@ -261,44 +261,52 @@ admitted memory and work; exhausting either fails the call. JSON uses
 human output uses `one-of{... | ...}`. Analysis never selects one of these
 callees or composes it as a definite call. Expressions retain alternative operands.
 Branches are not pruned and computed indirect destinations do not extend the CFG,
-with one relocation-proven exception: a compiler jump table.
+with one exception the build's facts prove: a compiler jump table.
 
 ### Jump tables
 
-GCC dispatches an RV32 `switch` through a read-only table:
-`lui`/`addi` of the table, `slli index, 2`, `add`, `lw`, `jalr zero, 0(target)`,
-with one `R_RISCV_32` relocation per entry naming its case label. After a
-first analysis of a relocatable function, a `jalr zero` whose base register
-holds `load4[(index << 2) + table]` (or `sh2add`) in the analysis' `CallInputs`
-record at the jump (recorded at a relocatable object's jump the graph leaves
-without a target, and kept once a pass follows the table, so every pass proves
-it again) is a
-dispatch when the bounds check guarding it states the entry count (at most
-4096): the dispatch block's only incoming edge must be the in-range side of a
-conditional branch on the same index against a constant, the fall-through
-of `bltu limit, index` / `bgeu index, limit` or the taken edge of
-`bltu index, limit` / `bgeu limit, index`. A comparison elsewhere in the
-function bounds nothing. Every selected entry must carry an `R_RISCV_32` relocation with an
-explicit addend (`SHT_RELA`; a `SHT_REL` table keeps its addends in the
-words and is not proven) to a label inside the function; then the function
-is analyzed again with those targets as jumps; passes repeat while each proves
-again every table it followed and more, so a dispatch reached only through
-another table's case (a nested `switch`) is followed too. A pass that no longer
-proves a table it followed, such as one where a case jumps back into the
-dispatch block, proves none: the function is then reported without following
-any table. The recognizer and these passes are `oer-riscv-analysis`'s
-(`RecognizedTables`, `research_following_tables`), the stack analyzer runs
-the same driver, and the entries come from `oer-riscv-program`'s
-`ObjectTables` over the object's bytes. The symbols and the RELA
-relocations of read-only data this needs, the recognizer's indexes and the
-found entries are held in admitted working memory, and every record the
-recognizer visits is charged to the work budget; a return
-(`jalr zero, 0(ra)`) is never a candidate. A dispatch without a bound, with any entry unrelocated or leaving the
-function stays an indirect gap. A linked image's dispatch is not resolved
-either, even when the link kept its relocations (`--emit-relocs`): there the
-table address is an image constant rather than a symbol, and a compiler table
-without a bounds check, such as the dispatch of a Rust `async` state machine,
-has no stated entry count. `function-records` lists each followed table
+A compiler dispatches an RV32 `switch` through a read-only table:
+`lui`/`addi` of the table, `slli index, 2`, `add` (or `sh2add`), `lw`,
+`jalr zero, 0(target)`. The value analysis records each such jump as a
+`dispatch` (`{offset, base, index, scale}`): the target is the word loaded
+from `base + (index << scale)`, the load, addition and scaling in the jump's
+own block; `base` is the constant, image address or object symbol the
+addition reads, so a base the block or a loop's preheader forms gives the
+same record on every pass even when the index merges to an unknown value.
+A dispatch's table is proven by the build's facts (`oer-riscv-model`'s
+`TableEntries` port):
+
+- In a relocatable object (`oer-riscv-program`'s `ObjectTables`), a table has
+  no label, so the bounds check guarding the dispatch states the entry count
+  (at most 4096): the dispatch block's only incoming edge must be the
+  in-range side of a conditional branch on the same, known index against a
+  constant, the fall-through of `bltu limit, index` / `bgeu index, limit` or
+  the taken edge of `bltu index, limit` / `bgeu limit, index`; a comparison
+  elsewhere in the function bounds nothing. Every selected entry must carry
+  an `R_RISCV_32` relocation with an explicit addend (`SHT_RELA`; a `SHT_REL`
+  table keeps its addends in the words and is not proven) to a label inside
+  the function.
+- In a static image linked with `--emit-relocs` (`ImageTables` over the
+  image facts), a table the compiler labelled (`.LJTI*`) is the run of words
+  the link kept relocated from its label to the next symbol of its section,
+  with or without a bound: the dispatch of a Rust `async` state machine,
+  whose state index no check bounds, is followed. A sized read-only data
+  object is its words; with a bound, the bound's count of read-only words.
+  These need no relocations: an image linked without them proves every
+  such table but a labelled one no check bounds.
+
+Every entry must land inside the function. The function is then analyzed
+again with those targets as jumps; passes repeat while each proves again
+every table it followed and more, so a dispatch reached only through another
+table's case (a nested `switch`) is followed too. A pass that no longer
+proves a table it followed proves none: the function is then reported
+without following any table. The recognizer and these passes are
+`oer-riscv-analysis`'s (`RecognizedTables`, `research_following_tables`); the
+stack analyzer runs the same driver. The facts this needs, the recognizer's
+indexes and the found entries are held in admitted working memory, and
+every record the recognizer visits is charged to the work budget; a return
+(`jalr zero, 0(ra)`) is never a dispatch. A dispatch whose table the facts
+do not prove stays an indirect gap. `function-records` lists each followed table
 as `jump_tables` (`{site, first_case, entries}`, entry `i` being case
 `first_case + i`, where `first_case` undoes GCC's subtraction of the smallest
 case from the switch value, seen through an addition of a constant on either

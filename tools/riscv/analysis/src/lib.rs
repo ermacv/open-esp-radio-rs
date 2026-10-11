@@ -779,6 +779,9 @@ mod tests {
     }
     impl JumpTableSource for Proves {
         type Table = KnownJump;
+        fn same(&self, earlier: &KnownJump, later: &KnownJump) -> bool {
+            earlier == later
+        }
         fn tables<'m>(
             &self,
             records: &[FunctionRecord],

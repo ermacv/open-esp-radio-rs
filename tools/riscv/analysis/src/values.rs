@@ -639,6 +639,127 @@ fn known(v: &AbstractValue) -> bool {
     !matches!(v, AbstractValue::Unknown | AbstractValue::Expression { .. })
 }
 
+/// Instructions a dispatch's slice walks back through its block.
+const MAX_SLICE: usize = 32;
+
+/// The table dispatch of the jump at node `at` through register `target`:
+/// `target` is the word loaded from `base + (index << scale)`, the load, the
+/// addition and the scaling all in the jump's own block. Returns the base
+/// and index values on entry to the instructions that read them; the base
+/// must be a constant, an image address or a symbol. A base the block or a
+/// loop's preheader forms holds on every pass while the index may merge; one
+/// a later pass merges leaves that pass without the record.
+fn table_dispatch(
+    at: usize,
+    target: u8,
+    nodes: &[Node],
+    operations: &[Operation],
+    states: &[Option<State>],
+    incoming: &[u8],
+    control: &mut dyn RunControl,
+) -> Result<Option<(Value, Value, u8)>> {
+    // The nearest node before `from` in the same block that writes
+    // `register`, within the slice's reach.
+    let mut writer = |from: usize, register: u8| -> Result<Option<usize>> {
+        let mut j = from;
+        for _ in 0..MAX_SLICE {
+            control.checkpoint(1)?;
+            if j == 0 {
+                return Ok(None);
+            }
+            let previous = &nodes[j - 1];
+            let continues = matches!(previous.decoded.flow, InstructionFlow::Next)
+                && incoming[j] == 1
+                && previous.offset + u64::from(previous.decoded.length) == nodes[j].offset;
+            if !continues {
+                return Ok(None);
+            }
+            j -= 1;
+            let op = &operations[j];
+            let dest = match op.op {
+                SemanticOp::Integer { dest, .. }
+                | SemanticOp::Upper { dest, .. }
+                | SemanticOp::Link { dest }
+                | SemanticOp::Opaque { dest } => Some(dest),
+                SemanticOp::Memory { dest, .. } => dest,
+                _ => None,
+            };
+            if dest == Some(register) {
+                return Ok((op.relocation.is_none() && op.gap.is_none()).then_some(j));
+            }
+        }
+        Ok(None)
+    };
+    let value = |node: usize, register: u8| states[node].map(|state| state[register as usize]);
+    let Some(load) = writer(at, target)? else {
+        return Ok(None);
+    };
+    let SemanticOp::Memory {
+        kind: MemoryKind::Load,
+        base: address,
+        displacement: 0,
+        width: 4,
+        ..
+    } = operations[load].op
+    else {
+        return Ok(None);
+    };
+    let Some(add) = writer(load, address)? else {
+        return Ok(None);
+    };
+    let SemanticOp::Integer {
+        op,
+        left: Operand::Register(left),
+        right: Operand::Register(right),
+        ..
+    } = operations[add].op
+    else {
+        return Ok(None);
+    };
+    let (index, base, scale) = match op {
+        IntegerOp::ShiftAdd1 | IntegerOp::ShiftAdd2 | IntegerOp::ShiftAdd3 => {
+            let scale = match op {
+                IntegerOp::ShiftAdd1 => 1,
+                IntegerOp::ShiftAdd2 => 2,
+                _ => 3,
+            };
+            (value(add, left), value(add, right), scale)
+        }
+        IntegerOp::Add => {
+            let mut found = None;
+            for (scaled, base) in [(left, right), (right, left)] {
+                let Some(shift) = writer(add, scaled)? else {
+                    continue;
+                };
+                if let SemanticOp::Integer {
+                    op: IntegerOp::Shl,
+                    left: Operand::Register(index),
+                    right: Operand::Immediate(scale),
+                    ..
+                } = operations[shift].op
+                    && scale < 32
+                {
+                    found = Some((value(shift, index), value(add, base), scale as u8));
+                    break;
+                }
+            }
+            match found {
+                Some(found) => found,
+                None => return Ok(None),
+            }
+        }
+        _ => return Ok(None),
+    };
+    let (Some(index), Some(base)) = (index, base) else {
+        return Ok(None);
+    };
+    Ok(matches!(
+        base,
+        Value::Constant(_) | Value::Image(_) | Value::Symbol(..)
+    )
+    .then_some((base, index, scale)))
+}
+
 #[cfg(test)]
 pub(super) fn analyze(
     input: &FunctionInput<'_>,
@@ -667,7 +788,7 @@ pub(super) fn analyze_with(
     let bytes_per_node = std::mem::size_of::<Option<State>>()
         + std::mem::size_of::<Operation>()
         + std::mem::size_of::<usize>()
-        + 1;
+        + 2;
     let bytes = nodes
         .len()
         .checked_mul(bytes_per_node)
@@ -694,6 +815,18 @@ pub(super) fn analyze_with(
         position(control, input.section, node.offset);
         control.checkpoint(1)?;
         operations.push(prepare(input, node, isa, control)?);
+    }
+    // The edges into each node, saturating: a node another path enters
+    // starts a block, where a dispatch's slice stops.
+    let mut incoming = reserve_vec::<u8>(nodes.len())?;
+    incoming.resize(nodes.len(), 0);
+    for edge in edges {
+        control.checkpoint(1)?;
+        if let Some(target) = edge.target
+            && let Ok(at) = nodes.binary_search_by_key(&target, |n| n.offset)
+        {
+            incoming[at] = incoming[at].saturating_add(1);
+        }
     }
     let mut queue = VecDeque::new();
     queue
@@ -804,28 +937,38 @@ pub(super) fn analyze_with(
             symbolic,
             abi,
         )?;
+        if symbolic
+            && let InstructionFlow::Indirect {
+                base,
+                offset: 0,
+                link: false,
+            } = node.decoded.flow
+            && !CallAbi::RiscvInteger.links().contains(&base)
+            && let Some((table, index, scale)) =
+                table_dispatch(i, base, nodes, &operations, &states, &incoming, control)?
+        {
+            sink.record(
+                &FunctionRecord::Dispatch {
+                    offset: node.offset,
+                    base: public(table, input, &symbols.sets),
+                    index: public(index, input, &symbols.sets),
+                    scale,
+                },
+                control,
+            )?;
+        }
         // In a relocatable object, a jump the graph left without a target (an
         // `indirect` edge, which already makes its control flow incomplete),
         // such as one through a jump table whose base a register holds, is a
-        // gap; one a caller expanded is a dispatch too, but no gap. Returns,
-        // tail calls and relocated jumps have targets and are neither. An
-        // image finds its unexpanded jumps below, where their targets are
-        // known.
+        // gap. Returns, tail calls and relocated jumps have targets and are
+        // not. An image finds its unexpanded jumps below, where their
+        // targets are known.
         let first = edges.partition_point(|e| e.from < node.offset);
         let unexpanded = input.image.is_none()
             && edges[first..]
                 .iter()
                 .take_while(|e| e.from == node.offset)
                 .any(|e| e.relation == EdgeKind::Indirect);
-        // Only a jump without a link can be a known jump; its search is
-        // charged.
-        let dispatch = unexpanded
-            || (input.image.is_none()
-                && matches!(
-                    node.decoded.flow,
-                    InstructionFlow::Indirect { link: false, .. }
-                )
-                && super::known_jump(input.jumps, node.offset, control)?.is_some());
         if unexpanded {
             effects
                 .gap
@@ -845,10 +988,9 @@ pub(super) fn analyze_with(
                     control,
                 )?;
             }
-            // The registers at a call, and at a relocatable object's dispatch,
-            // expanded or not: a caller reads a jump table from them, and
-            // proves it again on the pass that follows it.
-            if operations[i].opaque_call || dispatch {
+            // The registers at a call, and at a relocatable object's jump the
+            // graph leaves without a target.
+            if operations[i].opaque_call || unexpanded {
                 sink.record(
                     &FunctionRecord::CallInputs {
                         offset: node.offset,
@@ -957,19 +1099,30 @@ pub(super) fn analyze_with(
                         control,
                     )?;
                 }
-                effects.gap.get_or_insert(SemanticGapReason::OpaqueCall);
-                sink.record(
-                    &FunctionRecord::Transfer {
-                        offset: node.offset,
-                        target: if node.conflict {
-                            AbstractValue::Unknown
-                        } else {
-                            public(target, input, &symbols.sets)
+                // A jump the graph follows through a known table, whose
+                // target the values leave unknown, goes where the table's
+                // edges go: no opaque transfer and no gap. Targets the values
+                // resolve stay transfers. Its registers stay for a caller
+                // that proves the table again.
+                let followed = !call
+                    && target == Value::Unknown
+                    && matches!(node.decoded.flow, InstructionFlow::Indirect { .. })
+                    && super::known_jump(input.jumps, node.offset, control)?.is_some();
+                if !followed {
+                    effects.gap.get_or_insert(SemanticGapReason::OpaqueCall);
+                    sink.record(
+                        &FunctionRecord::Transfer {
+                            offset: node.offset,
+                            target: if node.conflict {
+                                AbstractValue::Unknown
+                            } else {
+                                public(target, input, &symbols.sets)
+                            },
+                            call,
                         },
-                        call,
-                    },
-                    control,
-                )?;
+                        control,
+                    )?;
+                }
             }
         }
         let relocation = operations[i].relocation.map(|r| {
@@ -1589,76 +1742,6 @@ mod tests {
         );
     }
     #[test]
-    fn known_jump_searches_are_charged_and_only_at_jumps() {
-        struct Meter(u64);
-        impl RunControl for Meter {
-            fn checkpoint(&mut self, units: u64) -> Result<()> {
-                self.0 += units;
-                Ok(())
-            }
-        }
-        // `jalr zero, 0(a5)` alone, or a plain instruction, with known jumps
-        // at other sites the search visits and passes.
-        let work = |flow: InstructionFlow, jumps: &[KnownJump]| {
-            let nodes = [Node {
-                offset: 0,
-                decoded: DecodedOp {
-                    length: 2,
-                    text: String::new(),
-                    flow,
-                },
-                conflict: false,
-            }];
-            let input = FunctionInput {
-                image: None,
-                section: 1,
-                extent: CodeRange {
-                    start: 0,
-                    length: 2,
-                },
-                bytes: &[0, 0],
-                relocations: &PreparedReferences::empty(),
-                data_ranges: &[],
-                jumps,
-            };
-            let memory = WorkingMemory::new(1024 * 1024).unwrap();
-            let mut meter = Meter(0);
-            analyze_with(
-                &input,
-                &nodes,
-                &[],
-                &Isa(vec![SemanticOp::None]),
-                &memory,
-                &mut meter,
-                &mut Records::default(),
-                true,
-                None,
-            )
-            .unwrap();
-            meter.0
-        };
-        let elsewhere: Vec<_> = (1..=1000)
-            .map(|i| KnownJump {
-                site: 2 * i,
-                targets: Vec::new(),
-            })
-            .collect();
-        let jump = InstructionFlow::Indirect {
-            base: 15,
-            offset: 0,
-            link: false,
-        };
-        assert!(
-            work(jump, &elsewhere) >= work(jump, &[]) + 1000,
-            "each known jump the search visits is charged"
-        );
-        assert_eq!(
-            work(InstructionFlow::Next, &elsewhere),
-            work(InstructionFlow::Next, &[]),
-            "an instruction that is no jump searches nothing"
-        );
-    }
-    #[test]
     fn an_object_dispatch_through_a_loaded_register_records_its_registers() {
         // `lw a5, 0(a1); jalr zero, 0(a5)` in a relocatable object, and a
         // `jalr zero, 0(ra)` return.
@@ -1784,8 +1867,8 @@ mod tests {
                 ..
             } if *e == id
         )));
-        // A return records nothing; a dispatch its caller already expanded
-        // keeps its registers, so the table is proven again, but is no gap.
+        // A return records nothing; a dispatch its caller already expanded is
+        // no gap and records no registers: its table is a `Dispatch` record.
         let (complete, returned) = run(1, &[], false);
         assert!(complete);
         assert!(
@@ -1804,7 +1887,7 @@ mod tests {
         );
         assert!(complete, "{expanded:?}");
         assert!(
-            expanded
+            !expanded
                 .iter()
                 .any(|r| matches!(r, FunctionRecord::CallInputs { offset: 2, .. }))
         );
@@ -2137,6 +2220,126 @@ mod tests {
         r.symbol = 4;
         assert_eq!(lower(upper, r), Value::Unknown);
         assert_eq!(lower(Value::Constant(0), r), Value::Unknown);
+    }
+
+    /// The records of `[a1 = opaque; a2 = 0x5000; a3 = a1 << 2;
+    /// a3 = a3 + a2; a5 = load4(a3); jalr zero, 0(a5)]`, with `entered`
+    /// edges from the first instruction into later ones.
+    fn dispatch_records(entered: &[usize]) -> Vec<FunctionRecord> {
+        dispatch_records_through(entered, 15)
+    }
+
+    /// [`dispatch_records`] with the target loaded into, and the jump made
+    /// through, `target`.
+    fn dispatch_records_through(entered: &[usize], target: u8) -> Vec<FunctionRecord> {
+        let ops = vec![
+            SemanticOp::Opaque { dest: 11 },
+            set(12, 0x5000),
+            SemanticOp::Integer {
+                op: IntegerOp::Shl,
+                dest: 13,
+                left: Operand::Register(11),
+                right: Operand::Immediate(2),
+            },
+            SemanticOp::Integer {
+                op: IntegerOp::Add,
+                dest: 13,
+                left: Operand::Register(13),
+                right: Operand::Register(12),
+            },
+            SemanticOp::Memory {
+                kind: MemoryKind::Load,
+                base: 13,
+                displacement: 0,
+                width: 4,
+                dest: Some(target),
+                source: None,
+                swap: false,
+                signed: false,
+            },
+            SemanticOp::None,
+        ];
+        let bytes: Vec<u8> = (0..ops.len()).flat_map(|i| [i as u8, 0]).collect();
+        let nodes: Vec<_> = (0..ops.len())
+            .map(|i| Node {
+                offset: i as u64 * 2,
+                decoded: DecodedOp {
+                    length: 2,
+                    text: String::new(),
+                    flow: if i + 1 == ops.len() {
+                        InstructionFlow::Indirect {
+                            base: target,
+                            offset: 0,
+                            link: false,
+                        }
+                    } else if entered.is_empty() || i != 0 {
+                        InstructionFlow::Next
+                    } else {
+                        InstructionFlow::Branch { displacement: 0 }
+                    },
+                },
+                conflict: false,
+            })
+            .collect();
+        let edge = |from: usize, to: usize, relation| Edge {
+            from: from as u64 * 2,
+            target: Some(to as u64 * 2),
+            relation,
+            external: false,
+        };
+        let mut edges: Vec<_> = (0..ops.len() - 1)
+            .map(|i| edge(i, i + 1, EdgeKind::Fallthrough))
+            .chain(entered.iter().map(|&to| edge(0, to, EdgeKind::Taken)))
+            .collect();
+        edges.sort_by_key(|e| (e.from, e.target));
+        let input = FunctionInput {
+            image: None,
+            section: 1,
+            extent: CodeRange {
+                start: 0,
+                length: bytes.len() as u64,
+            },
+            bytes: &bytes,
+            relocations: &PreparedReferences::empty(),
+            data_ranges: &[],
+            jumps: &[],
+        };
+        let memory = WorkingMemory::new(1024 * 1024).unwrap();
+        let mut sink = Records::default();
+        analyze_with(
+            &input,
+            &nodes,
+            &edges,
+            &Isa(ops),
+            &memory,
+            &mut || Ok(()),
+            &mut sink,
+            true,
+            None,
+        )
+        .unwrap();
+        sink.0
+            .into_iter()
+            .filter(|record| matches!(record, FunctionRecord::Dispatch { .. }))
+            .collect()
+    }
+
+    #[test]
+    fn a_dispatch_keeps_its_block_formed_base_whatever_its_index() {
+        // The index is unknown; the base the block forms still names the table.
+        assert_eq!(
+            dispatch_records(&[]),
+            [FunctionRecord::Dispatch {
+                offset: 10,
+                base: AbstractValue::Constant { value: 0x5000 },
+                index: AbstractValue::Unknown,
+                scale: 2,
+            }]
+        );
+        // A path entering between the base and the jump breaks the block.
+        assert_eq!(dispatch_records(&[3]), []);
+        // A jump through a link register is a return, never a dispatch.
+        assert_eq!(dispatch_records_through(&[], 1), []);
     }
 }
 

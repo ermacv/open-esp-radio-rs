@@ -33,6 +33,21 @@ pub const EXECUTORS: &[&str] = &["embassy-executor"];
 /// virtual time, so the rule covers dev dependencies too.
 pub const TIME_DRIVERS: &[&str] = &["embassy-time", "oer-time-embassy"];
 
+/// The third-party format libraries each with the packages that may depend
+/// on it through a normal or build dependency: one owner reads the format
+/// and exposes only its own types, so no other package can name, and leak,
+/// the library's types. `blobray-artifacts` and `oer-image-encode` still read
+/// ELF through `object` until #334 moves them onto `oer-elf`.
+pub const EXTERNAL_OWNERS: &[(&str, &[&str])] = &[
+    (
+        "object",
+        &["oer-elf", "blobray-artifacts", "oer-image-encode"],
+    ),
+    ("gimli", &["oer-elf"]),
+    ("addr2line", &["oer-elf"]),
+    ("rv-asm", &["oer-riscv-decode"]),
+];
+
 /// Whether packages of `layer` may bind an executor or the time driver.
 pub fn binds_runtime(layer: Layer) -> bool {
     matches!(layer, Layer::Adapter | Layer::Composition | Layer::Facade)
@@ -331,6 +346,19 @@ pub fn check(model: &Model) -> Vec<String> {
                         target.name
                     ));
                 }
+            }
+            if dependency.kind != Kind::Development
+                && let Some((_, owners)) = EXTERNAL_OWNERS
+                    .iter()
+                    .find(|(name, _)| *name == dependency.package)
+                && !owners.contains(&package.name.as_str())
+            {
+                problem(format!(
+                    "{} depends on {}, which only {} may depend on (oer_repo::policy::EXTERNAL_OWNERS); use its owner's interface",
+                    package.name,
+                    dependency.package,
+                    owners.join(", ")
+                ));
             }
             if source.scope != Scope::Production {
                 continue;
@@ -652,6 +680,27 @@ mod tests {
                 "s/Cargo.toml: blobray package blobray-extra has no row in the component table (oer_repo::policy::COMPONENTS)"
             ]
         );
+    }
+
+    #[test]
+    fn a_format_library_is_a_dependency_of_its_owners_only() {
+        let host = "layer = \"tool\"\nplatform = \"host\"\nhost-layer = \"build\"";
+        let depends = |name: &str, section: &str| {
+            problems(&[(
+                "s/Cargo.toml",
+                manifest(name, host, &format!("[{section}]\nobject = \"=0.39.1\"")),
+            )])
+        };
+        assert!(depends("oer-elf", "dependencies").is_empty());
+        assert_eq!(
+            depends("oer-riscv-program", "dependencies"),
+            [
+                "s/Cargo.toml: oer-riscv-program depends on object, which only oer-elf, blobray-artifacts, oer-image-encode may depend on (oer_repo::policy::EXTERNAL_OWNERS); use its owner's interface"
+            ]
+        );
+        assert_eq!(depends("oer-riscv-program", "build-dependencies").len(), 1);
+        // Tests may write fixtures with it.
+        assert!(depends("oer-riscv-program", "dev-dependencies").is_empty());
     }
 
     #[test]

@@ -23,7 +23,9 @@ through; nothing else parses `llvm-nm` or `llvm-objdump` output or walks
   memory sizes and permissions; `header_flags()` is the raw `e_flags`, which
   `rv32::header_flags` decodes into the floating-point ABI and RV32E.
 - No `object` type appears in the public interface: callers see only these
-  views and this crate's `Error`.
+  views and this crate's `Error`. `object`, `gimli` and `addr2line` are this
+  crate's to depend on; `blobray-artifacts` and `oer-image-encode` still take
+  `object` until #334 ([format libraries](../riscv/README.md#format-libraries)).
 - Relocations: `relocations(section)` and `target_address`. `rv32` is the
   one RV32 relocation table: each type's patched `Field` and its target's
   `Role` (call, jump, branch, absolute or PC-relative address halves, data

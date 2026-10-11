@@ -236,6 +236,14 @@ pub trait RadioPortEvents {
 /// settings name only that interface, so one client cannot act for another.
 /// Each kind of client names its work with its own identity type, which it
 /// chooses, so a client names only its own work, by type.
+///
+/// Clients of one kind (IEEE 802.15.4 multi-PAN interfaces, two Wi-Fi
+/// interfaces of one role) share the identity type and choose its values
+/// independently. The backend therefore keys admitted work by the client
+/// and its identity: two clients of one kind may choose the same value
+/// without colliding, and one client's cancel never reaches another's
+/// work, so [`CancelError::NotRunning`] proves that this client's work
+/// ended.
 pub trait RadioPortClient {
     /// The correlation identity of this client's work: its own type, so
     /// another kind of client's identity does not type-check. The owner

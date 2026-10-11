@@ -293,11 +293,13 @@ fn ready<T>(value: T) -> core::future::Ready<T> {
     core::future::ready(value)
 }
 
-fn end(model: &Model, id: Id) -> Result<(), CancelError> {
+/// End work by its identity, of one client (`Some(interface)`) or, for the
+/// owner, of any client.
+fn end(model: &Model, id: Id, interface: Option<u8>) -> Result<(), CancelError> {
     let mut running = model.running.borrow_mut();
     let index = running
         .iter()
-        .position(|(running, _)| *running == id)
+        .position(|(running, by)| *running == id && interface.is_none_or(|own| own == *by))
         .ok_or(CancelError::NotRunning)?;
     running.remove(index);
     model.events.borrow_mut().push_back(id.0);
@@ -326,7 +328,7 @@ impl RadioPortOwner for Owner<'_> {
     }
 
     fn cancel(&mut self, id: Id) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
-        ready(Ok(end(self.0, id)))
+        ready(Ok(end(self.0, id, None)))
     }
 
     fn lifecycle(
@@ -382,7 +384,7 @@ impl RadioPortClient for Client<'_> {
     }
 
     fn cancel(&self, id: Id) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
-        ready(Ok(end(self.model, id)))
+        ready(Ok(end(self.model, id, Some(self.interface))))
     }
 }
 
@@ -428,4 +430,30 @@ fn a_phase_lends_clients_scoped_to_their_interface_and_its_leftovers_reach_the_o
         now_ready(owner.lifecycle(LifecycleCommand::Disable)),
         Ok(Ok(()))
     );
+}
+
+#[test]
+fn clients_of_one_kind_choose_the_same_identity_without_colliding() {
+    let model = Model {
+        running: core::cell::RefCell::default(),
+        events: core::cell::RefCell::default(),
+    };
+    let mut owner = Owner(&model);
+    let PhaseParts {
+        clients: [first, second],
+        ..
+    } = owner.split().into_parts();
+    // Two interfaces of one kind choose the same value: the backend keys
+    // work by client and identity.
+    first.admit(Id(7));
+    second.admit(Id(7));
+    assert_eq!(now_ready(first.cancel(Id(7))), Ok(Ok(())));
+    // The first client's cancel did not reach the second's work, and its
+    // second cancel proves only its own work ended.
+    assert_eq!(
+        now_ready(first.cancel(Id(7))),
+        Ok(Err(CancelError::NotRunning))
+    );
+    assert_eq!(model.running.borrow().as_slice(), [(Id(7), 1)]);
+    assert_eq!(now_ready(second.cancel(Id(7))), Ok(Ok(())));
 }

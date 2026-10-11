@@ -68,7 +68,6 @@ async fn restart(
         return (evidence, None);
     };
     session.port = Some(port);
-    session.maintained = false;
     evidence.result = match session.configure(config).await {
         Ok(()) => {
             let id = session.id();
@@ -124,8 +123,6 @@ pub(in crate::product_hil) async fn run_session(
     report_power_sequence_once(&system);
     let mut session = Session {
         port: Some(port),
-        maintained: false,
-        maintenance_ends: 0,
         channel,
         next_id: 0,
         received: Received::default(),

@@ -244,8 +244,7 @@ pub struct Ieee802154StopFailure {
 // CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154System {
     route: RegisteredIeee802154OperationalRoute,
-    /// Bound except after a failed rebind.
-    bound: Option<BoundEspHalIeee802154InterruptRoute>,
+    bound: BoundEspHalIeee802154InterruptRoute,
     /// The scene levels the MAC's priorities were resolved with
     /// (`s_coex_config`).
     coex_config: Ieee802154CoexConfig,
@@ -262,8 +261,6 @@ pub enum Ieee802154MaintenanceError {
     Phy(ConcurrentPhyError),
     /// Tracking failed after it started; the domain is poisoned.
     TrackingFailed,
-    /// The CPU route could not be bound again; the MAC receives no interrupt.
-    Route(EspHalIeee802154InterruptRouteError),
 }
 
 fn fail_stop(error: Ieee802154StartError, owner: FailStopOwner) -> Ieee802154StartFailure {
@@ -488,7 +485,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         Ok(bound) => Ok((
             Ieee802154System {
                 route,
-                bound: Some(bound),
+                bound,
                 coex_config: Ieee802154CoexConfig::VENDOR,
                 wifi_coexistence: false,
                 control,
@@ -696,15 +693,13 @@ impl Ieee802154System {
                 )),
             });
         }
-        if let Some(bound) = bound
-            && let Err((error, bound)) = bound.quiesce()
-        {
+        if let Err((error, bound)) = bound.quiesce() {
             return Err(Ieee802154StopFailure {
                 error: Ieee802154StopError::Route(error),
                 owner: Ok((
                     Self {
                         route,
-                        bound: Some(bound),
+                        bound,
                         coex_config,
                         wifi_coexistence,
                         control,

@@ -17,10 +17,9 @@ use oer_hil_protocol::{
     ieee802154::ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
-    AutoPendingMode, Channel, CommandError, Configuration, EnergyScanRequest,
-    EnhancedAckGeneration, EventsLost, FrameAddress, FrameView, Ieee802154RadioPort, Interface,
-    LifecycleCommand, LifecycleEvent, RadioCommand, RadioPort, RadioSetting, RequestId, TxMode,
-    TxRequest, TxSecurity,
+    AutoPendingMode, Channel, Configuration, EnergyScanRequest, EnhancedAckGeneration, EventsLost,
+    FrameAddress, FrameView, Ieee802154RadioPort, Interface, LifecycleCommand, LifecycleEvent,
+    RadioCommand, RadioPort, RadioSetting, RequestId, TxMode, TxRequest, TxSecurity,
 };
 
 use super::super::client::tx_outcome;
@@ -61,16 +60,9 @@ impl Received {
     }
 }
 
-/// Bound on a shared PHY maintenance window a refused command waits out.
-const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(1);
-
 pub(super) struct Session {
     /// The radio's port; the session gives it back only across a restart.
     pub(super) port: Option<Ieee802154SystemPort>,
-    /// Shared PHY maintenance quiesced the port and has not enabled it yet.
-    pub(super) maintained: bool,
-    /// Maintenance windows that ended, so a waiting command sees its own.
-    pub(super) maintenance_ends: u32,
     pub(super) channel: Channel,
     pub(super) next_id: u32,
     pub(super) received: Received,
@@ -90,33 +82,15 @@ impl Session {
             .expect("the session holds its port outside a restart")
     }
 
-    /// Admit `command`. Shared PHY maintenance quiesces the port and refuses
-    /// a command that writes the hardware until its `Enabled`: the command
-    /// waits out the window and is admitted then.
+    /// Admit `command`; a refusal fails the request.
     pub(super) async fn submit(
         &mut self,
         command: RadioCommand<'_>,
     ) -> Result<(), Ieee802154SessionResult> {
-        loop {
-            match self.port().submit(command) {
-                Ok(Ok(_)) => return Ok(()),
-                Ok(Err(CommandError::Quiesced)) => self.wait_maintenance().await?,
-                _ => return Err(Ieee802154SessionResult::CommandRejected),
-            }
+        match self.port().submit(command) {
+            Ok(Ok(_)) => Ok(()),
+            _ => Err(Ieee802154SessionResult::CommandRejected),
         }
-    }
-
-    /// Take events until a maintenance window ends; received frames are
-    /// recorded and other events dropped, as between commands.
-    async fn wait_maintenance(&mut self) -> Result<(), Ieee802154SessionResult> {
-        let ends = self.maintenance_ends;
-        while self.maintenance_ends == ends {
-            let Ok(event) = with_timeout(MAINTENANCE_TIMEOUT, self.taken()).await else {
-                return Err(Ieee802154SessionResult::EventTimeout);
-            };
-            let _ = self.observe(event);
-        }
-        Ok(())
     }
 
     /// Apply the host's identity and filter to an enabled radio, and
@@ -189,17 +163,6 @@ impl Session {
         match event {
             Ok(Ieee802154RadioEvent::Received(frame)) => {
                 self.received.record(&frame);
-                None
-            }
-            // The session never quiesces the port: `Quiesced` opens a shared
-            // PHY maintenance window and the next `Enabled` closes it.
-            Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Quiesced)) => {
-                self.maintained = true;
-                None
-            }
-            Ok(Ieee802154RadioEvent::Lifecycle(LifecycleEvent::Enabled)) if self.maintained => {
-                self.maintained = false;
-                self.maintenance_ends = self.maintenance_ends.wrapping_add(1);
                 None
             }
             Ok(event) => Some(event),

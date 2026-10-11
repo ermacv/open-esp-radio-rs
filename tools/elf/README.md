@@ -25,8 +25,9 @@ through; nothing else parses `llvm-nm` or `llvm-objdump` output or walks
   `rv32::header_flags` decodes into the floating-point ABI and RV32E.
 - No `object` type appears in the public interface: callers see only these
   views and this crate's `Error`. `object`, `gimli` and `addr2line` are this
-  crate's to depend on; `blobray-artifacts` and `oer-image-encode` still take
-  `object` until #334 ([format libraries](../riscv/README.md#format-libraries)).
+  crate's to depend on; `blobray-artifacts`, Blobray's metered streaming
+  reader and object writer, is the one other owner of `object`
+  ([format libraries](../riscv/README.md#format-libraries)).
 - Relocations: `relocations(section)`, each with an explicit or implicit
   (`SHT_REL`, in the patched word) addend, and `target_address`. `rv32` is the
   one RV32 relocation table: each type's patched `Field` and its target's

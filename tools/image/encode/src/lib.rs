@@ -326,11 +326,8 @@ pub fn require_partition_table(bytes: &[u8]) -> Result<()> {
 /// Fails unless the ELF holds the ESP-IDF application descriptor the
 /// second-stage bootloader requires.
 pub fn require_app_descriptor(elf: &[u8]) -> Result<()> {
-    use object::{Object as _, ObjectSymbol as _};
-    let elf = object::File::parse(elf)?;
-    if elf
-        .symbols()
-        .any(|symbol| symbol.name() == Ok("esp_app_desc"))
+    let elf = oer_elf::Elf::parse(elf)?;
+    if elf.symbols().any(|symbol| symbol.name == "esp_app_desc")
         || elf.section_by_name(".flash.appdesc").is_some()
         || elf.section_by_name(".rodata_desc").is_some()
     {

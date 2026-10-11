@@ -62,8 +62,8 @@ pub struct RegisterAccessDocument {
 }
 
 /// Schema of the `function-records` document
-/// (`{"schema":4,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`).
-pub const FUNCTION_RECORDS_SCHEMA: u32 = 4;
+/// (`{"schema":5,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`).
+pub const FUNCTION_RECORDS_SCHEMA: u32 = 5;
 pub const FIELD_ACCESSES_SCHEMA: u32 = 3;
 pub const CALLERS_SCHEMA: u32 = 1;
 

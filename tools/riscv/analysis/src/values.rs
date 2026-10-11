@@ -181,7 +181,7 @@ fn prepare(
         if raw.offset.checked_add(4) == Some(node.offset)
             && raw.offset >= input.extent.start
             && isa.value_relocation(raw, SemanticOp::Link { dest: 0 }) == ValueRelocation::CallUpper
-            && let InstructionFlow::Indirect { base, .. } = node.decoded.flow
+            && let Some((base, ..)) = node.decoded.flow.through_register()
         {
             let start = (raw.offset - input.extent.start) as usize;
             if matches!(isa.lift(&input.bytes[start..start + 4]), SemanticOp::Upper { dest, pc_relative: true, .. } if dest == base && dest != 0)
@@ -943,7 +943,6 @@ pub(super) fn analyze_with(
                 offset: 0,
                 link: false,
             } = node.decoded.flow
-            && !CallAbi::RiscvInteger.links().contains(&base)
             && let Some((table, index, scale)) =
                 table_dispatch(i, base, nodes, &operations, &states, &incoming, control)?
         {
@@ -1002,14 +1001,7 @@ pub(super) fn analyze_with(
                     control,
                 )?;
             }
-            if matches!(
-                node.decoded.flow,
-                InstructionFlow::Indirect {
-                    base: 1 | 5,
-                    offset: 0,
-                    link: false
-                }
-            ) {
+            if matches!(node.decoded.flow, InstructionFlow::Return { .. }) {
                 sink.record(
                     &FunctionRecord::ReturnValue {
                         offset: node.offset,
@@ -1041,19 +1033,17 @@ pub(super) fn analyze_with(
                         || u64::from(address) >= input.extent.start + input.extent.length)
                         .then_some((Value::Image(address), link))
                 }
-                InstructionFlow::Indirect {
-                    base,
-                    offset: displacement,
-                    link,
-                } => {
+                flow @ (InstructionFlow::Indirect { .. } | InstructionFlow::Return { .. }) => {
+                    let (base, displacement, link) = flow.through_register().unwrap_or_default();
                     let target = symbols.sets.map(state[base as usize], control, |v, _| {
                         Ok(match offset(v, i64::from(displacement)) {
                             Value::Constant(n) | Value::Image(n) => Value::Image(n & !1),
                             _ => Value::Unknown,
                         })
                     })?;
+                    // A return whose address the values know is a transfer.
                     let return_pattern =
-                        matches!(base, 1 | 5) && displacement == 0 && target == Value::Unknown;
+                        matches!(flow, InstructionFlow::Return { .. }) && target == Value::Unknown;
                     let targets = symbols.sets.get(target);
                     let is_local = |v: &Value| matches!(v, Value::Image(a) if u64::from(*a) >= input.extent.start && u64::from(*a) < input.extent.start + input.extent.length);
                     let local = targets.values[..targets.len].iter().all(is_local);
@@ -1665,7 +1655,7 @@ mod tests {
                 Ok(false)
             }
         }
-        let ops = vec![SemanticOp::None, set(5, 2), set(5, 4), SemanticOp::None];
+        let ops = vec![SemanticOp::None, set(6, 2), set(6, 4), SemanticOp::None];
         let bytes = [0, 0, 1, 0, 2, 0, 3, 0];
         let nodes: Vec<_> = (0..4)
             .map(|i| Node {
@@ -1675,7 +1665,7 @@ mod tests {
                     text: String::new(),
                     flow: if i == 3 {
                         InstructionFlow::Indirect {
-                            base: 5,
+                            base: 6,
                             offset: 0,
                             link: false,
                         }
@@ -1759,22 +1749,19 @@ mod tests {
             SemanticOp::None,
         ];
         let bytes = [0, 0, 1, 0];
-        let run = |base: u8, jumps: &[KnownJump], relocated: bool| {
+        let through = |base| InstructionFlow::Indirect {
+            base,
+            offset: 0,
+            link: false,
+        };
+        let run = |jump: InstructionFlow, jumps: &[KnownJump], relocated: bool| {
             let nodes: Vec<_> = (0..2)
                 .map(|i| Node {
                     offset: i * 2,
                     decoded: DecodedOp {
                         length: 2,
                         text: String::new(),
-                        flow: if i == 1 {
-                            InstructionFlow::Indirect {
-                                base,
-                                offset: 0,
-                                link: false,
-                            }
-                        } else {
-                            InstructionFlow::Next
-                        },
+                        flow: if i == 1 { jump } else { InstructionFlow::Next },
                     },
                     conflict: false,
                 })
@@ -1796,7 +1783,14 @@ mod tests {
                     relation: EdgeKind::Jump,
                     external: true,
                 });
-            } else if base != 1 {
+            } else if matches!(jump, InstructionFlow::Return { .. }) {
+                edges.push(Edge {
+                    from: 2,
+                    target: None,
+                    relation: EdgeKind::Return,
+                    external: true,
+                });
+            } else {
                 match jumps.first() {
                     Some(jump) => edges.extend(jump.targets.iter().map(|&target| Edge {
                         from: 2,
@@ -1840,7 +1834,7 @@ mod tests {
             .unwrap();
             (summary.complete, sink.0)
         };
-        let (complete, records) = run(15, &[], false);
+        let (complete, records) = run(through(15), &[], false);
         assert!(!complete, "the dispatch is not expanded");
         assert!(records.iter().any(|r| matches!(
             r,
@@ -1869,8 +1863,14 @@ mod tests {
         )));
         // A return records nothing; a dispatch its caller already expanded is
         // no gap and records no registers: its table is a `Dispatch` record.
-        let (complete, returned) = run(1, &[], false);
+        let (complete, returned) = run(InstructionFlow::Return { base: 1 }, &[], false);
         assert!(complete);
+        assert!(
+            returned
+                .iter()
+                .any(|r| matches!(r, FunctionRecord::ReturnValue { offset: 2, .. })),
+            "{returned:?}"
+        );
         assert!(
             !returned
                 .iter()
@@ -1878,7 +1878,7 @@ mod tests {
             "{returned:?}"
         );
         let (complete, expanded) = run(
-            15,
+            through(15),
             &[KnownJump {
                 site: 2,
                 targets: vec![0],
@@ -1893,7 +1893,7 @@ mod tests {
         );
         // A jump the graph resolved through its relocation stays complete:
         // only a jump the graph left without a target is a gap.
-        let (complete, relocated) = run(15, &[], true);
+        let (complete, relocated) = run(through(15), &[], true);
         assert!(complete, "{relocated:?}");
         assert!(!relocated.iter().any(|r| matches!(
             r,
@@ -2226,12 +2226,20 @@ mod tests {
     /// a3 = a3 + a2; a5 = load4(a3); jalr zero, 0(a5)]`, with `entered`
     /// edges from the first instruction into later ones.
     fn dispatch_records(entered: &[usize]) -> Vec<FunctionRecord> {
-        dispatch_records_through(entered, 15)
+        dispatch_records_through(
+            entered,
+            InstructionFlow::Indirect {
+                base: 15,
+                offset: 0,
+                link: false,
+            },
+        )
     }
 
-    /// [`dispatch_records`] with the target loaded into, and the jump made
-    /// through, `target`.
-    fn dispatch_records_through(entered: &[usize], target: u8) -> Vec<FunctionRecord> {
+    /// [`dispatch_records`] with the target loaded into the register `jump`
+    /// goes through, and the jump made as `jump`.
+    fn dispatch_records_through(entered: &[usize], jump: InstructionFlow) -> Vec<FunctionRecord> {
+        let (target, ..) = jump.through_register().unwrap();
         let ops = vec![
             SemanticOp::Opaque { dest: 11 },
             set(12, 0x5000),
@@ -2267,11 +2275,7 @@ mod tests {
                     length: 2,
                     text: String::new(),
                     flow: if i + 1 == ops.len() {
-                        InstructionFlow::Indirect {
-                            base: target,
-                            offset: 0,
-                            link: false,
-                        }
+                        jump
                     } else if entered.is_empty() || i != 0 {
                         InstructionFlow::Next
                     } else {
@@ -2338,8 +2342,11 @@ mod tests {
         );
         // A path entering between the base and the jump breaks the block.
         assert_eq!(dispatch_records(&[3]), []);
-        // A jump through a link register is a return, never a dispatch.
-        assert_eq!(dispatch_records_through(&[], 1), []);
+        // A return is never a dispatch.
+        assert_eq!(
+            dispatch_records_through(&[], InstructionFlow::Return { base: 1 }),
+            []
+        );
     }
 }
 

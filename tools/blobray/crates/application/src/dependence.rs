@@ -216,20 +216,17 @@ fn shape(code: &dyn Code, semantics: &dyn FunctionSemantics, pc: u32) -> Option<
             },
         ),
         InstructionFlow::Indirect {
-            base,
-            offset,
-            link: linked,
+            base, link: linked, ..
         } => (
             [base, 0],
             link(semantics.lift(bytes)),
             if linked {
                 Kind::Call
-            } else if ABI.links().contains(&base) && offset == 0 {
-                Kind::Return
             } else {
                 Kind::Jump { target: None }
             },
         ),
+        InstructionFlow::Return { base } => ([base, 0], link(semantics.lift(bytes)), Kind::Return),
         InstructionFlow::Stop => ([0; 2], 0, Kind::Plain),
         InstructionFlow::Next => match semantics.lift(bytes) {
             SemanticOp::Integer {

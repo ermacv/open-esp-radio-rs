@@ -112,7 +112,8 @@ pub fn audit_section(
             | InstructionFlow::Branch { displacement } => {
                 Some(pc.wrapping_add_signed(displacement))
             }
-            InstructionFlow::Indirect { base, offset, .. } => {
+            flow @ (InstructionFlow::Indirect { .. } | InstructionFlow::Return { .. }) => {
+                let (base, offset, _) = flow.through_register().unwrap_or_default();
                 let target =
                     values[usize::from(base)].map(|n: u32| n.wrapping_add_signed(offset) & !1);
                 if target.is_none() {

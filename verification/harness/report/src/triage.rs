@@ -87,7 +87,9 @@ impl Code {
                     displacement: 0,
                     link: false,
                 } => return (calls > 0).then_some(Ending::Spins),
-                InstructionFlow::Indirect { link: false, .. } | InstructionFlow::Stop => {
+                InstructionFlow::Indirect { link: false, .. }
+                | InstructionFlow::Return { .. }
+                | InstructionFlow::Stop => {
                     return (calls > 0).then_some(Ending::Returns);
                 }
                 InstructionFlow::Branch { .. } | InstructionFlow::Jump { .. } => {

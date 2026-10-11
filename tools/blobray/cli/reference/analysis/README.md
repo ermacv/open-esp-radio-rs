@@ -52,7 +52,7 @@ the operation, and a completed analysis is never discarded for them. A
 relocation to a `.L` local label in a read-only string section
 (`SHF_STRINGS`) shows the escaped text there in quotes; labels of other data,
 such as jump tables, get no text. The JSON document is
-`{"schema":4,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
+`{"schema":5,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,
 expressions, values, memory accesses, conditions and return values); a
@@ -191,9 +191,10 @@ It supports its RV32IMAC encodings, the backend's Zba/Zbb/Zbs, Zcb, Zcmp and
 single-precision F forms, and records unsupported encodings as gaps.
 Printed instruction text is versioned with that decoder, not a parsing interface;
 bytes, offsets and typed flow are the structural interface. Calls use ABI link
-registers x1/x5; canonical indirect return patterns describe the calling convention,
-not proof about the dynamic register value. Other indirect transfers remain
-unresolved. A direct call records its target but does not enqueue the callee.
+registers x1/x5; the decoder marks returns (a `jalr` through `ra` or `t0` at
+offset zero that links neither, and the returning Zcmp pops) as `return`
+flow, which describes the calling convention, not proof about the dynamic
+register value. Other indirect transfers remain unresolved. A direct call records its target but does not enqueue the callee.
 
 Records include instructions, maximal decoded basic blocks, instruction-origin
 edges, relocation references and gap ranges. Block IDs are their start offsets;
@@ -305,7 +306,7 @@ without following any table. The recognizer and these passes are
 stack analyzer runs the same driver. The facts this needs, the recognizer's
 indexes and the found entries are held in admitted working memory, and
 every record the recognizer visits is charged to the work budget; a return
-(`jalr zero, 0(ra)`) is never a dispatch. A dispatch whose table the facts
+(the decoder's `return` flow) is never a dispatch. A dispatch whose table the facts
 do not prove stays an indirect gap. `function-records` lists each followed table
 as `jump_tables` (`{site, first_case, entries}`, entry `i` being case
 `first_case + i`, where `first_case` undoes GCC's subtraction of the smallest

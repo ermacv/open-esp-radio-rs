@@ -306,7 +306,7 @@ fn analyze_with(
             let exact = r.offset == offset;
             let call_pair = r.offset.checked_add(4) == Some(offset)
                 && r.offset >= input.extent.start
-                && matches!(decoded.flow, InstructionFlow::Indirect { .. });
+                && decoded.flow.through_register().is_some();
             if !exact && !call_pair {
                 continue;
             }
@@ -316,7 +316,7 @@ fn analyze_with(
                 let first =
                     u32::from_le_bytes(input.bytes[position..position + 4].try_into().unwrap());
                 if first & 0x7f != 0x17
-                    || !matches!(decoded.flow,InstructionFlow::Indirect{base,..} if u32::from(base)==(first>>7)&31)
+                    || !matches!(decoded.flow.through_register(), Some((base, ..)) if u32::from(base) == (first >> 7) & 31)
                 {
                     unknown = true;
                     continue;
@@ -370,12 +370,10 @@ fn analyze_with(
                     outgoing.push((Some(next), EdgeKind::PossibleContinuation));
                 }
             }
-            InstructionFlow::Indirect {
-                base,
-                offset: imm,
-                link,
-            } => {
-                let known = if link {
+            flow @ (InstructionFlow::Indirect { .. } | InstructionFlow::Return { .. }) => {
+                let (_, _, link) = flow.through_register().unwrap_or_default();
+                let returns = matches!(decoded.flow, InstructionFlow::Return { .. });
+                let known = if link || returns {
                     None
                 } else {
                     known_jump(input.jumps, offset, control)?
@@ -384,12 +382,7 @@ fn analyze_with(
                     for &target in &known.targets {
                         outgoing.push((Some(target), EdgeKind::Jump));
                     }
-                } else if relocated.is_none()
-                    && !unknown
-                    && !link
-                    && matches!(base, 1 | 5)
-                    && imm == 0
-                {
+                } else if relocated.is_none() && !unknown && returns {
                     outgoing.push((None, EdgeKind::Return));
                 } else {
                     if relocated.is_none() || unknown {

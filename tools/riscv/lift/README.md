@@ -31,7 +31,12 @@ integer destination (`fmv.x.w`, `fclass.s`, comparisons, `fcvt.w[u].s`) lifts
 to `Opaque`, and every other form to `None`. A Zicsr access writes only its
 `rd` among the integer registers and lifts to `Opaque` of it.
 
-The decoder and semantic identities (`policy-6` and `values-10`, each over
+A `jalr` through `ra` or `t0` at offset zero that links neither decodes as
+`InstructionFlow::Return` (the ISA's pop hint), as do the returning Zcmp pops;
+every other `jalr` is `Indirect`, so no consumer recognizes returns by
+register.
+
+The decoder and semantic identities (`policy-7` and `values-10`, each over
 rv-asm 0.2.1) cover every behavior below; any change to decoding or lifting
 changes its identity. `decode_instruction` is the decoding Blobray's executor
 shares.

@@ -128,6 +128,10 @@ async fn main(
         };
     let hci = start_bluetooth_hci(public_address, Some(VERSION), entropy);
     spawner.spawn(tracking(radio).expect("PHY tracking task"));
+    #[cfg(trace_journal)]
+    if let Ok(hold) = crate::trace::hold_limit_task() {
+        spawner.spawn(hold);
+    }
     #[cfg(feature = "bluetooth-secure-gatt")]
     secure::run(spawner, radio, system, port, hci, public_address, usb, boot).await;
     #[cfg(not(feature = "bluetooth-secure-gatt"))]

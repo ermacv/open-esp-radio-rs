@@ -10,6 +10,11 @@ the query neither resets the Controller nor submits ATT/HCI work. Counters are
 not independent proof of ATT delivery. The Linux peer validates actual replies
 and reconnection. This property does not imply pairing or secure GATT.
 
+The `bluetooth::Trace` property marks an image that records the Bluetooth LE
+trace (`bluetooth-trace`): the Controller, radio role and runtime events of
+`oer-bluetooth-trace`, drained through the
+[trace commands](diagnostics.md#event-trace). It adds no message.
+
 The separate `bluetooth::SecureGatt` property identifies the actual secure
 application with one caller-owned RAM bond slot. `bluetooth::GetSecureGatt`
 reports traffic counters, the current unanswered Numeric Comparison challenge,

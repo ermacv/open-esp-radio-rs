@@ -31,6 +31,9 @@ pub enum ImageClass {
     /// The performance image with only the Wi-Fi system's diagnostics: the
     /// station's exit evidence without the executor and PHY observers.
     DiagnosticStationExit,
+    /// The plaintext Trouble GATT image recording the Bluetooth LE trace
+    /// (`bluetooth-trace`), for the scenario that checks the trace.
+    DiagnosticBluetoothGattTrace,
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
     /// The IEEE 802.15.4 radio image as the product builds its radio: the
@@ -62,6 +65,7 @@ impl ImageClass {
                 | Self::SystemPanicReset
                 | Self::DiagnosticUsbJtagOff
                 | Self::BluetoothGatt
+                | Self::DiagnosticBluetoothGattTrace
                 | Self::BluetoothSecureGatt
                 | Self::BluetoothDtm
         ) {
@@ -71,7 +75,7 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 29] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -92,6 +96,7 @@ impl ImageClass {
         Self::DiagnosticRxDelivery,
         Self::DiagnosticRxOwnership,
         Self::DiagnosticStationExit,
+        Self::DiagnosticBluetoothGattTrace,
         Self::DiagnosticIeee802154EventStatus,
         Self::DiagnosticIeee802154EdEvent,
         Self::DiagnosticIeee802154Radio,
@@ -118,6 +123,7 @@ impl ImageClass {
                 | Self::DiagnosticRxDelivery
                 | Self::DiagnosticRxOwnership
                 | Self::DiagnosticStationExit
+                | Self::DiagnosticBluetoothGattTrace
                 | Self::DiagnosticIeee802154EventStatus
                 | Self::DiagnosticIeee802154EdEvent
                 | Self::DiagnosticIeee802154Radio
@@ -151,6 +157,7 @@ impl ImageClass {
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
             Self::DiagnosticRxOwnership => "diagnostic-rx-ownership",
             Self::DiagnosticStationExit => "diagnostic-station-exit",
+            Self::DiagnosticBluetoothGattTrace => "diagnostic-bluetooth-gatt-trace",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
             Self::DiagnosticIeee802154Radio => "diagnostic-ieee802154-radio",
@@ -174,6 +181,7 @@ impl ImageClass {
     pub const fn runtime_features(self) -> &'static str {
         match self {
             Self::BluetoothGatt => "bluetooth-gatt",
+            Self::DiagnosticBluetoothGattTrace => "bluetooth-gatt,bluetooth-trace",
             Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
             Self::SystemWatchdog => "system-watchdog",
             Self::SystemPanicReset => "system-panic-reset",
@@ -224,6 +232,7 @@ impl ImageClass {
                 | Self::SystemPanicReset
                 | Self::DiagnosticUsbJtagOff
                 | Self::BluetoothGatt
+                | Self::DiagnosticBluetoothGattTrace
                 | Self::BluetoothSecureGatt
                 | Self::BluetoothDtm
                 | Self::BootSmoke

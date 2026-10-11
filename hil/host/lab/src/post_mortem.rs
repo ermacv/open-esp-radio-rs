@@ -681,7 +681,7 @@ exit 1
     #[test]
     fn a_trace_is_decoded_oldest_first_with_platform_names() {
         let hang = <oer_hil_trace::Hang as oer_trace::Event>::KIND.raw();
-        let station = oer_trace::Kind::new(oer_trace::Domain::Bluetooth, 9).raw();
+        let station = oer_trace::Kind::new(oer_trace::Domain::Bluetooth, 200).raw();
         let entry = |tag, kind, t_us| oer_hil_protocol::telemetry::TraceEntry {
             tag,
             kind,
@@ -708,7 +708,7 @@ exit 1
         assert!(lines[0].contains("frozen by platform.hang"), "{text}");
         assert!(lines[0].contains("previous boot"), "{text}");
         assert!(
-            lines[1].contains("bluetooth.9 [0x00000001, 0x00000002]"),
+            lines[1].contains("bluetooth.200 [0x00000001, 0x00000002]"),
             "{text}"
         );
         assert!(lines[2].contains("platform.hang"), "{text}");

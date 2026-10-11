@@ -2306,6 +2306,8 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-bluetooth-ll",
  "oer-bluetooth-radio",
+ "oer-bluetooth-trace",
+ "oer-trace",
 ]
 
 [[package]]
@@ -2378,6 +2380,13 @@ dependencies = [
  "oer-bluetooth-radio",
  "oer-time",
  "oer-time-virtual",
+]
+
+[[package]]
+name = "oer-bluetooth-trace"
+version = "0.1.0"
+dependencies = [
+ "oer-trace",
 ]
 
 [[package]]
@@ -2558,9 +2567,11 @@ name = "oer-esp32s31-bluetooth-radio"
 version = "0.1.0"
 dependencies = [
  "oer-bluetooth-radio",
+ "oer-bluetooth-trace",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-hal",
+ "oer-trace",
 ]
 
 [[package]]
@@ -2571,12 +2582,14 @@ dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "oer-bluetooth-radio",
+ "oer-bluetooth-trace",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-bluetooth-radio",
  "oer-esp32s31-hal",
  "oer-time",
  "oer-time-virtual",
+ "oer-trace",
 ]
 
 [[package]]
@@ -3164,6 +3177,7 @@ dependencies = [
  "async-io",
  "futures-lite",
  "heapless 0.9.3",
+ "oer-bluetooth-trace",
  "oer-durable",
  "oer-hil-fixture",
  "oer-hil-lab",
@@ -3175,6 +3189,7 @@ dependencies = [
  "oer-hil-schema",
  "oer-hil-workload",
  "oer-process",
+ "oer-trace",
  "rustix",
  "serde",
  "serde_json",
@@ -3642,6 +3657,7 @@ dependencies = [
 name = "oer-hil-trace"
 version = "0.1.0"
 dependencies = [
+ "oer-bluetooth-trace",
  "oer-ieee80211-trace",
  "oer-ieee802154-trace",
  "oer-phy-trace",

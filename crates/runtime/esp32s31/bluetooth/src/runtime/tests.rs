@@ -162,3 +162,34 @@ fn reports_never_take_the_slot_kept_for_a_lifecycle_terminal() {
     assert_eq!(queue.entries.len(), 2);
     assert!(queue.begin(Admission::Disabling));
 }
+
+#[test]
+fn a_dropped_report_and_its_reported_loss_are_traced() {
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+    use oer_bluetooth_radio::{EventId, EventsLost};
+    use oer_bluetooth_trace::{QueueLoss, QueueOp};
+
+    use super::OutcomeQueue;
+
+    let queue = OutcomeQueue::<NoopRawMutex, 3, 1>::new();
+    for byte in 0..3 {
+        queue.push(received(EventId::new(4), byte));
+    }
+    assert_eq!(
+        crate::trace::take::<QueueLoss>(),
+        [QueueLoss {
+            op: QueueOp::ReportDropped,
+            id: 4,
+        }]
+    );
+    assert!(matches!(queue.take(), Some(Ok(_))));
+    assert!(matches!(queue.take(), Some(Ok(_))));
+    assert_eq!(queue.take(), Some(Err(EventsLost)));
+    assert_eq!(
+        crate::trace::take::<QueueLoss>(),
+        [QueueLoss {
+            op: QueueOp::LossReported,
+            id: 0,
+        }]
+    );
+}

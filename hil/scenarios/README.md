@@ -64,6 +64,14 @@ The family owns every executable value:
   ATT echo load runs over the Bluetooth connection for the same interval. It
   requires the station fixture and the Bluetooth adapter, and publishes
   `coexistence.wifi.rx-rate` and `coexistence.bluetooth.echoes`.
+- `[bluetooth]` `kind = "gatt"` with `trace = true` runs the plaintext GATT
+  cycles on `diagnostic-bluetooth-gatt-trace`: before each connection the
+  workload restarts the trace with the indication, opening, closing,
+  lifecycle, role-request and role-event-end channels, stops and drains it
+  after the disconnection, and publishes `bluetooth.trace.connection-steps`
+  once every cycle holds, in order, an accepted indication, the opening,
+  admitted connection events with anchored ends and the closing
+  (`bluetooth-trouble-gatt-trace`, an `investigation` scenario).
 - `[wifi]` selects the image and an optional `[wifi.datapath]` initialization
   (placement, checksum, TX-buffer and RX-continuation diagnostics). Each
   workload variant carries its own link expectation, observers, fixture

@@ -35,7 +35,7 @@ use oer_hil_protocol::system::{
 use oer_hil_protocol::system::{HangInjected, InjectHang};
 #[cfg(feature = "pc-profile")]
 use oer_hil_protocol::telemetry::{ControlProfile, GetProfileSamples};
-#[cfg(not(feature = "memory-benchmark"))]
+#[cfg(trace_journal)]
 use oer_hil_protocol::telemetry::{
     ControlTrace, GetTraceEntries, GetTraceSnapshot, TraceEntriesPage, TraceSnapshot, TraceState,
 };
@@ -107,11 +107,11 @@ oer_hil_agent::requests! {
         ControlProfile(ControlProfile),
         #[cfg(feature = "pc-profile")]
         GetProfileSamples(GetProfileSamples),
-        #[cfg(not(feature = "memory-benchmark"))]
+        #[cfg(trace_journal)]
         ControlTrace(ControlTrace),
-        #[cfg(not(feature = "memory-benchmark"))]
+        #[cfg(trace_journal)]
         GetTraceEntries(GetTraceEntries),
-        #[cfg(not(feature = "memory-benchmark"))]
+        #[cfg(trace_journal)]
         GetTraceSnapshot(GetTraceSnapshot),
         #[cfg(feature = "wifi-ble-coex")]
         GetGatt(oer_hil_protocol::bluetooth::GetGatt),
@@ -907,7 +907,7 @@ pub async fn protocol_task() {
                         };
                         respond(session_id, request_id, reply).await;
                     }
-                    #[cfg(not(feature = "memory-benchmark"))]
+                    #[cfg(trace_journal)]
                     Request::ControlTrace(ControlTrace(control)) => {
                         let reply = if session_id == 0 {
                             Ok(TraceState(crate::trace::control(control)))
@@ -916,7 +916,7 @@ pub async fn protocol_task() {
                         };
                         respond(session_id, request_id, reply).await;
                     }
-                    #[cfg(not(feature = "memory-benchmark"))]
+                    #[cfg(trace_journal)]
                     Request::GetTraceEntries(GetTraceEntries { first }) => {
                         let reply = if session_id == 0 {
                             Ok(TraceEntriesPage(crate::trace::entries(first)))
@@ -925,7 +925,7 @@ pub async fn protocol_task() {
                         };
                         respond(session_id, request_id, reply).await;
                     }
-                    #[cfg(not(feature = "memory-benchmark"))]
+                    #[cfg(trace_journal)]
                     Request::GetTraceSnapshot(GetTraceSnapshot { slot, offset }) => {
                         let reply = if session_id == 0 {
                             Ok(TraceSnapshot(crate::trace::snapshot(slot, offset)))

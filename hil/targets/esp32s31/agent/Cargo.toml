@@ -8,6 +8,10 @@ publish.workspace = true
 build = "build.rs"
 
 [features]
+# The image keeps the RTC event trace (`agent/src/trace.rs`): it records,
+# freezes on a panic or hang, and serves the trace commands. Every Wi-Fi and
+# Bluetooth image has it; `memory-benchmark` leaves it out (`build.rs`).
+trace-journal = []
 # Two RTC-retained trace snapshot slots of 1024 words, for images that
 # capture register windows.
 trace-snapshots = []
@@ -57,6 +61,7 @@ owned-network = ["dep:embassy-net-owned", "dep:oer-embassy-net-owned", "dep:xarx
 # images run the Trouble Host and the GATT application.
 bluetooth-radio = [
     "panic-hook",
+    "trace-journal",
     "oer-hil-protocol?/bluetooth",
     "dep:oer-bluetooth-controller",
     "dep:oer-bluetooth-hci",
@@ -78,6 +83,9 @@ bluetooth-radio = [
     "dep:critical-section",
 ]
 bluetooth-hil = ["bluetooth-radio"]
+# Record the Bluetooth LE Controller, radio role and runtime trace points
+# (`oer-bluetooth-trace`); the `diagnostic-bluetooth-gatt-trace` image.
+bluetooth-trace = ["oer-esp32s31-bluetooth-system?/trace"]
 bluetooth-gatt = ["bluetooth-radio", "dep:oer-bluetooth-gatt-trouble", "dep:trouble-host"]
 # The secure GATT image restarts the Controller epoch around one retained bond
 # store and serves the `bluetooth-secure-gatt` scenario.
@@ -92,6 +100,7 @@ bluetooth-secure-gatt = [
 ]
 open-radio-hil = [
     "panic-hook",
+    "trace-journal",
     "oer-hil-protocol?/wifi",
     "oer-hil-agent?/wifi",
     "dep:oer-ieee80211-softmac",

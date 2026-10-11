@@ -1389,3 +1389,32 @@ fn disable_finds_room_on_a_queue_its_admitted_events_fill() {
     );
     assert_eq!(taken(&runtime), None);
 }
+
+#[test]
+fn lifecycle_commands_and_their_terminals_are_traced() {
+    use oer_bluetooth_trace::{Lifecycle, LifecycleCommand as Command, LifecycleStep as Step};
+
+    let model = Model::default();
+    let runtime = installed(&model);
+    let step = |command, step| Lifecycle { command, step };
+    assert_eq!(
+        crate::trace::take::<Lifecycle>(),
+        [
+            step(Command::Enable, Step::Terminal),
+            step(Command::Enable, Step::Admitted),
+        ]
+    );
+    disable(&runtime);
+    assert_eq!(
+        block_on(runtime.run_lifecycle(LifecycleCommand::Disable)),
+        Ok(Err(LifecycleError::AlreadyInState))
+    );
+    assert_eq!(
+        crate::trace::take::<Lifecycle>(),
+        [
+            step(Command::Disable, Step::Terminal),
+            step(Command::Disable, Step::Admitted),
+            step(Command::Disable, Step::AlreadyInState),
+        ]
+    );
+}

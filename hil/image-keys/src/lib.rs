@@ -70,6 +70,7 @@ pub fn image_keys(enabled: &dyn Fn(&str) -> bool) -> ImageKeys {
             add(bluetooth::Hci::KEY, true);
             add(phy::RxHotSram::KEY, enabled("phy-rx-hot-sram"));
         }
+        add(bluetooth::Trace::KEY, enabled("bluetooth-trace"));
         return sorted(keys);
     }
     let traffic = !enabled("memory-benchmark");
@@ -169,6 +170,7 @@ pub const READ_FEATURES: &[&str] = &[
     "open-radio-hil",
     "bluetooth-secure-gatt",
     "bluetooth-gatt",
+    "bluetooth-trace",
     "phy-rx-hot-sram",
     "memory-benchmark",
     "wifi-ble-coex",

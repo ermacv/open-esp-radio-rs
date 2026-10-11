@@ -414,8 +414,10 @@ images have.
 
 ## Event trace
 
-Every image links one `oer-trace` trace in RTC fast memory beside the
-post-mortem record (`runtime/src/trace.rs`): 512 entries, and two 1024-word
+Every Wi-Fi and Bluetooth image keeps one `oer-trace` trace in RTC fast
+memory beside the post-mortem record (`agent/src/trace.rs`, the agent's
+`trace-journal` feature; `build.rs` leaves it out of `memory-benchmark` as
+`cfg(trace_journal)`): 512 entries, and two 1024-word
 snapshot slots only with the `trace-snapshots` feature. The hang watchdog and
 the agent's panic hook, which the platform's panic entry calls through its
 `panic-hook` feature, freeze it before the reset; every image but
@@ -436,7 +438,13 @@ memory, and its fault CRC uses no cached lookup table. The next boot also holds 
 trace for the host, which pages it out through the
 [trace commands](../../protocol/diagnostics.md#event-trace). The
 `station-exit-evidence` feature also enables the station runtime's own trace
-events. With an IEEE 802.15.4 image, the `ieee802154-trace` feature records
+events. The `bluetooth-trace` feature records the Bluetooth LE Controller,
+radio role and runtime events of
+[`oer-bluetooth-trace`](../../../crates/protocols/bluetooth/trace/README.md)
+through the composition's `trace` feature; the Bluetooth console serves the
+trace commands in every Bluetooth image, whose trace holds only the agent's
+own events without it. `diagnostic-bluetooth-gatt-trace` builds the GATT
+image with it, and product images never do. With an IEEE 802.15.4 image, the `ieee802154-trace` feature records
 the MAC engine, runtime and transmit power-sequence events of
 [`oer-ieee802154-trace`](../../../crates/hardware/ieee802154/trace/README.md). `diagnostic-ieee802154-radio-trace`
 builds with it and serves the scenarios against the reference peer, so a

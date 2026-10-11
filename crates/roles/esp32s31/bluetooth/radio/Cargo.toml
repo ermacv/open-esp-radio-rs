@@ -8,6 +8,8 @@ repository.workspace = true
 description = "The portable Bluetooth LE radio event contract over the ESP32-S31 scheduler executor and role pools"
 
 [features]
+# Record the role's trace points (`oer-bluetooth-trace`) into `oer-trace`.
+trace = ["oer-trace/record"]
 # Host model memory for dependent crates' tests.
 test-support = [
     "oer-esp32s31-bluetooth/test-support",
@@ -17,9 +19,11 @@ test-support = [
 
 [dependencies]
 oer-bluetooth-radio = { path = "../../../../protocols/bluetooth/le/radio" }
+oer-bluetooth-trace = { path = "../../../../protocols/bluetooth/trace" }
 oer-esp32s31-bluetooth = { path = "../../../../hardware/esp32s31/driver/bluetooth" }
 oer-esp32s31-bluetooth-memory = { path = "../../../../hardware/esp32s31/driver/bluetooth/memory" }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
+oer-trace = { path = "../../../../trace" }
 
 [dev-dependencies]
 oer-esp32s31-bluetooth-memory = { path = "../../../../hardware/esp32s31/driver/bluetooth/memory", features = ["validation-probes"] }

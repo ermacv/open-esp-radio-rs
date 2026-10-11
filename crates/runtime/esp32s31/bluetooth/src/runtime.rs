@@ -352,6 +352,7 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
             }
             owed.admission = admission;
             owed.generation = owed.generation.wrapping_add(1);
+            crate::trace::terminal(terminal);
             self.send(owed, BluetoothOutcome::Lifecycle(terminal));
             true
         })
@@ -388,6 +389,7 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
         };
         owed.reserved -= 1;
         owed.admission = admission;
+        crate::trace::terminal(terminal);
         self.send(owed, BluetoothOutcome::Lifecycle(terminal));
         true
     }
@@ -411,6 +413,10 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
                         // A report nothing acknowledges never takes the slot
                         // kept for a lifecycle terminal.
                         owed.lost = true;
+                        crate::trace::emit(|| oer_bluetooth_trace::QueueLoss {
+                            op: oer_bluetooth_trace::QueueOp::ReportDropped,
+                            id: id.get(),
+                        });
                         return false;
                     }
                 }
@@ -458,10 +464,14 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
                     outcome,
                 }) => {
                     owed.held = Some(outcome);
+                    trace_loss_reported();
                     Some(Err(EventsLost))
                 }
                 Ok(Entry { outcome, .. }) => Some(Ok(outcome)),
-                Err(_) if core::mem::take(&mut owed.lost) => Some(Err(EventsLost)),
+                Err(_) if core::mem::take(&mut owed.lost) => {
+                    trace_loss_reported();
+                    Some(Err(EventsLost))
+                }
                 Err(_) => None,
             }
         })
@@ -484,6 +494,14 @@ impl<M: RawMutex, const EVENTS: usize, const CONNECTIONS: usize>
             owed.generation = owed.generation.wrapping_add(1);
         });
     }
+}
+
+/// Record that the consumer took a loss in place of dropped reports.
+fn trace_loss_reported() {
+    crate::trace::emit(|| oer_bluetooth_trace::QueueLoss {
+        op: oer_bluetooth_trace::QueueOp::LossReported,
+        id: 0,
+    });
 }
 
 /// The sink of one locked entry: outcomes go to the queue, and a fault
@@ -946,6 +964,19 @@ impl<
         }
         self.changed.signal(());
         self.work.signal(());
+        crate::trace::emit(|| oer_bluetooth_trace::Lifecycle {
+            command: crate::trace::command(command),
+            step: match started {
+                Ok(()) => oer_bluetooth_trace::LifecycleStep::Admitted,
+                Err(LifecycleError::AlreadyInState) => {
+                    oer_bluetooth_trace::LifecycleStep::AlreadyInState
+                }
+                Err(LifecycleError::InvalidState) => {
+                    oer_bluetooth_trace::LifecycleStep::InvalidState
+                }
+                Err(LifecycleError::Busy) => oer_bluetooth_trace::LifecycleStep::Busy,
+            },
+        });
         Ok(started.map(|()| queue.lifecycle_state().1))
     }
 

@@ -282,13 +282,10 @@ struct Client<'m> {
 }
 struct Phase<'m>(&'m Model);
 struct Control;
-/// Admitted work: only its client's `admit` returns one.
-struct Work(Id);
 
 impl Client<'_> {
-    fn admit(&self, id: Id) -> Work {
+    fn admit(&self, id: Id) {
         self.model.running.borrow_mut().push((id, self.interface));
-        Work(id)
     }
 }
 
@@ -350,12 +347,16 @@ impl<'m> RadioPortSplit for Phase<'m> {
     type Control = Control;
     type Clients = [Client<'m>; 2];
 
-    fn into_parts(self) -> (Events<'m>, Control, [Client<'m>; 2]) {
+    fn into_parts(self) -> PhaseParts<Events<'m>, Control, [Client<'m>; 2]> {
         let client = |interface| Client {
             model: self.0,
             interface,
         };
-        (Events(self.0), Control, [client(0), client(1)])
+        PhaseParts {
+            events: Events(self.0),
+            control: Control,
+            clients: [client(0), client(1)],
+        }
     }
 }
 
@@ -372,7 +373,7 @@ impl RadioPortEvents for Events<'_> {
 }
 
 impl RadioPortClient for Client<'_> {
-    type Work = Work;
+    type Id = Id;
     type Domain = Port;
     type Fault = ();
 
@@ -380,11 +381,8 @@ impl RadioPortClient for Client<'_> {
         ready(Ok(Err(ClockError::Unavailable)))
     }
 
-    fn cancel<'a>(
-        &'a self,
-        work: &'a Work,
-    ) -> impl Future<Output = PortResult<(), CancelError, ()>> + 'a {
-        ready(Ok(end(self.model, work.0)))
+    fn cancel(&self, id: Id) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
+        ready(Ok(end(self.model, id)))
     }
 }
 
@@ -407,14 +405,17 @@ fn a_phase_lends_clients_scoped_to_their_interface_and_its_leftovers_reach_the_o
     };
     let mut owner = Owner(&model);
     {
-        let (mut events, _control, [station, access_point]) = owner.split().into_parts();
-        let joined = station.admit(Id(1));
-        let _served = access_point.admit(Id(2));
-        // A client names only work it admitted, by its value: it ends it
-        // once, and a second cancel proves the work ended.
-        assert_eq!(now_ready(station.cancel(&joined)), Ok(Ok(())));
+        let PhaseParts {
+            mut events,
+            clients: [station, access_point],
+            ..
+        } = owner.split().into_parts();
+        station.admit(Id(1));
+        access_point.admit(Id(2));
+        // A client ends work once; a second cancel proves the work ended.
+        assert_eq!(now_ready(station.cancel(Id(1))), Ok(Ok(())));
         assert_eq!(
-            now_ready(station.cancel(&joined)),
+            now_ready(station.cancel(Id(1))),
             Ok(Err(CancelError::NotRunning))
         );
         assert_eq!(now_ready(events.next_event()), Ok(Ok(1)));

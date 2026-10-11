@@ -74,7 +74,7 @@ pub mod conformance;
 mod owner;
 mod relation;
 
-pub use owner::{RadioPortClient, RadioPortEvents, RadioPortOwner, RadioPortSplit};
+pub use owner::{PhaseParts, RadioPortClient, RadioPortEvents, RadioPortOwner, RadioPortSplit};
 pub use relation::{
     ClockInfo, ClockRelation, ClockSample, Generation, GenerationSource, Projected,
     ProjectionError, RadioStamp, RelationRate, RelationSample, Stamp,

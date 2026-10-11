@@ -16,8 +16,9 @@
 //!   cancellation and the lifecycle.
 //! - [`RadioPortOwner`], [`RadioPortSplit`], [`RadioPortEvents`] and
 //!   [`RadioPortClient`]: the one owner of an installed port, which takes
-//!   exclusive operations on `&mut` and lends running phases of an event
-//!   consumer and interface-scoped clients.
+//!   exclusive operations on `&mut` and lends running phases
+//!   ([`PhaseParts`]) of an event consumer, a phase control and
+//!   interface-scoped clients.
 //! - [`Poisoned`] and [`PortResult`]: the only outer error of a port call,
 //!   carrying the backend's cause; every refusal is the inner `Err`.
 //! - [`EventsLost`]: the one loss marker, with its ordering rule.

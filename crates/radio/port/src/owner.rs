@@ -127,8 +127,12 @@ use crate::{
 pub trait RadioPortOwner {
     /// One owned event.
     type Event;
-    /// The correlation identity of the port's admitted work.
-    type Id: Correlation;
+    /// The port's identity of admitted work: the client that admitted it
+    /// together with that client's identity, as the backend keys the work,
+    /// so two clients of one kind that chose the same value stay apart.
+    /// A client handle forms it ([`RadioPortClient::port_id`]), and
+    /// terminal events carry it.
+    type Id: Copy + Eq;
     /// The clock domain of the port's radio instants.
     type Domain;
     /// The cause a poisoned backend reports.
@@ -172,14 +176,19 @@ pub trait RadioPortOwner {
         command: LifecycleCommand,
     ) -> impl Future<Output = PortResult<(), LifecycleError, Self::Fault>> + '_;
 
-    /// Lend the port for one running phase: its event consumer and its
-    /// client handles, borrowing the owner until the last of them is
-    /// dropped.
+    /// Lend the port for one running phase: its event consumer, its control
+    /// and its client handles ([`PhaseParts`]), borrowing the owner until
+    /// the last of them is dropped.
     fn split(&mut self) -> Self::Split<'_>;
 }
 
 /// The handles one running phase lends: its one event consumer, its
 /// control and the protocol's client handles.
+///
+/// Every part borrows the owner for the phase: an implementation's
+/// `Events`, `Control` and `Clients` carry the lifetime of the
+/// [`RadioPortOwner::Split`] that returns them, so no part outlives the
+/// phase and no owner call compiles while one lives.
 pub trait RadioPortSplit {
     /// The cause a poisoned backend reports.
     type Fault: Copy + Debug;
@@ -212,7 +221,8 @@ pub struct PhaseParts<E, C, K> {
 /// The one consumer of a running phase's events.
 ///
 /// It is the stream's only consumer while the phase lasts: a router that
-/// hands each terminal event to the exchange whose identity it carries.
+/// hands each terminal event to the exchange whose port identity (client
+/// and identity, [`RadioPortOwner::Id`]) it carries.
 pub trait RadioPortEvents {
     /// One owned event.
     type Event;
@@ -246,10 +256,11 @@ pub trait RadioPortEvents {
 /// ended.
 pub trait RadioPortClient {
     /// The correlation identity of this client's work: its own type, so
-    /// another kind of client's identity does not type-check. The owner
-    /// ends any client's work between phases through the port's identity
-    /// ([`RadioPortOwner::Id`]), which each client identity converts into.
+    /// another kind of client's identity does not type-check.
     type Id: Correlation;
+    /// The port's identity of this client's work: the owner's
+    /// [`RadioPortOwner::Id`].
+    type PortId: Copy + Eq;
     /// The clock domain of the port's radio instants.
     type Domain;
     /// The cause a poisoned backend reports.
@@ -270,4 +281,10 @@ pub trait RadioPortClient {
         &self,
         id: Self::Id,
     ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + '_;
+
+    /// The port's identity of this client's work `id`: this client with its
+    /// identity. The client handle forms it, as only it knows which client
+    /// it is; the owner ends a work a phase left in flight by it, and a
+    /// router matches terminal events against it.
+    fn port_id(&self, id: Self::Id) -> Self::PortId;
 }

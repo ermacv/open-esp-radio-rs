@@ -1,6 +1,7 @@
 //! A service's client of a lower-MAC port: one interface's reception, its
-//! transmissions and its settings, over the port's [`EventRouter`]. The
-//! port's lifecycle and channel are its owner's ([`crate::owner`]).
+//! transmissions and its own interface's state, over the port's
+//! [`EventRouter`]. Port-wide settings, the channel and the lifecycle are
+//! the port's owner's ([`crate::owner`]).
 //!
 //! The router is the port's one event consumer; a client reads the router's
 //! queues and transmits through an [`UpperMacTx`] over it, so a service
@@ -24,12 +25,18 @@ use core::{
 
 use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_ieee80211_lower_mac::{
-    CoexPriority, EventsLost, Ieee80211LowerMacPort, KeySelector, LifecycleError,
-    LowerMacAirReservation, LowerMacAmpdu, LowerMacBeaconTiming, LowerMacSetting, MacAddress,
-    PhyRate, Poisoned, RadioPort, ReceiveFilter, RxBuffer, RxMeta, SettingError, TbttEvent,
-    TxCompletion, TxPower, VifConfig, VifId, VifRole,
+    Cipher, ClockError, ClockInfo, CoexPriority, EventsLost, Ieee80211ClockSample,
+    Ieee80211Instant, Ieee80211LowerMacPort, Ieee80211Radio, KeyHandle, KeyInstall, KeyScope,
+    KeySelector, LifecycleError, LowerMacAirReservation, LowerMacAmpdu, LowerMacBeaconTiming,
+    LowerMacCapabilities, LowerMacSetting, MacAddress, PhyRate, Poisoned, PortResult, RadioPort,
+    ReceiveFilter, RxBlockAckAgreement, RxBuffer, RxMeta, SettingError, TbttEvent, TbttSchedule,
+    TxCompletion, TxPower, VifConfig, VifId, VifRole, VifTsf,
 };
-use oer_ieee80211_mac::{data::EthernetFrameParts, qos::WmmAccessCategory};
+use oer_ieee80211_mac::{
+    data::EthernetFrameParts,
+    qos::WmmAccessCategory,
+    tsf::{TsfDuration, TsfInstant},
+};
 use oer_ieee80211_softmac::BackoffEntropy;
 use oer_ieee80211_upper_mac::{
     HeTxopRtsBudget, MpduRequest, RateLadder, TxBody, TxPlanner, TxReceiver, TxReport, TxRequest,
@@ -200,6 +207,9 @@ pub enum PortClientError<F> {
     /// An A-MPDU went to a port that sends none
     /// ([`NoAggregation`](crate::aggregate::NoAggregation)).
     AggregationUnsupported,
+    /// The operation names another interface's state: a key, an agreement
+    /// or a TSF the client did not install on its own interface.
+    ForeignVif,
 }
 
 impl<F> PortClientError<F> {
@@ -240,6 +250,30 @@ pub struct PortClient<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: us
     entropy: X::Entropy,
     config: PortClientConfig,
     counters: PortClientCounters,
+    /// The keys the client installed on its interface.
+    keys: KeySet,
+}
+
+/// Key handles, one bit each. A key install is a setting call, which
+/// takes the client shared, so the set changes through a cell.
+#[derive(Default)]
+struct KeySet(core::cell::Cell<[u32; 8]>);
+
+impl KeySet {
+    fn update(&self, handle: KeyHandle, present: bool) {
+        let mut bits = self.0.get();
+        let (word, bit) = (usize::from(handle.0 / 32), 1 << (handle.0 % 32));
+        if present {
+            bits[word] |= bit;
+        } else {
+            bits[word] &= !bit;
+        }
+        self.0.set(bits);
+    }
+
+    fn contains(&self, handle: KeyHandle) -> bool {
+        self.0.get()[usize::from(handle.0 / 32)] & 1 << (handle.0 % 32) != 0
+    }
 }
 
 impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
@@ -264,15 +298,43 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
             entropy,
             config,
             counters: PortClientCounters::default(),
+            keys: KeySet::default(),
         })
     }
 
-    pub fn port(&self) -> &'p X::Port {
+    /// The port, for this crate's own machinery only: a client never hands
+    /// it out, so no service reaches the port's lifecycle or another
+    /// interface's state through it.
+    pub(crate) fn port(&self) -> &'p X::Port {
         self.router.port()
     }
 
-    pub const fn router(&self) -> &'p EventRouter<'p, X::Port, EXCHANGES, RX> {
-        self.router
+    /// What the port supports.
+    pub fn capabilities(&self) -> LowerMacCapabilities {
+        self.port().capabilities()
+    }
+
+    /// The A-MPDUs the client's aggregation sends; `None` sends every frame
+    /// alone.
+    pub fn ampdu_capabilities(&self) -> Option<oer_ieee80211_lower_mac::AmpduCapabilities> {
+        <X::Aggregation as PortAggregation<X>>::capabilities(self.port())
+    }
+
+    /// The port's radio time.
+    pub fn now(
+        &self,
+    ) -> impl Future<Output = PortResult<Ieee80211Instant, ClockError, PortFault<X>>> + 'p {
+        self.port().now()
+    }
+
+    /// One sample of the port's radio clock against the monotonic clock.
+    pub fn clock_sample(&self) -> PortResult<Ieee80211ClockSample, ClockError, PortFault<X>> {
+        self.port().clock_sample()
+    }
+
+    /// The port's radio clock.
+    pub fn clock_info(&self) -> ClockInfo<Ieee80211Radio> {
+        self.port().clock_info()
     }
 
     pub const fn config(&self) -> &PortClientConfig {
@@ -488,21 +550,85 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         }
     }
 
-    /// Apply one setting.
-    pub fn apply(&self, setting: LowerMacSetting) -> Result<(), PortClientError<PortFault<X>>> {
+    fn apply(&self, setting: LowerMacSetting) -> Result<(), PortClientError<PortFault<X>>> {
         self.port()
             .apply(setting)?
             .map_err(PortClientError::Setting)
     }
 
-    /// Contend with a BSS's EDCA parameters: the port's queues take their
-    /// AIFSN and TXOP limits, the transmit planner each access category's
-    /// contention window.
-    pub fn install_edca(
+    /// Install a key on the client's interface.
+    pub fn install_key(
+        &self,
+        cipher: Cipher,
+        scope: KeyScope,
+        key: &[u8],
+    ) -> Result<KeyHandle, PortClientError<PortFault<X>>> {
+        let handle = self
+            .port()
+            .install_key(KeyInstall {
+                vif: self.config.vif,
+                cipher,
+                scope,
+                key,
+            })?
+            .map_err(PortClientError::Setting)?;
+        self.keys.update(handle, true);
+        Ok(handle)
+    }
+
+    /// Remove a key the client installed; another interface's key is
+    /// `ForeignVif`.
+    pub fn remove_key(&self, handle: KeyHandle) -> Result<(), PortClientError<PortFault<X>>> {
+        if !self.keys.contains(handle) {
+            return Err(PortClientError::ForeignVif);
+        }
+        self.apply(LowerMacSetting::RemoveKey(handle))?;
+        self.keys.update(handle, false);
+        Ok(())
+    }
+
+    /// Start acknowledging A-MPDUs of `peer` and `tid` on the client's
+    /// interface.
+    pub fn add_rx_block_ack(
+        &self,
+        agreement: RxBlockAckAgreement,
+    ) -> Result<(), PortClientError<PortFault<X>>> {
+        if agreement.vif != self.config.vif {
+            return Err(PortClientError::ForeignVif);
+        }
+        self.apply(LowerMacSetting::AddRxBlockAck(agreement))
+    }
+
+    /// End the receive agreement of `peer` and `tid` on the client's
+    /// interface.
+    pub fn remove_rx_block_ack(
+        &self,
+        peer: MacAddress,
+        tid: u8,
+    ) -> Result<(), PortClientError<PortFault<X>>> {
+        self.apply(LowerMacSetting::RemoveRxBlockAck {
+            vif: self.config.vif,
+            peer,
+            tid,
+        })
+    }
+
+    /// The BSS color of the client's interface.
+    pub fn set_he_bss_color(&self, color: u8) -> Result<(), PortClientError<PortFault<X>>> {
+        self.apply(LowerMacSetting::HeBssColor {
+            vif: self.config.vif,
+            color,
+        })
+    }
+
+    /// Contend with a BSS's EDCA parameters in the transmit planner: each
+    /// access category's contention window. The port's queues are shared by
+    /// every interface, so their AIFSN and TXOP limits are the owner's
+    /// (`PortOwner::install_edca`).
+    pub fn contend_with(
         &mut self,
         parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
-    ) -> Result<(), PortClientError<PortFault<X>>> {
-        self.apply(LowerMacSetting::Edca(parameters))?;
+    ) {
         for category in [
             WmmAccessCategory::BestEffort,
             WmmAccessCategory::Background,
@@ -516,7 +642,52 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
                 ),
             );
         }
-        Ok(())
+    }
+
+    /// Set the TSF of the client's interface.
+    pub fn set_tsf(&self, at: TsfInstant) -> Result<(), PortClientError<PortFault<X>>>
+    where
+        X::Port: LowerMacBeaconTiming,
+    {
+        self.port()
+            .set_tsf(VifTsf {
+                vif: self.config.vif,
+                at,
+            })?
+            .map_err(PortClientError::Setting)
+    }
+
+    /// Report the TBTTs of the client's interface: the next at `next`, then
+    /// one every `beacon_interval`, each `lead` early.
+    pub fn set_tbtt(
+        &self,
+        next: TsfInstant,
+        beacon_interval: TsfDuration,
+        lead: TsfDuration,
+    ) -> Result<(), PortClientError<PortFault<X>>>
+    where
+        X::Port: LowerMacBeaconTiming,
+    {
+        self.port()
+            .set_tbtt(TbttSchedule {
+                next: VifTsf {
+                    vif: self.config.vif,
+                    at: next,
+                },
+                beacon_interval,
+                lead,
+            })?
+            .map_err(PortClientError::Setting)
+    }
+
+    /// Stop the TBTTs of the client's interface.
+    pub fn stop_tbtt(&self) -> Result<(), PortClientError<PortFault<X>>>
+    where
+        X::Port: LowerMacBeaconTiming,
+    {
+        self.port()
+            .stop_tbtt(self.config.vif)?
+            .map_err(PortClientError::Setting)
     }
 
     /// Configure the client's interface with `bssid` and `receive`.

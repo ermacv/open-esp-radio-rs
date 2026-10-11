@@ -6,8 +6,8 @@ use core::future::Future;
 use oer_ieee80211_datapath::DestinationTxQueues;
 use oer_ieee80211_lower_mac::{
     AmpduCapabilities, Channel, ClockError, CoexPriority, KeySelector, LifecycleCommand,
-    LifecycleError, LowerMacSetting, MacAddress, PhyRate, Poisoned, ReceiveFilter, SettingError,
-    TxPower, VifId, VifRole,
+    LifecycleError, MacAddress, PhyRate, Poisoned, ReceiveFilter, SettingError, TxPower, VifId,
+    VifRole,
 };
 use oer_ieee80211_mac::{
     ccmp::CcmpTxPacketNumberError,
@@ -173,6 +173,8 @@ pub enum PortLinkError<F> {
     MissingState,
     /// The station would move a port whose lifecycle another owner holds.
     NotOwner,
+    /// The station named another interface's key or agreement.
+    ForeignVif,
     /// The radio system refused a coexistence effect.
     Coexistence,
 }
@@ -207,8 +209,29 @@ impl<F> From<PortClientError<F>> for PortLinkError<F> {
                 Self::Frame(StationFrameError::OutputTooSmall { required: 10 })
             }
             PortClientError::AggregationUnsupported => Self::MissingState,
+            PortClientError::ForeignVif => Self::ForeignVif,
         }
     }
+}
+
+/// Port-wide effects a station without the port's owner asks for: each
+/// the latest since the owner last took them.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PortRequests {
+    /// The access point's EDCA parameters for the shared queues.
+    pub edca: Option<oer_ieee80211_mac::extensions::wmm::WmmParameterSet>,
+    /// The coexistence priority of the station's beacon reception.
+    pub rx_beacon_priority: Option<oer_ieee80211_lower_mac::RxBeaconPriority>,
+    /// The transmit gate the station's doze wants.
+    pub tx_gate: Option<bool>,
+}
+
+impl PortRequests {
+    pub const NONE: Self = Self {
+        edca: None,
+        rx_beacon_priority: None,
+        tx_gate: None,
+    };
 }
 
 /// The station's client of the port: the [`PortClient`] of its interface,
@@ -219,6 +242,12 @@ pub struct PortLink<'p, X: PortStationEnv> {
     /// The port's lifecycle authority, when the station owns its channel;
     /// `None` when another owner decides it.
     owner: Option<PortStationOwner<'p, X>>,
+    /// Port-wide effects the station needs, waiting for the owner when the
+    /// link does not hold it.
+    requests: PortRequests,
+    /// The beacon-receive priority the owner delegated, when it did.
+    beacon_priority:
+        Option<oer_ieee80211_upper_mac_service::owner::BeaconPriorityGrant<'p, X::Port>>,
     config: PortStationConfig,
     coex: X::Coex,
     rate: <X::RateControl as RateControl>::Config,
@@ -255,6 +284,8 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
                 },
             )?,
             owner: None,
+            requests: PortRequests::NONE,
+            beacon_priority: None,
             config,
             coex,
             rate,
@@ -275,12 +306,40 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         &mut self.coex
     }
 
-    pub fn port(&self) -> &'p X::Port {
-        self.client.port()
+    /// What the port supports.
+    pub fn capabilities(&self) -> oer_ieee80211_lower_mac::LowerMacCapabilities {
+        self.client.capabilities()
     }
 
-    pub const fn router(&self) -> &'p PortRouter<'p, X> {
-        self.client.router()
+    /// The port's radio time.
+    pub fn now(
+        &self,
+    ) -> impl core::future::Future<
+        Output = oer_ieee80211_lower_mac::PortResult<
+            oer_ieee80211_lower_mac::Ieee80211Instant,
+            oer_ieee80211_lower_mac::ClockError,
+            PortFault<X>,
+        >,
+    > + 'p {
+        self.client.now()
+    }
+
+    /// One sample of the port's radio clock against the monotonic clock.
+    pub fn clock_sample(
+        &self,
+    ) -> oer_ieee80211_lower_mac::PortResult<
+        oer_ieee80211_lower_mac::Ieee80211ClockSample,
+        oer_ieee80211_lower_mac::ClockError,
+        PortFault<X>,
+    > {
+        self.client.clock_sample()
+    }
+
+    /// The port's radio clock.
+    pub fn clock_info(
+        &self,
+    ) -> oer_ieee80211_lower_mac::ClockInfo<oer_ieee80211_lower_mac::Ieee80211Radio> {
+        self.client.clock_info()
     }
 
     pub const fn config(&self) -> &PortStationConfig {
@@ -338,7 +397,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     /// The port's A-MPDU capabilities; `None` when it sends every frame
     /// alone.
     pub(crate) fn ampdu_capabilities(&self) -> Option<AmpduCapabilities> {
-        <X::Aggregation as PortAggregation<X>>::capabilities(self.client.port())
+        self.client.ampdu_capabilities()
     }
 
     /// Send one A-MPDU until the planner reports the exchange's end.
@@ -371,19 +430,149 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         self.client.discard_backlog().await;
     }
 
-    /// Apply one setting.
-    pub fn apply(&self, setting: LowerMacSetting) -> Result<(), PortLinkError<PortFault<X>>> {
-        Ok(self.client.apply(setting)?)
+    /// Install a CCMP key on the station's interface.
+    pub fn install_key(
+        &self,
+        scope: oer_ieee80211_lower_mac::KeyScope,
+        key: &[u8],
+    ) -> Result<oer_ieee80211_lower_mac::KeyHandle, PortLinkError<PortFault<X>>> {
+        Ok(self
+            .client
+            .install_key(oer_ieee80211_lower_mac::Cipher::Ccmp128, scope, key)?)
     }
 
-    /// Contend with the access point's EDCA parameters: the port's queues
-    /// take their AIFSN and TXOP limits, the transmit planner each access
-    /// category's contention window.
+    /// Remove a key the station installed.
+    pub fn remove_key(
+        &self,
+        handle: oer_ieee80211_lower_mac::KeyHandle,
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
+        Ok(self.client.remove_key(handle)?)
+    }
+
+    /// Start acknowledging A-MPDUs of a receive agreement of the station's
+    /// interface.
+    pub fn add_rx_block_ack(
+        &self,
+        agreement: oer_ieee80211_lower_mac::RxBlockAckAgreement,
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
+        Ok(self.client.add_rx_block_ack(agreement)?)
+    }
+
+    /// End the receive agreement of `peer` and `tid`.
+    pub fn remove_rx_block_ack(
+        &self,
+        peer: MacAddress,
+        tid: u8,
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
+        Ok(self.client.remove_rx_block_ack(peer, tid)?)
+    }
+
+    /// The BSS color of the station's interface.
+    pub fn set_he_bss_color(&self, color: u8) -> Result<(), PortLinkError<PortFault<X>>> {
+        Ok(self.client.set_he_bss_color(color)?)
+    }
+
+    /// Set the TSF of the station's interface.
+    pub fn set_tsf(
+        &self,
+        at: oer_ieee80211_mac::tsf::TsfInstant,
+    ) -> Result<(), PortLinkError<PortFault<X>>>
+    where
+        X::Port: oer_ieee80211_lower_mac::LowerMacBeaconTiming,
+    {
+        Ok(self.client.set_tsf(at)?)
+    }
+
+    /// Report the TBTTs of the station's interface.
+    pub fn set_tbtt(
+        &self,
+        next: oer_ieee80211_mac::tsf::TsfInstant,
+        beacon_interval: oer_ieee80211_mac::tsf::TsfDuration,
+        lead: oer_ieee80211_mac::tsf::TsfDuration,
+    ) -> Result<(), PortLinkError<PortFault<X>>>
+    where
+        X::Port: oer_ieee80211_lower_mac::LowerMacBeaconTiming,
+    {
+        Ok(self.client.set_tbtt(next, beacon_interval, lead)?)
+    }
+
+    /// Stop the TBTTs of the station's interface.
+    pub fn stop_tbtt(&self) -> Result<(), PortLinkError<PortFault<X>>>
+    where
+        X::Port: oer_ieee80211_lower_mac::LowerMacBeaconTiming,
+    {
+        Ok(self.client.stop_tbtt()?)
+    }
+
+    /// The port's owner, for a setting every interface shares; `NotOwner`
+    /// when another owner decides it.
+    fn owner(&self) -> Result<&PortStationOwner<'p, X>, PortLinkError<PortFault<X>>> {
+        self.owner.as_ref().ok_or(PortLinkError::NotOwner)
+    }
+
+    /// Open or close the port's transmit gate for the station's doze. The
+    /// gate is every interface's: applied at once when the link holds the
+    /// owner, else requested from the one who does.
+    pub fn set_tx_gate(&mut self, open: bool) -> Result<(), PortLinkError<PortFault<X>>> {
+        match &self.owner {
+            Some(owner) => owner.set_tx_gate(open)?,
+            None => self.requests.tx_gate = Some(open),
+        }
+        Ok(())
+    }
+
+    /// Take the beacon-receive priority the port's owner delegates: the
+    /// station's power manager then changes it on time.
+    pub fn grant_beacon_priority(
+        &mut self,
+        grant: oer_ieee80211_upper_mac_service::owner::BeaconPriorityGrant<'p, X::Port>,
+    ) {
+        self.beacon_priority = Some(grant);
+    }
+
+    /// The coexistence priority the port receives the station's beacons
+    /// with: applied at once through the owner or its grant, else requested.
+    pub fn set_rx_beacon_priority(
+        &mut self,
+        priority: oer_ieee80211_lower_mac::RxBeaconPriority,
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
+        match (&self.owner, &self.beacon_priority) {
+            (Some(owner), _) => owner.set_rx_beacon_priority(priority)?,
+            (None, Some(grant)) => grant.set(priority)?,
+            (None, None) => self.requests.rx_beacon_priority = Some(priority),
+        }
+        Ok(())
+    }
+
+    /// Monitor reception for every interface; the owner's.
+    pub fn set_monitor(&self, enabled: bool) -> Result<(), PortLinkError<PortFault<X>>>
+    where
+        X::Port: oer_ieee80211_lower_mac::LowerMacMonitor,
+    {
+        Ok(self.owner()?.set_monitor(enabled)?)
+    }
+
+    /// Contend with the access point's EDCA parameters. The planner takes
+    /// each access category's contention window. The port's queues, which
+    /// every interface shares, take the AIFSN and TXOP limits through the
+    /// owner: at once when the link holds it, else through the one who
+    /// does, which takes the request with [`take_requests`](Self::take_requests).
     pub fn install_edca(
         &mut self,
         parameters: oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
     ) -> Result<(), PortLinkError<PortFault<X>>> {
-        Ok(self.client.install_edca(parameters)?)
+        self.client.contend_with(parameters);
+        match &self.owner {
+            Some(owner) => owner.install_edca(parameters)?,
+            None => self.requests.edca = Some(parameters),
+        }
+        Ok(())
+    }
+
+    /// The port-wide effects the station asked for since the last call,
+    /// each the latest: the port's owner decides which it applies.
+    pub fn take_requests(&mut self) -> PortRequests {
+        core::mem::replace(&mut self.requests, PortRequests::NONE)
     }
 
     /// Configure the station interface with `bssid` and `receive`.

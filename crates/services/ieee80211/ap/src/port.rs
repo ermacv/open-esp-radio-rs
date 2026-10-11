@@ -56,9 +56,8 @@ use oer_ieee80211_ap::{
 };
 use oer_ieee80211_datapath::{DestinationTxQueues, SoftwareTxFrame};
 use oer_ieee80211_lower_mac::{
-    Channel, Cipher, ClockError, CoexPriority, Ieee80211LowerMacPort, KeyHandle, KeyInstall,
-    KeyScope, KeySelector, LowerMacBeaconTiming, LowerMacSetting, PhyRate, Poisoned, RadioPort,
-    ReceiveFilter, RxCryptoStatus, RxEvidence, RxMeta, SettingError, VifTsf,
+    Channel, Cipher, ClockError, CoexPriority, KeyHandle, KeyScope, KeySelector, PhyRate, Poisoned,
+    ReceiveFilter, RxCryptoStatus, RxEvidence, RxMeta, SettingError,
 };
 use oer_ieee80211_mac::{
     ap::{
@@ -118,7 +117,7 @@ use oer_ieee80211_mac::beacon::dtim;
 use oer_ieee80211_mac::channel::Band;
 use oer_ieee80211_mac::channel_switch::{ChannelSwitch, ChannelSwitchMode};
 
-use oer_ieee80211_lower_mac::{RxBlockAckAgreement, VifId};
+use oer_ieee80211_lower_mac::RxBlockAckAgreement;
 use oer_ieee80211_mac::ap::{ApManagementFrame, ApManagementSubtype, ApProtectedManagementFrame};
 use oer_ieee80211_mac::block_ack::{
     ADDBA_ACTION_BODY_LEN, BlockAckAction, TxBlockAckResponse, TxBlockAckRetry,
@@ -770,14 +769,12 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
             None,
             ReceiveFilter::BSS_MEMBER.union(ReceiveFilter::PROBE_REQUESTS),
         )?;
-        let vif = self.client.config().vif;
         self.client
-            .port()
-            .set_tsf(VifTsf {
-                vif,
-                at: TsfInstant::from_micros(0),
-            })?
-            .map_err(PortApError::Tsf)?;
+            .set_tsf(TsfInstant::from_micros(0))
+            .map_err(|error| match error {
+                PortClientError::Setting(error) => PortApError::Tsf(error),
+                error => PortApError::Client(error),
+            })?;
         if self.service.link_protection() == LinkProtection::Ccmp && self.group_key.is_none() {
             let gtk = self.service.gtk()?;
             let (key_id, key) = (gtk.key_id(), *gtk.key());
@@ -804,7 +801,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         }
         if let Some(handle) = self.group_key.take() {
             self.client
-                .apply(LowerMacSetting::RemoveKey(handle))
+                .remove_key(handle)
                 .map_err(|error| match error {
                     PortClientError::Setting(error) => PortApError::Key(error),
                     error => PortApError::Client(error),
@@ -834,14 +831,11 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         key: &[u8],
     ) -> Result<KeyHandle, PortApError<PortFault<X>>> {
         self.client
-            .port()
-            .install_key(KeyInstall {
-                vif: self.client.config().vif,
-                cipher: Cipher::Ccmp128,
-                scope,
-                key,
-            })?
-            .map_err(PortApError::Key)
+            .install_key(Cipher::Ccmp128, scope, key)
+            .map_err(|error| match error {
+                PortClientError::Setting(error) => PortApError::Key(error),
+                error => PortApError::Client(error),
+            })
     }
 
     fn link_mut(&mut self, peer: [u8; 6]) -> Option<&mut PeerLink<X::RateControl>> {
@@ -906,12 +900,10 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         else {
             return Ok(());
         };
-        self.client
-            .apply(LowerMacSetting::RemoveKey(handle))
-            .map_err(|error| match error {
-                PortClientError::Setting(error) => PortApError::Key(error),
-                error => PortApError::Client(error),
-            })
+        self.client.remove_key(handle).map_err(|error| match error {
+            PortClientError::Setting(error) => PortApError::Key(error),
+            error => PortApError::Client(error),
+        })
     }
 
     /// Forget a peer: its link and pairwise key, its SAE session, the frames
@@ -1928,7 +1920,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         }
         let agreement = status.tx_block_ack?;
         let ht = status.ht?;
-        let port = <X::Aggregation as PortAggregation<X>>::capabilities(self.client.port())?;
+        let port = self.client.ampdu_capabilities()?;
         let link = self
             .links
             .iter()
@@ -2013,12 +2005,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         let run = self.subframes.len();
         let first_sequence =
             first_sequence.ok_or(PortApError::Service(ApServiceError::UnknownPeer))?;
-        let committed_at = self
-            .client
-            .port()
-            .now()
-            .await?
-            .map_err(PortApError::Clock)?;
+        let committed_at = self.client.now().await?.map_err(PortApError::Clock)?;
         let ampdu = self
             .subframes
             .request(AP_TX_BLOCK_ACK_TID, first_sequence, committed_at)
@@ -2334,7 +2321,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                 starting_sequence,
                 ..
             } => {
-                let capabilities = self.client.port().capabilities();
+                let capabilities = self.client.capabilities();
                 let window = window
                     .min(capabilities.rx_block_ack_max_window)
                     .min(PORT_REORDER_WINDOW as u16);
@@ -2344,13 +2331,13 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
                     && self.reorder.accept(peer, tid, starting_sequence, window)
                     && if self
                         .client
-                        .apply(LowerMacSetting::AddRxBlockAck(RxBlockAckAgreement {
+                        .add_rx_block_ack(RxBlockAckAgreement {
                             vif,
                             peer,
                             tid,
                             start_sequence: starting_sequence,
                             window,
-                        }))
+                        })
                         .is_ok()
                     {
                         true
@@ -2531,9 +2518,7 @@ impl<'p, X: PortApEnv> PortAccessPoint<'p, X> {
         tid: u8,
     ) -> Result<(), PortApError<PortFault<X>>> {
         if self.reorder.stop(peer, tid) {
-            let vif: VifId = self.client.config().vif;
-            self.client
-                .apply(LowerMacSetting::RemoveRxBlockAck { vif, peer, tid })?;
+            self.client.remove_rx_block_ack(peer, tid)?;
         }
         Ok(())
     }

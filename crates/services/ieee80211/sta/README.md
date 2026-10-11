@@ -86,7 +86,14 @@ A `PortLink` holds no lifecycle authority unless `with_owner` gives it the
 port's `PortOwner`: a lone station decides the channel (it scans and
 tunes), while in the STA+AP pair another owner does. Without it, a channel
 move or lifecycle command is `PortLinkError::NotOwner`. `lend_owner` and `take_owner` move the authority
-for a phase in which the station decides the channel alone.
+for a phase in which the station decides the channel alone. A port-wide
+effect the station needs without the owner (its access point's EDCA set,
+its beacon reception's coexistence priority, its doze's transmit gate) is
+recorded as a `PortRequests` fact that the owner takes (`take_requests`)
+and decides. The owner may instead delegate the beacon-receive priority
+(`grant_beacon_priority` with a `BeaconPriorityGrant`): the station's power
+manager then changes it at once, as each beacon window needs, and only a
+link with neither the owner nor that grant records it as a request.
 
 The composition places the station's memory: `PortStation::new` borrows a
 `PortStationStorage` (the scan table and the `PortConnectionBuffers`: the

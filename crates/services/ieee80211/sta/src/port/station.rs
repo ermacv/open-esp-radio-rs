@@ -8,9 +8,7 @@ use oer_ieee80211_upper_mac::rate_control::{RateControl, link_metric};
 use oer_ieee80211_upper_mac_service::client::{PortClientEnv, PortFault, PortMsdu, PortRxBuffer};
 use oer_ieee80211_upper_mac_service::{aggregate::AmpduSubframes, frame::NetworkBody};
 
-use oer_ieee80211_lower_mac::{
-    Channel, ChannelWidth, Ieee80211LowerMacPort, ReceiveFilter, RxMeta,
-};
+use oer_ieee80211_lower_mac::{Channel, ChannelWidth, ReceiveFilter, RxMeta};
 use oer_ieee80211_mac::{
     ccmp::{CcmpPacketNumberStep, CcmpTxPacketNumber},
     scan::{HtSecondaryChannel, ScanRecord, ScanTable},
@@ -683,7 +681,6 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
     fn phy(&self, candidate: &ScanRecord) -> PhyMode {
         let ht40_capable = self
             .link
-            .port()
             .capabilities()
             .widths
             .contains(ChannelWidth::Mhz40Above);
@@ -919,12 +916,8 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             .install_bss(peer.protection);
         // An HE association's PPDUs carry the BSS color of its HE Operation.
         if peer.phy == PhyMode::He20 {
-            let vif = self.link.config().vif;
             self.link
-                .apply(oer_ieee80211_lower_mac::LowerMacSetting::HeBssColor {
-                    vif,
-                    color: peer.he_bss_color,
-                })
+                .set_he_bss_color(peer.he_bss_color)
                 .map_err(|error| {
                     step(
                         StaFailureDisposition::RetryCurrentCandidate,

@@ -82,6 +82,7 @@ impl<'s, 'p, P: LowerMacLiveRetune> PortAbsence<'s, 'p, P> {
     /// them paused and poll only reception until `window.until`.
     pub async fn begin<X: PortClientEnv<Port = P>, const EXCHANGES: usize, const RX: usize>(
         client: &mut PortClient<'p, X, EXCHANGES, RX>,
+        owner: &crate::owner::PortOwner<'_, 'p, P, EXCHANGES, RX>,
         timer: &impl Timer,
         state: &'s mut AbsenceState,
         window: AbsenceWindow,
@@ -112,7 +113,8 @@ impl<'s, 'p, P: LowerMacLiveRetune> PortAbsence<'s, 'p, P> {
         if timer.now() >= window.until {
             return Ok(None);
         }
-        let port = client.port();
+        // The channel is the owner's: the client only reserved the air.
+        let port = owner.port();
         port.retune_live(window.channel)
             .map_err(|poisoned| AbsenceError::Client(PortClientError::Poisoned(poisoned)))?
             .map_err(|error| AbsenceError::Client(PortClientError::Setting(error)))?;

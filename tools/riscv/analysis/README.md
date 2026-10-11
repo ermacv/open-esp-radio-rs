@@ -19,7 +19,9 @@ resolved and unresolved calls/outgoing jumps without expanding the local CFG.
 The one exception is `FunctionInput::jumps`: indirect jumps whose targets the
 caller knows from the build's facts (`KnownJump`, such as the entries of a jump
 table that the link's relocations name), which the CFG follows as jumps.
-Blobray passes none.
+The stack analyzer passes the tables an `--emit-relocs` image's relocations
+and sized read-only objects name; Blobray passes the relocation-proven tables
+of relocatable objects and none for linked images.
 No second analyzer or machine executor is selected for linked code.
 
 The same value solver can emit a flat expression DAG, entry-register values,

@@ -95,7 +95,7 @@ of the named functions, so writes made through calls such as
 `phy_i2c_writeReg(block, host, register, value)` become a query:
 
 ```console
-blobray --abi riscv-integer call-arguments --input rom=/path/to/rom.elf --symbol phy_i2c_writeReg_Mask
+blobray call-arguments --abi riscv-integer --input rom=/path/to/rom.elf --symbol phy_i2c_writeReg_Mask
 ```
 
 In a relocatable object a call site is a `call` or `branch` relocation to the
@@ -291,8 +291,11 @@ relocations of read-only data this needs, the recognizer's indexes and the
 found entries are held in admitted working memory, and every record the
 recognizer visits is charged to the work budget; a return
 (`jalr zero, 0(ra)`) is never a candidate. A dispatch without a bound, with any entry unrelocated or leaving the
-function stays an indirect gap, and executable images, which keep no
-relocations, are not resolved. `function-records` lists each followed table
+function stays an indirect gap. A linked image's dispatch is not resolved
+either, even when the link kept its relocations (`--emit-relocs`): there the
+table address is an image constant rather than a symbol, and a compiler table
+without a bounds check, such as the dispatch of a Rust `async` state machine,
+has no stated entry count. `function-records` lists each followed table
 as `jump_tables` (`{site, first_case, entries}`, entry `i` being case
 `first_case + i`, where `first_case` undoes GCC's subtraction of the smallest
 case from the switch value, seen through an addition of a constant on either

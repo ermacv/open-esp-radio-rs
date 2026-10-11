@@ -1,3 +1,5 @@
+extern crate std;
+
 use super::*;
 use oer_time::{Duration, Instant, RadioDuration};
 
@@ -261,5 +263,159 @@ fn a_radio_span_converts_only_through_a_relation() {
             .project_span(RadioDuration::from_micros(1))
             .map(|projected| projected.uncertainty),
         Ok(Duration::from_micros(1))
+    );
+}
+
+/// A backend in one cell, whose owner lends a phase of an event consumer
+/// and two interface clients.
+struct Model {
+    /// Admitted work by identity, with the interface that admitted it.
+    running: core::cell::RefCell<std::vec::Vec<(Id, u8)>>,
+    events: core::cell::RefCell<std::collections::VecDeque<u32>>,
+}
+
+struct Owner<'m>(&'m Model);
+struct Events<'m>(&'m Model);
+struct Client<'m> {
+    model: &'m Model,
+    interface: u8,
+}
+struct Phase<'m>(&'m Model);
+
+impl Client<'_> {
+    fn admit(&self, id: Id) {
+        self.model.running.borrow_mut().push((id, self.interface));
+    }
+}
+
+fn ready<T>(value: T) -> core::future::Ready<T> {
+    core::future::ready(value)
+}
+
+fn end(model: &Model, id: Id, interface: Option<u8>) -> Result<(), CancelError> {
+    let mut running = model.running.borrow_mut();
+    let index = running
+        .iter()
+        .position(|(running, by)| *running == id && interface.is_none_or(|own| own == *by))
+        .ok_or(CancelError::NotRunning)?;
+    running.remove(index);
+    model.events.borrow_mut().push_back(id.0);
+    Ok(())
+}
+
+impl RadioPortOwner for Owner<'_> {
+    type Event = u32;
+    type Id = Id;
+    type Domain = Port;
+    type Fault = ();
+    type Split<'a>
+        = Phase<'a>
+    where
+        Self: 'a;
+
+    fn next_event(&mut self) -> impl Future<Output = PortResult<u32, EventsLost, ()>> + '_ {
+        ready(match self.0.events.borrow_mut().pop_front() {
+            Some(event) => Ok(Ok(event)),
+            None => Ok(Err(EventsLost)),
+        })
+    }
+
+    fn now(&self) -> impl Future<Output = PortResult<RadioInstant<Port>, ClockError, ()>> + '_ {
+        ready(Ok(Err(ClockError::Unavailable)))
+    }
+
+    fn cancel(&mut self, id: Id) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
+        ready(Ok(end(self.0, id, None)))
+    }
+
+    fn lifecycle(
+        &mut self,
+        _: LifecycleCommand,
+    ) -> impl Future<Output = PortResult<(), LifecycleError, ()>> + '_ {
+        ready(Ok(Ok(())))
+    }
+
+    fn split(&mut self) -> Phase<'_> {
+        Phase(self.0)
+    }
+}
+
+impl<'m> RadioPortSplit for Phase<'m> {
+    type Fault = ();
+    type Events = Events<'m>;
+    type Clients = [Client<'m>; 2];
+
+    fn into_parts(self) -> (Events<'m>, [Client<'m>; 2]) {
+        let client = |interface| Client {
+            model: self.0,
+            interface,
+        };
+        (Events(self.0), [client(0), client(1)])
+    }
+}
+
+impl RadioPortEvents for Events<'_> {
+    type Event = u32;
+    type Fault = ();
+
+    fn next_event(&mut self) -> impl Future<Output = PortResult<u32, EventsLost, ()>> + '_ {
+        ready(match self.0.events.borrow_mut().pop_front() {
+            Some(event) => Ok(Ok(event)),
+            None => Ok(Err(EventsLost)),
+        })
+    }
+}
+
+impl RadioPortClient for Client<'_> {
+    type Id = Id;
+    type Domain = Port;
+    type Fault = ();
+
+    fn now(&self) -> impl Future<Output = PortResult<RadioInstant<Port>, ClockError, ()>> + '_ {
+        ready(Ok(Err(ClockError::Unavailable)))
+    }
+
+    fn cancel(&self, id: Id) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
+        ready(Ok(end(self.model, id, Some(self.interface))))
+    }
+}
+
+/// The value of a future that is ready at its first poll.
+fn now_ready<F: Future>(future: F) -> F::Output {
+    let mut future = core::pin::pin!(future);
+    match future.as_mut().poll(&mut core::task::Context::from_waker(
+        core::task::Waker::noop(),
+    )) {
+        core::task::Poll::Ready(value) => value,
+        core::task::Poll::Pending => panic!("the model answers at once"),
+    }
+}
+
+#[test]
+fn a_phase_lends_clients_scoped_to_their_interface_and_its_leftovers_reach_the_owner() {
+    let model = Model {
+        running: core::cell::RefCell::default(),
+        events: core::cell::RefCell::default(),
+    };
+    let mut owner = Owner(&model);
+    {
+        let (mut events, [station, access_point]) = owner.split().into_parts();
+        station.admit(Id(1));
+        access_point.admit(Id(2));
+        // A client ends only its own work.
+        assert_eq!(
+            now_ready(access_point.cancel(Id(1))),
+            Ok(Err(CancelError::NotRunning))
+        );
+        assert_eq!(now_ready(station.cancel(Id(1))), Ok(Ok(())));
+        assert_eq!(now_ready(events.next_event()), Ok(Ok(1)));
+    }
+    // The phase ended with the access point's work in flight: the owner
+    // ends it and takes its terminal, then runs an exclusive command.
+    assert_eq!(now_ready(owner.cancel(Id(2))), Ok(Ok(())));
+    assert_eq!(now_ready(owner.next_event()), Ok(Ok(2)));
+    assert_eq!(
+        now_ready(owner.lifecycle(LifecycleCommand::Disable)),
+        Ok(Ok(()))
     );
 }

@@ -7,7 +7,8 @@ description: Use when a task changes or investigates the IEEE 802.11 (Wi-Fi) blo
 
 Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-dependencies),
 [sans-IO and time](../../../docs/architecture.md#sans-io-protocols-executors-and-time),
-[radio ports](../../../docs/architecture.md#radio-ports).
+[radio ports](../../../docs/architecture.md#radio-ports),
+[ownership and refusals](../../../docs/architecture.md#ownership-and-refusals).
 
 ## Packages (path → role)
 

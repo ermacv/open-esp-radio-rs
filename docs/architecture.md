@@ -315,6 +315,43 @@ Rules:
 - Hardware counters and alarms belong to their driver and reach the layers
   above as read-only capabilities (`MacLocalTime`) or port operations.
 
+## Ownership and refusals
+
+Every module follows two rules when it designs an API. Owner decision:
+[#581](https://github.com/ermacv/open-esp-radio-rs/issues/581) (the
+single-ownership audit, 2026-10-11) and
+[#599](https://github.com/ermacv/open-esp-radio-rs/issues/599).
+
+**Single ownership.** A resource has one owner, a value that is neither
+`Clone` nor `Copy`. Exclusivity follows how long it lasts:
+
+- short exclusivity, within one call, is `&mut` on the owner, so the borrow
+  checker refuses an overlap before the code runs;
+- long exclusivity, which outlives the call (a transmit queue while its
+  attempt is on the air), is a lease value the holder returns;
+- temporary occupancy that ends by itself is awaited, not refused.
+
+Across executor tasks, which need `'static` futures and cannot share a
+borrow, the owner is an actor: one task holds the owner and its `&mut`, and
+the others send it requests and await its replies. A handle shared between
+tasks over an internal mutex is not ownership. A refusal such as `Busy`
+reaches a caller only where the caller can choose another action; a caller
+that could only retry should have waited or held the right instead.
+Synchronization a backend needs inside itself, for its interrupt entries
+and its runner, stays inside and never reaches a caller as a refusal.
+
+**Typestate or refusal.** Who controls a state decides its form:
+
+- a state the caller controls is typestate or a token: its own earlier
+  submission (a lease for the pending work), its own lifecycle command (a
+  `Disabled` proof that only the `Disable` terminal yields);
+- a state the world controls stays a typed refusal or outcome: the
+  hardware, a peer, the RF arbiter (a coexistence rejection is an outcome
+  of the work, not a caller's error).
+
+A radio port applies both through its owner and client handles
+([Radio ports](#radio-ports)).
+
 ## Package names
 
 Every package is named `oer-` followed by lowercase tokens in this order: an
@@ -375,6 +412,17 @@ protocol:
 | Capabilities | What the backend supports and what it performs autonomously, read before submission |
 | Lifecycle | Enable, disable, quiesce and cancel of submitted work, each with a terminal event; `Disable` ends the work in flight first |
 | Clock | The backend's radio time on the shared time contract, with a stated resolution and the relation of its epoch to monotonic time (`ClockInfo`); asynchronous under the same conditions as submission |
+
+**Authority.** An installed port has one owner
+(`oer_radio_port::RadioPortOwner`), which takes the lifecycle and each
+protocol's radio-wide settings on `&mut`, and lends the port out for one
+running phase: `split` returns the phase's one event consumer
+(`RadioPortEvents`) and the protocol's client handles, each scoped to its
+interface (`RadioPortClient`). While they live, no owner call compiles, so
+an exclusive operation never meets a client's work and no backend refuses
+one as busy ([Ownership and refusals](#ownership-and-refusals)). The base
+`RadioPort` and the protocol ports move onto this shape in
+[#581](https://github.com/ermacv/open-esp-radio-rs/issues/581).
 
 **Correlation identities.** Each port keeps its own 32-bit identity type
 (`TxId`, `RequestId`, `EventId`), so a completion of one port cannot be

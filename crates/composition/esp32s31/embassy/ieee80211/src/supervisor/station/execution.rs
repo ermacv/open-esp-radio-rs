@@ -197,6 +197,11 @@ pub(super) async fn run(
     Result<DatapathRunnerExit<ConnectedDisconnectReason>, ConnectedDatapathError>,
     Option<StationCommand>,
 ) {
+    // This arm only stops racing once power save fails; it ends no port.
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a select arm that stays out of the race, not a port body"
+    )]
     let power = async {
         let _failure = power.await;
         core::future::pending::<Infallible>().await

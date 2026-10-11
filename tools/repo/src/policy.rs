@@ -36,13 +36,13 @@ pub const TIME_DRIVERS: &[&str] = &["embassy-time", "oer-time-embassy"];
 /// The third-party format libraries each with the packages that may depend
 /// on it through a normal or build dependency: one owner reads the format
 /// and exposes only its own types, so no other package can name, and leak,
-/// the library's types. `blobray-artifacts` and `oer-image-encode` still read
-/// ELF through `object` until #334 moves them onto `oer-elf`.
+/// the library's types. `object` has a second owner, `blobray-artifacts`:
+/// Blobray's metered, streaming reading of archive members and sections
+/// under its work budget, the artifact identities it keeps for evidence and
+/// its writing of ELF objects are not the whole-file view `oer-elf` gives
+/// (<https://github.com/ermacv/open-esp-radio-rs/issues/334#issuecomment-6113736705>).
 pub const EXTERNAL_OWNERS: &[(&str, &[&str])] = &[
-    (
-        "object",
-        &["oer-elf", "blobray-artifacts", "oer-image-encode"],
-    ),
+    ("object", &["oer-elf", "blobray-artifacts"]),
     ("gimli", &["oer-elf"]),
     ("addr2line", &["oer-elf"]),
     ("rv-asm", &["oer-riscv-decode"]),
@@ -695,10 +695,14 @@ mod tests {
         assert_eq!(
             depends("oer-riscv-program", "dependencies"),
             [
-                "s/Cargo.toml: oer-riscv-program depends on object, which only oer-elf, blobray-artifacts, oer-image-encode may depend on (oer_repo::policy::EXTERNAL_OWNERS); use its owner's interface"
+                "s/Cargo.toml: oer-riscv-program depends on object, which only oer-elf, blobray-artifacts may depend on (oer_repo::policy::EXTERNAL_OWNERS); use its owner's interface"
             ]
         );
         assert_eq!(depends("oer-riscv-program", "build-dependencies").len(), 1);
+        // Blobray's streaming reader owns it too; the image encoder reads
+        // ELF through oer-elf.
+        assert!(depends("blobray-artifacts", "dependencies").is_empty());
+        assert_eq!(depends("oer-image-encode", "dependencies").len(), 1);
         // Tests may write fixtures with it.
         assert!(depends("oer-riscv-program", "dev-dependencies").is_empty());
     }

@@ -51,7 +51,10 @@ A third-party library that reads a format has one owner, and no other
 package may take it as a normal or build dependency
 (`oer_repo::policy::EXTERNAL_OWNERS`, enforced by the same policy): `object`,
 `gimli` and `addr2line` belong to `oer-elf`, `rv-asm` to `oer-riscv-decode`.
-`blobray-artifacts` and `oer-image-encode` also still take `object`, until
-they read ELF through `oer-elf` (#334).
+`object` has one more owner, `blobray-artifacts`, Blobray's streaming
+reader: it reads archive members and sections metered under Blobray's work
+budget, keeps the artifact identities its evidence names, and writes ELF
+objects, none of which the whole-file view of `oer-elf` does
+([decision](https://github.com/ermacv/open-esp-radio-rs/issues/334#issuecomment-6113736705)).
 An owner exposes only its own types, so the library's types cannot leak
 through another package's interface. Tests may use them for fixtures.

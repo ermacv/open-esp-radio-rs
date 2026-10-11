@@ -96,8 +96,8 @@ packages of its own host layer and the layers below it
 | `execution` | HIL execution: protocol, agent, DUT link, scenarios, workloads, families, run bundles, observer identity, the HIL lab | `oer-hil-link`, `oer-hil-workload`, `oer-hil-family-*`, `oer-hil-run-bundle` |
 | `verification` | Vendor evidence and provenance, the register model, vendor scenarios and stands | `oer-vendor-evidence`, `oer-vendor-provenance`, `oer-register-model` |
 | `stand` | The stand file, boards, the arbiter, owners, journal, hubs and power, stand hosts | `oer-stand-file`, `oer-stand-board`, `oer-stand-arbiter`, `oer-hil-flash` |
-| `build` | Images and binary analysis | `oer-image`, `oer-elf`, `oer-riscv-*`, Blobray's libraries |
-| `foundation` | Processes, files, host tools, chip profiles, the repository model, vendor pins, the devices layer and the data formats | `oer-process`, `oer-durable`, `oer-toolchain`, `oer-repo`, `oer-vendor-artifacts`, `oer-device-*`, `oer-devices`, `oer-image-bundle`, `oer-hil-run-bundle-format` |
+| `build` | Images and binary analysis | `oer-image`, `oer-riscv-*`, Blobray's libraries |
+| `foundation` | Processes, files, host tools, chip profiles, the repository model, vendor pins, the devices layer and the data formats | `oer-process`, `oer-durable`, `oer-toolchain`, `oer-repo`, `oer-vendor-artifacts`, `oer-device-*`, `oer-devices`, `oer-image-bundle`, `oer-hil-run-bundle-format`, `oer-elf` (the ELF format, read by the image encoder too) |
 
 So the stand and the build layer never reach HIL execution, verification
 never reaches HIL execution or orchestration, and the foundation depends

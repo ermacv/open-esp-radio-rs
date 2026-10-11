@@ -126,3 +126,38 @@ fn only_a_binary_partition_table_is_one() {
     assert!(require_partition_table(b"application").is_err());
     assert!(require_partition_table(&rom_image()).is_err());
 }
+
+/// An RV32 object defining a data symbol `name`, and a section `section`.
+fn elf_with(name: &str, section: &str) -> Vec<u8> {
+    use object::write::{Object, Symbol, SymbolSection};
+    use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags};
+    use object::{SymbolKind, SymbolScope};
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let id = object.add_section(
+        Vec::new(),
+        section.as_bytes().to_vec(),
+        SectionKind::ReadOnlyData,
+    );
+    object.append_section_data(id, &[0; 4], 4);
+    object.add_symbol(Symbol {
+        name: name.as_bytes().to_vec(),
+        value: 0,
+        size: 4,
+        kind: SymbolKind::Data,
+        scope: SymbolScope::Linkage,
+        weak: false,
+        section: SymbolSection::Section(id),
+        flags: SymbolFlags::None,
+    });
+    object.write().unwrap()
+}
+
+#[test]
+fn the_app_descriptor_is_found_by_its_symbol_or_section() {
+    assert!(require_app_descriptor(&elf_with("esp_app_desc", ".data")).is_ok());
+    assert!(require_app_descriptor(&elf_with("other", ".flash.appdesc")).is_ok());
+    assert!(require_app_descriptor(&elf_with("other", ".rodata_desc")).is_ok());
+    let error = require_app_descriptor(&elf_with("other", ".rodata")).unwrap_err();
+    assert!(error.to_string().contains("esp_app_desc"), "{error}");
+    assert!(require_app_descriptor(b"not an ELF").is_err());
+}

@@ -896,8 +896,8 @@ version = "0.1.0"
 dependencies = [
  "esp-idf-part",
  "espflash",
- "object",
  "oer-chip-profile",
+ "oer-elf",
  "sha2 0.10.9",
 ]
 

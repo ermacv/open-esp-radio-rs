@@ -86,6 +86,23 @@ pub fn demangle(name: &str) -> String {
     addr2line::demangle_auto(name.into(), None).into_owned()
 }
 
+/// One symbol-table entry whose name is kept as raw bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RawSymbol<'data> {
+    /// Index in its symbol table.
+    pub index: usize,
+    /// The name's bytes; `None` when the name cannot be read.
+    pub name: Option<&'data [u8]>,
+    pub address: u64,
+    pub size: u64,
+    pub kind: SymbolKind,
+    /// Defined in this file: neither undefined nor common.
+    pub defined: bool,
+    pub global: bool,
+    /// Index of the section that defines it.
+    pub section: Option<usize>,
+}
+
 /// One section header.
 #[derive(Clone, Debug)]
 pub struct Section<'data> {
@@ -474,16 +491,26 @@ impl<'data> Elf<'data> {
             .map(|section| section.index)
     }
 
-    /// Every symbol of the static symbol table, in table order, failing on
-    /// a symbol whose name cannot be read instead of skipping it.
-    pub fn checked_symbols(&self) -> impl Iterator<Item = Result<Symbol<'data>>> + '_ {
-        self.file.symbols().map(checked_symbol)
+    /// Every entry of the static and then the dynamic symbol table, in table
+    /// order, with its name as raw bytes: `None` when the name cannot be
+    /// read. Unlike [`Elf::symbols`], no entry is skipped, so a reader can
+    /// select entries by section first and refuse an unreadable name only
+    /// where it matters.
+    pub fn raw_symbols(&self) -> impl Iterator<Item = RawSymbol<'data>> + '_ {
+        self.file
+            .symbols()
+            .chain(self.file.dynamic_symbols())
+            .map(raw_symbol)
     }
 
-    /// Every symbol of the dynamic symbol table, in table order, failing on
-    /// a symbol whose name cannot be read instead of skipping it.
-    pub fn checked_dynamic_symbols(&self) -> impl Iterator<Item = Result<Symbol<'data>>> + '_ {
-        self.file.dynamic_symbols().map(checked_symbol)
+    /// The entry at `index` of the static symbol table, its name as raw
+    /// bytes and never required to be readable.
+    pub fn raw_symbol_at(&self, index: usize) -> Result<RawSymbol<'data>> {
+        Ok(raw_symbol(
+            self.file
+                .symbol_by_index(object::SymbolIndex(index))
+                .map_err(parse_error)?,
+        ))
     }
 
     /// Every symbol of the dynamic symbol table, in table order. Symbols
@@ -707,9 +734,28 @@ impl<'data> Elf<'data> {
     }
 }
 
-fn checked_symbol<'data>(entry: object::Symbol<'data, '_>) -> Result<Symbol<'data>> {
-    let index = entry.index().0;
-    symbol(entry).ok_or_else(|| Error::new(format!("symbol {index} has no readable name")))
+fn raw_symbol<'data>(entry: object::Symbol<'data, '_>) -> RawSymbol<'data> {
+    RawSymbol {
+        index: entry.index().0,
+        name: entry.name_bytes().ok(),
+        address: entry.address(),
+        size: entry.size(),
+        kind: symbol_kind(entry.kind()),
+        defined: !entry.is_undefined() && !entry.is_common(),
+        global: entry.is_global(),
+        section: entry.section_index().map(|index| index.0),
+    }
+}
+
+fn symbol_kind(kind: object::SymbolKind) -> SymbolKind {
+    match kind {
+        object::SymbolKind::Text => SymbolKind::Text,
+        object::SymbolKind::Data => SymbolKind::Data,
+        object::SymbolKind::Section => SymbolKind::Section,
+        object::SymbolKind::File => SymbolKind::File,
+        object::SymbolKind::Tls => SymbolKind::Tls,
+        _ => SymbolKind::Unknown,
+    }
 }
 
 fn symbol<'data>(entry: object::Symbol<'data, '_>) -> Option<Symbol<'data>> {
@@ -719,14 +765,7 @@ fn symbol<'data>(entry: object::Symbol<'data, '_>) -> Option<Symbol<'data>> {
         name,
         address: entry.address(),
         size: entry.size(),
-        kind: match entry.kind() {
-            object::SymbolKind::Text => SymbolKind::Text,
-            object::SymbolKind::Data => SymbolKind::Data,
-            object::SymbolKind::Section => SymbolKind::Section,
-            object::SymbolKind::File => SymbolKind::File,
-            object::SymbolKind::Tls => SymbolKind::Tls,
-            _ => SymbolKind::Unknown,
-        },
+        kind: symbol_kind(entry.kind()),
         defined: !entry.is_undefined() && !entry.is_common(),
         global: entry.is_global(),
         section: entry.section_index().map(|index| index.0),

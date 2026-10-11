@@ -15,9 +15,9 @@ through; nothing else parses `llvm-nm` or `llvm-objdump` output or walks
   allocation, write, execute, TLS and `NOBITS` flags, header type
   (`SectionKind`), file offset and bytes (a section whose range leaves the
   file reads as empty: check `file_offset + size` before trusting it);
-  `symbol_table_section()` and `dynamic_symbols()`. `checked_symbols()` and
-  `checked_dynamic_symbols()` fail on a symbol whose name cannot be read,
-  where `symbols()` skips it.
+  `symbol_table_section()` and `dynamic_symbols()`. `raw_symbols()` lists
+  every entry of both tables with its name as raw bytes, `None` when it
+  cannot be read, where `symbols()` skips such an entry.
 - Program headers: `program_headers()`, each with its type
   (`ProgramHeaderKind`: load, dynamic, interpreter, TLS), addresses, file and
   memory sizes and permissions; `header_flags()` is the raw `e_flags`, which

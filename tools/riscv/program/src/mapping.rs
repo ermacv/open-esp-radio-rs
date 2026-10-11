@@ -30,6 +30,13 @@ fn kind(name: &[u8]) -> Result<Option<bool>> {
         Ok(None)
     }
 }
+/// The name of a symbol of the section being mapped: one that cannot be read
+/// is an invalid mapping symbol. Other sections' symbols are never read.
+fn name<'d>(symbol: &oer_elf::RawSymbol<'d>) -> Result<&'d [u8]> {
+    symbol
+        .name
+        .ok_or_else(|| invalid("invalid mapping symbol name"))
+}
 pub fn data_ranges<'a>(
     file: &oer_elf::Elf<'_>,
     section_index: usize,
@@ -44,15 +51,9 @@ pub fn data_ranges<'a>(
         .checked_add(section.size)
         .ok_or_else(|| invalid("mapping section extent overflow"))?;
     let mut count = 0usize;
-    let symbols = || {
-        file.checked_symbols()
-            .chain(file.checked_dynamic_symbols())
-            .map(|symbol| symbol.map_err(|_| invalid("invalid mapping symbol name")))
-    };
-    for symbol in symbols() {
+    for symbol in file.raw_symbols() {
         control.checkpoint(1)?;
-        let symbol = symbol?;
-        if symbol.section == Some(section_index) && kind(symbol.name.as_bytes())?.is_some() {
+        if symbol.section == Some(section_index) && kind(name(&symbol)?)?.is_some() {
             count = count
                 .checked_add(1)
                 .ok_or_else(|| invalid("mapping count overflow"))?;
@@ -72,13 +73,12 @@ pub fn data_ranges<'a>(
         .map_err(|_| allocation())?;
     let mut ranges = Vec::new();
     ranges.try_reserve_exact(count).map_err(|_| allocation())?;
-    for symbol in symbols() {
+    for symbol in file.raw_symbols() {
         control.checkpoint(1)?;
-        let symbol = symbol?;
         if symbol.section != Some(section_index) {
             continue;
         }
-        let Some(is_data) = kind(symbol.name.as_bytes())? else {
+        let Some(is_data) = kind(name(&symbol)?)? else {
             continue;
         };
         if symbol.global
@@ -171,9 +171,8 @@ mod tests {
         let elf = oer_elf::Elf::parse(&bytes).unwrap();
         let table = elf.section(elf.symbol_table_section().unwrap()).unwrap();
         let entry = elf
-            .checked_symbols()
-            .map(|s| s.unwrap())
-            .find(|s| s.name == "$d")
+            .raw_symbols()
+            .find(|s| s.name == Some(b"$d".as_slice()))
             .unwrap()
             .index;
         let at = (table.file_offset + 16 * entry as u64) as usize;
@@ -187,5 +186,45 @@ mod tests {
         .err()
         .unwrap();
         assert_eq!(error.message, "invalid mapping symbol name");
+    }
+
+    #[test]
+    fn an_unreadable_name_in_another_section_is_never_read() {
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+        let text = object.section_id(StandardSection::Text);
+        object.append_section_data(text, &[0; 8], 4);
+        let data = object.section_id(StandardSection::Data);
+        object.append_section_data(data, &[0; 4], 4);
+        object.add_symbol(Symbol {
+            name: b"other".to_vec(),
+            value: 0,
+            size: 4,
+            kind: SymbolKind::Data,
+            scope: SymbolScope::Compilation,
+            weak: false,
+            section: SymbolSection::Section(data),
+            flags: SymbolFlags::None,
+        });
+        let mut bytes = object.write().unwrap();
+        let elf = oer_elf::Elf::parse(&bytes).unwrap();
+        let text = elf.section_by_name(".text").unwrap().index;
+        let table = elf.section(elf.symbol_table_section().unwrap()).unwrap();
+        let entry = elf
+            .raw_symbols()
+            .find(|s| s.name == Some(b"other".as_slice()))
+            .unwrap()
+            .index;
+        let at = (table.file_offset + 16 * entry as u64) as usize;
+        bytes[at..at + 4].copy_from_slice(&0x00ff_ffffu32.to_le_bytes());
+        let ranges = data_ranges(
+            &oer_elf::Elf::parse(&bytes).unwrap(),
+            text,
+            &memory,
+            &mut || Ok(()),
+        )
+        .unwrap()
+        .ranges;
+        assert!(ranges.is_empty());
     }
 }

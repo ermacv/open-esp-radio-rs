@@ -217,7 +217,12 @@ connection) or `unobserved` (the DUT's own observation failed). A failed
 observation reports its own cause together with the attempt's host-side
 error, and exhausted attempts report the last host-side error. Each repetition also publishes the
 measurements `connection-attempts` and `connections-not-established` (lower is
-better), which `cargo hil runs history` and `runs compare` follow. The bound of
+better), which `cargo hil runs history` and `runs compare` follow. The
+plaintext GATT workload also publishes `connections-lost-before-att` (lower is
+better): a confirmed connection the DUT reports closed by supervision timeout
+(0x08) before any ATT exchange on it, listed as `lost_before_att` in the
+observation (#364). The repetition still fails; on the trace image the failed
+cycle's trace lands in the post-mortem. The bound of
 three attempts guards against the environment; it is no acceptance threshold.
 Whether a loss rate is acceptable is qualification's decision: the catalog
 keeps `secure-gatt-connection-establishment-loss-bound-unqualified` open until

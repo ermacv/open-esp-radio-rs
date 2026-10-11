@@ -50,6 +50,7 @@ fn every_controller_event_decodes_to_what_it_encoded() {
     for verdict in every(IndicationVerdict::from_raw) {
         round_trip(ConnectionIndication { verdict });
     }
+    assert_eq!(every(IndicationVerdict::from_raw).count(), 7);
     round_trip(PeripheralOpened {
         first_anchor_low: u32::MAX,
         interval_units: u16::MAX,

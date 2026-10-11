@@ -3,6 +3,7 @@ use super::establish::{Attempt, CONFIRMATION, establish};
 use crate::{Result, fixture::bluetooth::att, fixture::bluetooth::model::PeerAddress};
 use oer_hil_link::SerialCapture;
 use oer_hil_protocol::bluetooth::BluetoothGattEvidence as Evidence;
+use oer_hil_run_bundle_format::run::{Better, Measurement, MeasurementUnit};
 use oer_hil_workload::context::Context;
 use std::{
     path::Path,
@@ -30,12 +31,14 @@ pub fn run(output: &Path, context: &Context<'_>, trace: bool) -> Result<()> {
         let mut exchanges = Vec::new();
         let mut attempts = Vec::new();
         let mut cycles = Vec::new();
+        let mut early_losses = Vec::new();
         let probe = exercise(
             capture,
             &owner,
             &mut samples,
             &mut exchanges,
             &mut attempts,
+            &mut early_losses,
             trace.then_some(&mut cycles),
         );
         if trace {
@@ -46,14 +49,21 @@ pub fn run(output: &Path, context: &Context<'_>, trace: bool) -> Result<()> {
             );
         }
         context.measurements.record(super::establish::measurements(&attempts));
+        context.measurements.record([Measurement::observed(
+            "connections-lost-before-att",
+            early_losses.len() as u64,
+            MeasurementUnit::Count,
+        )
+        .better(Better::Lower)]);
         let cleanup = oer_process::cleanup(|| -> Result<()> {
             owner.restore()?;
             wait(capture, &mut samples, |e| !e.connected)?;
             Ok(())
         });
         context.results.observe("trouble-gatt", &serde_json::json!({
-            "schema": 2, "security": "plaintext", "connections": 3,
+            "schema": 3, "security": "plaintext", "connections": 3,
             "samples": samples, "exchanges": exchanges, "connection_attempts": attempts,
+            "lost_before_att": early_losses,
             "passed": probe.is_ok() && cleanup.is_ok(),
             "error": probe.as_ref().err().map(ToString::to_string),
             "restored": cleanup.is_ok(), "cleanup_error": cleanup.as_ref().err().map(ToString::to_string),
@@ -175,6 +185,7 @@ fn exercise(
     samples: &mut Vec<Evidence>,
     exchanges: &mut Vec<Exchange>,
     attempts: &mut Vec<Attempt>,
+    early_losses: &mut Vec<u32>,
     mut traced: Option<&mut Vec<CycleSteps>>,
 ) -> Result<()> {
     if !capture
@@ -198,51 +209,22 @@ fn exercise(
         if traced.is_some() {
             start_trace(capture)?;
         }
-        let peer = establish(
-            "connect",
+        let cycle = Cycle {
             connection,
-            attempts,
-            samples,
-            |_| owner.connect(PeerAddress(address)),
-            |samples| holds_within(capture, samples, CONFIRMATION, |e| confirms(e, connection)),
-            // Dropping the socket closes the host's side.
-            |_, peer| {
-                drop(peer);
-                Ok(())
-            },
-            |samples| Ok(unseen(&sample(capture, samples)?, connection)),
-        )?;
-        let live = wait(capture, samples, |e| {
-            e.connected && e.connections == connection
-        })?;
-        if live.address != Some(address) || live.disconnections != connection - 1 {
-            return Err("GATT connection changed its application epoch".into());
-        }
-        let handle = discover(&peer, connection, exchanges)?;
-        let [low, high] = handle.to_le_bytes();
-        if exchange(&peer, connection, &[0x0a, low, high], exchanges)? != [0x0b, previous] {
-            return Err("GATT value did not survive reconnect".into());
-        }
-        if exchange(&peer, connection, &[0x12, low, high, written], exchanges)? != [0x13] {
-            return Err("ATT write was not acknowledged".into());
-        }
-        if exchange(&peer, connection, &[0x0a, low, high], exchanges)? != [0x0b, written] {
-            return Err("ATT read did not return the written value".into());
-        }
-        let progressed = wait(capture, samples, |e| {
-            e.writes >= connection && e.reads >= 2 * connection
-        })?;
-        validate_progress(&progressed, connection, written, address)?;
-        drop(peer);
-        let idle = wait(capture, samples, |e| {
-            !e.connected && e.advertising && e.disconnections == connection
-        })?;
-        if idle.last_disconnect_reason != Some(0x13)
-            || idle.connections != connection
-            || idle.advertising_starts != connection + 1
-            || idle.address != Some(address)
-        {
-            return Err(format!("expected graceful same-epoch re-advertising: {idle:?}").into());
+            address,
+            previous,
+            written,
+        };
+        if let Err(error) = cycle.run(capture, owner, samples, exchanges, attempts, early_losses) {
+            if traced.is_some() {
+                // The post-mortem drains the failed cycle's trace; recording
+                // stops so that advertising does not overwrite it.
+                let _ = control(
+                    capture,
+                    oer_hil_protocol::telemetry::TraceControl::SetMask { mask: 0 },
+                );
+            }
+            return Err(error);
         }
         if let Some(cycles) = traced.as_deref_mut() {
             let steps = drain_cycle(capture)?;
@@ -316,6 +298,140 @@ fn characteristic(response: &[u8], service: (u16, u16)) -> Result<u16> {
     Ok(value)
 }
 
+/// One connection of the run: open it, read the value the previous one
+/// wrote, write its own, read it back and close it gracefully.
+struct Cycle {
+    connection: u32,
+    address: [u8; 6],
+    previous: u8,
+    written: u8,
+}
+
+impl Cycle {
+    fn run(
+        &self,
+        capture: &SerialCapture,
+        owner: &att::Owner,
+        samples: &mut Vec<Evidence>,
+        exchanges: &mut Vec<Exchange>,
+        attempts: &mut Vec<Attempt>,
+        early_losses: &mut Vec<u32>,
+    ) -> Result<()> {
+        let Self {
+            connection,
+            address,
+            ..
+        } = *self;
+        let peer = establish(
+            "connect",
+            connection,
+            attempts,
+            samples,
+            |_| owner.connect(PeerAddress(address)),
+            |samples| holds_within(capture, samples, CONFIRMATION, |e| confirms(e, connection)),
+            // Dropping the socket closes the host's side.
+            |_, peer| {
+                drop(peer);
+                Ok(())
+            },
+            |samples| Ok(unseen(&sample(capture, samples)?, connection)),
+        )?;
+        let served = serve(capture, samples, exchanges, peer, self);
+        served.map_err(
+            |error| match lost_early(capture, samples, exchanges, connection) {
+                Ok(true) => {
+                    early_losses.push(connection);
+                    format!(
+                        "connection {connection} was lost by supervision timeout (0x08) before \
+                         its first ATT exchange: {error}"
+                    )
+                    .into()
+                }
+                Ok(false) => error,
+                Err(observation) => {
+                    format!("{error} (then observing the DUT failed: {observation})").into()
+                }
+            },
+        )
+    }
+}
+
+/// Serve one confirmed connection until its graceful close.
+fn serve(
+    capture: &SerialCapture,
+    samples: &mut Vec<Evidence>,
+    exchanges: &mut Vec<Exchange>,
+    peer: att::Att,
+    cycle: &Cycle,
+) -> Result<()> {
+    let Cycle {
+        connection,
+        address,
+        previous,
+        written,
+    } = *cycle;
+    let live = wait(capture, samples, |e| {
+        e.connected && e.connections == connection
+    })?;
+    if live.address != Some(address) || live.disconnections != connection - 1 {
+        return Err("GATT connection changed its application epoch".into());
+    }
+    let handle = discover(&peer, connection, exchanges)?;
+    let [low, high] = handle.to_le_bytes();
+    if exchange(&peer, connection, &[0x0a, low, high], exchanges)? != [0x0b, previous] {
+        return Err("GATT value did not survive reconnect".into());
+    }
+    if exchange(&peer, connection, &[0x12, low, high, written], exchanges)? != [0x13] {
+        return Err("ATT write was not acknowledged".into());
+    }
+    if exchange(&peer, connection, &[0x0a, low, high], exchanges)? != [0x0b, written] {
+        return Err("ATT read did not return the written value".into());
+    }
+    let progressed = wait(capture, samples, |e| {
+        e.writes >= connection && e.reads >= 2 * connection
+    })?;
+    validate_progress(&progressed, connection, written, address)?;
+    drop(peer);
+    let idle = wait(capture, samples, |e| {
+        !e.connected && e.advertising && e.disconnections == connection
+    })?;
+    if idle.last_disconnect_reason != Some(0x13)
+        || idle.connections != connection
+        || idle.advertising_starts != connection + 1
+        || idle.address != Some(address)
+    {
+        return Err(format!("expected graceful same-epoch re-advertising: {idle:?}").into());
+    }
+    Ok(())
+}
+
+/// Whether the failed `connection` ended as #364 saw it: the DUT reports it
+/// closed by supervision timeout before any ATT exchange on it. The DUT may
+/// report the closing after the host's failure, so it gets [`CONFIRMATION`].
+fn lost_early(
+    capture: &SerialCapture,
+    samples: &mut Vec<Evidence>,
+    exchanges: &[Exchange],
+    connection: u32,
+) -> Result<bool> {
+    holds_within(capture, samples, CONFIRMATION, |e| {
+        e.disconnections >= connection
+    })?;
+    Ok(samples
+        .last()
+        .is_some_and(|state| lost_before_att(state, connection, exchanges)))
+}
+
+/// Supervision timeout (0x08) ended `connection` before its first ATT
+/// exchange.
+fn lost_before_att(state: &Evidence, connection: u32, exchanges: &[Exchange]) -> bool {
+    state.disconnections == connection
+        && state.last_disconnect_reason == Some(0x08)
+        && !exchanges
+            .iter()
+            .any(|exchange| exchange.connection == connection)
+}
+
 /// The steps one connection cycle left in the drained trace, oldest first.
 #[derive(Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub(super) struct CycleSteps {
@@ -347,15 +463,18 @@ impl CycleSteps {
 
 /// Record a cycle's steps with the radio role's admissions and event ends:
 /// each connection event adds two records, so a cycle fits the trace,
-/// where the per-step connection-event and per-PDU channels would wrap it.
+/// where the per-step connection-event channel would wrap it. The role's
+/// advertising-channel PDUs show whether a lost indication reached the
+/// radio; a connection adds none.
 fn start_trace(capture: &SerialCapture) -> Result<()> {
     use oer_bluetooth_trace::{
-        ConnectionIndication, Lifecycle, PeripheralClosed, PeripheralOpened, RoleEventEnd,
+        ConnectionIndication, Lifecycle, PeripheralClosed, PeripheralOpened, RoleEventEnd, RolePdu,
         RoleRequest,
     };
     use oer_trace::Event as _;
     let mask = RoleRequest::CHANNEL.mask()
         | RoleEventEnd::CHANNEL.mask()
+        | RolePdu::CHANNEL.mask()
         | ConnectionIndication::CHANNEL.mask()
         | PeripheralOpened::CHANNEL.mask()
         | PeripheralClosed::CHANNEL.mask()
@@ -457,6 +576,38 @@ pub(super) fn cycle_steps(entries: &[oer_hil_protocol::telemetry::TraceEntry]) -
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_a_supervision_timeout_before_any_exchange_is_an_early_loss() {
+        let state = |disconnections, reason| Evidence {
+            disconnections,
+            last_disconnect_reason: reason,
+            ..Evidence::default()
+        };
+        let exchanged = [super::Exchange {
+            connection: 2,
+            request: vec![0x02, 23, 0],
+            response: vec![0x03, 23, 0],
+        }];
+        assert!(super::lost_before_att(&state(1, Some(0x08)), 1, &exchanged));
+        // Another reason, an earlier connection's closing, or an exchange
+        // on the connection is something else.
+        assert!(!super::lost_before_att(
+            &state(1, Some(0x13)),
+            1,
+            &exchanged
+        ));
+        assert!(!super::lost_before_att(
+            &state(1, Some(0x08)),
+            2,
+            &exchanged
+        ));
+        assert!(!super::lost_before_att(
+            &state(2, Some(0x08)),
+            2,
+            &exchanged
+        ));
+    }
+
     #[test]
     fn a_cycle_needs_every_step_in_order() {
         use oer_bluetooth_trace::{

@@ -295,12 +295,14 @@ raw_enum!(
         NotRunning = 1,
         /// The hardware captured no packet start.
         NoCapture = 2,
-        /// It is no `CONNECT_IND`, or not a valid one.
+        /// A `CONNECT_IND` that fails validation.
         Malformed = 3,
         /// The set admits no connection from this initiator.
         NotAdmitted = 4,
         /// It names another advertiser.
         NotAddressed = 5,
+        /// It is another PDU type, such as a `SCAN_REQ`.
+        OtherPdu = 6,
     }
 );
 

@@ -552,6 +552,54 @@ fn a_connection_is_traced_from_its_indication_to_its_close() {
 }
 
 #[test]
+fn another_pdu_in_the_event_is_traced_apart_from_a_malformed_indication() {
+    use oer_bluetooth_trace::{ConnectionIndication, IndicationVerdict};
+    let mut harness = Harness::configured();
+    let mut parameters = super::nonconnectable_parameters();
+    parameters[4] = 0x00; // ADV_IND
+    assert_eq!(
+        harness.command(super::SET_ADV_PARAMS, &parameters),
+        Some(SUCCESS)
+    );
+    harness.send(SET_ADV_ENABLE, &[1]);
+    assert!(matches!(
+        harness.step().unwrap(),
+        Some(Request::ConfigureConnectable(_, _))
+    ));
+    assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
+        panic!("an advertising event");
+    };
+    // A SCAN_REQ, then a CONNECT_IND one byte short.
+    let mut scan_request = std::vec![0x03, 12];
+    scan_request.extend_from_slice(&connect_ind()[2..14]);
+    let mut truncated = connect_ind();
+    truncated[1] -= 1;
+    truncated.pop();
+    for pdu in [scan_request, truncated] {
+        harness.core.outcome(RadioOutcome::Received {
+            id: event.id,
+            pdu: ReceivedPdu {
+                pdu: &pdu,
+                rssi_dbm: -50,
+                captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
+            },
+        });
+    }
+    assert_eq!(
+        crate::trace::take::<ConnectionIndication>(),
+        [
+            ConnectionIndication {
+                verdict: IndicationVerdict::OtherPdu,
+            },
+            ConnectionIndication {
+                verdict: IndicationVerdict::Malformed,
+            },
+        ]
+    );
+}
+
+#[test]
 fn a_refused_opening_is_traced_closed_with_the_host_s_reason() {
     use oer_bluetooth_trace::{PeripheralClosed, PeripheralOpened};
     let mut harness = Harness::configured();

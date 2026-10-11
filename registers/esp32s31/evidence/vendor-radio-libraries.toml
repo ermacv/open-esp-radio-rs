@@ -510,7 +510,7 @@ description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf424830
 
 [[sources]]
 id = "BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"
-description = "espressif/esp-phy-lib commit b88e4b76e090ae59c51cb00b916d38def895b396, esp32s31/libphy.a, sha256 d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580; complete phy_init.o phy_xpd_rf_new body, size 0x62. The leaf disables AGC, clears MODEM_SYSCON_RADIO.WIFI_BB_CFG bits zero and one in one fresh-read RMW, delays one microsecond, writes 0x07 to PHY-I2C block 0x67 register two, clears PMU_RADIO.RF_PWC bits 31:16, clears PMU_RADIO.IMM_HP_CK_POWER_0 bits 31:28, and tail-calls phy_close_fe_bb_clk."
+description = "espressif/esp-phy-lib commit b88e4b76e090ae59c51cb00b916d38def895b396, esp32s31/libphy.a, sha256 d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580; complete phy_init.o phy_xpd_rf_new body, size 0x62. The leaf disables AGC, clears only bit one of MODEM_SYSCON_RADIO.WIFI_BB_CFG (andi -3) in one fresh-read RMW, delays one microsecond, writes 0x07 to PHY-I2C block 0x67 register two, clears PMU_RADIO.RF_PWC bits 31:16, clears only bit 28 of PMU_RADIO.IMM_HP_CK_POWER_0 (and 0xefffffff) in one fresh-read RMW, and tail-calls phy_close_fe_bb_clk. The pinned esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0 (libphy.a sha256 116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2) carries the identical body."
 
 [[sources]]
 id = "HIL_S31_SOFTWARE_CCM_OPCODE_ABORT"

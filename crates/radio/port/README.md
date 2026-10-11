@@ -29,4 +29,35 @@ event by its identity. Taking an event only dequeues it: timed work a
 backend performs in software runs in the backend's own runner future, which
 the composition polls for as long as the port exists.
 
+## Conformance suite
+
+The `conformance` module (the `test-support` feature) checks the shared
+rules on any backend. A backend's test wraps it in a `Harness`: the port, how
+to drive its futures beside its runner, and hooks that make its hardware or
+model admit work, finish it, settle its runner and produce data the protocol
+does not promise to deliver (naming the operation whose reserved terminal
+carried it, where one did); `classify` sorts its events into a work
+terminal, a lifecycle terminal and other events. `check_all` runs every
+rule on fresh harnesses:
+
+- every event produced before a loss comes before one `EventsLost`, an
+  event produced after it follows the marker, and a reserved terminal is
+  never lost;
+- a cancel of admitted work is followed by that work's own terminal exactly
+  once, and a later cancel is `NotRunning`;
+- `Disable` with work in flight ends the work first, then `Disabled`, and
+  nothing follows;
+- `Quiesce` with work in flight lets it end, then `Quiesced`, nothing
+  follows, and `Enable` admits work again;
+- a poisoned backend reports the events from before the fault, then
+  `Poisoned` at every event call and at once from every other call
+  (`check_all_poisoning`, for a backend that implements `PoisoningHarness`;
+  one that never poisons runs `check_all`);
+- the caller's identities avoid the backend's reserved range.
+
+A port's own rules (a refusal hands its arguments back) live beside the
+port's definition and use the same harness. Backends run the suite from
+their own tests; a test double that does not keep the port's contract (a
+scripted model) does not.
+
 The package has no state, never waits and depends only on `oer-time`.

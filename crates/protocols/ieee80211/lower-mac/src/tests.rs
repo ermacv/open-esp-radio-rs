@@ -1692,3 +1692,8 @@ fn tsf_generation(epoch: u32, jumps: u32) -> TsfGeneration {
     }
     source.current()
 }
+
+#[test]
+fn the_model_keeps_every_rule_of_the_port_conformance_suite() {
+    crate::conformance::check_all(crate::conformance::ModelHarness::new);
+}

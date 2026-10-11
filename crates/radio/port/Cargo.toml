@@ -8,6 +8,11 @@ repository.workspace = true
 description = "The base trait and vocabulary every radio port shares: refusals and poisoning, event loss, lifecycle, cancellation, correlation identities and clock relation"
 readme = "README.md"
 
+[features]
+# The shared conformance suite (`conformance`), which each backend's tests
+# run over a harness of the backend.
+test-support = []
+
 [dependencies]
 oer-time = { path = "../../time" }
 

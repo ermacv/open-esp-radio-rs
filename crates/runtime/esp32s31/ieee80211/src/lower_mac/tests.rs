@@ -1683,3 +1683,89 @@ fn tsf_sample_checks_radio_elapsed_and_preserves_both_generations() {
     assert_eq!(maximum.generation, tsf_generation);
     assert_eq!(maximum.local.generation, crate::clock_generation(7));
 }
+
+/// The S31 runtime on its fake hardware under the shared port conformance
+/// suite: one station interface, as [`install`] configures it.
+struct ConformanceBench {
+    bench: Port,
+}
+
+impl oer_radio_port::conformance::Harness for ConformanceBench {
+    type Port = Esp32s31LowerMacPort<'static, Lower>;
+
+    fn port(&self) -> &Self::Port {
+        &self.bench.port
+    }
+
+    /// The runner is polled beside every port future, as the composition
+    /// polls it beside the consumer.
+    fn drive<F: Future>(&self, future: F) -> F::Output {
+        match block_on(embassy_futures::select::select(
+            future,
+            self.bench.runtime.run(),
+        )) {
+            embassy_futures::select::Either::First(output) => output,
+            embassy_futures::select::Either::Second(never) => match never {},
+        }
+    }
+
+    fn admit(&self) -> TxId {
+        assert_eq!(
+            submit(&self.bench, attempt(&self.bench, 1, &data_frame())),
+            Ok(Ok(()))
+        );
+        TxId(1)
+    }
+
+    /// The best-effort queue's hardware completes its attempt.
+    fn finish(&self, _: TxId) {
+        with_hardware(&self.bench, |hardware| {
+            hardware.completion[BE] = Some(MacTxCompletionObservation::new_model(0, 0));
+        });
+        self.bench.runtime.on_interrupt(EVENT_TX_COMPLETE);
+    }
+
+    /// A frame of the station's BSS reaches the receive producer.
+    fn produce_undelivered(&self) -> Option<TxId> {
+        let mut mpdu = data_frame();
+        mpdu[4..10].copy_from_slice(&STATION);
+        mpdu[10..16].copy_from_slice(&BSSID);
+        assert_eq!(
+            self.bench
+                .runtime
+                .on_received(TestRxUnit::new(&mpdu, None, live_units())),
+            Ok(())
+        );
+        None
+    }
+
+    /// The `EVENTS` of [`Lower`].
+    fn undelivered_capacity(&self) -> usize {
+        2
+    }
+
+    fn classify(
+        event: &<Self::Port as RadioPort>::Event,
+    ) -> oer_radio_port::conformance::EventClass<TxId> {
+        oer_ieee80211_lower_mac::conformance::classify::<Self::Port>(event)
+    }
+}
+
+impl oer_radio_port::conformance::PoisoningHarness for ConformanceBench {
+    fn poison(&self) {
+        poison(&self.bench);
+    }
+}
+
+impl oer_ieee80211_lower_mac::conformance::LowerMacHarness for ConformanceBench {
+    fn attempt(&self, id: TxId) -> Esp32s31MpduAttempt<'static, 512> {
+        attempt(&self.bench, id.0, &data_frame())
+    }
+}
+
+#[test]
+fn the_runtime_keeps_every_rule_of_the_port_conformance_suite() {
+    oer_ieee80211_lower_mac::conformance::check_all(|| ConformanceBench {
+        bench: install(true),
+    });
+}

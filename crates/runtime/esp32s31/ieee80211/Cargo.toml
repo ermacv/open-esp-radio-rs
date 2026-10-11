@@ -40,6 +40,8 @@ oer-ieee80211-runtime = { path = "../../ieee80211" }
 log = { version = "0.4", optional = true }
 
 [dev-dependencies]
+oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac", features = ["test-support"] }
+oer-radio-port = { path = "../../../radio/port", features = ["test-support"] }
 critical-section = { version = "1.2.0", features = ["std"] }
 oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal", features = ["validation-probes"] }
 oer-esp32s31-ieee80211-ap = { path = "../../../roles/esp32s31/ieee80211/ap", features = ["diagnostics"] }

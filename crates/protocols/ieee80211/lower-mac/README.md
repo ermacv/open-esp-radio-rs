@@ -186,6 +186,12 @@ value: its radio clock (`now`) reads what the test last passed to
 the port test against it, as `oer-ieee80211-upper-mac-service` and
 `oer-ieee80211-sta-service` do.
 
+The `conformance` module (the `test-support` feature) adds this port's own
+rule to the shared suite of `oer-radio-port` (a refused attempt comes back
+with its identity and nothing changes) and holds `ModelHarness`, the model's
+harness. `conformance::check_all` runs every rule; the crate's tests run it on
+the model, and the ESP32-S31 runtime's tests on its fake hardware.
+
 `ModelAir` joins several models as radios on one medium, so a test runs
 real drivers against each other (an access point on one model, its stations
 on others) instead of scripting one side. Each `step` carries every

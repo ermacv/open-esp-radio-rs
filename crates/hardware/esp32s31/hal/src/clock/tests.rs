@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, vec::Vec};
 
 use oer_esp32s31_pac::{WifiPowerBaseline, WifiPowerRestoreReadback};
 
-use crate::power::test_clocks::{ClockEvent, CountingPlatformClocks, held, holding};
+use crate::power::test_clocks::{ClockEvent, CountingPlatformClocks, abandoned, held, holding};
 use crate::power::{PlatformClock, PlatformClockProvider, PowerEntry};
 
 use super::{
@@ -14,6 +14,7 @@ use super::{
 enum Operation {
     Acquire(PlatformClock),
     Release(PlatformClock),
+    Abandon(PlatformClock, crate::power::PlatformClockAbandonment),
     RestorePower(WifiPowerBaseline),
     PowerSequence(PowerEntry),
 }
@@ -78,6 +79,7 @@ fn setup() -> (Log, Port, CountingPlatformClocks) {
         sink.borrow_mut().push(match event {
             ClockEvent::Acquire(clock) => Operation::Acquire(clock),
             ClockEvent::Release(clock) => Operation::Release(clock),
+            ClockEvent::Abandon(clock, how) => Operation::Abandon(clock, how),
         });
     });
     (log, port, platform)
@@ -212,6 +214,7 @@ fn a_failed_power_sequence_admits_no_client_and_retries_without_a_second_referen
         .filter(|operation| **operation == Operation::Acquire(PlatformClock::Pll160m))
         .count();
     assert_eq!(acquisitions, 1);
+    power.abandon_for_test();
 }
 
 #[test]
@@ -244,7 +247,7 @@ fn a_failed_restore_keeps_the_last_client_for_retry() {
 }
 
 #[test]
-fn a_failed_power_sequence_keeps_its_references_after_the_owner_drops() {
+fn a_failed_power_sequence_is_abandoned_with_its_references_on() {
     let (_, mut port, platform) = setup();
     port.power_sequence_failure = Some(crate::power::PowerError {
         checkpoint: crate::power::PowerCheckpoint::ModemClockSource,
@@ -262,17 +265,19 @@ fn a_failed_power_sequence_keeps_its_references_after_the_owner_drops() {
         held(),
         holding(&[PlatformClock::Mpll, PlatformClock::Pll160m])
     );
-    // Dropping the failed owner gives nothing back: the sequence stays
-    // fail-stop with its sources on.
-    #[allow(
-        clippy::drop_non_drop,
-        reason = "the test shows that dropping the owner gives nothing back"
-    )]
-    drop(power);
+    // Abandoning the failed owner gives nothing back: the sequence stays
+    // fail-stop with its sources on, and the abandonment is recorded.
+    power.abandon_for_test();
     assert_eq!(
         held(),
         holding(&[PlatformClock::Mpll, PlatformClock::Pll160m])
     );
+    let (abandoned, dropped) = abandoned();
+    assert_eq!(
+        abandoned,
+        holding(&[PlatformClock::Mpll, PlatformClock::Pll160m])
+    );
+    assert!(dropped.is_empty());
 }
 
 #[test]
@@ -300,6 +305,7 @@ fn power_up_after_every_client_left_keeps_the_wifi_resets() {
         sequences,
         [PowerEntry::FirstSinceBoot, PowerEntry::Repeated],
     );
+    power.abandon_for_test();
 }
 
 #[test]
@@ -330,4 +336,5 @@ fn a_failed_first_power_up_still_pulses_the_wifi_resets_on_retry() {
         sequences,
         [PowerEntry::FirstSinceBoot, PowerEntry::FirstSinceBoot]
     );
+    power.abandon_for_test();
 }

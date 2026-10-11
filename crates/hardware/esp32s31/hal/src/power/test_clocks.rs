@@ -8,8 +8,8 @@ use core::cell::{Cell, RefCell};
 use std::boxed::Box;
 
 use super::{
-    PlatformClock, PlatformClockError, PlatformClockGuard, PlatformClockHolds,
-    PlatformClockProvider,
+    PlatformClock, PlatformClockAbandonment, PlatformClockError, PlatformClockGuard,
+    PlatformClockHolds, PlatformClockProvider,
 };
 
 /// One platform clock edge the provider observed.
@@ -17,6 +17,7 @@ use super::{
 pub(crate) enum ClockEvent {
     Acquire(PlatformClock),
     Release(PlatformClock),
+    Abandon(PlatformClock, PlatformClockAbandonment),
 }
 
 type Sink = Box<dyn Fn(ClockEvent)>;
@@ -24,6 +25,8 @@ type Sink = Box<dyn Fn(ClockEvent)>;
 std::thread_local! {
     static HELD: Cell<PlatformClockHolds> = Cell::new(PlatformClockHolds::default());
     static SINK: RefCell<Option<Sink>> = const { RefCell::new(None) };
+    static ABANDONED: Cell<PlatformClockHolds> = Cell::new(PlatformClockHolds::default());
+    static DROPPED: Cell<PlatformClockHolds> = Cell::new(PlatformClockHolds::default());
 }
 
 fn record(event: ClockEvent) {
@@ -45,6 +48,25 @@ fn release(clock: PlatformClock) {
     record(ClockEvent::Release(clock));
 }
 
+fn abandon(clock: PlatformClock, how: PlatformClockAbandonment) {
+    let counts = match how {
+        PlatformClockAbandonment::Abandoned => &ABANDONED,
+        PlatformClockAbandonment::Dropped => &DROPPED,
+    };
+    counts.with(|counts| {
+        let mut holds = counts.get();
+        holds.set(clock, holds.get(clock) + 1);
+        counts.set(holds);
+    });
+    record(ClockEvent::Abandon(clock, how));
+}
+
+/// The references this thread's owners abandoned deliberately, and those
+/// whose guards were dropped; both stay counted in [`held`].
+pub(crate) fn abandoned() -> (PlatformClockHolds, PlatformClockHolds) {
+    (ABANDONED.with(Cell::get), DROPPED.with(Cell::get))
+}
+
 /// The references this thread's guards hold.
 pub(crate) fn held() -> PlatformClockHolds {
     HELD.with(Cell::get)
@@ -60,6 +82,8 @@ impl CountingPlatformClocks {
     /// A granting platform with no event sink.
     pub(crate) fn new() -> Self {
         HELD.with(|held| held.set(PlatformClockHolds::default()));
+        ABANDONED.with(|counts| counts.set(PlatformClockHolds::default()));
+        DROPPED.with(|counts| counts.set(PlatformClockHolds::default()));
         SINK.with_borrow_mut(|sink| *sink = None);
         Self {
             refused: Cell::new([false; PlatformClock::COUNT]),
@@ -92,7 +116,7 @@ impl PlatformClockProvider for CountingPlatformClocks {
             held.set(holds);
         });
         record(ClockEvent::Acquire(clock));
-        Ok(PlatformClockGuard::new(clock, release))
+        Ok(PlatformClockGuard::new(clock, release, abandon))
     }
 }
 

@@ -107,7 +107,9 @@ use oer_hil_protocol::{
 /// The radio peripheral token proves the image owns the radio; the modem
 /// clocks' platform sources come from ESP-HAL's counted clock tree. The probe
 /// image is reset-isolated and terminal: the module clocks and common power
-/// stay on, and the arbiter and the other partitions are dropped without
+/// stay on, and the shared radio that holds their platform references lives
+/// in a static for the rest of the boot, so the MAC never runs with a clock
+/// its bookkeeping dropped. The other partitions are dropped without
 /// release.
 #[cfg(any(
     feature = "ieee802154-event-status-probe",
@@ -115,8 +117,11 @@ use oer_hil_protocol::{
     feature = "ieee802154-route-probe"
 ))]
 fn ieee802154_foundation(mut radio: EspHalRadioPlatform) -> Option<Ieee802154FoundationConfigured> {
+    static SHARED: static_cell::StaticCell<oer_esp32s31_hal::shared_radio::SharedRadio> =
+        static_cell::StaticCell::new();
     let (shared, partitions) =
         RadioHardware::take(radio.analog_bus_ownership()?)?.into_concurrent(());
+    let shared: &'static _ = SHARED.try_init(shared)?;
     let mut lease = shared.try_acquire().ok()?;
     let powered = Ieee802154Cold::from_partition(partitions.ieee802154)
         .power_up(&mut lease, &mut EspHalRadioClocks::new())

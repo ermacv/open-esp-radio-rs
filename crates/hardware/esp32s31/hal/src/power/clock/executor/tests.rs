@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, vec::Vec};
 
 use super::*;
 use crate::power::clock::{ModemClockModule, ModemClockPlannerIdentity};
-use crate::power::test_clocks::{ClockEvent, CountingPlatformClocks, held, holding};
+use crate::power::test_clocks::{ClockEvent, CountingPlatformClocks, abandoned, held, holding};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
@@ -13,6 +13,7 @@ enum Operation {
     ReleaseAnalogI2c,
     Acquire(PlatformClock),
     Release(PlatformClock),
+    Abandon(PlatformClock, PlatformClockAbandonment),
 }
 
 /// One ordered log shared by the modem port and the platform provider.
@@ -37,6 +38,7 @@ fn setup() -> (Log, Port, CountingPlatformClocks) {
             ClockEvent::Release(PlatformClock::Pll160m) => Operation::ReleasePll,
             ClockEvent::Release(PlatformClock::AnalogI2cMaster) => Operation::ReleaseAnalogI2c,
             ClockEvent::Release(other) => Operation::Release(other),
+            ClockEvent::Abandon(clock, how) => Operation::Abandon(clock, how),
         });
     });
     (log.clone(), Port(log), platform)
@@ -113,7 +115,7 @@ fn a_refused_platform_request_poisons_the_transaction_before_the_gate() {
 }
 
 #[test]
-fn a_poisoned_acquisition_keeps_its_references_after_the_owner_drops() {
+fn a_poisoned_acquisition_is_abandoned_with_its_references_on() {
     let (_, mut port, platform) = setup();
     platform.set_refused(PlatformClock::AnalogI2cMaster, true);
     let mut held_clocks = ModemPlatformClocks::default();
@@ -127,37 +129,49 @@ fn a_poisoned_acquisition_keeps_its_references_after_the_owner_drops() {
     };
     assert_eq!(poisoned.dependency(), Dependency::AnalogI2cMaster);
     // The 160 MHz source taken before the refusal stays with the poisoned
-    // owner, and dropping the owner does not give it back: a failed
-    // transaction stays fail-stop with the clock on.
+    // owner; abandoning the owner keeps it on and records it, as a failed
+    // transaction stays fail-stop.
     assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
     drop(poisoned);
+    held_clocks.abandon_for_test();
     assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
-    #[allow(
-        clippy::drop_non_drop,
-        reason = "the test shows that dropping the owner gives nothing back"
-    )]
-    drop(held_clocks);
-    assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
+    let (abandoned, dropped) = abandoned();
+    assert_eq!(abandoned, holding(&[PlatformClock::Pll160m]));
+    assert!(dropped.is_empty());
 }
 
-/// Only an explicit release gives a platform clock back; a dropped guard
-/// keeps it held, so destroying the radio's bookkeeping never closes a
-/// clock under a user that still runs on it (#551: the IEEE 802.15.4 ED
-/// probe lost the coexistence clock when its shared radio was dropped).
+/// A guard ends explicitly: `release` gives the reference back, and
+/// `abandon` keeps it held and records it.
 #[test]
-fn only_an_explicit_release_gives_a_platform_clock_back() {
+fn a_guard_ends_with_release_or_abandon() {
     let platform = CountingPlatformClocks::new();
-    let dropped = platform
+    let kept = platform
         .acquire(PlatformClock::ModemCoexistence)
         .unwrap_or_else(|_| panic!("granted"));
-    drop(dropped);
-    assert_eq!(held(), holding(&[PlatformClock::ModemCoexistence]));
-
+    kept.abandon();
     let released = platform
         .acquire(PlatformClock::AnalogI2cMaster)
         .unwrap_or_else(|_| panic!("granted"));
     released.release();
     assert_eq!(held(), holding(&[PlatformClock::ModemCoexistence]));
+    let (abandoned, dropped) = abandoned();
+    assert_eq!(abandoned, holding(&[PlatformClock::ModemCoexistence]));
+    assert!(dropped.is_empty());
+}
+
+/// Dropping a guard without `release` or `abandon` is a defect: the clock
+/// stays on and the drop is recorded, so destroying the radio's
+/// bookkeeping never closes a clock under a user that still runs on it
+/// (#551: the IEEE 802.15.4 ED probe lost the coexistence clock when its
+/// shared radio was dropped); a debug build asserts.
+#[test]
+#[should_panic(expected = "dropped without release or abandon")]
+fn a_dropped_guard_keeps_its_clock_and_asserts() {
+    let platform = CountingPlatformClocks::new();
+    let guard = platform
+        .acquire(PlatformClock::ModemCoexistence)
+        .unwrap_or_else(|_| panic!("granted"));
+    drop(guard);
 }
 
 /// The planner's explicit release gives each platform clock back once.
@@ -174,4 +188,6 @@ fn the_planner_releases_its_platform_clocks_explicitly() {
     assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
     held_clocks.release(PlatformClock::ModemCoexistence);
     assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
+    held_clocks.release(PlatformClock::Pll160m);
+    assert!(held().is_empty());
 }

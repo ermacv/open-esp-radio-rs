@@ -24,21 +24,24 @@ extern crate std;
 use oer_espressif_ieee802154_engine::engine::{
     FRAME_SIZE, Ieee802154Engine, Ieee802154EnhancedAck, Ieee802154Environment,
     Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154State,
-    Ieee802154TxError,
+    Ieee802154TxError, RECEIVE_SENSITIVITY_DBM,
 };
 use oer_espressif_ieee802154_engine::{
     channel::Ieee802154Channel,
     ll::Ieee802154LowLevel,
+    pib::CCA_THRESHOLD_RANGE_DBM,
     types::{Ieee802154CcaMode, Ieee802154MultipanIndex, Ieee802154RxStatus},
 };
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, CancelError, CcaMode,
-    Channel, CommandError, Configuration, CsmaCa, ENH_ACK_PROBING_IE_CAPACITY, EnhAckProbing,
-    FcsStatus, FramePending, FrameRetries, FrameType, FrameVersion, FrameView, Ieee802154Instant,
-    Interface, InterfaceSetting, KeyIdMode, MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities,
+    CcaThresholdCapability, CcaThresholdError, Channel, CommandError, Configuration, CslCapability,
+    CsmaCa, ENH_ACK_PROBING_IE_CAPACITY, EnhAckProbing, FcsStatus, FramePending, FrameRetries,
+    FrameType, FrameVersion, FrameView, Ieee802154Capabilities, Ieee802154Instant, Interface,
+    InterfaceSetting, KeyIdMode, MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities,
     RadioCommand, RadioEvent, RadioFault, RadioState, RadioStateMachine, ReceivedFrame, RequestId,
-    RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TimeSync, TxMode,
-    TxSecurity, TxStatus, csl_phase, generate_enhanced_ack, write_csl_ie,
+    RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TimeSync,
+    TransmitPowerCapability, TransmitPowerError, TxMode, TxSecurity, TxStatus, csl_phase,
+    generate_enhanced_ack, write_csl_ie,
 };
 use oer_time::Clock;
 
@@ -56,12 +59,19 @@ pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::
     .union(RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT)
     .union(RadioCapabilities::SCHEDULED_TRANSMIT)
     .union(RadioCapabilities::SCHEDULED_RECEIVE)
-    .union(RadioCapabilities::TRANSMIT_POWER)
     .union(RadioCapabilities::PROMISCUOUS)
     .union(RadioCapabilities::RECEIVE_TIMESTAMP)
     .union(RadioCapabilities::AUTOMATIC_ACKNOWLEDGEMENT)
     .union(RadioCapabilities::SOURCE_MATCH)
     .union(RadioCapabilities::TIME_SYNC);
+
+/// The CSL timing ESP-IDF's OpenThread port reports for the radio: a drift
+/// of ± 50 ppm (`CONFIG_OPENTHREAD_CSL_ACCURACY` default) and an uncertainty
+/// of 50 × 10 microseconds (`CONFIG_OPENTHREAD_CSL_UNCERTAIN` default).
+pub const IEEE802154_CSL_CAPABILITY: CslCapability = CslCapability {
+    accuracy_ppm: 50,
+    uncertainty_10us: 50,
+};
 
 /// Header IE bytes an enhanced ACK carries at most (OpenThread
 /// `OT_ACK_IE_MAX_SIZE`).
@@ -261,7 +271,8 @@ enum Phase {
     Attempting,
 }
 
-/// The transmit security the upper layer armed for the next transmission.
+/// The CCM* key and nonce source a request carries
+/// ([`TxSecurity::Key`]).
 #[derive(Clone, Copy)]
 struct ArmedSecurity {
     key: [u8; 16],
@@ -726,18 +737,6 @@ fn configure_software(engine: &mut Ieee802154Engine<'_>, configuration: Configur
         Configuration::AutomaticAcknowledgement(enable) => {
             engine.pib().set_auto_ack_tx(enable);
         }
-        Configuration::TransmitPowerDbm(power) => {
-            engine.pib().set_power_table([power; 16]);
-        }
-        Configuration::ChannelTransmitPowerDbm { channel, power_dbm } => {
-            engine
-                .pib()
-                .set_power_for_channel(hal_channel(channel), power_dbm);
-        }
-        Configuration::CcaThresholdDbm(threshold) => {
-            engine.pib().set_cca_threshold(threshold);
-        }
-        Configuration::CcaMode(mode) => engine.pib().set_cca_mode(hal_cca_mode(mode)),
         Configuration::PanCoordinator(enable) => engine.pib().set_coordinator(enable),
         Configuration::PendingMode(mode) => engine
             .pib()
@@ -863,7 +862,6 @@ pub struct Ieee802154Radio<'storage, R> {
     random: R,
     enhanced_ack: Option<Ieee802154EnhancedAckGenerator>,
     transmission: Option<Transmission>,
-    next_security: Option<ArmedSecurity>,
     security: RadioSecurity,
 }
 
@@ -879,13 +877,18 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
             ),
             None => RadioStateMachine::new(IEEE802154_RADIO_CAPABILITIES),
         };
+        let levels = engine.tx_power_levels();
+        let machine = machine.with_transmit_power(TransmitPowerCapability {
+            levels: levels.portable(),
+            // `ieee802154_pib_init` starts every channel at the highest level.
+            reset_dbm: levels.highest_dbm(),
+        });
         Self {
             engine,
             machine,
             random,
             enhanced_ack: None,
             transmission: None,
-            next_security: None,
             security: RadioSecurity {
                 interfaces: [InterfaceSecurity::NONE; Ieee802154MultipanIndex::COUNT as usize],
                 csl: Ieee802154Csl {
@@ -909,9 +912,9 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
     /// (`mIsSecurityProcessed`). The transmit completion reports the fields
     /// written, and a received frame reports the security of the enhanced
     /// ACK it was sent (`mAckFrameCounter`, `mAckKeyId`). Secured enhanced
-    /// ACKs take their counter from the same keys. Security the upper layer
-    /// arms with [`Self::set_transmit_security`] takes precedence for the
-    /// next transmission; without keys a secured frame goes out as given.
+    /// ACKs take their counter from the same keys. A request that carries
+    /// its own key ([`TxSecurity::Key`]) is secured with it instead; without
+    /// keys a secured frame goes out as given.
     ///
     /// These are the keys of [`Interface::PRIMARY`]; a multi-PAN radio keeps
     /// keys per interface ([`Self::interface_mac_keys`]).
@@ -970,8 +973,28 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
         self.machine.capabilities()
     }
 
+    /// What the radio supports, as its port publishes it: the portable
+    /// capabilities and interfaces, the engine's transmit-power levels, the
+    /// CCA thresholds of [`CCA_THRESHOLD_RANGE_DBM`] starting from the PIB
+    /// defaults, the engine's [`RECEIVE_SENSITIVITY_DBM`] and
+    /// [`IEEE802154_CSL_CAPABILITY`].
+    pub const fn port_capabilities(&self) -> Ieee802154Capabilities {
+        Ieee802154Capabilities {
+            operations: self.capabilities(),
+            interfaces: self.interfaces(),
+            transmit_power: self.transmit_power(),
+            cca_threshold: Some(CcaThresholdCapability {
+                lowest_dbm: *CCA_THRESHOLD_RANGE_DBM.start(),
+                highest_dbm: *CCA_THRESHOLD_RANGE_DBM.end(),
+                reset_dbm: self.engine.pib_defaults().cca_threshold_dbm(),
+            }),
+            receive_sensitivity_dbm: RECEIVE_SENSITIVITY_DBM,
+            csl: Some(IEEE802154_CSL_CAPABILITY),
+        }
+    }
+
     /// The engine, for vendor configuration the portable contract has no
-    /// command for (pending table, transmit security, multi-PAN identity).
+    /// command for (pending table, multi-PAN identity).
     /// Operation entries must go through [`Self::submit`].
     pub fn engine(&mut self) -> &mut Ieee802154Engine<'storage> {
         &mut self.engine
@@ -1096,7 +1119,10 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
                 // The PHR counts the two FCS bytes the hardware appends.
                 image[0] = (bytes.len() + 2) as u8;
                 image[1..=bytes.len()].copy_from_slice(bytes);
-                let security = self.next_security.take();
+                let security = match request.security {
+                    TxSecurity::Key { key, address } => Some(ArmedSecurity { key, address }),
+                    TxSecurity::Radio | TxSecurity::Retransmission | TxSecurity::Processed => None,
+                };
                 let mode = request.mode;
                 let mut transmission = Transmission {
                     image,
@@ -1107,7 +1133,7 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
                     }),
                     retries: FrameRetries::new(request.max_frame_retries),
                     security,
-                    armed: security.is_some(),
+                    armed: false,
                     tx_security: request.security,
                     applied: None,
                     interface: multipan_index(request.interface)
@@ -1294,21 +1320,53 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
         }
     }
 
-    /// `esp_ieee802154_set_transmit_security` for the secured `[PHR, PSDU...]`
-    /// image the next transmission sends. The transmission arms it again
-    /// before each later attempt.
-    pub fn set_transmit_security<L: Ieee802154LowLevel + ?Sized>(
+    /// The transmit power a request or setting may name: the engine's
+    /// provider levels, every channel starting at the highest.
+    pub const fn transmit_power(&self) -> Option<TransmitPowerCapability> {
+        self.machine.transmit_power()
+    }
+
+    /// Set the transmit power of every channel
+    /// (`esp_ieee802154_set_txpower`), or of `channel` alone
+    /// (`esp_ieee802154_set_power_with_channel`); the next operation
+    /// publishes it.
+    ///
+    /// # Errors
+    ///
+    /// The power lies outside [`Self::transmit_power`]; nothing changed.
+    pub fn set_transmit_power(
         &mut self,
-        ll: &mut L,
-        frame: &[u8],
-        key: &[u8; 16],
-        address: &[u8; 8],
-    ) {
-        self.engine.set_transmit_security(ll, frame, key, address);
-        self.next_security = Some(ArmedSecurity {
-            key: *key,
-            address: *address,
-        });
+        channel: Option<Channel>,
+        power_dbm: i8,
+    ) -> Result<(), TransmitPowerError> {
+        TransmitPowerCapability::check(self.transmit_power(), power_dbm)?;
+        match channel {
+            Some(channel) => self
+                .engine
+                .pib()
+                .set_power_for_channel(hal_channel(channel), power_dbm),
+            None => self.engine.pib().set_power_table([power_dbm; 16]),
+        }
+        Ok(())
+    }
+
+    /// Set the CCA energy threshold (`esp_ieee802154_set_cca_threshold`);
+    /// the next operation publishes it.
+    ///
+    /// # Errors
+    ///
+    /// The threshold lies outside [`CCA_THRESHOLD_RANGE_DBM`]; nothing
+    /// changed.
+    pub fn set_cca_threshold(&mut self, threshold_dbm: i8) -> Result<(), CcaThresholdError> {
+        CcaThresholdCapability::check(self.port_capabilities().cca_threshold, threshold_dbm)?;
+        self.engine.pib().set_cca_threshold(threshold_dbm);
+        Ok(())
+    }
+
+    /// Set the CCA mode (`esp_ieee802154_set_cca_mode`); the next operation
+    /// publishes it.
+    pub fn set_cca_mode(&mut self, mode: CcaMode) {
+        self.engine.pib().set_cca_mode(hal_cca_mode(mode));
     }
 
     /// The delay a transmission must wait now before its next attempt, in

@@ -68,10 +68,9 @@ pub use mac::security::{MacKeys, TransmitSecurity};
 pub use mac::time_sync::TimeSync;
 pub use oer_radio_port::{ClockRelation, Correlation, CorrelationIds};
 pub use port::{
-    CancelError, ClockError, ClockInfo, CslReceiver, EnhancedAckGeneration, EventsLost,
-    FrameCounterUpdate, Ieee802154Capabilities, Ieee802154RadioPort, LifecycleCommand,
+    CancelError, ClockError, ClockInfo, CslCapability, CslReceiver, EnhancedAckGeneration,
+    EventsLost, FrameCounterUpdate, Ieee802154Capabilities, Ieee802154RadioPort, LifecycleCommand,
     LifecycleError, LifecycleEvent, Poisoned, PortResult, RadioPort, RadioSetting, SettingError,
-    TransmitSecurityArming,
 };
 pub use radio::capabilities::{CapabilityBitsError, RadioCapabilities};
 pub use radio::channel::{Channel, ChannelError};
@@ -84,6 +83,10 @@ pub use radio::event::{
     SecurityStatus, SentAcknowledgement, TxStatus,
 };
 pub use radio::interface::Interface;
+pub use radio::power::{
+    CcaThresholdCapability, CcaThresholdError, TransmitPowerCapability, TransmitPowerError,
+    TransmitPowerLevels, TransmitPowerLevelsError,
+};
 pub use radio::state::{
     AcceptedCommand, CommandError, EventError, RadioState, RadioStateMachine, RestingState,
 };

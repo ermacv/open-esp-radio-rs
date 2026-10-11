@@ -3,17 +3,17 @@ use crate::Ieee802154Instant;
 
 #[test]
 fn unknown_bits_fail_closed_and_known_sets_round_trip() {
-    // The fifteen low bits are published capabilities; the wider image
+    // The fourteen low bits are published capabilities; the wider image
     // fails closed above them.
-    for bit in 0..15 {
+    for bit in 0..14 {
         let image = 1_u32 << bit;
         assert!(RadioCapabilities::from_bits(image).is_ok());
     }
     assert_eq!(
-        RadioCapabilities::from_bits(1 << 15),
+        RadioCapabilities::from_bits(1 << 14),
         Err(CapabilityBitsError {
-            bits: 1 << 15,
-            unknown: 1 << 15
+            bits: 1 << 14,
+            unknown: 1 << 14
         })
     );
     assert_eq!(

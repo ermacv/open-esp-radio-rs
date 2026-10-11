@@ -136,6 +136,16 @@ pub enum TxSecurity {
     /// The upper layer already secured the frame; the radio transmits it
     /// as given.
     Processed,
+    /// The upper layer wrote the frame's auxiliary security header and frame
+    /// counter; the radio applies CCM* to every attempt with `key` and the
+    /// nonce source `address`, instead of its MAC keys
+    /// (`esp_ieee802154_set_transmit_security`).
+    Key {
+        /// The key.
+        key: [u8; 16],
+        /// The extended address of the nonce, in frame byte order.
+        address: [u8; 8],
+    },
 }
 
 /// Borrowed portable transmission request.
@@ -225,23 +235,6 @@ pub enum Configuration {
     Promiscuous(bool),
     /// Enable or disable automatic acknowledgement generation.
     AutomaticAcknowledgement(bool),
-    /// Set the default transmit power in dBm.
-    TransmitPowerDbm(i8),
-    /// Set the transmit power of one channel in dBm
-    /// (`esp_ieee802154_set_power_with_channel`).
-    ChannelTransmitPowerDbm {
-        /// The channel whose power changes.
-        channel: Channel,
-        /// Transmit power in dBm.
-        power_dbm: i8,
-    },
-    /// Set the energy threshold of clear-channel assessment in dBm
-    /// (`esp_ieee802154_set_cca_threshold`,
-    /// `otPlatRadioSetCcaEnergyDetectThreshold`).
-    CcaThresholdDbm(i8),
-    /// Set how clear-channel assessment decides that the channel is busy
-    /// (`esp_ieee802154_set_cca_mode`).
-    CcaMode(CcaMode),
     /// Act as the PAN coordinator: accept data and command frames without a
     /// destination address (`esp_ieee802154_set_coordinator`).
     PanCoordinator(bool),

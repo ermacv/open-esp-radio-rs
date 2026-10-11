@@ -255,10 +255,7 @@ where
     /// The installed radio's capabilities and interfaces.
     fn capabilities(&self) -> Ieee802154Capabilities {
         self.runtime
-            .with_installed(|radio, _, _| Ieee802154Capabilities {
-                operations: radio.capabilities(),
-                interfaces: radio.interfaces(),
-            })
+            .with_installed(|radio, _, _| radio.port_capabilities())
     }
 
     fn submit(
@@ -280,14 +277,10 @@ where
     }
 
     fn apply(&self, setting: RadioSetting<'_>) -> PortResult<(), SettingError, Infallible> {
-        Ok(self.runtime.with_installed(|radio, hardware, _| {
-            // A quiesced port holds the hardware still.
-            let hardware = match hardware {
-                Hardware::Held(hardware) if !self.runtime.quiesced() => Some(hardware),
-                Hardware::Held(_) | Hardware::Lent { .. } => None,
-            };
-            apply_setting(radio, hardware, setting)
-        }))
+        // No setting writes the hardware: a quiesced port admits them all.
+        Ok(self
+            .runtime
+            .with_installed(|radio, _, _| apply_setting(radio, setting)))
     }
 
     fn frame_counter(&self, interface: Interface) -> Result<Option<u32>, Poisoned<Infallible>> {

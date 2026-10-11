@@ -9,6 +9,7 @@
 
 pub use crate::types::Ieee802154MultipanIndex;
 pub use oer_ieee802154::AutoPendingMode;
+use oer_ieee802154::CcaThresholdError;
 
 use crate::channel::{IEEE802154_MIN_CHANNEL, Ieee802154Channel};
 use crate::ll::Ieee802154LowLevel;
@@ -18,14 +19,52 @@ use crate::types::Ieee802154CcaMode;
 const CHANNEL_COUNT: usize = 16;
 const INTERFACE_COUNT: usize = Ieee802154MultipanIndex::COUNT as usize;
 
+/// The CCA energy thresholds in dBm the driver accepts: the range of
+/// ESP-IDF's `CONFIG_IEEE802154_CCA_THRESHOLD` Kconfig option. The MAC
+/// register field is an eight-bit code without physical bounds, and the
+/// vendor's runtime `esp_ieee802154_set_cca_threshold` takes any `int8_t`.
+pub const CCA_THRESHOLD_RANGE_DBM: core::ops::RangeInclusive<i8> = -120..=0;
+
 /// Build-time PIB defaults (`CONFIG_IEEE802154_CCA_MODE` and
-/// `CONFIG_IEEE802154_CCA_THRESHOLD`).
+/// `CONFIG_IEEE802154_CCA_THRESHOLD`), which every MAC initialization
+/// restores.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Ieee802154PibDefaults {
-    /// Initial clear-channel-assessment mode.
-    pub cca_mode: Ieee802154CcaMode,
-    /// Initial CCA energy threshold in dBm.
-    pub cca_threshold_dbm: i8,
+    cca_mode: Ieee802154CcaMode,
+    cca_threshold_dbm: i8,
+}
+
+impl Ieee802154PibDefaults {
+    /// The defaults, refusing a CCA threshold outside
+    /// [`CCA_THRESHOLD_RANGE_DBM`].
+    pub const fn new(
+        cca_mode: Ieee802154CcaMode,
+        cca_threshold_dbm: i8,
+    ) -> Result<Self, CcaThresholdError> {
+        let lowest_dbm = *CCA_THRESHOLD_RANGE_DBM.start();
+        let highest_dbm = *CCA_THRESHOLD_RANGE_DBM.end();
+        if cca_threshold_dbm < lowest_dbm || cca_threshold_dbm > highest_dbm {
+            return Err(CcaThresholdError::OutOfRange {
+                requested_dbm: cca_threshold_dbm,
+                lowest_dbm,
+                highest_dbm,
+            });
+        }
+        Ok(Self {
+            cca_mode,
+            cca_threshold_dbm,
+        })
+    }
+
+    /// The initial clear-channel-assessment mode.
+    pub const fn cca_mode(self) -> Ieee802154CcaMode {
+        self.cca_mode
+    }
+
+    /// The initial CCA energy threshold in dBm.
+    pub const fn cca_threshold_dbm(self) -> i8 {
+        self.cca_threshold_dbm
+    }
 }
 
 impl Default for Ieee802154PibDefaults {

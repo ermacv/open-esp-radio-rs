@@ -503,14 +503,8 @@ fn a_quiesced_port_holds_the_radio_still() {
         Ok(Ok(_))
     ));
     assert_eq!(
-        runtime.port.apply(RadioSetting::TransmitSecurity(
-            oer_ieee802154::TransmitSecurityArming {
-                frame: &received_image()[..11],
-                key: [0; 16],
-                address: [0; 8],
-            }
-        )),
-        Ok(Err(SettingError::Quiesced))
+        runtime.port.apply(RadioSetting::CcaThresholdDbm(-70)),
+        Ok(Ok(()))
     );
     assert_eq!(
         runtime.port.apply(RadioSetting::Csl(CslReceiver {
@@ -690,14 +684,8 @@ fn pausing_leaves_receive_mode_and_resuming_enters_it_again() {
         Ok(Err(CancelError::NotRunning))
     );
     assert_eq!(
-        runtime.port.apply(RadioSetting::TransmitSecurity(
-            oer_ieee802154::TransmitSecurityArming {
-                frame: &received_image()[..11],
-                key: [0; 16],
-                address: [0; 8],
-            }
-        )),
-        Ok(Err(SettingError::Quiesced))
+        runtime.port.apply(RadioSetting::CcaThresholdDbm(-70)),
+        Ok(Ok(()))
     );
     // A software setting, the state and the RSSI it read stay available.
     assert_eq!(

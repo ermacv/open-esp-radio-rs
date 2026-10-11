@@ -42,15 +42,17 @@ in (the Espressif runtime's `Ieee802154Runtime::clock`) and
 time (`otPlatRadioGetNow`, `otPlatTimeGet`) and the port's live RSSI
 (`otPlatRadioGetRssi`) through them; `init` refuses a port whose clock is
 not the image's monotonic clock (`ClockInfo::monotonic` is not
-`Some(ClockRelation::IDENTICAL)`), then hand the port to
-`OpenThreadRadio::new` with the transmit power, CCA threshold and receive
-sensitivity to report, and give the radio to the `openthread` crate. Poll
-the runtime's runner (`Ieee802154System::run`) beside it: the adapter is the
-port's one event consumer and only takes events. The
-figures are the composition's: `OpenThreadRadioDefaults::esp_idf` takes the
-chip's default transmit power and receive sensitivity (on the ESP32-S31,
-`IEEE802154_DEFAULT_TX_POWER_DBM` and `IEEE802154_RECEIVE_SENSITIVITY_DBM`
-of the composition) with ESP-IDF's default CCA threshold. The radio enables
+`Some(ClockRelation::IDENTICAL)`) or one without a transmit-power, CCA
+threshold or CSL capability, then hand the port to `OpenThreadRadio::new` and give
+the radio to the `openthread` crate. Poll the runtime's runner
+(`Ieee802154System::run`) beside it: the adapter is the port's one event
+consumer and only takes events. OpenThread is told the port's figures
+(`Ieee802154Capabilities`): the transmit power and CCA threshold the radio
+starts with (`reset_dbm`) and its receive sensitivity, from which enhanced
+ACKs also measure link margins. OpenThread's frame power is an upper
+bound: above the port's levels the frame goes out at the highest level,
+below them the transmission fails. A CCA threshold outside the port's range
+fails the operation. The radio enables
 the port through its lifecycle and takes the `Enabled` terminal event,
 installs zeroed MAC keys and an enhanced-ACK generator through
 `RadioSetting`s and serves OpenThread's operations through the port's
@@ -78,7 +80,8 @@ The capabilities are the ones the radio keeps under this trait:
 - PHY: ACK timeout, energy scan, transmission from sleep, transmit
   security and timed transmission and reception, as ESP-IDF's OpenThread
   port reports them (`otPlatRadioGetCaps`). The CSL accuracy and
-  uncertainty are the port's defaults, 50 ppm and 500 microseconds.
+  uncertainty are the radio port's `CslCapability`; the Espressif runtime
+  publishes ESP-IDF's defaults, 50 ppm and 500 microseconds.
 - MAC: hardware acknowledgement in both directions, PAN ID, short and
   extended address filtering, promiscuous mode and source matching. A
   disabled source-match table answers every poll with frame pending; an

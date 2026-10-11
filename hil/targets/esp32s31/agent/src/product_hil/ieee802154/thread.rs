@@ -16,10 +16,7 @@ use embassy_futures::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use esp_hal::{efuse, rng::Trng};
-use oer_esp32s31_ieee802154_system::{
-    IEEE802154_DEFAULT_TX_POWER_DBM, IEEE802154_RECEIVE_SENSITIVITY_DBM, Ieee802154SystemPort,
-    Ieee802154SystemRuntime,
-};
+use oer_esp32s31_ieee802154_system::{Ieee802154SystemPort, Ieee802154SystemRuntime};
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_hil_protocol::{
     ieee802154::IEEE802154_THREAD_RECORDED_DATAGRAMS, ieee802154::Ieee802154SessionResult,
@@ -33,8 +30,7 @@ use oer_ieee802154::{
     RequestId,
 };
 use oer_ieee802154_openthread::{
-    MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
-    PortRssi,
+    MonotonicRadioClock, OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, PortRssi,
 };
 use oer_time_embassy::EmbassyClock;
 use openthread::{
@@ -295,13 +291,7 @@ pub(in crate::product_hil) async fn run_thread(
     let (ot, socket) = joined.expect("the stack started");
     publish_event_reliably(0, request_id, started(Ieee802154SessionResult::Done)).await;
 
-    let radio: ThreadRadio<'_> = OpenThreadRadio::new(
-        &port,
-        OpenThreadRadioDefaults::esp_idf(
-            IEEE802154_DEFAULT_TX_POWER_DBM,
-            IEEE802154_RECEIVE_SENSITIVITY_DBM,
-        ),
-    );
+    let radio: ThreadRadio<'_> = OpenThreadRadio::new(&port);
     let tracking_stop = Signal::<CriticalSectionRawMutex, ()>::new();
     let tracking = async {
         // The radio system's periodic PHY tracking, as ESP-IDF's

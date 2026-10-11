@@ -32,32 +32,30 @@ impl RadioCapabilities {
     pub const HARDWARE_ACKNOWLEDGEMENT: Self = Self(1 << 3);
     /// Scheduled monotonic-time transmission.
     pub const SCHEDULED_TRANSMIT: Self = Self(1 << 4);
-    /// Per-request or configured transmit power.
-    pub const TRANSMIT_POWER: Self = Self(1 << 5);
     /// Promiscuous receive mode.
-    pub const PROMISCUOUS: Self = Self(1 << 6);
+    pub const PROMISCUOUS: Self = Self(1 << 5);
     /// Receive timestamps in a monotonic radio epoch.
-    pub const RECEIVE_TIMESTAMP: Self = Self(1 << 7);
+    pub const RECEIVE_TIMESTAMP: Self = Self(1 << 6);
     /// Automatic acknowledgement generation.
-    pub const AUTOMATIC_ACKNOWLEDGEMENT: Self = Self(1 << 8);
+    pub const AUTOMATIC_ACKNOWLEDGEMENT: Self = Self(1 << 7);
     /// MAC security processing offload.
-    pub const SECURITY_OFFLOAD: Self = Self(1 << 9);
+    pub const SECURITY_OFFLOAD: Self = Self(1 << 8);
     /// Hardware source matching and frame-pending selection.
-    pub const SOURCE_MATCH: Self = Self(1 << 10);
+    pub const SOURCE_MATCH: Self = Self(1 << 9);
     /// Retransmission after a transmission without acknowledgement or
     /// channel access.
-    pub const TRANSMIT_RETRIES: Self = Self(1 << 11);
+    pub const TRANSMIT_RETRIES: Self = Self(1 << 10);
     /// Reception in a window that opens at a monotonic radio time.
-    pub const SCHEDULED_RECEIVE: Self = Self(1 << 12);
+    pub const SCHEDULED_RECEIVE: Self = Self(1 << 11);
     /// More than one addressing interface
     /// ([`Configuration::Interface`], [`TxRequest::interface`](crate::TxRequest::interface)).
-    pub const MULTI_PAN: Self = Self(1 << 13);
+    pub const MULTI_PAN: Self = Self(1 << 12);
     /// Network time written into a transmitted frame's Time IE at its SFD
     /// ([`TxRequest::time_sync`](crate::TxRequest::time_sync)).
-    pub const TIME_SYNC: Self = Self(1 << 14);
+    pub const TIME_SYNC: Self = Self(1 << 13);
 
     /// The bits this contract publishes; the image has room for more.
-    const KNOWN: u32 = (1 << 15) - 1;
+    const KNOWN: u32 = (1 << 14) - 1;
 
     /// Validate a serialized capability image.
     pub const fn from_bits(bits: u32) -> Result<Self, CapabilityBitsError> {
@@ -104,12 +102,6 @@ impl RadioCapabilities {
             Configuration::Promiscuous(_) => self.contains(Self::PROMISCUOUS),
             Configuration::AutomaticAcknowledgement(_) => {
                 self.contains(Self::AUTOMATIC_ACKNOWLEDGEMENT)
-            }
-            Configuration::TransmitPowerDbm(_) | Configuration::ChannelTransmitPowerDbm { .. } => {
-                self.contains(Self::TRANSMIT_POWER)
-            }
-            Configuration::CcaThresholdDbm(_) | Configuration::CcaMode(_) => {
-                self.contains(Self::CLEAR_CHANNEL_ASSESSMENT)
             }
             Configuration::PendingMode(_)
             | Configuration::AddPendingAddress(_)

@@ -11,6 +11,8 @@ pub mod command;
 pub mod event;
 /// Addressing interfaces of a multi-PAN radio.
 pub mod interface;
+/// Transmit power and CCA threshold capabilities.
+pub mod power;
 /// Command admission and event validation under one finite owner.
 pub mod state;
 

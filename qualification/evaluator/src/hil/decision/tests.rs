@@ -690,6 +690,10 @@ fn a_bound_is_judged_on_every_current_run_together_and_never_invents_a_pass() {
             "ab".repeat(32)
         ))
     );
+    // A run no shard can keep never joins the sum.
+    let mut unrecordable = index.clone();
+    unrecordable.scenarios.get_mut(id).unwrap()[1].inherited_flags = Some("RUSTFLAGS");
+    assert_eq!(decide(&unrecordable).status, EvidenceStatus::Missing);
     // A worse run joins as well, and the sum leaves the bound: open again,
     // never an unresolved failure that only a code change clears.
     let mut worse = index.scenarios[id][1].clone();

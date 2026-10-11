@@ -777,12 +777,13 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
         "chip-a",
         &[PathBuf::from("firmware")],
         None,
+        &BTreeSet::new(),
     )
     .unwrap();
     assert_eq!(recorded, ["station-reconnect"]);
     // The shard names its observer build, stored once beside it.
     let shard: serde_json::Value =
-        read_json(&root.join("evidence/station-reconnect.json")).unwrap();
+        read_json(&root.join("evidence/station-reconnect/run-1.json")).unwrap();
     let observer = &shard["subject"]["observer"];
     assert!(observer.get("build").is_none());
     let build = oer_hil_run_bundle_format::observer::store::path(
@@ -980,10 +981,43 @@ fn observer_assessment_work_does_not_grow_with_the_runs() {
         "chip-a",
         &other,
         Some(&named),
+        Recordable::default(),
     )
     .unwrap();
     assert_eq!(observer::work::take().build_loads, 1);
     assert_eq!(index.summary().qualifying, 0);
+    // Every run of a scenario a bound pools may be recorded, so its observer
+    // is assessed without naming the run.
+    let pooled = BTreeSet::from(["station-reconnect".to_owned()]);
+    HilEvidenceIndex::load_selected(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "chip-a",
+        &other,
+        None,
+        Recordable {
+            runs: None,
+            scenarios: Some(&pooled),
+        },
+    )
+    .unwrap();
+    assert_eq!(observer::work::take().build_loads, 1);
+    // So is one of a named run when the whole store is read.
+    HilEvidenceIndex::load_selected(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "chip-a",
+        &other,
+        None,
+        Recordable {
+            runs: Some(&named),
+            scenarios: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(observer::work::take().build_loads, 1);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1175,6 +1209,7 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
             "chip-a",
             &repository,
             Some(&only),
+            Recordable::default(),
         )
         .unwrap();
         shard::distill(
@@ -1184,10 +1219,18 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
             "chip-a",
             &[PathBuf::from("firmware")],
             Some(&only),
+            &BTreeSet::new(),
         )
         .unwrap()
     };
-    let shard = |scenario: &str| fs::read(root.join(format!("evidence/{scenario}.json"))).ok();
+    let shard = |scenario: &str| {
+        let shards = fs::read_dir(root.join("evidence").join(scenario)).ok()?;
+        let mut shards = shards
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(shards.len(), 1, "{scenario} keeps its latest run");
+        fs::read(shards.pop()?).ok()
+    };
 
     fs::write(root.join("firmware/src/lib.rs"), "checkout one").unwrap();
     assert_eq!(record("run-2"), ["station-roam"]);
@@ -1232,11 +1275,20 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
             "chip-a",
             &repository,
             Some(&only),
+            Recordable::default(),
         )
         .unwrap();
         let sources = [PathBuf::from("firmware")];
-        let recorded =
-            shard::distill(&root, &index, evidence, "chip-a", &sources, Some(&only)).unwrap();
+        let recorded = shard::distill(
+            &root,
+            &index,
+            evidence,
+            "chip-a",
+            &sources,
+            Some(&only),
+            &BTreeSet::new(),
+        )
+        .unwrap();
         shard::explain(&root, &index, &only, &recorded, evidence, &sources).unwrap()
     };
     assert_eq!(
@@ -1260,6 +1312,74 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
         explain("missing-run", "abc123")[0].2,
         shard::RunVerdict::NotFound
     );
+
+    // A bounded scenario keeps every current run: one requested run records
+    // the others too, and a newer run replaces none of them.
+    observe("run-3", "gatt", 300);
+    observe("run-4", "gatt", 400);
+    let pooled = BTreeSet::from(["gatt".to_owned()]);
+    let sources = [PathBuf::from("firmware")];
+    let all = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &repository).unwrap();
+    let only = BTreeSet::from(["run-4".to_owned()]);
+    assert_eq!(
+        shard::distill(
+            &root,
+            &all,
+            evidence,
+            "chip-a",
+            &sources,
+            Some(&only),
+            &pooled
+        )
+        .unwrap(),
+        ["gatt"]
+    );
+    for run in ["run-3", "run-4"] {
+        assert!(
+            root.join(format!("evidence/gatt/{run}.json")).is_file(),
+            "{run}"
+        );
+    }
+    assert_eq!(
+        shard::explain(&root, &all, &only, &["gatt".to_owned()], evidence, &sources).unwrap(),
+        [(
+            "run-4".to_owned(),
+            "gatt".to_owned(),
+            shard::RunVerdict::Recorded
+        )]
+    );
+    // At another commit the store's copy of run-3 no longer qualifies: its
+    // current shard stands for it and stays, while the shard of run-4, which
+    // the store no longer holds and whose sources changed, goes, whichever
+    // runs are requested.
+    fs::write(root.join("firmware/src/lib.rs"), "run-3 source").unwrap();
+    fs::remove_dir_all(root.join("runs/run-4")).unwrap();
+    let moved = RepositoryState {
+        commit: "moved".to_owned(),
+        dirty: false,
+    };
+    let all = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &moved).unwrap();
+    let run_3 = all.scenarios["gatt"]
+        .iter()
+        .find(|o| o.run_id == "run-3")
+        .unwrap();
+    assert!(run_3.source_bound && run_3.exclusions.is_empty());
+    let run_3_only = BTreeSet::from(["run-3".to_owned()]);
+    for requested in [Some(&run_3_only), None] {
+        shard::distill(
+            &root, &all, evidence, "chip-a", &sources, requested, &pooled,
+        )
+        .unwrap();
+        assert!(root.join("evidence/gatt/run-3.json").is_file());
+        assert!(!root.join("evidence/gatt/run-4.json").exists());
+    }
+    // A scenario without a bound keeps its latest run alone.
+    observe("run-5", "station-reconnect", 500);
+    let all = HilEvidenceIndex::load(&root, runs, evidence, "chip-a", &repository).unwrap();
+    shard::distill(&root, &all, evidence, "chip-a", &sources, None, &pooled).unwrap();
+    assert!(!root.join("evidence/station-reconnect/run-1.json").exists());
+    assert!(root.join("evidence/station-reconnect/run-5.json").is_file());
+    assert!(root.join("evidence/gatt/run-3.json").is_file());
     fs::remove_dir_all(root).unwrap();
 }
 

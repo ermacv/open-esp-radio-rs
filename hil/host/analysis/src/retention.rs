@@ -339,16 +339,26 @@ pub fn cited_by_shards(root: &Path) -> BTreeSet<String> {
     let Ok(targets) = fs::read_dir(root.join("hil/evidence")) else {
         return cited;
     };
+    // A shard is the file `<scenario>/<run>.json` of its target's directory,
+    // beside the target's `observers/`.
     for target in targets.flatten() {
-        let Ok(shards) = fs::read_dir(target.path()) else {
+        let Ok(scenarios) = fs::read_dir(target.path()) else {
             continue;
         };
-        for shard in shards.flatten() {
-            if let Some(value) = fs::read(shard.path())
-                .ok()
-                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            {
-                collect(&value, &mut cited);
+        for scenario in scenarios.flatten() {
+            if scenario.file_name() == "observers" {
+                continue;
+            }
+            let Ok(shards) = fs::read_dir(scenario.path()) else {
+                continue;
+            };
+            for shard in shards.flatten() {
+                if let Some(value) = fs::read(shard.path())
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                {
+                    collect(&value, &mut cited);
+                }
             }
         }
     }

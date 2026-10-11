@@ -193,6 +193,23 @@ impl ScenarioCatalog {
     }
 }
 
+/// The observations a recording may keep from a stale snapshot: those of
+/// `runs` and of `scenarios`.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Recordable<'a> {
+    pub(crate) runs: Option<&'a BTreeSet<String>>,
+    pub(crate) scenarios: Option<&'a BTreeSet<String>>,
+}
+
+impl Recordable<'_> {
+    fn covers(&self, run: &str, scenario: &str) -> bool {
+        self.runs.is_some_and(|runs| runs.contains(run))
+            || self
+                .scenarios
+                .is_some_and(|scenarios| scenarios.contains(scenario))
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HilEvidenceIndex {
     scenarios: BTreeMap<String, Vec<ScenarioEvidence>>,
@@ -400,6 +417,9 @@ struct ScenarioEvidence {
     /// Its build binds its sources in every respect but one: the checkout's
     /// tree changed since its snapshot.
     stale_snapshot: bool,
+    /// The compiler flags its firmware inherited from the environment, which
+    /// no shard binds: it is never recorded, so it never joins a bound's sum.
+    inherited_flags: Option<&'static str>,
 }
 
 impl ScenarioEvidence {
@@ -435,6 +455,19 @@ struct CompletionSeal {
 pub(crate) use oer_hil_scenario_catalog::Role as ScenarioRole;
 
 impl HilEvidenceIndex {
+    /// Whether one of `runs` observed one of `scenarios`.
+    pub(crate) fn observed_by(
+        &self,
+        scenarios: &BTreeSet<String>,
+        runs: &BTreeSet<String>,
+    ) -> bool {
+        scenarios.iter().any(|scenario| {
+            self.scenarios
+                .get(scenario)
+                .is_some_and(|observations| observations.iter().any(|o| runs.contains(&o.run_id)))
+        })
+    }
+
     #[cfg(test)]
     pub(crate) fn synthetic(entries: &[(&str, usize)]) -> Self {
         Self {
@@ -459,6 +492,7 @@ impl HilEvidenceIndex {
                             procedure_document: None,
                             source_bound: false,
                             stale_snapshot: false,
+                            inherited_flags: None,
                         }],
                     )
                 })
@@ -479,10 +513,21 @@ impl HilEvidenceIndex {
         target: &str,
         repository: &RepositoryState,
     ) -> Result<Self> {
-        Self::load_selected(root, runs, evidence, target, repository, None)
+        Self::load_selected(
+            root,
+            runs,
+            evidence,
+            target,
+            repository,
+            None,
+            Recordable::default(),
+        )
     }
 
     /// [`Self::load`] reading only the run bundles named in `only`, when set.
+    /// The observer of an otherwise excluded observation is assessed when a
+    /// recording may still keep it from its stale snapshot: an observation of
+    /// a named run, of `recordable`'s runs or of its scenarios.
     pub(crate) fn load_selected(
         root: &Path,
         runs: &Path,
@@ -490,8 +535,9 @@ impl HilEvidenceIndex {
         target: &str,
         repository: &RepositoryState,
         only: Option<&BTreeSet<String>>,
+        recordable: Recordable<'_>,
     ) -> Result<Self> {
-        let mut index = Self::load_runs(root, runs, target, repository, only)?;
+        let mut index = Self::load_runs(root, runs, target, repository, only, recordable)?;
         for (shard, current) in shard::load(root, evidence, target)? {
             index.summary.shards += 1;
             if !current {
@@ -503,10 +549,16 @@ impl HilEvidenceIndex {
                 .scenarios
                 .entry(shard.scenario().to_owned())
                 .or_default();
-            if observations.iter().any(|o| o.run_id == observation.run_id) {
-                continue;
+            // A current shard stands for its run where the store's copy of
+            // that run no longer qualifies on this tree.
+            match observations
+                .iter_mut()
+                .find(|o| o.run_id == observation.run_id)
+            {
+                Some(stored) if !stored.exclusions.is_empty() => *stored = observation,
+                Some(_) => {}
+                None => observations.push(observation),
             }
-            observations.push(observation);
         }
         Ok(index)
     }
@@ -517,6 +569,7 @@ impl HilEvidenceIndex {
         target: &str,
         repository: &RepositoryState,
         only: Option<&BTreeSet<String>>,
+        recordable: Recordable<'_>,
     ) -> Result<Self> {
         let current_observer = observer::Current::load(root);
         // The checkout's run directory, which `cargo hil` links to the store
@@ -752,19 +805,24 @@ impl HilEvidenceIndex {
                             procedure_document: None,
                             source_bound: false,
                             stale_snapshot,
+                            inherited_flags: None,
                         });
                     let observations = scenarios.get_mut(&scenario_id).unwrap();
                     let position = (scenario_id, observations.len() - 1);
                     let observation = observations.last_mut().unwrap();
+                    observation.inherited_flags = shard::inherited_flags(observation)?;
                     if !current_observer.available() {
                         observation
                             .exclusions
                             .push(decision::Exclusion::CurrentObserverConfigurationUnavailable);
-                    } else if !observation.exclusions.is_empty() && only.is_none() {
+                    } else if !observation.exclusions.is_empty()
+                        && only.is_none()
+                        && !recordable.covers(&observation.run_id, &position.0)
+                    {
                         // Already excluded: no observer makes it apply, and
-                        // assessing one reads its build. Only runs named for
-                        // recording are assessed whatever else excludes
-                        // them, since a stale snapshot may still be recorded.
+                        // assessing one reads its build. Only runs that may be
+                        // recorded are assessed whatever else excludes them,
+                        // since a stale snapshot may still be recorded.
                     } else if let Some(reference) = observation
                         .subject
                         .as_ref()

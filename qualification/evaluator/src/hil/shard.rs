@@ -7,6 +7,11 @@
 //! executed scenario document, plus the digests of every source the observed
 //! firmware and observer were built from. A shard supports qualification
 //! while those sources are unchanged, whatever else the repository changed.
+//!
+//! Each shard is the file `<scenario>/<run>.json` of the evidence directory.
+//! A scenario holds its latest qualifying run, or, when a requirement bounds
+//! its measurements, every current qualifying run: the bound sums them all,
+//! and recording never selects among them (#363).
 use super::*;
 use oer_hil_run_bundle_format::build::BuildParameters;
 use oer_hil_run_bundle_format::build::BuildProvenance;
@@ -16,10 +21,46 @@ use serde::Serialize;
 use serde_json::Value;
 
 /// Shard format.
-/// Schema 2 records the observer build by digest in `observers/`.
-const SCHEMA: u16 = 2;
-/// Extension of a shard file; its stem is the scenario identifier.
+/// Schema 2 records the observer build by digest in `observers/`; schema 3
+/// stores one shard per run below its scenario's directory.
+const SCHEMA: u16 = 3;
+/// Extension of a shard file; its stem is the run identifier and its
+/// directory the scenario's.
 const EXTENSION: &str = "json";
+
+/// The shard of `scenario`'s observation in `run` below `directory`.
+fn shard_path(directory: &Path, scenario: &str, run: &str) -> PathBuf {
+    directory.join(scenario).join(format!("{run}.{EXTENSION}"))
+}
+
+/// The shard files of `scenario` below `directory`, by run.
+fn scenario_shards(directory: &Path, scenario: &str) -> Result<BTreeMap<String, PathBuf>> {
+    let entries = match fs::read_dir(directory.join(scenario)) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut shards = BTreeMap::new();
+    for entry in entries {
+        let path = entry?.path();
+        let run = (path.extension().and_then(|e| e.to_str()) == Some(EXTENSION))
+            .then(|| path.file_stem().and_then(|s| s.to_str()))
+            .flatten()
+            .filter(|run| shard_name(run))
+            .ok_or_else(|| format!("unexpected HIL evidence file {}", path.display()))?;
+        shards.insert(run.to_owned(), path);
+    }
+    Ok(shards)
+}
+
+/// Whether `name` is a scenario or run identifier a shard path can hold.
+fn shard_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('.')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+}
 
 /// Files the observer's own build reads beside its manifest directories: the
 /// root lock and toolchain it is built with and the inputs it validates.
@@ -186,6 +227,7 @@ impl Shard {
             procedure_document: self.procedure.clone(),
             source_bound: true,
             stale_snapshot: false,
+            inherited_flags: None,
         }
     }
 
@@ -205,22 +247,34 @@ pub(super) fn load(root: &Path, directory: &Path, target: &str) -> Result<Vec<(S
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
         Err(error) => return Err(error.into()),
     };
-    let mut paths = entries
+    let mut scenarios = entries
         .map(|entry| Ok(entry?.path()))
         .collect::<Result<Vec<_>>>()?;
-    paths.sort();
-    let mut shards = vec![];
-    for path in paths {
-        if path.file_name() == Some(observer_store::DIRECTORY.as_ref()) && path.is_dir() {
+    scenarios.sort();
+    let mut paths = vec![];
+    for scenario in scenarios {
+        if scenario.file_name() == Some(observer_store::DIRECTORY.as_ref()) && scenario.is_dir() {
             continue;
         }
-        if path.extension().and_then(|e| e.to_str()) != Some(EXTENSION) {
-            return Err(format!("unexpected HIL evidence file {}", path.display()).into());
-        }
+        let name = scenario
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| scenario.is_dir() && shard_name(name))
+            .ok_or_else(|| format!("unexpected HIL evidence file {}", scenario.display()))?;
+        paths.extend(
+            scenario_shards(&root.join(directory), name)?
+                .into_iter()
+                .map(|(run, path)| (name.to_owned(), run, path)),
+        );
+    }
+    let mut shards = vec![];
+    for (scenario, run, path) in paths {
         let mut shard: Shard = read_json(&path)?;
+        if shard.scenario != scenario || shard.run_id != run {
+            return Err(format!("invalid HIL evidence shard {}", path.display()).into());
+        }
         if shard.schema != SCHEMA
             || shard.target != target
-            || path.file_stem().and_then(|s| s.to_str()) != Some(shard.scenario.as_str())
             || !valid_sha256(&shard.completion_seal.sha256)
             || shard.outcome != Outcome::Passed
             || shard.sources.windows(2).any(|w| w[0].path >= w[1].path)
@@ -350,7 +404,7 @@ fn observation_sources(
 /// The inherited compiler flags an observation's firmware was built with, as
 /// its build provenance records them. Such an image depends on the builder's
 /// environment, which no source binding covers, so it is never recorded.
-fn inherited_flags(observation: &ScenarioEvidence) -> Result<Option<&'static str>> {
+pub(super) fn inherited_flags(observation: &ScenarioEvidence) -> Result<Option<&'static str>> {
     let (Some(run), Some(subject)) = (&observation.run_directory, &observation.subject) else {
         return Ok(None);
     };
@@ -487,9 +541,12 @@ fn recorded_sources(
 
 /// Record the latest qualifying observation of every scenario of `index` in
 /// `directory`, bound to the digests of the sources its bundle records its
-/// firmware was built from, else to `sources`. With `runs`, only observations
-/// of those runs are recorded, so only the shards of scenarios they observed
-/// change. A run that archived its source snapshot binds the digests of the
+/// firmware was built from, else to `sources`; of a `pooled` scenario, whose
+/// measurements a requirement bounds, every qualifying observation, and
+/// none of its shards that no longer are current stays. With `runs`, only
+/// the scenarios those runs observed change, and only those runs are
+/// recorded, except that a pooled scenario they observed records all of its
+/// qualifying observations: recording never selects what a bound sums. A run that archived its source snapshot binds the digests of the
 /// sources as that snapshot holds them, so one run records the same bytes
 /// from any checkout. Returns the scenarios recorded.
 pub(crate) fn distill(
@@ -499,6 +556,7 @@ pub(crate) fn distill(
     target: &str,
     sources: &[PathBuf],
     runs: Option<&BTreeSet<String>>,
+    pooled: &BTreeSet<String>,
 ) -> Result<Vec<String>> {
     let mut known = BTreeMap::<PathBuf, String>::new();
     let mut checkout_digests = |paths: &[PathBuf]| -> Result<Vec<SourceDigest>> {
@@ -526,20 +584,25 @@ pub(crate) fn distill(
     // stored once, however many shards name it.
     let mut stored = BTreeSet::new();
     for (scenario, observations) in &index.scenarios {
+        let pooled = pooled.contains(scenario);
+        if !runs.is_none_or(|runs| observations.iter().any(|o| runs.contains(&o.run_id))) {
+            continue;
+        }
         let mut qualifying = Vec::new();
         for o in observations {
             if o.source_bound
                 || o.outcome != Outcome::Passed
                 || o.run_directory.is_none()
-                || !runs.is_none_or(|runs| runs.contains(&o.run_id))
+                || !(pooled || runs.is_none_or(|runs| runs.contains(&o.run_id)))
             {
                 continue;
             }
-            // A requested run is recorded by the rule that later judges its
-            // shard current: every source the shard binds matches the run's
-            // snapshot, whatever else the tree changed since.
+            // A requested run, and every run of a pooled scenario whichever
+            // runs are requested, is recorded by the rule that later judges
+            // its shard current: every source the shard binds matches the
+            // run's snapshot, whatever else the tree changed since.
             let recordable = o.exclusions.is_empty()
-                || (runs.is_some()
+                || ((runs.is_some() || pooled)
                     && o.stale_snapshot
                     && o.exclusions
                         .iter()
@@ -550,87 +613,116 @@ pub(crate) fn distill(
             }
         }
         qualifying.sort_by_key(|o| std::cmp::Reverse(o.started_unix_millis));
-        let mut chosen = None;
+        let mut chosen = Vec::new();
         for observation in qualifying {
-            match inherited_flags(observation)? {
+            match observation.inherited_flags {
                 Some(flags) => eprintln!(
                     "hil-evidence: {scenario}: run {} is not recorded; its firmware was built \
                      with inherited {flags}, which no source binding covers",
                     observation.run_id
                 ),
                 None => {
-                    chosen = Some(observation);
-                    break;
+                    chosen.push(observation);
+                    if !pooled {
+                        break;
+                    }
                 }
             }
         }
-        let Some(observation) = chosen else {
+        if chosen.is_empty() && !pooled {
             continue;
-        };
-        let (Some(seal), Some(subject), Some(run)) = (
-            &observation.completion_seal,
-            &observation.subject,
-            &observation.run_directory,
-        ) else {
-            continue;
-        };
-        let procedure = subject
-            .procedure
-            .as_ref()
-            .map(|p| read_json::<Value>(&run.join(&p.path)))
-            .transpose()?;
-        let shard = Shard {
-            schema: SCHEMA,
-            target: target.to_owned(),
-            scenario: scenario.clone(),
-            run_id: observation.run_id.clone(),
-            started_unix_millis: observation.started_unix_millis,
-            outcome: observation.outcome,
-            failure: observation.failure.clone(),
-            repetitions: observation
-                .repetition_outcomes
-                .iter()
-                .zip(&observation.repetition_failures)
-                .zip(&observation.measurements)
-                .map(|((outcome, failure), measurements)| Repetition {
-                    outcome: *outcome,
-                    failure: failure.clone(),
-                    measurements: measurements.clone(),
-                })
-                .collect(),
-            completion_seal: seal.clone(),
-            subject: subject.clone(),
-            procedure,
-            sources: {
-                let paths = observation_sources(root, observation)?;
-                let paths = paths.as_deref().unwrap_or(sources);
-                match Snapshot::load(run)? {
-                    Some(snapshot) => paths
-                        .iter()
-                        .map(|path| {
-                            Ok(SourceDigest {
-                                sha256: snapshot.digest(path)?,
-                                path: path.clone(),
-                            })
-                        })
-                        .collect::<Result<Vec<_>>>()?,
-                    None => checkout_digests(paths)?,
-                }
-            },
-        };
-        if let Some(observer) = &subject.observer
-            && stored.insert(observer.identity())
-        {
-            observer_store::store(&root.join(directory), &observer.proof()?["build"])
-                .map_err(|error| error.to_string())?;
         }
-        let mut bytes = serde_json::to_vec_pretty(&shard)?;
-        bytes.push(b'\n');
-        fs::write(
-            root.join(directory).join(format!("{scenario}.{EXTENSION}")),
-            bytes,
-        )?;
-        recorded.push(scenario.clone());
+        // A latest shard replaces the scenario's others; a pooled scenario
+        // keeps every other shard whose own sources are still current,
+        // whatever the store holds of its run, and loses its stale ones even
+        // when nothing new is recorded.
+        let keep = chosen
+            .iter()
+            .map(|o| o.run_id.clone())
+            .collect::<BTreeSet<_>>();
+        for (run, path) in scenario_shards(&root.join(directory), scenario)? {
+            if keep.contains(&run) {
+                continue;
+            }
+            if pooled {
+                let shard: Shard = read_json(&path)?;
+                if current(root, &path, &shard.sources)? {
+                    continue;
+                }
+            }
+            fs::remove_file(path)?;
+        }
+        let chosen_runs = keep;
+        for observation in chosen {
+            let (Some(seal), Some(subject), Some(run)) = (
+                &observation.completion_seal,
+                &observation.subject,
+                &observation.run_directory,
+            ) else {
+                continue;
+            };
+            let procedure = subject
+                .procedure
+                .as_ref()
+                .map(|p| read_json::<Value>(&run.join(&p.path)))
+                .transpose()?;
+            let shard = Shard {
+                schema: SCHEMA,
+                target: target.to_owned(),
+                scenario: scenario.clone(),
+                run_id: observation.run_id.clone(),
+                started_unix_millis: observation.started_unix_millis,
+                outcome: observation.outcome,
+                failure: observation.failure.clone(),
+                repetitions: observation
+                    .repetition_outcomes
+                    .iter()
+                    .zip(&observation.repetition_failures)
+                    .zip(&observation.measurements)
+                    .map(|((outcome, failure), measurements)| Repetition {
+                        outcome: *outcome,
+                        failure: failure.clone(),
+                        measurements: measurements.clone(),
+                    })
+                    .collect(),
+                completion_seal: seal.clone(),
+                subject: subject.clone(),
+                procedure,
+                sources: {
+                    let paths = observation_sources(root, observation)?;
+                    let paths = paths.as_deref().unwrap_or(sources);
+                    match Snapshot::load(run)? {
+                        Some(snapshot) => paths
+                            .iter()
+                            .map(|path| {
+                                Ok(SourceDigest {
+                                    sha256: snapshot.digest(path)?,
+                                    path: path.clone(),
+                                })
+                            })
+                            .collect::<Result<Vec<_>>>()?,
+                        None => checkout_digests(paths)?,
+                    }
+                },
+            };
+            if let Some(observer) = &subject.observer
+                && stored.insert(observer.identity())
+            {
+                observer_store::store(&root.join(directory), &observer.proof()?["build"])
+                    .map_err(|error| error.to_string())?;
+            }
+            let mut bytes = serde_json::to_vec_pretty(&shard)?;
+            bytes.push(b'\n');
+            let path = shard_path(&root.join(directory), scenario, &observation.run_id);
+            fs::create_dir_all(
+                path.parent()
+                    .ok_or("a shard lies in its scenario's directory")?,
+            )?;
+            fs::write(path, bytes)?;
+        }
+        if !chosen_runs.is_empty() {
+            recorded.push(scenario.clone());
+        }
     }
     collect_observers(&root.join(directory))?;
     Ok(recorded)
@@ -716,29 +808,34 @@ pub(crate) fn explain(
         for (scenario, observations) in &index.scenarios {
             for observation in observations.iter().filter(|o| &o.run_id == run) {
                 observed = true;
-                let shard_run = recorded
-                    .contains(scenario)
-                    .then(|| {
-                        read_json::<Value>(
-                            &root.join(directory).join(format!("{scenario}.{EXTENSION}")),
-                        )
-                    })
-                    .transpose()?
-                    .and_then(|shard| shard["run-id"].as_str().map(str::to_owned));
+                // The scenario's shards now: its newest run stands for a
+                // run that was not recorded.
+                let shards = if recorded.contains(scenario) {
+                    scenario_shards(&root.join(directory), scenario)?
+                } else {
+                    BTreeMap::new()
+                };
+                let mut shard_runs = Vec::new();
+                for path in shards.values() {
+                    let shard: Shard = read_json(path)?;
+                    shard_runs.push((shard.started_unix_millis, shard.run_id));
+                }
+                shard_runs.sort();
+                let newest = shard_runs.last().map(|(_, run)| run.clone());
                 let verdict = if observation.outcome != Outcome::Passed {
                     RunVerdict::NotPassed {
                         outcome: observation.outcome,
                     }
-                } else if shard_run.as_deref() == Some(run.as_str()) {
+                } else if shards.contains_key(run) {
                     RunVerdict::Recorded
                 } else if let Some(exclusion) = observation.exclusions.first() {
                     RunVerdict::Excluded {
                         exclusion: exclusion.clone(),
                         differing: differing_sources(root, observation, sources)?,
                     }
-                } else if let Some(flags) = inherited_flags(observation)? {
+                } else if let Some(flags) = observation.inherited_flags {
                     RunVerdict::InheritedFlags { flags }
-                } else if let Some(id) = shard_run {
+                } else if let Some(id) = newest {
                     RunVerdict::NewerRunRecorded { run: id }
                 } else {
                     RunVerdict::NotFound
@@ -793,8 +890,14 @@ const DIFFERING_SHOWN: usize = 10;
 fn collect_observers(directory: &Path) -> Result<()> {
     let mut named = BTreeSet::new();
     for entry in fs::read_dir(directory)? {
-        let path = entry?.path();
-        if path.extension().and_then(|e| e.to_str()) == Some(EXTENSION) {
+        let scenario = entry?.path();
+        let Some(name) = scenario.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name == observer_store::DIRECTORY || !scenario.is_dir() {
+            continue;
+        }
+        for path in scenario_shards(directory, name)?.into_values() {
             let shard: Value = read_json(&path)?;
             if let Some(digest) = shard["subject"]["observer"]["build_sha256"].as_str() {
                 named.insert(digest.to_owned());

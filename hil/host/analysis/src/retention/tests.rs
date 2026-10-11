@@ -264,3 +264,24 @@ fn unreadable_runs_go_by_schema_and_age() {
         assert!(store.run(kept).is_dir(), "{kept}");
     }
 }
+
+#[test]
+fn every_run_a_scenario_s_shards_cite_is_cited() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("hil/evidence/esp32s31");
+    for (scenario, run) in [("gatt", "run-1"), ("gatt", "run-2"), ("dtm", "run-3")] {
+        std::fs::create_dir_all(target.join(scenario)).unwrap();
+        std::fs::write(
+            target.join(scenario).join(format!("{run}.json")),
+            serde_json::to_vec(&serde_json::json!({ "scenario": scenario, "run-id": run }))
+                .unwrap(),
+        )
+        .unwrap();
+    }
+    std::fs::create_dir_all(target.join("observers")).unwrap();
+    std::fs::write(target.join("observers/build.json"), b"{}").unwrap();
+    assert_eq!(
+        super::cited_by_shards(root.path()),
+        ["run-1", "run-2", "run-3"].map(String::from).into()
+    );
+}

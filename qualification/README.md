@@ -540,8 +540,13 @@ hil-requirements = [
   `over = "current-runs"` holds on the sums over all of them, so a noisy run
   averages out and rerunning until a lucky run proves nothing (owner decision
   on #363).
+- **Evidence.** The store and the tracked shards hold every such run:
+  `hil-evidence` records each current qualifying run of a bounded scenario
+  (see below), and `cargo hil runs prune` keeps every run a shard cites.
 - **Decision.** A run that lacks a bound measurement, records it twice or
-  with another identity cannot join (`bound-measurements-unavailable`). A sum
+  with another identity cannot join (`bound-measurements-unavailable`), nor
+  can one whose firmware inherited compiler flags no shard binds
+  (`unrecordable-build`), since recording never keeps it. A sum
   below its minimum denominator, or outside the bound, leaves the obligation
   missing; more current runs move it, and none is picked. Only a bound met by
   all joined runs satisfies it, never an invented pass. `hil_decisions` lists
@@ -627,7 +632,12 @@ Digests of sealed files are remembered in the user's cache per file identity
 and status-change time (`OER_QUALIFICATION_HASH_CACHE=0` disables it). `cargo qualification hil-evidence (--manifest PATH |
 --hil-target TARGET)` records
 the latest qualifying observation of every scenario as a tracked shard in the
-program's `[hil] evidence` directory (`hil/evidence/<chip>/`). A shard holds
+program's `[hil] evidence` directory, the file `<scenario>/<run>.json` of
+`hil/evidence/<chip>/`, replacing the scenario's older shards. A scenario
+whose measurements a requirement of any program of the target bounds keeps
+every current qualifying run instead: recording one of its runs records all
+of them, and drops only its shards whose sources changed, so the bound sums
+what was observed and recording never selects (#363). A shard holds
 the observation's outcome, repetitions, measurements and failures, the run's
 completion seal, the observation subject (observer proof, firmware identity,
 repository provenance) and the executed scenario document, and the digests of

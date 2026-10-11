@@ -87,6 +87,9 @@ enum ObligationGap {
     /// A bound's measurement is missing from a repetition, or recorded
     /// with another identity: the run cannot join the judged set.
     BoundMeasurementsUnavailable,
+    /// Its firmware inherited compiler flags no shard binds, so recording
+    /// never keeps it and it never joins a bound's sum.
+    UnrecordableBuild,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -298,6 +301,9 @@ impl HilEvidenceIndex {
                         .all(|bound| bound.available(&observation.measurements)))
             {
                 gaps.push(ObligationGap::BoundMeasurementsUnavailable);
+            }
+            if !requirement.bounds.is_empty() && observation.inherited_flags.is_some() {
+                gaps.push(ObligationGap::UnrecordableBuild);
             }
             let criteria_failed = assessments
                 .as_ref()

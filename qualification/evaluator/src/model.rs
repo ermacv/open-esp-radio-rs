@@ -588,6 +588,30 @@ fn referenced_scenarios(root: &Path, catalog: &Path) -> Result<BTreeSet<String>>
     Ok(referenced)
 }
 
+/// The scenarios whose measurements a requirement of a program of HIL target
+/// `target` bounds: every current qualifying run of them is evidence, which
+/// recording keeps whole (#363).
+fn bounded_scenarios(root: &Path, target: &str) -> Result<BTreeSet<String>> {
+    let mut bounded = BTreeSet::new();
+    for path in program_paths(root)? {
+        let input = fs::read_to_string(root.join(&path))?;
+        let document: ManifestDocument = toml_edit::de::from_str(&input)
+            .map_err(|error| format!("cannot parse {}: {error}", path.display()))?;
+        if document.hil.target != target {
+            continue;
+        }
+        let resolved = document.resolve_catalogs(root, &root.join(&path), &input)?;
+        bounded.extend(resolved.capabilities.iter().flat_map(|capability| {
+            capability
+                .hil_requirements
+                .iter()
+                .filter(|requirement| !requirement.bounds.is_empty())
+                .map(|requirement| requirement.scenario.clone())
+        }));
+    }
+    Ok(bounded)
+}
+
 /// A program whose `[hil]` section names `target`; every such program must
 /// name the same run and evidence directories, so any one records the same
 /// shards.
@@ -647,17 +671,37 @@ impl ValidatedProgram {
             .as_deref()
             .ok_or("the program's [hil] section names no evidence directory")?;
         let repository = RepositoryState::read(root)?;
-        let index = HilEvidenceIndex::load_selected(
+        let pooled = bounded_scenarios(root, &hil_target)?;
+        let load = |only| {
+            HilEvidenceIndex::load_selected(
+                root,
+                &document.hil.runs,
+                evidence,
+                &hil_target,
+                &repository,
+                only,
+                crate::hil::Recordable {
+                    runs,
+                    scenarios: Some(&pooled),
+                },
+            )
+        };
+        let mut index = load(runs)?;
+        // A requested run of a bounded scenario records every other current
+        // run of it too, so the index holds them all.
+        if runs.is_some_and(|runs| index.observed_by(&pooled, runs)) {
+            index = load(None)?;
+        }
+        let sources = crate::hil::shard::tracked_sources(root, &index)?;
+        let recorded = crate::hil::shard::distill(
             root,
-            &document.hil.runs,
+            &index,
             evidence,
             &hil_target,
-            &repository,
+            &sources,
             runs,
+            &pooled,
         )?;
-        let sources = crate::hil::shard::tracked_sources(root, &index)?;
-        let recorded =
-            crate::hil::shard::distill(root, &index, evidence, &hil_target, &sources, runs)?;
         let verdicts = match runs {
             Some(runs) => {
                 crate::hil::shard::explain(root, &index, runs, &recorded, evidence, &sources)?

@@ -3843,6 +3843,7 @@ name = "oer-ieee80211-sta-service"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "embassy-sync 0.8.0",
  "oer-espressif-ieee80211-policy",
  "oer-ieee80211-datapath",
  "oer-ieee80211-lower-mac",

@@ -1541,6 +1541,7 @@ fn station_status_edge(state: StationLinkState) -> Option<StationLinkEdge> {
 const fn hil_fault_phase(phase: oer::wifi::StaFaultPhase) -> StationFaultPhase {
     use oer::wifi::StaFaultPhase as DriverPhase;
     match phase {
+        DriverPhase::Attempt => StationFaultPhase::Attempt,
         DriverPhase::Start => StationFaultPhase::Start,
         DriverPhase::Connected => StationFaultPhase::Connected,
         DriverPhase::Teardown => StationFaultPhase::Teardown,
@@ -1555,6 +1556,7 @@ const fn hil_fault_cause(cause: oer::wifi::StaFaultCause) -> StationFaultCause {
         DriverCause::Configuration => StationFaultCause::Configuration,
         DriverCause::Resources => StationFaultCause::Resources,
         DriverCause::RfState => StationFaultCause::RfState,
+        DriverCause::PortLost => StationFaultCause::PortLost,
     }
 }
 

@@ -35,13 +35,30 @@ submission per attempt.
 | `PortConnection` | The connected data plane | QoS or non-QoS data with per-TID sequence numbers and a CCMP header from `CcmpTxPacketNumber`, at the access category of the user priority; receive duplicate filter, Block Ack reordering (ADDBA, DELBA, BlockAckReq) into the station's slots, CCMP replay check per lane after reordering, A-MSDU deaggregation; SA Query under management frame protection; Deauthentication and Disassociation; the Group Key Handshake under the pairwise key |
 | `PortPowerSave` | `oer_ieee80211_sta::modem_sleep` | Runs for every association with the profile's `sleep_type` (`set_sleep_type` restarts it); TBTTs and TSF of `LowerMacBeaconTiming`, which the station's port must implement, doze as `TxGate { open: false }`, Null frames with the Power Management bit, the frame held while the station dozes |
 | `PortStation`, `PortAttemptPort` | `StaAttemptPort` | Scan when the candidate must be refreshed, tune, authenticate (Open System, SAE, or Open System resuming a cached SAE PMKSA), associate, program the BSS filter, handshake, install keys, enter the connection |
-| `PortStationLifecycle` | `StaLifecycleBackend` | Attempts through `StaAttempt`, the connection served for a `PortStationApplication`, backoff |
+| `PortStationLifecycle` | `StaLifecycleBackend` | Attempts through `StaAttempt`, the connection served for a `PortStationApplication`, backoff; the one publisher of the station's link stream |
+| `StationLinkStatus`, `StationLinkPublisher` | — | The station's link stream: `Disconnected`, `Connected` and `Faulted` edges with the operational TX Block Ack TIDs, read as a snapshot or awaited |
 
 A failure in which the station lost its port (`PortStationError::is_port_lost`:
-a poisoned port, or a refused or failed lifecycle command, whichever phase met
-it) is `Terminal`: no automatic retry, since only the port's owner restores
-the port, and the lifecycle returns the station to that owner. The station
-never enables a port itself.
+a poisoned port, or a refused or failed lifecycle command) gets no automatic
+retry, since only the port's owner restores the port. Within an attempt it is
+`Terminal`; the lifecycle ends on it with a `PortStationFault`, which keeps the
+station for that owner and names `StaFaultReason { phase, cause: PortLost }`.
+The phase is the link's state at the loss, which is what a reader of the link
+stream saw: `Attempt` before the link connected (joining, or entering the
+connection), `Connected` while serving it, `Teardown` while leaving it. The
+station holds no hardware, so `Start`, the bring-up of hardware a station
+owns, is never its phase. The station never enables a port itself.
+
+The link stream has exactly one producer, the `StationLinkPublisher` that
+`StationLinkStatus::publisher` hands out and `PortStationLifecycle` owns. It
+reports every edge, a fault as the last of its run (a later run, once the
+port's owner restored the port, opens with `Disconnected(None)`). Dropping it,
+however the lifecycle ended (stopped, faulted, or its task cancelled), closes
+the stream: a read (`StationLinkRead`) is `Closed` with the last snapshot, and
+every waiter wakes with it, so a fault published just before the drop still
+reaches the reader, inside the closure. A reader
+thus tells a failed station (`Faulted(reason)`) from a producer that is gone
+(closure), and never takes a gone producer's last state for the current one.
 
 The integrator names its port, transmit-policy parameters, backoff entropy,
 timer, key-data unwrap and the network's transmit source
@@ -275,5 +292,7 @@ System join with data both ways, a WPA2-PSK connection whose keys are
 installed through the port, a Block Ack window released in order with a
 replay and a duplicate dropped, power save around a TBTT with a buffered-data
 TIM, a Deauthentication by the access point, an SAE join with an SA Query
-under management frame protection, and the lifecycle rejoining after a
-Deauthentication.
+under management frame protection, the lifecycle rejoining after a
+Deauthentication, and a port lost before, during and while leaving a
+connection ending the lifecycle faulted on the link stream, which closes when
+the lifecycle is dropped.

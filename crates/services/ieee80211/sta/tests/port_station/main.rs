@@ -52,15 +52,16 @@ use oer_ieee80211_sta::{
     modem_sleep::{CoexView, PmCoexAction, PmCoexEvent, PmState, SleepType},
     pmksa::StaSharedPmksa,
     scan::{StaCandidateScanExit, StaScanConfig},
-    station::{StaLifecycleExit, StaReconnectPolicy},
+    station::{StaFaultPhase, StaLifecycleExit, StaReconnectPolicy},
 };
 use oer_ieee80211_sta_service::{
     port::{
-        EventRouter, PortChannelSwitch, PortCoexistence, PortCoexistenceRefused, PortConnection,
-        PortConnectionFrame, PortDisconnect, PortLink, PortLinkError, PortLinkSupervision,
-        PortProbe, PortRouter, PortScan, PortScanTarget, PortStation, PortStationApplication,
-        PortStationConfig, PortStationEnv, PortStationEvent, PortStationLifecycle,
-        PortStationProfile, PortStationStorage,
+        EventRouter, PortAttemptError, PortChannelSwitch, PortCoexistence, PortCoexistenceRefused,
+        PortConnection, PortConnectionFrame, PortDisconnect, PortLink, PortLinkError,
+        PortLinkSupervision, PortProbe, PortRouter, PortScan, PortScanTarget, PortStation,
+        PortStationApplication, PortStationConfig, PortStationEnv, PortStationError,
+        PortStationEvent, PortStationLifecycle, PortStationProfile, PortStationStorage,
+        StationLinkState, StationLinkStatus,
     },
     scan::{StaCandidateScanService, StaScanBackend},
     station::StaLifecycleService,
@@ -1650,11 +1651,17 @@ struct Application<'a> {
     disconnects: &'a RefCell<Vec<PortDisconnect>>,
     stop_after: u32,
     stop: &'a Cell<bool>,
+    /// A port the stop poisons as the station reads it.
+    poison_on_stop: Option<&'a Model>,
 }
 
 impl PortStationApplication<ModelRxBuffer> for Application<'_> {
     fn stop_requested(&mut self) -> bool {
-        self.stop.get() || self.connections.get() >= self.stop_after
+        let stop = self.stop.get() || self.connections.get() >= self.stop_after;
+        if let Some(model) = self.poison_on_stop.filter(|_| stop) {
+            model.poison();
+        }
+        stop
     }
 
     fn deliver(&mut self, _msdu: PortMsdu<'_, ModelRxBuffer>) {}
@@ -1668,6 +1675,55 @@ impl PortStationApplication<ModelRxBuffer> for Application<'_> {
     }
 }
 
+type LinkStatus = StationLinkStatus<embassy_sync::blocking_mutex::raw::NoopRawMutex>;
+
+/// Poll the lifecycle's `future` with the router and the scripted access
+/// point under virtual time until it ends. `step` runs before each round of
+/// the access point and returns whether it changed anything.
+fn drive_lifecycle<T>(
+    world: &World,
+    ap: &mut ScriptedAp,
+    future: impl Future<Output = T>,
+    mut step: impl FnMut(&World, &mut ScriptedAp) -> bool,
+) -> T {
+    let mut future = pin!(future);
+    let mut routing = pin!(world.router.run());
+    let mut context = Context::from_waker(Waker::noop());
+    let mut quiet = false;
+    for _ in 0..1_000_000 {
+        world.timer.advance_to(world.timer.now());
+        if let Poll::Ready(exit) = future.as_mut().poll(&mut context) {
+            return exit;
+        }
+        if routing.as_mut().poll(&mut context).is_ready() {
+            // The router ended on the terminal poisoned event; the station
+            // learns of it at its next poll.
+            routing.set(world.router.run());
+        }
+        if step(world, ap) {
+            continue;
+        }
+        if ap.step(world.model, world.timer.now().as_micros()) {
+            continue;
+        }
+        // The router may have answered a wait the station registered
+        // after its poll (a lifecycle terminal of a channel move): poll
+        // once more before moving time.
+        if !quiet {
+            quiet = true;
+            continue;
+        }
+        quiet = false;
+        let next = world
+            .timer
+            .next_deadline()
+            .map(Instant::as_micros)
+            .expect("a deadline");
+        world.advance_to(next.max(world.timer.now().as_micros()));
+    }
+    panic!("the lifecycle did not end");
+}
+
 #[test]
 fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication() {
     on_large_stack(the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body);
@@ -1679,6 +1735,7 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
     let connections = Cell::new(0);
     let disconnects = RefCell::new(Vec::new());
     let stop = Cell::new(false);
+    let status = LinkStatus::new();
     let mut service = StaLifecycleService::new(
         PortStationLifecycle::new(
             Application {
@@ -1686,50 +1743,29 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
                 disconnects: &disconnects,
                 stop_after: 2,
                 stop: &stop,
+                poison_on_stop: None,
             },
+            status.publisher().unwrap(),
             Duration::from_millis(1),
         ),
         StaReconnectPolicy::new(3, 10, 100, 20).unwrap(),
     );
     let mut sent_deauthentication = false;
-    let exit = {
-        let future = service.run(world.station(open()));
-        let mut future = pin!(future);
-        let mut routing = pin!(world.router.run());
-        let mut context = Context::from_waker(Waker::noop());
-        let mut quiet = false;
-        loop {
-            world.timer.advance_to(world.timer.now());
-            if let Poll::Ready(exit) = future.as_mut().poll(&mut context) {
-                break exit;
-            }
-            assert!(routing.as_mut().poll(&mut context).is_pending());
+    let exit = drive_lifecycle(
+        &world,
+        &mut ap,
+        service.run(world.station(open())),
+        |_, ap| {
             // The access point ends the first association once it is up.
             if !sent_deauthentication && connections.get() == 1 {
                 let deauthentication = ap.deauthentication(1);
                 ap.queue(deauthentication);
                 sent_deauthentication = true;
-                continue;
+                return true;
             }
-            if ap.step(world.model, world.timer.now().as_micros()) {
-                continue;
-            }
-            // The router may have answered a wait the station registered
-            // after its poll (a lifecycle terminal of a channel move): poll
-            // once more before moving time.
-            if !quiet {
-                quiet = true;
-                continue;
-            }
-            quiet = false;
-            let next = world
-                .timer
-                .next_deadline()
-                .map(Instant::as_micros)
-                .expect("a deadline");
-            world.advance_to(next.max(world.timer.now().as_micros()));
-        }
-    };
+            false
+        },
+    );
     let StaLifecycleExit::Stopped { progress, .. } = exit else {
         panic!("the lifecycle did not stop");
     };
@@ -1745,6 +1781,249 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
     assert_eq!(ap.probe_requests.len(), 3);
     assert_eq!(ap.associations, 2);
     assert!(ap.deauthenticated);
+    // The stream saw the station leave; the stopped lifecycle still owns
+    // its publisher.
+    assert!(matches!(
+        status.read().open().unwrap().state,
+        StationLinkState::Disconnected(Some(PortDisconnect::Local))
+    ));
+    drop(service);
+    assert!(status.read().open().is_none());
+}
+
+/// Run a lifecycle over the open access point, losing the port where
+/// `lose` says, and return its end with the link stream's last state
+/// before the lifecycle was dropped.
+fn lose_the_port(
+    setup: impl FnOnce(&World),
+    poison_on_stop: bool,
+    lose: impl FnMut(&World, &mut ScriptedAp, &Application<'_>) -> bool,
+    lost_by: impl Fn(&PortAttemptError<Env<'_>>) -> bool,
+) -> (
+    Option<oer_ieee80211_sta::station::StaFaultReason>,
+    StationLinkState,
+) {
+    let world = World::new();
+    setup(&world);
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let connections = Cell::new(0);
+    let disconnects = RefCell::new(Vec::new());
+    let stop = Cell::new(false);
+    let status = LinkStatus::new();
+    let application = Application {
+        connections: &connections,
+        disconnects: &disconnects,
+        stop_after: u32::MAX,
+        stop: &stop,
+        poison_on_stop: None,
+    };
+    let mut lose = lose;
+    let mut service = StaLifecycleService::new(
+        PortStationLifecycle::new(
+            Application {
+                connections: &connections,
+                disconnects: &disconnects,
+                stop_after: u32::MAX,
+                stop: &stop,
+                poison_on_stop: poison_on_stop.then_some(world.model),
+            },
+            status.publisher().unwrap(),
+            Duration::from_millis(1),
+        ),
+        StaReconnectPolicy::new(3, 10, 100, 20).unwrap(),
+    );
+    let exit = drive_lifecycle(
+        &world,
+        &mut ap,
+        service.run(world.station(open())),
+        |world, ap| lose(world, ap, &application),
+    );
+    let state = status.read().open().unwrap().state;
+    let reason = match exit {
+        StaLifecycleExit::Faulted { fault, reason, .. } => {
+            assert_eq!(oer_ieee80211_sta::station::StaFault::reason(&fault), reason);
+            // The fault keeps the station and the failure that lost the port.
+            assert!(fault.error().is_port_lost());
+            assert!(lost_by(fault.error()), "{:?}", fault.error());
+            Some(reason)
+        }
+        _ => None,
+    };
+    drop(service);
+    // Dropping the lifecycle drops its publisher: the stream closes.
+    assert!(status.read().open().is_none());
+    (reason, state)
+}
+
+fn port_lost(phase: StaFaultPhase) -> Option<oer_ieee80211_sta::station::StaFaultReason> {
+    Some(oer_ieee80211_sta::station::StaFaultReason::new(
+        phase,
+        oer_ieee80211_sta::station::StaFaultCause::PortLost,
+    ))
+}
+
+#[test]
+fn a_port_poisoned_under_a_connection_faults_the_station() {
+    on_large_stack(|| {
+        let mut poisoned = false;
+        let (reason, state) = lose_the_port(
+            |_| {},
+            false,
+            |world, _, application| {
+                if !poisoned && application.connections.get() == 1 {
+                    world.model.poison();
+                    poisoned = true;
+                    return true;
+                }
+                false
+            },
+            |error| matches!(error, PortStationError::Link(PortLinkError::Poisoned(_))),
+        );
+        assert_eq!(reason, port_lost(StaFaultPhase::Connected));
+        assert!(matches!(state, StationLinkState::Faulted(r) if Some(r) == reason));
+    });
+}
+
+#[test]
+fn a_port_its_owner_disabled_faults_the_station_s_join() {
+    on_large_stack(|| {
+        // The owner disabled the port: the station's scan meets a refused
+        // lifecycle command.
+        let disable = |world: &World| {
+            ready(world.model.lifecycle(LifecycleCommand::Disable))
+                .unwrap()
+                .unwrap();
+        };
+        let (reason, state) = lose_the_port(
+            disable,
+            false,
+            |_, _, _| false,
+            |error| matches!(error, PortStationError::Scan(scan) if matches!(scan.error(), PortLinkError::Lifecycle(_))),
+        );
+        assert_eq!(reason, port_lost(StaFaultPhase::Attempt));
+        assert!(matches!(state, StationLinkState::Faulted(r) if Some(r) == reason));
+    });
+}
+
+#[test]
+fn a_port_poisoned_as_the_station_leaves_faults_its_teardown() {
+    on_large_stack(|| {
+        // The application stops once connected, and the port is lost as
+        // the station reads the stop: its Deauthentication cannot go out.
+        let (reason, state) = lose_the_port(
+            |_| {},
+            true,
+            |_, _, application| {
+                if application.connections.get() == 1 && !application.stop.get() {
+                    application.stop.set(true);
+                    return true;
+                }
+                false
+            },
+            |error| matches!(error, PortStationError::Link(PortLinkError::Poisoned(_))),
+        );
+        assert_eq!(reason, port_lost(StaFaultPhase::Teardown));
+        assert!(matches!(state, StationLinkState::Faulted(r) if Some(r) == reason));
+    });
+}
+
+#[test]
+fn a_port_poisoned_as_the_station_enters_its_connection_faults_its_attempt() {
+    on_large_stack(|| {
+        // The access point's Association Response has reached the station,
+        // which has not entered its connection yet.
+        let mut poisoned = false;
+        let (reason, state) = lose_the_port(
+            |_| {},
+            false,
+            |world, ap, application| {
+                if !poisoned
+                    && ap.associations == 1
+                    && ap.outbox.is_empty()
+                    && world.model.queued_events() == 0
+                    && application.connections.get() == 0
+                {
+                    world.model.poison();
+                    poisoned = true;
+                    return true;
+                }
+                false
+            },
+            |error| error.is_port_lost(),
+        );
+        // The link never connected: the attempt, not a hardware bring-up.
+        assert_eq!(reason, port_lost(StaFaultPhase::Attempt));
+        assert!(matches!(state, StationLinkState::Faulted(r) if Some(r) == reason));
+    });
+}
+
+#[test]
+fn a_run_after_a_fault_opens_the_stream_disconnected() {
+    on_large_stack(|| {
+        let world = World::new();
+        // The owner disabled the port: the first run faults in its join.
+        ready(world.model.lifecycle(LifecycleCommand::Disable))
+            .unwrap()
+            .unwrap();
+        let mut ap = ScriptedAp::new(ApSecurity::Open);
+        let connections = Cell::new(0);
+        let disconnects = RefCell::new(Vec::new());
+        let stop = Cell::new(false);
+        let status = LinkStatus::new();
+        let mut service = StaLifecycleService::new(
+            PortStationLifecycle::new(
+                Application {
+                    connections: &connections,
+                    disconnects: &disconnects,
+                    stop_after: 1,
+                    stop: &stop,
+                    poison_on_stop: None,
+                },
+                status.publisher().unwrap(),
+                Duration::from_millis(1),
+            ),
+            StaReconnectPolicy::new(3, 10, 100, 20).unwrap(),
+        );
+        let exit = drive_lifecycle(
+            &world,
+            &mut ap,
+            service.run(world.station(open())),
+            |_, _| false,
+        );
+        let StaLifecycleExit::Faulted { fault, reason, .. } = exit else {
+            panic!("the disabled port did not fault the join");
+        };
+        let faulted = status.read().open().unwrap();
+        assert!(matches!(faulted.state, StationLinkState::Faulted(r) if r == reason));
+
+        // The owner restores the port and runs the same station again.
+        let (station, _) = fault.into_parts();
+        ready(world.model.lifecycle(LifecycleCommand::Enable))
+            .unwrap()
+            .unwrap();
+        let mut states = Vec::new();
+        let mut seen = faulted.revision;
+        let exit = drive_lifecycle(&world, &mut ap, service.run(station), |_, _| {
+            let snapshot = status.read().open().unwrap();
+            if snapshot.revision > seen {
+                seen = snapshot.revision;
+                states.push(snapshot.state);
+            }
+            false
+        });
+        assert!(matches!(exit, StaLifecycleExit::Stopped { .. }));
+        // The new run leaves the fault before anything else, then connects.
+        assert!(
+            matches!(states.first(), Some(StationLinkState::Disconnected(None))),
+            "{states:?}"
+        );
+        assert!(
+            states
+                .iter()
+                .any(|state| matches!(state, StationLinkState::Connected(_))),
+            "{states:?}"
+        );
+    });
 }
 
 /// Route every earlier event and drop what the station has not read, then
@@ -2479,6 +2758,7 @@ fn the_lifecycle_follows_its_access_point_to_the_announced_channel_body() {
     let connections = Cell::new(0);
     let disconnects = RefCell::new(Vec::new());
     let stop = Cell::new(false);
+    let status = LinkStatus::new();
     let mut service = StaLifecycleService::new(
         PortStationLifecycle::new(
             Application {
@@ -2486,7 +2766,9 @@ fn the_lifecycle_follows_its_access_point_to_the_announced_channel_body() {
                 disconnects: &disconnects,
                 stop_after: 2,
                 stop: &stop,
+                poison_on_stop: None,
             },
+            status.publisher().unwrap(),
             Duration::from_millis(1),
         ),
         StaReconnectPolicy::new(3, 10, 100, 20).unwrap(),

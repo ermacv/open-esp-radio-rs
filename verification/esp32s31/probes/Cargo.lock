@@ -1490,6 +1490,7 @@ dependencies = [
 name = "oer-ieee80211-sta-service"
 version = "0.1.0"
 dependencies = [
+ "embassy-sync 0.8.0",
  "oer-ieee80211-datapath",
  "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",

@@ -30,6 +30,7 @@
 mod connected;
 mod join;
 mod link;
+mod link_status;
 mod power;
 mod rsn;
 mod scan;
@@ -46,11 +47,15 @@ pub use link::{
     PortCoexistenceRefused, PortConnectionFrame, PortLink, PortLinkError, PortRouter,
     PortStationConfig, PortStationEnv, PortStationFrame,
 };
+pub use link_status::{
+    STATION_LINK_WAITERS, StationLinkPublisher, StationLinkRead, StationLinkSnapshot,
+    StationLinkState, StationLinkStatus,
+};
 pub use power::PortPowerSave;
 pub use rsn::{PortHandshake, PortKeyInstall, PortKeys};
 pub use scan::{PortProbe, PortScan, PortScanTarget};
 pub use station::{
     LinkSupervisionError, PortAttemptError, PortAttemptPort, PortAttemptReport,
-    PortLinkSupervision, PortStation, PortStationApplication, PortStationError,
+    PortLinkSupervision, PortStation, PortStationApplication, PortStationError, PortStationFault,
     PortStationLifecycle, PortStationProfile, PortStationStorage, PortTxBlockAck, PortUnwrapError,
 };

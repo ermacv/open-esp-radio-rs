@@ -377,7 +377,7 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
     }
 
     /// Move the enabled port to `channel` through a full lifecycle
-    /// ([`PortClient::move_channel`](oer_ieee80211_upper_mac_service::PortClient::move_channel)).
+    /// ([`PortClient::move_channel`](oer_ieee80211_upper_mac_service::client::PortClient::move_channel)).
     pub async fn move_channel(
         &mut self,
         channel: Channel,

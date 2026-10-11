@@ -333,11 +333,21 @@ fn profile(ssid: &WifiSsid) -> PortApProfile<'_> {
     }
 }
 
+/// The port's lifecycle authority, which the test holds as the port's owner.
+type Owner<'r, 'p> = oer_ieee80211_upper_mac_service::owner::PortOwner<
+    'r,
+    'p,
+    Model,
+    { oer_ieee80211_upper_mac_service::PORT_EXCHANGES },
+    { oer_ieee80211_upper_mac_service::PORT_BACKLOG },
+>;
+
 /// The port's owner tunes the port to the BSS's channel, and the access
 /// point starts there.
 fn start<X: PortApEnv<Port = Model>>(
     model: &Model,
     router: &oer_ieee80211_upper_mac_service::PortRouter<'_, Model>,
+    owner: &mut Owner<'_, '_>,
     timer: &VirtualClock,
     access_point: &mut PortAccessPoint<'_, X>,
 ) {
@@ -346,7 +356,7 @@ fn start<X: PortApEnv<Port = Model>>(
         model,
         router,
         timer,
-        access_point.client_mut().move_channel(channel),
+        owner.move_channel(channel),
         &[],
         |_| {},
     )
@@ -447,7 +457,9 @@ fn the_access_point_starts_its_bss_and_beacons_at_every_tbtt() {
     )
     .unwrap();
 
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+
+    start(&model, &router, &mut owner, &timer, &mut access_point);
     assert_eq!(model.channel(), Some(Channel::from_wifi_channel(channel())));
     let vif = model.vif_config(AP).unwrap();
     assert_eq!(
@@ -524,7 +536,8 @@ fn a_probe_request_for_the_bss_or_any_ssid_is_answered_once_per_interval() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
 
     // A wildcard request, a directed one inside the response interval, then
     // one for another SSID, and a directed one after the interval.
@@ -696,7 +709,8 @@ fn an_open_station_authenticates_associates_and_leaves() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
 
     let start = timer.now().as_micros();
     serve(
@@ -773,7 +787,8 @@ fn an_inactive_peer_is_disassociated_and_deauthenticated() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
     let start = timer.now().as_micros();
     serve(
         &model,
@@ -830,7 +845,8 @@ fn a_wpa3_station_authenticates_by_sae_while_the_bss_goes_on() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
 
     // The station's Commit, built from the primitives the station role
     // uses: the access point answers with its own Commit.
@@ -944,7 +960,8 @@ fn a_wpa2_station_completes_the_four_way_handshake_and_gets_its_key() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
     // The group key is the port's from the start.
     assert_eq!(model.installed_keys(), [KeyScope::Group { key_id: 1 }]);
 
@@ -1046,7 +1063,8 @@ fn a_silent_station_gets_message_1_again_and_is_closed_when_its_retries_run_out(
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
     let start = timer.now().as_micros();
     serve(
         &model,
@@ -1166,7 +1184,8 @@ fn an_open_bss_carries_data_both_ways_for_its_associated_peers() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
     let start = timer.now().as_micros();
 
     // Before the station associates, its downlink has nowhere to go.
@@ -1259,7 +1278,8 @@ fn a_wpa2_bss_carries_data_under_each_key_and_drops_replays() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
     let ptk = ptk();
     let rsn_ie = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, &[]).unwrap();
@@ -1365,6 +1385,7 @@ fn last_tim(model: &Model) -> (u8, u8) {
 fn associated<'a, const HELD: usize>(
     model: &'a Model,
     router: &'a PortApRouter<'a, Env<'a>>,
+    owner: &mut Owner<'a, 'a>,
     timer: &'a VirtualClock,
     ssid: &'a WifiSsid,
     storage: &'a mut PortApStorage<HELD, TestFrame>,
@@ -1383,7 +1404,7 @@ fn associated<'a, const HELD: usize>(
         storage,
     )
     .unwrap();
-    start(model, router, timer, &mut access_point);
+    start(model, router, owner, timer, &mut access_point);
     let start = timer.now().as_micros();
     serve(
         model,
@@ -1406,7 +1427,8 @@ fn a_dozing_peer_s_frames_wait_for_its_ps_poll_or_its_wake_up() {
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
-    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let mut owner = router.owner().unwrap();
+    let mut access_point = associated(&model, &router, &mut owner, &timer, &ssid, &mut storage);
     let aid = access_point
         .service()
         .peer_status(STATION)
@@ -1480,7 +1502,8 @@ fn group_frames_wait_for_the_dtim_while_a_peer_dozes() {
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
-    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let mut owner = router.owner().unwrap();
+    let mut access_point = associated(&model, &router, &mut owner, &timer, &ssid, &mut storage);
     let start = timer.now().as_micros();
     serve(
         &model,
@@ -1547,7 +1570,8 @@ fn a_peer_s_block_ack_agreement_reorders_its_data_until_it_ends() {
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
-    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let mut owner = router.owner().unwrap();
+    let mut access_point = associated(&model, &router, &mut owner, &timer, &ssid, &mut storage);
     let now = timer.now().as_micros();
     let delivered = serve(
         &model,
@@ -1606,7 +1630,8 @@ fn the_composition_sizes_the_frames_held_for_dozing_peers() {
     let ssid = WifiSsid::new(SSID).unwrap();
     // Room for one held frame only.
     let mut storage = PortApStorage::<1, TestFrame>::new();
-    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let mut owner = router.owner().unwrap();
+    let mut access_point = associated(&model, &router, &mut owner, &timer, &ssid, &mut storage);
     let start = timer.now().as_micros();
     serve(
         &model,
@@ -1704,7 +1729,8 @@ fn with_ht_peer(
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
     let ptk = ptk();
     let rsn_ie = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, &[]).unwrap();
@@ -2006,7 +2032,8 @@ fn each_associated_peer_gets_its_own_rate_control_from_its_association() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
     let start = timer.now().as_micros();
     // The Association Request arrives 56 dB over the noise floor.
     let metered = RxMeta {
@@ -2076,7 +2103,8 @@ fn frames_held_for_a_dozing_peer_stay_the_network_s_owners_until_it_leaves() {
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
-    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let mut owner = router.owner().unwrap();
+    let mut access_point = associated(&model, &router, &mut owner, &timer, &ssid, &mut storage);
     let from = [0x02, 0, 0, 0, 0, 0x99];
     let start = timer.now().as_micros();
     serve(
@@ -2213,7 +2241,8 @@ fn an_announced_channel_switch_moves_the_bss_at_its_tbtt() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
     let start = timer.now().as_micros();
     // The first beacon starts the schedule.
     drive(
@@ -2266,7 +2295,7 @@ fn an_announced_channel_switch_moves_the_bss_at_its_tbtt() {
         &model,
         &router,
         &timer,
-        access_point.client_mut().move_channel(target),
+        owner.move_channel(target),
         &[],
         |_| {},
     )
@@ -2369,7 +2398,8 @@ fn a_two_band_access_point_moves_to_5_ghz_with_an_extended_announcement() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut access_point);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut access_point);
     let start = timer.now().as_micros();
     drive(
         &model,
@@ -2414,7 +2444,7 @@ fn a_two_band_access_point_moves_to_5_ghz_with_an_extended_announcement() {
         &model,
         &router,
         &timer,
-        access_point.client_mut().move_channel(target),
+        owner.move_channel(target),
         &[],
         |_| {},
     )
@@ -2461,7 +2491,8 @@ fn a_stopped_access_point_releases_its_peers_and_starts_again_where_its_owner_tu
     let router = PortApRouter::<Env<'_>>::new(&model, 1);
     let ssid = WifiSsid::new(SSID).unwrap();
     let mut storage = PortApStorage::<8, TestFrame>::new();
-    let mut access_point = associated(&model, &router, &timer, &ssid, &mut storage);
+    let mut owner = router.owner().unwrap();
+    let mut access_point = associated(&model, &router, &mut owner, &timer, &ssid, &mut storage);
     assert!(access_point.service().peer_status(STATION).is_some());
     assert!(access_point.schedule().is_some());
 
@@ -2503,7 +2534,7 @@ fn a_stopped_access_point_releases_its_peers_and_starts_again_where_its_owner_tu
         &model,
         &router,
         &timer,
-        access_point.client_mut().move_channel(eleven),
+        owner.move_channel(eleven),
         &[],
         |_| {},
     )
@@ -2650,7 +2681,8 @@ fn pmf_rejects_forged_and_replayed_management_before_peer_state_changes() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut ap);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut ap);
     join_pmf(&model, &router, &timer, &mut ap);
     let activity = ap.service().peer_status(STATION).unwrap().last_activity;
     let now = timer.now().as_micros();
@@ -2787,7 +2819,8 @@ fn pmf_protects_group_actions_and_teardown_and_keeps_ipns_across_restart() {
         &mut storage,
     )
     .unwrap();
-    start(&model, &router, &timer, &mut ap);
+    let mut owner = router.owner().unwrap();
+    start(&model, &router, &mut owner, &timer, &mut ap);
     join_pmf(&model, &router, &timer, &mut ap);
     let mut receiver = BipReceiver::new(ap.service().igtk().unwrap());
     let body = [0, 4, 37, 3, 0, 6, 3];
@@ -2829,7 +2862,7 @@ fn pmf_protects_group_actions_and_teardown_and_keeps_ipns_across_restart() {
     assert_eq!(teardown.frames[0][1] & 0x40, 0x40);
     assert_eq!(&teardown.frames[0][32..], &[3, 0]);
     assert!(model.installed_keys().is_empty());
-    start(&model, &router, &timer, &mut ap);
+    start(&model, &router, &mut owner, &timer, &mut ap);
     drive(
         &model,
         &router,

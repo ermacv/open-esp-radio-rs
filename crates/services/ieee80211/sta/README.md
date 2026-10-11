@@ -28,8 +28,8 @@ submission per attempt.
 
 | Item | Port it implements | Over the lower-MAC port |
 | --- | --- | --- |
-| `PortLink` | The station's `PortClient` (`oer-ieee80211-upper-mac-service::client`) over the port's `PortRouter` | The client's input, transmission, settings and lifecycle, with the station's coexistence schedule (connection frames at `Elevated`) and rate-control configuration; a loss is a `PortInput::EventsLost` input, and a poisoned port ends every phase with `PortLinkError::Poisoned`, which carries the backend's cause |
-| `PortScan` | `StaScanPort` | a permanent channel move per visit (`PortClient::move_channel`: `Disable`, `LowerMacSetting::Channel`, `Enable`), the station filter `OTHER_BSS_MANAGEMENT` (or `LowerMacMonitor` through `with_monitor` when the filters lack it), a Probe Request per channel, beacons and Probe Responses into a `ScanTable` |
+| `PortLink` | The station's `PortClient` (`oer-ieee80211-upper-mac-service::client`) over the port's `PortRouter` | The client's input, transmission and settings, and the port's lifecycle through the link's `PortOwner`, with the station's coexistence schedule (connection frames at `Elevated`) and rate-control configuration; a loss is a `PortInput::EventsLost` input, and a poisoned port ends every phase with `PortLinkError::Poisoned`, which carries the backend's cause |
+| `PortScan` | `StaScanPort` | a permanent channel move per visit (`PortOwner::move_channel`: `Disable`, `LowerMacSetting::Channel`, `Enable`), the station filter `OTHER_BSS_MANAGEMENT` (or `LowerMacMonitor` through `with_monitor` when the filters lack it), a Probe Request per channel, beacons and Probe Responses into a `ScanTable` |
 | `PortJoin` | `StaJoinBackend` | Open System and SAE Authentication and Association Requests; receive is the station filter `BSS_MEMBER` with the access point's BSSID |
 | `PortHandshake`, `PortKeyInstall` | `RsnHandshakeBackend`, `RsnKeyInstallBackend` | EAPOL in data MPDUs; the pairwise and group CCMP-128 keys through `install_key` (`PortKeys`), removed again on a failed install; Message 4 in the clear or under the pairwise key |
 | `PortConnection` | The connected data plane | QoS or non-QoS data with per-TID sequence numbers and a CCMP header from `CcmpTxPacketNumber`, at the access category of the user priority; receive duplicate filter, Block Ack reordering (ADDBA, DELBA, BlockAckReq) into the station's slots, CCMP replay check per lane after reordering, A-MSDU deaggregation; SA Query under management frame protection; Deauthentication and Disassociation; the Group Key Handshake under the pairwise key |
@@ -81,6 +81,12 @@ The port reserves every completion and lifecycle terminal when it admits
 the work, so a loss holds only received frames and TBTTs: they are gone and
 the connection goes on. A lifecycle command whose terminal the router's own
 bounded queue dropped ends with `PortLinkError::LifecycleLost`.
+
+A `PortLink` holds no lifecycle authority unless `with_owner` gives it the
+port's `PortOwner`: a lone station decides the channel (it scans and
+tunes), while in the STA+AP pair another owner does. Without it, a channel
+move or lifecycle command is `PortLinkError::NotOwner`. `lend_owner` and `take_owner` move the authority
+for a phase in which the station decides the channel alone.
 
 The composition places the station's memory: `PortStation::new` borrows a
 `PortStationStorage` (the scan table and the `PortConnectionBuffers`: the

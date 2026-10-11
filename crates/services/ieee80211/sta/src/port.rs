@@ -45,7 +45,7 @@ pub use join::{PortAssociation, PortHePower, PortJoin};
 pub use link::{
     EventRouter, NoCoexistence, PORT_BACKLOG, PORT_EXCHANGES, PortCoexistence,
     PortCoexistenceRefused, PortConnectionFrame, PortLink, PortLinkError, PortRouter,
-    PortStationConfig, PortStationEnv, PortStationFrame,
+    PortStationConfig, PortStationEnv, PortStationFrame, PortStationOwner,
 };
 pub use link_status::{
     STATION_LINK_WAITERS, StationLinkPublisher, StationLinkRead, StationLinkSnapshot,

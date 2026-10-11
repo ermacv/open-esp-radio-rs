@@ -1,6 +1,6 @@
 //! A service's client of a lower-MAC port: one interface's reception, its
-//! transmissions and the port's settings and lifecycle, over the port's
-//! [`EventRouter`].
+//! transmissions and its settings, over the port's [`EventRouter`]. The
+//! port's lifecycle and channel are its owner's ([`crate::owner`]).
 //!
 //! The router is the port's one event consumer; a client reads the router's
 //! queues and transmits through an [`UpperMacTx`] over it, so a service
@@ -24,10 +24,10 @@ use core::{
 
 use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_ieee80211_lower_mac::{
-    Channel, CoexPriority, EventsLost, Ieee80211LowerMacPort, KeySelector, LifecycleCommand,
-    LifecycleError, LifecycleEvent, LowerMacAirReservation, LowerMacAmpdu, LowerMacBeaconTiming,
-    LowerMacSetting, MacAddress, PhyRate, Poisoned, RadioPort, ReceiveFilter, RxBuffer, RxMeta,
-    SettingError, TbttEvent, TxCompletion, TxPower, VifConfig, VifId, VifRole,
+    CoexPriority, EventsLost, Ieee80211LowerMacPort, KeySelector, LifecycleError,
+    LowerMacAirReservation, LowerMacAmpdu, LowerMacBeaconTiming, LowerMacSetting, MacAddress,
+    PhyRate, Poisoned, RadioPort, ReceiveFilter, RxBuffer, RxMeta, SettingError, TbttEvent,
+    TxCompletion, TxPower, VifConfig, VifId, VifRole,
 };
 use oer_ieee80211_mac::{data::EthernetFrameParts, qos::WmmAccessCategory};
 use oer_ieee80211_softmac::BackoffEntropy;
@@ -537,58 +537,5 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         // The station's frames of its BSS are routed to it from now on.
         self.attachment.set_bssid(bssid);
         Ok(())
-    }
-
-    /// Move the enabled port to `channel` permanently: `Disable`, then
-    /// [`LowerMacSetting::Channel`], then `Enable`, each to its terminal.
-    /// The port goes through a full lifecycle, so `Disable` ends every
-    /// admitted operation first. A move that keeps the port enabled goes
-    /// through [`LowerMacLiveRetune`](oer_ieee80211_lower_mac::LowerMacLiveRetune)
-    /// instead.
-    ///
-    /// A channel outside the port's capabilities is refused before the
-    /// port is touched (`Setting(UnsupportedChannel)`). The port must be
-    /// enabled: a disabled one refuses `Disable` (`Lifecycle(AlreadyInState)`)
-    /// and stays as it is. An `Enable` that fails (`LifecycleFailed`,
-    /// `LifecycleLost`) leaves the port disabled; the client never enables
-    /// it again on its own, since only the port's owner decides its
-    /// lifecycle, so a service ends on that error (`is_port_lost`).
-    pub async fn move_channel(
-        &mut self,
-        channel: Channel,
-    ) -> Result<(), PortClientError<PortFault<X>>> {
-        if !self.port().capabilities().supports_channel(channel) {
-            return Err(PortClientError::Setting(SettingError::UnsupportedChannel));
-        }
-        self.lifecycle(LifecycleCommand::Disable).await?;
-        self.apply(LowerMacSetting::Channel(channel))?;
-        self.lifecycle(LifecycleCommand::Enable).await
-    }
-
-    /// Run one lifecycle command to its terminal event, which the router
-    /// queues for the client.
-    pub async fn lifecycle(
-        &mut self,
-        command: LifecycleCommand,
-    ) -> Result<(), PortClientError<PortFault<X>>> {
-        self.port()
-            .lifecycle(command)
-            .await?
-            .map_err(PortClientError::Lifecycle)?;
-        match self.router.lifecycle().await {
-            Some(Ok(LifecycleEvent::Failed { .. })) => Err(PortClientError::LifecycleFailed),
-            Some(Ok(_)) => Ok(()),
-            // The router's own queue overflowed: its terminal may be among
-            // the dropped entries.
-            Some(Err(EventsLost)) => {
-                self.counters.events_lost = self.counters.events_lost.saturating_add(1);
-                Err(PortClientError::LifecycleLost)
-            }
-            None => Err(PortClientError::Poisoned(
-                self.router
-                    .poisoned()
-                    .expect("the router ended its queue on poisoning"),
-            )),
-        }
     }
 }

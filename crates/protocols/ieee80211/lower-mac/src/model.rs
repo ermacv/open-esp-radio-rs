@@ -349,6 +349,8 @@ struct State {
     /// Non-terminal events the queue holds.
     queued: usize,
     poisoned: bool,
+    /// The next `Enable` fails ([`LowerMacModel::fail_next_enable`]).
+    fail_enable: bool,
     responses: VecDeque<ModelOutcome>,
     submitted: Vec<SubmittedAttempt>,
 }
@@ -524,6 +526,13 @@ impl<O: TxBody> LowerMacModel<O> {
     /// every other call returns it at once.
     pub fn poison(&self) {
         self.state.borrow_mut().poisoned = true;
+    }
+
+    /// Make the next `Enable` fail as a backend that cannot bring the radio
+    /// up: its terminal is [`LifecycleEvent::Failed`] and the port stays
+    /// disabled.
+    pub fn fail_next_enable(&self) {
+        self.state.borrow_mut().fail_enable = true;
     }
 
     /// Whether a submission may be admitted: `Err` once poisoned.
@@ -861,7 +870,8 @@ impl<O: TxBody> LowerMacModel<O> {
         state.lifecycle_requests += 1;
         Ok(match command {
             LifecycleCommand::Enable if state.enabled => Err(LifecycleError::AlreadyInState),
-            LifecycleCommand::Enable if state.channel.is_none() => {
+            LifecycleCommand::Enable if state.channel.is_none() || state.fail_enable => {
+                state.fail_enable = false;
                 // Nothing to tune to: the command fails and the port stays
                 // disabled.
                 state.push(Queued::Lifecycle(LifecycleEvent::Failed { command }));

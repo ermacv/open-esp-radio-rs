@@ -48,8 +48,8 @@ use oer_ieee80211_sta::{
 use oer_ieee80211_sta_ap_service::{PortStaAp, PortStaApError, PortStaApEvent, ProtectedSearch};
 use oer_ieee80211_sta_service::port::{
     NoCoexistence, PortDisconnect, PortLink, PortLinkSupervision, PortProbe, PortStation,
-    PortStationConfig, PortStationEnv, PortStationError, PortStationEvent, PortStationProfile,
-    PortStationStorage,
+    PortStationConfig, PortStationEnv, PortStationError, PortStationEvent, PortStationOwner,
+    PortStationProfile, PortStationStorage,
 };
 use oer_ieee80211_upper_mac::{
     AmpduRetryPolicy, FixedRate, ProtectEveryHeTxop, ProtectionPolicy, RetryLimits, TxPlanner,
@@ -265,15 +265,47 @@ fn radio() -> (&'static Model, &'static Router) {
     ready(model.lifecycle(LifecycleCommand::Enable))
         .unwrap()
         .unwrap();
+    // The port's owner takes its own terminal before the router reads the
+    // port: a later owner command meets only its own.
+    assert!(matches!(
+        ready(oer_ieee80211_lower_mac::RadioPort::next_event(model)),
+        Ok(Ok(oer_ieee80211_lower_mac::model::ModelEvent::Lifecycle(_)))
+    ));
     (model, leak(PortRouter::new(model, 1)))
 }
 
+/// The lifecycle authority of a test radio's port.
+type Owner<P = Model> = PortStationOwner<'static, Env<P>>;
+
+/// The upstream access point with its port's owner: it is alone on its
+/// port, so the test moves the port for it.
+struct Upstream {
+    ap: PortAccessPoint<'static, Env>,
+    owner: Owner,
+}
+
+impl core::ops::Deref for Upstream {
+    type Target = PortAccessPoint<'static, Env>;
+    fn deref(&self) -> &Self::Target {
+        &self.ap
+    }
+}
+
+impl core::ops::DerefMut for Upstream {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.ap
+    }
+}
+
+/// A station; `owner` when it decides its port's channel alone, `None`
+/// when the pair does.
 fn station<P: TestPort + 'static>(
     router: &'static Router<P>,
     timer: &'static VirtualTimer,
     address: MacAddress,
     ssid: &'static [u8],
     frames: &'static TestFrames,
+    owner: Option<Owner<P>>,
 ) -> PortStation<'static, Env<P>> {
     let link = PortLink::new(
         router,
@@ -292,6 +324,10 @@ fn station<P: TestPort + 'static>(
         },
     )
     .expect("the station's interface is free");
+    let link = match owner {
+        Some(owner) => link.with_owner(owner),
+        None => link,
+    };
     let probe = leak(PortProbe {
         ssid,
         supported_rates: &RATES,
@@ -532,16 +568,12 @@ async fn join<A: Future, B: Future>(a: A, b: B) -> (A::Output, B::Output) {
 
 /// The upstream access point's owner: it serves its BSS until `until` and
 /// moves its port when its own announced switch is due.
-async fn serve_upstream(access_point: &mut PortAccessPoint<'static, Env>, until: Instant) {
+async fn serve_upstream(upstream: &mut Upstream, until: Instant) {
     loop {
-        match access_point.run_until(until, &mut |_| {}).await.unwrap() {
+        match upstream.ap.run_until(until, &mut |_| {}).await.unwrap() {
             Some(PortApEvent::ChannelSwitch { target }) => {
-                access_point
-                    .client_mut()
-                    .move_channel(target)
-                    .await
-                    .unwrap();
-                access_point.channel_switched().unwrap();
+                upstream.owner.move_channel(target).await.unwrap();
+                upstream.ap.channel_switched().unwrap();
             }
             None => return,
         }
@@ -612,7 +644,9 @@ fn unconnected_pair_with_search(
             PAIR_STATION,
             UPSTREAM_SSID,
             leak(TestFrames::new()),
+            None,
         ),
+        world.pair.1.owner().unwrap(),
         access_point(
             world.pair.1,
             world.timer,
@@ -631,11 +665,7 @@ fn unconnected_pair_with_search(
 fn set_up(
     world: &World,
     policy: ApFollowPolicy,
-) -> (
-    PortAccessPoint<'static, Env>,
-    TestPair,
-    PortStation<'static, Env>,
-) {
+) -> (Upstream, TestPair, PortStation<'static, Env>) {
     set_up_with_search(world, policy, ApSearchPolicy::new(&[]))
 }
 
@@ -643,22 +673,19 @@ fn set_up_with_search(
     world: &World,
     policy: ApFollowPolicy,
     search: ApSearchPolicy<'static>,
-) -> (
-    PortAccessPoint<'static, Env>,
-    TestPair,
-    PortStation<'static, Env>,
-) {
-    let mut upstream = access_point(
-        world.upstream.1,
-        world.timer,
-        UPSTREAM,
-        UPSTREAM_SSID,
-        ghz2_4(6),
-        leak(TestFrames::new()),
-    );
-    world
-        .drive(upstream.client_mut().move_channel(ghz2_4(6)))
-        .unwrap();
+) -> (Upstream, TestPair, PortStation<'static, Env>) {
+    let mut upstream = Upstream {
+        ap: access_point(
+            world.upstream.1,
+            world.timer,
+            UPSTREAM,
+            UPSTREAM_SSID,
+            ghz2_4(6),
+            leak(TestFrames::new()),
+        ),
+        owner: world.upstream.1.owner().unwrap(),
+    };
+    world.drive(upstream.owner.move_channel(ghz2_4(6))).unwrap();
     upstream.start(ghz2_4(6)).unwrap();
     let mut pair = unconnected_pair_with_search(world, policy, search);
     let until = world.after(3_000);
@@ -678,6 +705,7 @@ fn set_up_with_search(
         CLIENT,
         PAIR_SSID,
         world.client_frames,
+        world.client.1.owner(),
     );
     let until = world.after(4_000);
     let (_, (_, client)) = world.drive(join(
@@ -922,7 +950,7 @@ fn current_channel_retries_keep_the_access_point_and_bidirectional_data_inner() 
     // An unconstrained scan would find this upstream on channel 11 and
     // take the pair's radio away from its existing access-point peer.
     world
-        .drive(upstream.client_mut().move_channel(ghz2_4(11)))
+        .drive(upstream.owner.move_channel(ghz2_4(11)))
         .unwrap();
     upstream.start(ghz2_4(11)).unwrap();
     for _ in 0..2 {
@@ -958,9 +986,7 @@ fn current_channel_retries_keep_the_access_point_and_bidirectional_data_inner() 
         observe,
     );
     world.drive(upstream.stop()).unwrap();
-    world
-        .drive(upstream.client_mut().move_channel(ghz2_4(6)))
-        .unwrap();
+    world.drive(upstream.owner.move_channel(ghz2_4(6))).unwrap();
     upstream.start(ghz2_4(6)).unwrap();
     let to_ap = ethernet(PAIR_ACCESS_POINT, CLIENT, b"during upstream join");
     let to_client = ethernet(CLIENT, PAIR_ACCESS_POINT, b"access point stays up");
@@ -1106,7 +1132,7 @@ fn reconnect_waits_for_an_announced_move_after_the_upstream_is_lost_inner() {
     ));
     assert_eq!(world.pair.0.channel(), Some(ghz2_4(6)));
     world
-        .drive(upstream.client_mut().move_channel(ghz2_4(11)))
+        .drive(upstream.owner.move_channel(ghz2_4(11)))
         .unwrap();
     upstream.start(ghz2_4(11)).unwrap();
     // The owner finishes its move while serving just the access point.
@@ -1298,7 +1324,7 @@ fn passive_recovery(number: u8) {
         .unwrap();
     world.drive(world.timer.wait_until(restart));
     world
-        .drive(upstream.client_mut().move_channel(ghz2_4(number)))
+        .drive(upstream.owner.move_channel(ghz2_4(number)))
         .unwrap();
     upstream.start(ghz2_4(number)).unwrap();
     let until = world.after(2_000);
@@ -1382,7 +1408,7 @@ fn a_delayed_or_failed_cts_never_departures_without_a_live_reservation_inner() {
         world.pair_frames,
     );
     world
-        .drive(ap.client_mut().move_channel(ghz2_4(6)))
+        .drive(world.pair.1.owner().unwrap().move_channel(ghz2_4(6)))
         .unwrap();
     ap.start(ghz2_4(6)).unwrap();
     let lifecycle = world.pair.0.lifecycle_requests();
@@ -1511,7 +1537,7 @@ fn a_failed_passive_return_blocks_clients_until_port_recovery_inner() {
         world.pair_frames,
     );
     world
-        .drive(ap.client_mut().move_channel(ghz2_4(6)))
+        .drive(world.pair.1.owner().unwrap().move_channel(ghz2_4(6)))
         .unwrap();
     ap.start(ghz2_4(6)).unwrap();
     let mut state = AbsenceState::new();

@@ -377,6 +377,54 @@ pub struct LowerMacConfig {
     pub tsf_epoch: u32,
 }
 
+/// The owners a disabled, idle [`LowerMacCore`] is built from, which
+/// [`LowerMacCore::dismantle`] returns. A place is `None` when its buffer or
+/// aggregate owner was lent and not returned: a borrower that drops one
+/// instead of returning it is a client defect, and its storage is lost until
+/// the image restarts. [`Self::lost_tx_buffers`] and
+/// [`Self::lost_ampdu_owners`] count those places for the composition's
+/// diagnostics.
+pub struct LowerMacCoreParts<
+    'slot,
+    P,
+    E,
+    T,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    S: AmpduBacking = NoAmpdu,
+    const AMPDU_SLOTS: usize = 2,
+    const AMPDU_BUFFERS: usize = 0,
+> {
+    pub tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
+    pub spare: [Option<Pin<&'slot mut TxSlot<BUFFER_SIZE>>>; TX_BUFFERS],
+    pub ampdu: [Option<Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>>; AMPDU_BUFFERS],
+    pub ampdu_source: Option<&'slot S>,
+    pub config: LowerMacConfig,
+    pub coex: &'slot dyn RadioCoexPriorities,
+}
+
+impl<
+    P,
+    E,
+    T,
+    S: AmpduBacking,
+    const BUFFER_SIZE: usize,
+    const TX_BUFFERS: usize,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFERS: usize,
+> LowerMacCoreParts<'_, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>
+{
+    /// Transmit buffers lent and never returned.
+    pub fn lost_tx_buffers(&self) -> usize {
+        self.spare.iter().filter(|place| place.is_none()).count()
+    }
+
+    /// Aggregate owners lent and never returned.
+    pub fn lost_ampdu_owners(&self) -> usize {
+        self.ampdu.iter().filter(|place| place.is_none()).count()
+    }
+}
+
 /// One lent transmit buffer: a whole ordinary TX slot, whose DMA buffer
 /// holds the MPDU after the TX metadata word. It goes back to the core by
 /// submission or [`LowerMacCore::release_tx_buffer`]; a dropped buffer's
@@ -595,7 +643,7 @@ where
         config: LowerMacConfig,
         coex: &'slot dyn RadioCoexPriorities,
     ) -> Self {
-        Self::build(tx, spare, [], None, config, coex)
+        Self::build(tx, spare.map(Some), [], None, config, coex)
     }
 }
 
@@ -618,16 +666,16 @@ where
 {
     fn build(
         tx: OrdinaryTxOwner<'slot, P, E, T, BUFFER_SIZE>,
-        spare: [Pin<&'slot mut TxSlot<BUFFER_SIZE>>; TX_BUFFERS],
-        ampdu: [Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>; AMPDU_BUFFERS],
+        spare: [Option<Pin<&'slot mut TxSlot<BUFFER_SIZE>>>; TX_BUFFERS],
+        ampdu: [Option<Esp32s31AmpduOwner<'slot, S::Backing, AMPDU_SLOTS>>; AMPDU_BUFFERS],
         ampdu_source: Option<&'slot S>,
         config: LowerMacConfig,
         coex: &'slot dyn RadioCoexPriorities,
     ) -> Self {
         Self {
             tx,
-            spare: spare.map(Some),
-            ampdu_owners: ampdu.map(Some),
+            spare,
+            ampdu_owners: ampdu,
             ampdu_source,
             config,
             state: PortState::Disabled,
@@ -649,12 +697,76 @@ where
         }
     }
 
+    /// A disabled core over the owners a dismantled core returned: the
+    /// state of the core they came from is gone, as at a radio start. A
+    /// place that was not home stays empty.
+    pub fn from_parts(
+        parts: LowerMacCoreParts<
+            'slot,
+            P,
+            E,
+            T,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+        >,
+    ) -> Self {
+        let LowerMacCoreParts {
+            tx,
+            spare,
+            ampdu,
+            ampdu_source,
+            config,
+            coex,
+        } = parts;
+        Self::build(tx, spare, ampdu, ampdu_source, config, coex)
+    }
+
+    /// Take the core apart into the owners it was built from, for a later
+    /// core over the same storage: a radio stop and start, or a port
+    /// reinstall. Only a disabled core with no attempt admitted comes
+    /// apart; another is returned unchanged.
+    ///
+    /// A transmit buffer or aggregate owner still lent, or one its borrower
+    /// dropped, is not home: its place in the parts is `None`, and the
+    /// storage behind it is lost until the image restarts.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc driver returns the unconsumed core by value"
+    )]
+    pub fn dismantle(
+        self,
+    ) -> Result<
+        LowerMacCoreParts<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
+        Self,
+    > {
+        if self.state != PortState::Disabled || self.attempts().next().is_some() {
+            return Err(self);
+        }
+        Ok(LowerMacCoreParts {
+            tx: self.tx,
+            spare: self.spare,
+            ampdu: self.ampdu_owners,
+            ampdu_source: self.ampdu_source,
+            config: self.config,
+            coex: self.coex,
+        })
+    }
+
     pub const fn capabilities(&self) -> LowerMacCapabilities {
         esp32s31_lower_mac_capabilities(BUFFER_SIZE)
     }
 
     pub const fn ampdu_capabilities(&self) -> AmpduCapabilities {
         esp32s31_ampdu_capabilities(AMPDU_SLOTS)
+    }
+
+    /// The channel the radio is tuned to: the configured one unless an
+    /// `Enable` still awaits its retune.
+    pub const fn tuned_channel(&self) -> WifiChannel {
+        self.tuned
     }
 
     /// The channel received frames are reported on.
@@ -1849,7 +1961,14 @@ where
         config: LowerMacConfig,
         coex: &'slot dyn RadioCoexPriorities,
     ) -> Self {
-        Self::build(tx, spare, ampdu, Some(source), config, coex)
+        Self::build(
+            tx,
+            spare.map(Some),
+            ampdu.map(Some),
+            Some(source),
+            config,
+            coex,
+        )
     }
 
     /// Lend an idle aggregate owner; `None` without aggregate owners or

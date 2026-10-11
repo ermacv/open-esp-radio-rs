@@ -61,5 +61,44 @@ pub async fn switch_esp32s31_wifi_channel<D: PhyShortDelay, P, O: PhyTargetObser
     .await
 }
 
+/// [`switch_esp32s31_wifi_channel`] for a register owner published in the
+/// radio's arena (`registers`), as an installed lower-MAC port holds it.
+/// The port is disabled, so no DMA or interrupt service reaches the
+/// registers meanwhile.
+#[cfg(target_arch = "riscv32")]
+pub async fn switch_published_esp32s31_wifi_channel<D: PhyShortDelay, P, O: PhyTargetObserver>(
+    timer: &impl oer_time::Timer,
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    platform: &mut P,
+    registers: &oer_esp32s31_hal::ieee80211::arena::RadioAccess<'_>,
+    channel: WifiChannel,
+    observer: &mut O,
+) -> Result<(), PublishedWifiChannelError> {
+    let channel = lower_wifi_channel(channel);
+    let (mut hardware, phy) = registers
+        .try_channel_hal_with_attachment(platform, lease)
+        .map_err(PublishedWifiChannelError::Registers)?;
+    switch_concurrent_wifi_channel::<D, _, _>(
+        timer,
+        phy,
+        channel.channel_or_frequency,
+        channel.cbw,
+        &mut hardware,
+        observer,
+    )
+    .await
+    .map_err(PublishedWifiChannelError::Phy)
+}
+
+/// Why a retune through the published register owner failed.
+#[cfg(target_arch = "riscv32")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PublishedWifiChannelError {
+    /// The register arena refused the transaction.
+    Registers(oer_esp32s31_hal::ieee80211::arena::RadioOwnerArenaError),
+    /// The PHY refused the channel.
+    Phy(ConcurrentWifiChannelError),
+}
+
 #[cfg(test)]
 mod tests;

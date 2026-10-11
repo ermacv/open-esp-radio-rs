@@ -46,8 +46,17 @@
 //! interrupt entry offers each edge to every published queue, and the
 //! watchdog waits for the earliest deadline of any of them.
 //!
+//! On the target, `install_esp32s31_wifi_port` binds the port to the
+//! radio's lifetime: it takes the stopped Wi-Fi a radio start produced,
+//! publishes the MAC registers in the radio's arena and installs the core
+//! over them, and `uninstall_esp32s31_wifi_port` reverses it at radio stop,
+//! returning the stopped Wi-Fi and the core's parts
+//! ([`LowerMacCore::dismantle`]) for the next start. `Esp32s31PortRetune` is
+//! the product [`LowerMacRetune`]: one PHY switch under the shared radio's
+//! lease, through the published registers.
+//!
 //! This is an additional entry point: the station and access-point roles do
-//! not drive the backend through it yet.
+//! not drive the backend through it yet (#271).
 
 use core::{
     cell::{Cell, RefCell},
@@ -2132,6 +2141,16 @@ where
 }
 
 mod rx_publisher;
+
+#[cfg(target_arch = "riscv32")]
+mod install;
+
+#[cfg(target_arch = "riscv32")]
+pub use install::{
+    Esp32s31PortRetune, Esp32s31WifiPortHeld, Esp32s31WifiPortInstallError,
+    Esp32s31WifiPortInstallFailure, Esp32s31WifiPortInstalled, Esp32s31WifiPortUninstallFailure,
+    Esp32s31WifiPortUninstalled, install_esp32s31_wifi_port, uninstall_esp32s31_wifi_port,
+};
 
 pub use rx_publisher::{Esp32s31PortRxPublisher, PortRxSink};
 

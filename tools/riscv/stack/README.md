@@ -13,7 +13,10 @@ table decides which relocation is an address word or a control transfer.
 
 `analyze` works in the caller's `WorkingMemory` and charges the caller's
 `RunControl`, as Blobray's analyses do: running out of either fails it with
-`ResourceLimited` instead of running on. The caller decides both; the image
+`ResourceLimited` instead of running on. The queries over an image's facts
+(`stack_sizes`, `taken_addresses`, `waker_vtables`, `interrupt_table`,
+`vector_table`, `trap_entry`) charge the same control for each relocation,
+word, entry or step they read. The caller decides both; the image
 checks' budget is `oer_image_check_stack::budget`. The memory covers the
 image facts and the value analysis; this crate's own maps, the DWARF and
 the resolutions are not yet reserved in it.

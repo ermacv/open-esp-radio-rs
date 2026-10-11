@@ -8,7 +8,7 @@
 //! built at run time in writable memory (a leaked allocation) is not.
 use crate::dwarf::Dwarf;
 use crate::{Analysis, Fact, Resolutions, TransferKind};
-use oer_riscv_model::Result;
+use oer_riscv_model::{Result, RunControl};
 use oer_riscv_program::facts::ImageFacts;
 use std::collections::BTreeSet;
 
@@ -34,6 +34,7 @@ pub fn waker_vtables(
     image: &ImageFacts<'_>,
     dwarf: &Dwarf,
     analysis: &Analysis,
+    control: &mut dyn RunControl,
 ) -> Result<Vec<[u32; 4]>> {
     let function = |address: u32| {
         let target = image.word(address)? & !1;
@@ -42,6 +43,7 @@ pub fn waker_vtables(
     };
     let mut vtables = Vec::new();
     for &(address, _) in image.words() {
+        control.checkpoint(1)?;
         if address % 4 != 0 {
             continue;
         }

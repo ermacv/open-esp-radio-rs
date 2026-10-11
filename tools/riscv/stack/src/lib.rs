@@ -255,7 +255,7 @@ fn analyze_one(
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<Analysis> {
-    let sizes = image::stack_sizes(elf)?;
+    let sizes = image::stack_sizes(elf, control)?;
     let functions = image::observing(elf, memory, control, |observe, control| {
         let mut facts = BTreeMap::new();
         for function in elf.functions() {
@@ -291,9 +291,15 @@ fn table_entries(
     elf: &ImageFacts<'_>,
     transfer: &Transfer,
     observation: &image::Observation,
-) -> Option<Vec<u32>> {
-    let address = table_base(transfer, observation)?;
-    image::table(elf, address).or_else(|| elf.jump_table(address).map(Iterator::collect))
+    control: &mut dyn RunControl,
+) -> Result<Option<Vec<u32>>> {
+    let Some(address) = table_base(transfer, observation) else {
+        return Ok(None);
+    };
+    match image::table(elf, address, control)? {
+        Some(entries) => Ok(Some(entries)),
+        None => image::jump_table(elf, address, control),
+    }
 }
 
 /// One function's facts: its sweep, then the value analysis over a graph
@@ -307,7 +313,7 @@ fn function_facts(
     control: &mut dyn RunControl,
 ) -> Result<FunctionFacts> {
     control.checkpoint(u64::from(function.size))?;
-    let swept = sweep::transfers(elf, &function)?;
+    let swept = sweep::transfers(elf, &function, control)?;
     let inside =
         |target: u32| target >= function.address && target - function.address < function.size;
     let known = |site: u32, entries: &[u32]| KnownJump {
@@ -337,7 +343,7 @@ fn function_facts(
             {
                 continue;
             }
-            if let Some(entries) = table_entries(elf, transfer, &observation) {
+            if let Some(entries) = table_entries(elf, transfer, &observation, control)? {
                 jumps.push(known(transfer.site, &entries));
             }
         }
@@ -361,7 +367,7 @@ fn function_facts(
     // their entries replace whatever the value analysis read.
     let mut tabled = BTreeSet::new();
     for transfer in std::mem::take(&mut transfers) {
-        let Some(entries) = table_entries(elf, &transfer, &observation) else {
+        let Some(entries) = table_entries(elf, &transfer, &observation, control)? else {
             dispatched.push(transfer);
             continue;
         };

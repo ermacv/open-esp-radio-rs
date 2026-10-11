@@ -296,13 +296,6 @@ fn merges(bytes: &[u8], start: u32, end: u32) -> BTreeSet<u32> {
     targets
 }
 
-/// The `entries` words of the unwritable table at `base`, if all are there.
-fn table_words(image: &ImageFacts<'_>, base: u32, entries: u32) -> Option<Vec<u32>> {
-    (0..entries)
-        .map(|i| image.read_only_word(base.wrapping_add(4 * i)))
-        .collect()
-}
-
 /// The fact an index takes on the fall-through path of a bounds check:
 /// `bltu limit, index` falls through when `index <= limit`, `bgeu index,
 /// limit` when `index < limit`.
@@ -398,7 +391,11 @@ pub(crate) struct Swept {
     pub float_sites: Vec<u32>,
 }
 
-pub(crate) fn transfers(image: &ImageFacts<'_>, function: &Function) -> Result<Swept> {
+pub(crate) fn transfers(
+    image: &ImageFacts<'_>,
+    function: &Function,
+    control: &mut dyn RunControl,
+) -> Result<Swept> {
     let bytes = function_bytes(image.file(), function)?;
     let (start, end) = (function.address, function.address + function.size);
     let outside = |target: u32| target < start || target >= end;
@@ -483,10 +480,17 @@ pub(crate) fn transfers(image: &ImageFacts<'_>, function: &Function) -> Result<S
                     Some(Fact::TableEntry {
                         base: TableBase::Address(table),
                         entries,
-                    }) if displacement.as_i32() == 0 => image
-                        .jump_table(table)
-                        .map(Iterator::collect)
-                        .or_else(|| table_words(image, table, entries?)),
+                    }) if displacement.as_i32() == 0 => {
+                        match crate::image::jump_table(image, table, control)? {
+                            Some(entries) => Some(entries),
+                            None => match entries {
+                                Some(entries) => {
+                                    crate::image::words(image, table, u64::from(entries), control)?
+                                }
+                                None => None,
+                            },
+                        }
+                    }
                     _ => None,
                 };
                 let kind = if link {

@@ -3,7 +3,7 @@
 //! symbol holds (its pointer word relocated to the entries, then its length);
 //! every non-zero handler word carries the relocation that names it, and a
 //! zero word is an entry the build left out.
-use oer_riscv_model::{Error, ErrorCode, Result};
+use oer_riscv_model::{Error, ErrorCode, Result, RunControl};
 use oer_riscv_program::facts::ImageFacts;
 
 /// Where one field lies in a table entry, in bytes.
@@ -41,6 +41,7 @@ pub fn interrupt_table(
     image: &ImageFacts<'_>,
     symbol: &str,
     layout: &TableLayout,
+    control: &mut dyn RunControl,
 ) -> Result<Vec<TableEntry>> {
     let invalid = |message: String| Error::new(ErrorCode::Integrity, message);
     let slice = image
@@ -74,22 +75,26 @@ pub fn interrupt_table(
             size => value & ((1 << (8 * size)) - 1),
         })
     };
-    (0..length)
-        .map(|index| {
-            let entry = first + index * layout.entry;
-            let address = entry + layout.handler;
-            let handler = word(address)?;
-            if handler != 0 && image.word(address) != Some(handler) {
-                return Err(invalid(format!(
-                    "the handler word at {address:#010x} has no relocation"
-                )));
-            }
-            Ok(TableEntry {
-                source: field(entry, layout.source)?,
-                level: field(entry, layout.level)?,
-                core: field(entry, layout.core)?,
-                handler: (handler != 0).then_some(handler & !1),
-            })
-        })
-        .collect()
+    // The entries grow as they are read: a corrupt length fails at the
+    // first word outside the table, never on the budget or an allocation.
+    let mut entries = Vec::new();
+    for index in 0..length {
+        // Each entry reads its handler and three fields.
+        control.checkpoint(4)?;
+        let entry = first + index * layout.entry;
+        let address = entry + layout.handler;
+        let handler = word(address)?;
+        if handler != 0 && image.word(address) != Some(handler) {
+            return Err(invalid(format!(
+                "the handler word at {address:#010x} has no relocation"
+            )));
+        }
+        entries.push(TableEntry {
+            source: field(entry, layout.source)?,
+            level: field(entry, layout.level)?,
+            core: field(entry, layout.core)?,
+            handler: (handler != 0).then_some(handler & !1),
+        });
+    }
+    Ok(entries)
 }

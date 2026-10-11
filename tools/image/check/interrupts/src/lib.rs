@@ -394,7 +394,8 @@ pub fn interrupt_stacks_of(image: &Image) -> Result<InterruptStacks> {
     };
     let field = |(offset, size): (u32, u32)| Field { offset, size };
     let memory = WorkingMemory::new(MEMORY_LIMIT)?;
-    let facts = ImageFacts::new(elf, &memory, &mut Budget::new(WORK_UNITS, TIMEOUT))?;
+    let mut control = Budget::new(WORK_UNITS, TIMEOUT);
+    let facts = ImageFacts::new(elf, &memory, &mut control)?;
     let table = interrupt_table(
         &facts,
         &interrupts.table_symbol,
@@ -405,13 +406,18 @@ pub fn interrupt_stacks_of(image: &Image) -> Result<InterruptStacks> {
             core: field(interrupts.table_core.into()),
             handler: interrupts.table_handler,
         },
+        &mut control,
     )?;
-    let vectors = vector_table(&facts, &interrupts.vector_table_symbol)?
+    let vectors = vector_table(&facts, &interrupts.vector_table_symbol, &mut control)?
         .into_iter()
         .flatten()
-        .map(|entry| trap_entry(&facts, entry))
+        .map(|entry| trap_entry(&facts, entry, &mut control))
         .collect::<oer_riscv_model::Result<Vec<_>>>()?;
-    let exception = trap_entry(&facts, symbol(&interrupts.exception_entry_symbol)?)?;
+    let exception = trap_entry(
+        &facts,
+        symbol(&interrupts.exception_entry_symbol)?,
+        &mut control,
+    )?;
     // The handler a slot calls is a direct call of the slot's own code: a
     // call site no inlined function owns. Calls from a handler inlined into
     // the slot are the handler's.

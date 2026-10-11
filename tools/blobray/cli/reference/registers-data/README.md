@@ -146,3 +146,49 @@ The independent [register tool](../../../../registers/README.md) owns
 source-model initialization, SVD import, reviewed source applicability and
 four-output publication. A Blobray observation is research evidence, not an
 automatic hardware-source promotion.
+
+
+## MMIO difference between builds
+
+`mmio-diff` compares two builds of the same firmware (images or libraries) by
+their MMIO behavior and reports only its change:
+
+```console
+blobray mmio-diff --abi riscv-integer --range 0x20000000:0x1000000 --old image=main.elf --new image=branch.elf
+```
+
+Each build is analyzed as `register-accesses` analyzes it (`--old` and
+`--new` repeat `ROLE=PATH`; at least one `--range` window is required). A
+function's accesses inside the windows are its loads and stores at an exact
+address or an indexed progression, each with its width, the bits a loaded
+value keeps (`keeps`) and, for a store, where each run of the stored bits
+comes from; a run loaded from outside the windows keeps its position but not
+its data address. A whole stored word that lies inside a sized function or
+data object of a static image (a DMA descriptor, a handler) also names that
+symbol's stable name and offset (`0x…(&name+offset)`). Identical accesses
+match first; of the rest, a pair whose words lie in the same symbol at the
+same offset matches (the object moved between the builds), then a pair
+storing the same value whatever symbol it lands in. Functions are matched across builds by their demangled
+name without crate disambiguators or legacy hashes, and every instance of a
+name is compared as one multiset, so symbol hashes, code layout, branch
+offsets and the addresses of loaded data never produce a difference. A
+stored word that is an image address no sized symbol contains, such as a
+buffer's end, a linker-script bound or an address in part of a word,
+compares by its value alone: unchanged code whose layout moves it reports
+that store as changed. Only functions
+whose accesses differ are reported, with the accesses one build has and the
+other lacks (`-` old, `+` new), and a function with MMIO accesses that one
+build lacks is all removed or all added. A function either build blocks has
+no accesses compared: its state (`analyzed`, `blocked`, `absent` in each
+build) is reported where it differs, since its accesses there are unknown.
+Each change says whether each build's analysis of the function is complete:
+an access missing from an incomplete one may only be unseen. Code a build
+does not analyze is reported with its reason (`gaps`), and a build with no
+analyzed function, such as a file in no supported format or an image
+without function symbols, is an error rather than a build without MMIO
+behavior. A function whose accesses outside the stack with an
+unresolved address change in number is reported too: there the comparison
+sees less, and its accesses there may differ unseen. The JSON document
+(`MMIO_DIFF_SCHEMA`) carries both builds' inputs, the windows, the number of
+functions with MMIO accesses and of blocked functions in each build, and the
+changes.

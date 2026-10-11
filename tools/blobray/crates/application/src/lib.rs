@@ -25,6 +25,7 @@ mod external_calls;
 pub mod in_process;
 pub mod library;
 pub mod linking;
+pub mod mmio_diff;
 mod registers;
 
 pub use blobray_verification::VERIFIER as EXECUTION_VERIFIER;

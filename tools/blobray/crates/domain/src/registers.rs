@@ -1,7 +1,7 @@
 //! Register-access observations are separate from physical hardware declarations.
 use crate::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RegisterMaskKind {
     /// Bits retained by a saved load-and-constant expression.
@@ -10,7 +10,7 @@ pub enum RegisterMaskKind {
     /// This is an expression observation, not a claim of hardware RMW safety.
     WriteReplacement,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegisterMask {
     pub kind: RegisterMaskKind,

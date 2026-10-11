@@ -5,15 +5,40 @@ pub mod tables;
 use oer_elf::{ProgramHeaderKind, SectionKind, rv32};
 use oer_riscv_model::*;
 
-/// `PF_X`, `PF_W` and `PF_R` of an [`ImageSegment`]'s raw ELF permissions.
+/// `PF_X` of an [`ImageSegment`]'s raw ELF permissions.
 const PF_X: u32 = 1;
-const PF_W: u32 = 2;
-const PF_R: u32 = 4;
 
+/// The memory of a static RV32 image as its sections lay it out: every
+/// allocated section with file contents, as a firmware packer loads it. A
+/// section's own flags say whether it is code or writable data, whatever the
+/// flags of the load segment holding it; a reservation without contents
+/// (`NOBITS`) is no memory, so it may overlap code.
 pub struct ProgramView<'a> {
     bytes: &'a [u8],
-    segments: Vec<ImageSegment>,
+    /// Loaded sections, by address; none overlaps another.
+    regions: Vec<Region>,
     _capacity: MemoryReservation<'a>,
+}
+/// One loaded section of a [`ProgramView`].
+#[derive(Clone, Copy)]
+struct Region {
+    address: u64,
+    file_offset: u64,
+    size: u64,
+    executable: bool,
+    writable: bool,
+    /// Whether the section holds constants: neither executable nor
+    /// writable, or writable inside a read-only window covering all of it.
+    constant: bool,
+}
+impl Region {
+    /// Whether `[address, address + length)` lies inside this section.
+    fn holds(&self, address: u64, length: u64) -> bool {
+        address >= self.address
+            && address
+                .checked_add(length)
+                .is_some_and(|end| end <= self.address + self.size)
+    }
 }
 fn bad(message: impl Into<String>) -> Error {
     Error::new(ErrorCode::LinkBlocked, message)
@@ -44,107 +69,71 @@ impl<'a> ProgramView<'a> {
         if !matches!(length, 2 | 4) || address & 1 != 0 {
             return Err(invalid("invalid instruction prefix"));
         }
-        for segment in &self.segments {
-            c.checkpoint(1)?;
-            if segment.flags & PF_X != 0
-                && u64::from(address) >= segment.address
-                && u64::from(address) + u64::from(length) <= segment.address + segment.file_size
-            {
-                let start = (segment.file_offset + u64::from(address) - segment.address) as usize;
-                return self
-                    .bytes
-                    .get(start..start + usize::from(length))
-                    .ok_or_else(|| invalid("instruction outside captured image"));
-            }
-        }
-        Err(invalid("instruction outside executable captured mapping"))
+        let region = self
+            .region(u64::from(address), u64::from(length), c)?
+            .filter(|region| region.executable)
+            .ok_or_else(|| invalid("instruction outside executable captured mapping"))?;
+        let start = (region.file_offset + u64::from(address) - region.address) as usize;
+        self.bytes
+            .get(start..start + usize::from(length))
+            .ok_or_else(|| invalid("instruction outside captured image"))
     }
 
+    /// The loaded section holding all of `[address, address + length)`.
+    fn region(&self, address: u64, length: u64, c: &mut dyn RunControl) -> Result<Option<Region>> {
+        c.checkpoint(1)?;
+        let at = self
+            .regions
+            .partition_point(|region| region.address <= address);
+        Ok(at
+            .checked_sub(1)
+            .map(|at| self.regions[at])
+            .filter(|region| region.holds(address, length)))
+    }
+
+    /// The image of `bytes` that `file` parses, with the caller's
+    /// `read_only` windows: a writable section all of whose bytes lie in one
+    /// holds constants. Dynamic loading, runtime relocations and
+    /// writable code are outside its profile; thread-local templates are
+    /// ordinary data, thread-local storage itself is never memory.
     pub fn new(
         bytes: &'a [u8],
         file: &oer_elf::Elf<'_>,
+        read_only: &[ReadOnlyWindow],
         memory: &'a WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<Self> {
-        let headers = file.program_headers();
-        for header in &headers {
+        for header in file.program_headers() {
             c.checkpoint(1)?;
             if matches!(
                 header.kind,
-                ProgramHeaderKind::Dynamic
-                    | ProgramHeaderKind::Interpreter
-                    | ProgramHeaderKind::Tls
+                ProgramHeaderKind::Dynamic | ProgramHeaderKind::Interpreter
             ) {
                 return Err(Error::new(
                     ErrorCode::Incompatible,
-                    "dynamic loading and TLS are outside the static image profile",
+                    "dynamic loading is outside the static image profile",
                 ));
             }
         }
         abi(file).map_err(|e| Error::new(ErrorCode::Incompatible, e.message))?;
+        let sections = file.sections().count();
         let capacity = memory.reserve(
-            1024 * std::mem::size_of::<ImageSegment>() as u64,
+            (sections as u64).saturating_mul(std::mem::size_of::<Region>() as u64),
             c.position(),
         )?;
-        let mut segments: Vec<ImageSegment> = Vec::new();
-        segments.try_reserve_exact(1024).map_err(|_| {
+        let mut regions: Vec<Region> = Vec::new();
+        regions.try_reserve_exact(sections).map_err(|_| {
             Error::new(
                 ErrorCode::ResourceLimited,
-                "image segment allocation refused",
+                "image region allocation refused",
             )
         })?;
-        for segment in headers
-            .iter()
-            .filter(|header| header.kind == ProgramHeaderKind::Load)
-        {
-            c.checkpoint(1)?;
-            if segments.len() == 1024 {
-                return Err(Error::new(
-                    ErrorCode::ResourceLimited,
-                    "image exceeds 1024 load segments",
-                ));
-            }
-            let (offset, size) = (segment.file_offset, segment.file_size);
-            let end = segment
-                .address
-                .checked_add(segment.memory_size)
-                .filter(|v| *v <= 1u64 << 32)
-                .ok_or_else(|| invalid("segment exceeds RV32 address space"))?;
-            if size > segment.memory_size
-                || offset
-                    .checked_add(size)
-                    .is_none_or(|v| v > bytes.len() as u64)
-                || (segment.writable() && segment.executable())
-            {
-                return Err(invalid("invalid segment bounds or writable code"));
-            }
-            for previous in &segments {
-                c.checkpoint(1)?;
-                if segment.memory_size != 0
-                    && previous.memory_size != 0
-                    && segment.address < previous.address + previous.memory_size
-                    && previous.address < end
-                {
-                    return Err(invalid("overlapping load segments"));
-                }
-            }
-            segments.push(ImageSegment {
-                address: segment.address,
-                file_offset: offset,
-                file_size: size,
-                memory_size: segment.memory_size,
-                flags: segment.flags,
-            });
-        }
-        if segments.is_empty() {
-            return Err(invalid("image has no load segments"));
-        }
         for section in file.sections() {
             c.checkpoint(1)?;
-            if section.tls || section.kind == SectionKind::Dynamic {
+            if section.kind == SectionKind::Dynamic {
                 return Err(Error::new(
                     ErrorCode::Incompatible,
-                    "dynamic loading and TLS are outside the static image profile",
+                    "dynamic loading is outside the static image profile",
                 ));
             }
             if section.allocated && matches!(section.kind, SectionKind::Rel | SectionKind::Rela) {
@@ -153,14 +142,75 @@ impl<'a> ProgramView<'a> {
                     "runtime relocation sections are outside the static image profile",
                 ));
             }
+            if !section.allocated || section.nobits || section.size == 0 {
+                continue;
+            }
+            if section
+                .file_offset
+                .checked_add(section.size)
+                .is_none_or(|end| end > bytes.len() as u64)
+                || section
+                    .address
+                    .checked_add(section.size)
+                    .is_none_or(|end| end > 1u64 << 32)
+            {
+                return Err(invalid("invalid section bounds"));
+            }
+            if section.writable && section.executable {
+                return Err(invalid("writable code"));
+            }
+            regions.push(Region {
+                address: section.address,
+                file_offset: section.file_offset,
+                size: section.size,
+                executable: section.executable,
+                writable: section.writable,
+                constant: !section.executable
+                    && (!section.writable
+                        || ReadOnlyWindow::cover(read_only, section.address, section.size)),
+            });
+        }
+        if regions.is_empty() {
+            return Err(invalid("image has no loaded sections"));
+        }
+        // A section is analyzed only as the bytes a load segment carries at
+        // its address, and code only from an executable segment, whatever
+        // other segments overlap it.
+        let segments: Vec<_> = file
+            .program_headers()
+            .into_iter()
+            .filter(|header| header.kind == ProgramHeaderKind::Load)
+            .collect();
+        for region in &regions {
+            let loaded = segments.iter().any(|segment| {
+                region.address >= segment.address
+                    && region.address + region.size <= segment.address + segment.file_size
+                    && segment
+                        .file_offset
+                        .checked_add(region.address - segment.address)
+                        == Some(region.file_offset)
+                    && (!region.executable || segment.flags & PF_X != 0)
+            });
+            c.checkpoint(segments.len() as u64)?;
+            if !loaded {
+                return Err(invalid("section is not the bytes a load segment carries"));
+            }
+        }
+        regions.sort_unstable_by_key(|region| region.address);
+        for pair in regions.windows(2) {
+            c.checkpoint(1)?;
+            if pair[1].address < pair[0].address + pair[0].size {
+                return Err(invalid("overlapping loaded sections"));
+            }
         }
         Ok(Self {
             bytes,
-            segments,
+            regions,
             _capacity: capacity,
         })
     }
-    /// Verify that a section's captured bytes are the file-backed bytes loaded at its VMA.
+    /// Verify that a section's captured bytes are the file-backed bytes
+    /// loaded at its VMA; whether they may change at run time.
     pub fn data_range(
         &self,
         address: u64,
@@ -168,51 +218,25 @@ impl<'a> ProgramView<'a> {
         length: u64,
         c: &mut dyn RunControl,
     ) -> Result<bool> {
-        let mut consumed = 0;
-        let mut writable = false;
-        while consumed < length {
-            c.checkpoint(1)?;
-            let at = address
-                .checked_add(consumed)
-                .ok_or_else(|| invalid("data address overflow"))?;
-            let mut found = None;
-            for segment in &self.segments {
-                c.checkpoint(1)?;
-                if at >= segment.address && at - segment.address < segment.file_size {
-                    found = Some(segment);
-                    break;
-                }
-            }
-            let segment =
-                found.ok_or_else(|| invalid("data range has no file-backed load mapping"))?;
-            writable |= segment.flags & PF_W != 0;
-            let offset = at - segment.address;
-            if segment.file_offset.checked_add(offset) != file_offset.checked_add(consumed) {
-                return Err(invalid("section data differs from loaded segment mapping"));
-            }
-            consumed += (segment.file_size - offset).min(length - consumed);
+        let region = self
+            .region(address, length.max(1), c)?
+            .ok_or_else(|| invalid("data range has no loaded section"))?;
+        if region.file_offset.checked_add(address - region.address) != Some(file_offset) {
+            return Err(invalid("section data differs from its loaded bytes"));
         }
-        Ok(writable)
+        Ok(!region.constant && region.writable)
     }
     pub fn code(&self, address: u64, code: &[u8], c: &mut dyn RunControl) -> Result<()> {
-        for segment in &self.segments {
-            c.checkpoint(1)?;
-            if segment.flags & PF_X != 0 && address >= segment.address {
-                let offset = address - segment.address;
-                if offset
-                    .checked_add(code.len() as u64)
-                    .is_some_and(|end| end <= segment.file_size)
-                {
-                    c.checkpoint(code.len() as u64)?;
-                    let start = (segment.file_offset + offset) as usize;
-                    if self.bytes[start..start + code.len()] == *code {
-                        return Ok(());
-                    }
-                    return Err(invalid("section code differs from loaded segment bytes"));
-                }
-            }
+        let region = self
+            .region(address, code.len() as u64, c)?
+            .filter(|region| region.executable)
+            .ok_or_else(|| invalid("function has no executable file-backed load range"))?;
+        c.checkpoint(code.len() as u64)?;
+        let start = (region.file_offset + address - region.address) as usize;
+        if self.bytes[start..start + code.len()] == *code {
+            return Ok(());
         }
-        Err(invalid("function has no executable file-backed load range"))
+        Err(invalid("section code differs from loaded section bytes"))
     }
 }
 impl ImageMemory for ProgramView<'_> {
@@ -222,34 +246,28 @@ impl ImageMemory for ProgramView<'_> {
         bytes: &mut [u8],
         c: &mut dyn RunControl,
     ) -> Result<bool> {
-        let address = u64::from(address);
-        for segment in &self.segments {
+        let (address, length) = (u64::from(address), bytes.len() as u64);
+        // Only data that is not written at run time holds constants: a
+        // section neither writable nor executable, or a writable one a
+        // window the caller asserts read-only covers whole. Code loaded into
+        // RAM may carry tables the program rewrites, such as a vector table
+        // in an `AX` section, whose file bytes are only the initial contents.
+        let Some(region) = self
+            .region(address, length, c)?
+            .filter(|region| region.constant)
+        else {
+            return Ok(false);
+        };
+        let start = (region.file_offset + address - region.address) as usize;
+        let length = bytes.len();
+        for (to, from) in bytes
+            .chunks_mut(4096)
+            .zip(self.bytes[start..start + length].chunks(4096))
+        {
             c.checkpoint(1)?;
-            // Only a readable segment that is neither writable nor executable
-            // holds constants: code loaded into RAM may carry tables the
-            // program rewrites, such as a vector table in an `AX` section,
-            // whose file bytes are only the initial contents.
-            if segment.flags & (PF_R | PF_W | PF_X) != PF_R || address < segment.address {
-                continue;
-            }
-            let offset = address - segment.address;
-            if offset
-                .checked_add(bytes.len() as u64)
-                .is_some_and(|end| end <= segment.file_size)
-            {
-                let start = (segment.file_offset + offset) as usize;
-                let length = bytes.len();
-                for (to, from) in bytes
-                    .chunks_mut(4096)
-                    .zip(self.bytes[start..start + length].chunks(4096))
-                {
-                    c.checkpoint(1)?;
-                    to.copy_from_slice(from);
-                }
-                return Ok(true);
-            }
+            to.copy_from_slice(from);
         }
-        Ok(false)
+        Ok(true)
     }
 }
 
@@ -267,9 +285,9 @@ pub fn execution_segments(
     source.read_at(0, &mut bytes, control)?;
     let file = oer_elf::Elf::executable(&bytes)
         .map_err(|_| invalid("execution requires static little-endian RV32 ELF"))?;
-    let view = ProgramView::new(&bytes, &file, memory, control)?;
+    let (segments, _capacity) = execution_profile(&bytes, &file, memory, control)?;
     let boot = boot_data(&file, &bytes, control)?;
-    for segment in &view.segments {
+    for segment in &segments {
         control.checkpoint(1)?;
         if segment.memory_size == 0 {
             continue;
@@ -304,6 +322,105 @@ pub fn execution_segments(
         consume(segment, &image, control)?;
     }
     Ok(())
+}
+
+/// The load segments of a static RV32 image under the execution profile:
+/// no dynamic loading, thread-local storage, runtime relocations, writable
+/// code or overlapping segments, since execution loads the segments
+/// themselves.
+fn execution_profile<'a>(
+    bytes: &[u8],
+    file: &oer_elf::Elf<'_>,
+    memory: &'a WorkingMemory,
+    c: &mut dyn RunControl,
+) -> Result<(Vec<ImageSegment>, MemoryReservation<'a>)> {
+    let headers = file.program_headers();
+    for header in &headers {
+        c.checkpoint(1)?;
+        if matches!(
+            header.kind,
+            ProgramHeaderKind::Dynamic | ProgramHeaderKind::Interpreter | ProgramHeaderKind::Tls
+        ) {
+            return Err(Error::new(
+                ErrorCode::Incompatible,
+                "dynamic loading and TLS are outside the execution profile",
+            ));
+        }
+    }
+    abi(file).map_err(|e| Error::new(ErrorCode::Incompatible, e.message))?;
+    let capacity = memory.reserve(
+        1024 * std::mem::size_of::<ImageSegment>() as u64,
+        c.position(),
+    )?;
+    let mut segments: Vec<ImageSegment> = Vec::new();
+    segments.try_reserve_exact(1024).map_err(|_| {
+        Error::new(
+            ErrorCode::ResourceLimited,
+            "image segment allocation refused",
+        )
+    })?;
+    for segment in headers
+        .iter()
+        .filter(|header| header.kind == ProgramHeaderKind::Load)
+    {
+        c.checkpoint(1)?;
+        if segments.len() == 1024 {
+            return Err(Error::new(
+                ErrorCode::ResourceLimited,
+                "image exceeds 1024 load segments",
+            ));
+        }
+        let (offset, size) = (segment.file_offset, segment.file_size);
+        let end = segment
+            .address
+            .checked_add(segment.memory_size)
+            .filter(|v| *v <= 1u64 << 32)
+            .ok_or_else(|| invalid("segment exceeds RV32 address space"))?;
+        if size > segment.memory_size
+            || offset
+                .checked_add(size)
+                .is_none_or(|v| v > bytes.len() as u64)
+            || (segment.writable() && segment.executable())
+        {
+            return Err(invalid("invalid segment bounds or writable code"));
+        }
+        for previous in &segments {
+            c.checkpoint(1)?;
+            if segment.memory_size != 0
+                && previous.memory_size != 0
+                && segment.address < previous.address + previous.memory_size
+                && previous.address < end
+            {
+                return Err(invalid("overlapping load segments"));
+            }
+        }
+        segments.push(ImageSegment {
+            address: segment.address,
+            file_offset: offset,
+            file_size: size,
+            memory_size: segment.memory_size,
+            flags: segment.flags,
+        });
+    }
+    if segments.is_empty() {
+        return Err(invalid("image has no load segments"));
+    }
+    for section in file.sections() {
+        c.checkpoint(1)?;
+        if section.tls || section.kind == SectionKind::Dynamic {
+            return Err(Error::new(
+                ErrorCode::Incompatible,
+                "dynamic loading and TLS are outside the execution profile",
+            ));
+        }
+        if section.allocated && matches!(section.kind, SectionKind::Rel | SectionKind::Rela) {
+            return Err(Error::new(
+                ErrorCode::Incompatible,
+                "runtime relocation sections are outside the execution profile",
+            ));
+        }
+    }
+    Ok((segments, capacity))
 }
 
 /// Address of the defined code symbol at `index` of the static symbol table
@@ -441,7 +558,7 @@ pub fn executable_sections(
 ) -> Result<()> {
     let file = oer_elf::Elf::executable(bytes)
         .map_err(|_| invalid("audit requires static little-endian RV32 ELF"))?;
-    let _view = ProgramView::new(bytes, &file, memory, control)?;
+    let _view = ProgramView::new(bytes, &file, &[], memory, control)?;
     let mut found = false;
     for section in file.sections() {
         control.checkpoint(1)?;
@@ -492,7 +609,7 @@ pub fn executable_sections(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     struct Source(Vec<u8>);
     impl ByteSource for Source {
@@ -584,7 +701,7 @@ mod tests {
             panic!("a truncated section is never visited")
         })
         .unwrap_err();
-        assert_eq!(error.message, "invalid executable section bytes");
+        assert_eq!(error.message, "invalid section bounds");
     }
     #[test]
     fn a_code_symbol_resolves_whatever_bytes_its_name_holds() {
@@ -622,24 +739,250 @@ mod tests {
             4
         );
     }
+    /// `PF_W` and `PF_R` of a segment's raw ELF permissions.
+    pub(crate) const PF_W: u32 = 2;
+    pub(crate) const PF_R: u32 = 4;
+    /// `SHF_WRITE`, `SHF_ALLOC`, `SHF_EXECINSTR` and `SHF_TLS`.
+    pub(crate) const W: u32 = 1;
+    pub(crate) const A: u32 = 2;
+    pub(crate) const X: u32 = 4;
+    pub(crate) const T: u32 = 0x400;
+    /// One load segment: address, file offset, file size, memory size and
+    /// flags.
+    pub(crate) type Load = (u32, u32, u32, u32, u32);
+    /// One section: type, flags, address, file offset and size.
+    pub(crate) type Part = (u32, u32, u32, u32, u32);
+    /// An ELF32 RV32 executable of `payload` from file offset 0x200, with
+    /// `loads` and a `PT_TLS` header when `tls`, and `parts` (offsets
+    /// relative to the payload) after a null section and before a string
+    /// table.
+    pub(crate) fn image(
+        loads: &[Load],
+        tls: Option<Load>,
+        parts: &[Part],
+        payload: &[u8],
+    ) -> Vec<u8> {
+        const BASE: u32 = 0x200;
+        let headers = loads.len() + usize::from(tls.is_some());
+        let mut b = vec![0x7f, b'E', b'L', b'F', 1, 1, 1, 0];
+        b.resize(16, 0);
+        put16(&mut b, 2); // ET_EXEC
+        put16(&mut b, 243); // EM_RISCV
+        put32(&mut b, 1);
+        put32(&mut b, loads[0].0); // entry
+        put32(&mut b, 52); // phoff
+        let shoff = BASE + payload.len() as u32;
+        put32(&mut b, shoff);
+        put32(&mut b, 0); // flags: soft-float RV32
+        put16(&mut b, 52);
+        put16(&mut b, 32);
+        put16(&mut b, headers as u16);
+        put16(&mut b, 40);
+        put16(&mut b, parts.len() as u16 + 2);
+        put16(&mut b, parts.len() as u16 + 1);
+        let segments = loads
+            .iter()
+            .map(|&load| (1, load))
+            .chain(tls.map(|load| (7, load)));
+        for (kind, (address, offset, file, memory, flags)) in segments {
+            for v in [
+                kind,
+                BASE + offset,
+                address,
+                address,
+                file,
+                memory,
+                flags,
+                4,
+            ] {
+                put32(&mut b, v);
+            }
+        }
+        b.resize(BASE as usize, 0);
+        b.extend_from_slice(payload);
+        b.extend_from_slice(&[0; 40]);
+        for &(kind, flags, address, offset, size) in parts {
+            for v in [0, kind, flags, address, BASE + offset, size, 0, 0, 4, 0] {
+                put32(&mut b, v);
+            }
+        }
+        let names = b.len() as u32 + 40;
+        for v in [0, 3, 0, 0, names, 1, 0, 0, 1, 0] {
+            put32(&mut b, v);
+        }
+        b.push(0);
+        b
+    }
+    fn view(bytes: &[u8], read_only: &[ReadOnlyWindow]) -> Result<Option<[u8; 4]>> {
+        let file = oer_elf::Elf::parse(bytes).unwrap();
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let view = ProgramView::new(bytes, &file, read_only, &memory, &mut || Ok(()))?;
+        let mut word = [0; 4];
+        let known = view.read_constant(0x3000, &mut word, &mut || Ok(()))?;
+        Ok(known.then_some(word))
+    }
+    const WORD: [u8; 4] = [0x11, 0x22, 0x33, 0x44];
     #[test]
-    fn constants_come_only_from_segments_neither_writable_nor_executable() {
-        let constant = |flags| {
-            let bytes = segment_elf(0x3000, 4, flags);
-            let file = oer_elf::Elf::parse(bytes.as_slice()).unwrap();
-            let memory = WorkingMemory::new(1 << 20).unwrap();
-            let view = ProgramView::new(&bytes, &file, &memory, &mut || Ok(())).unwrap();
-            let mut word = [0; 4];
-            let known = view
-                .read_constant(0x2000, &mut word, &mut || Ok(()))
-                .unwrap();
-            known.then_some(word)
+    fn constants_come_only_from_sections_neither_writable_nor_executable() {
+        let constant = |flags, segment, read_only: &[ReadOnlyWindow]| {
+            let bytes = image(
+                &[(0x3000, 0, 4, 4, segment)],
+                None,
+                &[(1, flags, 0x3000, 0, 4)],
+                &WORD,
+            );
+            view(&bytes, read_only).unwrap()
         };
         let (r, w, x) = (PF_R, PF_W, PF_X);
-        assert_eq!(constant(r), Some([0x11, 0x22, 0x33, 0x44]));
-        assert_eq!(constant(r | w), None);
+        assert_eq!(constant(A, r, &[]), Some(WORD));
+        // The section's flags decide, whatever its segment's flags say.
+        assert_eq!(constant(A, r | w, &[]), Some(WORD));
+        assert_eq!(constant(A | W, r, &[]), None);
         // A vector table in RAM code: the program rewrites what the file
         // carries as its initial contents.
-        assert_eq!(constant(r | x), None);
+        assert_eq!(constant(A | X, r | x, &[]), None);
+        // A writable section inside a window the caller asserts read-only.
+        let window = ReadOnlyWindow {
+            start: 0x3000,
+            length: 0x1000,
+        };
+        assert_eq!(constant(A | W, r | w, &[window]), Some(WORD));
+        let short = ReadOnlyWindow {
+            start: 0x3000,
+            length: 2,
+        };
+        assert_eq!(constant(A | W, r | w, &[short]), None);
+        assert_eq!(constant(A | X, r | x, &[window]), None);
+        // A window covering only the word read, not the whole section,
+        // leaves the section writable, as `ImageFacts` reads it.
+        let wide = image(
+            &[(0x3000, 0, 8, 8, r | w)],
+            None,
+            &[(1, A | W, 0x3000, 0, 8)],
+            &[0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0],
+        );
+        let word = ReadOnlyWindow {
+            start: 0x3000,
+            length: 4,
+        };
+        assert_eq!(view(&wide, &[word]).unwrap(), None);
+    }
+    #[test]
+    fn an_esp_idf_layout_loads_by_its_sections() {
+        // Code at 0x2000 and data at 0x3000 in one RWE segment; flash code
+        // at 0x4000 and a rodata segment from the same address, whose
+        // reservation (NOBITS) covers the code; a thread-local template and
+        // its zero-initialized part.
+        let mut payload = vec![0; 0x1110];
+        let mut put = |at: usize, word: [u8; 4]| payload[at..at + 4].copy_from_slice(&word);
+        put(0, [0x13, 0, 0, 0]); // nop at 0x2000
+        put(0x1000, WORD); // .data at 0x3000
+        put(0x1004, [0x13, 0, 0, 0]); // flash nop at 0x4000
+        put(0x1108, WORD); // .rodata (WA) at 0x4100
+        put(0x110c, [1, 0, 0, 0]); // .tdata at 0x4104
+        let bytes = image(
+            &[
+                (0x2000, 0, 0x1004, 0x1004, PF_R | PF_W | PF_X),
+                (0x4000, 0x1004, 4, 4, PF_R | PF_X),
+                (0x4000, 0x1008, 0x108, 0x10c, PF_R | PF_W),
+            ],
+            Some((0x4104, 0x110c, 4, 8, PF_R)),
+            &[
+                (1, A | X, 0x2000, 0, 4),
+                (1, A | W, 0x3000, 0x1000, 4),
+                (1, A | X, 0x4000, 0x1004, 4),
+                (8, A | W, 0x4000, 0x1008, 0x100),
+                (1, A | W, 0x4100, 0x1108, 4),
+                (1, A | W | T, 0x4104, 0x110c, 4),
+                (8, A | W | T, 0x4108, 0x1110, 4),
+            ],
+            &payload,
+        );
+        // The RWE segment's data loads, but stays writable.
+        assert_eq!(view(&bytes, &[]).unwrap(), None);
+        let file = oer_elf::Elf::parse(bytes.as_slice()).unwrap();
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let window = [ReadOnlyWindow {
+            start: 0x4000,
+            length: 0x1000,
+        }];
+        let view = ProgramView::new(&bytes, &file, &window, &memory, &mut || Ok(())).unwrap();
+        let fetch = |at| {
+            view.executable_bytes(at, 4, &mut || Ok(()))
+                .map(<[u8]>::to_vec)
+        };
+        assert_eq!(fetch(0x2000).unwrap(), [0x13, 0, 0, 0]);
+        assert_eq!(fetch(0x4000).unwrap(), [0x13, 0, 0, 0]);
+        let mut word = [0; 4];
+        assert!(
+            view.read_constant(0x4100, &mut word, &mut || Ok(()))
+                .unwrap()
+        );
+        assert_eq!(word, WORD);
+        // Thread-local storage is never memory.
+        assert!(
+            !view
+                .read_constant(0x4108, &mut word, &mut || Ok(()))
+                .unwrap()
+        );
+    }
+    #[test]
+    fn a_section_must_be_the_bytes_a_load_segment_carries() {
+        // Data whose segment carries other file bytes.
+        let moved = image(
+            &[(0x3000, 4, 4, 4, PF_R)],
+            None,
+            &[(1, A, 0x3000, 0, 4)],
+            &[0; 8],
+        );
+        assert_eq!(
+            view(&moved, &[]).unwrap_err().message,
+            "section is not the bytes a load segment carries"
+        );
+        // Code in a segment that does not execute.
+        let code = image(
+            &[(0x3000, 0, 4, 4, PF_R)],
+            None,
+            &[(1, A | X, 0x3000, 0, 4)],
+            &WORD,
+        );
+        assert_eq!(
+            view(&code, &[]).unwrap_err().message,
+            "section is not the bytes a load segment carries"
+        );
+        // Two loaded sections at one address.
+        let overlap = image(
+            &[(0x3000, 0, 8, 8, PF_R)],
+            None,
+            &[(1, A, 0x3000, 0, 8), (1, A, 0x3004, 4, 4)],
+            &[0; 8],
+        );
+        assert_eq!(
+            view(&overlap, &[]).unwrap_err().message,
+            "overlapping loaded sections"
+        );
+        let writable_code = image(
+            &[(0x3000, 0, 4, 4, PF_R | PF_W | PF_X)],
+            None,
+            &[(1, A | W | X, 0x3000, 0, 4)],
+            &WORD,
+        );
+        assert_eq!(
+            view(&writable_code, &[]).unwrap_err().message,
+            "writable code"
+        );
+    }
+    #[test]
+    fn execution_keeps_refusing_thread_local_storage() {
+        let bytes = image(
+            &[(0x2000, 0, 4, 4, PF_R | PF_X)],
+            Some((0x3000, 4, 4, 4, PF_R)),
+            &[(1, A | X, 0x2000, 0, 4)],
+            &[0x13, 0, 0, 0, 1, 0, 0, 0],
+        );
+        assert_eq!(
+            load(bytes).unwrap_err().message,
+            "dynamic loading and TLS are outside the execution profile"
+        );
     }
 }

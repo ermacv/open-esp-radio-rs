@@ -279,7 +279,7 @@ pub(crate) fn observing<R>(
     body: impl FnOnce(&mut Observe<'_>, &mut dyn RunControl) -> Result<R>,
 ) -> Result<R> {
     let file = image.file();
-    let view = ProgramView::new(image.bytes(), file, memory, control)?;
+    let view = ProgramView::new(image.bytes(), file, &[], memory, control)?;
     let mut observe = |function: &Function,
                        jumps: &[KnownJump],
                        tables: &Tables<'_>,

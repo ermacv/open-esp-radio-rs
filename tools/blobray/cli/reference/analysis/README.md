@@ -52,7 +52,7 @@ the operation, and a completed analysis is never discarded for them. A
 relocation to a `.L` local label in a read-only string section
 (`SHF_STRINGS`) shows the escaped text there in quotes; labels of other data,
 such as jump tables, get no text. The JSON document is
-`{"schema":6,"inputs":[...],"abi":...,"call_returns":...,"functions":[...],"missing":[...]}`:
+`{"schema":7,"inputs":[...],"abi":...,"call_returns":...,"read_only":[...],"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,
 expressions, values, memory accesses, conditions and return values); a
@@ -80,7 +80,7 @@ displacements after it: such an access is a candidate to read, not a proof.
 An access whose last displacement is `--offset` (of `--width` bytes, when
 given) is reported with its instruction offset, kind and width; absolute
 addresses are no field. The JSON document is
-`{"schema":4,"inputs":[...],"abi":...,"call_returns":...,"offset":N,"width":W,"functions":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N,"unknown_addresses":N}`:
+`{"schema":5,"inputs":[...],"abi":...,"call_returns":...,"read_only":[...],"offset":N,"width":W,"functions":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N,"unknown_addresses":N}`:
 `blocked` lists the functions no analysis could read, `partial` counts the
 analyzed functions whose coverage or value semantics is incomplete and
 `partial_causes` breaks them down by cause (see
@@ -110,7 +110,7 @@ the caller's own argument at entry (`arg0`..`arg7`), another entry register,
 or unknown (`?`); a site without retained register state has no arguments.
 These are may-values of one site: there is no interprocedural expansion and
 a value does not prove that its path runs. The JSON document is
-`{"schema":3,"inputs":[...],"abi":...,"call_returns":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N}`;
+`{"schema":4,"inputs":[...],"abi":...,"call_returns":...,"read_only":[...],"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N}`;
 `partial` counts analyzed functions whose coverage or semantics is
 incomplete, which can hold further sites or less precise values, and
 `partial_causes` breaks them down by cause.
@@ -146,6 +146,24 @@ further address, while in the ESP32-S31 inventory it gives the ROM's
 `phy_pbus_rd` its PHY_PBUS read windows through `phy_pbus_rd_addr`. It is an
 explicit assumption, and every JSON document records it as `call_returns`.
 
+### Read-only windows
+
+A linked image is analyzed by its sections, as a firmware packer loads it
+([static RV32 images](../../../../riscv/program/README.md)), so an ESP-IDF
+firmware ELF, with its IRAM code and DRAM data in one segment, its flash
+rodata placed after a reservation that overlaps code and its thread-local
+template, is analyzed whole. ESP-IDF flags its flash rodata writable, so no
+constant would be read from it: `--read-only START:LENGTH` on every analysis
+command asserts a range read-only at run time whatever the section flags say,
+and constants and jump tables are read from the sections it covers whole. Take it
+from the chip's memory map, the flash window (on ESP32-S31 the XIP window
+`0x40000000:0x4000000`); Blobray never infers it from section names. It is an
+explicit assumption, and every JSON document records it as `read_only`.
+
+```console
+blobray register-accesses --abi riscv-integer --read-only 0x40000000:0x4000000 --range 0x20000000:0x1000000 --input image=phy_tracking_reference.elf
+```
+
 ### Callers
 
 `callers` lists every reference the analyzed functions make to the named
@@ -160,7 +178,7 @@ address of another symbol carries one, so a `call`, a `branch` and an
 `address` (a function pointer stored in a table) are all found with the
 referencing instruction's offset. Repeat `--symbol NAME` for several targets.
 The JSON document is
-`{"schema":2,"inputs":[...],"abi":...,"call_returns":...,"symbols":[...],"callers":[...],"blocked":[...],"gaps":N}`.
+`{"schema":3,"inputs":[...],"abi":...,"call_returns":...,"read_only":[...],"symbols":[...],"callers":[...],"blocked":[...],"gaps":N}`.
 A call inside one section that the assembler resolved without a relocation
 is not a reference and is not listed.
 
@@ -191,13 +209,18 @@ enumerates objects, prepares each object once for all its functions and owns
 the visit. No analysis or backend module opens a path. Graph allocations
 require working-capacity admission.
 
-The artifact view verifies nonoverlapping RV32 load segments and that selected
-code agrees with executable file-backed bytes. Dynamic loading, runtime
-relocations, TLS, RV32E/quad-float ABI and writable executable segments are
-outside this static profile. Static relocation sections retained by
-`--emit-relocs` are provenance; their edits are not applied again during
-value/flow interpretation. Read-only ELF permissions are the declared static
-memory interpretation, not a hardware-memory-map assertion. Single-precision
+The artifact view lays an image's memory out by its loaded sections
+([static RV32 images](../../../../riscv/program/README.md)): they must not
+overlap, each must be the bytes a load segment carries at its address, and
+selected code must agree with an executable section in an executable segment.
+A thread-local template and a segment holding both code and data sections
+are accepted; dynamic loading, runtime relocations, RV32E/quad-float ABI and
+writable code sections are outside this static profile. Static relocation
+sections retained by `--emit-relocs` are provenance; their edits are not
+applied again during value/flow interpretation. Constants come from sections
+neither writable nor executable, and from writable sections only inside the
+caller's [read-only windows](#read-only-windows), an assertion about the
+chip's memory map that no section flag makes. Single-precision
 instructions are decoded and lifted for their integer and memory effects only;
 the FP register file is not modeled. Concrete execution uses the separate
 [execution contract](../execution/README.md#concrete-execution-and-comparison).
@@ -335,10 +358,11 @@ human format prints `jump table +site: +target <- cases …` with those case
 values, or `<- entries …` with entry indexes when they are unknown, after the
 listing.
 
-Loads retain address and width. In the static ELF image profile, file-backed
-bytes in readable, non-writable PT_LOAD segments supply constants, with signed
-byte/halfword extension. Writable memory, zero-fill tails, unmapped addresses
-remain symbolic loads; atomic load results remain unknown. Stores retain address, width and source value. Atomic operations retain their read/write kind and
+Loads retain address and width. In the static ELF image profile, the bytes of
+loaded sections neither writable nor executable supply constants, with signed
+byte/halfword extension, and so do writable sections inside the caller's
+[read-only windows](#read-only-windows). Other writable memory, code, zero-fill
+(`NOBITS`) and unmapped addresses remain symbolic loads; atomic load results remain unknown. Stores retain address, width and source value. Atomic operations retain their read/write kind and
 conditional store behavior without modeling memory or reservations. Calls are
 opaque effects: their possible continuation forgets registers except x0 and symbolic x10/x11 call results. Unknown operations and conflicting instruction
 boundaries are explicit gaps and cannot propagate stale values. Missing decoded

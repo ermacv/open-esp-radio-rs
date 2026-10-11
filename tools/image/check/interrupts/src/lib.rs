@@ -395,7 +395,7 @@ pub fn interrupt_stacks_of(image: &Image) -> Result<InterruptStacks> {
     let field = |(offset, size): (u32, u32)| Field { offset, size };
     let memory = WorkingMemory::new(MEMORY_LIMIT)?;
     let mut control = Budget::new(WORK_UNITS, TIMEOUT);
-    let facts = ImageFacts::new(elf, &memory, &mut control)?;
+    let facts = ImageFacts::new(elf, &[], &memory, &mut control)?;
     let table = interrupt_table(
         &facts,
         &interrupts.table_symbol,

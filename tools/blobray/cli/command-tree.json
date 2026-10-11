@@ -43,6 +43,7 @@
       "--group-by",
       "--abi",
       "--call-returns",
+      "--read-only",
       "--working-memory-mib",
       "--timeout-secs",
       "--max-work-units"
@@ -60,6 +61,7 @@
       "--function",
       "--abi",
       "--call-returns",
+      "--read-only",
       "--working-memory-mib",
       "--timeout-secs",
       "--max-work-units"
@@ -78,6 +80,7 @@
       "--width",
       "--abi",
       "--call-returns",
+      "--read-only",
       "--working-memory-mib",
       "--timeout-secs",
       "--max-work-units"
@@ -95,6 +98,7 @@
       "--symbol",
       "--abi",
       "--call-returns",
+      "--read-only",
       "--working-memory-mib",
       "--timeout-secs",
       "--max-work-units"
@@ -113,6 +117,7 @@
       "--range",
       "--abi",
       "--call-returns",
+      "--read-only",
       "--working-memory-mib",
       "--timeout-secs",
       "--max-work-units"
@@ -161,6 +166,7 @@
       "--symbol",
       "--abi",
       "--call-returns",
+      "--read-only",
       "--working-memory-mib",
       "--timeout-secs",
       "--max-work-units"

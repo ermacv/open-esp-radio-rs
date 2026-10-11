@@ -165,8 +165,8 @@ section range, file range, image address when the object is an image,
 writability, the SHA-256 of its bytes and the counts of section relocations,
 relocations overlapping the range and relocations of unknown extent.
 
-Image addresses resolve only through file-backed load mappings; a range with
-no exact section fails. Writable section bytes are initialization values only.
+Image addresses resolve only through loaded sections, each the bytes a load
+segment carries; a range with no exact section fails. Writable section bytes are initialization values only.
 Relocations are never applied. `NOBITS` ranges, overflowing lengths, symbols
 of another object and empty or oversized range lists are rejected. A
 successful export claims no completeness or comparison result.

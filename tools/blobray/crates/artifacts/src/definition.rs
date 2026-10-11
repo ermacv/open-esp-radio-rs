@@ -330,14 +330,18 @@ mod tests {
             inspect_link_definition(&source, &id, &memory, &mut || Ok(())).unwrap(),
             0x1000
         );
+        // The image's memory is its sections: the thread-local segment and
+        // the section-less mappings at 0x3000 are no memory to read.
         let file = oer_elf::Elf::parse(source.0.as_slice()).unwrap();
-        assert_eq!(
-            oer_riscv_program::ProgramView::new(&source.0, &file, &memory, &mut || Ok(()))
-                .err()
+        let view =
+            oer_riscv_program::ProgramView::new(&source.0, &file, &[], &memory, &mut || Ok(()))
+                .unwrap();
+        assert!(
+            !view
+                .read_constant(0x3000, &mut [0; 4], &mut || Ok(()))
                 .unwrap()
-                .code,
-            ErrorCode::Incompatible
         );
+        drop(view);
         // An overlapping data address space does not change the selected code bytes.
         put(&mut source.0, program + 64 + 8, 0x1000);
         id.object.artifact = ArtifactId::of_bytes(&source.0);
@@ -345,7 +349,8 @@ mod tests {
             inspect_link_definition(&source, &id, &memory, &mut || Ok(())).unwrap(),
             0x1000
         );
-        // Even without TLS, overlapping mappings still cannot execute.
+        // Without the thread-local segment, the overlapping mappings still
+        // neither execute nor become memory.
         put(&mut source.0, program + 32, 0);
         id.object.artifact = ArtifactId::of_bytes(&source.0);
         assert_eq!(
@@ -353,13 +358,15 @@ mod tests {
             0x1000
         );
         let file = oer_elf::Elf::parse(source.0.as_slice()).unwrap();
-        assert_eq!(
-            oer_riscv_program::ProgramView::new(&source.0, &file, &memory, &mut || Ok(()))
-                .err()
+        let view =
+            oer_riscv_program::ProgramView::new(&source.0, &file, &[], &memory, &mut || Ok(()))
+                .unwrap();
+        assert!(
+            !view
+                .read_constant(0x3000, &mut [0; 4], &mut || Ok(()))
                 .unwrap()
-                .code,
-            ErrorCode::Integrity
         );
+        drop(view);
         assert_eq!(memory.observation().reserved_bytes, 0);
     }
     #[test]

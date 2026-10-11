@@ -6,7 +6,7 @@ const TEST_MEMORY: u64 = 1 << 32;
 /// Run `body` over the facts of `elf`, read without a work budget.
 fn with_facts<R>(elf: &[u8], body: impl FnOnce(&ImageFacts<'_>) -> Result<R>) -> Result<R> {
     let memory = WorkingMemory::new(TEST_MEMORY)?;
-    let facts = ImageFacts::new(elf, &memory, &mut || Ok(()))?;
+    let facts = ImageFacts::new(elf, &[], &memory, &mut || Ok(()))?;
     body(&facts)
 }
 
@@ -34,10 +34,10 @@ fn analyze_within(
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<Analysis> {
-    let image = ImageFacts::new(elf, memory, control)?;
+    let image = ImageFacts::new(elf, &[], memory, control)?;
     let companions = companions
         .iter()
-        .map(|companion| ImageFacts::new(companion, memory, control))
+        .map(|companion| ImageFacts::new(companion, &[], memory, control))
         .collect::<Result<Vec<_>>>()?;
     let companions: Vec<&ImageFacts<'_>> = companions.iter().collect();
     let mut keep = Ledger::new(memory, control)?;
@@ -2172,17 +2172,17 @@ fn the_working_memory_and_the_work_budget_bound_the_analysis() {
     // The facts alone fit; the analysis needs more than either limit.
     let needed = {
         let memory = WorkingMemory::new(TEST_MEMORY).unwrap();
-        ImageFacts::new(&image, &memory, &mut || Ok(())).unwrap();
+        ImageFacts::new(&image, &[], &memory, &mut || Ok(())).unwrap();
         memory.peak()
     };
     let memory = WorkingMemory::new(needed + 1).unwrap();
-    let facts = ImageFacts::new(&image, &memory, &mut || Ok(())).unwrap();
+    let facts = ImageFacts::new(&image, &[], &memory, &mut || Ok(())).unwrap();
     let error = crate::analyze(&facts, &[], &[], &mut kept(&memory), &mut || Ok(())).unwrap_err();
     assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
     assert!(error.memory.is_some(), "{error:?}");
 
     let memory = WorkingMemory::new(TEST_MEMORY).unwrap();
-    let facts = ImageFacts::new(&image, &memory, &mut || Ok(())).unwrap();
+    let facts = ImageFacts::new(&image, &[], &memory, &mut || Ok(())).unwrap();
     let error = crate::analyze(&facts, &[], &[], &mut kept(&memory), &mut Units(1)).unwrap_err();
     assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
     assert!(crate::analyze(&facts, &[], &[], &mut kept(&memory), &mut Units(u64::MAX)).is_ok());
@@ -2442,7 +2442,7 @@ fn the_analyzers_own_structures_fail_on_working_memory() {
     // What the analysis keeps stays admitted while the caller holds it,
     // beside the image facts; the rest is released with each function.
     let memory = WorkingMemory::new(TEST_MEMORY).unwrap();
-    let facts = ImageFacts::new(&elf, &memory, &mut || Ok(())).unwrap();
+    let facts = ImageFacts::new(&elf, &[], &memory, &mut || Ok(())).unwrap();
     let before = memory.used();
     let mut keep = kept(&memory);
     crate::analyze(&facts, &[], &[], &mut keep, &mut || Ok(())).unwrap();

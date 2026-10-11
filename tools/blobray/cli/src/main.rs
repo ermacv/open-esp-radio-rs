@@ -4,7 +4,8 @@ use blobray_application as app;
 use blobray_domain::CheckVerdict;
 use clap::{Parser, Subcommand, ValueEnum};
 use oer_riscv_model::{
-    CallAbi, DEFAULT_WORKING_BYTES, Error, ErrorCode, FunctionDecoder, FunctionSemantics, Result,
+    CallAbi, DEFAULT_WORKING_BYTES, Error, ErrorCode, FunctionDecoder, FunctionSemantics,
+    ReadOnlyWindow, Result,
 };
 use std::io::Write;
 use std::{ffi::OsString, path::PathBuf, process::ExitCode};
@@ -38,13 +39,19 @@ struct Assumptions {
     /// function to collect them, so the analysis takes about twice as long.
     #[arg(long)]
     call_returns: bool,
+    /// START:LENGTH range read-only at run time whatever a linked image's
+    /// section flags say, such as flash mapped for reading: constants are
+    /// read from it. Take it from the chip's memory map; repeat for more.
+    #[arg(long = "read-only", value_name = "START:LENGTH", value_parser = parse_window)]
+    read_only: Vec<ReadOnlyWindow>,
 }
 
 impl Assumptions {
-    fn analysis(&self) -> app::library::Assumptions {
+    fn analysis(&self) -> app::library::Assumptions<'_> {
         app::library::Assumptions {
             abi: self.abi.map(|AbiArg::RiscvInteger| CallAbi::RiscvInteger),
             call_returns: self.call_returns,
+            read_only: &self.read_only,
         }
     }
 }
@@ -386,7 +393,7 @@ fn field_accesses(
     inputs: Vec<OsString>,
     offset: i64,
     width: Option<u8>,
-    assumptions: app::library::Assumptions,
+    assumptions: app::library::Assumptions<'_>,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -456,6 +463,7 @@ fn field_accesses(
                     .collect(),
                 abi: assumptions.abi,
                 call_returns: assumptions.call_returns,
+                read_only: assumptions.read_only.to_vec(),
                 offset,
                 width,
                 functions,
@@ -520,7 +528,7 @@ fn field_accesses(
 fn function_records(
     inputs: Vec<OsString>,
     names: Vec<String>,
-    assumptions: app::library::Assumptions,
+    assumptions: app::library::Assumptions<'_>,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -621,6 +629,7 @@ fn function_records(
                     .collect(),
                 abi: assumptions.abi,
                 call_returns: assumptions.call_returns,
+                read_only: assumptions.read_only.to_vec(),
                 functions,
                 missing,
             };
@@ -794,7 +803,7 @@ fn mmio_diff(
     old: Vec<OsString>,
     new: Vec<OsString>,
     ranges: Vec<blobray_domain::ImageRegion>,
-    assumptions: app::library::Assumptions,
+    assumptions: app::library::Assumptions<'_>,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -835,6 +844,7 @@ fn mmio_diff(
                 new: described(&new_inputs, &new),
                 abi: assumptions.abi,
                 call_returns: assumptions.call_returns,
+                read_only: assumptions.read_only.to_vec(),
                 diff,
             };
             serde_json::to_writer(&mut out, &document).map_err(json_error)?;
@@ -1115,6 +1125,17 @@ fn parse_range(text: &str) -> std::result::Result<blobray_domain::ImageRegion, S
     })
 }
 
+fn parse_window(text: &str) -> std::result::Result<ReadOnlyWindow, String> {
+    let range = parse_range(text)?;
+    range
+        .end()
+        .ok_or("the window exceeds the RV32 address space")?;
+    Ok(ReadOnlyWindow {
+        start: range.start,
+        length: range.length,
+    })
+}
+
 fn json_error(e: serde_json::Error) -> Error {
     invalid(&e.to_string())
 }
@@ -1200,7 +1221,7 @@ fn register_accesses(
     ranges: Vec<blobray_domain::ImageRegion>,
     filter: blobray_cli::access_groups::AccessFilter,
     group_by: Option<blobray_cli::access_groups::GroupBy>,
-    assumptions: app::library::Assumptions,
+    assumptions: app::library::Assumptions<'_>,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -1239,11 +1260,12 @@ fn register_accesses(
             .collect();
         write!(
             out,
-            "{{\"schema\":{},\"inputs\":{},\"abi\":{},\"call_returns\":{},\"records\":[",
+            "{{\"schema\":{},\"inputs\":{},\"abi\":{},\"call_returns\":{},\"read_only\":{},\"records\":[",
             blobray_cli::wire::REGISTER_ACCESSES_SCHEMA,
             serde_json::to_string(&described).map_err(json_error)?,
             serde_json::to_string(&assumptions.abi).map_err(json_error)?,
-            assumptions.call_returns
+            assumptions.call_returns,
+            serde_json::to_string(assumptions.read_only).map_err(json_error)?
         )
         .map_err(io_error)?;
     }
@@ -1318,7 +1340,7 @@ fn register_accesses(
 fn call_arguments(
     inputs: Vec<OsString>,
     symbols: Vec<String>,
-    assumptions: app::library::Assumptions,
+    assumptions: app::library::Assumptions<'_>,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -1392,6 +1414,7 @@ fn call_arguments(
                     .collect(),
                 abi: assumptions.abi,
                 call_returns: assumptions.call_returns,
+                read_only: assumptions.read_only.to_vec(),
                 symbols,
                 callers,
                 blocked,
@@ -1452,7 +1475,7 @@ fn call_arguments(
 fn callers(
     inputs: Vec<OsString>,
     symbols: Vec<String>,
-    assumptions: app::library::Assumptions,
+    assumptions: app::library::Assumptions<'_>,
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
@@ -1516,6 +1539,7 @@ fn callers(
                     .collect(),
                 abi: assumptions.abi,
                 call_returns: assumptions.call_returns,
+                read_only: assumptions.read_only.to_vec(),
                 symbols,
                 callers,
                 blocked,

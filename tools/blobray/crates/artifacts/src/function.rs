@@ -51,9 +51,12 @@ fn reserved<T>(count: usize) -> Result<Vec<T>> {
     Ok(v)
 }
 /// Own captured bytes in this callback scope; parsed views cannot escape it.
+/// A linked image's sections inside `read_only` hold constants whatever
+/// their flags say ([`ReadOnlyWindow`]).
 pub fn with_prepared_object<T>(
     source: &dyn ByteSource,
     payload: &ArtifactId,
+    read_only: &[ReadOnlyWindow],
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
     consume: impl FnOnce(&mut PreparedObject<'_, '_>, &mut dyn RunControl) -> Result<T>,
@@ -105,7 +108,7 @@ pub fn with_prepared_object<T>(
     }
     let image = if file.kind() == object::ObjectKind::Executable {
         Some(oer_riscv_program::ProgramView::new(
-            &bytes, &view, memory, control,
+            &bytes, &view, read_only, memory, control,
         )?)
     } else {
         None

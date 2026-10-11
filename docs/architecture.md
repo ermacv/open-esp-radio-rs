@@ -422,7 +422,15 @@ running phase: `split` returns the phase's one event consumer
 only gate or tune admission while clients run (a Wi-Fi transmit gate,
 beacon-receive priority, EDCA, modem-sleep membership), and the protocol's
 client handles, each scoped to its interface (`RadioPortClient`), whose
-admitted work is a value only their own submissions return. While the
+admitted work is a value only their own submissions return. The three
+parts are disjoint resources, each with one holder. The control has one
+holder, the policy that arbitrates admission; other policies that need it
+(power save, coexistence slices) send that holder requests. None of its
+operations refuses as busy: stopping admission takes effect at once, even
+when its future is dropped, and the future resolves to a typed proof that
+the air is quiet, which only the backend constructs (closing the Wi-Fi
+transmit gate yields a proof that no attempt is published); a policy that
+needs a quiet air takes the proof instead of retrying a refusal. While the
 parts live, no owner call compiles, so a lifecycle command or a channel
 move never meets a client's work and no backend refuses one as busy
 ([Ownership and refusals](#ownership-and-refusals)). Work a phase leaves in

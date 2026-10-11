@@ -2,14 +2,16 @@
 //!
 //! An installed port has exactly one owner ([`RadioPortOwner`]), which is
 //! neither `Clone` nor `Copy`. The operations that conflict with work in
-//! flight take `&mut` on it, between running phases: the lifecycle and each
-//! protocol's permanent radio moves (a Wi-Fi or IEEE 802.15.4 channel move).
+//! flight take `&mut` on it, between running phases: the lifecycle and a
+//! protocol's permanent radio moves where it has them (a Wi-Fi channel
+//! move; an IEEE 802.15.4 request names its own channel, so that port has
+//! none).
 //! Between phases the owner also consumes the event stream and ends any
 //! admitted work.
 //!
 //! For one running phase the owner lends the port out:
 //! [`RadioPortOwner::split`] borrows it mutably and returns three parts
-//! ([`RadioPortSplit`]):
+//! ([`RadioPortSplit`], [`PhaseParts`]):
 //!
 //! - the phase's one event consumer ([`RadioPortEvents`]);
 //! - the phase control, one value that is neither `Clone` nor `Copy`, for
@@ -17,11 +19,21 @@
 //!   clients run (a Wi-Fi transmit gate, beacon-receive priority, EDCA or
 //!   modem-sleep membership), held by the policy that drives them;
 //! - the protocol's client handles, each scoped to its interface
-//!   ([`RadioPortClient`]).
+//!   ([`RadioPortClient`]); their count is fixed at the split and may follow
+//!   the backend's capabilities (one IEEE 802.15.4 interface, or up to four
+//!   with multi-PAN).
 //!
-//! The three parts are disjoint resources, each with one holder: a client
-//! owns its own work, the control owns the policy of what reaches the air
-//! next, and neither can act for the other.
+//! The parts are disjoint resources, each with one holder: a client owns
+//! its own work, the control owns the policy of what reaches the air next,
+//! and neither can act for the other. Each kind of client names its work
+//! with its own identity type ([`RadioPortClient::Id`]), which the client
+//! chooses, as a sans-IO core does: another client's identity does not
+//! type-check, and a port with one client simply uses its identity.
+//!
+//! Nothing of the port reaches another executor task but requests to its
+//! actor. A measurement the backend publishes (an IEEE 802.15.4 recent
+//! RSSI) is not part of the port: as the radio clock, it is the backend's
+//! own published value, with one writer and readers of an atomic snapshot.
 //!
 //! # The phase control
 //!
@@ -148,6 +160,13 @@ pub trait RadioPortOwner {
     /// Start one lifecycle command; its terminal
     /// [`LifecycleEvent`](crate::LifecycleEvent) follows through
     /// [`Self::next_event`].
+    ///
+    /// The owner runs one command at a time, and the backend keeps one
+    /// terminal slot reserved for it, so neither cause of
+    /// [`LifecycleError::Busy`] (another command, no slot for the terminal)
+    /// reaches the owner: a backend never refuses its command as busy.
+    /// The variant leaves the contract with [`RadioPort`](crate::RadioPort)'s
+    /// lifecycle in #581.
     fn lifecycle(
         &mut self,
         command: LifecycleCommand,
@@ -172,12 +191,22 @@ pub trait RadioPortSplit {
     /// admission yields a typed proof of a quiet air (see the
     /// [module](self) documentation).
     type Control;
-    /// The protocol's client handles, one per interface.
+    /// The protocol's client handles, one per interface; their count is
+    /// fixed at the split.
     type Clients;
 
-    /// The event consumer, the control and the client handles, as separate
-    /// values.
-    fn into_parts(self) -> (Self::Events, Self::Control, Self::Clients);
+    /// The phase's parts, as separate values.
+    fn into_parts(self) -> PhaseParts<Self::Events, Self::Control, Self::Clients>;
+}
+
+/// The parts of one running phase ([`RadioPortSplit::into_parts`]).
+pub struct PhaseParts<E, C, K> {
+    /// The phase's one event consumer.
+    pub events: E,
+    /// The phase control, with one holder.
+    pub control: C,
+    /// The protocol's client handles, one per interface.
+    pub clients: K,
 }
 
 /// The one consumer of a running phase's events.
@@ -205,13 +234,14 @@ pub trait RadioPortEvents {
 ///
 /// A client is scoped to its interface: its protocol's submissions and
 /// settings name only that interface, so one client cannot act for another.
-/// Its admitted work is a [`Self::Work`] value that only its own
-/// submissions return, so a client names only its own work, by type.
+/// Each kind of client names its work with its own identity type, which it
+/// chooses, so a client names only its own work, by type.
 pub trait RadioPortClient {
-    /// One admitted operation of this client, which its protocol's
-    /// submission returns: neither `Clone` nor `Copy`, and with no public
-    /// constructor.
-    type Work;
+    /// The correlation identity of this client's work: its own type, so
+    /// another kind of client's identity does not type-check. The owner
+    /// ends any client's work between phases through the port's identity
+    /// ([`RadioPortOwner::Id`]), which each client identity converts into.
+    type Id: Correlation;
     /// The clock domain of the port's radio instants.
     type Domain;
     /// The cause a poisoned backend reports.
@@ -226,9 +256,10 @@ pub trait RadioPortClient {
 
     /// End one operation this client admitted. Its terminal event is the
     /// operation's own, which may be its natural end. A refusal as
-    /// [`CancelError::NotRunning`] proves that the operation already ended.
-    fn cancel<'a>(
-        &'a self,
-        work: &'a Self::Work,
-    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + 'a;
+    /// [`CancelError::NotRunning`] proves that the operation already ended:
+    /// the air ends work, so its end is an outcome, not a caller's state.
+    fn cancel(
+        &self,
+        id: Self::Id,
+    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + '_;
 }

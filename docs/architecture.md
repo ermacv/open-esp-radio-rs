@@ -338,7 +338,10 @@ tasks over an internal mutex is not ownership. A refusal such as `Busy`
 reaches a caller only where the caller can choose another action; a caller
 that could only retry should have waited or held the right instead.
 Synchronization a backend needs inside itself, for its interrupt entries
-and its runner, stays inside and never reaches a caller as a refusal.
+and its runner, stays inside and never reaches a caller as a refusal. A
+measurement a backend publishes (a recent RSSI, the radio clock) has one
+writer and is read as an atomic snapshot without a lock; it is the
+backend's published value, not a shared handle of the port.
 
 **Typestate or refusal.** Who controls a state decides its form:
 
@@ -416,14 +419,18 @@ protocol:
 **Authority.** An installed port has one owner
 (`oer_radio_port::RadioPortOwner`), which takes on `&mut`, between running
 phases, the operations that conflict with work in flight: the lifecycle and
-each protocol's permanent channel move. It lends the port out for one
+a permanent channel move where the protocol has one (an IEEE 802.15.4
+request names its own channel). It lends the port out for one
 running phase: `split` returns the phase's one event consumer
 (`RadioPortEvents`), one phase control for the radio-wide operations that
 only gate or tune admission while clients run (a Wi-Fi transmit gate,
 beacon-receive priority, EDCA, modem-sleep membership), and the protocol's
-client handles, each scoped to its interface (`RadioPortClient`), whose
-admitted work is a value only their own submissions return. The three
-parts are disjoint resources, each with one holder. The control has one
+client handles, each scoped to its interface (`RadioPortClient`) and
+counted at the split. Each kind of client names its work with its own
+identity type, which it chooses as a sans-IO core does, so another
+client's identity does not type-check and a single-client port (Bluetooth
+LE, whose controller core arbitrates every role) uses its own. The control and the clients are disjoint
+resources, each with one holder. The control has one
 holder, the policy that arbitrates admission; other policies that need it
 (power save, coexistence slices) send that holder requests. None of its
 operations refuses as busy: stopping admission takes effect at once, even

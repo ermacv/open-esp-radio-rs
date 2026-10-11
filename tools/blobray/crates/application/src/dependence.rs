@@ -37,14 +37,12 @@ type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<AddressH
 
 /// No producer: an input of the session or phase.
 const INPUT: u32 = u32::MAX;
-/// Registers a call may clobber under the psABI; a call model's results.
-const CALLER_SAVED: [u8; 16] = [1, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30, 31];
-/// Link registers whose `jalr x0, 0(link)` returns to the caller.
-const LINKS: [u8; 2] = [1, 5];
-/// First argument register; call argument words 0 to 7 are `a0` to `a7`.
-const FIRST_ARGUMENT: u8 = 10;
+/// The calling convention dependence assumes: a call clobbers its
+/// registers and returns through its links, and the argument words travel
+/// in its argument registers.
+const ABI: oer_riscv_model::CallAbi = oer_riscv_model::CallAbi::RiscvInteger;
 /// Argument words passed in registers.
-const REGISTER_ARGUMENTS: usize = 8;
+const REGISTER_ARGUMENTS: usize = ABI.arguments().len();
 /// Instructions of one function's recovered CFG; a larger function gets no
 /// post-dominators, so its branches control the rest of their frame.
 const MAX_FUNCTION_INSTRUCTIONS: usize = 1 << 16;
@@ -226,7 +224,7 @@ fn shape(code: &dyn Code, semantics: &dyn FunctionSemantics, pc: u32) -> Option<
             link(semantics.lift(bytes)),
             if linked {
                 Kind::Call
-            } else if LINKS.contains(&base) && offset == 0 {
+            } else if ABI.links().contains(&base) && offset == 0 {
                 Kind::Return
             } else {
                 Kind::Jump { target: None }
@@ -558,7 +556,7 @@ impl Forward<'_> {
             self.registers[step.shape.def as usize] = step.step;
         }
         if step.call_returned {
-            for r in CALLER_SAVED {
+            for r in ABI.clobbered() {
                 self.registers[r as usize] = step.step;
             }
         }
@@ -668,16 +666,15 @@ impl Forward<'_> {
             }
         }
         for &(e, register) in &sinks.registers {
-            let word = usize::from(register - FIRST_ARGUMENT);
-            if let Some(words) = self.arguments.get(e as usize)
-                && word < REGISTER_ARGUMENTS
+            if let Some(word) = ABI.argument_word(register)
+                && let Some(words) = self.arguments.get(e as usize)
             {
                 seeds.push(words[word]);
             }
         }
-        for (word, selected) in sinks.returns.into_iter().enumerate() {
+        for (register, selected) in ABI.results().into_iter().zip(sinks.returns) {
             if selected {
-                seeds.push(self.registers[usize::from(FIRST_ARGUMENT) + word]);
+                seeds.push(self.registers[usize::from(register)]);
             }
         }
         if sinks.goal
@@ -690,9 +687,8 @@ impl Forward<'_> {
         }
         seeds.retain(|s| *s != INPUT);
         for &(e, register) in &sinks.arguments {
-            let word = usize::from(register - FIRST_ARGUMENT);
-            if let Some(words) = self.arguments.get(e as usize)
-                && word < REGISTER_ARGUMENTS
+            if let Some(word) = ABI.argument_word(register)
+                && let Some(words) = self.arguments.get(e as usize)
                 && words[word] != INPUT
             {
                 self.graph.effect_seeds.push(words[word]);
@@ -840,7 +836,7 @@ impl<'x> Analyzer<'x> {
                     }
                     let mut words = [INPUT; REGISTER_ARGUMENTS];
                     for (w, word) in words.iter_mut().enumerate() {
-                        *word = forward.registers[usize::from(FIRST_ARGUMENT) + w];
+                        *word = forward.registers[usize::from(ABI.arguments()[w])];
                     }
                     forward
                         .arguments

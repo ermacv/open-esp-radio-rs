@@ -368,6 +368,52 @@ pub struct SemanticSummary {
 pub enum CallAbi {
     RiscvInteger,
 }
+
+impl CallAbi {
+    /// The integer registers that carry a call's first argument words, in
+    /// order (`a0` to `a7`).
+    pub const fn arguments(self) -> [u8; 8] {
+        match self {
+            Self::RiscvInteger => [10, 11, 12, 13, 14, 15, 16, 17],
+        }
+    }
+
+    /// The integer registers that carry a call's result (`a0`, `a1`).
+    pub const fn results(self) -> [u8; 2] {
+        match self {
+            Self::RiscvInteger => [10, 11],
+        }
+    }
+
+    /// The integer registers a callee preserves (`sp`, `gp`, `tp` and
+    /// `s0` to `s11`).
+    pub const fn preserved(self) -> [u8; 15] {
+        match self {
+            Self::RiscvInteger => [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+        }
+    }
+
+    /// The integer registers a call may clobber: every one but `zero` and
+    /// the preserved ones.
+    pub const fn clobbered(self) -> [u8; 16] {
+        match self {
+            Self::RiscvInteger => [1, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30, 31],
+        }
+    }
+
+    /// The link registers (`ra`, `t0`): a jump through one, at offset zero
+    /// and without linking, returns to the caller.
+    pub const fn links(self) -> [u8; 2] {
+        match self {
+            Self::RiscvInteger => [1, 5],
+        }
+    }
+
+    /// The argument word `register` carries, if it carries one.
+    pub fn argument_word(self, register: u8) -> Option<usize> {
+        self.arguments().iter().position(|&r| r == register)
+    }
+}
 /// Flat DAG. References must point to earlier records in the same function.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
@@ -399,4 +445,30 @@ pub enum BranchTest {
     Ge,
     Ltu,
     Geu,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_psabi_register_roles_partition_the_integer_registers() {
+        let abi = CallAbi::RiscvInteger;
+        let mut roles: Vec<u8> = abi.preserved().into_iter().chain(abi.clobbered()).collect();
+        roles.sort_unstable();
+        assert_eq!(roles, (1..32).collect::<Vec<u8>>());
+        let clobbered = abi.clobbered();
+        for register in abi
+            .arguments()
+            .into_iter()
+            .chain(abi.results())
+            .chain(abi.links())
+        {
+            assert!(clobbered.contains(&register), "x{register}");
+        }
+        assert_eq!(abi.argument_word(10), Some(0));
+        assert_eq!(abi.argument_word(17), Some(7));
+        assert_eq!(abi.argument_word(18), None);
+        assert_eq!(abi.results(), [abi.arguments()[0], abi.arguments()[1]]);
+    }
 }

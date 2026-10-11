@@ -1278,17 +1278,19 @@ fn evaluate(
     }
     if op.opaque_call {
         state = unknown_state();
-        if abi.is_some() {
-            for r in [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] {
-                state[r] = incoming[r];
+        if let Some(abi) = abi {
+            for r in abi.preserved() {
+                state[usize::from(r)] = incoming[usize::from(r)];
             }
         }
-        for r in [10, 11] {
-            state[r] = symbols.expression(
+        // A call's result registers name its results whatever is assumed
+        // about the registers it preserves.
+        for r in CallAbi::RiscvInteger.results() {
+            state[usize::from(r)] = symbols.expression(
                 node.offset,
                 Expression::CallResult {
                     callsite: node.offset,
-                    register: r as u8,
+                    register: r,
                 },
                 c,
             )?;

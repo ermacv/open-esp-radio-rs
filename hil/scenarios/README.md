@@ -73,7 +73,8 @@ The family owns every executable value:
   accepted indication, the opening, admitted connection events with anchored
   ends and the closing (`bluetooth-trouble-gatt-trace`, an `investigation`
   scenario). A failed cycle stops the trace, so the repetition's post-mortem
-  holds that cycle's records.
+  holds that cycle's records; its ten repetitions are the traced sample that
+  catches a connection lost before its first ATT exchange (#364).
 - `[wifi]` selects the image and an optional `[wifi.datapath]` initialization
   (placement, checksum, TX-buffer and RX-continuation diagnostics). Each
   workload variant carries its own link expectation, observers, fixture

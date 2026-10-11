@@ -1,16 +1,10 @@
 //! Bisection: find the first commit at which a scenario stops passing.
 //!
 //! Every tested revision is checked out, detached, in the bisection's own
-//! worktree below `target/hil/bisect/<id>/`. A revision whose HIL protocol
-//! version is this checkout's runs on this checkout's runner and host code
-//! with the revision's firmware, built from a source snapshot of the
-//! worktree. A revision with another protocol version runs its own runner,
-//! built in the worktree, inside this bisection's whole-stand lease: its
-//! runner gets a private arbiter directory holding a copy of the stand file
-//! (and of an older device registry), so it neither waits for nor disturbs
-//! the shared arbiter, whose schema it may not read, and the worktree's run
-//! directory links to the shared store. Every step is launched through
-//! [`crate::launch::launch_run`], and its run is the one its receipt names.
+//! worktree below `target/hil/bisect/<id>/`, and runs its scenario with the
+//! runner that speaks its HIL wire ([`crate::revision::Revision`]): this
+//! checkout's with the revision's firmware for the same wire, otherwise the
+//! revision's own inside the bisection's whole-stand lease.
 //!
 //! A revision whose image does not build or does not link, or whose own
 //! runner cannot run, is broken: it is neither good nor bad, and the search
@@ -26,20 +20,15 @@ use std::{
 };
 
 use oer_hil_analysis::Run;
-use oer_hil_run_bundle::RunStore;
 use oer_hil_schema::run::{FailureKind, Outcome};
 use oer_process::git::Worktree;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     Result,
-    job::Running,
-    launch::{self, Launch, launch_run},
+    revision::{Ran, Revision, Runner},
 };
 
-/// The file naming a revision's HIL wire: revisions with equal locks speak
-/// the same protocol.
-const MESSAGES_LOCK: &str = "hil/protocol/messages.lock";
 const REPORT_SCHEMA: u16 = 2;
 
 /// What one tested revision showed.
@@ -71,16 +60,6 @@ impl std::fmt::Display for Broken {
             Self::RunnerUnavailable => "its runner cannot run",
         })
     }
-}
-
-/// Which runner judged a revision.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "runner", rename_all = "kebab-case")]
-pub enum Runner {
-    /// This checkout's runner with the revision's firmware.
-    Current,
-    /// The revision's own runner, for its other wire.
-    Revision,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -163,12 +142,6 @@ pub fn search(len: usize, mut probe: impl FnMut(usize) -> Result<Probe>) -> Resu
             }
         }
     }
-}
-
-/// The HIL wire of the tree at `root`, or `None` for a revision older than
-/// the keyed protocol, whose wire no lock names.
-pub(crate) fn messages_lock(root: &Path) -> Option<String> {
-    fs::read_to_string(root.join(MESSAGES_LOCK)).ok()
 }
 
 /// Whether an image build log shows a link failure rather than a compile
@@ -285,7 +258,6 @@ pub fn run(
             &format!("{good}..{bad}"),
         ],
     )?;
-    let current = messages_lock(checkout).ok_or("this checkout names no HIL wire")?;
     let id = oer_durable::unix_millis().to_string();
     let directory = checkout.join("target/hil/bisect").join(&id);
     fs::create_dir_all(&directory)?;
@@ -308,14 +280,8 @@ pub fn run(
         path.display()
     ));
     let bisection = Bisection {
-        checkout,
-        owner,
         spec,
-        current,
-        runner: launch::Runner::prepare(checkout)?,
-        store: RunStore::shared()?,
-        worktree: directory.join(format!("bisect-{id}")),
-        arbiter: directory.join("arbiter"),
+        revision: Revision::new(checkout, owner, &directory)?,
     };
     let mut worktree = None;
     let found = search(commits.len(), |index| {
@@ -363,28 +329,25 @@ pub fn run(
 }
 
 struct Bisection<'a> {
-    checkout: &'a Path,
-    owner: &'a str,
     spec: &'a Spec,
-    current: String,
-    /// This checkout's runner, prepared once for every step it judges.
-    runner: launch::Runner,
-    store: RunStore,
-    worktree: PathBuf,
-    arbiter: PathBuf,
+    revision: Revision<'a>,
 }
 
 impl Bisection<'_> {
     fn step(&self, worktree: &mut Option<Worktree>, commit: &str) -> Result<Step> {
-        match worktree {
-            Some(worktree) => worktree.checkout(commit)?,
-            None => *worktree = Some(Worktree::detached(self.checkout, &self.worktree, commit)?),
-        }
-        let subject = oer_process::git::text(&self.worktree, ["log", "-1", "--format=%s"])?;
-        let (runner, verdict) = if messages_lock(&self.worktree).as_ref() == Some(&self.current) {
-            (Runner::Current, self.with_current_runner()?)
-        } else {
-            (Runner::Revision, self.with_revision_runner()?)
+        self.revision.checkout(worktree, commit)?;
+        let subject = self.revision.subject()?;
+        let (runner, ran) = self.revision.launch(
+            std::slice::from_ref(&self.spec.scenario),
+            &crate::revision::seed_and_boards(self.spec.layout_seed, &self.spec.boards),
+            &format!("bisect {} with the revision's runner", self.spec.scenario),
+        )?;
+        let verdict = match ran {
+            Ran::Run { directory, .. } => judge_run(&directory)?,
+            Ran::RunnerUnavailable => Verdict::Broken {
+                why: Broken::RunnerUnavailable,
+                run: None,
+            },
         };
         Ok(Step {
             commit: commit.to_owned(),
@@ -393,123 +356,19 @@ impl Bisection<'_> {
             verdict,
         })
     }
+}
 
-    /// The run's layout seed and chosen boards.
-    fn seed_arguments(&self) -> Vec<String> {
-        let mut arguments = self
-            .spec
-            .layout_seed
-            .map(|seed| vec![String::from("--layout-seed"), seed.to_string()])
-            .unwrap_or_default();
-        arguments.extend(self.spec.boards.iter().cloned());
-        arguments
-    }
-
-    /// This checkout's runner, building the revision's firmware from a
-    /// snapshot of the worktree, as a job of its own.
-    fn with_current_runner(&self) -> Result<Verdict> {
-        let snapshot = oer_hil_source_snapshot::capture(
-            &self.worktree,
-            &[],
-            false,
-            &oer_hil_image::source_snapshot_store()?,
-            &oer_hil_image::source_objects()?,
-        )?;
-        let mut arguments = vec![
-            String::from("run"),
-            self.spec.scenario.clone(),
-            String::from("--source-snapshot"),
-            snapshot.directory().to_string_lossy().into_owned(),
-        ];
-        arguments.extend(self.seed_arguments());
-        let arguments = arguments
-            .into_iter()
-            .map(std::ffi::OsString::from)
-            .collect::<Vec<_>>();
-        let mut job = Running::new(self.checkout, self.owner, &arguments)?;
-        let launched = launch_run(
-            &Launch::new(self.checkout, &self.runner)
-                .args(arguments)
-                .env(oer_stand_owners::OWNER_ENV, self.owner)
-                .context(
-                    oer_process::Context::current()?
-                        .clone()
-                        .with(oer_stand_owners::OWNER_KEY, self.owner)
-                        .with(oer_stand_arbiter::jobs::JOB_KEY, job.id()),
-                ),
-        )?;
-        job.finish_with(&self.store, &launched.runs)?;
-        self.judge_run(&launched.run()?.to_string())
-    }
-
-    /// The revision's own runner, inside a whole-stand lease of the shared
-    /// arbiter, with a private arbiter holding a copy of the stand file.
-    fn with_revision_runner(&self) -> Result<Verdict> {
-        let arbiter = oer_stand_arbiter::Arbiter::open()?;
-        fs::create_dir_all(&self.arbiter)?;
-        // A revision's runner reads the user's stand file; a revision before
-        // the stand model read it beside its arbiter's state, and one before
-        // the stand file the arbiter's device registry the shared directory
-        // may still hold: the private arbiter gets copies of both.
-        fs::copy(arbiter.stand_file(), self.arbiter.join("stand.toml"))?;
-        let devices = arbiter.directory().join("devices.json");
-        if devices.exists() {
-            fs::copy(&devices, self.arbiter.join("devices.json"))?;
-        }
-        let _grant = arbiter.acquire(&oer_stand_arbiter::Request {
-            owner: self.owner.to_owned(),
-            work: format!("bisect {} with the revision's runner", self.spec.scenario),
-            scenarios: vec![self.spec.scenario.clone()],
-            run: None,
-            claims: vec![oer_stand_claims::Claim::stand()],
-        })?;
-        // The revision's runner records its runs in the shared store, and
-        // runs without an observer receipt: its receipt format is the
-        // revision's own.
-        let runner = match launch::Runner::prepare(&self.worktree)
-            .and_then(|runner| Ok((runner, self.store.link(&self.worktree)?)))
-        {
-            Ok((runner, _)) => launch::Runner {
-                receipt: None,
-                ..runner
-            },
-            Err(error) => {
-                eprintln!("hil: the revision's runner does not build: {error}");
-                return Ok(Verdict::Broken {
-                    why: Broken::RunnerUnavailable,
-                    run: None,
-                });
-            }
-        };
-        let mut arguments = vec![String::from("run"), self.spec.scenario.clone()];
-        arguments.extend(self.seed_arguments());
-        let launched = launch_run(
-            &Launch::new(&self.worktree, &runner)
-                .args(arguments)
-                .env(oer_stand_file::paths::ARBITER_ENV, &self.arbiter)
-                .env(oer_stand_owners::OWNER_ENV, self.owner)
-                .context(
-                    oer_process::Context::default().with(oer_stand_owners::OWNER_KEY, self.owner),
-                ),
-        )?;
-        match launched.runs.last() {
-            Some(run) => self.judge_run(run.as_str()),
-            None => {
-                eprintln!(
-                    "hil: the revision's runner created no run ({})",
-                    launched.status
-                );
-                Ok(Verdict::Broken {
-                    why: Broken::RunnerUnavailable,
-                    run: None,
-                })
-            }
-        }
-    }
-
-    fn judge_run(&self, id: &str) -> Result<Verdict> {
-        Ok(judge(&Run::open(&self.store, id)?)?)
-    }
+/// The verdict of the run at `directory`; why it does not read, with its
+/// path, when it does not.
+fn judge_run(directory: &Path) -> Result<Verdict> {
+    let unreadable = |error: &dyn std::fmt::Display| {
+        format!("the run at {} does not read: {error}", directory.display())
+    };
+    let bundle = oer_hil_run_bundle_format::RunBundle::open(directory)
+        .map_err(|error| unreadable(&error))?
+        .ok_or_else(|| unreadable(&"it has no manifest"))?;
+    let run = Run::of(bundle).map_err(|error| unreadable(&error))?;
+    Ok(judge(&run)?)
 }
 
 fn step_line(step: &Step) -> String {
@@ -557,4 +416,4 @@ fn write_report(path: &Path, report: &Report) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

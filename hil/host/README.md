@@ -24,7 +24,7 @@ hil/
 │   ├── net-traffic/   network sessions, paced UDP/TCP and ICMP host traffic
 │   ├── run-bundle/    the run bundle: format, writer and seal, the one reader, run store, build provenance, verification
 │   ├── analysis/      run queries, the one measurement aggregation and comparison, performance, views
-│   ├── experiment/    the one run launch, A/B comparisons and bisection
+│   ├── experiment/    the one run launch, revision runs, A/B comparisons and bisection
 │   ├── image/         image class specs for the image pipeline, firmware records, compare_images
 │   ├── scenario/      scenario envelope, catalog, campaign plan and requirements
 │   ├── image-class/   image classes and the keys each serves
@@ -88,7 +88,7 @@ visible. Source compatibility is still checked per workload.
 | Guide | Content |
 | --- | --- |
 | [Sharing the stand](stand.md) | Leases, owners and balances, boards and their reset paths, the ESP-IDF firmware catalog, host fixture probing, the dashboard |
-| [Runs and investigation](runs.md) | The shared run store, failure post-mortems and board recovery, enqueued runs, bisection, A/B comparison, performance, profiles and layout seeds |
+| [Runs and investigation](runs.md) | The shared run store, failure post-mortems and board recovery, enqueued runs, bisection, revision runs, A/B comparison, performance, profiles and layout seeds |
 | [Host fixtures](fixtures.md) | Network fixture preparation and restoration, evidence boundaries, Linux fixture software installation, probe load and air observers |
 | [Execution and evidence architecture](architecture.md) | Package ownership, the run lifecycle and the bundle contract |
 | [Stand arbiter](../../stand/arbiter/README.md) | The queue, claims, balances and state files |

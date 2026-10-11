@@ -13,7 +13,7 @@ decision.
 | Inspect scenario definitions | [Scenario catalog](scenarios/README.md) | Reading only |
 | Configure the lab and run commands | [Host setup and operations](host/README.md) | The guide labels build, fixture and DUT effects |
 | Share the stand: leases, boards, firmware catalog | [Sharing the stand](host/stand.md) | Leases, flashes and resets of named boards |
-| Find, compare and investigate runs | [Runs and investigation](host/runs.md) | Reading only, except enqueued runs, bisection and A/B comparisons, which run scenarios |
+| Find, compare and investigate runs | [Runs and investigation](host/runs.md) | Reading only, except enqueued runs, bisection, revision runs and A/B comparisons, which run scenarios |
 | Preview or install Linux fixture software | [Canonical fixture installation](host/fixtures.md#linux-fixture-software-installation) | Dry-run is offline; installation uses interactive privilege but no RF |
 | Build or understand target firmware | [ESP32-S31 target](targets/esp32s31/README.md) | Build-only sections are separate from flash/run sections |
 | Install or operate the Linux network fixture | [`linux-net`](host/linux-net/) and its checked helper interface | Requires explicit host setup and, for installation, privileges |

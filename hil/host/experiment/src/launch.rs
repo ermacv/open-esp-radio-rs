@@ -42,6 +42,15 @@ impl Runner {
             receipt: Some(prepared.receipt),
         })
     }
+    /// The runner of a revision checked out at `root`, without an observer
+    /// receipt: its embedded build and receipt format are the revision's
+    /// own, which this checkout does not read.
+    pub fn revision(root: &Path) -> Result<Self> {
+        Ok(Self {
+            executable: oer_hil_observer::prepare::build(root)?,
+            receipt: None,
+        })
+    }
 }
 
 /// One invocation of a runner.

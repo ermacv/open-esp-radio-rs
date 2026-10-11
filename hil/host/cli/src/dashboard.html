@@ -469,7 +469,7 @@ function runRow(r, extra = "") {
     copy(r.id, "copy id"),
   ].filter(Boolean).join("");
   return `<tr id="run-${esc(r.id)}"${extra}><td class="num">${at(r.started_millis / 1000)}</td>
-    <td>${r.owner ? esc(r.owner) : '<span class="muted" title="no lease names this run: it ran inside an enclosing lease (cargo hil ab, cargo hil bisect, cargo stand lease) or was started by an older build">—</span>'}</td>
+    <td>${r.owner ? esc(r.owner) : '<span class="muted" title="no lease names this run: it ran inside an enclosing lease (cargo hil ab, cargo hil bisect, cargo hil revision, cargo stand lease) or was started by an older build">—</span>'}</td>
     <td>${pill(outcome)}${r.experiment_arm ? ` <span class="pill muted" title="an arm of a cargo hil ab experiment">A/B arm ${esc(r.experiment_arm.toUpperCase())}</span>` : ""}</td>
     <td><div class="scenarios">${runScenarios(r) || '<span class="muted">—</span>'}</div>${progress(r)}</td>
     <td class="num">${esc(r.commit ?? "")}${r.dirty ? ' <span class="warn">dirty</span>' : ""}<div class="small">${esc(r.checkout ?? "")}</div></td>

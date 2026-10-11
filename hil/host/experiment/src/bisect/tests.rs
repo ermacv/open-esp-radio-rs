@@ -1,37 +1,5 @@
 use super::*;
 
-#[test]
-fn enclosing_lease_reaches_current_runner_steps() {
-    crate::lease_tests::within_enclosing_lease(
-        "bisect::tests::enclosing_lease_reaches_current_runner_steps",
-        |directory, runner| {
-            let root = crate::lease_tests::repository(directory);
-            let store = RunStore::at(directory.join("store"));
-            run_with(Outcome::Passed, None, &store.runs());
-            let spec = Spec {
-                good: "HEAD".into(),
-                bad: "HEAD".into(),
-                scenario: "s".into(),
-                layout_seed: None,
-                boards: Vec::new(),
-            };
-            let bisection = Bisection {
-                checkout: &root,
-                owner: "experiment-test",
-                spec: &spec,
-                current: String::new(),
-                runner,
-                store,
-                worktree: root.clone(),
-                arbiter: directory.join("private-arbiter"),
-            };
-            assert!(
-                matches!(bisection.with_current_runner().unwrap(), Verdict::Good { run } if run == "7")
-            );
-        },
-    );
-}
-
 /// Probe `len` commits whose first bad one is `first_bad`, `broken` ones
 /// broken, recording the probed indices.
 fn bisect(len: usize, first_bad: usize, broken: &[usize]) -> (Found, Vec<usize>) {
@@ -100,17 +68,10 @@ fn a_link_failure_is_told_from_a_compile_failure() {
     );
 }
 
-#[test]
-fn this_tree_names_its_wire_and_an_older_tree_none() {
-    let lock = messages_lock(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."));
-    assert!(lock.is_some_and(|lock| lock.contains("\nframing ")));
-    assert_eq!(messages_lock(tempfile::tempdir().unwrap().path()), None);
-}
-
 /// A completed run `7` below `runs` of one scenario `s` on the correctness
 /// image: one repetition that ended `outcome` with `failure`, or, for a
 /// blocked scenario, no repetition and the failure that blocked it.
-fn run_with(outcome: Outcome, failure: Option<(FailureKind, &str)>, runs: &Path) -> Run {
+pub(crate) fn run_with(outcome: Outcome, failure: Option<(FailureKind, &str)>, runs: &Path) -> Run {
     use oer_hil_run_bundle::run::test_support::repetition;
     use oer_hil_run_bundle::run::test_support::write_run;
     use oer_hil_run_bundle_format::run::Failure;
@@ -213,4 +174,19 @@ fn the_report_names_its_steps_and_conclusion() {
     let text = summary(&report);
     assert!(text.contains("c broken: does not link (run 2)"), "{text}");
     assert!(text.contains("hide the first bad commit among"), "{text}");
+}
+
+#[test]
+fn an_unreadable_run_names_its_path_and_why() {
+    let directory = tempfile::tempdir().unwrap();
+    let error = judge_run(directory.path()).unwrap_err().to_string();
+    assert!(
+        error.contains(&directory.path().display().to_string()),
+        "{error}"
+    );
+    assert!(error.contains("no manifest"), "{error}");
+    std::fs::write(directory.path().join("manifest.json"), "{").unwrap();
+    let error = judge_run(directory.path()).unwrap_err().to_string();
+    assert!(error.contains("does not read: "), "{error}");
+    assert!(!error.contains("no manifest"), "{error}");
 }

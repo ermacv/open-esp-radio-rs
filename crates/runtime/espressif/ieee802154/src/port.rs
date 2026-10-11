@@ -149,17 +149,6 @@ impl<
     }
 }
 
-impl<
-    'storage,
-    M: RawMutex,
-    H: Ieee802154LowLevel + Ieee802154RecentRssi,
-    T: Timer,
-    R: Ieee802154Random,
-    const EVENTS: usize,
-> Ieee802154Control<'_, Ieee802154Runtime<'storage, M, H, T, R, EVENTS>>
-{
-}
-
 impl<M: RawMutex, H, T: Timer, R: Ieee802154Random, const EVENTS: usize> RadioPort
     for Ieee802154Port<'_, Ieee802154Runtime<'_, M, H, T, R, EVENTS>>
 where

@@ -1,9 +1,6 @@
 //! The WPA2 four-way handshake and key installation over the lower-MAC port.
 
-use oer_ieee80211_lower_mac::{
-    Cipher, Ieee80211LowerMacPort, KeyHandle, KeyInstall, KeyScope, KeySelector, LowerMacSetting,
-    MacAddress,
-};
+use oer_ieee80211_lower_mac::{KeyHandle, KeyScope, KeySelector, MacAddress};
 use oer_ieee80211_mac::{
     ccmp::{CcmpKeyId, CcmpTxPacketNumber},
     data::{DataInterfaceRole, plan_data_decapsulation},
@@ -206,15 +203,7 @@ impl<'a, 'p, X: PortStationEnv> PortKeyInstall<'a, 'p, X> {
         key: &RsnKeyInstall,
         scope: KeyScope,
     ) -> Result<KeyHandle, PortLinkError<PortFault<X>>> {
-        self.link
-            .port()
-            .install_key(KeyInstall {
-                vif: self.link.config().vif,
-                cipher: Cipher::Ccmp128,
-                scope,
-                key: key.key().as_bytes(),
-            })?
-            .map_err(PortLinkError::Setting)
+        self.link.install_key(scope, key.key().as_bytes())
     }
 }
 
@@ -233,7 +222,7 @@ impl<X: PortStationEnv> RsnKeyInstallBackend for PortKeyInstall<'_, '_, X> {
         let group = match self.install(request.group(), KeyScope::Group { key_id }) {
             Ok(group) => group,
             Err(error) => {
-                self.link.apply(LowerMacSetting::RemoveKey(pairwise))?;
+                self.link.remove_key(pairwise)?;
                 return Err(error);
             }
         };
@@ -250,8 +239,8 @@ impl<X: PortStationEnv> RsnKeyInstallBackend for PortKeyInstall<'_, '_, X> {
 
     fn rollback_keys(&mut self, installed: PortInstalledKeys) -> Result<(), Self::Error> {
         let keys = installed.keys;
-        let group = self.link.apply(LowerMacSetting::RemoveKey(keys.group));
-        self.link.apply(LowerMacSetting::RemoveKey(keys.pairwise))?;
+        let group = self.link.remove_key(keys.group);
+        self.link.remove_key(keys.pairwise)?;
         group
     }
 

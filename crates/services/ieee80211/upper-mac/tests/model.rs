@@ -905,6 +905,15 @@ impl PortClientEnv for ClientEnv {
 }
 
 fn client<'r>(router: &'r Router<'r>, role: VifRole) -> PortClient<'r, ClientEnv, 4, 4> {
+    client_on(router, STATION, ADDRESS, role)
+}
+
+fn client_on<'r>(
+    router: &'r Router<'r>,
+    vif: VifId,
+    address: MacAddress,
+    role: VifRole,
+) -> PortClient<'r, ClientEnv, 4, 4> {
     PortClient::new(
         router,
         TxPlanner::new(
@@ -922,14 +931,41 @@ fn client<'r>(router: &'r Router<'r>, role: VifRole) -> PortClient<'r, ClientEnv
         Ladder,
         Seeded(0x1357_9bdf),
         PortClientConfig {
-            vif: STATION,
-            address: ADDRESS,
+            vif,
+            address,
             role,
             power: TxPower::Calibrated,
             retry_limit: 7,
         },
     )
     .expect("the interface is free")
+}
+
+#[test]
+fn a_client_removes_only_the_keys_of_its_own_interface() {
+    let model = enabled_station();
+    let router = Router::new(&model, 1);
+    let station = client(&router, VifRole::Station);
+    let access_point = client_on(&router, VifId(1), PEER, VifRole::AccessPoint);
+    let key = [7; 16];
+    let handle = station
+        .install_key(
+            oer_ieee80211_lower_mac::Cipher::Ccmp128,
+            oer_ieee80211_lower_mac::KeyScope::Group { key_id: 1 },
+            &key,
+        )
+        .unwrap();
+    // The access point cannot remove the station's key, and the station's
+    // key stays installed.
+    assert_eq!(
+        access_point.remove_key(handle),
+        Err(PortClientError::ForeignVif)
+    );
+    assert_eq!(model.installed_keys().len(), 1);
+    assert_eq!(station.remove_key(handle), Ok(()));
+    assert!(model.installed_keys().is_empty());
+    // A removed key is no longer the station's either.
+    assert_eq!(station.remove_key(handle), Err(PortClientError::ForeignVif));
 }
 
 #[test]
@@ -956,12 +992,11 @@ fn a_client_configures_its_interface_in_its_role() {
 fn a_channel_move_runs_the_port_lifecycle_around_the_channel_setting() {
     let model = enabled_station();
     let router = Router::new(&model, 1);
-    let client = client(&router, VifRole::Station);
     let eleven = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
     // The enabled port refuses the setting itself: no hidden fallback.
     assert_eq!(
-        client.apply(LowerMacSetting::Channel(eleven)),
-        Err(PortClientError::Setting(SettingError::PortEnabled))
+        model.apply(LowerMacSetting::Channel(eleven)),
+        Ok(Err(SettingError::PortEnabled))
     );
     let mut owner = router.owner().unwrap();
     let lifecycle = model.lifecycle_requests();
@@ -970,8 +1005,8 @@ fn a_channel_move_runs_the_port_lifecycle_around_the_channel_setting() {
     // `Disable`, then `Enable`, each to its terminal.
     assert_eq!(model.lifecycle_requests(), lifecycle + 2);
     assert_eq!(
-        client.apply(LowerMacSetting::Channel(eleven)),
-        Err(PortClientError::Setting(SettingError::PortEnabled))
+        model.apply(LowerMacSetting::Channel(eleven)),
+        Ok(Err(SettingError::PortEnabled))
     );
 }
 
@@ -1002,7 +1037,7 @@ fn a_channel_move_refuses_an_unsupported_channel_without_touching_the_port() {
 fn a_channel_move_on_a_disabled_port_is_a_lost_port_and_leaves_it_disabled() {
     let model = enabled_station();
     let router = Router::new(&model, 1);
-    let client = client(&router, VifRole::Station);
+    let _client = client(&router, VifRole::Station);
     let mut owner = router.owner().unwrap();
     run(exchange(
         &router,
@@ -1021,7 +1056,8 @@ fn a_channel_move_on_a_disabled_port_is_a_lost_port_and_leaves_it_disabled() {
         model.channel(),
         Some(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap())
     );
-    assert_eq!(client.apply(LowerMacSetting::Channel(eleven)), Ok(()));
+    // Disabled, the port takes the setting: its owner decides when.
+    assert_eq!(model.apply(LowerMacSetting::Channel(eleven)), Ok(Ok(())));
 }
 
 #[test]

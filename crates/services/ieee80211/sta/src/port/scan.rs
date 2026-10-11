@@ -1,8 +1,7 @@
 //! Candidate scan over the lower-MAC port.
 
 use oer_ieee80211_lower_mac::{
-    Channel, Ieee80211LowerMacPort, Ieee80211Stamp, KeySelector, LowerMacMonitor, PortResult,
-    RadioPort, ReceiveFilter, RxEvidence, SettingError, VifRole,
+    Channel, Ieee80211Stamp, KeySelector, LowerMacMonitor, ReceiveFilter, RxEvidence, VifRole,
 };
 use oer_ieee80211_mac::{
     management::{BROADCAST_ADDRESS, ProbeRequest, ProbeRequestError},
@@ -37,7 +36,8 @@ pub struct PortScanTarget<'a> {
     pub probe: Option<PortProbe<'a>>,
 }
 
-type SetMonitor<P> = fn(&P, bool) -> PortResult<(), SettingError, <P as RadioPort>::Fault>;
+type SetMonitor<X> =
+    for<'l, 'p> fn(&'l PortLink<'p, X>, bool) -> Result<(), PortLinkError<PortFault<X>>>;
 
 /// Received signal strength of a frame whose backend reports none.
 const UNKNOWN_RSSI_DBM: i8 = -100;
@@ -60,7 +60,7 @@ pub struct PortScan<'a, 'p, X: PortStationEnv, const N: usize> {
     table: &'a mut ScanTable<N>,
     target: PortScanTarget<'a>,
     tick: Duration,
-    set_monitor: Option<SetMonitor<X::Port>>,
+    set_monitor: Option<SetMonitor<X>>,
     monitoring: bool,
     channel: u8,
     /// An owner-selected channel; a visit must not tune the shared port.
@@ -102,7 +102,7 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
     where
         X::Port: LowerMacMonitor,
     {
-        self.set_monitor = Some(<X::Port as LowerMacMonitor>::set_monitor);
+        self.set_monitor = Some(|link, enabled| link.set_monitor(enabled));
         self
     }
 
@@ -176,9 +176,9 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
             RxEvidence::HardwareObserved(stamp) | RxEvidence::ProtocolValidated(stamp) => stamp,
             RxEvidence::Unavailable => return None,
         };
-        let port = self.link.port();
-        let sample = port.clock_sample().ok()?.ok()?;
-        port.clock_info()
+        let sample = self.link.clock_sample().ok()?.ok()?;
+        self.link
+            .clock_info()
             .monotonic?
             .project(stamp.at, stamp.generation, &sample)
             .ok()
@@ -187,7 +187,7 @@ impl<'a, 'p, X: PortStationEnv, const N: usize> PortScan<'a, 'p, X, N> {
 
     fn set_monitor(&self, enabled: bool) -> Result<(), PortLinkError<PortFault<X>>> {
         match self.set_monitor {
-            Some(set) => set(self.link.port(), enabled)?.map_err(PortLinkError::Setting),
+            Some(set) => set(self.link, enabled),
             None => Ok(()),
         }
     }
@@ -200,11 +200,7 @@ impl<X: PortStationEnv, const N: usize> StaScanPort for PortScan<'_, '_, X, N> {
 
     async fn begin_scan(&mut self) -> Result<(), Self::Error> {
         self.table.clear();
-        let filters = self
-            .link
-            .port()
-            .capabilities()
-            .receive_filters(VifRole::Station);
+        let filters = self.link.capabilities().receive_filters(VifRole::Station);
         self.monitoring = if filters.contains(ReceiveFilter::OTHER_BSS_MANAGEMENT) {
             false
         } else if self.fixed_channel.is_none() && self.set_monitor.is_some() {

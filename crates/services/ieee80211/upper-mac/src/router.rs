@@ -269,8 +269,10 @@ impl<'p, P: Ieee80211LowerMacPort, const WAITERS: usize, const RX: usize>
         }
     }
 
-    /// The port whose events the router takes.
-    pub const fn port(&self) -> &'p P {
+    /// The port whose events the router takes: this crate's own machinery
+    /// only, so a holder of the router reaches the port through a client
+    /// or the [`PortOwner`](crate::owner::PortOwner), never directly.
+    pub(crate) const fn port(&self) -> &'p P {
         self.port
     }
 

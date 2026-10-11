@@ -3,8 +3,8 @@
 
 use oer_ieee80211_datapath::{DestinationTxQueues, SoftwareTxFrame};
 use oer_ieee80211_lower_mac::{
-    Cipher, KeyInstall, KeyScope, KeySelector, LowerMacBeaconTiming, LowerMacSetting, MacAddress,
-    RxBlockAckAgreement, RxCryptoStatus, RxEvidence, RxMeta,
+    KeyScope, KeySelector, LowerMacBeaconTiming, MacAddress, RxBlockAckAgreement, RxCryptoStatus,
+    RxEvidence, RxMeta,
 };
 use oer_ieee80211_mac::block_ack::TX_BLOCK_ACK_MAX_TIDS;
 use oer_ieee80211_mac::block_ack::{TxBlockAckOriginator, TxBlockAckResponseDisposition};
@@ -823,12 +823,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         }
         let run = context.subframes.len();
         let first_sequence = first_sequence.ok_or(PortLinkError::MissingState)?;
-        let committed_at = context
-            .link
-            .port()
-            .now()
-            .await?
-            .map_err(PortLinkError::Clock)?;
+        let committed_at = context.link.now().await?.map_err(PortLinkError::Clock)?;
         let ampdu = context
             .subframes
             .request(tid, first_sequence, committed_at)
@@ -1255,7 +1250,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                 starting_sequence,
                 ..
             }) => {
-                let capabilities = context.link.port().capabilities();
+                let capabilities = context.link.capabilities();
                 let accepted = usize::from(tid) < TIDS
                     && window != 0
                     && tid <= capabilities.rx_block_ack_max_tid
@@ -1277,11 +1272,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                         starting_sequence,
                         window,
                     )
-                    && if context
-                        .link
-                        .apply(LowerMacSetting::AddRxBlockAck(agreement))
-                        .is_ok()
-                    {
+                    && if context.link.add_rx_block_ack(agreement).is_ok() {
                         true
                     } else {
                         self.buffers.reorder.stop(self.config.bssid, tid);
@@ -1309,11 +1300,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
             }
             Some(BlockAckAction::Delba { tid, .. }) => {
                 if self.buffers.reorder.stop(self.config.bssid, tid) {
-                    context.link.apply(LowerMacSetting::RemoveRxBlockAck {
-                        vif: context.link.config().vif,
-                        peer: self.config.bssid,
-                        tid,
-                    })?;
+                    context.link.remove_rx_block_ack(self.config.bssid, tid)?;
                 }
                 Ok(())
             }
@@ -1434,20 +1421,19 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                         None => self.bip = Some(BipReceiver::new(igtk)),
                     }
                 }
-                let installed = context.link.port().install_key(KeyInstall {
-                    vif: context.link.config().vif,
-                    cipher: Cipher::Ccmp128,
-                    scope: KeyScope::Group { key_id },
-                    key: request.group().key().as_bytes(),
-                });
+                let installed = context
+                    .link
+                    .install_key(KeyScope::Group { key_id }, request.group().key().as_bytes());
                 let group = match &installed {
-                    Ok(Ok(group)) => Some(*group),
-                    _ => None,
+                    Ok(group) => Some(*group),
+                    Err(_) => None,
                 };
                 let completed = supplicant.complete_group_key_install(request, group.is_some());
                 let group = match (installed, completed) {
-                    (Err(poisoned), _) => return Err(PortLinkError::Poisoned(poisoned)),
-                    (Ok(Ok(group)), Ok(response)) => (group, response),
+                    (Err(PortLinkError::Poisoned(poisoned)), _) => {
+                        return Err(PortLinkError::Poisoned(poisoned));
+                    }
+                    (Ok(group), Ok(response)) => (group, response),
                     _ => {
                         self.counters.eapol_rejected =
                             self.counters.eapol_rejected.saturating_add(1);
@@ -1456,7 +1442,7 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
                 };
                 let (group, response) = group;
                 if group != keys.group {
-                    context.link.apply(LowerMacSetting::RemoveKey(keys.group))?;
+                    context.link.remove_key(keys.group)?;
                 }
                 self.keys = Some(PortKeys {
                     group,
@@ -1843,18 +1829,12 @@ impl<'b, P: LowerMacBeaconTiming, R: RateControl> PortConnection<'b, P, R> {
         context.subframes.clear();
         for tid in 0..TIDS as u8 {
             if self.buffers.reorder.stop(self.config.bssid, tid) {
-                context.link.apply(LowerMacSetting::RemoveRxBlockAck {
-                    vif: context.link.config().vif,
-                    peer: self.config.bssid,
-                    tid,
-                })?;
+                context.link.remove_rx_block_ack(self.config.bssid, tid)?;
             }
         }
         if let Some(keys) = self.keys.take() {
-            context.link.apply(LowerMacSetting::RemoveKey(keys.group))?;
-            context
-                .link
-                .apply(LowerMacSetting::RemoveKey(keys.pairwise))?;
+            context.link.remove_key(keys.group)?;
+            context.link.remove_key(keys.pairwise)?;
         }
         context
             .link

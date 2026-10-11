@@ -749,6 +749,47 @@ fn the_pair_follows_its_upstream_s_move_and_takes_its_peer_along_body() {
 }
 
 #[test]
+fn the_pair_decides_the_port_wide_effects_its_station_asks_for() {
+    on_large_stack(the_pair_decides_the_port_wide_effects_its_station_asks_for_body);
+}
+
+fn the_pair_decides_the_port_wide_effects_its_station_asks_for_body() {
+    let world = World::new();
+    let (mut upstream, mut pair, _client) = set_up(&world, ApFollowPolicy::DEFAULT);
+    // The station joined without the port's owner: the pair applied the
+    // upstream's EDCA set to the shared queues.
+    let edca = pair.station().connection().unwrap().config().edca;
+    assert!(edca.is_some());
+    assert_eq!(world.pair.0.edca(), edca);
+
+    // The pair delegated the beacon-receive priority: the station's
+    // power manager changes it at once, as a beacon window needs.
+    let link = pair.station_mut().link_mut();
+    link.set_rx_beacon_priority(oer_ieee80211_lower_mac::RxBeaconPriority::BeaconWindow)
+        .unwrap();
+    assert_eq!(
+        world.pair.0.rx_beacon_priority(),
+        Some(oer_ieee80211_lower_mac::RxBeaconPriority::BeaconWindow)
+    );
+    link.set_rx_beacon_priority(oer_ieee80211_lower_mac::RxBeaconPriority::Cleared)
+        .unwrap();
+    assert_eq!(
+        world.pair.0.rx_beacon_priority(),
+        Some(oer_ieee80211_lower_mac::RxBeaconPriority::Cleared)
+    );
+
+    // A doze asks to close the transmit gate; the pair keeps it open,
+    // because the access point keeps transmitting while the station dozes.
+    pair.station_mut().link_mut().set_tx_gate(false).unwrap();
+    let until = world.after(200);
+    world.drive(join(
+        serve_upstream(&mut upstream, until),
+        serve_pair(&mut pair, until),
+    ));
+    assert!(world.pair.0.gate_open());
+}
+
+#[test]
 fn the_access_point_stops_where_its_policy_does_not_follow_and_starts_again() {
     on_large_stack(the_access_point_stops_where_its_policy_does_not_follow_and_starts_again_body);
 }
@@ -1407,9 +1448,8 @@ fn a_delayed_or_failed_cts_never_departures_without_a_live_reservation_inner() {
         ghz2_4(6),
         world.pair_frames,
     );
-    world
-        .drive(world.pair.1.owner().unwrap().move_channel(ghz2_4(6)))
-        .unwrap();
+    let mut owner = world.pair.1.owner().unwrap();
+    world.drive(owner.move_channel(ghz2_4(6))).unwrap();
     ap.start(ghz2_4(6)).unwrap();
     let lifecycle = world.pair.0.lifecycle_requests();
     let window = AbsenceWindow {
@@ -1424,6 +1464,7 @@ fn a_delayed_or_failed_cts_never_departures_without_a_live_reservation_inner() {
         .drive_observing(
             PortAbsence::begin(
                 ap.client_mut(),
+                &owner,
                 world.timer,
                 &mut state,
                 window,
@@ -1464,6 +1505,7 @@ fn a_delayed_or_failed_cts_never_departures_without_a_live_reservation_inner() {
     assert!(matches!(
         world.drive(PortAbsence::begin(
             ap.client_mut(),
+            &owner,
             world.timer,
             &mut state,
             window,
@@ -1536,9 +1578,8 @@ fn a_failed_passive_return_blocks_clients_until_port_recovery_inner() {
         ghz2_4(6),
         world.pair_frames,
     );
-    world
-        .drive(world.pair.1.owner().unwrap().move_channel(ghz2_4(6)))
-        .unwrap();
+    let mut owner = world.pair.1.owner().unwrap();
+    world.drive(owner.move_channel(ghz2_4(6))).unwrap();
     ap.start(ghz2_4(6)).unwrap();
     let mut state = AbsenceState::new();
     let window = AbsenceWindow {
@@ -1550,6 +1591,7 @@ fn a_failed_passive_return_blocks_clients_until_port_recovery_inner() {
     let guard = world
         .drive(PortAbsence::begin(
             ap.client_mut(),
+            &owner,
             world.timer,
             &mut state,
             window,
@@ -1564,6 +1606,7 @@ fn a_failed_passive_return_blocks_clients_until_port_recovery_inner() {
     assert!(matches!(
         world.drive(PortAbsence::begin(
             ap.client_mut(),
+            &owner,
             world.timer,
             &mut state,
             window,

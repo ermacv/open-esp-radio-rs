@@ -216,6 +216,13 @@ where
         search: Search,
         timer: T,
     ) -> Self {
+        // The station's power manager changes its beacon reception's
+        // coexistence priority on time; the rest of the port stays the
+        // pair's.
+        let mut station = station;
+        station
+            .link_mut()
+            .grant_beacon_priority(owner.grant_beacon_priority());
         Self {
             station: Some(station),
             owner: Some(owner),
@@ -229,6 +236,34 @@ where
             running: false,
             search,
         }
+    }
+
+    /// Decide the port-wide effects the station asked for: the pair is the
+    /// port's owner. The shared queues take the upstream's EDCA parameters
+    /// (which interface's they should take is #329's). The station's beacon
+    /// reception's coexistence priority is delegated at construction, so
+    /// the station sets it on time and asks for nothing here. The transmit
+    /// gate stays open: the access point keeps transmitting while the
+    /// station dozes, so the station's doze never gates it.
+    fn apply_station_requests(&mut self) -> Result<(), PortStaApError<S, A>> {
+        let Some(station) = self.station.as_mut() else {
+            return Ok(());
+        };
+        let requests = station.link_mut().take_requests();
+        let owner = self
+            .owner
+            .as_ref()
+            .ok_or(PortStaApError::Station(PortLinkError::NotOwner))?;
+        let owned = |error: oer_ieee80211_upper_mac_service::client::PortClientError<
+            PortFault<S>,
+        >| PortStaApError::Station(error.into());
+        if let Some(parameters) = requests.edca {
+            owner.install_edca(parameters).map_err(owned)?;
+        }
+        if let Some(priority) = requests.rx_beacon_priority {
+            owner.set_rx_beacon_priority(priority).map_err(owned)?;
+        }
+        Ok(())
     }
 
     /// Take the port's lifecycle authority back from the station after a
@@ -250,6 +285,12 @@ where
             self.owner = Some(owner);
         }
         outcome
+    }
+
+    pub fn station_mut(&mut self) -> &mut PortStation<'p, S> {
+        self.station
+            .as_mut()
+            .expect("the station is kept between joins")
     }
 
     pub fn station(&self) -> &PortStation<'p, S> {
@@ -297,6 +338,7 @@ where
             }
         };
         self.station = Some(station);
+        self.apply_station_requests()?;
         let channel = self
             .station()
             .connection()
@@ -409,6 +451,7 @@ where
                 .access_point_switch_due(target, self.timer.now());
             self.act(actions).await?;
         }
+        self.apply_station_requests()?;
         if let Err(error) = joined {
             return Ok(Err(error));
         }
@@ -537,6 +580,7 @@ where
                 Ok(_) => {}
                 Err(error) => return Err(PortStaApError::AccessPoint(error)),
             }
+            self.apply_station_requests()?;
             match station_report.map_err(PortStaApError::Station)? {
                 Some(PortStationEvent::ChannelSwitch(switch)) => {
                     let actions = self.coordinator.upstream_switch_announced(
@@ -784,6 +828,7 @@ where
                     .connection()
                     .map(|connection| connection.config().channel);
                 self.station = Some(connected);
+                self.apply_station_requests()?;
                 let channel = channel.ok_or(PortStaApError::NoStation)?;
                 let start = self.coordinator.station_connected(channel);
                 self.act(start).await.map(|()| None)
@@ -926,8 +971,13 @@ where
             start,
             until,
         };
+        let owner = self
+            .owner
+            .as_ref()
+            .ok_or(PortStaApError::Station(PortLinkError::NotOwner))?;
         let Some(absence) = PortAbsence::begin(
             self.access_point.client_mut(),
+            owner,
             &self.timer,
             &mut self.absence,
             window,

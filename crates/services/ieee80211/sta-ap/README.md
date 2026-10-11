@@ -36,6 +36,13 @@ The actions it carries out:
 - **Start the access point.** It starts again once the port is on a channel it may serve.
 - **Leave the upstream.** This is the alternative policy: the station leaves, and the access point keeps its channel.
 
+The pair decides its station's port-wide requests: the shared queues take
+the upstream's EDCA set (which interface's set they should take is #329's),
+and the transmit gate stays open while the station dozes, because the access
+point keeps transmitting. The beacon-receive coexistence priority is
+delegated to the station at construction (`BeaconPriorityGrant`), so its
+power manager changes it on time for each beacon window.
+
 The pair holds the port's `PortOwner` and moves the port itself
 (`PortOwner::move_channel`); its station joins on the granted channel and
 holds no lifecycle authority, except while it scans alone (the access point

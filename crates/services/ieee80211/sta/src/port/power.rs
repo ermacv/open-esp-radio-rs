@@ -4,10 +4,7 @@ use core::marker::PhantomData;
 use oer_ieee80211_upper_mac_service::TxMpdu;
 use oer_ieee80211_upper_mac_service::client::PortFault;
 
-use oer_ieee80211_lower_mac::{
-    KeySelector, LowerMacBeaconTiming, LowerMacSetting, MacAddress, RxBeaconPriority, TbttSchedule,
-    VifTsf,
-};
+use oer_ieee80211_lower_mac::{KeySelector, LowerMacBeaconTiming, MacAddress, RxBeaconPriority};
 use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     station::StaSequenceCounter,
@@ -173,12 +170,12 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         context: &mut PowerContext<'_, '_, X>,
         beacon: &StaBeaconObservation,
     ) -> Result<(), PortLinkError<PortFault<X>>> {
-        let vif = context.link.config().vif;
-        // The station TSF follows the access point's.
-        let _ = context
-            .link
-            .port()
-            .set_tsf(VifTsf::new(vif, beacon.timestamp_tsf))?;
+        // The station TSF follows the access point's; a refusal leaves the
+        // port's own.
+        match context.link.set_tsf(beacon.timestamp_tsf) {
+            Ok(()) | Err(PortLinkError::Setting(_)) => {}
+            Err(error) => return Err(error),
+        }
         let mut actions = PmActions::new();
         self.modem.beacon(
             PmBeacon {
@@ -289,10 +286,10 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
 
     fn set_gate<X: PortStationEnv<Port = P>>(
         &mut self,
-        link: &PortLink<'_, X>,
+        link: &mut PortLink<'_, X>,
         open: bool,
     ) -> Result<(), PortLinkError<PortFault<X>>> {
-        link.apply(LowerMacSetting::TxGate { open })?;
+        link.set_tx_gate(open)?;
         self.gate_open = open;
         Ok(())
     }
@@ -301,22 +298,18 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
         &self,
         link: &PortLink<'_, X>,
     ) -> Result<(), PortLinkError<PortFault<X>>> {
-        let vif = link.config().vif;
-        let outcome = match self.schedule {
-            Some(schedule) => link.port().set_tbtt(TbttSchedule {
-                next: VifTsf::new(vif, schedule.first_tbtt),
-                beacon_interval: oer_time::RadioDuration::from_micros(u64::from(
-                    schedule.interval_micros,
-                )),
-                lead: oer_time::RadioDuration::from_micros(u64::from(
+        match self.schedule {
+            Some(schedule) => link.set_tbtt(
+                schedule.first_tbtt,
+                oer_time::RadioDuration::from_micros(u64::from(schedule.interval_micros)),
+                oer_time::RadioDuration::from_micros(u64::from(
                     schedule
                         .ahead_micros
                         .saturating_add(schedule.wake_ahead_micros),
                 )),
-            }),
-            None => link.port().stop_tbtt(vif),
-        };
-        outcome?.map_err(PortLinkError::Setting)
+            ),
+            None => link.stop_tbtt(),
+        }
     }
 
     /// Perform the effects of one input in order, and then those the Null
@@ -420,18 +413,16 @@ impl<P: LowerMacBeaconTiming> PortPowerSave<P> {
                 .await
                 .map_err(|_| PortLinkError::Coexistence)?,
             PmAction::RxBeaconPriority(beacon_window) => {
-                context
-                    .link
-                    .apply(LowerMacSetting::RxBeaconPriority(if beacon_window {
-                        RxBeaconPriority::BeaconWindow
-                    } else {
-                        RxBeaconPriority::Zero
-                    }))?;
+                context.link.set_rx_beacon_priority(if beacon_window {
+                    RxBeaconPriority::BeaconWindow
+                } else {
+                    RxBeaconPriority::Zero
+                })?;
             }
             PmAction::ClearRxBeaconPriority => {
                 context
                     .link
-                    .apply(LowerMacSetting::RxBeaconPriority(RxBeaconPriority::Cleared))?;
+                    .set_rx_beacon_priority(RxBeaconPriority::Cleared)?;
             }
             // The hardware meaning of the vendor's beacon receive time is
             // not established, so the port has no setting for it yet.

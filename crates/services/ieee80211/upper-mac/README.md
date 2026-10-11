@@ -78,8 +78,21 @@ interface, refusing one another client holds; configuring the interface's
 BSS (`configure`) routes that BSS's frames to it. The client reads its
 interface's receive and extension queues as `PortInput`s (`Frame(PortFrame)` in the port's own
 `RxBuffer`, `Tbtt`, `EventsLost`, `Poisoned`), transmits MPDUs and A-MPDUs
-through its `UpperMacTx`, and applies settings, the BSS's EDCA parameters
-and its interface configuration, with every failure a `PortClientError`.
+through its `UpperMacTx`, and acts only on its own interface: its
+configuration, its keys (`install_key`; `remove_key` refuses another
+interface's key as `ForeignVif`), its receive Block Ack agreements, its TSF
+and TBTTs, its HE BSS color, and its planner's contention windows
+(`contend_with`). It reads the port's capabilities and clock. It holds no
+raw port and no router, so it reaches no other interface's state and no
+port-wide setting; every failure is a `PortClientError`. Port-wide settings
+are the owner's: the EDCA limits of the shared queues, the transmit gate,
+the beacon-receive coexistence priority, monitor reception, live retune
+(an absence window takes the owner) and the lifecycle. The owner may
+delegate one of them, the beacon-receive priority, to the client whose
+beacons it is (`PortOwner::grant_beacon_priority`), which changes it on
+time and nothing else of the port. Compile-fail doc
+tests on `owner`, each with a compiling twin, show what a client cannot
+name.
 A client sends no lifecycle command. The port's lifecycle and channel
 belong to its owner: `EventRouter::owner` hands out the one
 `owner::PortOwner`, neither `Clone` nor `Copy`, which runs lifecycle
@@ -89,12 +102,8 @@ each command meets its own terminal; a command whose future was dropped
 leaves its terminal to be discarded before the next. The owner is held by
 whoever decides the port's channel (a lone station's lifecycle, the
 STA+AP pair, the runtime that installs the port) and moves only by value.
-A client still reaches the raw port through `PortClient::port()` for its
-extensions (keys, TBTTs, capabilities) until #580 replaces it with
-operations scoped to the client's own interface; calling the port's
-lifecycle or another interface's settings through it breaks this
-contract. A conforming port under one owner never loses a lifecycle
-terminal, so `LifecycleLost` leaves the contract with #578. `PortMsdu` is the MSDU a service hands its
+A conforming port under one owner never loses a lifecycle terminal, so
+`LifecycleLost` leaves the contract with #578. `PortMsdu` is the MSDU a service hands its
 application: the port's buffer, or parts to copy. A service sends no copy of a frame from a queue
 of its own: it takes the network's owners from its source
 (`oer-ieee80211-datapath`'s `DestinationTxQueues`) when it sends them, and

@@ -429,7 +429,9 @@ client handles, each scoped to its interface (`RadioPortClient`) and
 counted at the split. Each kind of client names its work with its own
 identity type, which it chooses as a sans-IO core does, so another
 client's identity does not type-check and a single-client port (Bluetooth
-LE, whose controller core arbitrates every role) uses its own. The control and the clients are disjoint
+LE, whose controller core arbitrates every role) uses its own. The backend
+keys work by client and identity, so clients of one kind (802.15.4
+multi-PAN interfaces) may choose the same value without colliding. The control and the clients are disjoint
 resources, each with one holder. The control has one
 holder, the policy that arbitrates admission; other policies that need it
 (power save, coexistence slices) send that holder requests. None of its

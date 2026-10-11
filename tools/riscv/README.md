@@ -44,3 +44,14 @@ The rows of the `blobray-*` crates are in
 
 Changing an edge changes the table, this page and Blobray's architecture in
 the same change.
+
+## Format libraries
+
+A third-party library that reads a format has one owner, and no other
+package may take it as a normal or build dependency
+(`oer_repo::policy::EXTERNAL_OWNERS`, enforced by the same policy): `object`,
+`gimli` and `addr2line` belong to `oer-elf`, `rv-asm` to `oer-riscv-decode`.
+`blobray-artifacts` and `oer-image-encode` also still take `object`, until
+they read ELF through `oer-elf` (#334).
+An owner exposes only its own types, so the library's types cannot leak
+through another package's interface. Tests may use them for fixtures.

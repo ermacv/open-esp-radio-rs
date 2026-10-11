@@ -23,7 +23,10 @@ use oer_ieee80211_mac::{
 use oer_ieee80211_rsn::{
     Pmk,
     aes::AsyncRsnKeyUnwrap,
-    runner::{RsnHandshakeConfig, RsnHandshakeError, RsnKeyInstallError, RsnKeyInstallMetadata},
+    runner::{
+        RsnHandshakeConfig, RsnHandshakeError, RsnKeyInstallError, RsnKeyInstallFailure,
+        RsnKeyInstallMetadata,
+    },
     sae::SaeError,
 };
 use oer_ieee80211_rsn_service::runner::{
@@ -184,6 +187,47 @@ pub enum PortStationError<E, U> {
 
 /// The error type of an environment's station.
 pub type PortAttemptError<X> = PortStationError<PortFault<X>, PortUnwrapError<X>>;
+
+impl<E, U> PortStationError<E, U> {
+    /// Whether the station lost its port in this failure
+    /// ([`PortLinkError::is_port_lost`]), whichever phase met it.
+    pub const fn is_port_lost(&self) -> bool {
+        let link = match self {
+            Self::Link(error)
+            | Self::Join(StaJoinError::Backend(error))
+            | Self::Handshake(RsnHandshakeError::Backend(error))
+            | Self::KeyInstall(
+                RsnKeyInstallError::Install(error)
+                | RsnKeyInstallError::Failed(RsnKeyInstallFailure::Transmit(error))
+                | RsnKeyInstallError::Rollback {
+                    rollback: error, ..
+                },
+            ) => error,
+            Self::Scan(error) => error.error(),
+            _ => return false,
+        };
+        link.is_port_lost()
+    }
+
+    /// The disposition of this failure: a lost port ends the station's
+    /// lifecycle, since only the port's owner restores it; any other
+    /// failure is `otherwise`.
+    pub const fn disposition(&self, otherwise: StaFailureDisposition) -> StaFailureDisposition {
+        if self.is_port_lost() {
+            StaFailureDisposition::Terminal
+        } else {
+            otherwise
+        }
+    }
+}
+
+/// A phase's failure `error`, `otherwise` unless it lost the port.
+fn step<E, U>(
+    otherwise: StaFailureDisposition,
+    error: PortStationError<E, U>,
+) -> StaAttemptStepError<PortStationError<E, U>> {
+    StaAttemptStepError::new(error.disposition(otherwise), error)
+}
 
 /// What the phases of the last attempt reported.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -623,9 +667,10 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             StaCandidateScanExit::NoCandidate { .. } | StaCandidateScanExit::Stopped { .. } => Err(
                 StaAttemptStepError::refresh_candidate(PortStationError::NoCandidate),
             ),
-            StaCandidateScanExit::Failed { error, .. } => Err(
-                StaAttemptStepError::refresh_candidate(PortStationError::Scan(error)),
-            ),
+            StaCandidateScanExit::Failed { error, .. } => Err(step(
+                StaFailureDisposition::RefreshCandidate,
+                PortStationError::Scan(error),
+            )),
             StaCandidateScanExit::InvalidPlan { error, .. } => Err(StaAttemptStepError::terminal(
                 PortStationError::ScanPlan(error),
             )),
@@ -681,14 +726,20 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             }
         } else {
             self.link.move_channel(channel).await.map_err(|error| {
-                StaAttemptStepError::retry_current(PortStationError::Link(error))
+                step(
+                    StaFailureDisposition::RetryCurrentCandidate,
+                    PortStationError::Link(error),
+                )
             })?;
         }
         // Authentication and Association already contend with the access
         // point's advertised parameters, as the vendor station does.
         if let Some(parameters) = candidate.wmm_parameters() {
             self.link.install_edca(parameters).map_err(|error| {
-                StaAttemptStepError::refresh_candidate(PortStationError::Link(error))
+                step(
+                    StaFailureDisposition::RefreshCandidate,
+                    PortStationError::Link(error),
+                )
             })?;
         }
         Ok(())
@@ -747,7 +798,10 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
                     .authenticate_sae(exchange, security.sequences.non_qos_mut())
                     .await
                     .map_err(|error| {
-                        StaAttemptStepError::retry_current(PortStationError::Join(error))
+                        step(
+                            StaFailureDisposition::RetryCurrentCandidate,
+                            PortStationError::Join(error),
+                        )
                     })?;
                 if let Some(credentials) = security.credentials() {
                     credentials
@@ -763,7 +817,10 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
                         .authenticate(address, bssid, security.sequences.non_qos_mut())
                         .await
                         .map_err(|error| {
-                            StaAttemptStepError::retry_current(PortStationError::Join(error))
+                            step(
+                                StaFailureDisposition::RetryCurrentCandidate,
+                                PortStationError::Join(error),
+                            )
                         })?,
                 );
             }
@@ -809,7 +866,12 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
                 security.sequences.non_qos_mut(),
             )
             .await
-            .map_err(|error| StaAttemptStepError::retry_current(PortStationError::Join(error)))?;
+            .map_err(|error| {
+                step(
+                    StaFailureDisposition::RetryCurrentCandidate,
+                    PortStationError::Join(error),
+                )
+            })?;
         self.association = Some(success.response);
         self.report.association = Some(success);
         Ok(())
@@ -824,7 +886,10 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             .and_then(|response| response.wmm_parameters)
         {
             self.link.install_edca(parameters).map_err(|error| {
-                StaAttemptStepError::retry_current(PortStationError::Link(error))
+                step(
+                    StaFailureDisposition::RetryCurrentCandidate,
+                    PortStationError::Link(error),
+                )
             })?;
         }
         let candidate =
@@ -859,13 +924,21 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
                     color: peer.he_bss_color,
                 })
                 .map_err(|error| {
-                    StaAttemptStepError::retry_current(PortStationError::Link(error))
+                    step(
+                        StaFailureDisposition::RetryCurrentCandidate,
+                        PortStationError::Link(error),
+                    )
                 })?;
         }
         self.peer = Some(peer);
         self.link
             .configure(Some(bssid), ReceiveFilter::BSS_MEMBER)
-            .map_err(|error| StaAttemptStepError::retry_current(PortStationError::Link(error)))
+            .map_err(|error| {
+                step(
+                    StaFailureDisposition::RetryCurrentCandidate,
+                    PortStationError::Link(error),
+                )
+            })
     }
 
     fn protected(&self) -> bool {
@@ -912,7 +985,10 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
             .run(config, &mut || sequences.take_non_qos())
             .await
             .map_err(|error| {
-                StaAttemptStepError::retry_current(PortStationError::Handshake(error))
+                step(
+                    StaFailureDisposition::RetryCurrentCandidate,
+                    PortStationError::Handshake(error),
+                )
             })?;
         self.pending = Some(pending);
         Ok(())
@@ -946,7 +1022,12 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
         ))
         .run(pending)
         .await
-        .map_err(|error| StaAttemptStepError::retry_current(PortStationError::KeyInstall(error)))?;
+        .map_err(|error| {
+            step(
+                StaFailureDisposition::RetryCurrentCandidate,
+                PortStationError::KeyInstall(error),
+            )
+        })?;
         self.report.keys = Some(established.metadata());
         let (installed, connected) = established.into_parts();
         self.security.set_connected(connected);
@@ -1156,10 +1237,11 @@ impl<'p, X: PortStationEnv> StaAttemptPort for PortAttemptPort<'p, X> {
         };
         if let Err(error) = started {
             owner.release_connection();
+            let error = PortStationError::Link(error);
             return Err(StaConnectedEntryFailure::new(
                 owner,
-                StaFailureDisposition::RetryCurrentCandidate,
-                PortStationError::Link(error),
+                error.disposition(StaFailureDisposition::RetryCurrentCandidate),
+                error,
             ));
         }
         Ok(owner)
@@ -1326,12 +1408,13 @@ fn connected_failure<'p, X: PortStationEnv>(
     owner: PortStation<'p, X>,
     error: PortLinkError<PortFault<X>>,
 ) -> StaAttemptOutcome<PortStation<'p, X>, PortAttemptError<X>, Infallible> {
+    let error = PortStationError::Link(error);
     StaAttemptOutcome::Failed {
         owner,
         failure: StaAttemptFailure::new(
             StaLifecycleStage::Connected,
-            StaFailureDisposition::RefreshCandidate,
-            PortStationError::Link(error),
+            error.disposition(StaFailureDisposition::RefreshCandidate),
+            error,
         ),
     }
 }

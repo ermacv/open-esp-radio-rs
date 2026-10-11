@@ -553,6 +553,51 @@ fn quiesce_ends_with_its_terminal_event_and_stops_admission() {
 }
 
 #[test]
+fn a_quiesced_port_is_neither_enabled_nor_disabled() {
+    let model = enabled_station();
+    let away = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
+    ready(model.lifecycle(LifecycleCommand::Quiesce))
+        .unwrap()
+        .unwrap();
+    next(&model);
+    assert_eq!(
+        ready(model.lifecycle(LifecycleCommand::Quiesce)),
+        Ok(Err(LifecycleError::AlreadyInState))
+    );
+    // The channel setting needs a disabled port, as on S31.
+    assert_eq!(
+        model.apply(LowerMacSetting::Channel(away)),
+        Ok(Err(SettingError::PortEnabled))
+    );
+    // `Enable` resumes a quiesced port.
+    ready(model.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        Model::view(&next(&model)),
+        LowerMacEvent::Lifecycle(LifecycleEvent::Enabled)
+    );
+    // `Disable` ends a quiesced port with its own terminal.
+    ready(model.lifecycle(LifecycleCommand::Quiesce))
+        .unwrap()
+        .unwrap();
+    next(&model);
+    assert_eq!(
+        ready(model.lifecycle(LifecycleCommand::Disable)),
+        Ok(Ok(()))
+    );
+    assert_eq!(
+        Model::view(&next(&model)),
+        LowerMacEvent::Lifecycle(LifecycleEvent::Disabled)
+    );
+    assert_eq!(
+        ready(model.lifecycle(LifecycleCommand::Quiesce)),
+        Ok(Err(LifecycleError::InvalidState))
+    );
+    assert_eq!(model.apply(LowerMacSetting::Channel(away)), Ok(Ok(())));
+}
+
+#[test]
 fn a_failed_enable_is_a_recoverable_terminal_event() {
     let model = Model::new();
     assert_eq!(ready(model.lifecycle(LifecycleCommand::Enable)), Ok(Ok(())));

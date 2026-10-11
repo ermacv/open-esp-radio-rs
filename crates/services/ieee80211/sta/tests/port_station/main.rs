@@ -2439,6 +2439,36 @@ fn an_announced_channel_switch_silences_the_station_until_its_owner_moves_it_bod
 }
 
 #[test]
+fn a_scan_on_a_port_its_owner_disabled_ends_the_station_terminally() {
+    on_large_stack(a_scan_on_a_port_its_owner_disabled_ends_the_station_terminally_body);
+}
+
+fn a_scan_on_a_port_its_owner_disabled_ends_the_station_terminally_body() {
+    let world = World::new();
+    let mut ap = ScriptedAp::new(ApSecurity::Open);
+    let mut station = world.station(open());
+    world
+        .drive(
+            &mut ap,
+            station.link_mut().lifecycle(LifecycleCommand::Disable),
+        )
+        .unwrap();
+    let lifecycle = world.model.lifecycle_requests();
+    let AssociationAttemptOutcome::Failed(failure) = world.drive(&mut ap, station.connect()) else {
+        panic!("a disabled port cannot scan");
+    };
+    // Only the port's owner restores it: no retry on the lost port.
+    assert_eq!(
+        failure.disposition,
+        oer_ieee80211_sta::station::StaFailureDisposition::Terminal
+    );
+    assert!(failure.error.is_port_lost());
+    // The refused `Disable` was the only command; nothing enabled the port.
+    assert_eq!(world.model.lifecycle_requests(), lifecycle + 1);
+    assert!(world.model.vif_config(VifId(0)).is_some());
+}
+
+#[test]
 fn the_lifecycle_follows_its_access_point_to_the_announced_channel() {
     on_large_stack(the_lifecycle_follows_its_access_point_to_the_announced_channel_body);
 }

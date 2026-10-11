@@ -202,6 +202,19 @@ pub enum PortClientError<F> {
     AggregationUnsupported,
 }
 
+impl<F> PortClientError<F> {
+    /// Whether the client lost its port: it is poisoned, or out of the
+    /// lifecycle state the client needs (a refused or failed lifecycle
+    /// command, or one whose terminal was lost). Only the port's owner
+    /// restores it, so a service ends instead of retrying.
+    pub const fn is_port_lost(&self) -> bool {
+        matches!(
+            self,
+            Self::Poisoned(_) | Self::Lifecycle(_) | Self::LifecycleFailed | Self::LifecycleLost
+        )
+    }
+}
+
 impl<F> From<Poisoned<F>> for PortClientError<F> {
     fn from(poisoned: Poisoned<F>) -> Self {
         Self::Poisoned(poisoned)
@@ -532,10 +545,21 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
     /// admitted operation first. A move that keeps the port enabled goes
     /// through [`LowerMacLiveRetune`](oer_ieee80211_lower_mac::LowerMacLiveRetune)
     /// instead.
+    ///
+    /// A channel outside the port's capabilities is refused before the
+    /// port is touched (`Setting(UnsupportedChannel)`). The port must be
+    /// enabled: a disabled one refuses `Disable` (`Lifecycle(AlreadyInState)`)
+    /// and stays as it is. An `Enable` that fails (`LifecycleFailed`,
+    /// `LifecycleLost`) leaves the port disabled; the client never enables
+    /// it again on its own, since only the port's owner decides its
+    /// lifecycle, so a service ends on that error (`is_port_lost`).
     pub async fn move_channel(
         &mut self,
         channel: Channel,
     ) -> Result<(), PortClientError<PortFault<X>>> {
+        if !self.port().capabilities().supports_channel(channel) {
+            return Err(PortClientError::Setting(SettingError::UnsupportedChannel));
+        }
         self.lifecycle(LifecycleCommand::Disable).await?;
         self.apply(LowerMacSetting::Channel(channel))?;
         self.lifecycle(LifecycleCommand::Enable).await

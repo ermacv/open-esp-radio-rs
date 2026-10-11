@@ -14,8 +14,8 @@ use oer_network_interface::NetworkInterfaceId;
 use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_lower_mac::{
     Backoff, BlockAckReport, Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort,
-    KeySelector, LifecycleCommand, LowerMacSetting, MacAddress, Protection, ReceiveFilter,
-    SettingError, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole,
+    KeySelector, LifecycleCommand, LifecycleError, LowerMacSetting, MacAddress, Protection,
+    ReceiveFilter, SettingError, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole,
     model::{LowerMacModel, ModelOutcome},
 };
 use oer_ieee80211_lower_mac::{LowerMacEvent, RxMeta};
@@ -972,6 +972,54 @@ fn a_channel_move_runs_the_port_lifecycle_around_the_channel_setting() {
         client.apply(LowerMacSetting::Channel(eleven)),
         Err(PortClientError::Setting(SettingError::PortEnabled))
     );
+}
+
+#[test]
+fn a_channel_move_refuses_an_unsupported_channel_without_touching_the_port() {
+    let model = enabled_station();
+    // A 2.4 GHz backend, as S31.
+    model.restrict_bands(oer_ieee80211_lower_mac::BandSet::GHZ2_4);
+    let router = Router::new(&model, 1);
+    let mut client = client(&router, VifRole::Station);
+    let lifecycle = model.lifecycle_requests();
+    let unsupported = Channel::ghz5(36, ChannelWidth::Mhz20).unwrap();
+    assert!(!model.capabilities().supports_channel(unsupported));
+    let refused = run(exchange(&router, client.move_channel(unsupported)));
+    assert_eq!(
+        refused,
+        Err(PortClientError::Setting(SettingError::UnsupportedChannel))
+    );
+    assert!(!refused.unwrap_err().is_port_lost());
+    assert_eq!(model.lifecycle_requests(), lifecycle);
+    assert_eq!(
+        model.channel(),
+        Some(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap())
+    );
+}
+
+#[test]
+fn a_channel_move_on_a_disabled_port_is_a_lost_port_and_leaves_it_disabled() {
+    let model = enabled_station();
+    let router = Router::new(&model, 1);
+    let mut client = client(&router, VifRole::Station);
+    run(exchange(
+        &router,
+        client.lifecycle(LifecycleCommand::Disable),
+    ))
+    .unwrap();
+    let eleven = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
+    let refused = run(exchange(&router, client.move_channel(eleven)));
+    assert_eq!(
+        refused,
+        Err(PortClientError::Lifecycle(LifecycleError::AlreadyInState))
+    );
+    assert!(refused.unwrap_err().is_port_lost());
+    // The client never enables the port on its own.
+    assert_eq!(
+        model.channel(),
+        Some(Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap())
+    );
+    assert_eq!(client.apply(LowerMacSetting::Channel(eleven)), Ok(()));
 }
 
 #[test]

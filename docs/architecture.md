@@ -423,7 +423,10 @@ a permanent channel move where the protocol has one (an IEEE 802.15.4
 request names its own channel). It lends the port out for one
 running phase: `split(&mut self)` returns `PhaseParts<'_, …>`, each part a
 `Lent` of that borrow, so the contract's signature, not a backend's types,
-binds every part to the phase. The parts are the phase's one event consumer
+binds every part to the phase. A backend's part types have no value outside the
+backend (no `Default`, `Clone`, `Copy` or public constructor), so a
+mutable reference cannot exchange a part out of its loan; each backend
+proves that with compile-fail tests. The parts are the phase's one event consumer
 (`RadioPortEvents`), one phase control for the radio-wide operations that
 only gate or tune admission while clients run (a Wi-Fi transmit gate,
 beacon-receive priority, EDCA, modem-sleep membership), and the protocol's

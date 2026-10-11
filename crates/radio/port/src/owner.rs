@@ -54,7 +54,10 @@
 //! The borrow is in the contract's signature, not in the backend's types:
 //! `split(&mut self)` returns `PhaseParts<'_, …>`, and [`Lent`] is
 //! invariant in its lifetime, so an implementation cannot hand out parts
-//! that outlive the phase, and a part cannot be taken out of its loan.
+//! that outlive the phase. A part comes out of its loan only by exchange
+//! for a second value of its type, and a backend's part types have no
+//! value outside it (no `Default`, `Clone`, `Copy` or public constructor),
+//! which each backend proves with compile-fail tests ([`Lent`]).
 //!
 //! While any of them lives, the borrow checker refuses every owner call, so
 //! an operation that conflicts with work in flight never meets a client's
@@ -277,9 +280,18 @@ pub struct PhaseParts<'a, E, C, K> {
 }
 
 /// One part of a running phase, lent for the borrow `'a` of the port's
-/// owner: it reaches its part by reference and has no way to give it up,
-/// so the part lives no longer than the phase. `'a` is invariant, so a
-/// loan cannot be stretched beyond the borrow that made it.
+/// owner. It reaches its part by shared or mutable reference
+/// (`Deref`, `DerefMut`) and has no method that gives the part up. `'a` is
+/// invariant, so a loan cannot be stretched beyond the borrow that made
+/// it.
+///
+/// A mutable reference could still exchange the part for a second value
+/// of its type (`core::mem::take`, `core::mem::replace`). A backend
+/// therefore gives its part types no value outside itself: no `Default`,
+/// `Clone` or `Copy` and no public constructor (multi-PAN clients go in
+/// the backend's own collection type, not a bare `Default` one). Each
+/// backend proves that of its own part types with compile-fail tests, so
+/// the part lives no longer than the phase.
 pub struct Lent<'a, T> {
     part: T,
     loan: PhantomData<fn(&'a ()) -> &'a ()>,

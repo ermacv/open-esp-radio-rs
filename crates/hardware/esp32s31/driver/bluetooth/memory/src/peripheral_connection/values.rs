@@ -198,26 +198,26 @@ pub struct PeripheralConnectionReceiveWait {
 }
 
 impl PeripheralConnectionReceiveWait {
-    /// Form the complete first-event receive wait.
+    /// Form the complete first-event receive wait from the transmit-window
+    /// width and the timing guard, in microseconds of the LE radio time: this
+    /// codec is the representation boundary, and the caller keeps the
+    /// domain-typed spans.
     ///
     /// The extra 61 microseconds are a fixed S31 PHY allowance recovered from
     /// the complete connection-event builder. This constructor admits only the
     /// short hardware form used by every valid legacy first transmit window.
-    pub fn new(
-        transmit_window: oer_time::RadioDuration,
-        timing_guard: oer_time::RadioDuration,
-    ) -> Option<Self> {
-        let total = timing_guard
+    pub fn new(transmit_window_micros: u64, timing_guard_micros: u64) -> Option<Self> {
+        let total = timing_guard_micros
             .checked_mul(2)?
-            .checked_add(transmit_window)?
-            .checked_add(oer_time::RadioDuration::from_micros(61))?;
-        if transmit_window.as_micros() == 0 || total.as_micros() > 65_534 {
+            .checked_add(transmit_window_micros)?
+            .checked_add(61)?;
+        if transmit_window_micros == 0 || total > 65_534 {
             return None;
         }
         Some(Self {
-            transmit_window_micros: u32::try_from(transmit_window.as_micros()).ok()?,
-            timing_guard_micros: u32::try_from(timing_guard.as_micros()).ok()?,
-            total_micros: u16::try_from(total.as_micros()).ok()?,
+            transmit_window_micros: u32::try_from(transmit_window_micros).ok()?,
+            timing_guard_micros: u32::try_from(timing_guard_micros).ok()?,
+            total_micros: u16::try_from(total).ok()?,
         })
     }
 
@@ -247,12 +247,12 @@ pub struct PeripheralConnectionRecurringReceiveWait {
 }
 
 impl PeripheralConnectionRecurringReceiveWait {
-    /// Form one receive wait whose physical duration is represented exactly.
+    /// Form one receive wait whose physical duration, `micros` of the LE
+    /// radio time, is represented exactly.
     ///
     /// The long form stores two-microsecond units. Odd long durations are
     /// rejected instead of silently reproducing the vendor's truncating shift.
-    pub fn new(total: oer_time::RadioDuration) -> Option<Self> {
-        let micros = total.as_micros();
+    pub fn new(micros: u64) -> Option<Self> {
         if micros > 131_070 || (micros > 65_534 && micros & 1 != 0) {
             return None;
         }

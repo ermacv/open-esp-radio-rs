@@ -295,7 +295,7 @@ impl Default for ModelTsf {
         Self {
             set_to: 0,
             set_at: 0,
-            relation: TsfRelation::new(0, oer_time::Duration::ZERO),
+            relation: TsfRelation::new(0, oer_ieee80211_mac::tsf::TsfDuration::ZERO),
         }
     }
 }
@@ -1361,7 +1361,7 @@ impl<O: TxBody> LowerMacBeaconTiming for LowerMacModel<O> {
                         at: now,
                         generation: 0,
                     },
-                    uncertainty: oer_time::Duration::ZERO,
+                    uncertainty: crate::Ieee80211Duration::ZERO,
                     generation: tsf.relation.generation(),
                 })
             }

@@ -7,6 +7,7 @@
 //! the last received anchor (Core Vol 6 Part B 4.2.4); the backend adds its
 //! jitter and guards as [`ConnectionAllowances`] describes.
 
+use oer_bluetooth_radio::LeRadio;
 use oer_bluetooth_radio::{
     ConnectionAllowances, ConnectionEventTiming, LeInstant, LeWindow, RadioDuration,
 };
@@ -20,16 +21,16 @@ pub(crate) struct Phase {
     /// here.
     pub(crate) reference: LeInstant,
     /// From the reference to the nominal anchor of the last event.
-    pub(crate) since_reference: RadioDuration,
+    pub(crate) since_reference: RadioDuration<LeRadio>,
     /// Width of the transmit window still uncertain at the anchor, zero once a
     /// packet fixed the anchor.
-    pub(crate) transmit_window: RadioDuration,
+    pub(crate) transmit_window: RadioDuration<LeRadio>,
 }
 
 impl Phase {
     /// The phase of an anchor a received packet just established, or of the
     /// first anchor with its transmit window.
-    pub(crate) const fn at(anchor: LeInstant, transmit_window: RadioDuration) -> Self {
+    pub(crate) const fn at(anchor: LeInstant, transmit_window: RadioDuration<LeRadio>) -> Self {
         Self {
             reference: anchor,
             since_reference: RadioDuration::from_micros(0),
@@ -43,10 +44,10 @@ impl Phase {
 pub(crate) struct Plan {
     pub(crate) anchor: LeInstant,
     /// From the phase's reference to `anchor`.
-    pub(crate) since_reference: RadioDuration,
+    pub(crate) since_reference: RadioDuration<LeRadio>,
     pub(crate) window: LeWindow,
     pub(crate) timing: ConnectionEventTiming,
-    pub(crate) transmit_window: RadioDuration,
+    pub(crate) transmit_window: RadioDuration<LeRadio>,
 }
 
 /// The first event, anchored at the start of its transmit window.
@@ -57,7 +58,7 @@ pub(crate) struct Plan {
 // CAPABILITY: bluetooth-first-peripheral-connection-window
 pub(crate) fn first(
     anchor: LeInstant,
-    transmit_window: RadioDuration,
+    transmit_window: RadioDuration<LeRadio>,
     allowances: ConnectionAllowances,
 ) -> Result<Plan, EpochExhausted> {
     // A span past `u64::MAX` cannot lie in the epoch either.
@@ -92,8 +93,8 @@ pub(crate) fn first(
 // CAPABILITY: bluetooth-recurring-peripheral-events, bluetooth-sleep-clock-accuracy-window-widening
 pub(crate) fn recurring(
     reference: LeInstant,
-    since_reference: RadioDuration,
-    transmit_window: RadioDuration,
+    since_reference: RadioDuration<LeRadio>,
+    transmit_window: RadioDuration<LeRadio>,
     peer_sleep_clock_ppm: u16,
     allowances: ConnectionAllowances,
 ) -> Result<Plan, EpochExhausted> {
@@ -136,10 +137,10 @@ pub(crate) fn recurring(
 /// computes it, then jitter. The u64 span times two u16 ppm coefficients fits
 /// u128; do not reject representable final drift through intermediate overflow.
 fn widening(
-    elapsed: RadioDuration,
+    elapsed: RadioDuration<LeRadio>,
     peer_ppm: u16,
     allowances: ConnectionAllowances,
-) -> Result<RadioDuration, EpochExhausted> {
+) -> Result<RadioDuration<LeRadio>, EpochExhausted> {
     let ppm = u128::from(peer_ppm) + u128::from(allowances.local_sleep_clock_ppm);
     let drift = (u128::from(elapsed.as_micros()) / 1_000) * ppm / 1_000;
     // A widening past `u64::MAX` cannot lie in the epoch.

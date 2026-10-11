@@ -427,7 +427,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     pub fn individual_twt_wake_plan<H: ConnectedControlHardware>(
         &self,
         hardware: &mut H,
-        wake_guard: oer_time::RadioDuration,
+        wake_guard: oer_ieee80211_mac::tsf::TsfDuration,
     ) -> Result<Option<StationTwtWakePlan>, ConnectedControlError> {
         self.core.individual_twt_wake_plan(hardware, wake_guard)
     }

@@ -254,11 +254,14 @@ fn a_tsf_sample_of_an_earlier_radio_start_is_refused_with_its_mac_clock() {
     let counter = Counter::new(&clock, 0);
     let storage = MacClockStorage::<NoopRawMutex, _, _>::new(&clock);
     let first = storage.start(&counter);
-    let relation = TsfRelation::new(first.tsf_epoch(), Duration::from_micros(1));
+    let relation = TsfRelation::new(
+        first.tsf_epoch(),
+        oer_ieee80211_mac::tsf::TsfDuration::from_micros(1),
+    );
     let sample = TsfSample {
         tsf: VifTsf::new(VifId(0), TsfInstant::from_micros(1_000_000)),
         local: first.sample().unwrap().stamp(),
-        uncertainty: Duration::from_micros(1),
+        uncertainty: oer_ieee80211_lower_mac::Ieee80211Duration::from_micros(1),
         generation: relation.generation(),
     };
     let now = first.sample().unwrap().stamp();

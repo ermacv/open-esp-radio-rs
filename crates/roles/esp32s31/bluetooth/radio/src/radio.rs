@@ -7,10 +7,11 @@ use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingConfiguration,
     AdvertisingEvent, AdvertisingReception, AdvertisingSetId, CancelError, ConnectionAllowances,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
-    EventId, EventResult, LeConnectionCapabilities, LeInstant, LePhys, LeRadioCapabilities,
-    LeWindow, LinkAcknowledgement, NonZeroRadioDuration, OutsideEpoch, RadioDuration, RadioOutcome,
-    RadioRequest, RadioTiming, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow,
-    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
+    EventId, EventResult, LeConnectionCapabilities, LeInstant, LePhys, LeRadio,
+    LeRadioCapabilities, LeWindow, LinkAcknowledgement, NonZeroRadioDuration, OutsideEpoch,
+    RadioDuration, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu, RequestError,
+    ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive,
+    TestReport, TestTransmit, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
@@ -213,9 +214,9 @@ const LONG_INTERVAL_MARGIN_MICROS: u32 = 2_000;
 
 /// The Controller span of one connection event in microseconds.
 fn connection_event_span(
-    interval: RadioDuration,
-    widening: RadioDuration,
-) -> Result<RadioDuration, RequestError> {
+    interval: RadioDuration<LeRadio>,
+    widening: RadioDuration<LeRadio>,
+) -> Result<RadioDuration<LeRadio>, RequestError> {
     if interval <= RadioDuration::from_micros(u64::from(WHOLE_INTERVAL_SPAN_MICROS)) {
         return Ok(interval);
     }
@@ -314,7 +315,7 @@ impl RadioClock {
             .raw_ticks_for_micros(self.epoch.project_capture(raw))
     }
 
-    fn duration(&self, duration: RadioDuration) -> Result<u32, RequestError> {
+    fn duration(&self, duration: RadioDuration<LeRadio>) -> Result<u32, RequestError> {
         self.epoch
             .raw_duration_ticks(duration)
             .map_err(|_| RequestError::TooFar)
@@ -1074,7 +1075,7 @@ impl<
     fn reserve(
         &self,
         anchor: LeInstant,
-        duration: RadioDuration,
+        duration: RadioDuration<LeRadio>,
     ) -> Result<SchedulerRawWindow, RequestError> {
         let now = LeInstant::from_micros(self.clock.now);
         let air = LeWindow::new(anchor, duration).map_err(|_| RequestError::TooFar)?;
@@ -1622,9 +1623,11 @@ impl<
                 transmit_window,
                 timing_guard,
             } => {
-                let receive_wait =
-                    PeripheralConnectionReceiveWait::new(transmit_window, timing_guard)
-                        .ok_or(RequestError::Unsupported)?;
+                let receive_wait = PeripheralConnectionReceiveWait::new(
+                    transmit_window.as_micros(),
+                    timing_guard.as_micros(),
+                )
+                .ok_or(RequestError::Unsupported)?;
                 self.memory.connections.prepare_first_event(
                     &slot.instance,
                     PeripheralConnectionFirstEvent {
@@ -1643,8 +1646,9 @@ impl<
                 )
             }
             ConnectionEventTiming::Recurring { receive_wait, .. } => {
-                let receive_wait = PeripheralConnectionRecurringReceiveWait::new(receive_wait)
-                    .ok_or(RequestError::Unsupported)?;
+                let receive_wait =
+                    PeripheralConnectionRecurringReceiveWait::new(receive_wait.as_micros())
+                        .ok_or(RequestError::Unsupported)?;
                 self.memory.connections.prepare_recurring_event(
                     &slot.instance,
                     PeripheralConnectionRecurringEvent {

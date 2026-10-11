@@ -18,9 +18,8 @@
 //! MPDUs.
 
 use oer_ieee80211_lower_mac::BlockAckReport;
-use oer_ieee80211_lower_mac::Ieee80211Instant;
+use oer_ieee80211_lower_mac::{Ieee80211Duration, Ieee80211Instant};
 use oer_ieee80211_mac::sequence::SequenceNumber;
-use oer_time::RadioDuration;
 
 /// Subframes one A-MPDU exchange tracks: the width of a 64-bit BlockAck
 /// bitmap.
@@ -80,9 +79,9 @@ pub fn compact<T: Copy>(items: &mut [T], mask: u64) -> usize {
 pub struct AmpduRetryPolicy {
     /// Time from the aggregate's commit after which its MSDUs are aged and
     /// discarded instead of retried.
-    pub lifetime: RadioDuration,
+    pub lifetime: Ieee80211Duration,
     /// An MSDU with less than this much lifetime left is already aged.
-    pub aged_margin: RadioDuration,
+    pub aged_margin: Ieee80211Duration,
     /// Attempts that end without any BlockAck, and failed protection
     /// exchanges in a row, that the aggregate survives.
     pub retry_limit: u8,
@@ -216,7 +215,7 @@ impl AmpduRetryState {
         // Aging is strictly after committed + lifetime - margin. Form the
         // relative offset first so a representable threshold is not rejected
         // because an unnecessary intermediate endpoint would overflow.
-        let one = RadioDuration::from_micros(1);
+        let one = Ieee80211Duration::from_micros(1);
         let aged_from = if let Some(delay) = policy.lifetime.checked_sub(policy.aged_margin) {
             delay
                 .checked_add(one)

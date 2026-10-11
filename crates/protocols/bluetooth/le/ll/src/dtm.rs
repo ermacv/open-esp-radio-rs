@@ -9,9 +9,9 @@
 use core::num::NonZeroU64;
 
 use oer_bluetooth_radio::{
-    EventId, EventResult, LeInstant, LeWindow, NonZeroRadioDuration, OutsideEpoch, RadioDuration,
-    RadioOutcome, RadioRequest, RadioTiming, TestChannel, TestPayloadType, TestPhy, TestReceive,
-    TestReport, TestTransmit, TxPower,
+    EventId, EventResult, LeInstant, LeRadio, LeWindow, NonZeroRadioDuration, OutsideEpoch,
+    RadioDuration, RadioOutcome, RadioRequest, RadioTiming, TestChannel, TestPayloadType, TestPhy,
+    TestReceive, TestReport, TestTransmit, TxPower,
 };
 
 mod payload;
@@ -22,18 +22,18 @@ pub use payload::DtmPayloadPattern;
 pub const DTM_MAX_PAYLOAD: usize = 255;
 
 /// Length of one receiver listening window.
-pub const DTM_RECEIVE_WINDOW: NonZeroRadioDuration =
+pub const DTM_RECEIVE_WINDOW: NonZeroRadioDuration<LeRadio> =
     NonZeroRadioDuration::from_micros(NonZeroU64::new(5_000).unwrap());
 
 /// Slack between planning the first event of a test and the earliest instant
 /// the backend admits, covering the time until the request reaches it.
-pub const DTM_PLANNING_SLACK: RadioDuration = RadioDuration::from_micros(500);
+pub const DTM_PLANNING_SLACK: RadioDuration<LeRadio> = RadioDuration::from_micros(500);
 
 /// Slack of a later transmitter packet, planned as soon as the previous one
 /// ended. It covers the request's way to the backend so that a grid slot the
 /// request cannot reach in time is skipped at planning rather than refused,
 /// which would cost a retry and a further interval.
-pub const DTM_RECURRING_TRANSMIT_SLACK: RadioDuration = RadioDuration::from_micros(100);
+pub const DTM_RECURRING_TRANSMIT_SLACK: RadioDuration<LeRadio> = RadioDuration::from_micros(100);
 
 /// One test.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -375,7 +375,7 @@ fn admitted_anchor(now: LeInstant, timing: RadioTiming) -> Option<LeInstant> {
 
 /// Air time of one LE Test packet: preamble, access address, header,
 /// payload and CRC; `None` for a PHY without a transmitter airtime.
-fn transmit_air_time(phy: TestPhy, length: u8) -> Option<NonZeroRadioDuration> {
+fn transmit_air_time(phy: TestPhy, length: u8) -> Option<NonZeroRadioDuration<LeRadio>> {
     // The packet overhead, and the airtime of one payload byte.
     let (overhead, byte) = match phy {
         TestPhy::Le1M => (const { NonZeroU64::new((1 + 4 + 2 + 3) * 8).unwrap() }, 8),
@@ -390,7 +390,7 @@ fn transmit_air_time(phy: TestPhy, length: u8) -> Option<NonZeroRadioDuration> {
 
 /// `I(L) = ceil((L + 249) / 625) * 625` microseconds for a packet of `L`
 /// microseconds.
-fn packet_interval(air: RadioDuration) -> RadioDuration {
+fn packet_interval(air: RadioDuration<LeRadio>) -> RadioDuration<LeRadio> {
     // Only the LE 1M/2M airtime of a u8 payload reaches this scalar formula:
     // air <= (1 + 4 + 2 + 255 + 3) * 8 = 2120 us; the interval is <= 2500 us.
     RadioDuration::from_micros((air.as_micros() + 249).div_ceil(625) * 625)

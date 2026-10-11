@@ -1020,6 +1020,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-bluetooth-radio"
+version = "0.1.0"
+dependencies = [
+ "oer-radio-coex",
+ "oer-radio-port",
+ "oer-time",
+]
+
+[[package]]
 name = "oer-elf"
 version = "0.1.0"
 dependencies = [
@@ -1044,6 +1053,7 @@ name = "oer-esp32s31-bluetooth"
 version = "0.1.0"
 dependencies = [
  "oer-bluetooth-hci",
+ "oer-bluetooth-radio",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
@@ -1055,7 +1065,6 @@ name = "oer-esp32s31-bluetooth-memory"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
- "oer-time",
  "pin-project",
  "vcell",
 ]
@@ -1343,6 +1352,7 @@ dependencies = [
 name = "oer-espressif-ieee80211-policy"
 version = "0.1.0"
 dependencies = [
+ "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",

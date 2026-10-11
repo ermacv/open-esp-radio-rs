@@ -763,7 +763,7 @@ impl ControllerSchedulerEpoch {
     /// absolute projections.
     pub fn raw_duration_ticks(
         self,
-        duration: oer_time::RadioDuration,
+        duration: oer_time::RadioDuration<oer_bluetooth_radio::LeRadio>,
     ) -> Result<u32, ControllerDurationError> {
         let projection = self
             .scale

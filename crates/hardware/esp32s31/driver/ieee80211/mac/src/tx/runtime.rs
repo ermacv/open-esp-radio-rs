@@ -12,13 +12,12 @@ use oer_ieee80211_mac::qos::{
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_espressif_ieee80211_policy::lmac;
-use oer_ieee80211_lower_mac::Ieee80211Stamp;
+use oer_ieee80211_lower_mac::{Ieee80211Duration, Ieee80211Stamp};
 use oer_ieee80211_upper_mac::{
     AmpduAttemptResult, AmpduRetryDecision as UpperAmpduRetryDecision,
     AmpduRetryError as UpperAmpduRetryError, AmpduRetryState as UpperAmpduRetryState,
     ContentionUpdate, MpduRetryState, RetryDecision, RetryOutcome, retry::RetryStateError,
 };
-use oer_time::RadioDuration;
 
 use crate::{
     edca::{EdcaAccessPolicy, EdcaContentionParameters, EdcaParametersError, EdcaQueues},
@@ -656,7 +655,7 @@ pub const VENDOR_AMPDU_MSDU_LIFETIME_MICROS: u32 = lmac::AMPDU_MSDU_LIFETIME_MIC
 pub struct AmpduRetryPolicy {
     /// Time from the aggregate's commit after which its MSDUs are aged and
     /// discarded instead of retried.
-    pub lifetime: RadioDuration,
+    pub lifetime: Ieee80211Duration,
     /// Keep one missing MPDU in the aggregate owner.
     ///
     /// The recovered HE path requires this because converting a one-member

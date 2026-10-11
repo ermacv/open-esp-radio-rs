@@ -64,6 +64,7 @@ use oer_bluetooth_ll::{
         LePeripheralEncryptionRandom, LePeripheralEncryptionTermination,
     },
 };
+use oer_bluetooth_radio::LeRadio;
 use oer_bluetooth_radio::{
     AccessAddress, ConnectionConfiguration, ConnectionEvent, ConnectionId, CrcInit, DataChannel,
     DataPdu, DataPduKind, EventId, EventResult, LeInstant, LePhy, LeWindow, OutsideEpoch,
@@ -92,7 +93,7 @@ const LL_PAYLOAD: usize = LE_DATA_LENGTH_MAXIMUM_OCTETS as usize;
 const FIRST_PRIORITY: u8 = 13;
 const PRIORITY: u8 = 8;
 /// Link Layer procedure response timeout (Core Vol 6 Part B 5.2).
-const PROCEDURE_TIMEOUT: RadioDuration = RadioDuration::from_micros(40_000_000);
+const PROCEDURE_TIMEOUT: RadioDuration<LeRadio> = RadioDuration::from_micros(40_000_000);
 /// Events tried per plan before the connection waits for the next call.
 const PLAN_ATTEMPTS: usize = 64;
 /// Connection Terminated due to MIC Failure.
@@ -151,8 +152,8 @@ struct Event {
     id: EventId,
     reservation: LeWindow,
     /// From the phase's reference to the event's nominal anchor.
-    since_reference: RadioDuration,
-    transmit_window: RadioDuration,
+    since_reference: RadioDuration<LeRadio>,
+    transmit_window: RadioDuration<LeRadio>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -312,7 +313,7 @@ impl Peripheral {
         self.opening = Some((indication, connection));
     }
 
-    fn finish_open(&mut self, anchor: LeInstant, transmit_window: RadioDuration) {
+    fn finish_open(&mut self, anchor: LeInstant, transmit_window: RadioDuration<LeRadio>) {
         let (indication, connection) = self.opening.take().expect("validated pending indication");
         let request = indication.request;
         self.connection = Some(Connection {
@@ -1292,8 +1293,9 @@ impl Connection {
                 if plan.window.start() >= earliest {
                     return Ok(RecurringCandidate::Ready(plan, reservation));
                 }
-                let interval =
-                    RadioDuration::from_micros(u64::from(provisional.timing().interval_micros()));
+                let interval = RadioDuration::<LeRadio>::from_micros(u64::from(
+                    provisional.timing().interval_micros(),
+                ));
                 // The decoded wire interval is nonzero. A late window may
                 // have its nominal anchor ahead of earliest because of widening.
                 let behind = earliest
@@ -1343,7 +1345,7 @@ impl Connection {
     fn span_of(
         &self,
         provisional: &oer_bluetooth_ll::connection::LePeripheralConnectionRecurringEventProvisional,
-    ) -> Result<(RadioDuration, RadioDuration), EpochExhausted> {
+    ) -> Result<(RadioDuration<LeRadio>, RadioDuration<LeRadio>), EpochExhausted> {
         let delta = provisional.delta().get();
         // Intervals are at most 4 s and counts at most 65,535, so each
         // product and their sum stays far below `u64::MAX`.

@@ -2543,7 +2543,7 @@ fn a_reconnection_starts_a_new_tsf_generation_and_refuses_the_earlier_sample() {
     let sample = TsfSample {
         tsf: VifTsf::new(VifId(0), TsfInstant::from_micros(1_000_000)),
         local: stamp,
-        uncertainty: oer_time::Duration::from_micros(1),
+        uncertainty: oer_ieee80211_lower_mac::Ieee80211Duration::from_micros(1),
         generation: earlier,
     };
     assert!(sample.tsf_at(stamp, earlier).is_ok());

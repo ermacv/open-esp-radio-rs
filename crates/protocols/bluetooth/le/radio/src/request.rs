@@ -5,7 +5,7 @@ use core::num::NonZeroU64;
 use oer_radio_coex::CoexPriority;
 
 use crate::{
-    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, LeInstant, LePhy, LeWindow,
+    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, LeInstant, LePhy, LeRadio, LeWindow,
     NonZeroRadioDuration, RadioDuration, TestChannel, TestPayloadType, channel::AdvertisingChannel,
 };
 
@@ -196,7 +196,7 @@ pub struct AdvertisingEvent {
     /// Channels used in index order.
     pub channels: AdvertisingChannels,
     /// Time between the anchors of consecutive channels.
-    pub channel_spacing: RadioDuration,
+    pub channel_spacing: RadioDuration<LeRadio>,
     /// Coexistence urgency of the event.
     pub coexistence: CoexistenceLevel,
 }
@@ -319,17 +319,17 @@ pub enum ConnectionEventTiming {
     /// both sides.
     First {
         /// Transmit window width.
-        transmit_window: RadioDuration,
+        transmit_window: RadioDuration<LeRadio>,
         /// Timing uncertainty on each side.
-        timing_guard: RadioDuration,
+        timing_guard: RadioDuration<LeRadio>,
     },
     /// A later event with its complete widened receive wait.
     Recurring {
         /// Total time to wait for the central.
-        receive_wait: RadioDuration,
+        receive_wait: RadioDuration<LeRadio>,
         /// Window widening on each side of the anchor: the clock drift since
         /// the last received anchor plus the backend's jitter.
-        widening: RadioDuration,
+        widening: RadioDuration<LeRadio>,
     },
 }
 
@@ -347,7 +347,7 @@ pub struct ConnectionEvent {
     pub window: LeWindow,
     /// Connection interval. A backend may let the event continue past its
     /// air window while it stays within the interval.
-    pub interval: RadioDuration,
+    pub interval: RadioDuration<LeRadio>,
     /// Receive wait of the event.
     pub timing: ConnectionEventTiming,
     /// Scheduling priority, 0 to 15.
@@ -413,9 +413,9 @@ pub enum TestPhy {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RadioTiming {
     /// Time the backend prepares the radio before an anchor.
-    pub preparation_lead: RadioDuration,
+    pub preparation_lead: RadioDuration<LeRadio>,
     /// Minimum time from a request to the start of its reservation.
-    pub admission_guard: RadioDuration,
+    pub admission_guard: RadioDuration<LeRadio>,
     /// How the backend listens around connection anchors.
     pub connection: ConnectionAllowances,
 }
@@ -440,7 +440,7 @@ impl RadioTiming {
     };
 }
 
-const ZERO: RadioDuration = RadioDuration::from_micros(0);
+const ZERO: RadioDuration<LeRadio> = RadioDuration::from_micros(0);
 
 /// The backend's allowances around a connection anchor, which the planner
 /// adds to the Link Layer's own window widening.
@@ -458,20 +458,20 @@ pub struct ConnectionAllowances {
     /// Worst-case accuracy of the local sleep clock, in parts per million.
     pub local_sleep_clock_ppm: u16,
     /// Timing jitter added to every window widening.
-    pub widening_jitter: RadioDuration,
+    pub widening_jitter: RadioDuration<LeRadio>,
     /// Fixed listening before the widened anchor of a recurring event.
-    pub receive_guard: RadioDuration,
+    pub receive_guard: RadioDuration<LeRadio>,
     /// Listening kept after the widened receive window.
-    pub receive_tail: RadioDuration,
+    pub receive_tail: RadioDuration<LeRadio>,
     /// Guard before an event's air window. Every event window includes it,
     /// so none is empty.
-    pub boundary_guard: NonZeroRadioDuration,
+    pub boundary_guard: NonZeroRadioDuration<LeRadio>,
     /// Uncertainty on each side of the first event's transmit window.
-    pub first_event_guard: RadioDuration,
+    pub first_event_guard: RadioDuration<LeRadio>,
     /// Air time a recurring event keeps after its widened anchor window.
-    pub event_length: RadioDuration,
+    pub event_length: RadioDuration<LeRadio>,
     /// Air time the first event keeps after its transmit window.
-    pub first_event_length: RadioDuration,
+    pub first_event_length: RadioDuration<LeRadio>,
 }
 
 /// An instant, window or span radio geometry needs lies outside the radio

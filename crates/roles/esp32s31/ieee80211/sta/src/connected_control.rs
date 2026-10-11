@@ -849,7 +849,7 @@ impl ConnectedControlCore {
     pub fn individual_twt_wake_plan<H: StationTsfHardware>(
         &self,
         hardware: &mut H,
-        wake_guard: oer_time::RadioDuration,
+        wake_guard: oer_ieee80211_mac::tsf::TsfDuration,
     ) -> Result<Option<StationTwtWakePlan>, ConnectedControlError> {
         let Some(requester) = self.individual_twt.as_ref() else {
             return Ok(None);
@@ -1332,8 +1332,13 @@ impl ConnectedControlCore {
             // local time, the counter its receive timestamp is a reading of.
             if let Some(stamp) = beacon.stamp {
                 let elapsed = hardware.mac_local_time().wrapping_sub(stamp);
-                let tsf = access_point_tsf_after(observation.timestamp_tsf, u64::from(elapsed))
-                    .expect("connected RX publishes only beacons whose TSF a 32-bit elapsed time advances");
+                let tsf = access_point_tsf_after(
+                    observation.timestamp_tsf,
+                    tsf_elapsed_at_nominal_rate(u64::from(elapsed)),
+                )
+                .expect(
+                    "connected RX publishes only beacons whose TSF a 32-bit elapsed time advances",
+                );
                 self.station_tsf
                     .set(hardware, tsf)
                     .map_err(ConnectedControlError::TsfTiming)?;
@@ -2008,6 +2013,7 @@ fn trace_link(event: LinkEvent) {
 pub use power::{
     ConnectedPowerCommand, JoinBeacon, JoinTsfUnrepresentable, NetworkTxPowerReport,
     POWER_COMMAND_CAPACITY, PowerCoexSnapshot, access_point_tsf_after, beacon_tsf_followable,
+    tsf_elapsed_at_nominal_rate,
 };
 
 #[cfg(test)]

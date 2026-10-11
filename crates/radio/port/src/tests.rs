@@ -66,7 +66,7 @@ fn a_monotonic_radio_clock_converts_exactly_both_ways() {
         clock.from_monotonic_with(Instant::from_micros(1_234), &sample),
         Ok(Projected {
             at: stamp(1_234, 2),
-            uncertainty: Duration::ZERO,
+            uncertainty: RadioDuration::ZERO,
         })
     );
 }
@@ -165,7 +165,7 @@ fn an_affine_clock_projects_from_its_sample_with_a_drift_bound() {
         affine.from_monotonic_with::<Port>(Instant::from_micros(6_000_000), &sample),
         Ok(Projected {
             at: stamp(2_000_000, 7),
-            uncertainty: Duration::from_micros(23),
+            uncertainty: RadioDuration::from_micros(23),
         })
     );
     // A projection before either epoch is refused, never clamped.
@@ -204,6 +204,44 @@ fn a_monotonic_clock_ignores_the_sample_and_an_unrelated_one_refuses() {
     };
     assert_eq!(
         unrelated.to_monotonic_with(stamp(77, 1), &sample),
+        Err(EpochError::Unrelated)
+    );
+}
+
+#[test]
+fn a_radio_span_converts_only_through_the_clock_relation() {
+    let span = RadioDuration::<Port>::from_micros(1_000_000);
+    assert_eq!(
+        ClockInfo::MONOTONIC_MICROS.duration_to_monotonic(span),
+        Ok(Projected {
+            at: Duration::from_micros(1_000_000),
+            uncertainty: Duration::ZERO,
+        })
+    );
+    let affine = ClockInfo {
+        resolution: Duration::from_micros(1),
+        epoch: RadioEpoch::Affine { drift_ppm: 30 },
+    };
+    // 30 ppm over one second, and a part of a microsecond rounds up.
+    assert_eq!(
+        affine.duration_to_monotonic(span),
+        Ok(Projected {
+            at: Duration::from_micros(1_000_000),
+            uncertainty: Duration::from_micros(30),
+        })
+    );
+    assert_eq!(
+        affine
+            .duration_to_monotonic(RadioDuration::<Port>::from_micros(1))
+            .map(|projected| projected.uncertainty),
+        Ok(Duration::from_micros(1))
+    );
+    let unrelated = ClockInfo {
+        resolution: Duration::from_micros(1),
+        epoch: RadioEpoch::Unrelated,
+    };
+    assert_eq!(
+        unrelated.duration_to_monotonic(span),
         Err(EpochError::Unrelated)
     );
 }

@@ -34,6 +34,7 @@ use oer_bluetooth_ll::{
     },
     connection::{LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeLegacyConnectionRequest},
 };
+use oer_bluetooth_radio::LeRadio;
 
 use oer_bluetooth_radio::{
     AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent, AdvertisingPdu,
@@ -54,7 +55,7 @@ use crate::{
 /// Longest legacy advertising PDU: header, AdvA and 31 data octets.
 pub(crate) const ADVERTISING_PDU_CAPACITY: usize = 2 + 6 + 31;
 /// Upper bound of the advertising delay.
-pub(crate) const ADVERTISING_DELAY_MAX: RadioDuration = RadioDuration::from_micros(10_000);
+pub(crate) const ADVERTISING_DELAY_MAX: RadioDuration<LeRadio> = RadioDuration::from_micros(10_000);
 const SET: AdvertisingSetId = AdvertisingSetId::new(0);
 /// Inter-frame space.
 const T_IFS_MICROS: u32 = 150;
@@ -64,9 +65,9 @@ const SCAN_REQ_AIR_MICROS: u32 = (1 + 4 + 2 + 12 + 3) * 8;
 const RESPONSE_CAPABLE_TAIL_MICROS: u32 = 4;
 /// Longest spacing of high duty cycle directed advertising events (Core
 /// Vol 6 Part B 4.4.2.4.3).
-const HIGH_DUTY_INTERVAL: RadioDuration = RadioDuration::from_micros(3_750);
+const HIGH_DUTY_INTERVAL: RadioDuration<LeRadio> = RadioDuration::from_micros(3_750);
 /// How long high duty cycle directed advertising lasts.
-const HIGH_DUTY_DURATION: RadioDuration = RadioDuration::from_micros(1_280_000);
+const HIGH_DUTY_DURATION: RadioDuration<LeRadio> = RadioDuration::from_micros(1_280_000);
 
 /// A connection indication accepted by a connectable set.
 #[derive(Clone, Copy, Debug)]
@@ -125,7 +126,7 @@ pub(crate) struct Advertiser {
     scan_response_len: Option<usize>,
     advertiser: LeDeviceAddress,
     channels: AdvertisingChannels,
-    interval: RadioDuration,
+    interval: RadioDuration<LeRadio>,
     next_anchor: Option<LeInstant>,
     outstanding: Option<Outstanding>,
     /// Events between raised coexistence levels, from the interval.
@@ -426,7 +427,7 @@ impl Advertiser {
     }
 
     /// Air time of one channel's packet and the responses it awaits.
-    fn channel_air(&self) -> NonZeroRadioDuration {
+    fn channel_air(&self) -> NonZeroRadioDuration<LeRadio> {
         // Legacy wire lengths are bounded to 39 bytes, so every sum below
         // stays under 10,000 us: none saturates.
         let air = air_micros(self.pdu_len);
@@ -447,7 +448,10 @@ impl Advertiser {
 
     /// Air time of one channel of the event and its responses, plus the
     /// lead.
-    fn channel_spacing(&self, timing: RadioTiming) -> Result<RadioDuration, EpochExhausted> {
+    fn channel_spacing(
+        &self,
+        timing: RadioTiming,
+    ) -> Result<RadioDuration<LeRadio>, EpochExhausted> {
         // A spacing past `u64::MAX` cannot lie in the epoch.
         self.channel_air()
             .get()
@@ -455,7 +459,10 @@ impl Advertiser {
             .ok_or(error(O::Event, C::ChannelSpacing))
     }
 
-    fn event_duration(&self, timing: RadioTiming) -> Result<NonZeroRadioDuration, EpochExhausted> {
+    fn event_duration(
+        &self,
+        timing: RadioTiming,
+    ) -> Result<NonZeroRadioDuration<LeRadio>, EpochExhausted> {
         let spacing = self.channel_spacing(timing)?;
         let channels = self.channels.iter().count() as u64;
         // The last channel needs no lead after it.
@@ -518,7 +525,7 @@ impl Advertiser {
         id: EventId,
         anchor: LeInstant,
         timing: RadioTiming,
-        delay: RadioDuration,
+        delay: RadioDuration<LeRadio>,
         progress: Progress,
     ) -> Result<RadioRequest<'static>, EpochExhausted> {
         let channel_spacing = self.channel_spacing(timing)?;
@@ -563,7 +570,7 @@ impl Advertiser {
     pub(crate) fn skip(
         &self,
         earliest: LeInstant,
-        delay: RadioDuration,
+        delay: RadioDuration<LeRadio>,
         progress: Progress,
     ) -> Result<Progress, EpochExhausted> {
         let anchor = progress.next_anchor.unwrap_or(earliest);
@@ -573,7 +580,7 @@ impl Advertiser {
     fn continuation(
         &self,
         anchor: LeInstant,
-        delay: RadioDuration,
+        delay: RadioDuration<LeRadio>,
         progress: Progress,
     ) -> Result<Progress, EpochExhausted> {
         let high_duty = matches!(

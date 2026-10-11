@@ -18,7 +18,7 @@ use oer_ieee80211_lower_mac::{
     ReceiveFilter, SettingError, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole,
     model::{LowerMacModel, ModelOutcome},
 };
-use oer_ieee80211_lower_mac::{LowerMacEvent, RxMeta};
+use oer_ieee80211_lower_mac::{ExtensionKind, LowerMacBeaconTiming as _, LowerMacEvent, RxMeta};
 use oer_ieee80211_mac::{
     ccmp::{CcmpHeader, CcmpKeyId, CcmpPacketNumberStep, CcmpTxPacketNumber},
     phy::{LegacyRate, PhyRate},
@@ -1168,6 +1168,42 @@ fn a_station_and_an_access_point_on_one_port_split_the_frames_by_their_addresses
     assert_eq!(transmitters(&router, STATION), [UPSTREAM, UPSTREAM]);
     assert!(transmitters(&router, ACCESS_POINT).is_empty());
     assert_eq!(router.unrouted_frames(), 1);
+}
+
+#[test]
+fn an_extension_event_goes_to_the_interface_it_names() {
+    let model = receiving_everything();
+    let router = Router::new(&model, 1);
+    let mut routing = pin!(router.run());
+    let _station = router.attach(STATION, VifRole::Station, ADDRESS).unwrap();
+    let _access_point = router
+        .attach(ACCESS_POINT, VifRole::AccessPoint, AP_ADDRESS)
+        .unwrap();
+    // The access point's TBTT is the access point's, not the station's.
+    model.fire_tbtt(ACCESS_POINT);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(poll_once(pin!(router.extension(STATION))).is_pending());
+    let Poll::Ready(Some(Ok(event))) = poll_once(pin!(router.extension(ACCESS_POINT))) else {
+        panic!("the access point's TBTT");
+    };
+    assert_eq!(
+        Model::view(&event),
+        LowerMacEvent::Extension {
+            kind: ExtensionKind::Tbtt,
+            vif: ACCESS_POINT,
+        }
+    );
+    assert_eq!(
+        Model::tbtt(&event).map(|tbtt| tbtt.tbtt.vif),
+        Some(ACCESS_POINT)
+    );
+    // The station's goes to the station.
+    model.fire_tbtt(STATION);
+    assert!(poll_once(routing.as_mut()).is_pending());
+    assert!(matches!(
+        poll_once(pin!(router.extension(STATION))),
+        Poll::Ready(Some(Ok(_)))
+    ));
 }
 
 #[test]

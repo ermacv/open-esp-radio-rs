@@ -5,7 +5,7 @@ use oer_radio_port::{ClockError, ClockInfo, LifecycleEvent, Poisoned, PortResult
 
 use crate::{
     capabilities::LowerMacCapabilities,
-    control::{KeyHandle, KeyInstall, LowerMacSetting, SettingError},
+    control::{KeyHandle, KeyInstall, LowerMacSetting, SettingError, VifId},
     rx::{RxBuffer, RxMeta},
     tx::{Refused, TxAttempt, TxBody, TxBuffer, TxCompletion, TxId, TxPayload},
 };
@@ -22,9 +22,20 @@ pub enum LowerMacEvent<'a> {
     TxCompleted(TxCompletion),
     /// The terminal event of a lifecycle command.
     Lifecycle(LifecycleEvent),
-    /// An event of an extension trait, read through that trait's view,
-    /// such as [`LowerMacBeaconTiming::tbtt`](crate::LowerMacBeaconTiming::tbtt).
-    Extension,
+    /// An event of an extension trait: what it is and which interface it
+    /// concerns, so a router hands it to that interface's client without
+    /// knowing the extension. Its content is read through the extension's
+    /// view, such as [`LowerMacBeaconTiming::tbtt`](crate::LowerMacBeaconTiming::tbtt).
+    Extension { kind: ExtensionKind, vif: VifId },
+}
+
+/// The kind of an [`LowerMacEvent::Extension`] event, one per extension
+/// event the port's extension traits define.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ExtensionKind {
+    /// A target beacon transmission time of the interface's schedule
+    /// ([`LowerMacBeaconTiming`](crate::LowerMacBeaconTiming)).
+    Tbtt,
 }
 
 /// A single attempt of the base port: one MPDU, its header in a backend
@@ -72,10 +83,8 @@ pub type SubmitResult<A, F> = PortResult<(), Refused<A>, F>;
 /// does not implement it.
 ///
 /// Every method of this trait is synchronous: a backend decides admission
-/// from its own state without waiting for hardware, as the ESP32-S31 queue
-/// owner does when it prepares a bound transmission
-/// (`hardware/esp32s31/driver/ieee80211/mac/src/tx.rs`, `TxHardware`). The
-/// base calls return ready futures.
+/// from its own state without waiting for hardware. The base calls return
+/// ready futures.
 ///
 /// # Events
 ///
@@ -88,10 +97,19 @@ pub type SubmitResult<A, F> = PortResult<(), Refused<A>, F>;
 /// backend's own runner, which the composition polls beside the consumer;
 /// the port never depends on its consumer to make progress.
 ///
+/// The port has one ordered stream: [`RadioPort::next_event`] yields every
+/// event, of every kind, in the order it occurred, however a backend queues
+/// them inside. A frame received before a `Disable` comes before its
+/// `Disabled`; a completion comes before the terminal of a `Disable` that
+/// ended its attempt; an [`EventsLost`](oer_radio_port::EventsLost) stands
+/// where the first event it replaces occurred, after every event that
+/// occurred before it.
+///
 /// Each transmit queue ([`LowerMacCapabilities::tx_queues`]) holds at most
 /// one attempt in flight; a second attempt for the same queue is refused as
-/// [`SubmitError::Busy`](crate::SubmitError::Busy). Completions correlate
-/// by [`TxId`], not by order. The backend reserves an admitted attempt's
+/// [`SubmitError::Busy`](crate::SubmitError::Busy). Attempts on different
+/// queues end in whatever order the medium ends them, so completions
+/// correlate by [`TxId`]. The backend reserves an admitted attempt's
 /// completion and a lifecycle command's terminal event when it admits
 /// them, so neither is ever lost.
 ///

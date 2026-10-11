@@ -15,7 +15,7 @@ the backend's runner, takes every event and dispatches it:
   different access categories run concurrently over one port;
 - received frames go to the bounded receive queue
   of the interface they belong to (`received(vif)`), extension events such
-  as TBTTs to the station's (`extension(vif)`), and lifecycle terminals to
+  as TBTTs to the interface each names (`extension(vif)`), and lifecycle terminals to
   `lifecycle()`, each reporting its own `EventsLost` in place of the first
   entry it dropped. Every client attaches its interface (`attach(vif, role,
   address)`, up to `ROUTER_VIFS`, released when the `Attachment` drops): the

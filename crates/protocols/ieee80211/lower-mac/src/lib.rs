@@ -82,7 +82,7 @@ pub use oer_radio_port::{
     Generation, GenerationSource, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned,
     PortResult, Projected, ProjectionError, RadioPort, RelationRate,
 };
-pub use port::{Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
+pub use port::{ExtensionKind, Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};
 pub use tx::{
     Backoff, BlockAckReport, KeySelector, Protection, Refused, SubmitError, TxAttempt, TxBody,

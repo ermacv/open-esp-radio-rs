@@ -5,10 +5,8 @@
 //! PPDU once, waits for the solicited response and reports the result as
 //! one [`TxCompletion`]. It does not retry, fall back to another rate or
 //! renumber the frame; the caller decides whether and how to submit the
-//! next attempt from the completion. On the ESP32-S31 this is one
-//! `prepare_bound_*`/`start_bound_*` pair of `TxHardware` and the one
-//! completion `take_tx_completion` or `take_block_ack_completion` returns
-//! (`hardware/esp32s31/driver/ieee80211/mac/src/tx.rs`).
+//! next attempt from the completion: one publication to the hardware and
+//! the one completion it reports.
 //!
 //! The header the caller encodes lives in a [`TxBuffer`] the backend lends
 //! ([`Ieee80211LowerMacPort::tx_buffer`](crate::Ieee80211LowerMacPort::tx_buffer));
@@ -147,8 +145,7 @@ pub enum KeySelector {
 /// Transmit power of one attempt.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TxPower {
-    /// The backend's calibrated target power for the rate; the ESP32-S31
-    /// selects the power table entry of the rate code.
+    /// The backend's calibrated target power for the rate.
     Calibrated,
     /// At most this many dBm: the backend sends the calibrated target when
     /// that is lower. Accepted down to
@@ -218,7 +215,7 @@ impl<P> TxAttempt<P> {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TxFault {
     /// The protection exchange failed in a way the hardware does not
-    /// retry (the ESP32-S31 RTS-error completion).
+    /// retry.
     ProtectionFailure,
     /// The hardware cipher found no usable key for the frame.
     KeyUnavailable,

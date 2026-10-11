@@ -992,7 +992,10 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
                 meta: *meta,
             },
             ModelEvent::Tx(completion, _) => LowerMacEvent::TxCompleted(*completion),
-            ModelEvent::Tbtt(_) => LowerMacEvent::Extension,
+            ModelEvent::Tbtt(event) => LowerMacEvent::Extension {
+                kind: crate::ExtensionKind::Tbtt,
+                vif: event.tbtt.vif,
+            },
             ModelEvent::Lifecycle(event) => LowerMacEvent::Lifecycle(*event),
         }
     }

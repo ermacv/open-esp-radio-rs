@@ -281,7 +281,8 @@ struct Client<'m> {
     interface: u8,
 }
 struct Phase<'m>(&'m Model);
-struct Control;
+/// The phase control borrows the owner, as every part does.
+struct Control<'m>(core::marker::PhantomData<&'m Model>);
 
 impl Client<'_> {
     fn admit(&self, id: Id) {
@@ -293,13 +294,13 @@ fn ready<T>(value: T) -> core::future::Ready<T> {
     core::future::ready(value)
 }
 
-/// End work by its identity, of one client (`Some(interface)`) or, for the
-/// owner, of any client.
-fn end(model: &Model, id: Id, interface: Option<u8>) -> Result<(), CancelError> {
+/// End one client's work by its identity: the backend keys work by client
+/// and identity.
+fn end(model: &Model, id: Id, interface: u8) -> Result<(), CancelError> {
     let mut running = model.running.borrow_mut();
     let index = running
         .iter()
-        .position(|(running, by)| *running == id && interface.is_none_or(|own| own == *by))
+        .position(|(running, by)| *running == id && *by == interface)
         .ok_or(CancelError::NotRunning)?;
     running.remove(index);
     model.events.borrow_mut().push_back(id.0);
@@ -308,7 +309,7 @@ fn end(model: &Model, id: Id, interface: Option<u8>) -> Result<(), CancelError> 
 
 impl RadioPortOwner for Owner<'_> {
     type Event = u32;
-    type Id = Id;
+    type Id = (u8, Id);
     type Domain = Port;
     type Fault = ();
     type Split<'a>
@@ -327,8 +328,11 @@ impl RadioPortOwner for Owner<'_> {
         ready(Ok(Err(ClockError::Unavailable)))
     }
 
-    fn cancel(&mut self, id: Id) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
-        ready(Ok(end(self.0, id, None)))
+    fn cancel(
+        &mut self,
+        (interface, id): (u8, Id),
+    ) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
+        ready(Ok(end(self.0, id, interface)))
     }
 
     fn lifecycle(
@@ -346,17 +350,17 @@ impl RadioPortOwner for Owner<'_> {
 impl<'m> RadioPortSplit for Phase<'m> {
     type Fault = ();
     type Events = Events<'m>;
-    type Control = Control;
+    type Control = Control<'m>;
     type Clients = [Client<'m>; 2];
 
-    fn into_parts(self) -> PhaseParts<Events<'m>, Control, [Client<'m>; 2]> {
+    fn into_parts(self) -> PhaseParts<Events<'m>, Control<'m>, [Client<'m>; 2]> {
         let client = |interface| Client {
             model: self.0,
             interface,
         };
         PhaseParts {
             events: Events(self.0),
-            control: Control,
+            control: Control(core::marker::PhantomData),
             clients: [client(0), client(1)],
         }
     }
@@ -376,6 +380,7 @@ impl RadioPortEvents for Events<'_> {
 
 impl RadioPortClient for Client<'_> {
     type Id = Id;
+    type PortId = (u8, Id);
     type Domain = Port;
     type Fault = ();
 
@@ -384,7 +389,11 @@ impl RadioPortClient for Client<'_> {
     }
 
     fn cancel(&self, id: Id) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
-        ready(Ok(end(self.model, id, Some(self.interface))))
+        ready(Ok(end(self.model, id, self.interface)))
+    }
+
+    fn port_id(&self, id: Id) -> (u8, Id) {
+        (self.interface, id)
     }
 }
 
@@ -406,7 +415,7 @@ fn a_phase_lends_clients_scoped_to_their_interface_and_its_leftovers_reach_the_o
         events: core::cell::RefCell::default(),
     };
     let mut owner = Owner(&model);
-    {
+    let leftover = {
         let PhaseParts {
             mut events,
             clients: [station, access_point],
@@ -421,10 +430,13 @@ fn a_phase_lends_clients_scoped_to_their_interface_and_its_leftovers_reach_the_o
             Ok(Err(CancelError::NotRunning))
         );
         assert_eq!(now_ready(events.next_event()), Ok(Ok(1)));
-    }
+        // The router records the port identity the client forms.
+        access_point.port_id(Id(2))
+    };
     // The phase ended with the access point's work in flight: the owner
-    // ends it and takes its terminal, then runs an exclusive command.
-    assert_eq!(now_ready(owner.cancel(Id(2))), Ok(Ok(())));
+    // ends it by its port identity and takes its terminal, then runs an
+    // exclusive command.
+    assert_eq!(now_ready(owner.cancel(leftover)), Ok(Ok(())));
     assert_eq!(now_ready(owner.next_event()), Ok(Ok(2)));
     assert_eq!(
         now_ready(owner.lifecycle(LifecycleCommand::Disable)),
@@ -443,6 +455,8 @@ fn clients_of_one_kind_choose_the_same_identity_without_colliding() {
         clients: [first, second],
         ..
     } = owner.split().into_parts();
+    // The port identities the clients form stay apart.
+    assert_ne!(first.port_id(Id(7)), second.port_id(Id(7)));
     // Two interfaces of one kind choose the same value: the backend keys
     // work by client and identity.
     first.admit(Id(7));

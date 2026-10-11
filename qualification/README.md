@@ -510,18 +510,21 @@ bound touches no file of a run's closure, so collected evidence stays current
 and is judged again. The thresholds the existing named checks derive from
 scenario documents move to this mechanism in #554.
 
+The secure GATT requirement, as the catalog declares it:
+
 ```toml
 hil-requirements = [
   { scenario = "bluetooth-trouble-secure-gatt", minimum-repetitions = 3, bounds = [
     { ratio = { numerator = { name = "connections-not-established", unit = "count", semantics = 1, better = "lower" },
                 denominator = { name = "connection-attempts", unit = "count", semantics = 1 } },
-      over = "current-runs", at-most-basis-points = 1500, minimum-denominator = 45 },
+      over = "current-runs", at-most-basis-points = 2000, minimum-denominator = 45 },
   ] },
 ]
 ```
 
-- **Quantity.** `measurement` bounds one measurement, in its own unit
-  (`at-most` or `at-least`); `ratio` bounds a numerator over a denominator in
+- **Quantity.** `measurement` bounds one measurement in each repetition, in
+  its own unit (`at-most` or `at-least`): its sum would grow with every run;
+  `ratio` bounds a numerator over a denominator in
   basis points (`at-most-basis-points` or `at-least-basis-points`, at most
   10000) and needs a positive `minimum-denominator`.
 - **Identity.** Each measurement is named with its unit, semantics version and

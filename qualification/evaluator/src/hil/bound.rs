@@ -113,6 +113,14 @@ impl BoundDocument {
             self.at_most_basis_points.is_some() || self.at_least_basis_points.is_some();
         let quantity = match (&self.measurement, &self.ratio) {
             (Some(metric), None) => {
+                // A sum of a value grows with every current run, so its
+                // verdict would follow how often the scenario ran.
+                if self.over == Over::CurrentRuns {
+                    return Err(invalid(
+                        "a single measurement holds per repetition; sum it as a ratio",
+                    )
+                    .into());
+                }
                 if in_basis_points || self.minimum_denominator.is_some() {
                     return Err(invalid(
                         "a measurement's limit is in its own unit and has no denominator",

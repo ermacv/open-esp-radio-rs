@@ -81,11 +81,12 @@ pub(super) fn print(map: &ProjectMap, next_only: bool, details: bool) {
             }
             for requirement in &entry.hil_requirements {
                 println!(
-                    "HIL-REQUIREMENT\t{}\tscenario={}\tchecks={}\trepetitions={}",
+                    "HIL-REQUIREMENT\t{}\tscenario={}\tchecks={}\trepetitions={}\tbounds={}",
                     entry.id,
                     requirement.scenario,
                     requirement.checks.join(","),
-                    requirement.minimum_repetitions
+                    requirement.minimum_repetitions,
+                    requirement.bounds.join(",")
                 );
             }
             if let Some(evidence) = &entry.evidence {
@@ -203,12 +204,7 @@ pub(super) fn markdown(map: &ProjectMap, output: &Path, root: &Path) -> Result<S
         }
         text.push('\n');
         for requirement in &entry.hil_requirements {
-            text.push_str(&format!(
-                "- HIL: `{}`, repetitions {}, checks `{}`.\n",
-                requirement.scenario,
-                requirement.minimum_repetitions,
-                requirement.checks.join("`, `")
-            ));
+            text.push_str(&hil_line(requirement));
         }
         for reference in &entry.vendor_roots {
             text.push_str(&format!(
@@ -272,5 +268,37 @@ fn prose(value: &str, entry: &Entry, output: &Path, root: &Path) -> Result<Strin
         crate::inventory::rewrite_links(value, source, output, root)
     } else {
         Ok(escape(value))
+    }
+}
+
+/// A HIL requirement's line of the status page.
+fn hil_line(requirement: &super::HilRequirement) -> String {
+    let mut line = format!(
+        "- HIL: `{}`, repetitions {}, checks `{}`",
+        requirement.scenario,
+        requirement.minimum_repetitions,
+        requirement.checks.join("`, `")
+    );
+    if !requirement.bounds.is_empty() {
+        line.push_str(&format!(", bounds `{}`", requirement.bounds.join("`, `")));
+    }
+    line.push_str(".\n");
+    line
+}
+
+#[cfg(test)]
+mod hil_line_tests {
+    #[test]
+    fn a_requirement_line_names_its_bounds() {
+        let requirement = super::super::HilRequirement {
+            scenario: "gatt".into(),
+            checks: Vec::new(),
+            minimum_repetitions: 3,
+            bounds: vec!["a/b<=2000bp/current-runs/min45".into()],
+        };
+        assert_eq!(
+            super::hil_line(&requirement),
+            "- HIL: `gatt`, repetitions 3, checks ``, bounds `a/b<=2000bp/current-runs/min45`.\n"
+        );
     }
 }

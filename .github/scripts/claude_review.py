@@ -28,6 +28,9 @@ TOOLS = ["Read", "Grep", "Glob", "Agent", "Bash"]
 ALLOWED_TOOLS = ["Read", "Grep", "Glob", "Agent",
                  "Bash(git -C pr diff *)", "Bash(git -C pr log *)", "Bash(git -C pr show *)",
                  "Bash(gh pr view *)", "Bash(gh pr diff *)", "Bash(gh issue view *)"]
+# What the workflow prepares before the review: the diff against the merge
+# base, the PR with its comments and reviews, and each issue it closes.
+INPUTS = "review-inputs"
 # The classification the issue of a finding is filed with
 # (review_findings.py); the label catalog is the one vocabulary.
 LABELS = [label["name"] for label in json.loads((Path(__file__).parents[1] / "labels.json").read_text())]
@@ -79,7 +82,28 @@ def failure(result):
         status = result.api_error_status or "no API status"
         detail = result.result or "; ".join(result.errors or []) or "no message"
         return f"{result.subtype}, {status}: {detail}"
+    # dontAsk denies every call outside ALLOWED_TOOLS without a prompt; a
+    # report written past a denial may rest on evidence the review never saw.
+    if result.permission_denials:
+        return "tool calls were denied: " + "; ".join(map(denied, result.permission_denials))
     return None
+
+
+def denied(denial):
+    """One denied tool call as the log names it: its tool and command or input."""
+    tool_input = denial.get("tool_input") or {}
+    return f"{denial.get('tool_name', 'tool')}: {tool_input.get('command', json.dumps(tool_input))}"
+
+
+def tool_policy():
+    """The prompt's statement of the prepared inputs and the Bash commands
+    that run, so a command the policy denies is not the first attempt."""
+    commands = ", ".join(f"`{tool[5:-1]}`" for tool in ALLOWED_TOOLS if tool.startswith("Bash("))
+    return (f"The workflow prepared the review inputs in {INPUTS}/: diff.patch (the diff against "
+            "the merge base), diff.stat, pr.json (the PR with its comments, reviews and closing "
+            "issues) and issue-N.json for each issue it closes. Read them with Read. Bash runs "
+            f"only {commands}, written exactly so (relative `pr`, no `cd`, pipes or redirections); "
+            "any other call is denied and fails the review.")
 
 
 async def review(prompt, guidance, model, token_file):
@@ -128,6 +152,7 @@ def main():
     guidance = "\n\n".join(Path(name).read_text() for name in ("CLAUDE.md", "REVIEW.md"))
     prompt = (f"Review pull request #{pr} of {os.environ['GITHUB_REPOSITORY']} at head {head}, "
               "checked out in pr/, following the review instructions.\n\n"
+              + tool_policy() + "\n\n"
               + filed_findings(review_findings.recorded(issue_labels.GitHub(os.environ["GH_TOKEN"]))))
     result = asyncio.run(review(prompt, guidance, os.environ["CLAUDE_REVIEW_MODEL"], token_file))
     token_file.unlink(missing_ok=True)

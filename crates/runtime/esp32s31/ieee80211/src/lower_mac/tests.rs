@@ -1,6 +1,5 @@
 use core::{
     cell::RefCell as TestCell,
-    future::ready,
     pin::Pin,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -355,16 +354,25 @@ impl crate::mac_clock::ReceptionClock for ModelTimer {
     }
 }
 
-/// Records every retune and answers with `accept`.
+/// Records every retune and answers with `accept`; with `release`, it
+/// holds the registers until the flag is set.
 struct Retune {
     accept: bool,
     tuned: &'static std::sync::Mutex<Vec<WifiChannel>>,
+    release: Option<&'static core::sync::atomic::AtomicBool>,
 }
 
-impl LowerMacRetune for Retune {
-    fn retune(&mut self, channel: WifiChannel) -> impl Future<Output = bool> {
+impl LowerMacRetune<Hardware> for Retune {
+    fn retune(&mut self, _: &mut Hardware, channel: WifiChannel) -> impl Future<Output = bool> {
         self.tuned.lock().unwrap().push(channel);
-        ready(self.accept)
+        let (accept, release) = (self.accept, self.release);
+        core::future::poll_fn(move |_| {
+            if release.is_none_or(|release| release.load(Ordering::SeqCst)) {
+                core::task::Poll::Ready(accept)
+            } else {
+                core::task::Poll::Pending
+            }
+        })
     }
 }
 
@@ -460,6 +468,7 @@ fn install_core(
         retune: Retune {
             accept: accept_retune,
             tuned,
+            release: None,
         },
     }) else {
         panic!("the first install succeeds");
@@ -637,9 +646,17 @@ fn submit(
 }
 
 fn with_hardware<U>(port: &Port, entry: impl FnOnce(&mut Hardware) -> U) -> U {
-    port.runtime
-        .installed
-        .lock(|installed| entry(&mut installed.borrow_mut().as_mut().unwrap().hardware))
+    port.runtime.installed.lock(|installed| {
+        entry(
+            installed
+                .borrow_mut()
+                .as_mut()
+                .unwrap()
+                .hardware
+                .as_mut()
+                .expect("the registers are home"),
+        )
+    })
 }
 
 #[test]
@@ -1073,7 +1090,7 @@ fn events_of_every_kind_leave_in_the_order_they_occurred() {
 fn poison(port: &Port) {
     assert_eq!(
         port.runtime
-            .with_core(|_, _, _| Err::<(), _>(LowerMacFault::RxBlockAckReadback)),
+            .with_core(|_, _| Err::<(), _>(LowerMacFault::RxBlockAckReadback)),
         Err(Poisoned {
             cause: LowerMacFault::RxBlockAckReadback
         })
@@ -1170,18 +1187,24 @@ fn uninstall_ends_the_ports_stream() {
     block_on(port.lifecycle(LifecycleCommand::Enable))
         .unwrap()
         .unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Disable))
+        .unwrap()
+        .unwrap();
     let Bench {
         runtime,
         port,
         control,
     } = port;
-    let (core, hardware) = control.uninstall(port);
+    let Ok((core, hardware)) = control.uninstall(port) else {
+        panic!("a disabled idle core uninstalls");
+    };
     let Ok((port, control)) = runtime.install(Esp32s31LowerMacParts {
         core,
         hardware,
         retune: Retune {
             accept: true,
             tuned: std::boxed::Box::leak(std::boxed::Box::default()),
+            release: None,
         },
     }) else {
         panic!("the uninstalled runtime installs again");
@@ -1191,7 +1214,7 @@ fn uninstall_ends_the_ports_stream() {
         port,
         control,
     };
-    // The Enabled terminal ended with the first port's stream; the next
+    // The terminals ended with the first port's stream; the next
     // port's stream starts empty, without a loss it never had (#457).
     assert!(port.runtime.queues.take().is_none());
 }
@@ -1211,7 +1234,9 @@ fn a_radio_stop_takes_the_core_apart_and_a_restart_rebuilds_it_disabled() {
         control,
     } = port;
     // Radio stop: the disabled, idle core comes apart into its owners.
-    let (core, hardware) = control.uninstall(port);
+    let Ok((core, hardware)) = control.uninstall(port) else {
+        panic!("a disabled idle core uninstalls");
+    };
     let Ok(parts) = core.dismantle() else {
         panic!("a disabled idle core comes apart");
     };
@@ -1222,6 +1247,7 @@ fn a_radio_stop_takes_the_core_apart_and_a_restart_rebuilds_it_disabled() {
         retune: Retune {
             accept: true,
             tuned: std::boxed::Box::leak(std::boxed::Box::default()),
+            release: None,
         },
     }) else {
         panic!("the uninstalled runtime installs again");
@@ -1256,16 +1282,108 @@ fn a_radio_stop_takes_the_core_apart_and_a_restart_rebuilds_it_disabled() {
 }
 
 #[test]
-fn an_enabled_core_does_not_come_apart_at_a_radio_stop() {
+fn an_enabled_port_stays_installed_at_a_radio_stop() {
     let port = install(true);
     block_on(port.lifecycle(LifecycleCommand::Enable))
         .unwrap()
         .unwrap();
-    let Bench { port, control, .. } = port;
-    let (core, _hardware) = control.uninstall(port);
-    // The radio stop must disable the port first: the core comes back
-    // whole.
-    assert!(core.dismantle().is_err());
+    let Bench {
+        runtime,
+        port,
+        control,
+    } = port;
+    // The radio stop must disable the port first: both handles come back
+    // and the stream is untouched.
+    let Err((control, port)) = control.uninstall(port) else {
+        panic!("an enabled core stays installed");
+    };
+    let port = Bench {
+        runtime,
+        port,
+        control,
+    };
+    assert_eq!(
+        next(&port),
+        Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
+}
+
+#[test]
+fn port_calls_that_reach_the_registers_are_busy_while_the_retune_holds_them() {
+    let release = std::boxed::Box::leak(std::boxed::Box::new(core::sync::atomic::AtomicBool::new(
+        false,
+    )));
+    let port = install(true);
+    let Bench {
+        runtime,
+        port,
+        control,
+    } = port;
+    let (core, hardware) = control.uninstall(port).ok().unwrap();
+    let lower = runtime;
+    let Ok((port, control)) = lower.install(Esp32s31LowerMacParts {
+        core,
+        hardware,
+        retune: Retune {
+            accept: true,
+            tuned: std::boxed::Box::leak(std::boxed::Box::default()),
+            release: Some(release),
+        },
+    }) else {
+        panic!("the uninstalled runtime installs again");
+    };
+    let port = Bench {
+        runtime: lower,
+        port,
+        control,
+    };
+    port.apply(LowerMacSetting::Channel(
+        Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap(),
+    ))
+    .unwrap()
+    .unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
+    // The runner lends the registers to the retune, which holds them.
+    let mut run = core::pin::pin!(lower.run());
+    let mut context = core::task::Context::from_waker(core::task::Waker::noop());
+    assert!(run.as_mut().poll(&mut context).is_pending());
+    assert_eq!(
+        port.apply(LowerMacSetting::RxBeaconPriority(
+            oer_ieee80211_lower_mac::RxBeaconPriority::Zero
+        )),
+        Ok(Err(SettingError::Busy))
+    );
+    assert_eq!(port.tsf(STA), Ok(Err(SettingError::Busy)));
+    assert_eq!(
+        submit(&port, attempt(&port, 1, &data_frame())),
+        Ok(Err(SubmitError::Disabled))
+    );
+    // An interrupt edge waits for the registers instead of reaching them.
+    lower.on_interrupt(EVENT_TX_COMPLETE);
+    // Neither handle leaves while the retune holds the registers.
+    let Bench {
+        runtime,
+        port,
+        control,
+    } = port;
+    let Err((control, port)) = control.uninstall(port) else {
+        panic!("a retuning port stays installed");
+    };
+    let port = Bench {
+        runtime,
+        port,
+        control,
+    };
+    release.store(true, Ordering::SeqCst);
+    assert!(run.as_mut().poll(&mut context).is_pending());
+    assert_eq!(
+        port.apply(LowerMacSetting::RxBeaconPriority(
+            oer_ieee80211_lower_mac::RxBeaconPriority::Zero
+        )),
+        Ok(Ok(()))
+    );
 }
 
 const BACKING: usize = 256;
@@ -1378,6 +1496,7 @@ fn install_ampdu() -> (AmpduPort, &'static Backings) {
         retune: Retune {
             accept: true,
             tuned,
+            release: None,
         },
     }) else {
         panic!("the first install succeeds");
@@ -1440,13 +1559,16 @@ fn the_control_uninstalls_both_handles_and_a_refusal_hands_bodies_back() {
         port,
         control,
     } = port;
-    let (core, hardware) = control.uninstall(port);
+    let Ok((core, hardware)) = control.uninstall(port) else {
+        panic!("a disabled idle core uninstalls");
+    };
     let Ok((port, control)) = runtime.install(Esp32s31LowerMacParts {
         core,
         hardware,
         retune: Retune {
             accept: true,
             tuned: std::boxed::Box::leak(std::boxed::Box::default()),
+            release: None,
         },
     }) else {
         panic!("the uninstalled runtime installs again");
@@ -1700,9 +1822,17 @@ fn attempts_on_different_queues_complete_by_their_identity() {
 }
 
 fn with_hardware_of<U>(port: &AmpduPort, entry: impl FnOnce(&mut Hardware) -> U) -> U {
-    port.runtime
-        .installed
-        .lock(|installed| entry(&mut installed.borrow_mut().as_mut().unwrap().hardware))
+    port.runtime.installed.lock(|installed| {
+        entry(
+            installed
+                .borrow_mut()
+                .as_mut()
+                .unwrap()
+                .hardware
+                .as_mut()
+                .expect("the registers are home"),
+        )
+    })
 }
 
 #[test]

@@ -140,14 +140,22 @@ pub const TBTT_CAPACITY: usize = 2;
 const COMPLETION_SLOTS: usize = COMPLETION_CAPACITY + 1;
 const LIFECYCLE_SLOTS: usize = LIFECYCLE_CAPACITY + 1;
 
-/// The PHY retune of an `Enable` after a channel change.
+/// The PHY retune of an `Enable` after a channel change, over the port's
+/// register owner `H`.
 ///
-/// The ESP32-S31 retunes through `switch_esp32s31_wifi_channel` under the
-/// shared-radio lease while the MAC's DMA and interrupt service are stopped,
-/// which a disabled port guarantees.
-pub trait LowerMacRetune {
-    /// Tune to `channel`; `false` when the PHY refused.
-    fn retune(&mut self, channel: WifiChannel) -> impl Future<Output = bool>;
+/// The runner lends the retune the installed register owner for the whole
+/// switch: meanwhile a setting, key or TSF call that reaches the registers
+/// is refused as `SettingError::Busy` and an attempt as
+/// `SubmitError::Disabled`, the port not being enabled yet; the interrupt
+/// entries defer their causes until the owner is back, and received frames
+/// are dropped, as an enabling port does not receive. Only a direct user of
+/// the port meets these refusals: the upper MAC's channel move holds every
+/// client of the port for its duration. The ESP32-S31
+/// retunes through `switch_published_esp32s31_wifi_channel` under the
+/// shared-radio lease ([`Esp32s31PortRetune`]).
+pub trait LowerMacRetune<H> {
+    /// Tune to `channel` through `hardware`; `false` when the PHY refused.
+    fn retune(&mut self, hardware: &mut H, channel: WifiChannel) -> impl Future<Output = bool>;
 }
 
 /// One unit of the receive producer: an owned receive buffer whose MPDU and
@@ -661,7 +669,8 @@ struct Installed<
     const AMPDU_BUFFERS: usize,
 > {
     core: LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
-    hardware: H,
+    /// `None` while lent to the retune of an `Enable`.
+    hardware: Option<H>,
 }
 
 /// The sink of one locked entry: events go to their queues.
@@ -740,6 +749,9 @@ pub struct Esp32s31LowerMac<
     retune: Mutex<M, RefCell<Option<R>>>,
     /// The channel an admitted `Enable` waits to be tuned to.
     pending_retune: Mutex<M, Cell<Option<WifiChannel>>>,
+    /// Interrupt causes that arrived while the retune held the registers,
+    /// serviced once they are back.
+    deferred: Mutex<M, Cell<Deferred>>,
     fault: Mutex<M, Cell<Option<LowerMacFault>>>,
     queues: Queues<M, EVENTS, U>,
     /// Raised when a deadline, a retune, an install or a fault may have
@@ -793,7 +805,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer,
     H: LowerMacHardware,
-    R: LowerMacRetune,
+    R: LowerMacRetune<H>,
     S: AmpduBacking,
     T: Default,
 {
@@ -841,7 +853,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer,
     H: LowerMacHardware,
-    R: LowerMacRetune,
+    R: LowerMacRetune<H>,
     S: AmpduBacking,
 {
     /// An empty port whose runner waits on `timer`, suitable for a
@@ -852,6 +864,7 @@ where
             installed: Mutex::new(RefCell::new(None)),
             retune: Mutex::new(RefCell::new(None)),
             pending_retune: Mutex::new(Cell::new(None)),
+            deferred: Mutex::new(Cell::new(Deferred::NONE)),
             fault: Mutex::new(Cell::new(None)),
             queues: Queues::new(),
             wake: Signal::new(),
@@ -957,7 +970,10 @@ where
             if installed.is_some() {
                 return Some((core, hardware));
             }
-            *installed = Some(Installed { core, hardware });
+            *installed = Some(Installed {
+                core,
+                hardware: Some(hardware),
+            });
             None
         });
         if let Some((core, hardware)) = refused {
@@ -977,21 +993,28 @@ where
     }
 
     /// Take the core and its register owner back and discard queued events
-    /// ([`Esp32s31LowerMacControl::uninstall`]).
+    /// ([`Esp32s31LowerMacControl::uninstall`]); `None`, and nothing
+    /// changed, unless the core is disabled and idle with its registers home.
     #[allow(
         clippy::type_complexity,
         reason = "the uninstalled owners are returned as they were installed"
     )]
     fn uninstall(
         &self,
-    ) -> (
+    ) -> Option<(
         LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
         H,
-    ) {
-        let installed = self
-            .installed
-            .lock(|installed| installed.borrow_mut().take())
-            .expect(INSTALLED);
+    )> {
+        let (core, hardware) = self.installed.lock(|installed| {
+            let mut installed = installed.borrow_mut();
+            let stopped = installed.as_ref().expect(INSTALLED);
+            if !stopped.core.idle_disabled() || stopped.hardware.is_none() {
+                return None;
+            }
+            installed
+                .take()
+                .and_then(|installed| Some((installed.core, installed.hardware?)))
+        })?;
         self.queues.discard();
         // The core's attempts went with it: their bodies go back.
         self.bodies.lock(|bodies| {
@@ -1000,7 +1023,8 @@ where
             }
         });
         self.pending_retune.lock(|pending| pending.set(None));
-        (installed.core, installed.hardware)
+        self.deferred.lock(|deferred| deferred.set(Deferred::NONE));
+        Some((core, hardware))
     }
 
     /// Run one entry under the lock; a fault poisons the port.
@@ -1018,7 +1042,58 @@ where
                 AMPDU_SLOTS,
                 AMPDU_BUFFERS,
             >,
+            &mut QueueSink<'_, M, EVENTS, U>,
+        ) -> Result<V, LowerMacFault>,
+    ) -> PortResult<V, NoCore, LowerMacFault> {
+        self.with_installed(|installed, sink| entry(&mut installed.core, sink))
+    }
+
+    /// Run one entry that reaches the registers under the lock; `None`
+    /// while the retune of an `Enable` holds them. A fault poisons the
+    /// port.
+    fn with_hardware<V>(
+        &self,
+        entry: impl FnOnce(
+            &mut LowerMacCore<
+                'slot,
+                P,
+                E,
+                T,
+                BUFFER_SIZE,
+                TX_BUFFERS,
+                S,
+                AMPDU_SLOTS,
+                AMPDU_BUFFERS,
+            >,
             &mut H,
+            &mut QueueSink<'_, M, EVENTS, U>,
+        ) -> Result<V, LowerMacFault>,
+    ) -> PortResult<Option<V>, NoCore, LowerMacFault> {
+        self.with_installed(|installed, sink| match installed.hardware.as_mut() {
+            Some(hardware) => entry(&mut installed.core, hardware, sink).map(Some),
+            None => Ok(None),
+        })
+    }
+
+    #[allow(
+        clippy::type_complexity,
+        reason = "the installed owners keep their types"
+    )]
+    fn with_installed<V>(
+        &self,
+        entry: impl FnOnce(
+            &mut Installed<
+                'slot,
+                P,
+                E,
+                T,
+                H,
+                S,
+                BUFFER_SIZE,
+                TX_BUFFERS,
+                AMPDU_SLOTS,
+                AMPDU_BUFFERS,
+            >,
             &mut QueueSink<'_, M, EVENTS, U>,
         ) -> Result<V, LowerMacFault>,
     ) -> PortResult<V, NoCore, LowerMacFault> {
@@ -1033,7 +1108,7 @@ where
             let mut sink = QueueSink {
                 queues: &self.queues,
             };
-            entry(&mut installed.core, &mut installed.hardware, &mut sink).map(Ok)
+            entry(installed, &mut sink).map(Ok)
         });
         result.map_err(|cause| self.poison(cause))
     }
@@ -1048,7 +1123,8 @@ where
     }
 
     /// Run one admission under the lock with `input`, which comes back when
-    /// no backend is installed; a fault poisons the port.
+    /// no backend is installed; the registers are `None` while the retune
+    /// of an `Enable` holds them. A fault poisons the port.
     fn admit_with_core<I, V>(
         &self,
         input: I,
@@ -1064,7 +1140,7 @@ where
                 AMPDU_SLOTS,
                 AMPDU_BUFFERS,
             >,
-            &mut H,
+            Option<&mut H>,
             I,
         ) -> Result<V, LowerMacFault>,
     ) -> PortResult<V, I, LowerMacFault> {
@@ -1076,7 +1152,7 @@ where
             let Some(installed) = installed.as_mut() else {
                 return Ok(Err(input));
             };
-            entry(&mut installed.core, &mut installed.hardware, input).map(Ok)
+            entry(&mut installed.core, installed.hardware.as_mut(), input).map(Ok)
         });
         result.map_err(|cause| self.poison(cause))
     }
@@ -1088,9 +1164,12 @@ where
     /// The MAC interrupt handler's TX edges: completion, hardware timeout
     /// and collision events of `oer_esp32s31_ieee80211_mac::irq`.
     pub fn on_interrupt(&self, events: u32) {
-        let _ = self.with_core(|core, hardware, sink| {
+        if let Ok(Ok(None)) = self.with_hardware(|core, hardware, sink| {
             core.service(hardware, WifiTxWake::Interrupt { events }, sink)
-        });
+        }) {
+            self.deferred
+                .lock(|deferred| deferred.set(deferred.get().with_events(events)));
+        }
         // A timeout starts the abort-settle deadline.
         self.wake.signal(());
     }
@@ -1098,11 +1177,14 @@ where
     /// The power interrupt's semantic causes: a station TBTT is reported as
     /// an event while its schedule runs.
     pub fn on_power_interrupt(&self, observation: MacPowerInterruptObservation) {
-        if observation.sta_tbtt() {
-            let _ = self.with_core(|core, hardware, sink| {
+        if observation.sta_tbtt()
+            && let Ok(Ok(None)) = self.with_hardware(|core, hardware, sink| {
                 core.station_tbtt(hardware, sink);
                 Ok(())
-            });
+            })
+        {
+            self.deferred
+                .lock(|deferred| deferred.set(deferred.get().with_station_tbtt()));
         }
     }
 
@@ -1146,13 +1228,15 @@ where
             .stamp
             .and_then(|raw| self.timer.snapshot()?.stamp(raw))
             .map_or(RxEvidence::Unavailable, RxEvidence::HardwareObserved);
-        let received = self.with_core(|core, hardware, _| {
+        let received = self.with_hardware(|core, hardware, _| {
             Ok(core.received(&*hardware, &frame).map(|(bytes, mut meta)| {
                 meta.timestamp = stamp;
                 (frame.mpdu_offset..frame.mpdu_offset + bytes.len(), meta)
             }))
         });
-        let Ok(Ok(Some((mpdu, meta)))) = received else {
+        // While the retune holds the registers, the enabling port does not
+        // receive.
+        let Ok(Ok(Some(Some((mpdu, meta))))) = received else {
             return Ok(Ok(()));
         };
         let event = QueuedEvent::Received {
@@ -1162,7 +1246,7 @@ where
         // Queued under the core's lock, as every event is: a port poisoned
         // meanwhile drops the unit instead.
         let mut refused = None;
-        let _ = self.with_core(|_, _, sink| {
+        let _ = self.with_core(|_, sink| {
             let queues = sink.queues;
             queues.ordered(|occurrence| {
                 if keep {
@@ -1177,6 +1261,34 @@ where
             Some(QueuedEvent::Received { frame, .. }) => Err(frame.unit),
             _ => Ok(()),
         })
+    }
+
+    /// Give the registers lent to a retune back to the installed core and
+    /// wake the runner to service what their absence deferred.
+    fn return_hardware(&self, hardware: H) {
+        self.installed.lock(|installed| {
+            if let Some(installed) = installed.borrow_mut().as_mut() {
+                installed.hardware = Some(hardware);
+            }
+        });
+        self.wake.signal(());
+    }
+
+    /// Service the interrupt causes deferred while the retune held the
+    /// registers.
+    fn service_deferred(&self) {
+        let deferred = self
+            .deferred
+            .lock(|deferred| deferred.replace(Deferred::NONE));
+        if deferred.events != 0 {
+            self.on_interrupt(deferred.events);
+        }
+        if deferred.station_tbtt {
+            let _ = self.with_hardware(|core, hardware, sink| {
+                core.station_tbtt(hardware, sink);
+                Ok(())
+            });
+        }
     }
 
     /// The port's runner: the publication watchdog of the attempts in
@@ -1197,6 +1309,7 @@ where
                 self.wake.wait().await;
                 continue;
             }
+            self.service_deferred();
             if let Some(channel) = self.pending_retune.lock(Cell::take) {
                 let mut guard = RetuneGuard {
                     slot: &self.retune,
@@ -1205,13 +1318,23 @@ where
                     channel,
                     done: false,
                 };
-                let retuned = match guard.retune.as_mut() {
-                    Some(retune) => retune.retune(channel).await,
-                    None => false,
+                let mut lent = LentHardware {
+                    hardware: self.installed.lock(|installed| {
+                        installed
+                            .borrow_mut()
+                            .as_mut()
+                            .and_then(|installed| installed.hardware.take())
+                    }),
+                    home: |hardware| self.return_hardware(hardware),
+                };
+                let retuned = match (guard.retune.as_mut(), lent.hardware.as_mut()) {
+                    (Some(retune), Some(hardware)) => retune.retune(hardware, channel).await,
+                    _ => false,
                 };
                 guard.done = true;
+                drop(lent);
                 drop(guard);
-                let _ = self.with_core(|core, _, sink| {
+                let _ = self.with_core(|core, sink| {
                     core.finish_retune(retuned, sink);
                     Ok(())
                 });
@@ -1236,7 +1359,7 @@ where
             match select(watchdog, self.wake.wait()).await {
                 Either::First(()) => {
                     serviced = deadline;
-                    let _ = self.with_core(|core, hardware, sink| {
+                    let _ = self.with_hardware(|core, hardware, sink| {
                         core.service(hardware, WifiTxWake::Deadline, sink)
                     });
                 }
@@ -1276,6 +1399,7 @@ where
 }
 
 impl<
+    'r,
     'slot,
     M: RawMutex,
     P,
@@ -1293,7 +1417,7 @@ impl<
     O: TxBody,
 >
     Esp32s31LowerMacControl<
-        '_,
+        'r,
         Esp32s31LowerMac<
             'slot,
             M,
@@ -1317,14 +1441,20 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer,
     H: LowerMacHardware,
-    R: LowerMacRetune,
+    R: LowerMacRetune<H>,
     S: AmpduBacking,
 {
     /// Take the core and its register owner back, consuming both handles of
-    /// the installed core. The port's stream ends here: its queued events
-    /// and the terminal events the core still owed are discarded, and the
-    /// next port starts with empty queues. The retune stays while an
-    /// `Enable` awaits it.
+    /// the installed core. Only a disabled core with no attempt admitted
+    /// leaves, its registers home from any retune: a radio stop disables
+    /// the port and lets its attempts settle first. The port's stream ends
+    /// here: its queued events, the `Disabled` terminal included, are
+    /// discarded, and the next port starts with empty queues.
+    ///
+    /// # Errors
+    ///
+    /// Both handles come back, and nothing changes, while the core is not
+    /// disabled and idle or a retune holds its registers.
     ///
     /// # Panics
     ///
@@ -1336,7 +1466,7 @@ where
     pub fn uninstall(
         self,
         port: Esp32s31LowerMacPort<
-            '_,
+            'r,
             Esp32s31LowerMac<
                 'slot,
                 M,
@@ -1355,23 +1485,92 @@ where
                 O,
             >,
         >,
-    ) -> (
-        LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
-        H,
-    ) {
+    ) -> Result<
+        (
+            LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
+            H,
+        ),
+        (
+            Self,
+            Esp32s31LowerMacPort<
+                'r,
+                Esp32s31LowerMac<
+                    'slot,
+                    M,
+                    P,
+                    E,
+                    T,
+                    H,
+                    R,
+                    BUFFER_SIZE,
+                    TX_BUFFERS,
+                    EVENTS,
+                    U,
+                    S,
+                    AMPDU_SLOTS,
+                    AMPDU_BUFFERS,
+                    O,
+                >,
+            >,
+        ),
+    > {
         assert!(
             core::ptr::eq(self.lower_mac, port.lower_mac),
             "the port belongs to this control's runtime"
         );
-        self.lower_mac.uninstall()
+        self.lower_mac.uninstall().ok_or((self, port))
     }
 }
 
-/// A setting's answer from the installed core.
+/// A setting's answer from the installed core: busy while the retune of
+/// an `Enable` holds the registers.
 fn setting_answer<V>(
-    answer: PortResult<Result<V, SettingError>, NoCore, LowerMacFault>,
+    answer: PortResult<Option<Result<V, SettingError>>, NoCore, LowerMacFault>,
 ) -> PortResult<V, SettingError, LowerMacFault> {
-    answer.map(installed)
+    answer.map(|answer| installed(answer).unwrap_or(Err(SettingError::Busy)))
+}
+
+/// Interrupt causes that arrived while the retune held the registers.
+#[derive(Clone, Copy)]
+struct Deferred {
+    events: u32,
+    station_tbtt: bool,
+}
+
+impl Deferred {
+    const NONE: Self = Self {
+        events: 0,
+        station_tbtt: false,
+    };
+
+    const fn with_events(self, events: u32) -> Self {
+        Self {
+            events: self.events | events,
+            ..self
+        }
+    }
+
+    const fn with_station_tbtt(self) -> Self {
+        Self {
+            station_tbtt: true,
+            ..self
+        }
+    }
+}
+
+/// The registers lent to a retune; they go home when the retune ends or
+/// its wait is dropped.
+struct LentHardware<H, F: FnMut(H)> {
+    hardware: Option<H>,
+    home: F,
+}
+
+impl<H, F: FnMut(H)> Drop for LentHardware<H, F> {
+    fn drop(&mut self) {
+        if let Some(hardware) = self.hardware.take() {
+            (self.home)(hardware);
+        }
+    }
 }
 
 /// Returns the retune to its slot, and the channel to the pending retune
@@ -1458,7 +1657,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
-    R: LowerMacRetune,
+    R: LowerMacRetune<H>,
     S: AmpduBacking,
 {
     type Event = Esp32s31LowerMacEvent<U, O, AMPDU_SLOTS>;
@@ -1489,7 +1688,7 @@ where
     ) -> impl Future<Output = PortResult<(), CancelError, LowerMacFault>> + '_ {
         ready(
             self.lower_mac
-                .with_core(|core, _, sink| Ok(core.cancel(id, sink)))
+                .with_core(|core, sink| Ok(core.cancel(id, sink)))
                 .map(installed),
         )
     }
@@ -1541,7 +1740,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
-    R: LowerMacRetune,
+    R: LowerMacRetune<H>,
     S: AmpduBacking,
 {
     /// Start one lifecycle command; its terminal event is owed from here.
@@ -1550,7 +1749,7 @@ where
         command: LifecycleCommand,
     ) -> PortResult<(), LifecycleError, LowerMacFault> {
         let queues = &self.queues;
-        let started = self.with_core(|core, _, sink| {
+        let started = self.with_core(|core, sink| {
             Ok(queues.owed_lifecycle.lock(|owed| {
                 // Admit only a command whose terminal event has room.
                 if owed.get() == LIFECYCLE_CAPACITY {
@@ -1618,7 +1817,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
-    R: LowerMacRetune,
+    R: LowerMacRetune<H>,
     S: AmpduBacking,
 {
     type TxBuffer = Esp32s31TxBuffer<'slot, BUFFER_SIZE>;
@@ -1666,14 +1865,14 @@ where
         len: usize,
     ) -> Result<Option<Esp32s31TxBuffer<'slot, BUFFER_SIZE>>, Poisoned<LowerMacFault>> {
         self.lower_mac
-            .with_core(|core, _, _| Ok(core.tx_buffer(len)))
+            .with_core(|core, _| Ok(core.tx_buffer(len)))
             .map(installed)
     }
 
     /// A buffer released while the port is poisoned is lost until the radio
     /// is reset.
     fn release_tx_buffer(&self, buffer: Esp32s31TxBuffer<'slot, BUFFER_SIZE>) {
-        let _ = self.lower_mac.with_core(|core, _, _| {
+        let _ = self.lower_mac.with_core(|core, _| {
             core.release_tx_buffer(buffer);
             Ok(())
         });
@@ -1721,6 +1920,14 @@ where
         let admitted = self
             .lower_mac
             .admit_with_core(attempt, |core, hardware, attempt| {
+                // The retune of an `Enable` holds the registers: the port is
+                // not enabled yet.
+                let Some(hardware) = hardware else {
+                    return Ok(Err(Refused {
+                        error: SubmitError::Disabled,
+                        attempt,
+                    }));
+                };
                 owe_completion(queues, attempt, |attempt| core.submit(hardware, attempt))
             })?
             .unwrap_or_else(|_| panic!("{INSTALLED}"))
@@ -1746,7 +1953,7 @@ where
     fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, LowerMacFault> {
         let applied = setting_answer(
             self.lower_mac
-                .with_core(|core, hardware, _| core.apply(hardware, setting)),
+                .with_hardware(|core, hardware, _| core.apply(hardware, setting)),
         );
         // Opening the transmit gate publishes a held attempt.
         self.lower_mac.wake.signal(());
@@ -1759,7 +1966,7 @@ where
     ) -> PortResult<KeyHandle, SettingError, LowerMacFault> {
         setting_answer(
             self.lower_mac
-                .with_core(|core, hardware, _| Ok(core.install_key(hardware, key))),
+                .with_hardware(|core, hardware, _| Ok(core.install_key(hardware, key))),
         )
     }
 
@@ -1768,7 +1975,7 @@ where
     fn clock_sample(&self) -> PortResult<Ieee80211ClockSample, ClockError, LowerMacFault> {
         let snapshot = installed(
             self.lower_mac
-                .with_core(|_, _, _| Ok(self.lower_mac.timer.snapshot()))?,
+                .with_core(|_, _| Ok(self.lower_mac.timer.snapshot()))?,
         );
         Ok(snapshot
             .map(|snapshot| snapshot.sample())
@@ -1817,7 +2024,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
-    R: LowerMacRetune,
+    R: LowerMacRetune<H>,
     S: AmpduBacking,
 {
     fn beacon_timing_capabilities(&self) -> BeaconTimingCapabilities {
@@ -1827,7 +2034,7 @@ where
     fn tsf(&self, vif: VifId) -> PortResult<VifTsf, SettingError, LowerMacFault> {
         setting_answer(
             self.lower_mac
-                .with_core(|core, hardware, _| Ok(core.tsf(hardware, vif))),
+                .with_hardware(|core, hardware, _| Ok(core.tsf(hardware, vif))),
         )
     }
 
@@ -1836,11 +2043,14 @@ where
     /// the second plus the counter's microsecond.
     fn tsf_sample(&self, vif: VifId) -> PortResult<TsfSample, SettingError, LowerMacFault> {
         let (before, reading, after) =
-            installed(self.lower_mac.with_core(|core, hardware, _| {
+            match installed(self.lower_mac.with_hardware(|core, hardware, _| {
                 let before = self.lower_mac.timer.snapshot();
                 let reading = core.tsf_reading(hardware, vif);
                 Ok((before, reading, self.lower_mac.timer.snapshot()))
-            })?);
+            })?) {
+                Some(read) => read,
+                None => return Ok(Err(SettingError::Busy)),
+            };
         // Two readings of one generation, in order, or no sample.
         let Some((before, uncertainty)) = before
             .zip(after)
@@ -1872,21 +2082,21 @@ where
     fn set_tsf(&self, tsf: VifTsf) -> PortResult<(), SettingError, LowerMacFault> {
         setting_answer(
             self.lower_mac
-                .with_core(|core, hardware, _| Ok(core.set_tsf(hardware, tsf))),
+                .with_hardware(|core, hardware, _| Ok(core.set_tsf(hardware, tsf))),
         )
     }
 
     fn set_tbtt(&self, schedule: TbttSchedule) -> PortResult<(), SettingError, LowerMacFault> {
         setting_answer(
             self.lower_mac
-                .with_core(|core, hardware, _| Ok(core.set_tbtt(hardware, schedule))),
+                .with_hardware(|core, hardware, _| Ok(core.set_tbtt(hardware, schedule))),
         )
     }
 
     fn stop_tbtt(&self, vif: VifId) -> PortResult<(), SettingError, LowerMacFault> {
         setting_answer(
             self.lower_mac
-                .with_core(|core, hardware, _| Ok(core.stop_tbtt(hardware, vif))),
+                .with_hardware(|core, hardware, _| Ok(core.stop_tbtt(hardware, vif))),
         )
     }
 
@@ -1939,7 +2149,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
-    R: LowerMacRetune,
+    R: LowerMacRetune<H>,
     S: AmpduBacking,
 {
     fn monitor_capabilities(&self) -> MonitorCapabilities {
@@ -1949,7 +2159,7 @@ where
     fn set_monitor(&self, enabled: bool) -> PortResult<(), SettingError, LowerMacFault> {
         setting_answer(
             self.lower_mac
-                .with_core(|core, hardware, _| Ok(core.set_monitor(hardware, enabled))),
+                .with_hardware(|core, hardware, _| Ok(core.set_monitor(hardware, enabled))),
         )
     }
 }
@@ -1996,7 +2206,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
-    R: LowerMacRetune,
+    R: LowerMacRetune<H>,
     S: AmpduBackingSource,
 {
     type AmpduBuffer = Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>;
@@ -2011,7 +2221,7 @@ where
     {
         let inner = installed(
             self.lower_mac
-                .with_core(|core, _, _| Ok(core.ampdu_buffer()))?,
+                .with_core(|core, _| Ok(core.ampdu_buffer()))?,
         );
         Ok(inner.map(|inner| Esp32s31PortAmpduBuffer {
             inner,
@@ -2023,7 +2233,7 @@ where
     /// subframes, and its aggregate owner is lost until the radio is
     /// reset.
     fn release_ampdu_buffer(&self, buffer: Esp32s31PortAmpduBuffer<'slot, S, AMPDU_SLOTS, O>) {
-        let _ = self.lower_mac.with_core(|core, _, _| {
+        let _ = self.lower_mac.with_core(|core, _| {
             core.release_ampdu_buffer(buffer.inner);
             Ok(())
         });
@@ -2061,6 +2271,14 @@ where
         let admitted = self
             .lower_mac
             .admit_with_core(attempt, |core, hardware, attempt| {
+                // The retune of an `Enable` holds the registers: the port is
+                // not enabled yet.
+                let Some(hardware) = hardware else {
+                    return Ok(Err(Refused {
+                        error: SubmitError::Disabled,
+                        attempt,
+                    }));
+                };
                 owe_completion(queues, attempt, |attempt| {
                     core.submit_ampdu(hardware, attempt)
                 })
@@ -2128,7 +2346,7 @@ where
     E: WifiTxEntropy,
     T: oer_time::Timer + ReceptionClock,
     H: LowerMacHardware,
-    R: LowerMacRetune,
+    R: LowerMacRetune<H>,
     S: AmpduBacking,
 {
     fn received_room(&self) -> usize {

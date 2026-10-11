@@ -63,8 +63,9 @@ pub async fn switch_esp32s31_wifi_channel<D: PhyShortDelay, P, O: PhyTargetObser
 
 /// [`switch_esp32s31_wifi_channel`] for a register owner published in the
 /// radio's arena (`registers`), as an installed lower-MAC port holds it.
-/// The port is disabled, so no DMA or interrupt service reaches the
-/// registers meanwhile.
+/// The port's runner lends its register owner to the switch: the port is
+/// enabling, and every port call and interrupt entry that would reach the
+/// registers is refused or deferred until the switch returns.
 #[cfg(target_arch = "riscv32")]
 pub async fn switch_published_esp32s31_wifi_channel<D: PhyShortDelay, P, O: PhyTargetObserver>(
     timer: &impl oer_time::Timer,

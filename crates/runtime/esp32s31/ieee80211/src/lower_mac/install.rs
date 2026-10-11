@@ -8,7 +8,10 @@
 //! [`uninstall_esp32s31_wifi_port`] reverses it at radio stop: it takes the
 //! core back, reclaims the register owner and reassembles the stopped
 //! Wi-Fi the radio stop releases. The core comes back as the parts a later
-//! install rebuilds it from ([`LowerMacCore::dismantle`]).
+//! install rebuilds it from ([`LowerMacCore::dismantle`]). The stopped
+//! Wi-Fi carries the channel the PHY is tuned to, which the installed core
+//! learns ([`LowerMacCore::radio_tuned_to`]), so its next `Enable` retunes
+//! when it is configured for another.
 //!
 //! Clocks and the PHY stay with the radio system: the port never holds a
 //! `PlatformClockGuard`, so it releases nothing here, and the radio stop's
@@ -34,36 +37,37 @@ use super::{
 };
 
 /// The product retune of an installed port: one channel switch under the
-/// shared radio's lease, through the register owner published in the arena.
+/// shared radio's lease, through the published register owner the runner
+/// lends it for the switch.
 pub struct Esp32s31PortRetune<'a, P, C, D, O> {
     radio: &'a oer_esp32s31_radio_runtime::RadioSystem<P, C, D>,
-    registers: RadioAccess<'a>,
     observer: O,
 }
 
 impl<'a, P, C, D, O> Esp32s31PortRetune<'a, P, C, D, O> {
-    /// A retune of the port whose registers `registers` reaches, leasing
-    /// `radio` for each switch; `observer` sees the PHY's steps.
+    /// A retune leasing `radio` for each switch; `observer` sees the PHY's
+    /// steps.
     pub const fn new(
         radio: &'a oer_esp32s31_radio_runtime::RadioSystem<P, C, D>,
-        registers: RadioAccess<'a>,
         observer: O,
     ) -> Self {
-        Self {
-            radio,
-            registers,
-            observer,
-        }
+        Self { radio, observer }
     }
 }
 
-impl<P, C, D, O> LowerMacRetune for Esp32s31PortRetune<'_, P, C, D, O>
+impl<'arena, P, C, D, O> LowerMacRetune<CooperativeRadioHardware<'arena>>
+    for Esp32s31PortRetune<'_, P, C, D, O>
 where
     C: oer_esp32s31_hal::shared_radio::PlatformClockProvider,
     D: oer_time::Timer,
     O: oer_esp32s31_phy::PhyTargetObserver,
 {
-    async fn retune(&mut self, channel: WifiChannel) -> bool {
+    async fn retune(
+        &mut self,
+        hardware: &mut CooperativeRadioHardware<'arena>,
+        channel: WifiChannel,
+    ) -> bool {
+        let registers: RadioAccess<'arena> = hardware.register_access();
         let mut guard = self.radio.lock().await;
         let (lease, platform, _) = guard.parts();
         oer_esp32s31_ieee80211::switch_published_esp32s31_wifi_channel::<
@@ -74,7 +78,7 @@ where
             self.radio.timer(),
             lease,
             platform,
-            &self.registers,
+            &registers,
             channel,
             &mut self.observer,
         )
@@ -111,6 +115,8 @@ pub struct Esp32s31WifiPortInstallFailure<W, C, R> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31WifiPortInstallError {
+    /// The core is not disabled and idle, as a built or rebuilt core is.
+    CoreNotDisabled,
     /// The arena refused the register owner.
     Registers(RadioOwnerArenaError),
     /// A core is installed already.
@@ -123,11 +129,15 @@ pub struct Esp32s31WifiPortUninstalled<W, Parts> {
     pub core: Parts,
 }
 
-/// Why the port could not be taken apart: it is still installed's owners,
-/// returned as they were so the caller retries after the cause ends.
-pub enum Esp32s31WifiPortUninstallFailure<'arena, W, Core> {
-    /// A register transaction is still borrowed; the hardware and the core
-    /// are back, uninstalled, with the held owner and the setup.
+/// Why the port could not be taken apart.
+pub enum Esp32s31WifiPortUninstallFailure<'r, 'arena, L, W, Core> {
+    /// The core is not disabled and idle, or a retune holds its registers:
+    /// the port is still installed, returned as it was, and the radio stop
+    /// retries once its `Disable` has settled.
+    Running(Esp32s31WifiPortInstalled<'r, L, W>),
+    /// The core left the runtime, but a register transaction is still
+    /// borrowed: the hardware, the disabled core, the held owner and the
+    /// setup are back, for a retry of the reclaim or a reinstall.
     Registers {
         error: RadioOwnerArenaError,
         hardware: CooperativeRadioHardware<'arena>,
@@ -135,8 +145,6 @@ pub enum Esp32s31WifiPortUninstallFailure<'arena, W, Core> {
         held: Esp32s31WifiPortHeld<W>,
         interrupt_setup: MacInterruptSetup,
     },
-    /// The core is not disabled and idle; the stopped Wi-Fi is back.
-    Core { wifi: WifiStopped<W>, core: Core },
 }
 
 /// Install the lower-MAC port over the stopped Wi-Fi a radio start produced:
@@ -225,9 +233,20 @@ where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: oer_time::Timer,
-    R: LowerMacRetune,
+    R: LowerMacRetune<CooperativeRadioHardware<'arena>>,
     O: oer_ieee80211_lower_mac::TxBody,
 {
+    // The radio start left the PHY on the stopped Wi-Fi's channel; the
+    // core retunes at `Enable` when it is configured for another.
+    let mut core = core;
+    if !core.radio_tuned_to(wifi.current_channel()) {
+        return Err(Esp32s31WifiPortInstallFailure {
+            error: Esp32s31WifiPortInstallError::CoreNotDisabled,
+            wifi,
+            core,
+            retune,
+        });
+    }
     let materialized = materialize_esp32s31_wifi_role(wifi, ());
     let (owner, registers, interrupt_setup) = (
         materialized.owner,
@@ -276,14 +295,15 @@ where
 /// Take the port apart at radio stop: uninstall its core, reclaim the
 /// register owner from the arena and reassemble the stopped Wi-Fi from it,
 /// the held owner and the interrupt setup the composition's route returned.
-/// The port must be disabled with nothing admitted, its DMA and interrupt
-/// service stopped; the stopped Wi-Fi records the channel the core is
-/// tuned to.
+/// The radio stop first disables the port and lets its attempts settle,
+/// with its DMA and interrupt service stopped; the stopped Wi-Fi records
+/// the channel the core is tuned to.
 ///
 /// # Errors
 ///
-/// A still borrowed register transaction or a core that is not disabled and
-/// idle returns every owner, as [`Esp32s31WifiPortUninstallFailure`] says.
+/// A port that is not yet disabled and idle comes back installed; a still
+/// borrowed register transaction returns every owner, as
+/// [`Esp32s31WifiPortUninstallFailure`] says.
 #[allow(
     clippy::result_large_err,
     clippy::type_complexity,
@@ -335,7 +355,25 @@ pub fn uninstall_esp32s31_wifi_port<
         LowerMacCoreParts<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     >,
     Esp32s31WifiPortUninstallFailure<
+        'r,
         'arena,
+        Esp32s31LowerMac<
+            'slot,
+            M,
+            P,
+            E,
+            T,
+            CooperativeRadioHardware<'arena>,
+            R,
+            BUFFER_SIZE,
+            TX_BUFFERS,
+            EVENTS,
+            U,
+            S,
+            AMPDU_SLOTS,
+            AMPDU_BUFFERS,
+            O,
+        >,
         W,
         LowerMacCore<'slot, P, E, T, BUFFER_SIZE, TX_BUFFERS, S, AMPDU_SLOTS, AMPDU_BUFFERS>,
     >,
@@ -344,7 +382,7 @@ where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: oer_time::Timer,
-    R: LowerMacRetune,
+    R: LowerMacRetune<CooperativeRadioHardware<'arena>>,
     O: oer_ieee80211_lower_mac::TxBody,
 {
     let Esp32s31WifiPortInstalled {
@@ -353,7 +391,19 @@ where
         held,
         interrupt_setup,
     } = installed;
-    let (core, hardware) = control.uninstall(port);
+    let (core, hardware) = match control.uninstall(port) {
+        Ok(owners) => owners,
+        Err((control, port)) => {
+            return Err(Esp32s31WifiPortUninstallFailure::Running(
+                Esp32s31WifiPortInstalled {
+                    port,
+                    control,
+                    held,
+                    interrupt_setup,
+                },
+            ));
+        }
+    };
     let registers = match hardware.try_into_registers() {
         Ok(registers) => registers,
         Err((hardware, error)) => {
@@ -369,8 +419,8 @@ where
     let mut owner = held.owner;
     owner.set_current_channel(core.tuned_channel());
     let wifi = owner.into_stopped(registers, interrupt_setup, ()).wifi;
-    match core.dismantle() {
-        Ok(core) => Ok(Esp32s31WifiPortUninstalled { wifi, core }),
-        Err(core) => Err(Esp32s31WifiPortUninstallFailure::Core { wifi, core }),
-    }
+    let Ok(core) = core.dismantle() else {
+        unreachable!("the runtime gives back only a disabled, idle core");
+    };
+    Ok(Esp32s31WifiPortUninstalled { wifi, core })
 }

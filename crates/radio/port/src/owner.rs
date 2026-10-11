@@ -19,6 +19,26 @@
 //! - the protocol's client handles, each scoped to its interface
 //!   ([`RadioPortClient`]).
 //!
+//! The three parts are disjoint resources, each with one holder: a client
+//! owns its own work, the control owns the policy of what reaches the air
+//! next, and neither can act for the other.
+//!
+//! # The phase control
+//!
+//! The control has one holder, the policy that arbitrates admission (for
+//! Wi-Fi, the service that pairs the station and the access point); the
+//! other policies that need it (a station's power save, coexistence slices)
+//! send that holder requests and never hold the control themselves.
+//!
+//! None of its operations refuses as busy. An operation that stops
+//! admission takes effect at once, also when its future is dropped; the
+//! work already on the air ends by itself, and the operation's future
+//! resolves to the protocol's typed proof that the air is quiet (for
+//! Wi-Fi, closing the transmit gate yields a proof that no attempt is
+//! published), which only the backend constructs. A policy that needs a
+//! quiet air (a power-save frame announcing sleep) takes that proof
+//! instead of retrying a refusal.
+//!
 //! While any of them lives, the borrow checker refuses every owner call, so
 //! an operation that conflicts with work in flight never meets a client's
 //! work at run time and no backend refuses one as busy. Dropping the parts
@@ -147,7 +167,10 @@ pub trait RadioPortSplit {
     /// The phase's one event consumer.
     type Events: RadioPortEvents<Fault = Self::Fault>;
     /// The phase control: the radio-wide operations that only gate or tune
-    /// admission while clients run. Neither `Clone` nor `Copy`.
+    /// admission while clients run. Neither `Clone` nor `Copy`, with one
+    /// holder; none of its operations refuses as busy, and one that stops
+    /// admission yields a typed proof of a quiet air (see the
+    /// [module](self) documentation).
     type Control;
     /// The protocol's client handles, one per interface.
     type Clients;

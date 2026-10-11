@@ -16,6 +16,7 @@ struct Obligation {
     scenario: String,
     checks: Vec<String>,
     minimum_repetitions: u8,
+    bounds: Vec<String>,
     procedure_sha256: String,
     action: &'static str,
     reason: String,
@@ -65,6 +66,7 @@ impl Plan {
                     scenario: decision.scenario.clone(),
                     checks: requirement.checks.clone(),
                     minimum_repetitions: requirement.minimum_repetitions,
+                    bounds: requirement.bounds.clone(),
                     procedure_sha256: decision
                         .procedure_sha256
                         .clone()
@@ -86,6 +88,7 @@ impl Plan {
                     &o.scenario,
                     &o.checks,
                     o.minimum_repetitions,
+                    &o.bounds,
                     &o.procedure_sha256,
                 )
             })
@@ -93,7 +96,7 @@ impl Plan {
         let scope_sha256 =
             oer_durable::sha256_bytes(&serde_json::to_vec(&(&target, &map.focus, &scope))?);
         Ok(Self {
-            schema: 2,
+            schema: 3,
             kind: "open-esp-radio-hil-selection",
             target,
             scope_sha256,

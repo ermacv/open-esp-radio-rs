@@ -380,6 +380,8 @@ pub(crate) struct HilRequirementDocument {
     pub(crate) checks: Vec<String>,
     #[serde(default = "one_repetition")]
     pub(crate) minimum_repetitions: u8,
+    #[serde(default)]
+    pub(crate) bounds: Vec<crate::hil::bound::BoundDocument>,
 }
 
 impl HilRequirementDocument {
@@ -392,10 +394,16 @@ impl HilRequirementDocument {
             )
             .into());
         }
+        let context = format!("{capability} on {scenario}");
         Ok(HilRequirement {
-            scenario,
             checks: self.checks.clone(),
             minimum_repetitions: self.minimum_repetitions,
+            bounds: self
+                .bounds
+                .iter()
+                .map(|bound| bound.validated(&context))
+                .collect::<Result<_>>()?,
+            scenario,
         })
     }
 }
@@ -793,6 +801,7 @@ fn evaluate_capability(
             requirement.checks.iter().map(|check| {
                 let selected = HilRequirement {
                     checks: vec![check.clone()],
+                    bounds: Vec::new(),
                     ..requirement.clone()
                 };
                 HilCheckEvidence {

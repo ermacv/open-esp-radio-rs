@@ -84,6 +84,9 @@ enum ObligationGap {
     InsufficientRepetitions,
     RequiredChecksUnavailable,
     CurrentCriteriaNotMet,
+    /// A bound's measurement is missing from a repetition, or recorded
+    /// with another identity: the run cannot join the judged set.
+    BoundMeasurementsUnavailable,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -102,12 +105,25 @@ struct ObservationDecision {
     applicable: bool,
 }
 
+/// The bounds judged on every complete current run of the scenario.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct BoundFindings {
+    runs: Vec<String>,
+    findings: Vec<bound::Finding>,
+}
+
 /// Diagnostics are derived, never stored back into the immutable observation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct EvidenceDecision {
     pub(crate) scenario: String,
     checks: Vec<String>,
     minimum_repetitions: u8,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    bounds: Vec<String>,
+    /// What each bound found on every complete current run together, and
+    /// those runs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bound_findings: Option<BoundFindings>,
     applicability_policy: &'static str,
     completion_boundary: &'static str,
     pub(crate) status: EvidenceStatus,
@@ -184,7 +200,7 @@ impl EvidenceDecision {
             }
             EvidenceStatus::Missing if !self.observations.is_empty() => Some((
                 WorkKind::Recheck,
-                "Recorded attempts do not complete this obligation; inspect missing checks and repetitions.",
+                "Recorded attempts do not complete this obligation; inspect missing checks, bounds, samples and repetitions.",
             )),
             EvidenceStatus::Missing => Some((
                 WorkKind::Experiment,
@@ -217,6 +233,8 @@ impl HilEvidenceIndex {
             scenario: requirement.scenario.clone(),
             checks: requirement.checks.clone(),
             minimum_repetitions: requirement.minimum_repetitions,
+            bounds: requirement.bounds.iter().map(ToString::to_string).collect(),
+            bound_findings: None,
             applicability_policy: "current-source-composition",
             completion_boundary: "scenario-repetition-set",
             status: EvidenceStatus::Missing,
@@ -272,6 +290,15 @@ impl HilEvidenceIndex {
             {
                 gaps.push(ObligationGap::RequiredChecksUnavailable);
             }
+            if !requirement.bounds.is_empty()
+                && (observation.measurements.len() != observation.repetitions
+                    || !requirement
+                        .bounds
+                        .iter()
+                        .all(|bound| bound.available(&observation.measurements)))
+            {
+                gaps.push(ObligationGap::BoundMeasurementsUnavailable);
+            }
             let criteria_failed = assessments
                 .as_ref()
                 .is_some_and(|values| values.contains(&checks::Assessment::Failed));
@@ -305,27 +332,82 @@ impl HilEvidenceIndex {
                 obligation_gaps: gaps,
             });
         }
-        if decision.status != EvidenceStatus::UnresolvedFailure
-            && !decision.investigation
-            && let Some(observation) = candidates
-                .into_iter()
-                .max_by_key(|entry| (entry.started_unix_millis, &entry.run_id))
+        if decision.status == EvidenceStatus::UnresolvedFailure
+            || decision.investigation
+            || candidates.is_empty()
         {
+            return decision;
+        }
+        let latest = candidates
+            .iter()
+            .max_by_key(|entry| (entry.started_unix_millis, &entry.run_id))
+            .copied()
+            .expect("there is a candidate");
+        let mut reference = if requirement.bounds.is_empty() {
             let mut reference = format!(
                 "hil:{}/{}:repetitions={}",
-                observation.run_id, requirement.scenario, observation.repetitions
+                latest.run_id, requirement.scenario, latest.repetitions
             );
-            if let Some(seal) = &observation.completion_seal
+            if let Some(seal) = &latest.completion_seal
                 && seal.path.starts_with("attempts")
             {
                 reference.push_str(&format!(":attempt={}", seal.sha256));
             }
-            if !requirement.checks.is_empty() {
-                reference.push_str(&format!(":checks={}", requirement.checks.join(",")));
+            reference
+        } else {
+            // Bounds are judged on every complete current run together, never
+            // on a selected one, so rerunning proves nothing by luck.
+            candidates.sort_by_key(|entry| (entry.started_unix_millis, &entry.run_id));
+            let repetitions = candidates
+                .iter()
+                .flat_map(|entry| entry.measurements.iter().cloned())
+                .collect::<Vec<_>>();
+            let findings = requirement
+                .bounds
+                .iter()
+                .map(|bound| bound.assess(&repetitions))
+                .collect::<Vec<_>>();
+            let met = findings
+                .iter()
+                .all(|finding| finding.assessment == bound::Assessment::Passed);
+            let runs = candidates
+                .iter()
+                .map(|entry| entry.run_id.clone())
+                .collect::<Vec<_>>();
+            let mut reference = format!(
+                "hil:{}/{}:repetitions={}",
+                runs.join("+"),
+                requirement.scenario,
+                repetitions.len()
+            );
+            // Each independently sealed attempt the bounds rest on, by run.
+            let attempts = candidates
+                .iter()
+                .filter_map(|entry| {
+                    let seal = entry.completion_seal.as_ref()?;
+                    seal.path
+                        .starts_with("attempts")
+                        .then(|| format!("{}={}", entry.run_id, seal.sha256))
+                })
+                .collect::<Vec<_>>();
+            if !attempts.is_empty() {
+                reference.push_str(&format!(":attempts={}", attempts.join(",")));
             }
-            decision.status = EvidenceStatus::Satisfied;
-            decision.evidence = Some(reference);
+            decision.bound_findings = Some(BoundFindings { runs, findings });
+            if !met {
+                return decision;
+            }
+            reference
+        };
+        if !requirement.checks.is_empty() {
+            reference.push_str(&format!(":checks={}", requirement.checks.join(",")));
         }
+        if !requirement.bounds.is_empty() {
+            let bounds = requirement.bounds.iter().map(ToString::to_string);
+            reference.push_str(&format!(":bounds={}", bounds.collect::<Vec<_>>().join(",")));
+        }
+        decision.status = EvidenceStatus::Satisfied;
+        decision.evidence = Some(reference);
         decision
     }
 }

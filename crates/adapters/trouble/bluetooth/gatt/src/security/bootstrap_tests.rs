@@ -60,7 +60,7 @@ fn run_bootstrap(fail: bool, bonds: bool) {
     .unwrap();
     let mut hci = LeControllerHciResources::<NoopRawMutex, 4, 4, 258>::new(config).unwrap();
     let LeControllerHciEndpoints { host, controller } = hci.split();
-    let mut core = LeController::<'_, 12>::new(
+    let mut core = LeController::<'_, 12, 1>::new(
         LeControllerConfig {
             bootstrap: config,
             version: None,

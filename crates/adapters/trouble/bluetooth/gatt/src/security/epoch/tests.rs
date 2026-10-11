@@ -35,7 +35,7 @@ fn transport() -> Transport {
 /// command can be held before the core executes it.
 struct Peer<'c> {
     transport: InProcessHciControllerTransport<'c, NoopRawMutex, 4, 4, 258>,
-    core: LeController<'static, 12>,
+    core: LeController<'static, 12, 1>,
 }
 
 /// A command taken from the Host and not yet executed.

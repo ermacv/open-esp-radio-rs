@@ -255,24 +255,24 @@ impl<'a, M: RawMutex, const DEPTH: usize, const PACKET_CAPACITY: usize>
     /// Active ACL backpressure retains data while commands keep progressing.
     pub(super) fn try_receive_admitted(
         &self,
-        acl_ready: bool,
+        admit_acl: impl Fn(ConnHandle) -> bool,
     ) -> Result<PacketSlot<PACKET_CAPACITY>, HciChannelError> {
         self.queue.state.lock(|state| {
             let mut state = state.borrow_mut();
             if state.generation != self.generation {
                 return Err(HciChannelError::Closed);
             }
-            state.try_receive_admitted(acl_ready)
+            state.try_receive_admitted(&admit_acl)
         })
     }
 
-    pub(super) async fn wait_receive_admitted(&self, acl_ready: bool) {
+    pub(super) async fn wait_receive_admitted(&self, admit_acl: impl Fn(ConnHandle) -> bool) {
         poll_fn(|context| {
             self.queue.state.lock(|state| {
                 let mut state = state.borrow_mut();
                 if state.generation != self.generation
                     || state.closed
-                    || state.admitted_offset(acl_ready).is_some()
+                    || state.admitted_offset(&admit_acl).is_some()
                 {
                     Poll::Ready(())
                 } else {
@@ -388,20 +388,27 @@ impl<const DEPTH: usize, const PACKET_CAPACITY: usize>
     }
 
     fn try_receive(&mut self) -> Result<PacketSlot<PACKET_CAPACITY>, HciChannelError> {
-        self.try_receive_admitted(true)
+        self.try_receive_admitted(&|_| true)
     }
 
-    fn admitted_offset(&self, acl_ready: bool) -> Option<usize> {
+    /// The oldest packet the receiver takes now: a command, or ACL data
+    /// whose connection handle `admit_acl` admits. A handle refused once
+    /// refuses its later packets too, so each handle keeps its order.
+    fn admitted_offset(&self, admit_acl: &impl Fn(ConnHandle) -> bool) -> Option<usize> {
         (0..self.length).find(|offset| {
-            acl_ready || self.slots[(self.head + offset) % DEPTH].kind != PacketKind::AclData
+            let slot = &self.slots[(self.head + offset) % DEPTH];
+            slot.kind != PacketKind::AclData
+                || admit_acl(ConnHandle::new(
+                    u16::from_le_bytes([slot.bytes[0], slot.bytes[1]]) & 0x0fff,
+                ))
         })
     }
 
     fn try_receive_admitted(
         &mut self,
-        acl_ready: bool,
+        admit_acl: &impl Fn(ConnHandle) -> bool,
     ) -> Result<PacketSlot<PACKET_CAPACITY>, HciChannelError> {
-        let Some(offset) = self.admitted_offset(acl_ready) else {
+        let Some(offset) = self.admitted_offset(admit_acl) else {
             return Err(if self.closed {
                 HciChannelError::Closed
             } else {
@@ -556,17 +563,47 @@ mod admission_tests {
             ] {
                 epoch.try_send(packet(kind, value)).unwrap();
             }
-            assert_eq!(epoch.try_receive_admitted(false).unwrap().bytes[0], 2);
+            assert_eq!(epoch.try_receive_admitted(|_| false).unwrap().bytes[0], 2);
             epoch.try_send(packet(PacketKind::AclData, 5)).unwrap();
-            assert_eq!(epoch.try_receive_admitted(false).unwrap().bytes[0], 4);
+            assert_eq!(epoch.try_receive_admitted(|_| false).unwrap().bytes[0], 4);
             assert!(matches!(
-                epoch.try_receive_admitted(false),
+                epoch.try_receive_admitted(|_| false),
                 Err(HciChannelError::Empty)
             ));
             for value in [1, 3, 5] {
-                assert_eq!(epoch.try_receive_admitted(true).unwrap().bytes[0], value);
+                assert_eq!(
+                    epoch.try_receive_admitted(|_| true).unwrap().bytes[0],
+                    value
+                );
             }
             assert!(epoch.vacant_storage_is_zeroed());
+        }
+    }
+
+    #[test]
+    fn a_busy_handle_holds_back_only_its_own_data() {
+        let queue = AsyncPacketQueue::<NoopRawMutex, 4, 8>::new();
+        let epoch = queue.epoch();
+        // ACL data opens with its handle, little-endian.
+        for handle in [1, 2, 1] {
+            let mut bytes = [0; 8];
+            bytes[0] = handle;
+            epoch
+                .try_send(PacketSlot {
+                    kind: PacketKind::AclData,
+                    length: 4,
+                    bytes,
+                })
+                .unwrap();
+        }
+        let only_two = |handle: ConnHandle| handle.into_inner() == 2;
+        assert_eq!(epoch.try_receive_admitted(only_two).unwrap().bytes[0], 2);
+        assert!(matches!(
+            epoch.try_receive_admitted(only_two),
+            Err(HciChannelError::Empty)
+        ));
+        for _ in 0..2 {
+            assert_eq!(epoch.try_receive_admitted(|_| true).unwrap().bytes[0], 1);
         }
     }
 
@@ -589,19 +626,19 @@ mod admission_tests {
         let waker = Waker::from(wakes.clone());
         let mut cx = Context::from_waker(&waker);
         {
-            let mut cancelled = pin!(epoch.wait_receive_admitted(false));
+            let mut cancelled = pin!(epoch.wait_receive_admitted(|_| false));
             assert!(cancelled.as_mut().poll(&mut cx).is_pending());
         }
-        let mut replacement = pin!(epoch.wait_receive_admitted(false));
+        let mut replacement = pin!(epoch.wait_receive_admitted(|_| false));
         assert!(replacement.as_mut().poll(&mut cx).is_pending());
         epoch.try_send(packet(PacketKind::Cmd, 2)).unwrap();
         assert!(wakes.0.load(Ordering::Relaxed) > 0);
         assert!(replacement.as_mut().poll(&mut cx).is_ready());
-        assert_eq!(epoch.try_receive_admitted(false).unwrap().bytes[0], 2);
-        assert_eq!(epoch.try_receive_admitted(true).unwrap().bytes[0], 1);
+        assert_eq!(epoch.try_receive_admitted(|_| false).unwrap().bytes[0], 2);
+        assert_eq!(epoch.try_receive_admitted(|_| true).unwrap().bytes[0], 1);
         epoch.close();
         assert!(matches!(
-            epoch.try_receive_admitted(false),
+            epoch.try_receive_admitted(|_| false),
             Err(HciChannelError::Closed)
         ));
     }

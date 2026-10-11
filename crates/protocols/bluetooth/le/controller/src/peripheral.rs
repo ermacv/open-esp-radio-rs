@@ -1,6 +1,7 @@
-//! The peripheral connection created by a connection indication.
+//! The peripheral connections created by connection indications, one per
+//! slot.
 //!
-//! The connection opens the backend's connection, reports LE Connection
+//! A connection opens the backend's connection, reports LE Connection
 //! Complete and then listens at every connection event: the first across the
 //! transmit window the indication set, later ones at the anchor the last
 //! received packet fixed, widened for clock drift. The next event is planned
@@ -79,12 +80,6 @@ use crate::planning::{
 
 use crate::{RadioWork, advertising::ConnectionIndication, coexistence};
 
-/// The connection's identifier at the backend.
-pub(crate) const CONNECTION: ConnectionId = ConnectionId::new(0);
-/// The connection handle reported to the Host.
-pub(crate) fn handle() -> ConnHandle {
-    ConnHandle::new(0)
-}
 /// Host events one connection event can produce: its receptions plus the
 /// procedure events that follow them.
 pub(crate) const EVENT_OUTPUT: usize = 8;
@@ -131,6 +126,13 @@ pub(crate) enum PeripheralEvent {
     CompletedPackets(u16),
 }
 
+/// A connection's report to the Host, with the handle it names.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HostEvent {
+    pub(crate) handle: ConnHandle,
+    pub(crate) event: PeripheralEvent,
+}
+
 /// The PDU waiting for the central's acknowledgement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Pending {
@@ -166,6 +168,11 @@ struct Closing {
 }
 
 struct Connection {
+    id: ConnectionId,
+    /// A more urgent connection's event took the place of this one's event
+    /// in progress; its cancel is sent.
+    preempted: bool,
+    handle: ConnHandle,
     request: LeLegacyConnectionRequest,
     created_at: LeInstant,
     link: Link,
@@ -198,7 +205,7 @@ struct Connection {
 
 /// Queue of Host events.
 struct Events {
-    items: [Option<PeripheralEvent>; 16],
+    items: [Option<HostEvent>; 16],
     head: usize,
     len: usize,
 }
@@ -212,16 +219,16 @@ impl Events {
         }
     }
 
-    fn push(&mut self, event: PeripheralEvent) {
+    fn push(&mut self, handle: ConnHandle, event: PeripheralEvent) {
         assert!(
             self.len < self.items.len(),
             "the Host event queue is drained per call"
         );
-        self.items[(self.head + self.len) % self.items.len()] = Some(event);
+        self.items[(self.head + self.len) % self.items.len()] = Some(HostEvent { handle, event });
         self.len += 1;
     }
 
-    fn pop(&mut self) -> Option<PeripheralEvent> {
+    fn pop(&mut self) -> Option<HostEvent> {
         if self.len == 0 {
             return None;
         }
@@ -232,45 +239,175 @@ impl Events {
     }
 }
 
-// CAPABILITY: bluetooth-peripheral, bluetooth-peripheral-latency, bluetooth-establishment-supervision-timeout, bluetooth-missed-event-recovery, bluetooth-termination, bluetooth-ll-data-pdu-tx, bluetooth-sn-nesn-retransmission-duplicate-suppression-and-empty-pdu-acknowledgments
-pub(crate) struct Peripheral {
-    /// Accepted indication and its exact LL owner, before first-window validation.
+/// One connection slot: an accepted indication until its first window is
+/// validated, then its connection.
+struct Slot {
+    /// Accepted indication and its exact LL owner, before first-window
+    /// validation.
     opening: Option<(ConnectionIndication, LePeripheralConnection)>,
     connection: Option<Connection>,
+    /// The submission count when the slot's last event was submitted, which
+    /// orders slots that wait equally long.
+    served: u64,
+}
+
+impl Slot {
+    const fn new() -> Self {
+        Self {
+            opening: None,
+            connection: None,
+            served: 0,
+        }
+    }
+
+    const fn is_active(&self) -> bool {
+        self.opening.is_some() || self.connection.is_some()
+    }
+
+    /// The Host-visible connection.
+    fn live(&self) -> Option<&Connection> {
+        self.connection
+            .as_ref()
+            .filter(|connection| connection.opened && connection.closing.is_none())
+    }
+
+    fn live_mut(&mut self) -> Option<&mut Connection> {
+        self.connection
+            .as_mut()
+            .filter(|connection| connection.opened && connection.closing.is_none())
+    }
+
+    /// Whether the slot has work for the radio. `room` tells whether the
+    /// Host output can take one event's receptions.
+    fn wants_radio(&self, room: bool) -> bool {
+        if self.opening.is_some() {
+            return true;
+        }
+        let Some(connection) = &self.connection else {
+            return false;
+        };
+        if connection.submitting.is_some() || connection.transmitting.is_some() {
+            return false;
+        }
+        if !connection.open_sent {
+            return true;
+        }
+        if let Some(closing) = connection.closing {
+            return connection.event.is_none() || !closing.cancel_sent;
+        }
+        // Without room an established connection still wants the radio: the
+        // request pass checks its supervision timeout against the current
+        // time instead of planning an event.
+        connection.event.is_none()
+            && (room
+                || connection.last_activity.is_some()
+                || connection.pending.is_none() && connection.has_transmission())
+    }
+}
+
+/// The connections' next request: one ready, or a transmission whose PDU the
+/// caller borrows from its connection with [`Peripheral::transmission`].
+pub(crate) enum PeripheralWork {
+    Ready(RadioWork<'static>),
+    Transmit {
+        index: usize,
+        kind: DataPduKind,
+        length: usize,
+    },
+}
+
+/// What a slot asks of the backend next, chosen before its request borrows
+/// the slot.
+#[derive(Clone, Copy, Debug)]
+enum Work {
+    Open,
+    Cancel(EventId),
+    Close,
+    Transmit(Pending, usize),
+}
+
+// CAPABILITY: bluetooth-peripheral, bluetooth-peripheral-latency, bluetooth-establishment-supervision-timeout, bluetooth-missed-event-recovery, bluetooth-termination, bluetooth-ll-data-pdu-tx, bluetooth-sn-nesn-retransmission-duplicate-suppression-and-empty-pdu-acknowledgments
+/// The peripheral connections, one per slot of `N`. A slot's index is its
+/// connection's identity at the backend; the Host's connection handle is
+/// allocated apart and not reused at once, so a command still in flight to
+/// a closed connection never reaches the next one.
+pub(crate) struct Peripheral<const N: usize> {
+    slots: [Slot; N],
     events: Events,
     local_version: Option<LeVersionInformation>,
     /// The Host's suggested transmit length for new connections.
     suggested_data_length: LeDataLength,
-    /// The request at the backend.
-    requested: Option<RequestKind>,
+    /// The request at the backend and the slot it is for.
+    requested: Option<(usize, RequestKind)>,
     /// Data received for the Host, taken after every outcome.
     received: Option<LeControllerAclPacket>,
+    /// Connection events submitted so far.
+    submissions: u64,
+    /// The next connection handle to allocate.
+    next_handle: u16,
 }
 
-impl Peripheral {
+impl<const N: usize> Peripheral<N> {
     pub(crate) const fn new(local_version: Option<LeVersionInformation>) -> Self {
+        const {
+            assert!(N > 0 && N <= 255, "1 to 255 connection slots");
+        }
         Self {
-            opening: None,
-            connection: None,
+            slots: [const { Slot::new() }; N],
             events: Events::new(),
             local_version,
             suggested_data_length: LeDataLength::MINIMUM,
             requested: None,
             received: None,
+            submissions: 0,
+            next_handle: 0,
         }
     }
 
     /// Whether a connection exists or is still closing.
-    pub(crate) const fn is_active(&self) -> bool {
-        self.opening.is_some() || self.connection.is_some()
+    pub(crate) fn is_active(&self) -> bool {
+        self.slots.iter().any(Slot::is_active)
     }
 
-    /// The handle of the Host-visible connection.
-    pub(crate) fn handle(&self) -> Option<ConnHandle> {
-        self.connection
-            .as_ref()
-            .filter(|connection| connection.opened && connection.closing.is_none())
-            .map(|_| handle())
+    /// Whether a connection indication finds a slot.
+    pub(crate) fn has_free_slot(&self) -> bool {
+        self.slots.iter().any(|slot| !slot.is_active())
+    }
+
+    /// The slot of the connection `handle`.
+    fn slot_of(&self, handle: ConnHandle) -> Option<usize> {
+        self.slots.iter().position(|slot| {
+            slot.connection
+                .as_ref()
+                .is_some_and(|connection| connection.handle == handle)
+        })
+    }
+
+    fn live_mut(&mut self, handle: ConnHandle) -> Option<&mut Connection> {
+        let slot = self.slot_of(handle)?;
+        self.slots[slot].live_mut()
+    }
+
+    /// Whether `handle` names a Host-visible connection.
+    pub(crate) fn is_live(&self, handle: ConnHandle) -> bool {
+        self.slot_of(handle)
+            .is_some_and(|slot| self.slots[slot].live().is_some())
+    }
+
+    /// A handle no connection holds, after the last one allocated: the
+    /// largest valid handle is 0x0EFF.
+    fn allocate_handle(&mut self) -> ConnHandle {
+        loop {
+            let handle = ConnHandle::new(self.next_handle);
+            self.next_handle = if self.next_handle == 0x0eff {
+                0
+            } else {
+                self.next_handle + 1
+            };
+            if self.slot_of(handle).is_none() {
+                return handle;
+            }
+        }
     }
 
     /// The Host's suggested transmit length for new connections.
@@ -284,20 +421,20 @@ impl Peripheral {
         self.suggested_data_length = transmit;
     }
 
-    /// Ask the live connection to send up to `transmit`.
-    pub(crate) fn set_data_length(&mut self, transmit: LeDataLength) -> Admission {
-        let Some(connection) = self
-            .connection
-            .as_mut()
-            .filter(|c| c.opened && c.closing.is_none())
-        else {
+    /// Ask the live connection `handle` to send up to `transmit`.
+    pub(crate) fn set_data_length(
+        &mut self,
+        handle: ConnHandle,
+        transmit: LeDataLength,
+    ) -> Admission {
+        let Some(connection) = self.live_mut(handle) else {
             return Admission::UnknownConnection;
         };
         connection.control.set_data_length(transmit);
         Admission::Accepted
     }
 
-    pub(crate) fn take_event(&mut self) -> Option<PeripheralEvent> {
+    pub(crate) fn take_event(&mut self) -> Option<HostEvent> {
         self.events.pop()
     }
 
@@ -306,24 +443,43 @@ impl Peripheral {
         self.received.take()
     }
 
-    /// Create the connection from an accepted indication.
+    /// Create a connection from an accepted indication, in a free slot:
+    /// connectable advertising runs only while one is free.
     pub(crate) fn open(&mut self, indication: ConnectionIndication) {
+        let slot = self
+            .slots
+            .iter_mut()
+            .find(|slot| !slot.is_active())
+            .expect("connectable advertising runs only while a connection slot is free");
         let connection = LePeripheralConnection::from_request(
             indication.request,
             LeChannelSelectionAlgorithm::AlgorithmTwo,
         );
-        self.opening = Some((indication, connection));
+        slot.opening = Some((indication, connection));
     }
 
-    fn finish_open(&mut self, anchor: LeInstant, transmit_window: RadioDuration<LeRadio>) {
-        let (indication, connection) = self.opening.take().expect("validated pending indication");
+    fn finish_open(
+        &mut self,
+        index: usize,
+        anchor: LeInstant,
+        transmit_window: RadioDuration<LeRadio>,
+    ) {
+        let (indication, connection) = self.slots[index]
+            .opening
+            .take()
+            .expect("validated pending indication");
         let request = indication.request;
         crate::trace::emit(|| oer_bluetooth_trace::PeripheralOpened {
             // The low word of the radio time.
             first_anchor_low: anchor.as_micros() as u32,
             interval_units: request.timing().interval_units(),
         });
-        self.connection = Some(Connection {
+        let id = ConnectionId::new(u8::try_from(index).expect("at most 255 connection slots"));
+        let handle = self.allocate_handle();
+        self.slots[index].connection = Some(Connection {
+            id,
+            preempted: false,
+            handle,
             request,
             created_at: indication.at,
             link: Link::Created(connection),
@@ -352,291 +508,362 @@ impl Peripheral {
         });
     }
 
-    /// End the connection without a Host event, as Reset does.
+    /// End every connection without a Host event, as Reset does.
     pub(crate) fn abort(&mut self) {
-        self.opening = None;
-        if let Some(connection) = &mut self.connection {
-            connection.closing = Some(Closing {
-                reason: None,
-                cancel_sent: false,
-            });
+        for slot in &mut self.slots {
+            slot.opening = None;
+            if let Some(connection) = &mut slot.connection {
+                connection.closing = Some(Closing {
+                    reason: None,
+                    cancel_sent: false,
+                });
+            }
         }
     }
 
-    /// Whether the connection has work for the radio. `room` tells whether
+    /// Whether a connection has work for the radio. `room` tells whether
     /// the Host output can take one event's receptions.
     pub(crate) fn wants_radio(&self, room: bool) -> bool {
-        if self.opening.is_some() {
-            return true;
-        }
-        let Some(connection) = &self.connection else {
-            return false;
-        };
-        if connection.submitting.is_some() || connection.transmitting.is_some() {
-            return false;
-        }
-        if !connection.open_sent {
-            return true;
-        }
-        if let Some(closing) = connection.closing {
-            return connection.event.is_none() || !closing.cancel_sent;
-        }
-        // Without room an established connection still wants the radio: the
-        // request pass checks its supervision timeout against the current
-        // time instead of planning an event.
-        connection.event.is_none()
-            && (room
-                || connection.last_activity.is_some()
-                || connection.pending.is_none() && connection.has_transmission())
+        self.slots.iter().any(|slot| slot.wants_radio(room))
     }
 
-    /// The reservation of the event in progress.
-    pub(crate) fn busy(&self) -> Option<LeWindow> {
-        self.connection
-            .as_ref()?
-            .event
-            .map(|event| event.reservation)
+    /// Connection events submitted and not ended yet.
+    pub(crate) fn events_in_flight(&self) -> usize {
+        self.slots
+            .iter()
+            .filter_map(|slot| slot.connection.as_ref())
+            .filter(|connection| connection.event.is_some() || connection.submitting.is_some())
+            .count()
     }
 
-    /// The reservation of the next event at its nominal anchor, which other
-    /// roles leave free.
-    pub(crate) fn planned(&self, timing: RadioTiming) -> Result<Option<LeWindow>, EpochExhausted> {
-        let Some(connection) = self.connection.as_ref() else {
-            return Ok(None);
-        };
-        if connection.closing.is_some() {
-            return Ok(None);
+    /// The reservations of the events in progress.
+    pub(crate) fn busy(&self) -> [Option<LeWindow>; N] {
+        core::array::from_fn(|index| {
+            self.slots[index]
+                .connection
+                .as_ref()
+                .and_then(|connection| connection.event)
+                .map(|event| event.reservation)
+        })
+    }
+
+    /// The reservations of the connections' next events at their nominal
+    /// anchors, which other roles leave free.
+    pub(crate) fn planned(
+        &self,
+        timing: RadioTiming,
+    ) -> Result<[Option<LeWindow>; N], EpochExhausted> {
+        let mut planned = [None; N];
+        for (window, slot) in planned.iter_mut().zip(&self.slots) {
+            if let Some(connection) = &slot.connection {
+                *window = connection.planned(timing)?;
+            }
         }
-        // The event one interval after the last one, as the Link Layer will
-        // prepare it: an update's instant moves it by the updated window
-        // offset and listens across the updated transmit window.
-        let (previous, following, transmit_window) = match (&connection.link, connection.event) {
-            // The first event is the next one.
-            (Link::Created(_), _) => {
-                let plan = timing::first(
-                    connection.phase.reference,
-                    connection.phase.transmit_window,
-                    timing.connection,
-                )
-                .map_err(|mut cause| {
-                    cause.operation = O::FutureReservation;
-                    cause
-                })?;
-                return timing
-                    .reservation(plan.window)
-                    .map(Some)
-                    .map_err(|OutsideEpoch| error(O::FutureReservation, C::Reservation));
-            }
-            (Link::InFlight(in_flight), Some(event)) => (
-                event.since_reference,
-                in_flight.following_event(),
-                event.transmit_window,
-            ),
-            (Link::Completed(completed), _) => (
-                connection.phase.since_reference,
-                completed.following_event(),
-                connection.phase.transmit_window,
-            ),
-            (Link::InFlight(_), None) | (Link::Moved, _) => {
-                unreachable!(
-                    "an event in flight is outstanding, and a link moves only within planning"
-                )
-            }
-        };
-        let (span, transmit_window) = match following {
-            LeFollowingEvent::Unchanged(timing) => {
-                (u64::from(timing.interval_micros()), transmit_window)
-            }
-            // An interval of at most 4 s and an offset of at most 82 s.
-            LeFollowingEvent::Instant { previous, updated } => (
-                u64::from(previous.interval_micros())
-                    + u64::from(updated.window_offset_units()) * 1_250,
-                RadioDuration::from_micros(u64::from(updated.window_size_units()) * 1_250),
-            ),
-        };
-        // A span past `u64::MAX` cannot lie in the epoch either.
-        let since_reference = previous
-            .checked_add(RadioDuration::from_micros(span))
-            .ok_or(error(O::FutureReservation, C::Recurrence))?;
-        let plan = timing::recurring(
-            connection.phase.reference,
-            since_reference,
-            transmit_window,
-            connection.request.sleep_clock_accuracy().worst_case_ppm(),
-            timing.connection,
-        )?;
-        timing
-            .reservation(plan.window)
-            .map(Some)
-            .map_err(|OutsideEpoch| error(O::FutureReservation, C::Reservation))
+        Ok(planned)
     }
 
-    /// The next radio request. `earliest` is the earliest anchor the backend
-    /// admits now.
+    /// The next radio request: the slots' control work in slot order, then
+    /// the connection event of the slot closest to its supervision timeout,
+    /// the one served longest ago first among equals. An event that would
+    /// overlap another connection's event in progress is skipped as missed.
     pub(crate) fn next_request(
         &mut self,
         ids: &mut u32,
         now: LeInstant,
         timing: RadioTiming,
         room: bool,
-    ) -> Result<Option<RadioWork<'_>>, EpochExhausted> {
-        if let Some((indication, _)) = &self.opening {
-            let wire = indication.request.timing();
-            // The packet's end, then the start of the first transmit window.
-            let anchor = indication
-                .at
-                .checked_add(RadioDuration::from_micros(
-                    u64::from(LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS)
-                        + u64::from(wire.first_window_start_micros()),
-                ))
-                .ok_or(error(O::ConnectionIndication, C::FirstAnchor))?;
-            let transmit_window =
-                RadioDuration::from_micros(u64::from(wire.window_size_units()) * 1_250);
-            let plan = timing::first(anchor, transmit_window, timing.connection).map_err(
-                |mut cause| {
-                    cause.operation = O::ConnectionIndication;
-                    cause
-                },
-            )?;
-            timing
-                .reservation(plan.window)
-                .map_err(|OutsideEpoch| error(O::ConnectionIndication, C::Reservation))?;
-            self.finish_open(anchor, transmit_window);
+    ) -> Result<Option<PeripheralWork>, EpochExhausted> {
+        for index in 0..N {
+            self.validate_opening(index, timing)?;
+            self.prepare(index, now, room);
         }
-        if self
-            .connection
-            .as_ref()
-            .is_some_and(|connection| connection.closing.is_some() && !connection.open_sent)
-        {
-            // Nothing reached the backend yet.
-            self.connection = None;
-            return Ok(None);
-        }
-        let Some(connection) = self.connection.as_mut() else {
-            return Ok(None);
-        };
-        if !connection.open_sent {
-            connection.open_sent = true;
-            self.requested = Some(RequestKind::Open);
-            let access_address = connection.request.access_address().value().to_le_bytes();
-            return Ok(Some(RadioWork::Submit(RadioRequest::OpenConnection(
-                ConnectionConfiguration {
-                    connection: CONNECTION,
-                    access_address: AccessAddress(access_address),
-                    crc_init: CrcInit(connection.request.crc_initialization().wire_bytes()),
-                    created_at: connection.created_at,
-                    tx_power: TxPower::from_dbm(0),
-                    phy: LePhy::Le1M,
-                },
-            ))));
-        }
-        if let Some(closing) = &mut connection.closing {
-            return match connection.event {
-                Some(event) if !closing.cancel_sent => {
-                    closing.cancel_sent = true;
-                    self.requested = Some(RequestKind::Cancel);
-                    Ok(Some(RadioWork::Cancel(event.id)))
-                }
-                Some(_) => Ok(None),
-                None => {
-                    self.requested = Some(RequestKind::Close);
-                    Ok(Some(RadioWork::Submit(RadioRequest::CloseConnection(
-                        CONNECTION,
-                    ))))
-                }
-            };
-        }
-        if connection.event.is_some() {
-            return Ok(None);
-        }
-        connection.check_procedures(now, &mut self.events);
-        if connection.closing.is_some() {
-            // The first closing step: no event is in progress.
-            self.requested = Some(RequestKind::Close);
-            return Ok(Some(RadioWork::Submit(RadioRequest::CloseConnection(
-                CONNECTION,
-            ))));
-        }
-        if connection.pending.is_none()
-            && let Some((pending, length)) = connection.prepare_transmission()
-        {
-            connection.transmitting = Some((pending, length));
-            let kind = match pending {
-                Pending::Security | Pending::Control => DataPduKind::Control,
-                Pending::Acl => connection.acl_kind(),
-            };
-            let payload_length = connection.tx_length(pending, length);
-            self.requested = Some(RequestKind::Transmit);
-            return Ok(Some(RadioWork::Submit(RadioRequest::Transmit {
-                connection: CONNECTION,
-                pdu: DataPdu::new(kind, &connection.tx[..payload_length])
-                    .expect("a legacy data PDU fits"),
-            })));
+        if let Some((index, work)) = (0..N).find_map(|index| Some((index, self.work(index)?))) {
+            return Ok(Some(self.submit(index, work)));
         }
         if !room {
-            if connection.supervision_lost(now, connection.current_timing()) {
-                connection.closing = Some(Closing {
-                    reason: Some(HciError::CONN_TIMEOUT.to_status()),
-                    cancel_sent: false,
-                });
-                self.requested = Some(RequestKind::Close);
-                return Ok(Some(RadioWork::Submit(RadioRequest::CloseConnection(
-                    CONNECTION,
-                ))));
-            }
             return Ok(None);
         }
         let earliest = crate::planning::earliest(now, timing, R::Peripheral)?;
-        let Some((prepared, plan, reservation)) = connection.plan(earliest, timing)? else {
-            if connection.closing.is_some() {
-                self.requested = Some(RequestKind::Close);
-                return Ok(Some(RadioWork::Submit(RadioRequest::CloseConnection(
-                    CONNECTION,
-                ))));
+        let mut order: [usize; N] = core::array::from_fn(|index| index);
+        order.sort_unstable_by_key(|&index| {
+            let slot = &self.slots[index];
+            (
+                slot.connection
+                    .as_ref()
+                    .map_or(u64::MAX, Connection::supervision_deadline),
+                slot.served,
+                index,
+            )
+        });
+        // The most urgent connection waiting for its event takes the place
+        // of a less urgent one's event in its way.
+        let urgency = |slot: &Slot| {
+            (
+                slot.connection
+                    .as_ref()
+                    .map_or(u64::MAX, Connection::supervision_deadline),
+                slot.served,
+            )
+        };
+        if let Some(&waiting) = order.iter().find(|&&index| {
+            self.slots[index]
+                .connection
+                .as_ref()
+                .is_some_and(Connection::waits_for_event)
+        }) {
+            let connection = self.slots[waiting]
+                .connection
+                .as_ref()
+                .expect("the slot holds the connection");
+            if let Some(planned) = connection.planned(timing)? {
+                let victim = (0..N).find(|&other| {
+                    other != waiting
+                        && urgency(&self.slots[other]) > urgency(&self.slots[waiting])
+                        && self.slots[other].connection.as_ref().is_some_and(|c| {
+                            !c.preempted
+                                && c.closing.is_none()
+                                && c.event
+                                    .is_some_and(|event| event.reservation.overlaps(planned))
+                        })
+                });
+                if let Some(victim) = victim {
+                    let connection = self.slots[victim]
+                        .connection
+                        .as_mut()
+                        .expect("the victim holds the connection");
+                    connection.preempted = true;
+                    let id = connection
+                        .event
+                        .expect("the victim's event is in progress")
+                        .id;
+                    self.requested = Some((victim, RequestKind::Cancel));
+                    return Ok(Some(PeripheralWork::Ready(RadioWork::Cancel(id))));
+                }
             }
+        }
+        // A cancelled event still holds the radio until its end arrives;
+        // the connection that took its place waits for it instead of
+        // missing its own event.
+        if self.slots.iter().any(|slot| {
+            slot.connection
+                .as_ref()
+                .is_some_and(|connection| connection.preempted && connection.event.is_some())
+        }) {
             return Ok(None);
-        };
-        let first = prepared.first_transmit_window_micros().is_some();
-        let coexistence = coexistence::peripheral_connection_level(
-            prepared.event_counter(),
-            prepared.state().supervision_anchor_event_counter(),
-            prepared.timing().interval_micros(),
-            connection.local_procedure_pending(),
-        );
-        let channel = DataChannel::new(prepared.channel().get()).expect("a data channel index");
-        let interval = RadioDuration::from_micros(u64::from(prepared.timing().interval_micros()));
-        let id = crate::controller::allocate_event(ids);
-        trace_event(Op::Requested, prepared.event_counter(), id);
-        let event = Event {
-            id,
-            reservation,
-            since_reference: plan.since_reference,
-            transmit_window: plan.transmit_window,
-        };
-        connection.submitting = Some((prepared, event));
-        self.requested = Some(RequestKind::Event);
-        Ok(Some(RadioWork::Submit(RadioRequest::ConnectionEvent(
-            ConnectionEvent {
-                id,
-                connection: CONNECTION,
-                channel,
-                window: plan.window,
-                interval,
-                timing: plan.timing,
-                priority: if first { FIRST_PRIORITY } else { PRIORITY },
-                coexistence,
-            },
-        ))))
+        }
+        for index in order {
+            let Some(connection) = self.slots[index].connection.as_ref() else {
+                continue;
+            };
+            if !connection.waits_for_event() {
+                continue;
+            }
+            let busy = self.busy();
+            let blocked = busy
+                .iter()
+                .enumerate()
+                .filter(|&(other, _)| other != index)
+                .filter_map(|(_, window)| *window);
+            let connection = self.slots[index]
+                .connection
+                .as_mut()
+                .expect("the slot holds the connection");
+            let Some((prepared, plan, reservation)) = connection.plan(earliest, timing, blocked)?
+            else {
+                if connection.closing.is_some() {
+                    self.requested = Some((index, RequestKind::Close));
+                    return Ok(Some(PeripheralWork::Ready(RadioWork::Submit(
+                        RadioRequest::CloseConnection(connection.id),
+                    ))));
+                }
+                continue;
+            };
+            self.submissions += 1;
+            self.slots[index].served = self.submissions;
+            self.requested = Some((index, RequestKind::Event));
+            let connection = self.slots[index]
+                .connection
+                .as_mut()
+                .expect("the slot holds the connection");
+            return Ok(Some(PeripheralWork::Ready(connection.submit_event(
+                ids,
+                prepared,
+                plan,
+                reservation,
+            ))));
+        }
+        Ok(None)
     }
 
-    /// The backend's answer to the last request of the connection.
+    /// Validate the first window of the slot's accepted indication and
+    /// create its connection.
+    fn validate_opening(
+        &mut self,
+        index: usize,
+        timing: RadioTiming,
+    ) -> Result<(), EpochExhausted> {
+        let Some((indication, _)) = &self.slots[index].opening else {
+            return Ok(());
+        };
+        let wire = indication.request.timing();
+        // The packet's end, then the start of the first transmit window.
+        let anchor = indication
+            .at
+            .checked_add(RadioDuration::from_micros(
+                u64::from(LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS)
+                    + u64::from(wire.first_window_start_micros()),
+            ))
+            .ok_or(error(O::ConnectionIndication, C::FirstAnchor))?;
+        let transmit_window =
+            RadioDuration::from_micros(u64::from(wire.window_size_units()) * 1_250);
+        let plan =
+            timing::first(anchor, transmit_window, timing.connection).map_err(|mut cause| {
+                cause.operation = O::ConnectionIndication;
+                cause
+            })?;
+        timing
+            .reservation(plan.window)
+            .map_err(|OutsideEpoch| error(O::ConnectionIndication, C::Reservation))?;
+        self.finish_open(index, anchor, transmit_window);
+        Ok(())
+    }
+
+    /// Settle the slot's state before its work is chosen: a connection that
+    /// closes before it reached the backend goes at once, procedures time
+    /// out, and without room for an event the supervision timeout still
+    /// runs against `now`.
+    fn prepare(&mut self, index: usize, now: LeInstant, room: bool) {
+        let slot = &mut self.slots[index];
+        let Some(connection) = slot.connection.as_mut() else {
+            return;
+        };
+        if connection.closing.is_some() && !connection.open_sent {
+            // Nothing reached the backend yet.
+            slot.connection = None;
+            return;
+        }
+        if !connection.open_sent
+            || connection.closing.is_some()
+            || connection.event.is_some()
+            || connection.submitting.is_some()
+            || connection.transmitting.is_some()
+        {
+            return;
+        }
+        connection.check_procedures(now, &mut self.events);
+        if connection.closing.is_none()
+            && !room
+            && connection.supervision_lost(now, connection.current_timing())
+        {
+            connection.closing = Some(Closing {
+                reason: Some(HciError::CONN_TIMEOUT.to_status()),
+                cancel_sent: false,
+            });
+        }
+    }
+
+    /// The slot's work other than its next event.
+    fn work(&mut self, index: usize) -> Option<Work> {
+        let connection = self.slots[index].connection.as_mut()?;
+        if connection.submitting.is_some() || connection.transmitting.is_some() {
+            return None;
+        }
+        if !connection.open_sent {
+            return Some(Work::Open);
+        }
+        if let Some(closing) = connection.closing {
+            return match connection.event {
+                Some(event) if !closing.cancel_sent => Some(Work::Cancel(event.id)),
+                Some(_) => None,
+                None => Some(Work::Close),
+            };
+        }
+        if connection.event.is_some() || connection.pending.is_some() {
+            return None;
+        }
+        let (pending, length) = connection.prepare_transmission()?;
+        Some(Work::Transmit(pending, length))
+    }
+
+    /// The request of the slot's `work`.
+    fn submit(&mut self, index: usize, work: Work) -> PeripheralWork {
+        let connection = self.slots[index]
+            .connection
+            .as_mut()
+            .expect("work belongs to a connection");
+        let id = connection.id;
+        match work {
+            Work::Open => {
+                connection.open_sent = true;
+                self.requested = Some((index, RequestKind::Open));
+                let access_address = connection.request.access_address().value().to_le_bytes();
+                PeripheralWork::Ready(RadioWork::Submit(RadioRequest::OpenConnection(
+                    ConnectionConfiguration {
+                        connection: id,
+                        access_address: AccessAddress(access_address),
+                        crc_init: CrcInit(connection.request.crc_initialization().wire_bytes()),
+                        created_at: connection.created_at,
+                        tx_power: TxPower::from_dbm(0),
+                        phy: LePhy::Le1M,
+                    },
+                )))
+            }
+            Work::Cancel(event) => {
+                if let Some(closing) = &mut connection.closing {
+                    closing.cancel_sent = true;
+                }
+                self.requested = Some((index, RequestKind::Cancel));
+                PeripheralWork::Ready(RadioWork::Cancel(event))
+            }
+            Work::Close => {
+                self.requested = Some((index, RequestKind::Close));
+                PeripheralWork::Ready(RadioWork::Submit(RadioRequest::CloseConnection(id)))
+            }
+            Work::Transmit(pending, length) => {
+                connection.transmitting = Some((pending, length));
+                let kind = match pending {
+                    Pending::Security | Pending::Control => DataPduKind::Control,
+                    Pending::Acl => connection.acl_kind(),
+                };
+                let length = connection.tx_length(pending, length);
+                self.requested = Some((index, RequestKind::Transmit));
+                PeripheralWork::Transmit {
+                    index,
+                    kind,
+                    length,
+                }
+            }
+        }
+    }
+
+    /// The transmission [`PeripheralWork::Transmit`] chose, borrowing its
+    /// PDU from the connection.
+    pub(crate) fn transmission(
+        &self,
+        index: usize,
+        kind: DataPduKind,
+        length: usize,
+    ) -> RadioWork<'_> {
+        let connection = self.slots[index]
+            .connection
+            .as_ref()
+            .expect("a transmission belongs to a connection");
+        RadioWork::Submit(RadioRequest::Transmit {
+            connection: connection.id,
+            pdu: DataPdu::new(kind, &connection.tx[..length]).expect("a legacy data PDU fits"),
+        })
+    }
+
+    /// The backend's answer to the last request of a connection.
     pub(crate) fn request_done(&mut self, accepted: bool) {
-        let Some(request) = self.requested.take() else {
+        let Some((index, request)) = self.requested.take() else {
             return;
         };
-        let Some(connection) = &mut self.connection else {
+        let slot = &mut self.slots[index];
+        let Some(connection) = &mut slot.connection else {
             return;
         };
+        let handle = connection.handle;
         match request {
             RequestKind::Open => {
                 if accepted {
@@ -644,17 +871,20 @@ impl Peripheral {
                     let request = connection.request;
                     let timing = request.timing();
                     let initiator = request.initiator();
-                    self.events.push(PeripheralEvent::Connected {
-                        peer_kind: match initiator.kind() {
-                            LeDeviceAddressKind::Public => AddrKind::PUBLIC,
-                            LeDeviceAddressKind::Random => AddrKind::RANDOM,
+                    self.events.push(
+                        handle,
+                        PeripheralEvent::Connected {
+                            peer_kind: match initiator.kind() {
+                                LeDeviceAddressKind::Public => AddrKind::PUBLIC,
+                                LeDeviceAddressKind::Random => AddrKind::RANDOM,
+                            },
+                            peer: BdAddr::new(initiator.wire_bytes()),
+                            interval_units: timing.interval_units(),
+                            latency: timing.peripheral_latency(),
+                            timeout_units: timing.supervision_timeout_units(),
+                            accuracy: clock_accuracy(request.sleep_clock_accuracy().encoded()),
                         },
-                        peer: BdAddr::new(initiator.wire_bytes()),
-                        interval_units: timing.interval_units(),
-                        latency: timing.peripheral_latency(),
-                        timeout_units: timing.supervision_timeout_units(),
-                        accuracy: clock_accuracy(request.sleep_clock_accuracy().encoded()),
-                    });
+                    );
                 } else {
                     // The opening the trace recorded closes with the reason
                     // the Host gets.
@@ -662,8 +892,9 @@ impl Peripheral {
                     crate::trace::emit(|| oer_bluetooth_trace::PeripheralClosed {
                         reason: Some(reason.into_inner()),
                     });
-                    self.connection = None;
-                    self.events.push(PeripheralEvent::ConnectionFailed(reason));
+                    slot.connection = None;
+                    self.events
+                        .push(handle, PeripheralEvent::ConnectionFailed(reason));
                 }
             }
             RequestKind::Cancel => {}
@@ -673,9 +904,10 @@ impl Peripheral {
                     reason: reason.map(Status::into_inner),
                 });
                 connection.close_procedures(&mut self.events);
-                self.connection = None;
+                slot.connection = None;
                 if let Some(reason) = reason {
-                    self.events.push(PeripheralEvent::Disconnected(reason));
+                    self.events
+                        .push(handle, PeripheralEvent::Disconnected(reason));
                 }
             }
             RequestKind::Transmit => {
@@ -721,115 +953,133 @@ impl Peripheral {
         outcome: RadioOutcome<'_>,
         random: Option<&dyn LeRandomSource>,
     ) {
-        let Some(connection) = &mut self.connection else {
+        for slot in &mut self.slots {
+            let Some(connection) = &mut slot.connection else {
+                continue;
+            };
+            match outcome {
+                RadioOutcome::Received { id, pdu } if connection.owns(id) => {
+                    self.received =
+                        connection.receive(pdu.pdu, random, self.local_version, &mut self.events);
+                }
+                RadioOutcome::TransmitAcknowledged(id) if id == connection.id => {
+                    connection.acknowledged(&mut self.events);
+                }
+                RadioOutcome::EventEnded { id, result } if connection.owns(id) => {
+                    connection.event = None;
+                    connection.preempted = false;
+                    let Link::InFlight(in_flight) =
+                        core::mem::replace(&mut connection.link, Link::Moved)
+                    else {
+                        unreachable!("an event in progress is in flight")
+                    };
+                    let activity = match result {
+                        EventResult::Executed {
+                            anchor: Some(anchor),
+                        } => {
+                            connection.phase =
+                                timing::Phase::at(anchor, RadioDuration::from_micros(0));
+                            connection.last_activity = Some(anchor);
+                            LePeripheralConnectionEventPeerActivity::Observed
+                        }
+                        // An aborted event proves no peer packet.
+                        EventResult::Executed { anchor: None }
+                        | EventResult::NotExecuted
+                        | EventResult::Aborted => LePeripheralConnectionEventPeerActivity::Missed,
+                    };
+                    trace_event(
+                        match activity {
+                            LePeripheralConnectionEventPeerActivity::Observed => Op::Observed,
+                            LePeripheralConnectionEventPeerActivity::Missed => Op::Missed,
+                        },
+                        in_flight.event_counter(),
+                        id,
+                    );
+                    connection.link = Link::Completed(in_flight.complete(activity));
+                    connection.after_event(&mut self.events);
+                }
+                _ => continue,
+            }
             return;
-        };
-        match outcome {
-            RadioOutcome::Received { id, pdu } if connection.owns(id) => {
-                self.received =
-                    connection.receive(pdu.pdu, random, self.local_version, &mut self.events);
-            }
-            RadioOutcome::TransmitAcknowledged(id) if id == CONNECTION => {
-                connection.acknowledged(&mut self.events);
-            }
-            RadioOutcome::EventEnded { id, result } if connection.owns(id) => {
-                connection.event = None;
-                let Link::InFlight(in_flight) =
-                    core::mem::replace(&mut connection.link, Link::Moved)
-                else {
-                    unreachable!("an event in progress is in flight")
-                };
-                let activity = match result {
-                    EventResult::Executed {
-                        anchor: Some(anchor),
-                    } => {
-                        connection.phase = timing::Phase::at(anchor, RadioDuration::from_micros(0));
-                        connection.last_activity = Some(anchor);
-                        LePeripheralConnectionEventPeerActivity::Observed
-                    }
-                    // An aborted event proves no peer packet.
-                    EventResult::Executed { anchor: None }
-                    | EventResult::NotExecuted
-                    | EventResult::Aborted => LePeripheralConnectionEventPeerActivity::Missed,
-                };
-                trace_event(
-                    match activity {
-                        LePeripheralConnectionEventPeerActivity::Observed => Op::Observed,
-                        LePeripheralConnectionEventPeerActivity::Missed => Op::Missed,
-                    },
-                    in_flight.event_counter(),
-                    id,
-                );
-                connection.link = Link::Completed(in_flight.complete(activity));
-                connection.after_event(&mut self.events);
-            }
-            _ => {}
         }
     }
 
-    /// Host Disconnect.
-    pub(crate) fn disconnect(&mut self, reason: u8) -> bool {
-        match &mut self.connection {
-            Some(connection) if connection.opened && connection.closing.is_none() => {
+    /// Host Disconnect of `handle`.
+    pub(crate) fn disconnect(&mut self, handle: ConnHandle, reason: u8) -> bool {
+        match self.live_mut(handle) {
+            Some(connection) => {
                 connection.control.request_host_termination(reason);
                 true
             }
-            _ => false,
+            None => false,
         }
     }
 
+    /// The connection `handle` while it is not closing; the Host may still
+    /// address one that has not reported its completion.
+    fn addressed(&mut self, handle: ConnHandle) -> Option<&mut Connection> {
+        let slot = self.slot_of(handle)?;
+        self.slots[slot]
+            .connection
+            .as_mut()
+            .filter(|c| c.closing.is_none())
+    }
+
     /// Host LE Read Remote Features: whether the request was admitted.
-    pub(crate) fn read_remote_features(&mut self, _: &LeReadRemoteFeaturesCommand) -> Admission {
-        let Some(connection) = self.connection.as_mut().filter(|c| c.closing.is_none()) else {
+    pub(crate) fn read_remote_features(
+        &mut self,
+        command: &LeReadRemoteFeaturesCommand,
+    ) -> Admission {
+        let handle = command.handle();
+        let Some(connection) = self.addressed(handle) else {
             return Admission::UnknownConnection;
         };
-        match connection.control.admit_remote_feature_request() {
-            LeRemoteFeaturesAdmission::Cached(features) => {
-                self.events
-                    .push(PeripheralEvent::RemoteFeatures(Status::SUCCESS, features));
-                Admission::Accepted
-            }
+        let features = match connection.control.admit_remote_feature_request() {
+            LeRemoteFeaturesAdmission::Cached(features) => Some(features),
             LeRemoteFeaturesAdmission::Admitted => {
-                if let Some(features) = connection.control.activate_remote_feature_request() {
-                    self.events
-                        .push(PeripheralEvent::RemoteFeatures(Status::SUCCESS, features));
-                }
-                Admission::Accepted
+                connection.control.activate_remote_feature_request()
             }
-            LeRemoteFeaturesAdmission::Busy => Admission::Disallowed,
+            LeRemoteFeaturesAdmission::Busy => return Admission::Disallowed,
+        };
+        if let Some(features) = features {
+            self.events.push(
+                handle,
+                PeripheralEvent::RemoteFeatures(Status::SUCCESS, features),
+            );
         }
+        Admission::Accepted
     }
 
     /// Host Read Remote Version Information.
     pub(crate) fn read_remote_version(
         &mut self,
-        _: &LeReadRemoteVersionInformationCommand,
+        command: &LeReadRemoteVersionInformationCommand,
     ) -> Admission {
-        let Some(connection) = self.connection.as_mut().filter(|c| c.closing.is_none()) else {
+        let handle = command.handle();
+        let Some(connection) = self.addressed(handle) else {
             return Admission::UnknownConnection;
         };
-        match connection.control.admit_remote_version_request() {
-            LeRemoteVersionAdmission::Cached(version) => {
-                self.events
-                    .push(PeripheralEvent::RemoteVersion(Status::SUCCESS, version));
-                Admission::Accepted
-            }
+        let version = match connection.control.admit_remote_version_request() {
+            LeRemoteVersionAdmission::Cached(version) => Some(version),
             LeRemoteVersionAdmission::Admitted => {
-                if let Some(version) = connection.control.activate_remote_version_request() {
-                    self.events
-                        .push(PeripheralEvent::RemoteVersion(Status::SUCCESS, version));
-                }
-                Admission::Accepted
+                connection.control.activate_remote_version_request()
             }
             LeRemoteVersionAdmission::Busy | LeRemoteVersionAdmission::LocalIdentityUnavailable => {
-                Admission::Disallowed
+                return Admission::Disallowed;
             }
+        };
+        if let Some(version) = version {
+            self.events.push(
+                handle,
+                PeripheralEvent::RemoteVersion(Status::SUCCESS, version),
+            );
         }
+        Admission::Accepted
     }
 
-    /// Host LE Long Term Key Request Reply or Negative Reply.
-    pub(crate) fn long_term_key(&mut self, key: Option<[u8; 16]>) -> Admission {
-        let Some(connection) = self.connection.as_mut().filter(|c| c.closing.is_none()) else {
+    /// Host LE Long Term Key Request Reply or Negative Reply for `handle`.
+    pub(crate) fn long_term_key(&mut self, handle: ConnHandle, key: Option<[u8; 16]>) -> Admission {
+        let Some(connection) = self.addressed(handle) else {
             return Admission::UnknownConnection;
         };
         let result = match key {
@@ -849,33 +1099,38 @@ impl Peripheral {
     /// or not yet.
     #[cfg(feature = "diagnostic-mic-fault")]
     pub(crate) fn arm_mic_corruption(&mut self, handle: ConnHandle) -> Status {
-        if self.handle() != Some(handle) {
+        if !self.is_live(handle) {
             return HciError::UNKNOWN_CONN_IDENTIFIER.to_status();
         }
-        match self.connection.as_mut() {
-            Some(connection) if connection.closing.is_none() => {
+        match self.addressed(handle) {
+            Some(connection) => {
                 connection.corrupt_next_mic = true;
                 Status::SUCCESS
             }
-            _ => HciError::CMD_DISALLOWED.to_status(),
+            None => HciError::CMD_DISALLOWED.to_status(),
         }
     }
 
-    /// Whether a Host ACL packet can be taken now.
-    pub(crate) fn acl_ready(&self) -> bool {
-        self.connection
-            .as_ref()
-            .is_some_and(|connection| connection.host_acl.is_none())
+    /// The handles whose connection still holds a Host ACL packet and
+    /// takes no other now.
+    pub(crate) fn acl_busy(&self) -> [Option<ConnHandle>; N] {
+        core::array::from_fn(|index| {
+            self.slots[index]
+                .connection
+                .as_ref()
+                .filter(|connection| connection.host_acl.is_some())
+                .map(|connection| connection.handle)
+        })
     }
 
-    /// Take one Host ACL packet. A packet the connection cannot carry is
+    /// Take one Host ACL packet. A packet no connection can carry is
     /// discarded.
     pub(crate) fn acl(&mut self, packet: AclPacket<'_>, capacity: u16) {
-        let handle = self.handle();
-        let Some(connection) = &mut self.connection else {
+        let handle = packet.handle();
+        let Some(connection) = self.live_mut(handle) else {
             return;
         };
-        if let Ok(packet) = LeHostAclPacket::copy_from(packet, handle, capacity) {
+        if let Ok(packet) = LeHostAclPacket::copy_from(packet, Some(handle), capacity) {
             connection.host_acl = Some(packet);
         }
     }
@@ -900,6 +1155,133 @@ pub(crate) enum Admission {
 }
 
 impl Connection {
+    /// The reservation of the next event at its nominal anchor, which other
+    /// roles leave free.
+    fn planned(&self, timing: RadioTiming) -> Result<Option<LeWindow>, EpochExhausted> {
+        if self.closing.is_some() {
+            return Ok(None);
+        }
+        // The event one interval after the last one, as the Link Layer will
+        // prepare it: an update's instant moves it by the updated window
+        // offset and listens across the updated transmit window.
+        let (previous, following, transmit_window) = match (&self.link, self.event) {
+            // The first event is the next one.
+            (Link::Created(_), _) => {
+                let plan = timing::first(
+                    self.phase.reference,
+                    self.phase.transmit_window,
+                    timing.connection,
+                )
+                .map_err(|mut cause| {
+                    cause.operation = O::FutureReservation;
+                    cause
+                })?;
+                return timing
+                    .reservation(plan.window)
+                    .map(Some)
+                    .map_err(|OutsideEpoch| error(O::FutureReservation, C::Reservation));
+            }
+            (Link::InFlight(in_flight), Some(event)) => (
+                event.since_reference,
+                in_flight.following_event(),
+                event.transmit_window,
+            ),
+            (Link::Completed(completed), _) => (
+                self.phase.since_reference,
+                completed.following_event(),
+                self.phase.transmit_window,
+            ),
+            (Link::InFlight(_), None) | (Link::Moved, _) => {
+                unreachable!(
+                    "an event in flight is outstanding, and a link moves only within planning"
+                )
+            }
+        };
+        let (span, transmit_window) = match following {
+            LeFollowingEvent::Unchanged(timing) => {
+                (u64::from(timing.interval_micros()), transmit_window)
+            }
+            // An interval of at most 4 s and an offset of at most 82 s.
+            LeFollowingEvent::Instant { previous, updated } => (
+                u64::from(previous.interval_micros())
+                    + u64::from(updated.window_offset_units()) * 1_250,
+                RadioDuration::from_micros(u64::from(updated.window_size_units()) * 1_250),
+            ),
+        };
+        // A span past `u64::MAX` cannot lie in the epoch either.
+        let since_reference = previous
+            .checked_add(RadioDuration::from_micros(span))
+            .ok_or(error(O::FutureReservation, C::Recurrence))?;
+        let plan = timing::recurring(
+            self.phase.reference,
+            since_reference,
+            transmit_window,
+            self.request.sleep_clock_accuracy().worst_case_ppm(),
+            timing.connection,
+        )?;
+        timing
+            .reservation(plan.window)
+            .map(Some)
+            .map_err(|OutsideEpoch| error(O::FutureReservation, C::Reservation))
+    }
+
+    /// Whether the connection's next event is due: it is open, not closing,
+    /// and has no request or event outstanding.
+    fn waits_for_event(&self) -> bool {
+        self.open_sent
+            && self.closing.is_none()
+            && self.event.is_none()
+            && self.submitting.is_none()
+            && self.transmitting.is_none()
+    }
+
+    /// When the supervision timeout ends the connection without another
+    /// received packet, in radio microseconds; the earliest wins a conflict.
+    fn supervision_deadline(&self) -> u64 {
+        let since = self.last_activity.unwrap_or(self.phase.reference);
+        since.as_micros().saturating_add(u64::from(
+            self.current_timing().supervision_timeout_micros(),
+        ))
+    }
+
+    /// The request of a planned event.
+    fn submit_event(
+        &mut self,
+        ids: &mut u32,
+        prepared: LePeripheralConnectionEventPrepared,
+        plan: timing::Plan,
+        reservation: LeWindow,
+    ) -> RadioWork<'static> {
+        let first = prepared.first_transmit_window_micros().is_some();
+        let coexistence = coexistence::peripheral_connection_level(
+            prepared.event_counter(),
+            prepared.state().supervision_anchor_event_counter(),
+            prepared.timing().interval_micros(),
+            self.local_procedure_pending(),
+        );
+        let channel = DataChannel::new(prepared.channel().get()).expect("a data channel index");
+        let interval = RadioDuration::from_micros(u64::from(prepared.timing().interval_micros()));
+        let id = crate::controller::allocate_event(ids);
+        trace_event(Op::Requested, prepared.event_counter(), id);
+        let event = Event {
+            id,
+            reservation,
+            since_reference: plan.since_reference,
+            transmit_window: plan.transmit_window,
+        };
+        self.submitting = Some((prepared, event));
+        RadioWork::Submit(RadioRequest::ConnectionEvent(ConnectionEvent {
+            id,
+            connection: self.id,
+            channel,
+            window: plan.window,
+            interval,
+            timing: plan.timing,
+            priority: if first { FIRST_PRIORITY } else { PRIORITY },
+            coexistence,
+        }))
+    }
+
     fn owns(&self, id: EventId) -> bool {
         self.event.is_some_and(|event| event.id == id)
     }
@@ -1006,7 +1388,7 @@ impl Connection {
                     packet.observe_fragment_completion(true);
                     if packet.is_complete() {
                         self.host_acl = None;
-                        events.push(PeripheralEvent::CompletedPackets(1));
+                        events.push(self.handle, PeripheralEvent::CompletedPackets(1));
                     }
                 }
             }
@@ -1050,7 +1432,7 @@ impl Connection {
             match self.control.receive(decoded, local_version) {
                 Ok(LePeripheralReceive::Data(fragment)) => {
                     received = LeControllerAclPacket::copy_from_ll(
-                        handle(),
+                        self.handle,
                         fragment.is_continuing(),
                         fragment.payload(),
                     );
@@ -1079,16 +1461,22 @@ impl Connection {
     /// Report procedure results and required terminations.
     fn poll_procedures(&mut self, events: &mut Events) {
         if let Some(request) = self.security.take_long_term_key_request() {
-            events.push(PeripheralEvent::LongTermKeyRequest {
-                random: request.random_number(),
-                diversifier: request.encrypted_diversifier(),
-            });
+            events.push(
+                self.handle,
+                PeripheralEvent::LongTermKeyRequest {
+                    random: request.random_number(),
+                    diversifier: request.encrypted_diversifier(),
+                },
+            );
         }
         if self.security.take_encryption_enabled() {
-            events.push(PeripheralEvent::EncryptionChanged(Status::SUCCESS, true));
+            events.push(
+                self.handle,
+                PeripheralEvent::EncryptionChanged(Status::SUCCESS, true),
+            );
         }
         if self.security.take_encryption_refreshed() {
-            events.push(PeripheralEvent::KeyRefreshed(Status::SUCCESS));
+            events.push(self.handle, PeripheralEvent::KeyRefreshed(Status::SUCCESS));
         }
         match self.security.termination() {
             Some(LePeripheralEncryptionTermination::Terminate(reason)) => {
@@ -1103,13 +1491,13 @@ impl Connection {
             Some(LePeripheralEncryptionTermination::Exit) | None => {}
         }
         if let Some(result) = self.control.take_remote_features_result() {
-            events.push(features_event(result));
+            events.push(self.handle, features_event(result));
         }
         if let Some(result) = self.control.take_remote_version_result() {
-            events.push(version_event(result));
+            events.push(self.handle, version_event(result));
         }
         if let Some(lengths) = self.control.take_data_length_change() {
-            events.push(PeripheralEvent::DataLengthChanged(lengths));
+            events.push(self.handle, PeripheralEvent::DataLengthChanged(lengths));
         }
     }
 
@@ -1185,11 +1573,14 @@ impl Connection {
             && transition.host_parameters_changed()
         {
             let timing = transition.updated();
-            events.push(PeripheralEvent::ConnectionUpdated {
-                interval_units: timing.interval_units(),
-                latency: timing.peripheral_latency(),
-                timeout_units: timing.supervision_timeout_units(),
-            });
+            events.push(
+                self.handle,
+                PeripheralEvent::ConnectionUpdated {
+                    interval_units: timing.interval_units(),
+                    latency: timing.peripheral_latency(),
+                    timeout_units: timing.supervision_timeout_units(),
+                },
+            );
         }
         let mut failure = None;
         if let Some(update) = self.channel_map.take()
@@ -1230,11 +1621,14 @@ impl Connection {
         self.poll_procedures(events);
     }
 
-    /// Plan the next event no earlier than `earliest`.
+    /// Plan the next event no earlier than `earliest`; an event whose
+    /// reservation overlaps a `blocked` one, another connection's event in
+    /// progress, is missed.
     fn plan(
         &mut self,
         earliest: LeInstant,
         timing: RadioTiming,
+        blocked: impl Iterator<Item = LeWindow> + Clone,
     ) -> Result<Option<(LePeripheralConnectionEventPrepared, timing::Plan, LeWindow)>, EpochExhausted>
     {
         match core::mem::replace(&mut self.link, Link::Moved) {
@@ -1259,7 +1653,9 @@ impl Connection {
                         return Err(cause);
                     }
                 };
-                if plan.window.start() >= earliest {
+                if plan.window.start() >= earliest
+                    && !blocked.clone().any(|window| window.overlaps(reservation))
+                {
                     return Ok(Some((prepared, plan, reservation)));
                 }
                 // A legitimate missed first window advances the LL policy.
@@ -1268,9 +1664,9 @@ impl Connection {
                         .into_submitted()
                         .complete(LePeripheralConnectionEventPeerActivity::Missed),
                 );
-                self.plan(earliest, timing)
+                self.plan(earliest, timing, blocked)
             }
-            Link::Completed(completed) => self.plan_recurring(completed, earliest, timing),
+            Link::Completed(completed) => self.plan_recurring(completed, earliest, timing, blocked),
             link => {
                 self.link = link;
                 Ok(None)
@@ -1283,6 +1679,7 @@ impl Connection {
         mut completed: LePeripheralConnectionEventCompleted,
         earliest: LeInstant,
         timing: RadioTiming,
+        blocked: impl Iterator<Item = LeWindow> + Clone,
     ) -> Result<Option<(LePeripheralConnectionEventPrepared, timing::Plan, LeWindow)>, EpochExhausted>
     {
         let peer_ppm = self.request.sleep_clock_accuracy().worst_case_ppm();
@@ -1319,6 +1716,14 @@ impl Connection {
                     .reservation(plan.window)
                     .map_err(|OutsideEpoch| error(O::Event, C::Reservation))?;
                 if plan.window.start() >= earliest {
+                    if blocked.clone().any(|window| window.overlaps(reservation)) {
+                        // Another connection holds the radio: this event is
+                        // missed, the next one tried.
+                        return Ok(match delta.checked_add(1) {
+                            Some(next) => RecurringCandidate::Late(next),
+                            None => RecurringCandidate::Lost(HciError::CONN_TIMEOUT.to_status()),
+                        });
+                    }
                     return Ok(RecurringCandidate::Ready(plan, reservation));
                 }
                 let interval = RadioDuration::<LeRadio>::from_micros(u64::from(

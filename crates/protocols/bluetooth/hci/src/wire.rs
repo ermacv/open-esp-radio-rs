@@ -16,14 +16,14 @@ pub struct HciCommandPacket<'packet> {
     parameters: &'packet [u8],
 }
 
-impl HciCommandPacket<'_> {
+impl<'packet> HciCommandPacket<'packet> {
     /// Command opcode, including its OGF and OCF fields.
     pub const fn opcode(&self) -> Opcode {
         self.opcode
     }
 
     /// Complete command parameter bytes following the three-byte HCI header.
-    pub const fn parameters(&self) -> &[u8] {
+    pub const fn parameters(&self) -> &'packet [u8] {
         self.parameters
     }
 

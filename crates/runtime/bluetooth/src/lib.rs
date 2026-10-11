@@ -136,9 +136,10 @@ pub async fn serve<
     const C2H: usize,
     const PACKET: usize,
     const OUTPUT: usize,
+    const CONNECTIONS: usize,
 >(
     transport: &InProcessHciControllerTransport<'_, M, H2C, C2H, PACKET>,
-    core: &mut LeController<'_, OUTPUT>,
+    core: &mut LeController<'_, OUTPUT, CONNECTIONS>,
     radio: &P,
     timer: &impl Timer,
     stop: impl Future<Output = ()>,
@@ -159,8 +160,8 @@ where
 
 /// Disable `radio` and feed every outcome to `core` until the port reports
 /// `Disabled`.
-async fn stop_port<P: LeRadioPort, const OUTPUT: usize>(
-    core: &mut LeController<'_, OUTPUT>,
+async fn stop_port<P: LeRadioPort, const OUTPUT: usize, const CONNECTIONS: usize>(
+    core: &mut LeController<'_, OUTPUT, CONNECTIONS>,
     radio: &P,
 ) -> Result<(), StopError<P::Fault>> {
     loop {
@@ -190,8 +191,8 @@ async fn stop_port<P: LeRadioPort, const OUTPUT: usize>(
 }
 
 /// Feed the next outcome to `core`; the lifecycle terminal it was, if any.
-async fn take_outcome<P: LeRadioPort, const OUTPUT: usize>(
-    core: &mut LeController<'_, OUTPUT>,
+async fn take_outcome<P: LeRadioPort, const OUTPUT: usize, const CONNECTIONS: usize>(
+    core: &mut LeController<'_, OUTPUT, CONNECTIONS>,
     radio: &P,
 ) -> Result<Option<LifecycleEvent>, StopError<P::Fault>> {
     match radio.next_event().await {
@@ -217,9 +218,10 @@ async fn serve_until<
     const C2H: usize,
     const PACKET: usize,
     const OUTPUT: usize,
+    const CONNECTIONS: usize,
 >(
     transport: &InProcessHciControllerTransport<'_, M, H2C, C2H, PACKET>,
-    core: &mut LeController<'_, OUTPUT>,
+    core: &mut LeController<'_, OUTPUT, CONNECTIONS>,
     radio: &P,
     timer: &impl Timer,
     stop: impl Future<Output = ()>,
@@ -309,7 +311,8 @@ where
 
         // Take the next command, or ACL data while the connection takes it.
         if core.is_command_ready() {
-            match transport.try_receive_admitted(&mut buffer, core.is_acl_ready()) {
+            let admission = core.acl_admission();
+            match transport.try_receive_admitted(&mut buffer, |handle| admission.admits(handle)) {
                 Ok(HostToControllerFrame::Command(command)) => {
                     core.command(command)
                         .expect("the core is ready for a command");
@@ -331,14 +334,16 @@ where
 
         // Wait for any of them to make progress.
         let command_ready = core.is_command_ready();
-        let acl_ready = core.is_acl_ready();
+        let admission = core.acl_admission();
         let publishing = core.front().is_some();
         let retry = retry_at.filter(|_| core.wants_radio() && !unsupported);
         let event = select4(
             radio.next_event(),
             async {
                 if command_ready {
-                    transport.wait_receive_admitted(acl_ready).await;
+                    transport
+                        .wait_receive_admitted(|handle| admission.admits(handle))
+                        .await;
                 } else {
                     core::future::pending::<()>().await;
                 }

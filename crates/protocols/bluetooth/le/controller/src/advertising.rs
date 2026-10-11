@@ -117,6 +117,8 @@ enum SetKind {
 struct Outstanding {
     id: EventId,
     reservation: LeWindow,
+    /// A connection event took its place; its cancel is sent.
+    preempted: bool,
 }
 
 #[derive(Debug)]
@@ -534,6 +536,27 @@ impl Advertiser {
         self.outstanding.map(|event| event.reservation)
     }
 
+    /// The submitted event a connection event may take the place of: one
+    /// of a running set, not cancelled yet.
+    pub(crate) fn preemptible(&self) -> Option<(EventId, LeWindow)> {
+        self.outstanding
+            .filter(|event| self.phase == Phase::Running && !event.preempted)
+            .map(|event| (event.id, event.reservation))
+    }
+
+    /// Whether a cancelled event still holds the radio until its end.
+    pub(crate) fn is_preempted(&self) -> bool {
+        self.outstanding.is_some_and(|event| event.preempted)
+    }
+
+    /// A connection event takes the submitted event's place: its cancel is
+    /// sent, and its end follows as usual.
+    pub(crate) fn preempt(&mut self) {
+        if let Some(event) = &mut self.outstanding {
+            event.preempted = true;
+        }
+    }
+
     /// Validate the whole event and its required successor before committing.
     pub(crate) fn build(
         &mut self,
@@ -554,6 +577,7 @@ impl Advertiser {
         self.outstanding = Some(Outstanding {
             id,
             reservation: reserved,
+            preempted: false,
         });
         self.commit(continuation);
         Ok(RadioRequest::Advertise(AdvertisingEvent {

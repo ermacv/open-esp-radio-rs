@@ -45,7 +45,7 @@ pub const LE_ENCRYPTION_CHANGE_EVENT_CAPACITY: usize = 6;
 /// Complete Encryption Key Refresh Complete event size without an H4 indicator.
 pub const LE_ENCRYPTION_KEY_REFRESH_COMPLETE_EVENT_CAPACITY: usize = 5;
 
-/// Host-provided LTK for the sole live Peripheral connection.
+/// Host-provided LTK for the Peripheral connection the handle names.
 pub struct LeLongTermKeyRequestReplyCommand {
     handle: ConnHandle,
     long_term_key: [u8; 16],
@@ -356,13 +356,13 @@ pub struct LeDisconnectCommand {
     reason: u8,
 }
 
-/// Owned request to fetch page zero of the sole live peer's LE features.
+/// Owned request to fetch page zero of the connection peer's LE features.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LeReadRemoteFeaturesCommand {
     handle: ConnHandle,
 }
 
-/// Owned request to fetch the sole live LE peer's Link Layer version.
+/// Owned request to fetch the connection peer's Link Layer version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LeReadRemoteVersionInformationCommand {
     handle: ConnHandle,

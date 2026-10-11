@@ -18,7 +18,8 @@ pub(crate) struct Proposal {
 }
 
 /// The earliest start in `[earliest, latest]` whose reservation
-/// `[start - lead, start + duration)` overlaps no busy reservation.
+/// `[start - lead, start + duration)` overlaps no busy reservation; `busy`
+/// holds each role's reservations as one group.
 ///
 /// # Errors
 ///
@@ -26,18 +27,17 @@ pub(crate) struct Proposal {
 pub(crate) fn place(
     proposal: Proposal,
     timing: RadioTiming,
-    busy: &[Option<LeWindow>],
+    busy: &[&[Option<LeWindow>]],
 ) -> Result<Option<LeInstant>, OutsideEpoch> {
     let mut start = proposal.earliest;
     if start > proposal.latest {
         return Ok(None);
     }
+    let windows = || busy.iter().copied().flatten().flatten();
     // Each pass either settles or moves past one busy reservation.
-    for _ in 0..=busy.len() {
+    for _ in 0..=windows().count() {
         let reserved = reservation(start, proposal.duration, timing)?;
-        match busy
-            .iter()
-            .flatten()
+        match windows()
             .filter(|window| window.overlaps(reserved))
             .map(|window| window.end())
             .max()
@@ -124,7 +124,7 @@ mod tests {
             place(
                 proposal(1_000, 2_000, 500),
                 TIMING,
-                &[None, busy(5_000, 100)]
+                &[&[None, busy(5_000, 100)]]
             ),
             Ok(Some(LeInstant::from_micros(1_000)))
         );
@@ -135,10 +135,13 @@ mod tests {
         // Busy 1_000..1_500 (reservation 900..1_500); then 1_700..1_800.
         let busy = [busy(1_000, 500), busy(1_700, 100)];
         assert_eq!(
-            place(proposal(1_000, 5_000, 200), TIMING, &busy),
+            place(proposal(1_000, 5_000, 200), TIMING, &[&busy]),
             Ok(Some(LeInstant::from_micros(1_900)))
         );
-        assert_eq!(place(proposal(1_000, 1_800, 200), TIMING, &busy), Ok(None));
+        assert_eq!(
+            place(proposal(1_000, 1_800, 200), TIMING, &[&busy]),
+            Ok(None)
+        );
     }
     #[test]
     fn a_conflict_is_no_work_but_geometry_outside_the_epoch_is_an_error() {
@@ -148,7 +151,7 @@ mod tests {
             Err(OutsideEpoch)
         );
         assert_eq!(
-            place(proposal(1_000, 1_200, 100), TIMING, &[busy(1_000, 500)]),
+            place(proposal(1_000, 1_200, 100), TIMING, &[&[busy(1_000, 500)]]),
             Ok(None)
         );
     }

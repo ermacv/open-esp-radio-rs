@@ -16,6 +16,7 @@ use crate::{LeController, LeControllerConfig, LeVersionInformation, PLANNING_SLA
 
 mod accept_list;
 mod connection;
+mod connections;
 
 pub(super) const TIMING: RadioTiming = RadioTiming {
     preparation_lead: RadioDuration::from_micros(300),
@@ -141,12 +142,24 @@ impl From<RadioWork<'_>> for Request {
     }
 }
 
-struct Harness {
-    core: LeController<'static, OUTPUT>,
+/// A Controller of `C` connections and an output of `O` packets under
+/// test.
+struct Bench<const C: usize, const O: usize> {
+    core: LeController<'static, O, C>,
     now: u64,
 }
 
-impl Harness {
+/// The single-connection Controller.
+type Harness = Bench<1, OUTPUT>;
+
+/// Output of a two-connection Controller: room for both connections' events
+/// in flight and the next one.
+const PAIR_OUTPUT: usize = 32;
+
+/// The two-connection Controller.
+type Pair = Bench<2, PAIR_OUTPUT>;
+
+impl<const C: usize, const O: usize> Bench<C, O> {
     fn new() -> Self {
         Self {
             core: LeController::new(config(), Some(&RANDOM)),
@@ -359,7 +372,7 @@ fn le_rand_uses_the_random_source_or_is_unknown_without_one() {
     assert_eq!(packets[0][5], SUCCESS);
     assert_eq!(&packets[0][6..14], &[1, 2, 3, 4, 5, 6, 7, 8]);
 
-    let mut core = LeController::<OUTPUT>::new(config(), None);
+    let mut core = LeController::<OUTPUT, 1>::new(config(), None);
     core.command(HciCommandPacket::new(LE_RAND, &[])).unwrap();
     assert_eq!(core.front().unwrap().as_bytes()[5], 0x01);
 }
@@ -409,7 +422,7 @@ fn advertising_pdu_carries_the_public_address_and_host_data() {
 #[test]
 fn connectable_advertising_needs_entropy_and_a_set_random_address() {
     // Defaults describe connectable undirected advertising.
-    let mut core = LeController::<OUTPUT>::new(config(), None);
+    let mut core = LeController::<OUTPUT, 1>::new(config(), None);
     core.command(HciCommandPacket::new(RESET, &[])).unwrap();
     core.pop();
     core.command(HciCommandPacket::new(SET_ADV_ENABLE, &[1]))

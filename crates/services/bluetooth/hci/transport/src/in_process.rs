@@ -6,7 +6,7 @@ use bt_hci::{
     FromHciBytes, FromHciBytesError, PacketKind, ReadHciError,
     cmd::controller_baseband::HostNumberOfCompletedPackets,
     data::{AclPacket, IsoPacket, SyncPacket},
-    param::ConnHandleCompletedPackets,
+    param::{ConnHandle, ConnHandleCompletedPackets},
     transport::{PacketToController, PacketToHost, Transport},
 };
 
@@ -546,15 +546,17 @@ where
         decode_host_slot(slot, buffer)
     }
 
-    /// Consume the oldest admitted Host packet: while `acl_ready` is false,
-    /// commands bypass queued ACL data, keeping FIFO order within each class.
+    /// Consume the oldest admitted Host packet: a command, or ACL data whose
+    /// connection handle `admit_acl` admits. Commands and every handle's
+    /// data each keep their FIFO order; data of a refused handle waits
+    /// without holding back the others.
     pub fn try_receive_admitted<'buffer>(
         &self,
         buffer: &'buffer mut [u8],
-        acl_ready: bool,
+        admit_acl: impl Fn(ConnHandle) -> bool,
     ) -> Result<HostToControllerFrame<'buffer>, HciChannelError> {
         require_profile_buffer::<PACKET_CAPACITY>(buffer.len())?;
-        let slot = self.host_to_controller.try_receive_admitted(acl_ready)?;
+        let slot = self.host_to_controller.try_receive_admitted(admit_acl)?;
         decode_host_slot(slot, buffer)
     }
 
@@ -565,10 +567,10 @@ where
         self.host_to_controller.wait_receive_ready().await;
     }
 
-    /// Wait until an admitted packet is available under the ACL gate.
-    pub async fn wait_receive_admitted(&self, acl_ready: bool) {
+    /// Wait until an admitted packet is available under `admit_acl`.
+    pub async fn wait_receive_admitted(&self, admit_acl: impl Fn(ConnHandle) -> bool) {
         self.host_to_controller
-            .wait_receive_admitted(acl_ready)
+            .wait_receive_admitted(admit_acl)
             .await;
     }
 

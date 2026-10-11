@@ -35,6 +35,9 @@ pub const CONTROLLER_TO_HOST: usize = 8;
 pub const PACKET: usize = 258;
 /// Controller-to-Host packets the core queues.
 pub const OUTPUT: usize = 12;
+/// Connections the Controller holds at once: the product's one peripheral
+/// connection until #376 derives the capacity from the radio role's.
+pub const CONNECTIONS: usize = 1;
 /// LE ACL data length reported to the Host.
 const ACL_DATA_LENGTH: u16 = 251;
 
@@ -62,7 +65,7 @@ type ControllerTransport = InProcessHciControllerTransport<
 >;
 
 static RESOURCES: StaticCell<Resources> = StaticCell::new();
-static CORE: StaticCell<LeController<'static, OUTPUT>> = StaticCell::new();
+static CORE: StaticCell<LeController<'static, OUTPUT, CONNECTIONS>> = StaticCell::new();
 
 /// The SoC entropy service as the Controller's random source.
 pub struct BluetoothEntropy<'d> {
@@ -93,7 +96,7 @@ pub struct BluetoothHci {
 /// Serves the Host over the radio port of the running client.
 pub struct BluetoothHciService {
     transport: ControllerTransport,
-    core: &'static mut LeController<'static, OUTPUT>,
+    core: &'static mut LeController<'static, OUTPUT, CONNECTIONS>,
     config: LeControllerConfig,
     random: &'static (dyn LeRandomSource + 'static),
     retired: Option<HciRetired<'static>>,
@@ -185,7 +188,7 @@ impl BluetoothHciService {
     reason = "the Controller core is rebuilt once per Host epoch in its static place; the linked image's stack gate and runtime stack painting check its stack use"
 )]
 fn reset_core(
-    core: &mut LeController<'static, OUTPUT>,
+    core: &mut LeController<'static, OUTPUT, CONNECTIONS>,
     config: LeControllerConfig,
     random: &'static (dyn LeRandomSource + 'static),
 ) {

@@ -16,6 +16,8 @@
 //!   classifies it, names an existing chip or family and input files, and
 //!   its name follows the rule; every dependency keeps the layer, platform
 //!   and role rules of [`oer_repo::policy`];
+//! - [`components`]: the documents that describe the dependency table of
+//!   Blobray and the shared RV32 layer state it exactly;
 //! - [`spawns`]: only entry crates run `cargo hil` or `cargo xtask`;
 //! - [`layouts`]: code relying on a foreign type's layout names the release
 //!   it was reviewed at, and its workspace still locks that release;
@@ -32,6 +34,7 @@ pub mod agents;
 pub mod allowlist;
 pub mod applications;
 pub mod classification;
+pub mod components;
 pub mod dependencies;
 pub mod fetch;
 pub mod layouts;
@@ -130,6 +133,10 @@ pub fn run(repo: &Repo) -> Result<Vec<Outcome>> {
         Outcome {
             check: "layer dependencies",
             problems: oer_repo::policy::check(&context.model),
+        },
+        Outcome {
+            check: "component documents",
+            problems: components::check(&context)?,
         },
         Outcome {
             check: "host applications",

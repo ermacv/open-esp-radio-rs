@@ -151,6 +151,91 @@ pub fn application_edge_allowed(source: HostApp, target: HostApp, boundary: Host
     permitted && (target != Formats || boundary == HostBoundary::Format)
 }
 
+/// The local packages each package of the shared RISC-V layer (host
+/// application `analysis`) and of Blobray may depend on through a normal or
+/// build dependency: the one table [`tools/riscv`](../../riscv/README.md) and
+/// [Blobray's architecture](../../blobray/docs/design/architecture.md#crates-and-modules)
+/// describe. The `oer-riscv-*` crates are Blobray's ISA layer: its
+/// application may use the ISA-neutral model, the function analysis and the
+/// static image view, and its command line selects the concrete decoder.
+/// Dependencies on other applications' shared libraries follow
+/// [`application_edge_allowed`].
+pub const COMPONENTS: &[(&str, &[&str])] = &[
+    ("oer-elf", &[]),
+    ("oer-riscv-model", &[]),
+    ("oer-riscv-decode", &[]),
+    (
+        "oer-riscv-lift",
+        &["oer-elf", "oer-riscv-decode", "oer-riscv-model"],
+    ),
+    ("oer-riscv-analysis", &["oer-riscv-model"]),
+    ("oer-riscv-program", &["oer-elf", "oer-riscv-model"]),
+    (
+        "oer-riscv-stack",
+        &[
+            "oer-elf",
+            "oer-riscv-analysis",
+            "oer-riscv-decode",
+            "oer-riscv-lift",
+            "oer-riscv-model",
+            "oer-riscv-program",
+        ],
+    ),
+    ("blobray-domain", &["oer-riscv-model"]),
+    (
+        "blobray-artifacts",
+        &["blobray-domain", "oer-riscv-model", "oer-riscv-program"],
+    ),
+    (
+        "blobray-analysis",
+        &["blobray-domain", "oer-riscv-analysis", "oer-riscv-model"],
+    ),
+    (
+        "blobray-backend-riscv",
+        &[
+            "blobray-domain",
+            "oer-riscv-decode",
+            "oer-riscv-lift",
+            "oer-riscv-model",
+        ],
+    ),
+    (
+        "blobray-verification",
+        &["blobray-domain", "oer-riscv-model"],
+    ),
+    (
+        "blobray-application",
+        &[
+            "blobray-analysis",
+            "blobray-artifacts",
+            "blobray-domain",
+            "blobray-verification",
+            "oer-riscv-analysis",
+            "oer-riscv-model",
+            "oer-riscv-program",
+        ],
+    ),
+    (
+        "blobray-linker",
+        &["blobray-application", "blobray-domain", "oer-riscv-model"],
+    ),
+    (
+        "blobray-cli",
+        &[
+            "blobray-application",
+            "blobray-backend-riscv",
+            "blobray-domain",
+            "oer-riscv-lift",
+            "oer-riscv-model",
+        ],
+    ),
+];
+
+/// Whether `app` is one whose packages [`COMPONENTS`] lists.
+fn has_components(app: Option<HostApp>) -> bool {
+    matches!(app, Some(HostApp::Analysis | HostApp::Blobray))
+}
+
 /// Every dependency of the model that breaks a rule, as
 /// `<manifest>: <problem>`. Unclassified packages are the classification
 /// check's; their edges are skipped.
@@ -164,6 +249,17 @@ pub fn check(model: &Model) -> Vec<String> {
         let mut problem = |message: String| {
             problems.push(format!("{}: {message}", package.manifest));
         };
+        let components = COMPONENTS
+            .iter()
+            .find(|(name, _)| *name == package.name)
+            .map(|(_, allowed)| *allowed);
+        if has_components(source.host_app) && components.is_none() {
+            problem(format!(
+                "{} package {} has no row in the component table (oer_repo::policy::COMPONENTS)",
+                source.host_app.map_or("?", HostApp::name),
+                package.name
+            ));
+        }
         for dependency in &package.dependencies {
             let target = model
                 .target(dependency)
@@ -187,6 +283,16 @@ pub fn check(model: &Model) -> Vec<String> {
                         target_app.name(),
                         boundary.name(),
                         target.name
+                    ));
+                }
+                if let Some(allowed) = components
+                    && has_components(class.host_app)
+                    && dependency.kind != Kind::Development
+                    && !allowed.contains(&target.name.as_str())
+                {
+                    problem(format!(
+                        "{} depends on {}, which its row of the component table (oer_repo::policy::COMPONENTS) does not allow",
+                        package.name, target.name
                     ));
                 }
                 if !host_edge_allowed(source.host_layer, class.host_layer) {
@@ -497,11 +603,66 @@ mod tests {
     }
 
     #[test]
+    fn blobray_and_the_riscv_layer_depend_only_as_the_component_table_allows() {
+        let class = |app: &str| {
+            format!(
+                "layer = \"tool\"\nplatform = \"host\"\nhost-layer = \"build\"\nhost-app = \"{app}\"\nhost-boundary = \"library\""
+            )
+        };
+        let pair = |source: (&str, &str), target: (&str, &str), section: &str| {
+            problems(&[
+                (
+                    "s/Cargo.toml",
+                    manifest(
+                        source.0,
+                        &class(source.1),
+                        &format!("[{section}]\n{} = {{ path = \"../t\" }}", target.0),
+                    ),
+                ),
+                ("t/Cargo.toml", manifest(target.0, &class(target.1), "")),
+            ])
+        };
+        let application = ("blobray-application", "blobray");
+        let domain = ("blobray-domain", "blobray");
+        let program = ("oer-riscv-program", "analysis");
+        // Rows allow exactly their listed edges, across the two applications.
+        assert!(pair(application, domain, "dependencies").is_empty());
+        assert!(pair(application, program, "build-dependencies").is_empty());
+        assert_eq!(
+            pair(domain, application, "dependencies"),
+            [
+                "s/Cargo.toml: blobray-domain depends on blobray-application, which its row of the component table (oer_repo::policy::COMPONENTS) does not allow"
+            ]
+        );
+        assert_eq!(
+            pair(program, ("oer-riscv-analysis", "analysis"), "dependencies").len(),
+            1
+        );
+        // Tests may use any package.
+        assert!(pair(domain, application, "dev-dependencies").is_empty());
+        // A package of either application must have a row.
+        assert_eq!(
+            pair(("blobray-extra", "blobray"), domain, "dependencies"),
+            [
+                "s/Cargo.toml: blobray package blobray-extra has no row in the component table (oer_repo::policy::COMPONENTS)"
+            ]
+        );
+    }
+
+    #[test]
     fn applications_link_only_their_declared_shared_boundaries() {
         let host = |app: &str, boundary: &str| {
             format!(
                 "layer = \"tool\"\nplatform = \"host\"\nhost-layer = \"entry\"\nhost-app = \"{app}\"\nhost-boundary = \"{boundary}\""
             )
+        };
+        // The synthetic Blobray package has no component-table row; that rule
+        // has its own test.
+        let edge = |source: &str, target: &str, kind: &str| -> Vec<String> {
+            edge(source, target, kind)
+                .into_iter()
+                .filter(|problem| !problem.contains("component table"))
+                .collect()
         };
         for kind in ["dependencies", "build-dependencies"] {
             for (source, target, boundary) in [

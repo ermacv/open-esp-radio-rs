@@ -67,21 +67,27 @@ links, such as the vendor scenarios, does not depend on the command line.
 
 | Crate | Principal modules | Owns | Allowed local dependencies |
 | --- | --- | --- | --- |
-| `blobray-domain` | identity, observations, effects, resources, ports | Shared values and narrow extension interfaces | None |
-| `blobray-artifacts` | containers, objects, symbols, relocations, mappings | Structural inspection of supplied immutable bytes | domain |
-| `blobray-analysis` | references, values, navigation facts | Derived function analysis | domain |
-| `blobray-backend-riscv` | decode, lift, ABI, execution | RV32 semantics and concrete machine state | domain |
-| `blobray-verification` | scenarios, comparison, record validation | Comparison relations and verdict construction | domain |
-| `blobray-application` | captured, library, linking, data, audit, in_process | Operations over given executables and their resource ownership | domain, artifacts, analysis, verification |
-| `blobray-linker` | GNU ld and LLD adapters, bounded subprocess transport | External linker processes behind `LinkerHost` | domain, application |
-| `blobray-cli` | CLI, JSON wire documents | Process entry point, rendering and concrete dependency selection | application, domain, backend-riscv |
+| `blobray-domain` | identity, observations, effects, resources, ports | Shared values and narrow extension interfaces | `oer-riscv-model` |
+| `blobray-artifacts` | containers, objects, symbols, relocations, mappings | Structural inspection of supplied immutable bytes | `blobray-domain`, `oer-riscv-model`, `oer-riscv-program` |
+| `blobray-analysis` | target audit, code closure, register navigation | Blobray analyses over the shared function analysis | `blobray-domain`, `oer-riscv-model`, `oer-riscv-analysis` |
+| `blobray-backend-riscv` | execution over lifted RV32 | Concrete machine state and RV32 execution | `blobray-domain`, `oer-riscv-model`, `oer-riscv-decode`, `oer-riscv-lift` |
+| `blobray-verification` | scenarios, comparison, record validation | Comparison relations and verdict construction | `blobray-domain`, `oer-riscv-model` |
+| `blobray-application` | captured, library, linking, data, audit, in_process | Operations over given executables and their resource ownership | `blobray-domain`, `blobray-artifacts`, `blobray-analysis`, `blobray-verification`, `oer-riscv-model`, `oer-riscv-analysis`, `oer-riscv-program` |
+| `blobray-linker` | GNU ld and LLD adapters, bounded subprocess transport | External linker processes behind `LinkerHost` | `blobray-domain`, `blobray-application`, `oer-riscv-model` |
+| `blobray-cli` | CLI, JSON wire documents | Process entry point, rendering and concrete dependency selection | `blobray-application`, `blobray-domain`, `blobray-backend-riscv`, `oer-riscv-model`, `oer-riscv-lift` |
 
-The common `blobray-` prefix is omitted in the dependency column. Application
-receives backend, model and external-tool capabilities through domain ports; it
-has no dependency on the RISC-V implementation. Analysis obtains lifting through
-the same ports. Verification can request execution through an injected executor
-and compares typed observations; it cannot select a different input behind the
-caller's back.
+The `oer-riscv-*` crates belong to the
+[shared RV32 layer](../../../riscv/README.md), which is Blobray's ISA layer:
+decoding, lifting, function analysis and the static image view live there and
+the stack analyzer shares them. Application depends on the ISA-neutral model,
+the function analysis and the static image view; RV32 facts such as relocation
+types and register numbers stay in that layer. The command line selects the
+concrete decoder from `oer-riscv-lift`. The allowed
+dependencies are `oer_repo::policy::COMPONENTS`, which `cargo tidy check`
+enforces on the manifests: an edge it does not allow, or a Blobray crate without
+a row, fails it, and so does this table when it states anything else. Verification can
+request execution through an injected executor and compares typed
+observations; it cannot select a different input behind the caller's back.
 
 Domain modules contain shared values and the contracts needed for dependency
 inversion. They do not accumulate orchestration, parsers, registries or
@@ -120,15 +126,35 @@ flowchart TD
     Linker[Linker adapters] --> App
     Linker --> Domain
     Host --> RV[RV32 backend]
+    Host --> Lift
+    Host --> Domain
     App --> Analysis[Analysis]
     App --> Verify[Verification]
     App --> Artifacts[Artifacts]
     App --> Domain[Domain values and ports]
+    App --> FnAnalysis
+    App --> Program
     Analysis --> Domain
+    Analysis --> FnAnalysis
     Verify --> Domain
     Artifacts --> Domain
+    Artifacts --> Program
     RV --> Domain
+    RV --> Lift
+    RV --> Decode
+    subgraph ISA[Shared RV32 layer]
+        Lift[oer-riscv-lift] --> Decode[oer-riscv-decode]
+        FnAnalysis[oer-riscv-analysis]
+        Program[oer-riscv-program]
+    end
 ```
+
+The graph leaves out the edges to `oer-riscv-model` (from every Blobray crate
+and from `oer-riscv-lift`, `oer-riscv-analysis` and `oer-riscv-program`) and to
+`oer-elf` (from `oer-riscv-lift` and `oer-riscv-program`). The table above lists
+the Blobray crates' edges, and the
+[shared layer's table](../../../riscv/README.md#dependency-table) lists the edges
+of the `oer-riscv-*` crates.
 
 Arrows represent compile-time dependencies. Runtime calls through injected ports
 do not add a reverse crate dependency.

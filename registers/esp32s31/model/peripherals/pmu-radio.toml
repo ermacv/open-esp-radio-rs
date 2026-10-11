@@ -289,7 +289,7 @@ completeness = "complete"
 [[review]]
 entity = "PMU_RADIO.RF_PWC"
 naming = "vendor"
-sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS"]
+sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS", "BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -297,7 +297,7 @@ completeness = "complete"
 [[review]]
 entity = "PMU_RADIO.RF_PWC.XPD_RF_CIRCUIT"
 naming = "vendor"
-sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS"]
+sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS", "BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -305,7 +305,7 @@ completeness = "complete"
 [[review]]
 entity = "PMU_RADIO.ANA_PERI_PWR_CTRL"
 naming = "vendor"
-sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS", "BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"]
+sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS", "BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -313,7 +313,7 @@ completeness = "complete"
 [[review]]
 entity = "PMU_RADIO.ANA_PERI_PWR_CTRL.XPD_PERIF_I2C"
 naming = "vendor"
-sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS", "BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"]
+sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS", "BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -321,7 +321,7 @@ completeness = "complete"
 [[review]]
 entity = "PMU_RADIO.ANA_PERI_PWR_CTRL.RSTB_PERIF_I2C"
 naming = "vendor"
-sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS", "BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"]
+sources = ["S31_ESP_PACS_SVD", "S31_PMU_HEADERS", "BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

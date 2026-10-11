@@ -567,6 +567,45 @@ fn a_bounded_table_entry_out_of_the_function_is_a_jump() {
 }
 
 #[test]
+fn a_table_base_set_before_an_exit_is_found_by_its_dispatch_record() {
+    // `lui s4, %hi(RODATA)`, a branch around an early return, then a
+    // bounded dispatch through `s4`, as the ROM's `spi_slave_download`
+    // does: the linear sweep forgets `s4` at the return, the value analysis
+    // follows the branch, so only its `Dispatch` record locates the table.
+    let arm = [LOAD_RA, SP_UP_16, RET];
+    let mut words = vec![
+        SP_DOWN_16,
+        SAVE_RA,
+        0x0000_2a37, // lui s4, 0x2
+        0x0005_1863, // bnez a0, <the dispatch>
+    ];
+    words.extend(arm);
+    words.extend([
+        0x0010_0593, // li a1, 1
+        0x00a5_ea63, // bltu a1, a0, <first arm>
+        0x0025_1513, // slli a0, a0, 2
+        0x0145_0533, // add a0, a0, s4
+        0x0005_2503, // lw a0, 0(a0)
+        0x0005_0067, // jr a0
+    ]);
+    words.extend(arm);
+    words.extend(arm);
+    let image = image(
+        &[Symbol {
+            name: "root",
+            words,
+            frame: Some(16),
+        }],
+        &[TEXT + 52, TEXT + 64],
+        false,
+    );
+    assert!(swept(&image).unwrap().jumps.is_empty());
+    let analysis = analyze(&image, &[], &[]).unwrap();
+    assert!(analysis.functions[&TEXT].complete);
+    assert_eq!(analysis.bound(TEXT).unwrap().bytes, Some(16));
+}
+
+#[test]
 fn an_unbounded_jump_table_stays_unknown() {
     // Without a bound or a sized table object, entries past the readable
     // ones could leave the function.

@@ -26,12 +26,19 @@ its relocations, each checked against the word it describes (a mismatch is an
 integrity error): a compiler jump table is the run of relocated words from its
 `.LJTI*` label, however the code indexes it, and its entries inside the
 function become edges of the value analysis's graph, which then also reaches
-the code behind them. A table the analysis's register values locate there is
-added through the shared driver of `oer-riscv-analysis`
-(`research_following_tables`), the one Blobray runs: the function is
-analyzed again following it, while each pass proves again every table it
-followed and more; a pass that loses one reports the function following
-only the tables the sweep names.
+the code behind them. Any other table is located as Blobray locates it: the
+value analysis records each jump through `table[index]` as a `Dispatch`
+record, the shared recognizer (`RecognizedTables` of `oer-riscv-analysis`)
+proves its entries from the image's facts (`ImageTables` of
+`oer-riscv-program`: a labelled table, a sized object or a run the guarding
+bounds check counts), and the shared driver (`research_following_tables`)
+analyzes the function again following it, while each pass proves again
+every table it followed and more; a pass that loses one reports the
+function following only the tables the sweep names. The sweep stays for
+transfer coverage: a base kept across an early return or in a register set
+far before the jump, which a linear sweep forgets, is still located. A jump
+followed through a proven table, whose entries all lie in the function, is
+no unresolved transfer.
 
 `analyze` also takes reviewed summaries (`Summary`, parsed from a
 `[[function]]` TOML such as `platform/esp32s31/linker/rom/functions.toml`) of

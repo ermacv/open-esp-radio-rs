@@ -50,8 +50,8 @@ pub enum PlatformClock {
 ///
 /// The platform clock owner (ESP-HAL) keeps its own reference count of each,
 /// because other SoC users share them. The radio holds each reference as a
-/// [`PlatformClockGuard`] for as long as it needs the clock; dropping the
-/// guard releases the reference, so there is no separate release call.
+/// [`PlatformClockGuard`] for as long as it needs the clock and gives it back
+/// with [`PlatformClockGuard::release`].
 pub trait PlatformClockProvider {
     /// Acquire one reference to `clock`.
     ///
@@ -63,10 +63,14 @@ pub trait PlatformClockProvider {
 
 /// One platform clock reference held by the radio.
 ///
-/// Dropping it releases the reference through the provider that created it.
-/// The platform's counts are global, so a guard needs no borrow of its
-/// provider and may live in a static radio owner.
-#[must_use = "dropping the guard releases the platform clock reference"]
+/// Only [`Self::release`] gives the reference back, through the provider
+/// that created it; the radio's owners call it in their checked release
+/// paths. Dropping a guard keeps the reference held: destroying the radio's
+/// bookkeeping never closes a clock under a user that still runs on it, and
+/// the clock stays on instead, which fails safe. The platform's counts are
+/// global, so a guard needs no borrow of its provider and may live in a
+/// static radio owner.
+#[must_use = "a dropped guard keeps its platform clock reference held; give it back with `release`"]
 pub struct PlatformClockGuard {
     clock: PlatformClock,
     release: fn(PlatformClock),
@@ -85,10 +89,9 @@ impl PlatformClockGuard {
     pub const fn clock(&self) -> PlatformClock {
         self.clock
     }
-}
 
-impl Drop for PlatformClockGuard {
-    fn drop(&mut self) {
+    /// Give the reference back to the platform.
+    pub fn release(self) {
         (self.release)(self.clock);
     }
 }
@@ -192,7 +195,9 @@ impl ModemPlatformClocks {
     }
 
     fn release(&mut self, clock: PlatformClock) {
-        drop(self.slot(clock).take());
+        if let Some(guard) = self.slot(clock).take() {
+            guard.release();
+        }
     }
 
     /// Count the references held into `holds`.

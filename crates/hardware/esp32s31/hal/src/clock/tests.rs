@@ -244,7 +244,7 @@ fn a_failed_restore_keeps_the_last_client_for_retry() {
 }
 
 #[test]
-fn a_failed_power_sequence_keeps_its_references_until_the_owner_drops() {
+fn a_failed_power_sequence_keeps_its_references_after_the_owner_drops() {
     let (_, mut port, platform) = setup();
     port.power_sequence_failure = Some(crate::power::PowerError {
         checkpoint: crate::power::PowerCheckpoint::ModemClockSource,
@@ -262,8 +262,17 @@ fn a_failed_power_sequence_keeps_its_references_until_the_owner_drops() {
         held(),
         holding(&[PlatformClock::Mpll, PlatformClock::Pll160m])
     );
+    // Dropping the failed owner gives nothing back: the sequence stays
+    // fail-stop with its sources on.
+    #[allow(
+        clippy::drop_non_drop,
+        reason = "the test shows that dropping the owner gives nothing back"
+    )]
     drop(power);
-    assert!(held().is_empty());
+    assert_eq!(
+        held(),
+        holding(&[PlatformClock::Mpll, PlatformClock::Pll160m])
+    );
 }
 
 #[test]

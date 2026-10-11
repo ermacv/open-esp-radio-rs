@@ -20,8 +20,8 @@ use oer_esp32s31_hal::power::{
 /// Platform clock provider backed by ESP-HAL's reference-counted clocks.
 ///
 /// It is a zero-size capability: ESP-HAL's counts are global, so each
-/// [`PlatformClockGuard`] it returns releases its reference on drop without
-/// borrowing the provider.
+/// [`PlatformClockGuard`] it returns gives its reference back through
+/// [`PlatformClockGuard::release`] without borrowing the provider.
 #[derive(Debug, Default)]
 // CAPABILITY: whole-radio-cold-power-and-clocks-shared-clock-lifetime
 pub struct EspHalRadioClocks {

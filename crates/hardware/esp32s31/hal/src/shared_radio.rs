@@ -633,7 +633,7 @@ impl<T> SharedRadioLease<'_, T> {
     ///
     /// The client does not hold power, or the baseline did not read back; the
     /// client then stays entered so the exit can be retried. Releasing a
-    /// platform reference drops its guard and cannot fail.
+    /// platform reference gives its guard back explicitly and cannot fail.
     pub fn exit_common_power<O: RadioClientOwner>(
         &mut self,
         _owner: &O,
@@ -766,7 +766,8 @@ impl<T> SharedRadioLease<'_, T> {
     ///
     /// The client does not hold its clocks, the planner rejected the release
     /// before any access, or the modem clocks are poisoned. Platform
-    /// references are released by dropping their guards.
+    /// references are given back explicitly through their guards; a poisoned
+    /// release keeps the references it did not reach.
     pub fn disable_modem_clocks<O: RadioClientOwner>(
         &mut self,
         _owner: &O,
@@ -853,7 +854,7 @@ impl<T> SharedRadioLease<'_, T> {
             return Err(LowPowerClockError::NotSelected);
         };
         deselect_bluetooth_low_power_clock(state.registers.radio_phy_mut());
-        drop(timer);
+        timer.release();
         Ok(())
     }
 

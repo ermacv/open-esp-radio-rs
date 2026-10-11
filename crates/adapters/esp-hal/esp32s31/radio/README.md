@@ -20,8 +20,9 @@ counts: the 160 MHz PLL output and the MPLL through their clock-tree nodes
 (`clock::ll::request_pll_f160m`, `request_mpll_clk`) and the three
 `MODEM_LPCON.CLK_CONF` gates (analog-I2C master, coexistence and low-power
 timer) under the lock ESP-HAL's regi2c accesses share, added by the pinned
-fork. `acquire` returns a `PlatformClockGuard`; dropping it calls the
-matching ESP-HAL release. The provider is a zero-size capability and a
+fork. `acquire` returns a `PlatformClockGuard`; only its `release` calls
+the matching ESP-HAL release, and a dropped guard keeps the clock held. The
+provider is a zero-size capability and a
 guard does not borrow it, because ESP-HAL's counts are global.
 
 `EspHalRadioPlatform` holds the `I2C_ANA_MST` singleton, and that singleton

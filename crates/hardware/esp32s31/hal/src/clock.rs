@@ -99,7 +99,9 @@ impl PlatformClockRefs {
     }
 
     fn release(&mut self, clock: PlatformClock) {
-        drop(self.slot(clock).take());
+        if let Some(guard) = self.slot(clock).take() {
+            guard.release();
+        }
     }
 
     fn count_into(&self, holds: &mut PlatformClockHolds) {

@@ -1,9 +1,11 @@
 //! Bounded local control-flow exploration. No filesystem, project or ISA implementation.
 use oer_riscv_model::*;
 mod references;
+mod tables;
 mod value_sets;
 mod values;
 pub use references::PreparedReferences;
+pub use tables::{JumpTableSource, ProvenTables, research_following_tables};
 pub use values::fold_integer;
 
 pub struct FunctionInput<'a> {
@@ -765,5 +767,95 @@ mod tests {
         .err()
         .unwrap();
         assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+    }
+
+    /// Proves a table `{0 -> 4}` at the jump of `[jalr, _, _]` while it
+    /// sees the jump, losing it on passes after `lose_after`.
+    struct Proves {
+        passes: std::cell::Cell<u32>,
+        lose_after: Option<u32>,
+    }
+    impl JumpTableSource for Proves {
+        type Table = KnownJump;
+        fn tables<'m>(
+            &self,
+            records: &[FunctionRecord],
+            _: CodeRange,
+            memory: &'m WorkingMemory,
+            _: &mut dyn RunControl,
+        ) -> Result<ProvenTables<'m, KnownJump>> {
+            let pass = self.passes.get() + 1;
+            self.passes.set(pass);
+            let located = records
+                .iter()
+                .any(|record| matches!(record, FunctionRecord::Instruction { offset: 0, .. }));
+            let mut found = ProvenTables::none(memory);
+            if located && self.lose_after.is_none_or(|last| pass <= last) {
+                found.tables.push(KnownJump {
+                    site: 0,
+                    targets: vec![4],
+                });
+            }
+            Ok(found)
+        }
+        fn jump(&self, table: &KnownJump) -> KnownJump {
+            table.clone()
+        }
+    }
+
+    /// The blocks, proven tables and source passes of researching
+    /// `[jalr, _, _]` with `known` jumps and a [`Proves`] source.
+    fn follow(known: &[KnownJump], lose_after: Option<u32>, proves: bool) -> (u64, usize, u32) {
+        let code = [1, 0, 0, 0, 0, 0];
+        let input = FunctionInput {
+            image: None,
+            section: 1,
+            extent: CodeRange {
+                start: 0,
+                length: 6,
+            },
+            bytes: &code,
+            relocations: &PreparedReferences::empty(),
+            data_ranges: &[],
+            jumps: known,
+        };
+        let memory = WorkingMemory::new(1024 * 1024).unwrap();
+        let source = Proves {
+            passes: std::cell::Cell::new(0),
+            lose_after: if proves { lose_after } else { Some(0) },
+        };
+        let (summary, tables) = research_following_tables(
+            input,
+            &source,
+            &Jalr,
+            &memory,
+            &mut || Ok(()),
+            &mut Discard,
+            None,
+        )
+        .unwrap();
+        (summary.blocks, tables.tables.len(), source.passes.get())
+    }
+
+    #[test]
+    fn a_table_proven_again_is_followed_and_ends_the_search() {
+        // The second pass proves the same table: its graph reaches the case.
+        assert_eq!(follow(&[], None, true), (2, 1, 2));
+    }
+
+    #[test]
+    fn a_pass_that_loses_its_table_reports_the_function_without_tables() {
+        // The first pass proves the table, the second loses it: the function
+        // is reported from a pass that follows none, its jump a gap.
+        assert_eq!(follow(&[], Some(1), true), (1, 0, 2));
+    }
+
+    #[test]
+    fn known_jumps_are_followed_on_every_pass() {
+        let known = [KnownJump {
+            site: 0,
+            targets: vec![4],
+        }];
+        assert_eq!(follow(&known, None, false), (2, 0, 1));
     }
 }

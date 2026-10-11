@@ -34,7 +34,9 @@ mod sweep;
 mod trap;
 mod wakers;
 
-use oer_riscv_model::{Error, ErrorCode, Result, RunControl, WorkingMemory};
+use oer_riscv_model::{
+    CodeRange, Error, ErrorCode, FunctionRecord, Result, RunControl, WorkingMemory,
+};
 use oer_riscv_program::facts::ImageFacts;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -44,7 +46,7 @@ pub use contexts::{HartStack, LevelStack, Stacks, interrupt_stacks};
 pub use dwarf::{Dwarf, instances};
 pub use image::{Function, stack_sizes};
 pub use interrupts::{Field, TableEntry, TableLayout, interrupt_table};
-use oer_riscv_analysis::KnownJump;
+use oer_riscv_analysis::{JumpTableSource, KnownJump, ProvenTables};
 pub use relocations::taken_addresses;
 pub use resolutions::{Assumption, Fact, Resolution, Resolutions};
 pub use summaries::{Summary, parse as parse_summaries};
@@ -273,14 +275,12 @@ fn analyze_one(
     })
 }
 
-/// The base of the table a transfer loads its target from, when known.
-fn table_base(transfer: &Transfer, observation: &image::Observation) -> Option<u32> {
+/// The base of the table a transfer loads its target from, when known:
+/// a constant, or the exact value of its register at the site.
+fn table_base(transfer: &Transfer, registers: Option<&[Option<u32>; 32]>) -> Option<u32> {
     match transfer.table {
         Some(TableBase::Address(address)) => Some(address),
-        Some(TableBase::Register(r)) => observation
-            .site_registers
-            .get(&transfer.site)
-            .and_then(|registers| registers[r as usize]),
+        Some(TableBase::Register(r)) => registers.and_then(|registers| registers[r as usize]),
         None => None,
     }
 }
@@ -290,10 +290,10 @@ fn table_base(transfer: &Transfer, observation: &image::Observation) -> Option<u
 fn table_entries(
     elf: &ImageFacts<'_>,
     transfer: &Transfer,
-    observation: &image::Observation,
+    registers: Option<&[Option<u32>; 32]>,
     control: &mut dyn RunControl,
 ) -> Result<Option<Vec<u32>>> {
-    let Some(address) = table_base(transfer, observation) else {
+    let Some(address) = table_base(transfer, registers) else {
         return Ok(None);
     };
     match image::table(elf, address, control)? {
@@ -302,9 +302,95 @@ fn table_entries(
     }
 }
 
+/// The jump that follows a table's `entries` from `site` inside `function`:
+/// its distinct non-null entries there, as code addresses in ascending
+/// order.
+fn table_jump(function: &Function, site: u32, entries: &[u32]) -> KnownJump {
+    let inside =
+        |target: u32| target >= function.address && target - function.address < function.size;
+    let mut targets: Vec<u64> = entries
+        .iter()
+        .filter(|&&entry| entry != 0)
+        .map(|entry| entry & !1)
+        .filter(|&target| inside(target))
+        .map(u64::from)
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    KnownJump {
+        site: u64::from(site),
+        targets,
+    }
+}
+
+/// The tables of the dispatches a function's sweep located: each
+/// unresolved tail transfer the sweep's own jumps leave whose table base a
+/// pass's registers at the site name, and whose entries the image's facts
+/// hold.
+struct SweptTables<'a, 'f> {
+    image: &'a ImageFacts<'f>,
+    function: &'a Function,
+    transfers: &'a [Transfer],
+    known: &'a [KnownJump],
+}
+
+impl JumpTableSource for SweptTables<'_, '_> {
+    type Table = KnownJump;
+
+    fn tables<'m>(
+        &self,
+        records: &[FunctionRecord],
+        _: CodeRange,
+        memory: &'m WorkingMemory,
+        control: &mut dyn RunControl,
+    ) -> Result<ProvenTables<'m, KnownJump>> {
+        let mut found: ProvenTables<'m, KnownJump> = ProvenTables::none(memory);
+        for transfer in self.transfers {
+            let site = u64::from(transfer.site);
+            if transfer.kind != TransferKind::Tail
+                || transfer.target.is_some()
+                || self.known.iter().any(|jump| jump.site == site)
+                || found.tables.iter().any(|jump| jump.site == site)
+            {
+                continue;
+            }
+            let mut registers = None;
+            for record in records {
+                control.checkpoint(1)?;
+                if let FunctionRecord::CallInputs {
+                    offset,
+                    registers: inputs,
+                } = record
+                    && *offset == site
+                {
+                    registers = Some(image::exact_registers(inputs));
+                    break;
+                }
+            }
+            let Some(entries) = table_entries(self.image, transfer, registers.as_ref(), control)?
+            else {
+                continue;
+            };
+            let jump = table_jump(self.function, transfer.site, &entries);
+            // The table and the copy `jump` makes of it for the next pass.
+            let bytes = 2 * (size_of::<KnownJump>() + size_of::<u64>() * jump.targets.len());
+            found.reserved.push(
+                memory.reserve(bytes as u64, control.position())?,
+                control.position(),
+            )?;
+            found.tables.push(jump);
+        }
+        Ok(found)
+    }
+
+    fn jump(&self, table: &KnownJump) -> KnownJump {
+        table.clone()
+    }
+}
+
 /// One function's facts: its sweep, then the value analysis over a graph
-/// that follows every jump table known so far, again for each table the
-/// analysis's register values newly locate.
+/// that follows the jump tables the sweep names, and those the analysis's
+/// register values locate ([`SweptTables`]).
 fn function_facts(
     elf: &ImageFacts<'_>,
     function: Function,
@@ -316,46 +402,28 @@ fn function_facts(
     let swept = sweep::transfers(elf, &function, control)?;
     let inside =
         |target: u32| target >= function.address && target - function.address < function.size;
-    let known = |site: u32, entries: &[u32]| KnownJump {
-        site: u64::from(site),
-        targets: entries
-            .iter()
-            .filter(|&&entry| entry != 0)
-            .map(|entry| entry & !1)
-            .filter(|&target| inside(target))
-            .map(u64::from)
-            .collect(),
-    };
-    let mut jumps: Vec<KnownJump> = swept
+    let jumps: Vec<KnownJump> = swept
         .jumps
         .iter()
-        .map(|(site, entries)| known(*site, entries))
+        .map(|(site, entries)| table_jump(&function, *site, entries))
         .collect();
-    let observation = loop {
-        let observation = observe(&function, &jumps, control)?;
-        let before = jumps.len();
-        for transfer in &swept.transfers {
-            if transfer.kind != TransferKind::Tail
-                || transfer.target.is_some()
-                || jumps
-                    .iter()
-                    .any(|jump| jump.site == u64::from(transfer.site))
-            {
-                continue;
-            }
-            if let Some(entries) = table_entries(elf, transfer, &observation, control)? {
-                jumps.push(known(transfer.site, &entries));
-            }
-        }
-        if jumps.len() == before {
-            break observation;
-        }
+    let tables = SweptTables {
+        image: elf,
+        function: &function,
+        transfers: &swept.transfers,
+        known: &jumps,
     };
+    let observation = observe(&function, &jumps, &tables, control)?;
     let mut transfers = swept.transfers;
     let table_bases = transfers
         .iter()
         .filter(|t| t.target.is_none())
-        .filter_map(|t| Some((t.site, table_base(t, &observation)?)))
+        .filter_map(|t| {
+            Some((
+                t.site,
+                table_base(t, observation.site_registers.get(&t.site))?,
+            ))
+        })
         .collect();
     let unresolved_registers = transfers
         .iter()
@@ -367,7 +435,13 @@ fn function_facts(
     // their entries replace whatever the value analysis read.
     let mut tabled = BTreeSet::new();
     for transfer in std::mem::take(&mut transfers) {
-        let Some(entries) = table_entries(elf, &transfer, &observation, control)? else {
+        let Some(entries) = table_entries(
+            elf,
+            &transfer,
+            observation.site_registers.get(&transfer.site),
+            control,
+        )?
+        else {
             dispatched.push(transfer);
             continue;
         };

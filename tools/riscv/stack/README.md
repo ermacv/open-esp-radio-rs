@@ -26,8 +26,12 @@ its relocations, each checked against the word it describes (a mismatch is an
 integrity error): a compiler jump table is the run of relocated words from its
 `.LJTI*` label, however the code indexes it, and its entries inside the
 function become edges of the value analysis's graph, which then also reaches
-the code behind them; a table the analysis's register values locate there is
-added the same way until none is new.
+the code behind them. A table the analysis's register values locate there is
+added through the shared driver of `oer-riscv-analysis`
+(`research_following_tables`), the one Blobray runs: the function is
+analyzed again following it, while each pass proves again every table it
+followed and more; a pass that loses one reports the function following
+only the tables the sweep names.
 
 `analyze` also takes reviewed summaries (`Summary`, parsed from a
 `[[function]]` TOML such as `platform/esp32s31/linker/rom/functions.toml`) of

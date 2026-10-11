@@ -113,7 +113,7 @@ fn a_refused_platform_request_poisons_the_transaction_before_the_gate() {
 }
 
 #[test]
-fn a_poisoned_acquisition_keeps_its_references_until_the_owner_drops() {
+fn a_poisoned_acquisition_keeps_its_references_after_the_owner_drops() {
     let (_, mut port, platform) = setup();
     platform.set_refused(PlatformClock::AnalogI2cMaster, true);
     let mut held_clocks = ModemPlatformClocks::default();
@@ -127,10 +127,51 @@ fn a_poisoned_acquisition_keeps_its_references_until_the_owner_drops() {
     };
     assert_eq!(poisoned.dependency(), Dependency::AnalogI2cMaster);
     // The 160 MHz source taken before the refusal stays with the poisoned
-    // owner; it is released with the owner, never by a separate call.
+    // owner, and dropping the owner does not give it back: a failed
+    // transaction stays fail-stop with the clock on.
     assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
     drop(poisoned);
     assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
+    #[allow(
+        clippy::drop_non_drop,
+        reason = "the test shows that dropping the owner gives nothing back"
+    )]
     drop(held_clocks);
-    assert!(held().is_empty());
+    assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
+}
+
+/// Only an explicit release gives a platform clock back; a dropped guard
+/// keeps it held, so destroying the radio's bookkeeping never closes a
+/// clock under a user that still runs on it (#551: the IEEE 802.15.4 ED
+/// probe lost the coexistence clock when its shared radio was dropped).
+#[test]
+fn only_an_explicit_release_gives_a_platform_clock_back() {
+    let platform = CountingPlatformClocks::new();
+    let dropped = platform
+        .acquire(PlatformClock::ModemCoexistence)
+        .unwrap_or_else(|_| panic!("granted"));
+    drop(dropped);
+    assert_eq!(held(), holding(&[PlatformClock::ModemCoexistence]));
+
+    let released = platform
+        .acquire(PlatformClock::AnalogI2cMaster)
+        .unwrap_or_else(|_| panic!("granted"));
+    released.release();
+    assert_eq!(held(), holding(&[PlatformClock::ModemCoexistence]));
+}
+
+/// The planner's explicit release gives each platform clock back once.
+#[test]
+fn the_planner_releases_its_platform_clocks_explicitly() {
+    let (_, _port, platform) = setup();
+    let mut held_clocks = ModemPlatformClocks::default();
+    for clock in [PlatformClock::Pll160m, PlatformClock::ModemCoexistence] {
+        held_clocks
+            .acquire(clock, &platform)
+            .unwrap_or_else(|_| panic!("granted"));
+    }
+    held_clocks.release(PlatformClock::ModemCoexistence);
+    assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
+    held_clocks.release(PlatformClock::ModemCoexistence);
+    assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
 }

@@ -266,79 +266,172 @@ fn a_radio_span_converts_only_through_a_relation() {
     );
 }
 
-/// A backend in one cell, whose owner lends a phase of an event consumer
-/// and two interface clients.
+/// A backend in one cell: its admitted work by slot and client, its
+/// queued events, and what its next enable and transitions do.
+#[derive(Default)]
 struct Model {
-    /// Admitted work by identity, with the interface that admitted it.
-    running: core::cell::RefCell<std::vec::Vec<(Id, u8)>>,
-    /// Terminal events, each carrying the port identity of its work.
-    events: core::cell::RefCell<std::collections::VecDeque<(u8, Id)>>,
+    running: core::cell::RefCell<std::vec::Vec<(u32, u8)>>,
+    events: core::cell::RefCell<std::collections::VecDeque<u32>>,
+    next_slot: core::cell::Cell<u32>,
+    refuse_enable: core::cell::Cell<bool>,
+    poisoned: core::cell::Cell<bool>,
+    /// The transition's end is reported after this many polls of nothing.
+    pending_polls: core::cell::Cell<u32>,
+    lifecycle: core::cell::RefCell<std::vec::Vec<&'static str>>,
 }
 
-struct Owner<'m>(&'m Model);
+/// The model's backend; only `install` wraps it.
+struct Backend<'m>(&'m Model);
+
 struct Events<'m>(&'m Model);
+struct Control(());
 struct Client<'m> {
     model: &'m Model,
     interface: u8,
 }
-/// The model's phase control; its loan is the `Lent` that carries it.
-struct Control(());
+struct Setup(());
 
-impl Client<'_> {
-    fn admit(&self, id: Id) {
-        self.model.running.borrow_mut().push((id, self.interface));
+/// One admitted operation's token: only the model mints it.
+struct Token(u32);
+
+impl RadioWork for Token {
+    type Id = u32;
+
+    fn id(&self) -> u32 {
+        self.0
     }
 }
 
-fn ready<T>(value: T) -> core::future::Ready<T> {
-    core::future::ready(value)
+impl Client<'_> {
+    fn admit(&self) -> Work<'_, Token> {
+        let slot = self.model.next_slot.get();
+        self.model.next_slot.set(slot + 1);
+        self.model.running.borrow_mut().push((slot, self.interface));
+        Work::new(Token(slot))
+    }
 }
 
-/// End one client's work by its identity: the backend keys work by client
-/// and identity.
-fn end(model: &Model, id: Id, interface: u8) -> Result<(), CancelError> {
+/// End one admitted operation by its slot; its terminal is queued.
+fn end(model: &Model, slot: u32) -> Result<(), CancelError> {
     let mut running = model.running.borrow_mut();
     let index = running
         .iter()
-        .position(|(running, by)| *running == id && *by == interface)
+        .position(|(running, _)| *running == slot)
         .ok_or(CancelError::NotRunning)?;
     running.remove(index);
-    model.events.borrow_mut().push_back((interface, id));
+    model.events.borrow_mut().push_back(slot);
     Ok(())
 }
 
-impl<'m> RadioPortOwner for Owner<'m> {
-    type Event = (u8, Id);
-    type Id = (u8, Id);
+fn poisoned<T>(model: &Model) -> Result<T, Poisoned<()>> {
+    if model.poisoned.get() {
+        Err(Poisoned { cause: () })
+    } else {
+        Ok(unreachable_ok())
+    }
+}
+
+fn unreachable_ok<T>() -> T {
+    unreachable!("only called on a poisoned model")
+}
+
+/// A transition step: the queued events first, then, after the pending
+/// polls, the end.
+fn step<R>(
+    model: &Model,
+    end: impl FnOnce() -> R,
+) -> core::task::Poll<Result<Step<u32, R>, Poisoned<()>>> {
+    if model.poisoned.get() {
+        return core::task::Poll::Ready(Err(Poisoned { cause: () }));
+    }
+    if let Some(event) = model.events.borrow_mut().pop_front() {
+        return core::task::Poll::Ready(Ok(Step::Event(event)));
+    }
+    let pending = model.pending_polls.get();
+    if pending > 0 {
+        model.pending_polls.set(pending - 1);
+        return core::task::Poll::Pending;
+    }
+    core::task::Poll::Ready(Ok(Step::Ended(end())))
+}
+
+impl<'m> PortBackend for Backend<'m> {
+    type Event = u32;
     type Domain = Port;
     type Fault = ();
-    type Events = Events<'m>;
-    type Control = Control;
-    type Clients = [Client<'m>; 2];
+    type EnableFailure = &'static str;
+    type Setup<'a>
+        = Setup
+    where
+        Self: 'a;
+    type Events<'a>
+        = Events<'m>
+    where
+        Self: 'a;
+    type Control<'a>
+        = Control
+    where
+        Self: 'a;
+    type Clients<'a>
+        = [Client<'m>; 2]
+    where
+        Self: 'a;
+    type Uninstall = ();
+    type Uninstalled = &'m Model;
 
-    fn next_event(&mut self) -> impl Future<Output = PortResult<(u8, Id), EventsLost, ()>> + '_ {
-        ready(match self.0.events.borrow_mut().pop_front() {
-            Some(event) => Ok(Ok(event)),
-            None => Ok(Err(EventsLost)),
+    fn admit_enable(&mut self) -> Result<(), Poisoned<()>> {
+        if self.0.poisoned.get() {
+            return poisoned(self.0);
+        }
+        self.0.lifecycle.borrow_mut().push("enable");
+        Ok(())
+    }
+
+    fn admit_disable(&mut self) -> Result<(), Poisoned<()>> {
+        if self.0.poisoned.get() {
+            return poisoned(self.0);
+        }
+        self.0.lifecycle.borrow_mut().push("disable");
+        // Disable ends every admitted work with its terminal first.
+        let slots: std::vec::Vec<u32> = self
+            .0
+            .running
+            .borrow()
+            .iter()
+            .map(|(slot, _)| *slot)
+            .collect();
+        for slot in slots {
+            let _ = end(self.0, slot);
+        }
+        Ok(())
+    }
+
+    fn next_enabling(
+        &mut self,
+    ) -> impl Future<Output = Result<Step<u32, Result<(), &'static str>>, Poisoned<()>>> + '_ {
+        let model = self.0;
+        core::future::poll_fn(move |_| {
+            step(model, || {
+                if model.refuse_enable.get() {
+                    Err("the radio refused the channel")
+                } else {
+                    Ok(())
+                }
+            })
         })
     }
 
+    fn next_disabling(&mut self) -> impl Future<Output = Result<Step<u32, ()>, Poisoned<()>>> + '_ {
+        let model = self.0;
+        core::future::poll_fn(move |_| step(model, || ()))
+    }
+
     fn now(&self) -> impl Future<Output = PortResult<RadioInstant<Port>, ClockError, ()>> + '_ {
-        ready(Ok(Err(ClockError::Unavailable)))
+        core::future::ready(Ok(Err(ClockError::Unavailable)))
     }
 
-    fn cancel(
-        &mut self,
-        (interface, id): (u8, Id),
-    ) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
-        ready(Ok(end(self.0, id, interface)))
-    }
-
-    fn lifecycle(
-        &mut self,
-        _: LifecycleCommand,
-    ) -> impl Future<Output = PortResult<(), LifecycleError, ()>> + '_ {
-        ready(Ok(Ok(())))
+    fn setup(&mut self) -> Lent<'_, Setup> {
+        Lent::new(Setup(()))
     }
 
     fn split(&mut self) -> PhaseParts<'_, Events<'m>, Control, [Client<'m>; 2]> {
@@ -350,14 +443,18 @@ impl<'m> RadioPortOwner for Owner<'m> {
             clients: Lent::new([client(0), client(1)]),
         }
     }
+
+    fn uninstall(self, (): ()) -> &'m Model {
+        self.0
+    }
 }
 
 impl RadioPortEvents for Events<'_> {
-    type Event = (u8, Id);
+    type Event = u32;
     type Fault = ();
 
-    fn next_event(&mut self) -> impl Future<Output = PortResult<(u8, Id), EventsLost, ()>> + '_ {
-        ready(match self.0.events.borrow_mut().pop_front() {
+    fn next_event(&mut self) -> impl Future<Output = PortResult<u32, EventsLost, ()>> + '_ {
+        core::future::ready(match self.0.events.borrow_mut().pop_front() {
             Some(event) => Ok(Ok(event)),
             None => Ok(Err(EventsLost)),
         })
@@ -365,21 +462,16 @@ impl RadioPortEvents for Events<'_> {
 }
 
 impl RadioPortClient for Client<'_> {
-    type Id = Id;
-    type PortId = (u8, Id);
+    type Token = Token;
     type Domain = Port;
     type Fault = ();
 
     fn now(&self) -> impl Future<Output = PortResult<RadioInstant<Port>, ClockError, ()>> + '_ {
-        ready(Ok(Err(ClockError::Unavailable)))
+        core::future::ready(Ok(Err(ClockError::Unavailable)))
     }
 
-    fn cancel(&self, id: Id) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
-        ready(Ok(end(self.model, id, self.interface)))
-    }
-
-    fn port_id(&self, id: Id) -> (u8, Id) {
-        (self.interface, id)
+    fn end(&self, token: Token) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ {
+        core::future::ready(Ok(end(self.model, token.0)))
     }
 }
 
@@ -394,76 +486,90 @@ fn now_ready<F: Future>(future: F) -> F::Output {
     }
 }
 
-#[test]
-fn a_phase_lends_clients_scoped_to_their_interface_and_its_leftovers_reach_the_owner() {
-    let model = Model {
-        running: core::cell::RefCell::default(),
-        events: core::cell::RefCell::default(),
+/// Enable `owner`, which the model accepts.
+fn enabled(owner: Owner<Backend<'_>, Disabled>) -> Owner<Backend<'_>, Enabled> {
+    let Ok(mut enabling) = owner.enable() else {
+        panic!("a healthy model admits Enable");
     };
-    let mut owner = Owner(&model);
-    let leftover = {
+    match now_ready(enabling.next()) {
+        EnableStep::Enabled(owner) => owner,
+        _ => panic!("the model enables"),
+    }
+}
+
+#[test]
+fn a_port_runs_a_phase_between_its_lifecycle_commands_and_ends_its_leftovers() {
+    let model = Model::default();
+    let mut owner = enabled(Owner::install(Backend(&model)));
+    {
         let PhaseParts {
             mut events,
             clients,
             ..
         } = owner.split();
         let [station, access_point] = &*clients;
-        station.admit(Id(1));
-        access_point.admit(Id(2));
-        // A client ends work once; a second cancel proves the work ended.
-        assert_eq!(now_ready(station.cancel(Id(1))), Ok(Ok(())));
-        assert_eq!(
-            now_ready(station.cancel(Id(1))),
-            Ok(Err(CancelError::NotRunning))
-        );
-        assert_eq!(now_ready(events.next_event()), Ok(Ok((0, Id(1)))));
-        // The router records the port identity the client forms.
-        access_point.port_id(Id(2))
+        let joined = station.admit();
+        let joined_id = joined.id();
+        let _served = access_point.admit();
+        // A client ends its own work by its token, once.
+        assert_eq!(now_ready(station.cancel(joined)), Ok(Ok(())));
+        assert_eq!(now_ready(events.next_event()), Ok(Ok(joined_id)));
+    }
+    // The access point's work is left in flight: `Disable` ends it, and its
+    // terminal comes before the end.
+    let Ok(mut disabling) = owner.disable() else {
+        panic!("a healthy model admits Disable");
     };
-    // The phase ended with the access point's work in flight: the owner
-    // ends it by its port identity and takes its terminal, then runs an
-    // exclusive command.
-    assert_eq!(now_ready(owner.cancel(leftover)), Ok(Ok(())));
-    assert_eq!(now_ready(owner.next_event()), Ok(Ok(leftover)));
-    assert_eq!(
-        now_ready(owner.lifecycle(LifecycleCommand::Disable)),
-        Ok(Ok(()))
-    );
+    assert!(matches!(now_ready(disabling.next()), DisableStep::Event(1)));
+    let DisableStep::Disabled(owner) = now_ready(disabling.next()) else {
+        panic!("the model disables");
+    };
+    assert_eq!(*model.lifecycle.borrow(), ["enable", "disable"]);
+    assert!(core::ptr::eq(owner.uninstall(()), &model));
 }
 
 #[test]
-fn clients_of_one_kind_choose_the_same_identity_without_colliding() {
-    let model = Model {
-        running: core::cell::RefCell::default(),
-        events: core::cell::RefCell::default(),
+fn a_refused_enable_leaves_a_disabled_owner_with_the_worlds_cause() {
+    let model = Model::default();
+    model.refuse_enable.set(true);
+    let Ok(mut enabling) = Owner::install(Backend(&model)).enable() else {
+        panic!("a healthy model admits Enable");
     };
-    let mut owner = Owner(&model);
-    let PhaseParts {
-        mut events,
-        clients,
-        ..
-    } = owner.split();
-    let [first, second] = &*clients;
-    // The port identities the clients form stay apart.
-    assert_ne!(first.port_id(Id(7)), second.port_id(Id(7)));
-    // Two interfaces of one kind choose the same value: the backend keys
-    // work by client and identity.
-    first.admit(Id(7));
-    second.admit(Id(7));
-    assert_eq!(now_ready(first.cancel(Id(7))), Ok(Ok(())));
-    // The first client's cancel did not reach the second's work, and its
-    // second cancel proves only its own work ended.
-    assert_eq!(
-        now_ready(first.cancel(Id(7))),
-        Ok(Err(CancelError::NotRunning))
-    );
-    assert_eq!(model.running.borrow().as_slice(), [(Id(7), 1)]);
-    assert_eq!(now_ready(second.cancel(Id(7))), Ok(Ok(())));
-    // Each terminal carries its port identity: the two `Id(7)` terminals
-    // route to their own clients.
-    assert_eq!(now_ready(events.next_event()), Ok(Ok(first.port_id(Id(7)))));
-    assert_eq!(
-        now_ready(events.next_event()),
-        Ok(Ok(second.port_id(Id(7))))
-    );
+    let EnableStep::Failed(owner, cause) = now_ready(enabling.next()) else {
+        panic!("the model refuses");
+    };
+    assert_eq!(cause, "the radio refused the channel");
+    // The disabled owner enables again once the world allows it.
+    model.refuse_enable.set(false);
+    let _ = enabled(owner);
+}
+
+#[test]
+fn a_dropped_step_loses_nothing() {
+    let model = Model::default();
+    let Ok(mut enabling) = Owner::install(Backend(&model)).enable() else {
+        panic!("a healthy model admits Enable");
+    };
+    model.pending_polls.set(1);
+    {
+        let mut step = core::pin::pin!(enabling.next());
+        let pending = step.as_mut().poll(&mut core::task::Context::from_waker(
+            core::task::Waker::noop(),
+        ));
+        assert!(pending.is_pending());
+        // The step future is dropped here, before the end.
+    }
+    assert!(matches!(now_ready(enabling.next()), EnableStep::Enabled(_)));
+}
+
+#[test]
+fn a_poisoned_backend_leaves_only_through_its_uninstall() {
+    let model = Model::default();
+    let owner = enabled(Owner::install(Backend(&model)));
+    model.poisoned.set(true);
+    let Err(poisoned) = owner.disable() else {
+        panic!("a poisoned model refuses Disable");
+    };
+    poisoned.cause();
+    assert!(core::ptr::eq(poisoned.uninstall(()), &model));
 }

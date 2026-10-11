@@ -14,11 +14,12 @@
 //!
 //! - [`RadioPort`]: the base trait, with the event stream, the radio clock,
 //!   cancellation and the lifecycle.
-//! - [`RadioPortOwner`], [`PhaseParts`], [`Lent`], [`RadioPortEvents`] and
-//!   [`RadioPortClient`]: the one owner of an installed port, which takes
-//!   exclusive operations on `&mut` and lends running phases, each part a
-//!   [`Lent`] of that borrow: an event consumer, a phase control and
-//!   interface-scoped clients.
+//! - [`Owner`] over a [`PortBackend`], with its states [`Disabled`] and
+//!   [`Enabled`], its transitions [`Enabling`] and [`Disabling`] and its
+//!   exit [`PoisonedOwner`]; [`PhaseParts`] and [`Lent`], one running
+//!   phase's event consumer ([`RadioPortEvents`]), control and clients
+//!   ([`RadioPortClient`]); [`Work`], one admitted operation. Every rule a
+//!   caller controls is a type.
 //! - [`Poisoned`] and [`PortResult`]: the only outer error of a port call,
 //!   carrying the backend's cause; every refusal is the inner `Err`.
 //! - [`EventsLost`]: the one loss marker, with its ordering rule.
@@ -75,7 +76,10 @@ pub mod conformance;
 mod owner;
 mod relation;
 
-pub use owner::{Lent, PhaseParts, RadioPortClient, RadioPortEvents, RadioPortOwner};
+pub use owner::{
+    DisableStep, Disabled, Disabling, EnableStep, Enabled, Enabling, Lent, Owner, PhaseParts,
+    PoisonedOwner, PortBackend, RadioPortClient, RadioPortEvents, RadioWork, Step, Work,
+};
 pub use relation::{
     ClockInfo, ClockRelation, ClockSample, Generation, GenerationSource, Projected,
     ProjectionError, RadioStamp, RelationRate, RelationSample, Stamp,

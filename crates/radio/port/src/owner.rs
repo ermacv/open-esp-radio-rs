@@ -1,188 +1,206 @@
-//! The one authority over an installed port.
+//! The one authority over an installed port, as types.
 //!
-//! An installed port has exactly one owner ([`RadioPortOwner`]), which is
-//! neither `Clone` nor `Copy`. The operations that conflict with work in
-//! flight take `&mut` on it, between running phases: the lifecycle and a
-//! protocol's permanent radio moves where it has them (a Wi-Fi channel
-//! move; an IEEE 802.15.4 request names its own channel, so that port has
-//! none).
-//! Between phases the owner also consumes the event stream and ends any
-//! admitted work.
+//! Every rule a caller controls is a type here, so breaking it does not
+//! compile ([ownership and refusals]); only what the world controls (the
+//! air, time, the hardware, a peer, the arbiter) stays a typed outcome.
 //!
-//! For one running phase the owner lends the port out:
-//! [`RadioPortOwner::split`] borrows it mutably and returns three parts
-//! ([`PhaseParts`]), each a [`Lent`] that carries that borrow:
+//! # Shape
 //!
-//! - the phase's one event consumer ([`RadioPortEvents`]);
-//! - the phase control, one value that is neither `Clone` nor `Copy`, for
-//!   the radio-wide operations that only gate or tune admission while
-//!   clients run (a Wi-Fi transmit gate, beacon-receive priority, EDCA or
-//!   modem-sleep membership), held by the policy that drives them;
-//! - the protocol's client handles, each scoped to its interface
-//!   ([`RadioPortClient`]); their count is fixed at the split and may follow
-//!   the backend's capabilities (one IEEE 802.15.4 interface, or up to four
-//!   with multi-PAN).
+//! A backend implements [`PortBackend`]; its install wraps the backend in an
+//! [`Owner`] in the [`Disabled`] state, and no caller ever holds the backend
+//! itself. The owner's state is its type:
 //!
-//! The parts are disjoint resources, each with one holder: a client owns
-//! its own work, the control owns the policy of what reaches the air next,
-//! and neither can act for the other. Each kind of client names its work
-//! with its own identity type ([`RadioPortClient::Id`]), which the client
-//! chooses, as a sans-IO core does: another client's identity does not
-//! type-check, and a port with one client simply uses its identity.
-//!
-//! Nothing of the port reaches another executor task but requests to its
-//! actor. A measurement the backend publishes (an IEEE 802.15.4 recent
-//! RSSI) is not part of the port: as the radio clock, it is the backend's
-//! own published value, with one writer and readers of an atomic snapshot.
-//!
-//! # The phase control
-//!
-//! The control has one holder, the policy that arbitrates admission (for
-//! Wi-Fi, the service that pairs the station and the access point); the
-//! other policies that need it (a station's power save, coexistence slices)
-//! send that holder requests and never hold the control themselves.
-//!
-//! None of its operations refuses as busy. An operation that stops
-//! admission takes effect at once, also when its future is dropped; the
-//! work already on the air ends by itself, and the operation's future
-//! resolves to the protocol's typed proof that the air is quiet (for
-//! Wi-Fi, closing the transmit gate yields a proof that no attempt is
-//! published), which only the backend constructs. A policy that needs a
-//! quiet air (a power-save frame announcing sleep) takes that proof
-//! instead of retrying a refusal.
-//!
-//! The borrow is in the contract's signature, not in the backend's types:
-//! `split(&mut self)` returns `PhaseParts<'_, …>`, and [`Lent`] is
-//! invariant in its lifetime, so an implementation cannot hand out parts
-//! that outlive the phase. A part comes out of its loan only by exchange
-//! for a second value of its type, and a backend's part types have no
-//! value outside it (no `Default`, `Clone`, `Copy` or public constructor),
-//! which each backend proves with compile-fail tests ([`Lent`]).
-//!
-//! While any of them lives, the borrow checker refuses every owner call, so
-//! an operation that conflicts with work in flight never meets a client's
-//! work at run time and no backend refuses one as busy. Dropping the parts
-//! ends the phase; work the clients admitted stays in flight, and its
-//! terminal events, with what they return (a Wi-Fi attempt's bodies), reach
-//! the owner's stream: the owner is where they go back to their pools.
-//!
+//! ```text
+//! Owner<B, Disabled> ── enable(self) ──▶ Enabling<B> ── next() … ─▶ Owner<B, Enabled>
+//!        ▲                                         └──────────────▶ Owner<B, Disabled> + failure
+//!        └──────────── Disabling<B> ◀── disable(self) ── Owner<B, Enabled>
+//! any step that meets a poisoned backend ──▶ PoisonedOwner<B>
 //! ```
-//! # use oer_radio_port::{LifecycleCommand, RadioPortOwner};
-//! async fn move_between_phases<O: RadioPortOwner>(owner: &mut O) {
-//!     {
-//!         let phase = owner.split();
-//!         // The clients run, the events consumer dispatches.
-//!         drop(phase);
-//!     }
-//!     // No client exists: the exclusive operation cannot overlap one.
-//!     let _ = owner.lifecycle(LifecycleCommand::Disable).await;
+//!
+//! - [`Owner<B, Disabled>`](Owner) lends the protocol's disabled-only
+//!   settings ([`Owner::setup`]: a permanent channel move, interface
+//!   configuration), and is the only state the backend's uninstall takes.
+//! - [`Owner<B, Enabled>`](Owner) lends one running phase at a time
+//!   ([`Owner::split`]): the phase's one event consumer, its control and
+//!   its interface-scoped clients, each a [`Lent`] of the owner's borrow.
+//! - [`Enabling`] and [`Disabling`] are the transitions. Their
+//!   [`next`](Enabling::next) yields the events the port reports before the
+//!   command's end, the leftover terminals of a phase's work included, and
+//!   then the next owner. They hold the backend between calls, so dropping
+//!   a `next` future loses nothing.
+//! - [`PoisonedOwner`] is the one exit of a poisoned backend: its cause and
+//!   the backend's uninstall.
+//!
+//! Rust has no linear types: dropping an owner, a transition or a poisoned
+//! owner abandons the backend without its uninstall, and the hardware stays
+//! as it was. Each is `#[must_use]`.
+//!
+//! A command never meets another command, a phase never meets a lifecycle
+//! command and a disabled-only setting never meets an enabled port: there is
+//! no lifecycle refusal and no "port enabled" or "port disabled" refusal.
+//! A failed `Enable` (the radio refused it) is the world's outcome and
+//! leaves an `Owner<B, Disabled>`.
+//!
+//! # What types guarantee
+//!
+//! | Guarantee | Enforced by |
+//! | --- | --- |
+//! | A disabled port lends no phase; an enabled one no disabled-only setting | the state parameter |
+//! | One lifecycle command at a time; no phase or setting while one runs | `enable`/`disable` take the owner by value |
+//! | A phase's parts end before any owner call or transition | [`Lent`], invariant in the owner's borrow |
+//! | One running phase, one event consumer | `split(&mut self)` |
+//! | A caller reaches the backend only through the owner and its parts | the owner's private field |
+//! | A transition is not resolved before its end | `next` alone hands out the next owner |
+//! | A part is not taken out of its loan | `Lent` gives no part away; see below |
+//!
+//! Each line has a compile-fail test below or in the crate's tests.
+//!
+//! # What each backend proves
+//!
+//! The language cannot express two rules, so every backend proves them of
+//! its own types with compile-fail tests:
+//!
+//! - its backend, its phase parts and every token it mints (admitted work,
+//!   leases, installed keys and agreements, validated values) are not
+//!   `Clone`, `Copy` or `Default` and have no public constructor, so a
+//!   mutable reference cannot exchange a part out of its loan;
+//! - everything that can act on the port borrows the phase part it came
+//!   from, so it lives no longer than the phase; received data and returned
+//!   bodies act on nothing and may outlive it.
+//!
+//! # Several executor tasks
+//!
+//! A borrow does not cross executor tasks, which need `'static` futures.
+//! Where several tasks need one port, the owner is an actor: one task holds
+//! it, and the others send it requests and await its replies. A handle
+//! shared between tasks over an internal mutex is not a form of this
+//! contract.
+//!
+//! # Inside the backend
+//!
+//! The backend's interrupt entries and runner reach its state beside the
+//! owner; that synchronization stays inside the backend and never reaches a
+//! caller as a refusal.
+//!
+//! # Compile-fail tests
+//!
+//! A disabled port lends no phase:
+//!
+//! ```compile_fail,E0599
+//! # use oer_radio_port::{Disabled, Owner, PortBackend};
+//! fn phase_while_disabled<B: PortBackend>(owner: &mut Owner<B, Disabled>) {
+//!     let _ = owner.split();
 //! }
 //! ```
 //!
-//! An exclusive operation while a phase's handles live does not compile:
+//! An enabled port takes no disabled-only setting:
 //!
-//! ```compile_fail,E0499
-//! # use oer_radio_port::{LifecycleCommand, RadioPortOwner};
-//! async fn overlap<O: RadioPortOwner>(owner: &mut O) {
-//!     let phase = owner.split();
-//!     let _ = owner.lifecycle(LifecycleCommand::Disable).await;
-//!     drop(phase);
+//! ```compile_fail,E0599
+//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! fn setup_while_enabled<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//!     let _ = owner.setup();
 //! }
 //! ```
 //!
-//! Nor does a part kept past its phase:
+//! An owner is gone once its command starts, so a second command cannot
+//! start beside it:
 //!
-//! ```compile_fail,E0499
-//! # use oer_radio_port::{LifecycleCommand, RadioPortOwner};
-//! async fn keep_the_control<O: RadioPortOwner>(owner: &mut O) {
+//! ```compile_fail,E0382
+//! # use oer_radio_port::{Disabled, Owner, PortBackend};
+//! fn two_commands<B: PortBackend>(owner: Owner<B, Disabled>) {
+//!     let _enabling = owner.enable();
+//!     let _ = owner.enable();
+//! }
+//! ```
+//!
+//! A phase's part does not outlive the phase:
+//!
+//! ```compile_fail,E0505
+//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! fn keep_the_control<B: PortBackend>(mut owner: Owner<B, Enabled>) {
 //!     let control = owner.split().control;
-//!     let _ = owner.lifecycle(LifecycleCommand::Disable).await;
+//!     let _disabling = owner.disable();
 //!     drop(control);
 //! }
 //! ```
 //!
-//! Nor an implementation whose parts would outlive the phase:
-//!
-//! ```compile_fail
-//! # use core::future::{Future, Ready, ready};
-//! # use oer_radio_port::*;
-//! # struct Owner; struct Events;
-//! # impl RadioPortEvents for Events {
-//! #     type Event = (); type Fault = ();
-//! #     fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, ()>> + '_ { ready(Ok(Err(EventsLost))) }
-//! # }
-//! impl RadioPortOwner for Owner {
-//! #   type Event = (); type Id = (); type Domain = (); type Fault = ();
-//! #   type Events = Events; type Control = (); type Clients = ();
-//! #   fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, ()>> + '_ { ready(Ok(Err(EventsLost))) }
-//! #   fn now(&self) -> impl Future<Output = PortResult<oer_time::RadioInstant<()>, ClockError, ()>> + '_ { ready(Ok(Err(ClockError::Unavailable))) }
-//! #   fn cancel(&mut self, _: ()) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ { ready(Ok(Ok(()))) }
-//! #   fn lifecycle(&mut self, _: LifecycleCommand) -> impl Future<Output = PortResult<(), LifecycleError, ()>> + '_ { ready(Ok(Ok(()))) }
-//!     // The parts claim a loan longer than the borrow of `self`.
-//!     fn split(&mut self) -> PhaseParts<'static, Events, (), ()> {
-//!         PhaseParts {
-//!             events: Lent::new(Events),
-//!             control: Lent::new(()),
-//!             clients: Lent::new(()),
-//!         }
-//!     }
-//! }
-//! ```
-//!
-//! Its compiling twin lends the parts for the borrow of `self`:
-//!
-//! ```
-//! # use core::future::{Future, Ready, ready};
-//! # use oer_radio_port::*;
-//! # struct Owner; struct Events;
-//! # impl RadioPortEvents for Events {
-//! #     type Event = (); type Fault = ();
-//! #     fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, ()>> + '_ { ready(Ok(Err(EventsLost))) }
-//! # }
-//! impl RadioPortOwner for Owner {
-//! #   type Event = (); type Id = (); type Domain = (); type Fault = ();
-//! #   type Events = Events; type Control = (); type Clients = ();
-//! #   fn next_event(&mut self) -> impl Future<Output = PortResult<(), EventsLost, ()>> + '_ { ready(Ok(Err(EventsLost))) }
-//! #   fn now(&self) -> impl Future<Output = PortResult<oer_time::RadioInstant<()>, ClockError, ()>> + '_ { ready(Ok(Err(ClockError::Unavailable))) }
-//! #   fn cancel(&mut self, _: ()) -> impl Future<Output = PortResult<(), CancelError, ()>> + '_ { ready(Ok(Ok(()))) }
-//! #   fn lifecycle(&mut self, _: LifecycleCommand) -> impl Future<Output = PortResult<(), LifecycleError, ()>> + '_ { ready(Ok(Ok(()))) }
-//!     fn split(&mut self) -> PhaseParts<'_, Events, (), ()> {
-//!         PhaseParts {
-//!             events: Lent::new(Events),
-//!             control: Lent::new(()),
-//!             clients: Lent::new(()),
-//!         }
-//!     }
-//! }
-//! ```
-//!
-//! Nor does a second phase beside the first, which would make two event
-//! consumers:
+//! Nor does a second phase run beside the first:
 //!
 //! ```compile_fail,E0499
-//! # use oer_radio_port::RadioPortOwner;
-//! fn two_phases<O: RadioPortOwner>(owner: &mut O) {
+//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! fn two_phases<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
 //!     let first = owner.split();
 //!     let second = owner.split();
 //!     drop((first, second));
 //! }
 //! ```
 //!
-//! # Several executor tasks
+//! A caller does not reach the backend past the owner:
 //!
-//! A borrow does not cross executor tasks, which need `'static` futures.
-//! Where several tasks need one port, the owner is an actor: one task holds
-//! it and its `&mut`, and the others send it requests and await its
-//! replies. A handle shared between tasks over an internal mutex is not a
-//! form of this contract. The actor's request and reply types are its
-//! protocol's, and its channel the executor binding's; this package names
-//! no executor.
+//! ```compile_fail,E0616
+//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! fn reach_the_backend<B: PortBackend>(owner: &mut Owner<B, Enabled>) -> &mut B {
+//!     &mut owner.backend
+//! }
+//! ```
 //!
-//! # Inside the backend
+//! Nor takes a part out of its loan:
 //!
-//! The backend's interrupt entries and runner still reach its state beside
-//! the handles; that synchronization stays inside the backend and never
-//! reaches a caller as a refusal.
+//! ```compile_fail,E0616
+//! # use oer_radio_port::{Enabled, Owner, PortBackend};
+//! fn take_the_part<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//!     let _ = owner.split().control.part;
+//! }
+//! ```
+//!
+//! Nor does admitted work outlive the client that admitted it, so no token
+//! names the work of a later phase:
+//!
+//! ```compile_fail,E0515
+//! # use oer_radio_port::{RadioPortClient, Work};
+//! fn keep_the_work<C: RadioPortClient>(
+//!     admit: impl for<'c> Fn(&'c C) -> Work<'c, C::Token>,
+//!     client: C,
+//! ) -> Work<'static, C::Token> {
+//!     admit(&client)
+//! }
+//! ```
+//!
+//! Its compiling twin keeps the work only as long as the client:
+//!
+//! ```
+//! # use oer_radio_port::{RadioPortClient, Work};
+//! fn keep_the_work<'c, C: RadioPortClient>(
+//!     admit: impl Fn(&'c C) -> Work<'c, C::Token>,
+//!     client: &'c C,
+//! ) -> Work<'c, C::Token> {
+//!     admit(client)
+//! }
+//! ```
+//!
+//! Each has a compiling twin:
+//!
+//! ```
+//! # use oer_radio_port::{Disabled, EnableStep, Owner, PortBackend};
+//! async fn phase_after_enable<B: PortBackend>(mut owner: Owner<B, Disabled>) {
+//!     let _ = owner.setup();
+//!     let Ok(mut enabling) = owner.enable() else { return };
+//!     let mut enabled = loop {
+//!         match enabling.next().await {
+//!             EnableStep::Event(_) => {}
+//!             EnableStep::Enabled(enabled) => break enabled,
+//!             EnableStep::Failed(..) | EnableStep::Poisoned(_) => return,
+//!         }
+//!     };
+//!     {
+//!         let phase = enabled.split();
+//!         drop(phase);
+//!     }
+//!     let _disabling = enabled.disable();
+//! }
+//! ```
+//!
+//! [ownership and refusals]: https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/architecture.md#ownership-and-refusals
 
 use core::{
     fmt::Debug,
@@ -193,112 +211,319 @@ use core::{
 
 use oer_time::RadioInstant;
 
-use crate::{
-    CancelError, ClockError, Correlation, EventsLost, LifecycleCommand, LifecycleError, PortResult,
-};
+use crate::{CancelError, ClockError, EventsLost, Poisoned, PortResult};
 
-/// The one authority over an installed port; see the [module](self)
-/// documentation.
+/// The state of an owner whose port admits no work and receives nothing.
+pub enum Disabled {}
+
+/// The state of an owner whose port runs.
+pub enum Enabled {}
+
+/// What a backend implements; callers never hold it. A backend's install
+/// wraps it with [`Owner::install`], which a caller cannot do without a
+/// backend value.
 ///
-/// A backend's `install` returns it, with the composition's control, and the
-/// control's `uninstall` consumes it. Its implementations are neither
-/// `Clone` nor `Copy`.
-pub trait RadioPortOwner {
+/// The methods are the backend's side of the [`Owner`]'s transitions and
+/// loans; the owner calls each only in the state its documentation names.
+pub trait PortBackend: Sized {
     /// One owned event.
     type Event;
-    /// The port's identity of admitted work: the client that admitted it
-    /// together with that client's identity, as the backend keys the work,
-    /// so two clients of one kind that chose the same value stay apart.
-    /// A client handle forms it ([`RadioPortClient::port_id`]), and
-    /// terminal events carry it.
-    type Id: Copy + Eq;
     /// The clock domain of the port's radio instants.
     type Domain;
     /// The cause a poisoned backend reports.
     type Fault: Copy + Debug;
+    /// Why the radio did not enable (a refused retune): the world's
+    /// outcome, after which the port is disabled.
+    type EnableFailure;
+    /// The protocol's disabled-only settings, lent by [`Owner::setup`].
+    type Setup<'a>
+    where
+        Self: 'a;
     /// The phase's one event consumer.
-    type Events: RadioPortEvents<Event = Self::Event, Fault = Self::Fault>;
+    type Events<'a>: RadioPortEvents<Event = Self::Event, Fault = Self::Fault>
+    where
+        Self: 'a;
     /// The phase control: the radio-wide operations that only gate or tune
-    /// admission while clients run. Neither `Clone` nor `Copy`, with one
-    /// holder; none of its operations refuses as busy, and one that stops
-    /// admission yields a typed proof of a quiet air (see the
-    /// [module](self) documentation).
-    type Control;
-    /// The protocol's client handles, one per interface; their count is
-    /// fixed at the split. Neither `Clone` nor `Copy`.
-    type Clients;
+    /// admission while clients run, as guards on its sub-resources.
+    type Control<'a>
+    where
+        Self: 'a;
+    /// The protocol's client handles, one per configured interface.
+    type Clients<'a>
+    where
+        Self: 'a;
+    /// What the backend's uninstall takes beside it (the composition's
+    /// control) and what it returns (its hardware owners).
+    type Uninstall;
+    /// The hardware owners the uninstall returns.
+    type Uninstalled;
 
-    /// The next event between running phases: the terminals of the owner's
-    /// own commands, and of the work a phase left in flight. It keeps
-    /// [`RadioPortEvents::next_event`]'s guarantees.
-    fn next_event(
+    /// Admit `Enable` on a disabled port.
+    fn admit_enable(&mut self) -> Result<(), Poisoned<Self::Fault>>;
+
+    /// Admit `Disable` on an enabled port, which ends every admitted work
+    /// with its terminal event first.
+    fn admit_disable(&mut self) -> Result<(), Poisoned<Self::Fault>>;
+
+    /// The next step of an admitted `Enable`: an event, or its end.
+    fn next_enabling(
         &mut self,
-    ) -> impl Future<Output = PortResult<Self::Event, EventsLost, Self::Fault>> + '_;
+    ) -> impl Future<
+        Output = Result<Step<Self::Event, Result<(), Self::EnableFailure>>, Poisoned<Self::Fault>>,
+    > + '_;
 
-    /// The radio clock, as [`RadioPortClient::now`] reads it.
+    /// The next step of an admitted `Disable`: an event (a leftover terminal
+    /// with its bodies), or its end.
+    fn next_disabling(
+        &mut self,
+    ) -> impl Future<Output = Result<Step<Self::Event, ()>, Poisoned<Self::Fault>>> + '_;
+
+    /// The radio clock.
     fn now(
         &self,
     ) -> impl Future<Output = PortResult<RadioInstant<Self::Domain>, ClockError, Self::Fault>> + '_;
 
-    /// End one admitted operation, as [`RadioPortClient::cancel`] does,
-    /// whichever client admitted it.
-    fn cancel(
-        &mut self,
-        id: Self::Id,
-    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + '_;
+    /// Lend the disabled-only settings.
+    fn setup(&mut self) -> Lent<'_, Self::Setup<'_>>;
 
-    /// Start one lifecycle command; its terminal
-    /// [`LifecycleEvent`](crate::LifecycleEvent) follows through
-    /// [`Self::next_event`].
-    ///
-    /// The owner runs one command at a time, and the backend keeps one
-    /// terminal slot reserved for it, so neither cause of
-    /// [`LifecycleError::Busy`] (another command, no slot for the terminal)
-    /// reaches the owner: a backend never refuses its command as busy.
-    /// The variant leaves the contract with [`RadioPort`](crate::RadioPort)'s
-    /// lifecycle in #581.
-    fn lifecycle(
-        &mut self,
-        command: LifecycleCommand,
-    ) -> impl Future<Output = PortResult<(), LifecycleError, Self::Fault>> + '_;
+    /// Lend one running phase of an enabled port.
+    fn split(&mut self) -> PhaseParts<'_, Self::Events<'_>, Self::Control<'_>, Self::Clients<'_>>;
 
-    /// Lend the port for one running phase: its event consumer, its control
-    /// and its client handles ([`PhaseParts`]), each a [`Lent`] of this
-    /// borrow of the owner, which lasts until the last of them is dropped.
-    fn split(&mut self) -> PhaseParts<'_, Self::Events, Self::Control, Self::Clients>;
+    /// Take the disabled or poisoned backend apart.
+    fn uninstall(self, control: Self::Uninstall) -> Self::Uninstalled;
 }
 
-/// The parts of one running phase ([`RadioPortOwner::split`]), each lent
-/// for the phase.
+/// One step of a backend's transition: an event before the command's end,
+/// or the end.
+pub enum Step<E, R> {
+    /// An event the port reports before the command ends.
+    Event(E),
+    /// The command ended.
+    Ended(R),
+}
+
+/// The one authority over an installed port, in state `S`; see the
+/// [module](self) documentation.
+#[must_use = "an owner leaves only through a transition or its backend's uninstall"]
+pub struct Owner<B, S> {
+    backend: B,
+    state: PhantomData<S>,
+}
+
+impl<B: PortBackend> Owner<B, Disabled> {
+    /// Wrap a just-installed, disabled backend. A backend's install calls
+    /// it; a caller has no backend value to pass.
+    pub const fn install(backend: B) -> Self {
+        Self {
+            backend,
+            state: PhantomData,
+        }
+    }
+
+    /// Lend the protocol's disabled-only settings.
+    pub fn setup(&mut self) -> Lent<'_, B::Setup<'_>> {
+        self.backend.setup()
+    }
+
+    /// Start `Enable`; [`Enabling::next`] ends it.
+    ///
+    /// # Errors
+    ///
+    /// A poisoned backend, which only its uninstall leaves.
+    #[allow(clippy::result_large_err, reason = "the owner moves on by value")]
+    pub fn enable(mut self) -> Result<Enabling<B>, PoisonedOwner<B>> {
+        match self.backend.admit_enable() {
+            Ok(()) => Ok(Enabling {
+                backend: Some(self.backend),
+            }),
+            Err(poisoned) => Err(PoisonedOwner::new(self.backend, poisoned)),
+        }
+    }
+
+    /// Take the disabled backend apart with the composition's `control`.
+    pub fn uninstall(self, control: B::Uninstall) -> B::Uninstalled {
+        self.backend.uninstall(control)
+    }
+}
+
+impl<B: PortBackend> Owner<B, Enabled> {
+    /// Lend one running phase: its event consumer, its control and its
+    /// clients, each a [`Lent`] of this borrow.
+    pub fn split(&mut self) -> PhaseParts<'_, B::Events<'_>, B::Control<'_>, B::Clients<'_>> {
+        self.backend.split()
+    }
+
+    /// Start `Disable`; [`Disabling::next`] yields the leftover terminals
+    /// and ends it.
+    ///
+    /// # Errors
+    ///
+    /// A poisoned backend, which only its uninstall leaves.
+    #[allow(clippy::result_large_err, reason = "the owner moves on by value")]
+    pub fn disable(mut self) -> Result<Disabling<B>, PoisonedOwner<B>> {
+        match self.backend.admit_disable() {
+            Ok(()) => Ok(Disabling {
+                backend: Some(self.backend),
+            }),
+            Err(poisoned) => Err(PoisonedOwner::new(self.backend, poisoned)),
+        }
+    }
+}
+
+impl<B: PortBackend, S> Owner<B, S> {
+    /// The radio clock.
+    pub fn now(
+        &self,
+    ) -> impl Future<Output = PortResult<RadioInstant<B::Domain>, ClockError, B::Fault>> + '_ {
+        self.backend.now()
+    }
+}
+
+/// An admitted `Enable` until its end. It holds the backend between calls of
+/// [`Self::next`], so dropping a `next` future loses nothing.
+#[must_use = "an enabling port resolves only through next"]
+pub struct Enabling<B> {
+    backend: Option<B>,
+}
+
+/// One step of [`Enabling::next`].
+pub enum EnableStep<B: PortBackend> {
+    /// An event the port reported before the command ended.
+    Event(B::Event),
+    /// The port is enabled.
+    Enabled(Owner<B, Enabled>),
+    /// The radio did not enable; the port is disabled.
+    Failed(Owner<B, Disabled>, B::EnableFailure),
+    /// The backend is poisoned.
+    Poisoned(PoisonedOwner<B>),
+}
+
+impl<B: PortBackend> Enabling<B> {
+    /// The next event, or the command's end with the next owner.
+    ///
+    /// # Panics
+    ///
+    /// Called again after it returned the next owner, as a completed future
+    /// polled again does.
+    pub async fn next(&mut self) -> EnableStep<B> {
+        let backend = self.backend.as_mut().expect(RESOLVED);
+        let step = backend.next_enabling().await;
+        match step {
+            Ok(Step::Event(event)) => EnableStep::Event(event),
+            Ok(Step::Ended(Ok(()))) => EnableStep::Enabled(Owner {
+                backend: self.backend.take().expect(RESOLVED),
+                state: PhantomData,
+            }),
+            Ok(Step::Ended(Err(failure))) => EnableStep::Failed(
+                Owner {
+                    backend: self.backend.take().expect(RESOLVED),
+                    state: PhantomData,
+                },
+                failure,
+            ),
+            Err(poisoned) => EnableStep::Poisoned(PoisonedOwner::new(
+                self.backend.take().expect(RESOLVED),
+                poisoned,
+            )),
+        }
+    }
+}
+
+/// An admitted `Disable` until its end. It holds the backend between calls
+/// of [`Self::next`], so dropping a `next` future loses nothing.
+#[must_use = "a disabling port resolves only through next"]
+pub struct Disabling<B> {
+    backend: Option<B>,
+}
+
+/// One step of [`Disabling::next`].
+pub enum DisableStep<B: PortBackend> {
+    /// An event the port reported before the command ended: a leftover
+    /// terminal of a phase's work, with what it returns.
+    Event(B::Event),
+    /// The port is disabled.
+    Disabled(Owner<B, Disabled>),
+    /// The backend is poisoned.
+    Poisoned(PoisonedOwner<B>),
+}
+
+impl<B: PortBackend> Disabling<B> {
+    /// The next event, or the command's end with the next owner.
+    ///
+    /// # Panics
+    ///
+    /// Called again after it returned the next owner, as a completed future
+    /// polled again does.
+    pub async fn next(&mut self) -> DisableStep<B> {
+        let backend = self.backend.as_mut().expect(RESOLVED);
+        let step = backend.next_disabling().await;
+        match step {
+            Ok(Step::Event(event)) => DisableStep::Event(event),
+            Ok(Step::Ended(())) => DisableStep::Disabled(Owner {
+                backend: self.backend.take().expect(RESOLVED),
+                state: PhantomData,
+            }),
+            Err(poisoned) => DisableStep::Poisoned(PoisonedOwner::new(
+                self.backend.take().expect(RESOLVED),
+                poisoned,
+            )),
+        }
+    }
+}
+
+const RESOLVED: &str = "a resolved transition is not stepped again";
+
+/// The one exit of a poisoned backend: its state is unknown, and only its
+/// uninstall leaves it.
+#[must_use = "a poisoned backend leaves only through its uninstall"]
+pub struct PoisonedOwner<B: PortBackend> {
+    backend: B,
+    cause: B::Fault,
+}
+
+impl<B: PortBackend> PoisonedOwner<B> {
+    fn new(backend: B, poisoned: Poisoned<B::Fault>) -> Self {
+        Self {
+            backend,
+            cause: poisoned.cause,
+        }
+    }
+
+    /// Why the backend's state is unknown.
+    pub fn cause(&self) -> B::Fault {
+        self.cause
+    }
+
+    /// Take the backend apart with the composition's `control`.
+    pub fn uninstall(self, control: B::Uninstall) -> B::Uninstalled {
+        self.backend.uninstall(control)
+    }
+}
+
+/// The parts of one running phase ([`Owner::split`]), each lent for the
+/// phase.
 pub struct PhaseParts<'a, E, C, K> {
     /// The phase's one event consumer.
     pub events: Lent<'a, E>,
     /// The phase control, with one holder.
     pub control: Lent<'a, C>,
-    /// The protocol's client handles, one per interface.
+    /// The protocol's client handles, one per configured interface.
     pub clients: Lent<'a, K>,
 }
 
-/// One part of a running phase, lent for the borrow `'a` of the port's
-/// owner. It reaches its part by shared or mutable reference
-/// (`Deref`, `DerefMut`) and has no method that gives the part up. `'a` is
-/// invariant, so a loan cannot be stretched beyond the borrow that made
-/// it.
-///
-/// A mutable reference could still exchange the part for a second value
-/// of its type (`core::mem::take`, `core::mem::replace`). A backend
-/// therefore gives its part types no value outside itself: no `Default`,
-/// `Clone` or `Copy` and no public constructor (multi-PAN clients go in
-/// the backend's own collection type, not a bare `Default` one). Each
-/// backend proves that of its own part types with compile-fail tests, so
-/// the part lives no longer than the phase.
+/// One part lent for the borrow `'a` of the port's owner. It reaches its
+/// part by shared or mutable reference and gives the part away by no
+/// method; `'a` is invariant, so no loan outlasts the borrow that made it.
+/// A part's type has no value outside its backend, so a mutable reference
+/// cannot exchange it out ([module](self) documentation).
 pub struct Lent<'a, T> {
     part: T,
     loan: PhantomData<fn(&'a ()) -> &'a ()>,
 }
 
 impl<T> Lent<'_, T> {
-    /// Lend `part` for the phase the owner's `split` opens.
+    /// Lend `part` for the borrow of the owner that the backend's `split` or
+    /// `setup` received.
     pub const fn new(part: T) -> Self {
         Self {
             part,
@@ -321,11 +546,8 @@ impl<T> DerefMut for Lent<'_, T> {
     }
 }
 
-/// The one consumer of a running phase's events.
-///
-/// It is the stream's only consumer while the phase lasts: a router that
-/// hands each terminal event to the exchange whose port identity (client
-/// and identity, [`RadioPortOwner::Id`]) it carries.
+/// The one consumer of a running phase's events: a router that hands each
+/// terminal event to the holder of its work ([`RadioWork::id`]).
 pub trait RadioPortEvents {
     /// One owned event.
     type Event;
@@ -334,36 +556,60 @@ pub trait RadioPortEvents {
 
     /// The next event. Taking it only dequeues it; dropping the future
     /// loses no event. `Ok(Err(EventsLost))` takes the place of the first
-    /// dropped event. A poisoned backend returns
-    /// [`Poisoned`](crate::Poisoned) after every event it produced before
-    /// the fault, and again at every later call.
+    /// dropped event. A poisoned backend returns [`Poisoned`] after every
+    /// event it produced before the fault, and again at every later call.
     fn next_event(
         &mut self,
     ) -> impl Future<Output = PortResult<Self::Event, EventsLost, Self::Fault>> + '_;
 }
 
+/// One admitted operation: what a client's submission returns. The backend
+/// mints its `token`, which is neither `Clone` nor `Copy`, so it names
+/// exactly one operation and only its holder ends it. A `Work` borrows the
+/// client that admitted it (`'c`, invariant), so no token outlives its
+/// phase and none can name the work of a later one.
+#[must_use = "dropping a work forgoes ending it; its terminal still arrives"]
+pub struct Work<'c, T> {
+    token: T,
+    loan: PhantomData<fn(&'c ()) -> &'c ()>,
+}
+
+impl<T: RadioWork> Work<'_, T> {
+    /// Admitted work for the client borrow the backend's submission
+    /// received.
+    pub const fn new(token: T) -> Self {
+        Self {
+            token,
+            loan: PhantomData,
+        }
+    }
+
+    /// The key a router matches the operation's terminal event by.
+    pub fn id(&self) -> T::Id {
+        self.token.id()
+    }
+}
+
+/// A backend's token of one admitted operation ([`Work`]).
+pub trait RadioWork {
+    /// The key a router matches the operation's terminal event by. It
+    /// grants nothing: ending the work takes the token itself.
+    type Id: Copy + Eq;
+
+    /// The routing key of this operation.
+    fn id(&self) -> Self::Id;
+}
+
 /// What every client handle of a running phase does beside its protocol's
-/// own submissions: read the radio clock and end its own work.
+/// own submissions, settings and leases: read the radio clock and end its
+/// own work.
 ///
-/// A client is scoped to its interface: its protocol's submissions and
-/// settings name only that interface, so one client cannot act for another.
-/// Each kind of client names its work with its own identity type, which it
-/// chooses, so a client names only its own work, by type.
-///
-/// Clients of one kind (IEEE 802.15.4 multi-PAN interfaces, two Wi-Fi
-/// interfaces of one role) share the identity type and choose its values
-/// independently. The backend therefore keys admitted work by the client
-/// and its identity: two clients of one kind may choose the same value
-/// without colliding, and one client's cancel never reaches another's
-/// work, so [`CancelError::NotRunning`] proves that this client's work
-/// ended.
+/// A client exists only for an interface the disabled port configured, and
+/// its protocol's calls name only that interface. Its submissions return a
+/// [`Work`] borrowing it.
 pub trait RadioPortClient {
-    /// The correlation identity of this client's work: its own type, so
-    /// another kind of client's identity does not type-check.
-    type Id: Correlation;
-    /// The port's identity of this client's work: the owner's
-    /// [`RadioPortOwner::Id`].
-    type PortId: Copy + Eq;
+    /// The backend's token of one admitted operation of this client.
+    type Token: RadioWork;
     /// The clock domain of the port's radio instants.
     type Domain;
     /// The cause a poisoned backend reports.
@@ -376,18 +622,23 @@ pub trait RadioPortClient {
         &self,
     ) -> impl Future<Output = PortResult<RadioInstant<Self::Domain>, ClockError, Self::Fault>> + '_;
 
-    /// End one operation this client admitted. Its terminal event is the
-    /// operation's own, which may be its natural end. A refusal as
-    /// [`CancelError::NotRunning`] proves that the operation already ended:
-    /// the air ends work, so its end is an outcome, not a caller's state.
-    fn cancel(
-        &self,
-        id: Self::Id,
-    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + '_;
+    /// End the operation `work` names: the token is the authority. Its
+    /// terminal event is the operation's own, which may be its natural end;
+    /// a refusal as [`CancelError::NotRunning`] says the air ended it
+    /// first, the world's outcome. Dropping the future may leave the work
+    /// running or ended; its terminal arrives either way.
+    fn cancel<'c>(
+        &'c self,
+        work: Work<'c, Self::Token>,
+    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + 'c {
+        self.end(work.token)
+    }
 
-    /// The port's identity of this client's work `id`: this client with its
-    /// identity. The client handle forms it, as only it knows which client
-    /// it is; the owner ends a work a phase left in flight by it, and a
-    /// router matches terminal events against it.
-    fn port_id(&self, id: Self::Id) -> Self::PortId;
+    /// The backend's side of [`Self::cancel`]. Only a [`Work`] holds a
+    /// token, and nothing takes it out but `cancel`, so a caller reaches
+    /// this only through `cancel`.
+    fn end(
+        &self,
+        token: Self::Token,
+    ) -> impl Future<Output = PortResult<(), CancelError, Self::Fault>> + '_;
 }

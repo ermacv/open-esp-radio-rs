@@ -317,43 +317,67 @@ Rules:
 
 ## Ownership and refusals
 
-Every module follows two rules when it designs an API. Owner decision:
-[#581](https://github.com/ermacv/open-esp-radio-rs/issues/581) (the
-single-ownership audit, 2026-10-11) and
-[#599](https://github.com/ermacv/open-esp-radio-rs/issues/599).
+Every module follows these rules when it designs an API, and every agent
+checks a design against them before it writes the code. Owner decisions:
+[single ownership](https://github.com/ermacv/open-esp-radio-rs/issues/581#issuecomment-6113824978)
+and [#599](https://github.com/ermacv/open-esp-radio-rs/issues/599). The
+owner's words: every check that can be a compile-time check must be one;
+the code adapts to clean modules with hard, defined contracts, never the
+other way round.
 
 **Single ownership.** A resource has one owner, a value that is neither
 `Clone` nor `Copy`. Exclusivity follows how long it lasts:
 
-- short exclusivity, within one call, is `&mut` on the owner, so the borrow
-  checker refuses an overlap before the code runs;
-- long exclusivity, which outlives the call (a transmit queue while its
-  attempt is on the air), is a lease value the holder returns;
-- temporary occupancy that ends by itself is awaited, not refused.
+- within one call it is `&mut` on the owner;
+- beyond the call (a transmit queue while its attempt is on the air) it is
+  a token or lease the holder gives back;
+- an occupancy that ends by itself is awaited, not refused.
 
 Across executor tasks, which need `'static` futures and cannot share a
-borrow, the owner is an actor: one task holds the owner and its `&mut`, and
-the others send it requests and await its replies. A handle shared between
-tasks over an internal mutex is not ownership. A refusal such as `Busy`
-reaches a caller only where the caller can choose another action; a caller
-that could only retry should have waited or held the right instead.
-Synchronization a backend needs inside itself, for its interrupt entries
-and its runner, stays inside and never reaches a caller as a refusal. A
-measurement a backend publishes (a recent RSSI, the radio clock) has one
-writer and is read as an atomic snapshot without a lock; it is the
-backend's published value, not a shared handle of the port.
+borrow, the owner is an actor: one task holds it, and the others send it
+requests and await its replies. A handle shared between tasks over an
+internal mutex is not ownership. A backend's synchronization with its own
+interrupt entries and runner stays inside it and never reaches a caller as
+a refusal. A measurement a backend publishes (a recent RSSI, the radio
+clock) has one writer and is read as an atomic snapshot without a lock.
 
-**Typestate or refusal.** Who controls a state decides its form:
+**Who controls a state decides its form.** List every refusal and error
+an API would return and ask who controls the state behind it.
 
-- a state the caller controls is typestate or a token: its own earlier
-  submission (a lease for the pending work), its own lifecycle command (a
-  `Disabled` proof that only the `Disable` terminal yields);
-- a state the world controls stays a typed refusal or outcome: the
-  hardware, a peer, the RF arbiter (a coexistence rejection is an outcome
-  of the work, not a caller's error).
+| Controlled by | Form | Examples |
+| --- | --- | --- |
+| The caller's own commands | a typestate: the value's type is its state, and a transition takes it by value | an owner `Disabled`/`Enabled`; a transmit gate closed |
+| The caller's own earlier submission or resource | a token: minted by the owner of the resource, neither `Clone` nor `Copy`, given back to end it | admitted work, a queue lease, an installed key, a Block Ack agreement, a Bluetooth LE set |
+| The caller's own capacity | a pool of tokens handed out once; "full" is an empty pool the caller holds, not a refusal | key slots, accept-list entries |
+| The caller's own values | a validated type that only the capabilities construct, which the call takes instead of the raw value | a supported channel, rate or transmit power |
+| The world (the air, time, the hardware, a peer, the arbiter) | a typed outcome or refusal | a poisoned backend, lost events, a clock that could not be read, a coexistence rejection, a cancel that finds the work already ended |
 
-A radio port applies both through its owner and client handles
-([Radio ports](#radio-ports)).
+A refusal such as `Busy`, `Disabled`, `AlreadyInState`, `Unknown…`,
+`No…Slot` or `Unsupported…` that a caller's own state explains is a design
+defect: it is replaced by the form in the table.
+
+**What makes a guarantee hold.** A guarantee is written down only with
+what enforces it:
+
+- a type rule has a compile-fail test that breaks it, pinned to its error
+  code, and a compiling twin that differs only in the broken rule, so the
+  test fails for the stated reason;
+- the language cannot forbid `Clone`, `Copy` or `Default` on another
+  crate's type, or make a value linear, so the owner of a type proves it of
+  its own types with compile-fail tests: its owners, loans and tokens have
+  no value outside it (no `Default`, `Clone`, `Copy` or public
+  constructor), and everything that can act on a resource borrows the loan
+  it came from;
+- a guarantee that is neither is not claimed.
+
+Typestate transitions that wait (an enable, a disable) are values that hold
+the owner between steps, so dropping a step's future loses nothing; only
+the last step hands out the next state. A borrow binds a loan to its
+lender: a loan type is invariant in the lender's borrow, and the lender's
+signature, not the borrower's types, fixes it.
+
+A radio port applies these rules through its owner, its phases and its
+tokens ([Radio ports](#radio-ports)).
 
 ## Package names
 
@@ -416,44 +440,25 @@ protocol:
 | Lifecycle | Enable, disable, quiesce and cancel of submitted work, each with a terminal event; `Disable` ends the work in flight first |
 | Clock | The backend's radio time on the shared time contract, with a stated resolution and the relation of its epoch to monotonic time (`ClockInfo`); asynchronous under the same conditions as submission |
 
-**Authority.** An installed port has one owner
-(`oer_radio_port::RadioPortOwner`), which takes on `&mut`, between running
-phases, the operations that conflict with work in flight: the lifecycle and
-a permanent channel move where the protocol has one (an IEEE 802.15.4
-request names its own channel). It lends the port out for one
-running phase: `split(&mut self)` returns `PhaseParts<'_, …>`, each part a
-`Lent` of that borrow, so the contract's signature, not a backend's types,
-binds every part to the phase. A backend's part types have no value outside the
-backend (no `Default`, `Clone`, `Copy` or public constructor), so a
-mutable reference cannot exchange a part out of its loan; each backend
-proves that with compile-fail tests. The parts are the phase's one event consumer
-(`RadioPortEvents`), one phase control for the radio-wide operations that
-only gate or tune admission while clients run (a Wi-Fi transmit gate,
-beacon-receive priority, EDCA, modem-sleep membership), and the protocol's
-client handles, each scoped to its interface (`RadioPortClient`) and
-counted at the split. Each kind of client names its work with its own
-identity type, which it chooses as a sans-IO core does, so another
-client's identity does not type-check and a single-client port (Bluetooth
-LE, whose controller core arbitrates every role) uses its own. The backend
-keys work by client and identity, so clients of one kind (802.15.4
-multi-PAN interfaces) may choose the same value without colliding. The
-port's identity of a work is that pair: the client handle forms it, the
-owner ends a phase's leftover work by it, and terminal events carry it. The control and the clients are disjoint
-resources, each with one holder. The control has one
-holder, the policy that arbitrates admission; other policies that need it
-(power save, coexistence slices) send that holder requests. None of its
-operations refuses as busy: stopping admission takes effect at once, even
-when its future is dropped, and the future resolves to a typed proof that
-the air is quiet, which only the backend constructs (closing the Wi-Fi
-transmit gate yields a proof that no attempt is published); a policy that
-needs a quiet air takes the proof instead of retrying a refusal. While the
-parts live, no owner call compiles, so a lifecycle command or a channel
-move never meets a client's work and no backend refuses one as busy
-([Ownership and refusals](#ownership-and-refusals)). Work a phase leaves in
-flight ends through the owner's stream, which returns its bodies to their
-pools. The base `RadioPort` and the protocol ports move onto this shape in
-[#581](https://github.com/ermacv/open-esp-radio-rs/issues/581), and
-`RadioPort` then keeps no lifecycle or cancel of its own.
+**Authority.** An installed port is an `oer_radio_port::Owner` over the
+backend, whose type is its state. An `Owner<B, Disabled>` lends the
+protocol's disabled-only settings (a permanent channel move, interface
+configuration) and is the only state the backend's uninstall takes; its
+`enable` takes it by value and returns an `Enabling` that steps through the
+port's events to an `Owner<B, Enabled>` or, when the radio refused, back to
+a disabled owner with the cause. An `Owner<B, Enabled>` lends one running
+phase at a time (`split`): the phase's one event consumer, its control (the
+radio-wide operations that only gate or tune admission, as guards with one
+holder, never refusing as busy) and its interface-scoped clients, each a
+`Lent` of the owner's borrow; its `disable` returns a `Disabling` that
+yields the leftover terminals of the phase's work, with their bodies, and
+then the disabled owner. A poisoned backend leaves through a
+`PoisonedOwner` and its uninstall. A client's submission returns its
+admitted work as a token the backend mints; ending the work takes the
+token. No call refuses for a state the caller controls
+([Ownership and refusals](#ownership-and-refusals)). The base `RadioPort`
+and the protocol ports move onto this shape in
+[#581](https://github.com/ermacv/open-esp-radio-rs/issues/581).
 
 **Correlation identities.** Each port keeps its own 32-bit identity type
 (`TxId`, `RequestId`, `EventId`), so a completion of one port cannot be

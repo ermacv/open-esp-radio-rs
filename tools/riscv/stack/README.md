@@ -4,10 +4,19 @@
 its machine code, over the program model of
 [`oer-riscv-program`](../program/README.md),
 [`oer-riscv-analysis`](../analysis/README.md) and
-[`oer-riscv-lift`](../lift/README.md). It reads the image's symbols (the
-functions with their aliases), sections, relocations and DWARF through
-[`oer-elf`](../../elf/README.md), whose RV32 relocation table decides which
-relocation is an address word or a control transfer.
+[`oer-riscv-lift`](../lift/README.md). It reads the image through one
+`ImageFacts` of `oer-riscv-program` (functions with their aliases,
+executable ranges, read-only words, sized data objects, relocated address
+words and `.LJTI*` labels, parsed once) and its frame records, relocations
+and DWARF through [`oer-elf`](../../elf/README.md), whose RV32 relocation
+table decides which relocation is an address word or a control transfer.
+
+`analyze` works in the caller's `WorkingMemory` and charges the caller's
+`RunControl`, as Blobray's analyses do: running out of either fails it with
+`ResourceLimited` instead of running on. The caller decides both; the image
+checks' budget is `oer_image_check_stack::budget`. The memory covers the
+image facts and the value analysis; this crate's own maps, the DWARF and
+the resolutions are not yet reserved in it.
 
 Facts of the build come first. An image linked with `--emit-relocs` keeps
 its relocations, each checked against the word it describes (a mismatch is an
@@ -111,7 +120,7 @@ set of found facts (waker vtables, field types) is a hole,
   unresolved call inside `Waker::wake`, `wake_by_ref`, `drop` or `clone` to
   that slot of every vtable.
 - `Analysis::constant_arguments` reads an argument register's exact value at
-  every direct call of a function, complete when `address_taken` finds no
+  every direct call of a function, complete when `taken_addresses` holds no
   relocation that takes the function's address other than a transfer: how
   the ESP32-S31 image reads every function `Ipc::call_function` posts, the
   targets of the IPC dispatch.

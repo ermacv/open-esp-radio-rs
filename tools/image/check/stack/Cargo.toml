@@ -12,6 +12,8 @@ description = "The stack check of an image: task and bootstrap stacks bounded fr
 oer-chip-profile = { path = "../../../chip-profile" }
 oer-elf = { path = "../../../elf" }
 oer-image-policy = { path = "../../policy" }
+oer-riscv-model = { path = "../../../riscv/model" }
+oer-riscv-program = { path = "../../../riscv/program" }
 oer-riscv-stack = { path = "../../../riscv/stack" }
 oer-vendor-artifacts = { path = "../../../vendor-artifacts" }
 rustc-demangle = "=0.1.28"

@@ -1,11 +1,11 @@
 //! Calls and out-of-function jumps of one function by a linear sweep over its
 //! whole extent, independent of which code its control-flow graph reaches.
-use crate::image::{Function, function_bytes, read_only_word};
-use crate::relocations::Relocations;
+use crate::image::{Function, function_bytes};
 use oer_riscv_decode::{
     CsrOp, Extension, Extensions, Float, Inst, Instruction, Operand, Reg, Register, decode,
 };
 use oer_riscv_model::*;
+use oer_riscv_program::facts::ImageFacts;
 use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -190,7 +190,7 @@ fn fact(
     instruction: &Instruction,
     pc: u32,
     facts: &[Option<Fact>; 32],
-    relocations: &Relocations,
+    image: &ImageFacts<'_>,
 ) -> Option<Fact> {
     let get = |r: u8| {
         if r == 0 {
@@ -228,7 +228,7 @@ fn fact(
                 (_, Some(Fact::Scaled { entries })) => (base(src1.0)?, entries),
                 // A compiler jump table indexed however the code likes.
                 (Some(Fact::Constant(table)), _) | (_, Some(Fact::Constant(table)))
-                    if relocations.is_jump_table(table) =>
+                    if image.is_jump_table(table) =>
                 {
                     (TableBase::Address(table), None)
                 }
@@ -242,7 +242,7 @@ fn fact(
             Some(Fact::TableAddress {
                 base: TableBase::Address(table),
                 entries,
-            }) if relocations.is_jump_table(table) => Some(Fact::TableEntry {
+            }) if image.is_jump_table(table) => Some(Fact::TableEntry {
                 base: TableBase::Address(table),
                 entries,
             }),
@@ -297,9 +297,9 @@ fn merges(bytes: &[u8], start: u32, end: u32) -> BTreeSet<u32> {
 }
 
 /// The `entries` words of the unwritable table at `base`, if all are there.
-fn table_words(file: &oer_elf::Elf<'_>, base: u32, entries: u32) -> Option<Vec<u32>> {
+fn table_words(image: &ImageFacts<'_>, base: u32, entries: u32) -> Option<Vec<u32>> {
     (0..entries)
-        .map(|i| read_only_word(file, base.wrapping_add(4 * i)))
+        .map(|i| image.read_only_word(base.wrapping_add(4 * i)))
         .collect()
 }
 
@@ -398,14 +398,8 @@ pub(crate) struct Swept {
     pub float_sites: Vec<u32>,
 }
 
-pub(crate) fn transfers(
-    elf: &[u8],
-    function: &Function,
-    relocations: &Relocations,
-) -> Result<Swept> {
-    let file =
-        oer_elf::Elf::parse(elf).map_err(|_| Error::new(ErrorCode::Integrity, "invalid ELF"))?;
-    let bytes = function_bytes(&file, function)?;
+pub(crate) fn transfers(image: &ImageFacts<'_>, function: &Function) -> Result<Swept> {
+    let bytes = function_bytes(image.file(), function)?;
     let (start, end) = (function.address, function.address + function.size);
     let outside = |target: u32| target < start || target >= end;
     let mut transfers = Vec::new();
@@ -489,9 +483,10 @@ pub(crate) fn transfers(
                     Some(Fact::TableEntry {
                         base: TableBase::Address(table),
                         entries,
-                    }) if displacement.as_i32() == 0 => relocations
+                    }) if displacement.as_i32() == 0 => image
                         .jump_table(table)
-                        .or_else(|| table_words(&file, table, entries?)),
+                        .map(Iterator::collect)
+                        .or_else(|| table_words(image, table, entries?)),
                     _ => None,
                 };
                 let kind = if link {
@@ -550,7 +545,7 @@ pub(crate) fn transfers(
             _ => {}
         }
         previous = upper(&instruction, pc);
-        let next = fact(&instruction, pc, &facts, relocations);
+        let next = fact(&instruction, pc, &facts, image);
         let load = match instruction {
             Instruction::Base(Inst::Lw { offset, base, .. }) => Some(Load {
                 base: base.0,

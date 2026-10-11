@@ -1,5 +1,70 @@
 use super::*;
 
+/// Working memory of a test's analysis: no test comes near it.
+const TEST_MEMORY: u64 = 1 << 32;
+
+/// Run `body` over the facts of `elf`, read without a work budget.
+fn with_facts<R>(elf: &[u8], body: impl FnOnce(&ImageFacts<'_>) -> Result<R>) -> Result<R> {
+    let memory = WorkingMemory::new(TEST_MEMORY)?;
+    let facts = ImageFacts::new(elf, &memory, &mut || Ok(()))?;
+    body(&facts)
+}
+
+/// [`crate::analyze`] of `elf` and its `companions` under `memory` and `control`.
+fn analyze_within(
+    elf: &[u8],
+    companions: &[&[u8]],
+    summaries: &[Summary],
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<Analysis> {
+    let image = ImageFacts::new(elf, memory, control)?;
+    let companions = companions
+        .iter()
+        .map(|companion| ImageFacts::new(companion, memory, control))
+        .collect::<Result<Vec<_>>>()?;
+    let companions: Vec<&ImageFacts<'_>> = companions.iter().collect();
+    crate::analyze(&image, &companions, summaries, memory, control)
+}
+
+/// [`crate::analyze`] without a work budget.
+fn analyze(elf: &[u8], companions: &[&[u8]], summaries: &[Summary]) -> Result<Analysis> {
+    let memory = WorkingMemory::new(TEST_MEMORY)?;
+    analyze_within(elf, companions, summaries, &memory, &mut || Ok(()))
+}
+
+fn functions(elf: &[u8]) -> Result<Vec<Function>> {
+    with_facts(elf, |facts| Ok(facts.functions().to_vec()))
+}
+
+fn stack_sizes(elf: &[u8]) -> Result<BTreeMap<u32, u64>> {
+    with_facts(elf, crate::stack_sizes)
+}
+
+fn taken_addresses(elf: &[u8]) -> Result<BTreeSet<u32>> {
+    with_facts(elf, crate::taken_addresses)
+}
+
+fn address_taken(elf: &[u8], function: u32) -> Result<bool> {
+    Ok(taken_addresses(elf)?.contains(&function))
+}
+
+fn vector_table(elf: &[u8], symbol: &str) -> Result<Vec<Option<u32>>> {
+    with_facts(elf, |facts| crate::vector_table(facts, symbol))
+}
+
+fn trap_entry(elf: &[u8], entry: u32) -> Result<TrapEntry> {
+    with_facts(elf, |facts| crate::trap_entry(facts, entry))
+}
+
+fn interrupt_table(elf: &[u8], symbol: &str, layout: &TableLayout) -> Result<Vec<TableEntry>> {
+    with_facts(elf, |facts| crate::interrupt_table(facts, symbol, layout))
+}
+
+fn swept(elf: &[u8]) -> Result<sweep::Swept> {
+    with_facts(elf, |facts| sweep::transfers(facts, &facts.functions()[0]))
+}
+
 const SP_DOWN_16: u32 = 0xff01_0113; // addi sp, sp, -16
 const SAVE_RA: u32 = 0x0011_2623; // sw ra, 12(sp)
 const LOAD_RA: u32 = 0x00c1_2083; // lw ra, 12(sp)
@@ -470,17 +535,7 @@ fn dispatch(bounded: bool) -> Symbol {
 fn a_bounded_jump_table_reads_exactly_its_entries() {
     // Two arms; the word after the table is not an entry.
     let image = image(&[dispatch(true)], &[TEXT + 32, TEXT + 36, 0x5000], false);
-    let function = &functions(&image).unwrap()[0];
-    assert_eq!(
-        sweep::transfers(
-            &image,
-            function,
-            &relocations::Relocations::read(&image).unwrap()
-        )
-        .unwrap()
-        .transfers,
-        []
-    );
+    assert_eq!(swept(&image).unwrap().transfers, []);
     assert_eq!(
         analyze(&image, &[], &[])
             .unwrap()
@@ -494,17 +549,12 @@ fn a_bounded_jump_table_reads_exactly_its_entries() {
 #[test]
 fn a_bounded_table_entry_out_of_the_function_is_a_jump() {
     let image = image(&[dispatch(true)], &[TEXT + 32, 0x5000], false);
-    let function = &functions(&image).unwrap()[0];
-    let transfers: Vec<_> = sweep::transfers(
-        &image,
-        function,
-        &relocations::Relocations::read(&image).unwrap(),
-    )
-    .unwrap()
-    .transfers
-    .iter()
-    .map(|t| (t.site, t.target, t.kind))
-    .collect();
+    let transfers: Vec<_> = swept(&image)
+        .unwrap()
+        .transfers
+        .iter()
+        .map(|t| (t.site, t.target, t.kind))
+        .collect();
     assert_eq!(transfers, [(TEXT + 28, Some(0x5000), TransferKind::Tail)]);
     let bound = analyze(&image, &[], &[]).unwrap().bound(TEXT).unwrap();
     assert_eq!(bound.reasons(), BTreeMap::from([(Reason::OutsideImage, 1)]));
@@ -759,13 +809,7 @@ fn a_global_untyped_code_label_is_a_function() {
 fn a_labelled_jump_table_is_read_from_its_relocations() {
     // No bounds check: the relocations alone name the table's entries.
     let image = labelled(&[dispatch(false)], &[TEXT + 24, TEXT + 28]);
-    let function = &functions(&image).unwrap()[0];
-    let swept = sweep::transfers(
-        &image,
-        function,
-        &relocations::Relocations::read(&image).unwrap(),
-    )
-    .unwrap();
+    let swept = swept(&image).unwrap();
     assert_eq!(swept.transfers, []);
     assert_eq!(swept.jumps, [(TEXT + 20, vec![TEXT + 24, TEXT + 28])]);
     let bound = analyze(&image, &[], &[]).unwrap().bound(TEXT).unwrap();
@@ -903,10 +947,12 @@ fn only_data_neither_writable_nor_executable_reads_as_constant() {
         &[0x1234_5678],
         true,
     );
-    let file = oer_elf::Elf::parse(elf.as_slice()).unwrap();
-    assert_eq!(image::read_only_word(&file, RODATA), Some(0x1234_5678));
+    let words = with_facts(&elf, |facts| {
+        Ok([facts.read_only_word(RODATA), facts.read_only_word(TEXT)])
+    })
+    .unwrap();
     // Code loaded into RAM may hold a table the program rewrites.
-    assert_eq!(image::read_only_word(&file, TEXT), None);
+    assert_eq!(words, [Some(0x1234_5678), None]);
 }
 
 /// The platform's interrupt entry up to its handler call
@@ -982,9 +1028,8 @@ fn trap_image(entry: &[u32]) -> (Vec<u8>, u32) {
 #[test]
 fn the_platform_trap_entry_keeps_its_frame_on_the_interrupt_stack() {
     let (elf, handler) = trap_image(&PLATFORM_ENTRY);
-    let functions = functions(&elf).unwrap();
     assert_eq!(
-        trap_entry(&elf, &functions, TEXT).unwrap(),
+        trap_entry(&elf, TEXT).unwrap(),
         TrapEntry {
             entry: TEXT,
             frame: 80,
@@ -998,8 +1043,7 @@ fn a_trap_entry_must_move_sp_before_its_first_memory_access() {
     let mut entry = vec![0x0011_2023]; // sw ra, 0(sp)
     entry.extend(PLATFORM_ENTRY);
     let (elf, _) = trap_image(&entry);
-    let functions = functions(&elf).unwrap();
-    let error = trap_entry(&elf, &functions, TEXT).unwrap_err();
+    let error = trap_entry(&elf, TEXT).unwrap_err();
     assert!(error.message.contains("outside its frame"), "{error:?}");
 }
 
@@ -1008,8 +1052,7 @@ fn a_trap_entry_learns_the_interrupt_stack_only_from_comparing_both_stacks() {
     // csrrw sp, mscratch, sp; addi sp, sp, -16; sw ra, 0(sp): mscratch may
     // hold the interrupted task's sp in a nested trap.
     let (elf, _) = trap_image(&[0x3401_1173, SP_DOWN_16, 0x0011_2023]);
-    let functions = functions(&elf).unwrap();
-    assert!(trap_entry(&elf, &functions, TEXT).is_err());
+    assert!(trap_entry(&elf, TEXT).is_err());
 }
 
 #[test]
@@ -1583,7 +1626,7 @@ fn a_waker_call_reaches_its_slot_of_every_waker_vtable() {
     let elf = compiled(WAKER_PROGRAM);
     let analysis = analyze(&elf, &[], &[]).unwrap();
     let dwarf = Dwarf::read(&elf).unwrap();
-    let vtables = waker_vtables(&elf, &dwarf, &analysis).unwrap();
+    let vtables = with_facts(&elf, |facts| waker_vtables(facts, &dwarf, &analysis)).unwrap();
     assert_eq!(vtables.len(), 1, "{vtables:x?}");
     let start = functions(&elf)
         .unwrap()
@@ -1865,8 +1908,7 @@ fn a_trap_entry_must_not_lower_the_level_before_its_handler() {
     let mut entry = PLATFORM_ENTRY.to_vec();
     entry.push(TAKE_NEXT);
     let (elf, _) = trap_image(&entry);
-    let functions = functions(&elf).unwrap();
-    let error = trap_entry(&elf, &functions, TEXT).unwrap_err();
+    let error = trap_entry(&elf, TEXT).unwrap_err();
     assert!(
         error.message.contains("lowers the interrupt level"),
         "{error:?}"
@@ -1996,4 +2038,39 @@ fn a_bound_names_what_it_reaches_and_each_function_its_floating_point() {
         analysis.bound(caller_at).unwrap().reached,
         BTreeSet::from([TEXT, caller_at])
     );
+}
+
+/// A work budget of so many units.
+struct Units(u64);
+
+impl RunControl for Units {
+    fn checkpoint(&mut self, units: u64) -> Result<()> {
+        self.0 = self
+            .0
+            .checked_sub(units)
+            .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "work budget exhausted"))?;
+        Ok(())
+    }
+}
+
+#[test]
+fn the_working_memory_and_the_work_budget_bound_the_analysis() {
+    let image = executable(&[leaf(None)]);
+    // The facts alone fit; the analysis needs more than either limit.
+    let needed = {
+        let memory = WorkingMemory::new(TEST_MEMORY).unwrap();
+        ImageFacts::new(&image, &memory, &mut || Ok(())).unwrap();
+        memory.peak()
+    };
+    let memory = WorkingMemory::new(needed + 1).unwrap();
+    let facts = ImageFacts::new(&image, &memory, &mut || Ok(())).unwrap();
+    let error = crate::analyze(&facts, &[], &[], &memory, &mut || Ok(())).unwrap_err();
+    assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+    assert!(error.memory.is_some(), "{error:?}");
+
+    let memory = WorkingMemory::new(TEST_MEMORY).unwrap();
+    let facts = ImageFacts::new(&image, &memory, &mut || Ok(())).unwrap();
+    let error = crate::analyze(&facts, &[], &[], &memory, &mut Units(1)).unwrap_err();
+    assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+    assert!(crate::analyze(&facts, &[], &[], &memory, &mut Units(u64::MAX)).is_ok());
 }

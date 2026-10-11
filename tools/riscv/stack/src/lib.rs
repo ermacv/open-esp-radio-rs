@@ -34,17 +34,18 @@ mod sweep;
 mod trap;
 mod wakers;
 
-use oer_riscv_model::{Error, ErrorCode, Result};
+use oer_riscv_model::{Error, ErrorCode, Result, RunControl, WorkingMemory};
+use oer_riscv_program::facts::ImageFacts;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 pub use cha::{TypeFacts, function_pointer_resolutions};
 pub use contexts::{HartStack, LevelStack, Stacks, interrupt_stacks};
 pub use dwarf::{Dwarf, instances};
-pub use image::{Function, functions, stack_sizes};
+pub use image::{Function, stack_sizes};
 pub use interrupts::{Field, TableEntry, TableLayout, interrupt_table};
 use oer_riscv_analysis::KnownJump;
-pub use relocations::{address_taken, taken_addresses};
+pub use relocations::taken_addresses;
 pub use resolutions::{Assumption, Fact, Resolution, Resolutions};
 pub use summaries::{Summary, parse as parse_summaries};
 pub use sweep::{LevelDrop, Load, TableBase, TargetSource, Transfer, TransferKind};
@@ -204,22 +205,30 @@ pub struct Analysis {
     pub summaries: BTreeSet<String>,
 }
 
-/// Analyze every function of the static RV32 executable `elf` and of the
+/// Analyze every function of the static RV32 executable `image` and of the
 /// `companions` it calls into, such as the chip's ROM ELF: a transfer from
 /// one into another reaches the callee's frame like any other call. No two
 /// ELFs may place code at the same address. `summaries` stand for companion
-/// functions the machine code alone does not bound ([`Summary`]).
-pub fn analyze(elf: &[u8], companions: &[&[u8]], summaries: &[Summary]) -> Result<Analysis> {
+/// functions the machine code alone does not bound ([`Summary`]). The value
+/// analysis works in `memory` and charges `control`; either running out
+/// fails the analysis with [`ErrorCode::ResourceLimited`].
+pub fn analyze(
+    image: &ImageFacts<'_>,
+    companions: &[&ImageFacts<'_>],
+    summaries: &[Summary],
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<Analysis> {
     let mut analysis = Analysis {
         functions: BTreeMap::new(),
         code: Vec::new(),
         summaries: BTreeSet::new(),
     };
-    let mut image = None;
-    for elf in std::iter::once(elf).chain(companions.iter().copied()) {
+    let mut own = None;
+    for elf in std::iter::once(image).chain(companions.iter().copied()) {
         let Analysis {
             functions, code, ..
-        } = analyze_one(elf)?;
+        } = analyze_one(elf, memory, control)?;
         for &(start, end) in &code {
             if analysis
                 .code
@@ -233,32 +242,33 @@ pub fn analyze(elf: &[u8], companions: &[&[u8]], summaries: &[Summary]) -> Resul
             }
         }
         analysis.code.extend(code);
-        image.get_or_insert_with(|| functions.keys().copied().collect::<BTreeSet<u32>>());
+        own.get_or_insert_with(|| functions.keys().copied().collect::<BTreeSet<u32>>());
         analysis.functions.extend(functions);
     }
-    analysis.summaries = summaries::apply(&mut analysis, &image.unwrap_or_default(), summaries)?;
+    analysis.summaries = summaries::apply(&mut analysis, &own.unwrap_or_default(), summaries)?;
     Ok(analysis)
 }
 
 /// The facts and executable ranges of one ELF.
-fn analyze_one(elf: &[u8]) -> Result<Analysis> {
-    let relocations = relocations::Relocations::read(elf)?;
-    let functions = image::functions(elf)?;
+fn analyze_one(
+    elf: &ImageFacts<'_>,
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<Analysis> {
     let sizes = image::stack_sizes(elf)?;
-    let code = image::executable_ranges(elf)?;
-    let functions = image::observing(elf, |observe| {
+    let functions = image::observing(elf, memory, control, |observe, control| {
         let mut facts = BTreeMap::new();
-        for function in functions {
+        for function in elf.functions() {
             facts.insert(
                 function.address,
-                function_facts(elf, function, &relocations, &sizes, observe)?,
+                function_facts(elf, function.clone(), &sizes, observe, control)?,
             );
         }
         Ok(facts)
     })?;
     Ok(Analysis {
         functions,
-        code,
+        code: elf.executable_ranges().to_vec(),
         summaries: BTreeSet::new(),
     })
 }
@@ -278,29 +288,26 @@ fn table_base(transfer: &Transfer, observation: &image::Observation) -> Option<u
 /// The entries of the table a transfer loads its target from, when the
 /// table is a sized object or a compiler jump table the relocations name.
 fn table_entries(
-    elf: &[u8],
-    relocations: &relocations::Relocations,
+    elf: &ImageFacts<'_>,
     transfer: &Transfer,
     observation: &image::Observation,
-) -> Result<Option<Vec<u32>>> {
-    let address = table_base(transfer, observation);
-    Ok(match address {
-        Some(address) => image::table(elf, address)?.or_else(|| relocations.jump_table(address)),
-        None => None,
-    })
+) -> Option<Vec<u32>> {
+    let address = table_base(transfer, observation)?;
+    image::table(elf, address).or_else(|| elf.jump_table(address).map(Iterator::collect))
 }
 
 /// One function's facts: its sweep, then the value analysis over a graph
 /// that follows every jump table known so far, again for each table the
 /// analysis's register values newly locate.
 fn function_facts(
-    elf: &[u8],
+    elf: &ImageFacts<'_>,
     function: Function,
-    relocations: &relocations::Relocations,
     sizes: &BTreeMap<u32, u64>,
-    observe: &mut dyn FnMut(&Function, &[KnownJump]) -> Result<image::Observation>,
+    observe: &mut image::Observe<'_>,
+    control: &mut dyn RunControl,
 ) -> Result<FunctionFacts> {
-    let swept = sweep::transfers(elf, &function, relocations)?;
+    control.checkpoint(u64::from(function.size))?;
+    let swept = sweep::transfers(elf, &function)?;
     let inside =
         |target: u32| target >= function.address && target - function.address < function.size;
     let known = |site: u32, entries: &[u32]| KnownJump {
@@ -319,7 +326,7 @@ fn function_facts(
         .map(|(site, entries)| known(*site, entries))
         .collect();
     let observation = loop {
-        let observation = observe(&function, &jumps)?;
+        let observation = observe(&function, &jumps, control)?;
         let before = jumps.len();
         for transfer in &swept.transfers {
             if transfer.kind != TransferKind::Tail
@@ -330,7 +337,7 @@ fn function_facts(
             {
                 continue;
             }
-            if let Some(entries) = table_entries(elf, relocations, transfer, &observation)? {
+            if let Some(entries) = table_entries(elf, transfer, &observation) {
                 jumps.push(known(transfer.site, &entries));
             }
         }
@@ -354,7 +361,7 @@ fn function_facts(
     // their entries replace whatever the value analysis read.
     let mut tabled = BTreeSet::new();
     for transfer in std::mem::take(&mut transfers) {
-        let Some(entries) = table_entries(elf, relocations, &transfer, &observation)? else {
+        let Some(entries) = table_entries(elf, &transfer, &observation) else {
             dispatched.push(transfer);
             continue;
         };
@@ -492,7 +499,7 @@ impl Analysis {
     /// The exact values argument register `a{register}` holds at every
     /// direct call of `callee`, or the first call site where it is not
     /// exact. Complete only for a callee whose address nothing takes
-    /// ([`address_taken`]): every call of it is then a direct one.
+    /// ([`taken_addresses`]): every call of it is then a direct one.
     pub fn constant_arguments(&self, callee: u32, register: usize) -> Result<BTreeSet<u32>> {
         let mut values = BTreeSet::new();
         for facts in self.functions.values() {

@@ -1,4 +1,5 @@
 //! Borrowed RV32 static ELF image. No loading, relocation or environment models.
+pub mod facts;
 pub mod mapping;
 use oer_elf::{ProgramHeaderKind, SectionKind, rv32};
 use oer_riscv_model::*;

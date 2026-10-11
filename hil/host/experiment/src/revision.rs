@@ -12,8 +12,9 @@
 //! worktree's run directory links to the shared store. An older runner
 //! reads the same settings under older names (`OER_HIL_ARBITER_DIR`,
 //! `OER_HIL_OWNER`) and may keep its runs in a directory of its own below
-//! the worktree's `target/hil`: such a run is moved out beside the worktree
-//! before the worktree goes. One launch on a revision is shared by [`run`]
+//! the worktree's `target/hil`: such a run is moved into the store's
+//! `revision-runs` directory before the worktree goes, where it outlives the
+//! checkout. One launch on a revision is shared by [`run`]
 //! and every [`crate::bisect`] step; every run goes
 //! through [`crate::launch::launch_run`], and its run is the one its receipt
 //! names.
@@ -106,7 +107,8 @@ pub(crate) struct Revision<'a> {
     pub(crate) store: RunStore,
     pub(crate) worktree: PathBuf,
     pub(crate) arbiter: PathBuf,
-    /// Where the runs a revision's runner kept below its worktree go.
+    /// Where the runs a revision's runner kept below its worktree go: the
+    /// store's [`RunStore::revision_runs`], so they outlive this checkout.
     pub(crate) runs: PathBuf,
 }
 
@@ -114,15 +116,16 @@ impl<'a> Revision<'a> {
     /// Launches for `checkout`, with the worktree and private arbiter below
     /// `directory`.
     pub(crate) fn new(checkout: &'a Path, owner: &'a str, directory: &Path) -> Result<Self> {
+        let store = RunStore::shared()?;
         Ok(Self {
             checkout,
             owner,
             current: messages_lock(checkout).ok_or("this checkout names no HIL wire")?,
             runner: launch::Runner::prepare(checkout)?,
-            store: RunStore::shared()?,
+            runs: store.revision_runs(),
+            store,
             worktree: directory.join("worktree"),
             arbiter: directory.join("arbiter"),
-            runs: directory.join("runs"),
         })
     }
 
@@ -299,9 +302,55 @@ impl Revision<'_> {
             .ok_or_else(|| format!("the revision's run {id} is in no run directory"))?;
         fs::create_dir_all(&self.runs)?;
         let kept = self.runs.join(id);
-        fs::rename(found, &kept)?;
+        move_directory(&found, &kept)?;
         Ok(kept)
     }
+}
+
+/// Move the directory `from` to `to`, also onto another file system (the
+/// store may live elsewhere than the checkout). There the tree is copied
+/// beside `to` under a partial name, renamed into place once complete and
+/// only then removed from `from`; a failed copy leaves no partial tree.
+fn move_directory(from: &Path, to: &Path) -> std::io::Result<()> {
+    match fs::rename(from, to) {
+        Err(error) if error.kind() == std::io::ErrorKind::CrossesDevices => move_across(from, to),
+        moved => moved,
+    }
+}
+
+/// [`move_directory`] onto another file system: copy under a partial name,
+/// rename into place, then remove `from`. A failed copy removes the partial
+/// tree and leaves `from` whole.
+fn move_across(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut name = std::ffi::OsString::from(".");
+    name.push(to.file_name().unwrap_or_default());
+    name.push(".partial");
+    let partial = to.with_file_name(name);
+    let copied = copy_tree(from, &partial).and_then(|()| fs::rename(&partial, to));
+    if let Err(error) = copied {
+        // The copy's own error is the one to report; a partial tree that
+        // cannot be removed either stays under its hidden partial name.
+        let _ = fs::remove_dir_all(&partial);
+        return Err(error);
+    }
+    fs::remove_dir_all(from)
+}
+
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let target = to.join(entry.file_name());
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else if kind.is_symlink() {
+            std::os::unix::fs::symlink(fs::read_link(entry.path())?, &target)?;
+        } else {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
 
 /// The directory named `id` holding a run report below `root`, at most
@@ -378,8 +427,9 @@ pub enum RevisionResult {
     /// The run ended; each scenario's outcome, in the run's order.
     Ran {
         run: String,
-        /// The run's directory: the shared store's, or beside the
-        /// experiment's worktree for a runner that kept it there.
+        /// The run's directory: in the store's `runs/`, or in its
+        /// `revision-runs/` for a revision's runner that kept the run below
+        /// its worktree in its own format.
         directory: PathBuf,
         scenarios: Vec<ScenarioOutcome>,
     },

@@ -87,7 +87,7 @@ fn revision(directory: &Path) -> Revision<'_> {
         store: RunStore::at(directory.join("store")),
         worktree: directory.join("worktree"),
         arbiter: directory.join("arbiter"),
-        runs: directory.join("runs"),
+        runs: RunStore::at(directory.join("store")).revision_runs(),
     }
 }
 
@@ -130,7 +130,7 @@ fn suite(parent: &Path, id: &str, scenarios: &str) -> PathBuf {
 }
 
 #[test]
-fn a_run_kept_below_the_worktree_moves_out_beside_it() {
+fn a_run_kept_below_the_worktree_moves_into_the_store_s_revision_runs() {
     let directory = tempfile::tempdir().unwrap();
     let revision = revision(directory.path());
     // An older runner keeps its runs per chip below the worktree.
@@ -142,6 +142,7 @@ fn a_run_kept_below_the_worktree_moves_out_beside_it() {
     );
     let kept = revision.keep("41").unwrap();
     assert_eq!(kept, revision.runs.join("41"));
+    assert!(kept.starts_with(revision.store.root()));
     assert!(!old.exists());
     assert_eq!(
         outcomes(&kept).unwrap(),
@@ -206,4 +207,60 @@ fn the_report_records_each_scenario_and_exits_by_the_worst() {
     assert_eq!(json["result"], "ran");
     assert_eq!(json["scenarios"][1]["outcome"], "failed");
     assert_eq!(serde_json::from_value::<Report>(json).unwrap(), report);
+}
+
+#[test]
+fn a_moved_tree_keeps_its_files_and_links() {
+    let directory = tempfile::tempdir().unwrap();
+    let from = directory.path().join("from");
+    fs::create_dir_all(from.join("scenarios/a")).unwrap();
+    fs::write(from.join("suite.json"), "{}").unwrap();
+    fs::write(from.join("scenarios/a/uart.log"), "log").unwrap();
+    std::os::unix::fs::symlink("suite.json", from.join("link")).unwrap();
+    let to = directory.path().join("to");
+    // The copy a move onto another file system makes.
+    copy_tree(&from, &to).unwrap();
+    assert_eq!(
+        fs::read_to_string(to.join("scenarios/a/uart.log")).unwrap(),
+        "log"
+    );
+    assert_eq!(
+        fs::read_link(to.join("link")).unwrap(),
+        Path::new("suite.json")
+    );
+    // A move on one file system renames.
+    let moved = directory.path().join("moved");
+    move_directory(&from, &moved).unwrap();
+    assert!(!from.exists());
+    assert_eq!(fs::read_to_string(moved.join("suite.json")).unwrap(), "{}");
+}
+
+#[test]
+fn a_move_across_file_systems_leaves_no_partial_tree_when_the_copy_fails() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let directory = tempfile::tempdir().unwrap();
+    let from = directory.path().join("from");
+    fs::create_dir_all(from.join("scenarios")).unwrap();
+    fs::write(from.join("suite.json"), "{}").unwrap();
+    let unreadable = from.join("scenarios/uart.log");
+    fs::write(&unreadable, "log").unwrap();
+    fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+    // A root test process reads the file anyway: nothing to check then.
+    if fs::read(&unreadable).is_ok() {
+        return;
+    }
+    let to = directory.path().join("store/41");
+    fs::create_dir_all(to.parent().unwrap()).unwrap();
+    assert!(move_across(&from, &to).is_err());
+    assert!(!to.exists());
+    assert!(!directory.path().join("store/.41.partial").exists());
+    assert_eq!(fs::read_to_string(from.join("suite.json")).unwrap(), "{}");
+    // Once the file reads, the move completes and removes the source.
+    fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o600)).unwrap();
+    move_across(&from, &to).unwrap();
+    assert!(!from.exists());
+    assert_eq!(
+        fs::read_to_string(to.join("scenarios/uart.log")).unwrap(),
+        "log"
+    );
 }

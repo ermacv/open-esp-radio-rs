@@ -297,7 +297,7 @@ same revision launch as [a revision's scenario set](#a-revisions-scenario-set):
 a revision's own runner is built with `oer-hil-observer`, and its runs reach
 the shared store through the worktree's `target/hil/runs` link, or, when an
 older runner keeps them in a directory of its own below `target/hil`, are
-moved to `target/hil/bisect/<id>/runs/`. The scenario's outcome
+moved to the store's `revision-runs/` directory beside its `runs/`. The scenario's outcome
 judges the commit: passed makes it good, failed bad. A commit whose image
 does not compile or does not link (told apart from the run's archived build
 log), or whose own runner does not build or starts no run, is broken: neither good nor bad, and
@@ -323,8 +323,11 @@ with a private arbiter directory. That runner gets the private arbiter and
 the owner under every environment name a revision has read them from
 (`OER_STAND_ARBITER_DIR` and `OER_HIL_ARBITER_DIR`, `OER_STAND_OWNER` and
 `OER_HIL_OWNER`). A run it keeps below the worktree's `target/hil` (an older
-runner's per-chip run directory) is moved to `target/hil/revision/<id>/runs/`
-before the worktree is removed, and its `suite.json` gives the outcomes. It is
+runner's per-chip run directory) is moved to the store's `revision-runs/`
+directory beside its `runs/` before the worktree is removed, so it outlives
+this checkout, and its `suite.json` gives the outcomes. `cargo hil runs`
+does not read such a run, whose bundle is in the revision's own format; it
+is found at `<store>/revision-runs/<run>`. It is
 how a revision whose wire differs
 from this checkout's, such as an older tag, is checked for regressions,
 which `ab` cannot do. The scenarios run in the order given. With the
@@ -451,7 +454,11 @@ a size budget, `OER_HIL_RUN_STORE_BUDGET_GIB` (40 GiB by default): over it, it
 deletes the oldest runs that only their age kept until the store fits, and
 every other reason above still keeps its runs. Run by hand without `--apply` it only lists the other runs and
 the bytes only they hold; hard-linked firmware shared with kept runs is not
-counted. Pins live in the store's `pins.json`. Pruning with `--apply`, and the
+counted. Neither the rule nor the size budget touches the store's
+`revision-runs/`: a run that another revision's runner wrote in its own
+format (a [revision run](#a-revisions-scenario-set) or a bisection step on
+an older wire) is evidence a decision may cite. It stays until someone
+deletes `<store>/revision-runs/<run>` by hand. Pins live in the store's `pins.json`. Pruning with `--apply`, and the
 automatic rule, also delete the observer builds in the store's `observers/`
 that no remaining run names and that were stored more than an hour ago; a
 starting run stores its build before its manifest names it. Run verification

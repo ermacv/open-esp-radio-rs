@@ -31,9 +31,9 @@ pub struct TargetAuditDocument {
 }
 
 /// Schema of the `register-accesses` document
-/// (`{"schema":6,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
+/// (`{"schema":7,"inputs":[...],"abi":...,"call_returns":...,"records":[...],"groups":[...],"summary":{...}}`;
 /// `groups` only with `--group-by`).
-pub const REGISTER_ACCESSES_SCHEMA: u32 = 6;
+pub const REGISTER_ACCESSES_SCHEMA: u32 = 7;
 
 /// One analyzed input of a `register-accesses` document, by position.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -51,6 +51,8 @@ pub struct RegisterAccessDocument {
     pub inputs: Vec<RegisterAccessInput>,
     /// The calling convention the analysis assumed, if any.
     pub abi: Option<CallAbi>,
+    /// Whether calls took the constants their callees return.
+    pub call_returns: bool,
     /// The records the request's filter selected: its observations, every
     /// blocked function it names and every gap.
     pub records: Vec<RegisterAccess>,
@@ -62,10 +64,10 @@ pub struct RegisterAccessDocument {
 }
 
 /// Schema of the `function-records` document
-/// (`{"schema":5,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`).
-pub const FUNCTION_RECORDS_SCHEMA: u32 = 5;
-pub const FIELD_ACCESSES_SCHEMA: u32 = 3;
-pub const CALLERS_SCHEMA: u32 = 1;
+/// (`{"schema":6,"inputs":[...],"abi":...,"call_returns":...,"functions":[...],"missing":[...]}`).
+pub const FUNCTION_RECORDS_SCHEMA: u32 = 6;
+pub const FIELD_ACCESSES_SCHEMA: u32 = 4;
+pub const CALLERS_SCHEMA: u32 = 2;
 
 /// Every memory access of the analyzed functions that lands on one field
 /// offset, as a field of its root ([`crate::field`]), and the functions no
@@ -77,6 +79,8 @@ pub struct FieldAccessesDocument {
     pub inputs: Vec<RegisterAccessInput>,
     /// The calling convention the analysis assumed, if any.
     pub abi: Option<CallAbi>,
+    /// Whether calls took the constants their callees return.
+    pub call_returns: bool,
     /// The field's displacement from the last loaded pointer or the root.
     pub offset: i64,
     /// The access width the request selects, if any.
@@ -115,6 +119,8 @@ pub struct FunctionRecordsDocument {
     pub inputs: Vec<RegisterAccessInput>,
     /// The calling convention the analysis assumed, if any.
     pub abi: Option<CallAbi>,
+    /// Whether calls took the constants their callees return.
+    pub call_returns: bool,
     pub functions: Vec<NamedFunction>,
     /// Requested names that no analyzed or blocked function carries.
     pub missing: Vec<String>,
@@ -154,6 +160,8 @@ pub struct CallersDocument {
     pub inputs: Vec<RegisterAccessInput>,
     /// The calling convention the analysis assumed, if any.
     pub abi: Option<CallAbi>,
+    /// Whether calls took the constants their callees return.
+    pub call_returns: bool,
     /// The requested symbol names.
     pub symbols: Vec<String>,
     /// The referencing functions, in input, object and symbol order.
@@ -173,8 +181,8 @@ pub struct Caller {
 }
 
 /// Schema of the `call-arguments` document
-/// (`{"schema":2,"inputs":[...],"abi":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N}`).
-pub const CALL_ARGUMENTS_SCHEMA: u32 = 2;
+/// (`{"schema":3,"inputs":[...],"abi":...,"call_returns":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N}`).
+pub const CALL_ARGUMENTS_SCHEMA: u32 = 3;
 
 /// The argument registers at every call site of the named functions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -184,6 +192,8 @@ pub struct CallArgumentsDocument {
     pub inputs: Vec<RegisterAccessInput>,
     /// The calling convention the analysis assumed, if any.
     pub abi: Option<CallAbi>,
+    /// Whether calls took the constants their callees return.
+    pub call_returns: bool,
     /// The requested function names.
     pub symbols: Vec<String>,
     /// The calling functions with their call sites, in input, object and
@@ -209,7 +219,7 @@ pub struct CallingFunction {
 }
 
 /// Schema of the `mmio-diff` document.
-pub const MMIO_DIFF_SCHEMA: u32 = 1;
+pub const MMIO_DIFF_SCHEMA: u32 = 2;
 
 /// The MMIO difference of two builds.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -219,6 +229,8 @@ pub struct MmioDiffDocument {
     pub old: Vec<RegisterAccessInput>,
     pub new: Vec<RegisterAccessInput>,
     pub abi: Option<CallAbi>,
+    /// Whether calls took the constants their callees return.
+    pub call_returns: bool,
     #[serde(flatten)]
     pub diff: blobray_domain::MmioDiff,
 }

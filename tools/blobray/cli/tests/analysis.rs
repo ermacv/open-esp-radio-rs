@@ -4,7 +4,7 @@
 #[allow(dead_code)]
 mod support;
 use blobray_application::in_process::{Executable, Limits};
-use blobray_application::library::{LibraryOutcome, analyze_library};
+use blobray_application::library::{Assumptions, LibraryOutcome, analyze_library};
 use object::{
     Architecture, BinaryFormat, Endianness, RelocationFlags, SectionKind, SymbolFlags, SymbolKind,
     SymbolScope,
@@ -99,7 +99,7 @@ fn analyze_with(object: Vec<u8>, memory: u64, control: &mut Limits) -> Result<An
     let mut found = None;
     analyze_library(
         &[library],
-        None,
+        Assumptions::default(),
         &oer_riscv_lift::RiscvDecoder,
         &memory,
         control,

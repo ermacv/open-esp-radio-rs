@@ -2,7 +2,7 @@
 #[allow(dead_code)]
 mod support;
 use blobray_application::in_process::{Executable, Limits};
-use blobray_application::library::register_accesses;
+use blobray_application::library::{Assumptions, register_accesses};
 use blobray_domain::*;
 use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
@@ -41,12 +41,20 @@ fn accesses(
     inputs: &[Executable],
     ranges: &[ImageRegion],
 ) -> Result<(RegisterAccessSummary, Vec<RegisterAccess>)> {
+    accesses_with(inputs, ranges, Assumptions::default())
+}
+
+fn accesses_with(
+    inputs: &[Executable],
+    ranges: &[ImageRegion],
+    assumptions: Assumptions,
+) -> Result<(RegisterAccessSummary, Vec<RegisterAccess>)> {
     let memory = WorkingMemory::new(64 * 1024 * 1024).unwrap();
     let mut control = Limits::new(DEFAULT_WORK_UNITS, std::time::Duration::from_secs(60));
     let mut records = Vec::new();
     let summary = register_accesses(
         inputs,
-        None,
+        assumptions,
         ranges,
         &oer_riscv_lift::RiscvDecoder,
         &memory,
@@ -1410,4 +1418,249 @@ fn an_image_follows_its_labelled_table_only_with_the_links_relocations() {
     let (complete, tables) = records("stripped.elf", switch_image(false));
     assert!(!complete, "the dispatch stays a gap");
     assert!(tables.is_empty());
+}
+
+/// `jal ra, target` at `site`.
+fn call(site: u32, target: u32) -> u32 {
+    let offset = target.wrapping_sub(site);
+    ((offset >> 20 & 1) << 31)
+        | ((offset >> 1 & 0x3ff) << 21)
+        | ((offset >> 11 & 1) << 20)
+        | ((offset >> 12 & 0xff) << 12)
+        | (1 << 7)
+        | 0x6f
+}
+
+#[test]
+fn a_call_takes_the_constants_its_callee_returns() {
+    const RET: u32 = 0x0000_8067;
+    let code = [
+        // helper @0x1000: a0 = 0x20101000, or 0x20100894 unless a1 == 0.
+        0x2010_1537, // lui a0, 0x20101
+        0x0005_8463, // beq a1, zero, +8
+        0x8945_0513, // addi a0, a0, -1900
+        RET,
+        // caller @0x1010: loads through helper's result.
+        call(0x1010, 0x1000),
+        0x0005_2503, // lw a0, 0(a0)
+        RET,
+        // loaded @0x101c: returns a word it loads, no constant.
+        0x0005_2503, // lw a0, 0(a0)
+        RET,
+        // other @0x1024: loads through loaded's result.
+        call(0x1024, 0x101c),
+        0x0005_2503, // lw a0, 0(a0)
+        RET,
+    ];
+    let image = support::executable_with_symbols(
+        &code,
+        &[
+            ("helper", 0x1000, 16),
+            ("caller", 0x1010, 12),
+            ("loaded", 0x101c, 8),
+            ("other", 0x1024, 12),
+        ],
+    );
+    let observed = |call_returns: bool, name: &str| -> Vec<u32> {
+        let (_, records) = accesses_with(
+            &[Executable::new(image.clone())],
+            &[ImageRegion {
+                start: 0x2010_0000,
+                length: 0x2000,
+            }],
+            Assumptions {
+                abi: None,
+                call_returns,
+            },
+        )
+        .unwrap();
+        let mut addresses: Vec<u32> = records
+            .iter()
+            .filter_map(|record| match record {
+                RegisterAccess::Observation {
+                    function, address, ..
+                } if function.name.as_deref() == Some(name.as_bytes()) => *address,
+                _ => None,
+            })
+            .collect();
+        addresses.sort_unstable();
+        addresses
+    };
+    assert_eq!(observed(true, "caller"), [0x2010_0894, 0x2010_1000]);
+    // A callee with a return that is no constant gives the call nothing.
+    assert_eq!(observed(true, "other"), Vec::<u32>::new());
+    // Calls take returned constants only when the request assumes them.
+    assert_eq!(observed(false, "caller"), Vec::<u32>::new());
+}
+
+/// A relocatable object of global functions `(name, offset, size)` over
+/// `code`, with relocations `(offset, symbol, type)` against its own or
+/// undefined symbols.
+fn functions_object(
+    code: &[u32],
+    functions: &[(&str, u64, u64)],
+    relocations: &[(u64, &str, u32)],
+) -> Vec<u8> {
+    use object::write::Relocation;
+    let bytes: Vec<u8> = code.iter().flat_map(|w| w.to_le_bytes()).collect();
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let text = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    obj.append_section_data(text, &bytes, 4);
+    let symbol = |obj: &mut Object, name: &str, value, size, section| {
+        obj.add_symbol(Symbol {
+            name: name.as_bytes().to_vec(),
+            value,
+            size,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Linkage,
+            weak: false,
+            section,
+            flags: SymbolFlags::None,
+        })
+    };
+    let mut ids = Vec::new();
+    for &(name, offset, size) in functions {
+        ids.push((
+            name,
+            symbol(&mut obj, name, offset, size, SymbolSection::Section(text)),
+        ));
+    }
+    for &(offset, name, r_type) in relocations {
+        let id = match ids.iter().find(|(known, _)| *known == name) {
+            Some(&(_, id)) => id,
+            None => {
+                let id = symbol(&mut obj, name, 0, 0, SymbolSection::Undefined);
+                ids.push((name, id));
+                id
+            }
+        };
+        obj.add_relocation(
+            text,
+            Relocation {
+                offset,
+                symbol: id,
+                addend: 0,
+                flags: object::RelocationFlags::Elf { r_type },
+            },
+        )
+        .unwrap();
+    }
+    obj.write().unwrap()
+}
+
+/// The addresses `name`'s observations of `[0x20100000, 0x20102000)` hold
+/// in `inputs`, analyzed with returned constants.
+fn returned_addresses(inputs: &[Executable], name: &str) -> Vec<u32> {
+    let (_, records) = accesses_with(
+        inputs,
+        &[ImageRegion {
+            start: 0x2010_0000,
+            length: 0x3000,
+        }],
+        Assumptions {
+            abi: None,
+            call_returns: true,
+        },
+    )
+    .unwrap();
+    let mut addresses: Vec<u32> = records
+        .iter()
+        .filter_map(|record| match record {
+            RegisterAccess::Observation {
+                function, address, ..
+            } if function.name.as_deref() == Some(name.as_bytes()) => *address,
+            _ => None,
+        })
+        .collect();
+    addresses.sort_unstable();
+    addresses
+}
+
+#[test]
+fn an_object_call_takes_its_global_callees_returned_constants() {
+    // helper: lui a0, 0x20101; ret.
+    let helper = functions_object(&[0x2010_1537, 0x0000_8067], &[("helper", 0, 8)], &[]);
+    // by_jal: jal ra, helper; lw a0, 0(a0); ret.
+    // by_call: auipc ra, %hi(helper); jalr ra, %lo(helper)(ra); lw a0, 0(a0); ret.
+    let caller = functions_object(
+        &[
+            0x0000_00ef,
+            0x0005_2503,
+            0x0000_8067,
+            0x0000_0097,
+            0x0000_80e7,
+            0x0005_2503,
+            0x0000_8067,
+        ],
+        &[("by_jal", 0, 12), ("by_call", 12, 16)],
+        &[
+            (0, "helper", object::elf::R_RISCV_JAL),
+            (12, "helper", object::elf::R_RISCV_CALL_PLT),
+        ],
+    );
+    let library = Executable::new(support::archive(
+        &[(b"helper.o", &helper), (b"caller.o", &caller)],
+        false,
+    ));
+    let inputs = [library];
+    assert_eq!(returned_addresses(&inputs, "by_jal"), [0x2010_1000]);
+    assert_eq!(returned_addresses(&inputs, "by_call"), [0x2010_1000]);
+}
+
+#[test]
+fn a_symbol_defined_with_other_results_answers_nothing() {
+    // helper: lui a0, 0x20101; ret.
+    let helper = functions_object(&[0x2010_1537, 0x0000_8067], &[("helper", 0, 8)], &[]);
+    // helper: beq a1, zero, elsewhere; lui a0, 0x20101; ret. Its branch
+    // out leaves through other code, so it gives no results.
+    let branching = functions_object(
+        &[0x0005_8063, 0x2010_1537, 0x0000_8067],
+        &[("helper", 0, 12)],
+        &[(0, "elsewhere", object::elf::R_RISCV_BRANCH)],
+    );
+    // by_jal: jal ra, helper; lw a0, 0(a0); ret.
+    let caller = functions_object(
+        &[0x0000_00ef, 0x0005_2503, 0x0000_8067],
+        &[("by_jal", 0, 12)],
+        &[(0, "helper", object::elf::R_RISCV_JAL)],
+    );
+    let library = Executable::new(support::archive(
+        &[
+            (b"helper.o", &helper),
+            (b"branching.o", &branching),
+            (b"caller.o", &caller),
+        ],
+        false,
+    ));
+    assert_eq!(returned_addresses(&[library], "by_jal"), Vec::<u32>::new());
+}
+
+#[test]
+fn a_callee_that_branches_out_returns_nothing() {
+    const RET: u32 = 0x0000_8067;
+    let code = [
+        // cond @0x1000: bne a1, zero, other; lui a0, 0x20101; ret.
+        0x0005_9663,
+        0x2010_1537,
+        RET,
+        // other @0x100c: lui a0, 0x20102; ret.
+        0x2010_2537,
+        RET,
+        // caller @0x1014: jal ra, cond; lw a0, 0(a0); ret.
+        call(0x1014, 0x1000),
+        0x0005_2503,
+        RET,
+    ];
+    let image = support::executable_with_symbols(
+        &code,
+        &[
+            ("cond", 0x1000, 12),
+            ("other", 0x100c, 8),
+            ("caller", 0x1014, 12),
+        ],
+    );
+    assert_eq!(
+        returned_addresses(&[Executable::new(image)], "caller"),
+        Vec::<u32>::new()
+    );
 }

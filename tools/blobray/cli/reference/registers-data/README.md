@@ -118,7 +118,7 @@ evaluation. The human groups print them high bits first, for example
 their load width (`load 1B 0xa[7:0]`); entries with different sources stay
 apart, keyed by the sources themselves.
 
-The JSON document streams `{"schema":6,"inputs":[...],"abi":...,"records":[...],"groups":[...],"summary":{...}}`;
+The JSON document streams `{"schema":7,"inputs":[...],"abi":...,"call_returns":...,"records":[...],"groups":[...],"summary":{...}}`;
 `records` holds the selected records and `groups` appears only with
 `--group-by`.
 `inputs` lists each input's role and SHA-256. A record is an `observation` (the
@@ -132,7 +132,7 @@ analyzed, partial and blocked functions, gaps, observations, unresolved and
 indexed addresses, and breaks the
 partial functions down by cause (`partial_causes`, see
 [interfaces and formats](../interfaces-formats/README.md)). `cargo registers
-inventory` runs it with `--abi riscv-integer` and compares these accesses,
+inventory` runs it with `--abi riscv-integer --call-returns` and compares these accesses,
 indexed progressions included, with the register model.
 
 Observations name no hardware registers: the reviewed register model owns

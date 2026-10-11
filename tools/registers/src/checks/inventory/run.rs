@@ -1,5 +1,6 @@
 //! The inventory run behind `cargo registers inventory`: Blobray's
-//! `register-accesses`, under the RISC-V integer calling convention, over
+//! `register-accesses`, under the RISC-V integer calling convention and
+//! with the constants callees return taken at their calls, over
 //! every pinned vendor binary inside the publication's owned MMIO ranges,
 //! compared with the register model ([`super`]), with the provenance
 //! registry's cited functions ranked first.
@@ -65,7 +66,7 @@ fn accesses(
         // A base address the vendor keeps in a callee-saved register across
         // a call stays known: without the assumption every register is
         // unknown after each call.
-        .args(["--abi", "riscv-integer"])
+        .args(["--abi", "riscv-integer", "--call-returns"])
         .args(["--timeout-secs", &OPERATION_TIMEOUT_SECS.to_string()]);
     for input in inputs {
         command

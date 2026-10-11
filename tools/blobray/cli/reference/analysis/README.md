@@ -52,7 +52,7 @@ the operation, and a completed analysis is never discarded for them. A
 relocation to a `.L` local label in a read-only string section
 (`SHF_STRINGS`) shows the escaped text there in quotes; labels of other data,
 such as jump tables, get no text. The JSON document is
-`{"schema":5,"inputs":[...],"abi":...,"functions":[...],"missing":[...]}`:
+`{"schema":6,"inputs":[...],"abi":...,"call_returns":...,"functions":[...],"missing":[...]}`:
 an `analyzed` function carries its coverage, its value-semantics summary,
 `complete` and every record (instructions, blocks, edges, references,
 expressions, values, memory accesses, conditions and return values); a
@@ -80,7 +80,7 @@ displacements after it: such an access is a candidate to read, not a proof.
 An access whose last displacement is `--offset` (of `--width` bytes, when
 given) is reported with its instruction offset, kind and width; absolute
 addresses are no field. The JSON document is
-`{"schema":3,"inputs":[...],"abi":...,"offset":N,"width":W,"functions":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N,"unknown_addresses":N}`:
+`{"schema":4,"inputs":[...],"abi":...,"call_returns":...,"offset":N,"width":W,"functions":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N,"unknown_addresses":N}`:
 `blocked` lists the functions no analysis could read, `partial` counts the
 analyzed functions whose coverage or value semantics is incomplete and
 `partial_causes` breaks them down by cause (see
@@ -110,7 +110,7 @@ the caller's own argument at entry (`arg0`..`arg7`), another entry register,
 or unknown (`?`); a site without retained register state has no arguments.
 These are may-values of one site: there is no interprocedural expansion and
 a value does not prove that its path runs. The JSON document is
-`{"schema":2,"inputs":[...],"abi":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N}`;
+`{"schema":3,"inputs":[...],"abi":...,"call_returns":...,"symbols":[...],"callers":[...],"blocked":[...],"partial":N,"partial_causes":{...},"gaps":N}`;
 `partial` counts analyzed functions whose coverage or semantics is
 incomplete, which can hold further sites or less precise values, and
 `partial_causes` breaks them down by cause.
@@ -128,6 +128,24 @@ inferred from ELF flags, and every JSON document records it as `abi`
 (`"riscv-integer"` or `null`). On the pinned ESP32-S31 `libpp.a` it turns
 8000-odd accesses at unknown addresses into known ones.
 
+### Returned constants
+
+`--call-returns` on every analysis command (`function-records`,
+`field-accesses`, `callers`, `call-arguments`, `register-accesses`,
+`mmio-diff`) takes the constants a called function returns at every call to
+it. A first pass analyzes every function and keeps, for `a0` and `a1`, the
+constants each one returns when its analysis is complete, every exit is a
+return and every return leaves at most eight known constants there; a tail
+call or another jump out keeps none. The second pass gives a call those
+constants instead of an unknown result, one call level deep. A call names
+its callee by address in an image (a direct `jal`, or a register holding a
+known address) and by a global symbol in a relocatable object; a symbol
+defined with different results answers nothing. The first pass makes the
+analysis take about twice as long: on the correctness image it resolves no
+further address, while in the ESP32-S31 inventory it gives the ROM's
+`phy_pbus_rd` its PHY_PBUS read windows through `phy_pbus_rd_addr`. It is an
+explicit assumption, and every JSON document records it as `call_returns`.
+
 ### Callers
 
 `callers` lists every reference the analyzed functions make to the named
@@ -142,7 +160,7 @@ address of another symbol carries one, so a `call`, a `branch` and an
 `address` (a function pointer stored in a table) are all found with the
 referencing instruction's offset. Repeat `--symbol NAME` for several targets.
 The JSON document is
-`{"schema":1,"inputs":[...],"abi":...,"symbols":[...],"callers":[...],"blocked":[...],"gaps":N}`.
+`{"schema":2,"inputs":[...],"abi":...,"call_returns":...,"symbols":[...],"callers":[...],"blocked":[...],"gaps":N}`.
 A call inside one section that the assembler resolved without a relocation
 is not a reference and is not listed.
 

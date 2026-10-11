@@ -70360,20 +70360,14 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PMU_RADIO.IMM_HP_CK_POWER_0 fields `[TIE_HIGH_XPD_BB_I2C, PHY_RF_SHUTDOWN_HIGH_OPAQUE]` from one reviewed logical image while preserving every other bit.
+    /// Replace PMU_RADIO.IMM_HP_CK_POWER_0 fields `[TIE_HIGH_XPD_BB_I2C]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_rf_immediate_clock_power(registers: &crate::PmuRadio) {
         registers.imm_hp_ck_power_0().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe {
-                writer
-                    .tie_high_xpd_bb_i2c()
-                    .bit((input & 0x00000001) != 0)
-                    .phy_rf_shutdown_high_opaque()
-                    .bits(((input >> 1) & 0x00000007) as u8)
-            }
+            writer.tie_high_xpd_bb_i2c().bit((input & 0x00000001) != 0)
         });
     }
 
@@ -70588,18 +70582,14 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields `[COLD_START_CLEAR_OPAQUE, WIFI_ENABLE]` from one reviewed logical image while preserving every other bit.
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields `[WIFI_ENABLE]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_phy_rf_baseband_control(registers: &crate::ModemSysconRadio) {
         registers.wifi_bb_cfg().modify(|_, writer| {
             let input = 0x00000000_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            writer
-                .cold_start_clear_opaque()
-                .bit((input & 0x00000001) != 0)
-                .wifi_enable()
-                .bit(((input >> 1) & 0x00000001) != 0)
+            writer.wifi_enable().bit((input & 0x00000001) != 0)
         });
     }
 

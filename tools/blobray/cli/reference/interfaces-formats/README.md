@@ -6,16 +6,20 @@ Reference application owners, content identities, result assessment and native f
 
 ## Owners and interfaces
 
-| Crate | Responsibility | Internal dependencies |
-| --- | --- | --- |
-| [domain](../../../crates/domain/README.md) | Identities, records, limits and portable control/stream ports | None |
-| [artifacts](../../../crates/artifacts/README.md) | ELF/AR inventory over borrowed captured bytes | Domain |
-| [verification](../../../crates/verification/README.md) | Concrete observation comparison and verdicts | Domain |
-| [analysis](../../../crates/analysis/README.md) | Local CFG, values and memory effects | Domain |
-| [riscv](../../../crates/riscv/README.md) | RV32 decoding, lifting and relocation interpretation | Domain |
-| [application](../../../crates/application/README.md) | Operations over given executables: inventory, library analysis, linking, data, audit and in-process comparison | Domain, artifacts, analysis, verification |
-| [linker](../../../crates/linker/src/lib.rs) | Linux adapters of the external ELF linkers behind `LinkerHost` | Domain, application |
-| [cli](../../src/main.rs) | CLI rendering and host composition | Domain, application, backend-riscv |
+| Crate | Responsibility |
+| --- | --- |
+| [domain](../../../crates/domain/README.md) | Identities, records, limits and portable control/stream ports |
+| [artifacts](../../../crates/artifacts/README.md) | ELF/AR inventory over borrowed captured bytes |
+| [verification](../../../crates/verification/README.md) | Concrete observation comparison and verdicts |
+| [analysis](../../../crates/analysis/README.md) | Target audit, code closure and register navigation over the shared function analysis |
+| [riscv](../../../crates/riscv/README.md) | Concrete RV32 execution over the shared decoder and lifter |
+| [application](../../../crates/application/README.md) | Operations over given executables: inventory, library analysis, linking, data, audit and in-process comparison |
+| [linker](../../../crates/linker/src/lib.rs) | Linux adapters of the external ELF linkers behind `LinkerHost` |
+| [cli](../../src/main.rs) | CLI rendering and host composition |
+
+Which crate may depend on which, the `oer-riscv-*` crates of the
+[shared RV32 layer](../../../../riscv/README.md) included, is the enforced table
+of [Blobray's architecture](../../../docs/design/architecture.md#crates-and-modules).
 
 Every operation is a function call over `blobray_application::in_process::Executable`
 values, a `WorkingMemory` and a `RunControl`; the

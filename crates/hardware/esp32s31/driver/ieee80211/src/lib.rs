@@ -14,6 +14,8 @@ extern crate std;
 mod channel;
 #[cfg(target_arch = "riscv32")]
 pub use channel::{PhyChannel, lower_wifi_channel, switch_esp32s31_wifi_channel};
+#[cfg(target_arch = "riscv32")]
+pub use channel::{PublishedWifiChannelError, switch_published_esp32s31_wifi_channel};
 pub mod ampdu_tx;
 pub mod coex;
 #[cfg(target_arch = "riscv32")]

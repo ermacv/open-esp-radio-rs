@@ -1196,6 +1196,78 @@ fn uninstall_ends_the_ports_stream() {
     assert!(port.runtime.queues.take().is_none());
 }
 
+#[test]
+fn a_radio_stop_takes_the_core_apart_and_a_restart_rebuilds_it_disabled() {
+    let port = install(true);
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
+    block_on(port.lifecycle(LifecycleCommand::Disable))
+        .unwrap()
+        .unwrap();
+    let Bench {
+        runtime,
+        port,
+        control,
+    } = port;
+    // Radio stop: the disabled, idle core comes apart into its owners.
+    let (core, hardware) = control.uninstall(port);
+    let Ok(parts) = core.dismantle() else {
+        panic!("a disabled idle core comes apart");
+    };
+    // Radio start: a disabled core over the same owners, a fresh stream.
+    let Ok((port, control)) = runtime.install(Esp32s31LowerMacParts {
+        core: LowerMacCore::from_parts(parts),
+        hardware,
+        retune: Retune {
+            accept: true,
+            tuned: std::boxed::Box::leak(std::boxed::Box::default()),
+        },
+    }) else {
+        panic!("the uninstalled runtime installs again");
+    };
+    let port = Bench {
+        runtime,
+        port,
+        control,
+    };
+    assert!(port.runtime.queues.take().is_none());
+    // The rebuilt core starts disabled: its interface is configured again
+    // and it enables.
+    port.apply(LowerMacSetting::Vif {
+        vif: STA,
+        config: Some(VifConfig {
+            address: STATION,
+            role: VifRole::Station,
+            bssid: Some(BSSID),
+            receive: ReceiveFilter::BSS_MEMBER,
+        }),
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        block_on(port.lifecycle(LifecycleCommand::Enable)),
+        Ok(Ok(()))
+    );
+    assert_eq!(
+        next(&port),
+        Ok(LowerMacEvent::Lifecycle(LifecycleEvent::Enabled))
+    );
+}
+
+#[test]
+fn an_enabled_core_does_not_come_apart_at_a_radio_stop() {
+    let port = install(true);
+    block_on(port.lifecycle(LifecycleCommand::Enable))
+        .unwrap()
+        .unwrap();
+    let Bench { port, control, .. } = port;
+    let (core, _hardware) = control.uninstall(port);
+    // The radio stop must disable the port first: the core comes back
+    // whole.
+    assert!(core.dismantle().is_err());
+}
+
 const BACKING: usize = 256;
 const BACKINGS: usize = 4;
 

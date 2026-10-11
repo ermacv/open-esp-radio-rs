@@ -2587,3 +2587,42 @@ fn the_tsf_relation_breaks_at_a_jump_a_channel_change_an_interface_change_and_an
     let reassociated = generation(&core, &mut hardware);
     assert_ne!(reassociated, jumped);
 }
+
+#[test]
+fn only_a_disabled_idle_core_comes_apart() {
+    let mut hardware = Hardware::default();
+    let core = enabled(&mut hardware);
+    // An enabled core keeps running: it is returned unchanged.
+    let Err(mut core) = core.dismantle() else {
+        panic!("an enabled core does not come apart");
+    };
+    let mut events = Events::default();
+    assert_eq!(
+        core.lifecycle(LifecycleCommand::Disable, &mut events),
+        Ok(LifecycleStart::Admitted)
+    );
+    assert!(core.dismantle().is_ok());
+}
+
+#[test]
+fn a_dismantled_core_rebuilds_disabled_over_the_owners_that_came_home() {
+    let mut core = core();
+    // A buffer lent and never returned is not home.
+    let _lent = core.tx_buffer(64).expect("an idle slot");
+    let Ok(parts) = core.dismantle() else {
+        panic!("a disabled idle core comes apart");
+    };
+    assert_eq!(parts.lost_tx_buffers(), 1);
+    assert_eq!(parts.lost_ampdu_owners(), 0);
+    assert_eq!(parts.config.channel, channel(6));
+    let mut rebuilt = Core::from_parts(parts);
+    // The rebuilt core is disabled, as at a radio start, and lends the
+    // three slots that came home.
+    let mut events = Events::default();
+    assert_eq!(
+        rebuilt.lifecycle(LifecycleCommand::Enable, &mut events),
+        Ok(LifecycleStart::Admitted)
+    );
+    let lendable: Vec<_> = core::iter::from_fn(|| rebuilt.tx_buffer(64)).collect();
+    assert_eq!(lendable.len(), 3);
+}

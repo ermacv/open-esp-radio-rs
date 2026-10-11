@@ -526,18 +526,19 @@ impl<'p, X: PortClientEnv, const EXCHANGES: usize, const RX: usize>
         Ok(())
     }
 
-    /// Tune to `channel`. A backend that retunes only while disabled
-    /// refuses the setting as `Busy`; the client then disables the port,
-    /// tunes and enables it again.
-    pub async fn retune(&mut self, channel: Channel) -> Result<(), PortClientError<PortFault<X>>> {
-        match self.apply(LowerMacSetting::Channel(channel)) {
-            Err(PortClientError::Setting(SettingError::Busy)) => {
-                self.lifecycle(LifecycleCommand::Disable).await?;
-                self.apply(LowerMacSetting::Channel(channel))?;
-                self.lifecycle(LifecycleCommand::Enable).await
-            }
-            result => result,
-        }
+    /// Move the enabled port to `channel` permanently: `Disable`, then
+    /// [`LowerMacSetting::Channel`], then `Enable`, each to its terminal.
+    /// The port goes through a full lifecycle, so `Disable` ends every
+    /// admitted operation first. A move that keeps the port enabled goes
+    /// through [`LowerMacLiveRetune`](oer_ieee80211_lower_mac::LowerMacLiveRetune)
+    /// instead.
+    pub async fn move_channel(
+        &mut self,
+        channel: Channel,
+    ) -> Result<(), PortClientError<PortFault<X>>> {
+        self.lifecycle(LifecycleCommand::Disable).await?;
+        self.apply(LowerMacSetting::Channel(channel))?;
+        self.lifecycle(LifecycleCommand::Enable).await
     }
 
     /// Run one lifecycle command to its terminal event, which the router

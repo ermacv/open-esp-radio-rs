@@ -45,8 +45,9 @@ const UNKNOWN_RSSI_DBM: i8 = -100;
 /// The primitive scan operations of [`StaScanPort`] over the lower-MAC port.
 ///
 /// The `StaScanBackend` of this crate orders them per channel. Each channel
-/// visit tunes through [`LowerMacSetting::Channel`](oer_ieee80211_lower_mac::LowerMacSetting::Channel),
-/// receives other BSSs' beacons and Probe Responses through the station
+/// visit moves the port permanently ([`PortLink::move_channel`]: `Disable`,
+/// [`LowerMacSetting::Channel`](oer_ieee80211_lower_mac::LowerMacSetting::Channel),
+/// `Enable`), receives other BSSs' beacons and Probe Responses through the station
 /// interface's `OTHER_BSS_MANAGEMENT` receive filter, sends the optional
 /// Probe Request through the transmit planner and records every beacon and
 /// Probe Response of the dwell in the scan table. A port whose station
@@ -223,7 +224,7 @@ impl<X: PortStationEnv, const N: usize> StaScanPort for PortScan<'_, '_, X, N> {
                 return Err(PortLinkError::MissingState);
             }
         } else {
-            self.link.retune(context.channel).await?;
+            self.link.move_channel(context.channel).await?;
         }
         self.channel = context.channel.number();
         Ok(requested_dwell_ticks)

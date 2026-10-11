@@ -238,6 +238,12 @@ pub struct RxBlockAckAgreement {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LowerMacSetting {
     /// Tune to a channel; every interface shares it.
+    ///
+    /// The port must be disabled: a backend refuses the setting on an
+    /// enabled or quiesced port with [`SettingError::PortEnabled`]. A
+    /// permanent channel move is therefore an explicit lifecycle sequence,
+    /// `Disable`, `Channel`, `Enable`; a move that keeps the port enabled
+    /// goes only through [`LowerMacLiveRetune`](crate::LowerMacLiveRetune).
     Channel(Channel),
     /// Configure an interface, or remove it (`None`).
     Vif {
@@ -322,6 +328,9 @@ pub enum SettingError {
     InvalidBlockAck,
     /// The setting needs work in flight to finish first.
     Busy,
+    /// The setting needs a disabled port, and the port is enabled or
+    /// quiesced ([`LowerMacSetting::Channel`]).
+    PortEnabled,
     /// A value lies outside the limits the backend's capabilities declare.
     Unsupported,
     /// Timing validation failed before changing the TSF or its relation.

@@ -14,8 +14,8 @@ use oer_network_interface::NetworkInterfaceId;
 use oer_ieee80211_lower_mac::Ieee80211Instant;
 use oer_ieee80211_lower_mac::{
     Backoff, BlockAckReport, Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort,
-    KeySelector, LifecycleCommand, LowerMacSetting, MacAddress, Protection, ReceiveFilter, TxPower,
-    TxResponse, TxStatus, VifConfig, VifId, VifRole,
+    KeySelector, LifecycleCommand, LowerMacSetting, MacAddress, Protection, ReceiveFilter,
+    SettingError, TxPower, TxResponse, TxStatus, VifConfig, VifId, VifRole,
     model::{LowerMacModel, ModelOutcome},
 };
 use oer_ieee80211_lower_mac::{LowerMacEvent, RxMeta};
@@ -949,6 +949,28 @@ fn a_client_configures_its_interface_in_its_role() {
             bssid: Some(ADDRESS),
             receive: ReceiveFilter::BSS_MEMBER,
         })
+    );
+}
+
+#[test]
+fn a_channel_move_runs_the_port_lifecycle_around_the_channel_setting() {
+    let model = enabled_station();
+    let router = Router::new(&model, 1);
+    let mut client = client(&router, VifRole::Station);
+    let eleven = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
+    // The enabled port refuses the setting itself: no hidden fallback.
+    assert_eq!(
+        client.apply(LowerMacSetting::Channel(eleven)),
+        Err(PortClientError::Setting(SettingError::PortEnabled))
+    );
+    let lifecycle = model.lifecycle_requests();
+    assert_eq!(run(exchange(&router, client.move_channel(eleven))), Ok(()));
+    assert_eq!(model.channel(), Some(eleven));
+    // `Disable`, then `Enable`, each to its terminal.
+    assert_eq!(model.lifecycle_requests(), lifecycle + 2);
+    assert_eq!(
+        client.apply(LowerMacSetting::Channel(eleven)),
+        Err(PortClientError::Setting(SettingError::PortEnabled))
     );
 }
 

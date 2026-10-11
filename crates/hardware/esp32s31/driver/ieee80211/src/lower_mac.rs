@@ -1348,7 +1348,7 @@ where
         // Retuning needs the MAC's DMA and interrupt service stopped, which
         // only a disabled port guarantees; `Enable` retunes.
         if self.state != PortState::Disabled {
-            return Err(SettingError::Busy);
+            return Err(SettingError::PortEnabled);
         }
         if self.channel != channel {
             self.break_tsf_relation(VifRole::Station);

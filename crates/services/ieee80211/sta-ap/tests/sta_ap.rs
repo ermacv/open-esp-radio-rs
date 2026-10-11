@@ -447,8 +447,12 @@ impl World {
         let mut client_router = pin!(self.client.1.run());
         let mut context = Context::from_waker(Waker::noop());
         let mut quiet = 0;
+        let models = [self.upstream.0, self.pair.0, self.client.0];
+        let port_work =
+            || models.map(|model| (model.lifecycle_requests(), model.channel_updates()));
         for _ in 0..50_000_000 {
             self.timer.advance_to(self.timer.now());
+            let before = port_work();
             let polled = future.as_mut().poll(&mut context);
             observe();
             if let Poll::Ready(output) = polled {
@@ -457,7 +461,9 @@ impl World {
             assert!(upstream_router.as_mut().poll(&mut context).is_pending());
             assert!(pair_router.as_mut().poll(&mut context).is_pending());
             assert!(client_router.as_mut().poll(&mut context).is_pending());
-            if air.step() {
+            // A driver that commanded its port (a channel move's lifecycle
+            // terminals arrive one poll apart) is still moving.
+            if air.step() || port_work() != before {
                 quiet = 0;
                 continue;
             }
@@ -535,7 +541,11 @@ async fn serve_upstream(access_point: &mut PortAccessPoint<'static, Env>, until:
     loop {
         match access_point.run_until(until, &mut |_| {}).await.unwrap() {
             Some(PortApEvent::ChannelSwitch { target }) => {
-                access_point.client_mut().retune(target).await.unwrap();
+                access_point
+                    .client_mut()
+                    .move_channel(target)
+                    .await
+                    .unwrap();
                 access_point.channel_switched().unwrap();
             }
             None => return,
@@ -557,7 +567,7 @@ async fn serve_client(
             switch.filter(|due: &oer_ieee80211_sta_service::port::PortChannelSwitch| due.at <= now)
         {
             switch = None;
-            station.link_mut().retune(due.target).await.unwrap();
+            station.link_mut().move_channel(due.target).await.unwrap();
             station.channel_switched(due.target).unwrap();
             continue;
         }
@@ -652,7 +662,7 @@ fn set_up_with_search(
         leak(TestFrames::new()),
     );
     world
-        .drive(upstream.client_mut().retune(ghz2_4(6)))
+        .drive(upstream.client_mut().move_channel(ghz2_4(6)))
         .unwrap();
     upstream.start(ghz2_4(6)).unwrap();
     let mut pair = unconnected_pair_with_search(world, policy, search);
@@ -917,7 +927,7 @@ fn current_channel_retries_keep_the_access_point_and_bidirectional_data_inner() 
     // An unconstrained scan would find this upstream on channel 11 and
     // take the pair's radio away from its existing access-point peer.
     world
-        .drive(upstream.client_mut().retune(ghz2_4(11)))
+        .drive(upstream.client_mut().move_channel(ghz2_4(11)))
         .unwrap();
     upstream.start(ghz2_4(11)).unwrap();
     for _ in 0..2 {
@@ -954,7 +964,7 @@ fn current_channel_retries_keep_the_access_point_and_bidirectional_data_inner() 
     );
     world.drive(upstream.stop()).unwrap();
     world
-        .drive(upstream.client_mut().retune(ghz2_4(6)))
+        .drive(upstream.client_mut().move_channel(ghz2_4(6)))
         .unwrap();
     upstream.start(ghz2_4(6)).unwrap();
     let to_ap = ethernet(PAIR_ACCESS_POINT, CLIENT, b"during upstream join");
@@ -1101,7 +1111,7 @@ fn reconnect_waits_for_an_announced_move_after_the_upstream_is_lost_inner() {
     ));
     assert_eq!(world.pair.0.channel(), Some(ghz2_4(6)));
     world
-        .drive(upstream.client_mut().retune(ghz2_4(11)))
+        .drive(upstream.client_mut().move_channel(ghz2_4(11)))
         .unwrap();
     upstream.start(ghz2_4(11)).unwrap();
     // The owner finishes its move while serving just the access point.
@@ -1293,7 +1303,7 @@ fn passive_recovery(number: u8) {
         .unwrap();
     world.drive(world.timer.wait_until(restart));
     world
-        .drive(upstream.client_mut().retune(ghz2_4(number)))
+        .drive(upstream.client_mut().move_channel(ghz2_4(number)))
         .unwrap();
     upstream.start(ghz2_4(number)).unwrap();
     let until = world.after(2_000);
@@ -1311,7 +1321,11 @@ fn passive_recovery(number: u8) {
     assert_eq!(world.pair.0.channel(), Some(ghz2_4(number)));
     assert_eq!(world.client.0.channel(), Some(ghz2_4(number)));
     assert_eq!(client.connection().unwrap().config().association_id, aid);
-    assert_eq!(world.pair.0.lifecycle_requests(), lifecycle);
+    // A move to another channel is permanent: `Disable` and `Enable`
+    // around the channel setting; a return on the same channel moves
+    // nothing.
+    let moved = if number == 6 { 0 } else { 2 };
+    assert_eq!(world.pair.0.lifecycle_requests(), lifecycle + moved);
     let after = pair.access_point().service().peer_status(CLIENT).unwrap();
     assert_eq!(after.association_id, peer.association_id);
     assert_eq!(after.association_epoch, peer.association_epoch);
@@ -1372,7 +1386,9 @@ fn a_delayed_or_failed_cts_never_departures_without_a_live_reservation_inner() {
         ghz2_4(6),
         world.pair_frames,
     );
-    world.drive(ap.client_mut().retune(ghz2_4(6))).unwrap();
+    world
+        .drive(ap.client_mut().move_channel(ghz2_4(6)))
+        .unwrap();
     ap.start(ghz2_4(6)).unwrap();
     let lifecycle = world.pair.0.lifecycle_requests();
     let window = AbsenceWindow {
@@ -1499,7 +1515,9 @@ fn a_failed_passive_return_blocks_clients_until_port_recovery_inner() {
         ghz2_4(6),
         world.pair_frames,
     );
-    world.drive(ap.client_mut().retune(ghz2_4(6))).unwrap();
+    world
+        .drive(ap.client_mut().move_channel(ghz2_4(6)))
+        .unwrap();
     ap.start(ghz2_4(6)).unwrap();
     let mut state = AbsenceState::new();
     let window = AbsenceWindow {

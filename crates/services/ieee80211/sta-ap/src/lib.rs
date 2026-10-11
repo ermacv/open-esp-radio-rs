@@ -616,7 +616,7 @@ where
         let station = self.station.as_mut().ok_or(PortStaApError::NoStation)?;
         station
             .link_mut()
-            .retune(channel)
+            .move_channel(channel)
             .await
             .map_err(PortStaApError::Station)?;
         if access_point_switch {

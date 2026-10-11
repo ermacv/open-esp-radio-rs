@@ -346,7 +346,7 @@ fn start<X: PortApEnv<Port = Model>>(
         model,
         router,
         timer,
-        access_point.client_mut().retune(channel),
+        access_point.client_mut().move_channel(channel),
         &[],
         |_| {},
     )
@@ -2266,7 +2266,7 @@ fn an_announced_channel_switch_moves_the_bss_at_its_tbtt() {
         &model,
         &router,
         &timer,
-        access_point.client_mut().retune(target),
+        access_point.client_mut().move_channel(target),
         &[],
         |_| {},
     )
@@ -2414,7 +2414,7 @@ fn a_two_band_access_point_moves_to_5_ghz_with_an_extended_announcement() {
         &model,
         &router,
         &timer,
-        access_point.client_mut().retune(target),
+        access_point.client_mut().move_channel(target),
         &[],
         |_| {},
     )
@@ -2503,7 +2503,7 @@ fn a_stopped_access_point_releases_its_peers_and_starts_again_where_its_owner_tu
         &model,
         &router,
         &timer,
-        access_point.client_mut().retune(eleven),
+        access_point.client_mut().move_channel(eleven),
         &[],
         |_| {},
     )

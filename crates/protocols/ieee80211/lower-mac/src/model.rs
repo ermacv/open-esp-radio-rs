@@ -366,6 +366,12 @@ impl State {
         self.vifs.get(usize::from(vif.0)).copied().flatten()
     }
 
+    /// Put every interface on `channel`, a channel the model supports.
+    fn tune(&mut self, channel: Channel) {
+        self.channel = Some(channel);
+        self.channel_updates += 1;
+    }
+
     /// End an attempt and release its buffer.
     fn finish(&mut self, index: usize, outcome: ModelOutcome) {
         let attempt = self.in_flight.remove(index);
@@ -1023,12 +1029,14 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
     fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, ModelFault> {
         let mut state = self.serving()?;
         Ok(match setting {
-            LowerMacSetting::Channel(channel) if MODEL_CAPABILITIES.supports_channel(channel) => {
-                state.channel = Some(channel);
-                state.channel_updates += 1;
+            LowerMacSetting::Channel(channel) if !MODEL_CAPABILITIES.supports_channel(channel) => {
+                Err(SettingError::UnsupportedChannel)
+            }
+            LowerMacSetting::Channel(_) if state.enabled => Err(SettingError::PortEnabled),
+            LowerMacSetting::Channel(channel) => {
+                state.tune(channel);
                 Ok(())
             }
-            LowerMacSetting::Channel(_) => Err(SettingError::UnsupportedChannel),
             LowerMacSetting::Vif {
                 config: Some(config),
                 ..
@@ -1170,13 +1178,15 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
 
 impl<O: TxBody> LowerMacLiveRetune for LowerMacModel<O> {
     fn retune_live(&self, channel: Channel) -> PortResult<(), SettingError, ModelFault> {
-        {
-            let state = self.serving()?;
-            if !state.enabled || !state.in_flight.is_empty() {
-                return Ok(Err(SettingError::Busy));
-            }
-        }
-        self.apply(LowerMacSetting::Channel(channel))
+        let mut state = self.serving()?;
+        Ok(if !state.enabled || !state.in_flight.is_empty() {
+            Err(SettingError::Busy)
+        } else if !MODEL_CAPABILITIES.supports_channel(channel) {
+            Err(SettingError::UnsupportedChannel)
+        } else {
+            state.tune(channel);
+            Ok(())
+        })
     }
 }
 

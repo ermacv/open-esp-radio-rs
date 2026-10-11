@@ -23,7 +23,7 @@ them while the FPU is off.
 | `ieee802154.8` | 6 | `Timer` | The engine arms or stops a MAC timer, or handles its overflow |
 
 The Domain::Ieee802154 range has twelve channels (mask bits 52 to 63);
-8 to 11 are unassigned. The two power events share one channel because they
+7 to 11 are unassigned. The two power events share one channel because they
 are emitted together. The engine emits behind its `trace` feature, the
 ESP32-S31 HAL behind `ieee802154-trace` and the ESP32-S31 runtime behind
 `trace`; each enables `oer-trace/record`. Without it, `oer_trace::emit`

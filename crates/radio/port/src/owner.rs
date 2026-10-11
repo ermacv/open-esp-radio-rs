@@ -58,7 +58,7 @@
 //! | One running phase, one event consumer | `split(&mut self)` |
 //! | A caller reaches the backend only through the owner and its parts | the owner's private field |
 //! | Admitted work names only its own phase's work | [`Work`] borrows its client |
-//! | Admitted work ends only through the client that admitted it | [`Work`] holds that client; no client cancels a work |
+//! | Admitted work ends only through the client that admitted it | [`Work`] holds that client and its token, which nothing takes out |
 //! | A part or a token is not taken out of its loan | `Lent` and `Work` give nothing away; see below |
 //!
 //! Each line has a compile-fail test below, pinned to its error code, with a
@@ -244,12 +244,22 @@
 //! }
 //! ```
 //!
-//! Nor does one client end another's work:
+//! Nor does a caller take the token out of a work, so a work ends only
+//! through the client that admitted it:
 //!
-//! ```compile_fail,E0599
+//! ```compile_fail,E0616
 //! # use oer_radio_port::{RadioPortClient, Work};
-//! async fn cross_cancel<'c, C: RadioPortClient>(other: &'c C, work: Work<'c, C>) {
-//!     let _ = other.cancel(work).await;
+//! fn take_the_token<C: RadioPortClient>(work: Work<'_, C>) {
+//!     let _ = work.token;
+//! }
+//! ```
+//!
+//! Its compiling twin reads only the work's routing key:
+//!
+//! ```
+//! # use oer_radio_port::{RadioPortClient, Work};
+//! fn read_the_key<C: RadioPortClient>(work: Work<'_, C>) {
+//!     let _ = work.id();
 //! }
 //! ```
 //!
@@ -282,9 +292,7 @@
 //! ) -> Work<'c, C> {
 //!     admit(client)
 //! }
-//! async fn own_cancel<C: RadioPortClient>(work: Work<'_, C>) {
-//!     let _ = work.cancel().await;
-//! }
+
 //! ```
 //!
 //! [ownership and refusals]: https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/architecture.md#ownership-and-refusals
@@ -592,7 +600,7 @@ fn abandoned<B: PortBackend>(backend: &mut Option<B>) {
     backend.abandon();
     // A host test unwinding a panic drops its owners; asserting then would
     // abort the test process and hide the first panic.
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(any(test, all(feature = "test-support", not(target_os = "none"))))]
     if std::thread::panicking() {
         return;
     }

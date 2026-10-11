@@ -68,7 +68,7 @@
 //!
 //! This package owns no state and never waits.
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(any(test, all(feature = "test-support", not(target_os = "none"))))]
 extern crate std;
 
 use core::{fmt::Debug, future::Future, ops::RangeInclusive};
@@ -77,7 +77,7 @@ use oer_time::RadioInstant;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod conformance;
-mod owner;
+pub mod owner;
 mod relation;
 
 pub use owner::{

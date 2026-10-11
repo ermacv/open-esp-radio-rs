@@ -626,3 +626,51 @@ fn an_owner_dropped_while_its_disable_waits_abandons_its_backend() {
     // The owner held the backend across the wait: its safety net stopped it.
     assert_eq!(*model.lifecycle.borrow(), ["enable", "abandon"]);
 }
+
+/// A body whose backend is poisoned between `enable` and `disable`: the
+/// disable meets the poison, and the poisoned owner uninstalls.
+struct PoisonBetween<'t>(&'t Model);
+
+impl<'m> PortBody<Backend<'m>> for PoisonBetween<'_> {
+    async fn run(self, owner: Owner<Backend<'m>, Disabled>) -> Ended<Backend<'m>> {
+        let Ok(enabled) = owner.enable().await else {
+            panic!("the model enables");
+        };
+        // The world poisons the backend while the port runs.
+        self.0.poisoned.set(true);
+        let Err(poisoned) = enabled.disable(&mut |_| {}).await else {
+            panic!("a poisoned model fails its disable");
+        };
+        poisoned.cause();
+        poisoned.uninstall(())
+    }
+}
+
+#[test]
+fn a_poisoned_disable_leaves_through_the_poisoned_owners_uninstall() {
+    let model = Model::default();
+    let ended = now_ready(run_port(Backend(&model), PoisonBetween(&model)));
+    assert!(core::ptr::eq(ended.into_uninstalled().unwrap(), &model));
+    assert_eq!(*model.lifecycle.borrow(), ["enable", "uninstall"]);
+}
+
+/// A body that fail-stops after the radio refused its `Enable`.
+struct FailStopRefused;
+
+impl<'m> PortBody<Backend<'m>> for FailStopRefused {
+    async fn run(self, owner: Owner<Backend<'m>, Disabled>) -> Ended<Backend<'m>> {
+        match owner.enable().await {
+            Ok(_) => panic!("the model refuses"),
+            Err(failed) => failed.fail_stop(),
+        }
+    }
+}
+
+#[test]
+fn a_refused_enable_can_fail_stop_without_an_uninstall() {
+    let model = Model::default();
+    model.refuse_enable.set(true);
+    let ended = now_ready(run_port(Backend(&model), FailStopRefused));
+    assert!(ended.into_uninstalled().is_none());
+    assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
+}

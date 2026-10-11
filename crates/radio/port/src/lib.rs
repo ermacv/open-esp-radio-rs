@@ -64,6 +64,8 @@ use core::{fmt::Debug, future::Future, ops::RangeInclusive};
 
 use oer_time::RadioInstant;
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod conformance;
 mod relation;
 
 pub use relation::{

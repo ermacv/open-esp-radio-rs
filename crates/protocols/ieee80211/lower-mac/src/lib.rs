@@ -94,6 +94,8 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod conformance;
 #[cfg(any(test, feature = "model"))]
 pub mod model;
 

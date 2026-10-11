@@ -2758,6 +2758,7 @@ dependencies = [
  "oer-ieee80211-upper-mac-service",
  "oer-memory",
  "oer-network-interface",
+ "oer-radio-port",
  "oer-time",
  "oer-time-virtual",
  "oer-trace",

@@ -20,6 +20,12 @@ link kept (each checked against the word it relocates) and the compiler's
 section. Lookups never parse again. The stack analyzer reads images through
 it.
 
+`tables::ObjectTables` implements the model's `TableEntries` port for a
+relocatable object: a table's entries are the labels its read-only data's
+`R_RISCV_32` RELA words name, as many as the dispatch's bounds check states
+(a `SHT_REL` table, whose addends live in its words, and a section two RELA
+sections relocate name none).
+
 `execution_segments` lends validated static RV32 ELF segment bytes to a caller's
 admitted loader. It shares `ProgramView` validation with static image research,
 including overlapping mappings, permissions, dynamic/TLS rejection and input

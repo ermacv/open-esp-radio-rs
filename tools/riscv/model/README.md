@@ -37,3 +37,10 @@ load segments (`ImageSegment`) and borrowed executable sections with their
 validated data intervals (`ExecutableSectionView`). The
 [byte-source port](src/source.rs) `ByteSource` gives stable positional,
 bounded reads of captured content; `hash_source` identifies it.
+
+The [table-entries port](src/tables.rs) `TableEntries` answers what a jump
+table holds, given its base (an object's symbol or an image address) and,
+when a bounds check states it, its entry count: the entries in index order,
+admitted in the caller's `WorkingMemory` (`TableWords`) and charged to its
+`RunControl`. A build's facts implement it, as `ImageMemory` answers
+constants; `NoTables` is a build whose facts hold no table.

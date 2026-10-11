@@ -409,6 +409,11 @@ impl CallAbi {
         }
     }
 
+    /// The return-address register (`ra`): `jalr zero, 0(ra)` returns.
+    pub const fn return_address(self) -> u8 {
+        self.links()[0]
+    }
+
     /// The argument word `register` carries, if it carries one.
     pub fn argument_word(self, register: u8) -> Option<usize> {
         self.arguments().iter().position(|&r| r == register)

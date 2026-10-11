@@ -122,6 +122,9 @@ pub struct Section<'data> {
     pub nobits: bool,
     /// What the section header says it holds.
     pub kind: SectionKind,
+    /// For a `SHT_REL` or `SHT_RELA` section, the section it relocates
+    /// (`sh_info`).
+    pub relocates: Option<usize>,
     /// Where its bytes start in the file; zero for `NOBITS`.
     pub file_offset: u64,
     /// The section's bytes in the file; empty for `NOBITS`.
@@ -271,6 +274,9 @@ pub struct Relocation {
     pub r_type: u32,
     pub target: Target,
     pub addend: i64,
+    /// The addend is the patched word's own contents (`SHT_REL`), not an
+    /// explicit field (`SHT_RELA`).
+    pub implicit_addend: bool,
 }
 
 /// A code symbol with every other name at its address.
@@ -783,7 +789,8 @@ fn section<'data>(
     // Only `SHT_NOBITS` (and the null section) occupy no file bytes.
     let file_range = header.file_range();
     let nobits = file_range.is_none();
-    let sh_type = elf_section_type(file, header.index().0);
+    let (sh_type, sh_info) = elf_section_header(file, header.index().0);
+    let kind = SectionKind::of(sh_type);
     Section {
         index: header.index().0,
         name: header.name().unwrap_or_default(),
@@ -794,7 +801,8 @@ fn section<'data>(
         executable: flags & u64::from(object::elf::SHF_EXECINSTR) != 0,
         tls: flags & u64::from(object::elf::SHF_TLS) != 0,
         nobits,
-        kind: SectionKind::of(sh_type),
+        kind,
+        relocates: matches!(kind, SectionKind::Rel | SectionKind::Rela).then_some(sh_info as usize),
         file_offset: file_range.map_or(0, |(offset, _)| offset),
         data: if nobits {
             &[]
@@ -804,20 +812,24 @@ fn section<'data>(
     }
 }
 
-/// The `sh_type` of the section at `index` of `file`.
-fn elf_section_type(file: &object::File<'_>, index: usize) -> u32 {
+/// The `sh_type` and `sh_info` of the section at `index` of `file`.
+fn elf_section_header(file: &object::File<'_>, index: usize) -> (u32, u32) {
     use object::read::elf::SectionHeader;
     let index = object::SectionIndex(index);
     match file {
         object::File::Elf32(elf) => elf
             .elf_section_table()
             .section(index)
-            .map_or(0, |header| header.sh_type(elf.endian())),
+            .map_or((0, 0), |header| {
+                (header.sh_type(elf.endian()), header.sh_info(elf.endian()))
+            }),
         object::File::Elf64(elf) => elf
             .elf_section_table()
             .section(index)
-            .map_or(0, |header| header.sh_type(elf.endian())),
-        _ => 0,
+            .map_or((0, 0), |header| {
+                (header.sh_type(elf.endian()), header.sh_info(elf.endian()))
+            }),
+        _ => (0, 0),
     }
 }
 
@@ -836,6 +848,7 @@ fn relocation(section: usize, at: u64, r: &object::Relocation) -> Option<Relocat
             _ => Target::Other,
         },
         addend: r.addend(),
+        implicit_addend: r.has_implicit_addend(),
     })
 }
 

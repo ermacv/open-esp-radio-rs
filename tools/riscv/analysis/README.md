@@ -24,10 +24,16 @@ table that the link's relocations name), which the CFG follows as jumps.
 tables of the dispatches the pass locates; the function is analyzed again
 following them while each pass proves again every table it followed and
 more, and a pass that loses or changes one reports the function from a pass
-that follows only the caller's own jumps. The stack analyzer's source reads
-an `--emit-relocs` image's relocated words, `.LJTI*` labels and sized
-read-only objects; Blobray's reads the relocation-proven tables of
-relocatable objects and none for linked images.
+that follows only the caller's own jumps. `RecognizedTables` is the source
+for compiler `switch` dispatches: `jump_tables` locates, in a pass's
+records, a `jalr zero` (never a return through `CallAbi`'s return address)
+whose base register holds `load4[(index << 2) + base]` behind a bounds check
+whose in-range edge is the only way into the dispatch block, and asks the
+model's `TableEntries` port what the table at `base` holds; every entry must
+land inside the function. `oer-riscv-program`'s `ObjectTables` implements the
+port for relocatable objects; Blobray uses it, and none for linked images
+yet. The stack analyzer's source reads an `--emit-relocs` image's relocated
+words, `.LJTI*` labels and sized read-only objects.
 No second analyzer or machine executor is selected for linked code.
 
 The same value solver can emit a flat expression DAG, entry-register values,

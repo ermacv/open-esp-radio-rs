@@ -128,27 +128,15 @@ pub fn analyze_library(
 }
 
 /// The sections and function symbols of one object.
-struct Selection<'m> {
+#[derive(Default)]
+struct Selection {
     /// Indices of nonempty executable sections, sorted.
     executable: Vec<u32>,
     functions: Vec<SymbolRecord>,
     diagnostics: Vec<Diagnostic>,
-    /// Symbols and data relocations that prove jump-table entries.
-    tables: crate::jump_tables::TableFacts<'m>,
 }
-impl<'m> Selection<'m> {
-    fn new(memory: &'m WorkingMemory) -> Self {
-        Self {
-            executable: Vec::new(),
-            functions: Vec::new(),
-            diagnostics: Vec::new(),
-            tables: crate::jump_tables::TableFacts::new(memory),
-        }
-    }
-}
-impl ElfSink for Selection<'_> {
+impl ElfSink for Selection {
     fn section(&mut self, r: &SectionRecord, c: &mut dyn RunControl) -> Result<()> {
-        self.tables.section(r, c)?;
         if r.flags & 4 != 0 && r.size != 0 {
             match self.executable.binary_search(&r.index) {
                 Ok(_) => return Err(Error::new(ErrorCode::Integrity, "duplicate section index")),
@@ -157,7 +145,7 @@ impl ElfSink for Selection<'_> {
         }
         c.checkpoint(1)
     }
-    fn symbol(&mut self, r: &SymbolRecord, c: &mut dyn RunControl) -> Result<()> {
+    fn symbol(&mut self, r: &SymbolRecord, _: &mut dyn RunControl) -> Result<()> {
         // STT_FUNC in a section already known to be executable.
         let section = if r.raw_section == 0xffff {
             r.extended_section
@@ -166,15 +154,14 @@ impl ElfSink for Selection<'_> {
         } else {
             None
         };
-        self.tables.symbol(r, section, c)?;
         if r.symbol_type == 2 && section.is_some_and(|s| self.executable.binary_search(&s).is_ok())
         {
             self.functions.push(r.clone());
         }
         Ok(())
     }
-    fn relocation(&mut self, r: &RelocationRecord, c: &mut dyn RunControl) -> Result<()> {
-        self.tables.relocation(r, c)
+    fn relocation(&mut self, _: &RelocationRecord, _: &mut dyn RunControl) -> Result<()> {
+        Ok(())
     }
     fn diagnostic(&mut self, r: &Diagnostic, _: &mut dyn RunControl) -> Result<()> {
         self.diagnostics.push(r.clone());
@@ -193,14 +180,14 @@ fn research_function<'m>(
     input: u64,
     payload: &ArtifactId,
     abi: Option<oer_riscv_model::CallAbi>,
-    tables: &crate::jump_tables::TableFacts<'_>,
+    tables: &dyn TableEntries,
     decoder: &dyn FunctionSemantics,
     memory: &'m WorkingMemory,
     control: &mut dyn RunControl,
     sink: &mut dyn FunctionSink,
 ) -> Result<(
     oer_riscv_analysis::AnalysisSummary,
-    crate::jump_tables::FoundTables<'m>,
+    oer_riscv_analysis::ProvenTables<'m, oer_riscv_analysis::JumpTable>,
 )> {
     let mut position = RunPosition {
         phase: RunPhase::AnalyzeFunction,
@@ -241,8 +228,8 @@ fn research_function<'m>(
                 data_ranges: view.data_ranges,
                 jumps: &[],
             },
-            &crate::jump_tables::ObjectTables {
-                facts: tables,
+            &oer_riscv_analysis::RecognizedTables {
+                entries: tables,
                 section: view.section,
             },
             decoder,
@@ -274,7 +261,7 @@ fn analyze_object(
     visit: &mut Visit<'_>,
 ) -> Result<()> {
     let object = member.id;
-    let mut selection = Selection::new(memory);
+    let mut selection = Selection::default();
     let (bytes, payload, elf) = match member.bytes {
         Ok(bytes) => {
             let (payload, elf) = inspect_source(bytes, &object, memory, control, &mut selection)?;
@@ -323,8 +310,9 @@ fn analyze_object(
     let (Some(bytes), Some(payload)) = (bytes, payload) else {
         return Ok(());
     };
-    selection.tables.finish(control)?;
-    let tables = selection.tables;
+    // A relocatable object's relocations prove its jump tables; a linked
+    // image's facts are not read here.
+    let relocatable = elf.as_ref().is_some_and(|e| e.object_type == 1);
     let functions: Vec<LibraryFunction> = selection
         .functions
         .into_iter()
@@ -341,6 +329,29 @@ fn analyze_object(
     let result =
         blobray_artifacts::with_prepared_object(bytes, &payload, memory, control, |prepared, c| {
             entered = true;
+            let object_tables = if relocatable {
+                match oer_riscv_program::tables::ObjectTables::new(prepared.bytes(), memory, c) {
+                    Ok(tables) => Some(tables),
+                    Err(error) if error.code == ErrorCode::Integrity => {
+                        visit(
+                            LibraryOutcome::Gap {
+                                input,
+                                object: Some(&object),
+                                reason: &format!("jump-table facts unreadable: {}", error.message),
+                            },
+                            c,
+                        )?;
+                        None
+                    }
+                    Err(error) => return Err(error),
+                }
+            } else {
+                None
+            };
+            let tables: &dyn TableEntries = match &object_tables {
+                Some(tables) => tables,
+                None => &NoTables,
+            };
             let mut references = AdmittedVec::new(memory);
             for function in &functions {
                 let mut records = RecordBuffer::new(memory);
@@ -351,23 +362,57 @@ fn analyze_object(
                     input,
                     &payload,
                     abi,
-                    &tables,
+                    tables,
                     decoder,
                     memory,
                     c,
                     &mut Records(&mut records),
                 );
                 match researched {
-                    Ok((summary, found)) => visit(
-                        LibraryOutcome::Analyzed(AnalyzedFunction {
-                            function,
-                            records: &records,
-                            coverage: summary.coverage,
-                            semantics: summary.semantics,
-                            jump_tables: &found.tables,
-                        }),
-                        c,
-                    )?,
+                    Ok((summary, found)) => {
+                        // The domain's copy of the tables, admitted before
+                        // it is made.
+                        let bytes = found.tables.len() * size_of::<JumpTable>()
+                            + found
+                                .tables
+                                .iter()
+                                .map(|table| table.entries.len() * size_of::<u64>())
+                                .sum::<usize>();
+                        let _copy = memory.reserve(bytes as u64, c.position())?;
+                        let mut jump_tables: Vec<JumpTable> = Vec::new();
+                        jump_tables
+                            .try_reserve_exact(found.tables.len())
+                            .map_err(|_| {
+                                Error::new(ErrorCode::ResourceLimited, "jump table copy refused")
+                            })?;
+                        for table in &found.tables {
+                            let mut entries = Vec::new();
+                            entries
+                                .try_reserve_exact(table.entries.len())
+                                .map_err(|_| {
+                                    Error::new(
+                                        ErrorCode::ResourceLimited,
+                                        "jump table copy refused",
+                                    )
+                                })?;
+                            entries.extend_from_slice(&table.entries);
+                            jump_tables.push(JumpTable {
+                                site: table.site,
+                                first_case: table.first_case,
+                                entries,
+                            });
+                        }
+                        visit(
+                            LibraryOutcome::Analyzed(AnalyzedFunction {
+                                function,
+                                records: &records,
+                                coverage: summary.coverage,
+                                semantics: summary.semantics,
+                                jump_tables: &jump_tables,
+                            }),
+                            c,
+                        )?
+                    }
                     Err(error) if blocks_function(&error) => visit(
                         LibraryOutcome::Blocked {
                             function,

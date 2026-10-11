@@ -13,7 +13,8 @@ through; nothing else parses `llvm-nm` or `llvm-objdump` output or walks
   and extends an unsized entry to the next code symbol.
 - Sections: `sections()`, `section(index)`, `section_by_name`, with their
   allocation, write, execute, TLS and `NOBITS` flags, header type
-  (`SectionKind`), file offset and bytes (a section whose range leaves the
+  (`SectionKind`), the section a `REL`/`RELA` section relocates
+  (`relocates`), file offset and bytes (a section whose range leaves the
   file reads as empty: check `file_offset + size` before trusting it);
   `symbol_table_section()` and `dynamic_symbols()`. `raw_symbols()` lists
   every entry of both tables with its name as raw bytes, `None` when it
@@ -26,7 +27,8 @@ through; nothing else parses `llvm-nm` or `llvm-objdump` output or walks
   views and this crate's `Error`. `object`, `gimli` and `addr2line` are this
   crate's to depend on; `blobray-artifacts` and `oer-image-encode` still take
   `object` until #334 ([format libraries](../riscv/README.md#format-libraries)).
-- Relocations: `relocations(section)` and `target_address`. `rv32` is the
+- Relocations: `relocations(section)`, each with an explicit or implicit
+  (`SHT_REL`, in the patched word) addend, and `target_address`. `rv32` is the
   one RV32 relocation table: each type's patched `Field` and its target's
   `Role` (call, jump, branch, absolute or PC-relative address halves, data
   word, hint, other), and `mask`, which clears exactly the patched bits.

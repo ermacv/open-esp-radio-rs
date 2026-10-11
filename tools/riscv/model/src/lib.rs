@@ -15,6 +15,8 @@ mod resources;
 pub use resources::*;
 mod memory;
 pub use memory::*;
+mod tables;
+pub use tables::*;
 mod semantics;
 pub use semantics::*;
 mod record_memory;

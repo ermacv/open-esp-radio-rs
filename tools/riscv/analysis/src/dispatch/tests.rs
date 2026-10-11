@@ -1,9 +1,6 @@
-use super::{SHT_RELA, SectionFact, TableFacts, jump_tables};
-use crate::*;
+use super::*;
 
 const TEXT: u32 = 1;
-const RODATA: u32 = 3;
-const RELA_RODATA: u32 = 5;
 const SYMTAB: u32 = 10;
 const TABLE: u64 = 7;
 
@@ -112,81 +109,58 @@ fn records(bounded: bool) -> Vec<FunctionRecord> {
     records
 }
 
-/// `.Ltable` at offset 0 of `.rodata`; entries 0..`entries` relocated to
-/// the case labels at 0x20, 0x30, 0x20, … of `.text` (`target` for the last).
 fn memory() -> &'static WorkingMemory {
     Box::leak(Box::new(WorkingMemory::new(1 << 20).unwrap()))
 }
 
-fn section(index: u32, section_type: u32, info: u32, read_only_data: bool) -> SectionFact {
-    SectionFact {
-        index,
-        section_type,
-        info,
-        read_only_data,
-    }
-}
-
-/// `.Ltable` at offset 0 of `.rodata`; entries 0..`entries` relocated by
-/// `.rela.rodata` (`relocations` of type `relocation_type`) to the case labels
+/// A build whose `.Ltable` symbol holds `entries` words naming case labels
 /// at 0x20, 0x30, 0x20, … of `.text` (`last` for the last).
-fn facts_with(entries: u64, last: u64, relocation_type: u32) -> TableFacts<'static> {
-    facts_with_sections(entries, last, relocation_type, &[])
+struct Facts {
+    words: Vec<u64>,
 }
 
-/// `facts_with`, with `extra` sections after the object's own.
-fn facts_with_sections(
-    entries: u64,
-    last: u64,
-    relocation_type: u32,
-    extra: &[SectionFact],
-) -> TableFacts<'static> {
-    let memory = memory();
-    let position = RunPosition::default();
-    let mut facts = TableFacts::new(memory);
-    for fact in [
-        section(TEXT, 1, 0, false),
-        section(RODATA, 1, 0, true),
-        section(RELA_RODATA, relocation_type, RODATA, false),
-    ]
-    .into_iter()
-    .chain(extra.iter().copied())
-    {
-        facts.sections.push(fact, position).unwrap();
-    }
-    for (index, value) in [
-        (TABLE, (Some(RODATA), 0)),
-        (8, (Some(TEXT), 0x20)),
-        (9, (Some(TEXT), 0x30)),
-        (11, (Some(TEXT), last)),
-    ] {
-        facts
-            .symbols
-            .push(((SYMTAB, index), value), position)
-            .unwrap();
-    }
-    for entry in 0..entries {
-        let label = if entry + 1 == entries {
-            11
-        } else if entry % 2 == 0 {
-            8
-        } else {
-            9
+impl TableEntries for Facts {
+    fn entries<'m>(
+        &self,
+        base: &AbstractValue,
+        count: Option<u32>,
+        section: u32,
+        memory: &'m WorkingMemory,
+        control: &mut dyn RunControl,
+    ) -> Result<Option<TableWords<'m>>> {
+        let (AbstractValue::Symbol { symbol, addend: 0 }, Some(count)) = (base, count) else {
+            return Ok(None);
         };
-        facts
-            .words
-            .push(((RELA_RODATA, 4 * entry), (SYMTAB, label, 0)), position)
-            .unwrap();
+        if *symbol != table_symbol() || section != TEXT {
+            return Ok(None);
+        }
+        let reserved = memory.reserve(u64::from(count) * 8, control.position())?;
+        let mut entries = Vec::new();
+        for &word in self.words.iter().take(count as usize) {
+            control.checkpoint(1)?;
+            entries.push(word);
+        }
+        Ok(Some(TableWords { entries, reserved }))
     }
-    facts.finish(&mut || Ok(())).unwrap();
-    facts
 }
 
-fn facts(entries: u64, last: u64) -> TableFacts<'static> {
-    facts_with(entries, last, SHT_RELA)
+fn facts(entries: u64, last: u64) -> Facts {
+    Facts {
+        words: (0..entries)
+            .map(|entry| {
+                if entry + 1 == entries {
+                    last
+                } else if entry % 2 == 0 {
+                    0x20
+                } else {
+                    0x30
+                }
+            })
+            .collect(),
+    }
 }
 
-fn run(records: &[FunctionRecord], facts: &TableFacts<'_>) -> Vec<JumpTable> {
+fn run(records: &[FunctionRecord], facts: &Facts) -> Vec<JumpTable> {
     jump_tables(records, TEXT, EXTENT, facts, memory(), &mut || Ok(()))
         .unwrap()
         .tables
@@ -285,47 +259,6 @@ fn a_rebased_switch_value_reports_its_first_case() {
 }
 
 #[test]
-fn a_rel_table_whose_addends_live_in_its_words_is_never_proven() {
-    // SHT_REL (9): each entry's addend is in the table word, not read here.
-    assert!(run(&records(true), &facts_with(3, 0x38, 9)).is_empty());
-}
-
-#[test]
-fn only_rela_words_of_read_only_data_are_kept() {
-    let memory = memory();
-    let mut facts = TableFacts::new(memory);
-    let mut c = || Ok(());
-    for fact in [
-        section(RODATA, 1, 0, true),
-        section(RELA_RODATA, SHT_RELA, RODATA, false),
-        section(20, 1, 0, false),
-        section(21, SHT_RELA, 20, false),
-        section(22, 9, RODATA, false),
-    ] {
-        facts.sections.push(fact, RunPosition::default()).unwrap();
-    }
-    let relocation = |section, addend| RelocationRecord {
-        section,
-        index: 0,
-        offset: 0,
-        relocation_type: 1,
-        symbol_table_section: SYMTAB,
-        symbol_index: 8,
-        addend,
-    };
-    facts
-        .relocation(&relocation(RELA_RODATA, Some(0)), &mut c)
-        .unwrap();
-    facts.relocation(&relocation(21, Some(0)), &mut c).unwrap();
-    facts.relocation(&relocation(22, None), &mut c).unwrap();
-    assert_eq!(
-        facts.words.len(),
-        1,
-        "a debug-like section's and a REL section's words are dropped as they stream"
-    );
-}
-
-#[test]
 fn the_recognizer_stops_when_the_work_budget_does() {
     let mut exhausted = || Err(Error::new(ErrorCode::ResourceLimited, "work budget"));
     let error = jump_tables(
@@ -384,10 +317,4 @@ fn the_first_case_is_read_through_narrow_extensions_or_left_unknown() {
     assert_eq!(first_case(&value(6), &expressions), None);
     assert_eq!(first_case(&value(7), &expressions), Some(0));
     assert_eq!(first_case(&value(0), &expressions), Some(0));
-}
-
-#[test]
-fn a_section_relocated_twice_proves_no_table() {
-    let twice = facts_with_sections(3, 0x38, SHT_RELA, &[section(6, SHT_RELA, RODATA, false)]);
-    assert!(run(&records(true), &twice).is_empty());
 }

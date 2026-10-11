@@ -27,7 +27,7 @@ pub fn load(elf: &Elf<'_>) -> Result<Dwarf> {
     gimli::Dwarf::load(
         |id: gimli::SectionId| -> std::result::Result<Reader, Error> {
             let data = match elf.object().section_by_name(id.name()) {
-                Some(section) => section.uncompressed_data()?,
+                Some(section) => section.uncompressed_data().map_err(crate::parse_error)?,
                 None => Default::default(),
             };
             Ok(gimli::EndianRcSlice::new(Rc::from(&*data), endian))

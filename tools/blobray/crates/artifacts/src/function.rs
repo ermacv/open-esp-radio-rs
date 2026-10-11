@@ -21,6 +21,9 @@ fn parse(error: object::Error) -> Error {
 }
 pub struct PreparedObject<'a, 'm> {
     file: object::File<'a>,
+    /// The same bytes through the repository's ELF view, for the static
+    /// image and mapping-symbol readers of `oer-riscv-program`.
+    elf: oer_elf::Elf<'a>,
     occurrence: Option<ObjectId>,
     image: Option<oer_riscv_program::ProgramView<'a>>,
     abi: RiscvAbi,
@@ -66,6 +69,8 @@ pub fn with_prepared_object<T>(
         ));
     }
     let file = object::File::parse(&*bytes).map_err(parse)?;
+    let view =
+        oer_elf::Elf::parse(&bytes).map_err(|e| Error::new(ErrorCode::Integrity, e.to_string()))?;
     if file.is_64()
         || !file.is_little_endian()
         || file.architecture() != object::Architecture::Riscv32
@@ -98,12 +103,12 @@ pub fn with_prepared_object<T>(
     }
     let image = if file.kind() == object::ObjectKind::Executable {
         Some(oer_riscv_program::ProgramView::new(
-            &bytes, &file, memory, control,
+            &bytes, &view, memory, control,
         )?)
     } else {
         None
     };
-    let abi = oer_riscv_program::abi(&file)
+    let abi = oer_riscv_program::abi(&view)
         .map_err(|e| Error::new(ErrorCode::Incompatible, e.message))?;
     let object::File::Elf32(elf) = &file else {
         unreachable!()
@@ -136,6 +141,7 @@ pub fn with_prepared_object<T>(
     )?;
     let mut object = PreparedObject {
         file,
+        elf: view,
         occurrence: None,
         image,
         abi,
@@ -380,8 +386,12 @@ impl<'data> PreparedObject<'data, '_> {
                 (count as u64).saturating_mul(u64::from(usize::BITS - count.leading_zeros())),
             )?;
             relocations.sort_unstable_by_key(|r| (r.offset, r.section, r.index));
-            let mappings =
-                oer_riscv_program::mapping::data_ranges(file, section_index, memory, control)?;
+            let mappings = oer_riscv_program::mapping::data_ranges(
+                &self.elf,
+                section_index.0,
+                memory,
+                control,
+            )?;
             self.sections[section_index.0] = Some(PreparedSection {
                 relocations,
                 mappings,

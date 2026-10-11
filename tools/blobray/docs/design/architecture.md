@@ -68,7 +68,7 @@ links, such as the vendor scenarios, does not depend on the command line.
 | Crate | Principal modules | Owns | Allowed local dependencies |
 | --- | --- | --- | --- |
 | `blobray-domain` | identity, observations, effects, resources, ports | Shared values and narrow extension interfaces | `oer-riscv-model` |
-| `blobray-artifacts` | containers, objects, symbols, relocations, mappings | Structural inspection of supplied immutable bytes | `blobray-domain`, `oer-riscv-model`, `oer-riscv-program` |
+| `blobray-artifacts` | containers, objects, symbols, relocations, mappings | Structural inspection of supplied immutable bytes | `blobray-domain`, `oer-elf`, `oer-riscv-model`, `oer-riscv-program` |
 | `blobray-analysis` | target audit, code closure, register navigation | Blobray analyses over the shared function analysis | `blobray-domain`, `oer-riscv-model`, `oer-riscv-analysis` |
 | `blobray-backend-riscv` | execution over lifted RV32 | Concrete machine state and RV32 execution | `blobray-domain`, `oer-riscv-model`, `oer-riscv-decode`, `oer-riscv-lift` |
 | `blobray-verification` | scenarios, comparison, record validation | Comparison relations and verdict construction | `blobray-domain`, `oer-riscv-model` |
@@ -151,7 +151,7 @@ flowchart TD
 
 The graph leaves out the edges to `oer-riscv-model` (from every Blobray crate
 and from `oer-riscv-lift`, `oer-riscv-analysis` and `oer-riscv-program`) and to
-`oer-elf` (from `oer-riscv-lift` and `oer-riscv-program`). The table above lists
+`oer-elf` (from `blobray-artifacts`, `oer-riscv-lift` and `oer-riscv-program`). The table above lists
 the Blobray crates' edges, and the
 [shared layer's table](../../../riscv/README.md#dependency-table) lists the edges
 of the `oer-riscv-*` crates.

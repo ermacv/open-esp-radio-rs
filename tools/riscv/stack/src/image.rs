@@ -234,7 +234,7 @@ pub(crate) fn observing<R>(
 ) -> Result<R> {
     let file = parse(elf)?;
     let memory = WorkingMemory::new(MEMORY_LIMIT)?;
-    let view = ProgramView::new(elf, file.object(), &memory, &mut || Ok(()))?;
+    let view = ProgramView::new(elf, &file, &memory, &mut || Ok(()))?;
     let mut observe = |function: &Function, jumps: &[KnownJump]| -> Result<Observation> {
         let mut control = || Ok(());
         let code = function_bytes(&file, function)?;

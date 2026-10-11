@@ -29,7 +29,7 @@ fn load<'a>(
     source.read_at(0, &mut bytes, control)?;
     Ok(bytes)
 }
-fn check(file: &object::File<'_>, kind: object::ObjectKind) -> Result<()> {
+fn check(bytes: &[u8], file: &object::File<'_>, kind: object::ObjectKind) -> Result<RiscvAbi> {
     if file.is_64()
         || !file.is_little_endian()
         || file.architecture() != object::Architecture::Riscv32
@@ -37,8 +37,7 @@ fn check(file: &object::File<'_>, kind: object::ObjectKind) -> Result<()> {
     {
         return Err(bad("requires little-endian RV32 ELF of the declared kind"));
     }
-    oer_riscv_program::abi(file)?;
-    Ok(())
+    oer_riscv_program::abi(&oer_elf::Elf::parse(bytes).map_err(|e| bad(e.to_string()))?)
 }
 pub fn inspect_link_input(
     source: &dyn ByteSource,
@@ -55,7 +54,7 @@ pub fn inspect_link_input(
         ));
     }
     let file = object::File::parse(&*bytes).map_err(|e| bad(e.to_string()))?;
-    check(&file, object::ObjectKind::Relocatable)?;
+    check(&bytes, &file, object::ObjectKind::Relocatable)?;
     for section in file.sections() {
         control.checkpoint(1)?;
         if section
@@ -178,7 +177,7 @@ pub fn validate_image(
     layout.validate()?;
     let bytes = load(source, memory, control)?;
     let file = object::File::parse(&*bytes).map_err(|e| bad(e.to_string()))?;
-    check(&file, object::ObjectKind::Executable)?;
+    let abi = check(&bytes, &file, object::ObjectKind::Executable)?;
     let mut segments = Vec::new();
     for segment in file.segments() {
         control.checkpoint(1)?;
@@ -289,8 +288,5 @@ pub fn validate_image(
     if roots.is_empty() {
         return Err(bad("image lacks a verified entry"));
     }
-    Ok(ValidatedImage {
-        segments,
-        abi: oer_riscv_program::abi(&file)?,
-    })
+    Ok(ValidatedImage { segments, abi })
 }

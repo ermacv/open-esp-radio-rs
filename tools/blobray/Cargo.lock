@@ -99,6 +99,7 @@ version = "0.1.0"
 dependencies = [
  "blobray-domain",
  "object",
+ "oer-elf",
  "oer-riscv-model",
  "oer-riscv-program",
 ]
@@ -440,7 +441,6 @@ dependencies = [
 name = "oer-riscv-program"
 version = "0.1.0"
 dependencies = [
- "object",
  "oer-elf",
  "oer-riscv-model",
 ]

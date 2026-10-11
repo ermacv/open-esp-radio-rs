@@ -12,7 +12,18 @@ through; nothing else parses `llvm-nm` or `llvm-objdump` output or walks
   into one `Function` with all its names (identical-code-folded aliases),
   and extends an unsized entry to the next code symbol.
 - Sections: `sections()`, `section(index)`, `section_by_name`, with their
-  allocation, write, execute, TLS and `NOBITS` flags and bytes.
+  allocation, write, execute, TLS and `NOBITS` flags, header type
+  (`SectionKind`), file offset and bytes (a section whose range leaves the
+  file reads as empty: check `file_offset + size` before trusting it);
+  `symbol_table_section()` and `dynamic_symbols()`. `checked_symbols()` and
+  `checked_dynamic_symbols()` fail on a symbol whose name cannot be read,
+  where `symbols()` skips it.
+- Program headers: `program_headers()`, each with its type
+  (`ProgramHeaderKind`: load, dynamic, interpreter, TLS), addresses, file and
+  memory sizes and permissions; `header_flags()` is the raw `e_flags`, which
+  `rv32::header_flags` decodes into the floating-point ABI and RV32E.
+- No `object` type appears in the public interface: callers see only these
+  views and this crate's `Error`.
 - Relocations: `relocations(section)` and `target_address`. `rv32` is the
   one RV32 relocation table: each type's patched `Field` and its target's
   `Role` (call, jump, branch, absolute or PC-relative address halves, data

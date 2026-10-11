@@ -44,7 +44,7 @@ fn a_received_pdu_loss_is_reported_in_its_place() {
 
     use super::OutcomeQueue;
 
-    // One slot for reports, one kept for a lifecycle terminal.
+    // Two slots for reports, one kept for a lifecycle terminal.
     let queue = OutcomeQueue::<NoopRawMutex, 3, 1>::new();
     let received = |byte| received(EventId::new(1), byte);
     for byte in 0..4 {

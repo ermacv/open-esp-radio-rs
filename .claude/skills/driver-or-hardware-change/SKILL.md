@@ -35,6 +35,9 @@ Known silicon problems: [hardware errata](../../../docs/hardware-errata.md).
    shifts, field positions or PAC type names.
 7. **Evidence.** Vendor behavior comparisons: `vendor-evidence` skill.
    Hardware-facing changes run the HIL scenarios they need: `hil-run` skill.
+   Questions about vendor code (`register-accesses`, `function-records
+   --format human`, `call-arguments`, `callers`, `mmio-diff`) go to Blobray,
+   not `objdump`: [choose a task](../../../tools/blobray/README.md#choose-a-task).
 
 ## Commands (all `run_in_background: true`)
 

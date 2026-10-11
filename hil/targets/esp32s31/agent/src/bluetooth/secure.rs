@@ -194,13 +194,11 @@ async fn lifecycle(
             epoch.as_mut().await
         };
         let exit = match end {
-            EpochEnd::Host(exit, Served::Stopped(_)) => exit,
-            EpochEnd::Host(exit, Served::StopFailed { .. } | Served::Poisoned(_)) => {
-                state.stopped();
-                retain((exit, system, port, service)).await
-            }
-            EpochEnd::Service(Served::Stopped(served)) => {
-                // The service ended on its own: no restart follows.
+            EpochEnd::Host(exit, Served::Stopped(ServeExit::Stopped)) => exit,
+            // The service ended on its own, even when the Host ended at the
+            // same time: no restart follows.
+            EpochEnd::Host(_, Served::Stopped(served))
+            | EpochEnd::Service(Served::Stopped(served)) => {
                 state.stopped();
                 service.close();
                 let stopped = {
@@ -210,23 +208,12 @@ async fn lifecycle(
                 let Ok(_parked) = stopped else {
                     crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n")
                 };
-                match served {
-                    ServeExit::EpochExhausted(_) => crate::fail(
-                        c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-epoch-exhausted\r\n",
-                    ),
-                    ServeExit::Stopped
-                    | ServeExit::Closed
-                    | ServeExit::Transport(_)
-                    | ServeExit::Lifecycle(_)
-                    | ServeExit::Clock(_) => {
-                        crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-service\r\n")
-                    }
-                }
+                crate::fail(super::exit_reason(served))
             }
             // The report diverges with every owner alive.
-            EpochEnd::Service(Served::StopFailed { .. } | Served::Poisoned(_)) => {
+            EpochEnd::Host(_, failed) | EpochEnd::Service(failed) => {
                 state.stopped();
-                crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-stop\r\n")
+                crate::fail(super::stop_failure_reason(&failed))
             }
         };
         record_shutdown(state, &exit);

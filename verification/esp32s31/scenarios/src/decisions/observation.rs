@@ -183,13 +183,7 @@ pub const DECISIONS: &[Decision] = &[
             comparison lends the zero-sized `WeakPhyGrantProtect`, whose hooks have no effect \
             like the archive's weak `phy_acquire_grant_protect` and \
             `phy_release_grant_protect`, so passing it carries no data",
-        places: &[
-            (
-                "phy/src/target_port.rs",
-                "grant: &mut impl PhyGrantProtectPort,",
-            ),
-            ("phy/src/target_port.rs", "&mut *self.grant,"),
-        ],
+        places: &[("phy/src/target_port.rs", "&mut *self.grant,")],
     },
     Decision {
         reason: "temperature acquisition provenance, a production scheduling record with no \
@@ -205,14 +199,6 @@ pub const DECISIONS: &[Decision] = &[
             diagnostic `phy_printf`; state keeps only whether a correction happened, and the \
             capacitor and frequency-memory writes are compared",
         places: &[
-            (
-                "phy/src/analog/frequency.rs",
-                "PhyFrequencyCapMemoryAction::Complete(PhyFrequencyCapMemoryOutcome {",
-            ),
-            (
-                "phy/src/analog/frequency.rs",
-                "correction: self.request.correction,",
-            ),
             ("phy/src/tracking/rfpll/thermal.rs", "self.request"),
             ("phy/src/tracking/parameters.rs", "self.child.request()"),
             ("phy/src/target_port.rs", "let request = child.request();"),

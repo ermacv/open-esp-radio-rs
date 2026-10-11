@@ -118,6 +118,20 @@ pub struct MemoryReservation<'a> {
     memory: &'a WorkingMemory,
     bytes: u64,
 }
+impl MemoryReservation<'_> {
+    /// Admit `bytes` more before the allocation they account for is made:
+    /// a structure that grows entry by entry holds one reservation.
+    pub fn grow(&mut self, bytes: u64, position: RunPosition) -> Result<()> {
+        let mut more = self.memory.reserve(bytes, position)?;
+        // The admitted bytes move into this reservation.
+        self.bytes += std::mem::take(&mut more.bytes);
+        Ok(())
+    }
+    /// The bytes this reservation admits.
+    pub fn bytes(&self) -> u64 {
+        self.bytes
+    }
+}
 impl Drop for MemoryReservation<'_> {
     fn drop(&mut self) {
         self.memory.used.set(self.memory.used.get() - self.bytes);
@@ -176,6 +190,21 @@ mod tests {
         }
         assert_eq!(memory.peak(), 24);
         assert_eq!(memory.used(), 16);
+    }
+    #[test]
+    fn a_grown_reservation_admits_within_the_limit_and_releases_all_at_once() {
+        let memory = WorkingMemory::new(16).unwrap();
+        let mut reservation = memory.reserve(4, RunPosition::default()).unwrap();
+        reservation.grow(8, RunPosition::default()).unwrap();
+        assert_eq!((reservation.bytes(), memory.used()), (12, 12));
+        let error = reservation.grow(5, RunPosition::default()).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ResourceLimited);
+        assert_eq!(
+            (reservation.bytes(), memory.used(), memory.peak()),
+            (12, 12, 12)
+        );
+        drop(reservation);
+        assert_eq!(memory.used(), 0);
     }
     #[test]
     fn overlapping_scopes_are_bounded_and_errors_release_capacity() {

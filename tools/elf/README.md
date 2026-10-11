@@ -41,8 +41,12 @@ through; nothing else parses `llvm-nm` or `llvm-objdump` output or walks
   section, or nothing. The vendor fingerprints are computed over it
   ([`oer-vendor-provenance`](../vendor-provenance/README.md)).
 - `dwarf::Symbolizer::frames(address)`: the inline chain at an address with
-  each frame's demangled function, file and line. `dwarf::load` gives the
-  debug information itself to analyses that read DWARF entries.
+  each frame's demangled function, file and line. `Symbolizer::new` copies
+  each debug section; `Symbolizer::shared` reads them as ranges of the ELF's
+  shared bytes. `dwarf::load` gives the debug information itself to
+  analyses that read DWARF entries; `dwarf::DebugSections` lends it from
+  the ELF's bytes without copies. A compressed debug section is an error:
+  `object` is built without its compression feature.
 
 It has no repository path dependency, so Blobray's standalone extraction
 takes it by path beside the RV32 crates. Blobray's own artifact inventory

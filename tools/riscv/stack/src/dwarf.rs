@@ -1,24 +1,43 @@
 //! Facts an image's DWARF states: the chain of functions inlined at an
-//! address, the type a function returns, by its qualified name, and where
-//! every copy of a function lies, inlined or not.
-use oer_elf::dwarf::{Reader, Symbolizer, gimli};
-use oer_riscv_model::{Error, ErrorCode, Result};
+//! address, the type a function returns, by its qualified name, where every
+//! copy of a function lies, inlined or not, and the types, globals and
+//! signatures of [`TypeFacts`].
+//!
+//! [`read`] reads the return types, the copies and the type facts in one
+//! pass over the debug sections borrowed from the ELF's bytes (a compressed
+//! one is an error: `oer-elf` reads none), and admits everything it
+//! keeps or builds on the way in the analysis's working memory; what only
+//! the pass needs borrows its strings from the sections. Inline chains are
+//! addr2line's, over sections shared with the same bytes
+//! ([`Symbolizer::shared`]): the caches it grows as it answers are the
+//! library's own, which the working memory does not account.
+use crate::cha::{TypeFacts, TypeWalk};
+use oer_elf::dwarf::{DebugSections, SliceReader, Symbolizer, gimli};
+use oer_riscv_model::{Error, ErrorCode, Ledger, Result, RunControl};
 use std::collections::BTreeMap;
+use std::rc::Rc;
+
+pub(crate) type Reader<'d> = SliceReader<'d>;
+pub(crate) type Unit<'d> = gimli::Unit<Reader<'d>>;
+pub(crate) type Entry<'d> = gimli::DebuggingInformationEntry<Reader<'d>>;
 
 /// The debug information of one ELF.
 pub struct Dwarf {
     symbolizer: Symbolizer,
     /// A function's entry address and the qualified name of its return type.
     returns: BTreeMap<u32, String>,
+    /// Each named subprogram's path, by its offset in `.debug_info`.
+    paths: BTreeMap<usize, String>,
+    /// Each copy's start and the offset of the subprogram it copies.
+    copies: Vec<(u32, usize)>,
 }
 
-fn invalid(message: impl Into<String>) -> Error {
+pub(crate) fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorCode::Integrity, message.into())
 }
 
-fn load(elf: &[u8]) -> Result<gimli::Dwarf<Reader>> {
-    let file = oer_elf::Elf::parse(elf).map_err(|_| invalid("invalid ELF"))?;
-    oer_elf::dwarf::load(&file).map_err(|error| invalid(error.to_string()))
+pub(crate) fn dwarf_error(error: gimli::Error) -> Error {
+    invalid(format!("DWARF: {error}"))
 }
 
 /// A demangled name without the crate disambiguators v0 symbols carry
@@ -37,19 +56,246 @@ pub(crate) fn plain(name: &str) -> String {
     out
 }
 
-impl Dwarf {
-    /// Read the debug information of `elf`.
-    pub fn read(elf: &[u8]) -> Result<Self> {
-        let returns = returns(&load(elf)?)?;
-        let symbolizer = Symbolizer::new(elf).map_err(|error| invalid(error.to_string()))?;
-        Ok(Self {
-            symbolizer,
-            returns,
-        })
+/// The bytes of the string an attribute names, borrowed from the sections.
+pub(crate) fn bytes<'d>(
+    dwarf: &gimli::Dwarf<Reader<'d>>,
+    unit: &Unit<'d>,
+    value: gimli::AttributeValue<Reader<'d>>,
+) -> Option<&'d [u8]> {
+    dwarf.attr_string(unit, value).ok().map(|name| name.slice())
+}
+
+/// The string an attribute names, lossily decoded.
+pub(crate) fn text<'d>(
+    dwarf: &gimli::Dwarf<Reader<'d>>,
+    unit: &Unit<'d>,
+    value: gimli::AttributeValue<Reader<'d>>,
+) -> Option<String> {
+    bytes(dwarf, unit, value).map(|name| String::from_utf8_lossy(name).into_owned())
+}
+
+/// The offset in `.debug_info` a reference attribute names.
+pub(crate) fn reference(
+    unit: &Unit<'_>,
+    value: gimli::AttributeValue<Reader<'_>>,
+) -> Option<usize> {
+    match value {
+        gimli::AttributeValue::UnitRef(offset) => offset
+            .to_debug_info_offset(&unit.header)
+            .map(|offset| offset.0),
+        gimli::AttributeValue::DebugInfoRef(offset) => Some(offset.0),
+        _ => None,
+    }
+}
+
+/// Read the debug information of `elf`: its DWARF facts and type facts,
+/// admitted in `keep`, which the caller holds while it keeps them.
+pub fn read(
+    elf: &Rc<[u8]>,
+    keep: &mut Ledger<'_>,
+    control: &mut dyn RunControl,
+) -> Result<(Dwarf, TypeFacts)> {
+    let memory = keep.memory();
+    let file = oer_elf::Elf::parse(elf).map_err(|_| invalid("invalid ELF"))?;
+    let sections = DebugSections::load(&file).map_err(|error| invalid(error.to_string()))?;
+    let dwarf = sections
+        .dwarf()
+        .map_err(|error| invalid(error.to_string()))?;
+    let mut scratch = Ledger::new(memory, control)?;
+    let mut returns = Returns::default();
+    let mut copies = Copies::default();
+    let mut types = TypeWalk::new(&file, keep, control)?;
+    let mut units = dwarf.units();
+    while let Some(header) = units.next().map_err(dwarf_error)? {
+        let unit = dwarf.unit(header).map_err(dwarf_error)?;
+        returns.scope.clear();
+        types.begin_unit();
+        let mut entries = unit.entries();
+        while let Some(entry) = entries.next_dfs().map_err(dwarf_error)? {
+            control.checkpoint(1)?;
+            let Some(offset) = entry
+                .offset()
+                .to_debug_info_offset(&unit.header)
+                .map(|offset| offset.0)
+            else {
+                continue;
+            };
+            let depth = entry.depth();
+            returns.entry(&dwarf, &unit, entry, depth, offset, &mut scratch, control)?;
+            copies.entry(&dwarf, &unit, entry, offset, keep, control)?;
+            types.entry(
+                &dwarf,
+                &unit,
+                entry,
+                depth,
+                offset,
+                keep,
+                &mut scratch,
+                control,
+            )?;
+        }
+        types.end_unit(keep, &mut scratch, control)?;
+    }
+    let types = types.finish(keep, control)?;
+    let symbolizer = Symbolizer::shared(elf.clone()).map_err(|error| invalid(error.to_string()))?;
+    let mut out = Dwarf {
+        symbolizer,
+        returns: BTreeMap::new(),
+        paths: copies.paths,
+        copies: copies.copies,
+    };
+    returns.finish(&mut out, keep, control)?;
+    drop(scratch);
+    Ok((out, types))
+}
+
+/// Every subprogram's entry and the qualified name of its return type.
+#[derive(Default)]
+struct Returns<'d> {
+    /// The named namespaces and types the current entry lies in: depth and
+    /// offset.
+    scope: Vec<(isize, usize)>,
+    /// Each named namespace and type: the scope it lies in and its name.
+    nodes: BTreeMap<usize, (Option<usize>, &'d [u8])>,
+    /// The named types among them.
+    types: Vec<usize>,
+    /// Each subprogram's entry and its return type's offset.
+    returned: Vec<(u32, usize)>,
+}
+
+impl<'d> Returns<'d> {
+    #[allow(clippy::too_many_arguments)]
+    fn entry(
+        &mut self,
+        dwarf: &gimli::Dwarf<Reader<'d>>,
+        unit: &Unit<'d>,
+        entry: &Entry<'d>,
+        depth: isize,
+        offset: usize,
+        scratch: &mut Ledger<'_>,
+        control: &mut dyn RunControl,
+    ) -> Result<()> {
+        self.scope.retain(|(at, _)| *at < depth);
+        let tag = entry.tag();
+        let named = matches!(
+            tag,
+            gimli::DW_TAG_namespace
+                | gimli::DW_TAG_structure_type
+                | gimli::DW_TAG_union_type
+                | gimli::DW_TAG_enumeration_type
+                | gimli::DW_TAG_base_type
+                | gimli::DW_TAG_typedef
+        );
+        if named {
+            if let Some(name) = entry
+                .attr_value(gimli::DW_AT_name)
+                .and_then(|value| bytes(dwarf, unit, value))
+            {
+                let parent = self.scope.last().map(|&(_, parent)| parent);
+                scratch.insert(&mut self.nodes, offset, (parent, name), control)?;
+                if tag != gimli::DW_TAG_namespace {
+                    scratch.push(&mut self.types, offset, control)?;
+                }
+                // Nested types live in the type's scope.
+                scratch.push(&mut self.scope, (depth, offset), control)?;
+            }
+        } else if tag == gimli::DW_TAG_subprogram {
+            let low = entry.attr_value(gimli::DW_AT_low_pc);
+            let returns = entry.attr_value(gimli::DW_AT_type);
+            if let (Some(gimli::AttributeValue::Addr(low)), Some(returns)) = (low, returns)
+                && let (Ok(low), Some(target)) = (u32::try_from(low), reference(unit, returns))
+            {
+                scratch.push(&mut self.returned, (low, target), control)?;
+            }
+        }
+        Ok(())
     }
 
-    /// The functions inlined at `address`, innermost first, by their
-    /// demangled paths; empty where the DWARF covers no code.
+    /// The qualified name of the type at `offset`: its scope's names and
+    /// its own, joined by `::`.
+    fn qualified(&self, offset: usize) -> String {
+        let mut parts = Vec::new();
+        let mut at = Some(offset);
+        while let Some(node) = at.and_then(|offset| self.nodes.get(&offset)) {
+            parts.push(String::from_utf8_lossy(node.1));
+            at = node.0;
+        }
+        parts.reverse();
+        parts.join("::")
+    }
+
+    fn finish(
+        self,
+        out: &mut Dwarf,
+        keep: &mut Ledger<'_>,
+        control: &mut dyn RunControl,
+    ) -> Result<()> {
+        for &(low, target) in &self.returned {
+            control.checkpoint(1)?;
+            if self.types.binary_search(&target).is_ok() {
+                let name = keep.string(&self.qualified(target), control)?;
+                keep.insert(&mut out.returns, low, name, control)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Every subprogram's and inlined subroutine's copy and the paths of named
+/// subprograms, for [`Dwarf::instances`].
+#[derive(Default)]
+struct Copies {
+    paths: BTreeMap<usize, String>,
+    copies: Vec<(u32, usize)>,
+}
+
+impl Copies {
+    fn entry<'d>(
+        &mut self,
+        dwarf: &gimli::Dwarf<Reader<'d>>,
+        unit: &Unit<'d>,
+        entry: &Entry<'d>,
+        offset: usize,
+        keep: &mut Ledger<'_>,
+        control: &mut dyn RunControl,
+    ) -> Result<()> {
+        let tag = entry.tag();
+        if tag != gimli::DW_TAG_subprogram && tag != gimli::DW_TAG_inlined_subroutine {
+            return Ok(());
+        }
+        if let Some(value) = entry.attr_value(gimli::DW_AT_linkage_name)
+            && let Some(linkage) = text(dwarf, unit, value)
+        {
+            let path = keep.string(&plain(&oer_elf::demangle(&linkage)), control)?;
+            keep.insert(&mut self.paths, offset, path, control)?;
+        }
+        // A copy names its subprogram by origin, or is one itself.
+        let origin = entry
+            .attr_value(gimli::DW_AT_abstract_origin)
+            .or_else(|| entry.attr_value(gimli::DW_AT_specification))
+            .and_then(|value| reference(unit, value))
+            .unwrap_or(offset);
+        let start = match entry.attr_value(gimli::DW_AT_low_pc) {
+            Some(gimli::AttributeValue::Addr(low)) => Some(low),
+            _ => {
+                let mut ranges = dwarf.die_ranges(unit, entry).map_err(dwarf_error)?;
+                ranges.next().map_err(dwarf_error)?.map(|range| range.begin)
+            }
+        };
+        if let Some(start) = start
+            && start != 0
+            && let Ok(start) = u32::try_from(start)
+        {
+            keep.push(&mut self.copies, (start, origin), control)?;
+        }
+        Ok(())
+    }
+}
+
+impl Dwarf {
+    /// The functions inlined at `address`, innermost first, then the
+    /// function they are inlined in, by their demangled paths; empty where
+    /// the DWARF covers no code.
     pub fn inline_chain(&self, address: u32) -> Result<Vec<String>> {
         Ok(self
             .symbolizer
@@ -66,159 +312,27 @@ impl Dwarf {
     pub fn return_type(&self, function: u32) -> Option<&str> {
         self.returns.get(&function).map(String::as_str)
     }
-}
 
-/// Every subprogram's entry and the qualified name of its return type.
-fn returns(dwarf: &gimli::Dwarf<Reader>) -> Result<BTreeMap<u32, String>> {
-    use gimli::Reader as _;
-    let error = |error: gimli::Error| invalid(format!("DWARF: {error}"));
-    // Qualified names of named types, by their offset in `.debug_info`.
-    let mut names: BTreeMap<usize, String> = BTreeMap::new();
-    // Each subprogram's entry and its return type's offset.
-    let mut returned: Vec<(u32, usize)> = Vec::new();
-    let mut units = dwarf.units();
-    while let Some(header) = units.next().map_err(error)? {
-        let unit = dwarf.unit(header).map_err(error)?;
-        let in_section = |offset: gimli::UnitOffset<usize>| {
-            offset
-                .to_debug_info_offset(&unit.header)
-                .map(|offset| offset.0)
-        };
-        let mut scope: Vec<(isize, String)> = Vec::new();
-        let mut entries = unit.entries();
-        while let Some(entry) = entries.next_dfs().map_err(error)? {
-            let entry = entry.clone();
-            let depth = entries.depth();
-            let offset = entries.offset();
-            scope.retain(|(at, _)| *at < depth);
-            let name: Option<String> = match entry.attr_value(gimli::DW_AT_name) {
-                Some(value) => dwarf
-                    .attr_string(&unit, value)
-                    .ok()
-                    .and_then(|name| name.to_string_lossy().ok().map(|name| name.into_owned())),
-                None => None,
-            };
-            let qualified = |name: &str| {
-                let mut path: Vec<&str> = scope.iter().map(|(_, part)| part.as_str()).collect();
-                path.push(name);
-                path.join("::")
-            };
-            match entry.tag() {
-                gimli::DW_TAG_namespace => {
-                    if let Some(name) = name {
-                        scope.push((depth, name));
-                    }
-                }
-                gimli::DW_TAG_structure_type
-                | gimli::DW_TAG_union_type
-                | gimli::DW_TAG_enumeration_type
-                | gimli::DW_TAG_base_type
-                | gimli::DW_TAG_typedef => {
-                    if let Some(name) = name {
-                        if let Some(at) = in_section(offset) {
-                            names.insert(at, qualified(&name));
-                        }
-                        // Nested types live in the type's scope.
-                        scope.push((depth, name));
-                    }
-                }
-                gimli::DW_TAG_subprogram => {
-                    let low = entry.attr_value(gimli::DW_AT_low_pc);
-                    let returns = entry.attr_value(gimli::DW_AT_type);
-                    if let (Some(gimli::AttributeValue::Addr(low)), Some(returns)) = (low, returns)
-                    {
-                        let target = match returns {
-                            gimli::AttributeValue::UnitRef(offset) => in_section(offset),
-                            gimli::AttributeValue::DebugInfoRef(offset) => Some(offset.0),
-                            _ => None,
-                        };
-                        if let (Ok(low), Some(target)) = (u32::try_from(low), target) {
-                            returned.push((low, target));
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    Ok(returned
-        .into_iter()
-        .filter_map(|(low, target)| Some((low, names.get(&target)?.clone())))
-        .collect())
-}
-
-/// Where every copy of each function named in `functions` (by its demangled
-/// path, as [`Dwarf::inline_chain`] names functions) lies in `elf`: the
-/// entry of each out-of-line copy and the first address of each inlined one.
-pub fn instances(elf: &[u8], functions: &[&str]) -> Result<BTreeMap<String, Vec<u32>>> {
-    use gimli::Reader as _;
-    let dwarf = load(elf)?;
-    let error = |error: gimli::Error| invalid(format!("DWARF: {error}"));
-    // Each named subprogram's path, by its offset in `.debug_info`.
-    let mut names: BTreeMap<usize, String> = BTreeMap::new();
-    // Each copy's start and the offset of the subprogram it copies.
-    let mut copies: Vec<(u32, usize)> = Vec::new();
-    let mut units = dwarf.units();
-    while let Some(header) = units.next().map_err(error)? {
-        let unit = dwarf.unit(header).map_err(error)?;
-        let global = |value: gimli::AttributeValue<Reader>| match value {
-            gimli::AttributeValue::UnitRef(offset) => offset
-                .to_debug_info_offset(&unit.header)
-                .map(|offset| offset.0),
-            gimli::AttributeValue::DebugInfoRef(offset) => Some(offset.0),
-            _ => None,
-        };
-        let mut entries = unit.entries();
-        while let Some(entry) = entries.next_dfs().map_err(error)? {
-            let entry = entry.clone();
-            let offset = entries.offset();
-            let tag = entry.tag();
-            if tag != gimli::DW_TAG_subprogram && tag != gimli::DW_TAG_inlined_subroutine {
-                continue;
-            }
-            if let Some(value) = entry.attr_value(gimli::DW_AT_linkage_name)
-                && let Ok(linkage) = dwarf.attr_string(&unit, value)
-                && let Ok(linkage) = linkage.to_string_lossy()
-                && let Some(at) = offset.to_debug_info_offset(&unit.header)
+    /// Where every copy of each function named in `functions` (by its
+    /// demangled path, as [`Dwarf::inline_chain`] names functions) lies: the
+    /// entry of each out-of-line copy and the first address of each inlined
+    /// one.
+    pub fn instances(&self, functions: &[&str]) -> BTreeMap<String, Vec<u32>> {
+        let mut found: BTreeMap<String, Vec<u32>> = functions
+            .iter()
+            .map(|function| ((*function).to_owned(), Vec::new()))
+            .collect();
+        for &(start, origin) in &self.copies {
+            if let Some(name) = self.paths.get(&origin)
+                && let Some(starts) = found.get_mut(name)
             {
-                let name = plain(&oer_elf::demangle(&linkage));
-                names.insert(at.0, name);
-            }
-            // A copy names its subprogram by origin, or is one itself.
-            let origin = entry
-                .attr_value(gimli::DW_AT_abstract_origin)
-                .or_else(|| entry.attr_value(gimli::DW_AT_specification))
-                .and_then(global)
-                .or_else(|| offset.to_debug_info_offset(&unit.header).map(|at| at.0));
-            let start = match entry.attr_value(gimli::DW_AT_low_pc) {
-                Some(gimli::AttributeValue::Addr(low)) => Some(low),
-                _ => {
-                    let mut ranges = dwarf.die_ranges(&unit, &entry).map_err(error)?;
-                    ranges.next().map_err(error)?.map(|range| range.begin)
-                }
-            };
-            if let (Some(origin), Some(start)) = (origin, start)
-                && start != 0
-                && let Ok(start) = u32::try_from(start)
-            {
-                copies.push((start, origin));
+                starts.push(start);
             }
         }
-    }
-    let mut found: BTreeMap<String, Vec<u32>> = functions
-        .iter()
-        .map(|function| ((*function).to_owned(), Vec::new()))
-        .collect();
-    for (start, origin) in copies {
-        if let Some(name) = names.get(&origin)
-            && let Some(starts) = found.get_mut(name)
-        {
-            starts.push(start);
+        for starts in found.values_mut() {
+            starts.sort_unstable();
+            starts.dedup();
         }
+        found
     }
-    for starts in found.values_mut() {
-        starts.sort_unstable();
-        starts.dedup();
-    }
-    Ok(found)
 }

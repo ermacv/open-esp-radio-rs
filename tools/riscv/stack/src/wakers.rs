@@ -8,7 +8,7 @@
 //! built at run time in writable memory (a leaked allocation) is not.
 use crate::dwarf::Dwarf;
 use crate::{Analysis, Fact, Resolutions, TransferKind};
-use oer_riscv_model::{Result, RunControl};
+use oer_riscv_model::{Ledger, Result, RunControl};
 use oer_riscv_program::facts::ImageFacts;
 use std::collections::BTreeSet;
 
@@ -34,6 +34,7 @@ pub fn waker_vtables(
     image: &ImageFacts<'_>,
     dwarf: &Dwarf,
     analysis: &Analysis,
+    keep: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<Vec<[u32; 4]>> {
     let function = |address: u32| {
@@ -52,7 +53,7 @@ pub fn waker_vtables(
             continue;
         };
         if dwarf.return_type(clone) == Some(RAW_WAKER) {
-            vtables.push([clone, wake, wake_by_ref, drop]);
+            keep.push(&mut vtables, [clone, wake, wake_by_ref, drop], control)?;
         }
     }
     Ok(vtables)
@@ -64,6 +65,8 @@ pub fn waker_resolutions(
     analysis: &Analysis,
     dwarf: &Dwarf,
     vtables: &[[u32; 4]],
+    keep: &mut Ledger<'_>,
+    control: &mut dyn RunControl,
 ) -> Result<Resolutions> {
     let mut resolutions = Resolutions::new();
     for facts in analysis.functions.values() {
@@ -77,6 +80,7 @@ pub fn waker_resolutions(
             let Some(slot) = chain.first().and_then(|function| slot(function)) else {
                 continue;
             };
+            keep.admit(Resolutions::admission(vtables.len()), control)?;
             let targets: BTreeSet<u32> = vtables.iter().map(|vtable| vtable[slot]).collect();
             resolutions.add(transfer.site, Fact::WakerVtables, targets);
         }

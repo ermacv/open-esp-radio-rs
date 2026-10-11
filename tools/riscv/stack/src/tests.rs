@@ -10,6 +10,22 @@ fn with_facts<R>(elf: &[u8], body: impl FnOnce(&ImageFacts<'_>) -> Result<R>) ->
     body(&facts)
 }
 
+/// A ledger in `memory`.
+fn kept(memory: &WorkingMemory) -> Ledger<'_> {
+    Ledger::new(memory, &mut || Ok(())).unwrap()
+}
+
+/// A ledger in an unbounded test memory, for what a test keeps.
+fn ledger() -> Ledger<'static> {
+    let memory = Box::leak(Box::new(WorkingMemory::new(TEST_MEMORY).unwrap()));
+    Ledger::new(memory, &mut || Ok(())).unwrap()
+}
+
+/// [`crate::read_debug`] of `elf` without a work budget.
+fn debug(elf: &[u8]) -> (Dwarf, TypeFacts) {
+    crate::read_debug(&std::rc::Rc::from(elf), &mut ledger(), &mut || Ok(())).unwrap()
+}
+
 /// [`crate::analyze`] of `elf` and its `companions` under `memory` and `control`.
 fn analyze_within(
     elf: &[u8],
@@ -24,7 +40,8 @@ fn analyze_within(
         .map(|companion| ImageFacts::new(companion, memory, control))
         .collect::<Result<Vec<_>>>()?;
     let companions: Vec<&ImageFacts<'_>> = companions.iter().collect();
-    crate::analyze(&image, &companions, summaries, memory, control)
+    let mut keep = Ledger::new(memory, control)?;
+    crate::analyze(&image, &companions, summaries, &mut keep, control)
 }
 
 /// [`crate::analyze`] without a work budget.
@@ -38,11 +55,15 @@ fn functions(elf: &[u8]) -> Result<Vec<Function>> {
 }
 
 fn stack_sizes(elf: &[u8]) -> Result<BTreeMap<u32, u64>> {
-    with_facts(elf, |facts| crate::stack_sizes(facts, &mut || Ok(())))
+    with_facts(elf, |facts| {
+        crate::stack_sizes(facts, &mut ledger(), &mut || Ok(()))
+    })
 }
 
 fn taken_addresses(elf: &[u8]) -> Result<BTreeSet<u32>> {
-    with_facts(elf, |facts| crate::taken_addresses(facts, &mut || Ok(())))
+    with_facts(elf, |facts| {
+        crate::taken_addresses(facts, &mut ledger(), &mut || Ok(()))
+    })
 }
 
 fn address_taken(elf: &[u8], function: u32) -> Result<bool> {
@@ -67,7 +88,7 @@ fn interrupt_table(elf: &[u8], symbol: &str, layout: &TableLayout) -> Result<Vec
 
 fn swept(elf: &[u8]) -> Result<sweep::Swept> {
     with_facts(elf, |facts| {
-        sweep::transfers(facts, &facts.functions()[0], &mut || Ok(()))
+        sweep::transfers(facts, &facts.functions()[0], &mut ledger(), &mut || Ok(()))
     })
 }
 
@@ -1271,12 +1292,24 @@ fn a_relocated_data_word_takes_a_function_s_address() {
 /// `source`, a `no_std` program with an `_start`, compiled and linked for
 /// RV32 by the repository's `rustc` with debug information and the link's
 /// relocations kept, as images are.
+/// A build directory no other call shares: tests compiling one program run
+/// in parallel.
+fn build_directory(kind: &str) -> std::path::PathBuf {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let call = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "oer-riscv-stack-{}-{kind}-{call}",
+        std::process::id()
+    ))
+}
+
 fn compiled(source: &str) -> Vec<u8> {
-    let directory = std::env::temp_dir().join(format!(
-        "oer-riscv-stack-{}-{}",
-        std::process::id(),
-        source.len()
-    ));
+    compiled_linking(source, &[])
+}
+
+/// [`compiled`], with the extra linker arguments `link`.
+fn compiled_linking(source: &str, link: &[&str]) -> Vec<u8> {
+    let directory = build_directory("program");
     std::fs::create_dir_all(&directory).unwrap();
     let input = directory.join("main.rs");
     let output = directory.join("main.elf");
@@ -1299,6 +1332,10 @@ fn compiled(source: &str) -> Vec<u8> {
         // `keep`, which a program defines to hold what `_start` does not
         // reach, survives the link's garbage collection.
         .args(["-C", "link-arg=--undefined=keep"])
+        .args(
+            link.iter()
+                .flat_map(|argument| ["-C".to_owned(), format!("link-arg={argument}")]),
+        )
         .arg("-o")
         .arg(&output)
         .arg(&input)
@@ -1313,11 +1350,7 @@ fn compiled(source: &str) -> Vec<u8> {
 /// `program` linked against the library crate `shared` built from `library`
 /// at `library_debuginfo`, with several codegen units each, as images are.
 fn compiled_with_library(library: &str, library_debuginfo: &str, program: &str) -> Vec<u8> {
-    let directory = std::env::temp_dir().join(format!(
-        "oer-riscv-stack-{}-{}-library",
-        std::process::id(),
-        program.len()
-    ));
+    let directory = build_directory("library");
     std::fs::create_dir_all(&directory).unwrap();
     let rustc = |debuginfo: &str, arguments: &[&std::ffi::OsStr]| {
         let status = std::process::Command::new("rustc")
@@ -1434,7 +1467,7 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 fn a_type_named_in_another_crate_or_unit_still_matches() {
     let elf = compiled_with_library(SHARED_LIBRARY, "2", SHARED_PROGRAM);
     let analysis = analyze(&elf, &[], &[]).unwrap();
-    let types = TypeFacts::read(&elf).unwrap();
+    let (_, types) = debug(&elf);
     let taken = taken_addresses(&elf).unwrap();
     let named = |name: &str| {
         functions(&elf)
@@ -1450,7 +1483,9 @@ fn a_type_named_in_another_crate_or_unit_still_matches() {
             .address
     };
     let (start, consume, replace) = (named("_start"), named("consume"), named("replace"));
-    let resolutions = function_pointer_resolutions(&analysis, &types, &taken);
+    let resolutions =
+        function_pointer_resolutions(&analysis, &types, &taken, &mut ledger(), &mut || Ok(()))
+            .unwrap();
     let site = analysis.functions[&start]
         .transfers
         .iter()
@@ -1528,7 +1563,7 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 fn a_merged_function_of_another_type_stays_a_candidate() {
     let elf = compiled(MERGED_PROGRAM);
     let analysis = analyze(&elf, &[], &[]).unwrap();
-    let types = TypeFacts::read(&elf).unwrap();
+    let (_, types) = debug(&elf);
     let taken = taken_addresses(&elf).unwrap();
     let named = |name: &str| {
         functions(&elf)
@@ -1544,7 +1579,9 @@ fn a_merged_function_of_another_type_stays_a_candidate() {
         "not merged: {:?}",
         signed.names
     );
-    let resolutions = function_pointer_resolutions(&analysis, &types, &taken);
+    let resolutions =
+        function_pointer_resolutions(&analysis, &types, &taken, &mut ledger(), &mut || Ok(()))
+            .unwrap();
     let sites: Vec<u32> = analysis.functions[&start]
         .transfers
         .iter()
@@ -1608,7 +1645,7 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 fn a_function_of_a_unit_without_types_stays_a_candidate() {
     let elf = compiled_with_library(LIMITED_LIBRARY, "limited", LIMITED_PROGRAM);
     let analysis = analyze(&elf, &[], &[]).unwrap();
-    let types = TypeFacts::read(&elf).unwrap();
+    let (_, types) = debug(&elf);
     let taken = taken_addresses(&elf).unwrap();
     let named = |name: &str| {
         functions(&elf)
@@ -1624,7 +1661,9 @@ fn a_function_of_a_unit_without_types_stays_a_candidate() {
             .address
     };
     let (start, limited) = (named("_start"), named("limited"));
-    let resolutions = function_pointer_resolutions(&analysis, &types, &taken);
+    let resolutions =
+        function_pointer_resolutions(&analysis, &types, &taken, &mut ledger(), &mut || Ok(()))
+            .unwrap();
     let site = analysis.functions[&start]
         .transfers
         .iter()
@@ -1687,15 +1726,15 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 fn a_waker_call_reaches_its_slot_of_every_waker_vtable() {
     let elf = compiled(WAKER_PROGRAM);
     let analysis = analyze(&elf, &[], &[]).unwrap();
-    let dwarf = Dwarf::read(&elf).unwrap();
+    let (dwarf, _) = debug(&elf);
     let vtables = with_facts(&elf, |facts| {
-        waker_vtables(facts, &dwarf, &analysis, &mut || Ok(()))
+        waker_vtables(facts, &dwarf, &analysis, &mut ledger(), &mut || Ok(()))
     })
     .unwrap();
     assert_eq!(vtables.len(), 1, "{vtables:x?}");
     // Every relocated word it reads is charged to the work budget.
     let error = with_facts(&elf, |facts| {
-        waker_vtables(facts, &dwarf, &analysis, &mut Units(0))
+        waker_vtables(facts, &dwarf, &analysis, &mut ledger(), &mut Units(0))
     })
     .unwrap_err();
     assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
@@ -1706,7 +1745,8 @@ fn a_waker_call_reaches_its_slot_of_every_waker_vtable() {
         .unwrap()
         .address;
     assert_eq!(analysis.bound(start).unwrap().bytes, None);
-    let resolutions = waker_resolutions(&analysis, &dwarf, &vtables).unwrap();
+    let resolutions =
+        waker_resolutions(&analysis, &dwarf, &vtables, &mut ledger(), &mut || Ok(())).unwrap();
     // `_start`'s `wake_by_ref` reaches `by_ref` (slot 2), not `wake`.
     let site = analysis.functions[&start]
         .transfers
@@ -1876,7 +1916,7 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 fn a_call_through_a_static_s_function_pointer_reaches_the_taken_functions_of_its_type() {
     let elf = compiled(HOOK_PROGRAM);
     let analysis = analyze(&elf, &[], &[]).unwrap();
-    let types = TypeFacts::read(&elf).unwrap();
+    let (_, types) = debug(&elf);
     let taken = taken_addresses(&elf).unwrap();
     let named = |name: &str| {
         functions(&elf)
@@ -1900,7 +1940,9 @@ fn a_call_through_a_static_s_function_pointer_reaches_the_taken_functions_of_its
     );
     assert!(taken.contains(&shallow) && taken.contains(&deep));
     assert_eq!(analysis.bound(start).unwrap().bytes, None);
-    let resolutions = function_pointer_resolutions(&analysis, &types, &taken);
+    let resolutions =
+        function_pointer_resolutions(&analysis, &types, &taken, &mut ledger(), &mut || Ok(()))
+            .unwrap();
     let site = analysis.functions[&start]
         .transfers
         .iter()
@@ -2059,8 +2101,8 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 #[test]
 fn every_inlined_copy_of_a_function_is_found_with_its_callers() {
     let elf = compiled(WRITER_PROGRAM);
-    let dwarf = Dwarf::read(&elf).unwrap();
-    let found = instances(&elf, &["main::writer", "main::absent"]).unwrap();
+    let (dwarf, _) = debug(&elf);
+    let found = dwarf.instances(&["main::writer", "main::absent"]);
     assert!(found["main::absent"].is_empty());
     let callers: BTreeSet<String> = found["main::writer"]
         .iter()
@@ -2135,15 +2177,15 @@ fn the_working_memory_and_the_work_budget_bound_the_analysis() {
     };
     let memory = WorkingMemory::new(needed + 1).unwrap();
     let facts = ImageFacts::new(&image, &memory, &mut || Ok(())).unwrap();
-    let error = crate::analyze(&facts, &[], &[], &memory, &mut || Ok(())).unwrap_err();
+    let error = crate::analyze(&facts, &[], &[], &mut kept(&memory), &mut || Ok(())).unwrap_err();
     assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
     assert!(error.memory.is_some(), "{error:?}");
 
     let memory = WorkingMemory::new(TEST_MEMORY).unwrap();
     let facts = ImageFacts::new(&image, &memory, &mut || Ok(())).unwrap();
-    let error = crate::analyze(&facts, &[], &[], &memory, &mut Units(1)).unwrap_err();
+    let error = crate::analyze(&facts, &[], &[], &mut kept(&memory), &mut Units(1)).unwrap_err();
     assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
-    assert!(crate::analyze(&facts, &[], &[], &memory, &mut Units(u64::MAX)).is_ok());
+    assert!(crate::analyze(&facts, &[], &[], &mut kept(&memory), &mut Units(u64::MAX)).is_ok());
 }
 
 #[test]
@@ -2155,7 +2197,7 @@ fn every_image_query_charges_its_reads_to_the_work_budget() {
             crate::interrupt_table(facts, "__OER_INTERRUPT_TABLE", &S31_TABLE, &mut Units(0))
                 .unwrap_err(),
         );
-        limited(crate::taken_addresses(facts, &mut Units(0)).unwrap_err());
+        limited(crate::taken_addresses(facts, &mut ledger(), &mut Units(0)).unwrap_err());
         Ok(())
     })
     .unwrap();
@@ -2183,7 +2225,7 @@ fn every_image_query_charges_its_reads_to_the_work_budget() {
     .unwrap();
     let records = executable(&[leaf(Some(32))]);
     with_facts(&records, |facts| {
-        limited(crate::stack_sizes(facts, &mut Units(0)).unwrap_err());
+        limited(crate::stack_sizes(facts, &mut ledger(), &mut Units(0)).unwrap_err());
         Ok(())
     })
     .unwrap();
@@ -2191,10 +2233,10 @@ fn every_image_query_charges_its_reads_to_the_work_budget() {
     let jump_table = labelled(&[leaf(Some(32))], &[TEXT, TEXT]);
     with_facts(&jump_table, |facts| {
         assert_eq!(
-            image::jump_table(facts, RODATA, &mut Units(2))?,
+            image::jump_table(facts, RODATA, &mut ledger(), &mut Units(2))?,
             Some(vec![TEXT, TEXT])
         );
-        limited(image::jump_table(facts, RODATA, &mut Units(1)).unwrap_err());
+        limited(image::jump_table(facts, RODATA, &mut ledger(), &mut Units(1)).unwrap_err());
         Ok(())
     })
     .unwrap();
@@ -2210,17 +2252,20 @@ fn every_image_query_charges_its_reads_to_the_work_budget() {
     };
     oversized[at..at + 4].copy_from_slice(&(1u32 << 31).to_le_bytes());
     with_facts(&oversized, |facts| {
-        assert_eq!(image::table(facts, RODATA, &mut Units(3))?, None);
+        assert_eq!(
+            image::table(facts, RODATA, &mut ledger(), &mut Units(3))?,
+            None
+        );
         Ok(())
     })
     .unwrap();
     let object = image(&[leaf(Some(32))], &[TEXT, TEXT], true);
     with_facts(&object, |facts| {
         assert_eq!(
-            image::table(facts, RODATA, &mut Units(2))?,
+            image::table(facts, RODATA, &mut ledger(), &mut Units(2))?,
             Some(vec![TEXT, TEXT])
         );
-        limited(image::table(facts, RODATA, &mut Units(1)).unwrap_err());
+        limited(image::table(facts, RODATA, &mut ledger(), &mut Units(1)).unwrap_err());
         Ok(())
     })
     .unwrap();
@@ -2230,7 +2275,12 @@ fn every_image_query_charges_its_reads_to_the_work_budget() {
 fn the_sweep_charges_each_table_entry_it_reads() {
     let sweep = |elf: &[u8], units: u64| {
         with_facts(elf, |facts| {
-            sweep::transfers(facts, &facts.functions()[0], &mut Units(units))
+            sweep::transfers(
+                facts,
+                &facts.functions()[0],
+                &mut ledger(),
+                &mut Units(units),
+            )
         })
     };
     // Two entries of a labelled table, read from its relocations.
@@ -2266,10 +2316,11 @@ fn the_analysis_charges_each_table_entry_it_follows() {
     let jump_table = labelled(&[dispatch(false)], &[TEXT + 24, TEXT + 28]);
     with_facts(&jump_table, |facts| {
         assert_eq!(
-            table_entries(facts, &transfer, None, &mut Units(2))?,
+            table_entries(facts, &transfer, None, &mut ledger(), &mut Units(2))?,
             Some(vec![TEXT + 24, TEXT + 28])
         );
-        let error = table_entries(facts, &transfer, None, &mut Units(1)).unwrap_err();
+        let error =
+            table_entries(facts, &transfer, None, &mut ledger(), &mut Units(1)).unwrap_err();
         assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
         Ok(())
     })
@@ -2307,4 +2358,96 @@ fn image_tables_read_a_labelled_table_a_sized_object_or_a_bounded_run() {
     assert_eq!(entries(&plain, at(RODATA), Some(2)), Some(words));
     // An object's symbol is no image address.
     assert_eq!(entries(&plain, AbstractValue::Unknown, Some(2)), None);
+}
+
+#[test]
+fn shared_sections_give_the_inline_chain_copied_ones_give() {
+    // The analysis's symbolizer reads its sections as ranges of the ELF's
+    // bytes; the copying one reads each section's own copy.
+    for program in [WAKER_PROGRAM, WRITER_PROGRAM] {
+        let elf = compiled(program);
+        let (dwarf, _) = debug(&elf);
+        let copied = oer_elf::dwarf::Symbolizer::new(&elf).unwrap();
+        let mut inlined = 0;
+        for function in functions(&elf).unwrap() {
+            for address in (function.address..function.address + function.size).step_by(2) {
+                let expected: Vec<String> = copied
+                    .frames(u64::from(address))
+                    .unwrap()
+                    .into_iter()
+                    .filter_map(|frame| frame.function)
+                    .map(|name| crate::dwarf::plain(&name))
+                    .collect();
+                assert_eq!(
+                    dwarf.inline_chain(address).unwrap(),
+                    expected,
+                    "{address:#010x}"
+                );
+                inlined += usize::from(expected.len() > 1);
+            }
+        }
+        assert!(inlined > 0, "the program inlines nothing");
+    }
+}
+
+#[test]
+fn the_analyzers_own_structures_fail_on_working_memory() {
+    // A working memory too small for what each step keeps fails it inside
+    // the stack analysis, not only in the facts or the value analysis.
+    let limited = |error: Error| {
+        assert_eq!(error.code, ErrorCode::ResourceLimited, "{error:?}");
+        assert!(error.memory.is_some(), "{error:?}");
+    };
+    let tiny = WorkingMemory::new(1).unwrap();
+    let elf = compiled(WAKER_PROGRAM);
+    let shared = std::rc::Rc::from(&elf[..]);
+    limited(
+        crate::read_debug(&shared, &mut kept(&tiny), &mut || Ok(()))
+            .err()
+            .unwrap(),
+    );
+    with_facts(&elf, |facts| {
+        limited(crate::stack_sizes(facts, &mut kept(&tiny), &mut || Ok(())).unwrap_err());
+        limited(crate::taken_addresses(facts, &mut kept(&tiny), &mut || Ok(())).unwrap_err());
+        Ok(())
+    })
+    .unwrap();
+    // What the analysis keeps stays admitted while the caller holds it,
+    // beside the image facts; the rest is released with each function.
+    let memory = WorkingMemory::new(TEST_MEMORY).unwrap();
+    let facts = ImageFacts::new(&elf, &memory, &mut || Ok(())).unwrap();
+    let before = memory.used();
+    let mut keep = kept(&memory);
+    crate::analyze(&facts, &[], &[], &mut keep, &mut || Ok(())).unwrap();
+    assert!(keep.bytes() > 0);
+    assert_eq!(memory.used(), before + keep.bytes());
+    drop(keep);
+    assert_eq!(memory.used(), before);
+}
+
+#[test]
+fn a_compressed_debug_section_is_an_error_not_a_read() {
+    // `oer-elf` reads no compressed section; the analysis fails closed.
+    let compressed = compiled_linking(WRITER_PROGRAM, &["--compress-debug-sections=zlib"]);
+    let error = crate::read_debug(
+        &std::rc::Rc::from(&compressed[..]),
+        &mut ledger(),
+        &mut || Ok(()),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.code, ErrorCode::Integrity, "{error:?}");
+    assert!(
+        error.message.contains("compressed debug section"),
+        "{error:?}"
+    );
+    // The symbolizer, which reads sections as ranges of the bytes, never
+    // hands addr2line compressed bytes as DWARF.
+    let Err(error) = oer_elf::dwarf::Symbolizer::shared(std::rc::Rc::from(&compressed[..])) else {
+        panic!("the symbolizer read a compressed section");
+    };
+    assert!(
+        error.to_string().contains("compressed debug section"),
+        "{error}"
+    );
 }

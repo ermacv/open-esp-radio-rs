@@ -445,7 +445,7 @@ pub fn interrupt_stacks_of(image: &Image) -> Result<InterruptStacks> {
             (slot, calls)
         })
         .collect();
-    let level_writers = level_writers(elf, dwarf, interrupts)?;
+    let level_writers = level_writers(dwarf, interrupts)?;
 
     let sources = source_table(elf, &interrupts.source_table_symbol)?;
     let harts = oer_riscv_stack::interrupt_stacks(
@@ -613,7 +613,6 @@ fn handler_code(
 /// inside, or a writer of which the DWARF shows no copy. Each copy's inline
 /// chain must hold one of the writer's contexts.
 fn level_writers(
-    elf: &[u8],
     dwarf: &Dwarf,
     interrupts: &oer_chip_profile::InterruptContract,
 ) -> Result<Vec<String>> {
@@ -622,7 +621,7 @@ fn level_writers(
         .iter()
         .map(|writer| writer.writer.as_str())
         .collect();
-    let copies = oer_riscv_stack::instances(elf, &writers)?;
+    let copies = dwarf.instances(&writers);
     let mut problems = Vec::new();
     for level_writer in &interrupts.level_writers {
         let (writer, contexts) = (&level_writer.writer, &level_writer.contexts);

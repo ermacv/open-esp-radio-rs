@@ -21,10 +21,10 @@
 //! the debuginfo name is computed from the type's path and generic arguments
 //! by one rule. A test holds the toolchain to it across crates and codegen
 //! units. A site whose load address or field is unknown stays unresolved.
+use crate::dwarf::{Entry, Reader, Unit, reference, text};
 use crate::{Analysis, Fact, Resolutions, TransferKind};
-use gimli::Reader as _;
-use oer_elf::dwarf::{Reader, gimli};
-use oer_riscv_model::{Error, ErrorCode, Result};
+use oer_elf::dwarf::gimli;
+use oer_riscv_model::{Ledger, Result, RunControl};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// One type's name and layout.
@@ -164,223 +164,275 @@ fn trait_method(symbol: &str) -> Option<(String, String)> {
     Some((trait_path, method.to_owned()))
 }
 
-fn invalid(message: impl Into<String>) -> Error {
-    Error::new(ErrorCode::Integrity, message.into())
+/// One unit's walk state of [`TypeWalk`].
+#[derive(Default)]
+struct UnitTypes {
+    /// The type, subprogram or subroutine type each depth belongs to.
+    owners: Vec<(isize, usize, gimli::DwTag)>,
+    /// Whether the unit states any type: a unit with limited debuginfo
+    /// names its functions without their parameters or result.
+    typed: bool,
+    subprograms: Vec<usize>,
+    symbols: BTreeMap<usize, String>,
 }
 
-impl TypeFacts {
-    /// Read the type facts of `elf`.
-    pub fn read(elf: &[u8]) -> Result<Self> {
-        let file = oer_elf::Elf::parse(elf).map_err(|_| invalid("invalid ELF"))?;
-        let dwarf = oer_elf::dwarf::load(&file).map_err(|error| invalid(error.to_string()))?;
-        let error = |error: gimli::Error| invalid(format!("DWARF: {error}"));
-        let mut facts = Self::default();
+/// [`TypeFacts`] under construction by the one pass of
+/// [`crate::dwarf::read`]: what each entry states, then, at the end, what
+/// the whole image's entries state together.
+pub(crate) struct TypeWalk {
+    facts: TypeFacts,
+    unit: UnitTypes,
+    /// Typed subprograms by their symbol, for the trait methods' arities.
+    typed_symbols: Vec<(usize, String)>,
+    /// A function's entry and the DIEs that may state its signature: its
+    /// own, then its abstract origin or specification.
+    entries: Vec<(u32, usize, Option<usize>)>,
+}
+
+impl TypeWalk {
+    /// The walk over the DWARF of `file`, with its function symbols.
+    pub(crate) fn new(
+        file: &oer_elf::Elf<'_>,
+        keep: &mut Ledger<'_>,
+        control: &mut dyn RunControl,
+    ) -> Result<Self> {
+        let mut facts = TypeFacts::default();
         let mut sized: BTreeMap<u32, Vec<String>> = BTreeMap::new();
-        // Typed subprograms by their symbol, for the trait methods' arities.
-        let mut typed_symbols: Vec<(usize, String)> = Vec::new();
         for symbol in file.symbols() {
+            control.checkpoint(1)?;
             if symbol.kind == oer_elf::SymbolKind::Text
                 && symbol.size > 0
                 && let Ok(address) = u32::try_from(symbol.address)
             {
-                sized
-                    .entry(address & !1)
-                    .or_default()
-                    .push(symbol.name.to_owned());
+                let name = keep.string(symbol.name, control)?;
+                let names = keep.entry(&mut sized, address & !1, Vec::new, control)?;
+                keep.push(names, name, control)?;
             }
         }
-        facts.merged = sized
-            .iter()
-            .filter(|(_, symbols)| symbols.len() > 1)
-            .map(|(&address, symbols)| (address, symbols.clone()))
-            .collect();
+        for (&address, symbols) in &sized {
+            if symbols.len() > 1 {
+                let mut copy = Vec::new();
+                for symbol in symbols {
+                    let symbol = keep.string(symbol, control)?;
+                    keep.push(&mut copy, symbol, control)?;
+                }
+                keep.insert(&mut facts.merged, address, copy, control)?;
+            }
+        }
         facts.symbols = sized;
-        // A function's entry and the DIEs that may state its signature: its
-        // own, then its abstract origin or specification.
-        let mut entries: Vec<(u32, usize, Option<usize>)> = Vec::new();
-        let mut units = dwarf.units();
-        while let Some(header) = units.next().map_err(error)? {
-            let unit = dwarf.unit(header).map_err(error)?;
-            let global = |offset: gimli::UnitOffset<usize>| {
-                offset
-                    .to_debug_info_offset(&unit.header)
-                    .map(|offset| offset.0)
-            };
-            let reference = |value: gimli::AttributeValue<Reader>| match value {
-                gimli::AttributeValue::UnitRef(offset) => global(offset),
-                gimli::AttributeValue::DebugInfoRef(offset) => Some(offset.0),
-                _ => None,
-            };
-            // The type, subprogram or subroutine type each depth belongs to.
-            let mut owners: Vec<(isize, usize, gimli::DwTag)> = Vec::new();
-            // Whether the unit states any type: a unit with limited debuginfo
-            // names its functions without their parameters or result.
-            let mut typed = false;
-            let mut subprograms = Vec::new();
-            let mut unit_symbols: BTreeMap<usize, String> = BTreeMap::new();
-            let mut entries_cursor = unit.entries();
-            while let Some(entry) = entries_cursor.next_dfs().map_err(error)? {
-                let entry = entry.clone();
-                let depth = entries_cursor.depth();
-                let Some(offset) = global(entries_cursor.offset()) else {
-                    continue;
+        Ok(Self {
+            facts,
+            unit: UnitTypes::default(),
+            typed_symbols: Vec::new(),
+            entries: Vec::new(),
+        })
+    }
+
+    pub(crate) fn begin_unit(&mut self) {
+        self.unit = UnitTypes::default();
+    }
+
+    /// What one entry states.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn entry<'d>(
+        &mut self,
+        dwarf: &gimli::Dwarf<Reader<'d>>,
+        unit: &Unit<'d>,
+        entry: &Entry<'d>,
+        depth: isize,
+        offset: usize,
+        keep: &mut Ledger<'_>,
+        scratch: &mut Ledger<'_>,
+        control: &mut dyn RunControl,
+    ) -> Result<()> {
+        let facts = &mut self.facts;
+        let state = &mut self.unit;
+        state.owners.retain(|(at, ..)| *at < depth);
+        let name = entry
+            .attr_value(gimli::DW_AT_name)
+            .and_then(|value| text(dwarf, unit, value));
+        let size = entry
+            .attr_value(gimli::DW_AT_byte_size)
+            .and_then(|value| value.udata_value());
+        let type_of = entry
+            .attr_value(gimli::DW_AT_type)
+            .and_then(|value| reference(unit, value));
+        let tag = entry.tag();
+        match tag {
+            gimli::DW_TAG_structure_type
+            | gimli::DW_TAG_union_type
+            | gimli::DW_TAG_enumeration_type
+            | gimli::DW_TAG_base_type
+            | gimli::DW_TAG_array_type
+            | gimli::DW_TAG_pointer_type
+            | gimli::DW_TAG_subroutine_type
+            | gimli::DW_TAG_typedef
+            | gimli::DW_TAG_const_type
+            | gimli::DW_TAG_volatile_type
+            | gimli::DW_TAG_restrict_type
+            | gimli::DW_TAG_atomic_type
+            | gimli::DW_TAG_reference_type
+            | gimli::DW_TAG_rvalue_reference_type
+            | gimli::DW_TAG_class_type => {
+                state.typed = true;
+                let name = match name {
+                    Some(name) => Some(keep.string(&name, control)?),
+                    None => None,
                 };
-                owners.retain(|(at, ..)| *at < depth);
-                let name = entry
-                    .attr_value(gimli::DW_AT_name)
-                    .and_then(|value| dwarf.attr_string(&unit, value).ok())
-                    .and_then(|name| name.to_string_lossy().ok().map(|name| name.into_owned()));
-                let size = entry
-                    .attr_value(gimli::DW_AT_byte_size)
-                    .and_then(|value| value.udata_value());
-                let type_of = entry.attr_value(gimli::DW_AT_type).and_then(reference);
-                let tag = entry.tag();
-                match tag {
-                    gimli::DW_TAG_structure_type
-                    | gimli::DW_TAG_union_type
-                    | gimli::DW_TAG_enumeration_type
-                    | gimli::DW_TAG_base_type
-                    | gimli::DW_TAG_array_type
-                    | gimli::DW_TAG_pointer_type
-                    | gimli::DW_TAG_subroutine_type
-                    | gimli::DW_TAG_typedef
-                    | gimli::DW_TAG_const_type
-                    | gimli::DW_TAG_volatile_type
-                    | gimli::DW_TAG_restrict_type
-                    | gimli::DW_TAG_atomic_type
-                    | gimli::DW_TAG_reference_type
-                    | gimli::DW_TAG_rvalue_reference_type
-                    | gimli::DW_TAG_class_type => {
-                        typed = true;
-                        facts.types.insert(
-                            offset,
-                            Type {
-                                tag,
-                                name,
-                                size,
-                                members: Vec::new(),
-                                target: type_of,
-                            },
-                        );
-                        if tag == gimli::DW_TAG_subroutine_type {
-                            facts.signatures.insert(
-                                offset,
-                                Signature {
-                                    parameters: Vec::new(),
-                                    result: type_of,
-                                },
-                            );
-                        }
-                        owners.push((depth, offset, tag));
-                    }
-                    gimli::DW_TAG_member => {
-                        let location = match entry.attr_value(gimli::DW_AT_data_member_location) {
-                            Some(value) => value.udata_value(),
-                            None => Some(0),
-                        };
-                        // The innermost aggregate owning this member: a
-                        // variant's members belong to its enum.
-                        if let (Some(&(_, owner, _)), Some(location), Some(member)) = (
-                            owners.iter().rev().find(|(_, _, tag)| {
-                                matches!(
-                                    *tag,
-                                    gimli::DW_TAG_structure_type | gimli::DW_TAG_union_type
-                                )
-                            }),
-                            location,
-                            type_of,
-                        ) && let Some(owner) = facts.types.get_mut(&owner)
-                        {
-                            owner.members.push((location, member));
-                        }
-                    }
-                    gimli::DW_TAG_variable => {
-                        let inside_function = owners
-                            .iter()
-                            .any(|(_, _, tag)| *tag == gimli::DW_TAG_subprogram);
-                        if let (false, Some(gimli::AttributeValue::Exprloc(expression)), Some(ty)) = (
-                            inside_function,
-                            entry.attr_value(gimli::DW_AT_location),
-                            type_of,
-                        ) {
-                            facts.add_global(&expression, unit.encoding(), ty);
-                        }
-                    }
-                    gimli::DW_TAG_subprogram => {
-                        owners.push((depth, offset, tag));
-                        subprograms.push(offset);
-                        let symbol = entry
-                            .attr_value(gimli::DW_AT_linkage_name)
-                            .or_else(|| entry.attr_value(gimli::DW_AT_MIPS_linkage_name))
-                            .and_then(|value| dwarf.attr_string(&unit, value).ok())
-                            .and_then(|name| {
-                                name.to_string_lossy().ok().map(|name| name.into_owned())
-                            })
-                            .or_else(|| name.clone());
-                        if let Some(symbol) = symbol {
-                            unit_symbols.insert(offset, symbol.clone());
-                            facts.named.entry(symbol).or_default().push(offset);
-                        }
-                        facts.signatures.insert(
-                            offset,
-                            Signature {
-                                parameters: Vec::new(),
-                                result: type_of,
-                            },
-                        );
-                        let low = match entry.attr_value(gimli::DW_AT_low_pc) {
-                            Some(gimli::AttributeValue::Addr(low)) => u32::try_from(low).ok(),
-                            _ => None,
-                        };
-                        let origin = entry
-                            .attr_value(gimli::DW_AT_abstract_origin)
-                            .or_else(|| entry.attr_value(gimli::DW_AT_specification))
-                            .and_then(reference);
-                        if let Some(low) = low {
-                            entries.push((low, offset, origin));
-                        }
-                    }
-                    gimli::DW_TAG_formal_parameter => {
-                        typed = true;
-                        if let Some(&(
-                            _,
-                            owner,
-                            gimli::DW_TAG_subprogram | gimli::DW_TAG_subroutine_type,
-                        )) = owners.last()
-                            && let (Some(signature), Some(ty)) =
-                                (facts.signatures.get_mut(&owner), type_of)
-                        {
-                            signature.parameters.push(ty);
-                        }
-                    }
-                    _ => {}
+                keep.insert(
+                    &mut facts.types,
+                    offset,
+                    Type {
+                        tag,
+                        name,
+                        size,
+                        members: Vec::new(),
+                        target: type_of,
+                    },
+                    control,
+                )?;
+                if tag == gimli::DW_TAG_subroutine_type {
+                    keep.insert(
+                        &mut facts.signatures,
+                        offset,
+                        Signature {
+                            parameters: Vec::new(),
+                            result: type_of,
+                        },
+                        control,
+                    )?;
+                }
+                scratch.push(&mut state.owners, (depth, offset, tag), control)?;
+            }
+            gimli::DW_TAG_member => {
+                let location = match entry.attr_value(gimli::DW_AT_data_member_location) {
+                    Some(value) => value.udata_value(),
+                    None => Some(0),
+                };
+                // The innermost aggregate owning this member: a variant's
+                // members belong to its enum.
+                if let (Some(&(_, owner, _)), Some(location), Some(member)) = (
+                    state.owners.iter().rev().find(|(_, _, tag)| {
+                        matches!(
+                            *tag,
+                            gimli::DW_TAG_structure_type | gimli::DW_TAG_union_type
+                        )
+                    }),
+                    location,
+                    type_of,
+                ) && let Some(owner) = facts.types.get_mut(&owner)
+                {
+                    keep.push(&mut owner.members, (location, member), control)?;
                 }
             }
-            if typed {
-                for offset in subprograms {
-                    if let Some(symbols) = unit_symbols.remove(&offset) {
-                        typed_symbols.push((offset, symbols));
-                    }
+            gimli::DW_TAG_variable => {
+                let inside_function = state
+                    .owners
+                    .iter()
+                    .any(|(_, _, tag)| *tag == gimli::DW_TAG_subprogram);
+                if let (false, Some(gimli::AttributeValue::Exprloc(expression)), Some(ty)) = (
+                    inside_function,
+                    entry.attr_value(gimli::DW_AT_location),
+                    type_of,
+                ) {
+                    facts.add_global(&expression, unit.encoding(), ty, keep, control)?;
                 }
-            } else {
-                facts.untyped.extend(subprograms);
+            }
+            gimli::DW_TAG_subprogram => {
+                scratch.push(&mut state.owners, (depth, offset, tag), control)?;
+                scratch.push(&mut state.subprograms, offset, control)?;
+                let symbol = entry
+                    .attr_value(gimli::DW_AT_linkage_name)
+                    .or_else(|| entry.attr_value(gimli::DW_AT_MIPS_linkage_name))
+                    .and_then(|value| text(dwarf, unit, value))
+                    .or_else(|| name.clone());
+                if let Some(symbol) = symbol {
+                    let own = scratch.string(&symbol, control)?;
+                    scratch.insert(&mut state.symbols, offset, own, control)?;
+                    let key = keep.string(&symbol, control)?;
+                    let offsets = keep.entry(&mut facts.named, key, Vec::new, control)?;
+                    keep.push(offsets, offset, control)?;
+                }
+                keep.insert(
+                    &mut facts.signatures,
+                    offset,
+                    Signature {
+                        parameters: Vec::new(),
+                        result: type_of,
+                    },
+                    control,
+                )?;
+                let low = match entry.attr_value(gimli::DW_AT_low_pc) {
+                    Some(gimli::AttributeValue::Addr(low)) => u32::try_from(low).ok(),
+                    _ => None,
+                };
+                let origin = entry
+                    .attr_value(gimli::DW_AT_abstract_origin)
+                    .or_else(|| entry.attr_value(gimli::DW_AT_specification))
+                    .and_then(|value| reference(unit, value));
+                if let Some(low) = low {
+                    scratch.push(&mut self.entries, (low, offset, origin), control)?;
+                }
+            }
+            gimli::DW_TAG_formal_parameter => {
+                state.typed = true;
+                if let Some(&(_, owner, gimli::DW_TAG_subprogram | gimli::DW_TAG_subroutine_type)) =
+                    state.owners.last()
+                    && let (Some(signature), Some(ty)) = (facts.signatures.get_mut(&owner), type_of)
+                {
+                    keep.push(&mut signature.parameters, ty, control)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// The end of one unit: its subprograms are typed or not.
+    pub(crate) fn end_unit(
+        &mut self,
+        keep: &mut Ledger<'_>,
+        scratch: &mut Ledger<'_>,
+        control: &mut dyn RunControl,
+    ) -> Result<()> {
+        let mut state = std::mem::take(&mut self.unit);
+        if state.typed {
+            for offset in state.subprograms {
+                if let Some(symbol) = state.symbols.remove(&offset) {
+                    scratch.push(&mut self.typed_symbols, (offset, symbol), control)?;
+                }
+            }
+        } else {
+            for offset in state.subprograms {
+                keep.add(&mut self.facts.untyped, offset, control)?;
             }
         }
-        for (offset, symbol) in typed_symbols {
+        Ok(())
+    }
+
+    /// The type facts of the whole image.
+    pub(crate) fn finish(
+        self,
+        keep: &mut Ledger<'_>,
+        control: &mut dyn RunControl,
+    ) -> Result<TypeFacts> {
+        let mut facts = self.facts;
+        for (offset, symbol) in self.typed_symbols {
+            control.checkpoint(1)?;
             if let (Some(method), Some(signature)) =
                 (trait_method(&symbol), facts.signatures.get(&offset))
                 && !signature.parameters.is_empty()
             {
-                facts
-                    .trait_arities
-                    .entry(method)
-                    .or_default()
-                    .insert(signature.parameters.len());
+                keep.admit(method.0.len() + method.1.len(), control)?;
+                let arities =
+                    keep.entry(&mut facts.trait_arities, method, BTreeSet::new, control)?;
+                keep.add(arities, signature.parameters.len(), control)?;
             }
         }
         // A concrete instance lists its parameters through its abstract
         // origin when it lists none with types of its own.
-        for (low, own, origin) in entries {
+        for (low, own, origin) in self.entries {
+            control.checkpoint(1)?;
             let die = match origin {
                 Some(origin)
                     if facts
@@ -392,20 +444,26 @@ impl TypeFacts {
                 }
                 _ => own,
             };
-            facts.functions.entry(low).or_insert(die);
+            if !facts.functions.contains_key(&low) {
+                keep.insert(&mut facts.functions, low, die, control)?;
+            }
         }
         Ok(facts)
     }
+}
 
+impl TypeFacts {
     /// Record a global variable's location: an address, perhaps plus an
     /// offset into a block LLVM merged globals into, perhaps in pieces.
     fn add_global(
         &mut self,
-        expression: &gimli::Expression<Reader>,
+        expression: &gimli::Expression<Reader<'_>>,
         encoding: gimli::Encoding,
         ty: usize,
-    ) {
-        let mut operations = expression.clone().operations(encoding);
+        keep: &mut Ledger<'_>,
+        control: &mut dyn RunControl,
+    ) -> Result<()> {
+        let mut operations = (*expression).operations(encoding);
         let mut pending: Option<u32> = None;
         let mut at = 0u64;
         let mut pieces = Vec::new();
@@ -430,8 +488,9 @@ impl TypeFacts {
             pieces.push((address, None, 0));
         }
         for (address, bytes, at) in pieces {
-            self.globals.push((address, bytes, at, ty));
+            keep.push(&mut self.globals, (address, bytes, at, ty), control)?;
         }
+        Ok(())
     }
 
     /// The type behind typedefs and qualifiers.
@@ -610,12 +669,17 @@ pub fn function_pointer_resolutions(
     analysis: &Analysis,
     types: &TypeFacts,
     taken: &BTreeSet<u32>,
-) -> Resolutions {
-    let taken: BTreeSet<u32> = taken
-        .iter()
-        .copied()
-        .filter(|address| analysis.functions.contains_key(address))
-        .collect();
+    keep: &mut Ledger<'_>,
+    control: &mut dyn RunControl,
+) -> Result<Resolutions> {
+    let mut scratch = Ledger::new(keep.memory(), control)?;
+    let mut functions = BTreeSet::new();
+    for &address in taken {
+        if analysis.functions.contains_key(&address) {
+            scratch.add(&mut functions, address, control)?;
+        }
+    }
+    let taken = functions;
     let mut resolutions = Resolutions::new();
     for facts in analysis.functions.values() {
         for transfer in &facts.transfers {
@@ -632,12 +696,18 @@ pub fn function_pointer_resolutions(
             let Some(field) = address.and_then(|address| types.field(address)) else {
                 continue;
             };
+            control.checkpoint(1)?;
+            // The candidates are a subset of the taken functions.
+            let _candidates = keep
+                .memory()
+                .reserve((taken.len() * size_of::<u32>()) as u64, control.position())?;
             if let Some(targets) = types.candidates(field, &taken) {
+                keep.admit(Resolutions::admission(targets.len()), control)?;
                 resolutions.add(transfer.site, Fact::FieldType, targets);
             }
         }
     }
-    resolutions
+    Ok(resolutions)
 }
 
 #[cfg(test)]

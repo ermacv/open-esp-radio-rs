@@ -342,8 +342,7 @@ impl Session {
     }
 
     /// Set the pending mode and add the host's source through the port; the
-    /// pending table is software the next operation publishes, so a
-    /// maintenance window does not refuse either.
+    /// pending table is software the next operation publishes.
     pub(super) async fn pending(&mut self, request: Ieee802154SessionPendingRequest) -> bool {
         let mode = match request.mode {
             Ieee802154SessionPendingMode::Disabled => AutoPendingMode::Disable,

@@ -109,6 +109,17 @@ impl PlatformClockRefs {
             holds.count(guard.as_ref());
         }
     }
+
+    /// End a test's owner, keeping every reference it still holds on.
+    #[cfg(test)]
+    fn abandon(self) {
+        for guard in [self.pll_f160m, self.analog_i2c, self.mpll]
+            .into_iter()
+            .flatten()
+        {
+            guard.abandon();
+        }
+    }
 }
 
 /// Protocol clients that can share the powered radio.
@@ -155,6 +166,14 @@ pub(crate) struct CommonRadioPower {
     /// The Wi-Fi baseband and MAC resets were pulsed by a successful
     /// power-up since boot.
     wifi_resets_pulsed: bool,
+}
+
+impl CommonRadioPower {
+    /// End a test's owner, keeping every reference it still holds on.
+    #[cfg(test)]
+    pub(crate) fn abandon_for_test(self) {
+        self.refs.abandon();
+    }
 }
 
 impl CommonRadioPower {

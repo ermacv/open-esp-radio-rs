@@ -53,6 +53,9 @@ impl PlatformClockProvider for EspHalRadioClocks {
             PlatformClock::ModemCoexistence => acquire_modem_coexistence_clock(),
             PlatformClock::ModemLowPowerTimer => acquire_modem_low_power_timer_clock(),
         }
-        Ok(PlatformClockGuard::new(clock, release))
+        // An abandoned or dropped guard keeps ESP-HAL's reference: the
+        // radio's single shared owner lives for the whole program, so there
+        // is nothing to record on the chip.
+        Ok(PlatformClockGuard::new(clock, release, |_, _| {}))
     }
 }

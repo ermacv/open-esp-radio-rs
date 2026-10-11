@@ -247,6 +247,10 @@ impl crate::shared_radio::PlatformClockProvider for GrantedPlatformClocks {
         clock: crate::shared_radio::PlatformClock,
     ) -> Result<crate::shared_radio::PlatformClockGuard, crate::shared_radio::PlatformClockError>
     {
-        Ok(crate::shared_radio::PlatformClockGuard::new(clock, |_| {}))
+        Ok(crate::shared_radio::PlatformClockGuard::new(
+            clock,
+            |_| {},
+            |_, _| {},
+        ))
     }
 }

@@ -61,28 +61,55 @@ pub trait PlatformClockProvider {
     fn acquire(&self, clock: PlatformClock) -> Result<PlatformClockGuard, PlatformClockError>;
 }
 
+/// How a platform clock reference ended without going back to the
+/// platform: its clock stays on until a chip reset.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlatformClockAbandonment {
+    /// An owner kept the clock on deliberately ([`PlatformClockGuard::abandon`]),
+    /// such as a power or clock transaction that failed and stays fail-stop.
+    Abandoned,
+    /// The guard was dropped without [`PlatformClockGuard::release`] or
+    /// [`PlatformClockGuard::abandon`]: a defect in its owner.
+    Dropped,
+}
+
 /// One platform clock reference held by the radio.
 ///
-/// Only [`Self::release`] gives the reference back, through the provider
-/// that created it; the radio's owners call it in their checked release
-/// paths. Dropping a guard keeps the reference held: destroying the radio's
-/// bookkeeping never closes a clock under a user that still runs on it, and
-/// the clock stays on instead, which fails safe. The platform's counts are
-/// global, so a guard needs no borrow of its provider and may live in a
-/// static radio owner.
-#[must_use = "a dropped guard keeps its platform clock reference held; give it back with `release`"]
+/// A guard ends in one of two explicit ways: [`Self::release`] gives the
+/// reference back through the provider that created it, in its owner's
+/// checked release path, and [`Self::abandon`] keeps the clock on
+/// deliberately, as a fail-stop owner does. Dropping a guard otherwise is a
+/// defect: the clock stays on, which fails safe, the provider records the
+/// drop, and a debug build asserts. Destroying the radio's bookkeeping
+/// therefore never closes a clock under a user that still runs on it, and
+/// never hides that it kept one on. The platform's counts are global, so a
+/// guard needs no borrow of its provider and may live in a static radio
+/// owner.
+#[must_use = "a guard ends with `release` or `abandon`; dropping it keeps the clock on and is a defect"]
 pub struct PlatformClockGuard {
     clock: PlatformClock,
     release: fn(PlatformClock),
+    abandon: fn(PlatformClock, PlatformClockAbandonment),
+    ended: bool,
 }
 
 impl PlatformClockGuard {
     /// Wrap one reference to `clock` that the caller just acquired from its
-    /// platform; `release(clock)` gives back exactly that reference.
+    /// platform: `release(clock)` gives back exactly that reference, and
+    /// `abandon(clock, how)` records that it stays held.
     ///
     /// Only a [`PlatformClockProvider`] implementation creates guards.
-    pub const fn new(clock: PlatformClock, release: fn(PlatformClock)) -> Self {
-        Self { clock, release }
+    pub const fn new(
+        clock: PlatformClock,
+        release: fn(PlatformClock),
+        abandon: fn(PlatformClock, PlatformClockAbandonment),
+    ) -> Self {
+        Self {
+            clock,
+            release,
+            abandon,
+            ended: false,
+        }
     }
 
     /// The clock this guard holds.
@@ -91,8 +118,33 @@ impl PlatformClockGuard {
     }
 
     /// Give the reference back to the platform.
-    pub fn release(self) {
+    pub fn release(mut self) {
+        self.ended = true;
         (self.release)(self.clock);
+    }
+
+    /// Keep the clock on until a chip reset, deliberately.
+    pub fn abandon(mut self) {
+        self.ended = true;
+        (self.abandon)(self.clock, PlatformClockAbandonment::Abandoned);
+    }
+}
+
+impl Drop for PlatformClockGuard {
+    fn drop(&mut self) {
+        if self.ended {
+            return;
+        }
+        (self.abandon)(self.clock, PlatformClockAbandonment::Dropped);
+        #[cfg(test)]
+        if std::thread::panicking() {
+            return;
+        }
+        debug_assert!(
+            false,
+            "a {:?} guard was dropped without release or abandon",
+            self.clock
+        );
     }
 }
 
@@ -197,6 +249,17 @@ impl ModemPlatformClocks {
     fn release(&mut self, clock: PlatformClock) {
         if let Some(guard) = self.slot(clock).take() {
             guard.release();
+        }
+    }
+
+    /// End a test's owner, keeping every reference it still holds on.
+    #[cfg(test)]
+    pub(crate) fn abandon_for_test(self) {
+        for guard in [self.pll_f160m, self.analog_i2c, self.coexistence]
+            .into_iter()
+            .flatten()
+        {
+            guard.abandon();
         }
     }
 

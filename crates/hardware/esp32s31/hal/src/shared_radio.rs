@@ -50,8 +50,8 @@ use crate::power::clock::{
     execute_release,
 };
 pub use crate::power::{
-    PlatformClock, PlatformClockError, PlatformClockGuard, PlatformClockHolds,
-    PlatformClockProvider,
+    PlatformClock, PlatformClockAbandonment, PlatformClockError, PlatformClockGuard,
+    PlatformClockHolds, PlatformClockProvider,
 };
 use crate::{
     clock::CommonRadioPower,

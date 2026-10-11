@@ -282,6 +282,6 @@ mod tests;
 
 pub(crate) mod clock;
 pub use clock::{
-    PlatformClock, PlatformClockError, PlatformClockGuard, PlatformClockHolds,
-    PlatformClockProvider,
+    PlatformClock, PlatformClockAbandonment, PlatformClockError, PlatformClockGuard,
+    PlatformClockHolds, PlatformClockProvider,
 };

@@ -27,14 +27,16 @@
 //! notifies them of through [`RadioSystem::wifi_coex_phase`] and
 //! [`RadioSystem::bluetooth_coex_phase`].
 
+mod coexistence;
 #[cfg(any(test, target_arch = "riscv32"))]
 mod lease;
 #[cfg(target_arch = "riscv32")]
 mod system;
 
+pub use coexistence::CoexLeaveFailure;
 #[cfg(target_arch = "riscv32")]
 pub use system::{
-    CoexPreemptionEnd, CoexWifiChannel, ExternalCoexStopError, Ieee802154JoinError, Ieee802154Left,
-    RadioGuard, RadioPhyError, RadioPhyPrepared, RadioResources, RadioSystem, WifiAsleep,
-    WifiCoexView, WifiCoexViewCell, WifiWakeError, WifiWakeFailure,
+    CoexPreemptionEnd, CoexWifiChannel, ExternalCoexStopFailure, Ieee802154JoinError,
+    Ieee802154Left, RadioGuard, RadioPhyError, RadioPhyPrepared, RadioResources, RadioSystem,
+    WifiAsleep, WifiCoexView, WifiCoexViewCell, WifiWakeError, WifiWakeFailure,
 };

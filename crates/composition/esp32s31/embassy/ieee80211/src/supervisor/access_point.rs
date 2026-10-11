@@ -74,7 +74,7 @@ pub(super) struct ProductionAccessPointParked {
 
 pub(super) struct ProductionAccessPointTask {
     channel: WifiChannel,
-    owner: WifiRoleOwner<EspHalWifiPlatform>,
+    owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
     registers: RadioRuntimeOwner,
     interrupts: MacInterruptEpoch,
     service: ProductionAccessPointControl,
@@ -83,7 +83,7 @@ pub(super) struct ProductionAccessPointTask {
 }
 
 pub(super) struct ProductionAccessPointPreflightFault {
-    _owner: WifiRoleOwner<EspHalWifiPlatform>,
+    _owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
     _registers: RadioRuntimeOwner,
     _interrupts: MacInterruptEpoch,
     _physical: ProductionWifiPhysicalResources,
@@ -95,7 +95,7 @@ pub(super) struct ProductionAccessPointPreflightFault {
 }
 
 pub(super) struct ProductionAccessPointEngineFault {
-    _owner: WifiRoleOwner<EspHalWifiPlatform>,
+    _owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
     _registers: RadioRuntimeOwner,
     _interrupts: MacInterruptEpoch,
     _ring: ProductionRxRing,
@@ -123,7 +123,7 @@ pub(super) enum ProductionAccessPointPreparationFault {
 
 pub(super) enum ProductionAccessPointTeardownFault {
     Aggregate {
-        _owner: WifiRoleOwner<EspHalWifiPlatform>,
+        _owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
         _registers: RadioRuntimeOwner,
         _interrupts: MacInterruptEpoch,
         _stopped: ProductionAccessPointStopped,
@@ -131,7 +131,7 @@ pub(super) enum ProductionAccessPointTeardownFault {
         _parked: ProductionAccessPointParked,
     },
     TxRestore {
-        _owner: WifiRoleOwner<EspHalWifiPlatform>,
+        _owner: WifiRoleOwner<EspHalWifiPlatform, WifiMembership>,
         _registers: RadioRuntimeOwner,
         _interrupts: MacInterruptEpoch,
         _ring: ProductionRxRing,

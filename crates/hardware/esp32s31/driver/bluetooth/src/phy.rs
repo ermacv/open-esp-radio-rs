@@ -13,7 +13,7 @@ use oer_esp32s31_phy::{
         BluetoothPhyClientError, BluetoothPhyLeaveFailure, BluetoothPhyMembership, join_bluetooth,
         leave_bluetooth,
     },
-    concurrent::{ConcurrentAcquire, ConcurrentPhy},
+    concurrent::{ConcurrentAcquire, ConcurrentPhy, PhyReady},
 };
 
 use crate::{low_power::ControllerLowPowerHardwareInitialized, resources::TaskResources};
@@ -23,6 +23,66 @@ use crate::{low_power::ControllerLowPowerHardwareInitialized, resources::TaskRes
 ///
 /// The BLE PHY engine is initialized from this state. Its membership stays
 /// with the Controller until `leave_phy` at shutdown.
+///
+/// The engine, and with it the installed Controller, starts only from a
+/// joined Controller:
+///
+/// ```no_run
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! {
+/// #     loop {}
+/// # }
+/// use oer_esp32s31_bluetooth::phy::ControllerPhyJoined;
+/// let _engine = ControllerPhyJoined::<'static, 4>::initialize_ble_phy_engine::<()>;
+/// ```
+///
+/// ```compile_fail,E0599
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! {
+/// #     loop {}
+/// # }
+/// use oer_esp32s31_bluetooth::low_power::ControllerLowPowerHardwareInitialized;
+/// let _engine =
+///     ControllerLowPowerHardwareInitialized::<'static, 4>::initialize_ble_phy_engine::<()>;
+/// ```
+///
+/// And the membership leaves only with the Controller's retirement, never
+/// from the joined owner:
+///
+/// ```no_run
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! {
+/// #     loop {}
+/// # }
+/// use oer_esp32s31_bluetooth::phy::ControllerPhyJoined;
+/// fn keep(joined: ControllerPhyJoined<'static, 4>) -> ControllerPhyJoined<'static, 4> {
+///     joined
+/// }
+/// ```
+///
+/// ```compile_fail,E0616
+/// # #![cfg_attr(target_arch = "riscv32", no_std)]
+/// # #![cfg_attr(target_arch = "riscv32", no_main)]
+/// # #[cfg(target_arch = "riscv32")]
+/// # #[panic_handler]
+/// # fn panic(_: &core::panic::PanicInfo) -> ! {
+/// #     loop {}
+/// # }
+/// use oer_esp32s31_bluetooth::phy::ControllerPhyJoined;
+/// use oer_esp32s31_phy::bluetooth_client::BluetoothPhyMembership;
+/// fn leave_early(joined: ControllerPhyJoined<'static, 4>) -> BluetoothPhyMembership {
+///     joined.membership
+/// }
+/// ```
 #[must_use = "the joined Controller retains its PHY membership"]
 pub struct ControllerPhyJoined<'cells, const MODEM_TIMER_CAPACITY: usize> {
     pub(crate) controller: ControllerLowPowerHardwareInitialized<'cells, MODEM_TIMER_CAPACITY>,
@@ -50,7 +110,8 @@ impl<const MODEM_TIMER_CAPACITY: usize> ControllerPhyJoinFailure<'_, MODEM_TIMER
 impl<'cells, const MODEM_TIMER_CAPACITY: usize>
     ControllerLowPowerHardwareInitialized<'cells, MODEM_TIMER_CAPACITY>
 {
-    /// Enter the shared PHY domain and BTBB as the Bluetooth client.
+    /// Enter the shared PHY domain and BTBB as the Bluetooth client, with
+    /// the radio system's proof that it prepared the domain.
     ///
     /// [`ConcurrentAcquire::TrackingDue`] means the domain must run its
     /// tracking before the Controller uses RF; [`ControllerPhyJoined::quiescence`]
@@ -58,15 +119,16 @@ impl<'cells, const MODEM_TIMER_CAPACITY: usize>
     ///
     /// # Errors
     ///
-    /// The domain is not registered and settled for the lease, Bluetooth
-    /// already holds BTBB, or the client set rejected the client.
+    /// The proof names another registration, the domain is not settled for
+    /// the lease, Bluetooth already holds BTBB, or the client set rejected
+    /// the client.
     #[allow(
         clippy::result_large_err,
         reason = "the failure retains the complete allocation-free Controller epoch"
     )]
     pub fn join_phy(
         self,
-        lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+        ready: PhyReady<'_, '_>,
         clock: &impl oer_time::Clock,
     ) -> Result<
         (
@@ -75,17 +137,17 @@ impl<'cells, const MODEM_TIMER_CAPACITY: usize>
         ),
         ControllerPhyJoinFailure<'cells, MODEM_TIMER_CAPACITY>,
     > {
-        match join_bluetooth(lease, self.task().hal(), clock) {
-            Ok((membership, acquired)) => Ok((
+        match join_bluetooth(ready, self.task().hal(), clock) {
+            Ok(joined) => Ok((
                 ControllerPhyJoined {
                     controller: self,
-                    membership,
+                    membership: joined.membership,
                 },
-                acquired,
+                joined.acquired,
             )),
-            Err(error) => Err(ControllerPhyJoinFailure {
+            Err(refused) => Err(ControllerPhyJoinFailure {
                 _controller: self,
-                error,
+                error: refused.error,
             }),
         }
     }

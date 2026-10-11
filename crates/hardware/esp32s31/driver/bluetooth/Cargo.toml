@@ -24,8 +24,11 @@ oer-esp32s31-phy = { path = "../../phy" }
 oer-time = { path = "../../../../time" }
 
 [dev-dependencies]
-critical-section = { version = "1.2.0", features = ["std"] }
 oer-esp32s31-hal = { path = "../../hal", features = ["validation-probes"] }
+
+# Host tests need the std implementation; chip doctests build without it.
+[target.'cfg(not(target_os = "none"))'.dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
 
 [lints]
 workspace = true

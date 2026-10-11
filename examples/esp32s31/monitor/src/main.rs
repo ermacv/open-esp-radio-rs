@@ -110,7 +110,9 @@ async fn monitor_task(
     let (radio, partitions) = shared_radio::start(spawner, radio_platform, RadioStart::new())
         .expect("the shared radio starts once");
     let ConcurrentPartitions {
-        wifi: partition, ..
+        wifi: partition,
+        wifi_coex,
+        ..
     } = partitions;
     let WifiStarted {
         wifi,
@@ -119,6 +121,7 @@ async fn monitor_task(
     } = integration::await_stack_boundary!(integration::new(
         radio,
         partition,
+        wifi_coex,
         wifi_platform,
         trng,
         config

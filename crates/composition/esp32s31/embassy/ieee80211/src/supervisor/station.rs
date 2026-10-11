@@ -1082,7 +1082,8 @@ pub struct ConnectedStationReturn<'state, 'security> {
 }
 
 pub(crate) struct ConnectedDriverAssemblyFault {
-    _role: oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalWifiPlatform>,
+    _role:
+        oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalWifiPlatform, super::WifiMembership>,
     _interrupt: MacInterruptEpoch,
     _dma: oer_esp32s31_ieee80211_runtime::roles::station::StationDmaResources<
         'static,
@@ -1190,7 +1191,10 @@ pub enum ConnectedStationFault<'state, 'security> {
         _security: StaAttemptSecurity<'security>,
     },
     DriverTeardown {
-        _role: oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalWifiPlatform>,
+        _role: oer_esp32s31_ieee80211::runtime::WifiRoleOwner<
+            EspHalWifiPlatform,
+            super::WifiMembership,
+        >,
         _interrupt: MacInterruptEpoch,
         _dma: oer_esp32s31_ieee80211_runtime::roles::station::StationDmaResources<
             'static,

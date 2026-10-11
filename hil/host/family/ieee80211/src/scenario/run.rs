@@ -7,8 +7,9 @@ use oer_hil_schema::image::ImageClass;
 use oer_hil_workload::context::Context;
 
 use super::{
-    AccessPoint, Direction, ProtectionPeer, RoleOperation, StationIcmp, StationReconnect,
-    StationTcp, StationUdp, WifiScenario, WifiWorkload, station::PROTECTION_CHECKS,
+    AccessPoint, Direction, ProtectionPeer, RestartRf, RoleOperation, StationIcmp,
+    StationReconnect, StationTcp, StationUdp, WifiScenario, WifiWorkload,
+    station::PROTECTION_CHECKS,
 };
 use crate::{
     Result,
@@ -21,6 +22,7 @@ use oer_hil_family_ieee80211_evidence::air::MacAddress;
 use oer_hil_family_ieee80211_fixture::{
     openwrt::air_monitor::ProtectionCapture, prepared::Prepared,
 };
+use oer_hil_protocol::wifi::WifiRadioRestartRf;
 
 /// The UDP workloads claim A-MPDU and receive reorder evidence, which a
 /// non-HT link does not have.
@@ -461,6 +463,7 @@ fn role(operation: RoleOperation, timeout: Duration) -> (Operation, ieee80211::c
     let mut config = ieee80211::control::Config {
         timeout,
         restart_cycles: 1,
+        restart_rf: WifiRadioRestartRf::ClosedAndWoken,
         monitor_channel: None,
         monitor_duration: Duration::from_secs(3),
         snapshot_length: 256,
@@ -468,8 +471,12 @@ fn role(operation: RoleOperation, timeout: Duration) -> (Operation, ieee80211::c
     let operation = match operation {
         RoleOperation::Stop {} => Operation::Stop,
         RoleOperation::Start {} => Operation::Start,
-        RoleOperation::Restart { cycles } => {
+        RoleOperation::Restart { cycles, rf } => {
             config.restart_cycles = cycles;
+            config.restart_rf = match rf {
+                RestartRf::ClosedAndWoken => WifiRadioRestartRf::ClosedAndWoken,
+                RestartRf::KeptOpen => WifiRadioRestartRf::KeptOpen,
+            };
             Operation::Restart
         }
         RoleOperation::Scan {} => Operation::Scan,

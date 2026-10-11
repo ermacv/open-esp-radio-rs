@@ -14,6 +14,9 @@ oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal" }
 oer-esp32s31-phy = { path = "../../../hardware/esp32s31/phy" }
 oer-time = { path = "../../../time" }
 
+[dev-dependencies]
+oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal", features = ["validation-probes"] }
+
 [lints]
 workspace = true
 

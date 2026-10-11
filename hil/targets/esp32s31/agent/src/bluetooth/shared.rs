@@ -16,7 +16,10 @@ use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
 use oer_esp32s31_bluetooth_system::{
     BluetoothEntropy, BluetoothHostTransport, BluetoothParked, start_bluetooth_hci,
 };
-use oer_esp32s31_hal::root::BluetoothPartition;
+use oer_esp32s31_hal::{
+    root::BluetoothPartition,
+    shared_radio::{BluetoothClient, CoexAbsent},
+};
 use oer_hil_protocol::bluetooth::BluetoothGattEvidence;
 
 use super::{Radio, VERSION, gatt};
@@ -33,6 +36,7 @@ pub(crate) fn start(
     spawner: Spawner,
     radio: &'static Radio,
     partition: BluetoothPartition,
+    coex: CoexAbsent<BluetoothClient>,
     interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes,
     public_address: BluetoothPublicDeviceAddress,
     entropy: &'static BluetoothEntropy<'static>,
@@ -42,6 +46,7 @@ pub(crate) fn start(
             spawner,
             radio,
             partition,
+            coex,
             interrupts,
             public_address,
             entropy,
@@ -66,11 +71,12 @@ async fn client(
     spawner: Spawner,
     radio: &'static Radio,
     partition: BluetoothPartition,
+    coex: CoexAbsent<BluetoothClient>,
     interrupts: oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRoutes,
     public_address: BluetoothPublicDeviceAddress,
     entropy: &'static BluetoothEntropy<'static>,
 ) {
-    let Ok(parked) = BluetoothParked::new(partition, interrupts) else {
+    let Ok(parked) = BluetoothParked::new(partition, coex, interrupts) else {
         crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");
     };
     let (system, port) =

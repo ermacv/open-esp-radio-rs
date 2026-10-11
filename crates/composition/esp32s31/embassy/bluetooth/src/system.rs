@@ -54,14 +54,15 @@ use oer_esp32s31_hal::{
     },
     root::BluetoothPartition,
     shared_radio::{
-        CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
+        BluetoothClient, CoexAbsent, Coexisting, CommonPower, CommonRadioPowerError,
+        ModemClockError, PlatformClockProvider, SharedRadioLease,
     },
 };
 use oer_esp32s31_phy::RomShortDelay;
 use oer_esp32s31_phy::{
     ConcurrentPhyTrackingError, ConcurrentRfError, NoopPhyTargetObserver,
     bluetooth_client::BluetoothPhyClientError,
-    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
+    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, phy_ready},
     maintain_concurrent_phy,
 };
 use oer_esp32s31_radio_esp_hal::{
@@ -79,7 +80,7 @@ use crate::coex::BleCoexStatusChange;
 /// Every Bluetooth LE schedule status bit, withdrawn when the Controller
 /// stops as the status hook's task-disable index does.
 const BLE_COEX_STATUS_ALL: u16 = 0xffff;
-use oer_esp32s31_radio_runtime::{RadioGuard, RadioPhyError, RadioSystem};
+use oer_esp32s31_radio_runtime::{CoexLeaveFailure, RadioGuard, RadioPhyError, RadioSystem};
 use static_cell::{ConstStaticCell, StaticCell};
 
 /// Slots of the source-127 software timer queue.
@@ -213,6 +214,8 @@ struct ControllerMemory {
 #[must_use = "the parked Bluetooth client retains its partition and memory"]
 pub struct BluetoothParked {
     partition: BluetoothPartition,
+    /// Bluetooth's coexistence state from the split, outside coexistence.
+    coex: CoexAbsent<BluetoothClient>,
     memory: ControllerMemory,
     /// Interrupt-owner storage published by an earlier epoch of this boot.
     published: Option<&'static Storage>,
@@ -220,7 +223,7 @@ pub struct BluetoothParked {
 
 impl BluetoothParked {
     /// Claim the static controller memory once per boot and park it with
-    /// `partition`; keep `interrupts`, the routes of the Controller's sources
+    /// `partition` and its coexistence state `coex`; keep `interrupts`, the routes of the Controller's sources
     /// in the image's interrupt table, for every epoch of the boot.
     ///
     /// # Errors
@@ -229,6 +232,7 @@ impl BluetoothParked {
     /// contract.
     pub fn new(
         partition: BluetoothPartition,
+        coex: CoexAbsent<BluetoothClient>,
         interrupts: EspHalBluetoothInterruptRoutes,
     ) -> Result<Self, BluetoothMemoryError> {
         let numbers =
@@ -289,6 +293,7 @@ impl BluetoothParked {
             unreachable!("the boot claimed the Controller memory, and with it the routes, once");
         }
         Ok(Self {
+            coex,
             partition,
             memory: ControllerMemory {
                 ble_phy,
@@ -335,6 +340,15 @@ pub enum BluetoothStartError {
 #[must_use = "a fail-stop owner keeps the radio until the chip resets"]
 pub struct BluetoothFailStop {
     _owner: FailStopOwner,
+    _power: BluetoothPower,
+}
+
+/// Bluetooth's common power proof and its part in coexistence: outside
+/// it before the Controller enables it and after it left, inside in between.
+#[allow(dead_code, reason = "a fail-stop owner never reads its proofs again")]
+enum BluetoothPower {
+    Alone(CommonPower<BluetoothClient>, CoexAbsent<BluetoothClient>),
+    Coexisting(CommonPower<BluetoothClient>, Coexisting<BluetoothClient>),
 }
 
 type Controller = oer_esp32s31_bluetooth::low_power::ControllerLowPowerHardwareInitialized<
@@ -396,17 +410,31 @@ enum FailStopOwner {
     Retired(Radio, ControllerRetired),
 }
 
-fn fail_stop(error: BluetoothStartError, owner: FailStopOwner) -> BluetoothStartFailure {
+fn fail_stop(
+    error: BluetoothStartError,
+    owner: FailStopOwner,
+    power: BluetoothPower,
+) -> BluetoothStartFailure {
     BluetoothStartFailure {
         error,
-        owner: Err(BluetoothFailStop { _owner: owner }),
+        owner: Err(BluetoothFailStop {
+            _owner: owner,
+            _power: power,
+        }),
     }
 }
 
-fn stop_fail(error: BluetoothStopError, owner: FailStopOwner) -> BluetoothStopFailure {
+fn stop_fail(
+    error: BluetoothStopError,
+    owner: FailStopOwner,
+    power: BluetoothPower,
+) -> BluetoothStopFailure {
     BluetoothStopFailure {
         error,
-        owner: BluetoothFailStop { _owner: owner },
+        owner: BluetoothFailStop {
+            _owner: owner,
+            _power: power,
+        },
     }
 }
 
@@ -512,6 +540,10 @@ struct Epoch {
 pub struct BluetoothSystem {
     epoch: Epoch,
     control: Control,
+    /// The common power proof.
+    power: CommonPower<BluetoothClient>,
+    /// Bluetooth takes part in coexistence for the epoch.
+    coexisting: Coexisting<BluetoothClient>,
 }
 
 impl BluetoothSystem {
@@ -575,13 +607,19 @@ impl BluetoothSystem {
         port: BluetoothSystemPort,
         radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<BluetoothParked, BluetoothStopFailure> {
-        let Self { epoch, control } = self;
+        let Self {
+            epoch,
+            control,
+            power,
+            coexisting,
+        } = self;
         let (role, hardware) = match control.uninstall(port).await {
             Ok(parts) => parts,
             Err((error, control, port)) => {
                 return Err(stop_fail(
                     BluetoothStopError::Runtime(error),
                     FailStopOwner::Installed(epoch, control, port),
+                    BluetoothPower::Coexisting(power, coexisting),
                 ));
             }
         };
@@ -603,6 +641,7 @@ impl BluetoothSystem {
             return Err(stop_fail(
                 BluetoothStopError::ModemTimer(error),
                 uninstalled(role, task, modem_timer, Some(bound), retained),
+                BluetoothPower::Coexisting(power, coexisting),
             ));
         }
         if let Err(failure) = bound.disable() {
@@ -610,6 +649,7 @@ impl BluetoothSystem {
             return Err(stop_fail(
                 BluetoothStopError::Routes(error),
                 uninstalled(role, task, modem_timer, Some(bound), retained),
+                BluetoothPower::Coexisting(power, coexisting),
             ));
         }
         critical_section::with(|cs| DISPATCH.borrow(cs).set(None));
@@ -619,6 +659,7 @@ impl BluetoothSystem {
                 return Err(stop_fail(
                     BluetoothStopError::TimerStorage,
                     uninstalled(role, task, modem_timer, None, retained),
+                    BluetoothPower::Coexisting(power, coexisting),
                 ));
             }
         };
@@ -634,6 +675,7 @@ impl BluetoothSystem {
                         timer,
                         retained,
                     },
+                    BluetoothPower::Coexisting(power, coexisting),
                 ));
             }
         };
@@ -649,20 +691,26 @@ impl BluetoothSystem {
                 return Err(stop_fail(
                     BluetoothStopError::Shutdown(failure.error()),
                     FailStopOwner::Shutdown(role, failure),
+                    BluetoothPower::Coexisting(power, coexisting),
                 ));
             }
         };
         // As `coex_disable` after the stack is disabled.
-        if let Err(error) = guard.disable_coex() {
-            return Err(stop_fail(
-                BluetoothStopError::Coex(error),
-                FailStopOwner::Retired(role, retired),
-            ));
-        }
+        let coex = match guard.disable_coex(coexisting) {
+            Ok(absent) => absent,
+            Err(CoexLeaveFailure { proof, error }) => {
+                return Err(stop_fail(
+                    BluetoothStopError::Coex(error),
+                    FailStopOwner::Retired(role, retired),
+                    BluetoothPower::Coexisting(power, proof),
+                ));
+            }
+        };
         if last && let Err(error) = guard.close_phy_if_idle().await {
             return Err(stop_fail(
                 BluetoothStopError::PhyClose(error),
                 FailStopOwner::Retired(role, retired),
+                BluetoothPower::Alone(power, coex),
             ));
         }
         let (lease, _, _) = guard.parts();
@@ -672,6 +720,7 @@ impl BluetoothSystem {
                 return Err(stop_fail(
                     BluetoothStopError::Shutdown(failure.error()),
                     FailStopOwner::Shutdown(role, failure),
+                    BluetoothPower::Alone(power, coex),
                 ));
             }
         };
@@ -696,6 +745,7 @@ impl BluetoothSystem {
                             radio: radio_memory,
                         },
                     ),
+                    BluetoothPower::Alone(power, coex),
                 ));
             }
         };
@@ -704,16 +754,22 @@ impl BluetoothSystem {
             direction_finding,
             radio: radio_memory,
         };
-        match powered.power_down(lease) {
+        match powered.power_down(lease, power, &coex) {
             Ok(cold) => Ok(BluetoothParked {
                 partition: cold.into_partition(),
+                coex,
                 memory,
                 published: Some(published),
             }),
-            Err(failure) => Err(stop_fail(
-                BluetoothStopError::Power(failure.error()),
-                FailStopOwner::Powered(failure.into_owner(), memory),
-            )),
+            Err(failure) => {
+                let error = BluetoothStopError::Power(failure.error());
+                let (powered, power) = failure.into_owner();
+                Err(stop_fail(
+                    error,
+                    FailStopOwner::Powered(powered, memory),
+                    BluetoothPower::Alone(power, coex),
+                ))
+            }
         }
     }
 }
@@ -801,17 +857,27 @@ fn unwind_powered(
     memory: ControllerMemory,
     published: Option<&'static Storage>,
     error: BluetoothStartError,
+    power: CommonPower<BluetoothClient>,
+    coex: CoexAbsent<BluetoothClient>,
 ) -> BluetoothStartFailure {
-    match powered.power_down(lease) {
+    match powered.power_down(lease, power, &coex) {
         Ok(cold) => BluetoothStartFailure {
             error,
             owner: Ok(BluetoothParked {
                 partition: cold.into_partition(),
+                coex,
                 memory,
                 published,
             }),
         },
-        Err(failure) => fail_stop(error, FailStopOwner::Powered(failure.into_owner(), memory)),
+        Err(failure) => {
+            let (powered, power) = failure.into_owner();
+            fail_stop(
+                error,
+                FailStopOwner::Powered(powered, memory),
+                BluetoothPower::Alone(power, coex),
+            )
+        }
     }
 }
 
@@ -854,19 +920,21 @@ pub async fn start<P, C: PlatformClockProvider>(
 ) -> Result<(BluetoothSystem, BluetoothSystemPort), BluetoothStartFailure> {
     let BluetoothParked {
         partition,
+        coex,
         memory,
         published,
     } = parked;
     let mut guard = radio.lock().await;
     let (lease, _, clocks) = guard.parts();
 
-    let powered = match ColdOwner::from_partition(partition).power_up(lease, clocks) {
+    let (powered, power) = match ColdOwner::from_partition(partition).power_up(lease, clocks) {
         Ok(powered) => powered,
         Err(failure) => {
             return Err(BluetoothStartFailure {
                 error: BluetoothStartError::Power(failure.error()),
                 owner: Ok(BluetoothParked {
                     partition: failure.into_owner().into_partition(),
+                    coex,
                     memory,
                     published,
                 }),
@@ -881,6 +949,7 @@ pub async fn start<P, C: PlatformClockProvider>(
                 return Err(fail_stop(
                     error,
                     FailStopOwner::Powered(failure.into_owner(), memory),
+                    BluetoothPower::Alone(power, coex),
                 ));
             }
             return Err(unwind_powered(
@@ -889,6 +958,8 @@ pub async fn start<P, C: PlatformClockProvider>(
                 memory,
                 published,
                 error,
+                power,
+                coex,
             ));
         }
     };
@@ -904,6 +975,7 @@ pub async fn start<P, C: PlatformClockProvider>(
             return Err(fail_stop(
                 BluetoothStartError::LowPower,
                 FailStopOwner::LowPower(failure, memory),
+                BluetoothPower::Alone(power, coex),
             ));
         }
     };
@@ -912,14 +984,31 @@ pub async fn start<P, C: PlatformClockProvider>(
         return Err(fail_stop(
             BluetoothStartError::Phy(error),
             FailStopOwner::Controller(controller, memory),
+            BluetoothPower::Alone(power, coex),
         ));
     }
+    let (lease, _, _) = guard.parts();
+    let ready = match phy_ready(lease) {
+        Ok(ready) => ready,
+        Err(error) => {
+            return Err(fail_stop(
+                BluetoothStartError::PhyClient(BluetoothPhyClientError::Phy(error)),
+                FailStopOwner::Controller(controller, memory),
+                BluetoothPower::Alone(power, coex),
+            ));
+        }
+    };
+    let joined = controller.join_phy(ready, &EmbassyClock);
     let (lease, platform, _) = guard.parts();
-    let (mut joined, acquired) = match controller.join_phy(lease, &EmbassyClock) {
+    let (mut joined, acquired) = match joined {
         Ok(joined) => joined,
         Err(failure) => {
             let error = BluetoothStartError::PhyClient(failure.error());
-            return Err(fail_stop(error, FailStopOwner::PhyJoin(failure, memory)));
+            return Err(fail_stop(
+                error,
+                FailStopOwner::PhyJoin(failure, memory),
+                BluetoothPower::Alone(power, coex),
+            ));
         }
     };
     if acquired == ConcurrentAcquire::TrackingDue {
@@ -945,12 +1034,14 @@ pub async fn start<P, C: PlatformClockProvider>(
                 return Err(fail_stop(
                     BluetoothStartError::Tracking(error),
                     FailStopOwner::Joined(joined, memory),
+                    BluetoothPower::Alone(power, coex),
                 ));
             }
             Err(ConcurrentPhyTrackingError::Failed(_)) => {
                 return Err(fail_stop(
                     BluetoothStartError::TrackingFailed,
                     FailStopOwner::Joined(joined, memory),
+                    BluetoothPower::Alone(power, coex),
                 ));
             }
         }
@@ -966,10 +1057,10 @@ pub async fn start<P, C: PlatformClockProvider>(
         .activate();
     // `esp_bt_controller_enable` enables coexistence for Bluetooth; a later
     // start failure is fail-stop and keeps it enabled.
-    guard.enable_coex();
+    let coexisting = guard.enable_coex(coex);
     drop(guard);
 
-    publish_and_install(runtime, radio_memory, published).await
+    publish_and_install(runtime, radio_memory, published, power, coexisting).await
 }
 
 /// Move the published status from `published` to `activity`.
@@ -1022,6 +1113,8 @@ async fn publish_and_install(
     runtime: BlePhyRuntime<'static, MODEM_TIMER_CAPACITY>,
     radio_memory: BluetoothSystemMemory,
     published: Option<&'static Storage>,
+    power: CommonPower<BluetoothClient>,
+    coexisting: Coexisting<BluetoothClient>,
 ) -> Result<(BluetoothSystem, BluetoothSystemPort), BluetoothStartFailure> {
     let BlePhyRuntime {
         endpoints,
@@ -1047,6 +1140,7 @@ async fn publish_and_install(
                             timer,
                             memory: radio_memory,
                         },
+                        BluetoothPower::Coexisting(power, coexisting),
                     ));
                 }
             }
@@ -1063,6 +1157,7 @@ async fn publish_and_install(
                         timer,
                         memory: radio_memory,
                     },
+                    BluetoothPower::Coexisting(power, coexisting),
                 ));
             }
         },
@@ -1092,6 +1187,7 @@ async fn publish_and_install(
                     bound: None,
                     memory: radio_memory,
                 },
+                BluetoothPower::Coexisting(power, coexisting),
             ));
         }
     };
@@ -1113,6 +1209,7 @@ async fn publish_and_install(
                     bound: Some(bound),
                     memory: radio_memory,
                 },
+                BluetoothPower::Coexisting(power, coexisting),
             ));
         }
     };
@@ -1125,6 +1222,8 @@ async fn publish_and_install(
                 published,
             },
             control,
+            power,
+            coexisting,
         },
         port,
     ))

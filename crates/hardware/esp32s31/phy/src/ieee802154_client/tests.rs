@@ -7,6 +7,7 @@ use oer_esp32s31_hal::{
 use oer_time_virtual::VirtualClock;
 
 use super::*;
+use crate::concurrent::ConcurrentAcquire;
 use crate::{
     PhyConfig, PhyState, RegisteredPhyState,
     concurrent::ConcurrentPhy,
@@ -49,13 +50,12 @@ fn joining_an_unregistered_domain_changes_nothing() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
-    assert_eq!(
-        join_ieee802154(&mut lease, &clocked, &VirtualClock::<8>::new())
-            .map(|(_, acquired)| acquired),
-        Err(Ieee802154PhyClientError::Phy(
-            ConcurrentPhyError::NotRegistered
-        ))
-    );
+    let _ = clocked;
+    // Nothing prepared the domain, so no client can enter it.
+    assert!(matches!(
+        crate::concurrent::phy_ready(&mut lease).map(|_| ()),
+        Err(ConcurrentPhyError::NotRegistered)
+    ));
     assert!(!lease.holds_btbb(RadioClient::Ieee802154));
 }
 
@@ -67,10 +67,12 @@ fn a_stale_registration_is_rejected_before_the_client_set_changes() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
+    let _ = &clocked;
+    // The ready proof refuses a registration that no longer describes the
+    // lease, before any client or BTBB change.
     assert_eq!(
-        join_ieee802154(&mut lease, &clocked, &VirtualClock::<8>::new())
-            .map(|(_, acquired)| acquired),
-        Err(Ieee802154PhyClientError::StaleRegistration)
+        crate::concurrent::phy_ready(&mut lease).map(|_| ()),
+        Err(ConcurrentPhyError::EpochMismatch)
     );
     assert!(!ieee802154_is_client(&lease));
     assert!(!lease.holds_btbb(RadioClient::Ieee802154));
@@ -84,7 +86,7 @@ fn leaving_without_the_btbb_reference_keeps_the_membership_and_the_client() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(
+        enter_client(
             &mut lease,
             RadioClient::Ieee802154,
             &VirtualClock::<8>::new()
@@ -103,4 +105,31 @@ fn leaving_without_the_btbb_reference_keeps_the_membership_and_the_client() {
     );
     let _membership = failure.into_membership();
     assert!(ieee802154_is_client(&lease));
+}
+
+/// Enter `client` with a proof for the lease's registration.
+fn enter_client(
+    lease: &mut oer_esp32s31_hal::shared_radio::SharedRadioLease<
+        '_,
+        crate::concurrent::ConcurrentPhy,
+    >,
+    client: oer_esp32s31_hal::shared_radio::RadioClient,
+    clock: &impl oer_time::Clock,
+) -> Result<crate::concurrent::ConcurrentAcquire, crate::concurrent::ConcurrentPhyError> {
+    crate::concurrent::acquire_client(lease, client, clock)
+}
+
+/// Join with a proof for the lease's registration.
+fn join_ieee802154_prepared(
+    lease: &mut oer_esp32s31_hal::shared_radio::SharedRadioLease<
+        '_,
+        crate::concurrent::ConcurrentPhy,
+    >,
+    clocked: &Ieee802154Clocked,
+    clock: &impl oer_time::Clock,
+) -> Result<(Ieee802154PhyMembership, ConcurrentAcquire), Ieee802154PhyClientError> {
+    let ready = crate::concurrent::PhyReady::for_test(lease);
+    join_ieee802154(ready, clocked, clock)
+        .map(|joined| (joined.membership, joined.acquired))
+        .map_err(|refused| refused.error)
 }

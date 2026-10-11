@@ -94,34 +94,6 @@ fn registration_epoch_persists_across_leases() {
 }
 
 #[test]
-fn common_power_membership_follows_the_proving_owner() {
-    use oer_esp32s31_pac::{BluetoothTaskRegisters, WifiRadioRegisters};
-    let RadioPartitions {
-        wifi_mac,
-        bluetooth,
-        ..
-    } = RadioPartitions::for_validation();
-    let wifi = WifiRadioRegisters::new(wifi_mac);
-    let bluetooth = BluetoothTaskRegisters::new(bluetooth);
-    let radio = arbiter();
-    let mut lease = radio
-        .try_acquire()
-        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
-
-    // Leaving before entering is rejected before any register access.
-    assert_eq!(
-        lease.exit_common_power(&wifi),
-        Err(CommonRadioPowerError::NotEntered)
-    );
-    assert_eq!(
-        lease.exit_common_power(&bluetooth),
-        Err(CommonRadioPowerError::NotEntered)
-    );
-    assert!(!lease.holds_common_power(RadioClient::Wifi));
-    assert!(!lease.holds_common_power(RadioClient::Bluetooth));
-}
-
-#[test]
 fn btbb_joins_an_initialized_baseband_without_register_access() {
     use crate::owner::PhyInitializationAccess;
     use oer_esp32s31_pac::Ieee802154TaskRegisters;
@@ -287,18 +259,5 @@ fn a_held_validation_grant_protect_is_owned_by_the_lease() {
     assert_eq!(
         lease.acquire_phy_grant_protect(),
         Err(PhyGrantProtectError::AlreadyProtected)
-    );
-}
-
-#[test]
-fn stopping_external_coexistence_that_never_started_is_rejected() {
-    let radio = arbiter();
-    let mut lease = radio
-        .try_acquire()
-        .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
-    assert_eq!(lease.external_coex(), None);
-    assert_eq!(
-        lease.stop_external_coex(),
-        Err(crate::coex::ExternalCoexError::NotActive)
     );
 }

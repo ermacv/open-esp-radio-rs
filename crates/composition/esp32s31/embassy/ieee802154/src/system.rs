@@ -12,7 +12,8 @@ use oer_esp32s31_hal::{
     },
     root::Ieee802154RadioPartition,
     shared_radio::{
-        CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
+        CoexAbsent, Coexisting, CommonPower, CommonRadioPowerError, Ieee802154Client,
+        ModemClockError, PlatformClockProvider, SharedRadioLease,
     },
 };
 use oer_esp32s31_ieee802154_esp_hal::{
@@ -28,7 +29,9 @@ use oer_esp32s31_phy::{
     },
     maintain_concurrent_phy,
 };
-use oer_esp32s31_radio_runtime::{Ieee802154JoinError, RadioPhyError, RadioSystem};
+use oer_esp32s31_radio_runtime::{
+    CoexLeaveFailure, Ieee802154JoinError, RadioPhyError, RadioSystem,
+};
 use oer_espressif_ieee802154_engine::{
     engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces},
     pib::Ieee802154PibDefaults,
@@ -102,6 +105,9 @@ oer_memory::zeroed_static! {
 pub struct Ieee802154Parked {
     /// The partition of the concurrent split.
     pub partition: Ieee802154RadioPartition,
+    /// IEEE 802.15.4's coexistence state from the split, outside
+    /// coexistence.
+    pub coex: CoexAbsent<Ieee802154Client>,
     /// The MAC engine and its receive storage.
     pub engine: Ieee802154Engine<'static>,
 }
@@ -112,11 +118,13 @@ impl Ieee802154Parked {
     /// `None` once an engine took the frames.
     pub fn new(
         partition: Ieee802154RadioPartition,
+        coex: CoexAbsent<Ieee802154Client>,
         defaults: Ieee802154PibDefaults,
     ) -> Option<Self> {
         let buffers = ENGINE_BUFFERS.try_take()?;
         Some(Self {
             partition,
+            coex,
             engine: Ieee802154Engine::new(
                 buffers,
                 oer_esp32s31_hal::ieee802154::ESP32S31_TX_POWER_LEVELS,
@@ -132,12 +140,14 @@ impl Ieee802154Parked {
     /// an engine took the composition's DMA-visible frames.
     pub fn multipan(
         partition: Ieee802154RadioPartition,
+        coex: CoexAbsent<Ieee802154Client>,
         defaults: Ieee802154PibDefaults,
         interfaces: Ieee802154Interfaces,
     ) -> Option<Self> {
         let buffers = ENGINE_BUFFERS.try_take()?;
         Some(Self {
             partition,
+            coex,
             engine: Ieee802154Engine::new_multipan(
                 buffers,
                 oer_esp32s31_hal::ieee802154::ESP32S31_TX_POWER_LEVELS,
@@ -180,6 +190,15 @@ pub enum Ieee802154StartError {
 #[must_use = "a fail-stop owner keeps the radio until the chip resets"]
 pub struct Ieee802154FailStop {
     _owner: FailStopOwner,
+    _power: CommonPower<Ieee802154Client>,
+    _coex: CoexAbsent<Ieee802154Client>,
+}
+
+/// IEEE 802.15.4's part in coexistence with Wi-Fi, which it takes on
+/// request and must leave before it leaves common power.
+enum Ieee802154Coex {
+    Absent(CoexAbsent<Ieee802154Client>),
+    Coexisting(Coexisting<Ieee802154Client>),
 }
 
 #[allow(
@@ -219,9 +238,9 @@ pub enum Ieee802154StopError {
     Clocks(ModemClockError),
     /// Common radio power could not be left.
     Power(CommonRadioPowerError),
-    /// IEEE 802.15.4 still takes part in coexistence with Wi-Fi; disable it
-    /// with [`Ieee802154System::disable_wifi_coexistence`] first.
-    WifiCoexistenceEnabled,
+    /// IEEE 802.15.4 could not leave coexistence with Wi-Fi: a request
+    /// timer could not be withdrawn.
+    Coexistence(CoexError),
 }
 
 /// Failed teardown.
@@ -248,8 +267,10 @@ pub struct Ieee802154System {
     /// The scene levels the MAC's priorities were resolved with
     /// (`s_coex_config`).
     coex_config: Ieee802154CoexConfig,
-    /// Whether IEEE 802.15.4 takes part in coexistence with Wi-Fi.
-    wifi_coexistence: bool,
+    /// The common power proof.
+    power: CommonPower<Ieee802154Client>,
+    /// IEEE 802.15.4's part in coexistence with Wi-Fi.
+    coex: Ieee802154Coex,
     control: Control,
 }
 
@@ -263,10 +284,19 @@ pub enum Ieee802154MaintenanceError {
     TrackingFailed,
 }
 
-fn fail_stop(error: Ieee802154StartError, owner: FailStopOwner) -> Ieee802154StartFailure {
+fn fail_stop(
+    error: Ieee802154StartError,
+    owner: FailStopOwner,
+    power: CommonPower<Ieee802154Client>,
+    coex: CoexAbsent<Ieee802154Client>,
+) -> Ieee802154StartFailure {
     Ieee802154StartFailure {
         error,
-        owner: Err(Ieee802154FailStop { _owner: owner }),
+        owner: Err(Ieee802154FailStop {
+            _owner: owner,
+            _power: power,
+            _coex: coex,
+        }),
     }
 }
 
@@ -276,12 +306,21 @@ fn unwind_clocked(
     clocked: Ieee802154Clocked,
     engine: Ieee802154Engine<'static>,
     error: Ieee802154StartError,
+    power: CommonPower<Ieee802154Client>,
+    coex: CoexAbsent<Ieee802154Client>,
 ) -> Ieee802154StartFailure {
     let powered = match clocked.disable_clocks(lease) {
         Ok(powered) => powered,
-        Err(failure) => return fail_stop(error, FailStopOwner::Clocked(failure.into_owner())),
+        Err(failure) => {
+            return fail_stop(
+                error,
+                FailStopOwner::Clocked(failure.into_owner()),
+                power,
+                coex,
+            );
+        }
     };
-    unwind_powered(lease, powered, engine, error)
+    unwind_powered(lease, powered, engine, error, power, coex)
 }
 
 fn unwind_powered(
@@ -289,16 +328,22 @@ fn unwind_powered(
     powered: Ieee802154Powered,
     engine: Ieee802154Engine<'static>,
     error: Ieee802154StartError,
+    power: CommonPower<Ieee802154Client>,
+    coex: CoexAbsent<Ieee802154Client>,
 ) -> Ieee802154StartFailure {
-    match powered.power_down(lease) {
+    match powered.power_down(lease, power, &coex) {
         Ok(cold) => Ieee802154StartFailure {
             error,
             owner: Ok(Ieee802154Parked {
                 partition: cold.into_partition(),
+                coex,
                 engine,
             }),
         },
-        Err(failure) => fail_stop(error, FailStopOwner::Powered(failure.into_owner())),
+        Err(failure) => {
+            let (powered, power) = failure.into_owner();
+            fail_stop(error, FailStopOwner::Powered(powered), power, coex)
+        }
     }
 }
 
@@ -335,18 +380,20 @@ pub async fn start<P, C: PlatformClockProvider>(
     }
     let Ieee802154Parked {
         partition,
+        coex,
         mut engine,
     } = parked;
     let mut guard = radio.lock().await;
     let (lease, _, clocks) = guard.parts();
 
-    let powered = match Ieee802154Cold::from_partition(partition).power_up(lease, clocks) {
+    let (powered, power) = match Ieee802154Cold::from_partition(partition).power_up(lease, clocks) {
         Ok(powered) => powered,
         Err(failure) => {
             return Err(Ieee802154StartFailure {
                 error: Ieee802154StartError::Power(failure.error()),
                 owner: Ok(Ieee802154Parked {
                     partition: failure.into_owner().into_partition(),
+                    coex,
                     engine,
                 }),
             });
@@ -360,9 +407,18 @@ pub async fn start<P, C: PlatformClockProvider>(
                 return Err(fail_stop(
                     error,
                     FailStopOwner::Powered(failure.into_owner()),
+                    power,
+                    coex,
                 ));
             }
-            return Err(unwind_powered(lease, failure.into_owner(), engine, error));
+            return Err(unwind_powered(
+                lease,
+                failure.into_owner(),
+                engine,
+                error,
+                power,
+                coex,
+            ));
         }
     };
 
@@ -376,6 +432,8 @@ pub async fn start<P, C: PlatformClockProvider>(
             return Err(fail_stop(
                 Ieee802154StartError::Phy(error),
                 FailStopOwner::Clocked(clocked),
+                power,
+                coex,
             ));
         }
         Err(error) => {
@@ -384,7 +442,7 @@ pub async fn start<P, C: PlatformClockProvider>(
                 Ieee802154JoinError::Client(error) => Ieee802154StartError::PhyClient(error),
             };
             let (lease, _, _) = guard.parts();
-            return Err(unwind_clocked(lease, clocked, engine, error));
+            return Err(unwind_clocked(lease, clocked, engine, error, power, coex));
         }
     };
     let (lease, platform, _) = guard.parts();
@@ -413,12 +471,16 @@ pub async fn start<P, C: PlatformClockProvider>(
                 return Err(fail_stop(
                     Ieee802154StartError::Tracking(error),
                     FailStopOwner::Joined(clocked, membership),
+                    power,
+                    coex,
                 ));
             }
             Err(ConcurrentPhyTrackingError::Failed(_)) => {
                 return Err(fail_stop(
                     Ieee802154StartError::TrackingFailed,
                     FailStopOwner::Joined(clocked, membership),
+                    power,
+                    coex,
                 ));
             }
         }
@@ -434,6 +496,8 @@ pub async fn start<P, C: PlatformClockProvider>(
                 membership,
                 engine,
                 error,
+                power,
+                coex,
             ));
         }
     };
@@ -447,6 +511,8 @@ pub async fn start<P, C: PlatformClockProvider>(
                 membership,
                 engine,
                 error,
+                power,
+                coex,
             ));
         }
     };
@@ -478,6 +544,8 @@ pub async fn start<P, C: PlatformClockProvider>(
                     },
                     parts.engine,
                 ),
+                power,
+                coex,
             ));
         }
     };
@@ -487,7 +555,8 @@ pub async fn start<P, C: PlatformClockProvider>(
                 route,
                 bound,
                 coex_config: Ieee802154CoexConfig::VENDOR,
-                wifi_coexistence: false,
+                power,
+                coex: Ieee802154Coex::Absent(coex),
                 control,
             },
             port,
@@ -506,6 +575,8 @@ pub async fn start<P, C: PlatformClockProvider>(
                     },
                     parts.engine,
                 ),
+                power,
+                coex,
             ))
         }
     }
@@ -517,11 +588,13 @@ fn leave_and_unwind(
     membership: Ieee802154PhyMembership,
     engine: Ieee802154Engine<'static>,
     error: Ieee802154StartError,
+    power: CommonPower<Ieee802154Client>,
+    coex: CoexAbsent<Ieee802154Client>,
 ) -> Ieee802154StartFailure {
     if leave_ieee802154(lease, &clocked, membership).is_err() {
-        return fail_stop(error, FailStopOwner::Clocked(clocked));
+        return fail_stop(error, FailStopOwner::Clocked(clocked), power, coex);
     }
-    unwind_clocked(lease, clocked, engine, error)
+    unwind_clocked(lease, clocked, engine, error, power, coex)
 }
 
 /// The shared radio is a software-coexistence build: the MAC publishes the
@@ -577,40 +650,82 @@ impl Ieee802154System {
     /// The image must run `RadioSystem::run_coex_schedule` once, as its
     /// Wi-Fi composition does. Nothing happens when it already takes part.
     pub async fn enable_wifi_coexistence<P, C: PlatformClockProvider>(
-        &mut self,
+        self,
         radio: &RadioSystem<P, C, EmbassyClock>,
-    ) {
-        if self.wifi_coexistence {
-            return;
+    ) -> Self {
+        let Self {
+            route,
+            bound,
+            coex_config,
+            power,
+            coex,
+            control,
+        } = self;
+        let coex = match coex {
+            Ieee802154Coex::Absent(absent) => {
+                Ieee802154Coex::Coexisting(radio.lock().await.enable_ieee802154_coex(absent))
+            }
+            coexisting @ Ieee802154Coex::Coexisting(_) => coexisting,
+        };
+        Self {
+            route,
+            bound,
+            coex_config,
+            power,
+            coex,
+            control,
         }
-        radio.lock().await.enable_ieee802154_coex();
-        self.wifi_coexistence = true;
     }
 
     /// Leave coexistence with Wi-Fi: withdraw the schedule status and
     /// disable coexistence for IEEE 802.15.4
-    /// (`RadioGuard::disable_ieee802154_coex`). [`Self::stop`] requires it
-    /// after [`Self::enable_wifi_coexistence`]. Nothing happens when it does
-    /// not take part.
+    /// (`RadioGuard::disable_ieee802154_coex`). Nothing happens when it does
+    /// not take part; [`Self::stop`] leaves it itself.
     ///
     /// # Errors
     ///
-    /// A coexistence timer could not be disabled; IEEE 802.15.4 has left
-    /// coexistence and the core keeps the timer as uncertain.
+    /// A coexistence timer could not be disabled; the core keeps the timer
+    /// as uncertain and the returned system still takes part, so a retry
+    /// withdraws the requests again.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the failure returns the running system"
+    )]
     pub async fn disable_wifi_coexistence<P, C: PlatformClockProvider>(
-        &mut self,
+        self,
         radio: &RadioSystem<P, C, EmbassyClock>,
-    ) -> Result<(), CoexError> {
-        if !self.wifi_coexistence {
-            return Ok(());
+    ) -> Result<Self, (Self, CoexError)> {
+        let Self {
+            route,
+            bound,
+            coex_config,
+            power,
+            coex,
+            control,
+        } = self;
+        let (coex, error) = match leave_coexistence(coex, radio).await {
+            Ok(absent) => (Ieee802154Coex::Absent(absent), None),
+            Err(CoexLeaveFailure { proof, error }) => {
+                (Ieee802154Coex::Coexisting(proof), Some(error))
+            }
+        };
+        let system = Self {
+            route,
+            bound,
+            coex_config,
+            power,
+            coex,
+            control,
+        };
+        match error {
+            None => Ok(system),
+            Some(error) => Err((system, error)),
         }
-        self.wifi_coexistence = false;
-        radio.lock().await.disable_ieee802154_coex()
     }
 
     /// Whether IEEE 802.15.4 takes part in coexistence with Wi-Fi.
     pub const fn wifi_coexistence(&self) -> bool {
-        self.wifi_coexistence
+        matches!(self.coex, Ieee802154Coex::Coexisting(_))
     }
 
     /// The scene levels the MAC's priorities were last resolved with
@@ -652,16 +767,20 @@ impl Ieee802154System {
         }
     }
 
-    /// `esp_ieee802154_disable`: quiesce the CPU route, take the MAC owners
-    /// out of the runtime, prove the foundation again, leave the shared PHY
-    /// and BTBB (closing RF after the last PHY client), release the module
-    /// clocks and leave common power. Must run on the core that started the
-    /// client.
+    /// `esp_ieee802154_disable`: leave coexistence with Wi-Fi when IEEE
+    /// 802.15.4 takes part, quiesce the CPU route, take the MAC owners out of
+    /// the runtime, prove the foundation again, leave the shared PHY and BTBB
+    /// (closing RF after the last PHY client), release the module clocks and
+    /// leave common power. Must run on the core that started the client.
     ///
     /// # Errors
     ///
-    /// A step failed. The failure returns the unchanged system when the
-    /// route could not be quiesced, or a fail-stop owner otherwise.
+    /// A step failed. A coexistence timer that could not be withdrawn
+    /// returns the running system, still taking part
+    /// ([`Ieee802154StopError::Coexistence`]). A route that could not be
+    /// quiesced returns the running system outside coexistence
+    /// ([`Ieee802154StopError::Route`]). Any later failure returns a
+    /// fail-stop owner.
     #[allow(
         clippy::result_large_err,
         reason = "the allocation-free failure returns the running system"
@@ -675,24 +794,30 @@ impl Ieee802154System {
             route,
             bound,
             coex_config,
-            wifi_coexistence,
+            power,
+            coex,
             control,
         } = self;
-        if wifi_coexistence {
-            return Err(Ieee802154StopFailure {
-                error: Ieee802154StopError::WifiCoexistenceEnabled,
-                owner: Ok((
-                    Self {
-                        route,
-                        bound,
-                        coex_config,
-                        wifi_coexistence,
-                        control,
-                    },
-                    port,
-                )),
-            });
-        }
+        // Coexistence ends before the client leaves the PHY and power.
+        let coex = match leave_coexistence(coex, radio).await {
+            Ok(absent) => absent,
+            Err(CoexLeaveFailure { proof, error }) => {
+                return Err(Ieee802154StopFailure {
+                    error: Ieee802154StopError::Coexistence(error),
+                    owner: Ok((
+                        Self {
+                            route,
+                            bound,
+                            coex_config,
+                            power,
+                            coex: Ieee802154Coex::Coexisting(proof),
+                            control,
+                        },
+                        port,
+                    )),
+                });
+            }
+        };
         if let Err((error, bound)) = bound.quiesce() {
             return Err(Ieee802154StopFailure {
                 error: Ieee802154StopError::Route(error),
@@ -701,7 +826,8 @@ impl Ieee802154System {
                         route,
                         bound,
                         coex_config,
-                        wifi_coexistence,
+                        power,
+                        coex: Ieee802154Coex::Absent(coex),
                         control,
                     },
                     port,
@@ -720,6 +846,8 @@ impl Ieee802154System {
                 return Err(stop_fail_stop(
                     error,
                     FailStopOwner::Joined(failure.into_reset().into_clocked(), membership),
+                    power,
+                    coex,
                 ));
             }
         };
@@ -736,6 +864,8 @@ impl Ieee802154System {
                 return Err(stop_fail_stop(
                     error,
                     FailStopOwner::Joined(clocked, failure.into_membership()),
+                    power,
+                    coex,
                 ));
             }
         };
@@ -745,6 +875,8 @@ impl Ieee802154System {
             return Err(stop_fail_stop(
                 Ieee802154StopError::PhyClose(error),
                 FailStopOwner::Clocked(clocked),
+                power,
+                coex,
             ));
         }
         let (lease, _, _) = guard.parts();
@@ -754,25 +886,57 @@ impl Ieee802154System {
                 return Err(stop_fail_stop(
                     Ieee802154StopError::Clocks(failure.error()),
                     FailStopOwner::Clocked(failure.into_owner()),
+                    power,
+                    coex,
                 ));
             }
         };
-        match powered.power_down(lease) {
+        match powered.power_down(lease, power, &coex) {
             Ok(cold) => Ok(Ieee802154Parked {
                 partition: cold.into_partition(),
+                coex,
                 engine,
             }),
-            Err(failure) => Err(stop_fail_stop(
-                Ieee802154StopError::Power(failure.error()),
-                FailStopOwner::Powered(failure.into_owner()),
-            )),
+            Err(failure) => {
+                let error = Ieee802154StopError::Power(failure.error());
+                let (powered, power) = failure.into_owner();
+                Err(stop_fail_stop(
+                    error,
+                    FailStopOwner::Powered(powered),
+                    power,
+                    coex,
+                ))
+            }
         }
     }
 }
 
-fn stop_fail_stop(error: Ieee802154StopError, owner: FailStopOwner) -> Ieee802154StopFailure {
+/// Leave coexistence with Wi-Fi when IEEE 802.15.4 takes part.
+async fn leave_coexistence<P, C: PlatformClockProvider>(
+    coex: Ieee802154Coex,
+    radio: &RadioSystem<P, C, EmbassyClock>,
+) -> Result<CoexAbsent<Ieee802154Client>, CoexLeaveFailure<Coexisting<Ieee802154Client>, CoexError>>
+{
+    match coex {
+        Ieee802154Coex::Absent(absent) => Ok(absent),
+        Ieee802154Coex::Coexisting(coexisting) => {
+            radio.lock().await.disable_ieee802154_coex(coexisting)
+        }
+    }
+}
+
+fn stop_fail_stop(
+    error: Ieee802154StopError,
+    owner: FailStopOwner,
+    power: CommonPower<Ieee802154Client>,
+    coex: CoexAbsent<Ieee802154Client>,
+) -> Ieee802154StopFailure {
     Ieee802154StopFailure {
         error,
-        owner: Err(Ieee802154FailStop { _owner: owner }),
+        owner: Err(Ieee802154FailStop {
+            _owner: owner,
+            _power: power,
+            _coex: coex,
+        }),
     }
 }

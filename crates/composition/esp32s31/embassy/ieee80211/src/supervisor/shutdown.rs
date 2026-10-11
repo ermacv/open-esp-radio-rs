@@ -63,12 +63,12 @@ impl Failure {
 }
 
 pub(super) struct ShutdownFrontier {
-    wifi: WifiStopped<EspHalWifiPlatform>,
+    wifi: WifiStopped<EspHalWifiPlatform, WifiMembership>,
     resources: Resources,
 }
 
 impl ShutdownFrontier {
-    pub(super) fn into_parts(self) -> (WifiStopped<EspHalWifiPlatform>, Resources) {
+    pub(super) fn into_parts(self) -> (WifiStopped<EspHalWifiPlatform, WifiMembership>, Resources) {
         (self.wifi, self.resources)
     }
 }

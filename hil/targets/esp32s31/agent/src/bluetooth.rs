@@ -114,11 +114,11 @@ async fn main(
     boot: u64,
 ) {
     let ConcurrentPartitions {
-        wifi: _wifi,
         bluetooth,
-        ieee802154: _ieee802154,
+        bluetooth_coex,
+        ..
     } = partitions;
-    let Ok(parked) = BluetoothParked::new(bluetooth, interrupts) else {
+    let Ok(parked) = BluetoothParked::new(bluetooth, bluetooth_coex, interrupts) else {
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-memory\r\n");
     };
     let (system, port) =

@@ -31,7 +31,8 @@ use crate::{
     owner::RadioRuntimeOwner,
     root::WifiPartition,
     shared_radio::{
-        CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
+        CoexAbsent, CommonPower, CommonPowerExitFailure, CommonRadioPowerError, ModemClockError,
+        PlatformClockProvider, SharedRadioLease, WifiClient,
     },
 };
 
@@ -139,31 +140,51 @@ impl WifiCold {
         self,
         lease: &mut SharedRadioLease<'_, T>,
         clocks: &impl PlatformClockProvider,
-    ) -> Result<WifiPowered, WifiTransitionFailure<Self, CommonRadioPowerError>> {
+    ) -> Result<
+        (WifiPowered, CommonPower<WifiClient>),
+        WifiTransitionFailure<Self, CommonRadioPowerError>,
+    > {
         match lease.enter_common_power(&self.registers.mac, clocks) {
-            Ok(()) => Ok(WifiPowered {
-                registers: self.registers,
-            }),
+            Ok(power) => Ok((
+                WifiPowered {
+                    registers: self.registers,
+                },
+                power,
+            )),
             Err(error) => Err(WifiTransitionFailure { owner: self, error }),
         }
     }
 }
 
 impl WifiPowered {
-    /// Leave common radio power; the last client restores the cold baseline.
+    /// Leave common radio power, outside coexistence (`coex`); the last
+    /// client restores the cold baseline.
     ///
     /// # Errors
     ///
-    /// The baseline did not read back; the client stays entered.
+    /// The baseline did not read back; the client stays entered and keeps
+    /// its owner and proof.
+    #[allow(
+        clippy::type_complexity,
+        reason = "the failure returns the owner beside its power proof"
+    )]
     pub fn power_down<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
-    ) -> Result<WifiCold, WifiTransitionFailure<Self, CommonRadioPowerError>> {
-        match lease.exit_common_power(&self.registers.mac) {
+        power: CommonPower<WifiClient>,
+        coex: &CoexAbsent<WifiClient>,
+    ) -> Result<
+        WifiCold,
+        WifiTransitionFailure<(Self, CommonPower<WifiClient>), CommonRadioPowerError>,
+    > {
+        match lease.exit_common_power(&self.registers.mac, power, coex) {
             Ok(()) => Ok(WifiCold {
                 registers: self.registers,
             }),
-            Err(error) => Err(WifiTransitionFailure { owner: self, error }),
+            Err(CommonPowerExitFailure { power, error }) => Err(WifiTransitionFailure {
+                owner: (self, power),
+                error,
+            }),
         }
     }
 

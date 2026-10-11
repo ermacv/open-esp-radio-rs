@@ -11,4 +11,4 @@ image = "correctness"
 kind = "role"
 link = { phy = "ht40", access_point_security = "wpa3-personal" }
 timeout_seconds = 90
-operation = { kind = "restart", cycles = 1 }
+operation = { kind = "restart", cycles = 1, rf = "closed-and-woken" }

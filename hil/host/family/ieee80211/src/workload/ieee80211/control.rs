@@ -51,6 +51,8 @@ pub(super) mod data_path;
 pub struct Config {
     pub timeout: Duration,
     pub restart_cycles: u8,
+    /// What each restart must do to shared RF.
+    pub restart_rf: WifiRadioRestartRf,
     pub monitor_duration: Duration,
     pub monitor_channel: Option<u8>,
     pub snapshot_length: u16,
@@ -117,7 +119,7 @@ fn qualify(
                     options.timeout,
                 )
                 .map(|completed| completed.0)?;
-            require_radio_restart(stopped, restarted)?;
+            require_radio_restart(stopped, restarted, options.restart_rf)?;
             eprintln!(
                 "wifi_radio_restart_cycle={cycle} generation={} rf={:?}",
                 restarted.generation, restarted.rf,
@@ -626,6 +628,7 @@ impl Default for Config {
         Self {
             timeout: DEFAULT_TIMEOUT,
             restart_cycles: 1,
+            restart_rf: WifiRadioRestartRf::ClosedAndWoken,
             monitor_duration: DEFAULT_MONITOR_DURATION,
             monitor_channel: None,
             snapshot_length: 256,
@@ -636,6 +639,7 @@ impl Default for Config {
 fn require_radio_restart(
     stopped: WifiRoleTransitionEvidence,
     restarted: WifiRadioRestartEvidence,
+    expected_rf: WifiRadioRestartRf,
 ) -> Result<()> {
     let expected_generation = stopped.generation.wrapping_add(1);
     if restarted.generation != expected_generation {
@@ -645,11 +649,11 @@ fn require_radio_restart(
         )
         .into());
     }
-    // Wi-Fi is the only client of this image's shared radio: its release must
-    // close RF, and the rejoin must wake it.
-    if restarted.rf != WifiRadioRestartRf::ClosedAndWoken {
+    // As the last PHY client Wi-Fi's release closes RF and the rejoin wakes
+    // it; beside another client RF stays open.
+    if restarted.rf != expected_rf {
         return Err(format!(
-            "idle radio restart kept RF open ({:?}) although Wi-Fi was the last PHY client",
+            "idle radio restart left RF {:?}, expected {expected_rf:?}",
             restarted.rf,
         )
         .into());

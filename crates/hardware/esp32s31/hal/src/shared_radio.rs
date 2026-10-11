@@ -39,11 +39,16 @@ use oer_esp32s31_pac::{
     Ieee802154TaskRegisters, RadioPhyRegisters, SharedRadioRegisters, WifiRadioRegisters,
 };
 
-pub use crate::clock::{CommonRadioPowerError, RadioClient};
+pub use crate::clock::{
+    BluetoothClient, CommonPower, CommonPowerExitFailure, CommonRadioPowerError, Ieee802154Client,
+    RadioClient, RadioClientKind, WifiClient,
+};
 use crate::coex::{
     CoexEventId, CoexPti, CoexPtiTable, CoexTimerBank, PHY_GRANT_PROTECT_EVENT, PhyGrantProtect,
     PhyGrantProtectError,
 };
+use crate::coex_participation::CoexParticipants;
+pub use crate::coex_participation::{CoexAbsent, Coexisting, ExternalCoexistence};
 use crate::power::clock::{
     ModemClockLease, ModemClockModule, ModemClockPlanner, ModemClockPlannerIdentity,
     ModemPlatformClocks, PoisonedModemClockAcquire, PoisonedModemClockRelease, execute_acquire,
@@ -76,20 +81,22 @@ const fn client_bit(client: RadioClient) -> u8 {
 /// Only the protocol register sets implement it, so a caller cannot enter or
 /// leave common power on behalf of a protocol whose registers it lacks.
 pub trait RadioClientOwner: sealed::RadioClientOwner {
-    const CLIENT: RadioClient;
+    /// The client these registers belong to.
+    type Client: RadioClientKind;
+    const CLIENT: RadioClient = <Self::Client as RadioClientKind>::CLIENT;
 }
 
 impl sealed::RadioClientOwner for WifiRadioRegisters {}
 impl RadioClientOwner for WifiRadioRegisters {
-    const CLIENT: RadioClient = RadioClient::Wifi;
+    type Client = WifiClient;
 }
 impl sealed::RadioClientOwner for BluetoothTaskRegisters {}
 impl RadioClientOwner for BluetoothTaskRegisters {
-    const CLIENT: RadioClient = RadioClient::Bluetooth;
+    type Client = BluetoothClient;
 }
 impl sealed::RadioClientOwner for Ieee802154TaskRegisters {}
 impl RadioClientOwner for Ieee802154TaskRegisters {
-    const CLIENT: RadioClient = RadioClient::Ieee802154;
+    type Client = Ieee802154Client;
 }
 
 /// Protocol register owner that may use the shared BTBB baseband.
@@ -134,6 +141,7 @@ struct SharedRadioState<T> {
     /// The low-power timer gate reference while Bluetooth selects its clock.
     bluetooth_low_power_clock: Option<PlatformClockGuard>,
     external_coex: Option<crate::coex::ExternalCoexConfig>,
+    coex_participants: CoexParticipants,
     attachment: T,
 }
 
@@ -307,6 +315,7 @@ impl<T> SharedRadio<T> {
                 phy_grant_protected: false,
                 bluetooth_low_power_clock: None,
                 external_coex: None,
+                coex_participants: CoexParticipants::default(),
                 attachment,
             }),
         }
@@ -657,6 +666,9 @@ impl<T> SharedRadioLease<'_, T> {
     /// analog-I2C references from `clocks`; ESP-HAL alone writes those shared
     /// gates.
     ///
+    /// The returned proof is the client's membership; only
+    /// [`Self::exit_common_power`] consumes it.
+    ///
     /// # Errors
     ///
     /// The client already holds power, or the first client's sequence failed
@@ -665,11 +677,34 @@ impl<T> SharedRadioLease<'_, T> {
         &mut self,
         _owner: &O,
         clocks: &impl PlatformClockProvider,
-    ) -> Result<(), CommonRadioPowerError> {
+    ) -> Result<CommonPower<O::Client>, CommonRadioPowerError> {
         let state = self.state_mut();
         state
             .power
-            .enter(state.registers.radio_phy_mut(), clocks, O::CLIENT)
+            .enter::<O::Client>(state.registers.radio_phy_mut(), clocks)
+    }
+
+    /// How many radios take part in coexistence.
+    pub fn coex_participant_count(&self) -> u32 {
+        self.state().coex_participants.count()
+    }
+
+    /// Enter client `K` into the coexistence participant set; returns how
+    /// many take part now. The radio system applies the coexistence policy.
+    pub fn enter_coex<K: RadioClientKind>(
+        &mut self,
+        absent: CoexAbsent<K>,
+    ) -> (Coexisting<K>, u32) {
+        self.state_mut().coex_participants.enter_client(absent)
+    }
+
+    /// Leave client `K` from the coexistence participant set; returns how
+    /// many still take part.
+    pub fn leave_coex<K: RadioClientKind>(
+        &mut self,
+        coexisting: Coexisting<K>,
+    ) -> (CoexAbsent<K>, u32) {
+        self.state_mut().coex_participants.leave_client(coexisting)
     }
 
     /// Leave common radio power as the protocol that owns `owner`.
@@ -680,15 +715,17 @@ impl<T> SharedRadioLease<'_, T> {
     ///
     /// # Errors
     ///
-    /// The client does not hold power, or the baseline did not read back; the
-    /// client then stays entered so the exit can be retried. Releasing a
-    /// platform reference gives its guard back explicitly and cannot fail.
+    /// The baseline did not read back; the client then stays entered and the
+    /// proof is returned so the exit can be retried. Releasing a platform
+    /// reference gives its guard back explicitly and cannot fail.
     pub fn exit_common_power<O: RadioClientOwner>(
         &mut self,
         _owner: &O,
-    ) -> Result<(), CommonRadioPowerError> {
+        power: CommonPower<O::Client>,
+        _coex: &CoexAbsent<O::Client>,
+    ) -> Result<(), CommonPowerExitFailure<O::Client>> {
         let state = self.state_mut();
-        state.power.exit(state.registers.radio_phy_mut(), O::CLIENT)
+        state.power.exit(state.registers.radio_phy_mut(), power)
     }
 
     /// Whether `client` currently holds the shared BTBB baseband.
@@ -927,6 +964,9 @@ impl<T> SharedRadioLease<'_, T> {
     /// work mode and grant (`esp_coex_external_params`), then the priorities
     /// and the enable of `esp_coex_external_set`.
     ///
+    /// The returned [`ExternalCoexistence`] takes part in coexistence until
+    /// [`Self::stop_external_coex`], with how many radios take part now.
+    ///
     /// # Errors
     ///
     /// External coexistence already runs, or the module clock failed; no
@@ -935,7 +975,7 @@ impl<T> SharedRadioLease<'_, T> {
         &mut self,
         config: crate::coex::ExternalCoexConfig,
         platform: &impl PlatformClockProvider,
-    ) -> Result<(), crate::coex::ExternalCoexError> {
+    ) -> Result<(ExternalCoexistence, u32), crate::coex::ExternalCoexError> {
         if self.state().external_coex.is_some() {
             return Err(crate::coex::ExternalCoexError::AlreadyActive);
         }
@@ -948,7 +988,7 @@ impl<T> SharedRadioLease<'_, T> {
         registers.publish_external_coex_priorities(config.role, config.wires, config.priorities());
         registers.set_external_coex_enabled(true);
         state.external_coex = Some(config);
-        Ok(())
+        Ok(state.coex_participants.enter_external())
     }
 
     /// Stop external coexistence, the register half of
@@ -957,17 +997,24 @@ impl<T> SharedRadioLease<'_, T> {
     ///
     /// # Errors
     ///
-    /// External coexistence does not run, or the planner rejected releasing
-    /// the module clock after the registers were stopped.
-    pub fn stop_external_coex(&mut self) -> Result<(), crate::coex::ExternalCoexError> {
+    /// The planner rejected releasing the module clock after the registers
+    /// were stopped; external coexistence left the
+    /// participant set either way. On success it returns how many radios
+    /// still take part.
+    pub fn stop_external_coex(
+        &mut self,
+        external: ExternalCoexistence,
+    ) -> Result<u32, crate::coex::ExternalCoexError> {
         let state = self.state_mut();
-        let Some(config) = state.external_coex.take() else {
-            return Err(crate::coex::ExternalCoexError::NotActive);
-        };
-        state.registers.clear_external_coex_priorities(config.role);
-        state.registers.set_external_coex_enabled(false);
+        let remaining = state.coex_participants.leave_external(external);
+        // Only a started external coexistence issues the proof.
+        if let Some(config) = state.external_coex.take() {
+            state.registers.clear_external_coex_priorities(config.role);
+            state.registers.set_external_coex_enabled(false);
+        }
         self.disable_slot(EXTERNAL_COEX_SLOT)
-            .map_err(crate::coex::ExternalCoexError::Clock)
+            .map_err(crate::coex::ExternalCoexError::Clock)?;
+        Ok(remaining)
     }
 
     /// The running external coexistence, if any.

@@ -40,7 +40,8 @@ impl Client {
             oer_esp32s31_radio_system::start(spawner, platform, start).ok()?;
         crate::product_hil::phy_register_image::adopt(radio);
         let defaults = Ieee802154PibDefaults::default();
-        let parked = Ieee802154Parked::new(partitions.ieee802154, defaults)?;
+        let parked =
+            Ieee802154Parked::new(partitions.ieee802154, partitions.ieee802154_coex, defaults)?;
         Some((Self { radio, defaults }, parked))
     }
 

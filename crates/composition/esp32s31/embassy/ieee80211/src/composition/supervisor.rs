@@ -280,6 +280,7 @@ where
 pub async fn drive_esp32s31_monitor_role<
     'runtime,
     P,
+    Membership,
     R,
     M,
     S,
@@ -296,14 +297,14 @@ pub async fn drive_esp32s31_monitor_role<
     endpoint: &mut WifiSupervisorEndpoint<'_, M, E>,
     controller: &mut MonitorController<'runtime, M>,
     radio: &oer_esp32s31_radio_runtime::RadioSystem<RP, RC, D>,
-    task: MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    task: MonitorTask<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     channel_policy: MonitorChannelPolicy,
     observer: &mut O,
     reject_while_active: Reject,
 ) -> WifiActiveRoleExit<
     MonitorTaskExit<
-        MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-        MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        MonitorStopped<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        MonitorTask<'runtime, P, Membership, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         R::Error,
     >,
 >

@@ -12,4 +12,4 @@ image = "correctness"
 kind = "role"
 link = { phy = "ht40" }
 timeout_seconds = 90
-operation = { kind = "restart", cycles = 3 }
+operation = { kind = "restart", cycles = 3, rf = "closed-and-woken" }

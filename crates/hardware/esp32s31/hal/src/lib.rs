@@ -31,6 +31,8 @@ pub mod bluetooth;
 
 mod clock;
 
+mod coex_participation;
+
 pub mod coex;
 
 pub mod power;

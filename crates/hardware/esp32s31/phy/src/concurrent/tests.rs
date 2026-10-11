@@ -62,11 +62,11 @@ fn clients_share_one_domain_and_leave_it_one_by_one() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
+        enter_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
         Ok(ConcurrentAcquire::Settled)
     );
     assert_eq!(
-        acquire_client(
+        enter_client(
             &mut lease,
             RadioClient::Bluetooth,
             &VirtualClock::<8>::new()
@@ -80,7 +80,7 @@ fn clients_share_one_domain_and_leave_it_one_by_one() {
     assert!(snapshot.contains(RadioClient::Wifi));
     assert!(snapshot.contains(RadioClient::Bluetooth));
     assert!(matches!(
-        acquire_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
+        enter_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
         Err(ConcurrentPhyError::Acquire(_))
     ));
 
@@ -100,7 +100,7 @@ fn an_unregistered_domain_rejects_every_client_operation() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
+        phy_ready(&mut lease).map(|_| ()),
         Err(ConcurrentPhyError::NotRegistered)
     );
     assert_eq!(
@@ -120,7 +120,7 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
+        enter_client(&mut lease, RadioClient::Wifi, &VirtualClock::<8>::new()),
         Ok(ConcurrentAcquire::Settled)
     );
     assert_eq!(
@@ -139,7 +139,7 @@ fn due_tracking_blocks_clients_until_maintenance_is_admitted() {
     );
     assert!(lease.attachment().tracking_pending());
     assert_eq!(
-        acquire_client(
+        enter_client(
             &mut lease,
             RadioClient::Bluetooth,
             &VirtualClock::<8>::new()
@@ -177,7 +177,7 @@ fn the_vendor_policy_ignores_proofs_and_still_needs_pending_tracking() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(
-        acquire_client(
+        enter_client(
             &mut lease,
             RadioClient::Ieee802154,
             &VirtualClock::<8>::new()
@@ -275,7 +275,7 @@ fn a_closed_domain_admits_no_client_until_rf_wakes() {
         Some(true)
     );
     assert_eq!(
-        acquire_client(
+        enter_client(
             &mut lease,
             RadioClient::Ieee802154,
             &VirtualClock::<8>::new()
@@ -310,7 +310,7 @@ fn rf_closes_only_after_the_last_client_left() {
         Err(ConcurrentPhyError::RfOpen)
     ));
     assert_eq!(
-        acquire_client(
+        enter_client(
             &mut lease,
             RadioClient::Bluetooth,
             &VirtualClock::<8>::new()
@@ -354,4 +354,16 @@ fn the_final_state_cache_follows_the_registered_domain_across_rf_close() {
             .unwrap_or_else(|_| panic!("a registered domain exports its state"));
         assert_eq!(cache.identity(), identity);
     }
+}
+
+/// Enter `client` with a proof for the lease's registration.
+fn enter_client(
+    lease: &mut oer_esp32s31_hal::shared_radio::SharedRadioLease<
+        '_,
+        crate::concurrent::ConcurrentPhy,
+    >,
+    client: oer_esp32s31_hal::shared_radio::RadioClient,
+    clock: &impl oer_time::Clock,
+) -> Result<crate::concurrent::ConcurrentAcquire, crate::concurrent::ConcurrentPhyError> {
+    crate::concurrent::acquire_client(lease, client, clock)
 }

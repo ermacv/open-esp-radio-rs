@@ -210,8 +210,13 @@ bluetooth = ["oer-esp32s31-bluetooth"]
 [gate]
 validation-probes = ["oer-esp32s31-bluetooth"]
 # Borrowed DMA memory needs `unsafe`: the SoC adapter's doctests run on the
-# chip target.
-doctests = [{ package = "oer-esp32s31-soc-esp-hal", features = "axi-gdma-mem2mem" }]
+# chip target. The Wi-Fi and Bluetooth drivers' owner rules hold only for the
+# chip, so their compile-fail tests and twins build there too.
+doctests = [
+    { package = "oer-esp32s31-soc-esp-hal", features = "axi-gdma-mem2mem" },
+    { package = "oer-esp32s31-ieee80211", features = "" },
+    { package = "oer-esp32s31-bluetooth", features = "" },
+]
 host-tests = ["examples/esp32s31/access-point"]
 # esp-hal's interrupt routes stay the image's table.
 static-interrupts = true

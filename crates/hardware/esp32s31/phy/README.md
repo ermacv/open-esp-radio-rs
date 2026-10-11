@@ -188,8 +188,11 @@ serialized by one mechanism:
   runs it for the shared radio.
 
 IEEE 802.15.4 composes these steps in [its client module](src/ieee802154_client.rs).
-`join_ieee802154` runs on the HAL `Ieee802154Clocked` owner: it checks that the
-settled registration still describes the lease, acquires the client, takes the
+`join_ieee802154` runs on the HAL `Ieee802154Clocked` owner and consumes a
+`PhyReady` proof (`phy_ready`: the domain registered, RF open and settled,
+its registration describing the lease, which the proof borrows until the
+join gives it back); every client's entry into the client set consumes one,
+so no client enters a domain that is not ready. It acquires the client, takes the
 shared BTBB reference with the gain byte projected from that registration and
 applies the transmit-on delay, issuing an affine `Ieee802154PhyMembership`.
 `RegisteredIeee802154Operational` keeps the membership beside the operational

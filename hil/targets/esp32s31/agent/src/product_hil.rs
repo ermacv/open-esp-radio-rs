@@ -1965,6 +1965,7 @@ pub async fn run(
         spawner,
         radio,
         partitions.bluetooth,
+        partitions.bluetooth_coex,
         bluetooth_interrupts,
         bluetooth_address,
         bluetooth_entropy,
@@ -1978,6 +1979,7 @@ pub async fn run(
     } = await_stack_boundary!(oer_esp32s31_ieee80211_system::new(
         radio,
         partitions.wifi,
+        partitions.wifi_coex,
         wifi_platform,
         trng,
         config

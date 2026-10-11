@@ -367,6 +367,22 @@ impl LeConnectionTimingTransition {
     }
 }
 
+/// How the event one interval after the last one follows it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeFollowingEvent {
+    /// One interval of the timing in force.
+    Unchanged(LeConnectionTiming),
+    /// The event is a Connection Update's instant: one interval of the
+    /// previous timing, then the updated window offset, listening across the
+    /// updated transmit window.
+    Instant {
+        /// The timing before the instant.
+        previous: LeConnectionTiming,
+        /// The timing from the instant on.
+        updated: LeConnectionTiming,
+    },
+}
+
 /// How the intervals of one recurring step divide around a connection
 /// update's instant: `before` intervals of the previous timing reach the
 /// instant, then `after` intervals of the updated timing follow, together
@@ -945,6 +961,17 @@ impl LePeripheralConnection {
         }
     }
 
+    /// The timing of the event `target`, one interval after the last one.
+    const fn following(&self, target: u16) -> LeFollowingEvent {
+        match self.connection_update_for_target(target, 0) {
+            Some((update, _)) => LeFollowingEvent::Instant {
+                previous: self.request.timing,
+                updated: update.timing,
+            },
+            None => LeFollowingEvent::Unchanged(self.request.timing),
+        }
+    }
+
     const fn apply_connection_update_for_target(
         &mut self,
         target: u16,
@@ -1037,6 +1064,12 @@ impl LePeripheralConnectionEventInFlight {
         self.prepared.channel()
     }
 
+    /// How the event after this one follows it, without completing it.
+    pub const fn following_event(&self) -> LeFollowingEvent {
+        let connection = &self.prepared.connection;
+        connection.following(connection.event_counter.wrapping_add(1))
+    }
+
     /// Advance exactly once after the paired lower owner proves the event closed.
     ///
     /// Both an observed peer packet and a missed event commit the same channel
@@ -1108,6 +1141,13 @@ impl LePeripheralConnectionEventCompleted {
 
     pub const fn timing(&self) -> LeConnectionTiming {
         self.connection.request.timing()
+    }
+
+    /// How the next event follows the closed one, without preparing it:
+    /// [`Self::prepare_recurring_event`] of one interval previews the same.
+    pub const fn following_event(&self) -> LeFollowingEvent {
+        // The successor already holds the next event's counter.
+        self.connection.following(self.connection.event_counter)
     }
 
     pub const fn event_counter(&self) -> u16 {

@@ -625,9 +625,9 @@ impl<T> SharedRadioLease<'_, T> {
 
     /// Leave common radio power as the protocol that owns `owner`.
     ///
-    /// The last client drops the platform's analog-I2C reference, restores
-    /// the cold-power baseline captured before the first power edge and then
-    /// drops the 160 MHz reference.
+    /// The last client gives back the platform's analog-I2C reference,
+    /// restores the cold-power baseline captured before the first power edge
+    /// and then gives back the 160 MHz and MPLL references.
     ///
     /// # Errors
     ///

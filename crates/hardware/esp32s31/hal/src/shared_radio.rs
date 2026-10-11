@@ -137,6 +137,19 @@ struct SharedRadioState<T> {
     attachment: T,
 }
 
+impl<T> SharedRadioState<T> {
+    /// The platform clock references the radio holds: common power, the
+    /// modem clock dependencies (also while poisoned) and the Bluetooth
+    /// low-power timer gate.
+    fn platform_clock_holds(&self) -> PlatformClockHolds {
+        let mut holds = PlatformClockHolds::default();
+        self.power.count_platform_clocks(&mut holds);
+        self.modem_platform_clocks.count_into(&mut holds);
+        holds.count(self.bluetooth_low_power_clock.as_ref());
+        holds
+    }
+}
+
 /// Identity of the one concurrent planner epoch; the radio is a singleton.
 static CONCURRENT_CLOCK_IDENTITY: ModemClockPlannerIdentity = ModemClockPlannerIdentity::new();
 
@@ -382,6 +395,12 @@ impl<T> SharedRadio<T> {
                 SharedRadioReleaseError::Restore(error),
             ));
         }
+        if !state.platform_clock_holds().is_empty() {
+            return Err((
+                Self::from_state(state),
+                SharedRadioReleaseError::PlatformClocksHeld,
+            ));
+        }
         Ok((state.registers, state.phy, state.attachment))
     }
 
@@ -416,6 +435,35 @@ impl<T> SharedRadio<T> {
     #[doc(hidden)]
     pub fn hold_phy_grant_protect_for_validation(&mut self) {
         self.state.get_mut().phy_grant_protected = true;
+    }
+
+    /// Keep every platform clock reference the radio holds on until a chip
+    /// reset, and forget them: the explicit end of a terminal validation
+    /// image or test that drops its shared radio. Each guard ends with
+    /// `abandon`, so none is dropped.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn abandon_platform_clocks(&mut self) {
+        let state = self.state.get_mut();
+        state.power.abandon_platform_clocks();
+        core::mem::take(&mut state.modem_platform_clocks).abandon();
+        if let Some(guard) = state.bluetooth_low_power_clock.take() {
+            guard.abandon();
+        }
+    }
+
+    /// Take a platform reference into common power as a failed power
+    /// sequence leaves it.
+    #[cfg(test)]
+    pub(crate) fn hold_platform_clock_for_test(
+        &mut self,
+        clock: PlatformClock,
+        platform: &impl PlatformClockProvider,
+    ) {
+        self.state
+            .get_mut()
+            .power
+            .hold_platform_clock_for_test(clock, platform);
     }
 
     #[cfg(test)]
@@ -544,6 +592,11 @@ pub enum SharedRadioReleaseError {
     BluetoothLowPowerClockSelected,
     /// External coexistence still runs.
     ExternalCoexActive,
+    /// The radio still holds a platform clock reference no client accounts
+    /// for, such as the sources a failed common power sequence took. The
+    /// reunion waits, as for the other holds: a retried power-up reuses
+    /// those sources, and its client's exit gives them back.
+    PlatformClocksHeld,
     /// A PHY calibration still owns a restore obligation.
     Restore(crate::root::RadioPhyReleaseError),
 }
@@ -591,12 +644,7 @@ impl<T> SharedRadioLease<'_, T> {
     /// modem clock dependencies (also while poisoned) and the Bluetooth
     /// low-power timer gate.
     pub fn platform_clock_holds(&self) -> PlatformClockHolds {
-        let state = self.state();
-        let mut holds = PlatformClockHolds::default();
-        state.power.count_platform_clocks(&mut holds);
-        state.modem_platform_clocks.count_into(&mut holds);
-        holds.count(state.bluetooth_low_power_clock.as_ref());
-        holds
+        self.state().platform_clock_holds()
     }
 
     /// Enter common radio power as the protocol that owns `owner`.

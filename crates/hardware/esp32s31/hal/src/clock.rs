@@ -110,8 +110,8 @@ impl PlatformClockRefs {
         }
     }
 
-    /// End a test's owner, keeping every reference it still holds on.
-    #[cfg(test)]
+    /// Keep every reference still held on, and forget it.
+    #[cfg(any(test, feature = "validation-probes"))]
     fn abandon(self) {
         for guard in [self.pll_f160m, self.analog_i2c, self.mpll]
             .into_iter()
@@ -171,8 +171,27 @@ pub(crate) struct CommonRadioPower {
 impl CommonRadioPower {
     /// End a test's owner, keeping every reference it still holds on.
     #[cfg(test)]
-    pub(crate) fn abandon_for_test(self) {
-        self.refs.abandon();
+    pub(crate) fn abandon_for_test(mut self) {
+        self.abandon_platform_clocks();
+    }
+
+    /// Keep every platform reference still held on until a chip reset, and
+    /// forget it: common power is fail-stop from here.
+    #[cfg(any(test, feature = "validation-probes"))]
+    pub(crate) fn abandon_platform_clocks(&mut self) {
+        core::mem::take(&mut self.refs).abandon();
+    }
+
+    /// Take a platform reference as a failed power sequence leaves it.
+    #[cfg(test)]
+    pub(crate) fn hold_platform_clock_for_test(
+        &mut self,
+        clock: PlatformClock,
+        platform: &impl PlatformClockProvider,
+    ) {
+        self.refs
+            .acquire(clock, platform)
+            .unwrap_or_else(|_| panic!("granted"));
     }
 }
 

@@ -252,9 +252,10 @@ impl ModemPlatformClocks {
         }
     }
 
-    /// End a test's owner, keeping every reference it still holds on.
-    #[cfg(test)]
-    pub(crate) fn abandon_for_test(self) {
+    /// Keep every reference still held on until a chip reset, and forget
+    /// it.
+    #[cfg(any(test, feature = "validation-probes"))]
+    pub(crate) fn abandon(self) {
         for guard in [self.pll_f160m, self.analog_i2c, self.coexistence]
             .into_iter()
             .flatten()

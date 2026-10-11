@@ -88,6 +88,30 @@ fn a_concurrent_split_reunites_and_retires_the_registration() {
     assert!(third != first && third != second);
 }
 
+/// The checked teardown waits for a failed power sequence: while common
+/// power still holds the sources it took, the shared radio is not reunited,
+/// so it never drops those references.
+#[test]
+fn reunion_waits_for_platform_clocks_a_failed_power_sequence_kept() {
+    use crate::power::{PlatformClock, test_clocks::CountingPlatformClocks};
+    let platform = CountingPlatformClocks::new();
+    let (mut shared, partitions) = RadioHardware::for_validation().into_concurrent(());
+    shared.hold_platform_clock_for_test(PlatformClock::Pll160m, &platform);
+    let Err(failure) = RadioHardware::from_concurrent(shared, partitions) else {
+        panic!("common power still holds the 160 MHz source");
+    };
+    assert_eq!(
+        failure.error(),
+        super::ConcurrentReunionError::Shared(SharedRadioReleaseError::PlatformClocksHeld)
+    );
+    let (mut shared, _partitions) = failure.into_parts();
+    shared.abandon_platform_clocks();
+    assert_eq!(
+        crate::power::test_clocks::abandoned().0,
+        crate::power::test_clocks::holding(&[PlatformClock::Pll160m])
+    );
+}
+
 #[test]
 fn reunion_waits_for_common_power() {
     use crate::shared_radio::RadioClient;

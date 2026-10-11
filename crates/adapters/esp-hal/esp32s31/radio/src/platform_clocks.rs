@@ -21,7 +21,10 @@ use oer_esp32s31_hal::power::{
 ///
 /// It is a zero-size capability: ESP-HAL's counts are global, so each
 /// [`PlatformClockGuard`] it returns gives its reference back through
-/// [`PlatformClockGuard::release`] without borrowing the provider.
+/// [`PlatformClockGuard::release`] without borrowing the provider. An
+/// abandoned or dropped guard keeps ESP-HAL's reference, and the provider
+/// records nothing: the radio's one shared owner lives for the whole
+/// program.
 #[derive(Debug, Default)]
 // CAPABILITY: whole-radio-cold-power-and-clocks-shared-clock-lifetime
 pub struct EspHalRadioClocks {

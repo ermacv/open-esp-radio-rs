@@ -421,7 +421,9 @@ protocol:
 phases, the operations that conflict with work in flight: the lifecycle and
 a permanent channel move where the protocol has one (an IEEE 802.15.4
 request names its own channel). It lends the port out for one
-running phase: `split` returns the phase's one event consumer
+running phase: `split(&mut self)` returns `PhaseParts<'_, …>`, each part a
+`Lent` of that borrow, so the contract's signature, not a backend's types,
+binds every part to the phase. The parts are the phase's one event consumer
 (`RadioPortEvents`), one phase control for the radio-wide operations that
 only gate or tune admission while clients run (a Wi-Fi transmit gate,
 beacon-receive priority, EDCA, modem-sleep membership), and the protocol's

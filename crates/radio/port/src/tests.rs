@@ -280,7 +280,6 @@ struct Client<'m> {
     model: &'m Model,
     interface: u8,
 }
-struct Phase<'m>(&'m Model);
 /// The phase control borrows the owner, as every part does.
 struct Control<'m>(core::marker::PhantomData<&'m Model>);
 
@@ -307,15 +306,14 @@ fn end(model: &Model, id: Id, interface: u8) -> Result<(), CancelError> {
     Ok(())
 }
 
-impl RadioPortOwner for Owner<'_> {
+impl<'m> RadioPortOwner for Owner<'m> {
     type Event = u32;
     type Id = (u8, Id);
     type Domain = Port;
     type Fault = ();
-    type Split<'a>
-        = Phase<'a>
-    where
-        Self: 'a;
+    type Events = Events<'m>;
+    type Control = Control<'m>;
+    type Clients = [Client<'m>; 2];
 
     fn next_event(&mut self) -> impl Future<Output = PortResult<u32, EventsLost, ()>> + '_ {
         ready(match self.0.events.borrow_mut().pop_front() {
@@ -342,26 +340,13 @@ impl RadioPortOwner for Owner<'_> {
         ready(Ok(Ok(())))
     }
 
-    fn split(&mut self) -> Phase<'_> {
-        Phase(self.0)
-    }
-}
-
-impl<'m> RadioPortSplit for Phase<'m> {
-    type Fault = ();
-    type Events = Events<'m>;
-    type Control = Control<'m>;
-    type Clients = [Client<'m>; 2];
-
-    fn into_parts(self) -> PhaseParts<Events<'m>, Control<'m>, [Client<'m>; 2]> {
-        let client = |interface| Client {
-            model: self.0,
-            interface,
-        };
+    fn split(&mut self) -> PhaseParts<'_, Events<'m>, Control<'m>, [Client<'m>; 2]> {
+        let model = self.0;
+        let client = |interface| Client { model, interface };
         PhaseParts {
-            events: Events(self.0),
-            control: Control(core::marker::PhantomData),
-            clients: [client(0), client(1)],
+            events: Lent::new(Events(model)),
+            control: Lent::new(Control(core::marker::PhantomData)),
+            clients: Lent::new([client(0), client(1)]),
         }
     }
 }
@@ -418,9 +403,10 @@ fn a_phase_lends_clients_scoped_to_their_interface_and_its_leftovers_reach_the_o
     let leftover = {
         let PhaseParts {
             mut events,
-            clients: [station, access_point],
+            clients,
             ..
-        } = owner.split().into_parts();
+        } = owner.split();
+        let [station, access_point] = &*clients;
         station.admit(Id(1));
         access_point.admit(Id(2));
         // A client ends work once; a second cancel proves the work ended.
@@ -451,10 +437,8 @@ fn clients_of_one_kind_choose_the_same_identity_without_colliding() {
         events: core::cell::RefCell::default(),
     };
     let mut owner = Owner(&model);
-    let PhaseParts {
-        clients: [first, second],
-        ..
-    } = owner.split().into_parts();
+    let PhaseParts { clients, .. } = owner.split();
+    let [first, second] = &*clients;
     // The port identities the clients form stay apart.
     assert_ne!(first.port_id(Id(7)), second.port_id(Id(7)));
     // Two interfaces of one kind choose the same value: the backend keys

@@ -14,10 +14,10 @@
 //!
 //! - [`RadioPort`]: the base trait, with the event stream, the radio clock,
 //!   cancellation and the lifecycle.
-//! - [`RadioPortOwner`], [`RadioPortSplit`], [`RadioPortEvents`] and
+//! - [`RadioPortOwner`], [`PhaseParts`], [`Lent`], [`RadioPortEvents`] and
 //!   [`RadioPortClient`]: the one owner of an installed port, which takes
-//!   exclusive operations on `&mut` and lends running phases
-//!   ([`PhaseParts`]) of an event consumer, a phase control and
+//!   exclusive operations on `&mut` and lends running phases, each part a
+//!   [`Lent`] of that borrow: an event consumer, a phase control and
 //!   interface-scoped clients.
 //! - [`Poisoned`] and [`PortResult`]: the only outer error of a port call,
 //!   carrying the backend's cause; every refusal is the inner `Err`.
@@ -75,7 +75,7 @@ pub mod conformance;
 mod owner;
 mod relation;
 
-pub use owner::{PhaseParts, RadioPortClient, RadioPortEvents, RadioPortOwner, RadioPortSplit};
+pub use owner::{Lent, PhaseParts, RadioPortClient, RadioPortEvents, RadioPortOwner};
 pub use relation::{
     ClockInfo, ClockRelation, ClockSample, Generation, GenerationSource, Projected,
     ProjectionError, RadioStamp, RelationRate, RelationSample, Stamp,

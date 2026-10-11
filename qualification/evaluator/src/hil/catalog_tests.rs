@@ -48,6 +48,7 @@ fn nested_catalog_consumes_shared_serialized_documents() {
             scenario: "alpha-system".into(),
             checks: vec![],
             minimum_repetitions: 3,
+            bounds: Vec::new(),
         })
         .unwrap();
     assert!(
@@ -55,7 +56,8 @@ fn nested_catalog_consumes_shared_serialized_documents() {
             .validate_requirement(&HilRequirement {
                 scenario: "alpha-system".into(),
                 checks: vec![],
-                minimum_repetitions: 4
+                minimum_repetitions: 4,
+                bounds: Vec::new(),
             })
             .is_err()
     );
@@ -156,6 +158,7 @@ fn an_unsupported_scenario_stays_an_open_gap_with_its_reason() {
             scenario: "alpha-system".into(),
             checks: Vec::new(),
             minimum_repetitions: 1,
+            bounds: Vec::new(),
         },
         &catalog,
     );
@@ -185,6 +188,7 @@ fn programs_decide_scenario_roles_and_an_investigation_scenario_never_qualifies(
             scenario: "alpha-system".into(),
             checks: Vec::new(),
             minimum_repetitions: 1,
+            bounds: Vec::new(),
         },
         &catalog,
     );

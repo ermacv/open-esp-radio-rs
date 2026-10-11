@@ -22,8 +22,10 @@ never decide it. Reference: [README](README.md).
 - `implementation`, `host` and `async` are reviewed declarations; `vendor` and
   `hil` are derived from evidence. Never write a readiness claim in prose or
   a dated `PASS` table.
-- Requirements name HIL scenarios and named checks, never duplicate
-  thresholds ([HIL requirements](README.md#hil-requirements-and-scenario-roles)).
+- Requirements name HIL scenarios and named checks, never duplicate a
+  scenario's thresholds ([HIL requirements](README.md#hil-requirements-and-scenario-roles));
+  acceptance bounds on observed measurements live in the requirement
+  ([measurement bounds](README.md#measurement-bounds)).
 - Catalogs are large: grep for the capability ID, then read that entry.
 
 ## Commands (in the background)

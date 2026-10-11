@@ -261,14 +261,16 @@ evidence only when:
    of dirty state or commit identity, or its build binds a clean commit whose
    closure files are unchanged in the checkout;
 7. no current failure of that scenario or its repetitions remains;
-8. selected named checks satisfy their current criteria.
+8. selected named checks satisfy their current criteria;
+9. the requirement's [measurement bounds](../qualification/README.md#measurement-bounds)
+   hold on every such run of the scenario together.
 
 The evaluator checks recorded measurement verdicts against their original
 thresholds independently of the requested criteria. Sufficient numeric
 observations can be reassessed without a new experiment or alteration of the
 sealed run. Missing measurements remain missing. A changed criterion cannot
 rescue a failed lifecycle, and repetition sets cannot be assembled from several
-runs. An aggregate infrastructure failure does not erase an explicit failed
+runs; only measurement bounds sum every current run, without selecting any. An aggregate infrastructure failure does not erase an explicit failed
 repetition. Details are exposed in `hil_decisions` in the qualification report.
 
 An independently sealed attempt covers a whole scenario repetition set, not

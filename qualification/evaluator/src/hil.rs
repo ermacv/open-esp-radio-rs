@@ -1,5 +1,6 @@
 //! Independent consumption of immutable HIL run bundles.
 
+pub(crate) mod bound;
 mod checks;
 mod chips;
 mod closure;
@@ -68,6 +69,9 @@ pub(crate) struct HilRequirement {
     pub(crate) scenario: String,
     pub(crate) checks: Vec<String>,
     pub(crate) minimum_repetitions: u8,
+    /// Bounds on the measurements of every current applicable run of the
+    /// scenario together.
+    pub(crate) bounds: Vec<bound::Bound>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -159,6 +163,16 @@ impl ScenarioCatalog {
             {
                 return Err(format!(
                     "HIL requirement {} names duplicate or unsupported check {name}",
+                    requirement.scenario
+                )
+                .into());
+            }
+        }
+        let mut bounds = BTreeSet::new();
+        for bound in &requirement.bounds {
+            if !bounds.insert(bound.to_string()) {
+                return Err(format!(
+                    "HIL requirement {} names bound {bound} twice",
                     requirement.scenario
                 )
                 .into());

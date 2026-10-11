@@ -68,6 +68,7 @@ mod tests {
             scenario: "rx".into(),
             checks: vec!["udp.rx.target-rate".into()],
             minimum_repetitions: 1,
+            bounds: Vec::new(),
         };
         let mut changed = original.clone();
         changed["wifi"]["workload"]["criteria"]["minimum_rx_bps"] = json!(2000);
@@ -106,6 +107,7 @@ mod tests {
             scenario: "rx".into(),
             checks: vec!["udp.rx.target-rate".into()],
             minimum_repetitions: 1,
+            bounds: Vec::new(),
         };
         let mut profiled = original.clone();
         profiled["profile"] = json!({"harts":"both","period_us":1000});

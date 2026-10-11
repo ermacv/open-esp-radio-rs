@@ -500,6 +500,51 @@ references or `null`; those diagnostic rows do not replace the conjunction.
 The console exposes the same detail as `HIL-CHECK` rows. Absence means no
 eligible proof, not necessarily that the check has never been executed.
 
+### Measurement bounds
+
+A scenario defines its experiment and its own success; its named checks
+decide whether the run passed. Qualification additionally bounds what the run
+observed: a HIL requirement's `bounds` limit recorded measurement values the
+producer publishes without a verdict (owner decision on #363). Changing a
+bound touches no file of a run's closure, so collected evidence stays current
+and is judged again. The thresholds the existing named checks derive from
+scenario documents move to this mechanism in #554.
+
+```toml
+hil-requirements = [
+  { scenario = "bluetooth-trouble-secure-gatt", minimum-repetitions = 3, bounds = [
+    { ratio = { numerator = { name = "connections-not-established", unit = "count", semantics = 1, better = "lower" },
+                denominator = { name = "connection-attempts", unit = "count", semantics = 1 } },
+      over = "current-runs", at-most-basis-points = 1500, minimum-denominator = 45 },
+  ] },
+]
+```
+
+- **Quantity.** `measurement` bounds one measurement, in its own unit
+  (`at-most` or `at-least`); `ratio` bounds a numerator over a denominator in
+  basis points (`at-most-basis-points` or `at-least-basis-points`, at most
+  10000) and needs a positive `minimum-denominator`.
+- **Identity.** Each measurement is named with its unit, semantics version and
+  declared `better`; a repetition that lacks it, records it twice or with
+  another identity leaves it unavailable. The bounded measurement (a ratio's
+  numerator) must declare the direction its limit implies: `lower` for an
+  upper limit, `higher` for a lower one.
+- **Scope.** A bound is judged on every current applicable run of its
+  scenario together, never on a selected one: each run that is otherwise
+  complete (passed, enough repetitions, its named checks met, every bound
+  measurement recorded) joins, and runs whose sources changed drop out by
+  themselves. `over = "repetition"` holds in each of their repetitions;
+  `over = "current-runs"` holds on the sums over all of them, so a noisy run
+  averages out and rerunning until a lucky run proves nothing (owner decision
+  on #363).
+- **Decision.** A run that lacks a bound measurement, records it twice or
+  with another identity cannot join (`bound-measurements-unavailable`). A sum
+  below its minimum denominator, or outside the bound, leaves the obligation
+  missing; more current runs move it, and none is picked. Only a bound met by
+  all joined runs satisfies it, never an invented pass. `hil_decisions` lists
+  each bound and `bound_findings`, the joined runs with the values judged; the
+  evidence reference names those runs and the bounds they met.
+
 ### HIL decisions and source currency
 
 JSON `hil_decisions` explains each complete obligation: its applicability policy,

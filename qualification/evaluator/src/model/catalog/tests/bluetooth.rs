@@ -44,11 +44,7 @@ fn secure_gatt_requires_repeated_numeric_comparison_hil_but_retains_retirement_g
     assert_eq!(requirement.minimum_repetitions, 3);
     ScenarioCatalog::load(&root, Path::new("hil/scenarios"))
         .unwrap()
-        .validate_requirement(&crate::hil::HilRequirement {
-            scenario: requirement.scenario.clone(),
-            checks: requirement.checks.clone(),
-            minimum_repetitions: requirement.minimum_repetitions,
-        })
+        .validate_requirement(&requirement.validated(&product.id).unwrap())
         .unwrap();
 
     // A normal cold restart does not prove fault/cancellation disposition or

@@ -59,7 +59,8 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
                     &HilRequirement {
                         scenario: "station-reconnect".into(),
                         checks: vec![],
-                        minimum_repetitions: 1
+                        minimum_repetitions: 1,
+                        bounds: Vec::new(),
                     },
                     &ScenarioCatalog::default()
                 )

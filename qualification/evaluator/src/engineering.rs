@@ -90,6 +90,7 @@ pub(crate) struct HilRequirement {
     pub(crate) scenario: String,
     pub(crate) checks: Vec<String>,
     pub(crate) minimum_repetitions: u8,
+    pub(crate) bounds: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -282,12 +283,20 @@ impl ProjectMap {
             entry.hil_requirements = document
                 .hil_requirements
                 .iter()
-                .map(|r| HilRequirement {
-                    scenario: r.scenario.clone(),
-                    checks: r.checks.clone(),
-                    minimum_repetitions: r.minimum_repetitions,
+                .map(|r| {
+                    let context = format!("{} on {}", document.id, r.scenario);
+                    Ok(HilRequirement {
+                        scenario: r.scenario.clone(),
+                        checks: r.checks.clone(),
+                        minimum_repetitions: r.minimum_repetitions,
+                        bounds: r
+                            .bounds
+                            .iter()
+                            .map(|bound| Ok(bound.validated(&context)?.to_string()))
+                            .collect::<Result<_>>()?,
+                    })
                 })
-                .collect();
+                .collect::<Result<_>>()?;
             for (axis, reason) in [
                 ("vendor", &document.vendor_not_applicable),
                 ("hil", &document.hil_not_applicable),

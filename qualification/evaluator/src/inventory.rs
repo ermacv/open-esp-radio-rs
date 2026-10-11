@@ -629,10 +629,11 @@ fn hil_requirement_list(values: &[HilRequirement]) -> String {
             .iter()
             .map(|requirement| {
                 format!(
-                    "`{}` ×{}{}",
+                    "`{}` ×{}{}{}",
                     requirement.scenario,
                     requirement.minimum_repetitions,
-                    named_checks(&requirement.checks)
+                    named_checks(&requirement.checks),
+                    bounds(requirement.bounds.iter().map(ToString::to_string))
                 )
             })
             .collect::<Vec<_>>()
@@ -648,10 +649,17 @@ fn hil_requirement_document_list(values: &[HilRequirementDocument]) -> String {
             .iter()
             .map(|requirement| {
                 format!(
-                    "`{}` ×{}{}",
+                    "`{}` ×{}{}{}",
                     requirement.scenario,
                     requirement.minimum_repetitions,
-                    named_checks(&requirement.checks)
+                    named_checks(&requirement.checks),
+                    bounds(requirement.bounds.iter().map(|bound| {
+                        // The catalog's own check rejects an invalid bound;
+                        // the view names it rather than hiding it.
+                        bound
+                            .validated(&requirement.scenario)
+                            .map_or_else(|error| format!("invalid: {error}"), |b| b.to_string())
+                    }))
                 )
             })
             .collect::<Vec<_>>()
@@ -661,6 +669,15 @@ fn hil_requirement_document_list(values: &[HilRequirementDocument]) -> String {
 
 fn optional_reason(reason: Option<&str>) -> String {
     reason.map_or_else(|| "not declared".to_owned(), |reason| format!("`{reason}`"))
+}
+
+fn bounds(bounds: impl Iterator<Item = String>) -> String {
+    let bounds = bounds.collect::<Vec<_>>();
+    if bounds.is_empty() {
+        String::new()
+    } else {
+        format!(" bounds: {}", code_list(&bounds))
+    }
 }
 
 fn named_checks(checks: &[String]) -> String {
@@ -684,6 +701,22 @@ fn escape_table(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_requirement_view_names_its_bounds() {
+        let requirement: HilRequirementDocument = toml::from_str(
+            r#"
+            scenario = "gatt"
+            minimum-repetitions = 3
+            bounds = [{ measurement = { name = "connections-lost-before-att", unit = "count", semantics = 1, better = "lower" }, over = "repetition", at-most = 0 }]
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            hil_requirement_document_list(&[requirement]),
+            "`gatt` ×3 bounds: `connections-lost-before-att<=0count/repetition`"
+        );
+    }
 
     struct RenderRoot {
         path: PathBuf,

@@ -112,6 +112,7 @@ fn requirement() -> HilRequirement {
         scenario: "boot-smoke".into(),
         checks: vec![],
         minimum_repetitions: 1,
+        bounds: Vec::new(),
     }
 }
 

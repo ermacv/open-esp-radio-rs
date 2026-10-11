@@ -96,6 +96,7 @@ fn requirement(id: &str, count: u8) -> HilRequirement {
         scenario: id.into(),
         checks: vec![],
         minimum_repetitions: count,
+        bounds: Vec::new(),
     }
 }
 
@@ -622,6 +623,86 @@ fn completed_numeric_observation_is_reassessed_but_absence_is_not_a_failure() {
         EvidenceStatus::Satisfied
     );
     assert_eq!(index.scenarios[id][0].measurements[0][0], measurement);
+}
+
+#[test]
+fn a_bound_is_judged_on_every_current_run_together_and_never_invents_a_pass() {
+    let id = "gatt";
+    let catalog = ScenarioCatalog::default();
+    let mut bounded = requirement(id, 2);
+    bounded.bounds.push(
+        serde_json::from_value::<bound::BoundDocument>(json!({
+            "ratio": {
+                "numerator": { "name": "connections-not-established", "unit": "count", "semantics": 1, "better": "lower" },
+                "denominator": { "name": "connection-attempts", "unit": "count", "semantics": 1 },
+            },
+            "over": "current-runs",
+            "at-most-basis-points": 1_000,
+            "minimum-denominator": 30,
+        }))
+        .unwrap()
+        .validated("capability")
+        .unwrap(),
+    );
+    let repetition = |lost: u64, attempts: u64| {
+        vec![
+            json!({"name":"connection-attempts","value":attempts,"unit":"count","semantics":1,"better":null,"threshold":null,"verdict":null}),
+            json!({"name":"connections-not-established","value":lost,"unit":"count","semantics":1,"better":"lower","threshold":null,"verdict":null}),
+        ]
+    };
+    let mut index = HilEvidenceIndex::synthetic(&[(id, 2)]);
+    let decide = |index: &HilEvidenceIndex| index.decision_for(&bounded, &catalog);
+    // A run without the measurements cannot join: missing, not a pass.
+    assert_eq!(decide(&index).status, EvidenceStatus::Missing);
+    // A noisy run: 3 of 20 attempts, over the limit and below the sample.
+    let runs = index.scenarios.get_mut(id).unwrap();
+    runs[0].measurements = vec![repetition(2, 10), repetition(1, 10)];
+    let decision = decide(&index);
+    assert_eq!(decision.status, EvidenceStatus::Missing);
+    let findings = decision.bound_findings.as_ref().unwrap();
+    assert_eq!(
+        findings.findings[0].assessment,
+        bound::Assessment::InsufficientSample
+    );
+    // A second run joins it, unselected: 3 of 40 is within the limit, on
+    // enough attempts. The noisy run alone blocks nothing.
+    let mut later = index.scenarios[id][0].clone();
+    later.run_id = "synthetic-later".into();
+    later.started_unix_millis = 1;
+    later.measurements = vec![repetition(0, 10), repetition(0, 10)];
+    later.completion_seal = Some(CompletionSeal {
+        path: "attempts/gatt.json".into(),
+        sha256: "ab".repeat(32),
+    });
+    index.scenarios.get_mut(id).unwrap().push(later);
+    let decision = decide(&index);
+    assert_eq!(decision.status, EvidenceStatus::Satisfied, "{decision:?}");
+    assert_eq!(
+        decision.bound_findings.as_ref().unwrap().findings[0].values,
+        [(3, Some(40))]
+    );
+    assert_eq!(
+        decision.evidence,
+        Some(format!(
+            "hil:synthetic-gatt+synthetic-later/gatt:repetitions=4\
+                 :attempts=synthetic-later={}\
+                 :bounds=connections-not-established/connection-attempts<=1000bp/current-runs/min30",
+            "ab".repeat(32)
+        ))
+    );
+    // A worse run joins as well, and the sum leaves the bound: open again,
+    // never an unresolved failure that only a code change clears.
+    let mut worse = index.scenarios[id][1].clone();
+    worse.run_id = "synthetic-worse".into();
+    worse.started_unix_millis = 2;
+    worse.measurements = vec![repetition(5, 10), repetition(5, 10)];
+    index.scenarios.get_mut(id).unwrap().push(worse);
+    let decision = decide(&index);
+    assert_eq!(decision.status, EvidenceStatus::Missing);
+    assert_eq!(
+        decision.bound_findings.as_ref().unwrap().findings[0].assessment,
+        bound::Assessment::Failed
+    );
 }
 
 #[test]

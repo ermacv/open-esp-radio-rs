@@ -32,6 +32,7 @@ kind = "boot-smoke"
             scenario: "ble-direct-test".to_owned(),
             checks: vec![],
             minimum_repetitions: 3,
+            bounds: Vec::new(),
         })
         .unwrap();
     let error = catalog
@@ -39,6 +40,7 @@ kind = "boot-smoke"
             scenario: "ble-direct-test".to_owned(),
             checks: vec![],
             minimum_repetitions: 4,
+            bounds: Vec::new(),
         })
         .unwrap_err();
     assert!(error.to_string().contains("declares 3"));
@@ -298,6 +300,7 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
                     scenario: "station-reconnect".to_owned(),
                     checks: vec![],
                     minimum_repetitions: 2,
+                    bounds: Vec::new(),
                 },
                 &ScenarioCatalog::default()
             )
@@ -759,6 +762,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
         scenario: "station-reconnect".to_owned(),
         checks: vec![],
         minimum_repetitions: 2,
+        bounds: Vec::new(),
     };
     let (runs, evidence) = (Path::new("runs"), Path::new("evidence"));
     let repository = RepositoryState {
@@ -1031,6 +1035,7 @@ fn a_referenced_observer_build_is_the_only_stored_form() {
         scenario: "station-reconnect".to_owned(),
         checks: vec![],
         minimum_repetitions: 1,
+        bounds: Vec::new(),
     };
     let repository = RepositoryState {
         commit: "abc123".to_owned(),

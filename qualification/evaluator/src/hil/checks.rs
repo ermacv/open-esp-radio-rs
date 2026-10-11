@@ -304,6 +304,7 @@ mod tests {
             scenario: "station-ap-loss".into(),
             checks: vec!["wifi.station.control-responsive".into()],
             minimum_repetitions: 3,
+            bounds: Vec::new(),
         };
         catalog.validate_requirement(&requirement).unwrap();
         let mut index = HilEvidenceIndex::synthetic(&[(&requirement.scenario, 3)]);
@@ -327,6 +328,7 @@ mod tests {
             scenario: "udp-rx-he20-ceiling".into(),
             checks: vec!["wifi.station.control-responsive".into()],
             minimum_repetitions: 1,
+            bounds: Vec::new(),
         };
         assert!(catalog.validate_requirement(&requirement).is_err());
         requirement.checks = vec!["udp.rx.target-rate".into()];
@@ -345,6 +347,7 @@ mod tests {
                 "wifi.station.ap-loss-reconnected".into(),
             ],
             minimum_repetitions: 1,
+            bounds: Vec::new(),
         };
         let mut index = HilEvidenceIndex::synthetic(&[(&requirement.scenario, 1)]);
         let entries = index.scenarios.get_mut(&requirement.scenario).unwrap();

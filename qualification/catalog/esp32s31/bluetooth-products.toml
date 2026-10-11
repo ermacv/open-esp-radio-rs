@@ -135,7 +135,7 @@ source-paths = ["crates/adapters/trouble/bluetooth/gatt/src/security/gatt.rs", "
 [capabilities.development]
 knowledge = ["crates/adapters/trouble/bluetooth/gatt/src/security/gatt.rs"]
 gap-work = [
-  { gap = "secure-gatt-connection-establishment-loss-bound-unqualified", kind = "measurement-method", reason = "The GATT workloads retry a connection the DUT never received and publish connections-not-established; no accepted bound on that loss exists yet, and evaluating one over measurements is not supported (#357, #363)." },
+  { gap = "secure-gatt-connection-establishment-loss-bound-unqualified", kind = "measurement-method", reason = "The GATT workloads retry a connection the DUT never received and publish connections-not-established; a requirement bound can judge that loss over the current runs (#363), but no bound value is accepted yet (#357)." },
 ]
 
 [capabilities.catalog-scope]

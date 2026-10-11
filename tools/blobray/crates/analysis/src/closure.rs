@@ -183,7 +183,8 @@ impl Walker<'_, '_> {
                             continue;
                         }
                     }
-                    InstructionFlow::Indirect { base, offset, link } => {
+                    flow @ (InstructionFlow::Indirect { .. } | InstructionFlow::Return { .. }) => {
+                        let (base, offset, link) = flow.through_register().unwrap_or_default();
                         match previous.filter(|(register, _)| *register == base) {
                             Some((_, value)) => self.transfer(
                                 &mut f,
@@ -192,8 +193,7 @@ impl Walker<'_, '_> {
                                 value.wrapping_add_signed(offset),
                                 link,
                             ),
-                            // `jalr x0, 0(ra)` returns to the caller.
-                            None if !link && base == 1 && offset == 0 => {}
+                            None if matches!(flow, InstructionFlow::Return { .. }) => {}
                             None => match self.input.observed.get(&pc) {
                                 Some(targets) => {
                                     f.followed.insert(pc);
@@ -268,4 +268,122 @@ pub fn code_closure(
         functions.insert(entry, function);
     }
     Ok(functions.into_values().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two-byte instructions: `[1, r]` returns through `r`, `[2, r]` jumps
+    /// through `r`, `[3, r]` loads `r` with 0x1008, anything else stops.
+    struct Isa;
+    impl FunctionDecoder for Isa {
+        fn identity(&self) -> &'static str {
+            "test"
+        }
+        fn decode(&self, bytes: &[u8]) -> Option<DecodedOp> {
+            let base = bytes[1];
+            Some(DecodedOp {
+                length: 2,
+                text: String::new(),
+                flow: match bytes[0] {
+                    1 => InstructionFlow::Return { base },
+                    2 => InstructionFlow::Indirect {
+                        base,
+                        offset: 0,
+                        link: false,
+                    },
+                    3 => InstructionFlow::Next,
+                    _ => InstructionFlow::Stop,
+                },
+            })
+        }
+        fn reference(
+            &self,
+            _: &FunctionRelocation,
+            _: &[FunctionRelocation],
+            _: u32,
+            _: &mut dyn RunControl,
+        ) -> Result<NormalizedReference> {
+            unreachable!()
+        }
+    }
+    impl FunctionSemantics for Isa {
+        fn semantic_identity(&self) -> &'static str {
+            "test"
+        }
+        fn lift(&self, bytes: &[u8]) -> SemanticOp {
+            match bytes[0] {
+                3 => SemanticOp::Upper {
+                    dest: bytes[1],
+                    value: 0x1008,
+                    pc_relative: false,
+                },
+                _ => SemanticOp::None,
+            }
+        }
+        fn value_relocation(&self, _: &FunctionRelocation, _: SemanticOp) -> ValueRelocation {
+            unreachable!()
+        }
+    }
+
+    /// Code at 0x1000.
+    struct Code(Vec<u8>);
+    impl CodeMemory for Code {
+        fn code(&self, address: u32, bytes: &mut [u8; 4]) -> Option<usize> {
+            let at = usize::try_from(address.checked_sub(0x1000)?).ok()?;
+            let available = self.0.get(at..)?.len().min(4);
+            (available > 0).then(|| {
+                bytes[..available].copy_from_slice(&self.0[at..at + available]);
+                available
+            })
+        }
+    }
+
+    /// The closure of the one function at 0x1000, with `observed` targets
+    /// at its first instruction.
+    fn closure(code: &[u8], observed: &[u32]) -> ClosureFunction {
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let observed: BTreeMap<_, _> = (!observed.is_empty())
+            .then(|| (0x1000, observed.iter().copied().collect()))
+            .into_iter()
+            .collect();
+        let starts = BTreeSet::from([0x1000, 0x1008]);
+        let input = ClosureInput {
+            roots: &[0x1000],
+            boundaries: &BTreeSet::new(),
+            function_starts: &starts,
+            observed: &observed,
+            code: &Code(code.to_vec()),
+            semantics: &Isa,
+        };
+        code_closure(&input, &memory, &mut || Ok(()))
+            .unwrap()
+            .remove(0)
+    }
+
+    #[test]
+    fn a_return_through_either_link_register_is_neither_unresolved_nor_followed() {
+        for link in [1, 5] {
+            let function = closure(&[1, link], &[0x1008]);
+            assert!(function.unresolved.is_empty(), "x{link}");
+            assert!(function.followed.is_empty(), "x{link}");
+            assert!(function.callees.is_empty(), "x{link}");
+        }
+        // A jump through t0 that the decoder does not mark a return stays
+        // unresolved, or follows what execution observed.
+        assert_eq!(closure(&[2, 5], &[]).unresolved, [0x1000]);
+        let followed = closure(&[2, 5, 0, 0, 0, 0, 0, 0, 0, 0], &[0x1008]);
+        assert_eq!(
+            (followed.followed, followed.callees),
+            (vec![0x1000], vec![0x1008])
+        );
+    }
+
+    #[test]
+    fn a_return_through_a_register_just_loaded_is_a_transfer() {
+        // `lui t0, …; jr t0` goes where the upper immediate says.
+        let function = closure(&[3, 5, 1, 5, 0, 0, 0, 0, 0, 0], &[]);
+        assert_eq!(function.callees, [0x1008]);
+    }
 }

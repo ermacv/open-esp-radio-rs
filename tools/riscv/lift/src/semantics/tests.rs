@@ -76,14 +76,7 @@ fn stack_forms_decode_as_the_assembler_wrote_them() {
         assert_eq!(decoded.length, 2);
         let returns = text.starts_with("cm.popret");
         assert_eq!(
-            matches!(
-                decoded.flow,
-                InstructionFlow::Indirect {
-                    base: 1,
-                    offset: 0,
-                    link: false
-                }
-            ),
+            decoded.flow == InstructionFlow::Return { base: 1 },
             returns,
             "{text}"
         );

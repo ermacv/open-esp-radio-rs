@@ -613,7 +613,9 @@ code symbol's start is a tail call. The closure does not enter call-model
 binding addresses or goal symbols; those transfer sites are
 `modeled`. Indirect transfers with neither kind of target, typically ones that
 never executed, and direct transfers leaving executable captured code, are
-`unresolved`; a `jalr x0, 0(ra)` return is neither. Indirect transfers the
+`unresolved`; a return (the decoder's `return` flow: a `jalr` through `ra`
+or `t0` at offset zero that links neither, or a returning Zcmp pop) is
+neither, unless an immediately preceding `lui`/`auipc` set its register. Indirect transfers the
 closure follows only to their observed targets are `followed`: targets no
 execution reached, such as the other arms of a jump table, are outside the
 closure, so the site itself remains a location to account for.

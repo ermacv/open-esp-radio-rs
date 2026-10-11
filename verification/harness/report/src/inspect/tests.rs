@@ -252,11 +252,29 @@ fn conversions_carry_the_text_since_the_previous_one() {
 fn a_tail_call_prints_like_a_call() {
     // As a_printed_register_field_is_tied_to_its_conversion, but the print
     // is a tail call: auipc t1; jalr zero, 0(t1).
+    let text = prints_ending_with("00000317", "00030067");
+    assert!(
+        text.contains("bits 4,5,6,7 >> 4 -> \"gain=%d\" test::gauge+0x20"),
+        "{text}"
+    );
+}
+
+#[test]
+fn only_a_jump_the_decoder_does_not_mark_a_return_is_a_tail_call() {
+    // jr t0 returns, so it prints nothing; jalr zero, 4(ra) is a jump.
+    assert_eq!(prints_ending_with("00000013", "00028067"), "");
+    let text = prints_ending_with("00000013", "00408067");
+    assert!(text.contains("test::gauge+0x20"), "{text}");
+}
+
+/// The prints of a_printed_register_field_is_tied_to_its_conversion's
+/// setup ended by the instructions `before` and `jump`.
+fn prints_ending_with(before: &str, jump: &str) -> String {
     let mut corpus = corpus(
         "gauge",
         code(&[
             "2010e7b7", "83078793", "0007a583", "0045d593", "00f5f593", "00000537", "00050513",
-            "00000317", "00030067",
+            before, jump,
         ]),
     );
     let format = |kind| Reference {
@@ -269,9 +287,5 @@ fn a_tail_call_prints_like_a_call() {
         (0x14, format(oer_elf::rv32::R_RISCV_HI20)),
         (0x18, format(oer_elf::rv32::R_RISCV_LO12_I)),
     ]);
-    let text = prints(&corpus, 0x2010_d830, 0x2010_d834);
-    assert!(
-        text.contains("bits 4,5,6,7 >> 4 -> \"gain=%d\" test::gauge+0x20"),
-        "{text}"
-    );
+    prints(&corpus, 0x2010_d830, 0x2010_d834)
 }

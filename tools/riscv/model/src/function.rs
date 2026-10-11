@@ -89,10 +89,38 @@ pub struct NormalizedReference {
 /// `link` identifies the ABI link registers x1/x5, not every nonzero destination.
 pub enum InstructionFlow {
     Next,
-    Branch { displacement: i32 },
-    Jump { displacement: i32, link: bool },
-    Indirect { base: u8, offset: i32, link: bool },
+    Branch {
+        displacement: i32,
+    },
+    Jump {
+        displacement: i32,
+        link: bool,
+    },
+    /// A jump through a register that is not a return.
+    Indirect {
+        base: u8,
+        offset: i32,
+        link: bool,
+    },
+    /// A return to the caller: a jump through the link register `base` at
+    /// offset zero that links nothing, as the ISA's return-address-stack
+    /// hints define it. The decoder marks it, so no consumer tests registers.
+    Return {
+        base: u8,
+    },
     Stop,
+}
+
+impl InstructionFlow {
+    /// The base register, offset and link of a jump through a register, a
+    /// return included.
+    pub const fn through_register(self) -> Option<(u8, i32, bool)> {
+        match self {
+            Self::Indirect { base, offset, link } => Some((base, offset, link)),
+            Self::Return { base } => Some((base, 0, false)),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DecodedOp {

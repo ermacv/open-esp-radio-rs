@@ -6,7 +6,7 @@ use oer_riscv_model::*;
 pub struct RiscvDecoder;
 impl FunctionDecoder for RiscvDecoder {
     fn identity(&self) -> &'static str {
-        "rv32imafc-zicsr-zba-zbb-zbs-zcb-zcmp/rv-asm-0.2.1/policy-6"
+        "rv32imafc-zicsr-zba-zbb-zbs-zcb-zcmp/rv-asm-0.2.1/policy-7"
     }
     fn unsupported_flow(&self, bytes: &[u8]) -> UnsupportedFlow {
         // ISA structure only, not CSR/privileged execution support. Zicsr:
@@ -54,10 +54,8 @@ impl FunctionDecoder for RiscvDecoder {
             (Instruction::Base(inst), width) => (inst, width),
             (Instruction::Extension(extension), width) => {
                 let flow = match extension {
-                    Extension::Pop { ret: Some(_), .. } => InstructionFlow::Indirect {
+                    Extension::Pop { ret: Some(_), .. } => InstructionFlow::Return {
                         base: oer_riscv_decode::RA,
-                        offset: 0,
-                        link: false,
                     },
                     _ => InstructionFlow::Next,
                 };
@@ -80,6 +78,13 @@ impl FunctionDecoder for RiscvDecoder {
                 displacement: offset.as_i32(),
                 link: matches!(dest.0, 1 | 5),
             },
+            // A jump through a link register that links none returns: the
+            // pop hint of the unprivileged ISA's `jalr` table.
+            Inst::Jalr { offset, base, dest }
+                if offset.as_i32() == 0 && matches!(base.0, 1 | 5) && !matches!(dest.0, 1 | 5) =>
+            {
+                InstructionFlow::Return { base: base.0 }
+            }
             Inst::Jalr { offset, base, dest } => InstructionFlow::Indirect {
                 base: base.0,
                 offset: offset.as_i32(),
@@ -249,6 +254,30 @@ mod tests {
         }
     }
     #[test]
+    fn only_a_jump_through_a_link_register_at_zero_that_links_none_returns() {
+        let flow = |word: u32| RiscvDecoder.decode(&word.to_le_bytes()).unwrap().flow;
+        // jr t0; jalr t1, 0(ra)
+        assert_eq!(flow(0x0002_8067), InstructionFlow::Return { base: 5 });
+        assert_eq!(flow(0x0000_8367), InstructionFlow::Return { base: 1 });
+        // jalr zero, 4(ra); jalr ra, 0(t0); jr a5
+        for (word, base, offset, link) in [
+            (0x0040_8067, 1, 4, false),
+            (0x0002_80e7, 5, 0, true),
+            (0x0007_8067, 15, 0, false),
+        ] {
+            assert_eq!(
+                flow(word),
+                InstructionFlow::Indirect { base, offset, link },
+                "{word:#x}"
+            );
+        }
+        // c.jr ra
+        assert_eq!(
+            RiscvDecoder.decode(&0x8082u16.to_le_bytes()).unwrap().flow,
+            InstructionFlow::Return { base: 1 }
+        );
+    }
+    #[test]
     fn decoding_rejects_truncated_long_and_unsupported_encodings() {
         assert_eq!(RiscvDecoder.decode(&[1, 0]).unwrap().length, 2);
         assert!(RiscvDecoder.decode(&[0x13, 0, 0]).is_none());
@@ -257,14 +286,10 @@ mod tests {
             InstructionFlow::Jump { link: false, .. }
         ));
         assert!(RiscvDecoder.decode(&[0xff, 0xff, 0xff, 0xff]).is_none());
-        assert!(matches!(
+        assert_eq!(
             RiscvDecoder.decode(&[0x67, 0x80, 0, 0]).unwrap().flow,
-            InstructionFlow::Indirect {
-                base: 1,
-                link: false,
-                ..
-            }
-        ));
+            InstructionFlow::Return { base: 1 }
+        );
     }
 }
 

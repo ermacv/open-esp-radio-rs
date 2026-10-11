@@ -43,8 +43,6 @@ pub(crate) const STACK: u8 = 2;
 const CALLEE_SAVED: [u8; 13] = [2, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27];
 /// Smallest instruction, the step of the undecodable-bytes fallback.
 const PARCEL: usize = 2;
-/// The return-address register `ra`, through which a function returns.
-const RETURN_ADDRESS: u8 = 1;
 /// The argument registers `a0` to `a7`.
 const ARGUMENTS: std::ops::Range<u8> = 10..18;
 /// Most loads a followed pointer may take from its root.
@@ -364,6 +362,7 @@ impl Corpus {
                         link: false,
                     }) => to.extend(target(displacement)),
                     Some(InstructionFlow::Indirect { link: false, .. })
+                    | Some(InstructionFlow::Return { .. })
                     | Some(InstructionFlow::Stop) => {}
                 }
                 to.retain(|successor| *successor < decoded.len());
@@ -485,12 +484,9 @@ impl Corpus {
             .unwrap_or_default();
         let lifted = RiscvDecoder.lift(raw);
         let access = state.step(lifted, address, reference, &mut notes, &self.registers);
-        // A tail call jumps through a register other than the return
-        // address and passes its arguments like any call.
-        let tail = matches!(
-            op.flow,
-            InstructionFlow::Indirect { base, link: false, .. } if base != RETURN_ADDRESS
-        );
+        // A tail call jumps through a register without returning and passes
+        // its arguments like any call.
+        let tail = matches!(op.flow, InstructionFlow::Indirect { link: false, .. });
         let print = if call || tail { state.print() } else { None };
         if call {
             state.call();

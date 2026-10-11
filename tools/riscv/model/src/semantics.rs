@@ -401,19 +401,6 @@ impl CallAbi {
         }
     }
 
-    /// The link registers (`ra`, `t0`): a jump through one, at offset zero
-    /// and without linking, returns to the caller.
-    pub const fn links(self) -> [u8; 2] {
-        match self {
-            Self::RiscvInteger => [1, 5],
-        }
-    }
-
-    /// The return-address register (`ra`): `jalr zero, 0(ra)` returns.
-    pub const fn return_address(self) -> u8 {
-        self.links()[0]
-    }
-
     /// The argument word `register` carries, if it carries one.
     pub fn argument_word(self, register: u8) -> Option<usize> {
         self.arguments().iter().position(|&r| r == register)
@@ -463,12 +450,7 @@ mod tests {
         roles.sort_unstable();
         assert_eq!(roles, (1..32).collect::<Vec<u8>>());
         let clobbered = abi.clobbered();
-        for register in abi
-            .arguments()
-            .into_iter()
-            .chain(abi.results())
-            .chain(abi.links())
-        {
+        for register in abi.arguments().into_iter().chain(abi.results()) {
             assert!(clobbered.contains(&register), "x{register}");
         }
         assert_eq!(abi.argument_word(10), Some(0));

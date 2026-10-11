@@ -78,7 +78,7 @@ pub struct PlatformClockGuard {
 
 impl PlatformClockGuard {
     /// Wrap one reference to `clock` that the caller just acquired from its
-    /// platform; `release(clock)` drops exactly that reference.
+    /// platform; `release(clock)` gives back exactly that reference.
     ///
     /// Only a [`PlatformClockProvider`] implementation creates guards.
     pub const fn new(clock: PlatformClock, release: fn(PlatformClock)) -> Self {

@@ -1,7 +1,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
-// A forgotten owner never releases what it holds, such as a platform clock
-// reference, so radio ownership must end in `Drop`.
+// A forgotten owner never releases what it holds, such as an arbiter lease,
+// so radio ownership must end in `Drop`.
 #![deny(clippy::mem_forget)]
 #![deny(missing_docs)]
 

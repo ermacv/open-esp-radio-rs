@@ -2,10 +2,10 @@
 //! cold-power baseline.
 //!
 //! The restricted PAC exposes straight-line configuration and baseline
-//! transactions. This module decides when common power takes and drops the
+//! transactions. This module decides when common power takes and gives back the
 //! platform-owned 160 MHz and analog-I2C references, which state it restores
 //! on release and when the captured cold-power baseline may be committed.
-//! Every value here is route-scoped: a route drops its references and
+//! Every value here is route-scoped: a route gives back its references and
 //! restores the baseline before the neutral root is reconstructed.
 
 use oer_esp32s31_pac::{RadioPhyRegisters, WifiPowerBaseline, WifiPowerRestoreReadback};
@@ -207,9 +207,9 @@ impl CommonRadioPower {
         Ok(())
     }
 
-    /// Leave common power; the last client drops the analog-I2C reference,
-    /// restores the cold baseline and then drops the 160 MHz and MPLL
-    /// references, as the vendor closes a gate before releasing its source.
+    /// Leave common power; the last client gives back the analog-I2C
+    /// reference, restores the cold baseline and then gives back the 160 MHz
+    /// and MPLL references, as the vendor closes a gate before releasing its source.
     ///
     /// A failed step keeps `client` entered so the exit can be retried.
     pub(crate) fn exit(

@@ -2,8 +2,8 @@
 // The `bluetooth_client` and `ieee802154_client` modules hold the only scoped
 // overrides.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
-// A forgotten owner never releases what it holds, such as a platform clock
-// reference, so radio ownership must end in `Drop`.
+// A forgotten owner never releases what it holds, such as an arbiter lease,
+// so radio ownership must end in `Drop`.
 #![deny(clippy::mem_forget)]
 // The registration and tracking graphs run only through the chip target
 // ports, which exist only for `riscv32`. Host builds type-check the graphs and

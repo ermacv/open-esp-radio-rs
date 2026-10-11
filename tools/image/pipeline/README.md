@@ -106,8 +106,9 @@ that `stack-coverage.toml` does not review exactly once (assembly, vector data,
 compiler runtime or a linker script's section label; a review supplies no
 frame). The analysis of one image runs within
 `oer_image_check_stack::budget`: 10^9 work units, 512 MiB of working memory
-(the image facts and the value analysis) and 5 minutes, chosen by the owner
-from the measured analysis of every image class; running out fails the gate
+(everything the analysis of the image and its ROM holds, as the budget's
+rustdoc lists it) and 5 minutes, chosen by the owner from the measured
+analysis of every image class; running out fails the gate
 with `ResourceLimited`. Reports go to
 `runtime-stack.txt` and `bootstrap-stack.txt`: what the analysis used of its
 work units and working memory, coverage, then per stack its bound (proven,

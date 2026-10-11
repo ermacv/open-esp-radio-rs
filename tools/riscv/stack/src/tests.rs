@@ -2412,6 +2412,33 @@ fn the_analyzers_own_structures_fail_on_working_memory() {
         Ok(())
     })
     .unwrap();
+    // The sweep's merge points are admitted too: a branch's target alone
+    // does not fit.
+    // `beqz a0, +8; nop; ret; ret`: no call, table or level write, so the
+    // branch's target is the sweep's one allocation.
+    let branching = executable(&[Symbol {
+        name: "branch",
+        words: vec![0x0005_0463, 0x0000_0013, RET, RET],
+        frame: Some(0),
+    }]);
+    with_facts(&branching, |facts| {
+        let swept = sweep::transfers(facts, &facts.functions()[0], &mut ledger(), &mut || Ok(()))?;
+        assert!(swept.transfers.is_empty() && swept.jumps.is_empty());
+        assert!(swept.level_drops.is_empty() && swept.float_sites.is_empty());
+        Ok(())
+    })
+    .unwrap();
+    with_facts(&branching, |facts| {
+        limited(
+            sweep::transfers(facts, &facts.functions()[0], &mut kept(&tiny), &mut || {
+                Ok(())
+            })
+            .err()
+            .unwrap(),
+        );
+        Ok(())
+    })
+    .unwrap();
     // What the analysis keeps stays admitted while the caller holds it,
     // beside the image facts; the rest is released with each function.
     let memory = WorkingMemory::new(TEST_MEMORY).unwrap();

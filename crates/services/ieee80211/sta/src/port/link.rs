@@ -165,6 +165,17 @@ pub enum PortLinkError<F> {
     Coexistence,
 }
 
+impl<F> PortLinkError<F> {
+    /// Whether the station lost its port, as
+    /// [`PortClientError::is_port_lost`] defines it.
+    pub const fn is_port_lost(&self) -> bool {
+        matches!(
+            self,
+            Self::Poisoned(_) | Self::Lifecycle(_) | Self::LifecycleFailed | Self::LifecycleLost
+        )
+    }
+}
+
 impl<F> From<Poisoned<F>> for PortLinkError<F> {
     fn from(poisoned: Poisoned<F>) -> Self {
         Self::Poisoned(poisoned)

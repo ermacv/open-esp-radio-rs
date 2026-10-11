@@ -37,6 +37,12 @@ submission per attempt.
 | `PortStation`, `PortAttemptPort` | `StaAttemptPort` | Scan when the candidate must be refreshed, tune, authenticate (Open System, SAE, or Open System resuming a cached SAE PMKSA), associate, program the BSS filter, handshake, install keys, enter the connection |
 | `PortStationLifecycle` | `StaLifecycleBackend` | Attempts through `StaAttempt`, the connection served for a `PortStationApplication`, backoff |
 
+A failure in which the station lost its port (`PortStationError::is_port_lost`:
+a poisoned port, or a refused or failed lifecycle command, whichever phase met
+it) is `Terminal`: no automatic retry, since only the port's owner restores
+the port, and the lifecycle returns the station to that owner. The station
+never enables a port itself.
+
 The integrator names its port, transmit-policy parameters, backoff entropy,
 timer, key-data unwrap and the network's transmit source
 (`PortStationEnv::Frames`, a `DestinationTxQueues` of

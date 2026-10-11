@@ -240,7 +240,11 @@ pub enum LowerMacSetting {
     /// Tune to a channel; every interface shares it.
     ///
     /// The port must be disabled: a backend refuses the setting on an
-    /// enabled or quiesced port with [`SettingError::PortEnabled`]. A
+    /// enabled or quiesced port with [`SettingError::PortEnabled`]. On a
+    /// disabled port it refuses only a channel outside its
+    /// [`capabilities`](crate::Ieee80211LowerMacPort::capabilities)
+    /// ([`SettingError::UnsupportedChannel`]), so a caller that checked the
+    /// capabilities first can always tune a disabled port. A
     /// permanent channel move is therefore an explicit lifecycle sequence,
     /// `Disable`, `Channel`, `Enable`; a move that keeps the port enabled
     /// goes only through [`LowerMacLiveRetune`](crate::LowerMacLiveRetune).

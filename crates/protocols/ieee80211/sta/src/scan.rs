@@ -101,6 +101,23 @@ pub enum StaScanError<E> {
     CandidateSelection(E),
 }
 
+impl<E> StaScanError<E> {
+    /// The port's error, whichever step it ended.
+    pub const fn error(&self) -> &E {
+        match self {
+            Self::Begin(error)
+            | Self::ChannelSwitch(error)
+            | Self::ReceiveStart(error)
+            | Self::ActiveProbe(error)
+            | Self::ReceiveObserve(error)
+            | Self::DwellWait(error)
+            | Self::ReceiveStop(error)
+            | Self::PrepareNextRing(error)
+            | Self::CandidateSelection(error) => error,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaScanConfigError {
     ZeroDwellTicks,

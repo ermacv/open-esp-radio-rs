@@ -174,7 +174,10 @@ flight until the test ends it (`complete`, `complete_with`), or ends each
 attempt as soon as it is published with the outcomes queued by `respond`
 (success, a given `BlockAckReport`, or a failure status); `submitted` records
 what every admitted attempt carried; `queued_events`, `gate_open`,
-`vif_config`, `channel` and `monitoring` read its state. Time enters as a
+`vif_config`, `channel` and `monitoring` read its state. Its lifecycle has
+the base port's three states: enabled, quiesced (`Enable` resumes, `Disable`
+ends it, `Channel` is `PortEnabled`) and disabled; `restrict_bands` narrows it
+to a backend with fewer bands. Time enters as a
 value: its radio clock (`now`) reads what the test last passed to
 `set_now`, which never runs backwards. Packages that drive
 the port test against it, as `oer-ieee80211-upper-mac-service` and

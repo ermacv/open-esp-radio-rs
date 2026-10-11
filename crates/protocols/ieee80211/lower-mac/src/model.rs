@@ -311,7 +311,14 @@ impl ModelTsf {
 
 #[derive(Default)]
 struct State {
+    /// Admitting work and receiving.
     enabled: bool,
+    /// Quiesced: neither admitting nor disabled; `Enable` resumes and
+    /// `Disable` ends it as from an enabled port.
+    quiesced: bool,
+    /// The bands the test narrowed the model to; all of
+    /// [`MODEL_CAPABILITIES`] when `None`.
+    bands: Option<BandSet>,
     channel: Option<Channel>,
     channel_updates: usize,
     lifecycle_requests: usize,
@@ -364,6 +371,17 @@ impl State {
 
     fn vif(&self, vif: VifId) -> Option<VifConfig> {
         self.vifs.get(usize::from(vif.0)).copied().flatten()
+    }
+
+    /// [`MODEL_CAPABILITIES`] within the bands the test narrowed it to.
+    fn capabilities(&self) -> LowerMacCapabilities {
+        match self.bands {
+            Some(bands) => LowerMacCapabilities {
+                bands,
+                ..MODEL_CAPABILITIES
+            },
+            None => MODEL_CAPABILITIES,
+        }
     }
 
     /// Put every interface on `channel`, a channel the model supports.
@@ -686,6 +704,12 @@ impl<O: TxBody> LowerMacModel<O> {
         }
     }
 
+    /// Narrow the model to `bands`, as a backend with fewer bands than
+    /// [`MODEL_CAPABILITIES`]: its capabilities and channel settings follow.
+    pub fn restrict_bands(&self, bands: BandSet) {
+        self.state.borrow_mut().bands = Some(bands);
+    }
+
     /// Accepted channel settings, including settings of the same channel.
     pub fn channel_updates(&self) -> usize {
         self.state.borrow().channel_updates
@@ -841,14 +865,18 @@ impl<O: TxBody> LowerMacModel<O> {
             }
             LifecycleCommand::Enable => {
                 state.enabled = true;
+                state.quiesced = false;
                 state.push(Queued::Lifecycle(LifecycleEvent::Enabled));
                 Ok(())
             }
-            LifecycleCommand::Disable | LifecycleCommand::Quiesce if !state.enabled => {
+            LifecycleCommand::Disable if !state.enabled && !state.quiesced => {
                 Err(LifecycleError::AlreadyInState)
             }
+            LifecycleCommand::Quiesce if state.quiesced => Err(LifecycleError::AlreadyInState),
+            LifecycleCommand::Quiesce if !state.enabled => Err(LifecycleError::InvalidState),
             LifecycleCommand::Disable | LifecycleCommand::Quiesce => {
                 state.enabled = false;
+                state.quiesced = matches!(command, LifecycleCommand::Quiesce);
                 while !state.in_flight.is_empty() {
                     state.finish(0, ModelOutcome::Fail(TxStatus::Aborted));
                 }
@@ -966,7 +994,7 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
     }
 
     fn capabilities(&self) -> LowerMacCapabilities {
-        MODEL_CAPABILITIES
+        self.state.borrow().capabilities()
     }
 
     /// The model's clock is the time the test sets, which a test sets to
@@ -1029,10 +1057,14 @@ impl<O: TxBody> Ieee80211LowerMacPort for LowerMacModel<O> {
     fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, ModelFault> {
         let mut state = self.serving()?;
         Ok(match setting {
-            LowerMacSetting::Channel(channel) if !MODEL_CAPABILITIES.supports_channel(channel) => {
+            LowerMacSetting::Channel(channel)
+                if !state.capabilities().supports_channel(channel) =>
+            {
                 Err(SettingError::UnsupportedChannel)
             }
-            LowerMacSetting::Channel(_) if state.enabled => Err(SettingError::PortEnabled),
+            LowerMacSetting::Channel(_) if state.enabled || state.quiesced => {
+                Err(SettingError::PortEnabled)
+            }
             LowerMacSetting::Channel(channel) => {
                 state.tune(channel);
                 Ok(())
@@ -1181,7 +1213,7 @@ impl<O: TxBody> LowerMacLiveRetune for LowerMacModel<O> {
         let mut state = self.serving()?;
         Ok(if !state.enabled || !state.in_flight.is_empty() {
             Err(SettingError::Busy)
-        } else if !MODEL_CAPABILITIES.supports_channel(channel) {
+        } else if !state.capabilities().supports_channel(channel) {
             Err(SettingError::UnsupportedChannel)
         } else {
             state.tune(channel);

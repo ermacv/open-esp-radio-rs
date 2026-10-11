@@ -67,11 +67,13 @@ The family owns every executable value:
 - `[bluetooth]` `kind = "gatt"` with `trace = true` runs the plaintext GATT
   cycles on `diagnostic-bluetooth-gatt-trace`: before each connection the
   workload restarts the trace with the indication, opening, closing,
-  lifecycle, role-request and role-event-end channels, stops and drains it
-  after the disconnection, and publishes `bluetooth.trace.connection-steps`
-  once every cycle holds, in order, an accepted indication, the opening,
-  admitted connection events with anchored ends and the closing
-  (`bluetooth-trouble-gatt-trace`, an `investigation` scenario).
+  lifecycle, role-request, role-event-end and role-PDU channels, stops and
+  drains it after the disconnection, and publishes
+  `bluetooth.trace.connection-steps` once every cycle holds, in order, an
+  accepted indication, the opening, admitted connection events with anchored
+  ends and the closing (`bluetooth-trouble-gatt-trace`, an `investigation`
+  scenario). A failed cycle stops the trace, so the repetition's post-mortem
+  holds that cycle's records.
 - `[wifi]` selects the image and an optional `[wifi.datapath]` initialization
   (placement, checksum, TX-buffer and RX-continuation diagnostics). Each
   workload variant carries its own link expectation, observers, fixture

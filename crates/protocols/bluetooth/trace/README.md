@@ -14,7 +14,7 @@ microseconds.
 | `bluetooth.2` | 1 | `RoleEventEnd` | The role ends an event: its result and the PDUs it reported and discarded |
 | `bluetooth.3` | 2 | `RolePdu` | The role reports a PDU of an advertising or scan event |
 | `bluetooth.4` | 3 | `AdvertiserStep` | The Controller's advertising set is configured, plans, skips or ends an event, or leaves the radio |
-| `bluetooth.5` | 4 | `ConnectionIndication` | The Controller judges a PDU received by a connectable advertising event as a connection indication |
+| `bluetooth.5` | 4 | `ConnectionIndication` | The Controller judges a PDU received by a connectable advertising event as a connection indication; another PDU type, such as a `SCAN_REQ`, is `OtherPdu`, apart from a `CONNECT_IND` that fails validation |
 | `bluetooth.6` | 5 | `PeripheralOpened` | The Controller opens the peripheral connection: the first anchor and the interval |
 | `bluetooth.7` | 6 | `PeripheralEvent` | A connection event is requested, admitted or refused, and ends with or without peer activity |
 | `bluetooth.8` | 7 | `PeripheralClosed` | The connection closes, or the radio refuses its opening, with the HCI reason the Host gets |

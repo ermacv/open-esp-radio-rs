@@ -32,7 +32,10 @@ use oer_bluetooth_ll::{
         LeChannelSelectionAlgorithmTwoSupport, LegacyConnectableAdvertisement,
         LegacyDirectedAdvertisement, LegacyScanResponseData,
     },
-    connection::{LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeLegacyConnectionRequest},
+    connection::{
+        LEGACY_CONNECT_IND_LE_1M_AIRTIME_MICROS, LeLegacyConnectionRequest,
+        LeLegacyConnectionRequestError,
+    },
 };
 use oer_bluetooth_radio::LeRadio;
 
@@ -652,8 +655,12 @@ impl Advertiser {
         let Some(at) = captured_at else {
             return IndicationVerdict::NoCapture;
         };
-        let Ok(request) = LeLegacyConnectionRequest::decode(pdu) else {
-            return IndicationVerdict::Malformed;
+        let request = match LeLegacyConnectionRequest::decode(pdu) {
+            Ok(request) => request,
+            Err(LeLegacyConnectionRequestError::UnexpectedPduType) => {
+                return IndicationVerdict::OtherPdu;
+            }
+            Err(_) => return IndicationVerdict::Malformed,
         };
         let admitted = match self.kind {
             SetKind::Connectable => true,

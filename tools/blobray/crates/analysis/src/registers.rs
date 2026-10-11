@@ -360,6 +360,15 @@ struct Linear<'a> {
     term: Option<(&'a AbstractValue, u32)>,
 }
 
+/// What one expression node decomposes to, memoized by its id: a
+/// decomposition (or `None` when two different terms meet) and the levels it
+/// needs, or the depth it could not be decomposed within.
+#[derive(Clone, Copy)]
+enum Decomposed<'a> {
+    Known(Option<Linear<'a>>, u8),
+    Deeper(u8),
+}
+
 impl<'a> Linear<'a> {
     fn scale(self, by: u32) -> Self {
         Self {
@@ -384,61 +393,113 @@ impl<'a> Linear<'a> {
     }
 }
 
-fn linear<'a>(
+/// The decomposition of `value` within `depth` levels, memoized in the
+/// caller's `memo` (one per function) by each expression node's dense id in
+/// admitted working memory: an expression is a DAG whose nodes several sums
+/// share, so a node reached again within no more levels costs nothing. A node
+/// that did not decompose within its levels is decomposed again only when it
+/// is reached with more, so at most `INDEXED_DEPTH + 1` times.
+fn linear<'a, 'm>(
     facts: &Facts<'a, '_>,
     value: &'a AbstractValue,
     depth: u8,
+    memo: &mut AdmittedVec<'m, Option<Decomposed<'a>>>,
     c: &mut dyn RunControl,
-) -> Result<Option<Linear<'a>>> {
+) -> Result<Decomposed<'a>> {
     if let Some(constant) = exact_address(value) {
-        return Ok(Some(Linear {
-            constant,
-            term: None,
-        }));
+        return Ok(Decomposed::Known(
+            Some(Linear {
+                constant,
+                term: None,
+            }),
+            0,
+        ));
     }
     let term = Linear {
         constant: 0,
         term: Some((value, 1)),
     };
-    let Some(Expression::Integer { op, left, right }) = facts.value_expression(value) else {
-        return Ok(Some(term));
+    let (AbstractValue::Expression { id }, Some(Expression::Integer { op, left, right })) =
+        (value, facts.value_expression(value))
+    else {
+        return Ok(Decomposed::Known(Some(term), 0));
     };
-    if depth == 0 {
-        return Ok(None);
-    }
-    c.checkpoint(1)?;
-    let operand = |v: &'a AbstractValue, c: &mut dyn RunControl| linear(facts, v, depth - 1, c);
-    Ok(match op {
-        IntegerOp::Add => match (operand(left, c)?, operand(right, c)?) {
-            (Some(l), Some(r)) => l.add(r),
-            _ => None,
-        },
-        IntegerOp::Sub => match (operand(left, c)?, operand(right, c)?) {
-            (Some(l), Some(r)) => l.add(r.scale(u32::MAX)),
-            _ => None,
-        },
-        IntegerOp::Shl => match constant(right) {
-            Some(by) => operand(left, c)?.map(|l| l.scale(1 << (by & 31))),
-            None => Some(term),
-        },
-        IntegerOp::Mul => match (constant(left), constant(right)) {
-            (_, Some(by)) => operand(left, c)?.map(|l| l.scale(by)),
-            (Some(by), _) => operand(right, c)?.map(|r| r.scale(by)),
-            _ => Some(term),
-        },
-        IntegerOp::ShiftAdd1 | IntegerOp::ShiftAdd2 | IntegerOp::ShiftAdd3 => {
-            let by = match op {
-                IntegerOp::ShiftAdd1 => 2,
-                IntegerOp::ShiftAdd2 => 4,
-                _ => 8,
-            };
-            match (operand(left, c)?, operand(right, c)?) {
-                (Some(l), Some(r)) => l.scale(by).add(r),
-                _ => None,
-            }
+    let slot = *id as usize;
+    match memo.get(slot).copied().flatten() {
+        Some(known @ Decomposed::Known(..)) => return Ok(known),
+        Some(Decomposed::Deeper(within)) if depth <= within => {
+            return Ok(Decomposed::Deeper(depth));
         }
-        _ => Some(term),
-    })
+        _ => {}
+    }
+    let outcome = if depth == 0 {
+        Decomposed::Deeper(0)
+    } else {
+        c.checkpoint(1)?;
+        // The operands' decompositions within one level less, with the
+        // levels they need; `None` when one is deeper.
+        let mut height = 0u8;
+        let mut operand = |v: &'a AbstractValue,
+                           memo: &mut AdmittedVec<'m, Option<Decomposed<'a>>>,
+                           c: &mut dyn RunControl|
+         -> Result<Option<Option<Linear<'a>>>> {
+            Ok(match linear(facts, v, depth - 1, memo, c)? {
+                Decomposed::Known(result, needs) if needs < depth => {
+                    height = height.max(needs);
+                    Some(result)
+                }
+                _ => None,
+            })
+        };
+        let result = match op {
+            IntegerOp::Add | IntegerOp::Sub => {
+                match (operand(left, memo, c)?, operand(right, memo, c)?) {
+                    (Some(l), Some(r)) => Some(match (l, r) {
+                        (Some(l), Some(r)) if *op == IntegerOp::Add => l.add(r),
+                        (Some(l), Some(r)) => l.add(r.scale(u32::MAX)),
+                        _ => None,
+                    }),
+                    _ => None,
+                }
+            }
+            IntegerOp::Shl => match constant(right) {
+                Some(by) => operand(left, memo, c)?.map(|l| l.map(|l| l.scale(1 << (by & 31)))),
+                None => Some(Some(term)),
+            },
+            IntegerOp::Mul => match (constant(left), constant(right)) {
+                (_, Some(by)) => operand(left, memo, c)?.map(|l| l.map(|l| l.scale(by))),
+                (Some(by), _) => operand(right, memo, c)?.map(|r| r.map(|r| r.scale(by))),
+                _ => Some(Some(term)),
+            },
+            IntegerOp::ShiftAdd1 | IntegerOp::ShiftAdd2 | IntegerOp::ShiftAdd3 => {
+                let by = match op {
+                    IntegerOp::ShiftAdd1 => 2,
+                    IntegerOp::ShiftAdd2 => 4,
+                    _ => 8,
+                };
+                match (operand(left, memo, c)?, operand(right, memo, c)?) {
+                    (Some(l), Some(r)) => Some(match (l, r) {
+                        (Some(l), Some(r)) => l.scale(by).add(r),
+                        _ => None,
+                    }),
+                    _ => None,
+                }
+            }
+            _ => Some(Some(term)),
+        };
+        match result {
+            Some(result) => Decomposed::Known(result, height + 1),
+            None => Decomposed::Deeper(depth),
+        }
+    };
+    if memo.len() <= slot {
+        c.checkpoint((slot + 1 - memo.len()) as u64)?;
+        while memo.len() <= slot {
+            memo.push(None, c.position())?;
+        }
+    }
+    memo[slot] = Some(outcome);
+    Ok(outcome)
 }
 
 /// The values an index expression is proven to stay below: `x & mask`, a
@@ -472,37 +533,61 @@ fn index_count(facts: &Facts<'_, '_>, index: &AbstractValue) -> Option<u32> {
     }
 }
 
-/// The progression an unresolved `address` selects from when the analysis
-/// computes it as a constant plus a nonzero multiple of one unknown index,
-/// through additions, subtractions, constant shifts and multiplications and
-/// `shNadd`. Any other shape, two different unknowns or a sum deeper than
-/// [`INDEXED_DEPTH`] is `None`: the address stays unresolved.
-pub fn indexed_address<'a>(
-    facts: &Facts<'a, '_>,
-    address: &'a AbstractValue,
-    c: &mut dyn RunControl,
-) -> Result<Option<IndexedAddress>> {
-    if facts.value_expression(address).is_none() {
-        return Ok(None);
+/// The progressions of one function's unresolved addresses, over one memo
+/// for the whole function: an expression node is decomposed once, whichever
+/// address reaches it, and again only when reached with more levels than it
+/// failed within (at most `INDEXED_DEPTH + 1` times). The memo lives in
+/// admitted working memory, and filling it up to a new id is charged too.
+pub struct IndexedAddresses<'f, 'a, 'm> {
+    facts: &'f Facts<'a, 'm>,
+    memo: AdmittedVec<'m, Option<Decomposed<'a>>>,
+}
+
+impl<'f, 'a, 'm> IndexedAddresses<'f, 'a, 'm> {
+    pub fn new(facts: &'f Facts<'a, 'm>, memory: &'m WorkingMemory) -> Self {
+        Self {
+            facts,
+            memo: AdmittedVec::new(memory),
+        }
     }
-    let Some(Linear {
-        constant,
-        term: Some((index, coefficient)),
-    }) = linear(facts, address, INDEXED_DEPTH, c)?
-    else {
-        return Ok(None);
-    };
-    let count = index_count(facts, index);
-    // An unbounded index with a unit step reaches every address: that is a
-    // pointer plus an offset, not an array, and says nothing.
-    if coefficient == 0 || (count.is_none() && matches!(coefficient, 1 | u32::MAX)) {
-        return Ok(None);
+
+    /// The progression an unresolved `address` selects from when the
+    /// analysis computes it as a constant plus a nonzero multiple of one
+    /// unknown index, through additions, subtractions, constant shifts and
+    /// multiplications and `shNadd`. Any other shape, two different unknowns
+    /// or a sum deeper than [`INDEXED_DEPTH`] is `None`: the address stays
+    /// unresolved.
+    pub fn address(
+        &mut self,
+        address: &'a AbstractValue,
+        c: &mut dyn RunControl,
+    ) -> Result<Option<IndexedAddress>> {
+        let facts = self.facts;
+        if facts.value_expression(address).is_none() {
+            return Ok(None);
+        }
+        let Decomposed::Known(
+            Some(Linear {
+                constant,
+                term: Some((index, coefficient)),
+            }),
+            _,
+        ) = linear(facts, address, INDEXED_DEPTH, &mut self.memo, c)?
+        else {
+            return Ok(None);
+        };
+        let count = index_count(facts, index);
+        // An unbounded index with a unit step reaches every address: that is a
+        // pointer plus an offset, not an array, and says nothing.
+        if coefficient == 0 || (count.is_none() && matches!(coefficient, 1 | u32::MAX)) {
+            return Ok(None);
+        }
+        Ok(Some(IndexedAddress {
+            base: constant,
+            stride: coefficient as i32,
+            count,
+        }))
     }
-    Ok(Some(IndexedAddress {
-        base: constant,
-        stride: coefficient as i32,
-        count,
-    }))
 }
 
 fn exact_address(value: &AbstractValue) -> Option<u32> {
@@ -974,7 +1059,9 @@ mod tests {
         let last = value(expressions.len() as u32 - 1);
         let records = records(expressions);
         let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
-        indexed_address(&facts, &last, &mut || Ok(())).unwrap()
+        IndexedAddresses::new(&facts, &memory)
+            .address(&last, &mut || Ok(()))
+            .unwrap()
     }
     fn integer(op: IntegerOp, left: AbstractValue, right: AbstractValue) -> Expression {
         Expression::Integer { op, left, right }
@@ -1105,9 +1192,56 @@ mod tests {
             integer(IntegerOp::Add, value(1), number(0x2010_0000)),
         ]);
         let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
-        let refused = indexed_address(&facts, &value(2), &mut || {
+        let refused = IndexedAddresses::new(&facts, &memory).address(&value(2), &mut || {
             Err(Error::new(ErrorCode::ResourceLimited, "work budget"))
         });
         assert_eq!(refused.unwrap_err().code, ErrorCode::ResourceLimited);
+    }
+
+    #[test]
+    fn a_shared_node_is_decomposed_once_however_many_paths_reach_it() {
+        // x0 = a0 & 7; x(i+1) = x(i) + x(i); the address is x14 + base: 2^14
+        // paths reach x0, and each node is still charged once.
+        let mut expressions = vec![argument(10), integer(IntegerOp::And, value(0), number(7))];
+        for id in 1..15 {
+            expressions.push(integer(IntegerOp::Add, value(id), value(id)));
+        }
+        expressions.push(integer(
+            IntegerOp::Add,
+            value(expressions.len() as u32 - 1),
+            number(0x2010_0000),
+        ));
+        let nodes = expressions.len() as u64;
+        let memory = WorkingMemory::new(1 << 16).unwrap();
+        let last = value(expressions.len() as u32 - 1);
+        let records = records(expressions);
+        let facts = Facts::new(&records, &memory, &mut || Ok(())).unwrap();
+        let mut checkpoints = 0u64;
+        let mut count = || {
+            checkpoints += 1;
+            Ok(())
+        };
+        let mut addresses = IndexedAddresses::new(&facts, &memory);
+        assert_eq!(
+            addresses.address(&last, &mut count).unwrap(),
+            Some(IndexedAddress {
+                base: 0x2010_0000,
+                stride: 1 << 14,
+                count: Some(8),
+            })
+        );
+        assert!(
+            checkpoints <= 2 * nodes,
+            "{checkpoints} checkpoints for {nodes} nodes"
+        );
+        // A second address of the function reuses the memo: no node is
+        // decomposed again.
+        let before = checkpoints;
+        let mut count = || {
+            checkpoints += 1;
+            Ok(())
+        };
+        addresses.address(&last, &mut count).unwrap();
+        assert_eq!(checkpoints, before);
     }
 }

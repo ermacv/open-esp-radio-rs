@@ -38,6 +38,7 @@ pub(crate) fn observe<'a, 'm>(
     // is in range, and once for all of them, so a store the ranges exclude
     // costs no work and no memo.
     let mut evaluator = blobray_analysis::registers::StoredBitsEvaluator::new(facts, memory);
+    let mut indexed_addresses = blobray_analysis::registers::IndexedAddresses::new(facts, memory);
     let mut observe = |record: u64,
                        width: u8,
                        address: &'a AbstractValue,
@@ -46,7 +47,7 @@ pub(crate) fn observe<'a, 'm>(
                        c: &mut dyn RunControl| {
         let fact = &records[record as usize];
         let mut stored: Option<Vec<StoredBits>> = None;
-        let indexed = match blobray_analysis::registers::indexed_address(facts, address, c)? {
+        let indexed = match indexed_addresses.address(address, c)? {
             Some(indexed) if in_ranges(&indexed, width, ranges, c)? => Some(indexed),
             _ => None,
         };

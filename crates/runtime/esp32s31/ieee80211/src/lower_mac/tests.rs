@@ -1356,6 +1356,13 @@ fn port_calls_that_reach_the_registers_are_busy_while_the_retune_holds_them() {
         Ok(Err(SettingError::Busy))
     );
     assert_eq!(port.tsf(STA), Ok(Err(SettingError::Busy)));
+    // A channel reaches no register: the enabling port is not disabled.
+    assert_eq!(
+        port.apply(LowerMacSetting::Channel(
+            Channel::ghz2_4(6, ChannelWidth::Mhz20).unwrap(),
+        )),
+        Ok(Err(SettingError::PortEnabled))
+    );
     assert_eq!(
         submit(&port, attempt(&port, 1, &data_frame())),
         Ok(Err(SubmitError::Disabled))

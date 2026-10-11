@@ -1469,7 +1469,9 @@ where
         Ok(())
     }
 
-    fn set_channel(&mut self, channel: Channel) -> Result<(), SettingError> {
+    /// The [`LowerMacSetting::Channel`] setting, which reaches no register:
+    /// the next `Enable` retunes.
+    pub fn set_channel(&mut self, channel: Channel) -> Result<(), SettingError> {
         if channel.band() != Band::Ghz2_4 {
             return Err(SettingError::UnsupportedChannel);
         }

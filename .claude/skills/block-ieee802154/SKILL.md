@@ -8,6 +8,7 @@ description: Use when a task changes or investigates the IEEE 802.15.4 block of 
 Layers and edges: [layer dependencies](../../../docs/architecture.md#layer-dependencies),
 [sans-IO and time](../../../docs/architecture.md#sans-io-protocols-executors-and-time),
 [radio ports](../../../docs/architecture.md#radio-ports),
+[ownership and refusals](../../../docs/architecture.md#ownership-and-refusals),
 [clocks, stamps and alarms](../../../docs/architecture.md#clocks-stamps-and-alarms).
 
 ## Packages (path → role)

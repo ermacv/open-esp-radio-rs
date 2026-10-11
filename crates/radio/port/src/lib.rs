@@ -14,6 +14,10 @@
 //!
 //! - [`RadioPort`]: the base trait, with the event stream, the radio clock,
 //!   cancellation and the lifecycle.
+//! - [`RadioPortOwner`], [`RadioPortSplit`], [`RadioPortEvents`] and
+//!   [`RadioPortClient`]: the one owner of an installed port, which takes
+//!   exclusive operations on `&mut` and lends running phases of an event
+//!   consumer and interface-scoped clients.
 //! - [`Poisoned`] and [`PortResult`]: the only outer error of a port call,
 //!   carrying the backend's cause; every refusal is the inner `Err`.
 //! - [`EventsLost`]: the one loss marker, with its ordering rule.
@@ -67,8 +71,10 @@ use oer_time::RadioInstant;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod conformance;
+mod owner;
 mod relation;
 
+pub use owner::{RadioPortClient, RadioPortEvents, RadioPortOwner, RadioPortSplit};
 pub use relation::{
     ClockInfo, ClockRelation, ClockSample, Generation, GenerationSource, Projected,
     ProjectionError, RadioStamp, RelationRate, RelationSample, Stamp,

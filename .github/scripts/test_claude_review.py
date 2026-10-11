@@ -14,7 +14,8 @@ import claude_review as review
 
 def result(**fields):
     return SimpleNamespace(**{"subtype": "success", "is_error": False, "api_error_status": None,
-                              "result": None, "errors": None, "structured_output": None, **fields})
+                              "result": None, "errors": None, "structured_output": None,
+                              "permission_denials": None, **fields})
 
 
 class IdentityToken(unittest.TestCase):
@@ -52,6 +53,14 @@ class Failure(unittest.TestCase):
         self.assertIn("no message", review.failure(result()))
         self.assertIsNotNone(review.failure(None))
 
+    def test_a_denied_tool_call_fails_the_review(self):
+        denial = {"tool_name": "Bash", "tool_use_id": "t1",
+                  "tool_input": {"command": "git -C /work/pr diff origin/main...HEAD"}}
+        report = {"summary": "Not verified.", "findings": []}
+        self.assertEqual(review.failure(result(structured_output=report, permission_denials=[denial])),
+                         "tool calls were denied: Bash: git -C /work/pr diff origin/main...HEAD")
+        self.assertIsNone(review.failure(result(structured_output=report, permission_denials=[])))
+
 
 class Policy(unittest.TestCase):
     def test_only_read_only_commands_run_without_a_prompt(self):
@@ -59,6 +68,13 @@ class Policy(unittest.TestCase):
         self.assertTrue(all(t.startswith(("Bash(git -C pr ", "Bash(gh pr ", "Bash(gh issue view"))
                             for t in commands), commands)
         self.assertNotIn("Bash", review.ALLOWED_TOOLS)
+
+    def test_the_prompt_names_every_allowed_command_and_the_inputs(self):
+        policy = review.tool_policy()
+        for tool in review.ALLOWED_TOOLS:
+            if tool.startswith("Bash("):
+                self.assertIn(f"`{tool[5:-1]}`", policy)
+        self.assertIn(f"{review.INPUTS}/", policy)
 
     def test_schema_requires_every_finding_field(self):
         finding = review.SCHEMA["properties"]["findings"]["items"]

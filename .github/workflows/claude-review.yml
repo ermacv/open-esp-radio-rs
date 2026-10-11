@@ -6,8 +6,10 @@ name: Claude review
 # this one audits it within the API budget. Every event runs this file from
 # main, which the Anthropic federation rule requires. Through the Claude Agent
 # SDK (.github/scripts/claude_review.py), Claude reads the PR head in pr/ with
-# read-only tools and a read-only token, following REVIEW.md; a separate job
-# publishes the review, files an issue for each finding and sets the
+# read-only tools and a read-only token, following REVIEW.md, from inputs a
+# step prepares (the diff, the PR and the issues it closes); a tool call the
+# policy denies fails the review. A separate job publishes the review, files
+# an issue for each finding (or one for a failed review) and sets the
 # informational claude-runtime-review status. It never blocks a merge.
 on:
   pull_request_target:
@@ -82,6 +84,25 @@ jobs:
           path: pr
           fetch-depth: 0
           persist-credentials: false
+      # The review reads its evidence from files in trusted main's tree, so
+      # it does not hinge on how a Bash command is phrased: dontAsk denies
+      # every other form, and a denied call fails the review.
+      - name: Prepare the review inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ needs.target.outputs.pr }}
+        run: |
+          mkdir review-inputs
+          git -C pr diff origin/main...HEAD >review-inputs/diff.patch
+          git -C pr diff --stat origin/main...HEAD >review-inputs/diff.stat
+          gh pr view "$PR" --json number,title,body,headRefOid,closingIssuesReferences,comments,reviews \
+            >review-inputs/pr.json
+          jq -r --arg issues "https://github.com/$GH_REPO/issues/" \
+            '.closingIssuesReferences[] | select(.url | startswith($issues)) | .number' review-inputs/pr.json |
+            while read -r issue; do
+              gh issue view "$issue" --json number,title,body,state,comments >"review-inputs/issue-$issue.json"
+            done
       # The Agent SDK, not claude-code-action: the plan's monthly API
       # credits cover the SDK but not Claude Code GitHub Actions.
       - name: Install the Claude Agent SDK

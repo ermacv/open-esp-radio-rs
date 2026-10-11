@@ -1,8 +1,7 @@
 //! Bring-up and teardown of the IEEE 802.15.4 client on the chip.
 
-use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_time::{Instant, Timer};
+use embassy_time::Instant;
 use oer_esp32s31_coex::CoexError;
 use oer_esp32s31_hal::{
     ieee802154::{
@@ -22,18 +21,14 @@ use oer_esp32s31_ieee802154_esp_hal::{
 use oer_esp32s31_phy::RomShortDelay;
 use oer_esp32s31_phy::{
     ConcurrentPhyTrackingError, ConcurrentRfError, ConcurrentTrackingTick, NoopPhyTargetObserver,
-    concurrent::{
-        ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError, MaintenancePolicy,
-        evaluate_periodic_tracking,
-    },
+    concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
     ieee802154_client::{
         Ieee802154PhyClientError, Ieee802154PhyMembership, RegisteredIeee802154Operational,
         RegisteredIeee802154OperationalRoute, leave_ieee802154,
     },
     maintain_concurrent_phy,
-    state::client::RadioClient,
 };
-use oer_esp32s31_radio_runtime::{Ieee802154JoinError, RadioGuard, RadioPhyError, RadioSystem};
+use oer_esp32s31_radio_runtime::{Ieee802154JoinError, RadioPhyError, RadioSystem};
 use oer_espressif_ieee802154_engine::{
     engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Interfaces},
     pib::Ieee802154PibDefaults,
@@ -43,9 +38,7 @@ use oer_espressif_ieee802154_runtime::{
 };
 use oer_time_embassy::EmbassyClock;
 
-use crate::maintenance::{
-    Ieee802154PhyMaintenance, MAINTENANCE_PERIOD_MICROS, next_attempt_micros,
-};
+use crate::maintenance::Ieee802154PhyMaintenance;
 
 /// Events the runtime queues before the consumer takes them.
 pub const IEEE802154_EVENT_CAPACITY: usize = 16;
@@ -251,8 +244,7 @@ pub struct Ieee802154StopFailure {
 // CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154System {
     route: RegisteredIeee802154OperationalRoute,
-    /// Bound except while PHY maintenance holds the MAC paused, or after a
-    /// failed rebind.
+    /// Bound except after a failed rebind.
     bound: Option<BoundEspHalIeee802154InterruptRoute>,
     /// The scene levels the MAC's priorities were resolved with
     /// (`s_coex_config`).
@@ -579,7 +571,6 @@ impl Ieee802154System {
     pub fn power_sequence(&self) -> oer_esp32s31_hal::ieee802154::Ieee802154PowerSequence {
         self.control
             .with_hardware(Ieee802154MacOwners::power_sequence)
-            .expect("a running system holds its hardware between maintenance ticks")
     }
 
     /// Take part in coexistence with Wi-Fi, as ESP-IDF's
@@ -631,154 +622,36 @@ impl Ieee802154System {
         self.coex_config
     }
 
-    /// Run one shared PHY tracking tick under the domain's maintenance
-    /// policy, as one tick of ESP-IDF's periodic `phy_track_pll`.
-    ///
-    /// Under the default [`MaintenancePolicy::Vendor`] this is one tick of
-    /// the radio's periodic tracking: it runs with IEEE 802.15.4 receiving,
-    /// as the vendor timer does, and needs no pause. Under
-    /// [`MaintenancePolicy::Quiesced`] every active client must prove
-    /// quiescence; when IEEE 802.15.4 is the only active client this pauses
-    /// the runtime (leaving receive mode), closes the CPU route, issues the
-    /// proof, runs the tracking transaction within it, and then resumes the
-    /// runtime and binds the route again. Call it on the core that started
-    /// the client.
+    /// Run one shared PHY tracking tick, as one tick of ESP-IDF's periodic
+    /// `phy_track_pll`: it runs with IEEE 802.15.4 receiving, as the vendor
+    /// timer does, and never pauses the MAC; an operation that loses RF ends
+    /// with its ordinary terminal event. The radio's
+    /// [`RadioSystem::run_tracking`] is the periodic loop of these ticks.
     ///
     /// # Errors
     ///
-    /// The domain rejected the evaluation or the maintenance, tracking failed
-    /// after it started, or the route could not be bound again.
+    /// The domain rejected the evaluation or the maintenance, or tracking
+    /// failed after it started.
     pub async fn maintain_phy<P, C: PlatformClockProvider>(
         &mut self,
         radio: &RadioSystem<P, C, EmbassyClock>,
     ) -> Result<Ieee802154PhyMaintenance, Ieee802154MaintenanceError> {
         let mut guard = radio.lock().await;
-        if guard.lease().attachment().maintenance_policy() == MaintenancePolicy::Vendor {
-            return match guard.track().await {
-                Ok(ConcurrentTrackingTick::NotDue) => Ok(Ieee802154PhyMaintenance::NotDue),
-                Ok(ConcurrentTrackingTick::Tracked(_outcome)) => {
-                    Ok(Ieee802154PhyMaintenance::Tracked)
-                }
-                Ok(ConcurrentTrackingTick::Unavailable(error)) => {
-                    Err(Ieee802154MaintenanceError::Phy(error))
-                }
-                Ok(ConcurrentTrackingTick::AwaitingQuiescence) => {
-                    // The policy was read under this guard.
-                    Ok(Ieee802154PhyMaintenance::AwaitingOtherClients)
-                }
-                Err(ConcurrentPhyTrackingError::Rejected(error)) => {
-                    Err(Ieee802154MaintenanceError::Phy(error))
-                }
-                Err(ConcurrentPhyTrackingError::Failed(_)) => {
-                    Err(Ieee802154MaintenanceError::TrackingFailed)
-                }
-            };
-        }
-        let lease = guard.lease();
-        let due = lease.attachment().tracking_pending()
-            || evaluate_periodic_tracking(lease, &EmbassyClock)
-                .map_err(Ieee802154MaintenanceError::Phy)?;
-        if !due {
-            return Ok(Ieee802154PhyMaintenance::NotDue);
-        }
-        let others = lease.attachment().client_snapshot().is_some_and(|clients| {
-            clients.contains(RadioClient::Wifi) || clients.contains(RadioClient::Bluetooth)
-        });
-        if others {
-            return Ok(Ieee802154PhyMaintenance::AwaitingOtherClients);
-        }
-        let tracked = core::pin::pin!(self.track_quiescent(&mut guard));
-        tracked.await
-    }
-
-    /// Track the shared PHY within IEEE 802.15.4's quiescence: pause the
-    /// runtime (leaving receive mode), close the CPU route, issue the
-    /// proof, track within it, then resume and bind the route again.
-    async fn track_quiescent<P, C: PlatformClockProvider>(
-        &mut self,
-        guard: &mut RadioGuard<'_, P, C, EmbassyClock>,
-    ) -> Result<Ieee802154PhyMaintenance, Ieee802154MaintenanceError> {
-        let (lease, platform, _) = guard.parts();
-        let mut paused = match self.control.pause() {
-            Ok(paused) => paused,
-            Err(_) => return Ok(Ieee802154PhyMaintenance::Busy),
-        };
-        if let Some(bound) = self.bound.take()
-            && let Err((error, bound)) = bound.quiesce()
-        {
-            self.bound = Some(bound);
-            self.control.resume(paused);
-            return Err(Ieee802154MaintenanceError::Route(error));
-        }
-
-        let issued_at = Instant::now().as_micros();
-        let tracked = match paused
-            .hardware_mut()
-            .task_mut()
-            .quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS)
-        {
-            Ok(proof) => {
-                maintain_concurrent_phy::<P, RomShortDelay, _>(
-                    &EmbassyClock,
-                    lease,
-                    platform,
-                    &[proof],
-                    NoopPhyTargetObserver,
-                )
-                .await
+        match guard.track().await {
+            Ok(ConcurrentTrackingTick::NotDue) => Ok(Ieee802154PhyMaintenance::NotDue),
+            Ok(ConcurrentTrackingTick::Tracked(_outcome)) => Ok(Ieee802154PhyMaintenance::Tracked),
+            Ok(ConcurrentTrackingTick::Unavailable(error)) => {
+                Err(Ieee802154MaintenanceError::Phy(error))
             }
-            Err(_) => Err(ConcurrentPhyTrackingError::Rejected(
-                ConcurrentPhyError::WindowClosed,
-            )),
-        };
-
-        self.control.resume(paused);
-        match bind() {
-            Ok(bound) => self.bound = Some(bound),
-            Err(error) => return Err(Ieee802154MaintenanceError::Route(error)),
-        }
-        match tracked {
-            Ok(_outcome) => Ok(Ieee802154PhyMaintenance::Tracked),
+            Ok(ConcurrentTrackingTick::AwaitingQuiescence) => {
+                Ok(Ieee802154PhyMaintenance::AwaitingOtherClients)
+            }
             Err(ConcurrentPhyTrackingError::Rejected(error)) => {
                 Err(Ieee802154MaintenanceError::Phy(error))
             }
             Err(ConcurrentPhyTrackingError::Failed(_)) => {
                 Err(Ieee802154MaintenanceError::TrackingFailed)
             }
-        }
-    }
-
-    /// Keep the shared PHY tracked until `stop` completes: one
-    /// [`Self::maintain_phy`] tick per tracking period, retried promptly
-    /// while the MAC is busy. This is the periodic loop of the
-    /// [`MaintenancePolicy::Quiesced`] policy while IEEE 802.15.4 is the only
-    /// client; under the default vendor policy the radio's
-    /// [`RadioSystem::run_tracking`] is the periodic loop. `observe` receives each tick's
-    /// outcome. Run it on the core that started the client and call
-    /// [`Self::stop`] after it returns.
-    ///
-    /// # Errors
-    ///
-    /// A maintenance attempt failed; tracking stops being attempted.
-    pub async fn maintain_phy_until<P, C: PlatformClockProvider>(
-        &mut self,
-        radio: &RadioSystem<P, C, EmbassyClock>,
-        stop: impl Future<Output = ()>,
-        mut observe: impl FnMut(Ieee802154PhyMaintenance),
-    ) -> Result<(), Ieee802154MaintenanceError> {
-        let mut stop = core::pin::pin!(stop);
-        let mut delay = MAINTENANCE_PERIOD_MICROS;
-        loop {
-            match select(Timer::after_micros(delay), stop.as_mut()).await {
-                Either::First(()) => {}
-                Either::Second(()) => return Ok(()),
-            }
-            let outcome = {
-                let maintained = core::pin::pin!(self.maintain_phy(radio));
-                maintained.await?
-            };
-            observe(outcome);
-            delay = next_attempt_micros(outcome);
         }
     }
 

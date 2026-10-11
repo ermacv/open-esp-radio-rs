@@ -9,7 +9,6 @@ description = "Product-level ESP32-S31 IEEE 802.15.4 composition over the shared
 
 [dependencies]
 oer-memory = { path = "../../../../memory" }
-embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }

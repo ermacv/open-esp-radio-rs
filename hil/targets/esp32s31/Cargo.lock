@@ -2094,7 +2094,6 @@ dependencies = [
 name = "oer-esp32s31-ieee802154-system"
 version = "0.1.0"
 dependencies = [
- "embassy-futures",
  "embassy-sync 0.8.0",
  "embassy-time",
  "oer-esp32s31-coex",

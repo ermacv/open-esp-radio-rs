@@ -144,8 +144,7 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
         }
     }
 
-    /// A request identifier outside the backend-reserved range (the
-    /// Espressif runtime's own pause, resume and lifecycle).
+    /// A request identifier outside the backend-reserved range.
     fn id(&mut self) -> RequestId {
         self.ids.next()
     }
@@ -183,51 +182,11 @@ impl<'r, P: Ieee802154RadioPort, const QUEUE: usize> OpenThreadRadio<'r, P, QUEU
         }
     }
 
-    /// Admit `command`. A port quiesced for shared PHY maintenance refuses
-    /// a command that writes the hardware until its `Enabled`: wait for it
-    /// and admit the command again, so OpenThread never sees the window.
+    /// Admit `command`; a refusal fails the OpenThread operation.
     async fn submit(&mut self, command: RadioCommand<'_>) -> Result<(), RadioErrorKind> {
-        loop {
-            match self.port.submit(command) {
-                Ok(Ok(_)) => return Ok(()),
-                Ok(Err(CommandError::Quiesced)) => self.wait_enabled().await?,
-                _ => return Err(RadioErrorKind::Other),
-            }
-        }
-    }
-
-    /// Wait for the `Enabled` that ends a maintenance window, queueing
-    /// frames and taking an abandoned operation's terminal meanwhile. The
-    /// adapter never quiesces the port itself, so only maintenance holds it.
-    async fn wait_enabled(&mut self) -> Result<(), RadioErrorKind> {
-        loop {
-            let event = match self.port.next_event().await {
-                Ok(Ok(event)) => event,
-                // Only frames are lost.
-                Ok(Err(EventsLost)) => {
-                    self.receive_lost = true;
-                    continue;
-                }
-                Err(_) => return Err(RadioErrorKind::Other),
-            };
-            match P::view(&event) {
-                RadioEvent::Received(_) => {
-                    if self.received.push_back(event).is_err() {
-                        self.receive_lost = true;
-                    }
-                }
-                RadioEvent::Lifecycle(LifecycleEvent::Enabled) => return Ok(()),
-                // A disabled radio ends no window.
-                RadioEvent::Lifecycle(LifecycleEvent::Disabled | LifecycleEvent::Failed { .. })
-                | RadioEvent::Fault { .. } => return Err(RadioErrorKind::Other),
-                view => {
-                    if let Some(id) = self.pending
-                        && terminal_of(view) == Some(id)
-                    {
-                        self.pending = None;
-                    }
-                }
-            }
+        match self.port.submit(command) {
+            Ok(Ok(_)) => Ok(()),
+            _ => Err(RadioErrorKind::Other),
         }
     }
 

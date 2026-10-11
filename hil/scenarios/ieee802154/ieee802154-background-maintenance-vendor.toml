@@ -9,4 +9,3 @@ kind = "background-maintenance"
 boots = 2
 channel = 15
 periods = 10
-policy = "vendor"

@@ -24,9 +24,7 @@ mod maintenance;
 #[cfg(target_arch = "riscv32")]
 mod system;
 
-pub use maintenance::{
-    BUSY_RETRY_MICROS, Ieee802154PhyMaintenance, MAINTENANCE_PERIOD_MICROS, next_attempt_micros,
-};
+pub use maintenance::Ieee802154PhyMaintenance;
 
 // Inputs of `start` and `Ieee802154Parked::new`, and the shared radio the
 // client joins, so an application can construct it through this crate (or

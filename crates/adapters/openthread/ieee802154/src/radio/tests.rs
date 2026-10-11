@@ -467,26 +467,3 @@ fn the_radio_secures_frames_with_openthread_keys() {
     assert_eq!(&psdu[10..15], &[10, 0, 0, 0, 3]);
     assert_eq!(counter(runtime), 11);
 }
-
-/// Shared PHY maintenance quiesces the port and holds the hardware: a
-/// command OpenThread issues meanwhile waits for the port's `Enabled` and
-/// is admitted then, so OpenThread never sees the window.
-#[test]
-fn a_command_waits_out_shared_phy_maintenance() {
-    let (runtime, mut radio) = initialized();
-    let mut paused = runtime.control.borrow_mut().pause().unwrap();
-    let (result, ()) = block_on(join(radio.set_receive(15), async {
-        yield_now().await;
-        // The refused command waits; nothing reached the lent hardware.
-        assert_ne!(
-            paused.hardware_mut().command,
-            Some(Ieee802154LlCommand::RxStart)
-        );
-        runtime.control.borrow_mut().resume(paused);
-    }));
-    assert_eq!(result, Ok(()));
-    assert_eq!(
-        runtime.with_model(|model| model.command),
-        Some(Ieee802154LlCommand::RxStart)
-    );
-}

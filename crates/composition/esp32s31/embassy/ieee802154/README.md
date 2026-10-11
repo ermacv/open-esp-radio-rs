@@ -34,18 +34,11 @@ common power. It returns the partition and the engine for a later start.
 
 Periodic shared PHY tracking belongs to the radio system
 (`RadioSystem::run_tracking`), as ESP-IDF's `phy_track_pll` timer belongs to
-`esp_phy`. `Ieee802154System::maintain_phy` runs one tracking attempt on
-demand. Under the default vendor admission it is one tracking tick with IEEE
-802.15.4 receiving. Under the stricter quiesced admission, when IEEE
-802.15.4 is the only active client, the call pauses the radio as a layer
-over the port's lifecycle (the consumer takes `Quiesced`; receive mode is
-left), closes the CPU route, issues the client's quiescence proof, tracks
-within that window, then resumes receive mode, enables the port (`Enabled`)
-and binds the route again. Meanwhile the quiesced port refuses commands
-that write the hardware as `Quiesced`; the OpenThread adapter waits for
-`Enabled` and admits them then; `maintain_phy_until` repeats it once per tracking period. With
-another client active it reports `AwaitingOtherClients`; a running
-transmission, scan or CCA reports `Busy`.
+`esp_phy`. `Ieee802154System::maintain_phy` runs one tracking tick on
+demand, with IEEE 802.15.4 receiving, as the vendor timer does. The MAC is
+never paused for PHY maintenance: an operation that loses RF ends with its
+ordinary terminal event (`TxStatus::CoexistenceRejected` for a denied
+transmission).
 
 A step that fails before starting shared hardware work rolls the earlier
 steps back and returns the parked partition. A started PHY, clock or power
@@ -214,7 +207,5 @@ closes RF after the last client, and `start` wakes it, as
 
 ## Limits
 
-Under the quiesced admission, tracking that must collect the proofs of
-several active clients needs a joint radio supervisor, which is not composed.
 Modem retention and light sleep are not composed: closing RF keeps the MAC
 and baseband powered. On-air behaviour is qualified only by HIL runs.

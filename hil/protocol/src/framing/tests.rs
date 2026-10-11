@@ -1603,7 +1603,6 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         short_address: u16::MAX,
         extended_address: [u8::MAX; 8],
         promiscuous: true,
-        maintenance_policy: crate::ieee802154::Ieee802154SessionMaintenancePolicy::Quiesced,
         background_maintenance: true,
         enhanced_ack: true,
         wifi_coexistence: true,
@@ -1743,7 +1742,6 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
                 not_due: u16::MAX,
                 tracked: u16::MAX,
                 awaiting_other_clients: u16::MAX,
-                busy: u16::MAX,
                 failed: true,
             },
             coexistence: crate::ieee802154::Ieee802154SessionCoexistence {

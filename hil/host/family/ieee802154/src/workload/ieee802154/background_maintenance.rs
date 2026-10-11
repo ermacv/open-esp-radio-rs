@@ -1,19 +1,18 @@
 //! Background shared PHY maintenance of the running IEEE 802.15.4 client.
 //!
 //! One session runs with background maintenance for several tracking
-//! periods under the chosen admission policy: under the vendor policy the
-//! device runs the PHY's periodic tracking loop with the radio running,
-//! under the quiesced policy it pauses its MAC for each tracking. The device
-//! must track the shared PHY on its own and still transmit afterwards. No
-//! peer is needed.
+//! periods: the device runs the PHY's periodic tracking loop with the radio
+//! running, as ESP-IDF's vendor timer does, and never pauses its MAC. The
+//! device must track the shared PHY on its own and still transmit
+//! afterwards. No peer is needed.
 
 use std::{path::Path, time::Duration};
 
 use oer_hil_link::SerialCapture;
 use oer_hil_protocol::{
     ieee802154::Ieee802154AirTxOutcome, ieee802154::Ieee802154SessionConfig,
-    ieee802154::Ieee802154SessionMaintenancePolicy, ieee802154::Ieee802154SessionStopEvidence,
-    ieee802154::Ieee802154SessionTransmitRequest, ieee802154::Ieee802154SessionTxMode,
+    ieee802154::Ieee802154SessionStopEvidence, ieee802154::Ieee802154SessionTransmitRequest,
+    ieee802154::Ieee802154SessionTxMode,
 };
 use oer_hil_workload::{boots::for_each_boot, context::Context, require_keys};
 use serde::Serialize;
@@ -27,7 +26,6 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct Config {
     pub boots: u8,
     pub channel: u8,
-    pub policy: Ieee802154SessionMaintenancePolicy,
     /// Whole tracking periods the session runs.
     pub periods: u8,
 }
@@ -65,12 +63,11 @@ pub(crate) fn validate(evidence: &Ieee802154SessionStopEvidence, periods: u8) ->
 struct BootReport {
     tracked: u16,
     not_due: u16,
-    busy: u16,
 }
 
 pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
     context.results.claim(
-        "periodic-tracking-inside-the-client-quiescence-window",
+        "periodic-tracking-with-the-radio-running",
         &[
             "tracking-during-traffic",
             "joint-maintenance-with-other-clients",
@@ -86,7 +83,6 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
             Ok(BootReport {
                 tracked: evidence.maintenance.tracked,
                 not_due: evidence.maintenance.not_due,
-                busy: evidence.maintenance.busy,
             })
         },
         |_, _| Ok(()),
@@ -111,7 +107,6 @@ fn session(capture: &SerialCapture, config: &Config) -> Result<Ieee802154Session
                     short_address: DEVICE_SHORT,
                     extended_address: [0; 8],
                     promiscuous: false,
-                    maintenance_policy: config.policy,
                     background_maintenance: true,
                     enhanced_ack: false,
                     wifi_coexistence: false,

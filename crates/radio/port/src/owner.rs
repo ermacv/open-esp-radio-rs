@@ -295,6 +295,27 @@
 
 //! ```
 //!
+//! The compiling twins of the remaining tests differ only in the rule each
+//! breaks: an owner comes from `run_port`, a disabled owner uninstalls, the
+//! clock is reached through the owner, and a part is borrowed through its
+//! loan:
+//!
+//! ```
+//! # use oer_radio_port::{Disabled, Enabled, Ended, Owner, PortBackend, PortBody, run_port};
+//! async fn own<B: PortBackend>(backend: B, body: impl PortBody<B>) -> Ended<B> {
+//!     run_port(backend, body).await
+//! }
+//! fn uninstall_while_disabled<B: PortBackend>(owner: Owner<B, Disabled>, control: B::Uninstall) {
+//!     let _ = owner.uninstall(control);
+//! }
+//! fn reach_through_the_owner<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//!     let _ = owner.now();
+//! }
+//! fn borrow_the_part<B: PortBackend>(owner: &mut Owner<B, Enabled>) {
+//!     let _ = &mut *owner.split().control;
+//! }
+//! ```
+//!
 //! [ownership and refusals]: https://github.com/ermacv/open-esp-radio-rs/blob/main/docs/architecture.md#ownership-and-refusals
 //! [`PlatformClockGuard`]: https://github.com/ermacv/open-esp-radio-rs/blob/main/crates/hardware/esp32s31/hal/src/power/clock/executor.rs
 

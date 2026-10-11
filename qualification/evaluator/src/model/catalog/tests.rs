@@ -1140,17 +1140,22 @@ fn ieee802154_catalog_migration_preserves_program_and_full_source_inventory() {
             > 0
     );
 
-    for (fact_id, parent_id) in [
-        ("ieee802154-registered-timing-entry", "rf-channel-readiness"),
-        ("ieee802154-mac-operation-subset", "rx-tx-dataplane"),
+    for (fact_id, parent_id, implementation) in [
+        (
+            "ieee802154-registered-timing-entry",
+            "rf-channel-readiness",
+            crate::model::ImplementationProof::Incomplete,
+        ),
+        (
+            "ieee802154-mac-operation-subset",
+            "rx-tx-dataplane",
+            crate::model::ImplementationProof::Complete,
+        ),
     ] {
         let fact = &catalog.source_facts[fact_id];
         let parent = &catalog.capabilities[parent_id];
         assert_eq!(fact.status, SourceStatus::Implemented);
-        assert_eq!(
-            parent.implementation,
-            crate::model::ImplementationProof::Incomplete
-        );
+        assert_eq!(parent.implementation, implementation);
         assert_eq!(parent.source_fact_refs, [fact_id]);
         assert_eq!(
             parent.source_contracts.as_slice(),

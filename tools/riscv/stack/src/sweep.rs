@@ -264,8 +264,14 @@ fn fact(
 }
 
 /// The direct branch and jump targets inside the function: where paths merge,
-/// so no register fact survives.
-fn merges(bytes: &[u8], start: u32, end: u32) -> BTreeSet<u32> {
+/// so no register fact survives. The set is admitted in `ledger`.
+fn merges(
+    bytes: &[u8],
+    start: u32,
+    end: u32,
+    ledger: &mut Ledger<'_>,
+    control: &mut dyn RunControl,
+) -> Result<BTreeSet<u32>> {
     let mut targets = BTreeSet::new();
     let mut offset = 0usize;
     while offset < bytes.len() {
@@ -290,11 +296,11 @@ fn merges(bytes: &[u8], start: u32, end: u32) -> BTreeSet<u32> {
             && target >= start
             && target < end
         {
-            targets.insert(target);
+            ledger.add(&mut targets, target, control)?;
         }
         offset += length;
     }
-    targets
+    Ok(targets)
 }
 
 /// The fact an index takes on the fall-through path of a bounds check:
@@ -406,7 +412,7 @@ pub(crate) fn transfers(
     let mut offset = 0usize;
     let mut previous: Option<(u8, u32)> = None;
     let mut writes = [None::<Write>; 32];
-    let merges = merges(bytes, start, end);
+    let merges = merges(bytes, start, end, ledger, control)?;
     let mut facts = [None::<Fact>; 32];
     let mut loads = [None::<Load>; 32];
     let mut level_drops = Vec::new();

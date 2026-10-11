@@ -59,6 +59,8 @@ struct Outstanding {
     id: EventId,
     channel: AdvertisingChannel,
     reservation: LeWindow,
+    /// A connection event took its place; its cancel is sent.
+    preempted: bool,
 }
 
 // CAPABILITY: bluetooth-legacy-passive-scanning, bluetooth-active-scanning
@@ -208,7 +210,7 @@ impl Scanner {
         next_anchor: Option<LeInstant>,
         earliest: LeInstant,
         timing: RadioTiming,
-        busy: &[Option<LeWindow>],
+        busy: &[&[Option<LeWindow>]],
     ) -> Result<Placement, EpochExhausted> {
         assert!(self.wants_window(), "only an eligible scanner is planned");
         let anchor = next_anchor.map_or(earliest, |anchor| anchor.max(earliest));
@@ -243,6 +245,8 @@ impl Scanner {
         };
         let room = busy
             .iter()
+            .copied()
+            .flatten()
             .flatten()
             .filter_map(|window| window.start().checked_duration_since(start))
             .fold(room.min(self.window), RadioDuration::min);
@@ -282,6 +286,7 @@ impl Scanner {
             id,
             channel,
             reservation,
+            preempted: false,
         });
         self.next_anchor = Some(next_anchor);
         self.channel = next_channel(channel);
@@ -295,6 +300,27 @@ impl Scanner {
 
     pub(crate) fn busy(&self) -> Option<LeWindow> {
         self.outstanding.map(|window| window.reservation)
+    }
+
+    /// The submitted window a connection event may take the place of: one
+    /// of a running scanner, not cancelled yet.
+    pub(crate) fn preemptible(&self) -> Option<(EventId, LeWindow)> {
+        self.outstanding
+            .filter(|window| self.phase == Phase::Running && !window.preempted)
+            .map(|window| (window.id, window.reservation))
+    }
+
+    /// Whether a cancelled event still holds the radio until its end.
+    pub(crate) fn is_preempted(&self) -> bool {
+        self.outstanding.is_some_and(|event| event.preempted)
+    }
+
+    /// A connection event takes the submitted window's place: its cancel is
+    /// sent, and its end follows as usual.
+    pub(crate) fn preempt(&mut self) {
+        if let Some(window) = &mut self.outstanding {
+            window.preempted = true;
+        }
     }
 
     pub(crate) fn owns(&self, id: EventId) -> bool {
@@ -423,7 +449,7 @@ mod tests {
             reservation,
             next_anchor,
         } = scanner
-            .place(None, earliest, timing, &[Some(busy)])
+            .place(None, earliest, timing, &[&[Some(busy)]])
             .unwrap()
         else {
             panic!("a clipped window fits")

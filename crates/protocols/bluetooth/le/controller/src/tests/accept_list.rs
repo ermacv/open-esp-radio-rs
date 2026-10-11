@@ -19,7 +19,7 @@ fn random_device() -> AcceptListDevice {
     }
 }
 
-impl Harness {
+impl<const C: usize, const O: usize> super::Bench<C, O> {
     /// Send one list command, answer its radio request with `result` and
     /// return the request and the command's status.
     fn change_list(

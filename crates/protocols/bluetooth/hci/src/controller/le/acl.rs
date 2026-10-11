@@ -1,4 +1,4 @@
-//! Owned Host ACL packets and standard completion events for one LE link.
+//! Owned Host ACL packets and standard completion events of LE links.
 
 use bt_hci::{
     PacketKind,
@@ -57,21 +57,21 @@ impl LeControllerToHostAclProfile {
     }
 }
 
-/// Response-less Host credit return for the sole supported connection.
+/// Response-less Host credit return: the packets the Host completed, per
+/// connection handle.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LeHostCompletedPacketsCommand {
-    handle: Option<ConnHandle>,
-    completed: u32,
-    mixed_handles: bool,
+pub struct LeHostCompletedPacketsCommand<'a> {
+    /// Validated handle and count pairs, four octets each.
+    pairs: &'a [u8],
 }
 
-impl LeHostCompletedPacketsCommand {
+impl<'a> LeHostCompletedPacketsCommand<'a> {
     /// Standard Host Number Of Completed Packets opcode.
     pub const OPCODE: Opcode = HostNumberOfCompletedPackets::OPCODE;
 
     /// Decode Host Number Of Completed Packets.
     pub fn decode(
-        command: crate::HciCommandPacket<'_>,
+        command: crate::HciCommandPacket<'a>,
     ) -> Result<Self, LeHostCompletedPacketsDecodeError> {
         if command.opcode() != Self::OPCODE {
             return Err(LeHostCompletedPacketsDecodeError::Unsupported);
@@ -79,44 +79,25 @@ impl LeHostCompletedPacketsCommand {
         let Some((&count, pairs)) = command.parameters().split_first() else {
             return Err(LeHostCompletedPacketsDecodeError::Malformed);
         };
-        if pairs.len() != usize::from(count) * 4 {
+        if pairs.len() != usize::from(count) * 4
+            || pairs
+                .chunks_exact(4)
+                .any(|pair| u16::from_le_bytes([pair[0], pair[1]]) > 0x0eff)
+        {
             return Err(LeHostCompletedPacketsDecodeError::Malformed);
         }
-        let mut handle = None;
-        let mut completed = 0_u32;
-        let mut mixed_handles = false;
-        for pair in pairs.chunks_exact(4) {
-            let raw_handle = u16::from_le_bytes([pair[0], pair[1]]);
-            if raw_handle > 0x0eff {
-                return Err(LeHostCompletedPacketsDecodeError::Malformed);
-            }
-            let pair_handle = ConnHandle::new(raw_handle);
-            if handle.is_some_and(|first| first != pair_handle) {
-                mixed_handles = true;
-            } else if handle.is_none() {
-                handle = Some(pair_handle);
-            }
-            completed += u32::from(u16::from_le_bytes([pair[2], pair[3]]));
-        }
-        Ok(Self {
-            handle,
-            completed,
-            mixed_handles,
-        })
+        Ok(Self { pairs })
     }
 
-    /// Sum the returned credits when every pair names the live connection.
-    pub fn completed_for(self, live_handle: Option<ConnHandle>) -> Option<u32> {
-        if self.mixed_handles {
-            return None;
-        }
-        match (self.handle, live_handle) {
-            (None, _) => Some(0),
-            (Some(handle), Some(live)) if handle.into_inner() == live.into_inner() => {
-                Some(self.completed)
-            }
-            _ => None,
-        }
+    /// Each pair's connection handle and completed packets, in command
+    /// order.
+    pub fn pairs(self) -> impl Iterator<Item = (ConnHandle, u16)> + 'a {
+        self.pairs.chunks_exact(4).map(|pair| {
+            (
+                ConnHandle::new(u16::from_le_bytes([pair[0], pair[1]])),
+                u16::from_le_bytes([pair[2], pair[3]]),
+            )
+        })
     }
 }
 
@@ -167,12 +148,12 @@ impl HciControllerResponse for LeHostCompletedPacketsErrorEvent {
     }
 }
 
-/// Why a consumed Host ACL packet cannot enter the sole live LE connection.
+/// Why a consumed Host ACL packet cannot enter the LE connection it names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeHostAclPacketRejection {
     /// No Host-visible connection exists yet.
     NoLiveConnection,
-    /// The packet names a handle other than the sole live connection.
+    /// The packet names a handle other than the connection it is copied for.
     UnknownConnectionIdentifier,
     /// LE-U accepts only point-to-point ACL packets.
     UnsupportedBroadcast,
@@ -204,7 +185,12 @@ pub struct LeControllerAclPacket {
 }
 
 impl LeControllerAclPacket {
-    /// Copy one nonempty LL fragment for the sole live LE connection.
+    /// The connection handle the packet names.
+    pub fn handle(&self) -> ConnHandle {
+        ConnHandle::new(u16::from_le_bytes([self.bytes[0], self.bytes[1] & 0x0f]))
+    }
+
+    /// Copy one nonempty LL fragment received on the connection `handle`.
     pub fn copy_from_ll(handle: ConnHandle, continuing: bool, payload: &[u8]) -> Option<Self> {
         if payload.is_empty() || payload.len() > LE_ACL_DATA_PACKET_CAPACITY {
             return None;
@@ -553,21 +539,23 @@ mod tests {
     }
 
     #[test]
-    fn host_completed_packets_owns_one_live_handle_credit_sum() {
+    fn host_completed_packets_name_each_handle_with_its_count() {
         let command = LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::new(
             LeHostCompletedPacketsCommand::OPCODE,
-            &[2, 1, 0, 2, 0, 1, 0, 3, 0],
+            &[2, 1, 0, 2, 0, 2, 0, 3, 0],
         ))
         .unwrap();
-        assert_eq!(command.completed_for(Some(ConnHandle::new(1))), Some(5));
-        assert_eq!(command.completed_for(Some(ConnHandle::new(2))), None);
+        assert_eq!(
+            command.pairs().collect::<std::vec::Vec<_>>(),
+            [(ConnHandle::new(1), 2), (ConnHandle::new(2), 3)]
+        );
 
         let empty = LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::new(
             LeHostCompletedPacketsCommand::OPCODE,
             &[0],
         ))
         .unwrap();
-        assert_eq!(empty.completed_for(None), Some(0));
+        assert_eq!(empty.pairs().count(), 0);
 
         for parameters in [&[][..], &[1, 1, 0, 1][..], &[1, 0, 0x10, 1, 0][..]] {
             assert_eq!(
@@ -578,13 +566,6 @@ mod tests {
                 Err(LeHostCompletedPacketsDecodeError::Malformed)
             );
         }
-
-        let mixed = LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::new(
-            LeHostCompletedPacketsCommand::OPCODE,
-            &[2, 1, 0, 1, 0, 2, 0, 1, 0],
-        ))
-        .unwrap();
-        assert_eq!(mixed.completed_for(Some(ConnHandle::new(1))), None);
 
         use bt_hci::{
             FromHciBytes,

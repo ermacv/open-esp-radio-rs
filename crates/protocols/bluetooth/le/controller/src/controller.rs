@@ -3,7 +3,7 @@
 use bt_hci::{
     cmd::Opcode,
     data::AclPacket,
-    param::{ControllerToHostFlowControl, Duration, Error as HciError, Status},
+    param::{ConnHandle, ControllerToHostFlowControl, Duration, Error as HciError, Status},
 };
 use oer_bluetooth_hci::{
     BootstrapCommandCompleteEvent, HciCommandPacket, LeAcceptListCommand,
@@ -30,7 +30,7 @@ use oer_bluetooth_ll::{
 };
 use oer_bluetooth_radio::LeRadio;
 use oer_bluetooth_radio::{
-    AcceptListChange, AcceptListDevice, CancelError, EventId, LeInstant, OutsideEpoch,
+    AcceptListChange, AcceptListDevice, CancelError, EventId, LeInstant, LeWindow, OutsideEpoch,
     RadioActivity, RadioDuration, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
@@ -45,13 +45,9 @@ use crate::{
     arbiter::place,
     dtm::{DtmRadioWork, DtmRole},
     output::Output,
-    peripheral::{Admission, EVENT_OUTPUT, Peripheral, PeripheralEvent, handle},
+    peripheral::{Admission, EVENT_OUTPUT, HostEvent, Peripheral, PeripheralEvent, PeripheralWork},
     scanning::Scanner,
 };
-
-/// Controller-to-Host ACL packets held for Host credits: every reception of
-/// one connection event.
-const HELD_ACL: usize = EVENT_OUTPUT;
 
 /// Static configuration of one Controller.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,6 +86,9 @@ enum Owner {
     ScannerControl,
     ScannerWindow,
     Peripheral,
+    /// The cancel of an advertising event or scan window a connection event
+    /// takes the place of.
+    Preemption,
 }
 
 /// A command whose response waits for radio work.
@@ -111,13 +110,15 @@ enum Pending {
 /// reports the backend's answer to [`Self::request_done`] before asking
 /// again, and feeds every backend observation to [`Self::outcome`].
 ///
+/// `CONNECTIONS` is the number of connections it holds at once.
+///
 /// `OUTPUT` bounds the queued Controller-to-Host packets. One slot is kept
 /// for the next command response; LE Advertising Reports that find the rest
 /// full are dropped and counted. A connection event is planned only while the
 /// output has room for everything it can produce, so connection data and
 /// events are never dropped.
 // CAPABILITY: bluetooth-hci-command-event-packets, bluetooth-hci-reset, bluetooth-event-masks, bluetooth-connection-handles-connection-complete-disconnection-complete, bluetooth-hci-acl-routing-and-bidirectional-flow-control
-pub struct LeController<'r, const OUTPUT: usize> {
+pub struct LeController<'r, const OUTPUT: usize, const CONNECTIONS: usize> {
     bootstrap: LeControllerBootstrap,
     random: Option<&'r dyn LeRandomSource>,
     output: Output<OUTPUT>,
@@ -127,18 +128,36 @@ pub struct LeController<'r, const OUTPUT: usize> {
     dtm: DtmRole,
     advertiser: Advertiser,
     scanner: Scanner,
-    peripheral: Peripheral,
+    peripheral: Peripheral<CONNECTIONS>,
     accept_list: AcceptList,
     /// Controller-to-Host ACL waiting for Host credits, with the offset
     /// already delivered of the first packet.
-    held: [Option<LeControllerAclPacket>; HELD_ACL],
+    /// As many as the output holds, so that every connection event the
+    /// output has room for also finds room here.
+    held: [Option<LeControllerAclPacket>; OUTPUT],
     held_offset: usize,
-    /// Host ACL credits when Controller-to-Host flow control is on.
-    host_credits: Option<u32>,
+    /// Controller-to-Host ACL packets each connection holds of the Host's
+    /// buffers, until the Host completes them or the connection closes.
+    outstanding: [Option<(ConnHandle, u32)>; CONNECTIONS],
     in_flight: Option<Owner>,
     next_event: u32,
     prng: u64,
     payload: [u8; DTM_MAX_PAYLOAD],
+}
+
+/// Which connection handles take Host ACL data now: a copy the service
+/// loop hands its transport, so waiting for data borrows no core.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AclAdmission<const CONNECTIONS: usize> {
+    /// Handles whose connection still holds a packet.
+    busy: [Option<ConnHandle>; CONNECTIONS],
+}
+
+impl<const CONNECTIONS: usize> AclAdmission<CONNECTIONS> {
+    /// Whether a packet for `handle` is taken now.
+    pub fn admits(&self, handle: ConnHandle) -> bool {
+        !self.busy.contains(&Some(handle))
+    }
 }
 
 /// One unit of radio work the core asks its port for.
@@ -151,7 +170,7 @@ pub enum RadioWork<'a> {
     Cancel(EventId),
 }
 
-impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
+impl<'r, const OUTPUT: usize, const CONNECTIONS: usize> LeController<'r, OUTPUT, CONNECTIONS> {
     /// A Controller awaiting its first HCI Reset. `random` answers LE Rand
     /// and supplies the encryption procedure's random values; without it,
     /// connectable advertising is refused.
@@ -182,9 +201,9 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             scanner: Scanner::new(),
             peripheral: Peripheral::new(version),
             accept_list: AcceptList::new(),
-            held: [None; HELD_ACL],
+            held: [None; OUTPUT],
             held_offset: 0,
-            host_credits: None,
+            outstanding: [None; CONNECTIONS],
             in_flight: None,
             next_event: 1,
             prng: seed | 1,
@@ -231,11 +250,17 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         // Host Number Of Completed Packets has no response unless malformed.
         match LeHostCompletedPacketsCommand::decode(packet) {
             Ok(command) => {
-                if let (Some(credits), Some(returned)) = (
-                    &mut self.host_credits,
-                    command.completed_for(self.peripheral.handle()),
-                ) {
-                    *credits = credits.saturating_add(returned);
+                // Each pair returns its own connection's packets; a handle
+                // that holds none, as one already closed, returns nothing.
+                for (handle, completed) in command.pairs() {
+                    if let Some((_, held)) = self
+                        .outstanding
+                        .iter_mut()
+                        .flatten()
+                        .find(|(owner, _)| *owner == handle)
+                    {
+                        *held = held.saturating_sub(u32::from(completed));
+                    }
                 }
                 self.deliver_held();
                 return Ok(());
@@ -352,15 +377,17 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 self.respond(response.as_bytes());
             }
             LeControllerCommandClassification::Disconnect(command) => {
-                let live = self.peripheral.handle() == Some(command.handle());
-                if live && self.peripheral.disconnect(command.reason()) {
+                if self
+                    .peripheral
+                    .disconnect(command.handle(), command.reason())
+                {
                     self.respond(command.into_accepted_status().as_bytes());
                 } else {
                     self.respond(command.into_unknown_connection_status().as_bytes());
                 }
             }
             LeControllerCommandClassification::ReadRemoteFeatures(command) => {
-                let admission = if self.peripheral.handle() == Some(command.handle()) {
+                let admission = if self.peripheral.is_live(command.handle()) {
                     self.peripheral.read_remote_features(&command)
                 } else {
                     Admission::UnknownConnection
@@ -373,7 +400,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 self.respond(response.as_bytes());
             }
             LeControllerCommandClassification::ReadRemoteVersionInformation(command) => {
-                let admission = if self.peripheral.handle() == Some(command.handle()) {
+                let admission = if self.peripheral.is_live(command.handle()) {
                     self.peripheral.read_remote_version(&command)
                 } else {
                     Admission::UnknownConnection
@@ -387,9 +414,9 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             }
             LeControllerCommandClassification::LongTermKeyReply(command) => {
                 let handle = command.handle();
-                let admission = if self.peripheral.handle() == Some(handle) {
+                let admission = if self.peripheral.is_live(handle) {
                     self.peripheral
-                        .long_term_key(Some(command.into_long_term_key()))
+                        .long_term_key(handle, Some(command.into_long_term_key()))
                 } else {
                     Admission::UnknownConnection
                 };
@@ -408,8 +435,8 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 );
             }
             LeControllerCommandClassification::LongTermKeyNegativeReply(command) => {
-                let admission = if self.peripheral.handle() == Some(command.handle()) {
-                    self.peripheral.long_term_key(None)
+                let admission = if self.peripheral.is_live(command.handle()) {
+                    self.peripheral.long_term_key(command.handle(), None)
                 } else {
                     Admission::UnknownConnection
                 };
@@ -489,7 +516,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             *slot = Some(packet);
             self.deliver_held();
         }
-        while let Some(event) = self.peripheral.take_event() {
+        while let Some(HostEvent { handle, event }) = self.peripheral.take_event() {
             let mask = self.bootstrap.event_mask();
             let le = self.bootstrap.le_event_mask();
             let meta = mask.is_le_meta_enabled();
@@ -502,11 +529,13 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                     timeout_units,
                     accuracy,
                 } => {
-                    self.host_credits = self.host_acl_credits();
+                    if let Some(entry) = self.outstanding.iter_mut().find(|entry| entry.is_none()) {
+                        *entry = Some((handle, 0));
+                    }
                     if meta
                         && le.is_le_conn_complete_enabled()
                         && let Ok(event) = LePeripheralConnectionCompleteEvent::new(
-                            handle(),
+                            handle,
                             peer_kind,
                             peer,
                             Duration::from_u16(interval_units),
@@ -529,12 +558,15 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 PeripheralEvent::Disconnected(reason) => {
                     // Undelivered data dies with the connection; the Host
                     // frees its buffers for the handle.
-                    self.held = [None; HELD_ACL];
-                    self.held_offset = 0;
-                    self.host_credits = self.host_acl_credits();
+                    self.drop_held(handle);
+                    for entry in &mut self.outstanding {
+                        if entry.is_some_and(|(owner, _)| owner == handle) {
+                            *entry = None;
+                        }
+                    }
                     if mask.is_disconnection_complete_enabled() {
                         self.output.push_event(
-                            LeDisconnectionCompleteEvent::new(handle(), reason).as_bytes(),
+                            LeDisconnectionCompleteEvent::new(handle, reason).as_bytes(),
                         );
                     }
                 }
@@ -546,7 +578,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                     if meta && le.is_le_conn_update_complete_enabled() {
                         self.output.push_event(
                             LeConnectionUpdateCompleteEvent::new(
-                                handle(),
+                                handle,
                                 Duration::from_u16(interval_units),
                                 latency,
                                 Duration::from_u16(timeout_units),
@@ -558,7 +590,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 PeripheralEvent::RemoteFeatures(status, features) => {
                     if meta && le.is_le_read_remote_features_page_0_complete_enabled() {
                         self.output.push_event(
-                            LeReadRemoteFeaturesCompleteEvent::new(status, handle(), features)
+                            LeReadRemoteFeaturesCompleteEvent::new(status, handle, features)
                                 .as_bytes(),
                         );
                     }
@@ -568,7 +600,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                         self.output.push_event(
                             LeReadRemoteVersionInformationCompleteEvent::new(
                                 status,
-                                handle(),
+                                handle,
                                 version.version(),
                                 version.company_identifier(),
                                 version.subversion(),
@@ -583,25 +615,24 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 } => {
                     if meta && le.is_le_long_term_key_request_enabled() {
                         self.output.push_event(
-                            LeLongTermKeyRequestEvent::new(handle(), random, diversifier)
-                                .as_bytes(),
+                            LeLongTermKeyRequestEvent::new(handle, random, diversifier).as_bytes(),
                         );
                     } else {
                         // A Host that masks the request cannot answer it.
-                        self.peripheral.long_term_key(None);
+                        self.peripheral.long_term_key(handle, None);
                     }
                 }
                 PeripheralEvent::EncryptionChanged(status, enabled) => {
                     if mask.is_encryption_change_v1_enabled() {
                         self.output.push_event(
-                            LeEncryptionChangeEvent::new(status, handle(), enabled).as_bytes(),
+                            LeEncryptionChangeEvent::new(status, handle, enabled).as_bytes(),
                         );
                     }
                 }
                 PeripheralEvent::KeyRefreshed(status) => {
                     if mask.is_encryption_key_refresh_complete_enabled() {
                         self.output.push_event(
-                            LeEncryptionKeyRefreshCompleteEvent::new(status, handle()).as_bytes(),
+                            LeEncryptionKeyRefreshCompleteEvent::new(status, handle).as_bytes(),
                         );
                     }
                 }
@@ -609,30 +640,53 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                     if meta && le.is_le_data_length_change_enabled() {
                         let (transmit, receive) = data_length_parameters(lengths);
                         self.output.push_event(
-                            LeDataLengthChangeEvent::new(handle(), transmit, receive).as_bytes(),
+                            LeDataLengthChangeEvent::new(handle, transmit, receive).as_bytes(),
                         );
                     }
                 }
                 PeripheralEvent::CompletedPackets(count) => {
-                    self.output.push_event(
-                        LeNumberOfCompletedPacketsEvent::new(handle(), count).as_bytes(),
-                    );
+                    self.output
+                        .push_event(LeNumberOfCompletedPacketsEvent::new(handle, count).as_bytes());
                 }
             }
             self.deliver_held();
         }
     }
 
-    /// Host credits of the current epoch, when flow control is on.
-    fn host_acl_credits(&self) -> Option<u32> {
+    /// The Host's free ACL buffers, when flow control is on: its total less
+    /// what each connection holds.
+    fn host_credits(&self) -> Option<u32> {
         match (
             self.bootstrap.controller_to_host_flow_control(),
             self.bootstrap.host_buffers(),
         ) {
             (ControllerToHostFlowControl::AclOnSyncOff, Some(buffers)) => {
-                Some(u32::from(buffers.total_acl_data_packets))
+                let held = self
+                    .outstanding
+                    .iter()
+                    .flatten()
+                    .map(|(_, held)| *held)
+                    .sum::<u32>();
+                Some(u32::from(buffers.total_acl_data_packets).saturating_sub(held))
             }
             _ => None,
+        }
+    }
+
+    /// Drop the held Controller-to-Host data of the closed connection
+    /// `handle`, keeping the others' in order.
+    fn drop_held(&mut self, handle: ConnHandle) {
+        if self.held[0].is_some_and(|packet| packet.handle() == handle) {
+            self.held_offset = 0;
+        }
+        let mut kept = 0;
+        for index in 0..OUTPUT {
+            if let Some(packet) = self.held[index].take()
+                && packet.handle() != handle
+            {
+                self.held[kept] = Some(packet);
+                kept += 1;
+            }
         }
     }
 
@@ -645,16 +699,24 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         while let Some(packet) = self.held[0] {
             let Some(fragment) = packet.next_host_fragment(self.held_offset, maximum) else {
                 self.held.rotate_left(1);
-                self.held[HELD_ACL - 1] = None;
+                self.held[OUTPUT - 1] = None;
                 self.held_offset = 0;
                 continue;
             };
-            if self.output.free() <= 1 || self.host_credits == Some(0) {
+            if self.output.free() <= 1 || self.host_credits() == Some(0) {
                 return;
             }
             self.output.push_acl(fragment.as_bytes());
-            if let Some(credits) = &mut self.host_credits {
-                *credits -= 1;
+            // Only flow control counts the Host's buffers a connection
+            // holds; without it the Host completes nothing.
+            if self.host_credits().is_some()
+                && let Some((_, held)) = self
+                    .outstanding
+                    .iter_mut()
+                    .flatten()
+                    .find(|(owner, _)| *owner == packet.handle())
+            {
+                *held += 1;
             }
             self.held_offset += fragment.payload_length();
         }
@@ -671,8 +733,8 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         };
         let response = match command {
             LeDataLengthCommand::Set { handle, transmit } => {
-                let admission = if self.peripheral.handle() == Some(handle) {
-                    self.peripheral.set_data_length(length(transmit))
+                let admission = if self.peripheral.is_live(handle) {
+                    self.peripheral.set_data_length(handle, length(transmit))
                 } else {
                     Admission::UnknownConnection
                 };
@@ -804,8 +866,9 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                     self.bootstrap.config().public_address(),
                     self.bootstrap.requested_random_address(),
                 ) {
-                    // One connection at a time, and encryption needs entropy.
-                    if self.peripheral.is_active() {
+                    // A connection needs a free slot, and encryption needs
+                    // entropy.
+                    if !self.peripheral.has_free_slot() {
                         self.respond_advertising(opcode, HciError::CMD_DISALLOWED.to_status());
                         return;
                     }
@@ -932,9 +995,9 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 self.pending = None;
                 self.advertising = LeLegacyAdvertisingConfiguration::new();
                 self.scanning = LeLegacyScanningConfiguration::new();
-                self.held = [None; HELD_ACL];
+                self.held = [None; OUTPUT];
                 self.held_offset = 0;
-                self.host_credits = None;
+                self.outstanding = [None; CONNECTIONS];
                 let response = self
                     .bootstrap
                     .dispatch(OwnedBootstrapCommand::Reset, self.random.is_some());
@@ -958,7 +1021,7 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
     /// The roles active now: advertising and scanning while enabled or still
     /// stopping, a connection until it closes. Direct Test Mode is not a
     /// role here.
-    pub const fn activity(&self) -> RadioActivity {
+    pub fn activity(&self) -> RadioActivity {
         RadioActivity {
             advertising: self.advertiser.is_active(),
             scanning: self.scanner.is_active(),
@@ -967,22 +1030,30 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
     }
 
     /// Whether the output can take everything one connection event produces.
+    ///
+    /// Every connection event already submitted may still produce as much,
+    /// so the output keeps room for each of them and the next one.
     fn has_event_room(&self) -> bool {
-        self.output.free() > EVENT_OUTPUT && self.held.iter().all(Option::is_none)
+        // Held data waits for the Host; the held store is as large as the
+        // output, so the events the output has room for fit there too.
+        let receptions = EVENT_OUTPUT * (self.peripheral.events_in_flight() + 1);
+        self.output.free() > receptions && self.held.iter().all(Option::is_none)
     }
 
-    /// Whether [`Self::acl`] takes a Host ACL packet now. Without a
-    /// connection every packet is taken and discarded.
-    pub fn is_acl_ready(&self) -> bool {
-        self.peripheral.acl_ready() || !self.peripheral.is_active()
+    /// Which handles [`Self::acl`] takes a Host ACL packet for now. A packet
+    /// for a handle no connection holds is taken and discarded.
+    pub fn acl_admission(&self) -> AclAdmission<CONNECTIONS> {
+        AclAdmission {
+            busy: self.peripheral.acl_busy(),
+        }
     }
 
-    /// The reservation the connection lends other roles; for host tests.
+    /// The reservations the connections lend other roles; for host tests.
     #[cfg(test)]
-    pub(crate) fn planned_connection(
+    pub(crate) fn planned_connections(
         &self,
         timing: RadioTiming,
-    ) -> Result<Option<oer_bluetooth_radio::LeWindow>, EpochExhausted> {
+    ) -> Result<[Option<oer_bluetooth_radio::LeWindow>; CONNECTIONS], EpochExhausted> {
         self.peripheral.planned(timing)
     }
 
@@ -1025,15 +1096,53 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 DtmRadioWork::None => Ok(None),
             };
         }
-        let room = self.has_event_room();
-        if self.peripheral.wants_radio(room) {
-            let request = self
-                .peripheral
-                .next_request(&mut self.next_event, now, timing, room)?;
-            if request.is_some() {
-                self.in_flight = Some(Owner::Peripheral)
+        // A connection event never moves: an advertising event or scan
+        // window submitted where a connection's next event now lies, as the
+        // first one a new connection's central set, gives way.
+        if self.peripheral.is_active() {
+            let planned = self.peripheral.planned(timing)?;
+            let overlaps = |window: LeWindow| planned.iter().flatten().any(|p| p.overlaps(window));
+            if let Some((id, window)) = self.advertiser.preemptible()
+                && overlaps(window)
+            {
+                self.advertiser.preempt();
+                self.in_flight = Some(Owner::Preemption);
+                return Ok(Some(RadioWork::Cancel(id)));
             }
-            return Ok(request);
+            if let Some((id, window)) = self.scanner.preemptible()
+                && overlaps(window)
+            {
+                self.scanner.preempt();
+                self.in_flight = Some(Owner::Preemption);
+                return Ok(Some(RadioWork::Cancel(id)));
+            }
+        }
+        // A cancelled event holds the radio until its end arrives: until
+        // then no connection event is planned, only connection control.
+        let room = self.has_event_room()
+            && !self.advertiser.is_preempted()
+            && !self.scanner.is_preempted();
+        // Connections without work leave the radio to advertising and
+        // scanning: their control requests and events go on.
+        if self.peripheral.wants_radio(room) {
+            match self
+                .peripheral
+                .next_request(&mut self.next_event, now, timing, room)?
+            {
+                Some(PeripheralWork::Ready(work)) => {
+                    self.in_flight = Some(Owner::Peripheral);
+                    return Ok(Some(work));
+                }
+                Some(PeripheralWork::Transmit {
+                    index,
+                    kind,
+                    length,
+                }) => {
+                    self.in_flight = Some(Owner::Peripheral);
+                    return Ok(Some(self.peripheral.transmission(index, kind, length)));
+                }
+                None => {}
+            }
         }
         if self.advertiser.has_control_request() {
             let request = self.advertiser.control_request();
@@ -1059,14 +1168,13 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                     break;
                 };
                 let (next_prng, delay) = advertising_delay(prng);
-                let busy = [
-                    self.scanner.busy(),
-                    self.peripheral.busy(),
-                    self.peripheral.planned(timing)?,
-                ];
-                let anchor = place(proposal, timing, &busy).map_err(|OutsideEpoch| {
-                    EpochExhausted::at(R::Advertising, O::Event, C::Reservation)
-                })?;
+                let scanning = [self.scanner.busy()];
+                let connections = self.peripheral.busy();
+                let planned = self.peripheral.planned(timing)?;
+                let anchor = place(proposal, timing, &[&scanning, &connections, &planned])
+                    .map_err(|OutsideEpoch| {
+                        EpochExhausted::at(R::Advertising, O::Event, C::Reservation)
+                    })?;
                 match anchor {
                     Some(anchor) => {
                         let id = EventId::new(self.next_event);
@@ -1093,13 +1201,18 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         if self.scanner.wants_window() {
             let earliest = crate::planning::earliest(now, timing, R::Scanning)?;
             for _ in 0..PLACEMENT_ATTEMPTS {
-                let busy = [
+                let advertising_busy = [
                     self.advertiser.busy(),
                     self.advertiser.planned(timing, advertising)?,
-                    self.peripheral.busy(),
-                    self.peripheral.planned(timing)?,
                 ];
-                match self.scanner.place(scan_anchor, earliest, timing, &busy)? {
+                let connections = self.peripheral.busy();
+                let planned = self.peripheral.planned(timing)?;
+                match self.scanner.place(
+                    scan_anchor,
+                    earliest,
+                    timing,
+                    &[&advertising_busy, &connections, &planned],
+                )? {
                     crate::scanning::Placement::Ready {
                         window,
                         reservation,
@@ -1159,7 +1272,9 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             Some(Owner::ScannerControl) => self.scanner.control_done(accepted),
             Some(Owner::ScannerWindow) => self.scanner.window_done(accepted),
             Some(Owner::Peripheral) => self.peripheral.request_done(accepted),
-            None => {}
+            // The cancelled event's end follows as usual; a refusal proves
+            // it ended already.
+            Some(Owner::Preemption) | None => {}
         }
         self.deliver_peripheral();
         self.settle();

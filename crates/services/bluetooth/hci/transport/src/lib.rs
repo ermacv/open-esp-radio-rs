@@ -12,9 +12,11 @@
 //!
 //! The Controller side can close both directions for good, or retire an epoch
 //! whose queues are empty and restart it with a fresh generation; old Host
-//! handles stay closed. While a connection's radio packet owner is busy,
-//! [`InProcessHciControllerTransport::try_receive_admitted`] lets commands
-//! bypass queued ACL data.
+//! handles stay closed.
+//! [`InProcessHciControllerTransport::try_receive_admitted`] takes commands
+//! and the ACL data of the connection handles the Controller admits: data
+//! for a busy connection waits without holding back commands or other
+//! connections' data, and each handle keeps its order.
 //!
 //! The packet values, their validation and the Controller codecs are
 //! `oer-bluetooth-hci`; this crate owns only the waiting transport. `M`

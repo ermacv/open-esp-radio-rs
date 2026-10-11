@@ -15,8 +15,10 @@
 //!   scan response, with the pseudo-random advertising delay and live
 //!   advertising-data updates, and connectable directed at high or low duty
 //!   cycle;
-//! - one peripheral connection created by a connection indication to the
-//!   connectable set: connection events widened for clock drift, supervision
+//! - peripheral connections, up to the `CONNECTIONS` the composition sets,
+//!   each created by a connection indication to the connectable set, which
+//!   runs only while a connection slot is free: connection events widened
+//!   for clock drift, supervision
 //!   and establishment timeouts, Channel Map and Connection Update instants,
 //!   feature, version, ping and termination procedures, LE encryption start,
 //!   pause and restart, and ACL data both ways with Host flow control;
@@ -25,13 +27,25 @@
 //!   list, whose Clear, Add and Remove commands the radio backend executes;
 //! - Direct Test Mode transmitter and receiver tests, which run alone.
 //!
-//! One arbiter places every event so that no two reservations overlap.
-//! Connection events come first; advertising takes precedence over scanning:
-//! a scan window starts after busy reservations and ends before the next
-//! advertising or connection event, and an advertising event that cannot
-//! start within the advertising delay range is skipped. The connection uses
-//! no peripheral latency and no PHY other than LE 1M, and connectable
-//! advertising needs the random source that encryption draws from.
+//! One air scheduler places every event so that no two reservations
+//! overlap, by class: control work first, then connection events, then
+//! advertising, then scanning. A connection event never moves: the
+//! connection closest to its supervision timeout, the one served longest ago
+//! among equals, takes its event first; a less urgent connection's event in
+//! its way is cancelled, as is an advertising event or scan window submitted
+//! where a connection's next event now lies, and an event that still finds
+//! another connection's event in progress is missed. A scan window starts
+//! after busy reservations and ends before the next advertising or
+//! connection event, and an advertising event that cannot start within the
+//! advertising delay range is skipped. Connections use no peripheral latency
+//! and no PHY other than LE 1M, and connectable advertising needs the random
+//! source that encryption draws from.
+//!
+//! A connection's slot is internal; the backend names it by the slot's
+//! `ConnectionId`, and the Host by a connection handle the core allocates
+//! and does not reuse at once. Host ACL data is admitted per handle
+//! ([`AclAdmission`]), and Controller-to-Host data shares the Host's buffers:
+//! each connection holds what the Host has not completed.
 //!
 //! Schedule calculations use checked radio-domain arithmetic. `next_request`
 //! returns `Ok(None)` for ordinary absence of work or a bounded placement
@@ -51,7 +65,7 @@
 //! advertising and Test End complete
 //! only after their radio work has finished; until then
 //! [`LeController::is_command_ready`] is false. Host ACL packets enter through
-//! [`LeController::acl`] while [`LeController::is_acl_ready`].
+//! [`LeController::acl`] for the handles [`LeController::acl_admission`] admits.
 
 #[cfg(test)]
 extern crate std;
@@ -70,7 +84,9 @@ mod planning;
 mod scanning;
 mod trace;
 
-pub use controller::{ControllerBusy, LeController, LeControllerConfig, PLANNING_SLACK, RadioWork};
+pub use controller::{
+    AclAdmission, ControllerBusy, LeController, LeControllerConfig, PLANNING_SLACK, RadioWork,
+};
 pub use oer_bluetooth_ll::control::LeVersionInformation;
 pub use output::{HCI_PACKET_CAPACITY, HciPacket};
 pub use planning::{EpochExhausted, PlanningCalculation, PlanningOperation, PlanningRole};

@@ -13,14 +13,14 @@ const DISCONNECT: Opcode = Opcode::new(OpcodeGroup::LINK_CONTROL, 0x0006);
 const LTK_REPLY: Opcode = Opcode::new(OpcodeGroup::LE, 0x001a);
 
 /// On-air start of the connection indication.
-const INDICATION_AT: u64 = 20_000;
+pub(super) const INDICATION_AT: u64 = 20_000;
 /// 30 ms interval, 1 s supervision timeout, 2.5 ms transmit window at offset 0.
-const INTERVAL: u64 = 30_000;
+pub(super) const INTERVAL: u64 = 30_000;
 const TIMEOUT: u64 = 1_000_000;
 
 /// `CONNECT_IND` from a random initiator to the public advertiser, asking for
 /// Channel Selection Algorithm #2 with a 50 ppm central clock.
-fn connect_ind() -> Vec<u8> {
+pub(super) fn connect_ind() -> Vec<u8> {
     let mut pdu = std::vec![0x05 | 0x20 | 0x40, 34];
     pdu.extend_from_slice(&[0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xc6]); // InitA
     pdu.extend_from_slice(&[6, 5, 4, 3, 2, 1]); // AdvA
@@ -36,13 +36,13 @@ fn connect_ind() -> Vec<u8> {
     pdu
 }
 
-impl Harness {
+impl<const C: usize, const O: usize> super::Bench<C, O> {
     /// A connected peripheral whose first event is in progress.
-    fn connected() -> (Self, EventId) {
+    pub(super) fn connected() -> (Self, EventId) {
         Self::connected_from(Self::configured())
     }
 
-    fn connected_from(mut harness: Self) -> (Self, EventId) {
+    pub(super) fn connected_from(mut harness: Self) -> (Self, EventId) {
         // LE Meta plus Disconnection Complete, Encryption Change and Read
         // Remote Version Information Complete.
         let mask = [0x90, 0x08, 0, 0, 0, 0, 0, 0x20];
@@ -87,7 +87,7 @@ impl Harness {
 
         // Other roles keep the first event's reservation free before it is
         // planned.
-        let reserved = harness.core.planned_connection(super::TIMING).unwrap();
+        let reserved = harness.core.planned_connections(super::TIMING).unwrap()[0];
         // The first event listens across the transmit window.
         let Some(Request::ConnectionEvent(first)) = harness.step().unwrap() else {
             panic!("the first event");
@@ -117,7 +117,7 @@ impl Harness {
         (harness, first.id)
     }
 
-    fn receive(&mut self, id: EventId, pdu: &[u8]) {
+    pub(super) fn receive(&mut self, id: EventId, pdu: &[u8]) {
         self.core.outcome(RadioOutcome::Received {
             id,
             pdu: ReceivedPdu {
@@ -128,7 +128,7 @@ impl Harness {
         });
     }
 
-    fn end_at(&mut self, id: EventId, anchor: Option<u64>) {
+    pub(super) fn end_at(&mut self, id: EventId, anchor: Option<u64>) {
         self.core.outcome(RadioOutcome::EventEnded {
             id,
             result: match anchor {
@@ -142,7 +142,7 @@ impl Harness {
 
     fn acknowledge(&mut self) {
         self.core.outcome(RadioOutcome::TransmitAcknowledged(
-            crate::peripheral::CONNECTION,
+            oer_bluetooth_radio::ConnectionId::new(0),
         ));
     }
 }
@@ -191,7 +191,12 @@ fn acl_data_flows_both_ways_and_completes_host_packets() {
     harness.end_at(first, Some(INDICATION_AT + 2_000));
 
     // Host data: 30 octets become a start and a continuation fragment.
-    assert!(harness.core.is_acl_ready());
+    assert!(
+        harness
+            .core
+            .acl_admission()
+            .admits(bt_hci::param::ConnHandle::new(0))
+    );
     let data: Vec<u8> = (0..30).collect();
     let packet = bt_hci::data::AclPacket::new(
         bt_hci::param::ConnHandle::new(0),
@@ -200,7 +205,12 @@ fn acl_data_flows_both_ways_and_completes_host_packets() {
         &data,
     );
     harness.core.acl(packet);
-    assert!(!harness.core.is_acl_ready());
+    assert!(
+        !harness
+            .core
+            .acl_admission()
+            .admits(bt_hci::param::ConnHandle::new(0))
+    );
     let Some(Request::Transmit(DataPduKind::Start, fragment)) = harness.step().unwrap() else {
         panic!("the first fragment");
     };
@@ -220,7 +230,12 @@ fn acl_data_flows_both_ways_and_completes_host_packets() {
     harness.acknowledge();
     // Number Of Completed Packets for the handle.
     assert_eq!(harness.drain(), [std::vec![0x13, 5, 1, 0, 0, 1, 0]]);
-    assert!(harness.core.is_acl_ready());
+    assert!(
+        harness
+            .core
+            .acl_admission()
+            .admits(bt_hci::param::ConnHandle::new(0))
+    );
     harness.end_at(third.id, None);
 }
 
@@ -250,7 +265,10 @@ fn host_disconnect_terminates_after_the_central_acknowledged() {
     assert_eq!(harness.drain(), [std::vec![0x05, 4, 0, 0, 0, 0x16]]);
     assert!(!harness.core.wants_radio());
     assert!(
-        harness.core.is_acl_ready(),
+        harness
+            .core
+            .acl_admission()
+            .admits(bt_hci::param::ConnHandle::new(0)),
         "data without a connection is dropped"
     );
 }
@@ -469,7 +487,7 @@ fn the_reserved_next_event_follows_a_connection_update() {
     update.extend_from_slice(&2_u16.to_le_bytes());
     harness.receive(first, &update);
     harness.end_at(first, Some(INDICATION_AT + 2_000));
-    let planned = |harness: &Harness| harness.core.planned_connection(super::TIMING).unwrap();
+    let planned = |harness: &Harness| harness.core.planned_connections(super::TIMING).unwrap()[0];
     let reserved = |event: &oer_bluetooth_radio::ConnectionEvent| {
         Some(super::TIMING.reservation(event.window).unwrap())
     };

@@ -295,7 +295,7 @@ impl LeRadioPort for ModelRadio {
 fn serves_bootstrap_and_ends_when_the_transport_closes() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let (exit, ()) = block_on(join(
         serve(&controller, &mut core, &NoRadio, &clock, pending()),
@@ -315,7 +315,7 @@ fn serves_bootstrap_and_ends_when_the_transport_closes() {
 fn a_radio_without_hardware_fails_advertising_enable() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let (exit, ()) = block_on(join(
         serve(&controller, &mut core, &NoRadio, &clock, pending()),
@@ -336,7 +336,7 @@ fn a_radio_without_hardware_fails_advertising_enable() {
 fn advertising_events_follow_their_outcomes() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     let (exit, ()) = block_on(join(
@@ -377,7 +377,7 @@ fn advertising_events_follow_their_outcomes() {
 fn refused_requests_are_retried_after_a_delay() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     let (exit, ()) = block_on(join(
@@ -413,7 +413,7 @@ fn refused_requests_are_retried_after_a_delay() {
 fn an_unsupported_request_is_not_retried_on_a_timer() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     let (exit, ()) = block_on(join(
@@ -512,7 +512,7 @@ impl LeRadioPort for PoisonedRadio {
 fn a_poisoned_port_ends_the_service_with_its_cause() {
     let mut resources = resources();
     let LeControllerHciEndpoints { controller, .. } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     assert_eq!(
         block_on(serve(
@@ -530,7 +530,7 @@ fn a_poisoned_port_ends_the_service_with_its_cause() {
 fn host_data_without_a_connection_does_not_block_commands() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let (exit, ()) = block_on(join(
         serve(&controller, &mut core, &NoRadio, &clock, pending()),
@@ -558,7 +558,7 @@ fn host_data_without_a_connection_does_not_block_commands() {
 fn advertising_enable_and_disable_report_the_active_roles() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     let advertising = RadioActivity {
@@ -601,7 +601,7 @@ fn advertising_enable_and_disable_report_the_active_roles() {
 fn required_epoch_exhaustion_exits_with_context_and_retains_the_core() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     let (exit, ()) = block_on(join(
@@ -655,7 +655,7 @@ async fn advertise(host: &Host<'_>, radio: &ModelRadio) {
 fn a_requested_stop_ends_every_admitted_event_once_before_returning() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     let stop = embassy_sync::signal::Signal::<NoopRawMutex, ()>::new();
@@ -685,7 +685,7 @@ fn a_requested_stop_ends_every_admitted_event_once_before_returning() {
 fn an_exhausted_clock_stops_the_service_and_accounts_the_admitted_event() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     let (exit, ()) = block_on(join(
@@ -712,7 +712,7 @@ fn an_exhausted_clock_stops_the_service_and_accounts_the_admitted_event() {
 fn an_exhausted_admission_stops_without_a_retry() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     let (exit, ()) = block_on(join(
@@ -736,7 +736,7 @@ fn an_exhausted_admission_stops_without_a_retry() {
 fn a_busy_stop_waits_for_the_other_terminal_and_disables_then() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     radio
@@ -766,7 +766,7 @@ fn a_busy_stop_waits_for_the_other_terminal_and_disables_then() {
 fn a_refused_stop_keeps_both_causes() {
     let mut resources = resources();
     let LeControllerHciEndpoints { host, controller } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     let radio = ModelRadio::new();
     radio
@@ -795,7 +795,7 @@ fn a_refused_stop_keeps_both_causes() {
 fn a_port_that_admits_nothing_stops_at_once() {
     let mut resources = resources();
     let LeControllerHciEndpoints { controller, .. } = resources.split();
-    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let mut core = LeController::<'_, 12, 1>::new(controller_config(), None);
     let clock: VirtualClock = VirtualClock::new();
     assert_eq!(
         block_on(serve(

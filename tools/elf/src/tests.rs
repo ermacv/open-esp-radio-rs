@@ -260,3 +260,87 @@ fn an_address_symbolizes_to_its_function_and_source_file() {
 fn symbolized_marker() -> u32 {
     std::hint::black_box(7)
 }
+
+/// A hand-built ELF32 RV32 executable: a readable `PT_LOAD` of 16 bytes
+/// (four in the file at offset 116), a `PT_TLS`, `e_flags` declaring the
+/// single-float ABI and RV32E, and a writable `.dat` `PROGBITS` section over
+/// the file bytes.
+fn executable() -> Vec<u8> {
+    let mut b = vec![0x7f, b'E', b'L', b'F', 1, 1, 1, 0];
+    b.resize(16, 0);
+    let half = |b: &mut Vec<u8>, v: u16| b.extend_from_slice(&v.to_le_bytes());
+    let word = |b: &mut Vec<u8>, v: u32| b.extend_from_slice(&v.to_le_bytes());
+    half(&mut b, 2); // ET_EXEC
+    half(&mut b, 243); // EM_RISCV
+    word(&mut b, 1);
+    word(&mut b, 0x2000); // entry
+    word(&mut b, 52); // phoff
+    word(&mut b, 132); // shoff
+    word(&mut b, 0x2 | 0x8); // EF_RISCV_FLOAT_ABI_SINGLE | EF_RISCV_RVE
+    half(&mut b, 52);
+    half(&mut b, 32);
+    half(&mut b, 2);
+    half(&mut b, 40);
+    half(&mut b, 3);
+    half(&mut b, 2);
+    for v in [1, 116, 0x2000, 0x2000, 4, 16, 4, 4] {
+        word(&mut b, v); // PT_LOAD, PF_R
+    }
+    for v in [7, 116, 0x2000, 0x2000, 0, 0, 4, 4] {
+        word(&mut b, v); // PT_TLS
+    }
+    b.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]); // offset 116
+    b.extend_from_slice(b"\0.dat\0.shs\0\0"); // offset 120
+    b.resize(132, 0);
+    b.extend_from_slice(&[0; 40]);
+    for v in [1, 1, 3, 0x2000, 116, 4, 0, 0, 4, 0] {
+        word(&mut b, v); // .dat: PROGBITS, SHF_WRITE | SHF_ALLOC
+    }
+    for v in [6, 3, 0, 0, 120, 12, 0, 0, 1, 0] {
+        word(&mut b, v); // .shs: STRTAB
+    }
+    b
+}
+
+#[test]
+fn program_headers_section_kinds_and_header_flags_are_typed() {
+    let bytes = executable();
+    let elf = Elf::executable(&bytes).unwrap();
+    let headers = elf.program_headers();
+    assert_eq!(headers.len(), 2);
+    assert_eq!(headers[0].kind, ProgramHeaderKind::Load);
+    assert_eq!(
+        (
+            headers[0].address,
+            headers[0].file_offset,
+            headers[0].file_size,
+            headers[0].memory_size
+        ),
+        (0x2000, 116, 4, 16)
+    );
+    assert!(headers[0].readable() && !headers[0].writable() && !headers[0].executable());
+    assert_eq!(headers[1].kind, ProgramHeaderKind::Tls);
+    let flags = rv32::header_flags(elf.header_flags());
+    assert_eq!(flags.float_abi, rv32::FloatAbi::Single);
+    assert!(flags.rve);
+    let data = elf.section_by_name(".dat").unwrap();
+    assert_eq!((data.kind, data.file_offset), (SectionKind::Program, 116));
+    assert!(data.writable && data.allocated && !data.executable);
+    assert_eq!(
+        elf.section_by_name(".shs").unwrap().kind,
+        SectionKind::Other(3)
+    );
+    // No symbol table at all.
+    assert_eq!(elf.symbol_table_section(), None);
+    assert_eq!(elf.dynamic_symbols().count(), 0);
+}
+
+#[test]
+fn a_relocatable_object_names_its_symbol_table_section() {
+    let bytes = object();
+    let elf = Elf::parse(&bytes).unwrap();
+    let table = elf.symbol_table_section().unwrap();
+    assert_eq!(elf.section(table).unwrap().kind, SectionKind::SymbolTable);
+    assert!(elf.program_headers().is_empty());
+    assert_eq!(rv32::header_flags(0).float_abi, rv32::FloatAbi::Soft);
+}

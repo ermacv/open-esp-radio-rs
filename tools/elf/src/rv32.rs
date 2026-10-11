@@ -226,3 +226,42 @@ pub fn mask(bytes: &mut [u8], offset: usize, r_type: u32) {
         location.copy_from_slice(&value.to_le_bytes()[..width]);
     }
 }
+
+/// The floating-point calling convention an RV32 file header declares.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FloatAbi {
+    /// `EF_RISCV_FLOAT_ABI_SOFT`.
+    Soft,
+    /// `EF_RISCV_FLOAT_ABI_SINGLE`.
+    Single,
+    /// `EF_RISCV_FLOAT_ABI_DOUBLE`.
+    Double,
+    /// `EF_RISCV_FLOAT_ABI_QUAD`.
+    Quad,
+}
+
+/// What an RV32 file header's `e_flags` declare: the floating-point
+/// calling convention and whether the code is RV32E.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeaderFlags {
+    pub float_abi: FloatAbi,
+    /// `EF_RISCV_RVE`: the reduced integer register file.
+    pub rve: bool,
+}
+
+/// Decode an RV32 file header's `e_flags`.
+pub fn header_flags(e_flags: u32) -> HeaderFlags {
+    use object::elf::{
+        EF_RISCV_FLOAT_ABI, EF_RISCV_FLOAT_ABI_DOUBLE, EF_RISCV_FLOAT_ABI_SINGLE,
+        EF_RISCV_FLOAT_ABI_SOFT, EF_RISCV_RVE,
+    };
+    HeaderFlags {
+        float_abi: match e_flags & EF_RISCV_FLOAT_ABI {
+            EF_RISCV_FLOAT_ABI_SOFT => FloatAbi::Soft,
+            EF_RISCV_FLOAT_ABI_SINGLE => FloatAbi::Single,
+            EF_RISCV_FLOAT_ABI_DOUBLE => FloatAbi::Double,
+            _ => FloatAbi::Quad,
+        },
+        rve: e_flags & EF_RISCV_RVE != 0,
+    }
+}

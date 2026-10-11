@@ -184,7 +184,12 @@ pub const COMPONENTS: &[(&str, &[&str])] = &[
     ("blobray-domain", &["oer-riscv-model"]),
     (
         "blobray-artifacts",
-        &["blobray-domain", "oer-riscv-model", "oer-riscv-program"],
+        &[
+            "blobray-domain",
+            "oer-elf",
+            "oer-riscv-model",
+            "oer-riscv-program",
+        ],
     ),
     (
         "blobray-analysis",

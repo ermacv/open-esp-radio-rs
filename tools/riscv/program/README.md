@@ -1,7 +1,8 @@
 # Static RV32 images
 
-`oer-riscv-program` reads one borrowed static RV32 ELF executable for the
-program model of [`oer-riscv-model`](../model/README.md): its ELF
+`oer-riscv-program` reads one borrowed static RV32 ELF executable, through
+[`oer-elf`](../../elf/README.md) only, for the program model of
+[`oer-riscv-model`](../model/README.md): its ELF
 floating-point ABI (`abi`), its validated load segments and the
 `ProgramView` that serves file-backed constants as `ImageMemory` (bytes of
 readable segments that are neither writable nor executable: code loaded into

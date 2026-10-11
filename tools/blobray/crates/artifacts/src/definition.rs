@@ -53,7 +53,7 @@ pub fn inspect_link_definition(
             "definition carrier must be little-endian RV32 ET_EXEC",
         ));
     }
-    oer_riscv_program::abi(&file)?;
+    oer_riscv_program::abi(&oer_elf::Elf::parse(&bytes).map_err(|e| invalid(&e.to_string()))?)?;
     let object::File::Elf32(elf) = &file else {
         unreachable!()
     };
@@ -330,7 +330,7 @@ mod tests {
             inspect_link_definition(&source, &id, &memory, &mut || Ok(())).unwrap(),
             0x1000
         );
-        let file = object::File::parse(source.0.as_slice()).unwrap();
+        let file = oer_elf::Elf::parse(source.0.as_slice()).unwrap();
         assert_eq!(
             oer_riscv_program::ProgramView::new(&source.0, &file, &memory, &mut || Ok(()))
                 .err()
@@ -352,7 +352,7 @@ mod tests {
             inspect_link_definition(&source, &id, &memory, &mut || Ok(())).unwrap(),
             0x1000
         );
-        let file = object::File::parse(source.0.as_slice()).unwrap();
+        let file = oer_elf::Elf::parse(source.0.as_slice()).unwrap();
         assert_eq!(
             oer_riscv_program::ProgramView::new(&source.0, &file, &memory, &mut || Ok(()))
                 .err()

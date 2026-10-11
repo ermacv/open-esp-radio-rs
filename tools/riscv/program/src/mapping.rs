@@ -1,5 +1,4 @@
 //! One owner for ELF mapping-symbol interpretation and admitted interval storage.
-use object::{Object, ObjectSection, ObjectSymbol};
 use oer_riscv_model::*;
 
 pub struct DataRanges<'a> {
@@ -32,29 +31,28 @@ fn kind(name: &[u8]) -> Result<Option<bool>> {
     }
 }
 pub fn data_ranges<'a>(
-    file: &object::File<'_>,
-    section_index: object::SectionIndex,
+    file: &oer_elf::Elf<'_>,
+    section_index: usize,
     memory: &'a WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<DataRanges<'a>> {
     let section = file
-        .section_by_index(section_index)
+        .section(section_index)
         .map_err(|_| invalid("invalid mapping section"))?;
     let end = section
-        .address()
-        .checked_add(section.size())
+        .address
+        .checked_add(section.size)
         .ok_or_else(|| invalid("mapping section extent overflow"))?;
     let mut count = 0usize;
-    for symbol in file.symbols().chain(file.dynamic_symbols()) {
+    let symbols = || {
+        file.checked_symbols()
+            .chain(file.checked_dynamic_symbols())
+            .map(|symbol| symbol.map_err(|_| invalid("invalid mapping symbol name")))
+    };
+    for symbol in symbols() {
         control.checkpoint(1)?;
-        if symbol.section_index() == Some(section_index)
-            && kind(
-                symbol
-                    .name_bytes()
-                    .map_err(|_| invalid("invalid mapping symbol name"))?,
-            )?
-            .is_some()
-        {
+        let symbol = symbol?;
+        if symbol.section == Some(section_index) && kind(symbol.name.as_bytes())?.is_some() {
             count = count
                 .checked_add(1)
                 .ok_or_else(|| invalid("mapping count overflow"))?;
@@ -74,29 +72,25 @@ pub fn data_ranges<'a>(
         .map_err(|_| allocation())?;
     let mut ranges = Vec::new();
     ranges.try_reserve_exact(count).map_err(|_| allocation())?;
-    for symbol in file.symbols().chain(file.dynamic_symbols()) {
+    for symbol in symbols() {
         control.checkpoint(1)?;
-        if symbol.section_index() != Some(section_index) {
+        let symbol = symbol?;
+        if symbol.section != Some(section_index) {
             continue;
         }
-        let Some(is_data) = kind(
-            symbol
-                .name_bytes()
-                .map_err(|_| invalid("invalid mapping symbol name"))?,
-        )?
-        else {
+        let Some(is_data) = kind(symbol.name.as_bytes())? else {
             continue;
         };
-        if !symbol.is_local()
-            || symbol.kind() != object::SymbolKind::Unknown
-            || symbol.size() != 0
-            || symbol.address() < section.address()
-            || symbol.address() > end
-            || (!is_data && symbol.address() & 1 != 0)
+        if symbol.global
+            || symbol.kind != oer_elf::SymbolKind::Unknown
+            || symbol.size != 0
+            || symbol.address < section.address
+            || symbol.address > end
+            || (!is_data && symbol.address & 1 != 0)
         {
             return Err(invalid("invalid ELF mapping symbol"));
         }
-        mappings.push((symbol.address(), is_data));
+        mappings.push((symbol.address, is_data));
     }
     // In-place, bounded storage; charge the comparison bound before sorting.
     control.checkpoint(
@@ -121,4 +115,77 @@ pub fn data_ranges<'a>(
         ranges,
         _capacity: capacity,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use object::write::{Object, StandardSection, Symbol, SymbolSection};
+    use object::{Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolKind, SymbolScope};
+
+    /// A relocatable RV32 object whose `.text` holds eight bytes and a `$d`
+    /// mapping symbol at offset 4, with the `.text` section index.
+    fn object() -> (Vec<u8>, usize) {
+        let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+        let text = object.section_id(StandardSection::Text);
+        object.append_section_data(text, &[0; 8], 4);
+        object.add_symbol(Symbol {
+            name: b"$d".to_vec(),
+            value: 4,
+            size: 0,
+            kind: SymbolKind::Label,
+            scope: SymbolScope::Compilation,
+            weak: false,
+            section: SymbolSection::Section(text),
+            flags: SymbolFlags::None,
+        });
+        let bytes = object.write().unwrap();
+        let index = oer_elf::Elf::parse(&bytes)
+            .unwrap()
+            .section_by_name(".text")
+            .unwrap()
+            .index;
+        (bytes, index)
+    }
+
+    #[test]
+    fn a_mapping_symbol_marks_data_and_an_unreadable_name_fails() {
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let (mut bytes, text) = object();
+        let ranges = data_ranges(
+            &oer_elf::Elf::parse(&bytes).unwrap(),
+            text,
+            &memory,
+            &mut || Ok(()),
+        )
+        .unwrap()
+        .ranges;
+        assert_eq!(
+            ranges,
+            [CodeRange {
+                start: 4,
+                length: 4
+            }]
+        );
+        // Point the `$d` symbol's name outside the string table.
+        let elf = oer_elf::Elf::parse(&bytes).unwrap();
+        let table = elf.section(elf.symbol_table_section().unwrap()).unwrap();
+        let entry = elf
+            .checked_symbols()
+            .map(|s| s.unwrap())
+            .find(|s| s.name == "$d")
+            .unwrap()
+            .index;
+        let at = (table.file_offset + 16 * entry as u64) as usize;
+        bytes[at..at + 4].copy_from_slice(&0x00ff_ffffu32.to_le_bytes());
+        let error = data_ranges(
+            &oer_elf::Elf::parse(&bytes).unwrap(),
+            text,
+            &memory,
+            &mut || Ok(()),
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.message, "invalid mapping symbol name");
+    }
 }

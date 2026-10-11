@@ -1,7 +1,12 @@
 //! Borrowed RV32 static ELF image. No loading, relocation or environment models.
 pub mod mapping;
-use object::{Object, ObjectSection, ObjectSegment};
+use oer_elf::{ProgramHeaderKind, SectionKind, rv32};
 use oer_riscv_model::*;
+
+/// `PF_X`, `PF_W` and `PF_R` of an [`ImageSegment`]'s raw ELF permissions.
+const PF_X: u32 = 1;
+const PF_W: u32 = 2;
+const PF_R: u32 = 4;
 
 pub struct ProgramView<'a> {
     bytes: &'a [u8],
@@ -12,18 +17,16 @@ fn bad(message: impl Into<String>) -> Error {
     Error::new(ErrorCode::LinkBlocked, message)
 }
 /// The ELF-declared floating-point calling convention of an RV32 image.
-pub fn abi(file: &object::File<'_>) -> Result<RiscvAbi> {
-    let object::FileFlags::Elf { e_flags, .. } = file.flags() else {
-        return Err(bad("not an ELF ABI"));
-    };
-    if e_flags & object::elf::EF_RISCV_RVE != 0 {
+pub fn abi(file: &oer_elf::Elf<'_>) -> Result<RiscvAbi> {
+    let flags = rv32::header_flags(file.header_flags());
+    if flags.rve {
         return Err(bad("RV32E is outside the RV32 integer-register profile"));
     }
-    match e_flags & object::elf::EF_RISCV_FLOAT_ABI {
-        object::elf::EF_RISCV_FLOAT_ABI_SOFT => Ok(RiscvAbi::Ilp32),
-        object::elf::EF_RISCV_FLOAT_ABI_SINGLE => Ok(RiscvAbi::Ilp32f),
-        object::elf::EF_RISCV_FLOAT_ABI_DOUBLE => Ok(RiscvAbi::Ilp32d),
-        _ => Err(bad("unsupported ELF floating-point ABI")),
+    match flags.float_abi {
+        rv32::FloatAbi::Soft => Ok(RiscvAbi::Ilp32),
+        rv32::FloatAbi::Single => Ok(RiscvAbi::Ilp32f),
+        rv32::FloatAbi::Double => Ok(RiscvAbi::Ilp32d),
+        rv32::FloatAbi::Quad => Err(bad("unsupported ELF floating-point ABI")),
     }
 }
 fn invalid(message: &str) -> Error {
@@ -41,7 +44,7 @@ impl<'a> ProgramView<'a> {
         }
         for segment in &self.segments {
             c.checkpoint(1)?;
-            if segment.flags & object::elf::PF_X != 0
+            if segment.flags & PF_X != 0
                 && u64::from(address) >= segment.address
                 && u64::from(address) + u64::from(length) <= segment.address + segment.file_size
             {
@@ -57,19 +60,18 @@ impl<'a> ProgramView<'a> {
 
     pub fn new(
         bytes: &'a [u8],
-        file: &object::File<'_>,
+        file: &oer_elf::Elf<'_>,
         memory: &'a WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<Self> {
-        use object::read::elf::{ProgramHeader, SectionHeader};
-        let object::File::Elf32(elf) = file else {
-            return Err(invalid("image is not ELF32"));
-        };
-        for header in elf.elf_program_headers() {
+        let headers = file.program_headers();
+        for header in &headers {
             c.checkpoint(1)?;
             if matches!(
-                header.p_type(elf.endian()),
-                object::elf::PT_DYNAMIC | object::elf::PT_INTERP | object::elf::PT_TLS
+                header.kind,
+                ProgramHeaderKind::Dynamic
+                    | ProgramHeaderKind::Interpreter
+                    | ProgramHeaderKind::Tls
             ) {
                 return Err(Error::new(
                     ErrorCode::Incompatible,
@@ -89,7 +91,10 @@ impl<'a> ProgramView<'a> {
                 "image segment allocation refused",
             )
         })?;
-        for segment in file.segments() {
+        for segment in headers
+            .iter()
+            .filter(|header| header.kind == ProgramHeaderKind::Load)
+        {
             c.checkpoint(1)?;
             if segments.len() == 1024 {
                 return Err(Error::new(
@@ -97,40 +102,36 @@ impl<'a> ProgramView<'a> {
                     "image exceeds 1024 load segments",
                 ));
             }
-            let object::SegmentFlags::Elf { p_flags } = segment.flags() else {
-                return Err(invalid("non-ELF load segment"));
-            };
-            let (offset, size) = segment.file_range();
+            let (offset, size) = (segment.file_offset, segment.file_size);
             let end = segment
-                .address()
-                .checked_add(segment.size())
+                .address
+                .checked_add(segment.memory_size)
                 .filter(|v| *v <= 1u64 << 32)
                 .ok_or_else(|| invalid("segment exceeds RV32 address space"))?;
-            if size > segment.size()
+            if size > segment.memory_size
                 || offset
                     .checked_add(size)
                     .is_none_or(|v| v > bytes.len() as u64)
-                || p_flags & (object::elf::PF_W | object::elf::PF_X)
-                    == (object::elf::PF_W | object::elf::PF_X)
+                || (segment.writable() && segment.executable())
             {
                 return Err(invalid("invalid segment bounds or writable code"));
             }
             for previous in &segments {
                 c.checkpoint(1)?;
-                if segment.size() != 0
+                if segment.memory_size != 0
                     && previous.memory_size != 0
-                    && segment.address() < previous.address + previous.memory_size
+                    && segment.address < previous.address + previous.memory_size
                     && previous.address < end
                 {
                     return Err(invalid("overlapping load segments"));
                 }
             }
             segments.push(ImageSegment {
-                address: segment.address(),
+                address: segment.address,
                 file_offset: offset,
                 file_size: size,
-                memory_size: segment.size(),
-                flags: p_flags,
+                memory_size: segment.memory_size,
+                flags: segment.flags,
             });
         }
         if segments.is_empty() {
@@ -138,26 +139,13 @@ impl<'a> ProgramView<'a> {
         }
         for section in file.sections() {
             c.checkpoint(1)?;
-            let header = elf
-                .elf_section_table()
-                .section(section.index())
-                .map_err(|_| invalid("invalid ELF section index"))?;
-            if matches!(
-                section.kind(),
-                object::SectionKind::Tls | object::SectionKind::UninitializedTls
-            ) || header.sh_type(elf.endian()) == object::elf::SHT_DYNAMIC
-            {
+            if section.tls || section.kind == SectionKind::Dynamic {
                 return Err(Error::new(
                     ErrorCode::Incompatible,
                     "dynamic loading and TLS are outside the static image profile",
                 ));
             }
-            if header.sh_flags(elf.endian()) & object::elf::SHF_ALLOC != 0
-                && matches!(
-                    header.sh_type(elf.endian()),
-                    object::elf::SHT_REL | object::elf::SHT_RELA
-                )
-            {
+            if section.allocated && matches!(section.kind, SectionKind::Rel | SectionKind::Rela) {
                 return Err(Error::new(
                     ErrorCode::Incompatible,
                     "runtime relocation sections are outside the static image profile",
@@ -195,7 +183,7 @@ impl<'a> ProgramView<'a> {
             }
             let segment =
                 found.ok_or_else(|| invalid("data range has no file-backed load mapping"))?;
-            writable |= segment.flags & object::elf::PF_W != 0;
+            writable |= segment.flags & PF_W != 0;
             let offset = at - segment.address;
             if segment.file_offset.checked_add(offset) != file_offset.checked_add(consumed) {
                 return Err(invalid("section data differs from loaded segment mapping"));
@@ -207,7 +195,7 @@ impl<'a> ProgramView<'a> {
     pub fn code(&self, address: u64, code: &[u8], c: &mut dyn RunControl) -> Result<()> {
         for segment in &self.segments {
             c.checkpoint(1)?;
-            if segment.flags & object::elf::PF_X != 0 && address >= segment.address {
+            if segment.flags & PF_X != 0 && address >= segment.address {
                 let offset = address - segment.address;
                 if offset
                     .checked_add(code.len() as u64)
@@ -239,10 +227,7 @@ impl ImageMemory for ProgramView<'_> {
             // holds constants: code loaded into RAM may carry tables the
             // program rewrites, such as a vector table in an `AX` section,
             // whose file bytes are only the initial contents.
-            if segment.flags & (object::elf::PF_R | object::elf::PF_W | object::elf::PF_X)
-                != object::elf::PF_R
-                || address < segment.address
-            {
+            if segment.flags & (PF_R | PF_W | PF_X) != PF_R || address < segment.address {
                 continue;
             }
             let offset = address - segment.address;
@@ -278,14 +263,8 @@ pub fn execution_segments(
         control.position(),
     )?;
     source.read_at(0, &mut bytes, control)?;
-    let file = object::File::parse(&*bytes).map_err(|_| invalid("invalid executable ELF"))?;
-    if file.kind() != object::ObjectKind::Executable
-        || file.architecture() != object::Architecture::Riscv32
-        || !file.is_little_endian()
-        || file.is_64()
-    {
-        return Err(invalid("execution requires static little-endian RV32 ELF"));
-    }
+    let file = oer_elf::Elf::executable(&bytes)
+        .map_err(|_| invalid("execution requires static little-endian RV32 ELF"))?;
     let view = ProgramView::new(&bytes, &file, memory, control)?;
     let boot = boot_data(&file, &bytes, control)?;
     for segment in &view.segments {
@@ -335,43 +314,35 @@ pub fn code_symbol_at(
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<u32> {
-    use object::{Object, ObjectSection, ObjectSymbol, ObjectSymbolTable, SymbolKind};
     let mut bytes = memory.bytes(
         usize::try_from(source.len()).map_err(|_| invalid("ELF size overflow"))?,
         control.position(),
     )?;
     source.read_at(0, &mut bytes, control)?;
-    let file = object::File::parse(&*bytes).map_err(|_| invalid("invalid executable ELF"))?;
-    if file.kind() != object::ObjectKind::Executable
-        || file.architecture() != object::Architecture::Riscv32
-    {
-        return Err(invalid("code symbols require a static RV32 executable"));
-    }
-    let object::File::Elf32(elf) = &file else {
-        return Err(invalid("code symbols require an ELF32 executable"));
-    };
-    let physical = elf.elf_symbol_table().section();
-    if physical.0 == 0 || physical.0 != table_section as usize {
+    let file = oer_elf::Elf::executable(&bytes)
+        .map_err(|_| invalid("code symbols require a static RV32 executable"))?;
+    let physical = file
+        .symbol_table_section()
+        .ok_or_else(|| invalid("executable has no static symbol table"))?;
+    if physical != table_section as usize {
         return Err(invalid("symbol belongs to another physical table"));
     }
-    let table = file
-        .symbol_table()
-        .ok_or_else(|| invalid("executable has no static symbol table"))?;
-    let symbol = table
-        .symbol_by_index(object::SymbolIndex(
-            usize::try_from(index).map_err(|_| invalid("symbol index overflow"))?,
-        ))
+    let symbol = file
+        .symbol_at(usize::try_from(index).map_err(|_| invalid("symbol index overflow"))?)
         .map_err(|_| invalid("symbol index outside the table"))?;
     let section = symbol
-        .section_index()
-        .and_then(|i| file.section_by_index(i).ok())
+        .section
+        .and_then(|i| file.section(i).ok())
         .ok_or_else(|| invalid("execution boundary is undefined/absolute"))?;
-    let address = symbol.address();
-    if symbol.is_undefined()
-        || !matches!(symbol.kind(), SymbolKind::Text | SymbolKind::Unknown)
-        || !matches!(section.flags(), object::SectionFlags::Elf { sh_flags } if sh_flags & 4 != 0)
-        || address < section.address()
-        || address - section.address() >= section.size()
+    let address = symbol.address;
+    if !symbol.defined
+        || !matches!(
+            symbol.kind,
+            oer_elf::SymbolKind::Text | oer_elf::SymbolKind::Unknown
+        )
+        || !section.executable
+        || address < section.address
+        || address - section.address >= section.size
         || address & 1 != 0
     {
         return Err(invalid("execution symbol is outside executable bytes"));
@@ -420,29 +391,24 @@ pub fn code_symbols(
 /// copies them there at start-up; execution begins from that state. Sections
 /// that overlap with content, or exceed the file, are rejected.
 fn boot_data<'b>(
-    file: &object::File<'b>,
+    file: &oer_elf::Elf<'_>,
     bytes: &'b [u8],
     control: &mut dyn RunControl,
 ) -> Result<Vec<(u64, &'b [u8])>> {
-    use object::read::elf::SectionHeader;
-    let object::File::Elf32(elf) = file else {
-        return Ok(Vec::new());
-    };
-    let endian = elf.endian();
     let mut result: Vec<(u64, &'b [u8])> = Vec::new();
-    for header in elf.elf_section_table().iter() {
+    for section in file.sections() {
         control.checkpoint(1)?;
-        let flags = header.sh_flags(endian);
-        let size = u64::from(header.sh_size(endian));
-        if header.sh_type(endian) != object::elf::SHT_PROGBITS
-            || flags & object::elf::SHF_WRITE == 0
-            || flags & (object::elf::SHF_EXECINSTR | object::elf::SHF_TLS) != 0
+        let size = section.size;
+        if section.kind != SectionKind::Program
+            || !section.writable
+            || section.executable
+            || section.tls
             || size == 0
         {
             continue;
         }
-        let offset = u64::from(header.sh_offset(endian));
-        let address = u64::from(header.sh_addr(endian));
+        let offset = section.file_offset;
+        let address = section.address;
         let data = offset
             .checked_add(size)
             .filter(|end| *end <= bytes.len() as u64)
@@ -470,32 +436,33 @@ pub fn executable_sections(
     control: &mut dyn RunControl,
     consume: &mut impl FnMut(ExecutableSectionView<'_>, &mut dyn RunControl) -> Result<()>,
 ) -> Result<()> {
-    let file = object::File::parse(bytes).map_err(|_| invalid("invalid executable ELF"))?;
-    if file.kind() != object::ObjectKind::Executable
-        || file.architecture() != object::Architecture::Riscv32
-        || !file.is_little_endian()
-        || file.is_64()
-    {
-        return Err(invalid("audit requires static little-endian RV32 ELF"));
-    }
+    let file = oer_elf::Elf::executable(bytes)
+        .map_err(|_| invalid("audit requires static little-endian RV32 ELF"))?;
     let _view = ProgramView::new(bytes, &file, memory, control)?;
     let mut found = false;
     for section in file.sections() {
         control.checkpoint(1)?;
-        if !matches!(section.flags(), object::SectionFlags::Elf { sh_flags } if sh_flags & u64::from(object::elf::SHF_EXECINSTR) != 0)
-        {
+        if !section.executable {
             continue;
         }
-        let data = section
-            .data()
-            .map_err(|_| invalid("invalid executable section bytes"))?;
+        let data = section.data;
+        // A section whose file range leaves the file reads as empty; that is
+        // a malformed image, never an empty section to skip.
+        if !section.nobits
+            && section
+                .file_offset
+                .checked_add(section.size)
+                .is_none_or(|end| end > bytes.len() as u64)
+        {
+            return Err(invalid("invalid executable section bytes"));
+        }
         if data.is_empty() {
             continue;
         }
-        let address = u32::try_from(section.address())
-            .map_err(|_| invalid("section address exceeds RV32"))?;
+        let address =
+            u32::try_from(section.address).map_err(|_| invalid("section address exceeds RV32"))?;
         if section
-            .address()
+            .address
             .checked_add(data.len() as u64)
             .is_none_or(|v| v > 1u64 << 32)
             || address & 1 != 0
@@ -504,10 +471,10 @@ pub fn executable_sections(
         }
         found = true;
         _view.code(u64::from(address), data, control)?;
-        let mappings = crate::mapping::data_ranges(&file, section.index(), memory, control)?;
+        let mappings = crate::mapping::data_ranges(&file, section.index, memory, control)?;
         consume(
             ExecutableSectionView {
-                section: section.index().0 as u32,
+                section: section.index as u32,
                 address,
                 bytes: data,
                 data_ranges: &mappings.ranges,
@@ -602,10 +569,25 @@ mod tests {
         assert_eq!(load(elf(0x3000)).unwrap(), [(0x2000, vec![])]);
     }
     #[test]
+    fn an_executable_section_beyond_the_file_fails_instead_of_being_skipped() {
+        // `.dat` becomes `AX` (SHF_ALLOC | SHF_EXECINSTR) at the executable
+        // segment's address, its size reaching past the end of the file.
+        let mut bytes = segment_elf(0x2000, 4, 5);
+        let header = 140;
+        bytes[header + 8..header + 12].copy_from_slice(&6u32.to_le_bytes());
+        bytes[header + 20..header + 24].copy_from_slice(&0x1000u32.to_le_bytes());
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let error = executable_sections(&bytes, &memory, &mut || Ok(()), &mut |_, _| {
+            panic!("a truncated section is never visited")
+        })
+        .unwrap_err();
+        assert_eq!(error.message, "invalid executable section bytes");
+    }
+    #[test]
     fn constants_come_only_from_segments_neither_writable_nor_executable() {
         let constant = |flags| {
             let bytes = segment_elf(0x3000, 4, flags);
-            let file = object::File::parse(bytes.as_slice()).unwrap();
+            let file = oer_elf::Elf::parse(bytes.as_slice()).unwrap();
             let memory = WorkingMemory::new(1 << 20).unwrap();
             let view = ProgramView::new(&bytes, &file, &memory, &mut || Ok(())).unwrap();
             let mut word = [0; 4];
@@ -614,7 +596,7 @@ mod tests {
                 .unwrap();
             known.then_some(word)
         };
-        let (r, w, x) = (object::elf::PF_R, object::elf::PF_W, object::elf::PF_X);
+        let (r, w, x) = (PF_R, PF_W, PF_X);
         assert_eq!(constant(r), Some([0x11, 0x22, 0x33, 0x44]));
         assert_eq!(constant(r | w), None);
         // A vector table in RAM code: the program rewrites what the file

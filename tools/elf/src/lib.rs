@@ -38,10 +38,10 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-impl From<object::Error> for Error {
-    fn from(error: object::Error) -> Self {
-        Self(error.to_string())
-    }
+/// An `object` parse failure as this crate's error; private, so no `object`
+/// type appears in the public interface.
+fn parse_error(error: object::Error) -> Error {
+    Error(error.to_string())
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -103,8 +103,96 @@ pub struct Section<'data> {
     pub tls: bool,
     /// `SHT_NOBITS`: no bytes in the file.
     pub nobits: bool,
+    /// What the section header says it holds.
+    pub kind: SectionKind,
+    /// Where its bytes start in the file; zero for `NOBITS`.
+    pub file_offset: u64,
     /// The section's bytes in the file; empty for `NOBITS`.
     pub data: &'data [u8],
+}
+
+/// The type of a section header (`sh_type`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SectionKind {
+    /// `SHT_PROGBITS`: contents the file carries.
+    Program,
+    /// `SHT_NOBITS`.
+    NoBits,
+    /// `SHT_SYMTAB`.
+    SymbolTable,
+    /// `SHT_DYNSYM`.
+    DynamicSymbolTable,
+    /// `SHT_REL`.
+    Rel,
+    /// `SHT_RELA`.
+    Rela,
+    /// `SHT_DYNAMIC`.
+    Dynamic,
+    /// Any other type.
+    Other(u32),
+}
+
+impl SectionKind {
+    fn of(sh_type: u32) -> Self {
+        use object::elf::*;
+        match sh_type {
+            SHT_PROGBITS => Self::Program,
+            SHT_NOBITS => Self::NoBits,
+            SHT_SYMTAB => Self::SymbolTable,
+            SHT_DYNSYM => Self::DynamicSymbolTable,
+            SHT_REL => Self::Rel,
+            SHT_RELA => Self::Rela,
+            SHT_DYNAMIC => Self::Dynamic,
+            other => Self::Other(other),
+        }
+    }
+}
+
+/// One program header.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProgramHeader {
+    pub kind: ProgramHeaderKind,
+    pub address: u64,
+    pub file_offset: u64,
+    /// Bytes the file carries.
+    pub file_size: u64,
+    /// Bytes in memory; beyond `file_size` they are zero.
+    pub memory_size: u64,
+    /// The raw `p_flags`; [`ProgramHeader::readable`], `writable` and
+    /// `executable` name its permission bits.
+    pub flags: u32,
+}
+
+impl ProgramHeader {
+    /// `PF_R`.
+    pub fn readable(&self) -> bool {
+        self.flags & object::elf::PF_R != 0
+    }
+
+    /// `PF_W`.
+    pub fn writable(&self) -> bool {
+        self.flags & object::elf::PF_W != 0
+    }
+
+    /// `PF_X`.
+    pub fn executable(&self) -> bool {
+        self.flags & object::elf::PF_X != 0
+    }
+}
+
+/// The type of a program header (`p_type`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProgramHeaderKind {
+    /// `PT_LOAD`.
+    Load,
+    /// `PT_DYNAMIC`.
+    Dynamic,
+    /// `PT_INTERP`.
+    Interpreter,
+    /// `PT_TLS`.
+    Tls,
+    /// Any other type.
+    Other(u32),
 }
 
 impl Section<'_> {
@@ -238,15 +326,15 @@ pub fn is_binary(bytes: &[u8]) -> bool {
 /// Every member of the static archive `bytes`, by name, in archive order.
 /// A thin archive, whose members live elsewhere, is refused.
 pub fn members(bytes: &[u8]) -> Result<Vec<(String, &[u8])>> {
-    let archive = ArchiveFile::parse(bytes)?;
+    let archive = ArchiveFile::parse(bytes).map_err(parse_error)?;
     if archive.is_thin() {
         return Err(Error::new("thin archives hold no members"));
     }
     let mut members = Vec::new();
     for member in archive.members() {
-        let member = member?;
+        let member = member.map_err(parse_error)?;
         let name = String::from_utf8_lossy(member.name()).into_owned();
-        members.push((name, member.data(bytes)?));
+        members.push((name, member.data(bytes).map_err(parse_error)?));
     }
     Ok(members)
 }
@@ -266,7 +354,7 @@ pub fn objects(bytes: &[u8]) -> Result<Vec<(String, Elf<'_>)>> {
 impl<'data> Elf<'data> {
     /// Parse an ELF file.
     pub fn parse(bytes: &'data [u8]) -> Result<Self> {
-        let file = object::File::parse(bytes)?;
+        let file = object::File::parse(bytes).map_err(parse_error)?;
         if file.format() != object::BinaryFormat::Elf {
             return Err(Error::new("not an ELF file"));
         }
@@ -300,9 +388,9 @@ impl<'data> Elf<'data> {
         self.file.symbol_table().is_some()
     }
 
-    /// The underlying `object` view, for format details this view does not
-    /// name (Blobray's ABI checks).
-    pub fn object(&self) -> &object::File<'data> {
+    /// The underlying `object` view, for this crate's DWARF reader only:
+    /// no `object` type leaves the crate.
+    pub(crate) fn object(&self) -> &object::File<'data> {
         &self.file
     }
 
@@ -314,7 +402,10 @@ impl<'data> Elf<'data> {
 
     /// The symbol at `index` of the static symbol table.
     pub fn symbol_at(&self, index: usize) -> Result<Symbol<'data>> {
-        let entry = self.file.symbol_by_index(object::SymbolIndex(index))?;
+        let entry = self
+            .file
+            .symbol_by_index(object::SymbolIndex(index))
+            .map_err(parse_error)?;
         symbol(entry).ok_or_else(|| Error::new(format!("symbol {index} has no readable name")))
     }
 
@@ -338,6 +429,69 @@ impl<'data> Elf<'data> {
         map
     }
 
+    /// Every program header, in table order; none for a file without them.
+    pub fn program_headers(&self) -> Vec<ProgramHeader> {
+        use object::read::elf::{FileHeader, ProgramHeader as _};
+        fn headers<H: FileHeader>(file: &object::read::elf::ElfFile<'_, H>) -> Vec<ProgramHeader> {
+            let endian = file.endian();
+            file.elf_program_headers()
+                .iter()
+                .map(|header| ProgramHeader {
+                    kind: match header.p_type(endian) {
+                        object::elf::PT_LOAD => ProgramHeaderKind::Load,
+                        object::elf::PT_DYNAMIC => ProgramHeaderKind::Dynamic,
+                        object::elf::PT_INTERP => ProgramHeaderKind::Interpreter,
+                        object::elf::PT_TLS => ProgramHeaderKind::Tls,
+                        other => ProgramHeaderKind::Other(other),
+                    },
+                    address: header.p_vaddr(endian).into(),
+                    file_offset: header.p_offset(endian).into(),
+                    file_size: header.p_filesz(endian).into(),
+                    memory_size: header.p_memsz(endian).into(),
+                    flags: header.p_flags(endian),
+                })
+                .collect()
+        }
+        match &self.file {
+            object::File::Elf32(file) => headers(file),
+            object::File::Elf64(file) => headers(file),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The raw `e_flags` of the file header.
+    pub fn header_flags(&self) -> u32 {
+        match self.file.flags() {
+            object::FileFlags::Elf { e_flags, .. } => e_flags,
+            _ => 0,
+        }
+    }
+
+    /// The section index of the static symbol table, when the file has one.
+    pub fn symbol_table_section(&self) -> Option<usize> {
+        self.sections()
+            .find(|section| section.kind == SectionKind::SymbolTable)
+            .map(|section| section.index)
+    }
+
+    /// Every symbol of the static symbol table, in table order, failing on
+    /// a symbol whose name cannot be read instead of skipping it.
+    pub fn checked_symbols(&self) -> impl Iterator<Item = Result<Symbol<'data>>> + '_ {
+        self.file.symbols().map(checked_symbol)
+    }
+
+    /// Every symbol of the dynamic symbol table, in table order, failing on
+    /// a symbol whose name cannot be read instead of skipping it.
+    pub fn checked_dynamic_symbols(&self) -> impl Iterator<Item = Result<Symbol<'data>>> + '_ {
+        self.file.dynamic_symbols().map(checked_symbol)
+    }
+
+    /// Every symbol of the dynamic symbol table, in table order. Symbols
+    /// whose name is unreadable are skipped.
+    pub fn dynamic_symbols(&self) -> impl Iterator<Item = Symbol<'data>> + '_ {
+        self.file.dynamic_symbols().filter_map(symbol)
+    }
+
     /// Every loadable segment, in program-header order.
     pub fn segments(&self) -> impl Iterator<Item = Segment<'data>> + '_ {
         self.file.segments().map(|segment| Segment {
@@ -353,24 +507,33 @@ impl<'data> Elf<'data> {
 
     /// Every section header, in table order.
     pub fn sections(&self) -> impl Iterator<Item = Section<'data>> + '_ {
-        self.file.sections().map(|s| section(&s))
+        self.file.sections().map(|s| section(&self.file, &s))
     }
 
     /// The section at `index`.
     pub fn section(&self, index: usize) -> Result<Section<'data>> {
         Ok(section(
-            &self.file.section_by_index(object::SectionIndex(index))?,
+            &self.file,
+            &self
+                .file
+                .section_by_index(object::SectionIndex(index))
+                .map_err(parse_error)?,
         ))
     }
 
     /// The first section named `name`.
     pub fn section_by_name(&self, name: &str) -> Option<Section<'data>> {
-        self.file.section_by_name(name).map(|s| section(&s))
+        self.file
+            .section_by_name(name)
+            .map(|s| section(&self.file, &s))
     }
 
     /// The relocations of the section at `index`, in file order.
     pub fn relocations(&self, index: usize) -> Result<Vec<Relocation>> {
-        let header = self.file.section_by_index(object::SectionIndex(index))?;
+        let header = self
+            .file
+            .section_by_index(object::SectionIndex(index))
+            .map_err(parse_error)?;
         Ok(header
             .relocations()
             .filter_map(|(at, r)| relocation(index, at, &r))
@@ -544,6 +707,11 @@ impl<'data> Elf<'data> {
     }
 }
 
+fn checked_symbol<'data>(entry: object::Symbol<'data, '_>) -> Result<Symbol<'data>> {
+    let index = entry.index().0;
+    symbol(entry).ok_or_else(|| Error::new(format!("symbol {index} has no readable name")))
+}
+
 fn symbol<'data>(entry: object::Symbol<'data, '_>) -> Option<Symbol<'data>> {
     let name = entry.name().ok()?;
     Some(Symbol {
@@ -565,13 +733,18 @@ fn symbol<'data>(entry: object::Symbol<'data, '_>) -> Option<Symbol<'data>> {
     })
 }
 
-fn section<'data>(header: &object::Section<'data, '_>) -> Section<'data> {
+fn section<'data>(
+    file: &object::File<'data>,
+    header: &object::Section<'data, '_>,
+) -> Section<'data> {
     let flags = match header.flags() {
         object::SectionFlags::Elf { sh_flags } => sh_flags,
         _ => 0,
     };
     // Only `SHT_NOBITS` (and the null section) occupy no file bytes.
-    let nobits = header.file_range().is_none();
+    let file_range = header.file_range();
+    let nobits = file_range.is_none();
+    let sh_type = elf_section_type(file, header.index().0);
     Section {
         index: header.index().0,
         name: header.name().unwrap_or_default(),
@@ -582,11 +755,30 @@ fn section<'data>(header: &object::Section<'data, '_>) -> Section<'data> {
         executable: flags & u64::from(object::elf::SHF_EXECINSTR) != 0,
         tls: flags & u64::from(object::elf::SHF_TLS) != 0,
         nobits,
+        kind: SectionKind::of(sh_type),
+        file_offset: file_range.map_or(0, |(offset, _)| offset),
         data: if nobits {
             &[]
         } else {
             header.data().unwrap_or_default()
         },
+    }
+}
+
+/// The `sh_type` of the section at `index` of `file`.
+fn elf_section_type(file: &object::File<'_>, index: usize) -> u32 {
+    use object::read::elf::SectionHeader;
+    let index = object::SectionIndex(index);
+    match file {
+        object::File::Elf32(elf) => elf
+            .elf_section_table()
+            .section(index)
+            .map_or(0, |header| header.sh_type(elf.endian())),
+        object::File::Elf64(elf) => elf
+            .elf_section_table()
+            .section(index)
+            .map_or(0, |header| header.sh_type(elf.endian())),
+        _ => 0,
     }
 }
 

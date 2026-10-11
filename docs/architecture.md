@@ -398,16 +398,14 @@ as the port exists.
 `install` returns two handles that borrow its runtime, and no other value
 reaches the installed backend: the port, for the protocol's one event
 consumer, and the control, for the composition, which carries the backend's
-own operations (coexistence, statistics, diagnostic hardware reads and,
-for Bluetooth LE, shared-PHY maintenance). The control's `uninstall`
-consumes both, so "not installed" is unrepresentable and no port call
-refuses as such. The interrupt entries and the runner stay on the runtime
-itself. The Bluetooth LE backend's shared-PHY maintenance is a layer over
-`Quiesce`: the consumer sees `Quiesced` and `Enabled`, and meanwhile the
-port refuses what would touch the held hardware as its contract states for
-its quiesced state. The IEEE 802.15.4 backend never pauses for it: PHY
-tracking runs with the MAC receiving, and an operation that loses RF ends
-with its ordinary terminal event. A port's
+own operations (coexistence, statistics and diagnostic hardware reads).
+The control's `uninstall` consumes both, so "not installed" is
+unrepresentable and no port call refuses as such. The interrupt entries and
+the runner stay on the runtime itself. Shared-PHY maintenance is not a layer
+over `Quiesce` and never pauses a port: PHY tracking and recalibration run
+under the radio arbiter's lease with the vendor grant-protect brackets, the
+protocol keeps running, and an operation that loses RF to them ends with its
+ordinary terminal event. A port's
 event stream lives as long as the port: `uninstall` discards the events it
 did not deliver, the terminal events still owed and a pending loss, and the
 next install's port starts with an empty stream; every event guarantee
@@ -461,7 +459,7 @@ interpreting it.
 | --- | --- | --- |
 | `Ieee80211LowerMacPort` | `lifecycle(Enable / Disable / Quiesce)` and `cancel(TxId)` | affine: the Wi-Fi MAC local time, sampled against the image's monotonic clock |
 | `Ieee802154RadioPort` | `lifecycle(Enable / Disable / Quiesce)` with `RadioEvent::Lifecycle` terminals and `cancel(RequestId)` | identical: the runtime's `Clock`, which the engine reads fresh at each event and the time driver also reads |
-| `LeRadioPort` | `lifecycle(Enable / Disable / Quiesce)` over an installed backend and `cancel(EventId)`; install and uninstall move memory and hardware owners and stay the backend's own operations, and shared-PHY maintenance is a layer over `Quiesce` | none: the extended controller clock |
+| `LeRadioPort` | `lifecycle(Enable / Disable / Quiesce)` over an installed backend and `cancel(EventId)`; install and uninstall move memory and hardware owners and stay the backend's own operations | none: the extended controller clock |
 
 **Shared RF path.** Protocols that share one radio name themselves with the
 portable [`RadioClient`](../crates/radio/coex/src/lib.rs) of `oer-radio-coex`

@@ -32,10 +32,11 @@
 //! A backend's `install` returns its port value, for the protocol's one
 //! event consumer, and a control, for the composition; the control's
 //! `uninstall` consumes both, so no call reaches a backend that is not
-//! installed: there is no "not installed" refusal. Install and uninstall are a port's birth
-//! and death; [`LifecycleCommand`] states live inside an installed port.
-//! Maintenance that must stop the radio, such as shared PHY tracking, is a
-//! layer over [`LifecycleCommand::Quiesce`], not a removal of the backend.
+//! installed: there is no "not installed" refusal. Install and uninstall
+//! are a port's birth and death; [`LifecycleCommand`] states live inside an
+//! installed port. Shared-PHY maintenance is neither: it never pauses a
+//! port, it runs under the radio arbiter's lease, and an operation that
+//! loses RF to it ends with its ordinary terminal event.
 //!
 //! A port's event stream lives as long as the port. Handing the port to
 //! `uninstall` ends it: the events it did not deliver, the terminal events

@@ -93,6 +93,12 @@ impl Resolutions {
         Self::default()
     }
 
+    /// The bytes [`Self::add`] of `targets` targets may request, for a
+    /// builder to admit first: the site's entry, its fact and every target.
+    pub fn admission(targets: usize) -> usize {
+        size_of::<(u32, Resolution)>() + size_of::<Fact>() + targets * size_of::<u32>()
+    }
+
     /// Add the `targets` that `fact` gives `site`, to those other facts give.
     pub fn add(&mut self, site: u32, fact: Fact, targets: impl IntoIterator<Item = u32>) {
         let resolution = self.sites.entry(site).or_default();

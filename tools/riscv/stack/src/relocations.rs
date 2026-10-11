@@ -1,13 +1,14 @@
 //! The addresses an image takes: what the link's relocations say about
 //! which functions a pointer may reach.
 use oer_elf::rv32::{self, Role};
-use oer_riscv_model::{Error, ErrorCode, Result, RunControl};
+use oer_riscv_model::{Error, ErrorCode, Ledger, Result, RunControl};
 use oer_riscv_program::facts::ImageFacts;
 
 /// Every address an allocated section of `image` takes: a relocation's
 /// target other than a call, a jump, a branch or a linker hint.
 pub fn taken_addresses(
     image: &ImageFacts<'_>,
+    keep: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<std::collections::BTreeSet<u32>> {
     let invalid = |message: String| Error::new(ErrorCode::Integrity, message);
@@ -33,7 +34,7 @@ pub fn taken_addresses(
                 .target_address(&relocation)
                 .map_err(|error| invalid(error.to_string()))?;
             if let Ok(address) = u32::try_from(target) {
-                taken.insert(address & !1);
+                keep.add(&mut taken, address & !1, control)?;
             }
         }
     }

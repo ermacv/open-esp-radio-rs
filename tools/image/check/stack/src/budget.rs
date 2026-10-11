@@ -7,8 +7,12 @@
 //! (<https://github.com/ermacv/open-esp-radio-rs/issues/524#issuecomment-6108624676>).
 //! The work budget is the primary bound: it does not depend on the
 //! machine's load. The deadline is a backstop. Working memory covers the
-//! image facts and the value analysis; the stack analyzer's own maps, the
-//! DWARF and the resolutions are not yet reserved in it. The runtime and
+//! image's and the ROM's bytes, their facts, the value analysis, and every
+//! structure of the stack analysis that grows with the image: the facts it
+//! keeps of each function, the DWARF and type facts, and the resolutions
+//! (`oer-riscv-stack`). Outside it stay the caches addr2line grows for the
+//! inline chains, which the working memory's contract leaves to the
+//! library, and the bounds the stack checks compute afterwards. The runtime and
 //! bootstrap stack reports state what the image's analysis used of these
 //! limits; the interrupt check reads its image facts within the same limits.
 use oer_riscv_model::{Error, ErrorCode, Result, RunControl, RunPosition};

@@ -17,9 +17,16 @@ table decides which relocation is an address word or a control transfer.
 (`stack_sizes`, `taken_addresses`, `waker_vtables`, `interrupt_table`,
 `vector_table`, `trap_entry`) charge the same control for each relocation,
 word, entry or step they read. The caller decides both; the image
-checks' budget is `oer_image_check_stack::budget`. The memory covers the
-image facts and the value analysis; this crate's own maps, the DWARF and
-the resolutions are not yet reserved in it.
+checks' budget is `oer_image_check_stack::budget`. Every structure that
+grows with the image is admitted in that memory before it is made: what
+the analysis keeps (each function's facts, the DWARF facts and type facts
+of `read_debug`, the vtables, taken addresses, frame records and
+resolutions) through the caller's `Ledger`, which it holds while it keeps
+them, and what one function's sweep and value analysis build through a
+ledger released with it. `read_debug` reads the DWARF once, from sections
+borrowed from the ELF's bytes; its inline chains are addr2line's over the
+same bytes (`Symbolizer::shared`), whose lazily grown caches are library
+internals the working memory does not account.
 
 Facts of the build come first. An image linked with `--emit-relocs` keeps
 its relocations, each checked against the word it describes (a mismatch is an
@@ -202,7 +209,7 @@ floating-point CSR accesses (`FunctionFacts::float_sites`): what checks of a
 context's code, such as the firmware gate's interrupt-context checks, read.
 
 The nesting rule's other half, each source at its table level for good, is
-the image's configuration. `instances` finds every copy of a function in the
+the image's configuration. `Dwarf::instances` finds every copy of a function in the
 DWARF, out of line or inlined; the firmware gate requires each copy of the
 CLIC level and route writers to run inside the functions its contract
 allows (start-up, the IPC line's install, the table's routes).

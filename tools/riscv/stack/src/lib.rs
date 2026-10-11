@@ -35,7 +35,7 @@ mod trap;
 mod wakers;
 
 use oer_riscv_model::{
-    CodeRange, Error, ErrorCode, FunctionRecord, Result, RunControl, WorkingMemory,
+    CodeRange, Error, ErrorCode, FunctionRecord, Ledger, Result, RunControl, WorkingMemory,
 };
 use oer_riscv_program::facts::ImageFacts;
 use std::collections::{BTreeMap, BTreeSet};
@@ -43,7 +43,7 @@ use std::fmt;
 
 pub use cha::{TypeFacts, function_pointer_resolutions};
 pub use contexts::{HartStack, LevelStack, Stacks, interrupt_stacks};
-pub use dwarf::{Dwarf, instances};
+pub use dwarf::{Dwarf, read as read_debug};
 pub use image::{Function, stack_sizes};
 pub use interrupts::{Field, TableEntry, TableLayout, interrupt_table};
 use oer_riscv_analysis::{JumpTable, JumpTableSource, KnownJump, ProvenTables, RecognizedTables};
@@ -212,26 +212,32 @@ pub struct Analysis {
 /// `companions` it calls into, such as the chip's ROM ELF: a transfer from
 /// one into another reaches the callee's frame like any other call. No two
 /// ELFs may place code at the same address. `summaries` stand for companion
-/// functions the machine code alone does not bound ([`Summary`]). The value
-/// analysis works in `memory` and charges `control`; either running out
-/// fails the analysis with [`ErrorCode::ResourceLimited`].
+/// functions the machine code alone does not bound ([`Summary`]). The
+/// facts it keeps are admitted in `keep`, which the caller holds while it
+/// keeps them; what it builds on the way, the value analysis included, is
+/// admitted in the same working memory and released with its function. It
+/// charges `control`; running out of either fails the analysis with
+/// [`ErrorCode::ResourceLimited`].
 pub fn analyze(
     image: &ImageFacts<'_>,
     companions: &[&ImageFacts<'_>],
     summaries: &[Summary],
-    memory: &WorkingMemory,
+    keep: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<Analysis> {
+    let memory = keep.memory();
     let mut analysis = Analysis {
         functions: BTreeMap::new(),
         code: Vec::new(),
         summaries: BTreeSet::new(),
     };
+    // The image's own functions, for the summaries; released with the call.
+    let mut scratch = Ledger::new(memory, control)?;
     let mut own = None;
     for elf in std::iter::once(image).chain(companions.iter().copied()) {
         let Analysis {
             functions, code, ..
-        } = analyze_one(elf, memory, control)?;
+        } = analyze_one(elf, memory, keep, control)?;
         for &(start, end) in &code {
             if analysis
                 .code
@@ -244,11 +250,25 @@ pub fn analyze(
                 ));
             }
         }
-        analysis.code.extend(code);
-        own.get_or_insert_with(|| functions.keys().copied().collect::<BTreeSet<u32>>());
+        for range in code {
+            keep.push(&mut analysis.code, range, control)?;
+        }
+        if own.is_none() {
+            let mut addresses = BTreeSet::new();
+            for &address in functions.keys() {
+                scratch.add(&mut addresses, address, control)?;
+            }
+            own = Some(addresses);
+        }
         analysis.functions.extend(functions);
     }
-    analysis.summaries = summaries::apply(&mut analysis, &own.unwrap_or_default(), summaries)?;
+    analysis.summaries = summaries::apply(
+        &mut analysis,
+        &own.unwrap_or_default(),
+        summaries,
+        keep,
+        control,
+    )?;
     Ok(analysis)
 }
 
@@ -256,22 +276,34 @@ pub fn analyze(
 fn analyze_one(
     elf: &ImageFacts<'_>,
     memory: &WorkingMemory,
+    keep: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<Analysis> {
-    let sizes = image::stack_sizes(elf, control)?;
+    let mut sized = Ledger::new(memory, control)?;
+    let sizes = image::stack_sizes(elf, &mut sized, control)?;
     let functions = image::observing(elf, memory, control, |observe, control| {
         let mut facts = BTreeMap::new();
         for function in elf.functions() {
-            facts.insert(
-                function.address,
-                function_facts(elf, function.clone(), &sizes, observe, control)?,
-            );
+            // What one function's analysis builds, released once its
+            // facts are admitted in what the analysis keeps.
+            let mut work = Ledger::new(memory, control)?;
+            let names = function.names.iter().map(String::len).sum::<usize>()
+                + function.names.len() * size_of::<String>();
+            work.admit(names, control)?;
+            let function =
+                function_facts(elf, function.clone(), &sizes, observe, &mut work, control)?;
+            keep.admit(function.requested_bytes(), control)?;
+            keep.insert(&mut facts, function.function.address, function, control)?;
         }
         Ok(facts)
     })?;
+    let mut code = Vec::new();
+    for &range in elf.executable_ranges() {
+        keep.push(&mut code, range, control)?;
+    }
     Ok(Analysis {
         functions,
-        code: elf.executable_ranges().to_vec(),
+        code,
         summaries: BTreeSet::new(),
     })
 }
@@ -292,14 +324,15 @@ fn table_entries(
     elf: &ImageFacts<'_>,
     transfer: &Transfer,
     registers: Option<&[Option<u32>; 32]>,
+    ledger: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<Option<Vec<u32>>> {
     let Some(address) = table_base(transfer, registers) else {
         return Ok(None);
     };
-    match image::table(elf, address, control)? {
+    match image::table(elf, address, ledger, control)? {
         Some(entries) => Ok(Some(entries)),
-        None => image::jump_table(elf, address, control),
+        None => image::jump_table(elf, address, ledger, control),
     }
 }
 
@@ -360,23 +393,26 @@ impl JumpTableSource for DispatchTables<'_> {
 
 /// One function's facts: its sweep, then the value analysis over a graph
 /// that follows the jump tables the sweep names, and those its `Dispatch`
-/// records locate ([`DispatchTables`]).
+/// records locate ([`DispatchTables`]). What it builds on the way is
+/// admitted in `work`.
 fn function_facts(
     elf: &ImageFacts<'_>,
     function: Function,
     sizes: &BTreeMap<u32, u64>,
     observe: &mut image::Observe<'_>,
+    work: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<FunctionFacts> {
     control.checkpoint(u64::from(function.size))?;
-    let swept = sweep::transfers(elf, &function, control)?;
+    let swept = sweep::transfers(elf, &function, work, control)?;
     let inside =
         |target: u32| target >= function.address && target - function.address < function.size;
-    let jumps: Vec<KnownJump> = swept
-        .jumps
-        .iter()
-        .map(|(site, entries)| table_jump(&function, *site, entries))
-        .collect();
+    let mut jumps: Vec<KnownJump> = Vec::new();
+    for (site, entries) in &swept.jumps {
+        work.admit(entries.len() * size_of::<u64>(), control)?;
+        let jump = table_jump(&function, *site, entries);
+        work.push(&mut jumps, jump, control)?;
+    }
     let tables = DispatchTables {
         recognized: RecognizedTables {
             entries: &ImageTables { image: elf },
@@ -384,23 +420,19 @@ fn function_facts(
         },
         known: &jumps,
     };
-    let observation = observe(&function, &jumps, &tables, control)?;
+    let observation = observe(&function, &jumps, &tables, work, control)?;
     let mut transfers = swept.transfers;
-    let table_bases = transfers
-        .iter()
-        .filter(|t| t.target.is_none())
-        .filter_map(|t| {
-            Some((
-                t.site,
-                table_base(t, observation.site_registers.get(&t.site))?,
-            ))
-        })
-        .collect();
-    let unresolved_registers = transfers
-        .iter()
-        .filter(|t| t.target.is_none())
-        .filter_map(|t| Some((t.site, *observation.site_registers.get(&t.site)?)))
-        .collect();
+    let mut table_bases = BTreeMap::new();
+    let mut unresolved_registers = BTreeMap::new();
+    for t in transfers.iter().filter(|t| t.target.is_none()) {
+        let registers = observation.site_registers.get(&t.site);
+        if let Some(base) = table_base(t, registers) {
+            work.insert(&mut table_bases, t.site, base, control)?;
+        }
+        if let Some(registers) = registers {
+            work.insert(&mut unresolved_registers, t.site, *registers, control)?;
+        }
+    }
     let mut dispatched = Vec::new();
     // Sites whose table the link's relocations or a sized object name:
     // their entries replace whatever the value analysis read.
@@ -410,30 +442,35 @@ fn function_facts(
             elf,
             &transfer,
             observation.site_registers.get(&transfer.site),
+            work,
             control,
         )?
         else {
-            dispatched.push(transfer);
+            work.push(&mut dispatched, transfer, control)?;
             continue;
         };
-        tabled.insert(transfer.site);
-        let mut targets: Vec<u32> = entries
-            .iter()
-            // A Rust function pointer is never null: a zero entry is an
-            // empty `Option<fn>` slot the code tests before calling.
-            .filter(|&&entry| entry != 0)
-            .map(|entry| entry & !1)
-            .filter(|&target| transfer.kind == TransferKind::Call || !inside(target))
-            .collect();
+        work.add(&mut tabled, transfer.site, control)?;
+        let mut targets = Vec::new();
+        // A Rust function pointer is never null: a zero entry is an empty
+        // `Option<fn>` slot the code tests before calling.
+        for &entry in &entries {
+            let target = entry & !1;
+            if entry != 0 && (transfer.kind == TransferKind::Call || !inside(target)) {
+                work.push(&mut targets, target, control)?;
+            }
+        }
         targets.sort_unstable();
         targets.dedup();
-        dispatched.extend(targets.into_iter().map(|target| Transfer {
-            target: Some(target),
-            source: None,
-            table: None,
-            load: None,
-            ..transfer
-        }));
+        for target in targets {
+            let transfer = Transfer {
+                target: Some(target),
+                source: None,
+                table: None,
+                load: None,
+                ..transfer
+            };
+            work.push(&mut dispatched, transfer, control)?;
+        }
     }
     transfers = dispatched;
     // A jump whose every target the value analysis found inside the
@@ -454,25 +491,28 @@ fn function_facts(
             .iter()
             .any(|t| t.site == site && t.target == Some(target))
         {
-            transfers.push(Transfer {
+            let transfer = Transfer {
                 site,
                 target: Some(target),
                 kind,
                 source: None,
                 table: None,
                 load: None,
-            });
+            };
+            work.push(&mut transfers, transfer, control)?;
         }
     }
     transfers.sort_by_key(|t| (t.site, t.target));
-    let call_arguments = transfers
-        .iter()
-        .filter(|t| t.kind == TransferKind::Call && t.target.is_some())
-        .filter_map(|t| {
-            let registers = observation.site_registers.get(&t.site)?;
-            Some((t.site, core::array::from_fn(|i| registers[10 + i])))
-        })
-        .collect();
+    let mut call_arguments = BTreeMap::new();
+    for t in &transfers {
+        if t.kind == TransferKind::Call
+            && t.target.is_some()
+            && let Some(registers) = observation.site_registers.get(&t.site)
+        {
+            let arguments: [Option<u32>; 8] = core::array::from_fn(|i| registers[10 + i]);
+            work.insert(&mut call_arguments, t.site, arguments, control)?;
+        }
+    }
     let depth = observation.depth;
     let recorded = sizes.get(&function.address).copied();
     let (frame, source) = match (recorded, depth) {
@@ -503,6 +543,23 @@ fn function_facts(
         level_drops: swept.level_drops,
         float_sites: swept.float_sites,
     })
+}
+
+impl FunctionFacts {
+    /// The heap bytes these facts hold, as a [`Ledger`] admits them: what
+    /// the analysis keeps of the function once its work is released.
+    fn requested_bytes(&self) -> usize {
+        let names = &self.function.names;
+        names.capacity() * size_of::<String>()
+            + names.iter().map(String::capacity).sum::<usize>()
+            + self.transfers.capacity() * size_of::<Transfer>()
+            + self.site_depths.len() * size_of::<(u32, u64)>()
+            + self.call_arguments.len() * size_of::<(u32, [Option<u32>; 8])>()
+            + self.table_bases.len() * size_of::<(u32, u32)>()
+            + self.unresolved_registers.len() * size_of::<(u32, [Option<u32>; 32])>()
+            + self.level_drops.capacity() * size_of::<(u32, LevelDrop)>()
+            + self.float_sites.capacity() * size_of::<u32>()
+    }
 }
 
 impl Analysis {

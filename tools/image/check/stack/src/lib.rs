@@ -23,13 +23,14 @@ mod coverage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
+use std::rc::Rc;
 
-use oer_riscv_model::WorkingMemory;
+use oer_riscv_model::{Ledger, RunControl, WorkingMemory};
 use oer_riscv_program::facts::ImageFacts;
 use oer_riscv_stack::{
-    Analysis, Bound, Dwarf, Function, Reason, Resolutions, Summary, TypeFacts, analyze,
-    function_pointer_resolutions, parse_summaries, stack_sizes, taken_addresses, waker_resolutions,
-    waker_vtables,
+    Analysis, Bound, Dwarf, Function, Reason, Resolutions, Summary, analyze,
+    function_pointer_resolutions, parse_summaries, read_debug, stack_sizes, taken_addresses,
+    waker_resolutions, waker_vtables,
 };
 
 use crate::budget::{Budget, MEMORY_LIMIT, TIMEOUT, Usage, WORK_UNITS};
@@ -87,7 +88,7 @@ pub fn audit_bootstrap_stack(
 /// One image's analysis with its pinned ROM, and the facts outside the
 /// machine code every stack bound resolves indirect sites with.
 pub struct Image {
-    pub elf: Vec<u8>,
+    pub elf: Rc<[u8]>,
     pub analysis: Analysis,
     /// The image's own functions.
     pub functions: Vec<Function>,
@@ -140,34 +141,56 @@ impl Image {
     ) -> Result<Self> {
         let memory = WorkingMemory::new(MEMORY_LIMIT)?;
         let mut control = Budget::new(WORK_UNITS, TIMEOUT);
+        // The image's and its companions' bytes are the analysis's too: its
+        // DWARF reads borrow them.
+        let input = elf.len()
+            + companions
+                .iter()
+                .map(|companion| companion.len())
+                .sum::<usize>();
+        let _input = memory.reserve(input as u64, control.position())?;
+        // The image's bytes move into the buffer the DWARF readers share,
+        // which copies them once.
+        let elf: Rc<[u8]> = {
+            let _copy = memory.reserve(elf.len() as u64, control.position())?;
+            Rc::from(elf)
+        };
         let facts = ImageFacts::new(&elf, &memory, &mut control)?;
         let companions = companions
             .iter()
             .map(|companion| ImageFacts::new(companion, &memory, &mut control))
             .collect::<oer_riscv_model::Result<Vec<_>>>()?;
         let companions: Vec<&ImageFacts<'_>> = companions.iter().collect();
-        let analysis = analyze(&facts, &companions, summaries, &memory, &mut control)?;
-        let functions = facts.functions().to_vec();
-        let names = functions
-            .iter()
-            .filter_map(|function| {
-                let name = function.names.first()?;
-                Some((function.address, oer_elf::demangle(name)))
-            })
-            .collect();
-        let dwarf = Dwarf::read(&elf)?;
-        let vtables = waker_vtables(&facts, &dwarf, &analysis, &mut control)?;
-        let mut resolutions = waker_resolutions(&analysis, &dwarf, &vtables)?;
+        // What the image keeps of the analysis, admitted while it counts
+        // against the budget.
+        let mut keep = Ledger::new(&memory, &mut control)?;
+        let analysis = analyze(&facts, &companions, summaries, &mut keep, &mut control)?;
+        let mut functions = Vec::new();
+        let mut names = BTreeMap::new();
+        for function in facts.functions() {
+            control.checkpoint(1)?;
+            keep.admit(
+                function.names.iter().map(String::len).sum::<usize>()
+                    + function.names.len() * size_of::<String>(),
+                &mut control,
+            )?;
+            keep.push(&mut functions, function.clone(), &mut control)?;
+            if let Some(name) = function.names.first() {
+                let name = keep.string(&oer_elf::demangle(name), &mut control)?;
+                keep.insert(&mut names, function.address, name, &mut control)?;
+            }
+        }
+        let (dwarf, types) = read_debug(&elf, &mut keep, &mut control)?;
+        let vtables = waker_vtables(&facts, &dwarf, &analysis, &mut keep, &mut control)?;
+        let mut resolutions =
+            waker_resolutions(&analysis, &dwarf, &vtables, &mut keep, &mut control)?;
         // Calls through a static's function pointer reach the taken functions
         // of its type: the diagnostic observers' `OnceCell<fn(..)>`.
-        let types = TypeFacts::read(&elf)?;
-        let taken = taken_addresses(&facts, &mut control)?;
-        let pointers = function_pointer_resolutions(&analysis, &types, &taken);
-        let stack_sizes = stack_sizes(&facts, &mut control)?;
-        let usage = Usage {
-            memory_bytes: memory.peak(),
-            work_units: control.used(),
-        };
+        let taken = taken_addresses(&facts, &mut keep, &mut control)?;
+        let pointers =
+            function_pointer_resolutions(&analysis, &types, &taken, &mut keep, &mut control)?;
+        drop(types);
+        let stack_sizes = stack_sizes(&facts, &mut keep, &mut control)?;
         drop(companions);
         drop(facts);
         let mut image = Self {
@@ -179,10 +202,14 @@ impl Image {
             dwarf,
             resolutions: Resolutions::new(),
             contract,
-            usage,
+            usage: Usage::default(),
         };
-        resolutions.extend(image.ipc_resolutions(&taken)?);
+        resolutions.extend(image.ipc_resolutions(&taken, &mut keep, &mut control)?);
         resolutions.extend(pointers);
+        image.usage = Usage {
+            memory_bytes: memory.peak(),
+            work_units: control.used(),
+        };
         image.resolutions = resolutions;
         Ok(image)
     }
@@ -228,7 +255,7 @@ impl Image {
     /// The capacity of `storage` in bytes, or `None` when the image links
     /// none of its symbols.
     fn capacity(&self, storage: Storage<'_>) -> Result<Option<u64>> {
-        let file = oer_elf::Elf::parse(self.elf.as_slice())?;
+        let file = oer_elf::Elf::parse(&self.elf)?;
         let defined = |name: &str| file.symbol(name);
         let address = |name: &str| file.address(name);
         match storage {
@@ -254,7 +281,12 @@ impl Image {
     /// The targets of the IPC dispatch's call of the posted callback: the
     /// `handler` argument of every direct call of the only function that
     /// posts one; none when the image posts none.
-    fn ipc_resolutions(&self, taken: &BTreeSet<u32>) -> Result<Resolutions> {
+    fn ipc_resolutions(
+        &self,
+        taken: &BTreeSet<u32>,
+        keep: &mut Ledger<'_>,
+        control: &mut dyn RunControl,
+    ) -> Result<Resolutions> {
         let mut resolutions = Resolutions::new();
         let Some(contract) = &self.contract else {
             return Ok(resolutions);
@@ -276,6 +308,7 @@ impl Image {
             for function in self.address_of(dispatch) {
                 for transfer in &self.analysis.functions[&function].transfers {
                     if transfer.target.is_none() {
+                        keep.admit(Resolutions::admission(targets.len()), control)?;
                         resolutions.add(
                             transfer.site,
                             oer_riscv_stack::Fact::IpcPosts,

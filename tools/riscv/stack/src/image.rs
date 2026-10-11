@@ -5,6 +5,7 @@ use oer_riscv_analysis::{
     FunctionInput, JumpTableSource, KnownJump, PreparedReferences, research_following_tables,
 };
 use oer_riscv_lift::RiscvDecoder;
+use oer_riscv_model::Ledger;
 use oer_riscv_model::*;
 use oer_riscv_program::ProgramView;
 use oer_riscv_program::facts::ImageFacts;
@@ -25,12 +26,13 @@ fn invalid(message: impl Into<String>) -> Error {
 pub(crate) fn table(
     image: &ImageFacts<'_>,
     address: u32,
+    ledger: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<Option<Vec<u32>>> {
     let Some(size) = image.data_object(address) else {
         return Ok(None);
     };
-    words(image, address, size / 4, control)
+    words(image, address, size / 4, ledger, control)
 }
 
 /// The `count` read-only words from `base`, each charged to `control`
@@ -39,6 +41,7 @@ pub(crate) fn words(
     image: &ImageFacts<'_>,
     base: u32,
     count: u64,
+    ledger: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<Option<Vec<u32>>> {
     let mut words = Vec::new();
@@ -47,7 +50,7 @@ pub(crate) fn words(
         let Some(word) = image.read_only_word(base.wrapping_add(4 * i as u32)) else {
             return Ok(None);
         };
-        words.push(word);
+        ledger.push(&mut words, word, control)?;
     }
     Ok(Some(words))
 }
@@ -57,15 +60,18 @@ pub(crate) fn words(
 pub(crate) fn jump_table(
     image: &ImageFacts<'_>,
     base: u32,
+    ledger: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<Option<Vec<u32>>> {
     let Some(entries) = image.jump_table(base) else {
         return Ok(None);
     };
-    entries
-        .map(|entry| control.checkpoint(1).map(|()| entry))
-        .collect::<Result<Vec<u32>>>()
-        .map(Some)
+    let mut words = Vec::new();
+    for entry in entries {
+        control.checkpoint(1)?;
+        ledger.push(&mut words, entry, control)?;
+    }
+    Ok(Some(words))
 }
 
 fn uleb128(bytes: &[u8], at: &mut usize) -> Result<u64> {
@@ -88,6 +94,7 @@ fn uleb128(bytes: &[u8], at: &mut usize) -> Result<u64> {
 /// no records; one function recorded twice with different sizes is an error.
 pub fn stack_sizes(
     image: &ImageFacts<'_>,
+    keep: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<BTreeMap<u32, u64>> {
     let file = image.file();
@@ -106,7 +113,7 @@ pub fn stack_sizes(
         let address = u32::from_le_bytes(address.try_into().unwrap());
         at += 4;
         let size = uleb128(bytes, &mut at)?;
-        if let Some(previous) = sizes.insert(address, size)
+        if let Some(previous) = keep.insert(&mut sizes, address, size, control)?
             && previous != size
         {
             return Err(invalid(format!(
@@ -148,8 +155,10 @@ pub(crate) struct Observation {
     pub site_registers: BTreeMap<u32, [Option<u32>; 32]>,
 }
 
-#[derive(Default)]
-struct Observer {
+/// The value analysis's records of one function, read into what the stack
+/// analysis keeps; their growth is admitted in the function's ledger.
+struct Observer<'l, 'm> {
+    ledger: &'l mut Ledger<'m>,
     deepest: i64,
     dynamic: bool,
     unexpanded: Vec<u32>,
@@ -158,8 +167,8 @@ struct Observer {
     transfers: Vec<(u32, u32, TransferKind)>,
 }
 
-impl FunctionSink for Observer {
-    fn record(&mut self, record: &FunctionRecord, _: &mut dyn RunControl) -> Result<()> {
+impl FunctionSink for Observer<'_, '_> {
+    fn record(&mut self, record: &FunctionRecord, control: &mut dyn RunControl) -> Result<()> {
         match record {
             FunctionRecord::Value {
                 register: SP,
@@ -194,19 +203,34 @@ impl FunctionSink for Observer {
                     _ => None,
                 };
                 for address in addresses.into_iter().flatten() {
-                    self.transfers.push((*offset as u32, address, kind));
+                    self.ledger.push(
+                        &mut self.transfers,
+                        (*offset as u32, address, kind),
+                        control,
+                    )?;
                 }
             }
             FunctionRecord::SemanticGap {
                 offset,
                 reason: SemanticGapReason::UnexpandedControlFlow,
-            } => self.unexpanded.push(*offset as u32),
+            } => self
+                .ledger
+                .push(&mut self.unexpanded, *offset as u32, control)?,
             FunctionRecord::CallInputs { offset, registers } => {
                 if let Some(AbstractValue::EntryStack { offset: sp }) = registers.get(SP as usize) {
-                    self.site_depths.insert(*offset as u32, sp.unsigned_abs());
+                    self.ledger.insert(
+                        &mut self.site_depths,
+                        *offset as u32,
+                        sp.unsigned_abs(),
+                        control,
+                    )?;
                 }
-                self.site_registers
-                    .insert(*offset as u32, exact_registers(registers));
+                self.ledger.insert(
+                    &mut self.site_registers,
+                    *offset as u32,
+                    exact_registers(registers),
+                    control,
+                )?;
             }
             _ => {}
         }
@@ -234,13 +258,20 @@ pub(crate) type Tables<'a> = dyn JumpTableSource<Table = oer_riscv_analysis::Jum
 /// The bounded value analysis of one function, its control-flow graph
 /// following the indirect jumps the given jumps name and the jump tables
 /// the given source proves ([`research_following_tables`]).
-pub(crate) type Observe<'a> = dyn FnMut(&Function, &[KnownJump], &Tables<'_>, &mut dyn RunControl) -> Result<Observation>
+pub(crate) type Observe<'a> = dyn FnMut(
+        &Function,
+        &[KnownJump],
+        &Tables<'_>,
+        &mut Ledger<'_>,
+        &mut dyn RunControl,
+    ) -> Result<Observation>
     + 'a;
 
 /// Run `body` with an observer of `image`'s functions: `observe(function,
-/// jumps, tables)` runs the bounded value analysis over one function, its
-/// control-flow graph following the indirect jumps `jumps` names and the
-/// tables `tables` proves.
+/// jumps, tables, ledger)` runs the bounded value analysis over one
+/// function, its control-flow graph following the indirect jumps `jumps`
+/// names and the tables `tables` proves, admitting the observation in
+/// `ledger`.
 pub(crate) fn observing<R>(
     image: &ImageFacts<'_>,
     memory: &WorkingMemory,
@@ -252,12 +283,21 @@ pub(crate) fn observing<R>(
     let mut observe = |function: &Function,
                        jumps: &[KnownJump],
                        tables: &Tables<'_>,
+                       ledger: &mut Ledger<'_>,
                        control: &mut dyn RunControl|
      -> Result<Observation> {
         let code = function_bytes(file, function)?;
         let references =
             PreparedReferences::new(&[], function.section as u32, &RiscvDecoder, memory, control)?;
-        let mut observer = Observer::default();
+        let mut observer = Observer {
+            ledger,
+            deepest: 0,
+            dynamic: false,
+            unexpanded: Vec::new(),
+            site_depths: BTreeMap::new(),
+            site_registers: BTreeMap::new(),
+            transfers: Vec::new(),
+        };
         let (summary, followed) = research_following_tables(
             FunctionInput {
                 image: Some(&view),
@@ -284,15 +324,17 @@ pub(crate) fn observing<R>(
             && observer.unexpanded.is_empty()
             && !observer.dynamic;
         let depth = (!observer.dynamic).then_some(observer.deepest.unsigned_abs());
+        let mut local_jumps = observer.unexpanded;
+        for table in &followed.tables {
+            observer
+                .ledger
+                .push(&mut local_jumps, table.site as u32, control)?;
+        }
         Ok(Observation {
             depth,
             complete,
             resolved: observer.transfers,
-            local_jumps: observer
-                .unexpanded
-                .into_iter()
-                .chain(followed.tables.iter().map(|table| table.site as u32))
-                .collect(),
+            local_jumps,
             site_depths: observer.site_depths,
             site_registers: observer.site_registers,
         })

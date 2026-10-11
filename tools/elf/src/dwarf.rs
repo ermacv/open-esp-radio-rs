@@ -35,6 +35,73 @@ pub fn load(elf: &Elf<'_>) -> Result<Dwarf> {
     )
 }
 
+/// The reader of the DWARF a [`DebugSections`] lends: slices of the ELF's
+/// bytes.
+pub type SliceReader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
+
+/// The debug sections of one ELF, each borrowed from its bytes: unlike
+/// [`load`], they are never copied. This crate reads no compressed section
+/// (`object` without its compression feature): one is an error.
+pub struct DebugSections<'data> {
+    endian: gimli::RunTimeEndian,
+    sections: Vec<(gimli::SectionId, &'data [u8])>,
+}
+
+/// The bytes of a debug section in the file, or an error for a compressed
+/// one, which this crate does not read.
+fn plain_data<'data>(section: &object::Section<'data, '_>) -> Result<&'data [u8]> {
+    use object::ObjectSection;
+    let data = section.compressed_data().map_err(crate::parse_error)?;
+    if data.format != object::CompressionFormat::None {
+        return Err(Error::new(format!(
+            "compressed debug section {}: not supported",
+            section.name().unwrap_or("?")
+        )));
+    }
+    Ok(data.data)
+}
+
+impl<'data> DebugSections<'data> {
+    /// The sections a [`gimli::Dwarf`] reads, each once.
+    fn ids() -> Vec<gimli::SectionId> {
+        let mut ids = Vec::new();
+        let _ = gimli::Dwarf::load(|id| -> std::result::Result<SliceReader<'_>, Error> {
+            ids.push(id);
+            Ok(gimli::EndianSlice::new(&[], gimli::RunTimeEndian::Little))
+        });
+        ids
+    }
+
+    /// The debug sections of `elf`; a missing section reads empty.
+    pub fn load(elf: &Elf<'data>) -> Result<Self> {
+        use object::Object;
+        let endian = if elf.object().is_little_endian() {
+            gimli::RunTimeEndian::Little
+        } else {
+            gimli::RunTimeEndian::Big
+        };
+        let mut sections = Vec::new();
+        for id in Self::ids() {
+            if let Some(section) = elf.object().section_by_name(id.name()) {
+                sections.push((id, plain_data(&section)?));
+            }
+        }
+        Ok(Self { endian, sections })
+    }
+
+    /// The debug information these sections hold.
+    pub fn dwarf(&self) -> Result<gimli::Dwarf<SliceReader<'_>>> {
+        gimli::Dwarf::load(|id| -> std::result::Result<SliceReader<'_>, Error> {
+            let data = self
+                .sections
+                .iter()
+                .find(|(section, _)| *section == id)
+                .map_or(&[][..], |(_, data)| &data[..]);
+            Ok(gimli::EndianSlice::new(data, self.endian))
+        })
+    }
+}
+
 /// One frame of the inline chain at an address.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Frame {
@@ -54,6 +121,37 @@ impl Symbolizer {
     /// The symbolizer of the ELF `bytes`.
     pub fn new(bytes: &[u8]) -> Result<Self> {
         let dwarf = load(&Elf::parse(bytes)?)?;
+        let context = addr2line::Context::from_dwarf(dwarf)
+            .map_err(|error| Error::new(format!("DWARF: {error}")))?;
+        Ok(Self { context })
+    }
+
+    /// The symbolizer of the ELF `bytes`, sharing them: each debug section
+    /// is a range of `bytes`, never a copy. A compressed section is an
+    /// error, as in [`DebugSections`].
+    pub fn shared(bytes: Rc<[u8]>) -> Result<Self> {
+        use gimli::Reader as _;
+        use object::{Object, ObjectSection};
+        let elf = Elf::parse(&bytes)?;
+        let endian = if elf.object().is_little_endian() {
+            gimli::RunTimeEndian::Little
+        } else {
+            gimli::RunTimeEndian::Big
+        };
+        let whole = gimli::EndianRcSlice::new(bytes.clone(), endian);
+        let dwarf = gimli::Dwarf::load(|id: gimli::SectionId| -> Result<Reader> {
+            let Some(section) = elf.object().section_by_name(id.name()) else {
+                return Ok(gimli::EndianRcSlice::new(Rc::from(&[][..]), endian));
+            };
+            plain_data(&section)?;
+            let Some((offset, size)) = section.file_range() else {
+                return Ok(gimli::EndianRcSlice::new(Rc::from(&[][..]), endian));
+            };
+            let mut reader = whole.clone();
+            reader.skip(offset as usize)?;
+            reader.truncate(size as usize)?;
+            Ok(reader)
+        })?;
         let context = addr2line::Context::from_dwarf(dwarf)
             .map_err(|error| Error::new(format!("DWARF: {error}")))?;
         Ok(Self { context })

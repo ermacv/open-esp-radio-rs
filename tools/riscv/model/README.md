@@ -15,7 +15,10 @@ enforce nothing.
 
 [Memory contracts](src/memory.rs) provide `WorkingMemory`, RAII reservations,
 fallible `ScratchBytes` and `AdmittedVec`, which admits overlapping buffers
-before growth. Borrowed scratch cannot outlive its authority, and live
+before growth. A reservation can `grow`; a [`Ledger`](src/ledger.rs) admits
+the growth of ordinary vectors, maps, sets and strings through one growing
+reservation, for structures that outlive their working memory: the caller
+holds the ledger while the structure counts against the operation. Borrowed scratch cannot outlive its authority, and live
 reservations cannot exceed its capacity. These values account requested
 capacity, not resident process pages. `MemoryFailure` carries a rejected
 reservation with the phase, input and member of the run position, without

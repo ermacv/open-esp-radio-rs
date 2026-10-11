@@ -4,6 +4,7 @@ use crate::image::{Function, function_bytes};
 use oer_riscv_decode::{
     CsrOp, Extension, Extensions, Float, Inst, Instruction, Operand, Reg, Register, decode,
 };
+use oer_riscv_model::Ledger;
 use oer_riscv_model::*;
 use oer_riscv_program::facts::ImageFacts;
 use std::collections::BTreeSet;
@@ -394,6 +395,7 @@ pub(crate) struct Swept {
 pub(crate) fn transfers(
     image: &ImageFacts<'_>,
     function: &Function,
+    ledger: &mut Ledger<'_>,
     control: &mut dyn RunControl,
 ) -> Result<Swept> {
     let bytes = function_bytes(image.file(), function)?;
@@ -423,7 +425,7 @@ pub(crate) fn transfers(
                 && let Some(drop) =
                     LevelDrop::of_word(u32::from_le_bytes(word.try_into().expect("4 bytes")))
             {
-                level_drops.push((pc, drop));
+                ledger.push(&mut level_drops, (pc, drop), control)?;
             }
             offset += if bytes[offset] & 3 == 3 { 4 } else { 2 };
             previous = None;
@@ -436,7 +438,7 @@ pub(crate) fn transfers(
         }) = instruction
             && let Some(drop) = LevelDrop::of_csr(csr, op, source)
         {
-            level_drops.push((pc, drop));
+            ledger.push(&mut level_drops, (pc, drop), control)?;
         }
         if matches!(
             instruction,
@@ -446,7 +448,7 @@ pub(crate) fn transfers(
                     ..
                 })
         ) {
-            float_sites.push(pc);
+            ledger.push(&mut float_sites, pc, control)?;
         }
         let resolved = |target: u32, kind| Transfer {
             site: pc,
@@ -463,9 +465,17 @@ pub(crate) fn transfers(
             }) => {
                 let target = pc.wrapping_add(displacement.as_u32());
                 if matches!(dest.0, 1 | 5) {
-                    transfers.push(resolved(target, TransferKind::Call));
+                    ledger.push(
+                        &mut transfers,
+                        resolved(target, TransferKind::Call),
+                        control,
+                    )?;
                 } else if outside(target) {
-                    transfers.push(resolved(target, TransferKind::Tail));
+                    ledger.push(
+                        &mut transfers,
+                        resolved(target, TransferKind::Tail),
+                        control,
+                    )?;
                 }
             }
             Instruction::Base(Inst::Jalr {
@@ -481,12 +491,16 @@ pub(crate) fn transfers(
                         base: TableBase::Address(table),
                         entries,
                     }) if displacement.as_i32() == 0 => {
-                        match crate::image::jump_table(image, table, control)? {
+                        match crate::image::jump_table(image, table, ledger, control)? {
                             Some(entries) => Some(entries),
                             None => match entries {
-                                Some(entries) => {
-                                    crate::image::words(image, table, u64::from(entries), control)?
-                                }
+                                Some(entries) => crate::image::words(
+                                    image,
+                                    table,
+                                    u64::from(entries),
+                                    ledger,
+                                    control,
+                                )?,
                                 None => None,
                             },
                         }
@@ -502,7 +516,7 @@ pub(crate) fn transfers(
                     Some((register, value)) if register == base.0 => {
                         let target = value.wrapping_add(displacement.as_u32()) & !1;
                         if link || outside(target) {
-                            transfers.push(resolved(target, kind));
+                            ledger.push(&mut transfers, resolved(target, kind), control)?;
                         }
                     }
                     // `ret`: a return, not a transfer.
@@ -512,36 +526,46 @@ pub(crate) fn transfers(
                     // already covers jumps inside it.
                     _ if dispatched.is_some() => {
                         if !link {
-                            jumps.push((pc, dispatched.clone().unwrap_or_default()));
+                            let mut entries = Vec::new();
+                            for &entry in dispatched.iter().flatten() {
+                                ledger.push(&mut entries, entry, control)?;
+                            }
+                            ledger.push(&mut jumps, (pc, entries), control)?;
                         }
-                        let mut targets: Vec<u32> = dispatched
-                            .iter()
-                            .flatten()
-                            // A Rust function pointer is never null: a zero
-                            // entry is an empty `Option<fn>` slot.
-                            .filter(|&&word| word != 0)
-                            .map(|word| word & !1)
-                            .filter(|&target| link || outside(target))
-                            .collect();
+                        let mut targets = Vec::new();
+                        // A Rust function pointer is never null: a zero
+                        // entry is an empty `Option<fn>` slot.
+                        for &word in dispatched.iter().flatten() {
+                            let target = word & !1;
+                            if word != 0 && (link || outside(target)) {
+                                ledger.push(&mut targets, target, control)?;
+                            }
+                        }
                         targets.sort_unstable();
                         targets.dedup();
-                        transfers.extend(targets.into_iter().map(|target| resolved(target, kind)));
+                        for target in targets {
+                            ledger.push(&mut transfers, resolved(target, kind), control)?;
+                        }
                     }
-                    _ => transfers.push(Transfer {
-                        site: pc,
-                        target: None,
-                        kind,
-                        source: Some(match writes[base.0 as usize] {
-                            Some(Write::Load { from_sp: true }) => TargetSource::StackSlot,
-                            Some(Write::Load { from_sp: false }) => TargetSource::Memory,
-                            _ => TargetSource::Register,
-                        }),
-                        table: match facts[base.0 as usize] {
-                            Some(Fact::TableEntry { base, .. }) => Some(base),
-                            _ => None,
+                    _ => ledger.push(
+                        &mut transfers,
+                        Transfer {
+                            site: pc,
+                            target: None,
+                            kind,
+                            source: Some(match writes[base.0 as usize] {
+                                Some(Write::Load { from_sp: true }) => TargetSource::StackSlot,
+                                Some(Write::Load { from_sp: false }) => TargetSource::Memory,
+                                _ => TargetSource::Register,
+                            }),
+                            table: match facts[base.0 as usize] {
+                                Some(Fact::TableEntry { base, .. }) => Some(base),
+                                _ => None,
+                            },
+                            load: loads[base.0 as usize],
                         },
-                        load: loads[base.0 as usize],
-                    }),
+                        control,
+                    )?,
                 }
             }
             // cm.popret and cm.popretz return through ra.

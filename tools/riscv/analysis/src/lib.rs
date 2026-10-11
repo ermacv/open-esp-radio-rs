@@ -1,9 +1,11 @@
 //! Bounded local control-flow exploration. No filesystem, project or ISA implementation.
 use oer_riscv_model::*;
+mod dispatch;
 mod references;
 mod tables;
 mod value_sets;
 mod values;
+pub use dispatch::{JumpTable, RecognizedTables, jump_tables};
 pub use references::PreparedReferences;
 pub use tables::{JumpTableSource, ProvenTables, research_following_tables};
 pub use values::fold_integer;

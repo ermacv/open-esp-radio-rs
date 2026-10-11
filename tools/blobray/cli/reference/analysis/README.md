@@ -286,9 +286,10 @@ again every table it followed and more, so a dispatch reached only through
 another table's case (a nested `switch`) is followed too. A pass that no longer
 proves a table it followed, such as one where a case jumps back into the
 dispatch block, proves none: the function is then reported without following
-any table. These passes are the shared driver of
-`oer-riscv-analysis` (`research_following_tables`), which the stack analyzer
-runs with its own source of tables. The symbols and the RELA
+any table. The recognizer and these passes are `oer-riscv-analysis`'s
+(`RecognizedTables`, `research_following_tables`), the stack analyzer runs
+the same driver, and the entries come from `oer-riscv-program`'s
+`ObjectTables` over the object's bytes. The symbols and the RELA
 relocations of read-only data this needs, the recognizer's indexes and the
 found entries are held in admitted working memory, and every record the
 recognizer visits is charged to the work budget; a return

@@ -20,6 +20,8 @@ fn parse(error: object::Error) -> Error {
     Error::new(ErrorCode::Integrity, error.to_string())
 }
 pub struct PreparedObject<'a, 'm> {
+    /// The verified bytes the views below read.
+    bytes: &'a [u8],
     file: object::File<'a>,
     /// The same bytes through the repository's ELF view, for the static
     /// image and mapping-symbol readers of `oer-riscv-program`.
@@ -140,6 +142,7 @@ pub fn with_prepared_object<T>(
             .ok_or_else(|| invalid("symbol capacity overflow"))?,
     )?;
     let mut object = PreparedObject {
+        bytes: &bytes,
         file,
         elf: view,
         occurrence: None,
@@ -399,6 +402,12 @@ impl<'data> PreparedObject<'data, '_> {
             });
         }
         Ok(())
+    }
+
+    /// The object's bytes, verified against its payload identity, for
+    /// readers of further facts of the same file.
+    pub fn bytes(&self) -> &'data [u8] {
+        self.bytes
     }
 
     /// The function `symbol` defines, over its declared size.

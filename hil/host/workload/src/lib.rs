@@ -14,7 +14,9 @@
 //! - [`failure::classify`]: scenario or infrastructure failure;
 //! - [`family`]: the trait a radio family implements and the registry the
 //!   runner composes, so the runner core dispatches without naming a family;
-//! - [`phy_tracking_hold`]: the one step several radio families share, the
+//! - [`interrupt_latency`]: a software interrupt's latency at the radio
+//!   interrupts' level, timed beside a family's traffic (#643);
+//! - [`phy_tracking_hold`]: a step several radio families share, the
 //!   RF hold of forced shared-PHY tracking ticks timed beside their own
 //!   clients (#591).
 //!
@@ -29,6 +31,7 @@ pub mod context;
 pub mod failure;
 pub mod family;
 pub mod fixture;
+pub mod interrupt_latency;
 mod keys;
 pub mod measurements;
 pub mod output;

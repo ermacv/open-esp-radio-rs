@@ -58,6 +58,9 @@ pub enum ImageClass {
     /// The joint Wi-Fi/Bluetooth LE image that times a forced tracking tick:
     /// the RF hold with both tracking classes as clients.
     DiagnosticWifiBleCoexTrackingHold,
+    /// The correctness Wi-Fi image that times a software interrupt raised
+    /// at the radio interrupts' level (`system/interrupt-latency`, #643).
+    DiagnosticInterruptLatency,
     /// The system watchdog image that, on request, switches its USB
     /// Serial/JTAG off its pads: the board leaves USB, for the stand's
     /// recovery scenario.
@@ -85,7 +88,7 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 32] = [
+    pub const ALL: [Self; 33] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -117,6 +120,7 @@ impl ImageClass {
         Self::DiagnosticPhyTrackingHold,
         Self::DiagnosticIeee802154TrackingHold,
         Self::DiagnosticWifiBleCoexTrackingHold,
+        Self::DiagnosticInterruptLatency,
         Self::DiagnosticUsbJtagOff,
     ];
 
@@ -147,6 +151,7 @@ impl ImageClass {
                 | Self::DiagnosticPhyTrackingHold
                 | Self::DiagnosticIeee802154TrackingHold
                 | Self::DiagnosticWifiBleCoexTrackingHold
+                | Self::DiagnosticInterruptLatency
                 | Self::DiagnosticUsbJtagOff
         )
     }
@@ -184,6 +189,7 @@ impl ImageClass {
             Self::DiagnosticPhyTrackingHold => "diagnostic-phy-tracking-hold",
             Self::DiagnosticIeee802154TrackingHold => "diagnostic-ieee802154-tracking-hold",
             Self::DiagnosticWifiBleCoexTrackingHold => "diagnostic-wifi-ble-coex-tracking-hold",
+            Self::DiagnosticInterruptLatency => "diagnostic-interrupt-latency",
             Self::DiagnosticUsbJtagOff => "diagnostic-usb-jtag-off",
         }
     }
@@ -230,6 +236,9 @@ impl ImageClass {
                 "open-radio-hil,ieee802154-radio,phy-tracking-hold"
             }
             Self::DiagnosticWifiBleCoexTrackingHold => "wifi-ble-coex,phy-tracking-hold",
+            Self::DiagnosticInterruptLatency => {
+                "open-radio-hil,driver-observation,interrupt-latency-probe"
+            }
             Self::DiagnosticIeee802154EdEvent => "open-radio-hil,ieee802154-ed-event-probe",
             Self::DiagnosticIeee802154Radio => "open-radio-hil,ieee802154-radio",
             Self::DiagnosticIeee802154RadioTrace => {
@@ -283,6 +292,7 @@ impl ImageClass {
                 | Self::WifiBleCoex
                 | Self::DiagnosticPhyTrackingHold
                 | Self::DiagnosticWifiBleCoexTrackingHold
+                | Self::DiagnosticInterruptLatency
                 | Self::DiagnosticMacIrq
                 | Self::DiagnosticTxWait
                 | Self::DiagnosticRxClock

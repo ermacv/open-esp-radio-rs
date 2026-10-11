@@ -123,6 +123,8 @@ oer_hil_agent::requests! {
         GetInterruptStacks(GetInterruptStacks),
         ProbeTimebase(ProbeTimebase),
         CallAcrossCores(CallAcrossCores),
+        #[cfg(feature = "interrupt-latency-probe")]
+        MeasureInterruptLatency(oer_hil_protocol::system::MeasureInterruptLatency),
         #[cfg(not(feature = "memory-benchmark"))]
         ProbeSourceGate(oer_hil_protocol::system::ProbeSourceGate),
         #[cfg(feature = "memory-benchmark")]
@@ -1015,6 +1017,18 @@ pub async fn protocol_task() {
                                 Err(RejectReason::Unsupported)
                             };
                         respond(session_id, request_id, response).await;
+                    }
+                    #[cfg(feature = "interrupt-latency-probe")]
+                    Request::MeasureInterruptLatency(
+                        oer_hil_protocol::system::MeasureInterruptLatency(request),
+                    ) => {
+                        let evidence = crate::system::interrupt_latency::measure(request).await;
+                        respond(
+                            session_id,
+                            request_id,
+                            Ok(oer_hil_protocol::system::InterruptLatency(evidence)),
+                        )
+                        .await;
                     }
                     #[cfg(not(feature = "memory-benchmark"))]
                     Request::ProbeSourceGate(_) => {

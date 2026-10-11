@@ -5,6 +5,8 @@
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
+mod interrupt_latency;
+pub use interrupt_latency::*;
 mod payload;
 pub use payload::*;
 #[cfg(feature = "system")]
@@ -19,6 +21,9 @@ crate::messages! {
     property IpcCall = "system/ipc-call";
     property SourceGate = "system/source-gate";
     property MemoryBenchmark = "system/memory-benchmark";
+    /// A software interrupt at the radio interrupts' level can be timed
+    /// from its raise to its handler; diagnostic only.
+    property InterruptLatencyProbe = "system/interrupt-latency";
     endpoint InjectHang = "system/hang/inject" => crate::system::HangInjected;
     topic HangInjected = "system/hang/injected";
     endpoint InjectPanic = "system/panic/inject" => crate::system::PanicInjected;
@@ -35,11 +40,21 @@ crate::messages! {
     topic CoresCalled = "system/ipc/called";
     endpoint ProbeSourceGate = "system/source-gate/probe" => crate::system::SourceGated;
     topic SourceGated = "system/source-gate/probed";
+    endpoint MeasureInterruptLatency = "system/interrupt-latency/measure" => crate::system::InterruptLatency;
+    topic InterruptLatency = "system/interrupt-latency/measured";
     #[cfg(feature = "system")]
     endpoint RunMemoryBenchmark = "system/memory-benchmark/run" => crate::system::MemoryBenchmarkCompleted;
     #[cfg(feature = "system")]
     topic MemoryBenchmarkCompleted = "system/memory-benchmark/completed";
 }
+
+/// `system/interrupt-latency/measure`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct MeasureInterruptLatency(pub crate::system::InterruptLatencyRequest);
+
+/// `system/interrupt-latency/measured`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Schema)]
+pub struct InterruptLatency(pub crate::system::InterruptLatencyEvidence);
 
 /// Arm the SoC deadline watchdog and misbehave as `0` says. Tests the SoC
 /// deadline service, not RF cessation.

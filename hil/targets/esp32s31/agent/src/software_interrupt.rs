@@ -23,10 +23,18 @@ pub(crate) enum Line {
         allow(dead_code)
     )]
     HangWatchdog = 2,
-    /// The program-counter profiler's sample of core 1.
-    #[cfg_attr(not(feature = "pc-profile"), allow(dead_code))]
+    /// The program-counter profiler's sample of core 1, or, in the
+    /// diagnostic image that times a software interrupt (#643), that probe:
+    /// the two features exclude each other.
+    #[cfg_attr(
+        not(any(feature = "pc-profile", feature = "interrupt-latency-probe")),
+        allow(dead_code)
+    )]
     Profiler = 3,
 }
+
+#[cfg(all(feature = "pc-profile", feature = "interrupt-latency-probe"))]
+compile_error!("the profiler and the interrupt-latency probe share software interrupt line 3");
 
 /// Core 0's executor wake, from the line's peripheral.
 pub(crate) fn executor0(
@@ -70,5 +78,18 @@ pub(crate) fn profiler() -> SoftwareInterrupt<'static, { Line::Profiler as u8 }>
     // SAFETY: the line has one owner, the profiler; binding, raising and
     // resetting touch only this line.
     #[allow(unsafe_code, reason = "the line is shared by two cores")]
+    SoftwareInterrupt::new(unsafe { esp_hal::peripherals::FROM_CPU_INTR3::steal() })
+}
+
+/// The interrupt-latency probe's line (#643): the profiler's line, which an
+/// image with the probe has no profiler to use.
+#[cfg(feature = "interrupt-latency-probe")]
+pub(crate) fn interrupt_latency_probe() -> SoftwareInterrupt<'static, { Line::Profiler as u8 }> {
+    // SAFETY: the line has one owner in this image, the probe (the profiler
+    // is excluded by feature); raising and resetting touch only this line.
+    #[allow(
+        unsafe_code,
+        reason = "the raise and the handler's reset share the line"
+    )]
     SoftwareInterrupt::new(unsafe { esp_hal::peripherals::FROM_CPU_INTR3::steal() })
 }

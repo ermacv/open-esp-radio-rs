@@ -314,7 +314,12 @@ fn station_udp_traffic(
                 minimum_rate_bps: criteria.minimum_rx_bps,
                 maximum_idle_channel_utilization_255: criteria.maximum_idle_channel_utilization_255,
                 suspend_phy_tracking: workload.suspend_phy_tracking,
-                phy_tracking_hold: workload.phy_tracking_hold,
+                traffic_probe: workload
+                    .phy_tracking_hold
+                    .map(crate::workload::traffic::rx_traffic::TrafficProbe::TrackingHold)
+                    .or(workload
+                        .interrupt_latency_probe
+                        .map(crate::workload::traffic::rx_traffic::TrafficProbe::InterruptLatency)),
                 ..Default::default()
             },
             output,

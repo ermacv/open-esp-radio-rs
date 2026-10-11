@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use oer_hil_workload::phy_tracking_hold::{self as tracking_hold, Load};
+use oer_hil_workload::{interrupt_latency, phy_tracking_hold as tracking_hold};
 
 use oer_hil_protocol::{
     network::Completion, network::Direction, network::FlowConfig, network::SessionConfig,
@@ -58,9 +58,20 @@ pub struct Config {
     pub maximum_idle_channel_utilization_255: Option<u8>,
     /// Suspend the shared PHY's periodic tracking for the session.
     pub suspend_phy_tracking: bool,
-    /// Time this many forced tracking ticks of each branch set during the
-    /// traffic and after it (`oer_hil_workload::phy_tracking_hold`).
-    pub phy_tracking_hold: Option<u16>,
+    /// A device measurement taken during the traffic and again after it.
+    pub traffic_probe: Option<TrafficProbe>,
+}
+
+/// A device measurement a receive session runs beside its traffic and again
+/// on the idle link after it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrafficProbe {
+    /// This many forced tracking ticks of each branch set
+    /// (`oer_hil_workload::phy_tracking_hold`, #591).
+    TrackingHold(u16),
+    /// This many software-interrupt latency samples
+    /// (`oer_hil_workload::interrupt_latency`, #643).
+    InterruptLatency(u16),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -253,7 +264,7 @@ pub fn run(
         Err(error) => return capture.finish_with(Err(error)),
     };
     // The timed ticks are the only tracking while the hold is measured.
-    if options.phy_tracking_hold.is_some()
+    if let Some(TrafficProbe::TrackingHold(_)) = options.traffic_probe
         && let Err(error) = tracking_hold::suspend(&capture)
     {
         return capture.finish_with(Err(error));
@@ -291,19 +302,18 @@ pub fn run(
             },
         )
     };
-    // Ticks timed while the host's traffic runs: the traffic's interrupts
-    // compete with the tick on the device.
-    let (host_result, mut hold_samples) = match options.phy_tracking_hold {
-        Some(ticks) => std::thread::scope(|scope| {
+    // The probe's traffic measurement runs while the host's traffic does:
+    // the traffic's interrupts compete with it on the device.
+    let (host_result, mut traffic_measurement) = match options.traffic_probe {
+        Some(probe) => std::thread::scope(|scope| {
             let deadline = Instant::now() + options.duration;
             let capture = &capture;
-            let traffic_hold = scope
-                .spawn(move || tracking_hold::measure(capture, ticks, Load::Traffic, deadline));
+            let measured = scope.spawn(move || probe.measure_traffic(capture, deadline));
             let host = send();
-            let hold = traffic_hold
+            let measured = measured
                 .join()
-                .unwrap_or_else(|_| Err("the tracking hold thread panicked".into()));
-            (host, Some(hold))
+                .unwrap_or_else(|_| Err("the traffic probe thread panicked".into()));
+            (host, Some(measured))
         }),
         None => (send(), None),
     };
@@ -322,25 +332,10 @@ pub fn run(
     if let Err(error) = capture.acknowledge_session(session) {
         return capture.finish_with(Err(error));
     }
-    if let (Some(ticks), Some(samples)) = (options.phy_tracking_hold, hold_samples.take()) {
-        // The same ticks on the idle link, then the timer runs again.
-        let idle = samples.and_then(|mut samples| {
-            let deadline = Instant::now() + tracking_hold::window(ticks);
-            samples.extend(tracking_hold::measure(
-                &capture,
-                ticks,
-                Load::Idle,
-                deadline,
-            )?);
-            Ok(samples)
-        });
-        let resumed = tracking_hold::resume(&capture);
-        if let Err(error) = idle
-            .and_then(|samples| tracking_hold::record(&context.results, &samples))
-            .and(resumed)
-        {
-            return capture.finish_with(Err(error));
-        }
+    if let (Some(probe), Some(measured)) = (options.traffic_probe, traffic_measurement.take())
+        && let Err(error) = probe.finish_idle(&capture, &context.results, measured)
+    {
+        return capture.finish_with(Err(error));
     }
     if let Err(error) = super::phy_tracking::finish(&capture, &context.results, tracking) {
         return capture.finish_with(Err(error));
@@ -656,7 +651,7 @@ impl Default for Config {
             phy: PhyExpectation::He20,
             maximum_idle_channel_utilization_255: None,
             suspend_phy_tracking: false,
-            phy_tracking_hold: None,
+            traffic_probe: None,
         }
     }
 }
@@ -710,3 +705,77 @@ fn record_rates(
 
 #[cfg(test)]
 mod tests;
+
+/// The traffic half of a probe's measurement.
+enum TrafficMeasurement {
+    TrackingHold(Vec<tracking_hold::Sample>),
+    InterruptLatency(interrupt_latency::Sample),
+}
+
+impl TrafficProbe {
+    fn measure_traffic(
+        self,
+        capture: &oer_hil_link::SerialCapture,
+        deadline: Instant,
+    ) -> Result<TrafficMeasurement> {
+        Ok(match self {
+            Self::TrackingHold(ticks) => TrafficMeasurement::TrackingHold(tracking_hold::measure(
+                capture,
+                ticks,
+                tracking_hold::Load::Traffic,
+                deadline,
+            )?),
+            Self::InterruptLatency(samples) => {
+                TrafficMeasurement::InterruptLatency(interrupt_latency::measure(
+                    capture,
+                    samples,
+                    interrupt_latency::Load::Traffic,
+                    Some(deadline.saturating_duration_since(Instant::now())),
+                )?)
+            }
+        })
+    }
+
+    /// Measure again on the idle link, restore what the probe suspended and
+    /// record both halves.
+    fn finish_idle(
+        self,
+        capture: &oer_hil_link::SerialCapture,
+        results: &oer_hil_workload::results::Results,
+        traffic: Result<TrafficMeasurement>,
+    ) -> Result<()> {
+        match self {
+            Self::TrackingHold(ticks) => {
+                // The same ticks on the idle link, then the timer runs again.
+                let idle = traffic.and_then(|traffic| {
+                    let TrafficMeasurement::TrackingHold(mut samples) = traffic else {
+                        unreachable!("a tracking hold measures ticks");
+                    };
+                    let deadline = Instant::now() + tracking_hold::window(ticks);
+                    samples.extend(tracking_hold::measure(
+                        capture,
+                        ticks,
+                        tracking_hold::Load::Idle,
+                        deadline,
+                    )?);
+                    Ok(samples)
+                });
+                let resumed = tracking_hold::resume(capture);
+                idle.and_then(|samples| tracking_hold::record(results, &samples))
+                    .and(resumed)
+            }
+            Self::InterruptLatency(samples) => {
+                let TrafficMeasurement::InterruptLatency(traffic) = traffic? else {
+                    unreachable!("an interrupt-latency probe measures latencies");
+                };
+                let idle = interrupt_latency::measure(
+                    capture,
+                    samples,
+                    interrupt_latency::Load::Idle,
+                    None,
+                )?;
+                interrupt_latency::record(results, &[traffic, idle])
+            }
+        }
+    }
+}

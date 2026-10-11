@@ -419,6 +419,7 @@ fn audit_radio_observers<'a>(
         class,
         ImageClass::Correctness
             | ImageClass::DiagnosticPhyTrackingHold
+            | ImageClass::DiagnosticInterruptLatency
             | ImageClass::DiagnosticMacIrq
             | ImageClass::DiagnosticTxWait
             | ImageClass::DiagnosticTaskPoll

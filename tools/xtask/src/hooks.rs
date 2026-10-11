@@ -46,7 +46,7 @@ pub struct Tool {
 pub const TOOLS: &[Tool] = &[
     Tool {
         name: "hil",
-        heavy: &["run", "run-all", "wait", "bisect", "ab"],
+        heavy: &["run", "run-all", "wait", "bisect", "revision", "ab"],
         pairs: &[
             ["image", "build"],
             ["images", "check"],

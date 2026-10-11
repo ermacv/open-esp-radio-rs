@@ -12,7 +12,7 @@ observes the checkout.
 | `artifacts` | Cargo's actual compilation units applied to the resolved graph |
 | `store` | The content store of observer builds (`observers/<sha256>.json` beside the runs and beside the evidence shards) and the reference form a run's record takes |
 | `receipt` | The receipt of a prepared runner, `OER_OBSERVER_RECEIPT` and the checkout's current descriptor `target/hil/current-observer.json` |
-| `compile`, `resolve`, `prepare` (feature `producer`) | Building the runner from Cargo's artifact messages, resolving its graph (the runner's build script), and its private copy under `target/hil/runners/<sha256>/` with the invocation's receipt |
+| `compile`, `resolve`, `prepare` (feature `producer`) | Building the runner from Cargo's artifact messages, resolving its graph (the runner's build script), and its private copy under `target/hil/runners/<sha256>/` with the invocation's receipt (`prepare`), or without reading its embedded build or writing a receipt (`build`, for another revision's runner, whose build record is in that revision's format) |
 
 `cargo hil` and `cargo hil observer` prepare the observer; the
 evaluator reads prepared descriptors and never runs Cargo for it.

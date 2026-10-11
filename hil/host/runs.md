@@ -3,7 +3,7 @@
 Every run leaves an immutable bundle in the shared run store. This guide covers
 finding and comparing runs, what the runner records when a repetition fails and
 how it brings a board back, and the tools for experiments: enqueued runs,
-bisection, A/B comparison, performance tracking, profiles and layout seeds.
+bisection, a revision's scenario set, A/B comparison, performance tracking, profiles and layout seeds.
 The bundle contract is in the [architecture](architecture.md).
 
 ## Find and compare runs
@@ -292,9 +292,12 @@ that runner uses a private arbiter directory with a copy of the stand file
 (and of the older `devices.json` registry, for revisions before it).
 
 Every step's run is launched through `oer-hil-experiment`'s one
-`launch_run`, which learns the run from the runner's receipt; a revision's
-own runner is built with `oer-hil-observer` and its runs reach the shared
-store through the worktree's `target/hil/runs` link. The scenario's outcome
+`launch_run`, which learns the run from the runner's receipt, through the
+same revision launch as [a revision's scenario set](#a-revisions-scenario-set):
+a revision's own runner is built with `oer-hil-observer`, and its runs reach
+the shared store through the worktree's `target/hil/runs` link, or, when an
+older runner keeps them in a directory of its own below `target/hil`, are
+moved to `target/hil/bisect/<id>/runs/`. The scenario's outcome
 judges the commit: passed makes it good, failed bad. A commit whose image
 does not compile or does not link (told apart from the run's archived build
 log), or whose own runner does not build or starts no run, is broken: neither good nor bad, and
@@ -304,6 +307,35 @@ bisection, since the next steps would meet the same stand. `report.json`
 records every step (commit, subject, runner, verdict and run) and the
 conclusion: the first bad commit (exit 0), the commits broken revisions leave
 ambiguous (exit 1), or why it stopped (exit 2). Its runs record no evidence.
+
+## A revision's scenario set
+
+```console
+cargo hil revision --rev <revision> --scenario <id> [--scenario <id>...] [--layout-seed N]
+```
+
+`revision` runs a scenario set on one revision with the runner that speaks
+its HIL wire, as a bisection step does: the revision is checked out,
+detached, below `target/hil/revision/<id>/`, and the same `messages.lock`
+comparison chooses this checkout's runner (with the revision's firmware from
+a source snapshot) or the revision's own runner inside a whole-stand lease
+with a private arbiter directory. That runner gets the private arbiter and
+the owner under every environment name a revision has read them from
+(`OER_STAND_ARBITER_DIR` and `OER_HIL_ARBITER_DIR`, `OER_STAND_OWNER` and
+`OER_HIL_OWNER`). A run it keeps below the worktree's `target/hil` (an older
+runner's per-chip run directory) is moved to `target/hil/revision/<id>/runs/`
+before the worktree is removed, and its `suite.json` gives the outcomes. It is
+how a revision whose wire differs
+from this checkout's, such as an older tag, is checked for regressions,
+which `ab` cannot do. The scenarios run in the order given. With the
+revision's own runner their ids and definitions are the revision's; with
+this checkout's runner (the same wire) they are this checkout's, and only
+the firmware is the revision's. `report.json` records the revision, its commit and subject, the
+runner and the run with each scenario's outcome; it pairs no measurement
+with another revision's. The exit status is 0 when every scenario passed, 1
+when one failed and 2 when the revision was not judged (a scenario that
+neither passed nor failed, or a runner that could not run). Its runs record
+no evidence.
 
 ## A/B comparison
 

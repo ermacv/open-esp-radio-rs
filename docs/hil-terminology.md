@@ -106,7 +106,7 @@ table; the verdict depends on no stand operation.
 | Execution | How a workload drives the DUT, peers and fixtures and records observations | `oer-hil-runner` (the run core and its family registry), `oer-hil-link` (the DUT session and its generic exchange, through its `Dut` port; the peer console), `oer-hil-workload` (`context`, typed `results`, `boots`, `fixture`, the `family` contract), `oer-hil-net-traffic` (host network traffic) and the `oer-hil-family-<family>` packages |
 | Verdict | Which checks pass for a scenario's observations | `oer-hil-image-class` (the image a scenario needs and the keys it must serve), the scenario model and campaign plan in `oer-hil-scenario` and each family's workloads |
 | Evidence | How a run is written, sealed, read and verified | `oer-hil-run-bundle` (the format, the one writer and the one reader, integrity, the run store), `oer-hil-source-snapshot` (the sources a run and its images were built from), `oer-hil-observer` (the observer's build identity), `oer-durable` (tools) and `oer-hil-schema` |
-| Analysis and experiments | What runs show and how runs are launched and compared | `oer-hil-analysis` (queries, the one measurement aggregation and comparison, performance, views) and `oer-hil-experiment` (the one run launch, A/B, bisection) |
+| Analysis and experiments | What runs show and how runs are launched and compared | `oer-hil-analysis` (queries, the one measurement aggregation and comparison, performance, views) and `oer-hil-experiment` (the one run launch, revision runs, A/B, bisection) |
 | Qualification | Whether sealed evidence establishes readiness | `oer-qualification` |
 
 ## Retired words

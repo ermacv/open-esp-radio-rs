@@ -1,9 +1,9 @@
-//! `cargo hil ab` and `cargo hil bisect`: their arguments, and calls into
-//! `oer-hil-experiment`.
+//! `cargo hil ab`, `cargo hil bisect` and `cargo hil revision`: their
+//! arguments, and calls into `oer-hil-experiment`.
 
 use std::{ffi::OsString, num::NonZeroU32};
 
-use oer_hil_experiment::{ab, bisect, launch::Runner};
+use oer_hil_experiment::{ab, bisect, launch::Runner, revision};
 use oer_hil_run_bundle::RunId;
 use oer_hil_schema::run::Outcome;
 use oer_process::Checkout;
@@ -109,4 +109,49 @@ pub(crate) fn bisect(
     )?;
     print!("{}", bisect::summary(&finished.report));
     Ok(std::process::ExitCode::from(finished.code))
+}
+
+#[derive(clap::Parser)]
+#[command(name = "cargo hil revision")]
+pub(crate) struct RevisionCli {
+    /// The revision: a commit, tag or branch.
+    #[arg(long)]
+    rev: String,
+    /// A scenario to run, in run order; repeat for each. The revision's own
+    /// runner takes the revision's scenario ids, this checkout's runner (the
+    /// same HIL wire) this checkout's.
+    #[arg(long = "scenario", required = true)]
+    scenarios: Vec<String>,
+    /// Build every image with this code layout seed.
+    #[arg(long, value_name = "SEED")]
+    layout_seed: Option<NonZeroU32>,
+    #[command(flatten)]
+    boards: crate::jobs::BoardChoiceArgs,
+}
+
+/// Run the scenario set `args` names on its revision; exits 0 when every
+/// scenario passed, 1 when one failed, 2 when the revision was not judged.
+pub(crate) fn revision(
+    ctx: &Checkout,
+    owner: &str,
+    args: &[OsString],
+) -> Result<std::process::ExitCode> {
+    use clap::Parser as _;
+    let cli = RevisionCli::try_parse_from(
+        std::iter::once(OsString::from("cargo hil revision")).chain(args.iter().cloned()),
+    )?;
+    let finished = revision::run(
+        &ctx.root,
+        owner,
+        &revision::Spec {
+            revision: cli.rev,
+            scenarios: cli.scenarios,
+            layout_seed: cli.layout_seed,
+            boards: cli.boards.arguments(),
+        },
+        |line| eprintln!("hil: {line}"),
+    )?;
+    print!("{}", revision::summary(&finished.report));
+    println!("report: {}", finished.path.display());
+    Ok(std::process::ExitCode::from(finished.report.code()))
 }

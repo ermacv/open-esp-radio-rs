@@ -48,6 +48,9 @@ pub fn run(ctx: &Checkout, args: &[OsString]) -> Result<std::process::ExitCode> 
         Some(HilCommand::Bisect) => {
             return crate::experiments::bisect(ctx, &options.owner(ctx)?, &args[1..]);
         }
+        Some(HilCommand::Revision) => {
+            return crate::experiments::revision(ctx, &options.owner(ctx)?, &args[1..]);
+        }
         None => {}
     }
     // The runner has no lease options: take them from after the command
@@ -170,12 +173,13 @@ enum HilCommand {
     Evidence,
     Profile,
     Bisect,
+    Revision,
     Ab,
     Wait,
 }
 
 impl HilCommand {
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 14] = [
         Self::Dashboard,
         Self::Peer,
         Self::Firmware,
@@ -187,6 +191,7 @@ impl HilCommand {
         Self::Evidence,
         Self::Profile,
         Self::Bisect,
+        Self::Revision,
         Self::Ab,
         Self::Wait,
     ];
@@ -204,6 +209,7 @@ impl HilCommand {
             Self::Evidence => "evidence",
             Self::Profile => "profile",
             Self::Bisect => "bisect",
+            Self::Revision => "revision",
             Self::Ab => "ab",
             Self::Wait => "wait",
         }
@@ -220,6 +226,7 @@ queue, are `cargo stand`):
   cargo hil perf report|baseline|check   gated measurements per commit, baselines, regressions
   cargo hil profile RUN [--scenario S] [--repetition N] [--top N]   symbolized program-counter profiles
   cargo hil bisect --good A --bad B --scenario S [--layout-seed N]   first commit at which S stops passing
+  cargo hil revision --rev R --scenario S... [--layout-seed N]   S on revision R with the runner of its HIL wire
   cargo hil ab --a VARIANT --b VARIANT --scenario S [--repetitions N] [--layout-seeds K] [--enqueue] [--after JOB]
                                       A/B comparison with noise-aware verdicts; --enqueue makes it a job
   cargo hil run ... --enqueue [--after JOB]   start the run detached as a job and print its id
@@ -409,6 +416,7 @@ fn command_tree(ctx: &Checkout) -> Result<std::process::ExitCode> {
         ("peer", crate::peer::PeerCli::command()),
         ("profile", ProfileCli::command()),
         ("bisect", crate::experiments::BisectCli::command()),
+        ("revision", crate::experiments::RevisionCli::command()),
         ("ab", crate::experiments::AbCli::command()),
     ] {
         nodes.extend(walk(&command, &path(&["hil", name])));

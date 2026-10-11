@@ -58,10 +58,10 @@ finds the attached board by its MAC at its `/dev/serial/by-id` link.
 `paths` places the stand's state after the XDG base directories, through
 `oer-durable`'s `xdg`: `stand_file()` (the configuration directory),
 `arbiter()` (`open-esp-radio/arbiter` in the cache directory, or
-`$OER_HIL_ARBITER_DIR`) and `locks()` (`open-esp-radio/leases` in the cache
+`$OER_STAND_ARBITER_DIR`) and `locks()` (`open-esp-radio/leases` in the cache
 directory). The stand file and the lock files never move with
-`OER_HIL_ARBITER_DIR`: a private arbiter (a test's, a bisection's revision
-runner) reads the same stand file as the runner's laboratory configuration
+`OER_STAND_ARBITER_DIR`: a private arbiter (a test's, a revision's own runner
+in a revision run or bisection step) reads the same stand file as the runner's laboratory configuration
 and excludes through the same locks.
 
 ## Host files

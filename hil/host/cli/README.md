@@ -14,7 +14,7 @@ the runner (`oer-hil-runner`), which `oer-hil-observer` builds and
 | `command` | Dispatch, lease options (`--owner`), `lease`, `queue`, `owner`, `preempt`, `devices`, `wait`, `runs` and `perf` (calls into `oer-hil-analysis`), `profile`, `firmware`, the merged `__command-tree`, and `run`/`run-all`: a job, a launch through `oer-hil-experiment`'s `launch_run`, pending evidence and automatic pruning |
 | `jobs` | The command line of jobs, whose records and tickets the arbiter owns (`oer_hil_arbiter::jobs`): `--enqueue` and `--after`, what a job is fixed with below `target/hil/jobs/cli/`, its detached process, `wait JOB` |
 | `evidence` | `cargo hil evidence pending` and `dismiss`: the checkout's pending evidence (`oer_hil_run_bundle::store::pending`); `cargo qualification hil-evidence --pending` records it |
-| `experiments` | The arguments of `ab` and `bisect`, run by `oer-hil-experiment` |
+| `experiments` | The arguments of `ab`, `bisect` and `revision`, run by `oer-hil-experiment` |
 | `board`, `flash`, `stand`, `dashboard` | Arguments and calls only: board resets, consoles and soaks and the peer console through board I/O (`oer-hil-board`), manual flashing through the flash operation (`oer-hil-flash`), stand discovery, doctor and fixture probes through `oer-hil-stand-host`; the live page |
 | `firmware_catalog` | `cargo hil firmware`: lists and builds the ESP-IDF firmware catalog (`hil/peers`, `verification/<chip>/hil-vendor`), which `oer-image`'s `esp_idf::catalog` builds against the pinned ESP-IDF, and flashes it through `oer_hil_flash::catalog` |
 

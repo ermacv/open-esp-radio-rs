@@ -49,6 +49,27 @@ with the ATT echo load in `oer-hil-family-bluetooth`'s
 `workload::bluetooth::coexistence`: one connection writes and reads back the
 application value for the measured interval, then disconnects gracefully.
 
+The `phy-tracking-hold` feature times the RF hold of shared-PHY tracking
+(#591). With the image's tracking task suspended (`phy/tracking/control`), a
+`phy/tracking/hold/measure` request forces the requested branches through the
+vendor's temperature-tracking debug policy (PHY `tracking-diagnostics`) with a
+zero threshold. The task runs one due tick under the radio lease with the
+PHY's observation recorder, clears the policy and replies with the tick's
+timings and the clients the domain served:
+- the three grant-protect intervals (RFPLL, common branch, transmit branch);
+- the Wi-Fi baseband-off interval;
+- the branches nested inside the tick.
+
+A grant-protect interval is the time the request was programmed, not a proof
+that the arbiter kept the other radios off the air. Three diagnostic classes
+carry the feature, one per client set:
+- `diagnostic-phy-tracking-hold`, the Wi-Fi station;
+- `diagnostic-ieee802154-tracking-hold`, the receiving IEEE 802.15.4 client;
+- `diagnostic-wifi-ble-coex-tracking-hold`, both tracking classes.
+
+The host step is `oer_hil_workload::phy_tracking_hold`. Product images compile
+neither the request nor the policy setter.
+
 `runtime/src/product_hil/network` owns stack setup, IPv4 configuration, socket
 API bindings and diagnostic wrappers. All implementations use the same traffic
 workers and public production radio constructor. Radio behaviour belongs in

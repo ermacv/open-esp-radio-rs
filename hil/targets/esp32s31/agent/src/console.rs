@@ -95,6 +95,8 @@ oer_hil_agent::requests! {
     pub(crate) enum Request (sessions = true) {
         #[cfg(not(feature = "memory-benchmark"))]
         ControlTracking(ControlTracking),
+        #[cfg(feature = "phy-tracking-hold")]
+        MeasureTrackingHold(oer_hil_protocol::phy::MeasureTrackingHold),
         #[cfg(not(feature = "memory-benchmark"))]
         ReadRegisterImage(ReadRegisterImage),
         #[cfg(not(feature = "memory-benchmark"))]
@@ -820,6 +822,19 @@ pub async fn protocol_task() {
                             Err(RejectReason::InvalidState)
                         } else {
                             Ok(crate::phy_tracking::control(control))
+                        };
+                        respond(session_id, request_id, reply).await;
+                    }
+                    #[cfg(feature = "phy-tracking-hold")]
+                    Request::MeasureTrackingHold(oer_hil_protocol::phy::MeasureTrackingHold(
+                        request,
+                    )) => {
+                        let reply = if session_id != 0 {
+                            Err(RejectReason::InvalidState)
+                        } else {
+                            crate::phy_tracking::measure_hold(request)
+                                .await
+                                .map(oer_hil_protocol::phy::TrackingHold)
                         };
                         respond(session_id, request_id, reply).await;
                     }

@@ -8,6 +8,7 @@ fn scenario() -> CoexistenceScenario {
         payload_bytes: 1_472,
         minimum_rx_bps: 10_000_000,
         minimum_echoes: 20,
+        phy_tracking_hold: None,
     }
 }
 
@@ -34,6 +35,33 @@ fn traffic_stays_within_one_bounded_phase() {
         },
         CoexistenceScenario {
             minimum_echoes: 0,
+            ..scenario()
+        },
+    ] {
+        assert!(invalid.validate().is_err(), "{invalid:?}");
+    }
+}
+
+/// A tracking hold selects the joint image that times ticks, and needs
+/// traffic long enough for every branch set's due ticks.
+#[test]
+fn a_tracking_hold_selects_its_image_and_needs_its_window() {
+    let hold = CoexistenceScenario {
+        phy_tracking_hold: Some(2),
+        ..scenario()
+    };
+    assert!(hold.validate().is_ok());
+    assert_eq!(
+        hold.plan().image,
+        ImageClass::DiagnosticWifiBleCoexTrackingHold
+    );
+    for invalid in [
+        CoexistenceScenario {
+            phy_tracking_hold: Some(3),
+            ..scenario()
+        },
+        CoexistenceScenario {
+            phy_tracking_hold: Some(0),
             ..scenario()
         },
     ] {

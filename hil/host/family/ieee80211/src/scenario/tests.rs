@@ -534,3 +534,32 @@ fn air_observers_are_refused_on_the_performance_image_and_admitted_on_station_ex
         UDP_RX.replace("image = 'correctness'", "image = 'diagnostic-station-exit'")
     ));
 }
+
+/// A station tracking hold needs its image, a receive-only offer long
+/// enough for every branch set's due ticks, and the timer left to the step.
+#[test]
+fn a_station_tracking_hold_needs_its_image_window_and_receive_offer() {
+    let hold = UDP_RX.replace("'correctness'", "'diagnostic-phy-tracking-hold'");
+    valid(&format!("{hold}phy_tracking_hold = 2\n"));
+    for broken in [
+        // Another image.
+        format!("{UDP_RX}phy_tracking_hold = 2\n"),
+        // No ticks, or more than the bound.
+        format!("{hold}phy_tracking_hold = 0\n"),
+        format!("{hold}phy_tracking_hold = 11\n"),
+        // Traffic shorter than three branch sets' windows.
+        format!("{hold}phy_tracking_hold = 3\n"),
+        // A transmitting offer.
+        format!(
+            "{}phy_tracking_hold = 2\n",
+            hold.replace(
+                "offer = { rx_bps = 50000000 }",
+                "offer = { rx_bps = 50000000, tx_bps = 50000000 }"
+            )
+        ),
+        // The scenario suspending tracking itself.
+        format!("{hold}phy_tracking_hold = 2\nsuspend_phy_tracking = true\n"),
+    ] {
+        invalid(&broken);
+    }
+}

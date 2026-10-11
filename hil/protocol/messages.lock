@@ -128,7 +128,10 @@ phy/startup-artifact e19bebb242ac5508 property
 phy/startup-artifact/part f9009c10dff8abb5 topic
 phy/startup-artifact/ready c1d6ed78910cefdc topic
 phy/startup-artifact/upload d719a6e460b8c641 endpoint
+phy/tracking-hold 55b6448723bbce33 property
 phy/tracking/control 36c987e42b3ce69a endpoint
+phy/tracking/hold 186a5f4fce97018d topic
+phy/tracking/hold/measure dde336f2a2b646b9 endpoint
 phy/tracking/state b95b96002f5ea5d3 topic
 system/hang/inject 2a42c5b154094a25 endpoint
 system/hang/injected ab4b470f0e8147f6 topic

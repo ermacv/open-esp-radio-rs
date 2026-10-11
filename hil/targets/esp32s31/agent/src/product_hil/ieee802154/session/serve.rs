@@ -208,6 +208,30 @@ pub(super) async fn serve_session(
     config: Ieee802154SessionConfig,
     counts: &Cell<Ieee802154SessionMaintenanceCounts>,
 ) -> Served {
+    // The session runs instead of the image's tracking task, so it serves
+    // the tracking-hold requests on its client's radio.
+    #[cfg(feature = "phy-tracking-hold")]
+    {
+        // Each future is built in its pinned place: the session's is too
+        // large to move.
+        let session = core::pin::pin!(serve_commands(session, system, client, config, counts));
+        let holds = core::pin::pin!(crate::product_hil::phy_tracking_hold::serve(client.radio));
+        match select(session, holds).await {
+            Either::First(served) => served,
+            Either::Second(never) => match never {},
+        }
+    }
+    #[cfg(not(feature = "phy-tracking-hold"))]
+    core::pin::pin!(serve_commands(session, system, client, config, counts)).await
+}
+
+async fn serve_commands(
+    session: &mut Session,
+    system: &mut Ieee802154System,
+    client: &Client,
+    config: Ieee802154SessionConfig,
+    counts: &Cell<Ieee802154SessionMaintenanceCounts>,
+) -> Served {
     let restartable = !config.background_maintenance && !config.wifi_coexistence;
     if config.background_maintenance {
         let stop = Signal::<CriticalSectionRawMutex, ()>::new();

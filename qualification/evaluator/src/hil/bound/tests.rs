@@ -138,6 +138,10 @@ fn a_declaration_needs_one_quantity_one_limit_and_a_matching_direction() {
             "better = \"higher\"",
         ),
         (
+            json!({ "measurement": metric, "over": "current-runs", "at-most": 1 }),
+            "per repetition",
+        ),
+        (
             json!({ "ratio": ratio, "over": "current-runs", "at-most": 1, "minimum-denominator": 1 }),
             "basis points",
         ),

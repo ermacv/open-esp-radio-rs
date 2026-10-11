@@ -113,7 +113,14 @@ async = "incomplete"
 depends-on = ["peripheral-link-security"]
 vendor-not-applicable = "host-security-and-oer-bluetooth-gatt-trouble-policy-over-independently-qualified-controller"
 hil-requirements = [
-  { scenario = "bluetooth-trouble-secure-gatt", minimum-repetitions = 3 },
+  # The air of the shared stand loses up to 17% of CONNECT_INDs to foreign
+  # scanners (#357); 20% catches a DUT that stops receiving them. Owner
+  # decision: https://github.com/ermacv/open-esp-radio-rs/issues/363#issuecomment-6110022081.
+  { scenario = "bluetooth-trouble-secure-gatt", minimum-repetitions = 3, bounds = [
+    { ratio = { numerator = { name = "connections-not-established", unit = "count", semantics = 1, better = "lower" },
+                denominator = { name = "connection-attempts", unit = "count", semantics = 1 } },
+      over = "current-runs", at-most-basis-points = 2000, minimum-denominator = 45 },
+  ] },
   { scenario = "bluetooth-trouble-secure-gatt-hci-read-failure", minimum-repetitions = 3 },
 ]
 gaps = [
@@ -121,7 +128,6 @@ gaps = [
   { axis = "host", id = "smp-att-permissions-bond-restore-and-security-downgrade-regressions-missing" },
   { axis = "hil", id = "secure-gatt-pairing-access-control-bonded-reconnect-and-failure-evidence-incomplete" },
   { axis = "hil", id = "secure-gatt-coordinated-host-controller-retirement-qualified-evidence-missing" },
-  { axis = "hil", id = "secure-gatt-connection-establishment-loss-bound-unqualified" },
   { axis = "async", id = "trouble-host-controller-coordinated-shutdown-and-cancellation-incomplete" },
 ]
 
@@ -135,7 +141,6 @@ source-paths = ["crates/adapters/trouble/bluetooth/gatt/src/security/gatt.rs", "
 [capabilities.development]
 knowledge = ["crates/adapters/trouble/bluetooth/gatt/src/security/gatt.rs"]
 gap-work = [
-  { gap = "secure-gatt-connection-establishment-loss-bound-unqualified", kind = "measurement-method", reason = "The GATT workloads retry a connection the DUT never received and publish connections-not-established; a requirement bound can judge that loss over the current runs (#363), but no bound value is accepted yet (#357)." },
 ]
 
 [capabilities.catalog-scope]

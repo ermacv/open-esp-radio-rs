@@ -224,9 +224,10 @@ better): a confirmed connection the DUT reports closed by supervision timeout
 observation (#364). The repetition still fails; on the trace image the failed
 cycle's trace lands in the post-mortem. The bound of
 three attempts guards against the environment; it is no acceptance threshold.
-Whether a loss rate is acceptable is qualification's decision: the catalog
-keeps `secure-gatt-connection-establishment-loss-bound-unqualified` open until
-a bound over these measurements exists (#363).
+Whether a loss rate is acceptable is qualification's decision: the
+`secure-peripheral-gatt` requirement bounds `connections-not-established` over
+`connection-attempts` across the current runs of `bluetooth-trouble-secure-gatt`
+([measurement bounds](../../../qualification/README.md#measurement-bounds), #363).
 
 ## Encryption and key-failure modes
 

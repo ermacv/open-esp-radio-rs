@@ -24,7 +24,8 @@ use std::{
 use oer_ieee80211_datapath::{SoftwareTxFrame, memory::MemoryTxQueues};
 use oer_ieee80211_lower_mac::{
     Channel, ChannelWidth, CoexPriority, Ieee80211LowerMacPort, KeySelector, LifecycleCommand,
-    LowerMacSetting, RadioPort, ReceiveFilter, RxBeaconPriority, TxPower, VifId,
+    LowerMacLiveRetune, LowerMacSetting, RadioPort, ReceiveFilter, RxBeaconPriority, TxPower,
+    VifId,
     model::{LowerMacModel, ModelOutcome, ModelRxBuffer, ready},
 };
 use oer_ieee80211_mac::{
@@ -692,9 +693,10 @@ fn owner_observation_has_an_absolute_deadline_and_never_tunes_or_probes_body() {
         ReceiveFilter::NONE
     );
 
+    // The port's owner moves the enabled port.
     world
         .model
-        .apply(LowerMacSetting::Channel(channel(AP_CHANNEL)))
+        .retune_live(channel(AP_CHANNEL))
         .unwrap()
         .unwrap();
     ap.next_beacon_micros = Some(22_000);
@@ -1220,11 +1222,8 @@ fn an_owner_grant_cannot_be_changed_by_the_joined_candidates_width_body() {
     let world = World::new();
     let granted = channel(AP_CHANNEL);
     let required = Channel::ghz2_4(AP_CHANNEL, ChannelWidth::Mhz40Above).unwrap();
-    world
-        .model
-        .apply(LowerMacSetting::Channel(granted))
-        .unwrap()
-        .unwrap();
+    // The port's owner moves the enabled port.
+    world.model.retune_live(granted).unwrap().unwrap();
     let mut ap = ScriptedAp::new(ApSecurity::Open);
     ap.ht40 = true;
     let mut profile = profile();
@@ -1248,7 +1247,7 @@ fn an_owner_grant_cannot_be_changed_by_the_joined_candidates_width_body() {
     assert_eq!(ap.probe_requests, [AP_CHANNEL]);
     // The same returned owner can join once its composition grants 40 MHz.
     world
-        .drive(&mut ap, station.link_mut().retune(required))
+        .drive(&mut ap, station.link_mut().move_channel(required))
         .unwrap();
     let outcome = world.drive(&mut ap, station.connect_on(required));
     let AssociationAttemptOutcome::Connected { connected, .. } = outcome else {
@@ -1698,6 +1697,7 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
         let mut future = pin!(future);
         let mut routing = pin!(world.router.run());
         let mut context = Context::from_waker(Waker::noop());
+        let mut quiet = false;
         loop {
             world.timer.advance_to(world.timer.now());
             if let Poll::Ready(exit) = future.as_mut().poll(&mut context) {
@@ -1714,6 +1714,14 @@ fn the_lifecycle_rejoins_the_same_access_point_after_a_deauthentication_body() {
             if ap.step(world.model, world.timer.now().as_micros()) {
                 continue;
             }
+            // The router may have answered a wait the station registered
+            // after its poll (a lifecycle terminal of a channel move): poll
+            // once more before moving time.
+            if !quiet {
+                quiet = true;
+                continue;
+            }
+            quiet = false;
             let next = world
                 .timer
                 .next_deadline()
@@ -2409,7 +2417,7 @@ fn an_announced_channel_switch_silences_the_station_until_its_owner_moves_it_bod
     ap.channel = 11;
     ap.beacon_extra.clear();
     world
-        .drive(&mut ap, station.link_mut().retune(channel(11)))
+        .drive(&mut ap, station.link_mut().move_channel(channel(11)))
         .unwrap();
     station.channel_switched(channel(11)).unwrap();
     assert_eq!(station.connection().unwrap().channel_switch(), None);
@@ -2463,6 +2471,7 @@ fn the_lifecycle_follows_its_access_point_to_the_announced_channel_body() {
         let mut future = pin!(future);
         let mut routing = pin!(world.router.run());
         let mut context = Context::from_waker(Waker::noop());
+        let mut quiet = false;
         loop {
             world.timer.advance_to(world.timer.now());
             if let Poll::Ready(exit) = future.as_mut().poll(&mut context) {
@@ -2492,6 +2501,14 @@ fn the_lifecycle_follows_its_access_point_to_the_announced_channel_body() {
             if ap.step(world.model, now) {
                 continue;
             }
+            // The router may have answered a wait the station registered
+            // after its poll (a lifecycle terminal of a channel move): poll
+            // once more before moving time.
+            if !quiet {
+                quiet = true;
+                continue;
+            }
+            quiet = false;
             let next = world
                 .timer
                 .next_deadline()

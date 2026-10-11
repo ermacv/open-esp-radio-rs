@@ -36,9 +36,10 @@ The actions it carries out:
 - **Start the access point.** It starts again once the port is on a channel it may serve.
 - **Leave the upstream.** This is the alternative policy: the station leaves, and the access point keeps its channel.
 
-Permanent moves use the shared upper-MAC `PortClient::retune`. On S31 the
-channel setting refuses while enabled, so this operation disables the port,
-sets the channel and enables it again. The S31 channel setting breaks both
+Permanent moves use the shared upper-MAC `PortClient::move_channel`: the
+channel setting needs a disabled port on every backend, so the move always
+disables the port, sets the channel and enables it again, and both
+interfaces see the lifecycle. The S31 channel setting breaks both
 VIFs' TSF relations; an announced CSA move tolerates that change. Temporary
 search windows require the separate live-retune contract below.
 

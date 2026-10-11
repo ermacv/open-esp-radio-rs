@@ -1161,10 +1161,10 @@ fn channels_outside_2_4_ghz_are_refused_and_enable_retunes() {
     assert_eq!(events.lifecycle, [LifecycleEvent::Enabled]);
     assert_eq!(core.channel(), eleven);
 
-    // Retuning needs the MAC stopped.
+    // Retuning needs the MAC stopped, which only a disabled port is.
     assert_eq!(
         core.apply(&mut hardware, LowerMacSetting::Channel(eleven)),
-        Ok(Err(SettingError::Busy))
+        Ok(Err(SettingError::PortEnabled))
     );
     core.lifecycle(LifecycleCommand::Disable, &mut events)
         .unwrap();

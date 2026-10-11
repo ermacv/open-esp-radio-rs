@@ -1105,6 +1105,31 @@ fn live_retuning_refuses_an_admitted_tx_or_a_disabled_port_without_changing_chan
 }
 
 #[test]
+fn the_channel_setting_needs_a_disabled_port_and_live_retuning_does_not() {
+    let model = enabled_station();
+    let away = Channel::ghz2_4(11, ChannelWidth::Mhz20).unwrap();
+    let updates = model.channel_updates();
+    assert_eq!(
+        model.apply(LowerMacSetting::Channel(away)),
+        Ok(Err(SettingError::PortEnabled))
+    );
+    assert_eq!(model.channel(), Some(channel_six()));
+    assert_eq!(model.channel_updates(), updates);
+
+    assert_eq!(model.retune_live(away), Ok(Ok(())));
+    assert_eq!(model.channel(), Some(away));
+
+    ready(model.lifecycle(LifecycleCommand::Disable))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        model.apply(LowerMacSetting::Channel(channel_six())),
+        Ok(Ok(()))
+    );
+    assert_eq!(model.channel(), Some(channel_six()));
+}
+
+#[test]
 fn a_tsf_relation_keeps_its_generation_through_drift_after_missed_beacons() {
     let mut relation = TsfRelation::new(4, oer_time::Duration::from_micros(1));
     let tsf = TsfInstant::from_micros;

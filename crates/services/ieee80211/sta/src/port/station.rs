@@ -680,7 +680,7 @@ impl<'p, X: PortStationEnv> PortStation<'p, X> {
                 ));
             }
         } else {
-            self.link.retune(channel).await.map_err(|error| {
+            self.link.move_channel(channel).await.map_err(|error| {
                 StaAttemptStepError::retry_current(PortStationError::Link(error))
             })?;
         }
@@ -1257,7 +1257,7 @@ impl<'p, X: PortStationEnv, A: PortStationApplication<PortRxBuffer<X>>> StaLifec
             let now = station.timer.now();
             if let Some(due) = switch.filter(|switch| switch.at <= now) {
                 switch = None;
-                let switched = match station.link_mut().retune(due.target).await {
+                let switched = match station.link_mut().move_channel(due.target).await {
                     Ok(()) => station.channel_switched(due.target),
                     Err(error) => Err(error),
                 };

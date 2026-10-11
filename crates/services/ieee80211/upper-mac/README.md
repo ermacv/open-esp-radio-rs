@@ -79,7 +79,8 @@ BSS (`configure`) routes that BSS's frames to it. The client reads its
 interface's receive and extension queues as `PortInput`s (`Frame(PortFrame)` in the port's own
 `RxBuffer`, `Tbtt`, `EventsLost`, `Poisoned`), transmits MPDUs and A-MPDUs
 through its `UpperMacTx`, and applies settings, the BSS's EDCA parameters,
-its interface configuration, retunes and lifecycle commands, with every
+its interface configuration, permanent channel moves (`move_channel`:
+`Disable`, `Channel`, `Enable`) and lifecycle commands, with every
 failure a `PortClientError`. `PortMsdu` is the MSDU a service hands its
 application: the port's buffer, or parts to copy. A service sends no copy of a frame from a queue
 of its own: it takes the network's owners from its source

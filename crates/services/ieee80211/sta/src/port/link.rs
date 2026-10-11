@@ -365,10 +365,13 @@ impl<'p, X: PortStationEnv> PortLink<'p, X> {
         Ok(self.client.configure(bssid, receive)?)
     }
 
-    /// Tune to `channel`, disabling the port around it where the backend
-    /// retunes only while disabled.
-    pub async fn retune(&mut self, channel: Channel) -> Result<(), PortLinkError<PortFault<X>>> {
-        Ok(self.client.retune(channel).await?)
+    /// Move the enabled port to `channel` through a full lifecycle
+    /// ([`PortClient::move_channel`](oer_ieee80211_upper_mac_service::PortClient::move_channel)).
+    pub async fn move_channel(
+        &mut self,
+        channel: Channel,
+    ) -> Result<(), PortLinkError<PortFault<X>>> {
+        Ok(self.client.move_channel(channel).await?)
     }
 
     /// Run one lifecycle command to its terminal event.

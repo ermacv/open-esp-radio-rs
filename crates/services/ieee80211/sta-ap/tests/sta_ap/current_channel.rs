@@ -1,5 +1,5 @@
-//! An enabled-port channel setting is refused, as on S31. This backend
-//! deliberately implements neither air reservation nor live retuning.
+//! A backend that, like S31, implements neither air reservation nor live
+//! retuning, so every channel move goes through the port lifecycle.
 
 use core::{cell::Cell, future::Future};
 
@@ -84,11 +84,7 @@ impl Ieee80211LowerMacPort for DisabledRetune {
     }
 
     fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, Fault> {
-        if matches!(setting, LowerMacSetting::Channel(_)) && self.enabled.get() {
-            Ok(Err(SettingError::Busy))
-        } else {
-            self.model.apply(setting)
-        }
+        self.model.apply(setting)
     }
 
     fn install_key(&self, key: KeyInstall<'_>) -> PortResult<KeyHandle, SettingError, Fault> {
@@ -184,7 +180,7 @@ fn setup(world: &World) -> Setup {
         leak(TestFrames::new()),
     );
     world
-        .drive(upstream.client_mut().retune(ghz2_4(6)))
+        .drive(upstream.client_mut().move_channel(ghz2_4(6)))
         .unwrap();
     upstream.start(ghz2_4(6)).unwrap();
     let port = leak(DisabledRetune {
@@ -463,7 +459,7 @@ fn an_upstream_lost_past_the_policy_restarts_the_access_point_on_its_new_channel
         // The upstream comes back where the pair, on channel 6, cannot hear it.
         world
             .drive_with_pair_router(
-                setup.upstream.client_mut().retune(ghz2_4(11)),
+                setup.upstream.client_mut().move_channel(ghz2_4(11)),
                 setup.router,
                 || {},
             )

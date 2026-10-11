@@ -281,9 +281,9 @@ struct ArmedSecurity {
 
 /// One transmission as OpenThread `SubMac` runs it over ESP-IDF's radio,
 /// which makes one attempt per transmit: CSMA-CA backoffs, retries and the
-/// delays before them. Every attempt after the first arms the transmission's
-/// security again, as ESP-IDF's OpenThread port arms it in each
-/// `otPlatRadioTransmit`; the engine clears it when an attempt ends.
+/// delays before them. Every attempt arms the transmission's security, as
+/// ESP-IDF's OpenThread port arms it in each `otPlatRadioTransmit`; the
+/// engine clears it when an attempt ends.
 struct Transmission {
     /// The `[PHR, MAC..., FCS]` image each attempt transmits.
     image: [u8; FRAME_SIZE],
@@ -291,9 +291,7 @@ struct Transmission {
     csma: CsmaCa,
     retries: FrameRetries,
     security: Option<ArmedSecurity>,
-    /// Whether the engine still holds `security`.
-    armed: bool,
-    /// Who secures the frame when no security is armed.
+    /// Who secures the frame when it carries no key.
     tx_security: TxSecurity,
     /// The security header fields an attempt wrote into the frame.
     applied: Option<AppliedSecurity>,
@@ -346,7 +344,6 @@ impl Transmission {
         L: Ieee802154LowLevel + ?Sized,
     {
         self.phase = Phase::DelayDue(delay);
-        self.armed = false;
         if engine.pib().rx_when_idle() {
             engine.receive(ll, env);
         } else {
@@ -365,9 +362,7 @@ impl Transmission {
         L: Ieee802154LowLevel + ?Sized,
     {
         if let Some(security) = self.security {
-            if !self.armed {
-                engine.set_transmit_security(ll, self.image(), &security.key, &security.address);
-            }
+            engine.set_transmit_security(ll, self.image(), &security.key, &security.address);
         } else if let Some(interface) = env
             .security
             .interfaces
@@ -394,7 +389,6 @@ impl Transmission {
             let address = interface.address;
             engine.set_transmit_security(ll, self.image(), &security.key, &address);
         }
-        self.armed = false;
         self.phase = Phase::Attempting;
         let image = self.image();
         let started = match self.mode {
@@ -1133,7 +1127,6 @@ impl<'storage, R: Ieee802154Random> Ieee802154Radio<'storage, R> {
                     }),
                     retries: FrameRetries::new(request.max_frame_retries),
                     security,
-                    armed: false,
                     tx_security: request.security,
                     applied: None,
                     interface: multipan_index(request.interface)

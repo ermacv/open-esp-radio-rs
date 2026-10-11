@@ -409,3 +409,32 @@ fn rfpll_terminal_detail_is_scoped_to_one_active_operation() {
     duplicate.observe_rfpll(value);
     assert!(duplicate.report().invalid);
 }
+
+/// The grant-protect request and the Wi-Fi baseband-off window are timed as
+/// held intervals: their longest hold is the RF time tracking takes from the
+/// other protocols, separate from the operations nested inside them.
+#[test]
+fn held_rf_intervals_record_their_longest_hold() {
+    let mut recorder = Recorder::default();
+    for (start, end) in [(100, 1_100), (2_000, 2_400)] {
+        recorder.observe(Operation::GrantProtectCommon, Event::Started, start);
+        recorder.observe(Operation::WifiBasebandOff, Event::Started, start + 10);
+        recorder.observe(Operation::WifiBasebandOff, Event::Completed, end - 10);
+        recorder.observe(Operation::GrantProtectCommon, Event::Completed, end);
+    }
+    let report = recorder.report();
+    assert!(!report.invalid);
+    let grant = report.timing(Operation::GrantProtectCommon);
+    assert_eq!((grant.completed, grant.maximum_micros), (2, 1_000));
+    assert_eq!(grant.elapsed_micros, 1_400);
+    let baseband = report.timing(Operation::WifiBasebandOff);
+    assert_eq!((baseband.completed, baseband.maximum_micros), (2, 980));
+}
+
+/// A release without a set is a malformed observation.
+#[test]
+fn a_release_without_a_set_invalidates_the_report() {
+    let mut recorder = Recorder::default();
+    recorder.observe(Operation::GrantProtectCommon, Event::Completed, 10);
+    assert!(recorder.report().invalid);
+}

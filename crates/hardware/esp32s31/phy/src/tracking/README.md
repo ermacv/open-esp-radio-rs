@@ -260,6 +260,20 @@ labelled requested hardware delay or CPU idle time. The recorder
 and HIL validator reject malformed intervals instead of accepting them as a
 successful measurement. Other operations have no poll breakdown.
 
+The RF hold of a tick is timed as held intervals separate from the
+operations nested in them:
+- `GrantProtectRfpll`, `GrantProtectCommon` and `GrantProtectTransmit` run
+  from each bracket's grant-protect set to its release, by the calibration
+  branch the transition reports (`PhyCalibrationTrackingBranch`);
+- `WifiBasebandOff` runs from `DisableWifiBaseband` to `EnableMacBaseband`.
+
+A grant-protect interval is the time the request was programmed. It is not
+an observation of RF exclusion. The opt-in `tracking-diagnostics` feature
+lets a diagnostic image force branches through the vendor's
+temperature-tracking debug policy
+(`ConcurrentPhy::set_temperature_tracking_debug`); the HIL target's
+`phy-tracking-hold` images use it.
+
 Production RX gain executes as one direct blocking transaction under the
 exclusive PHY owner. It records disjoint DC, publication and control phases,
 plus clock-free search and settle counts. The event-driven transition remains

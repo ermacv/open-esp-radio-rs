@@ -326,4 +326,18 @@ fn thermal_correction_is_bracketed_by_grant_protection_only_when_due() {
             .count(),
         2
     );
+    // The bracket is the RFPLL's RF-hold interval: its set opens it, its
+    // release closes it, and no other action is an edge.
+    use crate::tracking::observation::{Event, Operation, rfpll_hold_edge};
+    let edges: std::vec::Vec<_> = actions
+        .iter()
+        .filter_map(|action| rfpll_hold_edge(*action))
+        .collect();
+    assert_eq!(
+        edges,
+        [
+            (Operation::GrantProtectRfpll, Event::Started),
+            (Operation::GrantProtectRfpll, Event::Completed)
+        ]
+    );
 }

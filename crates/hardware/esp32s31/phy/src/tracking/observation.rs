@@ -35,9 +35,23 @@ pub enum Operation {
     /// Entire parameter executor, including critical entry/exit. All other
     /// operation intervals are children, not additive execution time.
     Tracking,
+    /// The PHY grant-protect request (coexistence event 48 on timer 5) held
+    /// around the RFPLL capacitor correction, from its set to its release.
+    /// It is the interval the request is programmed, not a proof that the
+    /// arbiter excluded every other radio from the air.
+    GrantProtectRfpll,
+    /// The grant-protect request held around the common branch (DCODE and
+    /// RX gain calibration).
+    GrantProtectCommon,
+    /// The grant-protect request held around the transmit branch (TXDC/PWDET
+    /// of each requested class and the gain publication).
+    GrantProtectTransmit,
+    /// The Wi-Fi baseband held off by a calibration branch, from
+    /// `DisableWifiBaseband` to `EnableMacBaseband`.
+    WifiBasebandOff,
 }
 
-pub const OPERATION_COUNT: usize = 18;
+pub const OPERATION_COUNT: usize = 22;
 const POLLED_COUNT: usize = 3;
 
 impl Operation {
@@ -98,6 +112,50 @@ impl Operation {
             | Calibration::Complete(_)
             | Calibration::Failed(_) => return None,
         })
+    }
+}
+
+/// The RF-hold interval edge a calibration action opens or closes: the
+/// grant-protect request held around `branch`, or the Wi-Fi baseband held
+/// off. A terminal transition (no branch) programs no request.
+pub(crate) const fn calibration_hold_edge(
+    action: Calibration,
+    branch: Option<super::calibration::PhyCalibrationTrackingBranch>,
+) -> Option<(Operation, Event)> {
+    use super::calibration::PhyCalibrationTrackingBranch as Branch;
+    match action {
+        Calibration::SetGrantProtect { enabled } => {
+            let operation = match branch {
+                Some(Branch::Common) => Operation::GrantProtectCommon,
+                Some(Branch::Transmit) => Operation::GrantProtectTransmit,
+                None => return None,
+            };
+            Some((operation, grant_protect_edge(enabled)))
+        }
+        Calibration::DisableWifiBaseband => Some((Operation::WifiBasebandOff, Event::Started)),
+        Calibration::EnableMacBaseband => Some((Operation::WifiBasebandOff, Event::Completed)),
+        _ => None,
+    }
+}
+
+/// The grant-protect edge of an RFPLL thermal correction action.
+pub(crate) const fn rfpll_hold_edge(
+    action: super::rfpll::thermal::Action,
+) -> Option<(Operation, Event)> {
+    match action {
+        super::rfpll::thermal::Action::SetGrantProtect { enabled } => {
+            Some((Operation::GrantProtectRfpll, grant_protect_edge(enabled)))
+        }
+        _ => None,
+    }
+}
+
+/// Setting the request opens its interval; releasing it closes it.
+const fn grant_protect_edge(enabled: bool) -> Event {
+    if enabled {
+        Event::Started
+    } else {
+        Event::Completed
     }
 }
 

@@ -187,6 +187,43 @@ fn run(
     panic!("calibration tracking exceeded its finite path")
 }
 
+/// Each grant-protect pair belongs to one branch: the common branch's pair
+/// first, then the transmit branch's, and a terminal transition has none.
+/// The PHY's RF-hold timing names its intervals by this branch.
+#[test]
+fn every_grant_protect_pair_belongs_to_one_branch() {
+    let mut transition = PhyCalibrationTrackingTransition::new(
+        PhyCalibrationTrackingRequest {
+            clients: (PhyCalibrationTrackClass::Wifi).clients(),
+        },
+        PARAMETERS,
+    );
+    let mut edges = Vec::new();
+    for _ in 0..CALIBRATION_TRACKING_ACTION_LIMIT {
+        let action = transition.action();
+        if matches!(
+            action,
+            PhyCalibrationTrackingAction::Complete(_) | PhyCalibrationTrackingAction::Failed(_)
+        ) {
+            assert_eq!(transition.branch(), None);
+            break;
+        }
+        if let PhyCalibrationTrackingAction::SetGrantProtect { enabled } = action {
+            edges.push((transition.branch(), enabled));
+        }
+        transition.advance(completion(action)).unwrap();
+    }
+    assert_eq!(
+        edges,
+        [
+            (Some(PhyCalibrationTrackingBranch::Common), true),
+            (Some(PhyCalibrationTrackingBranch::Common), false),
+            (Some(PhyCalibrationTrackingBranch::Transmit), true),
+            (Some(PhyCalibrationTrackingBranch::Transmit), false),
+        ]
+    );
+}
+
 #[test]
 fn wifi_inclusive_threshold_runs_common_then_wifi_and_restores_every_guard() {
     let actions = run(
@@ -584,9 +621,19 @@ fn dcode_failure_restores_gain_without_publishing_common_progress() {
         transition.action(),
         PhyCalibrationTrackingAction::RestoreTxGainCompensation
     );
+    // The shared failure tail closes the bracket the common branch opened:
+    // the transmit branch never acquired the request.
+    assert_eq!(
+        transition.branch(),
+        Some(PhyCalibrationTrackingBranch::Common)
+    );
     transition
         .advance(PhyCalibrationTrackingCompletion::TxGainCompensationRestored)
         .unwrap();
+    assert_eq!(
+        transition.branch(),
+        Some(PhyCalibrationTrackingBranch::Common)
+    );
     grant(&mut transition, false);
     assert_eq!(
         transition.action(),
@@ -1493,4 +1540,49 @@ fn grant_protection_brackets_each_measurement_branch_like_the_vendor() {
         actions[class_end + 1],
         PhyCalibrationTrackingAction::Complete(_)
     ));
+}
+
+/// Every action of a complete pass with both classes, mapped to its RF-hold
+/// edge, gives balanced intervals: one common and one transmit grant-protect
+/// bracket, every Wi-Fi baseband-off window closed, and no edge at the
+/// terminal action.
+#[test]
+fn a_complete_pass_maps_to_balanced_rf_hold_intervals() {
+    use crate::tracking::observation::{Operation, Recorder, calibration_hold_edge};
+
+    let mut transition = PhyCalibrationTrackingTransition::new(
+        PhyCalibrationTrackingRequest {
+            clients: crate::tracking::parameters::PhyParamTrackRequest::new(true, true),
+        },
+        PARAMETERS,
+    );
+    let mut recorder = Recorder::default();
+    let mut now = 0;
+    for _ in 0..CALIBRATION_TRACKING_ACTION_LIMIT {
+        let action = transition.action();
+        now += 10;
+        if matches!(
+            action,
+            PhyCalibrationTrackingAction::Complete(_) | PhyCalibrationTrackingAction::Failed(_)
+        ) {
+            assert_eq!(calibration_hold_edge(action, transition.branch()), None);
+            break;
+        }
+        if let Some((operation, event)) = calibration_hold_edge(action, transition.branch()) {
+            recorder.observe(operation, event, now);
+        }
+        transition.advance(completion(action)).unwrap();
+    }
+    let report = recorder.report();
+    assert!(!report.invalid);
+    for operation in [
+        Operation::GrantProtectCommon,
+        Operation::GrantProtectTransmit,
+    ] {
+        let timing = report.timing(operation);
+        assert_eq!((timing.started, timing.completed), (1, 1), "{operation:?}");
+    }
+    let baseband = report.timing(Operation::WifiBasebandOff);
+    assert!(baseband.completed >= 2);
+    assert_eq!(baseband.started, baseband.completed);
 }

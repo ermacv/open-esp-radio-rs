@@ -25,7 +25,7 @@ use oer_esp32s31_phy::RomShortDelay;
 use oer_esp32s31_phy::{
     ConcurrentPhyRegisterFailure, ConcurrentPhyRegistration, ConcurrentPhyTrackingError,
     ConcurrentRfError, ConcurrentTrackingTick, NoopPhyTargetObserver, PhyCalibrationCache,
-    PhyCalibrationIdentity, PhyRegisterConfig, close_concurrent_rf,
+    PhyCalibrationIdentity, PhyRegisterConfig, PhyTargetObserver, close_concurrent_rf,
     concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
     ieee802154_client::{
         Ieee802154PhyClientError, Ieee802154PhyLeaveFailure, Ieee802154PhyMembership,
@@ -840,10 +840,26 @@ impl<'radio, P, C: PlatformClockProvider, T: Timer> RadioGuard<'radio, P, C, T> 
     ///
     /// Once tracking starts, drive this future to a terminal result.
     pub async fn track(&mut self) -> Result<ConcurrentTrackingTick, ConcurrentPhyTrackingError> {
+        self.track_observed(NoopPhyTargetObserver).await
+    }
+
+    /// [`Self::track`] reporting the tick's operations to `observer`, for a
+    /// diagnostic image that times them.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::track`].
+    ///
+    /// # Cancellation
+    ///
+    /// As [`Self::track`].
+    pub async fn track_observed<O: PhyTargetObserver>(
+        &mut self,
+        observer: O,
+    ) -> Result<ConcurrentTrackingTick, ConcurrentPhyTrackingError> {
         let timer = self.timer;
         let (lease, platform, _) = self.parts();
-        track_concurrent_phy::<P, RomShortDelay, _>(lease, platform, timer, NoopPhyTargetObserver)
-            .await
+        track_concurrent_phy::<P, RomShortDelay, _>(lease, platform, timer, observer).await
     }
 
     /// Enable coexistence for one radio, as `coex_enable` does. Each radio

@@ -38,6 +38,9 @@ protocol compositions are clients of the system:
   `RadioSystem::run_tracking_observed` also reports every tick's result, and
   `RadioSystem::run_tracking_until` ends when a stop future completes, which
   it polls only between ticks so a started tick always finishes.
+  `RadioGuard::track_observed` runs one tick like `RadioGuard::track` and
+  reports its operations to a `PhyTargetObserver`, for a diagnostic image
+  that times them.
 
 - `RadioGuard::suspend_wifi` and `RadioGuard::resume_wifi` are the vendor
   modem sleep's `wifi_rf_phy_disable`/`wifi_rf_phy_enable`: the Wi-Fi

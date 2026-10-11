@@ -649,6 +649,13 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         self.child.action()
     }
 
+    /// The calibration branch of the current action.
+    pub const fn branch(
+        &self,
+    ) -> Option<crate::tracking::calibration::PhyCalibrationTrackingBranch> {
+        self.child.branch()
+    }
+
     pub fn advance(
         &mut self,
         completion: crate::tracking::calibration::PhyCalibrationTrackingCompletion,

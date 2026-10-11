@@ -68,6 +68,7 @@ mod output;
 mod peripheral;
 mod planning;
 mod scanning;
+mod trace;
 
 pub use controller::{ControllerBusy, LeController, LeControllerConfig, PLANNING_SLACK, RadioWork};
 pub use oer_bluetooth_ll::control::LeVersionInformation;

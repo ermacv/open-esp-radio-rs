@@ -496,6 +496,99 @@ fn the_reserved_next_event_follows_a_connection_update() {
 }
 
 #[test]
+fn a_connection_is_traced_from_its_indication_to_its_close() {
+    use oer_bluetooth_trace::{
+        AdvertiserStep, AdvertiserStepKind as Step, ConnectionIndication, IndicationVerdict,
+        PeripheralClosed, PeripheralEvent, PeripheralEventOp as Op, PeripheralOpened,
+    };
+    let (mut harness, first) = Harness::connected();
+    let steps: std::vec::Vec<Step> = crate::trace::take::<AdvertiserStep>()
+        .into_iter()
+        .map(|step| step.step)
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            Step::Configured,
+            Step::EventPlanned,
+            Step::EventEnded,
+            Step::Removed
+        ]
+    );
+    assert_eq!(
+        crate::trace::take::<ConnectionIndication>(),
+        [ConnectionIndication {
+            verdict: IndicationVerdict::Accepted,
+        }]
+    );
+    assert_eq!(
+        crate::trace::take::<PeripheralOpened>(),
+        [PeripheralOpened {
+            first_anchor_low: (INDICATION_AT + 352 + 1_250) as u32,
+            interval_units: (INTERVAL / 1_250) as u16,
+        }]
+    );
+    harness.end_at(first, Some(INDICATION_AT + 2_000));
+    let event = |op, counter| PeripheralEvent {
+        op,
+        counter,
+        id: first.get(),
+    };
+    assert_eq!(
+        crate::trace::take::<PeripheralEvent>(),
+        [
+            event(Op::Requested, 0),
+            event(Op::Accepted, 0),
+            event(Op::Observed, 0)
+        ]
+    );
+    // Reset closes the connection without a reason for the Host.
+    assert_eq!(harness.command(super::RESET, &[]), None);
+    assert_eq!(harness.step().unwrap(), Some(Request::CloseConnection));
+    assert_eq!(
+        crate::trace::take::<PeripheralClosed>(),
+        [PeripheralClosed { reason: None }]
+    );
+}
+
+#[test]
+fn a_refused_opening_is_traced_closed_with_the_host_s_reason() {
+    use oer_bluetooth_trace::{PeripheralClosed, PeripheralOpened};
+    let mut harness = Harness::configured();
+    let mut parameters = super::nonconnectable_parameters();
+    parameters[4] = 0x00; // ADV_IND
+    assert_eq!(
+        harness.command(super::SET_ADV_PARAMS, &parameters),
+        Some(SUCCESS)
+    );
+    harness.send(SET_ADV_ENABLE, &[1]);
+    assert!(matches!(
+        harness.step().unwrap(),
+        Some(Request::ConfigureConnectable(_, _))
+    ));
+    assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
+    let Some(Request::Advertise(event)) = harness.step().unwrap() else {
+        panic!("an advertising event");
+    };
+    harness.core.outcome(RadioOutcome::Received {
+        id: event.id,
+        pdu: ReceivedPdu {
+            pdu: &connect_ind(),
+            rssi_dbm: -50,
+            captured_at: Some(LeInstant::from_micros(INDICATION_AT)),
+        },
+    });
+    let refused = harness.step_with(Err(oer_bluetooth_radio::RequestError::NoInstance));
+    assert!(matches!(refused, Ok(Some(Request::OpenConnection(_)))));
+    assert_eq!(crate::trace::take::<PeripheralOpened>().len(), 1);
+    // Connection Rejected due to Limited Resources.
+    assert_eq!(
+        crate::trace::take::<PeripheralClosed>(),
+        [PeripheralClosed { reason: Some(0x0d) }]
+    );
+}
+
+#[test]
 fn reset_drops_the_connection_without_disconnection_complete() {
     let (mut harness, first) = Harness::connected();
     assert_eq!(harness.command(super::RESET, &[]), None);

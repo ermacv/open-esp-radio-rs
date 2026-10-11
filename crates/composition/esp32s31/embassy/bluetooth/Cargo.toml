@@ -36,6 +36,13 @@ static_cell = "2.1.1"
 # Diagnostic images only: forwards the Controller's vendor command 0xFC01,
 # which arms one received-MIC corruption.
 diagnostic-mic-fault = ["oer-bluetooth-controller/diagnostic-mic-fault"]
+# Diagnostic images only: record the Controller, radio role and runtime trace
+# points (`oer-bluetooth-trace`).
+trace = [
+    "oer-bluetooth-controller/trace",
+    "oer-esp32s31-bluetooth-radio/trace",
+    "oer-esp32s31-bluetooth-runtime/trace",
+]
 
 [lints]
 workspace = true

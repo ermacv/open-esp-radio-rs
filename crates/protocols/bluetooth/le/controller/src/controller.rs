@@ -1077,7 +1077,13 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                         self.in_flight = Some(Owner::AdvertiserEvent);
                         return Ok(Some(RadioWork::Submit(request)));
                     }
-                    None => advertising = self.advertiser.skip(earliest, delay, advertising)?,
+                    None => {
+                        crate::trace::emit(|| oer_bluetooth_trace::AdvertiserStep {
+                            step: oer_bluetooth_trace::AdvertiserStepKind::EventSkipped,
+                            id: 0,
+                        });
+                        advertising = self.advertiser.skip(earliest, delay, advertising)?
+                    }
                 }
                 prng = next_prng;
             }

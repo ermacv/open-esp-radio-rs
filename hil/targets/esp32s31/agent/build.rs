@@ -2,6 +2,19 @@ fn main() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     oer_esp32s31_platform_layout::build::configure_runtime("oer-esp32s31-hil-agent");
     enabled_features(manifest);
+    trace_journal();
+}
+
+/// `cfg(trace_journal)`: the image keeps the event trace. The memory
+/// benchmark builds on `open-radio-hil` but keeps no trace, and a feature
+/// cannot take another away.
+fn trace_journal() {
+    println!("cargo::rustc-check-cfg=cfg(trace_journal)");
+    if std::env::var_os("CARGO_FEATURE_TRACE_JOURNAL").is_some()
+        && std::env::var_os("CARGO_FEATURE_MEMORY_BENCHMARK").is_none()
+    {
+        println!("cargo::rustc-cfg=trace_journal");
+    }
 }
 
 /// Lists the manifest features this build enables, as `ENABLED_FEATURES`,

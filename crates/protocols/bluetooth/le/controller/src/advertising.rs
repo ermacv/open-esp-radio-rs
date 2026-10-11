@@ -42,6 +42,8 @@ use oer_bluetooth_radio::{
     TxPower,
 };
 
+use oer_bluetooth_trace::{AdvertiserStep, AdvertiserStepKind, IndicationVerdict};
+
 use crate::{
     RadioWork,
     arbiter::{Proposal, reservation},
@@ -383,6 +385,16 @@ impl Advertiser {
 
     /// The backend's answer to this role's control request.
     pub(crate) fn control_done(&mut self, accepted: bool) {
+        if accepted {
+            let step = match self.phase {
+                Phase::Configuring { .. } => Some(AdvertiserStepKind::Configured),
+                Phase::Removing { .. } => Some(AdvertiserStepKind::Removed),
+                Phase::Idle | Phase::Running | Phase::Cancelling { .. } => None,
+            };
+            if let Some(step) = step {
+                crate::trace::emit(|| AdvertiserStep { step, id: 0 });
+            }
+        }
         match self.phase {
             Phase::Configuring { .. } if accepted => {
                 self.phase = Phase::Running;
@@ -525,6 +537,10 @@ impl Advertiser {
         let reserved = reservation(anchor, self.event_duration(timing)?, timing)
             .map_err(|OutsideEpoch| error(O::Event, C::Reservation))?;
         let continuation = self.continuation(anchor, delay, progress)?;
+        crate::trace::emit(|| AdvertiserStep {
+            step: AdvertiserStepKind::EventPlanned,
+            id: id.get(),
+        });
         self.outstanding = Some(Outstanding {
             id,
             reservation: reserved,
@@ -620,28 +636,47 @@ impl Advertiser {
         }
     }
 
+    /// Judge a PDU the set received as a connection indication, and open
+    /// the connection it accepts.
+    fn indication(&mut self, pdu: &[u8], captured_at: Option<LeInstant>) -> IndicationVerdict {
+        if self.phase != Phase::Running {
+            return IndicationVerdict::NotRunning;
+        }
+        let Some(at) = captured_at else {
+            return IndicationVerdict::NoCapture;
+        };
+        let Ok(request) = LeLegacyConnectionRequest::decode(pdu) else {
+            return IndicationVerdict::Malformed;
+        };
+        let admitted = match self.kind {
+            SetKind::Connectable => true,
+            SetKind::Directed { target, .. } => request.initiator() == target,
+            SetKind::Nonconnectable | SetKind::Scannable => false,
+        };
+        if !admitted {
+            return IndicationVerdict::NotAdmitted;
+        }
+        if !request.is_addressed_to(self.advertiser) {
+            return IndicationVerdict::NotAddressed;
+        }
+        self.connection = Some(ConnectionIndication { request, at });
+        self.connected = true;
+        self.phase = Phase::Cancelling { sent: false };
+        IndicationVerdict::Accepted
+    }
+
     /// Account one outcome.
     pub(crate) fn outcome(&mut self, outcome: RadioOutcome<'_>) {
         match outcome {
             RadioOutcome::Received { id, pdu } if self.owns(id) => {
-                let (Some(at), Phase::Running) = (pdu.captured_at, self.phase) else {
-                    return;
-                };
-                let Ok(request) = LeLegacyConnectionRequest::decode(pdu.pdu) else {
-                    return;
-                };
-                let admitted = match self.kind {
-                    SetKind::Connectable => true,
-                    SetKind::Directed { target, .. } => request.initiator() == target,
-                    SetKind::Nonconnectable | SetKind::Scannable => false,
-                };
-                if admitted && request.is_addressed_to(self.advertiser) {
-                    self.connection = Some(ConnectionIndication { request, at });
-                    self.connected = true;
-                    self.phase = Phase::Cancelling { sent: false };
-                }
+                let verdict = self.indication(pdu.pdu, pdu.captured_at);
+                crate::trace::emit(|| oer_bluetooth_trace::ConnectionIndication { verdict });
             }
             RadioOutcome::EventEnded { id, .. } if self.owns(id) => {
+                crate::trace::emit(|| AdvertiserStep {
+                    step: AdvertiserStepKind::EventEnded,
+                    id: id.get(),
+                });
                 self.outstanding = None;
                 self.ended = self.ended.wrapping_add(1);
                 match self.phase {

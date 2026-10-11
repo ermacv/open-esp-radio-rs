@@ -407,6 +407,7 @@ fn audit_radio_observers<'a>(
             | ImageClass::SystemPanicReset
             | ImageClass::DiagnosticUsbJtagOff
             | ImageClass::BluetoothGatt
+            | ImageClass::DiagnosticBluetoothGattTrace
             | ImageClass::BluetoothSecureGatt
             | ImageClass::BluetoothDtm
             | ImageClass::BootSmoke

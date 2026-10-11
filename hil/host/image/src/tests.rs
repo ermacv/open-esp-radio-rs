@@ -63,6 +63,10 @@ fn radio_observer_placement_remains_required_only_for_radio_compositions() {
 fn the_radio_less_classes_need_no_driver_observation() {
     for (class, features) in [
         (ImageClass::BluetoothGatt, "bluetooth-gatt"),
+        (
+            ImageClass::DiagnosticBluetoothGattTrace,
+            "bluetooth-gatt,bluetooth-trace",
+        ),
         (ImageClass::SystemWatchdog, "system-watchdog"),
         (
             ImageClass::DiagnosticMemoryBenchmark,
@@ -80,7 +84,7 @@ fn the_radio_less_classes_need_no_driver_observation() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(oer_hil_schema::image::ImageClass::ALL.len(), 28);
+    assert_eq!(oer_hil_schema::image::ImageClass::ALL.len(), 29);
     assert_eq!(
         oer_hil_schema::image::ImageClass::SystemPanicReset.runtime_features(),
         "system-panic-reset"

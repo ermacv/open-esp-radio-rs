@@ -71,6 +71,7 @@ members = [
     "crates/protocols/bluetooth/le/controller",
     "crates/protocols/bluetooth/le/ll",
     "crates/protocols/bluetooth/le/radio",
+    "crates/protocols/bluetooth/trace",
     "crates/protocols/ieee802154",
     "crates/protocols/ieee80211/ap",
     "crates/protocols/ieee80211/sta",

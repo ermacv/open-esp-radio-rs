@@ -600,6 +600,29 @@ impl<
     /// Admit one request. A faulted radio ([`Self::is_faulted`]) admits
     /// nothing and answers `Busy`; its port reports it as poisoned.
     pub fn request(&mut self, request: RadioRequest<'_>) -> Result<(), RequestError> {
+        let kind = crate::trace::request_kind(&request);
+        let start = match &request {
+            RadioRequest::Advertise(event) => Some(event.anchor),
+            RadioRequest::Scan(window) => Some(window.window.start()),
+            RadioRequest::ConnectionEvent(event) => Some(event.window.start()),
+            RadioRequest::TestTransmit(test) => Some(test.window.start()),
+            RadioRequest::TestReceive(test) => Some(test.window.start()),
+            _ => None,
+        };
+        let now = self.now();
+        let result = self.admit(request);
+        crate::trace::emit(|| oer_bluetooth_trace::RoleRequest {
+            kind,
+            answer: crate::trace::answer(result),
+            // The lead to a window past the radio time, within 2^32 us.
+            lead_micros: start
+                .and_then(|start| start.checked_duration_since(now))
+                .and_then(|lead| u32::try_from(lead.as_micros()).ok()),
+        });
+        result
+    }
+
+    fn admit(&mut self, request: RadioRequest<'_>) -> Result<(), RequestError> {
         if self.faulted {
             return Err(RequestError::Busy);
         }
@@ -2059,6 +2082,7 @@ impl<
 
     fn finish(&mut self, id: SchedulerItemId, event: Event, sink: &mut impl BluetoothRadioSink) {
         let mut anchor = None;
+        let mut counts = PduCounts::default();
         match id.kind() {
             SchedulerRoleKind::LegacyAdvertising => {
                 let slot =
@@ -2081,6 +2105,7 @@ impl<
                         event.id,
                         sink,
                         &mut self.faulted,
+                        &mut counts,
                     );
                 }
             }
@@ -2101,6 +2126,7 @@ impl<
                         event.id,
                         sink,
                         &mut self.faulted,
+                        &mut counts,
                     );
                 }
             }
@@ -2135,6 +2161,7 @@ impl<
                                 self.clock
                                     .packet_start(pdu.captured_time().wrapping_controller_ticks()),
                             );
+                            counts.received = counts.received.saturating_add(1);
                             sink.outcome(RadioOutcome::Received {
                                 id: event.id,
                                 pdu: ReceivedPdu {
@@ -2144,7 +2171,9 @@ impl<
                                 },
                             })
                         }
-                        Ok(Some(LeRxOutcome::Discarded)) => {}
+                        Ok(Some(LeRxOutcome::Discarded)) => {
+                            counts.discarded = counts.discarded.saturating_add(1);
+                        }
                         Ok(None) => break,
                         Err(_) => {
                             self.faulted = true;
@@ -2192,6 +2221,19 @@ impl<
         } else {
             EventResult::NotExecuted
         };
+        crate::trace::emit(|| oer_bluetooth_trace::RoleEventEnd {
+            id: event.id.get(),
+            result: match result {
+                EventResult::Executed { anchor: Some(_) } => {
+                    oer_bluetooth_trace::EndResult::ExecutedWithAnchor
+                }
+                EventResult::Executed { anchor: None } => oer_bluetooth_trace::EndResult::Executed,
+                EventResult::NotExecuted => oer_bluetooth_trace::EndResult::NotExecuted,
+                EventResult::Aborted => oer_bluetooth_trace::EndResult::Aborted,
+            },
+            received: counts.received,
+            discarded: counts.discarded,
+        });
         sink.outcome(RadioOutcome::EventEnded {
             id: event.id,
             result,
@@ -2241,6 +2283,14 @@ fn accounted<S, E, F>(
     source.ok()
 }
 
+/// The PDUs an ending event reported and discarded, for its trace; each
+/// count stops at 255.
+#[derive(Default)]
+struct PduCounts {
+    received: u8,
+    discarded: u8,
+}
+
 fn drain_chain<const PACKETS: usize>(
     chain: &mut LeRxChain<PACKETS>,
     source: LeRxSource,
@@ -2248,10 +2298,21 @@ fn drain_chain<const PACKETS: usize>(
     id: EventId,
     sink: &mut impl BluetoothRadioSink,
     faulted: &mut bool,
+    counts: &mut PduCounts,
 ) {
     loop {
         match chain.take(source) {
             Ok(Some(LeRxOutcome::Received(pdu))) => {
+                counts.received = counts.received.saturating_add(1);
+                // A received PDU holds its two-octet header.
+                if let [header, length, ..] = *pdu.as_bytes() {
+                    crate::trace::emit(|| oer_bluetooth_trace::RolePdu {
+                        id: id.get(),
+                        header,
+                        length,
+                        rssi_dbm: pdu.rssi_dbm(),
+                    });
+                }
                 let captured_at =
                     Some(clock.packet_start(pdu.captured_time().wrapping_controller_ticks()));
                 sink.outcome(RadioOutcome::Received {
@@ -2263,7 +2324,9 @@ fn drain_chain<const PACKETS: usize>(
                     },
                 });
             }
-            Ok(Some(LeRxOutcome::Discarded)) => {}
+            Ok(Some(LeRxOutcome::Discarded)) => {
+                counts.discarded = counts.discarded.saturating_add(1);
+            }
             Ok(None) => return,
             Err(_) => {
                 *faulted = true;

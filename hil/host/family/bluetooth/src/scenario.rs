@@ -25,7 +25,12 @@ use crate::{
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum BluetoothScenario {
     /// Three plaintext ATT connection cycles on one Trouble/Controller epoch.
-    Gatt {},
+    /// With `trace`, on the image that records the Bluetooth LE trace, whose
+    /// connection steps the workload then checks.
+    Gatt {
+        #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+        trace: bool,
+    },
     /// Scannable non-connectable advertising found by an active scanner
     /// through its scan response.
     ScannableAdvertising {},
@@ -102,6 +107,10 @@ impl ScenarioFamily for BluetoothScenario {
                 peer: self.peer_image().is_some(),
                 ..Requirements::default()
             },
+            checks: match self {
+                Self::Gatt { trace: true } => vec!["bluetooth.trace.connection-steps"],
+                _ => Vec::new(),
+            },
             ..Plan::target_only(self.image())
         }
     }
@@ -111,7 +120,7 @@ impl ScenarioFamily for BluetoothScenario {
     /// raw HCI.
     fn served_by(&self, capabilities: &DeviceImageKeys) -> bool {
         match self {
-            Self::Gatt {} | Self::SecureGatt { .. } => true,
+            Self::Gatt { .. } | Self::SecureGatt { .. } => true,
             Self::ScannableAdvertising {} | Self::DirectedAdvertising {} | Self::DtmPeer { .. } => {
                 capabilities.has::<bluetooth::Hci>()
             }
@@ -139,7 +148,7 @@ impl Workload for BluetoothScenario {
 
     fn run(&self, output: &Path, context: &Context<'_>, _fixtures: &Fixtures) -> Result<()> {
         match self {
-            Self::Gatt {} => workload::gatt::run(output, context),
+            Self::Gatt { trace } => workload::gatt::run(output, context, *trace),
             Self::ScannableAdvertising {} => workload::scannable::run(output, context),
             Self::DirectedAdvertising {} => workload::directed::run(output, context),
             Self::SecureGatt {
@@ -161,7 +170,8 @@ impl Workload for BluetoothScenario {
 impl BluetoothScenario {
     pub fn image(&self) -> ImageClass {
         match self {
-            Self::Gatt {} => ImageClass::BluetoothGatt,
+            Self::Gatt { trace: false } => ImageClass::BluetoothGatt,
+            Self::Gatt { trace: true } => ImageClass::DiagnosticBluetoothGattTrace,
             Self::SecureGatt { .. } => ImageClass::BluetoothSecureGatt,
             Self::Dtm { .. }
             | Self::DtmPeer { .. }
@@ -174,7 +184,7 @@ impl BluetoothScenario {
     /// uses no Linux adapter.
     pub fn adapter_preflight(&self) -> Option<fn(Adapter) -> Result<()>> {
         Some(match self {
-            Self::Gatt {}
+            Self::Gatt { .. }
             | Self::SecureGatt { .. }
             | Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {} => fixture::att::preflight,

@@ -190,7 +190,7 @@ mod stack_evidence;
     feature = "bluetooth-radio"
 ))]
 mod system;
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+#[cfg(trace_journal)]
 mod trace;
 #[cfg(any(
     feature = "system-watchdog",
@@ -368,7 +368,7 @@ use oer_espressif_staged_runtime as _;
 #[unsafe(link_section = ".flash.critical.text.panic_hook")]
 fn oer_platform_panic_hook(details: &oer_espressif_staged_runtime::panic::PanicDetails<'_>) {
     // The trace keeps what happened before the panic.
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    #[cfg(trace_journal)]
     oer_trace::freeze(<oer_hil_trace::Panic as oer_trace::Event>::KIND, 0);
     #[cfg(any(
         feature = "system-watchdog",
@@ -417,7 +417,7 @@ extern "C" fn runtime_main() -> ! {
         feature = "bluetooth-radio"
     ))]
     system::take_platform_panic();
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    #[cfg(trace_journal)]
     trace::install();
     // The bootstrap configured PSRAM before entering this separately linked
     // runtime. `esp_hal::init()` cannot carry process-local mapping metadata
@@ -615,7 +615,7 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
             };
             spawner.spawn(protocol);
-            #[cfg(not(feature = "memory-benchmark"))]
+            #[cfg(trace_journal)]
             if let Ok(hold) = trace::hold_limit_task() {
                 spawner.spawn(hold);
             }

@@ -77,6 +77,7 @@ pub const EVENT_SETS: &[oer_trace::Describer] = &[
     <oer_ieee80211_trace::StationTrace as oer_trace::EventSet>::describe,
     <oer_phy_trace::PhyTrace as oer_trace::EventSet>::describe,
     <oer_ieee802154_trace::Ieee802154Trace as oer_trace::EventSet>::describe,
+    <oer_bluetooth_trace::BluetoothTrace as oer_trace::EventSet>::describe,
 ];
 
 /// The state a complete snapshot at `point` holds, when a domain knows the

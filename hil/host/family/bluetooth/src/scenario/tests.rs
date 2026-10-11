@@ -9,6 +9,10 @@ fn each_workload_selects_its_image() {
     for (text, image) in [
         ("kind = 'gatt'", ImageClass::BluetoothGatt),
         (
+            "kind = 'gatt'\ntrace = true",
+            ImageClass::DiagnosticBluetoothGattTrace,
+        ),
+        (
             "kind = 'secure-gatt'\nshutdown = 'hci-read-failure'",
             ImageClass::BluetoothSecureGatt,
         ),
@@ -73,4 +77,13 @@ fn out_of_range_or_retired_workloads_are_rejected() {
     ] {
         assert!(toml::from_str::<BluetoothScenario>(text).is_err(), "{text}");
     }
+}
+
+#[test]
+fn only_the_traced_gatt_scenario_publishes_its_trace_check() {
+    assert_eq!(
+        parse("kind = 'gatt'\ntrace = true").plan().checks,
+        ["bluetooth.trace.connection-steps"]
+    );
+    assert!(parse("kind = 'gatt'").plan().checks.is_empty());
 }

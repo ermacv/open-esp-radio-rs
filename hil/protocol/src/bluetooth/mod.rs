@@ -29,6 +29,9 @@ crate::messages! {
     property Dtm = "bluetooth/dtm";
     /// Raw HCI exchanges with the image's Controller.
     property Hci = "bluetooth/hci";
+    /// The Bluetooth LE trace: the Controller, radio role and runtime
+    /// record their events.
+    property Trace = "bluetooth/trace";
     #[cfg(feature = "bluetooth")]
     endpoint FailGattResetRead = "bluetooth/secure-gatt/fail-reset-read" => crate::bluetooth::SecureGattState;
     #[cfg(feature = "bluetooth")]

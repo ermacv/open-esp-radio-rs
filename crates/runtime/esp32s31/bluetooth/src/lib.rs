@@ -61,6 +61,8 @@ mod outcome;
 mod port;
 #[cfg(any(target_arch = "riscv32", test))]
 mod runtime;
+#[cfg(any(target_arch = "riscv32", test))]
+mod trace;
 
 #[cfg(target_arch = "riscv32")]
 pub use hardware::LiveBluetoothHardware;

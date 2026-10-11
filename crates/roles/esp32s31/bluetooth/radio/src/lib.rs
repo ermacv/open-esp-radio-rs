@@ -37,6 +37,8 @@ extern crate std;
 mod coexistence;
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 mod radio;
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+mod trace;
 #[cfg(any(test, all(feature = "test-support", not(target_arch = "riscv32"))))]
 #[doc(hidden)]
 pub mod validation;

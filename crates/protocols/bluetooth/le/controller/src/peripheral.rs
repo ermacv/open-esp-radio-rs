@@ -70,6 +70,8 @@ use oer_bluetooth_radio::{
     RadioDuration, RadioOutcome, RadioRequest, RadioTiming, TxPower,
 };
 
+use oer_bluetooth_trace::PeripheralEventOp as Op;
+
 use crate::planning::{
     EpochExhausted, PlanningCalculation as C, PlanningOperation as O, PlanningRole as R,
 };
@@ -315,6 +317,11 @@ impl Peripheral {
     fn finish_open(&mut self, anchor: LeInstant, transmit_window: RadioDuration) {
         let (indication, connection) = self.opening.take().expect("validated pending indication");
         let request = indication.request;
+        crate::trace::emit(|| oer_bluetooth_trace::PeripheralOpened {
+            // The low word of the radio time.
+            first_anchor_low: anchor.as_micros() as u32,
+            interval_units: request.timing().interval_units(),
+        });
         self.connection = Some(Connection {
             request,
             created_at: indication.at,
@@ -598,6 +605,7 @@ impl Peripheral {
         let channel = DataChannel::new(prepared.channel().get()).expect("a data channel index");
         let interval = RadioDuration::from_micros(u64::from(prepared.timing().interval_micros()));
         let id = crate::controller::allocate_event(ids);
+        trace_event(Op::Requested, prepared.event_counter(), id);
         let event = Event {
             id,
             reservation,
@@ -647,15 +655,22 @@ impl Peripheral {
                         accuracy: clock_accuracy(request.sleep_clock_accuracy().encoded()),
                     });
                 } else {
+                    // The opening the trace recorded closes with the reason
+                    // the Host gets.
+                    let reason = HciError::CONN_REJECTED_LIMITED_RESOURCES.to_status();
+                    crate::trace::emit(|| oer_bluetooth_trace::PeripheralClosed {
+                        reason: Some(reason.into_inner()),
+                    });
                     self.connection = None;
-                    self.events.push(PeripheralEvent::ConnectionFailed(
-                        HciError::CONN_REJECTED_LIMITED_RESOURCES.to_status(),
-                    ));
+                    self.events.push(PeripheralEvent::ConnectionFailed(reason));
                 }
             }
             RequestKind::Cancel => {}
             RequestKind::Close => {
                 let reason = connection.closing.and_then(|closing| closing.reason);
+                crate::trace::emit(|| oer_bluetooth_trace::PeripheralClosed {
+                    reason: reason.map(Status::into_inner),
+                });
                 connection.close_procedures(&mut self.events);
                 self.connection = None;
                 if let Some(reason) = reason {
@@ -678,6 +693,11 @@ impl Peripheral {
                     .take()
                     .expect("an event was requested");
                 let in_flight = prepared.into_submitted();
+                trace_event(
+                    if accepted { Op::Accepted } else { Op::Refused },
+                    in_flight.event_counter(),
+                    event.id,
+                );
                 connection.phase.since_reference = event.since_reference;
                 connection.phase.transmit_window = event.transmit_window;
                 if accepted {
@@ -731,6 +751,14 @@ impl Peripheral {
                     | EventResult::NotExecuted
                     | EventResult::Aborted => LePeripheralConnectionEventPeerActivity::Missed,
                 };
+                trace_event(
+                    match activity {
+                        LePeripheralConnectionEventPeerActivity::Observed => Op::Observed,
+                        LePeripheralConnectionEventPeerActivity::Missed => Op::Missed,
+                    },
+                    in_flight.event_counter(),
+                    id,
+                );
                 connection.link = Link::Completed(in_flight.complete(activity));
                 connection.after_event(&mut self.events);
             }
@@ -1434,6 +1462,15 @@ enum RecurringCandidate {
     Ready(timing::Plan, LeWindow),
     Late(u16),
     Lost(Status),
+}
+
+/// Record one step of a connection event.
+fn trace_event(op: Op, counter: u16, id: EventId) {
+    crate::trace::emit(|| oer_bluetooth_trace::PeripheralEvent {
+        op,
+        counter,
+        id: id.get(),
+    });
 }
 
 fn error(operation: O, calculation: C) -> EpochExhausted {

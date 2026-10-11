@@ -16,7 +16,10 @@ pub(super) struct Exchange {
     response: Vec<u8>,
 }
 
-pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
+/// The connections a run cycles through.
+const CONNECTIONS: usize = 3;
+
+pub fn run(output: &Path, context: &Context<'_>, trace: bool) -> Result<()> {
     let adapter = context
         .lab
         .bluetooth_adapter
@@ -26,7 +29,22 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
         let mut samples = Vec::new();
         let mut exchanges = Vec::new();
         let mut attempts = Vec::new();
-        let probe = exercise(capture, &owner, &mut samples, &mut exchanges, &mut attempts);
+        let mut cycles = Vec::new();
+        let probe = exercise(
+            capture,
+            &owner,
+            &mut samples,
+            &mut exchanges,
+            &mut attempts,
+            trace.then_some(&mut cycles),
+        );
+        if trace {
+            context.results.observe("bluetooth-trace", &cycles);
+            context.measurements.check(
+                "bluetooth.trace.connection-steps",
+                probe.is_ok() && cycles.len() == CONNECTIONS,
+            );
+        }
         context.measurements.record(super::establish::measurements(&attempts));
         let cleanup = oer_process::cleanup(|| -> Result<()> {
             owner.restore()?;
@@ -157,6 +175,7 @@ fn exercise(
     samples: &mut Vec<Evidence>,
     exchanges: &mut Vec<Exchange>,
     attempts: &mut Vec<Attempt>,
+    mut traced: Option<&mut Vec<CycleSteps>>,
 ) -> Result<()> {
     if !capture
         .request_image_keys(Duration::from_secs(10))?
@@ -176,6 +195,9 @@ fn exercise(
     let mut previous = 0;
     for (index, written) in [0x31, 0x52, 0x73].into_iter().enumerate() {
         let connection = index as u32 + 1;
+        if traced.is_some() {
+            start_trace(capture)?;
+        }
         let peer = establish(
             "connect",
             connection,
@@ -221,6 +243,18 @@ fn exercise(
             || idle.address != Some(address)
         {
             return Err(format!("expected graceful same-epoch re-advertising: {idle:?}").into());
+        }
+        if let Some(cycles) = traced.as_deref_mut() {
+            let steps = drain_cycle(capture)?;
+            let complete = steps.complete();
+            cycles.push(steps);
+            if !complete {
+                return Err(format!(
+                    "connection {connection}'s trace misses a step: {:?}",
+                    cycles.last()
+                )
+                .into());
+            }
         }
         previous = written;
     }
@@ -282,8 +316,226 @@ fn characteristic(response: &[u8], service: (u16, u16)) -> Result<u16> {
     Ok(value)
 }
 
+/// The steps one connection cycle left in the drained trace, oldest first.
+#[derive(Debug, Default, Eq, PartialEq, serde::Serialize)]
+pub(super) struct CycleSteps {
+    /// The indication was accepted, before the opening.
+    accepted: bool,
+    /// The connection opened.
+    opened: bool,
+    /// Connection events the radio role admitted while it was open.
+    admitted_events: usize,
+    /// Connection events that ended with an anchor from a peer packet.
+    anchored_events: usize,
+    /// The connection closed, after its events.
+    closed: bool,
+    /// Every connection indication verdict.
+    verdicts: Vec<String>,
+    /// Bluetooth LE trace records read.
+    records: usize,
+}
+
+impl CycleSteps {
+    fn complete(&self) -> bool {
+        self.accepted
+            && self.opened
+            && self.admitted_events > 0
+            && self.anchored_events > 0
+            && self.closed
+    }
+}
+
+/// Record a cycle's steps with the radio role's admissions and event ends:
+/// each connection event adds two records, so a cycle fits the trace,
+/// where the per-step connection-event and per-PDU channels would wrap it.
+fn start_trace(capture: &SerialCapture) -> Result<()> {
+    use oer_bluetooth_trace::{
+        ConnectionIndication, Lifecycle, PeripheralClosed, PeripheralOpened, RoleEventEnd,
+        RoleRequest,
+    };
+    use oer_trace::Event as _;
+    let mask = RoleRequest::CHANNEL.mask()
+        | RoleEventEnd::CHANNEL.mask()
+        | ConnectionIndication::CHANNEL.mask()
+        | PeripheralOpened::CHANNEL.mask()
+        | PeripheralClosed::CHANNEL.mask()
+        | Lifecycle::CHANNEL.mask();
+    let status = control(
+        capture,
+        oer_hil_protocol::telemetry::TraceControl::Start { mask },
+    )?;
+    if !status.installed || !status.running {
+        return Err(format!("the Bluetooth LE trace did not start: {status:?}").into());
+    }
+    Ok(())
+}
+
+fn control(
+    capture: &SerialCapture,
+    control: oer_hil_protocol::telemetry::TraceControl,
+) -> Result<oer_hil_protocol::telemetry::TraceStatus> {
+    Ok(capture
+        .request(
+            0,
+            oer_hil_protocol::telemetry::ControlTrace(control),
+            Duration::from_secs(5),
+        )?
+        .0)
+}
+
+/// Read the trace of one cycle; a trace that filled up lost its oldest
+/// steps, which is an error, never a missing step. Advertising goes on after
+/// the disconnection, so recording stops first: the check then holds for
+/// every entry read.
+fn drain_cycle(capture: &SerialCapture) -> Result<CycleSteps> {
+    let status = control(
+        capture,
+        oer_hil_protocol::telemetry::TraceControl::SetMask { mask: 0 },
+    )?;
+    if status.stored_entries >= status.entries {
+        return Err(format!("the cycle's trace filled up: {status:?}").into());
+    }
+    Ok(cycle_steps(&capture.trace_entries(status.entries)?))
+}
+
+/// The steps of one cycle: an accepted indication, then the opening, then
+/// admitted connection events and their anchored ends, then the closing.
+pub(super) fn cycle_steps(entries: &[oer_hil_protocol::telemetry::TraceEntry]) -> CycleSteps {
+    use oer_bluetooth_trace::{
+        ConnectionIndication, EndResult, IndicationVerdict, PeripheralClosed, PeripheralOpened,
+        RequestAnswer, RequestKind, RoleEventEnd, RoleRequest,
+    };
+    use oer_trace::Event as _;
+    let mut records = entries
+        .iter()
+        .map(|entry| oer_trace::Record {
+            tag: entry.tag,
+            kind: entry.kind,
+            t_us: entry.t_us,
+            words: entry.words,
+        })
+        .collect::<Vec<_>>();
+    oer_trace::oldest_first(&mut records);
+    let mut steps = CycleSteps::default();
+    for record in records {
+        if oer_trace::Kind::from_raw(record.kind)
+            .is_some_and(|kind| kind.domain == oer_trace::Domain::Bluetooth)
+        {
+            steps.records += 1;
+        }
+        let open = steps.opened && !steps.closed;
+        if let Some(indication) = (record.kind == ConnectionIndication::KIND.raw())
+            .then(|| ConnectionIndication::decode(record.words))
+            .flatten()
+        {
+            steps.verdicts.push(format!("{:?}", indication.verdict));
+            steps.accepted |= indication.verdict == IndicationVerdict::Accepted;
+        } else if record.kind == PeripheralOpened::KIND.raw() {
+            steps.opened = steps.accepted;
+        } else if let Some(request) = (open && record.kind == RoleRequest::KIND.raw())
+            .then(|| RoleRequest::decode(record.words))
+            .flatten()
+        {
+            if request.kind == RequestKind::ConnectionEvent
+                && request.answer == RequestAnswer::Accepted
+            {
+                steps.admitted_events += 1;
+            }
+        } else if let Some(end) = (open && record.kind == RoleEventEnd::KIND.raw())
+            .then(|| RoleEventEnd::decode(record.words))
+            .flatten()
+        {
+            if end.result == EndResult::ExecutedWithAnchor {
+                steps.anchored_events += 1;
+            }
+        } else if record.kind == PeripheralClosed::KIND.raw() {
+            steps.closed = open && steps.anchored_events > 0;
+        }
+    }
+    steps
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_cycle_needs_every_step_in_order() {
+        use oer_bluetooth_trace::{
+            ConnectionIndication, EndResult, IndicationVerdict, PeripheralClosed, PeripheralOpened,
+            RequestAnswer, RequestKind, RoleEventEnd, RoleRequest,
+        };
+        use oer_trace::Event;
+        fn entries(
+            events: &[(oer_trace::Kind, [u32; 2])],
+        ) -> Vec<oer_hil_protocol::telemetry::TraceEntry> {
+            let mut entries = events
+                .iter()
+                .enumerate()
+                .map(
+                    |(index, (kind, words))| oer_hil_protocol::telemetry::TraceEntry {
+                        tag: index as u16 + 1,
+                        kind: kind.raw(),
+                        t_us: index as u32,
+                        words: *words,
+                    },
+                )
+                .collect::<Vec<_>>();
+            // Storage order is not time order.
+            entries.reverse();
+            entries
+        }
+        let accepted = (
+            ConnectionIndication::KIND,
+            ConnectionIndication {
+                verdict: IndicationVerdict::Accepted,
+            }
+            .encode(),
+        );
+        let opened = (
+            PeripheralOpened::KIND,
+            PeripheralOpened {
+                first_anchor_low: 1,
+                interval_units: 24,
+            }
+            .encode(),
+        );
+        let admitted = (
+            RoleRequest::KIND,
+            RoleRequest {
+                kind: RequestKind::ConnectionEvent,
+                answer: RequestAnswer::Accepted,
+                lead_micros: Some(500),
+            }
+            .encode(),
+        );
+        let anchored = (
+            RoleEventEnd::KIND,
+            RoleEventEnd {
+                id: 9,
+                result: EndResult::ExecutedWithAnchor,
+                received: 1,
+                discarded: 0,
+            }
+            .encode(),
+        );
+        let closed = (
+            PeripheralClosed::KIND,
+            PeripheralClosed { reason: Some(0x13) }.encode(),
+        );
+        let whole = super::cycle_steps(&entries(&[accepted, opened, admitted, anchored, closed]));
+        assert!(whole.complete(), "{whole:?}");
+        assert_eq!(whole.records, 5);
+        assert_eq!(whole.verdicts, ["Accepted"]);
+        // Events before the opening do not count; a closing before an
+        // anchored end does not close the cycle.
+        let early = super::cycle_steps(&entries(&[admitted, anchored, accepted, opened, closed]));
+        assert!(!early.complete(), "{early:?}");
+        assert_eq!((early.admitted_events, early.anchored_events), (0, 0));
+        assert!(!early.closed);
+        // An opening without an accepted indication opens nothing.
+        let unaccepted = super::cycle_steps(&entries(&[opened, admitted, anchored, closed]));
+        assert!(!unaccepted.opened && !unaccepted.complete());
+    }
+
     use super::*;
     #[test]
     fn discovery_rejects_truncation_duplicates_and_foreign_handles() {

@@ -1306,3 +1306,105 @@ fn a_stopped_cancellation_needs_the_receipt_and_aborts_a_started_event() {
     };
     assert_eq!(sink.0, [Seen::Aborted(EventId::new(1))]);
 }
+
+#[test]
+fn requests_their_answers_and_event_ends_are_traced() {
+    use oer_bluetooth_trace::{EndResult, RequestAnswer, RequestKind, RoleEventEnd, RoleRequest};
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    configure_legacy(&mut radio);
+    let channels = AdvertisingChannels::single(AdvertisingChannel::Channel37);
+    radio.request(advertise(7, 10_000, channels)).unwrap();
+    // The set has a pending event.
+    assert_eq!(
+        radio.request(advertise(8, 20_000, channels)),
+        Err(RequestError::Busy)
+    );
+    assert_eq!(
+        crate::trace::take::<RoleRequest>(),
+        [
+            RoleRequest {
+                kind: RequestKind::ConfigureAdvertising,
+                answer: RequestAnswer::Accepted,
+                lead_micros: None,
+            },
+            RoleRequest {
+                kind: RequestKind::Advertise,
+                answer: RequestAnswer::Accepted,
+                lead_micros: Some(10_000),
+            },
+            RoleRequest {
+                kind: RequestKind::Advertise,
+                answer: RequestAnswer::Busy,
+                lead_micros: Some(20_000),
+            },
+        ]
+    );
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::Start(_)
+    ));
+    execute_all(&radio, 0);
+    radio.complete(&mut sink);
+    assert_eq!(
+        crate::trace::take::<RoleEventEnd>(),
+        [RoleEventEnd {
+            id: 7,
+            result: EndResult::Executed,
+            received: 0,
+            discarded: 0,
+        }]
+    );
+}
+
+#[test]
+fn advertising_channel_pdus_are_traced_and_counted_at_the_end() {
+    use oer_bluetooth_trace::{EndResult, RoleEventEnd, RolePdu};
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    radio
+        .request(RadioRequest::ConfigureAdvertising(
+            AdvertisingConfiguration {
+                set: AdvertisingSetId::new(0),
+                pdu: AdvertisingPdu::new(&ADV_IND).unwrap(),
+                reception: AdvertisingReception::ScanResponse(
+                    AdvertisingPdu::new(&SCAN_RSP).unwrap(),
+                ),
+                tx_power: TxPower::from_dbm(0),
+                phy: LePhy::Le1M,
+            },
+        ))
+        .unwrap();
+    let channels = AdvertisingChannels::single(AdvertisingChannel::Channel37);
+    radio.request(advertise(7, 10_000, channels)).unwrap();
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::Start(_)
+    ));
+    let source = radio
+        .memory
+        .connectable
+        .receive_source(&radio.connectable[0].as_ref().unwrap().instance)
+        .unwrap();
+    let pdu = [0x03, 12, 9, 9, 9, 9, 9, 9, 1, 2, 3, 4, 5, 6];
+    assert!(
+        radio
+            .memory
+            .non_scanning
+            .emulate_receive_for_validation(&pdu, source, 0)
+    );
+    execute_all(&radio, 0);
+    radio.complete(&mut sink);
+    let pdus = crate::trace::take::<RolePdu>();
+    assert_eq!(pdus.len(), 1);
+    assert_eq!((pdus[0].id, pdus[0].header, pdus[0].length), (7, 0x03, 12));
+    assert_eq!(
+        crate::trace::take::<RoleEventEnd>(),
+        [RoleEventEnd {
+            id: 7,
+            result: EndResult::Executed,
+            received: 1,
+            discarded: 0,
+        }]
+    );
+}

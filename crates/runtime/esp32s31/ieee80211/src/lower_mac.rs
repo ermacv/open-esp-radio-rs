@@ -148,9 +148,8 @@ const LIFECYCLE_SLOTS: usize = LIFECYCLE_CAPACITY + 1;
 /// is refused as `SettingError::Busy` and an attempt as
 /// `SubmitError::Disabled`, the port not being enabled yet; the interrupt
 /// entries defer their causes until the owner is back, and received frames
-/// are dropped, as an enabling port does not receive. Only a direct user of
-/// the port meets these refusals: the upper MAC's channel move holds every
-/// client of the port for its duration. The ESP32-S31
+/// are dropped, as an enabling port does not receive. A client acting on
+/// the port while its owner's `Enable` retunes meets these refusals. The ESP32-S31
 /// retunes through `switch_published_esp32s31_wifi_channel` under the
 /// shared-radio lease ([`Esp32s31PortRetune`]).
 pub trait LowerMacRetune<H> {
@@ -1951,10 +1950,18 @@ where
     }
 
     fn apply(&self, setting: LowerMacSetting) -> PortResult<(), SettingError, LowerMacFault> {
-        let applied = setting_answer(
-            self.lower_mac
-                .with_hardware(|core, hardware, _| core.apply(hardware, setting)),
-        );
+        let applied = match setting {
+            // The channel reaches no register, so a retune in progress does
+            // not hold it back: an enabling port refuses it as enabled.
+            LowerMacSetting::Channel(channel) => self
+                .lower_mac
+                .with_core(|core, _| Ok(core.set_channel(channel)))
+                .map(installed),
+            setting => setting_answer(
+                self.lower_mac
+                    .with_hardware(|core, hardware, _| core.apply(hardware, setting)),
+            ),
+        };
         // Opening the transmit gate publishes a held attempt.
         self.lower_mac.wake.signal(());
         applied

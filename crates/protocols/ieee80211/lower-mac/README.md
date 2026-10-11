@@ -237,8 +237,13 @@ implements the port in two layers:
   the attempt's completion is taken, which carries them (`Esp32s31TxBodies`),
   or an uninstall drops them; the event queues hold no body. Its `install`
   returns the port (`Esp32s31LowerMacPort`) and the composition's
-  `Esp32s31LowerMacControl`, whose `uninstall` consumes both; the interrupt
-  entries, the receive producer and the runner stay on the runtime. The owned
+  `Esp32s31LowerMacControl`, whose `uninstall` consumes both once the core is
+  disabled and idle with its registers home, and hands both back otherwise;
+  the interrupt entries, the receive producer and the runner stay on the
+  runtime. On the target `install_esp32s31_wifi_port` installs the port over
+  the stopped Wi-Fi of a radio start for the radio's lifetime, and
+  `uninstall_esp32s31_wifi_port` returns the stopped Wi-Fi and the core's
+  parts at radio stop. The owned
   event is sized by its largest variant, and a consumer that queues events
   (the upper-MAC router's receive and extension rings) pays that size per
   entry: on a 64-bit host a received frame's variant is 120 bytes, which a
@@ -267,7 +272,7 @@ operations map onto the S31 seams as follows:
 | `TxCompleted` | `take_tx_completion` through `TxCompletion::tx_status`; a collision detach is `Collision`, the hardware timeout abort `Aborted`; `ack_snr_db` from `ack_snr_sample`, no ACK RSSI |
 | `TxResponse::BlockAck` | A BlockAckReq at a non-HT rate; `take_block_ack_completion` gives the `BlockAckReport` |
 | `Received`, `RxMeta`, `RxBuffer` | `Esp32s31LowerMac::on_received` takes one unit of the receive producer (`LowerMacRxUnit`; on the target `Esp32s31StagedRx`, a staging-pool DMA buffer with its ring's ingress configuration), reads its `NormalizedRxFrame` in place, narrowed by `VifConfig::admits`, and `portable::rx_meta` on the configured channel. The `Esp32s31RxBuffer` is that unit with the MPDU's range (`NormalizedRxFrame::mpdu_offset`): nothing is copied, and the DMA buffer returns when the consumer drops it. A unit the port does not queue returns at once; an MPDU longer than the pool's buffers never reaches the port |
-| `Channel` | 2.4 GHz, 20 and 40 MHz, while disabled (`PortEnabled` otherwise); `Enable` retunes through `LowerMacRetune`, and a refused retune ends as a `Recoverable` `Failed { Enable }` with the port disabled |
+| `Channel` | 2.4 GHz, 20 and 40 MHz, while disabled (`PortEnabled` otherwise); `Enable` retunes through `LowerMacRetune`, and a refused retune ends as a `Recoverable` `Failed { Enable }` with the port disabled. The runner lends the retune the register owner: meanwhile a setting, key or TSF call that reaches the registers is `Busy`, an attempt is `Disabled`, interrupt causes are deferred until the owner is back and received frames are dropped; a client acting while the owner's `Enable` retunes meets these refusals |
 | `Vif`, `ReceiveFilter` | The smallest superset policy: station link policy six (`StaLinkRxPolicyHardware`) for the `BSS_MEMBER` rules, station ESP-NOW policy six mode two (`StaEspNowRxPolicyHardware`) when `OTHER_BSS_MANAGEMENT` is requested (the broadcast BSSID outside a BSS), access-point policy eight (`ApRxPolicyHardware`) for the `BSS_MEMBER` and `PROBE_REQUESTS` rules. Refused: other BSSs' management for the access point. One station and one access point; the station address is the one the cold start published |
 | `Edca` | `WifiTxRuntimePolicy::install_wmm`: all four records validated before any is installed; every attempt's AIFSN comes from its queue's record |
 | `TxGate` | `set_power_save_tx_block` on every ordinary queue; closing is refused (`Busy`) while an attempt is published, and an attempt admitted behind the closed gate is held and published when it opens |

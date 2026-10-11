@@ -8,7 +8,7 @@ baseAddress = 0x20108000
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "FREQUENCY_CORRECTION_CONTROL_OPAQUE"
+name = "WORD_0050_OPAQUE"
 description = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."
 addressOffset = 0x50
 size = 32
@@ -25,6 +25,6 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_BRX_RECOVERED_GAPS.FREQUENCY_CORRECTION_CONTROL_OPAQUE"
+entity = "PHY_BRX_RECOVERED_GAPS.WORD_0050_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]

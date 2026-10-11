@@ -115,11 +115,11 @@ reason = "live state: the last analog I2C command of its host"
 excluded = true
 reason = "live state: the read mask of the analog I2C block last addressed"
 
-[registers."PHY_NRX_RECOVERED_GAPS.CFO_HIGH_CONTROL_OPAQUE"]
+[registers."PHY_NRX_RECOVERED_GAPS.WORD_00B8_OPAQUE"]
 excluded = true
 reason = "live state: carrier frequency offset estimation"
 
-[registers."PHY_AGC_RECOVERED_GAPS.RSSI_STATUS_OPAQUE"]
+[registers."PHY_AGC_RECOVERED_GAPS.WORD_006C_OPAQUE"]
 excluded = true
 reason = "live state: AGC RSSI status"
 

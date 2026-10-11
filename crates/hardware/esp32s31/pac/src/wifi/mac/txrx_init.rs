@@ -29,57 +29,57 @@ impl WifiRadioRegisters {
         let init = &self.peripherals.wifi_mac.wifi_mac_txrx_prefix;
 
         init.feature_edges().modify(|_, w| {
-            w.first_group_bit_31_opaque()
+            w.bit_31_opaque()
                 .set_bit()
-                .first_group_bit_23_opaque()
+                .bit_23_opaque()
                 .set_bit()
-                .first_group_bit_15_opaque()
+                .bit_15_opaque()
                 .set_bit()
-                .first_group_bit_13_opaque()
+                .bit_13_opaque()
                 .set_bit()
         });
         init.feature_edges()
-            .modify(|_, w| w.second_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_12_opaque().set_bit());
         init.feature_edges()
-            .modify(|_, w| w.third_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_28_opaque().set_bit());
         init.mode_control()
-            .modify(|_, w| w.init_clear_opaque().clear_bit());
+            .modify(|_, w| w.bit_3_opaque().clear_bit());
 
         for queue in 0..4 {
             init.rx_queue_default(queue).modify(|_, w| {
-                w.high_23_16_opaque()
+                w.bits_16_23_opaque()
                     .set(0)
-                    .queue_bit_24_opaque()
+                    .bit_24_opaque()
                     .clear_bit()
-                    .queue_bit_25_opaque()
+                    .bit_25_opaque()
                     .clear_bit()
-                    .queue_bit_26_opaque()
+                    .bit_26_opaque()
                     .clear_bit()
-                    .high_31_27_opaque()
+                    .bits_27_31_opaque()
                     .set(0)
             });
         }
         init.rx_queue_default(0)
-            .modify(|_, w| w.queue_bit_24_opaque().set_bit());
+            .modify(|_, w| w.bit_24_opaque().set_bit());
         init.rx_queue_default(1)
-            .modify(|_, w| w.queue_bit_24_opaque().set_bit());
+            .modify(|_, w| w.bit_24_opaque().set_bit());
         init.rx_queue_default(0)
-            .modify(|_, w| w.queue_bit_26_opaque().set_bit());
+            .modify(|_, w| w.bit_26_opaque().set_bit());
         init.rx_queue_default(1)
-            .modify(|_, w| w.queue_bit_26_opaque().set_bit());
+            .modify(|_, w| w.bit_26_opaque().set_bit());
 
         init.feature_edges()
-            .modify(|_, w| w.late_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_9_opaque().set_bit());
         init.control_edges()
-            .modify(|_, w| w.first_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_0_opaque().set_bit());
         init.control_edges()
-            .modify(|_, w| w.second_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_4_opaque().set_bit());
         init.timing_control()
-            .modify(|_, w| w.enable_opaque().set_bit());
+            .modify(|_, w| w.bit_31_opaque().set_bit());
         init.timing_control()
-            .modify(|_, w| w.timing_image_opaque().set(0x1b));
+            .modify(|_, w| w.bits_20_27_opaque().set(0x1b));
         init.shared_enable_control()
-            .modify(|_, w| w.enable_group_opaque().set(3));
+            .modify(|_, w| w.bits_0_1_opaque().set(3));
     }
 
     /// Apply the on-chip paths of all three HE callbacks in `mac_txrx_init`.
@@ -118,7 +118,7 @@ impl WifiRadioRegisters {
         crate::svd::zero_based_field_write::mac_cts_cck_rate_table(callbacks, 0, 1, 5, 0);
         callbacks
             .bb_rx_hang_control()
-            .modify(|_, w| w.timeout_opaque().set(0x00f));
+            .modify(|_, w| w.bits_0_11_opaque().set(0x00f));
         true
     }
 
@@ -130,24 +130,25 @@ impl WifiRadioRegisters {
         let callbacks = &self.peripherals.wifi_mac.wifi_mac_txrx_callbacks;
         callbacks
             .bb_rx_hang_control()
-            .modify(|_, w| w.txrx_suffix_first_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_31_opaque().set_bit());
         callbacks
             .bb_rx_hang_control()
-            .modify(|_, w| w.txrx_suffix_second_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_30_opaque().set_bit());
         let init = &self.peripherals.wifi_mac.wifi_mac_txrx_suffix;
         init.default_image_a()
-            .modify(|_, w| w.low_image_opaque().set(0x0f0));
+            .modify(|_, w| w.bits_0_11_opaque().set(0x0f0));
         shared
             .shared_radio
             .shared_radio_init_control
             .control()
-            .modify(|_, w| w.wifi_init_low_image_opaque().set(0x0f0));
-        init.field_control().modify(|_, w| w.field_opaque().set(4));
+            .modify(|_, w| w.bits_0_11_opaque().set(0x0f0));
+        init.field_control()
+            .modify(|_, w| w.bits_4_7_opaque().set(4));
         init.gate_control()
-            .modify(|_, w| w.low_gate_group_opaque().set(0x7fff));
+            .modify(|_, w| w.bits_16_30_opaque().set(0x7fff));
         init.gate_control()
-            .modify(|_, w| w.high_gate_opaque().set_bit());
-        init.aux_enable().modify(|_, w| w.enable_opaque().set_bit());
+            .modify(|_, w| w.bit_31_opaque().set_bit());
+        init.aux_enable().modify(|_, w| w.bit_1_opaque().set_bit());
         self.peripherals
             .wifi_mac
             .wifi_mac_rx_dma

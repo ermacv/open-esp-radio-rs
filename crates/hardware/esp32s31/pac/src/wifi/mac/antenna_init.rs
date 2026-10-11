@@ -21,7 +21,7 @@ impl WifiRadioRegisters {
         }
         for physical_bank in (0..4).rev() {
             init.bank_control(physical_bank)
-                .modify(|_, w| w.first_clear_opaque().clear_bit());
+                .modify(|_, w| w.bit_2_opaque().clear_bit());
         }
 
         // Second complete reverse traversal: the blob deliberately samples
@@ -34,14 +34,14 @@ impl WifiRadioRegisters {
         }
         for physical_bank in (0..4).rev() {
             let control = init.bank_control(physical_bank);
-            control.modify(|_, w| w.second_clear_opaque().clear_bit());
-            control.modify(|_, w| w.bank_enable_opaque().set_bit());
-            control.modify(|_, w| w.third_clear_opaque().clear_bit());
+            control.modify(|_, w| w.bit_3_opaque().clear_bit());
+            control.modify(|_, w| w.bit_5_opaque().set_bit());
+            control.modify(|_, w| w.bit_4_opaque().clear_bit());
         }
 
         init.common_control()
-            .modify(|_, w| w.common_clear_opaque().clear_bit());
+            .modify(|_, w| w.bit_2_opaque().clear_bit());
         init.common_control()
-            .modify(|_, w| w.common_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_5_opaque().set_bit());
     }
 }

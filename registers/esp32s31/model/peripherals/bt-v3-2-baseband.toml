@@ -209,13 +209,13 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "IDLE_BITS_15_16_OPAQUE"
+name = "BITS_15_16_OPAQUE"
 description = "The reset-idle predicate fails when this exact two-bit field is nonzero."
 bitOffset = 15
 bitWidth = 2
 
 [[peripherals.registers.register.fields]]
-name = "IDLE_BITS_20_23_OPAQUE"
+name = "BITS_20_23_OPAQUE"
 description = "The reset-idle predicate fails when this exact four-bit field is nonzero."
 bitOffset = 20
 bitWidth = 4
@@ -757,42 +757,42 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_6_OPAQUE"
+name = "BIT_6_OPAQUE"
 bitOffset = 6
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_7_OPAQUE"
+name = "BIT_7_OPAQUE"
 bitOffset = 7
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_8_OPAQUE"
+name = "BIT_8_OPAQUE"
 bitOffset = 8
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_9_OPAQUE"
+name = "BIT_9_OPAQUE"
 bitOffset = 9
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_10_OPAQUE"
+name = "BIT_10_OPAQUE"
 bitOffset = 10
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_19_OPAQUE"
+name = "BIT_19_OPAQUE"
 bitOffset = 19
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_20_OPAQUE"
+name = "BIT_20_OPAQUE"
 bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_21_OPAQUE"
+name = "BIT_21_OPAQUE"
 bitOffset = 21
 bitWidth = 1
 
@@ -1575,7 +1575,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.SOFTWARE_RESET_IDLE_STATUS.IDLE_BITS_15_16_OPAQUE"
+entity = "BT_V3_2_BASEBAND.SOFTWARE_RESET_IDLE_STATUS.BITS_15_16_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BBMAC_IDLE_FOR_SWRST"]
 provenance = "observed"
@@ -1583,7 +1583,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.SOFTWARE_RESET_IDLE_STATUS.IDLE_BITS_20_23_OPAQUE"
+entity = "BT_V3_2_BASEBAND.SOFTWARE_RESET_IDLE_STATUS.BITS_20_23_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BBMAC_IDLE_FOR_SWRST"]
 provenance = "observed"
@@ -1799,7 +1799,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_6_OPAQUE"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.BIT_6_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
@@ -1807,7 +1807,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_7_OPAQUE"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.BIT_7_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
@@ -1815,7 +1815,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_8_OPAQUE"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.BIT_8_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
@@ -1823,7 +1823,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_9_OPAQUE"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.BIT_9_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
@@ -1831,7 +1831,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_10_OPAQUE"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.BIT_10_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
@@ -1839,7 +1839,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_19_OPAQUE"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.BIT_19_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
@@ -1847,7 +1847,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_20_OPAQUE"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.BIT_20_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
@@ -1855,7 +1855,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_21_OPAQUE"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.BIT_21_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"

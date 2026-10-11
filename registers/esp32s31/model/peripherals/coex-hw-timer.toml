@@ -45,7 +45,7 @@ minimum = 0
 maximum = 0x03
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_30_31_OPAQUE"
 description = "Bits preserved by coex_hw_timer_set while PARAMETER_1 is replaced."
 bitOffset = 30
 bitWidth = 2
@@ -71,7 +71,7 @@ minimum = 0
 maximum = 0x00ffffff
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_24_31_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -171,7 +171,7 @@ entity = "COEX_HW_TIMER.CONFIGURATION%s.PARAMETER_1"
 naming = "descriptive"
 
 [[review]]
-entity = "COEX_HW_TIMER.CONFIGURATION%s.HIGH_OPAQUE"
+entity = "COEX_HW_TIMER.CONFIGURATION%s.BITS_30_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -179,7 +179,7 @@ entity = "COEX_HW_TIMER.SECONDARY_TARGET%s.SECONDARY_TICK_IMAGE"
 naming = "descriptive"
 
 [[review]]
-entity = "COEX_HW_TIMER.SECONDARY_TARGET%s.HIGH_OPAQUE"
+entity = "COEX_HW_TIMER.SECONDARY_TARGET%s.BITS_24_31_OPAQUE"
 naming = "opaque"
 
 [[review]]

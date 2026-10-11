@@ -21,7 +21,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "PARAMETER_121_OPAQUE"
+name = "BITS_4_11_OPAQUE"
 description = "First update writes parameter byte 0x121 into bits 11:4."
 bitOffset = 4
 bitWidth = 8
@@ -31,7 +31,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "PARAMETER_120_OFFSET_OPAQUE"
+name = "BITS_12_19_OPAQUE"
 description = "Second update writes the low eight bits of parameter byte 0x120 plus 0x50 into bits 19:12."
 bitOffset = 12
 bitWidth = 8
@@ -50,7 +50,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "RX_COMPENSATION_LOW_OPAQUE"
+name = "BITS_0_7_OPAQUE"
 description = "Complete phy_set_rx_comp_new writes 0xed into bits 7:0."
 bitOffset = 0
 bitWidth = 8
@@ -101,7 +101,7 @@ bitOffset = 5
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "ANTENNA_INIT_OPAQUE"
+name = "BITS_11_17_OPAQUE"
 description = "Complete phy_ant_init writes 0x34 into bits 17:11."
 bitOffset = 11
 bitWidth = 7
@@ -111,7 +111,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "AGC_DISABLE_OPAQUE"
+name = "BIT_29_OPAQUE"
 description = "Instruction-exact AGC disable/enable gate."
 bitOffset = 29
 bitWidth = 1
@@ -140,7 +140,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CLEAR_PULSE_OPAQUE"
+name = "BIT_20_OPAQUE"
 description = "Instruction-exact set/clear pulse; the vendor symbol qualifies the operation while the electrical effect remains unknown."
 bitOffset = 20
 bitWidth = 1
@@ -149,13 +149,19 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "RX_11B_PATH_CONTROL_0"
-description = "Complete phy_bb_agc_reg_update writes the full word; complete phy_rx_11b_opt later replaces two six-bit fields."
+description = "Complete phy_bb_agc_reg_update writes the full word; complete phy_rx_11b_opt later replaces two six-bit fields and complete phy_rx_sense_set the low byte."
 addressOffset = 0x7044
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "RX_11B_LOW_OPAQUE"
+name = "RX_SENSE"
+description = "Receive-sensitivity setting complete phy_rx_sense_set publishes."
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "BITS_8_13_OPAQUE"
 description = "Complete phy_rx_11b_opt replaces bits 13:8."
 bitOffset = 8
 bitWidth = 6
@@ -165,7 +171,7 @@ minimum = 0x0
 maximum = 0x3F
 
 [[peripherals.registers.register.fields]]
-name = "RX_11B_HIGH_OPAQUE"
+name = "BITS_16_21_OPAQUE"
 description = "Complete phy_rx_11b_opt replaces bits 21:16."
 bitOffset = 16
 bitWidth = 6
@@ -177,7 +183,7 @@ maximum = 0x3F
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_UPDATE_7048_OPAQUE"
+name = "WORD_7048_OPAQUE"
 description = "Complete phy_bb_agc_reg_update writes 0xff7da4f3."
 addressOffset = 0x7048
 size = 32
@@ -193,7 +199,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_18_OPAQUE"
 description = "Bits 18:0 receive 0xbb8 during AGC initialization and 0x400 or 0x800 in the two RF RX saturation phases."
 bitOffset = 0
 bitWidth = 19
@@ -203,31 +209,31 @@ minimum = 0x0
 maximum = 0x7FFFF
 
 [[peripherals.registers.register.fields]]
-name = "RF_RX_SATURATION_BIT_19_OPAQUE"
+name = "BIT_19_OPAQUE"
 description = "One member of the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst."
 bitOffset = 19
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RF_RX_SATURATION_BIT_24_OPAQUE"
+name = "BIT_24_OPAQUE"
 description = "One member of the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst."
 bitOffset = 24
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "POST_INIT_SET_OPAQUE"
+name = "BIT_26_OPAQUE"
 description = "Complete phy_reg_update_new sets bit 26."
 bitOffset = 26
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RF_RX_SATURATION_BIT_28_OPAQUE"
+name = "BIT_28_OPAQUE"
 description = "One member of the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst."
 bitOffset = 28
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RF_RX_SATURATION_HIGH_OPAQUE"
+name = "BITS_30_31_OPAQUE"
 description = "Bits 31:30 are the adjacent high pair in the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst."
 bitOffset = 30
 bitWidth = 2
@@ -246,7 +252,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_0_31_OPAQUE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -292,7 +298,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "RX_COMPENSATION_HIGH_OPAQUE"
+name = "BITS_24_31_OPAQUE"
 description = "Complete phy_set_rx_comp_new writes 0xed into bits 31:24."
 bitOffset = 24
 bitWidth = 8
@@ -311,7 +317,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "WINDOW_OPAQUE"
+name = "BITS_0_8_OPAQUE"
 description = "Complete phy_rx_11b_opt writes 0x1c8 and complete phy_reg_update_new writes 0x1c0 into bits 8:0."
 bitOffset = 0
 bitWidth = 9
@@ -330,7 +336,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "BITS_0_31_OPAQUE"
+name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
@@ -348,7 +354,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_CLEAR_OPAQUE"
+name = "BITS_0_10_OPAQUE"
 description = "Complete phy_ant_init clears bits 10:0."
 bitOffset = 0
 bitWidth = 11
@@ -358,7 +364,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "ANTENNA_DIVERSITY_ENABLE_OPAQUE"
+name = "BIT_11_OPAQUE"
 description = "Complete phy_ant_dft_cfg writes zero to disable antenna diversity and one to enable it."
 bitOffset = 11
 bitWidth = 1
@@ -381,7 +387,7 @@ description = "Enable the recovered antenna-diversity path."
 value = 1
 
 [[peripherals.registers.register.fields]]
-name = "BIT_12_CLEAR_OPAQUE"
+name = "BIT_12_OPAQUE"
 description = "Complete phy_ant_init independently clears bit 12."
 bitOffset = 12
 bitWidth = 1
@@ -396,7 +402,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_8_15_OPAQUE"
 description = "Complete phy_ant_init writes 0x1e into bits 15:8."
 bitOffset = 8
 bitWidth = 8
@@ -406,7 +412,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_24_31_OPAQUE"
 description = "Complete phy_ant_init writes 0x1e into bits 31:24."
 bitOffset = 24
 bitWidth = 8
@@ -425,7 +431,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "RX_11B_LOW_OPAQUE"
+name = "BITS_0_3_OPAQUE"
 description = "Complete phy_rx_11b_opt replaces bits 3:0."
 bitOffset = 0
 bitWidth = 4
@@ -435,7 +441,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "RX_11B_HIGH_OPAQUE"
+name = "BITS_10_15_OPAQUE"
 description = "Complete phy_rx_11b_opt replaces bits 15:10."
 bitOffset = 10
 bitWidth = 6
@@ -454,7 +460,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_HIGH_OPAQUE"
+name = "BITS_24_31_OPAQUE"
 description = "Instruction-exact 0xd2 value in bits 31:24."
 bitOffset = 24
 bitWidth = 8
@@ -485,7 +491,7 @@ maximum = 0x7F
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_UPDATE_78A4_OPAQUE"
+name = "WORD_78A4_OPAQUE"
 description = "Complete phy_bb_agc_reg_update writes 0x0001721f."
 addressOffset = 0x78A4
 size = 32
@@ -501,7 +507,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_6_OPAQUE"
 description = "First fresh-read update replaces bits 6:0 with 0x17."
 bitOffset = 0
 bitWidth = 7
@@ -511,7 +517,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_7_13_OPAQUE"
 description = "Second fresh-read update replaces bits 13:7 with 0x17."
 bitOffset = 7
 bitWidth = 7
@@ -545,7 +551,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "RX_11B_MODE_OPAQUE"
+name = "BITS_12_15_OPAQUE"
 description = "Complete phy_rx_11b_opt replaces bits 15:12."
 bitOffset = 12
 bitWidth = 4
@@ -555,7 +561,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "BB_AGC_UPDATE_CLEAR_OPAQUE"
+name = "BIT_26_OPAQUE"
 description = "Complete phy_bb_agc_reg_update clears bit 26."
 bitOffset = 26
 bitWidth = 1
@@ -563,7 +569,7 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_UPDATE_8010_OPAQUE"
+name = "WORD_8010_OPAQUE"
 description = "Complete phy_bb_agc_reg_update writes 0x000852a1."
 addressOffset = 0x8010
 size = 32
@@ -572,7 +578,7 @@ access = "write-only"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_UPDATE_8018_OPAQUE"
+name = "WORD_8018_OPAQUE"
 description = "Complete phy_bb_agc_reg_update writes 0x00600030."
 addressOffset = 0x8018
 size = 32
@@ -581,7 +587,7 @@ access = "write-only"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_UPDATE_801C_OPAQUE"
+name = "WORD_801C_OPAQUE"
 description = "Complete phy_bb_agc_reg_update writes 0x010000a0."
 addressOffset = 0x801C
 size = 32
@@ -590,7 +596,7 @@ access = "write-only"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_UPDATE_8020_OPAQUE"
+name = "WORD_8020_OPAQUE"
 description = "Complete phy_bb_agc_reg_update writes 0x00000180."
 addressOffset = 0x8020
 size = 32
@@ -599,7 +605,7 @@ access = "write-only"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_UPDATE_8028_OPAQUE"
+name = "WORD_8028_OPAQUE"
 description = "Complete phy_bb_agc_reg_update writes 0xc0403020."
 addressOffset = 0x8028
 size = 32
@@ -608,7 +614,7 @@ access = "write-only"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_UPDATE_802C_OPAQUE"
+name = "WORD_802C_OPAQUE"
 description = "Complete phy_bb_agc_reg_update writes 0x01000080."
 addressOffset = 0x802C
 size = 32
@@ -617,7 +623,7 @@ access = "write-only"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "AGC_UPDATE_8070_OPAQUE"
+name = "WORD_8070_OPAQUE"
 description = "Complete phy_bb_agc_reg_update writes 0x000008c7."
 addressOffset = 0x8070
 size = 32
@@ -633,7 +639,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BB_AGC_UPDATE_SET_OPAQUE"
+name = "BITS_20_22_OPAQUE"
 description = "Complete phy_bb_agc_reg_update sets all three bits."
 bitOffset = 20
 bitWidth = 3
@@ -666,7 +672,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL.PARAMETER_121_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL.BITS_4_11_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -674,7 +680,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL.PARAMETER_120_OFFSET_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL.BITS_12_19_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -696,7 +702,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.RX_COMPENSATION_LOW_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.BITS_0_7_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_SET_RX_COMP_NEW"]
 provenance = "observed"
@@ -762,7 +768,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL.ANTENNA_INIT_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL.BITS_11_17_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
 provenance = "observed"
@@ -770,7 +776,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL.AGC_DISABLE_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL.BIT_29_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -794,7 +800,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.DC_MEMORY_CONTROL.CLEAR_PULSE_OPAQUE"
+entity = "PHY_AGC_ORACLE.DC_MEMORY_CONTROL.BIT_20_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_DC_MEM_CLR"]
 provenance = "observed"
@@ -810,7 +816,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0.RX_11B_LOW_OPAQUE"
+entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0.BITS_8_13_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -818,7 +824,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0.RX_11B_HIGH_OPAQUE"
+entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0.BITS_16_21_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -826,7 +832,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_UPDATE_7048_OPAQUE"
+entity = "PHY_AGC_ORACLE.WORD_7048_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -845,7 +851,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.LOW_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.BITS_0_18_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -853,7 +859,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.RF_RX_SATURATION_BIT_19_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.BIT_19_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -861,7 +867,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.RF_RX_SATURATION_BIT_24_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.BIT_24_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -869,7 +875,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.POST_INIT_SET_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.BIT_26_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 provenance = "observed"
@@ -877,7 +883,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.RF_RX_SATURATION_BIT_28_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.BIT_28_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -885,7 +891,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.RF_RX_SATURATION_HIGH_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.BITS_30_31_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -933,7 +939,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.RX_COMPENSATION_HIGH_CONTROL.RX_COMPENSATION_HIGH_OPAQUE"
+entity = "PHY_AGC_ORACLE.RX_COMPENSATION_HIGH_CONTROL.BITS_24_31_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_SET_RX_COMP_NEW"]
 provenance = "observed"
@@ -952,7 +958,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL.WINDOW_OPAQUE"
+entity = "PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL.BITS_0_8_OPAQUE"
 naming = "opaque"
 sources = [
     "ROM_REV0_PHY_AGC",
@@ -982,7 +988,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_0.LOW_CLEAR_OPAQUE"
+entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_0.BITS_0_10_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
 provenance = "observed"
@@ -990,7 +996,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_0.ANTENNA_DIVERSITY_ENABLE_OPAQUE"
+entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_0.BIT_11_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_ANT_DFT_CFG"]
 provenance = "observed"
@@ -998,7 +1004,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_0.BIT_12_CLEAR_OPAQUE"
+entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_0.BIT_12_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
 provenance = "observed"
@@ -1014,7 +1020,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_2.LOW_OPAQUE"
+entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_2.BITS_8_15_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
 provenance = "observed"
@@ -1022,7 +1028,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_2.HIGH_OPAQUE"
+entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_2.BITS_24_31_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
 provenance = "observed"
@@ -1038,7 +1044,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1.RX_11B_LOW_OPAQUE"
+entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1.BITS_0_3_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1046,7 +1052,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1.RX_11B_HIGH_OPAQUE"
+entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1.BITS_10_15_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1065,7 +1071,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL.INIT_HIGH_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL.BITS_24_31_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1096,7 +1102,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_UPDATE_78A4_OPAQUE"
+entity = "PHY_AGC_ORACLE.WORD_78A4_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1112,7 +1118,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.POST_INIT_RX_CONTROL.LOW_OPAQUE"
+entity = "PHY_AGC_ORACLE.POST_INIT_RX_CONTROL.BITS_0_6_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 provenance = "observed"
@@ -1120,7 +1126,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.POST_INIT_RX_CONTROL.HIGH_OPAQUE"
+entity = "PHY_AGC_ORACLE.POST_INIT_RX_CONTROL.BITS_7_13_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 provenance = "observed"
@@ -1152,7 +1158,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.RX_11B_MODE_CONTROL.RX_11B_MODE_OPAQUE"
+entity = "PHY_AGC_ORACLE.RX_11B_MODE_CONTROL.BITS_12_15_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1160,7 +1166,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.RX_11B_MODE_CONTROL.BB_AGC_UPDATE_CLEAR_OPAQUE"
+entity = "PHY_AGC_ORACLE.RX_11B_MODE_CONTROL.BIT_26_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1168,7 +1174,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_UPDATE_8010_OPAQUE"
+entity = "PHY_AGC_ORACLE.WORD_8010_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1176,7 +1182,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_UPDATE_8018_OPAQUE"
+entity = "PHY_AGC_ORACLE.WORD_8018_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1184,7 +1190,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_UPDATE_801C_OPAQUE"
+entity = "PHY_AGC_ORACLE.WORD_801C_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1192,7 +1198,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_UPDATE_8020_OPAQUE"
+entity = "PHY_AGC_ORACLE.WORD_8020_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1200,7 +1206,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_UPDATE_8028_OPAQUE"
+entity = "PHY_AGC_ORACLE.WORD_8028_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1208,7 +1214,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_UPDATE_802C_OPAQUE"
+entity = "PHY_AGC_ORACLE.WORD_802C_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1216,7 +1222,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_UPDATE_8070_OPAQUE"
+entity = "PHY_AGC_ORACLE.WORD_8070_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1232,7 +1238,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.AGC_UPDATE_8078_CONTROL.BB_AGC_UPDATE_SET_OPAQUE"
+entity = "PHY_AGC_ORACLE.AGC_UPDATE_8078_CONTROL.BITS_20_22_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
@@ -1244,9 +1250,19 @@ entity = "PHY_AGC_ORACLE.CSI_DUMP_FORCE_CONTROL.FORCE_LLTF"
 naming = "descriptive"
 
 [[review]]
-entity = "PHY_AGC_ORACLE.SATURATION_GAIN_LOW.BITS_0_31_OPAQUE"
-naming = "opaque"
+entity = "PHY_AGC_ORACLE.SATURATION_GAIN_LOW.VALUE"
+naming = "descriptive"
+sources = ["ROM_REV0_RADIO_ACCESSOR_FIELDS"]
 
 [[review]]
-entity = "PHY_AGC_ORACLE.SATURATION_GAIN_HIGH.BITS_0_31_OPAQUE"
-naming = "opaque"
+entity = "PHY_AGC_ORACLE.SATURATION_GAIN_HIGH.VALUE"
+naming = "descriptive"
+sources = ["ROM_REV0_RADIO_ACCESSOR_FIELDS"]
+
+[[review]]
+entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0.RX_SENSE"
+naming = "descriptive"
+sources = ["ROM_REV0_RADIO_ACCESSOR_FIELDS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"

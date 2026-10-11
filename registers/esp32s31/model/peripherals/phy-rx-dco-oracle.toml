@@ -17,7 +17,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CALIBRATION_CONTROL_OPAQUE"
+name = "BITS_22_23_OPAQUE"
 description = "Two-bit field preserved around the complete bounded RX-DCO measurement graph."
 bitOffset = 22
 bitWidth = 2
@@ -48,7 +48,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_RX_DCO_ORACLE.CONTROL.CALIBRATION_CONTROL_OPAQUE"
+entity = "PHY_RX_DCO_ORACLE.CONTROL.BITS_22_23_OPAQUE"
 naming = "opaque"
 sources = [
     "BLOB_LIBPHY_PHY_XTAL_DUTY_CAL",

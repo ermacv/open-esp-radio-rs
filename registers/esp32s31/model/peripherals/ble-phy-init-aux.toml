@@ -20,7 +20,7 @@ addressOffset = 0x0
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE_OPAQUE"
+name = "BITS_0_31_OPAQUE"
 description = "Complete positional image; only the ordered zero-then-one publications are proven."
 bitOffset = 0
 bitWidth = 32
@@ -39,7 +39,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLE_HW_POSITIONAL_WORD_1FF0.VALUE.IMAGE_OPAQUE"
+entity = "BLE_HW_POSITIONAL_WORD_1FF0.VALUE.BITS_0_31_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
@@ -66,7 +66,7 @@ addressOffset = 0x0
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE_OPAQUE"
+name = "BITS_0_31_OPAQUE"
 description = "Complete positional image; only the ordered 0x20-then-0x40 publications are proven."
 bitOffset = 0
 bitWidth = 32
@@ -85,7 +85,7 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BLE_HW_POSITIONAL_WORD_891C.VALUE.IMAGE_OPAQUE"
+entity = "BLE_HW_POSITIONAL_WORD_891C.VALUE.BITS_0_31_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"

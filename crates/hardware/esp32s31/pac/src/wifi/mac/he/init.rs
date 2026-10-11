@@ -29,7 +29,7 @@ impl WifiRadioRegisters {
 
         let timing = init.bf_timing_control();
         timing.modify(|_, w| w.non_tb_beam_ru_select().clear_bit());
-        timing.modify(|_, w| w.clear_23_opaque().clear_bit());
+        timing.modify(|_, w| w.bit_23_opaque().clear_bit());
         timing.modify(|_, w| w.he_beam_hw_sequence_enable().set_bit());
         timing.modify(|_, w| w.he_beam_ndp_time().set(0x71));
         timing.modify(|_, w| {
@@ -39,13 +39,13 @@ impl WifiRadioRegisters {
                 .set(0x10)
         });
         timing.modify(|_, w| w.he_beam_hw_sequence_select().set(5));
-        timing.modify(|_, w| w.enable_25_opaque().set_bit());
+        timing.modify(|_, w| w.bit_25_opaque().set_bit());
 
-        init.bf_enable().modify(|_, w| w.enable_opaque().set_bit());
+        init.bf_enable().modify(|_, w| w.bit_31_opaque().set_bit());
         init.bf_vector_control()
-            .modify(|_, w| w.image_opaque().set(0x801));
+            .modify(|_, w| w.bits_12_23_opaque().set(0x801));
         init.bf_high_image()
-            .modify(|_, w| w.image_opaque().set(0x690));
+            .modify(|_, w| w.bits_20_31_opaque().set(0x690));
         init.bf_mode_control()
             .modify(|_, w| w.high_selector_class().clear_bit());
         init.bf_mode_control()
@@ -95,7 +95,7 @@ impl WifiRadioRegisters {
             .phy_agc_oracle
             .agc_init_high_control()
             .read()
-            .init_high_opaque()
+            .bits_24_31_opaque()
             .bits();
 
         self.peripherals
@@ -106,7 +106,7 @@ impl WifiRadioRegisters {
         init.rx_field_control()
             .modify(|_, w| w.timeout_seconds().set(0x3c));
         init.parent_enable()
-            .modify(|_, w| w.enable_opaque().set_bit());
+            .modify(|_, w| w.bit_12_opaque().set_bit());
         init.tb_tx_control().modify(|_, w| w.clear_15().clear_bit());
         init.tb_tx_control().modify(|_, w| w.clear_14().clear_bit());
     }

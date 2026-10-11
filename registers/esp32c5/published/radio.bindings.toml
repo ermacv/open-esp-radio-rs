@@ -158,16 +158,16 @@ access = "read-write"
 address = 1611227468
 width = 32
 access = "read-write"
-identity = "PCR_RADIO.REGISTER_014C_OPAQUE"
+identity = "PCR_RADIO.WORD_014C_OPAQUE"
 peripheral = "PCR_RADIO"
 peripheral-type = "PcrRadio"
 peripheral-module = "pcr_radio"
 scope = []
-register-method = "register_014c_opaque"
+register-method = "word_014c_opaque"
 
 [[registers.fields]]
-svd-name = "LOW_BYTE_OPAQUE"
-method = "low_byte_opaque"
+svd-name = "BITS_0_7_OPAQUE"
+method = "bits_0_7_opaque"
 bit-offset = 0
 bit-width = 8
 access = "read-write"
@@ -220,8 +220,8 @@ scope = []
 register-method = "front_end_and_tone_stop_control"
 
 [[registers.fields]]
-svd-name = "FRONT_END_INIT_ENABLE_OPAQUE"
-method = "front_end_init_enable_opaque"
+svd-name = "BIT_2_OPAQUE"
+method = "bit_2_opaque"
 bit-offset = 2
 bit-width = 1
 access = "read-write"
@@ -238,8 +238,8 @@ scope = []
 register-method = "rx_dco_control"
 
 [[registers.fields]]
-svd-name = "CALIBRATION_CONTROL_OPAQUE"
-method = "calibration_control_opaque"
+svd-name = "BITS_22_23_OPAQUE"
+method = "bits_22_23_opaque"
 bit-offset = 22
 bit-width = 2
 access = "read-write"
@@ -270,8 +270,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "FRONT_END_INIT_HIGH_OPAQUE"
-method = "front_end_init_high_opaque"
+svd-name = "BIT_31_OPAQUE"
+method = "bit_31_opaque"
 bit-offset = 31
 bit-width = 1
 access = "read-write"
@@ -288,15 +288,15 @@ scope = []
 register-method = "rx_iq_scale"
 
 [[registers.fields]]
-svd-name = "SCALE_LOW_OPAQUE"
-method = "scale_low_opaque"
+svd-name = "BITS_0_7_OPAQUE"
+method = "bits_0_7_opaque"
 bit-offset = 0
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SCALE_HIGH_OPAQUE"
-method = "scale_high_opaque"
+svd-name = "BITS_8_15_OPAQUE"
+method = "bits_8_15_opaque"
 bit-offset = 8
 bit-width = 8
 access = "read-write"
@@ -313,8 +313,8 @@ scope = []
 register-method = "front_end_clear_control"
 
 [[registers.fields]]
-svd-name = "INIT_CLEAR_FIRST_OPAQUE"
-method = "init_clear_first_opaque"
+svd-name = "BIT_8_OPAQUE"
+method = "bit_8_opaque"
 bit-offset = 8
 bit-width = 1
 access = "read-write"
@@ -331,29 +331,29 @@ scope = []
 register-method = "adc_rate_and_front_end_control"
 
 [[registers.fields]]
-svd-name = "ADC_RATE_LOW_OPAQUE"
-method = "adc_rate_low_opaque"
+svd-name = "BIT_0_OPAQUE"
+method = "bit_0_opaque"
 bit-offset = 0
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "ADC_RATE_HIGH_OPAQUE"
-method = "adc_rate_high_opaque"
+svd-name = "BIT_1_OPAQUE"
+method = "bit_1_opaque"
 bit-offset = 1
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "DAC_RATE_LOW_OPAQUE"
-method = "dac_rate_low_opaque"
+svd-name = "BIT_2_OPAQUE"
+method = "bit_2_opaque"
 bit-offset = 2
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "DAC_RATE_HIGH_OPAQUE"
-method = "dac_rate_high_opaque"
+svd-name = "BIT_3_OPAQUE"
+method = "bit_3_opaque"
 bit-offset = 3
 bit-width = 1
 access = "read-write"
@@ -370,8 +370,8 @@ scope = []
 register-method = "fe_bb_clock_control"
 
 [[registers.fields]]
-svd-name = "FE_BB_ENABLE_OPAQUE"
-method = "fe_bb_enable_opaque"
+svd-name = "BITS_0_1_OPAQUE"
+method = "bits_0_1_opaque"
 bit-offset = 0
 bit-width = 2
 access = "read-write"
@@ -388,15 +388,15 @@ scope = []
 register-method = "power_detector_control"
 
 [[registers.fields]]
-svd-name = "CALIBRATION_FIELD_OPAQUE"
-method = "calibration_field_opaque"
+svd-name = "BITS_4_11_OPAQUE"
+method = "bits_4_11_opaque"
 bit-offset = 4
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INITIALIZATION_MODE_OPAQUE"
-method = "initialization_mode_opaque"
+svd-name = "BITS_20_22_OPAQUE"
+method = "bits_20_22_opaque"
 bit-offset = 20
 bit-width = 3
 access = "read-write"
@@ -413,15 +413,15 @@ scope = []
 register-method = "power_detector_sar_control_status"
 
 [[registers.fields]]
-svd-name = "SAR_CONFIG_CLEAR_OPAQUE"
-method = "sar_config_clear_opaque"
+svd-name = "BIT_9_OPAQUE"
+method = "bit_9_opaque"
 bit-offset = 9
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SAR_MODE_OPAQUE"
-method = "sar_mode_opaque"
+svd-name = "BITS_12_13_OPAQUE"
+method = "bits_12_13_opaque"
 bit-offset = 12
 bit-width = 2
 access = "read-write"
@@ -510,8 +510,8 @@ scope = []
 register-method = "word_0888_opaque"
 
 [[registers.fields]]
-svd-name = "IQ_SWAP_OPAQUE"
-method = "iq_swap_opaque"
+svd-name = "BIT_29_OPAQUE"
+method = "bit_29_opaque"
 bit-offset = 29
 bit-width = 1
 access = "read-write"
@@ -528,8 +528,8 @@ scope = []
 register-method = "word_0894_opaque"
 
 [[registers.fields]]
-svd-name = "FE_INIT_ENABLE_OPAQUE"
-method = "fe_init_enable_opaque"
+svd-name = "BIT_22_OPAQUE"
+method = "bit_22_opaque"
 bit-offset = 22
 bit-width = 1
 access = "read-write"
@@ -546,15 +546,15 @@ scope = []
 register-method = "dac_scale"
 
 [[registers.fields]]
-svd-name = "SCALE_LOW_OPAQUE"
-method = "scale_low_opaque"
+svd-name = "BITS_8_15_OPAQUE"
+method = "bits_8_15_opaque"
 bit-offset = 8
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SCALE_HIGH_OPAQUE"
-method = "scale_high_opaque"
+svd-name = "BITS_16_23_OPAQUE"
+method = "bits_16_23_opaque"
 bit-offset = 16
 bit-width = 8
 access = "read-write"
@@ -571,15 +571,15 @@ scope = []
 register-method = "word_0c08_opaque"
 
 [[registers.fields]]
-svd-name = "INIT_FIRST_OPAQUE"
-method = "init_first_opaque"
+svd-name = "BIT_25_OPAQUE"
+method = "bit_25_opaque"
 bit-offset = 25
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INIT_SECOND_OPAQUE"
-method = "init_second_opaque"
+svd-name = "BIT_26_OPAQUE"
+method = "bit_26_opaque"
 bit-offset = 26
 bit-width = 1
 access = "read-write"
@@ -621,8 +621,8 @@ scope = []
 register-method = "word_0c20_opaque"
 
 [[registers.fields]]
-svd-name = "INIT_LOW_OPAQUE"
-method = "init_low_opaque"
+svd-name = "BITS_0_7_OPAQUE"
+method = "bits_0_7_opaque"
 bit-offset = 0
 bit-width = 8
 access = "read-write"
@@ -2554,8 +2554,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "POLICY_HIGH_OPAQUE"
-method = "policy_high_opaque"
+svd-name = "BITS_17_31_OPAQUE"
+method = "bits_17_31_opaque"
 bit-offset = 17
 bit-width = 15
 access = "read-write"
@@ -2606,8 +2606,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "POLICY_HIGH_OPAQUE"
-method = "policy_high_opaque"
+svd-name = "BITS_17_31_OPAQUE"
+method = "bits_17_31_opaque"
 bit-offset = 17
 bit-width = 15
 access = "read-write"
@@ -2658,8 +2658,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "POLICY_HIGH_OPAQUE"
-method = "policy_high_opaque"
+svd-name = "BITS_17_31_OPAQUE"
+method = "bits_17_31_opaque"
 bit-offset = 17
 bit-width = 15
 access = "read-write"
@@ -2710,8 +2710,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "POLICY_HIGH_OPAQUE"
-method = "policy_high_opaque"
+svd-name = "BITS_17_31_OPAQUE"
+method = "bits_17_31_opaque"
 bit-offset = 17
 bit-width = 15
 access = "read-write"
@@ -2728,8 +2728,8 @@ scope = []
 register-method = "control"
 
 [[registers.fields]]
-svd-name = "ENABLES_OPAQUE"
-method = "enables_opaque"
+svd-name = "BITS_0_2_OPAQUE"
+method = "bits_0_2_opaque"
 bit-offset = 0
 bit-width = 3
 access = "read-write"
@@ -2760,8 +2760,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_6_OPAQUE"
-method = "cold_rx_enable_6_opaque"
+svd-name = "BIT_6_OPAQUE"
+method = "bit_6_opaque"
 bit-offset = 6
 bit-width = 1
 access = "read-write"
@@ -2795,15 +2795,15 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_12_OPAQUE"
-method = "cold_rx_enable_12_opaque"
+svd-name = "BIT_12_OPAQUE"
+method = "bit_12_opaque"
 bit-offset = 12
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_13_OPAQUE"
-method = "cold_rx_enable_13_opaque"
+svd-name = "BIT_13_OPAQUE"
+method = "bit_13_opaque"
 bit-offset = 13
 bit-width = 1
 access = "read-write"
@@ -2837,29 +2837,29 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_20_OPAQUE"
-method = "bits_20_opaque"
+svd-name = "BIT_20_OPAQUE"
+method = "bit_20_opaque"
 bit-offset = 20
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_21_OPAQUE"
-method = "cold_rx_enable_21_opaque"
+svd-name = "BIT_21_OPAQUE"
+method = "bit_21_opaque"
 bit-offset = 21
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "BITS_22_OPAQUE"
-method = "bits_22_opaque"
+svd-name = "BIT_22_OPAQUE"
+method = "bit_22_opaque"
 bit-offset = 22
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_23_OPAQUE"
-method = "cold_rx_enable_23_opaque"
+svd-name = "BIT_23_OPAQUE"
+method = "bit_23_opaque"
 bit-offset = 23
 bit-width = 1
 access = "read-write"
@@ -2879,15 +2879,15 @@ bit-width = 2
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_27_OPAQUE"
-method = "cold_rx_enable_27_opaque"
+svd-name = "BIT_27_OPAQUE"
+method = "bit_27_opaque"
 bit-offset = 27
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_28_OPAQUE"
-method = "cold_rx_enable_28_opaque"
+svd-name = "BIT_28_OPAQUE"
+method = "bit_28_opaque"
 bit-offset = 28
 bit-width = 1
 access = "read-write"
@@ -2943,8 +2943,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_6_OPAQUE"
-method = "cold_rx_enable_6_opaque"
+svd-name = "BIT_6_OPAQUE"
+method = "bit_6_opaque"
 bit-offset = 6
 bit-width = 1
 access = "read-only"
@@ -2978,15 +2978,15 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_12_OPAQUE"
-method = "cold_rx_enable_12_opaque"
+svd-name = "BIT_12_OPAQUE"
+method = "bit_12_opaque"
 bit-offset = 12
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_13_OPAQUE"
-method = "cold_rx_enable_13_opaque"
+svd-name = "BIT_13_OPAQUE"
+method = "bit_13_opaque"
 bit-offset = 13
 bit-width = 1
 access = "read-only"
@@ -3020,29 +3020,29 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "BITS_20_OPAQUE"
-method = "bits_20_opaque"
+svd-name = "BIT_20_OPAQUE"
+method = "bit_20_opaque"
 bit-offset = 20
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_21_OPAQUE"
-method = "cold_rx_enable_21_opaque"
+svd-name = "BIT_21_OPAQUE"
+method = "bit_21_opaque"
 bit-offset = 21
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "BITS_22_OPAQUE"
-method = "bits_22_opaque"
+svd-name = "BIT_22_OPAQUE"
+method = "bit_22_opaque"
 bit-offset = 22
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_23_OPAQUE"
-method = "cold_rx_enable_23_opaque"
+svd-name = "BIT_23_OPAQUE"
+method = "bit_23_opaque"
 bit-offset = 23
 bit-width = 1
 access = "read-only"
@@ -3062,15 +3062,15 @@ bit-width = 2
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_27_OPAQUE"
-method = "cold_rx_enable_27_opaque"
+svd-name = "BIT_27_OPAQUE"
+method = "bit_27_opaque"
 bit-offset = 27
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_28_OPAQUE"
-method = "cold_rx_enable_28_opaque"
+svd-name = "BIT_28_OPAQUE"
+method = "bit_28_opaque"
 bit-offset = 28
 bit-width = 1
 access = "read-only"
@@ -3112,8 +3112,8 @@ scope = []
 register-method = "cca_control"
 
 [[registers.fields]]
-svd-name = "CONTROL_LOW_OPAQUE"
-method = "control_low_opaque"
+svd-name = "BITS_0_27_OPAQUE"
+method = "bits_0_27_opaque"
 bit-offset = 0
 bit-width = 28
 access = "read-write"
@@ -3172,8 +3172,8 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "LOW_STATE_OPAQUE"
-method = "low_state_opaque"
+svd-name = "BITS_4_15_OPAQUE"
+method = "bits_4_15_opaque"
 bit-offset = 4
 bit-width = 12
 access = "write-only"
@@ -3207,8 +3207,8 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "HIGH_STATE_OPAQUE"
-method = "high_state_opaque"
+svd-name = "BITS_20_31_OPAQUE"
+method = "bits_20_31_opaque"
 bit-offset = 20
 bit-width = 12
 access = "write-only"
@@ -3253,8 +3253,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "LOW_STATE_OPAQUE"
-method = "low_state_opaque"
+svd-name = "BITS_4_15_OPAQUE"
+method = "bits_4_15_opaque"
 bit-offset = 4
 bit-width = 12
 access = "read-only"
@@ -3288,8 +3288,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "MIDDLE_STATE_OPAQUE"
-method = "middle_state_opaque"
+svd-name = "BITS_20_23_OPAQUE"
+method = "bits_20_23_opaque"
 bit-offset = 20
 bit-width = 4
 access = "read-only"
@@ -3323,8 +3323,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "TRIGGER_FLOW_HIGH_OPAQUE"
-method = "trigger_flow_high_opaque"
+svd-name = "BITS_28_31_OPAQUE"
+method = "bits_28_31_opaque"
 bit-offset = 28
 bit-width = 4
 access = "read-only"
@@ -3369,8 +3369,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_STATE_OPAQUE"
-method = "high_state_opaque"
+svd-name = "BITS_4_31_OPAQUE"
+method = "bits_4_31_opaque"
 bit-offset = 4
 bit-width = 28
 access = "read-write"
@@ -3426,8 +3426,8 @@ scope = []
 register-method = "word_7920_opaque"
 
 [[registers.fields]]
-svd-name = "CLEAR_OPAQUE"
-method = "clear_opaque"
+svd-name = "BITS_12_15_OPAQUE"
+method = "bits_12_15_opaque"
 bit-offset = 12
 bit-width = 4
 access = "read-write"
@@ -3444,22 +3444,22 @@ scope = []
 register-method = "rx_evm_control"
 
 [[registers.fields]]
-svd-name = "ENABLE_LOW_OPAQUE"
-method = "enable_low_opaque"
+svd-name = "BIT_0_OPAQUE"
+method = "bit_0_opaque"
 bit-offset = 0
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "MEMORY_RESET_OPAQUE"
-method = "memory_reset_opaque"
+svd-name = "BIT_1_OPAQUE"
+method = "bit_1_opaque"
 bit-offset = 1
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "ENABLE_HIGH_OPAQUE"
-method = "enable_high_opaque"
+svd-name = "BIT_2_OPAQUE"
+method = "bit_2_opaque"
 bit-offset = 2
 bit-width = 1
 access = "read-write"
@@ -3476,8 +3476,8 @@ scope = []
 register-method = "rx_evm_config"
 
 [[registers.fields]]
-svd-name = "MODE_OPAQUE"
-method = "mode_opaque"
+svd-name = "BITS_2_6_OPAQUE"
+method = "bits_2_6_opaque"
 bit-offset = 2
 bit-width = 5
 access = "read-write"
@@ -3508,8 +3508,8 @@ scope = []
 register-method = "rx_evm_memory_reset"
 
 [[registers.fields]]
-svd-name = "RESET_OPAQUE"
-method = "reset_opaque"
+svd-name = "BIT_8_OPAQUE"
+method = "bit_8_opaque"
 bit-offset = 8
 bit-width = 1
 access = "read-write"
@@ -3934,8 +3934,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RTC_UPDATE_ENABLE_OPAQUE"
-method = "rtc_update_enable_opaque"
+svd-name = "BIT_27_OPAQUE"
+method = "bit_27_opaque"
 bit-offset = 27
 bit-width = 1
 access = "read-write"
@@ -4190,8 +4190,8 @@ scope = []
 register-method = "softap_control"
 
 [[registers.fields]]
-svd-name = "HIGH_CONTROL_OPAQUE"
-method = "high_control_opaque"
+svd-name = "BIT_30_OPAQUE"
+method = "bit_30_opaque"
 bit-offset = 30
 bit-width = 1
 access = "read-write"

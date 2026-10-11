@@ -20,7 +20,7 @@ bitOffset = 0
 bitWidth = 3
 
 [[peripherals.registers.register.fields]]
-name = "BITS_3_OPAQUE"
+name = "BIT_3_OPAQUE"
 bitOffset = 3
 bitWidth = 1
 
@@ -75,7 +75,7 @@ bitOffset = 20
 bitWidth = 6
 
 [[peripherals.registers.register.fields]]
-name = "BITS_26_OPAQUE"
+name = "BIT_26_OPAQUE"
 bitOffset = 26
 bitWidth = 1
 
@@ -85,7 +85,7 @@ bitOffset = 27
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_28_31_OPAQUE"
 bitOffset = 28
 bitWidth = 4
 
@@ -177,7 +177,7 @@ bitOffset = 20
 bitWidth = 5
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_25_31_OPAQUE"
 bitOffset = 25
 bitWidth = 7
 
@@ -270,7 +270,7 @@ bitOffset = 16
 bitWidth = 12
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_28_31_OPAQUE"
 bitOffset = 28
 bitWidth = 4
 
@@ -363,7 +363,7 @@ bitOffset = 29
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_30_31_OPAQUE"
 bitOffset = 30
 bitWidth = 2
 
@@ -407,7 +407,7 @@ bitOffset = 25
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_26_31_OPAQUE"
 bitOffset = 26
 bitWidth = 6
 
@@ -461,7 +461,7 @@ bitOffset = 27
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_28_31_OPAQUE"
 bitOffset = 28
 bitWidth = 4
 
@@ -481,7 +481,7 @@ entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.TRIGGER_STATE_CS"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BITS_3_OPAQUE"
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BIT_3_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -525,7 +525,7 @@ entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BEAM_TIMER"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BITS_26_OPAQUE"
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BIT_26_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -533,7 +533,7 @@ entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.NDP_DETECT_SUCCESS"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.HIGH_OPAQUE"
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BITS_28_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -597,7 +597,7 @@ entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.TB_PRE_FEC_PADDING"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.HIGH_OPAQUE"
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.BITS_25_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -665,7 +665,7 @@ entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.BASIC_USER.RX_AID"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.BASIC_USER.HIGH_OPAQUE"
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.BASIC_USER.BITS_28_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -733,7 +733,7 @@ entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.MORE_TF"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.HIGH_OPAQUE"
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.BITS_30_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -765,7 +765,7 @@ entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS.CONTAINS_TRS"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS.HIGH_OPAQUE"
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS.BITS_26_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -805,5 +805,5 @@ entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.RX_AMPDU_AUTO_ACK_VAL
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.HIGH_OPAQUE"
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.BITS_28_31_OPAQUE"
 naming = "opaque"

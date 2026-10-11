@@ -15,13 +15,13 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "COMMON_CLEAR_OPAQUE"
+name = "BIT_2_OPAQUE"
 description = "Cleared by the penultimate RMW of the complete leaf."
 bitOffset = 2
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COMMON_ENABLE_OPAQUE"
+name = "BIT_5_OPAQUE"
 description = "Set by the final RMW of the complete leaf."
 bitOffset = 5
 bitWidth = 1
@@ -39,25 +39,25 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "FIRST_CLEAR_OPAQUE"
+name = "BIT_2_OPAQUE"
 description = "Cleared for all eight words in the first reverse traversal."
 bitOffset = 2
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "SECOND_CLEAR_OPAQUE"
+name = "BIT_3_OPAQUE"
 description = "Cleared in the first RMW of each word in the second reverse traversal."
 bitOffset = 3
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "THIRD_CLEAR_OPAQUE"
+name = "BIT_4_OPAQUE"
 description = "Cleared in the third RMW of each word in the second reverse traversal."
 bitOffset = 4
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "BANK_ENABLE_OPAQUE"
+name = "BIT_5_OPAQUE"
 description = "Set in the middle RMW of each word in the second reverse traversal."
 bitOffset = 5
 bitWidth = 1
@@ -78,7 +78,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_ANTENNA_INIT.COMMON_CONTROL.COMMON_CLEAR_OPAQUE"
+entity = "WIFI_MAC_ANTENNA_INIT.COMMON_CONTROL.BIT_2_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
 provenance = "observed"
@@ -86,7 +86,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_ANTENNA_INIT.COMMON_CONTROL.COMMON_ENABLE_OPAQUE"
+entity = "WIFI_MAC_ANTENNA_INIT.COMMON_CONTROL.BIT_5_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
 provenance = "observed"
@@ -102,7 +102,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.FIRST_CLEAR_OPAQUE"
+entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.BIT_2_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
 provenance = "observed"
@@ -110,7 +110,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.SECOND_CLEAR_OPAQUE"
+entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.BIT_3_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
 provenance = "observed"
@@ -118,7 +118,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.THIRD_CLEAR_OPAQUE"
+entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.BIT_4_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
 provenance = "observed"
@@ -126,7 +126,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.BANK_ENABLE_OPAQUE"
+entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.BIT_5_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
 provenance = "observed"

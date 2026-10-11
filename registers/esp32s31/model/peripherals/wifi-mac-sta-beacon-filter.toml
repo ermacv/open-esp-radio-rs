@@ -15,7 +15,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "ENABLES_OPAQUE"
+name = "BITS_0_2_OPAQUE"
 bitOffset = 0
 bitWidth = 3
 
@@ -39,5 +39,5 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_STA_BEACON_FILTER.CONTROL.ENABLES_OPAQUE"
+entity = "WIFI_MAC_STA_BEACON_FILTER.CONTROL.BITS_0_2_OPAQUE"
 naming = "opaque"

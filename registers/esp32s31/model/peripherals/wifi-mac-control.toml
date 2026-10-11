@@ -15,7 +15,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_CONTROL_OPAQUE"
+name = "BITS_0_11_OPAQUE"
 bitOffset = 0
 bitWidth = 12
 
@@ -72,7 +72,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_CONTROL_OPAQUE"
+name = "BITS_24_31_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -142,9 +142,9 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_CONTROL.CONTROL.LOW_CONTROL_OPAQUE"
+entity = "WIFI_MAC_CONTROL.CONTROL.BITS_0_11_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "WIFI_MAC_CONTROL.CONTROL.HIGH_CONTROL_OPAQUE"
+entity = "WIFI_MAC_CONTROL.CONTROL.BITS_24_31_OPAQUE"
 naming = "opaque"

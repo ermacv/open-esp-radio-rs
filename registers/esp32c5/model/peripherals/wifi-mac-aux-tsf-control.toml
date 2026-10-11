@@ -15,7 +15,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_CONTROL_OPAQUE"
+name = "BIT_30_OPAQUE"
 bitOffset = 30
 bitWidth = 1
 
@@ -112,7 +112,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_AUX_TSF_CONTROL.SOFTAP_CONTROL.HIGH_CONTROL_OPAQUE"
+entity = "WIFI_MAC_AUX_TSF_CONTROL.SOFTAP_CONTROL.BIT_30_OPAQUE"
 naming = "opaque"
 
 [[review]]

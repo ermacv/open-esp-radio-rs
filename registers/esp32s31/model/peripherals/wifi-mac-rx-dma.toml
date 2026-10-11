@@ -11,14 +11,14 @@ baseAddress = 0x20104000
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "RX_COLD_CONTROL_OPAQUE"
+name = "WORD_007C_OPAQUE"
 description = "Complete mac_rxbuf_init clears the low byte immediately before publishing the descriptor base. Individual bit meanings are unknown."
 addressOffset = 0x7C
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "COLD_LOW_OPAQUE"
+name = "BITS_0_7_OPAQUE"
 bitOffset = 0
 bitWidth = 8
 
@@ -49,7 +49,7 @@ bitOffset = 31
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HARDWARE_BEACON_RELOAD_OPAQUE"
+name = "BIT_27_OPAQUE"
 description = "Complete hal_mac_set_rxbuf_reload_use_hw_beacon_enable sets bit 27 through one fresh-read RMW."
 bitOffset = 27
 bitWidth = 1
@@ -87,7 +87,7 @@ bitOffset = 0
 bitWidth = 20
 
 [[peripherals.registers.register.fields]]
-name = "UPPER_OPAQUE"
+name = "BITS_20_31_OPAQUE"
 description = "Unassigned upper state retained by the complete-word zero predicate in wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."
 bitOffset = 20
 bitWidth = 12
@@ -174,14 +174,14 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "RX_BUFFER_LIMIT_OPAQUE"
+name = "WORD_0C68_OPAQUE"
 description = "Complete mac_rxbuf_init sets the low twenty bits before descriptor publication."
 addressOffset = 0xC68
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_19_OPAQUE"
 bitOffset = 0
 bitWidth = 20
 
@@ -192,14 +192,14 @@ maximum = 0xFFFFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "RX_BUFFER_BASE_OPAQUE"
+name = "WORD_0C6C_OPAQUE"
 description = "Complete mac_rxbuf_init replaces the low twenty bits with four before selecting the descriptor high window."
 addressOffset = 0xC6C
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_19_OPAQUE"
 bitOffset = 0
 bitWidth = 20
 
@@ -235,7 +235,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_12_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -250,7 +250,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_21_31_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -331,7 +331,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_22_31_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -359,7 +359,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_12_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -374,7 +374,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_21_31_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -455,7 +455,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_22_31_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -483,7 +483,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_12_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -498,7 +498,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_21_31_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -579,7 +579,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_22_31_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -607,7 +607,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_12_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -622,7 +622,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_21_31_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -703,7 +703,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_22_31_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -731,7 +731,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_12_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -746,7 +746,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_21_31_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -827,7 +827,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_22_31_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -855,7 +855,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_12_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -870,7 +870,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_21_31_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -951,7 +951,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_22_31_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -979,7 +979,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_12_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -994,7 +994,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_21_31_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -1075,7 +1075,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_22_31_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -1103,7 +1103,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_12_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -1118,7 +1118,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_21_31_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -1199,7 +1199,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_22_31_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -1236,7 +1236,7 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_1_11_OPAQUE"
+name = "BITS_1_11_OPAQUE"
 description = "Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."
 bitOffset = 1
 bitWidth = 11
@@ -1252,7 +1252,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_16_29_OPAQUE"
+name = "BITS_16_29_OPAQUE"
 description = "Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."
 bitOffset = 16
 bitWidth = 14
@@ -1310,7 +1310,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "POLICY_25_31_OPAQUE"
+name = "BITS_25_31_OPAQUE"
 description = "Bits cleared by every reviewed zero-based ordinary-entry policy publication."
 bitOffset = 25
 bitWidth = 7
@@ -1496,7 +1496,7 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_1_4_OPAQUE"
+name = "BITS_1_4_OPAQUE"
 description = "Bits cleared by every reviewed zero-based extra-SoftAP control publication."
 bitOffset = 1
 bitWidth = 4
@@ -1511,7 +1511,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_10_11_OPAQUE"
+name = "BITS_10_11_OPAQUE"
 description = "Bits cleared by every reviewed zero-based extra-SoftAP control publication."
 bitOffset = 10
 bitWidth = 2
@@ -1526,7 +1526,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_16_29_OPAQUE"
+name = "BITS_16_29_OPAQUE"
 description = "Bits cleared by every reviewed zero-based extra-SoftAP control publication."
 bitOffset = 16
 bitWidth = 14
@@ -1578,7 +1578,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "POLICY_25_31_OPAQUE"
+name = "BITS_25_31_OPAQUE"
 description = "Bits cleared by every reviewed zero-based extra-SoftAP policy publication."
 bitOffset = 25
 bitWidth = 7
@@ -1664,7 +1664,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_COLD_CONTROL_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.WORD_007C_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
 provenance = "observed"
@@ -1707,7 +1707,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_CONTROL.HARDWARE_BEACON_RELOAD_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.RX_CONTROL.BIT_27_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
 provenance = "observed"
@@ -1765,7 +1765,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_BUFFER_LIMIT_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.WORD_0C68_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
 provenance = "observed"
@@ -1773,7 +1773,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_BUFFER_BASE_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.WORD_0C6C_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
 provenance = "observed"
@@ -2425,7 +2425,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_COLD_CONTROL_OPAQUE.COLD_LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.WORD_007C_OPAQUE.BITS_0_7_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2437,7 +2437,7 @@ entity = "WIFI_MAC_RX_DMA.RX_NEXT_DESCRIPTOR.ADDRESS_LOW"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_NEXT_DESCRIPTOR.UPPER_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.RX_NEXT_DESCRIPTOR.BITS_20_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2485,11 +2485,11 @@ entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.DCM"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_BUFFER_LIMIT_OPAQUE.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.WORD_0C68_OPAQUE.BITS_0_19_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_BUFFER_BASE_OPAQUE.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.WORD_0C6C_OPAQUE.BITS_0_19_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2497,7 +2497,7 @@ entity = "WIFI_MAC_RX_DMA.RX_DESCRIPTOR_HIGH_WINDOW.ADDRESS_HIGH"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7.BITS_0_12_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2509,7 +2509,7 @@ entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7.LAST_TX_WAS_TRIGGER_BASED"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7.BITS_21_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2545,7 +2545,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7.BLOCK_ACK_REC
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7.BITS_22_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2553,7 +2553,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q7.ADDRESS_BYTES_
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6.BITS_0_12_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2565,7 +2565,7 @@ entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6.LAST_TX_WAS_TRIGGER_BASED"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6.BITS_21_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2601,7 +2601,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6.BLOCK_ACK_REC
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6.BITS_22_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2609,7 +2609,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q6.ADDRESS_BYTES_
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5.BITS_0_12_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2621,7 +2621,7 @@ entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5.LAST_TX_WAS_TRIGGER_BASED"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5.BITS_21_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2657,7 +2657,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5.BLOCK_ACK_REC
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5.BITS_22_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2665,7 +2665,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q5.ADDRESS_BYTES_
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4.BITS_0_12_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2677,7 +2677,7 @@ entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4.LAST_TX_WAS_TRIGGER_BASED"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4.BITS_21_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2713,7 +2713,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4.BLOCK_ACK_REC
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4.BITS_22_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2721,7 +2721,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q4.ADDRESS_BYTES_
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3.BITS_0_12_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2733,7 +2733,7 @@ entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3.LAST_TX_WAS_TRIGGER_BASED"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3.BITS_21_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2769,7 +2769,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3.BLOCK_ACK_REC
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3.BITS_22_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2777,7 +2777,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q3.ADDRESS_BYTES_
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2.BITS_0_12_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2789,7 +2789,7 @@ entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2.LAST_TX_WAS_TRIGGER_BASED"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2.BITS_21_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2825,7 +2825,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2.BLOCK_ACK_REC
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2.BITS_22_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2833,7 +2833,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q2.ADDRESS_BYTES_
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1.BITS_0_12_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2845,7 +2845,7 @@ entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1.LAST_TX_WAS_TRIGGER_BASED"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1.BITS_21_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2881,7 +2881,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1.BLOCK_ACK_REC
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1.BITS_22_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2889,7 +2889,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q1.ADDRESS_BYTES_
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0.LOW_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0.BITS_0_12_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2901,7 +2901,7 @@ entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0.LAST_TX_WAS_TRIGGER_BASED"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0.BITS_21_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2937,7 +2937,7 @@ entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0.BLOCK_ACK_REC
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0.HIGH_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0.BITS_22_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2949,11 +2949,11 @@ entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.ENABLE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.CONTROL_1_11_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.BITS_1_11_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.CONTROL_16_29_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.BITS_16_29_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -2973,7 +2973,7 @@ entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY.INTERFACE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY.POLICY_25_31_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY.BITS_25_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -3021,7 +3021,7 @@ entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.ENABLE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.CONTROL_1_4_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.BITS_1_4_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -3029,7 +3029,7 @@ entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.INDEX"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.CONTROL_10_11_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.BITS_10_11_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -3037,7 +3037,7 @@ entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.TID"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.CONTROL_16_29_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.BITS_16_29_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -3061,7 +3061,7 @@ entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY.WINDOW"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY.POLICY_25_31_OPAQUE"
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY.BITS_25_31_OPAQUE"
 naming = "opaque"
 
 [[review]]

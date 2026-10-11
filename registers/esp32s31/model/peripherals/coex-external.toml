@@ -39,19 +39,19 @@ bitOffset = 12
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
-name = "ADVANCED_GRANT_0_OPAQUE"
+name = "BITS_16_19_OPAQUE"
 description = "Advanced follower field: 1 with one wire, 0xc otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."
 bitOffset = 16
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
-name = "ADVANCED_GRANT_1_OPAQUE"
+name = "BITS_20_23_OPAQUE"
 description = "Advanced follower field: 1 with one wire, 8 otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."
 bitOffset = 20
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
-name = "ADVANCED_GRANT_2_OPAQUE"
+name = "BITS_24_27_OPAQUE"
 description = "Advanced follower field: 1; hal_clr_extern_pti sets 0xf in the advanced mode."
 bitOffset = 24
 bitWidth = 4
@@ -63,7 +63,7 @@ bitOffset = 28
 bitWidth = 2
 
 [[peripherals.registers.register.fields]]
-name = "MODE_FLAGS_OPAQUE"
+name = "BITS_30_31_OPAQUE"
 description = "Set to 0b11 by hal_set_extern_pti_mode in mode 1 and in the follower mode; the leader mode leaves them unchanged."
 bitOffset = 30
 bitWidth = 2
@@ -117,7 +117,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_13_OPAQUE"
 description = "Bits no external-coexistence leaf writes."
 bitOffset = 0
 bitWidth = 14
@@ -128,7 +128,7 @@ bitOffset = 14
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_15_31_OPAQUE"
 description = "Bits no external-coexistence leaf writes."
 bitOffset = 15
 bitWidth = 17
@@ -201,15 +201,15 @@ entity = "COEX_EXTERNAL.PTI.ADVANCED_PRIORITY"
 naming = "descriptive"
 
 [[review]]
-entity = "COEX_EXTERNAL.PTI.ADVANCED_GRANT_0_OPAQUE"
+entity = "COEX_EXTERNAL.PTI.BITS_16_19_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "COEX_EXTERNAL.PTI.ADVANCED_GRANT_1_OPAQUE"
+entity = "COEX_EXTERNAL.PTI.BITS_20_23_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "COEX_EXTERNAL.PTI.ADVANCED_GRANT_2_OPAQUE"
+entity = "COEX_EXTERNAL.PTI.BITS_24_27_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -217,7 +217,7 @@ entity = "COEX_EXTERNAL.PTI.WORK_MODE"
 naming = "descriptive"
 
 [[review]]
-entity = "COEX_EXTERNAL.PTI.MODE_FLAGS_OPAQUE"
+entity = "COEX_EXTERNAL.PTI.BITS_30_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -249,7 +249,7 @@ entity = "COEX_EXTERNAL.ENABLE_1"
 naming = "descriptive"
 
 [[review]]
-entity = "COEX_EXTERNAL.ENABLE_1.LOW_OPAQUE"
+entity = "COEX_EXTERNAL.ENABLE_1.BITS_0_13_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -257,7 +257,7 @@ entity = "COEX_EXTERNAL.ENABLE_1.ENABLE"
 naming = "descriptive"
 
 [[review]]
-entity = "COEX_EXTERNAL.ENABLE_1.HIGH_OPAQUE"
+entity = "COEX_EXTERNAL.ENABLE_1.BITS_15_31_OPAQUE"
 naming = "opaque"
 
 [[review]]

@@ -48,7 +48,7 @@ pub struct PhyDcIqAccumulatorSnapshot {
 pub struct PhyDcIqReadinessSnapshot {
     /// PAC `ESTIMATOR_READY_STATUS.READY`.
     pub ready: bool,
-    /// Whether PAC `ESTIMATOR_ACTIVITY_STATUS.ACTIVITY_OPAQUE` is nonzero.
+    /// Whether PAC `ESTIMATOR_ACTIVITY_STATUS.BITS_20_21_OPAQUE` is nonzero.
     pub activity: bool,
 }
 

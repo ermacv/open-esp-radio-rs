@@ -75,9 +75,13 @@ or hide it. A `descriptive` name states meaning, not position or the vendor's
 write: a trailing register offset (`CONFIG_0088`), bit positions alone
 (`BITS_5_9`), a write action (`SET_BY_…`, `FORCE_ZERO`, `FORCE_ONE`) or a
 complete written image (`IMAGE`, `INIT_IMAGE`) is opaque instead. An opaque
-register is named `WORD_<offset>_OPAQUE` and an opaque field
-`BIT_<n>_OPAQUE` or `BITS_<low>_<high>_OPAQUE`; the whole content of a register
-whose meaning is established is its `VALUE` field. Vendor names keep their
+name is its position and nothing else, so it carries no unproven hint of
+meaning: a register is `WORD_<offset>_OPAQUE` with its four-digit hexadecimal
+offset in its parent, a field `BIT_<n>_OPAQUE` or `BITS_<low>_<high>_OPAQUE`,
+and an array inserts `_%s` before the suffix and names its first element's
+position. Validation computes the name from the geometry and refuses any
+other. The whole content of a register whose meaning is established is its
+`VALUE` field. Vendor names keep their
 source's spelling. `naming` applies only
 to registers and fields. The SVD description carries the marker, so raw PAC
 documentation shows it too.

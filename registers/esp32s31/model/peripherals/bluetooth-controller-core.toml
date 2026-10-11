@@ -53,7 +53,7 @@ addressOffset = 0x74
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "ZERO_LOW_22_OPAQUE"
+name = "BITS_0_21_OPAQUE"
 description = "Full HAL initialization writes zero to the low 22 unassigned positions."
 bitOffset = 0
 bitWidth = 22
@@ -118,7 +118,7 @@ name = "CONFIG_24"
 bitOffset = 24
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "INIT_CLEAR_25_OPAQUE"
+name = "BIT_25_OPAQUE"
 description = "HAL initialization clears this unassigned position together with the complete high-byte reset."
 bitOffset = 25
 bitWidth = 1
@@ -127,7 +127,7 @@ name = "LATCH_REQUEST"
 bitOffset = 26
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "INIT_CLEAR_27_30_OPAQUE"
+name = "BITS_27_30_OPAQUE"
 description = "HAL initialization clears these unassigned positions together with the complete high-byte reset."
 bitOffset = 27
 bitWidth = 4
@@ -351,7 +351,7 @@ addressOffset = 0x1C0
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "ZERO_LOW_6_OPAQUE"
+name = "BITS_0_5_OPAQUE"
 description = "The initial complete HAL write clears these unassigned positions."
 bitOffset = 0
 bitWidth = 6
@@ -363,7 +363,7 @@ name = "CONFIG_6"
 bitOffset = 6
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "ZERO_MIDDLE_24_OPAQUE"
+name = "BITS_7_30_OPAQUE"
 description = "The initial complete HAL write clears these unassigned positions."
 bitOffset = 7
 bitWidth = 24
@@ -389,7 +389,7 @@ bitWidth = 20
 minimum = 0
 maximum = 0xF_FFFF
 [[peripherals.registers.register.fields]]
-name = "ZERO_HIGH_12_OPAQUE"
+name = "BITS_20_31_OPAQUE"
 description = "The complete HAL write clears the unassigned high positions."
 bitOffset = 20
 bitWidth = 12
@@ -822,7 +822,7 @@ name = "LANE_0_INDEX_HIGH"
 bitOffset = 2
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_0_CLEAR_HIGH_OPAQUE"
+name = "BIT_3_OPAQUE"
 bitOffset = 3
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -838,7 +838,7 @@ name = "LANE_1_INDEX_HIGH"
 bitOffset = 6
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_1_CLEAR_HIGH_OPAQUE"
+name = "BIT_7_OPAQUE"
 bitOffset = 7
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -854,7 +854,7 @@ name = "LANE_2_INDEX_HIGH"
 bitOffset = 10
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_2_CLEAR_HIGH_OPAQUE"
+name = "BIT_11_OPAQUE"
 bitOffset = 11
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -870,7 +870,7 @@ name = "LANE_3_INDEX_HIGH"
 bitOffset = 14
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_3_CLEAR_HIGH_OPAQUE"
+name = "BIT_15_OPAQUE"
 bitOffset = 15
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -886,7 +886,7 @@ name = "LANE_4_INDEX_HIGH"
 bitOffset = 18
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_4_CLEAR_HIGH_OPAQUE"
+name = "BIT_19_OPAQUE"
 bitOffset = 19
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -902,7 +902,7 @@ name = "LANE_5_INDEX_HIGH"
 bitOffset = 22
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_5_CLEAR_HIGH_OPAQUE"
+name = "BIT_23_OPAQUE"
 bitOffset = 23
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -918,7 +918,7 @@ name = "LANE_6_INDEX_HIGH"
 bitOffset = 26
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_6_CLEAR_HIGH_OPAQUE"
+name = "BIT_27_OPAQUE"
 bitOffset = 27
 bitWidth = 1
 [[peripherals.registers.register.fields]]
@@ -934,7 +934,7 @@ name = "LANE_7_INDEX_HIGH"
 bitOffset = 30
 bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_7_CLEAR_HIGH_OPAQUE"
+name = "BIT_31_OPAQUE"
 bitOffset = 31
 bitWidth = 1
 
@@ -1163,7 +1163,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SRAM_POINTER_PREFIX.ZERO_LOW_22_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SRAM_POINTER_PREFIX.BITS_0_21_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -1203,7 +1203,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL.INIT_CLEAR_25_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL.BIT_25_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
@@ -1219,7 +1219,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL.INIT_CLEAR_27_30_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.BTLC_TIMER_CONTROL.BITS_27_30_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
@@ -1931,7 +1931,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH.ZERO_LOW_6_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH.BITS_0_5_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -1947,7 +1947,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH.ZERO_MIDDLE_24_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH.BITS_7_30_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -1979,7 +1979,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_20.ZERO_HIGH_12_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_20.BITS_20_31_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -2067,7 +2067,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_0_CLEAR_HIGH_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.BIT_3_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -2099,7 +2099,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_1_CLEAR_HIGH_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.BIT_7_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -2131,7 +2131,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_2_CLEAR_HIGH_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.BIT_11_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -2163,7 +2163,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_3_CLEAR_HIGH_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.BIT_15_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -2195,7 +2195,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_4_CLEAR_HIGH_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.BIT_19_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -2227,7 +2227,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_5_CLEAR_HIGH_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.BIT_23_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -2259,7 +2259,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_6_CLEAR_HIGH_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.BIT_27_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
@@ -2291,7 +2291,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_7_CLEAR_HIGH_OPAQUE"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.BIT_31_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"

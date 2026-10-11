@@ -44,7 +44,7 @@ impl WifiRadioRegisters {
         Some(MacHeTxMpduLengthLink {
             mpdu_length: value.mpdu_length().bits(),
             next_link: value.next_link().bits(),
-            high_opaque: value.high_opaque().bits(),
+            high_opaque: value.bits_21_31_opaque().bits(),
         })
     }
 
@@ -128,12 +128,13 @@ impl WifiRadioRegisters {
             .wifi_mac
             .wifi_mac_txrx_prefix
             .mode_control()
-            .modify(|_, w| w.he_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_2_opaque().set_bit());
         init.shared_enable_control()
-            .modify(|_, w| w.enable_opaque().set_bit());
+            .modify(|_, w| w.bit_31_opaque().set_bit());
         init.feature_edges().modify(|_, w| w.enable_1().set_bit());
         init.feature_edges().modify(|_, w| w.enable_0().set_bit());
-        init.tx_mode_control().modify(|_, w| w.mode_opaque().set(1));
+        init.tx_mode_control()
+            .modify(|_, w| w.beacon_filter_frame_crc_state().set(1));
 
         // Complete hal_he_set_bcast_ru(0x7fd, 0, 0): six independent RMWs.
         let broadcast_low = init.broadcast_ru_low();
@@ -155,7 +156,7 @@ impl WifiRadioRegisters {
             .peripherals
             .phy_frequency_channel_oracle
             .channel_tx_offset_control()
-            .modify(|_, w| w.he_parent_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_17_opaque().set_bit());
         init.dump_complete_hesigb()
             .modify(|_, w| w.enable().clear_bit());
         init.ersu_and_vht_control()
@@ -174,7 +175,7 @@ impl WifiRadioRegisters {
             multi.modify(|_, w| w.multi_bssid_mask().set(0xff));
             multi.modify(|_, w| w.bssid_byte_5().set(0));
             init.multi_bssid_high()
-                .modify(|_, w| w.high_address_opaque().set(0));
+                .modify(|_, w| w.bits_16_23_opaque().set(0));
             for physical in (0..8).rev() {
                 init.queue_control(physical)
                     .modify(|_, w| w.qos_null_to_translated_bss().clear_bit());

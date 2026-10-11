@@ -57,14 +57,12 @@ impl WifiRadioRegisters {
         // Preserve the two distinct fresh-read edges from the complete leaf.
         table
             .control()
-            .modify(|_, w| w.high_enable_group_opaque().set(0x3f));
-        table
-            .control()
-            .modify(|_, w| w.low_enable_group_opaque().set(0x3f));
+            .modify(|_, w| w.bits_8_13_opaque().set(0x3f));
+        table.control().modify(|_, w| w.bits_1_6_opaque().set(0x3f));
         self.peripherals
             .wifi_mac
             .wifi_mac_rx_csi_control
             .control()
-            .modify(|_, w| w.last_rx_buffer_enable_opaque().set_bit());
+            .modify(|_, w| w.bit_27_opaque().set_bit());
     }
 }

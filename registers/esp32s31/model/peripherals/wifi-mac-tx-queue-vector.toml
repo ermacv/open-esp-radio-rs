@@ -137,7 +137,7 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_1_3_OPAQUE"
 bitOffset = 1
 bitWidth = 3
 
@@ -349,7 +349,7 @@ bitOffset = 26
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "BITS_27_OPAQUE"
+name = "BIT_27_OPAQUE"
 bitOffset = 27
 bitWidth = 1
 
@@ -371,7 +371,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_OPAQUE"
+name = "BITS_0_1_OPAQUE"
 bitOffset = 0
 bitWidth = 2
 
@@ -381,7 +381,7 @@ bitOffset = 2
 bitWidth = 17
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_19_31_OPAQUE"
 bitOffset = 19
 bitWidth = 13
 
@@ -520,7 +520,7 @@ bitOffset = 2
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_7_3_OPAQUE"
+name = "BITS_3_7_OPAQUE"
 bitOffset = 3
 bitWidth = 5
 
@@ -535,7 +535,7 @@ bitOffset = 8
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_9_OPAQUE"
+name = "BIT_9_OPAQUE"
 bitOffset = 9
 bitWidth = 1
 
@@ -677,7 +677,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_21_31_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -820,7 +820,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_28_31_OPAQUE"
 bitOffset = 28
 bitWidth = 4
 
@@ -1207,7 +1207,7 @@ entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.TXOP"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.LOW_OPAQUE"
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.BITS_1_3_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -1307,7 +1307,7 @@ entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.CODING"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.BITS_27_OPAQUE"
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.BIT_27_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -1315,7 +1315,7 @@ entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.MCS"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_MODE%s.LOW_OPAQUE"
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_MODE%s.BITS_0_1_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -1323,7 +1323,7 @@ entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_MODE%s.SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LEN
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_MODE%s.HIGH_OPAQUE"
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_MODE%s.BITS_19_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -1367,7 +1367,7 @@ entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_REQUIRED_2"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_7_3_OPAQUE"
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.BITS_3_7_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -1375,7 +1375,7 @@ entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_REQUIRED_8"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_9_OPAQUE"
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.BIT_9_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -1411,7 +1411,7 @@ entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_DESCRIPTOR_COUNTS%s.DESCRIPTOR_COUNT_A_COP
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_DESCRIPTOR_COUNTS%s.HIGH_OPAQUE"
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_DESCRIPTOR_COUNTS%s.BITS_21_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -1475,7 +1475,7 @@ entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.HT20_TXOP_COUNT"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.HIGH_OPAQUE"
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.BITS_28_31_OPAQUE"
 naming = "opaque"
 
 [[review]]

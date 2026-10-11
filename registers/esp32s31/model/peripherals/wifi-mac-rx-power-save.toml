@@ -39,7 +39,7 @@ bitOffset = 13
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
-name = "MIDDLE_OPAQUE"
+name = "BITS_21_22_OPAQUE"
 bitOffset = 21
 bitWidth = 2
 
@@ -128,7 +128,7 @@ entity = "WIFI_MAC_RX_POWER_SAVE.CONTROL.FE_FREQUENCY_HOP_TIME"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_RX_POWER_SAVE.CONTROL.MIDDLE_OPAQUE"
+entity = "WIFI_MAC_RX_POWER_SAVE.CONTROL.BITS_21_22_OPAQUE"
 naming = "opaque"
 
 [[review]]

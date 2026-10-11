@@ -15,7 +15,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "REQUESTS_OPAQUE"
+name = "BITS_0_31_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 [peripherals.registers.register.fields.writeConstraint.range]
@@ -50,7 +50,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_CONTROL_OPAQUE"
+name = "BITS_0_7_OPAQUE"
 bitOffset = 0
 bitWidth = 8
 
@@ -130,7 +130,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST.REQUESTS_OPAQUE"
+entity = "WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST.BITS_0_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -138,7 +138,7 @@ entity = "WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH.VALUE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_COEX_RUNTIME.ITWT_CONTROL.LOW_CONTROL_OPAQUE"
+entity = "WIFI_MAC_COEX_RUNTIME.ITWT_CONTROL.BITS_0_7_OPAQUE"
 naming = "opaque"
 
 [[review]]

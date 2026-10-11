@@ -42,7 +42,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_24_31_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -87,7 +87,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_24_31_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -161,7 +161,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_24_31_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -206,7 +206,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_OPAQUE"
+name = "BITS_24_31_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -253,7 +253,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "TIMEOUT_OPAQUE"
+name = "BITS_0_11_OPAQUE"
 bitOffset = 0
 bitWidth = 12
 
@@ -262,12 +262,12 @@ minimum = 0x0
 maximum = 0xFFF
 
 [[peripherals.registers.register.fields]]
-name = "TXRX_SUFFIX_SECOND_ENABLE_OPAQUE"
+name = "BIT_30_OPAQUE"
 bitOffset = 30
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "TXRX_SUFFIX_FIRST_ENABLE_OPAQUE"
+name = "BIT_31_OPAQUE"
 bitOffset = 31
 bitWidth = 1
 
@@ -465,7 +465,7 @@ entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_RATE_TABLE.QAM16_RATE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_RATE_TABLE.HIGH_OPAQUE"
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_RATE_TABLE.BITS_24_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -481,7 +481,7 @@ entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_CCK_RATE_TABLE.RATE_2M_SHORT_PREAMBLE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_CCK_RATE_TABLE.HIGH_OPAQUE"
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_CCK_RATE_TABLE.BITS_24_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -513,7 +513,7 @@ entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_RATE_TABLE.QAM16_RATE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_RATE_TABLE.HIGH_OPAQUE"
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_RATE_TABLE.BITS_24_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -529,7 +529,7 @@ entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_CCK_RATE_TABLE.RATE_2M_SHORT_PREAMBLE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_CCK_RATE_TABLE.HIGH_OPAQUE"
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_CCK_RATE_TABLE.BITS_24_31_OPAQUE"
 naming = "opaque"
 
 [[review]]
@@ -549,15 +549,15 @@ entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_SCCK_RATE_TABLE.LR3_RATE"
 naming = "descriptive"
 
 [[review]]
-entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL.TIMEOUT_OPAQUE"
+entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL.BITS_0_11_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL.TXRX_SUFFIX_SECOND_ENABLE_OPAQUE"
+entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL.BIT_30_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL.TXRX_SUFFIX_FIRST_ENABLE_OPAQUE"
+entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL.BIT_31_OPAQUE"
 naming = "opaque"
 
 [[review]]

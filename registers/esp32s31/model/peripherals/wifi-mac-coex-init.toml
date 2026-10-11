@@ -187,7 +187,7 @@ bitOffset = 4
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COEX_PTI_INIT_OPAQUE"
+name = "BIT_5_OPAQUE"
 description = "Set by complete hal_coex_pti_init."
 bitOffset = 5
 bitWidth = 1
@@ -290,7 +290,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL.COEX_PTI_INIT_OPAQUE"
+entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL.BIT_5_OPAQUE"
 naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
 provenance = "observed"

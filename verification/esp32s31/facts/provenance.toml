@@ -3403,6 +3403,12 @@ code = "62a1999ecc071ca6818af043ea5ae1a262be846a8ff8eb3e79c1408ecc494a53"
 [[function]]
 artifact = "libpp"
 member = "hal_mac_ctl.o"
+symbol = "hal_set_pri20_chan_offset"
+code = "8fc5ccf66c64d7a474fa6fe1d907b75a67954f4477ba9589e4a711bf106798c1"
+
+[[function]]
+artifact = "libpp"
+member = "hal_mac_ctl.o"
 symbol = "hal_vht_enable_bwsignaling_rts"
 code = "a12bb45ed4761f55e3194d1b01cd2520ab9fadd26291c086084ed1c66a96895a"
 
@@ -3623,6 +3629,12 @@ artifact = "libpp"
 member = "hal_pwr.o"
 symbol = "pwr_hal_select_wifimac_regdma_link"
 code = "d73abad28ea76119d2e1b2069a6a554897d65da5ceaf9fb4e8152007008e9051"
+
+[[function]]
+artifact = "libpp"
+member = "hal_pwr.o"
+symbol = "pwr_hal_set_beacon_filter_frame_crc_state"
+code = "6bfd2abf13e6f3f8b071407af54e8a6d0f5fdd6c82c8cda9dc8b02f6873e121d"
 
 [[function]]
 artifact = "libpp"
@@ -5512,6 +5524,12 @@ code = "0a5f674da1372252e822f329d3a6a1ad35f22176ff6e078632bb90c195a37ea2"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_bb_bss_cbw40_dig"
+code = "53c6a151555bfbaf4ba16d28d4ca952038fde22ac69e703eda527759b2305a50"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_bb_cbw_chan_cfg"
 code = "c16cf8f08e802a997a29efb0473751eba32dfd52112c79b736a667d7efe68635"
 
@@ -6647,6 +6665,12 @@ member = ""
 symbol = "pp_post"
 code = "b2c0dba7015129c4e9bb1cc9cb41a33ffc2184d8ce072d3c27750d992cd8c251"
 decisions = ["coverage.toml"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "pwr_hal_set_beacon_filter_frame_crc_state"
+code = "6bfd2abf13e6f3f8b071407af54e8a6d0f5fdd6c82c8cda9dc8b02f6873e121d"
 
 [[function]]
 artifact = "rom"

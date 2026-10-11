@@ -2337,25 +2337,25 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>ADC_RATE_LOW_OPAQUE</name>
+              <name>BIT_0_OPAQUE</name>
               <description>Opaque: meaning not established. Bit 0, set to the ADC rate bit by phy_adc_rate_set.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>ADC_RATE_HIGH_OPAQUE</name>
+              <name>BIT_1_OPAQUE</name>
               <description>Opaque: meaning not established. Bit 1, set to the ADC rate bit by phy_adc_rate_set.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>DAC_RATE_LOW_OPAQUE</name>
+              <name>BIT_2_OPAQUE</name>
               <description>Opaque: meaning not established. Bit 2, cleared by phy_dac_rate_set.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>DAC_RATE_HIGH_OPAQUE</name>
+              <name>BIT_3_OPAQUE</name>
               <description>Opaque: meaning not established. Bit 3, cleared by phy_dac_rate_set.</description>
               <bitOffset>3</bitOffset>
               <bitWidth>1</bitWidth>
@@ -2400,7 +2400,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>FRONT_END_INIT_ENABLE_OPAQUE</name>
+              <name>BIT_2_OPAQUE</name>
               <description>Opaque: meaning not established. Front-end initialization enable; meaning unknown.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
@@ -2415,7 +2415,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>CALIBRATION_CONTROL_OPAQUE</name>
+              <name>BITS_22_23_OPAQUE</name>
               <description>Opaque: meaning not established. Two-bit calibration control; meaning unknown.</description>
               <bitOffset>22</bitOffset>
               <bitWidth>2</bitWidth>
@@ -2442,7 +2442,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>FRONT_END_INIT_HIGH_OPAQUE</name>
+              <name>BIT_31_OPAQUE</name>
               <description>Opaque: meaning not established. Front-end initialization bit; meaning unknown.</description>
               <bitOffset>31</bitOffset>
               <bitWidth>1</bitWidth>
@@ -2457,13 +2457,13 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>SCALE_LOW_OPAQUE</name>
+              <name>BITS_0_7_OPAQUE</name>
               <description>Opaque: meaning not established. Low RX IQ scale byte.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
             </field>
             <field>
-              <name>SCALE_HIGH_OPAQUE</name>
+              <name>BITS_8_15_OPAQUE</name>
               <description>Opaque: meaning not established. High RX IQ scale byte.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>8</bitWidth>
@@ -2478,7 +2478,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_CLEAR_FIRST_OPAQUE</name>
+              <name>BIT_8_OPAQUE</name>
               <description>Opaque: meaning not established. Front-end initialization clear bit; meaning unknown.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>1</bitWidth>
@@ -2493,7 +2493,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>FE_BB_ENABLE_OPAQUE</name>
+              <name>BITS_0_1_OPAQUE</name>
               <description>Opaque: meaning not established. Two-bit front-end and baseband clock enable; individual meanings unknown.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>2</bitWidth>
@@ -2508,13 +2508,13 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>CALIBRATION_FIELD_OPAQUE</name>
+              <name>BITS_4_11_OPAQUE</name>
               <description>Opaque: meaning not established. Byte phy_pwdet_reg_init replaces with 0x50.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>8</bitWidth>
             </field>
             <field>
-              <name>INITIALIZATION_MODE_OPAQUE</name>
+              <name>BITS_20_22_OPAQUE</name>
               <description>Opaque: meaning not established. Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>3</bitWidth>
@@ -2529,13 +2529,13 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>SAR_CONFIG_CLEAR_OPAQUE</name>
+              <name>BIT_9_OPAQUE</name>
               <description>Opaque: meaning not established. Bit phy_pwdet_sar2_init clears.</description>
               <bitOffset>9</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>SAR_MODE_OPAQUE</name>
+              <name>BITS_12_13_OPAQUE</name>
               <description>Opaque: meaning not established. Two bits phy_pwdet_sar2_init sets.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>2</bitWidth>
@@ -2610,7 +2610,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>IQ_SWAP_OPAQUE</name>
+              <name>BIT_29_OPAQUE</name>
               <description>Opaque: meaning not established. Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown.</description>
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
@@ -2625,7 +2625,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>FE_INIT_ENABLE_OPAQUE</name>
+              <name>BIT_22_OPAQUE</name>
               <description>Opaque: meaning not established. Front-end initialization enable; meaning unknown.</description>
               <bitOffset>22</bitOffset>
               <bitWidth>1</bitWidth>
@@ -2640,13 +2640,13 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>SCALE_LOW_OPAQUE</name>
+              <name>BITS_8_15_OPAQUE</name>
               <description>Opaque: meaning not established. Second DAC scale byte.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>8</bitWidth>
             </field>
             <field>
-              <name>SCALE_HIGH_OPAQUE</name>
+              <name>BITS_16_23_OPAQUE</name>
               <description>Opaque: meaning not established. First DAC scale byte.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>8</bitWidth>
@@ -2661,13 +2661,13 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_FIRST_OPAQUE</name>
+              <name>BIT_25_OPAQUE</name>
               <description>Opaque: meaning not established. First bit; meaning unknown.</description>
               <bitOffset>25</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>INIT_SECOND_OPAQUE</name>
+              <name>BIT_26_OPAQUE</name>
               <description>Opaque: meaning not established. Second bit; meaning unknown.</description>
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
@@ -2703,7 +2703,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_LOW_OPAQUE</name>
+              <name>BITS_0_7_OPAQUE</name>
               <description>Opaque: meaning not established. Low byte; meaning unknown.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
@@ -2733,7 +2733,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>CLEAR_OPAQUE</name>
+              <name>BITS_12_15_OPAQUE</name>
               <description>Opaque: meaning not established. Four bits phy_rxevm_init_cfg clears; meaning unknown.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>4</bitWidth>
@@ -2748,19 +2748,19 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>ENABLE_LOW_OPAQUE</name>
+              <name>BIT_0_OPAQUE</name>
               <description>Opaque: meaning not established. Set with bit 2 when phy_rxevm_init_cfg enables the measurement.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>MEMORY_RESET_OPAQUE</name>
+              <name>BIT_1_OPAQUE</name>
               <description>Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>ENABLE_HIGH_OPAQUE</name>
+              <name>BIT_2_OPAQUE</name>
               <description>Opaque: meaning not established. Set with bit 0 when phy_rxevm_init_cfg enables the measurement.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
@@ -2775,7 +2775,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>MODE_OPAQUE</name>
+              <name>BITS_2_6_OPAQUE</name>
               <description>Opaque: meaning not established. Five bits phy_rxevm_init_cfg sets to 0x18.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>5</bitWidth>
@@ -2802,7 +2802,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>RESET_OPAQUE</name>
+              <name>BIT_8_OPAQUE</name>
               <description>Opaque: meaning not established. Pulsed by phy_rxevm_reset_mem.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>1</bitWidth>
@@ -2944,14 +2944,14 @@ documentation establishes their electrical meaning.</description>
           </fields>
         </register>
         <register>
-          <name>REGISTER_014C_OPAQUE</name>
+          <name>WORD_014C_OPAQUE</name>
           <description>Opaque: meaning not established. Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A.</description>
           <addressOffset>0x14C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>LOW_BYTE_OPAQUE</name>
+              <name>BITS_0_7_OPAQUE</name>
               <description>Opaque: meaning not established. Low byte; meaning unknown.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
@@ -2973,7 +2973,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>HIGH_CONTROL_OPAQUE</name>
+              <name>BIT_30_OPAQUE</name>
               <description>Opaque: meaning not established.</description>
               <bitOffset>30</bitOffset>
               <bitWidth>1</bitWidth>
@@ -3161,7 +3161,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_6_OPAQUE</name>
+              <name>BIT_6_OPAQUE</name>
               <description>Opaque: meaning not established. Unknown event enabled by the complete cold receive mask.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
@@ -3191,13 +3191,13 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_12_OPAQUE</name>
+              <name>BIT_12_OPAQUE</name>
               <description>Opaque: meaning not established. Unknown event enabled by the complete cold receive mask.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_13_OPAQUE</name>
+              <name>BIT_13_OPAQUE</name>
               <description>Opaque: meaning not established. Unknown event enabled by the complete cold receive mask.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>1</bitWidth>
@@ -3227,25 +3227,25 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>BITS_20_OPAQUE</name>
+              <name>BIT_20_OPAQUE</name>
               <description>Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_21_OPAQUE</name>
+              <name>BIT_21_OPAQUE</name>
               <description>Opaque: meaning not established. Unknown event enabled by the complete cold receive mask.</description>
               <bitOffset>21</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>BITS_22_OPAQUE</name>
+              <name>BIT_22_OPAQUE</name>
               <description>Opaque: meaning not established. Interrupt-enable bit whose event identity remains unknown.</description>
               <bitOffset>22</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_23_OPAQUE</name>
+              <name>BIT_23_OPAQUE</name>
               <description>Opaque: meaning not established. Unknown event enabled by the complete cold receive mask.</description>
               <bitOffset>23</bitOffset>
               <bitWidth>1</bitWidth>
@@ -3263,13 +3263,13 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>2</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_27_OPAQUE</name>
+              <name>BIT_27_OPAQUE</name>
               <description>Opaque: meaning not established. Unknown event enabled by the complete cold receive mask.</description>
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_28_OPAQUE</name>
+              <name>BIT_28_OPAQUE</name>
               <description>Opaque: meaning not established. Unknown event enabled by the complete cold receive mask.</description>
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
@@ -3323,7 +3323,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_6_OPAQUE</name>
+              <name>BIT_6_OPAQUE</name>
               <description>Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
@@ -3353,13 +3353,13 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_12_OPAQUE</name>
+              <name>BIT_12_OPAQUE</name>
               <description>Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_13_OPAQUE</name>
+              <name>BIT_13_OPAQUE</name>
               <description>Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>1</bitWidth>
@@ -3389,25 +3389,25 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>BITS_20_OPAQUE</name>
+              <name>BIT_20_OPAQUE</name>
               <description>Opaque: meaning not established. Masked event bit whose identity remains unknown.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_21_OPAQUE</name>
+              <name>BIT_21_OPAQUE</name>
               <description>Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
               <bitOffset>21</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>BITS_22_OPAQUE</name>
+              <name>BIT_22_OPAQUE</name>
               <description>Opaque: meaning not established. Masked event bit whose identity remains unknown.</description>
               <bitOffset>22</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_23_OPAQUE</name>
+              <name>BIT_23_OPAQUE</name>
               <description>Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
               <bitOffset>23</bitOffset>
               <bitWidth>1</bitWidth>
@@ -3425,13 +3425,13 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>2</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_27_OPAQUE</name>
+              <name>BIT_27_OPAQUE</name>
               <description>Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>COLD_RX_ENABLE_28_OPAQUE</name>
+              <name>BIT_28_OPAQUE</name>
               <description>Opaque: meaning not established. Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
@@ -3759,7 +3759,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>RTC_UPDATE_ENABLE_OPAQUE</name>
+              <name>BIT_27_OPAQUE</name>
               <description>Opaque: meaning not established. Set when the leaf's enable argument is nonzero.</description>
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
@@ -4054,7 +4054,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>ENABLES_OPAQUE</name>
+              <name>BITS_0_2_OPAQUE</name>
               <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>3</bitWidth>
@@ -4221,7 +4221,7 @@ documentation establishes their electrical meaning.</description>
           <access>read-write</access>
           <fields>
             <field>
-              <name>CONTROL_LOW_OPAQUE</name>
+              <name>BITS_0_27_OPAQUE</name>
               <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>28</bitWidth>
@@ -4285,7 +4285,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>LOW_STATE_OPAQUE</name>
+              <name>BITS_4_15_OPAQUE</name>
               <description>Opaque: meaning not established.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>12</bitWidth>
@@ -4315,7 +4315,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>HIGH_STATE_OPAQUE</name>
+              <name>BITS_20_31_OPAQUE</name>
               <description>Opaque: meaning not established.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>12</bitWidth>
@@ -4354,7 +4354,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>LOW_STATE_OPAQUE</name>
+              <name>BITS_4_15_OPAQUE</name>
               <description>Opaque: meaning not established.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>12</bitWidth>
@@ -4384,7 +4384,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>MIDDLE_STATE_OPAQUE</name>
+              <name>BITS_20_23_OPAQUE</name>
               <description>Opaque: meaning not established.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>4</bitWidth>
@@ -4414,7 +4414,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>TRIGGER_FLOW_HIGH_OPAQUE</name>
+              <name>BITS_28_31_OPAQUE</name>
               <description>Opaque: meaning not established. The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved.</description>
               <bitOffset>28</bitOffset>
               <bitWidth>4</bitWidth>
@@ -4454,7 +4454,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>HIGH_STATE_OPAQUE</name>
+              <name>BITS_4_31_OPAQUE</name>
               <description>Opaque: meaning not established.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>28</bitWidth>
@@ -4560,7 +4560,7 @@ documentation establishes their electrical meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>POLICY_HIGH_OPAQUE</name>
+              <name>BITS_17_31_OPAQUE</name>
               <description>Opaque: meaning not established.</description>
               <bitOffset>17</bitOffset>
               <bitWidth>15</bitWidth>

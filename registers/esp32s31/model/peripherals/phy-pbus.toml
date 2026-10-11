@@ -87,7 +87,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "FORCE_TXRX_MODE_OPAQUE"
+name = "BITS_8_11_OPAQUE"
 description = "phy_force_txrx_off replaces bits 11:8 with one of four evidenced encodings; the individual bit meanings remain unknown."
 bitOffset = 8
 bitWidth = 4
@@ -119,13 +119,13 @@ description = "Second force-TX/RX disable write in complete phy_force_txrx_off."
 value = 0
 
 [[peripherals.registers.register.fields]]
-name = "RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_OPAQUE"
+name = "BIT_14_OPAQUE"
 description = "phy_set_rxclk_en writes this bit with its neighbor as a pair; complete phy_rxiq_cal_init independently sets it first at root entry. The shared electrical identity remains unknown."
 bitOffset = 14
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_OPAQUE"
+name = "BIT_15_OPAQUE"
 description = "phy_set_rxclk_en writes this bit with its neighbor as a pair; complete phy_rxiq_cal_init independently sets it at root entry and clears it during the successful cleanup suffix. The shared electrical identity remains unknown."
 bitOffset = 15
 bitWidth = 1
@@ -173,13 +173,13 @@ bitWidth = 9
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_1_OPAQUE"
+name = "BITS_9_17_OPAQUE"
 bitOffset = 9
 bitWidth = 9
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "FE_INIT_ENABLE_OPAQUE"
+name = "BIT_20_OPAQUE"
 description = "First complete phy_fe_reg_init RMW sets bit 20."
 bitOffset = 20
 bitWidth = 1
@@ -194,7 +194,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_0_OPAQUE"
+name = "BITS_0_8_OPAQUE"
 bitOffset = 0
 bitWidth = 9
 
@@ -208,17 +208,17 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_0_OPAQUE"
+name = "BITS_0_8_OPAQUE"
 bitOffset = 0
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_1_OPAQUE"
+name = "BITS_9_17_OPAQUE"
 bitOffset = 9
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_2_OPAQUE"
+name = "BITS_18_26_OPAQUE"
 bitOffset = 18
 bitWidth = 9
 
@@ -232,17 +232,17 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_0_OPAQUE"
+name = "BITS_0_8_OPAQUE"
 bitOffset = 0
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_1_OPAQUE"
+name = "BITS_9_17_OPAQUE"
 bitOffset = 9
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_2_OPAQUE"
+name = "BITS_18_26_OPAQUE"
 bitOffset = 18
 bitWidth = 9
 
@@ -256,17 +256,17 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_0_OPAQUE"
+name = "BITS_0_8_OPAQUE"
 bitOffset = 0
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_1_OPAQUE"
+name = "BITS_9_17_OPAQUE"
 bitOffset = 9
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_2_OPAQUE"
+name = "BITS_18_26_OPAQUE"
 bitOffset = 18
 bitWidth = 9
 
@@ -342,7 +342,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_PBUS.STATUS_CLOCK_FORCE.FORCE_TXRX_MODE_OPAQUE"
+entity = "PHY_PBUS.STATUS_CLOCK_FORCE.BITS_8_11_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_CLOCK_FORCE"]
 provenance = "observed"
@@ -350,7 +350,7 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_PBUS.STATUS_CLOCK_FORCE.RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_OPAQUE"
+entity = "PHY_PBUS.STATUS_CLOCK_FORCE.BIT_14_OPAQUE"
 naming = "opaque"
 sources = [
     "ROM_REV0_PHY_CLOCK_FORCE",
@@ -361,7 +361,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_PBUS.STATUS_CLOCK_FORCE.RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_OPAQUE"
+entity = "PHY_PBUS.STATUS_CLOCK_FORCE.BIT_15_OPAQUE"
 naming = "opaque"
 sources = [
     "ROM_REV0_PHY_CLOCK_FORCE",
@@ -391,7 +391,7 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_0.FE_INIT_ENABLE_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_0.BIT_20_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_FE_REG_INIT"]
 provenance = "observed"
@@ -451,45 +451,45 @@ entity = "PHY_PBUS.READ_RESULT_0.RESULT_WINDOW_0_RX_DCO"
 naming = "descriptive"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_0.RESULT_WINDOW_1_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_0.BITS_9_17_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_1.RESULT_WINDOW_0_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_1.BITS_0_8_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_2.RESULT_WINDOW_0_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_2.BITS_0_8_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_2.RESULT_WINDOW_1_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_2.BITS_9_17_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_2.RESULT_WINDOW_2_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_2.BITS_18_26_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_3.RESULT_WINDOW_0_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_3.BITS_0_8_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_3.RESULT_WINDOW_1_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_3.BITS_9_17_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_3.RESULT_WINDOW_2_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_3.BITS_18_26_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_4.RESULT_WINDOW_0_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_4.BITS_0_8_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_4.RESULT_WINDOW_1_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_4.BITS_9_17_OPAQUE"
 naming = "opaque"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_4.RESULT_WINDOW_2_OPAQUE"
+entity = "PHY_PBUS.READ_RESULT_4.BITS_18_26_OPAQUE"
 naming = "opaque"

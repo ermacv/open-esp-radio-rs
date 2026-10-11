@@ -180,9 +180,12 @@ external symbol implementation, and there is no pass scheduler, provider
 registry or computation cache. One prepared object serves all functions of an
 object during one call.
 
-Artifacts owns the borrowed `ImageMemory` view over validated static ELF load
-segments; analysis reads constant bytes through that narrow port and cannot
-load files or request mutable machine memory.
+Artifacts owns the borrowed `ImageMemory` view over the image's loaded
+sections, each the bytes a load segment carries, with the caller's read-only
+windows ([static RV32 images](../../../riscv/program/README.md)); load
+segments themselves are only the execution profile's. Analysis reads constant
+bytes through that narrow port and cannot load files or request mutable
+machine memory.
 
 Reviewed interpretations such as effect contracts and layout projections are
 reviewed through Git outside Blobray and reach a comparison by content. A

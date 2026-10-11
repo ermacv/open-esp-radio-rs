@@ -10,10 +10,12 @@
 //! [`monitor`] provides bounded capture and injection handoffs. [`connected_tasks`]
 //! coordinates finite task shutdown, and [`station_network`] retains network
 //! ownership across station associations. [`stack_boundary`] provides an explicit
-//! poll boundary for large async state machines. Hardware access and concrete
+//! poll boundary for large async state machines. [`lower_mac_owner`] keeps
+//! the transmit permits of a lower-MAC backend on the owner shape. Hardware access and concrete
 //! task assembly belong to the chip backend and its integration.
 
 pub mod connected_tasks;
+pub mod lower_mac_owner;
 pub mod monitor;
 pub mod stack_boundary;
 pub mod station_network;
@@ -26,3 +28,7 @@ pub use monitor::{
 
 #[cfg(test)]
 extern crate std;
+
+// The in-memory lower-MAC model allocates its state and events.
+#[cfg(any(test, feature = "test-support"))]
+extern crate alloc;

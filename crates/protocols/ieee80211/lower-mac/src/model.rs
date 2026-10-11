@@ -40,6 +40,7 @@ use oer_ieee80211_mac::{
 use crate::*;
 
 mod air;
+
 pub use air::ModelAir;
 
 /// The one generation of the model's radio clock: it is the monotonic
@@ -93,6 +94,8 @@ pub const MODEL_CAPABILITIES: LowerMacCapabilities = LowerMacCapabilities {
     rx_block_ack_agreements: 2,
     rx_block_ack_max_tid: 7,
     rx_block_ack_max_window: 64,
+    edca_max_aifsn: 15,
+    edca_max_cw_exponent: 10,
 };
 
 /// The model's A-MPDU limits.

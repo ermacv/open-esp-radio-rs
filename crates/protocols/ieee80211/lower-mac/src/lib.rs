@@ -32,6 +32,7 @@
 pub mod capabilities;
 pub mod control;
 pub mod extensions;
+pub mod owner;
 pub mod port;
 pub mod rx;
 pub mod tx;
@@ -81,6 +82,12 @@ pub use oer_radio_port::{
     CancelError, ClockError, ClockInfo, ClockRelation, Correlation, CorrelationIds, EventsLost,
     Generation, GenerationSource, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned,
     PortResult, Projected, ProjectionError, RadioPort, RelationRate,
+};
+pub use owner::{
+    BssColor, Ccmp128Key, Ieee80211Capabilities, LowerMacBackend, LowerMacClient, LowerMacControl,
+    LowerMacEvents, LowerMacSetup, MpduLength, PhaseAttempt, PhaseRate, QueueGrant,
+    SupportedBackoff, SupportedBlockAck, SupportedChannel, SupportedCoex, SupportedEdca,
+    SupportedFilter, SupportedPower, TxGated,
 };
 pub use port::{ExtensionKind, Ieee80211LowerMacPort, LowerMacEvent, MpduAttempt, SubmitResult};
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};

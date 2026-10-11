@@ -255,6 +255,11 @@ pub struct LowerMacCapabilities {
     pub rx_block_ack_max_tid: u8,
     /// Largest receive Block Ack window.
     pub rx_block_ack_max_window: u16,
+    /// Largest AIFSN an EDCA record may carry.
+    pub edca_max_aifsn: u8,
+    /// Largest contention-window exponent (`ECWmin`, `ECWmax`) an EDCA
+    /// record may carry.
+    pub edca_max_cw_exponent: u8,
 }
 
 impl LowerMacCapabilities {

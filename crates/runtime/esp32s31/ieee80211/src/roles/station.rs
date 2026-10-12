@@ -22,6 +22,7 @@ mod join;
 mod join_port;
 mod lifecycle;
 pub mod network;
+pub mod on_port;
 pub mod power;
 #[cfg(target_arch = "riscv32")]
 mod reclaim;

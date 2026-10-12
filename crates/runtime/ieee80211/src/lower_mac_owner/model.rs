@@ -603,6 +603,11 @@ impl<'a, 'id, R: ModelRole> LowerMacClient<'id> for ModelClient<'a, 'id, R> {
         self.state.borrow().tuned
     }
 
+    fn address(&self) -> IndividualAddress {
+        IndividualAddress::new(self.state.borrow().addresses[role_index(R::ROLE)])
+            .expect("the model's addresses are individual")
+    }
+
     fn queue<'c, 's>(
         &'c self,
         seat: &'s mut Seat<'id, TxQueueKind>,

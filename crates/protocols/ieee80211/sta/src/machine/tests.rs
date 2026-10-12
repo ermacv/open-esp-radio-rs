@@ -134,7 +134,6 @@ fn meta() -> RxMeta {
 
 fn done(completion_status: TxStatus) -> TxCompletion {
     TxCompletion {
-        id: oer_ieee80211_lower_mac::TxId(0),
         status: completion_status,
         ack_rssi_dbm: None,
         ack_snr_db: None,

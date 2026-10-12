@@ -280,6 +280,16 @@ struct Model {
     lifecycle: core::cell::RefCell<std::vec::Vec<&'static str>>,
     /// The install's held part as the last split or disable left it.
     held: core::cell::Cell<(u32, u32)>,
+    /// How often `run_port` polled the driver.
+    driver_polls: core::cell::Cell<u32>,
+    /// Work posted to the driver (an interrupt status), and how much of it
+    /// the driver served.
+    posted: core::cell::Cell<u32>,
+    served: core::cell::Cell<u32>,
+    /// The driver ignores the retire request.
+    stubborn_driver: core::cell::Cell<bool>,
+    /// The backend's retire bound has passed.
+    bound_passed: core::cell::Cell<bool>,
 }
 
 /// The model's capabilities marker.
@@ -355,6 +365,9 @@ impl<'m> PortBackend for Backend<'m> {
     type Resources<'id> = [Slot<'id, ModelCaps>; 2];
     /// The phases lent and the disables run over the install's held part.
     type Held<'id> = core::cell::Cell<(u32, u32)>;
+    /// The parts reach the state through the model, so the driver owns
+    /// none.
+    type State = ();
     type Uninstall = ();
     type Uninstalled = &'m Model;
 
@@ -452,7 +465,42 @@ impl<'m> PortBackend for Backend<'m> {
         }
     }
 
-    fn uninstall(self, (): ()) -> &'m Model {
+    fn drive<'p, 'id>(
+        &mut self,
+        _: &'p Self::Held<'id>,
+        retire: Retire<'p>,
+    ) -> impl Future<Output = ()> + use<'p, 'id, 'm> {
+        let model = self.0;
+        // It serves what was posted at every poll, and retires at the first
+        // poll after the request unless it is stubborn.
+        core::future::poll_fn(move |_| {
+            model.driver_polls.set(model.driver_polls.get() + 1);
+            model.served.set(model.posted.get());
+            if retire.is_requested() && !model.stubborn_driver.get() {
+                model.lifecycle.borrow_mut().push("retire");
+                core::task::Poll::Ready(())
+            } else {
+                core::task::Poll::Pending
+            }
+        })
+    }
+
+    fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
+        let model = self.0;
+        core::future::poll_fn(move |_| {
+            if model.bound_passed.get() {
+                core::task::Poll::Ready(())
+            } else {
+                core::task::Poll::Pending
+            }
+        })
+    }
+
+    fn detach<'id>(&mut self, _: &Self::Held<'id>) {
+        self.0.lifecycle.borrow_mut().push("detach");
+    }
+
+    fn uninstall<'id>(self, _: Self::Held<'id>, (): (), (): ()) -> &'m Model {
         self.0.lifecycle.borrow_mut().push("uninstall");
         self.0
     }
@@ -509,7 +557,7 @@ struct OnePhase<'t> {
 impl<'m> PortBody<Backend<'m>> for OnePhase<'_> {
     async fn run<'id>(
         self,
-        mut owner: Owner<'id, Backend<'m>, Disabled>,
+        mut owner: Owner<'_, 'id, Backend<'m>, Disabled>,
         _: [Slot<'id, ModelCaps>; 2],
     ) -> Ended<'id, Backend<'m>> {
         let _ = owner.setup();
@@ -562,7 +610,7 @@ fn a_port_runs_a_phase_between_its_lifecycle_commands_and_ends_through_its_unins
     assert!(core::ptr::eq(ended.unwrap(), &model));
     assert_eq!(
         *model.lifecycle.borrow(),
-        ["enable", "disable", "uninstall"]
+        ["enable", "disable", "retire", "detach", "uninstall"]
     );
 }
 
@@ -572,7 +620,7 @@ struct TwoPhases;
 impl<'m> PortBody<Backend<'m>> for TwoPhases {
     async fn run<'id>(
         self,
-        mut owner: Owner<'id, Backend<'m>, Disabled>,
+        mut owner: Owner<'_, 'id, Backend<'m>, Disabled>,
         _: [Slot<'id, ModelCaps>; 2],
     ) -> Ended<'id, Backend<'m>> {
         for _ in 0..2 {
@@ -605,7 +653,7 @@ struct EnableOnce<'t> {
 impl<'m> PortBody<Backend<'m>> for EnableOnce<'_> {
     async fn run<'id>(
         self,
-        owner: Owner<'id, Backend<'m>, Disabled>,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
         _: [Slot<'id, ModelCaps>; 2],
     ) -> Ended<'id, Backend<'m>> {
         match owner.enable().await {
@@ -650,7 +698,7 @@ struct DropTheEnable;
 impl<'m> PortBody<Backend<'m>> for DropTheEnable {
     async fn run<'id>(
         self,
-        owner: Owner<'id, Backend<'m>, Disabled>,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
         _: [Slot<'id, ModelCaps>; 2],
     ) -> Ended<'id, Backend<'m>> {
         drop(owner.enable());
@@ -676,7 +724,7 @@ struct DropTheDisable;
 impl<'m> PortBody<Backend<'m>> for DropTheDisable {
     async fn run<'id>(
         self,
-        owner: Owner<'id, Backend<'m>, Disabled>,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
         _: [Slot<'id, ModelCaps>; 2],
     ) -> Ended<'id, Backend<'m>> {
         let Ok(enabled) = owner.enable().await else {
@@ -715,7 +763,7 @@ struct PoisonBetween<'t>(&'t Model);
 impl<'m> PortBody<Backend<'m>> for PoisonBetween<'_> {
     async fn run<'id>(
         self,
-        owner: Owner<'id, Backend<'m>, Disabled>,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
         _: [Slot<'id, ModelCaps>; 2],
     ) -> Ended<'id, Backend<'m>> {
         let Ok(enabled) = owner.enable().await else {
@@ -736,7 +784,10 @@ fn a_poisoned_disable_leaves_through_the_poisoned_owners_uninstall() {
     let model = Model::default();
     let ended = now_ready(run_port(Backend(&model), PoisonBetween(&model)));
     assert!(core::ptr::eq(ended.unwrap(), &model));
-    assert_eq!(*model.lifecycle.borrow(), ["enable", "uninstall"]);
+    assert_eq!(
+        *model.lifecycle.borrow(),
+        ["enable", "retire", "detach", "uninstall"]
+    );
 }
 
 /// A body that fail-stops after the radio refused its `Enable`.
@@ -745,7 +796,7 @@ struct FailStopRefused;
 impl<'m> PortBody<Backend<'m>> for FailStopRefused {
     async fn run<'id>(
         self,
-        owner: Owner<'id, Backend<'m>, Disabled>,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
         _: [Slot<'id, ModelCaps>; 2],
     ) -> Ended<'id, Backend<'m>> {
         match owner.enable().await {
@@ -834,4 +885,184 @@ fn a_fifo_permit_pool_meets_the_conformance_rule() {
     crate::conformance::permits_serve_takers_in_arrival_order(&pool, [held]);
     // The rule handed every permit back.
     assert_eq!(pool.free.borrow().len(), 2);
+}
+
+/// Poll `future` once with a waker that does nothing.
+fn poll_once<F: Future>(future: core::pin::Pin<&mut F>) -> core::task::Poll<F::Output> {
+    future.poll(&mut core::task::Context::from_waker(
+        core::task::Waker::noop(),
+    ))
+}
+
+/// A future of the world that the test makes ready: it stands for a
+/// foreign future (another task's reply, a permit) the body awaits.
+fn foreign(ready: &core::cell::Cell<bool>) -> impl Future<Output = ()> + '_ {
+    core::future::poll_fn(|_| {
+        if ready.get() {
+            core::task::Poll::Ready(())
+        } else {
+            core::task::Poll::Pending
+        }
+    })
+}
+
+/// A body that awaits a foreign future while disabled, then uninstalls.
+struct Stalled<'t>(&'t core::cell::Cell<bool>);
+
+impl<'m> PortBody<Backend<'m>> for Stalled<'_> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
+        foreign(self.0).await;
+        owner.uninstall(())
+    }
+}
+
+#[test]
+fn a_body_awaiting_a_foreign_future_does_not_stall_the_driver() {
+    let model = Model::default();
+    let released = core::cell::Cell::new(false);
+    let mut port = core::pin::pin!(run_port(Backend(&model), Stalled(&released)));
+    assert!(poll_once(port.as_mut()).is_pending());
+    // The interrupt posts work while the body waits on the world: the
+    // driver serves it at the task's next wake.
+    model.posted.set(1);
+    assert!(poll_once(port.as_mut()).is_pending());
+    assert_eq!(model.served.get(), 1);
+    model.posted.set(2);
+    assert!(poll_once(port.as_mut()).is_pending());
+    assert_eq!(model.served.get(), 2);
+    released.set(true);
+    let core::task::Poll::Ready(ended) = poll_once(port.as_mut()) else {
+        panic!("the released body uninstalls");
+    };
+    assert!(core::ptr::eq(ended.unwrap(), &model));
+}
+
+/// A body that uninstalls the disabled port at once.
+struct UninstallAtOnce;
+
+impl<'m> PortBody<Backend<'m>> for UninstallAtOnce {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
+        owner.uninstall(())
+    }
+}
+
+#[test]
+fn an_uninstall_retires_the_driver_then_detaches_then_takes_the_backend_apart() {
+    let model = Model::default();
+    let ended = now_ready(run_port(Backend(&model), UninstallAtOnce));
+    assert!(core::ptr::eq(ended.unwrap(), &model));
+    assert_eq!(*model.lifecycle.borrow(), ["retire", "detach", "uninstall"]);
+}
+
+#[test]
+fn a_driver_that_misses_its_retire_bound_fail_stops_the_port() {
+    let model = Model::default();
+    model.stubborn_driver.set(true);
+    let mut port = core::pin::pin!(run_port(Backend(&model), UninstallAtOnce));
+    // Within the bound, `run_port` waits for the driver.
+    assert!(poll_once(port.as_mut()).is_pending());
+    assert!(model.lifecycle.borrow().is_empty());
+    model.bound_passed.set(true);
+    let core::task::Poll::Ready(ended) = poll_once(port.as_mut()) else {
+        panic!("a passed bound ends the port");
+    };
+    // No detach and no uninstall: the hardware stays installed.
+    assert!(ended.is_none());
+    assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
+}
+
+/// A body that fail-stops after a wait, then yields once more before it
+/// returns its `Ended`.
+struct FailStopThenYield<'t>(&'t core::cell::Cell<bool>);
+
+impl<'m> PortBody<Backend<'m>> for FailStopThenYield<'_> {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
+        foreign(self.0).await;
+        let ended = owner.fail_stop();
+        let mut yielded = false;
+        core::future::poll_fn(|_| {
+            if yielded {
+                core::task::Poll::Ready(())
+            } else {
+                yielded = true;
+                core::task::Poll::Pending
+            }
+        })
+        .await;
+        ended
+    }
+}
+
+#[test]
+fn a_fail_stop_halts_the_driver_at_its_next_poll() {
+    let model = Model::default();
+    let fail = core::cell::Cell::new(false);
+    let mut port = core::pin::pin!(run_port(Backend(&model), FailStopThenYield(&fail)));
+    assert!(poll_once(port.as_mut()).is_pending());
+    let before = model.driver_polls.get();
+    assert_eq!(before, 1);
+    fail.set(true);
+    // The body abandons the backend and yields: the driver is not polled.
+    assert!(poll_once(port.as_mut()).is_pending());
+    assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
+    assert_eq!(model.driver_polls.get(), before);
+    let core::task::Poll::Ready(ended) = poll_once(port.as_mut()) else {
+        panic!("the body returns its fail-stop");
+    };
+    assert!(ended.is_none());
+    assert_eq!(model.driver_polls.get(), before);
+}
+
+/// A body that drops its owner, survives the safety net's debug assertion,
+/// and waits on.
+struct DropTheOwnerAndWait;
+
+impl<'m> PortBody<Backend<'m>> for DropTheOwnerAndWait {
+    async fn run<'id>(
+        self,
+        owner: Owner<'_, 'id, Backend<'m>, Disabled>,
+        _: [Slot<'id, ModelCaps>; 2],
+    ) -> Ended<'id, Backend<'m>> {
+        let dropped = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| drop(owner)));
+        assert_eq!(dropped.is_err(), cfg!(debug_assertions));
+        foreign(&core::cell::Cell::new(false)).await;
+        unreachable!("the test drops the port first")
+    }
+}
+
+#[test]
+fn a_dropped_owner_halts_the_driver_at_its_next_poll() {
+    let model = Model::default();
+    let mut port = core::pin::pin!(run_port(Backend(&model), DropTheOwnerAndWait));
+    assert!(poll_once(port.as_mut()).is_pending());
+    assert!(poll_once(port.as_mut()).is_pending());
+    assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
+    assert_eq!(model.driver_polls.get(), 0);
+}
+
+#[test]
+fn a_port_dropped_while_its_driver_retires_abandons_its_backend() {
+    let model = Model::default();
+    model.stubborn_driver.set(true);
+    let dropped = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| {
+        let mut port = core::pin::pin!(run_port(Backend(&model), UninstallAtOnce));
+        // The body asked for the uninstall; `run_port` waits for the driver.
+        assert!(poll_once(port.as_mut()).is_pending());
+        assert!(model.lifecycle.borrow().is_empty());
+    }));
+    // The safety net stopped the backend before it asserted in debug.
+    assert_eq!(dropped.is_err(), cfg!(debug_assertions));
+    assert_eq!(*model.lifecycle.borrow(), ["abandon"]);
 }

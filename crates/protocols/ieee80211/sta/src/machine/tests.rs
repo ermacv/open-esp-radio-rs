@@ -65,11 +65,27 @@ impl TxBufferMemory for Buffer {
     }
 }
 
+/// A key slot and an installed key: neither `Clone` nor `Copy`.
+#[derive(Debug, Eq, PartialEq)]
+struct Slot(u8);
+#[derive(Debug, Eq, PartialEq)]
+struct Key(Slot);
+
 struct Tokens;
 
 impl StaTokens for Tokens {
     type Ticket = Ticket;
     type SmallBuffer = Buffer;
+    type PairwiseSlot = Slot;
+    type GroupSlot = Slot;
+    type PairwiseKey = Key;
+    type GroupKey = Key;
+}
+
+const SNONCE: [u8; 32] = [3; 32];
+
+fn nonce() -> [u8; 32] {
+    SNONCE
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -145,6 +161,9 @@ enum Seen {
     Notify(StaNotice),
     AccessPoint(AccessPointCommand<Caps>),
     Upstream(UpstreamFact<Caps>),
+    InstallPairwise([u8; 16]),
+    InstallGroup(u8),
+    RemoveKey,
 }
 
 /// The loop the thin service runs, with the test as the port.
@@ -163,6 +182,10 @@ struct World {
 
 impl World {
     fn new(skipped_absences: u8) -> Self {
+        Self::with_security(skipped_absences, StaSecurity::Open)
+    }
+
+    fn with_security(skipped_absences: u8, security: StaSecurity) -> Self {
         let mut ssid = [0; 32];
         ssid[..SSID.len()].copy_from_slice(SSID);
         let mut channels = [None; 16];
@@ -180,11 +203,14 @@ impl World {
                 supported_rates: [0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24],
                 association: &CAPABILITIES,
                 phy: PhyMode::Legacy,
+                security,
+                nonce,
             },
             [Ticket(0), Ticket(1)],
             [Buffer([0; 512]), Buffer([0; 512])],
             place,
             absence,
+            (Slot(0), Slot(1)),
         );
         Self {
             station,
@@ -218,6 +244,23 @@ impl World {
                         self.station.input(now, StaInput::AbsenceAnswer(answer));
                     }
                     StaAction::Ready(id) => self.arbiter.ready(id),
+                    StaAction::InstallPairwiseKey { slot, key, .. } => {
+                        self.seen.push(Seen::InstallPairwise(key));
+                        self.station
+                            .input(now, StaInput::PairwiseKeyInstalled(Key(slot)));
+                    }
+                    StaAction::InstallGroupKey { slot, key_id, .. } => {
+                        self.seen.push(Seen::InstallGroup(key_id));
+                        self.station.input(now, StaInput::GroupKeyInstalled(Key(slot)));
+                    }
+                    StaAction::RemovePairwiseKey(Key(slot)) => {
+                        self.seen.push(Seen::RemoveKey);
+                        self.station.input(now, StaInput::PairwiseKeyRemoved(slot));
+                    }
+                    StaAction::RemoveGroupKey(Key(slot)) => {
+                        self.seen.push(Seen::RemoveKey);
+                        self.station.input(now, StaInput::GroupKeyRemoved(slot));
+                    }
                     StaAction::ExchangeLease(old) => {
                         let new = self.arbiter.exchange(old);
                         self.station.input(now, StaInput::Exchanged(new));
@@ -606,6 +649,128 @@ fn an_undelivered_wake_null_is_sent_again_when_the_tim_shows_buffered_frames() {
             subtype: NULL_ACTIVE,
             on: 6
         }]
+    );
+}
+
+/// The WPA2 network's RSN element: CCMP-128 with PSK.
+const RSN: [u8; 22] = [
+    0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
+];
+const PMK: [u8; 32] = [7; 32];
+const ANONCE: [u8; 32] = [4; 32];
+
+/// A beacon of the WPA2 network on channel 6.
+fn wpa2_beacon() -> [u8; 77] {
+    let mut frame = [0_u8; 77];
+    frame[..55].copy_from_slice(&beacon());
+    // ESS and Privacy.
+    frame[34..36].copy_from_slice(&0x0011_u16.to_le_bytes());
+    frame[55..77].copy_from_slice(&RSN);
+    frame
+}
+
+/// An EAPOL frame from the access point to the station, in a data frame
+/// from the DS.
+fn eapol_frame(eapol: &[u8]) -> std::vec::Vec<u8> {
+    let mut frame = std::vec![0_u8; 24];
+    frame[0..2].copy_from_slice(&0x0208_u16.to_le_bytes());
+    frame[4..10].copy_from_slice(&LOCAL);
+    frame[10..16].copy_from_slice(&BSSID);
+    frame[16..22].copy_from_slice(&BSSID);
+    frame.extend_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e]);
+    frame.extend_from_slice(eapol);
+    frame
+}
+
+#[test]
+fn a_station_joins_a_wpa2_network_through_the_four_way_handshake() {
+    use oer_ieee80211_mac::security::rsn::Akm;
+    use oer_ieee80211_rsn::{PtkContext, frames::RsnTxFrame};
+
+    let mut world = World::with_security(
+        3,
+        StaSecurity::Wpa2Personal {
+            pmk: Pmk::from_bytes(PMK),
+        },
+    );
+    world.station.input(at(0), StaInput::Command(StaCommand::Connect));
+    world.run(at(0));
+    world.advance();
+    world.receive(at(13), &wpa2_beacon());
+    world.advance();
+    world.receive(at(30), &authentication_response(0));
+    // The association response with the Privacy capability.
+    world.receive(at(31), &association_response(0));
+    world.take();
+
+    // Message 1: the station answers with Message 2 in a data frame.
+    let message1 = RsnTxFrame::<512>::message1(Akm::Psk, LOCAL, 1, ANONCE).unwrap();
+    world.receive(at(32), &eapol_frame(message1.as_bytes()));
+    assert_eq!(
+        world.take(),
+        [Seen::Transmit {
+            subtype: 0x0008,
+            on: 6
+        }]
+    );
+
+    // Message 3, with the access point's RSN element and the GTK in its
+    // key data: the station installs both keys, then sends Message 4.
+    let ptk = Pmk::from_bytes(PMK).derive_ptk(
+        Akm::Psk,
+        PtkContext {
+            authenticator_address: BSSID,
+            supplicant_address: LOCAL,
+            authenticator_nonce: ANONCE,
+            supplicant_nonce: SNONCE,
+        },
+    );
+    let mut plain = std::vec::Vec::new();
+    plain.extend_from_slice(&RSN);
+    // The GTK KDE of key 1.
+    plain.extend_from_slice(&[0xdd, 22, 0x00, 0x0f, 0xac, 0x01, 0x01, 0x00]);
+    plain.extend_from_slice(&[0x99; 16]);
+    plain.extend_from_slice(&[0xdd, 0]);
+    let wrapped = oer_ieee80211_rsn::aes::software_aes128_key_wrap(ptk.kek(), &plain).unwrap();
+    let message3 =
+        RsnTxFrame::<512>::message3(Akm::Psk, LOCAL, 2, ANONCE, [0; 8], wrapped.as_bytes())
+            .unwrap()
+            .authenticate(&ptk);
+    world.receive(at(33), &eapol_frame(message3.as_bytes()));
+    let seen = world.take();
+    assert!(matches!(seen[0], Seen::InstallPairwise(_)));
+    assert_eq!(
+        seen[1..],
+        [
+            Seen::InstallGroup(1),
+            Seen::Transmit {
+                subtype: 0x0008,
+                on: 6
+            },
+            Seen::Notify(StaNotice::Connected {
+                bssid: BSSID,
+                channel: 6
+            }),
+            Seen::Upstream(UpstreamFact::Connected(channel(6))),
+        ]
+    );
+    assert!(world.station.is_connected());
+
+    // Leaving removes both keys before the Deauthentication.
+    world
+        .station
+        .input(at(40), StaInput::Command(StaCommand::Disconnect));
+    world.run(at(40));
+    assert_eq!(
+        world.take()[..3],
+        [
+            Seen::RemoveKey,
+            Seen::RemoveKey,
+            Seen::Transmit {
+                subtype: 0x00c0,
+                on: 6
+            },
+        ]
     );
 }
 

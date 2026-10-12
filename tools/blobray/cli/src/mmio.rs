@@ -85,10 +85,11 @@ pub fn access(access: &MmioAccess) -> String {
 /// The whole report.
 pub fn render(diff: &MmioDiff) -> String {
     let mut out = format!(
-        "MMIO functions: {} old, {} new; {} changed; blocked {} old, {} new\n",
+        "MMIO functions: {} old, {} new; {} changed; {} not shown unchanged; blocked {} old, {} new\n",
         diff.functions[0],
         diff.functions[1],
         diff.changes.len(),
+        diff.uncertain.len(),
         diff.blocked[0],
         diff.blocked[1]
     );

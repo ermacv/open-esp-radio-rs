@@ -229,7 +229,7 @@ pub struct CallingFunction {
 }
 
 /// Schema of the `mmio-diff` document.
-pub const MMIO_DIFF_SCHEMA: u32 = 3;
+pub const MMIO_DIFF_SCHEMA: u32 = 4;
 
 /// The MMIO difference of two builds.
 #[derive(Clone, Debug, Serialize, Deserialize)]

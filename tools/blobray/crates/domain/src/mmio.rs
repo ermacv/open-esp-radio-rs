@@ -128,13 +128,26 @@ pub struct MmioFunctionChange {
     /// What each build knows of it: old, new.
     pub state: [MmioFunctionState; 2],
     /// Whether each build's analysis of it is complete: an access missing
-    /// from an incomplete one may only be unseen.
+    /// from an incomplete one may only be unseen. A build that blocks or
+    /// lacks the function has no complete analysis of it.
     pub complete: [bool; 2],
     pub removed: Vec<MmioAccess>,
     pub added: Vec<MmioAccess>,
     /// Accesses outside the stack whose address the analysis does not
     /// resolve, in each build: where the comparison sees less.
     pub unresolved: [u64; 2],
+}
+
+/// A function no difference is seen in, although a build blocks it or
+/// analyzes it incompletely: an access may be unseen.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MmioUncertainFunction {
+    pub function: String,
+    /// What each build knows of it: old, new.
+    pub state: [MmioFunctionState; 2],
+    /// Whether each build's analysis of it is complete.
+    pub complete: [bool; 2],
 }
 
 /// The MMIO difference of two builds.
@@ -148,6 +161,10 @@ pub struct MmioDiff {
     /// whose state (analyzed, blocked, absent) does where that hides or
     /// changes MMIO behavior, in name order.
     pub changes: Vec<MmioFunctionChange>,
+    /// Functions both builds define that `changes` does not list but whose
+    /// sameness is not shown: blocked or incompletely analyzed in a build,
+    /// in name order.
+    pub uncertain: Vec<MmioUncertainFunction>,
     /// Functions each build blocks, old and new: their accesses are unknown.
     pub blocked: [u64; 2],
     /// Why code of each build was not analyzed, old and new: code no

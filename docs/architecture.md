@@ -494,6 +494,34 @@ fixes it.
 A radio port applies these rules through its owner, its phases and its
 tokens ([Radio ports](#radio-ports)).
 
+## Changing a shared contract
+
+A shared contract is a crate or trait that more than one block depends on
+(today `oer-radio-port`, the permit pool, the shared radio system, PHY and
+coexistence). It takes only what at least two blocks have proven in code; a
+need of one block stays in that block until a second one has it. A change
+starts from a prototype in the block that needs it, showing the case the
+current contract fails, and lands before the blocks that depend on it build
+on it.
+
+Every proposed change comes with a cost table, and is not accepted without one:
+
+| Column | What it states |
+| --- | --- |
+| Checks | where each check runs: at compile time, or what stays at run time (a panic, a refusal, a wait) |
+| Code size | the new monomorphized copies, and which generic code they come from |
+| RAM and CPU | the memory, and the time on each hot path it touches |
+| Signatures | the lifetimes, parameters and items it adds to the contract |
+| Breakage | what it breaks, and which blocks must rebase or rework |
+| Alternatives | the options considered, and why each was rejected |
+| Reversal | the measurement that would undo the decision |
+
+Bounds, cancellation and the slot of each terminal are specified before
+the contract's shape. Generic code over a marker type is a thin wrapper over
+one non-generic core, so a marker that multiplies (one per role, access
+category or interface) does not multiply the code; such an identity lives
+in a value the owner mints rather than in a type parameter.
+
 ## Package names
 
 Every package is named `oer-` followed by lowercase tokens in this order: an

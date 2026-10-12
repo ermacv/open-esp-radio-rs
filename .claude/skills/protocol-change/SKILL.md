@@ -36,6 +36,11 @@ Find the owning package in the
 7. **Docs.** Update the package README or rustdoc that describes the changed
    contract; a capability whose support changed keeps its
    `// CAPABILITY:` anchor in step (`qualification-entry` skill).
+8. **Shared contracts.** A change to a contract more than one block uses
+   (`oer-radio-port`, the permit pool, the radio system) follows
+   [changing a shared contract](../../../docs/architecture.md#changing-a-shared-contract):
+   a prototype in the block with the failing case, the cost table, and a merge
+   before dependents build on it. A need of one block stays in that block.
 
 ## Commands (all `run_in_background: true`)
 

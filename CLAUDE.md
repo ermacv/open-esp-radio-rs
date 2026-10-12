@@ -13,7 +13,7 @@ Commands written with `<chip>` take either chip where that input exists.
 
 ## Rules
 
-- **Ask, never fall back.** When a requirement or rule admits materially different readings that change the implementation, drop required data, add a fallback or leave work unfinished, explain the ambiguity and ask the user; continue only independent work until they answer. Never silently pick a conservative reading, older behavior, approximation or omission. An explicit user decision stays authoritative: do not ask it again.
+- **Ask, never fall back.** A question is material when its readings differ in a shared crate, drop required data, change on-hardware behavior or qualification, or change a block's public API. Explain the ambiguity, recommend an option and ask the user; continue only independent work until they answer, and batch questions that block nothing per milestone. Never silently pick a conservative reading, older behavior, approximation or omission. Any other choice the agent makes itself and records in its PR as its own decision, never as an owner decision. An explicit user decision stays authoritative: do not ask it again.
 - **No compatibility layers.** Change an interface together with every caller: no deprecated aliases, re-export shims, legacy readers or fallback paths for an old shape.
 - **Background work.** Builds, tests, checks and HIL runs (`cargo build|test|clippy|check|doc`, `cargo xtask check`, `cargo xtask push`, `cargo fw build`, `cargo hil run`, `cargo hil wait`) run asynchronously (`run_in_background: true`); act on completion and keep answering meanwhile. Greps and reads stay in the foreground. No foreground `sleep` polling. Never wait for or signal processes by name (`pgrep -f`, `pkill -f`): the pattern matches the waiting shell too. Chain dependent steps in one command or wait on a PID. Claude Code's pre-tool hook enforces this.
 - **zsh.** An unquoted `$VAR` holding several words stays one argument: pass lists of scenarios or paths literally or as an array.
@@ -70,5 +70,12 @@ One task is one session and one PR. A block guide skill (`block-wifi`,
 `block-bluetooth`, `block-ieee802154`) maps
 a block's packages across layers, its shared contracts, traps and checks; the
 agent profile of the same name in `.claude/agents/` starts a session with it
-(`@block-wifi` in agent view, `claude --agent block-wifi`). A shared
-contract does not change while a block that depends on it has work in flight.
+(`@block-wifi` in agent view, `claude --agent block-wifi`). A block decides
+inside its own crates with the repository owner directly; `common` joins only
+when a shared crate changes. A shared crate takes only what at least two
+blocks have proven in code. A shared change comes with a prototype in a block
+that shows the failing case, a
+[cost table](docs/architecture.md#changing-a-shared-contract) and one owner
+(`common`), and it merges before dependents build on it: a shared contract
+does not change while a block that depends on it has work in flight. Bounds,
+cancellation and each terminal's slot are specified before a contract's shape.

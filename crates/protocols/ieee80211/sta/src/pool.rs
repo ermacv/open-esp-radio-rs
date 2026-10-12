@@ -44,3 +44,41 @@ impl<X> Pool<X> {
         }
     }
 }
+
+/// A first-in, first-out queue of at most [`POOL_CAPACITY`] items: it holds
+/// what a machine owes for tokens it took from a [`Pool`] of that size, so
+/// it never fills beyond them.
+pub(crate) struct Fifo<X> {
+    items: [Option<X>; POOL_CAPACITY],
+    head: usize,
+    len: usize,
+}
+
+impl<X> Fifo<X> {
+    pub(crate) const fn new() -> Self {
+        Self {
+            items: [const { None }; POOL_CAPACITY],
+            head: 0,
+            len: 0,
+        }
+    }
+
+    /// Queue `item` at the back.
+    pub(crate) fn push(&mut self, item: X) {
+        assert!(self.len < POOL_CAPACITY, "a queue holds at most its pool's tokens");
+        let at = (self.head + self.len) % POOL_CAPACITY;
+        self.items[at] = Some(item);
+        self.len += 1;
+    }
+
+    /// The front item.
+    pub(crate) fn pop(&mut self) -> Option<X> {
+        if self.len == 0 {
+            return None;
+        }
+        let item = self.items[self.head].take();
+        self.head = (self.head + 1) % POOL_CAPACITY;
+        self.len -= 1;
+        item
+    }
+}

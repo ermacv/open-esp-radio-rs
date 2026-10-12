@@ -82,9 +82,9 @@ pub trait PhaseAggregate<'id> {
         Self::Types: TxBufferPool<'id, C>;
 
     /// Append the MPDU a numbered `buffer` holds, again: a subframe its
-    /// Block Ack did not acknowledge. The backend leaves its CCMP header,
-    /// and so its packet number, as it is, and numbers the aggregate's new
-    /// subframes ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131631789)).
+    /// Block Ack did not acknowledge. The backend sets the Retry bit of
+    /// its Frame Control, leaves its CCMP header, and so its packet number,
+    /// as it is, and numbers the aggregate's new subframes ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131631789)).
     ///
     /// # Errors
     ///

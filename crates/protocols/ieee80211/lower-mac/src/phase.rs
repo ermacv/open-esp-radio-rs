@@ -518,8 +518,8 @@ pub trait InterfacePhase<'p, 'id: 'p> {
 
     /// The MPDU a numbered `buffer` holds, again, bound to `frame`, its
     /// kind: a retransmission (the subframe of an A-MPDU its Block Ack did
-    /// not acknowledge), which keeps its packet number. The backend writes
-    /// no new CCMP header.
+    /// not acknowledge), which keeps its packet number. The backend sets
+    /// the Retry bit of its Frame Control and writes no new CCMP header.
     fn retransmit<C>(
         &mut self,
         buffer: <Self::Types as TxBufferPool<'id, C>>::Numbered,

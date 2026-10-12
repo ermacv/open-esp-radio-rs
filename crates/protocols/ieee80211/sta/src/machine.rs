@@ -69,7 +69,8 @@ use oer_ieee80211_arbiter::{
     Purpose, Refusal, StationNotice, UpstreamFact,
 };
 use oer_ieee80211_lower_mac::{
-    AckHeader, GroupAddress, HeaderSpec, Ieee80211Capabilities, IndividualAddress, MpduLength,
+    AckHeader, GroupAddress, GroupKeyId, HeaderSpec, Ieee80211Capabilities, IndividualAddress,
+    MpduLength,
     ReceiveFilter, RxEvidence, RxMeta, SizedFrame, Station as StationRole, StationReceive,
     SupportedChannel, SupportedFilter, TxBufferMemory, TxCompletion, TxStatus,
 };
@@ -97,6 +98,7 @@ use oer_ieee80211_rsn::{
         RsnStaSupplicant, RsnStaSupplicantAction,
     },
 };
+use oer_ieee80211_mac::ccmp::CcmpRxReplayEpoch;
 use oer_time::{Duration, Instant};
 
 use crate::pool::Pool;
@@ -233,7 +235,7 @@ pub enum StaAction<'a, T: StaTokens, K> {
         /// The slot it takes.
         slot: T::GroupSlot,
         /// Its key index.
-        key_id: u8,
+        key_id: GroupKeyId,
         /// The temporal key.
         key: [u8; 16],
     },
@@ -298,7 +300,8 @@ pub enum StaRatePlan {
     Null,
 }
 
-/// The station's connected link, as the data machine sees it.
+/// The station's connected link, as the data machine sees it while data
+/// may go.
 pub struct LinkView<'a, T: StaTokens> {
     /// The station's own address.
     pub address: [u8; 6],
@@ -306,13 +309,33 @@ pub struct LinkView<'a, T: StaTokens> {
     pub bssid: [u8; 6],
     /// The station's association identifier.
     pub association_id: u16,
-    /// The BSS is a QoS BSS: data goes as QoS Data by TID.
-    pub qos: bool,
-    /// The pairwise key, on a protected link once it is installed.
-    pub pairwise: Option<&'a T::PairwiseKey>,
-    /// Data may go now: the station is home and awake, and a protected
-    /// link holds its key; otherwise MSDUs wait.
-    pub transmit: bool,
+    /// How data is sequenced on the BSS.
+    pub mode: LinkMode<'a>,
+    /// How data is protected.
+    pub protection: LinkProtection<'a, T>,
+}
+
+/// How data is sequenced on a link.
+pub enum LinkMode<'a> {
+    /// A QoS BSS: QoS Data, a sequence space per TID.
+    Qos,
+    /// A non-QoS BSS: Data in the station's sequence space, which its
+    /// management frames share.
+    NonQos(&'a mut StaSequenceCounter),
+}
+
+/// How data is protected on a link.
+pub enum LinkProtection<'a, T: StaTokens> {
+    /// An open network.
+    Open,
+    /// CCMP: the pairwise key data goes under, and the replay check of the
+    /// association's keys that received data passes.
+    Ccmp {
+        /// The pairwise key.
+        key: &'a T::PairwiseKey,
+        /// The replay check.
+        replay: &'a mut CcmpRxReplayEpoch,
+    },
 }
 
 /// What the station tells the application.
@@ -685,6 +708,12 @@ struct Handshake<T: StaTokens, K> {
     keys: Keys<T>,
 }
 
+/// The handshake's step; its values move from one step to the next, so the
+/// handshake holds the largest of them in place.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a step's frame or key request moves into the next step; without an allocator a box is no option"
+)]
 enum HandshakeStep {
     /// Waiting for the access point's next message.
     Await,
@@ -698,8 +727,8 @@ enum HandshakeStep {
     InstallGroup(RsnStaKeyInstallRequest),
     AwaitInstalled(RsnStaKeyInstallRequest),
     /// Message 4, then connected.
-    SendLast(RsnTxFrame),
-    AwaitLast,
+    SendLast(RsnTxFrame, CcmpRxReplayEpoch),
+    AwaitLast(CcmpRxReplayEpoch),
 }
 
 /// The connected station.
@@ -746,6 +775,9 @@ enum Sending {
 struct ConnectedRsn {
     supplicant: RsnConnectedSupplicant,
     rekey: Rekey,
+    /// The replay check of the association's keys, which the data machine
+    /// borrows through the link.
+    replay: CcmpRxReplayEpoch,
 }
 
 /// A group key's handshake: one algorithm whatever the slots. With a free
@@ -873,13 +905,26 @@ fn peer_disconnect(frame: &[u8], bssid: [u8; 6]) -> Option<u16> {
     Some(u16::from_le_bytes(frame.get(24..26)?.try_into().ok()?))
 }
 
-/// A group key's index and temporal key.
-fn group_key(install: &RsnKeyInstall) -> (u8, [u8; 16]) {
-    let key_id = match install.kind() {
-        RsnKeyKind::Group { key_id, .. } => key_id,
-        RsnKeyKind::Pairwise => 0,
+/// A group key's index and temporal key, when its index is a group
+/// key's (1 to 3).
+fn group_key(install: &RsnKeyInstall) -> Option<(GroupKeyId, [u8; 16])> {
+    let RsnKeyKind::Group { key_id, .. } = install.kind() else {
+        return None;
     };
-    (key_id, *install.key().as_bytes())
+    Some((GroupKeyId::new(key_id)?, *install.key().as_bytes()))
+}
+
+/// The replay check of the keys a handshake's Message 3 installs.
+fn replay_epoch(request: &RsnStaKeyInstallRequest) -> Option<CcmpRxReplayEpoch> {
+    let RsnKeyKind::Group { key_id, .. } = request.group().kind() else {
+        return None;
+    };
+    CcmpRxReplayEpoch::new(
+        *request.pairwise().receive_sequence(),
+        key_id,
+        *request.group().receive_sequence(),
+    )
+    .ok()
 }
 
 /// What ended in the station's world.
@@ -902,7 +947,7 @@ enum Owed<T: StaTokens, K> {
     },
     InstallGroup {
         slot: T::GroupSlot,
-        key_id: u8,
+        key_id: GroupKeyId,
         key: [u8; 16],
     },
     RemovePairwise(T::PairwiseKey),
@@ -994,35 +1039,43 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         matches!(self.state, State::Connected(_))
     }
 
-    /// The connected link, which the data machine sends and receives on:
-    /// its pairwise key is lent, so only the station removes it
-    /// ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131495971)).
-    pub fn link(&self) -> Option<LinkView<'_, T>> {
-        let State::Connected(connected) = &self.state else {
+    /// The connected link, which the data machine sends and receives on,
+    /// while data may go: the station is home and awake, and a protected
+    /// link holds its key. It lends the pairwise key, so only the station
+    /// removes it, the replay check, and on a non-QoS BSS the station's
+    /// sequence space ([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6131495971)).
+    pub fn link(&mut self) -> Option<LinkView<'_, T>> {
+        let State::Connected(connected) = &mut self.state else {
             return None;
         };
+        if self.absence.is_some() || connected.power.asleep() {
+            return None;
+        }
         let pairwise = match &connected.keys.pairwise {
             KeyCell::Installed(key) => Some(key),
             KeyCell::Free(_) | KeyCell::Busy => None,
         };
-        // A protected link without its key sends nothing.
-        let protected = connected.rsn.is_some();
+        let replay = match &mut connected.rsn {
+            Some(rsn) => Some(&mut rsn.replay),
+            None => None,
+        };
+        let protection = match (pairwise, replay) {
+            (Some(key), Some(replay)) => LinkProtection::Ccmp { key, replay },
+            // A protected link without its key sends nothing.
+            (None, Some(_)) | (Some(_), None) => return None,
+            (None, None) => LinkProtection::Open,
+        };
         Some(LinkView {
             address: self.config.address,
             bssid: connected.bssid,
             association_id: connected.association_id,
-            qos: connected.qos,
-            pairwise,
-            transmit: self.absence.is_none()
-                && !connected.power.asleep()
-                && (pairwise.is_some() || !protected),
+            mode: if connected.qos {
+                LinkMode::Qos
+            } else {
+                LinkMode::NonQos(&mut self.sequence)
+            },
+            protection,
         })
-    }
-
-    /// The next sequence number of the station's non-QoS space, which its
-    /// management frames and a non-QoS link's data share.
-    pub const fn take_sequence(&mut self) -> SequenceNumber {
-        self.sequence.take()
     }
 
     /// The security policy the scan selects and the join associates with.
@@ -1161,16 +1214,23 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         self.state = match state {
             State::Handshake(mut handshake) if handshake.keys.installed() => {
                 match core::mem::replace(&mut handshake.step, HandshakeStep::Await) {
-                    HandshakeStep::AwaitInstalled(request) => match handshake
-                        .supplicant
-                        .complete_key_install::<DEFAULT_EAPOL_FRAME_CAPACITY>(request, true)
-                    {
-                        Ok(RsnStaSupplicantAction::Transmit(message4)) => {
-                            handshake.step = HandshakeStep::SendLast(message4);
-                            State::Handshake(handshake)
+                    HandshakeStep::AwaitInstalled(request) => {
+                        // The replay check starts from the keys' receive
+                        // sequences.
+                        let Some(epoch) = replay_epoch(&request) else {
+                            return self.set(leave_handshake(handshake, REASON_UNSPECIFIED));
+                        };
+                        match handshake
+                            .supplicant
+                            .complete_key_install::<DEFAULT_EAPOL_FRAME_CAPACITY>(request, true)
+                        {
+                            Ok(RsnStaSupplicantAction::Transmit(message4)) => {
+                                handshake.step = HandshakeStep::SendLast(message4, epoch);
+                                State::Handshake(handshake)
+                            }
+                            _ => leave_handshake(handshake, REASON_UNSPECIFIED),
                         }
-                        _ => leave_handshake(handshake, REASON_UNSPECIFIED),
-                    },
+                    }
                     step => {
                         handshake.step = step;
                         State::Handshake(handshake)
@@ -1190,9 +1250,21 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     && let Rekey::AwaitInstalled(request) =
                         core::mem::replace(&mut rsn.rekey, Rekey::None)
                 {
-                    match rsn.supplicant.complete_group_key_install(request, true) {
-                        Ok(response) => rsn.rekey = Rekey::Send(response),
-                        Err(_) => {
+                    // The new group key's frontiers start from its receive
+                    // sequence once it is installed.
+                    let rotation = match request.group().kind() {
+                        RsnKeyKind::Group { key_id, .. } => rsn
+                            .replay
+                            .prepare_group_rotation(key_id, *request.group().receive_sequence())
+                            .ok(),
+                        RsnKeyKind::Pairwise => None,
+                    };
+                    let completed = rsn.supplicant.complete_group_key_install(request, true);
+                    let rotated = rotation
+                        .is_some_and(|rotation| rsn.replay.commit_group_rotation(rotation).is_ok());
+                    match completed {
+                        Ok(response) if rotated => rsn.rekey = Rekey::Send(response),
+                        _ => {
                             return self.set(leave_connected(
                                 connected,
                                 StaDisconnectReason::HandshakeFailed,
@@ -1479,7 +1551,7 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                     State::Handshake(handshake)
                 }
                 // Message 4 went: connected, the supplicant's keys held.
-                (HandshakeStep::AwaitLast, Done::Tx { .. }) => connect(handshake),
+                (HandshakeStep::AwaitLast(_), Done::Tx { .. }) => connect(handshake),
                 (HandshakeStep::Await, Done::Tick)
                     if matches!(handshake.deadline.poll(now), RsnStaDeadlineEvent::Expired { .. }) =>
                 {
@@ -2078,20 +2150,23 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
                 }
                 None => (HandshakeStep::Install(request), None),
             },
-            HandshakeStep::InstallGroup(request) => match handshake.keys.take_group_slot() {
-                Some(slot) => {
-                    let (key_id, key) = group_key(request.group());
-                    (
+            HandshakeStep::InstallGroup(request) => {
+                // A key index that is no group key's fails the handshake.
+                let Some((key_id, key)) = group_key(request.group()) else {
+                    return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
+                };
+                match handshake.keys.take_group_slot() {
+                    Some(slot) => (
                         HandshakeStep::AwaitInstalled(request),
                         Some(Owed::InstallGroup { slot, key_id, key }),
-                    )
+                    ),
+                    None => (HandshakeStep::InstallGroup(request), None),
                 }
-                None => (HandshakeStep::InstallGroup(request), None),
-            },
-            HandshakeStep::SendLast(message) => {
+            }
+            HandshakeStep::SendLast(message, epoch) => {
                 match self.encode_eapol(handshake.bssid, message.as_bytes()) {
-                    Ok(transmit) => (HandshakeStep::AwaitLast, Some(Owed::Transmit(transmit))),
-                    Err(Unsent::NoTokens) => (HandshakeStep::SendLast(message), None),
+                    Ok(transmit) => (HandshakeStep::AwaitLast(epoch), Some(Owed::Transmit(transmit))),
+                    Err(Unsent::NoTokens) => (HandshakeStep::SendLast(message, epoch), None),
                     Err(Unsent::Encode) => {
                         return (leave_handshake(handshake, REASON_UNSPECIFIED), None);
                     }
@@ -2166,8 +2241,10 @@ impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
         let rsn = connected.rsn.as_mut()?;
         let (rekey, owed) = match core::mem::replace(&mut rsn.rekey, Rekey::None) {
             Rekey::Install(request) => {
+                let Some((key_id, key)) = group_key(request.group()) else {
+                    return Some(Err(StaDisconnectReason::HandshakeFailed));
+                };
                 if let Some(slot) = connected.keys.take_group_slot() {
-                    let (key_id, key) = group_key(request.group());
                     (
                         Rekey::AwaitInstalled(request),
                         Some(Owed::InstallGroup { slot, key_id, key }),
@@ -2697,8 +2774,12 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
         qos,
         supplicant,
         keys,
+        step,
         ..
     } = handshake;
+    let HandshakeStep::AwaitLast(replay) = step else {
+        return leave_keyed(keys, StaDisconnectReason::HandshakeFailed, None);
+    };
     match supplicant.into_connected() {
         Ok(supplicant) => State::Connected(Connected {
             bssid,
@@ -2715,6 +2796,7 @@ fn connect<T: StaTokens, K>(handshake: Handshake<T, K>) -> State<T, K> {
             rsn: Some(ConnectedRsn {
                 supplicant,
                 rekey: Rekey::None,
+                replay,
             }),
             keys,
         }),

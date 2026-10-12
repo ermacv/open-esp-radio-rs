@@ -282,7 +282,7 @@ impl World {
                             .input(now, StaInput::PairwiseKeyInstalled(Key(slot)));
                     }
                     StaAction::InstallGroupKey { slot, key_id, .. } => {
-                        self.seen.push(Seen::InstallGroup(key_id));
+                        self.seen.push(Seen::InstallGroup(key_id.get()));
                         self.station.input(now, StaInput::GroupKeyInstalled(Key(slot)));
                     }
                     StaAction::RemovePairwiseKey(Key(slot)) => {

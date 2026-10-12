@@ -166,7 +166,6 @@ impl Work for Numbering {
         submit(phase, tickets.remove(0), small.remove(0), Some(&key));
         let (ticket, buffer) = completion(phase).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
-            .ok()
             .expect("a protected attempt's buffer comes back numbered");
         // The same MPDU again: a retransmission keeps its number.
         let frame = data_frame(phase, true);
@@ -176,8 +175,7 @@ impl Work for Numbering {
         submit_frame(phase, ticket, frame, Some(&key));
         let (ticket, buffer) = completion(phase).await;
         let numbered = <ModelTypes as TxBufferPool<'id, ModelSmall>>::numbered(buffer)
-            .ok()
-            .unwrap();
+            .expect("a retransmission's buffer comes back numbered");
         // Renewed, the memory holds a new MPDU, numbered anew.
         let renewed = <ModelTypes as TxBufferPool<'id, ModelSmall>>::renew(numbered);
         submit(phase, ticket, renewed, Some(&key));

@@ -22,7 +22,7 @@ access = "read-only"
 
 [[peripherals.registers.register.fields]]
 name = "SIGNED_SIXTEENTH_DB_CODE"
-description = "Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."
+description = "Signed twelve-bit noise-floor measurement in sixteenth-dB units. The complete ROM arithmetic shift produces quarter-dB and libpp[wdev.o]::wDev_GetNoiseFloor applies rounded division by four once more before retaining a signed byte; open rev0 HIL observed -92 dBm."
 bitOffset = 0
 bitWidth = 12
 access = "read-only"

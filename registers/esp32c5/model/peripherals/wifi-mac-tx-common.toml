@@ -21,7 +21,7 @@ bitWidth = 28
 
 [[peripherals.registers.register.fields]]
 name = "PHY_AUX_FORCE"
-description = "Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."
+description = "Complete libphy[phy_reg.o]::phy_disable_cca writes encoding two and complete libphy[phy_reg.o]::phy_enable_cca writes zero in their second fresh-read edge."
 bitOffset = 28
 bitWidth = 2
 
@@ -31,7 +31,7 @@ maximum = 0x3
 
 [[peripherals.registers.register.fields]]
 name = "FORCE"
-description = "Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."
+description = "Value three suppresses CCA while invalidating a timed-out queue. Complete libphy[phy_reg.o]::phy_disable_cca writes encoding two and complete libphy[phy_reg.o]::phy_enable_cca writes zero."
 bitOffset = 30
 bitWidth = 2
 

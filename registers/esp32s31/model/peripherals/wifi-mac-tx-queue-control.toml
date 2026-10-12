@@ -12,7 +12,7 @@ dim = 4
 dimIncrement = 0x10
 dimIndex = "0,1,2,3"
 name = "PROTECTION%s"
-description = "Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."
+description = "Canonical WDEVTXQ_CONF2. Complete dbg_read_txq_conf2 names the three ten-bit lanes TXQ_MIN_MPDU_LEN for CBW20, CBW40 and CBW80, followed by SW_CTS at bit 30 and SW_RTS at bit 31. For HT, complete libpp[hal_mac_tx.o]::mac_tx_set_htsig copies peer state offset 0x82 into all three lanes; complete rcUpdateAMPDUParam derives that value from the HT A-MPDU minimum MPDU start-spacing code. For HE, complete libpp[pp_he.o]::ppCalDeliNum stores the rate/GI/DCM/density-specific minimum subframe byte count at descriptor offset 0x28 and complete libpp[hal_mac_tx.o]::mac_tx_set_hesig copies that halfword into all three lanes. The HE init suffix clears only SW_CTS in this same word, preserving SW_RTS and all three spacing lanes. A coherent hardware-owned vendor HT queue contained 0x0280a028, exactly three copies of negotiated value 40. Open HE20 MCS9 HIL with 16-us density proved value 230: fixed snapshot 0x31 lost all 32 MPDUs, while three copies of 230 received a full first-attempt BlockAck with 43 empty delimiters per non-final subframe. The descriptor-count RMWs target the separate queue-vector word at 0x20105504-q*0x7c."
 addressOffset = 0x0
 size = 32
 access = "read-write"
@@ -109,7 +109,7 @@ maximum = 0xF
 
 [[peripherals.registers.register.fields]]
 name = "SCHEDULER_PRIORITY"
-description = "Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."
+description = "Complete libpp[hal_mac.o]::mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."
 bitOffset = 28
 bitWidth = 4
 
@@ -141,7 +141,7 @@ maximum = 0xFFFFF
 
 [[peripherals.registers.register.fields]]
 name = "BITS_20_21_OPAQUE"
-description = "Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."
+description = "Recovered PLCP0 control image; libpp[hal_mac_tx.o]::mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."
 bitOffset = 20
 bitWidth = 2
 
@@ -151,19 +151,19 @@ maximum = 0x3
 
 [[peripherals.registers.register.fields]]
 name = "BIT_22_OPAQUE"
-description = "Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."
+description = "Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o libpp[hal_mac_tx.o]::mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after libpp[hal_mac_tx.o]::mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."
 bitOffset = 22
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "BIT_23_OPAQUE"
-description = "Recovered PLCP0 control image; mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."
+description = "Recovered PLCP0 control image; libpp[hal_mac_tx.o]::mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."
 bitOffset = 23
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "PLCP_FORMAT"
-description = "Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."
+description = "Three-bit format selector derived by complete libpp[hal_mac_tx.o]::mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, libpp[pp.o]::ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."
 bitOffset = 24
 bitWidth = 3
 

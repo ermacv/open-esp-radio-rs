@@ -65,7 +65,7 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "BF_REPORT_RATE"
-description = "Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order."
+description = "Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete libpp[hal_mac_ctl.o]::hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order."
 addressOffset = 0x41C
 size = 32
 access = "read-write"
@@ -236,7 +236,7 @@ bitWidth = 32
 
 [peripherals.registers.register]
 name = "INTERRUPT_1_CLEAR"
-description = "Complete hal_mac_interrupt_clr_bsscolor sets bit 12 through a fresh-read RMW to acknowledge the secondary BSS-color event."
+description = "Complete libpp[hal_mac_ctl.o]::hal_mac_interrupt_clr_bsscolor sets bit 12 through a fresh-read RMW to acknowledge the secondary BSS-color event."
 addressOffset = 0xBF0
 size = 32
 access = "read-write"

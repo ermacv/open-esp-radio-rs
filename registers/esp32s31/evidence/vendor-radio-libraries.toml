@@ -379,7 +379,7 @@ description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db
 
 [[sources]]
 id = "BLOB_LIBPHY_PHY_FE_REG_UPDATE"
-description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_fe_reg_update size 0x32"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o libphy[phy_reg.o]::phy_fe_reg_update size 0x32"
 
 [[sources]]
 id = "BLOB_LIBPHY_PHY_TXDC_PWDET"
@@ -391,15 +391,15 @@ description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db
 
 [[sources]]
 id = "BLOB_LIBCOEX_PTI_TABLE"
-description = "_oracles/libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; complete coexist_api.o coex_pti_get tail-calls complete coexist_core.o coex_core_pti_get size 0x1e, which bounds-checks only the output pointer and copies coex_pti_tab[event]. The complete 48-byte coex_pti_tab object in coexist_core.o .dram1.2 gives cold defaults event 1 = 5, event 3 = 7, event 10 = 3 and event 15 = 1. These are the only events queried by complete hal_init and hal_set_ofdma_sequence_pti. Runtime coexistence may mutate the table, so the PAC fields do not hardcode these policy values."
+description = "_oracles/libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; complete coexist_api.o coex_pti_get tail-calls complete coexist_core.o libcoexist[coexist_core.o]::coex_core_pti_get size 0x1e, which bounds-checks only the output pointer and copies coex_pti_tab[event]. The complete 48-byte coex_pti_tab object in coexist_core.o .dram1.2 gives cold defaults event 1 = 5, event 3 = 7, event 10 = 3 and event 15 = 1. These are the only events queried by complete hal_init and hal_set_ofdma_sequence_pti. Runtime coexistence may mutate the table, so the PAC fields do not hardcode these policy values."
 
 [[sources]]
 id = "BLOB_LIBCOEX_PHY_GRANT_PROTECT"
-description = "espressif/esp-coex-lib commit c758e7b56e0fa22177a0539796e1df59978dc322, esp32s31/libcoexist.a, sha256 13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147; complete coexist_api.o phy_acquire_grant_protect tail-calls coex_core_request(2, 48, 0, 0) and phy_release_grant_protect tail-calls coex_core_release(2, 48). Complete coexist_core.o coex_core_timer_idx_get accepts events 1 through 48; its 48-byte switch table maps event 48 to timer index 5 and every other event to 0 through 4 or 0xff. The complete coexist_hw.o timer leaves are byte-identical to the earlier archive, so index 5 addresses the sixth 0x10-byte entry at 0x2010f450. The coex_pti_tab object in .dram1.2 is 49 bytes, with event 48 = 15. The strong hooks replace the empty weak phy_acquire_grant_protect/phy_release_grant_protect of the paired esp-phy-lib archive."
+description = "espressif/esp-coex-lib commit c758e7b56e0fa22177a0539796e1df59978dc322, esp32s31/libcoexist.a, sha256 13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147; complete coexist_api.o libcoexist[coexist_api.o]::phy_acquire_grant_protect tail-calls libcoexist[coexist_core.o]::coex_core_request(2, 48, 0, 0) and libcoexist[coexist_api.o]::phy_release_grant_protect tail-calls libcoexist[coexist_core.o]::coex_core_release(2, 48). Complete coexist_core.o libcoexist[coexist_core.o]::coex_core_timer_idx_get accepts events 1 through 48; its 48-byte switch table maps event 48 to timer index 5 and every other event to 0 through 4 or 0xff. The complete coexist_hw.o timer leaves are byte-identical to the earlier archive, so index 5 addresses the sixth 0x10-byte entry at 0x2010f450. The coex_pti_tab object in .dram1.2 is 49 bytes, with event 48 = 15. The strong hooks replace the empty weak libcoexist[coexist_api.o]::phy_acquire_grant_protect/libcoexist[coexist_api.o]::phy_release_grant_protect of the paired esp-phy-lib archive."
 
 [[sources]]
 id = "BLOB_LIBCOEX_HW_TIMER"
-description = "espressif/esp-coex-lib commit c758e7b56e0fa22177a0539796e1df59978dc322, esp32s31/libcoexist.a, sha256 13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147; complete coexist_hw.o coex_hw_timer_set/enable/disable/force/unforce leaves prove the 0x2010f400 + index*0x10 bank, word offsets and ordered RMW masks. Complete coexist_core.o coex_core_timer_idx_get guards event numbers 1 through 48 and its complete 48-byte switch table contains only timer indices 0 through 5 or 0xff; event 48 selects timer 5, the PHY grant-protect request. Complete coex_core_request maps request kinds 0 through 4 to the timer client field through its five-byte table 02 01 00 03 04 and asserts on any larger kind."
+description = "espressif/esp-coex-lib commit c758e7b56e0fa22177a0539796e1df59978dc322, esp32s31/libcoexist.a, sha256 13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147; complete coexist_hw.o libcoexist[coexist_hw.o]::coex_hw_timer_set/enable/disable/force/unforce leaves prove the 0x2010f400 + index*0x10 bank, word offsets and ordered RMW masks. Complete coexist_core.o libcoexist[coexist_core.o]::coex_core_timer_idx_get guards event numbers 1 through 48 and its complete 48-byte switch table contains only timer indices 0 through 5 or 0xff; event 48 selects timer 5, the PHY grant-protect request. Complete libcoexist[coexist_core.o]::coex_core_request maps request kinds 0 through 4 to the timer client field through its five-byte table 02 01 00 03 04 and asserts on any larger kind."
 
 [[sources]]
 id = "BLOB_LIBCOEX_TIMER_CLOCK"
@@ -494,7 +494,7 @@ sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
 
 [[sources]]
 id = "BLOB_LIBPHY_CALIBRATION_20260907"
-description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0, esp32s31/libphy.a, sha256 116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2; Complete phy_txgain_comp_pacfg_new, phy_start_tx_tone_step_new, phy_force_dig_gain, phy_reg_update_new and their caller sequencing in phy_bb_init/phy_rf_init. Gain compensation bytes are 00 fb 03 00. Tone start clears stop before disabling compensation; only disabling both paths sets stop and restores compensation. Post-init AGC preserves FTM. Forced digital gain updates enable bit 16 before bytes 0 and 1 in 0x20100408. phy_rf_init applies phy_fe_reg_update before phy_xtal_duty_cal_init."
+description = "espressif/esp-phy-lib commit 20f1db053a0e6cb9f1c09d255c43bf42483041d0, esp32s31/libphy.a, sha256 116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2; Complete phy_txgain_comp_pacfg_new, phy_start_tx_tone_step_new, phy_force_dig_gain, phy_reg_update_new and their caller sequencing in phy_bb_init/phy_rf_init. Gain compensation bytes are 00 fb 03 00. Tone start clears stop before disabling compensation; only disabling both paths sets stop and restores compensation. Post-init AGC preserves FTM. Forced digital gain updates enable bit 16 before bytes 0 and 1 in 0x20100408. phy_rf_init applies libphy[phy_reg.o]::phy_fe_reg_update before phy_xtal_duty_cal_init."
 
 [[sources]]
 id = "BLOB_LIBPHY_PHY_CLOSE_RF_20260907"

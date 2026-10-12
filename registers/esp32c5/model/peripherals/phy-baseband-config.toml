@@ -11,39 +11,39 @@ baseAddress = 0x600A0000
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "ADC_RATE_AND_FRONT_END_CONTROL"
-description = "Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears."
+description = "Word whose bits 1:0 libphy[phy_i2c.o]::phy_adc_rate_set replaces with its rate bit and whose bits 3:2 libphy[phy_i2c.o]::phy_dac_rate_set clears."
 addressOffset = 0x448
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "BIT_0_OPAQUE"
-description = "Bit 0, set to the ADC rate bit by phy_adc_rate_set."
+description = "Bit 0, set to the ADC rate bit by libphy[phy_i2c.o]::phy_adc_rate_set."
 bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "BIT_1_OPAQUE"
-description = "Bit 1, set to the ADC rate bit by phy_adc_rate_set."
+description = "Bit 1, set to the ADC rate bit by libphy[phy_i2c.o]::phy_adc_rate_set."
 bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "BIT_2_OPAQUE"
-description = "Bit 2, cleared by phy_dac_rate_set."
+description = "Bit 2, cleared by libphy[phy_i2c.o]::phy_dac_rate_set."
 bitOffset = 2
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "BIT_3_OPAQUE"
-description = "Bit 3, cleared by phy_dac_rate_set."
+description = "Bit 3, cleared by libphy[phy_i2c.o]::phy_dac_rate_set."
 bitOffset = 3
 bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "FE_CLOCK_GATE"
-description = "Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7."
+description = "Front-end clock-gate word; libphy[phy_init.o]::phy_open_fe_bb_clk writes 0x1E7."
 addressOffset = 0x400
 size = 32
 access = "read-write"
@@ -57,7 +57,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "TABLE_MEMORY_INDEX_SOURCE"
-description = "Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4."
+description = "Word whose bits 31:24 libphy[phy_reg.o]::phy_fe_reg_init replaces with 0xB4."
 addressOffset = 0x408
 size = 32
 access = "read-write"
@@ -71,7 +71,7 @@ bitWidth = 8
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "FRONT_END_AND_TONE_STOP_CONTROL"
-description = "Word whose bit 2 phy_fe_reg_init sets."
+description = "Word whose bit 2 libphy[phy_reg.o]::phy_fe_reg_init sets."
 addressOffset = 0x40c
 size = 32
 access = "read-write"
@@ -99,7 +99,7 @@ bitWidth = 2
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IQ_CORRECTION_CONTROL"
-description = "Word whose bits 31:29 phy_fe_reg_init sets."
+description = "Word whose bits 31:29 libphy[phy_reg.o]::phy_fe_reg_init sets."
 addressOffset = 0x438
 size = 32
 access = "read-write"
@@ -125,7 +125,7 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "RX_IQ_SCALE"
-description = "Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces."
+description = "Word whose bits 15:8 and 7:0 libphy[phy_reg.o]::phy_fe_reg_init clears and phy_rxiq_scale_set replaces."
 addressOffset = 0x43c
 size = 32
 access = "read-write"
@@ -145,7 +145,7 @@ bitWidth = 8
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "FRONT_END_CLEAR_CONTROL"
-description = "Word whose bit 8 phy_fe_reg_init clears."
+description = "Word whose bit 8 libphy[phy_reg.o]::phy_fe_reg_init clears."
 addressOffset = 0x444
 size = 32
 access = "read-write"
@@ -159,7 +159,7 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "FE_BB_CLOCK_CONTROL"
-description = "Word whose bits 1:0 phy_open_fe_bb_clk sets."
+description = "Word whose bits 1:0 libphy[phy_init.o]::phy_open_fe_bb_clk sets."
 addressOffset = 0x800
 size = 32
 access = "read-write"
@@ -180,13 +180,13 @@ access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "BITS_4_11_OPAQUE"
-description = "Byte phy_pwdet_reg_init replaces with 0x50."
+description = "Byte libphy[phy_pwdet.o]::phy_pwdet_reg_init replaces with 0x50."
 bitOffset = 4
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
 name = "BITS_20_22_OPAQUE"
-description = "Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."
+description = "Three-bit mode libphy[phy_pwdet.o]::phy_pwdet_reg_init sets to 2 and libphy[phy_pwdet.o]::phy_pwdet_sar2_init to 6."
 bitOffset = 20
 bitWidth = 3
 
@@ -200,20 +200,20 @@ access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "BIT_9_OPAQUE"
-description = "Bit phy_pwdet_sar2_init clears."
+description = "Bit libphy[phy_pwdet.o]::phy_pwdet_sar2_init clears."
 bitOffset = 9
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "BITS_12_13_OPAQUE"
-description = "Two bits phy_pwdet_sar2_init sets."
+description = "Two bits libphy[phy_pwdet.o]::phy_pwdet_sar2_init sets."
 bitOffset = 12
 bitWidth = 2
 
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "WORD_0810_OPAQUE"
-description = "Word phy_pwdet_reg_init writes 0x0F0F0FFF."
+description = "Word libphy[phy_pwdet.o]::phy_pwdet_reg_init writes 0x0F0F0FFF."
 addressOffset = 0x810
 size = 32
 access = "read-write"
@@ -227,7 +227,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "WORD_0814_OPAQUE"
-description = "Word phy_pwdet_reg_init writes 0x00FF0F64."
+description = "Word libphy[phy_pwdet.o]::phy_pwdet_reg_init writes 0x00FF0F64."
 addressOffset = 0x814
 size = 32
 access = "read-write"
@@ -241,7 +241,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "POWER_DETECTOR_REFERENCE"
-description = "Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA."
+description = "Word libphy[phy_pwdet.o]::phy_pwdet_reg_init and libphy[phy_pwdet.o]::phy_pwdet_sar2_init write 0xAAAA."
 addressOffset = 0x818
 size = 32
 access = "read-write"
@@ -255,7 +255,7 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "TX_PA_CONTROL_1"
-description = "Word whose bits 15:8 phy_fe_reg_init replaces with 0x96."
+description = "Word whose bits 15:8 libphy[phy_reg.o]::phy_fe_reg_init replaces with 0x96."
 addressOffset = 0x870
 size = 32
 access = "read-write"
@@ -269,21 +269,21 @@ bitWidth = 8
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "WORD_0888_OPAQUE"
-description = "Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."
+description = "Word whose bit 29 libphy[phy_reg.o]::phy_fe_reg_init sets when phy_param byte 0x2A (set for a channel of at least 3001 MHz) is set and clears otherwise."
 addressOffset = 0x888
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "BIT_29_OPAQUE"
-description = "Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."
+description = "Band-dependent bit that libphy[phy_reg.o]::phy_fe_reg_init sets in the 5 GHz band; meaning unknown."
 bitOffset = 29
 bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "WORD_0894_OPAQUE"
-description = "Word whose bit 22 phy_fe_reg_init sets."
+description = "Word whose bit 22 libphy[phy_reg.o]::phy_fe_reg_init sets."
 addressOffset = 0x894
 size = 32
 access = "read-write"
@@ -337,7 +337,7 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "IQ_CORRECTION_AUX"
-description = "Word whose bits 14:13 phy_fe_reg_init sets."
+description = "Word whose bits 14:13 libphy[phy_reg.o]::phy_fe_reg_init sets."
 addressOffset = 0xc0c
 size = 32
 access = "read-write"
@@ -357,7 +357,7 @@ bitWidth = 1
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "WORD_0C20_OPAQUE"
-description = "Word whose bits 7:0 phy_fe_reg_init replaces with 0x57."
+description = "Word whose bits 7:0 libphy[phy_reg.o]::phy_fe_reg_init replaces with 0x57."
 addressOffset = 0xc20
 size = 32
 access = "read-write"
@@ -371,7 +371,7 @@ bitWidth = 8
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "BB_CLOCK_GATE"
-description = "Baseband clock-gate word; phy_open_fe_bb_clk writes all ones."
+description = "Baseband clock-gate word; libphy[phy_init.o]::phy_open_fe_bb_clk writes all ones."
 addressOffset = 0x7c80
 size = 32
 access = "read-write"

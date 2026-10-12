@@ -165,7 +165,7 @@ resetValue = 0x00000004
 
 [[peripherals.registers.register.fields]]
 name = "PHY_HOST_MAP"
-description = "Host-selection field that phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."
+description = "Host-selection field that libphy[phy_i2c.o]::phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."
 bitOffset = 4
 bitWidth = 13
 

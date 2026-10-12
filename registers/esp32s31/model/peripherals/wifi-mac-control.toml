@@ -9,7 +9,7 @@ baseAddress = 0x20104CAC
 
 [peripherals.registers.register]
 name = "CONTROL"
-description = "Cold promiscuous initialization writes zero. hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask."
+description = "Cold promiscuous initialization writes zero. libpp[hal_mac.o]::hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask."
 addressOffset = 0x0
 size = 32
 access = "read-write"
@@ -27,14 +27,14 @@ bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "ACTIVE_STATE"
-description = "Three-bit activity state polled until zero before PHY retuning. hal_mac_deinit independently records bit 13 as TX active and bit 14 as RX active; bit 15 remains unnamed."
+description = "Three-bit activity state polled until zero before PHY retuning. libpp[hal_mac.o]::hal_mac_deinit independently records bit 13 as TX active and bit 14 as RX active; bit 15 remains unnamed."
 bitOffset = 13
 bitWidth = 3
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
 name = "TX_BLOCK_STOP_REQUEST_LOW"
-description = "Bit 16 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."
+description = "Bit 16 of the eight stop-request bits libpp[hal_mac.o]::hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."
 bitOffset = 16
 bitWidth = 1
 
@@ -63,7 +63,7 @@ value = 7
 
 [[peripherals.registers.register.fields]]
 name = "TX_BLOCK_STOP_REQUEST_HIGH"
-description = "Bits 23:20 of the eight stop-request bits hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."
+description = "Bits 23:20 of the eight stop-request bits libpp[hal_mac.o]::hal_mac_deinit sets and hal_mac_init clears with the WIFI_PS_NONE retention mask."
 bitOffset = 20
 bitWidth = 4
 

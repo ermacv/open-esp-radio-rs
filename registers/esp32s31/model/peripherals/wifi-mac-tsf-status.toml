@@ -23,7 +23,7 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "WAKEUP_SIGNAL_CLEAR"
-description = "Complete pm_clear_wakeup_signal sets bit zero before invoking two externally supplied synchronization callbacks; hardware clear behavior remains unknown."
+description = "Complete libpp[pm.o]::pm_clear_wakeup_signal sets bit zero before invoking two externally supplied synchronization callbacks; hardware clear behavior remains unknown."
 addressOffset = 0x4
 size = 32
 access = "read-write"

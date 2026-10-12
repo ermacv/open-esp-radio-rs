@@ -4,11 +4,11 @@ schema = 2
 name = "WIFI_MAC_LOCAL_TIME"
 description = """
 Free-running Wi-Fi MAC local-time counter, read-only and without read side
-        effects. Complete lmacAdjustTimestamp subtracts the receive timestamp
+        effects. Complete libpp[lmac.o]::lmacAdjustTimestamp subtracts the receive timestamp
         a received frame carries from this word as the frame's age and, while
         the station slept, rewrites that timestamp as this word minus a
-        TU-scaled sleep interval; pm_twt_set_target_wdev_time,
-        pm_get_null_max_tx_time and pm_coex_recalculate_wifi_time_slice read
+        TU-scaled sleep interval; libpp[pm_twt.o]::pm_twt_set_target_wdev_time,
+        libpp[pm_coex.o]::pm_get_null_max_tx_time and libpp[pm_coex.o]::pm_coex_recalculate_wifi_time_slice read
         it as the MAC's current time. The PHY SDM deadline samples the same
         word. Its unit and rate against the system timer are not
         established."""

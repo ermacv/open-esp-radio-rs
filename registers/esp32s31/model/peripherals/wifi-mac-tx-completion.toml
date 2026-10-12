@@ -12,26 +12,26 @@ dim = 4
 dimIncrement = 0x7C
 dimIndex = "0,1,2,3"
 name = "PRIMARY%s"
-description = "Primary completion/status word. Complete hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete lmacProcessTxSuccess stores that byte as encoded ACK SNR."
+description = "Primary completion/status word. Complete libpp[hal_mac_tx.o]::hal_mac_get_txq_complete copies bits 23:16 to result byte two independently of the primary/alternate status selector; complete libpp[lmac.o]::lmacProcessTxSuccess stores that byte as encoded ACK SNR."
 addressOffset = 0x18
 size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
 name = "DETAIL"
-description = "Low completion detail byte passed by complete lmacProcessTxComplete to the status-one/status-four secondary dispatchers when PRIMARY is selected."
+description = "Low completion detail byte passed by complete libpp[lmac.o]::lmacProcessTxComplete to the status-one/status-four secondary dispatchers when PRIMARY is selected."
 bitOffset = 0
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
 name = "STATUS"
-description = "Four-bit top-level completion status selected by complete hal_mac_get_txq_complete and dispatched by complete lmacProcessTxComplete."
+description = "Four-bit top-level completion status selected by complete libpp[hal_mac_tx.o]::hal_mac_get_txq_complete and dispatched by complete libpp[lmac.o]::lmacProcessTxComplete."
 bitOffset = 12
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
 name = "ACK_SNR_ENCODED"
-description = "Complete hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before rcUpdateAckSnr. This field is meaningful only for a successful completion."
+description = "Complete libpp[hal_mac_tx.o]::hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete libpp[lmac.o]::lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete libpp[trc.o]::rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before libpp[trc.o]::rcUpdateAckSnr. This field is meaningful only for a successful completion."
 bitOffset = 16
 bitWidth = 8
 
@@ -73,7 +73,7 @@ access = "read-only"
 
 [[peripherals.registers.register.fields]]
 name = "SECONDARY_TRIGGER_BASED_PACKET_COUNT"
-description = "Complete hal_mac_get_txq_complete contributes AUX_C bits 13:7 to reconstructed extension word one; complete lmacProcessTxComplete shifts that image right by two before storing the seven-bit secondary Trigger-based packet count."
+description = "Complete libpp[hal_mac_tx.o]::hal_mac_get_txq_complete contributes AUX_C bits 13:7 to reconstructed extension word one; complete libpp[lmac.o]::lmacProcessTxComplete shifts that image right by two before storing the seven-bit secondary Trigger-based packet count."
 bitOffset = 7
 bitWidth = 7
 

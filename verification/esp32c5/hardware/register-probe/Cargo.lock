@@ -1020,6 +1020,7 @@ dependencies = [
 name = "oer-ieee802154"
 version = "0.1.0"
 dependencies = [
+ "oer-ieee802154-port",
  "oer-radio-port",
  "oer-time",
 ]
@@ -1027,6 +1028,14 @@ dependencies = [
 [[package]]
 name = "oer-ieee802154-pac"
 version = "0.1.0"
+
+[[package]]
+name = "oer-ieee802154-port"
+version = "0.1.0"
+dependencies = [
+ "oer-radio-port",
+ "oer-time",
+]
 
 [[package]]
 name = "oer-ieee802154-trace"

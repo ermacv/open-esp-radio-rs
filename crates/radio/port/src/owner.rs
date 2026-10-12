@@ -85,11 +85,13 @@
 //!
 //! A resource that outlives a phase (an installed key, an agreement, a
 //! configured interface) has its token kept by the owner and lent into each
-//! phase. Admitted work and the permits and leases it holds are
-//! phase-scoped: [`Work`] borrows its client. A submission consumes a
-//! permit (a transmit slot, a terminal-event cell) and its terminal returns
-//! it, so no queue overflows and no terminal is lost; only unsolicited
-//! reception may lose events. A `'static` sans-IO core holds no
+//! phase. Admitted work is phase-scoped: [`Work`] borrows its client. The
+//! pools of the permits work holds (a transmit slot, a terminal-event cell)
+//! live in the backend's held part of the install, which outlives every
+//! phase: a submission moves its permit into the backend, which gives it
+//! back to its pool when the work ends and before it hands the terminal
+//! out, so no queue overflows, no terminal is lost and no caller holds the
+//! permit of submitted work; only unsolicited reception may lose events. A `'static` sans-IO core holds no
 //! phase-scoped token: the phase keeps a boundary table from the core's own
 //! identity to the token, which carries out the core's decisions.
 //!
@@ -364,21 +366,30 @@ pub trait PortBackend: Sized {
     /// The phase's one event consumer.
     type Events<'a, 'id>: RadioPortEvents<Event = Self::Event, Fault = Self::Fault>
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
     /// The phase control: the radio-wide operations that only gate or tune
     /// admission while clients run, as guards on its sub-resources; each
     /// guard proves only its own state (a closed transmit gate proves this
     /// port publishes nothing, `TxGated`, not that the air is quiet).
     type Control<'a, 'id>
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
     /// The protocol's client handles, one per configured interface.
     type Clients<'a, 'id>
     where
-        Self: 'a;
+        Self: 'a,
+        'id: 'a;
     /// The port-lifetime resources the body receives once with its owner:
     /// slot pools and permit pools, minted through [`Mint`].
     type Resources<'id>;
+    /// The port-lifetime part of the install the backend keeps: the owner
+    /// holds it beside the backend and lends it into each phase and
+    /// disable, so the backend's own state of the install may carry the
+    /// brand (the pools of the permits its work holds, which it gives back
+    /// before it hands a terminal event out). `()` when it keeps none.
+    type Held<'id>;
     /// What the uninstall takes beside the backend (the composition's
     /// control).
     type Uninstall;
@@ -388,22 +399,26 @@ pub trait PortBackend: Sized {
     /// Enable the disabled port, within the backend's bound.
     fn enable(&mut self) -> impl Future<Output = EnableResult<Self::Refusal, Self::Fault>> + '_;
 
-    /// Disable the enabled port within the backend's bound: end every
-    /// admitted work, hand its terminal event with what it returns to
-    /// `sink`, and return when every permit is back.
-    fn disable<'a>(
+    /// Disable the enabled port of the install `'id` within the backend's
+    /// bound: end every admitted work, hand its terminal event with what it
+    /// returns to `sink`, and return when every permit is back in `held`.
+    fn disable<'a, 'id>(
         &'a mut self,
+        held: &'a Self::Held<'id>,
         sink: &'a mut dyn FnMut(Self::Event),
-    ) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>> + 'a;
+    ) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>> + 'a
+    where
+        'id: 'a;
 
     /// The radio clock.
     fn now(
         &self,
     ) -> impl Future<Output = PortResult<RadioInstant<Self::Domain>, ClockError, Self::Fault>> + '_;
 
-    /// The port-lifetime resources of the install `'id`, minted with
-    /// `mint`; [`run_port`] calls it once.
-    fn resources<'id>(&mut self, mint: Mint<'id>) -> Self::Resources<'id>;
+    /// The port-lifetime part the backend keeps and the resources the body
+    /// receives of the install `'id`, minted with `mint`; [`run_port`] calls
+    /// it once.
+    fn resources<'id>(&mut self, mint: Mint<'id>) -> (Self::Held<'id>, Self::Resources<'id>);
 
     /// Lend the disabled-only settings of the install `'id`. An
     /// implementation names the associated types with both lifetimes
@@ -411,11 +426,15 @@ pub trait PortBackend: Sized {
     /// parameter of the method.
     fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>>;
 
-    /// Lend one running phase of the enabled port of the install `'id`.
+    /// Lend one running phase of the enabled port of the install `'id`,
+    /// over the part of the install it keeps.
     #[allow(clippy::type_complexity, reason = "the phase's three parts")]
     fn split<'a, 'id>(
         &'a mut self,
-    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>;
+        held: &'a Self::Held<'id>,
+    ) -> PhaseParts<'a, Self::Events<'a, 'id>, Self::Control<'a, 'id>, Self::Clients<'a, 'id>>
+    where
+        'id: 'a;
 
     /// Take the disabled or poisoned backend apart with the composition's
     /// `control`.
@@ -452,8 +471,10 @@ pub async fn run_port<B: PortBackend>(
     mut backend: B,
     body: impl PortBody<B>,
 ) -> Option<B::Uninstalled> {
-    let resources = backend.resources(crate::pool::Mint::new());
-    body.run(Owner::new(backend), resources).await.uninstalled
+    let (held, resources) = backend.resources(crate::pool::Mint::new());
+    body.run(Owner::new(backend, held), resources)
+        .await
+        .uninstalled
 }
 
 /// How a port's body ended: its hardware owners, after an uninstall, or
@@ -465,28 +486,23 @@ pub struct Ended<'id, B: PortBackend> {
     brand: Brand<'id>,
 }
 
-impl<'id, B: PortBackend> Ended<'id, B> {
-    /// The hardware owners an uninstall returned, or `None` after a
-    /// fail-stop.
-    pub fn into_uninstalled(self) -> Option<B::Uninstalled> {
-        self.uninstalled
-    }
-}
-
 /// The one authority over an installed port, in state `S`; see the
 /// [module](self) documentation.
 #[must_use = "an owner leaves only through a transition, an uninstall or a fail-stop"]
 pub struct Owner<'id, B: PortBackend, S> {
     /// `None` only once a consuming method took it.
     backend: Option<B>,
+    /// The part of the install the backend keeps; `None` with the backend.
+    held: Option<B::Held<'id>>,
     brand: Brand<'id>,
     state: PhantomData<S>,
 }
 
 impl<'id, B: PortBackend, S> Owner<'id, B, S> {
-    fn new(backend: B) -> Self {
+    fn new(backend: B, held: B::Held<'id>) -> Self {
         Self {
             backend: Some(backend),
+            held: Some(held),
             brand: PhantomData,
             state: PhantomData,
         }
@@ -496,8 +512,19 @@ impl<'id, B: PortBackend, S> Owner<'id, B, S> {
         self.backend.as_mut().expect(HELD)
     }
 
-    fn take(mut self) -> B {
-        self.backend.take().expect(HELD)
+    /// The backend and the part of the install it keeps, borrowed apart.
+    fn parts(&mut self) -> (&mut B, &B::Held<'id>) {
+        (
+            self.backend.as_mut().expect(HELD),
+            self.held.as_ref().expect(HELD),
+        )
+    }
+
+    fn take(mut self) -> (B, B::Held<'id>) {
+        (
+            self.backend.take().expect(HELD),
+            self.held.take().expect(HELD),
+        )
     }
 
     /// The radio clock.
@@ -510,7 +537,7 @@ impl<'id, B: PortBackend, S> Owner<'id, B, S> {
     /// Stop the backend at once and end the port without its uninstall:
     /// the hardware stays installed and unreachable until a reset.
     pub fn fail_stop(self) -> Ended<'id, B> {
-        self.take().abandon();
+        self.take().0.abandon();
         Ended {
             uninstalled: None,
             brand: PhantomData,
@@ -533,10 +560,10 @@ impl<'id, B: PortBackend> Owner<'id, B, Disabled> {
         // The owner holds the backend across the wait, so a dropped future
         // drops the owner and its safety net runs.
         let enabled = self.backend().enable().await;
-        let backend = self.take();
+        let (backend, held) = self.take();
         match enabled {
-            Ok(Ok(())) => Ok(Owner::new(backend)),
-            Ok(Err(refusal)) => Err(Failed::Refused(Owner::new(backend), refusal)),
+            Ok(Ok(())) => Ok(Owner::new(backend, held)),
+            Ok(Err(refusal)) => Err(Failed::Refused(Owner::new(backend, held), refusal)),
             Err(poisoned) => Err(Failed::Poisoned(PoisonedOwner::new(backend, poisoned))),
         }
     }
@@ -544,7 +571,7 @@ impl<'id, B: PortBackend> Owner<'id, B, Disabled> {
     /// Take the disabled backend apart with the composition's `control`.
     pub fn uninstall(self, control: B::Uninstall) -> Ended<'id, B> {
         Ended {
-            uninstalled: Some(self.take().uninstall(control)),
+            uninstalled: Some(self.take().0.uninstall(control)),
             brand: PhantomData,
         }
     }
@@ -557,7 +584,8 @@ impl<'id, B: PortBackend> Owner<'id, B, Enabled> {
     pub fn split(
         &mut self,
     ) -> PhaseParts<'_, B::Events<'_, 'id>, B::Control<'_, 'id>, B::Clients<'_, 'id>> {
-        self.backend().split()
+        let (backend, held) = self.parts();
+        backend.split(held)
     }
 
     /// Disable the port within the backend's bound: every leftover terminal
@@ -572,10 +600,13 @@ impl<'id, B: PortBackend> Owner<'id, B, Enabled> {
         sink: &mut dyn FnMut(B::Event),
     ) -> Result<Owner<'id, B, Disabled>, PoisonedOwner<'id, B>> {
         // The owner holds the backend across the wait, as `enable`'s does.
-        let disabled = self.backend().disable(sink).await;
-        let backend = self.take();
+        let disabled = {
+            let (backend, held) = self.parts();
+            backend.disable(held, sink).await
+        };
+        let (backend, held) = self.take();
         match disabled {
-            Ok(()) => Ok(Owner::new(backend)),
+            Ok(()) => Ok(Owner::new(backend, held)),
             Err(poisoned) => Err(PoisonedOwner::new(backend, poisoned)),
         }
     }

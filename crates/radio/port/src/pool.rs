@@ -16,9 +16,11 @@
 //!   slot back.
 //! - A **permit** ([`Permit`]) is awaited: a [`PermitPool`] holds a fixed
 //!   number, and taking one waits while all are held, never refused. A
-//!   submission moves its permit into the work, and the work's terminal
-//!   event carries it back, released when the air finished, not when a
-//!   handle drops; a cancel is only a request. In which order waiting
+//!   submission moves its permit into the backend, which keeps the pool in
+//!   its held part of the install (`PortBackend::Held`) and takes the
+//!   permit back when the work ends, before it hands the terminal event
+//!   out: released when the air finished, not when a handle drops, and
+//!   never lost with an event dropped unread; a cancel is only a request. In which order waiting
 //!   takers are served is the pool's documented policy (first in, first out
 //!   by default), which the conformance suite checks.
 //!
@@ -188,7 +190,8 @@ impl<Kind> Slot<'_, Kind> {
 }
 
 /// One permit of a pool of the kind `Kind`: one unit of capacity a piece of
-/// work holds until its terminal event carries it back.
+/// work holds until it ends; the backend that keeps the pool gives it back
+/// before it hands the work's terminal out.
 #[must_use = "a permit goes back to its pool through `PermitPool::release`"]
 pub struct Permit<'id, Kind> {
     index: u8,
@@ -213,7 +216,9 @@ pub trait PermitPool<'id, Kind> {
     /// Dropping the future gives up its place.
     fn take(&self) -> impl Future<Output = Permit<'id, Kind>> + '_;
 
-    /// Give a permit back, when the terminal event of the work that held it
-    /// arrived; the next waiting taker resumes.
+    /// Give a permit back: the backend that keeps the pool calls it when the
+    /// work that held the permit ended, before it hands the terminal out,
+    /// or when a taker drops a permit it never submitted; the next waiting
+    /// taker resumes.
     fn release(&self, permit: Permit<'id, Kind>);
 }

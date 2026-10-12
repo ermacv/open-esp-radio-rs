@@ -21,6 +21,7 @@ pub mod memory_benchmark;
 pub mod network;
 pub mod postmortem;
 pub mod profile;
+pub mod sample_request;
 #[cfg(feature = "wifi")]
 pub mod traffic;
 

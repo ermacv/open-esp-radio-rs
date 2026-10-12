@@ -2,9 +2,10 @@
 //!
 //! SYSTIMER alarm 1 interrupts core 0 at the highest priority every armed
 //! period. Its handler records the instruction core 0 was interrupted at
-//! (`mepc`) and the interrupted code's return address, then raises the
-//! profiler's FROM_CPU line, whose handler bound on core 1 records core 1's
-//! pair the same way. Samples cover interrupt handlers of lower priority,
+//! (`mepc`) and the interrupted code's return address, then requests core
+//! 1's sample (FROM_CPU line 2, shared with the hang watchdog; see
+//! `software_interrupt`), whose handler bound on core 1 records core 1's pair
+//! the same way. Samples cover interrupt handlers of lower priority,
 //! executor tasks and the idle wait alike, so the profile divides each hart's
 //! whole time, not only task polls.
 //!
@@ -76,15 +77,6 @@ pub(crate) fn init(alarm: Alarm<'static>, token: crate::ProfileSample) {
         panic!("profile alarm: {error:?}");
     }
     critical_section::with(|cs| TIMER.borrow_ref_mut(cs).replace(periodic));
-}
-
-/// Enable the core 1 sampling interrupt; call on core 1 before its executor
-/// enables interrupts. `token` is its source's, whose table entry names
-/// [`sample_core1`] on core 1.
-pub(crate) fn enable_core1_sampler(token: crate::ProfileCore1Sample) {
-    if let Err(error) = oer_espressif_interrupt_table_esp_hal::enable(&token) {
-        panic!("profile core 1 sampler: {error:?}");
-    }
 }
 
 /// Serve one host profile command.
@@ -162,17 +154,15 @@ pub(crate) fn sample_core0() {
     });
     record(0);
     if PROFILER.samples_wanted(1) {
-        crate::software_interrupt::profiler().raise();
+        crate::software_interrupt::request_core1_sample(
+            oer_hil_agent::sample_request::Requester::Profiler,
+        );
     }
 }
 
-/// An interrupt-table handler of the image.
-#[allow(
-    unsafe_code,
-    reason = "an interrupt handler runs from SRAM, which only a link section selects"
-)]
-#[unsafe(link_section = ".rwtext.open_radio_irq")]
-pub(crate) fn sample_core1() {
-    crate::software_interrupt::profiler().reset();
+/// Record core 1's sample for the profiler's request; called by core 1's
+/// sample handler (`software_interrupt::sample_core1`).
+#[inline(always)]
+pub(crate) fn record_core1() {
     record(1);
 }

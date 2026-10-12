@@ -4,13 +4,14 @@
 depend on the chip: transport workload pieces, memory-benchmark data
 conditioning, console serialization, network-boundary counters and IPv4
 policy, the reset-retained post-mortem record, task liveness slots for the
-hang watchdog, the platform's own trace events and the secure-GATT evidence. The [esp32s31 HIL agent](../targets/esp32s31/README.md) composes these
+hang watchdog, the request flags that let the hang watchdog and the
+profiler share one cross-hart sample line, the platform's own trace events and the secure-GATT evidence. The [esp32s31 HIL agent](../targets/esp32s31/README.md) composes these
 modules with its radio, executor and console. Host tests exercise the same
 compiled code the firmware links.
 
 | Feature | Modules |
 | --- | --- |
-| none | `console`, `liveness`, `postmortem`, `profile`, `trace` |
+| none | `console`, `liveness`, `postmortem`, `profile`, `sample_request`, `trace` |
 | `wifi` (default) | `network::progress`, `traffic` |
 | `system` (default) | `memory_benchmark` |
 | `secure-gatt` | `bluetooth_gatt::secure`, with the protocol's `bluetooth` family |

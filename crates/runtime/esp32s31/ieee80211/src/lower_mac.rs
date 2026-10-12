@@ -38,6 +38,7 @@
 //! 2026-10-12). Beside the base contract the backend serves A-MPDU
 //! aggregates, the station's beacon timing and monitor reception.
 
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 use core::{
     cell::{Cell, RefCell},
     convert::Infallible,
@@ -70,8 +71,7 @@ use oer_esp32s31_ieee80211_mac::{
 };
 use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointClient, AckHeader, AmpduClient, AmpduRate, AttemptKey, Backoff,
-    BeaconTimingClient, BssColor, CancelError, Ccmp128Key, ClockError, EventsLost, GroupKeyId,
-    Ieee80211Capabilities, Ieee80211Instant, Ieee80211Radio, IndividualAddress, InterfaceRole,
+    BeaconTimingClient, BssColor, CancelError, Ccmp128Key, ClockError, EventsLost, Ieee80211Capabilities, Ieee80211Instant, Ieee80211Radio, IndividualAddress, InterfaceRole,
     KeyHandle, LifecycleEvent, LowerMacBackend, LowerMacCapabilities, LowerMacClient,
     LowerMacControl, LowerMacEvent, LowerMacEvents, LowerMacSetting, LowerMacSetup, MacAddress,
     MonitorControl, PhaseAmpdu, PhaseAmpduBuffer, PhaseAttempt, Poisoned, PortResult,

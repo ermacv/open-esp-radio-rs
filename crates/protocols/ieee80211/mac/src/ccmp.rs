@@ -15,8 +15,7 @@ use core::num::NonZeroU8;
 mod replay;
 
 pub use replay::{
-    CcmpGroupReplayReplacement, CcmpRxProtection, CcmpRxReplayEpoch, CcmpRxReplayEpochCandidate,
-    CcmpRxReplayError,
+    CcmpRxProtection, CcmpRxReplayEpoch, CcmpRxReplayEpochCandidate, CcmpRxReplayError,
 };
 
 pub const CCMP_HEADER_LEN: usize = 8;
@@ -93,6 +92,42 @@ impl CcmpKeyId {
 
     pub const fn header_bits(self) -> u8 {
         self.0 << 6
+    }
+}
+
+/// The identifier of a group key, 1 to 3: in WPA2 key id 0 is the
+/// pairwise key's (IEEE 802.11-2020 12.7.2), and a backend may place group
+/// keys by their id (on ESP32-S31 an access point's group key `n` takes
+/// key-table entry `1 + n`, so an id 0 would take the station's entry 1).
+///
+/// ```
+/// # use oer_ieee80211_mac::ccmp::GroupKeyId;
+/// assert!(GroupKeyId::new(0).is_none());
+/// assert_eq!(GroupKeyId::new(1).map(GroupKeyId::get), Some(1));
+/// assert_eq!(GroupKeyId::new(3).map(GroupKeyId::get), Some(3));
+/// assert!(GroupKeyId::new(4).is_none());
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GroupKeyId(u8);
+
+impl GroupKeyId {
+    /// `key_id`, when it is 1 to 3.
+    pub const fn new(key_id: u8) -> Option<Self> {
+        if matches!(key_id, 1..=3) {
+            Some(Self(key_id))
+        } else {
+            None
+        }
+    }
+
+    /// The identifier.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+
+    /// The identifier, as a CCMP header names it.
+    pub const fn key_id(self) -> CcmpKeyId {
+        CcmpKeyId(self.0)
     }
 }
 

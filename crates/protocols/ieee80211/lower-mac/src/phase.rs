@@ -216,16 +216,16 @@
 //! [owner decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6128926225
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 use oer_ieee80211_port::PortPhase;
 use oer_radio_port::{Poisoned, Slot};
 
 use crate::{
     Channel, PhyRate, Protection, RxMeta, TbttEvent, TxCompletion, VifRole,
     owner::{
-        AccessPoint, BssColor, Ccmp128Key, GroupKeyId, Ieee80211Capabilities, IndividualAddress,
-        InterfaceRole, PhaseRate, Station, StationReceive, SupportedBlockAck,
-        SupportedCoex, SupportedEdca, SupportedFilter, SupportedNoAck, SupportedPower,
-        TxFrame,
+        AccessPoint, BssColor, Ccmp128Key, Ieee80211Capabilities, IndividualAddress, InterfaceRole,
+        PhaseRate, Station, StationReceive, SupportedBlockAck, SupportedCoex, SupportedEdca,
+        SupportedFilter, SupportedNoAck, SupportedPower, TxFrame,
     },
 };
 
@@ -559,7 +559,10 @@ pub trait InterfacePhase<'p, 'id: 'p> {
     /// Remove `key`: an attempt that uses it and that the closed gate holds
     /// ends as aborted at once, a published one is waited for, and
     /// [`LowerMacEvent::KeyRemoved`] gives its slot back.
-    fn remove_pairwise_key(&mut self, key: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseKey);
+    fn remove_pairwise_key(
+        &mut self,
+        key: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::PairwiseKey,
+    );
 
     /// Remove `key`, as [`Self::remove_pairwise_key`].
     fn remove_group_key(&mut self, key: <InterfaceKeys<'p, 'id, Self> as KeyTypes<'id>>::GroupKey);
@@ -585,7 +588,10 @@ pub trait InterfacePhase<'p, 'id: 'p> {
 
     /// End `agreement`, giving its slot back.
     #[must_use = "an ended agreement's slot is capacity; dropping it loses it until the next install"]
-    fn remove_block_ack(&mut self, agreement: <Self::Types as PhaseTypes<'id>>::BlockAck) -> Slot<'id, <Self::Types as PhaseTypes<'id>>::BlockAckKind>;
+    fn remove_block_ack(
+        &mut self,
+        agreement: <Self::Types as PhaseTypes<'id>>::BlockAck,
+    ) -> Slot<'id, <Self::Types as PhaseTypes<'id>>::BlockAckKind>;
 }
 
 /// The station interface of a running phase.
@@ -763,4 +769,3 @@ impl<R> RetryPlan<R> {
             .sum()
     }
 }
-

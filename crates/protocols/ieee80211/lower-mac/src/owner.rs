@@ -337,37 +337,6 @@ impl<K> Clone for StationReceive<K> {
 
 impl<K> Copy for StationReceive<K> {}
 
-/// The identifier of a group key, 1 to 3: in WPA2 key id 0 is the
-/// pairwise key's (IEEE 802.11-2020 12.7.2), and a backend may place group
-/// keys by their id (on ESP32-S31 an access point's group key `n` takes
-/// key-table entry `1 + n`, so an id 0 would take the station's entry 1).
-///
-/// ```
-/// # use oer_ieee80211_lower_mac::GroupKeyId;
-/// assert!(GroupKeyId::new(0).is_none());
-/// assert_eq!(GroupKeyId::new(1).map(GroupKeyId::get), Some(1));
-/// assert_eq!(GroupKeyId::new(3).map(GroupKeyId::get), Some(3));
-/// assert!(GroupKeyId::new(4).is_none());
-/// ```
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct GroupKeyId(u8);
-
-impl GroupKeyId {
-    /// `key_id`, when it is 1 to 3.
-    pub const fn new(key_id: u8) -> Option<Self> {
-        if matches!(key_id, 1..=3) {
-            Some(Self(key_id))
-        } else {
-            None
-        }
-    }
-
-    /// The identifier.
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
-
 /// A backoff `K` counts down.
 #[derive(Debug)]
 pub struct SupportedBackoff<K> {
@@ -1114,8 +1083,8 @@ pub trait AddressSetup: LowerMacSetup {
 mod extensions;
 
 pub use extensions::{
-    AggregateAttempt, AggregateKey, AirReservationPhase, AmpduPhase, AmpduRate,
-    BeaconTimingPhase, BeaconWindow, MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, PhaseAggregate, TbttPlan,
+    AggregateAttempt, AggregateKey, AirReservationPhase, AmpduPhase, AmpduRate, BeaconTimingPhase,
+    BeaconWindow, MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, PhaseAggregate, TbttPlan,
 };
 
 #[cfg(test)]

@@ -1,8 +1,10 @@
 //! The CCMP replay check of one association's keys, shared by the station
 //! and the access point: the receive frontiers of the pairwise key and of
-//! the group key, each with one lane for non-QoS frames and one per TID
-//! ([`CcmpRxReplayState`]); a new group key starts the group's frontiers
-//! from its receive sequence.
+//! each installed group key by its index, each with one lane for non-QoS
+//! frames and one per TID ([`CcmpRxReplayState`]). A group key's frontiers
+//! start from its receive sequence when it is installed and leave with its
+//! removal, so the old and the new key of a rekey are both checked while
+//! both are installed.
 //!
 //! The receive path checks a frame here once it is decrypted and verified,
 //! and after the reorder of its TID, when the receiver has one: within a
@@ -11,7 +13,10 @@
 //!
 //! [layering decision on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6128926225
 
-use super::{CcmpHeader, CcmpKeyId, CcmpReplayError, CcmpReplayLane, CcmpRxReplayCandidate, CcmpRxReplayState};
+use super::{
+    CcmpHeader, CcmpKeyId, CcmpReplayError, CcmpReplayLane, CcmpRxReplayCandidate,
+    CcmpRxReplayState, GroupKeyId,
+};
 
 /// Which key a received frame's destination selects.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -31,23 +36,16 @@ pub enum CcmpRxReplayError {
     InvalidPairwiseReceiveSequence,
     /// The group key's receive sequence is not a packet number.
     InvalidGroupReceiveSequence,
-    /// The group key's index is not 0 to 3.
-    InvalidGroupKeyId(u8),
-    /// A group key change prepared against another epoch.
-    StaleGroupRotation,
-    /// The group key changed too many times.
-    GroupRevisionExhausted,
     /// The frame is for neither key.
     ForeignDestination,
-    /// The frame's CCMP header names another key than its destination's.
+    /// A pairwise frame's CCMP header names a group key's index.
     UnexpectedKeyId {
-        /// The destination's key.
-        protection: CcmpRxProtection,
-        /// The key index it expects.
-        expected: CcmpKeyId,
-        /// The key index the header names.
+        /// The index the header names.
         observed: CcmpKeyId,
     },
+    /// A group frame's CCMP header names an index no installed group key
+    /// has, or a group key removed since its check was prepared.
+    UninstalledGroupKey(CcmpKeyId),
     /// The frame repeats or precedes a packet number of its lane.
     Replay(CcmpReplayError),
 }
@@ -57,26 +55,23 @@ pub enum CcmpRxReplayError {
 pub enum CcmpRxReplayEpochCandidate {
     /// A pairwise frame's.
     Pairwise(CcmpRxReplayCandidate),
-    /// A group frame's.
-    Group(CcmpRxReplayCandidate),
+    /// A group frame's, under the group key of its index.
+    Group(GroupKeyId, CcmpRxReplayCandidate),
 }
 
-/// The receive frontiers of one association's pairwise and group keys.
+/// The receive frontiers of one association's pairwise key and installed
+/// group keys.
 #[derive(Debug, Eq, PartialEq)]
 pub struct CcmpRxReplayEpoch {
     pairwise: CcmpRxReplayState,
-    group: CcmpRxReplayState,
-    group_key_id: CcmpKeyId,
-    group_revision: u32,
+    /// The frontiers of the group key of each index 1 to 3, while it is
+    /// installed.
+    groups: [Option<CcmpRxReplayState>; 3],
 }
 
-/// A group key change prepared against one epoch.
-#[derive(Debug, Eq, PartialEq)]
-pub struct CcmpGroupReplayReplacement {
-    expected_key_id: CcmpKeyId,
-    expected_revision: u32,
-    group: CcmpRxReplayState,
-    group_key_id: CcmpKeyId,
+/// The slot of a group key index.
+const fn slot(key_id: GroupKeyId) -> usize {
+    key_id.get() as usize - 1
 }
 
 impl CcmpRxReplayEpoch {
@@ -85,29 +80,53 @@ impl CcmpRxReplayEpoch {
     ///
     /// # Errors
     ///
-    /// A receive sequence that is no packet number, or a key index above 3.
+    /// A receive sequence that is no packet number.
     pub fn new(
         pairwise_receive_sequence: [u8; 8],
-        group_key_id: u8,
+        group_key_id: GroupKeyId,
         group_receive_sequence: [u8; 8],
     ) -> Result<Self, CcmpRxReplayError> {
         let pairwise = CcmpRxReplayState::from_receive_sequence(pairwise_receive_sequence)
             .map_err(|_| CcmpRxReplayError::InvalidPairwiseReceiveSequence)?;
-        let group = CcmpRxReplayState::from_receive_sequence(group_receive_sequence)
-            .map_err(|_| CcmpRxReplayError::InvalidGroupReceiveSequence)?;
-        let group_key_id = CcmpKeyId::new(group_key_id)
-            .ok_or(CcmpRxReplayError::InvalidGroupKeyId(group_key_id))?;
-        Ok(Self {
+        let mut epoch = Self {
             pairwise,
-            group,
-            group_key_id,
-            group_revision: 0,
-        })
+            groups: [None, None, None],
+        };
+        epoch.install_group(group_key_id, group_receive_sequence)?;
+        Ok(epoch)
     }
 
-    /// The group key's index.
-    pub const fn group_key_id(&self) -> CcmpKeyId {
-        self.group_key_id
+    /// Whether the group key of `key_id` is installed.
+    pub const fn has_group(&self, key_id: GroupKeyId) -> bool {
+        self.groups[slot(key_id)].is_some()
+    }
+
+    /// The group key `key_id` is installed with its receive sequence: its
+    /// frontiers start there. A key installed again under an index that
+    /// holds one keeps the higher of the old and the new frontiers, so a
+    /// reinstalled key never lowers them.
+    ///
+    /// # Errors
+    ///
+    /// A receive sequence that is no packet number; nothing changed.
+    pub fn install_group(
+        &mut self,
+        key_id: GroupKeyId,
+        receive_sequence: [u8; 8],
+    ) -> Result<(), CcmpRxReplayError> {
+        let mut group = CcmpRxReplayState::from_receive_sequence(receive_sequence)
+            .map_err(|_| CcmpRxReplayError::InvalidGroupReceiveSequence)?;
+        if let Some(current) = &self.groups[slot(key_id)] {
+            merge_frontiers(current, &mut group)?;
+        }
+        self.groups[slot(key_id)] = Some(group);
+        Ok(())
+    }
+
+    /// The group key `key_id` is removed: its frames are refused from now
+    /// on.
+    pub fn remove_group(&mut self, key_id: GroupKeyId) {
+        self.groups[slot(key_id)] = None;
     }
 
     /// Prepare the check of a frame of `protection`, of the TID `tid` (none
@@ -115,8 +134,8 @@ impl CcmpRxReplayEpoch {
     ///
     /// # Errors
     ///
-    /// A foreign destination, a key index that does not match it, or a
-    /// replayed packet number.
+    /// A foreign destination, a key index that does not match it or names
+    /// no installed group key, or a replayed packet number.
     pub fn prepare(
         &self,
         protection: CcmpRxProtection,
@@ -131,8 +150,6 @@ impl CcmpRxReplayEpoch {
             CcmpRxProtection::Pairwise => {
                 if header.key_id() != CcmpKeyId::PAIRWISE {
                     return Err(CcmpRxReplayError::UnexpectedKeyId {
-                        protection,
-                        expected: CcmpKeyId::PAIRWISE,
                         observed: header.key_id(),
                     });
                 }
@@ -142,16 +159,16 @@ impl CcmpRxReplayEpoch {
                     .map_err(CcmpRxReplayError::Replay)
             }
             CcmpRxProtection::Group => {
-                if header.key_id() != self.group_key_id {
-                    return Err(CcmpRxReplayError::UnexpectedKeyId {
-                        protection,
-                        expected: self.group_key_id,
-                        observed: header.key_id(),
-                    });
-                }
-                self.group
+                let observed = header.key_id();
+                let Some(key_id) = GroupKeyId::new(observed.value()) else {
+                    return Err(CcmpRxReplayError::UninstalledGroupKey(observed));
+                };
+                let Some(group) = &self.groups[slot(key_id)] else {
+                    return Err(CcmpRxReplayError::UninstalledGroupKey(observed));
+                };
+                group
                     .prepare(lane, header.packet_number())
-                    .map(CcmpRxReplayEpochCandidate::Group)
+                    .map(|candidate| CcmpRxReplayEpochCandidate::Group(key_id, candidate))
                     .map_err(CcmpRxReplayError::Replay)
             }
             CcmpRxProtection::Other => Err(CcmpRxReplayError::ForeignDestination),
@@ -162,15 +179,20 @@ impl CcmpRxReplayEpoch {
     ///
     /// # Errors
     ///
-    /// A candidate another commit made stale.
-    pub fn commit(&mut self, candidate: CcmpRxReplayEpochCandidate) -> Result<(), CcmpRxReplayError> {
+    /// A candidate another commit made stale, or one of a group key removed
+    /// since.
+    pub fn commit(
+        &mut self,
+        candidate: CcmpRxReplayEpochCandidate,
+    ) -> Result<(), CcmpRxReplayError> {
         match candidate {
             CcmpRxReplayEpochCandidate::Pairwise(candidate) => self
                 .pairwise
                 .commit(candidate)
                 .map_err(CcmpRxReplayError::Replay),
-            CcmpRxReplayEpochCandidate::Group(candidate) => self
-                .group
+            CcmpRxReplayEpochCandidate::Group(key_id, candidate) => self.groups[slot(key_id)]
+                .as_mut()
+                .ok_or(CcmpRxReplayError::UninstalledGroupKey(key_id.key_id()))?
                 .commit(candidate)
                 .map_err(CcmpRxReplayError::Replay),
         }
@@ -190,80 +212,31 @@ impl CcmpRxReplayEpoch {
         let candidate = self.prepare(protection, tid, header)?;
         self.commit(candidate)
     }
+}
 
-    /// Raise `group`'s frontiers to this epoch's where this epoch's are
-    /// higher: a group key installed again under the same index never
-    /// lowers them.
-    fn merge_group_frontiers(&self, group: &mut CcmpRxReplayState) -> Result<(), CcmpRxReplayError> {
-        for lane in core::iter::once(CcmpReplayLane::NonQos).chain((0..16).map(CcmpReplayLane::Tid))
-        {
-            let current = self
-                .group
-                .highest(lane)
-                .ok_or(CcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
-            let incoming = group
-                .highest(lane)
-                .ok_or(CcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
-            if current > incoming {
-                let candidate = group
-                    .prepare(lane, current)
-                    .map_err(CcmpRxReplayError::Replay)?;
-                group.commit(candidate).map_err(CcmpRxReplayError::Replay)?;
-            }
+/// Raise `incoming`'s frontiers to `current`'s where `current`'s are
+/// higher.
+fn merge_frontiers(
+    current: &CcmpRxReplayState,
+    incoming: &mut CcmpRxReplayState,
+) -> Result<(), CcmpRxReplayError> {
+    for lane in core::iter::once(CcmpReplayLane::NonQos).chain((0..16).map(CcmpReplayLane::Tid)) {
+        let held = current
+            .highest(lane)
+            .ok_or(CcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
+        let new = incoming
+            .highest(lane)
+            .ok_or(CcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
+        if held > new {
+            let candidate = incoming
+                .prepare(lane, held)
+                .map_err(CcmpRxReplayError::Replay)?;
+            incoming
+                .commit(candidate)
+                .map_err(CcmpRxReplayError::Replay)?;
         }
-        Ok(())
     }
-
-    /// Prepare the change to the group key `group_key_id` with its receive
-    /// sequence: a new key starts its frontiers there, the same key keeps
-    /// the higher of its old and new ones.
-    ///
-    /// # Errors
-    ///
-    /// A receive sequence that is no packet number, or a key index above 3.
-    pub fn prepare_group_rotation(
-        &self,
-        group_key_id: u8,
-        group_receive_sequence: [u8; 8],
-    ) -> Result<CcmpGroupReplayReplacement, CcmpRxReplayError> {
-        let mut group = CcmpRxReplayState::from_receive_sequence(group_receive_sequence)
-            .map_err(|_| CcmpRxReplayError::InvalidGroupReceiveSequence)?;
-        let group_key_id = CcmpKeyId::new(group_key_id)
-            .ok_or(CcmpRxReplayError::InvalidGroupKeyId(group_key_id))?;
-        if group_key_id == self.group_key_id {
-            self.merge_group_frontiers(&mut group)?;
-        }
-        Ok(CcmpGroupReplayReplacement {
-            expected_key_id: self.group_key_id,
-            expected_revision: self.group_revision,
-            group,
-            group_key_id,
-        })
-    }
-
-    /// Commit a prepared group key change, once the new key is installed.
-    ///
-    /// # Errors
-    ///
-    /// A change prepared against another epoch, or too many changes.
-    pub fn commit_group_rotation(
-        &mut self,
-        replacement: CcmpGroupReplayReplacement,
-    ) -> Result<(), CcmpRxReplayError> {
-        if self.group_key_id != replacement.expected_key_id
-            || self.group_revision != replacement.expected_revision
-        {
-            return Err(CcmpRxReplayError::StaleGroupRotation);
-        }
-        let revision = self
-            .group_revision
-            .checked_add(1)
-            .ok_or(CcmpRxReplayError::GroupRevisionExhausted)?;
-        self.group = replacement.group;
-        self.group_key_id = replacement.group_key_id;
-        self.group_revision = revision;
-        Ok(())
-    }
+    Ok(())
 }
 
 #[cfg(test)]

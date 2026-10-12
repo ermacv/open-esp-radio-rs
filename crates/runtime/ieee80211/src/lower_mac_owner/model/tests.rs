@@ -2,10 +2,11 @@
 //! order and the three tests of the owner decisions on #563
 //! (https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560).
 
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 use super::*;
 use core::num::NonZeroU8;
 use oer_ieee80211_lower_mac::{
-    AckHeader, ChannelWidth, FrameControl, GroupKeyId, HeaderSpec, MpduLength, RetryPlan, RetryStage,
+    AckHeader, ChannelWidth, FrameControl, HeaderSpec, MpduLength, RetryPlan, RetryStage,
     SizedFrame, SupportedCoex, SupportedPower, TxPower,
 };
 use oer_ieee80211_mac::{phy::LegacyRate, qos::WmmAccessCategory};

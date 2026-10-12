@@ -25,6 +25,7 @@
 //!
 //! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
+use oer_ieee80211_mac::ccmp::GroupKeyId;
 use alloc::{boxed::Box, collections::VecDeque, rc::Rc, vec::Vec};
 use core::{
     cell::{Cell, RefCell},
@@ -41,7 +42,7 @@ use oer_time::RadioInstant;
 use oer_ieee80211_lower_mac::{
     AccessPoint, AccessPointPhase, AttemptKey, BandSet, BssColor, Ccmp128Key, Channel, ClassFrame,
     CoexPriority, CoexPrioritySet, FrameHeader, GateClosed, GateClosedKind, GateOpen, GateOpenKind,
-    GroupKeyId, HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndividualAddress,
+    HardwareServices, Ieee80211Capabilities, Ieee80211Radio, IndividualAddress,
     InterfaceAttempt, InterfacePhase, KeyTypes, LowerMacBackend, LowerMacCapabilities, Removed,
     RemovedKey, RoleKeys,
     LowerMacEvent, LowerMacPhase, LowerMacSetup, PhaseRate, PhaseTypes, PhyFormatSet, Protection,

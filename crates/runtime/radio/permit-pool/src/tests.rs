@@ -223,3 +223,113 @@ fn a_taker_outside_a_full_line_takes_a_place_once_one_frees() {
         assert!(poll_once(outside.as_mut()).is_ready());
     });
 }
+
+/// A waker that counts its wakes.
+struct Counter(std::sync::atomic::AtomicUsize);
+
+impl std::task::Wake for Counter {
+    fn wake(self: std::sync::Arc<Self>) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// A waker and its count of wakes.
+fn counted() -> (Waker, std::sync::Arc<Counter>) {
+    let counter = std::sync::Arc::new(Counter(std::sync::atomic::AtomicUsize::new(0)));
+    (Waker::from(counter.clone()), counter)
+}
+
+fn wakes(counter: &Counter) -> usize {
+    counter.0.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[test]
+fn releases_and_departures_wake_exactly_the_takers_they_let_through() {
+    with_permits::<2, _>(|permits| {
+        let pool = FifoPermitPool::<'_, Kind, 2, 2>::new(permits);
+        let (one, two) = match (poll_once(pin!(pool.take())), poll_once(pin!(pool.take()))) {
+            (Poll::Ready(one), Poll::Ready(two)) => (one, two),
+            _ => panic!("two free permits serve two takers"),
+        };
+        let (first_waker, first_wakes) = counted();
+        let (second_waker, second_wakes) = counted();
+        let (outside_waker, outside_wakes) = counted();
+        let mut first = pin!(pool.take());
+        let mut second = pin!(pool.take());
+        let mut outside = pin!(pool.take());
+        assert!(
+            first
+                .as_mut()
+                .poll(&mut Context::from_waker(&first_waker))
+                .is_pending()
+        );
+        assert!(
+            second
+                .as_mut()
+                .poll(&mut Context::from_waker(&second_waker))
+                .is_pending()
+        );
+        // The line's two places are taken: the third waits outside.
+        assert!(
+            outside
+                .as_mut()
+                .poll(&mut Context::from_waker(&outside_waker))
+                .is_pending()
+        );
+        // A release wakes the leader alone.
+        pool.release(one);
+        assert_eq!((wakes(&first_wakes), wakes(&second_wakes)), (1, 0));
+        // A second release before the leader runs: the leader is woken
+        // again; the taker behind it waits for the leader to be served.
+        pool.release(two);
+        assert_eq!(wakes(&second_wakes), 0);
+        // The served leader leaves a permit free: it wakes the next leader,
+        // and its freed place wakes the taker outside.
+        assert!(
+            first
+                .as_mut()
+                .poll(&mut Context::from_waker(&first_waker))
+                .is_ready()
+        );
+        assert_eq!(wakes(&second_wakes), 1);
+        assert_eq!(wakes(&outside_wakes), 1);
+        assert!(
+            second
+                .as_mut()
+                .poll(&mut Context::from_waker(&second_waker))
+                .is_ready()
+        );
+    });
+}
+
+#[test]
+fn a_departing_leader_wakes_the_next_one_when_a_permit_is_free() {
+    with_permits::<1, _>(|[permit]| {
+        let pool = FifoPermitPool::<'_, Kind, 1, 2>::new([permit]);
+        let held = match poll_once(pin!(pool.take())) {
+            Poll::Ready(permit) => permit,
+            Poll::Pending => panic!("a free permit serves at once"),
+        };
+        let (next_waker, next_wakes) = counted();
+        let mut next = pin!(pool.take());
+        {
+            let mut leader = pin!(pool.take());
+            assert!(poll_once(leader.as_mut()).is_pending());
+            assert!(
+                next.as_mut()
+                    .poll(&mut Context::from_waker(&next_waker))
+                    .is_pending()
+            );
+            pool.release(held);
+            assert_eq!(wakes(&next_wakes), 0, "the release woke the leader");
+        }
+        // The woken leader gave up its place: the next one leads and is
+        // woken to take the free permit.
+        assert_eq!(wakes(&next_wakes), 1);
+        assert!(
+            next.as_mut()
+                .poll(&mut Context::from_waker(&next_waker))
+                .is_ready()
+        );
+    });
+}

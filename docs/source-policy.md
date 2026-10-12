@@ -53,6 +53,10 @@ against (`verification/<chip>/facts/provenance.toml`). A pin update
 that changes or removes such a function fails `cargo verification check provenance --chip <chip>`;
 `cargo verification diff --chip <chip>` shows what changed, and after the facts follow the
 pinned code, `cargo verification provenance --chip <chip> --accept` records its fingerprint.
+A function that several pinned artifacts define (the ROM's copy and a
+library's, which can handle the same register bits differently) is cited by
+the copy its facts were read from (`libpp[pm.o]::pm_parse_beacon`,
+`rom[]::pm_tbtt_process`); the check refuses a bare name of one.
 
 A `SOURCE` block names the chips whose pinned artifacts its facts describe in
 parentheses directly after the marker, before any bracketed evidence tag:

@@ -18,8 +18,9 @@ pub fn description_directories(chip: &str) -> [PathBuf; 2] {
 }
 
 /// Every `description` string of the TOML files below `chip`'s
-/// [`description_directories`], in path order.
-pub fn descriptions(root: &Path, chip: &str) -> Result<Vec<String>> {
+/// [`description_directories`], in path order, with the file it is in,
+/// relative to `root`.
+pub fn descriptions(root: &Path, chip: &str) -> Result<Vec<(PathBuf, String)>> {
     let mut texts = Vec::new();
     for directory in description_directories(chip) {
         let mut files = Vec::new();
@@ -30,7 +31,10 @@ pub fn descriptions(root: &Path, chip: &str) -> Result<Vec<String>> {
             let document = text
                 .parse::<toml_edit::DocumentMut>()
                 .map_err(|error| Error::manifest("register model file", &file, error))?;
-            item_descriptions(document.as_item(), &mut texts);
+            let mut found = Vec::new();
+            item_descriptions(document.as_item(), &mut found);
+            let relative = file.strip_prefix(root).unwrap_or(&file).to_path_buf();
+            texts.extend(found.into_iter().map(|text| (relative.clone(), text)));
         }
     }
     Ok(texts)
@@ -117,13 +121,18 @@ mod tests {
             "[[source]]\nid = \"x\"\ndescription = \"libpp[pm.o]::pm_on\"\n",
         )
         .unwrap();
+        let model = PathBuf::from("registers/chip/model/peripherals/a.toml");
+        let evidence = PathBuf::from("registers/chip/evidence/e.toml");
         assert_eq!(
             descriptions(root.path(), "chip").unwrap(),
             [
-                "libpp[pm.o]::pm_on",
-                "complete bt_bb_v2_init_cmplx",
-                "bt_bb_rx_dpo_set replaces this field",
-                "inline phy_enable",
+                (evidence, "libpp[pm.o]::pm_on".to_owned()),
+                (model.clone(), "complete bt_bb_v2_init_cmplx".to_owned()),
+                (
+                    model.clone(),
+                    "bt_bb_rx_dpo_set replaces this field".to_owned()
+                ),
+                (model, "inline phy_enable".to_owned()),
             ]
         );
     }

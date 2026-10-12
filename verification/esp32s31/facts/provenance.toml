@@ -1762,12 +1762,6 @@ code = "08abfd6d5d9605c04d12f9b5479b1d441b711a6ae6be594f882a1051aa329aee"
 
 [[function]]
 artifact = "libnet80211"
-member = "ieee80211_hostap.o"
-symbol = "ieee80211_is_action_category_robust"
-code = "b87d58e20de879861835baa6700cb0a44310437f0a0b599db8398e35c21f7b34"
-
-[[function]]
-artifact = "libnet80211"
 member = "ieee80211_ht.o"
 symbol = "ampdu_dispatch_upto"
 code = "b2c67a70a8a80c32281be7d93f3db690921a9777b7bd25fd25c642a31329cdbd"
@@ -2390,12 +2384,6 @@ decisions = ["coverage.toml", "state.rs"]
 [[function]]
 artifact = "libphy"
 member = "phy_track.o"
-symbol = "phy_acquire_grant_protect"
-code = "82000d0ef706de3f2cf011239d156fc30a0c41e0fc07e1d7e755f2e8f143def9"
-
-[[function]]
-artifact = "libphy"
-member = "phy_track.o"
 symbol = "phy_cal_param_track"
 code = "e55dd2c349891eaee7f8390778e24e3eec4c70200df48b241537d42cc21014bf"
 decisions = ["coverage.toml", "state.rs"]
@@ -2406,12 +2394,6 @@ member = "phy_track.o"
 symbol = "phy_param_track_tot"
 code = "cd0cb6a1403d504235284fcf59a9341ebba7e58f2d5fc6094295f5117c59ba17"
 decisions = ["state.rs"]
-
-[[function]]
-artifact = "libphy"
-member = "phy_track.o"
-symbol = "phy_release_grant_protect"
-code = "82000d0ef706de3f2cf011239d156fc30a0c41e0fc07e1d7e755f2e8f143def9"
 
 [[function]]
 artifact = "libphy"
@@ -3439,12 +3421,6 @@ code = "93fae01aadd70b9a11143df89559b4bf96677bee49ffb7ea5d7f68b14562c800"
 
 [[function]]
 artifact = "libpp"
-member = "hal_mac_rx.o"
-symbol = "hal_mac_rx_set_dscr_reload"
-code = "fbb77484318c393d3d938dcec20e8b2310b2d76e4607b115e583ae969351f761"
-
-[[function]]
-artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "hal_attenna_init"
 code = "754a83a1f95d9fc6f801a85446a876212983e353403a927d5623f2f3706c4ed2"
@@ -3629,12 +3605,6 @@ artifact = "libpp"
 member = "hal_pwr.o"
 symbol = "pwr_hal_select_wifimac_regdma_link"
 code = "d73abad28ea76119d2e1b2069a6a554897d65da5ceaf9fb4e8152007008e9051"
-
-[[function]]
-artifact = "libpp"
-member = "hal_pwr.o"
-symbol = "pwr_hal_set_beacon_filter_frame_crc_state"
-code = "6bfd2abf13e6f3f8b071407af54e8a6d0f5fdd6c82c8cda9dc8b02f6873e121d"
 
 [[function]]
 artifact = "libpp"
@@ -3879,12 +3849,6 @@ code = "411dff89f4341daa7414c436e37df4ffa6ea0b7483b136d1d3a7132d077537e0"
 [[function]]
 artifact = "libpp"
 member = "hal_tsf.o"
-symbol = "tsf_hal_set_rx_beacon_abort_tsf_time_deviation_sync_enable"
-code = "73e8c05e1bf65206400bf27a3b84d36e09f49625aacbff666b389871316df9fe"
-
-[[function]]
-artifact = "libpp"
-member = "hal_tsf.o"
 symbol = "tsf_hal_set_tbtt_disable"
 code = "6221abe2466d9aab21036c9742a88e8acab1ffbe48c3724904ac81f4149965ff"
 
@@ -3923,18 +3887,6 @@ artifact = "libpp"
 member = "hal_tsf.o"
 symbol = "tsf_hal_set_tbtt_start_time"
 code = "06f674d75744262a2132bb356ae9487f59efdefb466a842524c4ed2e61fe453b"
-
-[[function]]
-artifact = "libpp"
-member = "hal_tsf.o"
-symbol = "tsf_hal_set_tsf_time_deviation"
-code = "22d3ee2cd379bb306d8795c914e921a16b110be260d26029661fb3d75b37c7f1"
-
-[[function]]
-artifact = "libpp"
-member = "hal_tsf.o"
-symbol = "tsf_hal_set_tsf_time_deviation_sync_enable"
-code = "e5cb96e0163b11fd608f9c65ba8c83b78b309ed4f5aff3cd903a9447c0476cb0"
 
 [[function]]
 artifact = "libpp"
@@ -4859,12 +4811,6 @@ code = "1eb55ac03c531b947679973b6974d640540d2f1cf6e707cb769f227bde552a81"
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "GetAccess"
-code = "c2b7dbbe69ddfd51a0117114508f4ea6e6ba41fd0386ea92217c0607eea38ff6"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "__assert_func"
 code = "6e29e42a979d589b39e48b573d76b17d57068754f5055b3dcca9beb828335cae"
 decisions = ["coverage.toml"]
@@ -4935,54 +4881,6 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "ampdu_dispatch_upto"
-code = "5af40c79a0b15b874d63ea61dec0e28ecb8f25fcf844fcb7e6e9a2bc209fdf93"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "coex_core_pti_get"
-code = "e46fcd5f6ad0c561ffdbdc1652d60482cb2605e18b2cdcbc82c5a6c7dcf8510d"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "coex_core_release"
-code = "66151cac27be77e018a2ea6171e1e023d5e20bb8e3da90a40a9b750c7cbc2538"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "coex_core_request"
-code = "bd0d50c4628ae83e23beb7caeb65864eba52ca13e703c5d58e3425800c66181d"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "coex_core_timer_idx_get"
-code = "87813ab9b65259ca1a6463b246b4e078b450d950df837eba624b5936daf7d983"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "coex_hw_timer_disable"
-code = "edd42e22e5b5344a7d7bd6cba789f76ca689dd8c9146775327709e66444eb5ff"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "coex_hw_timer_enable"
-code = "c5cb406d43192859c05b1324f7f8a21ef5fbf7b1722d711e7c12c616d9812520"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "coex_hw_timer_set"
-code = "e022315856d9e87fae51a405db9b24bae991b82b1a5b6b00f011ff032612e0d4"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "esp_test_tx_enab_statistics"
 code = "08a24b92c2f794f3b9ce4e5ec0aeca9c8995451d53b7cf65e5f70a0c3c7affe2"
 decisions = ["coverage.toml"]
@@ -5000,30 +4898,6 @@ member = ""
 symbol = "ets_vprintf"
 code = "6f8b2f12affe818e859f442722725e9d4cc0cdeb7726db7e4597642c3aea7ddc"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "get_estimated_batime"
-code = "87ddb2e034b084893cb4049109d66d405403b28e7154ea0ebad462b4c4b30418"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_ba_session_restore"
-code = "5c236f512b69f0b434294fb191f0e956fc53faaf7f2c5f74aecab4e6a9efe43c"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_ba_session_store"
-code = "ef19f0a0a7c5c652a803f3fd7fe98a7b85a959b1dc30bc02bf6355e92cca93de"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_enable_tsf_timer"
-code = "7696199246f79e984b18fb397b16e8890fd02675cce227a53bab76607aa82c2d"
 
 [[function]]
 artifact = "rom"
@@ -5053,24 +4927,6 @@ code = "73c0ac68034bd0b0235901960c1046f6f7b8d6c9df618bfbe087d0453938096c"
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "hal_he_set_bf_report_rate"
-code = "0f10ac983da1717c75f2b42a43eb5cc4ed828f5d10493a3205959b65dc76afbb"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_he_set_ersu"
-code = "ea07c1cd20a98b1eb1dc5c50477b9dba0a1fa8cc264b73931ea1b6c775241c80"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_he_set_ersu_ack_rate"
-code = "515a467c556c783cf559068b76c923c17596be8db9876f2bb6d05d0d7c66e090"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "hal_he_set_htc"
 code = "69a5f6cd284657dd992f11ac82e3e4c469fc441c97f06eb7b3fc25c9d7c0afea"
 decisions = ["coverage.toml"]
@@ -5081,30 +4937,6 @@ member = ""
 symbol = "hal_mac_clr_txq_state"
 code = "c3c8267e701f705103388e9655d3512e665d26331912b52a2bcc09c5763a218a"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_mac_deinit"
-code = "91675a1373eba8932b86e26fed18dab3584cc9cecdbb4f41dd853d5cc7867d5c"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_mac_get_txq_complete"
-code = "c75b16a05f4493b31753da4ab0b3b51d45b7e1d664f09e7c7a5d15edbed4e15f"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_mac_get_txq_state"
-code = "f897afdd6c918b2dbb992318baa52ce814415395840f38953cde90b5949852d0"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_mac_interrupt_clr_bsscolor"
-code = "7e40f5e8b1d6cbe6691d54829e3593999333b396bc8250d952d3c2fa7e7a884b"
 
 [[function]]
 artifact = "rom"
@@ -5140,12 +4972,6 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "hal_mac_tx_get_blockack"
-code = "cf0584e66f2c008d72bc44dfaa97e612ce46bf9d913862dda110f023b8a0bfb1"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "hal_mac_tx_set_ppdu"
 code = "f04a682c0e8c16a9434706b5901f6bf6c7bff3144c18bca6bc1f115ced59c20e"
 decisions = ["coverage.toml"]
@@ -5156,24 +4982,6 @@ member = ""
 symbol = "hal_mac_txq_enable"
 code = "404068ef3fb0b887c1456b42ce62588f3e85a1c0f41de32567d9511dfb07d56c"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_random"
-code = "2ee1f30949ad3c34977a7fc50cca83ffecee76e63f4bf30fb0a59d8be2b291a9"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_tsf_clear_soc_wakeup_request"
-code = "e267498a36d20d84741698556f7d52dfffc5ce5653f2f74ade49905b8915055e"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "hal_tsf_timer_set_target"
-code = "7bc5eda4a44648f0e84693b0651d4fc1603f917794ddf4b9258253894c900986"
 
 [[function]]
 artifact = "rom"
@@ -5190,90 +4998,6 @@ code = "d645301f184f019d3d1125ef934f0f72b1b729c3fa93a5156820b0034edc1d36"
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "he_get_min_subframe_len"
-code = "e3b2353241fb405f6d66b75b757a1f8dcaec5b13fd78fb04f735448875018cba"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "he_get_min_subframe_len_dcm"
-code = "5eb4e241d5f0ec90ac17614e98b136d4b863a9f871dc74ba1a0f956cf8fe84f8"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ic_get_he_rts_threshold_bytes"
-code = "23e813bae03f938f61eec111030fbf8b0cbac864018dac425c02c6c6c50d0a0f"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ic_mac_deinit"
-code = "dbc3e661ccde58d96b3b254a7849b47f0982b82bed547f11d297869426859717"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ic_mac_init"
-code = "d433c2b02af0f1ca846b2026ca9d6be860ca5d3388371761c80658f246c715b3"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ieee80211_alloc_tx_buf"
-code = "73f766f903b816625c1abe14595d7151a586e60aa4a5da4f312121a1158c6e44"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ieee80211_ampdu_reorder"
-code = "d56f77a5613fb6c2991a177c545e19f3152ed3838a629e42828cdec827ec8257"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ieee80211_crypto_encap"
-code = "9f96acf738d626abdf57a11876a5765f71c5b0b14646a6d738eb8bdc1cfd05e5"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ieee80211_encap_esfbuf"
-code = "7f56fc6fa40a36284e89ebc427b4c3a92400d77fbc861ae0621061dba03ec67f"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ieee80211_encap_esfbuf_htc"
-code = "3c6b1f1619fb40f1b92a77192c2d66980923c62e809e81baa7929bfad4ebe0d9"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ieee80211_recycle_cache_eb"
-code = "db7d9a6618ac298a8924aa7f375dea744c580413eda36937b6016b7cec35333d"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ieee80211_set_tx_desc"
-code = "e216676ccd9b004951c1b918f7d8e55cbc3db94fee64e27f9d79ae813c946c43"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ieee80211_set_tx_pti"
-code = "0cce7bd73ac5f6b20f94d15dbbd8861847532169975777dc48896c338f96033a"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "is_ndpa_to_dut"
-code = "b3f2e208a3006b25e4222b3fbfa2e79d4170061b9d81aaa6fa2079bd73648705"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "is_use_muedca"
 code = "a5e2fbee1e9bd8a351df7d73afe0db39a9205027f61572cf244325b72ccda548"
 decisions = ["coverage.toml"]
@@ -5281,33 +5005,9 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "lmacAdjustTimestamp"
-code = "6afeb50dd4243339ac89ba14cead06c6deb9fe8db36a7efceaa0e2847012e4a0"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "lmacEndFrameExchangeSequence"
-code = "487e2483631bbd6f68e5c4f71bcce12d277c565d5d0633aa1402c75a075083e4"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "lmacEndRetryAMPDUFail"
-code = "98c265c3d2df9efa0aa00bfbab36d2ab1c2c32d5680148cd1f37c85712060149"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "lmacIsLongFrame"
 code = "ee92b131eef7fc32f3a72e9e3736a9aab365d22d4d0e92d5e4365df9d56576a4"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "lmacMSDUAged"
-code = "cda95271b525bc9e369348982e3c9461c18682a6a96ea440e7d9d2188f4c3fd8"
 
 [[function]]
 artifact = "rom"
@@ -5326,12 +5026,6 @@ decisions = ["state.rs"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "lmacProcessCollisions"
-code = "32f72952247f68751e3bbdbabeb704344a2eda4189d74c377c55d19802fd75e6"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "lmacProcessCtsTimeout"
 code = "f2a05612ba9f7cf0c4b741d7c54d25bb75f2cb86cc25eb38337d3d98514a9ac8"
 decisions = ["state.rs"]
@@ -5346,27 +5040,9 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "lmacProcessLongRetryFail"
-code = "ed7469699816b3cf3ff612bf661debdb6a4864faf082c4ce0790736d13b41be4"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "lmacProcessShortFrameSuccess"
 code = "eb06e0ee3d5fb73d6c2530bb90eea527f1fb33a4810afe2db5861a0e9ce1d1d6"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "lmacProcessShortRetryFail"
-code = "fa5b65ce494a9ab9a60820cf7b9bedc1bdffdc3ddd9408566cd093228929ef4c"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "lmacProcessTxComplete"
-code = "83e1d892883146ed6e33f60be2d8fad9bfd63f1389495384ee50e5fb1ab61a5a"
 
 [[function]]
 artifact = "rom"
@@ -5378,20 +5054,8 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "lmacRetryTxFrame"
-code = "6cba2f73a236e9af7865cc55033d71934ad1d6bbc2e52528b7ace04d4db23138"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "lmacSetTxFrame"
 code = "f4d3f823209ad13cf69b947ece140b69d2994edae089691792a5a8debd0687a9"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "lmacTxFrame"
-code = "8f29161fc96495f0bb59c349c93870b46cc1a69460a51b082c7ca475d67622ba"
 
 [[function]]
 artifact = "rom"
@@ -5399,12 +5063,6 @@ member = ""
 symbol = "mac_tx_set_hesig"
 code = "68f6179143ab1d2f26ead53bacd0ea27837b5de4b37a4cd2d8967eafc543af42"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "mac_tx_set_htsig"
-code = "5ae046b0d09966cfce1af57473b2870f40016a09f2efa3c84214c11e7db98037"
 
 [[function]]
 artifact = "rom"
@@ -5733,12 +5391,6 @@ artifact = "rom"
 member = ""
 symbol = "phy_fe_reg_init"
 code = "77932b5a83da49eb46ca3fad1319f9c00beb8a9603f1e8ff42cc10828f5ea711"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "phy_fe_reg_update"
-code = "cde7ba2deb8f6fbbbafd9494d0e26369fed682fef13a2c25d2297eca1d93933b"
 
 [[function]]
 artifact = "rom"
@@ -6474,26 +6126,8 @@ code = "f1acb79b7a0ce22a05069e9ae7e9dd192b8e35f95c764cedffcfc769ad2f4d1d"
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "pm_coex_recalculate_wifi_time_slice"
-code = "4b2b25e22cf4a274ef130fa79dc0ffbd77a85f2a87373e7ef487e65d1562e9c4"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pm_get_null_max_tx_time"
-code = "95ca78a9ef67b364e787752a5485db499e2b1b101d6e31f9786b7267aed6991e"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "pm_on_isr_twt_wake"
 code = "2cd1163707f162174df9581af932f647e3f66033fc92b162980b94ccf2fac6c8"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pm_on_tbtt"
-code = "b4fba893ada15b01751b183416befe2fb0d4d0399a2e8468c603e0f29149d35e"
 
 [[function]]
 artifact = "rom"
@@ -6504,33 +6138,9 @@ code = "ea31a60204d92f4fe1b99bfad5390f1cc5d85686bc672f11468ab2bd31192d2a"
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "pm_twt_set_target_wdev_time"
-code = "b57aa49a947c852d42ceee3f05626fcbd479c78eba635ee66194c22d58cef4b7"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pm_update_next_tbtt"
-code = "c374d729be78af8e7b664e915f139c0ad034269de4bd0342588b02f8523a87fb"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "ppAssembleAMPDU"
 code = "bda8049993c1dee62667afdb14cd1bc7b81f4ebd4901c0f20ef8f1639b03e51b"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppCalDeliNum"
-code = "d9544853028a4776cffa2e17055f243952c61ccee97aba9df4ca62c5e4a48d02"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppCalSubFrameLength"
-code = "55c9d7abae4be83194815a424e9d140a56d354552e205eb2a71c36c7077007cb"
 
 [[function]]
 artifact = "rom"
@@ -6549,21 +6159,9 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "ppCalTxHESMPDULength"
-code = "ed2d051cda76280bad73656bf5970a8f0610f10e05c10055a4dd9101a13c516f"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "ppCertSetRate"
 code = "a51b5e77b55e04630e6b2ef3f3a31f68049f2a90d699895089ec23f35c22a5e2"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppCheckTxAMPDUlength"
-code = "d44033ba4627276a0b36d29ca3a653687b1ee73f45c874065edeecbdd8c317cd"
 
 [[function]]
 artifact = "rom"
@@ -6575,33 +6173,9 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "ppCheckTxRTS"
-code = "200a19661dca4bad36a91c1d05640f5344094db82bf0971ae65e49a904240012"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppEmptyDelimiterLength"
-code = "3a13a16b586bb00b693521360c7118acee2010701b5d1ac7ec081e252a75a712"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "ppEnqueueTxDone"
 code = "9e01510098176ffd9fd77d1b81accce4bd2e93cae78ee8f81819b748ff641cc4"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppFillAMPDUBar"
-code = "d7531c05d32d3c57e16f9efe5d4e9f33406ee27d65ab3cf9587cedc570ce7f18"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppHEAMPDU2Normal"
-code = "07d45271bd75958e1cb83692bc0b53c325418fdccc2b0a237768b2ea173252fa"
 
 [[function]]
 artifact = "rom"
@@ -6613,51 +6187,9 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "ppProcessTxQ"
-code = "11971620bcfe1d85b7b26c9c61322ea149c842e06271d6a3e67d758cae1b6bb5"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppReSendBar"
-code = "01e088a29c62e8b98e8a719d98dcc27530b1cd7b6ce01bb50e9fa00131e192ee"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "ppResortTxAMPDU"
 code = "c71cdedd654ae3be5472c7af1446e18178abbd4a3c7f544b2f24691937bf2557"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppSelectTxFormat"
-code = "0328c05120bee8f683d4f915bcbde992b69462d4875585a3462bd2a6802f6f8f"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppTask"
-code = "dff38bae24b0b4faf62b0eeb4ee1057bb36a0fb0c9452749ac4471d0bfa2bfe6"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppTxProtoProc"
-code = "c35ef8ce52b24d4b27bfa97caa04e0d18cbf09ffce7d360758b87d0db159ccc7"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "ppTxqUpdateBitmap"
-code = "c1d90d143cd53406157fcc48bb1d0fc9f352a48daf84963ce6cdd253d414ebfd"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pp_coex_tx_request"
-code = "89c5c572812e05611379e350fa82c87994bc2d294c6574462faa2848b98f069c"
 
 [[function]]
 artifact = "rom"
@@ -6671,42 +6203,6 @@ artifact = "rom"
 member = ""
 symbol = "pwr_hal_set_beacon_filter_frame_crc_state"
 code = "6bfd2abf13e6f3f8b071407af54e8a6d0f5fdd6c82c8cda9dc8b02f6873e121d"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pwr_hal_set_mac_modem_beacon_miss_limit"
-code = "33a82291c470e9e422dba874b24875bf11031181664b833c12bc428210e268b5"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pwr_hal_set_mac_modem_beacon_miss_timeout"
-code = "0be9a93f1875698c602d90512a5e5efadacccb8d79357be5ccbbd280fc8ac9de"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pwr_hal_set_mac_modem_state_sleep_limit"
-code = "ad6feb6d2a78bf0df8ff9aca719b795b7c03849f48effaaed42af28fe90ca884"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_early_time"
-code = "a4ffe350e9b07fcc8ff9c627d32a2c9afddd89b060a12859ed09956cbb801f2e"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_enable"
-code = "6c3cdbf8546b6f91c561324684e9dbe55fcdd5833a253dcc4fb8db4e19a531a9"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "pwr_hal_set_mac_modem_tbtt_auto_period_interval"
-code = "21e2472ef3127285b7a60e575999f19a3cbccd523a859c42c734c7962a665155"
 
 [[function]]
 artifact = "rom"
@@ -6725,18 +6221,6 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "rcGetSMPDURate"
-code = "f34dcca6af5538222563649a3dd0e96031d4145fc876fa550059d41457a09aa4"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "rcGetSched"
-code = "522f2bef227e3adf5160e33d78c149f2dba37cf8aa17f164aee34c5a9b65358f"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "rcReachRetryLimit"
 code = "10feb35d6b156527c94250d5109ecd6858eee8543a4415af14698a747c1e17f4"
 decisions = ["coverage.toml"]
@@ -6744,104 +6228,8 @@ decisions = ["coverage.toml"]
 [[function]]
 artifact = "rom"
 member = ""
-symbol = "rcTxUpdatePer"
-code = "c1c9b63ea175be7a584616cbfa38307f76d2f4813ebee1e514e30c45daac6dfe"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "rcUpdateAckSnr"
-code = "2bd8a7744ac4246f4983f1ffe2f2408a0aa96e665e25d0d5eb3a0a6a99fbd20a"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "rcUpdateTxDone"
-code = "a297ce23747f34fc3bcfb516c91a119b57641a2679c1450c7f7795e01a06d89d"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "rx11AXRate2AMPDULimit"
-code = "33c9e6e71af9bc0f3d1f535d95e1d5f428abf86633ce71f8b4e06a895bb91487"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "rx11NRate2AMPDULimit"
-code = "149ea800c627c77e60f1f33e580975dc2ffadefee3cf68f52df068cf29fb19dc"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "sta_input"
-code = "ebeac87b2f6a7be50c9cd3b561c12fe2d17f4f0de02e904886f80632d85575ce"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "sta_reset_beacon_timeout"
-code = "f2e7b19a4a18c0bc68f6b9c169770a39093716dd8e4f4dca7c476fe67c97a122"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "test_get_nonmumimo_common"
-code = "1886b6220e153ee07ca789684548e0d6dd24a40fbff1832e9f60986fba9aba29"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "test_nonmimo_update_user_info"
-code = "98be8a01c5a6380b61885f71919bf037d228344dedf93890dd4083f704d4e9f6"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "test_rx_parse_mumimo_complete_sigb"
-code = "315a338f302829e2273fe18b1d3ab3e10d4a9bf8d46d77b49ebb785c776646e2"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "test_rx_parse_nonmumimo_complete_sigb"
-code = "45423a64cf186a0ddf3b72ec66a2eb7948a98c8cda107d13dffe3129ff310493"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "trc_isTxAmpduOperational"
-code = "9ee1c1f056bf7daa35ce19c5637dd190eac83e26d8de4edef3c5753ef3f97402"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "trc_set_bf_report_rate"
-code = "9f8d93dd0ba3dfec92260a4e2ba6a767f19760ec7485591ff9d8427a96ba8616"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "trc_tid_isTxAmpduOperational"
-code = "4e549d60c4e236b88fe9d2b88190e584829a7332b5587d7f2e7a3457556bf010"
-
-[[function]]
-artifact = "rom"
-member = ""
 symbol = "tsf_hal_set_rx_beacon_abort_tsf_time_deviation_sync_enable"
 code = "73e8c05e1bf65206400bf27a3b84d36e09f49625aacbff666b389871316df9fe"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "tsf_hal_set_tbtt_intr_disable"
-code = "d0bb6f538a7bb52602814da280956827e914abf5717dde51ea62e4d963c4fff1"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "tsf_hal_set_tbtt_intr_enable"
-code = "c4aad41d106a69db85cea313486a2bfb63004020954b44f30815a68029230a14"
 
 [[function]]
 artifact = "rom"
@@ -6867,36 +6255,6 @@ member = ""
 symbol = "wDev_AppendRxBlocks"
 code = "e5fc4517bbfb5f84e4d6371aa39cbf6cd97b405583d025682867a2fdd55c3ec6"
 decisions = ["coverage.toml"]
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "wDev_GetNoiseFloor"
-code = "58b9a731265a4466bc1fa0ca72d3b6a0c6f650191931f5ee6f2185b3e1b24ce5"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "wDev_ProcessFiq"
-code = "2f937397921709f839cf9b604ae9c642a31b45e7251022892e4a343d207b70f6"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "wDev_ProcessRxSucData"
-code = "49cc63953e9d961c14c3f92577bb47f3636a5ac674bb0c949387f24ad53c41f3"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "wdevProcessRxSucDataAll"
-code = "b93bb6c7432c8b6fc4447ab569bb7e1499c902805833a40df052c9a8e615fd36"
-
-[[function]]
-artifact = "rom"
-member = ""
-symbol = "wdev_process_tbtt"
-code = "0d41cb558b47eeaf9d1b0c0b3af2c20c9d85809be75b9cdf91c60682cb5d076b"
 
 [[function]]
 artifact = "rom"

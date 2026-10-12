@@ -76,12 +76,14 @@ stack watermarks. UDP adds the radio facts needed for qualification; the RX
 diagnostic image also adds delivery-frontier evidence. Aggregate histograms and
 TX timing have typed records; supplemental text diagnostics cannot establish
 readiness or completion. An image with `telemetry/cpu-load` adds
-`CpuLoadEvidence` to every single-direction session: the window's cycles and
-each core's cycles in its executor's `wfi` over the measured traffic window
+`CpuLoadEvidence` to every TCP session and every one-direction UDP session:
+the window's cycles and each core's cycles in its executor's `wfi` over the
+measured traffic window
 (UDP RX from its first datagram, UDP TX and TCP from the start of the
 traffic). A core asleep at a window boundary is woken once so that its wait
 counts up to the boundary; a core that does not answer is `None`. A
-bidirectional session measures one window per direction and adds none.
+bidirectional UDP session measures one window per direction and adds none; a
+TCP session, served by one task in either direction, measures one.
 
 TX evidence covers a live interval, not a guessed queue drain. The radio executor
 collects the two aggregate lifecycle snapshots between its polls. Publication

@@ -252,8 +252,8 @@ pub const CPU_LOAD_CORES: usize = 2;
 /// the executor's own polling.
 ///
 /// An image with the executor's idle accounting (`telemetry/cpu-load`)
-/// publishes it for every single-direction session; a bidirectional session
-/// runs one window per direction and publishes none.
+/// publishes it for every TCP session and every one-direction UDP session; a
+/// bidirectional UDP session runs one window per direction and publishes none.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct CpuLoadEvidence {
     /// The window's length in CPU cycles.

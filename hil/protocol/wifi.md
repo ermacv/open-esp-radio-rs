@@ -78,9 +78,9 @@ TX timing have typed records; supplemental text diagnostics cannot establish
 readiness or completion. An image with `telemetry/cpu-load` adds
 `CpuLoadEvidence` to every TCP session and every one-direction UDP session:
 the window's cycles and each core's cycles in its executor's `wfi` over the
-measured traffic window
-(UDP RX from its first datagram, UDP TX and TCP from the start of the
-traffic). A core asleep at a window boundary is woken once so that its wait
+throughput's measurement window: for UDP RX from the first datagram, or the
+end of the 2-second startup allowance when none arrived by then, to the
+window's end; for UDP TX and TCP the elapsed interval. A core asleep at a window boundary is woken once so that its wait
 counts up to the boundary; a core that does not answer is `None`. A
 bidirectional UDP session measures one window per direction and adds none; a
 TCP session, served by one task in either direction, measures one.

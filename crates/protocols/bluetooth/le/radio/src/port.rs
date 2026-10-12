@@ -65,6 +65,16 @@ use oer_bluetooth_port::CancelError;
 /// [`RadioOutcome::TransmitAcknowledged`] once the peer acknowledged the
 /// connection's queued PDU and reports only new, non-empty receptions.
 ///
+/// # Dropping a call
+///
+/// A call's future may be dropped. A backend that admits in the caller's
+/// future admits nothing then. A backend whose driver admits (the
+/// ESP32-S31's) withdraws a request its driver has not taken, so nothing
+/// happens; a request the driver took it serves to the end: its effects
+/// stand (an admitted event's end reaches the event consumer as any other
+/// event's) and its reply is discarded, never given to the next call. The
+/// Controller service body drops no call.
+///
 /// # One client call at a time
 ///
 /// The client's calls take it by `&mut`, so a backend serves one of them

@@ -583,7 +583,7 @@ protocol:
 
 | Part | Semantics |
 | --- | --- |
-| Submission | Immediate admission of one request with a caller-chosen correlation identity: refusal is the call's result, never a later event, and a value, not a fault. Submission is synchronous when a backend can decide without waiting; a port whose backends need a fresh hardware reading to decide may declare it asynchronous, provided the wait is bounded, depends on no other submission or event, and dropping the future admits nothing |
+| Submission | Immediate admission of one request with a caller-chosen correlation identity: refusal is the call's result, never a later event, and a value, not a fault. Submission is synchronous when a backend can decide without waiting; a port whose backends need a fresh hardware reading to decide may declare it asynchronous, provided the wait is bounded and depends on no other submission or event. Dropping the future of a backend that admits in the caller's future admits nothing; a backend whose driver admits (Bluetooth LE) withdraws a request its driver has not taken, and serves one it took to the end, its effects standing and its reply discarded |
 | Events | Asynchronous stream of owned events, each viewed through a borrowed portable value, with exactly one consumer; loss of events is reported, never silent |
 | Capabilities | What the backend supports and what it performs autonomously, read before submission |
 | Lifecycle | Enable, disable, quiesce and cancel of submitted work, each with a terminal event; `Disable` ends the work in flight first |

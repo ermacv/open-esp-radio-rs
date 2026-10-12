@@ -84,8 +84,8 @@ pub use owner::{
     SupportedFilter, SupportedNoAck, SupportedPower, Tid, TxFrame, TxFrameBody,
 };
 pub use owner::{
-    AggregateAttempt, AggregateKey, AmpduPhase, AmpduRate, BeaconTimingPhase, MonitorPhase,
-    BeaconWindow, MpduStartSpacing, PhaseAggregate, TbttPlan,
+    AggregateAttempt, AggregateKey, AirReservationPhase, AmpduPhase, AmpduRate,
+    BeaconTimingPhase, BeaconWindow, MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, PhaseAggregate, TbttPlan,
 };
 pub use phase::{
     AccessPointPhase, Attempt, AttemptKey, ClassFrame, GateClosed, GateClosedKind, GateOpen,

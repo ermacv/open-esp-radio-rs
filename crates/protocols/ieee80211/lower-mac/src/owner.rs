@@ -1056,8 +1056,8 @@ pub trait AddressSetup: LowerMacSetup {
 mod extensions;
 
 pub use extensions::{
-    AggregateAttempt, AggregateKey, AmpduPhase, AmpduRate, BeaconTimingPhase, MonitorPhase,
-    BeaconWindow, MpduStartSpacing, PhaseAggregate, TbttPlan,
+    AggregateAttempt, AggregateKey, AirReservationPhase, AmpduPhase, AmpduRate,
+    BeaconTimingPhase, BeaconWindow, MAX_RESERVATION_MICROS, MonitorPhase, MpduStartSpacing, PhaseAggregate, TbttPlan,
 };
 
 #[cfg(test)]

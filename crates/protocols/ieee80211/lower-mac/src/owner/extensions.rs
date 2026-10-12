@@ -15,7 +15,11 @@
 //!   Block Ack report misses.
 //! - [`BeaconTimingPhase`]: an interface's TSF and TBTT schedule; its TBTT
 //!   events and TSF samples come in the phase's stream.
+//! - [`AirReservationPhase`]: a gate's closing that reserves the access
+//!   point's air for an absence of the station beside it.
 //! - [`MonitorPhase`]: monitor reception, a radio-wide setting.
+//!
+//! [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129677418
 
 use oer_ieee80211_mac::tsf::{TsfDuration, TsfInstant};
 use oer_radio_port::{Poisoned, Slot};
@@ -25,7 +29,10 @@ use super::{
 };
 use crate::{
     AmpduCapabilities, Protection,
-    phase::{AttemptKey, InterfacePhase, LowerMacPhase, PhaseTypes, TxBufferClass, TxBufferPool},
+    phase::{
+        AttemptKey, GateOpen, InterfacePhase, LowerMacPhase, PhaseTypes, TxBufferClass,
+        TxBufferPool,
+    },
 };
 
 /// A rate the backend aggregates at, checked by [`AmpduPhase::ampdu_rate`].
@@ -201,6 +208,23 @@ pub trait BeaconTimingPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     /// Stop the TBTT schedule.
     fn stop_tbtt(&mut self);
 }
+
+/// A phase whose gate's closing can take one last frame that reserves the
+/// air: a CTS-to-self of the access point, which its peers honour by
+/// keeping quiet while the station beside it is away ([owner decisions on
+/// #563]).
+pub trait AirReservationPhase<'p, 'id: 'p>: LowerMacPhase<'p, 'id> {
+    /// Close the gate as [`LowerMacPhase::close_gate`] does, and after the
+    /// published attempts end, before
+    /// [`LowerMacEvent::GateClosed`](crate::LowerMacEvent::GateClosed),
+    /// send the access point's CTS-to-self reserving the air until `until`:
+    /// its Duration is `min(until − now, MAX_RESERVATION)` when it goes,
+    /// and no frame goes once no time is left.
+    fn close_gate_reserving(&mut self, gate: GateOpen<'id>, until: crate::Ieee80211Instant);
+}
+
+/// The longest reservation a CTS-to-self's Duration field carries.
+pub const MAX_RESERVATION_MICROS: u16 = 32_767;
 
 /// A phase that receives as a monitor.
 pub trait MonitorPhase<'p, 'id: 'p>: LowerMacPhase<'p, 'id> {

@@ -68,8 +68,8 @@ use oer_bluetooth_ll::{
 use oer_bluetooth_radio::LeRadio;
 use oer_bluetooth_radio::{
     AccessAddress, ConnectionConfiguration, ConnectionEvent, ConnectionId, CrcInit, DataChannel,
-    DataPdu, DataPduKind, EventId, EventResult, LeInstant, LePhy, LeWindow, OutsideEpoch,
-    RadioDuration, RadioOutcome, RadioRequest, RadioTiming, TxPower,
+    DataPdu, DataPduKind, EventId, EventResult, LeCapabilities, LeInstant, LePhy, LeWindow,
+    OutsideEpoch, RadioDuration, RadioOutcome, RadioRequest, RadioTiming, Supported, TxPower,
 };
 
 use oer_bluetooth_trace::PeripheralEventOp as Op;
@@ -85,6 +85,9 @@ use crate::{RadioWork, advertising::ConnectionIndication, coexistence};
 pub(crate) const EVENT_OUTPUT: usize = 8;
 /// Largest data channel payload the Data Length Extension allows.
 const LL_PAYLOAD: usize = LE_DATA_LENGTH_MAXIMUM_OCTETS as usize;
+/// Largest data PDU payload a connection transmits: the Data Length
+/// Extension maximum and an encrypted PDU's MIC.
+pub(crate) const LL_DATA_PAYLOAD: usize = LL_PAYLOAD + LE_ACL_MIC_BYTES;
 /// Scheduling priority of the first event and of later events (vendor
 /// first-event transform and recurring baseline).
 const FIRST_PRIORITY: u8 = 13;
@@ -199,7 +202,7 @@ struct Connection {
     connection_update: Option<LeConnectionUpdate>,
     peer_termination: Option<u8>,
     closing: Option<Closing>,
-    tx: [u8; LL_PAYLOAD + LE_ACL_MIC_BYTES],
+    tx: [u8; LL_DATA_PAYLOAD],
     rx: [u8; receive::PDU_CAPACITY],
 }
 
@@ -305,10 +308,18 @@ impl Slot {
     }
 }
 
-/// The connections' next request: one ready, or a transmission whose PDU the
-/// caller borrows from its connection with [`Peripheral::transmission`].
+/// The connections' next request, which the caller checks against its
+/// capabilities: a transmission borrows its PDU from its connection through
+/// [`Peripheral::transmission`].
 pub(crate) enum PeripheralWork {
-    Ready(RadioWork<'static>),
+    /// Withdraw an event.
+    Cancel(EventId),
+    /// Open a connection.
+    Open(ConnectionConfiguration),
+    /// Close a connection.
+    Close(ConnectionId),
+    /// Schedule a connection event, placed by the caller.
+    Event(ConnectionEvent),
     Transmit {
         index: usize,
         kind: DataPduKind,
@@ -503,7 +514,7 @@ impl<const N: usize> Peripheral<N> {
             connection_update: None,
             peer_termination: None,
             closing: None,
-            tx: [0; LL_PAYLOAD + LE_ACL_MIC_BYTES],
+            tx: [0; LL_DATA_PAYLOAD],
             rx: [0; receive::PDU_CAPACITY],
         });
     }
@@ -637,7 +648,7 @@ impl<const N: usize> Peripheral<N> {
                         .expect("the victim's event is in progress")
                         .id;
                     self.requested = Some((victim, RequestKind::Cancel));
-                    return Ok(Some(PeripheralWork::Ready(RadioWork::Cancel(id))));
+                    return Ok(Some(PeripheralWork::Cancel(id)));
                 }
             }
         }
@@ -672,9 +683,7 @@ impl<const N: usize> Peripheral<N> {
             else {
                 if connection.closing.is_some() {
                     self.requested = Some((index, RequestKind::Close));
-                    return Ok(Some(PeripheralWork::Ready(RadioWork::Submit(
-                        RadioRequest::CloseConnection(connection.id),
-                    ))));
+                    return Ok(Some(PeripheralWork::Close(connection.id)));
                 }
                 continue;
             };
@@ -685,7 +694,7 @@ impl<const N: usize> Peripheral<N> {
                 .connection
                 .as_mut()
                 .expect("the slot holds the connection");
-            return Ok(Some(PeripheralWork::Ready(connection.submit_event(
+            return Ok(Some(PeripheralWork::Event(connection.submit_event(
                 ids,
                 prepared,
                 plan,
@@ -797,27 +806,25 @@ impl<const N: usize> Peripheral<N> {
                 connection.open_sent = true;
                 self.requested = Some((index, RequestKind::Open));
                 let access_address = connection.request.access_address().value().to_le_bytes();
-                PeripheralWork::Ready(RadioWork::Submit(RadioRequest::OpenConnection(
-                    ConnectionConfiguration {
-                        connection: id,
-                        access_address: AccessAddress(access_address),
-                        crc_init: CrcInit(connection.request.crc_initialization().wire_bytes()),
-                        created_at: connection.created_at,
-                        tx_power: TxPower::from_dbm(0),
-                        phy: LePhy::Le1M,
-                    },
-                )))
+                PeripheralWork::Open(ConnectionConfiguration {
+                    connection: id,
+                    access_address: AccessAddress(access_address),
+                    crc_init: CrcInit(connection.request.crc_initialization().wire_bytes()),
+                    created_at: connection.created_at,
+                    tx_power: TxPower::from_dbm(0),
+                    phy: LePhy::Le1M,
+                })
             }
             Work::Cancel(event) => {
                 if let Some(closing) = &mut connection.closing {
                     closing.cancel_sent = true;
                 }
                 self.requested = Some((index, RequestKind::Cancel));
-                PeripheralWork::Ready(RadioWork::Cancel(event))
+                PeripheralWork::Cancel(event)
             }
             Work::Close => {
                 self.requested = Some((index, RequestKind::Close));
-                PeripheralWork::Ready(RadioWork::Submit(RadioRequest::CloseConnection(id)))
+                PeripheralWork::Close(id)
             }
             Work::Transmit(pending, length) => {
                 connection.transmitting = Some((pending, length));
@@ -838,19 +845,22 @@ impl<const N: usize> Peripheral<N> {
 
     /// The transmission [`PeripheralWork::Transmit`] chose, borrowing its
     /// PDU from the connection.
-    pub(crate) fn transmission(
+    pub(crate) fn transmission<K: LeCapabilities>(
         &self,
         index: usize,
         kind: DataPduKind,
         length: usize,
-    ) -> RadioWork<'_> {
+    ) -> RadioWork<'_, K> {
         let connection = self.slots[index]
             .connection
             .as_ref()
             .expect("a transmission belongs to a connection");
+        let pdu = DataPdu::new(kind, &connection.tx[..length]).expect("a legacy data PDU fits");
         RadioWork::Submit(RadioRequest::Transmit {
             connection: connection.id,
-            pdu: DataPdu::new(kind, &connection.tx[..length]).expect("a legacy data PDU fits"),
+            pdu: Supported::new(pdu).expect(
+                "K carries every data PDU the core builds: LeController checks it at compile time",
+            ),
         })
     }
 
@@ -1251,7 +1261,7 @@ impl Connection {
         prepared: LePeripheralConnectionEventPrepared,
         plan: timing::Plan,
         reservation: LeWindow,
-    ) -> RadioWork<'static> {
+    ) -> ConnectionEvent {
         let first = prepared.first_transmit_window_micros().is_some();
         let coexistence = coexistence::peripheral_connection_level(
             prepared.event_counter(),
@@ -1270,7 +1280,7 @@ impl Connection {
             transmit_window: plan.transmit_window,
         };
         self.submitting = Some((prepared, event));
-        RadioWork::Submit(RadioRequest::ConnectionEvent(ConnectionEvent {
+        ConnectionEvent {
             id,
             connection: self.id,
             channel,
@@ -1279,7 +1289,7 @@ impl Connection {
             timing: plan.timing,
             priority: if first { FIRST_PRIORITY } else { PRIORITY },
             coexistence,
-        }))
+        }
     }
 
     fn owns(&self, id: EventId) -> bool {

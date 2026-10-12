@@ -5,8 +5,9 @@ use core::num::NonZeroU64;
 use oer_radio_coex::CoexPriority;
 
 use crate::{
-    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, LeInstant, LePhy, LeRadio, LeWindow,
-    NonZeroRadioDuration, RadioDuration, TestChannel, TestPayloadType, channel::AdvertisingChannel,
+    AdvertisingChannels, AdvertisingPdu, DataChannel, DataPdu, LeCapabilities, LeInstant, LePhy,
+    LeRadio, LeWindow, NonZeroRadioDuration, RadioDuration, Supported, TestChannel,
+    TestPayloadType, channel::AdvertisingChannel,
 };
 
 /// Caller-assigned identifier correlating one event with its outcomes.
@@ -495,42 +496,44 @@ impl RadioTiming {
     }
 }
 
-/// One request to the radio backend.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RadioRequest<'data> {
+/// One request to the radio backend. Every value it carries was checked
+/// against the capabilities `K` when it was built, and every timed one was
+/// placed within their horizon ([`Supported`]).
+#[derive(Debug, PartialEq)]
+pub enum RadioRequest<'data, K: LeCapabilities> {
     /// Configure an advertising set; its events may follow.
-    ConfigureAdvertising(AdvertisingConfiguration<'data>),
+    ConfigureAdvertising(Supported<K, AdvertisingConfiguration<'data>>),
     /// Schedule one advertising event.
-    Advertise(AdvertisingEvent),
+    Advertise(Supported<K, AdvertisingEvent>),
     /// Release an advertising set without pending events.
     RemoveAdvertising(AdvertisingSetId),
     /// Configure a scanner.
-    ConfigureScanner(ScannerConfiguration),
+    ConfigureScanner(Supported<K, ScannerConfiguration>),
     /// Schedule one scan window.
-    Scan(ScanWindow),
+    Scan(Supported<K, ScanWindow>),
     /// Release a scanner without pending windows.
     RemoveScanner(ScannerId),
     /// Open a connection.
-    OpenConnection(ConnectionConfiguration),
+    OpenConnection(Supported<K, ConnectionConfiguration>),
     /// Schedule one connection event.
-    ConnectionEvent(ConnectionEvent),
+    ConnectionEvent(Supported<K, ConnectionEvent>),
     /// Queue one PDU on a connection.
     Transmit {
         /// The connection.
         connection: ConnectionId,
         /// The PDU.
-        pdu: DataPdu<'data>,
+        pdu: Supported<K, DataPdu<'data>>,
     },
     /// Close a connection without pending events.
     CloseConnection(ConnectionId),
     /// Schedule one Direct Test Mode transmitter event.
-    TestTransmit(TestTransmit<'data>),
+    TestTransmit(Supported<K, TestTransmit<'data>>),
     /// Schedule one Direct Test Mode receiver event.
-    TestReceive(TestReceive),
+    TestReceive(Supported<K, TestReceive>),
     /// End Direct Test Mode after its last event ended.
     EndTest,
     /// Change the filter accept list.
-    FilterAcceptList(AcceptListChange),
+    FilterAcceptList(Supported<K, AcceptListChange>),
 }
 
 /// Why the backend refused a request. Nothing changed.
@@ -554,14 +557,10 @@ pub enum RequestError {
     AlreadyConfigured,
     /// The set, scanner or connection has a pending event or packet.
     Busy,
-    /// The window overlaps a scheduled event.
-    Overlap,
-    /// The window starts too soon for the backend to prepare it.
-    TooLate,
-    /// The window lies beyond what the backend can schedule.
-    TooFar,
-    /// The backend does not implement this form of the request.
-    Unsupported,
+    /// The window starts sooner than the backend prepares it: time passed
+    /// between the instant the request was placed at and its admission.
+    /// The work never existed.
+    Late,
     /// The filter accept list has no free entry.
     ListFull,
     /// The filter accept list does not hold the device to remove.

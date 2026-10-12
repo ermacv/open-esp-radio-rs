@@ -1,6 +1,6 @@
 //! What a backend serves, stated before any request.
 
-use crate::{DataPdu, RadioRequest, RadioTiming, ScanFilterPolicy, ScanType, TestPhy};
+use crate::{LeRadio, RadioDuration, RadioTiming, TestPhy};
 
 /// One LE PHY.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -87,17 +87,47 @@ pub struct LeConnectionCapabilities {
     pub max_data_payload: u8,
     /// Who acknowledges data PDUs.
     pub link_acknowledgement: LinkAcknowledgement,
+    /// The longest first-event wait for the central: the transmit window
+    /// widened by the timing guard on both sides.
+    pub max_first_receive_wait: RadioDuration<LeRadio>,
+    /// The longest receive wait of a later event.
+    pub max_receive_wait: RadioDuration<LeRadio>,
+}
+
+/// The legacy advertising a backend sends, by what the set listens for.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct LegacyAdvertisingTypes {
+    /// `ADV_NONCONN_IND`, which listens for nothing.
+    pub nonconnectable: bool,
+    /// The types that listen after each PDU: `ADV_IND` and `ADV_SCAN_IND`,
+    /// which answer `SCAN_REQ` or report every reception, and
+    /// `ADV_DIRECT_IND`, which reports every reception.
+    pub responsive: bool,
+}
+
+impl LegacyAdvertisingTypes {
+    /// No advertising.
+    pub const NONE: Self = Self {
+        nonconnectable: false,
+        responsive: false,
+    };
+
+    /// Whether any type is served.
+    pub const fn any(self) -> bool {
+        self.nonconnectable || self.responsive
+    }
 }
 
 /// What a backend serves.
 ///
-/// A backend refuses every request these capabilities exclude with
-/// [`crate::RequestError::Unsupported`] ([`Self::supports`] decides); a
-/// request they include may still be refused for its resources or timing.
+/// Every value a Controller submits is checked against these capabilities
+/// when it is built ([`Supported`](crate::Supported)), so a backend refuses
+/// nothing they exclude; a value they include may still meet the world
+/// (time, the epoch, the clock).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct LeRadioCapabilities {
-    /// Legacy advertising sets.
-    pub legacy_advertising: bool,
+    /// Legacy advertising PDU types.
+    pub legacy_advertising: LegacyAdvertisingTypes,
     /// Passive scanners.
     pub passive_scanning: bool,
     /// Active scanners, which send `SCAN_REQ`.
@@ -112,6 +142,11 @@ pub struct LeRadioCapabilities {
     pub phys: LePhys,
     /// PHYs of Direct Test Mode events.
     pub test_phys: LePhys,
+    /// The lowest transmit power the backend selects, in dBm; it rounds a
+    /// higher request down to a level it supports.
+    pub min_tx_power_dbm: i8,
+    /// How far past the current time a reservation may end.
+    pub max_ahead: RadioDuration<LeRadio>,
     /// How the backend keeps reservations apart and admits events, which
     /// the planner uses.
     pub timing: RadioTiming,
@@ -120,7 +155,7 @@ pub struct LeRadioCapabilities {
 impl LeRadioCapabilities {
     /// Nothing is served.
     pub const NONE: Self = Self {
-        legacy_advertising: false,
+        legacy_advertising: LegacyAdvertisingTypes::NONE,
         passive_scanning: false,
         active_scanning: false,
         filter_accept_list: false,
@@ -128,53 +163,32 @@ impl LeRadioCapabilities {
         direct_test_mode: false,
         phys: LePhys::NONE,
         test_phys: LePhys::NONE,
+        min_tx_power_dbm: i8::MAX,
+        max_ahead: RadioDuration::from_micros(0),
         timing: RadioTiming::MINIMAL,
     };
 
-    /// Whether these capabilities include `request`.
-    pub fn supports(&self, request: &RadioRequest<'_>) -> bool {
-        let scanning = self.passive_scanning || self.active_scanning;
-        let connection = self.peripheral_connection.is_some();
-        match request {
-            RadioRequest::ConfigureAdvertising(configuration) => {
-                self.legacy_advertising && self.phys.contains(configuration.phy)
-            }
-            RadioRequest::Advertise(_) | RadioRequest::RemoveAdvertising(_) => {
-                self.legacy_advertising
-            }
-            RadioRequest::ConfigureScanner(configuration) => {
-                let scan_type = match configuration.scan_type {
-                    ScanType::Passive => self.passive_scanning,
-                    ScanType::Active => self.active_scanning,
-                };
-                let filter = match configuration.filter_policy {
-                    ScanFilterPolicy::AcceptAll => true,
-                    ScanFilterPolicy::AcceptListOnly => self.filter_accept_list,
-                };
-                scan_type && filter && self.phys.contains(configuration.phy)
-            }
-            RadioRequest::Scan(_) | RadioRequest::RemoveScanner(_) => scanning,
-            RadioRequest::OpenConnection(configuration) => {
-                connection && self.phys.contains(configuration.phy)
-            }
-            RadioRequest::ConnectionEvent(_) | RadioRequest::CloseConnection(_) => connection,
-            RadioRequest::Transmit { pdu, .. } => self.carries(*pdu),
-            RadioRequest::TestTransmit(test) => {
-                self.direct_test_mode && self.test_phys.contains(test.phy.phy())
-            }
-            RadioRequest::TestReceive(test) => {
-                self.direct_test_mode && self.test_phys.contains(test.phy.phy())
-            }
-            RadioRequest::EndTest => self.direct_test_mode,
-            RadioRequest::FilterAcceptList(_) => self.filter_accept_list,
-        }
+    /// Whether any scanner is served.
+    pub const fn scanning(&self) -> bool {
+        self.passive_scanning || self.active_scanning
     }
+}
 
-    fn carries(&self, pdu: DataPdu<'_>) -> bool {
-        self.peripheral_connection.is_some_and(|connection| {
-            pdu.payload().len() <= usize::from(connection.max_data_payload)
-        })
-    }
+/// A backend's capabilities, known when the image is built: the marker the
+/// Controller core is generic over and every [`Supported`](crate::Supported)
+/// value is branded by. A composition names one per backend
+/// configuration; the core never names the backend.
+pub trait LeCapabilities: 'static {
+    /// What the backend serves.
+    const CAPS: LeRadioCapabilities;
+}
+
+/// The capabilities of a host without a radio: nothing is served, so no
+/// value is ever supported.
+pub enum NoCapabilities {}
+
+impl LeCapabilities for NoCapabilities {
+    const CAPS: LeRadioCapabilities = LeRadioCapabilities::NONE;
 }
 
 #[cfg(test)]

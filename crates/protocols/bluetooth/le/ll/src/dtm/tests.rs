@@ -2,10 +2,12 @@ use std::vec::Vec;
 
 use oer_bluetooth_radio::{
     ConnectionAllowances, EventId, EventResult, LeInstant, RadioDuration, RadioOutcome,
-    RadioRequest, RadioTiming, TestChannel, TestPhy, TestReport, TxPower,
+    RadioTiming, TestChannel, TestPhy, TestReport, TxPower,
 };
 
-use super::{DTM_MAX_PAYLOAD, DtmPayloadPattern, DtmSession, DtmStartError, DtmStop, DtmTest};
+use super::{
+    DTM_MAX_PAYLOAD, DtmEvent, DtmPayloadPattern, DtmSession, DtmStartError, DtmStop, DtmTest,
+};
 
 const TIMING: RadioTiming = RadioTiming {
     preparation_lead: RadioDuration::from_micros(107),
@@ -76,7 +78,7 @@ fn transmitter_packets_stay_on_the_interval_grid() {
     let mut anchors = Vec::new();
     let mut now = 1_000;
     for _ in 0..3 {
-        let Some(RadioRequest::TestTransmit(test)) = session
+        let Some(DtmEvent::Transmit(test)) = session
             .next_request(LeInstant::from_micros(now), TIMING, &mut payload)
             .unwrap()
         else {
@@ -119,7 +121,7 @@ fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
         })
         .unwrap();
     let mut payload = [0; DTM_MAX_PAYLOAD];
-    let Some(RadioRequest::TestTransmit(first)) = session
+    let Some(DtmEvent::Transmit(first)) = session
         .next_request(LeInstant::from_micros(1_000), TIMING, &mut payload)
         .unwrap()
     else {
@@ -136,7 +138,7 @@ fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
     // Planned 150 us after the packet, the next slot is still reachable
     // (150 + 107 + 40 + 100 = 397 us < 433 us): the planning slack of the
     // first packet does not push it one interval later.
-    let Some(RadioRequest::TestTransmit(second)) = session
+    let Some(DtmEvent::Transmit(second)) = session
         .next_request(LeInstant::from_micros(end + 150), TIMING, &mut payload)
         .unwrap()
     else {
@@ -149,7 +151,7 @@ fn a_later_le_2m_packet_takes_the_next_admitted_slot() {
         EventResult::Executed { anchor: None },
     );
     // Planned too late for the next slot, the packet takes the one after.
-    let Some(RadioRequest::TestTransmit(third)) = session
+    let Some(DtmEvent::Transmit(third)) = session
         .next_request(
             LeInstant::from_micros(start + 625 + 192 + 400),
             TIMING,
@@ -178,7 +180,7 @@ fn a_receiver_counts_packets_and_drains_before_it_stops() {
         TestReport::Nothing,
         TestReport::Received { rssi_dbm: -52 },
     ] {
-        let Some(RadioRequest::TestReceive(test)) = session
+        let Some(DtmEvent::Receive(test)) = session
             .next_request(LeInstant::from_micros(0), TIMING, &mut payload)
             .unwrap()
         else {
@@ -196,7 +198,7 @@ fn a_receiver_counts_packets_and_drains_before_it_stops() {
         );
     }
     assert_eq!(recurring, [false, true, true]);
-    let Some(RadioRequest::TestReceive(test)) = session
+    let Some(DtmEvent::Receive(test)) = session
         .next_request(LeInstant::from_micros(0), TIMING, &mut payload)
         .unwrap()
     else {
@@ -289,7 +291,7 @@ fn a_recurring_packet_near_epoch_end_needs_only_recurring_slack() {
         .unwrap(),
     );
     let mut payload = [0; DTM_MAX_PAYLOAD];
-    let Some(RadioRequest::TestTransmit(test)) = session
+    let Some(DtmEvent::Transmit(test)) = session
         .next_request(LeInstant::from_micros(u64::MAX - 800), TIMING, &mut payload)
         .unwrap()
     else {
@@ -331,7 +333,7 @@ fn an_aborted_event_is_counted_apart_and_the_next_test_event_follows() {
         })
         .unwrap();
     let mut payload = [0; 255];
-    let RadioRequest::TestReceive(first) = session
+    let DtmEvent::Receive(first) = session
         .next_request(LeInstant::from_micros(1_000), TIMING, &mut payload)
         .unwrap()
         .unwrap()

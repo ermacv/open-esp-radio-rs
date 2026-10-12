@@ -79,7 +79,7 @@ fn exercise(cancel: bool, fail: bool) {
     let mut transport = LeControllerHciResources::<NoopRawMutex, 4, 4, 258>::new(config).unwrap();
     let endpoints = transport.split();
     let peer = endpoints.controller;
-    let mut core = LeController::<'_, 12, 1>::new(
+    let mut core = LeController::<'_, oer_bluetooth_radio::NoCapabilities, 12, 1>::new(
         LeControllerConfig {
             bootstrap: config,
             version: None,

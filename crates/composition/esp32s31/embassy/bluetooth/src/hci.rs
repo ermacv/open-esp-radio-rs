@@ -25,7 +25,7 @@ use oer_esp32s31_soc_esp_hal::entropy::Entropy;
 use oer_time_embassy::EmbassyClock;
 use static_cell::StaticCell;
 
-use crate::system::{BluetoothSystemFault, BluetoothSystemPort};
+use crate::system::{BluetoothSystemCapabilities, BluetoothSystemFault, BluetoothSystemPort};
 
 /// Host-to-Controller packet slots; they also bound the Host's ACL credits.
 pub const HOST_TO_CONTROLLER: usize = 4;
@@ -65,7 +65,8 @@ type ControllerTransport = InProcessHciControllerTransport<
 >;
 
 static RESOURCES: StaticCell<Resources> = StaticCell::new();
-static CORE: StaticCell<LeController<'static, OUTPUT, CONNECTIONS>> = StaticCell::new();
+static CORE: StaticCell<LeController<'static, BluetoothSystemCapabilities, OUTPUT, CONNECTIONS>> =
+    StaticCell::new();
 
 /// The SoC entropy service as the Controller's random source.
 pub struct BluetoothEntropy<'d> {
@@ -96,7 +97,7 @@ pub struct BluetoothHci {
 /// Serves the Host over the radio port of the running client.
 pub struct BluetoothHciService {
     transport: ControllerTransport,
-    core: &'static mut LeController<'static, OUTPUT, CONNECTIONS>,
+    core: &'static mut LeController<'static, BluetoothSystemCapabilities, OUTPUT, CONNECTIONS>,
     config: LeControllerConfig,
     random: &'static (dyn LeRandomSource + 'static),
     retired: Option<HciRetired<'static>>,
@@ -188,7 +189,7 @@ impl BluetoothHciService {
     reason = "the Controller core is rebuilt once per Host epoch in its static place; the linked image's stack gate and runtime stack painting check its stack use"
 )]
 fn reset_core(
-    core: &mut LeController<'static, OUTPUT, CONNECTIONS>,
+    core: &mut LeController<'static, BluetoothSystemCapabilities, OUTPUT, CONNECTIONS>,
     config: LeControllerConfig,
     random: &'static (dyn LeRandomSource + 'static),
 ) {

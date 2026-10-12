@@ -7,11 +7,11 @@ use oer_bluetooth_radio::{
     AcceptListChange, AcceptListDevice, AdvertisingChannel, AdvertisingConfiguration,
     AdvertisingEvent, AdvertisingReception, AdvertisingSetId, CancelError, ConnectionAllowances,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, DataPduKind,
-    EventId, EventResult, LeConnectionCapabilities, LeInstant, LePhys, LeRadio,
-    LeRadioCapabilities, LeWindow, LinkAcknowledgement, NonZeroRadioDuration, OutsideEpoch,
-    RadioDuration, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu, RequestError,
-    ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive,
-    TestReport, TestTransmit, TxPower,
+    EventId, EventResult, LeCapabilities, LeConnectionCapabilities, LeInstant, LePhys, LeRadio,
+    LeRadioCapabilities, LeWindow, LegacyAdvertisingTypes, LinkAcknowledgement,
+    NonZeroRadioDuration, OutsideEpoch, RadioDuration, RadioOutcome, RadioRequest, RadioTiming,
+    ReceivedPdu, RequestError, ScanFilterPolicy, ScanType, ScanWindow, ScannerConfiguration,
+    ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
@@ -46,9 +46,19 @@ use oer_esp32s31_hal::bluetooth::{
 };
 use oer_esp32s31_hal::shared_radio::ClientQuiescence;
 
-/// Reservations may start at most this far after the current time; wrapping
+/// Reservations may end at most this far after the current time; wrapping
 /// controller time orders windows only within a half-range.
 const MAX_AHEAD_MICROS: u64 = 1 << 30;
+/// The longest first-event wait the short receive-wait form holds: its
+/// 65,534 microseconds less the 61-microsecond PHY allowance
+/// (`PeripheralConnectionReceiveWait`).
+const FIRST_RECEIVE_WAIT_MAX_MICROS: u64 = 65_534 - 61;
+/// The longest recurring receive wait the long form holds, in two-microsecond
+/// units (`PeripheralConnectionRecurringReceiveWait`).
+const RECEIVE_WAIT_MAX_MICROS: u64 = 131_070;
+/// The longest recurring receive wait the short form holds to the
+/// microsecond.
+const RECEIVE_WAIT_SHORT_MAX_MICROS: u64 = 65_534;
 /// The positional DTM hardware profile of the reviewed standalone build.
 const DTM_REVIEWED_CONFIG: u8 = 3;
 /// The largest LE Test payload.
@@ -102,6 +112,27 @@ pub enum RadioFault {
     MemoryInconsistency,
     /// Hardware executed events out of their scheduled order.
     OutOfOrderCompletion,
+}
+
+/// The radio's state is unknown: a fault was reported to its sink, now or
+/// earlier, and it admits nothing until a Controller reset.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RadioFaulted;
+
+/// Why one admission did not take place.
+enum Admit {
+    /// The world refused it; nothing changed.
+    Refused(RequestError),
+    /// The radio's own structures disagree: a fault.
+    Fault(RadioFault),
+    /// The radio faulted before.
+    Faulted,
+}
+
+impl From<RequestError> for Admit {
+    fn from(error: RequestError) -> Self {
+        Self::Refused(error)
+    }
 }
 
 /// Hardware work the caller performs next.
@@ -216,16 +247,16 @@ const LONG_INTERVAL_MARGIN_MICROS: u32 = 2_000;
 fn connection_event_span(
     interval: RadioDuration<LeRadio>,
     widening: RadioDuration<LeRadio>,
-) -> Result<RadioDuration<LeRadio>, RequestError> {
+) -> RadioDuration<LeRadio> {
     if interval <= RadioDuration::from_micros(u64::from(WHOLE_INTERVAL_SPAN_MICROS)) {
-        return Ok(interval);
+        return interval;
     }
     interval
         .checked_sub(RadioDuration::from_micros(u64::from(
             LONG_INTERVAL_MARGIN_MICROS,
         )))
         .and_then(|span| span.checked_add(widening))
-        .ok_or(RequestError::Unsupported)
+        .expect("a long interval exceeds its margin and a widening fits the epoch")
 }
 
 const fn connection_allowances(
@@ -315,10 +346,12 @@ impl RadioClock {
             .raw_ticks_for_micros(self.epoch.project_capture(raw))
     }
 
-    fn duration(&self, duration: RadioDuration<LeRadio>) -> Result<u32, RequestError> {
+    /// `duration` in controller ticks; every duration a placed request
+    /// holds lies within its horizon, which the ticks represent.
+    fn duration(&self, duration: RadioDuration<LeRadio>) -> u32 {
         self.epoch
             .raw_duration_ticks(duration)
-            .map_err(|_| RequestError::TooFar)
+            .expect("a placed duration lies within the horizon")
     }
 
     /// The instant of a capture, placed by its signed half-range distance
@@ -339,6 +372,124 @@ impl RadioClock {
         let delay = BlePhyLe1MPacketStartCalibration::le_1m().capture_delay_micros();
         // A capture lies at least `EPOCH_MARGIN / 2` above zero.
         LeInstant::from_micros(self.instant(raw_capture).as_micros() - u64::from(delay))
+    }
+}
+
+/// The scheduler policy and sleep-clock accuracy a radio is built with,
+/// known when the image is built.
+pub trait BluetoothRadioConfig: 'static {
+    /// The scheduler policy.
+    const SCHEDULER: SchedulerSoftwareConfig;
+    /// The board's worst-case sleep-clock accuracy, in parts per million.
+    const LOCAL_SLEEP_CLOCK_PPM: u16;
+}
+
+/// The capabilities of a radio with configuration `C` and these pools: the
+/// capabilities marker of its port, computed by
+/// [`BluetoothRadio::capabilities`] from the same timing the radio reserves
+/// with.
+pub struct BluetoothCapabilities<
+    C,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+>(core::marker::PhantomData<fn() -> C>, Infallible);
+
+impl<
+    C: BluetoothRadioConfig,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+> LeCapabilities
+    for BluetoothCapabilities<
+        C,
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+    >
+{
+    const CAPS: LeRadioCapabilities = BluetoothRadio::<
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+    >::capabilities(BluetoothRadio::<
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+    >::radio_timing(
+        C::SCHEDULER, C::LOCAL_SLEEP_CLOCK_PPM
+    ));
+}
+
+impl<
+    C,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+> core::fmt::Debug
+    for BluetoothCapabilities<
+        C,
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+    >
+{
+    fn fmt(&self, _: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self.1 {}
+    }
+}
+
+impl<
+    C,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+> PartialEq
+    for BluetoothCapabilities<
+        C,
+        LEGACY,
+        CONNECTABLE,
+        SCANNERS,
+        CONNECTIONS,
+        SCAN_PACKETS,
+        RX_PACKETS,
+        ITEMS,
+    >
+{
+    fn eq(&self, _: &Self) -> bool {
+        match self.1 {}
     }
 }
 
@@ -446,7 +597,10 @@ impl<
     /// `timing` is [`Self::radio_timing`] of the epoch's scheduler policy.
     pub const fn capabilities(timing: RadioTiming) -> LeRadioCapabilities {
         LeRadioCapabilities {
-            legacy_advertising: LEGACY + CONNECTABLE > 0,
+            legacy_advertising: LegacyAdvertisingTypes {
+                nonconnectable: LEGACY > 0,
+                responsive: CONNECTABLE > 0,
+            },
             passive_scanning: SCANNERS > 0,
             active_scanning: SCANNERS > 0,
             filter_accept_list: true,
@@ -454,6 +608,10 @@ impl<
                 Some(LeConnectionCapabilities {
                     max_data_payload: BLUETOOTH_LE_RX_PAYLOAD_CAPACITY as u8,
                     link_acknowledgement: LinkAcknowledgement::Hardware,
+                    max_first_receive_wait: RadioDuration::from_micros(
+                        FIRST_RECEIVE_WAIT_MAX_MICROS,
+                    ),
+                    max_receive_wait: RadioDuration::from_micros(RECEIVE_WAIT_MAX_MICROS),
                 })
             } else {
                 None
@@ -461,6 +619,8 @@ impl<
             direct_test_mode: true,
             phys: LePhys::LE_1M,
             test_phys: LePhys::ALL,
+            min_tx_power_dbm: LeTxPower::LOWEST_DBM,
+            max_ahead: RadioDuration::from_micros(MAX_AHEAD_MICROS),
             timing,
         }
     }
@@ -598,20 +758,39 @@ impl<
         self.faulted
     }
 
-    /// Admit one request. A faulted radio ([`Self::is_faulted`]) admits
-    /// nothing and answers `Busy`; its port reports it as poisoned.
-    pub fn request(&mut self, request: RadioRequest<'_>) -> Result<(), RequestError> {
+    /// Admit one request of a backend whose capabilities are `K`: every
+    /// value it carries is supported and every window placed within their
+    /// horizon, so the radio refuses only what the world decides (time, the
+    /// epoch) and what its pools and lists hold now. A disagreement of its
+    /// own structures is a fault, reported to `sink` and returned as
+    /// [`RadioFaulted`]; a faulted radio ([`Self::is_faulted`]) admits
+    /// nothing and returns it again.
+    pub fn request<K: LeCapabilities>(
+        &mut self,
+        request: RadioRequest<'_, K>,
+        sink: &mut impl BluetoothRadioSink,
+    ) -> Result<Result<(), RequestError>, RadioFaulted> {
+        // The core placed the request with the reservation this radio uses.
+        debug_assert_eq!(K::CAPS.timing, self.timing);
         let kind = crate::trace::request_kind(&request);
         let start = match &request {
-            RadioRequest::Advertise(event) => Some(event.anchor),
-            RadioRequest::Scan(window) => Some(window.window.start()),
-            RadioRequest::ConnectionEvent(event) => Some(event.window.start()),
-            RadioRequest::TestTransmit(test) => Some(test.window.start()),
-            RadioRequest::TestReceive(test) => Some(test.window.start()),
+            RadioRequest::Advertise(event) => Some(event.get().anchor),
+            RadioRequest::Scan(window) => Some(window.get().window.start()),
+            RadioRequest::ConnectionEvent(event) => Some(event.get().window.start()),
+            RadioRequest::TestTransmit(test) => Some(test.get().window.start()),
+            RadioRequest::TestReceive(test) => Some(test.get().window.start()),
             _ => None,
         };
         let now = self.now();
-        let result = self.admit(request);
+        let result = match self.admit(request) {
+            Ok(()) => Ok(Ok(())),
+            Err(Admit::Refused(error)) => Ok(Err(error)),
+            Err(Admit::Fault(fault)) => {
+                self.fault(fault, sink);
+                Err(RadioFaulted)
+            }
+            Err(Admit::Faulted) => Err(RadioFaulted),
+        };
         crate::trace::emit(|| oer_bluetooth_trace::RoleRequest {
             kind,
             answer: crate::trace::answer(result),
@@ -623,12 +802,9 @@ impl<
         result
     }
 
-    fn admit(&mut self, request: RadioRequest<'_>) -> Result<(), RequestError> {
+    fn admit<K: LeCapabilities>(&mut self, request: RadioRequest<'_, K>) -> Result<(), Admit> {
         if self.faulted {
-            return Err(RequestError::Busy);
-        }
-        if !Self::capabilities(self.timing).supports(&request) {
-            return Err(RequestError::Unsupported);
+            return Err(Admit::Faulted);
         }
         // A test session owns the Link Layer: no other role schedules air
         // activity until Test End.
@@ -642,20 +818,25 @@ impl<
                     | RadioRequest::Transmit { .. }
             )
         {
-            return Err(RequestError::Busy);
+            return Err(RequestError::Busy.into());
         }
         match request {
             RadioRequest::ConfigureAdvertising(configuration) => {
-                self.configure_advertising(configuration)
+                self.configure_advertising(*configuration.get())
             }
-            RadioRequest::Advertise(event) => self.advertise(event),
-            RadioRequest::RemoveAdvertising(set) => self.remove_advertising(set),
-            RadioRequest::ConfigureScanner(configuration) => self.configure_scanner(configuration),
-            RadioRequest::Scan(window) => self.scan(window),
-            RadioRequest::RemoveScanner(scanner) => self.remove_scanner(scanner),
-            RadioRequest::OpenConnection(configuration) => self.open_connection(configuration),
-            RadioRequest::ConnectionEvent(event) => self.connection_event(event),
+            RadioRequest::Advertise(event) => self.advertise(*event.get()),
+            RadioRequest::RemoveAdvertising(set) => Ok(self.remove_advertising(set)?),
+            RadioRequest::ConfigureScanner(configuration) => {
+                self.configure_scanner(*configuration.get())
+            }
+            RadioRequest::Scan(window) => self.scan(*window.get()),
+            RadioRequest::RemoveScanner(scanner) => Ok(self.remove_scanner(scanner)?),
+            RadioRequest::OpenConnection(configuration) => {
+                self.open_connection(*configuration.get())
+            }
+            RadioRequest::ConnectionEvent(event) => self.connection_event(*event.get()),
             RadioRequest::Transmit { connection, pdu } => {
+                let pdu = *pdu.get();
                 let kind = match pdu.kind() {
                     DataPduKind::Continuation => {
                         PeripheralConnectionTransmitPduKind::DataContinuation
@@ -665,11 +846,11 @@ impl<
                 };
                 self.transmit(connection, kind, pdu.payload())
             }
-            RadioRequest::CloseConnection(connection) => self.close_connection(connection),
-            RadioRequest::TestTransmit(test) => self.test_transmit(test),
-            RadioRequest::TestReceive(test) => self.test_receive(test),
-            RadioRequest::EndTest => self.end_test(),
-            RadioRequest::FilterAcceptList(change) => self.change_accept_list(change),
+            RadioRequest::CloseConnection(connection) => Ok(self.close_connection(connection)?),
+            RadioRequest::TestTransmit(test) => self.test_transmit(*test.get()),
+            RadioRequest::TestReceive(test) => self.test_receive(*test.get()),
+            RadioRequest::EndTest => Ok(self.end_test()?),
+            RadioRequest::FilterAcceptList(change) => Ok(self.change_accept_list(*change.get())?),
         }
     }
 
@@ -1094,54 +1275,54 @@ impl<
         }
     }
 
-    /// Admission of the reservation of `air` for one item.
+    /// Admission of the reservation of `air` for one item. The core placed
+    /// it within the horizon of an instant no later than this radio's time,
+    /// with the reservation this radio uses; only the time since then
+    /// refuses it, as [`RequestError::Late`].
     fn reserve(
         &self,
         anchor: LeInstant,
         duration: RadioDuration<LeRadio>,
     ) -> Result<SchedulerRawWindow, RequestError> {
         let now = LeInstant::from_micros(self.clock.now);
-        let air = LeWindow::new(anchor, duration).map_err(|_| RequestError::TooFar)?;
+        let air = LeWindow::new(anchor, duration).map_err(|_| RequestError::EpochExhausted)?;
         // A valid air window keeps its end, so only an early start fails.
         let reservation = self
             .timing
             .reservation(air)
-            .map_err(|OutsideEpoch| RequestError::TooLate)?;
+            .map_err(|OutsideEpoch| RequestError::Late)?;
         let guarded_now = now
             .checked_add(self.timing.admission_guard)
-            .ok_or(RequestError::TooFar)?;
+            .ok_or(RequestError::EpochExhausted)?;
         if reservation.start() < guarded_now {
-            return Err(RequestError::TooLate);
+            return Err(RequestError::Late);
         }
-        let horizon = reservation
-            .end()
-            .checked_duration_since(now)
-            .ok_or(RequestError::TooLate)?;
-        if horizon > RadioDuration::from_micros(MAX_AHEAD_MICROS) {
-            return Err(RequestError::TooFar);
-        }
-        self.clock.duration(reservation.duration())?;
-        SchedulerRawWindow::from_projected_scheduler_window(
+        debug_assert!(
+            reservation
+                .end()
+                .checked_duration_since(now)
+                .is_some_and(|horizon| horizon <= RadioDuration::from_micros(MAX_AHEAD_MICROS)),
+            "a placed reservation ends within the horizon"
+        );
+        Ok(SchedulerRawWindow::from_projected_scheduler_window(
             self.clock.raw(reservation.start().as_micros()),
             self.clock.raw(reservation.end().as_micros()),
         )
-        .ok_or(RequestError::TooFar)
+        .expect("a reservation within the horizon is a scheduler window"))
     }
 
-    /// Whether `window` is free of listed and pending reservations.
-    fn free(&self, window: SchedulerRawWindow) -> Result<(), RequestError> {
-        let occupied = self
-            .executor
-            .list()
-            .iter()
-            .map(|(_, listed)| listed)
-            .chain(self.pending.iter().flatten().map(|(_, pending)| *pending));
-        for other in occupied {
-            if overlaps(window, other) {
-                return Err(RequestError::Overlap);
-            }
-        }
-        Ok(())
+    /// Check that `window` is free of listed and pending reservations: the
+    /// core keeps its events apart with the reservation this radio uses.
+    fn free(&self, window: SchedulerRawWindow) {
+        debug_assert!(
+            self.executor
+                .list()
+                .iter()
+                .map(|(_, listed)| listed)
+                .chain(self.pending.iter().flatten().map(|(_, pending)| *pending))
+                .all(|other| !overlaps(window, other)),
+            "the core never overlaps its events"
+        );
     }
 
     fn check_capacity(&self, items: usize) -> Result<(), RequestError> {
@@ -1154,13 +1335,13 @@ impl<
     fn configure_advertising(
         &mut self,
         configuration: AdvertisingConfiguration<'_>,
-    ) -> Result<(), RequestError> {
+    ) -> Result<(), Admit> {
         if find_id(&self.legacy, configuration.set).is_some()
             || find_id(&self.connectable, configuration.set).is_some()
         {
-            return Err(RequestError::AlreadyConfigured);
+            return Err(RequestError::AlreadyConfigured.into());
         }
-        let tx_power = le_tx_power(configuration.tx_power)?;
+        let tx_power = le_tx_power(configuration.tx_power);
         let scan_response = match configuration.reception {
             AdvertisingReception::None => None,
             AdvertisingReception::ScanResponse(scan_response) => Some(Some(scan_response)),
@@ -1176,7 +1357,7 @@ impl<
                     .and_then(|()| pool.reset_link_state(&instance, tx_power));
                 if result.is_err() {
                     let _ = pool.release(instance);
-                    return Err(RequestError::Unsupported);
+                    return Err(Admit::Fault(RadioFault::MemoryInconsistency));
                 }
                 self.legacy[index] = Some(Slot {
                     id: configuration.set,
@@ -1189,7 +1370,7 @@ impl<
                 let pdu = configuration.pdu.bytes();
                 let adv_ind =
                     LegacyConnectableAdvIndPacketInput::try_from_encoded_extent(pdu, pdu[1])
-                        .map_err(|_| RequestError::Unsupported)?;
+                        .map_err(|_| Admit::Fault(RadioFault::MemoryInconsistency))?;
                 let scan_response = scan_response
                     .map(|response| {
                         let response = response.bytes();
@@ -1199,7 +1380,7 @@ impl<
                         )
                     })
                     .transpose()
-                    .map_err(|_| RequestError::Unsupported)?;
+                    .map_err(|_| Admit::Fault(RadioFault::MemoryInconsistency))?;
                 // TxAdd selects the advertiser address type.
                 let own_address = if pdu[0] & 0x40 == 0 {
                     LegacyConnectableAdvertisingOwnAddress::Public
@@ -1220,7 +1401,7 @@ impl<
                     .is_err()
                 {
                     let _ = pool.release(instance);
-                    return Err(RequestError::Unsupported);
+                    return Err(Admit::Fault(RadioFault::MemoryInconsistency));
                 }
                 self.connectable[index] = Some(Slot {
                     id: configuration.set,
@@ -1232,24 +1413,20 @@ impl<
         Ok(())
     }
 
-    fn advertise(&mut self, event: AdvertisingEvent) -> Result<(), RequestError> {
+    fn advertise(&mut self, event: AdvertisingEvent) -> Result<(), Admit> {
         if let Some(index) = find_id(&self.legacy, event.set) {
             return self.advertise_legacy(index, event);
         }
         if let Some(index) = find_id(&self.connectable, event.set) {
             return self.advertise_connectable(index, event);
         }
-        Err(RequestError::Unknown)
+        Err(RequestError::Unknown.into())
     }
 
-    fn advertise_legacy(
-        &mut self,
-        index: usize,
-        event: AdvertisingEvent,
-    ) -> Result<(), RequestError> {
+    fn advertise_legacy(&mut self, index: usize, event: AdvertisingEvent) -> Result<(), Admit> {
         let slot = self.legacy[index].as_ref().expect("the set is configured");
         if slot.event.is_some() {
-            return Err(RequestError::Busy);
+            return Err(RequestError::Busy.into());
         }
         let count = event.channels.len();
         let spacing = event.channel_spacing;
@@ -1257,14 +1434,16 @@ impl<
         for (position, window) in windows.iter_mut().enumerate().take(count) {
             let (_, anchor) = event
                 .channel_anchor(position)
-                .map_err(|_| RequestError::TooFar)?
-                .ok_or(RequestError::Unsupported)?;
+                .expect("a placed event's channels lie in the epoch")
+                .expect("the channel count holds the position");
             let lead = self.timing.preparation_lead;
             let window_ = self.reserve(
                 anchor,
-                spacing.checked_sub(lead).ok_or(RequestError::Unsupported)?,
+                spacing
+                    .checked_sub(lead)
+                    .expect("a supported event's spacing exceeds the preparation lead"),
             )?;
-            self.free(window_)?;
+            self.free(window_);
             *window = Some(window_);
         }
         self.check_capacity(count)?;
@@ -1275,7 +1454,7 @@ impl<
         )
         .expect("a channel set is non-empty");
         let first = windows[0].expect("an event has a channel");
-        let raw_duration = self.clock.duration(spacing)?;
+        let raw_duration = self.clock.duration(spacing);
         let slot = self.legacy[index].as_mut().expect("the set is configured");
         let prepared = self
             .memory
@@ -1287,7 +1466,7 @@ impl<
                 raw_duration,
                 coexistence::advertising_priorities(self.coexistence, event.coexistence),
             )
-            .map_err(|_| RequestError::Unsupported)?;
+            .map_err(|_| Admit::Fault(RadioFault::MemoryInconsistency))?;
         let mut submitted = [None; 3];
         for (item, start, end) in prepared.items() {
             let id = self
@@ -1312,12 +1491,12 @@ impl<
         &mut self,
         index: usize,
         event: AdvertisingEvent,
-    ) -> Result<(), RequestError> {
+    ) -> Result<(), Admit> {
         let slot = self.connectable[index]
             .as_ref()
             .expect("the set is configured");
         if slot.event.is_some() {
-            return Err(RequestError::Busy);
+            return Err(RequestError::Busy.into());
         }
         let count = event.channels.len();
         let spacing = event.channel_spacing;
@@ -1326,13 +1505,15 @@ impl<
         for (position, window) in windows.iter_mut().enumerate().take(count) {
             let (_, anchor) = event
                 .channel_anchor(position)
-                .map_err(|_| RequestError::TooFar)?
-                .ok_or(RequestError::Unsupported)?;
+                .expect("a placed event's channels lie in the epoch")
+                .expect("the channel count holds the position");
             let window_ = self.reserve(
                 anchor,
-                spacing.checked_sub(lead).ok_or(RequestError::Unsupported)?,
+                spacing
+                    .checked_sub(lead)
+                    .expect("a supported event's spacing exceeds the preparation lead"),
             )?;
-            self.free(window_)?;
+            self.free(window_);
             *window = Some(window_);
         }
         self.check_capacity(count)?;
@@ -1343,7 +1524,7 @@ impl<
         )
         .expect("a channel set is non-empty");
         let first = windows[0].expect("an event has a channel");
-        let raw_duration = self.clock.duration(spacing)?;
+        let raw_duration = self.clock.duration(spacing);
         let lead_ticks = self.policy.sequence_lead_raw_delta();
         let slot = self.connectable[index]
             .as_mut()
@@ -1359,7 +1540,7 @@ impl<
                 lead_ticks,
                 coexistence::advertising_priorities(self.coexistence, event.coexistence),
             )
-            .map_err(|_| RequestError::Unsupported)?;
+            .map_err(|_| Admit::Fault(RadioFault::MemoryInconsistency))?;
         let mut submitted = [None; 3];
         for (item, start, end) in prepared.items() {
             let id = self
@@ -1420,14 +1601,11 @@ impl<
         Err(RequestError::Unknown)
     }
 
-    fn configure_scanner(
-        &mut self,
-        configuration: ScannerConfiguration,
-    ) -> Result<(), RequestError> {
+    fn configure_scanner(&mut self, configuration: ScannerConfiguration) -> Result<(), Admit> {
         if find_id(&self.scanners, configuration.scanner).is_some() {
-            return Err(RequestError::AlreadyConfigured);
+            return Err(RequestError::AlreadyConfigured.into());
         }
-        let tx_power = le_tx_power(configuration.tx_power)?;
+        let tx_power = le_tx_power(configuration.tx_power);
         let index = free_slot(&self.scanners)?;
         let pool = &mut self.memory.scanners;
         let instance = pool.acquire().ok_or(RequestError::NoInstance)?;
@@ -1445,7 +1623,7 @@ impl<
             .is_err()
         {
             let _ = pool.release(instance);
-            return Err(RequestError::Unsupported);
+            return Err(Admit::Fault(RadioFault::MemoryInconsistency));
         }
         self.scanners[index] = Some(Slot {
             id: configuration.scanner,
@@ -1475,28 +1653,28 @@ impl<
         })
     }
 
-    fn scan(&mut self, scan: ScanWindow) -> Result<(), RequestError> {
+    fn scan(&mut self, scan: ScanWindow) -> Result<(), Admit> {
         let index = find_id(&self.scanners, scan.scanner).ok_or(RequestError::Unknown)?;
         if self.scanners[index]
             .as_ref()
             .is_some_and(|slot| slot.event.is_some())
         {
-            return Err(RequestError::Busy);
+            return Err(RequestError::Busy.into());
         }
         let anchor = scan.window.start();
         let duration = scan.window.duration();
         let window = self.reserve(anchor, duration)?;
-        self.free(window)?;
+        self.free(window);
         self.check_capacity(1)?;
         // The pinned scan restart (`r_sym_ble_M0sTWGzdUqAUyXoK849F`) ends
         // the item at most 32768 microseconds after the anchor and records
         // the whole window length in the link state.
         let item_end = anchor
             .checked_add(duration.min(RadioDuration::from_micros(u64::from(SCAN_EVENT_MAX_MICROS))))
-            .ok_or(RequestError::TooFar)?;
+            .expect("a placed window's end lies in the epoch");
         let item_end = self.clock.raw(item_end.as_micros());
-        let window_ticks = LegacyScanWindowTicks::new(self.clock.duration(duration)?)
-            .ok_or(RequestError::TooFar)?;
+        let window_ticks = LegacyScanWindowTicks::new(self.clock.duration(duration))
+            .expect("a placed window is non-empty and within the horizon");
         let slot = self.scanners[index]
             .as_mut()
             .expect("the scanner is configured");
@@ -1518,7 +1696,7 @@ impl<
                 LegacyScanStartSelection::Requested,
                 coexistence::passive_scan_priorities(self.coexistence),
             )
-            .map_err(|_| RequestError::Unsupported)?;
+            .map_err(|_| Admit::Fault(RadioFault::MemoryInconsistency))?;
         let id = self
             .memory
             .scanners
@@ -1552,17 +1730,14 @@ impl<
         Ok(())
     }
 
-    fn open_connection(
-        &mut self,
-        configuration: ConnectionConfiguration,
-    ) -> Result<(), RequestError> {
+    fn open_connection(&mut self, configuration: ConnectionConfiguration) -> Result<(), Admit> {
         if self
             .connections
             .iter()
             .flatten()
             .any(|(slot, _)| slot.id == configuration.connection)
         {
-            return Err(RequestError::AlreadyConfigured);
+            return Err(RequestError::AlreadyConfigured.into());
         }
         let index = self
             .connections
@@ -1577,7 +1752,7 @@ impl<
         );
         if pool.prepare_identity(&instance, identity).is_err() {
             let _ = pool.release(instance);
-            return Err(RequestError::Unsupported);
+            return Err(Admit::Fault(RadioFault::MemoryInconsistency));
         }
         self.connections[index] = Some((
             Slot {
@@ -1604,17 +1779,17 @@ impl<
             .ok_or(RequestError::Unknown)
     }
 
-    fn connection_event(&mut self, event: ConnectionEvent) -> Result<(), RequestError> {
+    fn connection_event(&mut self, event: ConnectionEvent) -> Result<(), Admit> {
         let index = self.connection_index(event.connection)?;
         let (slot, facts) = self.connections[index]
             .as_ref()
             .expect("the connection is open");
         if slot.event.is_some() {
-            return Err(RequestError::Busy);
+            return Err(RequestError::Busy.into());
         }
         let facts = *facts;
         let window = self.reserve(event.window.start(), event.window.duration())?;
-        self.free(window)?;
+        self.free(window);
         self.check_capacity(1)?;
         let channel = PeripheralConnectionDataChannel::new(event.channel.index())
             .expect("a data channel index is valid");
@@ -1626,11 +1801,11 @@ impl<
         };
         let span = PeripheralConnectionEventSpan::new(
             self.clock
-                .duration(connection_event_span(event.interval, widening)?)?,
+                .duration(connection_event_span(event.interval, widening)),
         )
-        .ok_or(RequestError::Unsupported)?;
+        .expect("a connection interval spans at least one tick");
         let priority = PeripheralConnectionSchedulerPriority::new(event.priority)
-            .ok_or(RequestError::Unsupported)?;
+            .expect("a supported event's priority is at most 15");
         let coexistence = coexistence::connection_priorities(self.coexistence, event.coexistence);
         let protection = coexistence::connection_protection(self.coexistence);
         let lead = self.policy.sequence_lead_raw_delta();
@@ -1650,7 +1825,7 @@ impl<
                     transmit_window.as_micros(),
                     timing_guard.as_micros(),
                 )
-                .ok_or(RequestError::Unsupported)?;
+                .expect("a supported first event's wait fits the short form");
                 self.memory.connections.prepare_first_event(
                     &slot.instance,
                     PeripheralConnectionFirstEvent {
@@ -1659,7 +1834,7 @@ impl<
                         event_span: span,
                         window: raw_window,
                         receive_wait,
-                        default_tx_power: le_tx_power(facts.tx_power)?,
+                        default_tx_power: le_tx_power(facts.tx_power),
                         priority,
                         coexistence,
                         protection,
@@ -1670,8 +1845,8 @@ impl<
             }
             ConnectionEventTiming::Recurring { receive_wait, .. } => {
                 let receive_wait =
-                    PeripheralConnectionRecurringReceiveWait::new(receive_wait.as_micros())
-                        .ok_or(RequestError::Unsupported)?;
+                    PeripheralConnectionRecurringReceiveWait::new(recurring_wait(receive_wait))
+                        .expect("a supported recurring wait fits the long form");
                 self.memory.connections.prepare_recurring_event(
                     &slot.instance,
                     PeripheralConnectionRecurringEvent {
@@ -1686,7 +1861,7 @@ impl<
                 )
             }
         }
-        .map_err(|_| RequestError::Unsupported)?;
+        .map_err(|_| Admit::Fault(RadioFault::MemoryInconsistency))?;
         let id = self
             .memory
             .connections
@@ -1702,13 +1877,13 @@ impl<
         connection: ConnectionId,
         kind: PeripheralConnectionTransmitPduKind,
         payload: &[u8],
-    ) -> Result<(), RequestError> {
+    ) -> Result<(), Admit> {
         let index = self.connection_index(connection)?;
         let (slot, _) = self.connections[index]
             .as_ref()
             .expect("the connection is open");
         if slot.event.is_some() {
-            return Err(RequestError::Busy);
+            return Err(RequestError::Busy.into());
         }
         match self
             .memory
@@ -1716,8 +1891,8 @@ impl<
             .enqueue_transmission(&slot.instance, kind, payload)
         {
             Ok(true) => Ok(()),
-            Ok(false) => Err(RequestError::Busy),
-            Err(_) => Err(RequestError::Unsupported),
+            Ok(false) => Err(RequestError::Busy.into()),
+            Err(_) => Err(Admit::Fault(RadioFault::MemoryInconsistency)),
         }
     }
 
@@ -1765,11 +1940,11 @@ impl<
         }
     }
 
-    fn test_transmit(&mut self, test: TestTransmit<'_>) -> Result<(), RequestError> {
+    fn test_transmit(&mut self, test: TestTransmit<'_>) -> Result<(), Admit> {
         if test.payload.len() > DTM_MAX_PAYLOAD {
-            return Err(RequestError::Unsupported);
+            return Err(Admit::Fault(RadioFault::MemoryInconsistency));
         }
-        let tx_power = le_tx_power(test.tx_power)?;
+        let tx_power = le_tx_power(test.tx_power);
         let phy = match test.phy {
             TestPhy::Le1M => DtmSchedulerTransmitterPhy::Le1M,
             TestPhy::Le2M => DtmSchedulerTransmitterPhy::Le2M,
@@ -1777,7 +1952,7 @@ impl<
             TestPhy::LeCodedS2 => DtmSchedulerTransmitterPhy::LeCodedS2,
         };
         let window = self.reserve(test.window.start(), test.window.duration())?;
-        self.free(window)?;
+        self.free(window);
         self.check_capacity(1)?;
         self.dtm_instance()?;
         let mut payload = [0; DTM_MAX_PAYLOAD];
@@ -1791,7 +1966,7 @@ impl<
                 test.payload.len() as u8,
                 &payload,
             )
-            .map_err(|_| RequestError::Unsupported)?;
+            .map_err(|_| Admit::Fault(RadioFault::MemoryInconsistency))?;
         self.schedule_test(
             test.id,
             window,
@@ -1801,8 +1976,8 @@ impl<
         )
     }
 
-    fn test_receive(&mut self, test: TestReceive) -> Result<(), RequestError> {
-        let tx_power = le_tx_power(test.tx_power)?;
+    fn test_receive(&mut self, test: TestReceive) -> Result<(), Admit> {
+        let tx_power = le_tx_power(test.tx_power);
         let phy = match test.phy {
             TestPhy::Le1M => DtmSchedulerReceiverPhy::Le1M,
             TestPhy::Le2M => DtmSchedulerReceiverPhy::Le2M,
@@ -1814,7 +1989,7 @@ impl<
             DtmReceiverEventPhase::Initial
         };
         let window = self.reserve(test.window.start(), test.window.duration())?;
-        self.free(window)?;
+        self.free(window);
         self.check_capacity(1)?;
         self.dtm_instance()?;
         self.schedule_test(
@@ -1833,7 +2008,7 @@ impl<
         rf_channel: u8,
         event_type: DtmSchedulerItemEventType,
         tx_power: LeTxPower,
-    ) -> Result<(), RequestError> {
+    ) -> Result<(), Admit> {
         // Every event after the first of a session is a recurring event.
         let recurring = matches!(self.mode, SchedulerMode::Test(phase) if phase.resume() == TestResume::Running);
         let sequence_start = self.clock.round_trip(window.start());
@@ -1863,7 +2038,7 @@ impl<
                     link_state, item,
                 ))
             })
-            .map_err(|_| RequestError::Unsupported)?;
+            .map_err(|_| Admit::Fault(RadioFault::MemoryInconsistency))?;
         let item = self
             .memory
             .dtm
@@ -2344,9 +2519,22 @@ fn drain_chain<const PACKETS: usize>(
 /// Longest scanner item the pinned restart schedules, in microseconds.
 const SCAN_EVENT_MAX_MICROS: u32 = 0x8000;
 
-/// The provider level of `power`, refusing a request below the lowest one.
-fn le_tx_power(power: TxPower) -> Result<LeTxPower, RequestError> {
-    LeTxPower::from_dbm(power.dbm()).ok_or(RequestError::Unsupported)
+/// The provider level of `power`, which a supported request holds at or
+/// above the lowest one.
+fn le_tx_power(power: TxPower) -> LeTxPower {
+    LeTxPower::from_dbm(power.dbm()).expect("a supported power is at or above the lowest level")
+}
+
+/// The recurring receive wait the hardware holds for `wait`: above the short
+/// form's range the long form counts two-microsecond units, so an odd wait
+/// listens one microsecond longer rather than shorter.
+fn recurring_wait(wait: RadioDuration<LeRadio>) -> u64 {
+    let micros = wait.as_micros();
+    if micros > RECEIVE_WAIT_SHORT_MAX_MICROS {
+        micros.next_multiple_of(2)
+    } else {
+        micros
+    }
 }
 
 fn overlaps(a: SchedulerRawWindow, b: SchedulerRawWindow) -> bool {

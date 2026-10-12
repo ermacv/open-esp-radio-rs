@@ -65,7 +65,8 @@ raw_enum!(
 );
 
 raw_enum!(
-    /// The radio role's answer to a request: accepted, or the refusal.
+    /// The radio role's answer to a request: accepted, the refusal, or the
+    /// radio's fault.
     RequestAnswer {
         Accepted = 0,
         Disabled = 1,
@@ -75,12 +76,11 @@ raw_enum!(
         Unknown = 5,
         AlreadyConfigured = 6,
         Busy = 7,
-        Overlap = 8,
-        TooLate = 9,
-        TooFar = 10,
-        Unsupported = 11,
-        ListFull = 12,
-        NotListed = 13,
+        Late = 8,
+        ListFull = 9,
+        NotListed = 10,
+        /// The radio's own structures disagreed: it faulted.
+        Faulted = 11,
     }
 );
 

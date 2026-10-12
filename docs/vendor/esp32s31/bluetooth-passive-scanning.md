@@ -426,7 +426,8 @@ the vendor link-state words.  SRAM masks remain private implementation details
 of typed memory accessors, just as for the DTM descriptors.
 
 The radio role admits each scan window against one fresh Controller-time
-sample and rejects an overlapping window instead of moving it; only the
+sample; the core placed it apart from every other window with the
+reservation function the radio shares, and the radio never moves it; only the
 admitted interval is encoded into SRAM. The scanner item then stays with the
 executor from list-zero insertion through the selector-one receive chain,
 `RUN`, fenced finished-list capture and the completion walk, which returns the

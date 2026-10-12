@@ -23,7 +23,7 @@ fn every_role_event_decodes_to_what_it_encoded() {
         }
     }
     assert_eq!(every(RequestKind::from_raw).count(), 14);
-    assert_eq!(every(RequestAnswer::from_raw).count(), 14);
+    assert_eq!(every(RequestAnswer::from_raw).count(), 12);
     for result in every(EndResult::from_raw) {
         round_trip(RoleEventEnd {
             id: u32::MAX,

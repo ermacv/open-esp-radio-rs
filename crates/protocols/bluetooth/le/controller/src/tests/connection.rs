@@ -87,7 +87,7 @@ impl<const C: usize, const O: usize> super::Bench<C, O> {
 
         // Other roles keep the first event's reservation free before it is
         // planned.
-        let reserved = harness.core.planned_connections(super::TIMING).unwrap()[0];
+        let reserved = harness.core.planned_connections().unwrap()[0];
         // The first event listens across the transmit window.
         let Some(Request::ConnectionEvent(first)) = harness.step().unwrap() else {
             panic!("the first event");
@@ -487,7 +487,7 @@ fn the_reserved_next_event_follows_a_connection_update() {
     update.extend_from_slice(&2_u16.to_le_bytes());
     harness.receive(first, &update);
     harness.end_at(first, Some(INDICATION_AT + 2_000));
-    let planned = |harness: &Harness| harness.core.planned_connections(super::TIMING).unwrap()[0];
+    let planned = |harness: &Harness| harness.core.planned_connections().unwrap()[0];
     let reserved = |event: &oer_bluetooth_radio::ConnectionEvent| {
         Some(super::TIMING.reservation(event.window).unwrap())
     };

@@ -10,12 +10,11 @@
 //! queued packets, takes the next Host command when the core is ready for
 //! one, submits the core's radio requests one at a time and feeds every
 //! radio outcome back. A refused request is retried after
-//! [`REFUSED_RETRY_DELAY`] or the next outcome or command; a request
-//! refused as [`RequestError::Unsupported`] lies outside the radio's
-//! capabilities and is never retried on a timer: the loop asks the core
-//! again only after an outcome, a command or Host data changed its plan. Whenever the
-//! core's [`RadioActivity`] changes, the loop reports it to the port before
-//! doing anything else.
+//! [`REFUSED_RETRY_DELAY`] or the next outcome or command. The core plans
+//! only what the port's capabilities ([`LeRadioPort::Caps`]) serve, so no
+//! request is refused as outside them. Whenever the core's
+//! [`RadioActivity`] changes, the loop reports it to the port before doing
+//! anything else.
 //!
 //! The loop owns the port's session: it enables the port when it starts,
 //! cancels a scheduled event through the port's cancellation when the core
@@ -139,7 +138,7 @@ pub async fn serve<
     const CONNECTIONS: usize,
 >(
     transport: &InProcessHciControllerTransport<'_, M, H2C, C2H, PACKET>,
-    core: &mut LeController<'_, OUTPUT, CONNECTIONS>,
+    core: &mut LeController<'_, P::Caps, OUTPUT, CONNECTIONS>,
     radio: &P,
     timer: &impl Timer,
     stop: impl Future<Output = ()>,
@@ -161,7 +160,7 @@ where
 /// Disable `radio` and feed every outcome to `core` until the port reports
 /// `Disabled`.
 async fn stop_port<P: LeRadioPort, const OUTPUT: usize, const CONNECTIONS: usize>(
-    core: &mut LeController<'_, OUTPUT, CONNECTIONS>,
+    core: &mut LeController<'_, P::Caps, OUTPUT, CONNECTIONS>,
     radio: &P,
 ) -> Result<(), StopError<P::Fault>> {
     loop {
@@ -192,7 +191,7 @@ async fn stop_port<P: LeRadioPort, const OUTPUT: usize, const CONNECTIONS: usize
 
 /// Feed the next outcome to `core`; the lifecycle terminal it was, if any.
 async fn take_outcome<P: LeRadioPort, const OUTPUT: usize, const CONNECTIONS: usize>(
-    core: &mut LeController<'_, OUTPUT, CONNECTIONS>,
+    core: &mut LeController<'_, P::Caps, OUTPUT, CONNECTIONS>,
     radio: &P,
 ) -> Result<Option<LifecycleEvent>, StopError<P::Fault>> {
     match radio.next_event().await {
@@ -221,7 +220,7 @@ async fn serve_until<
     const CONNECTIONS: usize,
 >(
     transport: &InProcessHciControllerTransport<'_, M, H2C, C2H, PACKET>,
-    core: &mut LeController<'_, OUTPUT, CONNECTIONS>,
+    core: &mut LeController<'_, P::Caps, OUTPUT, CONNECTIONS>,
     radio: &P,
     timer: &impl Timer,
     stop: impl Future<Output = ()>,
@@ -236,12 +235,8 @@ where
         Ok(Err(error)) => return Ok(ServeExit::Lifecycle(error)),
         Err(poisoned) => return Err(poisoned),
     }
-    let timing = radio.capabilities().timing;
     let mut buffer = [0; PACKET];
     let mut retry_at: Option<Instant> = None;
-    // The last request was refused as unsupported: ask again only after
-    // new input.
-    let mut unsupported = false;
     let mut reported = RadioActivity::IDLE;
     loop {
         // Report a change of the active roles first.
@@ -262,7 +257,7 @@ where
         }
 
         // Submit the next radio request.
-        if core.wants_radio() && !unsupported && retry_at.is_none_or(|at| timer.now() >= at) {
+        if core.wants_radio() && retry_at.is_none_or(|at| timer.now() >= at) {
             retry_at = None;
             let now = match radio.now().await {
                 Ok(Ok(now)) => now,
@@ -272,7 +267,7 @@ where
                 Ok(Err(error)) => return Ok(ServeExit::Clock(error)),
                 Err(poisoned) => return Err(poisoned),
             };
-            let work = match core.next_request(now, timing) {
+            let work = match core.next_request(now) {
                 Ok(work) => work,
                 Err(exhausted) => {
                     return Ok(ServeExit::EpochExhausted(Exhaustion::Planning(exhausted)));
@@ -290,7 +285,6 @@ where
                         Err(RequestError::EpochExhausted) => {
                             return Ok(ServeExit::EpochExhausted(Exhaustion::Clock));
                         }
-                        Err(RequestError::Unsupported) => unsupported = true,
                         Err(_) => retry_at = Some(retry_after_refusal(timer)),
                     }
                     continue;
@@ -316,12 +310,10 @@ where
                 Ok(HostToControllerFrame::Command(command)) => {
                     core.command(command)
                         .expect("the core is ready for a command");
-                    unsupported = false;
                     continue;
                 }
                 Ok(HostToControllerFrame::Acl(packet)) => {
                     core.acl(packet);
-                    unsupported = false;
                     continue;
                 }
                 // LE carries no synchronous or isochronous data here.
@@ -336,7 +328,7 @@ where
         let command_ready = core.is_command_ready();
         let admission = core.acl_admission();
         let publishing = core.front().is_some();
-        let retry = retry_at.filter(|_| core.wants_radio() && !unsupported);
+        let retry = retry_at.filter(|_| core.wants_radio());
         let event = select4(
             radio.next_event(),
             async {
@@ -366,7 +358,6 @@ where
         match event {
             Either4::First(Ok(Ok(event))) => {
                 retry_at = None;
-                unsupported = false;
                 core.outcome(P::view(&event));
             }
             // Advertising and scan reports are gone; every event's end and

@@ -10,8 +10,8 @@ use core::num::NonZeroU64;
 
 use oer_bluetooth_radio::{
     EventId, EventResult, LeInstant, LeRadio, LeWindow, NonZeroRadioDuration, OutsideEpoch,
-    RadioDuration, RadioOutcome, RadioRequest, RadioTiming, TestChannel, TestPayloadType, TestPhy,
-    TestReceive, TestReport, TestTransmit, TxPower,
+    RadioDuration, RadioOutcome, RadioTiming, TestChannel, TestPayloadType, TestPhy, TestReceive,
+    TestReport, TestTransmit, TxPower,
 };
 
 mod payload;
@@ -20,6 +20,16 @@ pub use payload::DtmPayloadPattern;
 
 /// Longest LE Test packet payload.
 pub const DTM_MAX_PAYLOAD: usize = 255;
+
+/// One planned test event, for the caller to check against its backend's
+/// capabilities and submit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DtmEvent<'payload> {
+    /// A transmitter event.
+    Transmit(TestTransmit<'payload>),
+    /// A receiver event.
+    Receive(TestReceive),
+}
 
 /// Length of one receiver listening window.
 pub const DTM_RECEIVE_WINDOW: NonZeroRadioDuration<LeRadio> =
@@ -227,7 +237,7 @@ impl DtmSession {
         now: LeInstant,
         timing: RadioTiming,
         payload: &'payload mut [u8; DTM_MAX_PAYLOAD],
-    ) -> Result<Option<RadioRequest<'payload>>, DtmEpochExhausted> {
+    ) -> Result<Option<DtmEvent<'payload>>, DtmEpochExhausted> {
         use DtmCalculation as C;
         let Phase::Running(test) = self.phase else {
             return Ok(None);
@@ -293,7 +303,7 @@ impl DtmSession {
             } => {
                 let bytes = &mut payload[..usize::from(length)];
                 pattern.fill(bytes);
-                RadioRequest::TestTransmit(TestTransmit {
+                DtmEvent::Transmit(TestTransmit {
                     id,
                     channel,
                     phy,
@@ -306,7 +316,7 @@ impl DtmSession {
             }
             DtmTest::Receive { channel, phy } => {
                 let recurring = core::mem::replace(&mut self.recurring, true);
-                RadioRequest::TestReceive(TestReceive {
+                DtmEvent::Receive(TestReceive {
                     id,
                     channel,
                     phy,

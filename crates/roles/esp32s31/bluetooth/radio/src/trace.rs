@@ -1,7 +1,9 @@
 //! The role's trace points (`oer-bluetooth-trace`), recorded behind the
 //! `trace` feature.
 
-use oer_bluetooth_radio::{RadioRequest, RequestError};
+use oer_bluetooth_radio::{LeCapabilities, RadioRequest, RequestError};
+
+use crate::RadioFaulted;
 use oer_bluetooth_trace::{RequestAnswer, RequestKind};
 use oer_trace::Event;
 
@@ -55,7 +57,7 @@ pub(crate) fn take<E: Event>() -> std::vec::Vec<E> {
 }
 
 /// The kind of `request`.
-pub(crate) const fn request_kind(request: &RadioRequest<'_>) -> RequestKind {
+pub(crate) const fn request_kind<K: LeCapabilities>(request: &RadioRequest<'_, K>) -> RequestKind {
     match request {
         RadioRequest::ConfigureAdvertising(_) => RequestKind::ConfigureAdvertising,
         RadioRequest::Advertise(_) => RequestKind::Advertise,
@@ -75,21 +77,21 @@ pub(crate) const fn request_kind(request: &RadioRequest<'_>) -> RequestKind {
 }
 
 /// The answer a request's result stands for.
-pub(crate) const fn answer(result: Result<(), RequestError>) -> RequestAnswer {
+pub(crate) const fn answer(
+    result: Result<Result<(), RequestError>, RadioFaulted>,
+) -> RequestAnswer {
     match result {
-        Ok(()) => RequestAnswer::Accepted,
-        Err(RequestError::Disabled) => RequestAnswer::Disabled,
-        Err(RequestError::ClockUnavailable) => RequestAnswer::ClockUnavailable,
-        Err(RequestError::EpochExhausted) => RequestAnswer::EpochExhausted,
-        Err(RequestError::NoInstance) => RequestAnswer::NoInstance,
-        Err(RequestError::Unknown) => RequestAnswer::Unknown,
-        Err(RequestError::AlreadyConfigured) => RequestAnswer::AlreadyConfigured,
-        Err(RequestError::Busy) => RequestAnswer::Busy,
-        Err(RequestError::Overlap) => RequestAnswer::Overlap,
-        Err(RequestError::TooLate) => RequestAnswer::TooLate,
-        Err(RequestError::TooFar) => RequestAnswer::TooFar,
-        Err(RequestError::Unsupported) => RequestAnswer::Unsupported,
-        Err(RequestError::ListFull) => RequestAnswer::ListFull,
-        Err(RequestError::NotListed) => RequestAnswer::NotListed,
+        Ok(Ok(())) => RequestAnswer::Accepted,
+        Ok(Err(RequestError::Disabled)) => RequestAnswer::Disabled,
+        Ok(Err(RequestError::ClockUnavailable)) => RequestAnswer::ClockUnavailable,
+        Ok(Err(RequestError::EpochExhausted)) => RequestAnswer::EpochExhausted,
+        Ok(Err(RequestError::NoInstance)) => RequestAnswer::NoInstance,
+        Ok(Err(RequestError::Unknown)) => RequestAnswer::Unknown,
+        Ok(Err(RequestError::AlreadyConfigured)) => RequestAnswer::AlreadyConfigured,
+        Ok(Err(RequestError::Busy)) => RequestAnswer::Busy,
+        Ok(Err(RequestError::Late)) => RequestAnswer::Late,
+        Ok(Err(RequestError::ListFull)) => RequestAnswer::ListFull,
+        Ok(Err(RequestError::NotListed)) => RequestAnswer::NotListed,
+        Err(RadioFaulted) => RequestAnswer::Faulted,
     }
 }

@@ -135,12 +135,12 @@ fn a_scan_window_gives_way_when_the_next_connection_event_moves_onto_it() {
         panic!("a scan window");
     };
     let reservation = super::TIMING.reservation(window.window).unwrap();
-    let planned = bench.core.planned_connections(super::TIMING).unwrap()[0].unwrap();
+    let planned = bench.core.planned_connections().unwrap()[0].unwrap();
     assert!(!reservation.overlaps(planned));
     // The central's packet arrives earlier than the nominal anchor, which
     // moves the next event onto the window: the window gives way.
     bench.end_at(first, Some(anchor - 40));
-    let planned = bench.core.planned_connections(super::TIMING).unwrap()[0].unwrap();
+    let planned = bench.core.planned_connections().unwrap()[0].unwrap();
     assert!(reservation.overlaps(planned));
     assert_eq!(bench.step().unwrap(), Some(Request::Cancel(window.id)));
     // The cancelled window holds the radio until its end arrives.

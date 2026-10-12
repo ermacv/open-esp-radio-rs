@@ -11,24 +11,26 @@ use oer_radio_port::{
 };
 
 use crate::{
-    EventId, LeInstant, LeRadio, LeRadioCapabilities, RadioActivity, RadioOutcome, RadioRequest,
-    RequestError,
+    EventId, LeCapabilities, LeInstant, LeRadio, NoCapabilities, RadioActivity, RadioOutcome,
+    RadioRequest, RequestError,
 };
 
 /// A Bluetooth LE radio backend as a Controller service loop drives it.
 ///
 /// The event stream, the radio clock, cancellation and the lifecycle are
-/// the shared [`RadioPort`] base. The loop reads [`Self::capabilities`]
-/// (with the [`RadioTiming`](crate::RadioTiming) a planner keeps
-/// reservations apart by), reads the radio time with [`RadioPort::now`],
+/// the shared [`RadioPort`] base. Its capabilities are a type
+/// ([`Self::Caps`]), known when the image is built, with the
+/// [`RadioTiming`](crate::RadioTiming) a planner keeps reservations apart
+/// by. The loop reads the radio time with [`RadioPort::now`],
 /// submits one [`RadioRequest`] at a time, takes owned events from
 /// [`RadioPort::next_event`] and reads each through [`Self::view`].
 ///
 /// Every call but [`Self::activity`], which cannot be refused, returns a
 /// [`PortResult`]. Its inner `Err` is a refusal and
-/// nothing changed: [`RequestError::Disabled`] while the port is disabled or quiesced, and
-/// [`RequestError::Unsupported`] for a request the capabilities exclude,
-/// which is final for that request; other refusals may succeed later. The
+/// nothing changed: [`RequestError::Disabled`] while the port is disabled or
+/// quiesced, and [`RequestError::Late`] when time passed between placing a
+/// request and its admission; other refusals may succeed later. A request
+/// the capabilities exclude cannot be built ([`crate::Supported`]). The
 /// outer [`Poisoned`](oer_radio_port::Poisoned) means the backend's state is
 /// unknown, with its cause: every later call returns it and only a reset
 /// restores the port.
@@ -64,23 +66,22 @@ use crate::{
 /// with a runner that holds it across scheduler stop sequences. Neither wait
 /// depends on the caller; both end within the backend's own bounds.
 ///
-/// Who acknowledges data PDUs is part of [`LeRadioCapabilities`]: either way
+/// Who acknowledges data PDUs is part of the capabilities: either way
 /// the port carries only LLID and payload, reports
 /// [`RadioOutcome::TransmitAcknowledged`] once the peer acknowledged the
 /// connection's queued PDU and reports only new, non-empty receptions.
 pub trait LeRadioPort: RadioPort<Id = EventId, Domain = LeRadio> {
-    /// What the backend serves. It does not change while the port exists.
-    fn capabilities(&self) -> LeRadioCapabilities;
+    /// What the backend serves, known when the image is built.
+    type Caps: LeCapabilities;
 
     /// The resolution of the radio time [`RadioPort::now`] reads and how its
     /// epoch relates to the image's monotonic time.
     fn clock_info(&self) -> ClockInfo<LeRadio>;
 
-    /// Submit one request: `Ok(Err(_))` when the radio refused it. A request
-    /// the capabilities exclude is refused as [`RequestError::Unsupported`].
+    /// Submit one request: `Ok(Err(_))` when the radio refused it.
     fn submit(
         &self,
-        request: RadioRequest<'_>,
+        request: RadioRequest<'_, Self::Caps>,
     ) -> impl Future<Output = PortResult<(), RequestError, Self::Fault>>;
 
     /// The portable view of an owned event.
@@ -92,11 +93,12 @@ pub trait LeRadioPort: RadioPort<Id = EventId, Domain = LeRadio> {
     fn activity(&self, activity: RadioActivity) -> Result<(), Poisoned<Self::Fault>>;
 }
 
-/// A port without a radio: time stands still and every request lies
-/// outside its empty capabilities, so it is refused as
-/// [`RequestError::Unsupported`]. Radio commands then complete with a
-/// failure status. It admits nothing, so enabling or disabling it changes
-/// nothing (`AlreadyInState`), and it runs nothing to cancel or quiesce.
+/// A port without a radio: time stands still and its capabilities serve
+/// nothing ([`NoCapabilities`]), so no request but a release can be built,
+/// and a release names nothing configured ([`RequestError::Unknown`]).
+/// Radio commands then complete with a failure status. It admits nothing,
+/// so enabling or disabling it changes nothing (`AlreadyInState`), and it
+/// runs nothing to cancel or quiesce.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoRadio;
 
@@ -136,9 +138,7 @@ impl RadioPort for NoRadio {
 }
 
 impl LeRadioPort for NoRadio {
-    fn capabilities(&self) -> LeRadioCapabilities {
-        LeRadioCapabilities::NONE
-    }
+    type Caps = NoCapabilities;
 
     fn clock_info(&self) -> ClockInfo<LeRadio> {
         ClockInfo {
@@ -149,9 +149,9 @@ impl LeRadioPort for NoRadio {
 
     fn submit(
         &self,
-        _: RadioRequest<'_>,
+        _: RadioRequest<'_, NoCapabilities>,
     ) -> impl Future<Output = PortResult<(), RequestError, Infallible>> {
-        ready(Ok(Err(RequestError::Unsupported)))
+        ready(Ok(Err(RequestError::Unknown)))
     }
 
     fn view(event: &Infallible) -> RadioOutcome<'_> {

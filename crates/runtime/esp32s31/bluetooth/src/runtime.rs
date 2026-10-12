@@ -13,24 +13,23 @@ use embassy_sync::{
     signal::Signal,
 };
 use oer_bluetooth_radio::{
-    CancelError, ClockError, EventId, EventsLost, LeInstant, LeRadioCapabilities, LifecycleCommand,
-    LifecycleError, LifecycleEvent, OutsideEpoch, Poisoned, PortResult, RadioActivity,
-    RadioOutcome, RadioRequest, RequestError,
+    CancelError, ClockError, EventId, EventsLost, LeInstant, LifecycleCommand, LifecycleError,
+    LifecycleEvent, OutsideEpoch, Poisoned, PortResult, RadioActivity, RadioOutcome, RadioRequest,
+    RequestError,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
     controller_time::{
         ControllerTimeEventError, ControllerTimeEventStep, ControllerTimeRequestError,
     },
-    scheduler::SchedulerSoftwareConfig,
     scheduler::{
         SchedulerFinishedListWorkerStep, SchedulerHardwareError, SchedulerNext,
         SchedulerStartError, SchedulerStopError, SchedulerWait,
     },
 };
 use oer_esp32s31_bluetooth_radio::{
-    BluetoothRadio, BluetoothRadioMemory, BluetoothRadioSink, CoexistenceProfile, RadioFault,
-    RadioStep,
+    BluetoothCapabilities, BluetoothRadio, BluetoothRadioConfig, BluetoothRadioMemory,
+    BluetoothRadioSink, CoexistenceProfile, RadioFault, RadioFaulted, RadioStep,
 };
 use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerStop, BluetoothSchedulerStopStep,
@@ -536,9 +535,9 @@ impl<M: RawMutex, E: Copy, const EVENTS: usize, const CONNECTIONS: usize> Blueto
 /// queue drops the newest advertising or scan report and reports
 /// [`EventsLost`] once in its place.
 ///
-/// The timing the port states ([`LeRadioCapabilities::timing`]) is the one
-/// of the scheduler policy and sleep-clock accuracy the runtime is built
-/// with; an install refuses hardware of another.
+/// `C` is the scheduler policy and sleep-clock accuracy the runtime is built
+/// with: its port's capabilities ([`BluetoothCapabilities`]) and their
+/// timing come from it, and an install refuses hardware of another.
 ///
 /// A hardware fault of the radio or the runner poisons the runtime: the
 /// queued outcomes are still reported, then [`Poisoned`] with its
@@ -551,6 +550,7 @@ pub struct BluetoothRuntime<
     M: RawMutex,
     H: BluetoothRadioHardware,
     T,
+    C,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -581,8 +581,7 @@ pub struct BluetoothRuntime<
     /// Raised when the consumer must look again without a new outcome.
     changed: Signal<M, ()>,
     /// The scheduler policy and sleep-clock accuracy the timing is for.
-    config: SchedulerSoftwareConfig,
-    local_sleep_clock_ppm: u16,
+    config: core::marker::PhantomData<fn() -> C>,
     work: Signal<M, ()>,
     activity: Signal<M, RadioActivity>,
     /// Whether another radio shares the antenna.
@@ -598,6 +597,7 @@ impl<
     M: RawMutex,
     H: BluetoothRadioHardware,
     T: Timer,
+    C: BluetoothRadioConfig,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -611,6 +611,7 @@ impl<
         M,
         H,
         T,
+        C,
         LEGACY,
         CONNECTABLE,
         SCANNERS,
@@ -621,22 +622,16 @@ impl<
         EVENTS,
     >
 {
-    /// An empty runtime whose waits are on `timer`, for hardware of the
-    /// scheduler policy `config` and a sleep clock of
-    /// `local_sleep_clock_ppm`, suitable for a `static`.
-    pub const fn new(
-        timer: T,
-        config: SchedulerSoftwareConfig,
-        local_sleep_clock_ppm: u16,
-    ) -> Self {
+    /// An empty runtime whose waits are on `timer`, for hardware of `C`'s
+    /// scheduler policy and sleep clock, suitable for a `static`.
+    pub const fn new(timer: T) -> Self {
         Self {
             timer,
             installed: Mutex::new(None),
             outcomes: OutcomeQueue::new(),
             fault: BlockingMutex::new(Cell::new(None)),
             changed: Signal::new(),
-            config,
-            local_sleep_clock_ppm,
+            config: core::marker::PhantomData,
             work: Signal::new(),
             activity: Signal::new(),
             shared: AtomicBool::new(false),
@@ -690,8 +685,8 @@ impl<
         if installed.is_some() {
             return Err((BluetoothInstallError::AlreadyInstalled, memory, hardware));
         }
-        if hardware.scheduler_config() != self.config
-            || hardware.local_sleep_clock_ppm() != self.local_sleep_clock_ppm
+        if hardware.scheduler_config() != C::SCHEDULER
+            || hardware.local_sleep_clock_ppm() != C::LOCAL_SLEEP_CLOCK_PPM
         {
             return Err((BluetoothInstallError::TimingMismatch, memory, hardware));
         }
@@ -772,7 +767,19 @@ impl<
     /// outcomes first.
     pub(crate) async fn submit_request(
         &self,
-        request: RadioRequest<'_>,
+        request: RadioRequest<
+            '_,
+            BluetoothCapabilities<
+                C,
+                LEGACY,
+                CONNECTABLE,
+                SCANNERS,
+                CONNECTIONS,
+                SCAN_PACKETS,
+                RX_PACKETS,
+                ITEMS,
+            >,
+        >,
     ) -> PortResult<(), RequestError, BluetoothFault<H::StartError>> {
         let mut installed = self.installed.lock().await;
         if let Some(poisoned) = self.poisoned() {
@@ -791,12 +798,12 @@ impl<
         // An event reserves its terminal outcomes; a connection event also
         // every data PDU its receive chain holds, which the hardware
         // acknowledges to the peer.
-        let event = match request {
-            RadioRequest::Advertise(event) => Some((event.id, 0)),
-            RadioRequest::Scan(window) => Some((window.id, 0)),
-            RadioRequest::ConnectionEvent(event) => Some((event.id, RX_PACKETS)),
-            RadioRequest::TestTransmit(test) => Some((test.id, 0)),
-            RadioRequest::TestReceive(test) => Some((test.id, 0)),
+        let event = match &request {
+            RadioRequest::Advertise(event) => Some((event.get().id, 0)),
+            RadioRequest::Scan(window) => Some((window.get().id, 0)),
+            RadioRequest::ConnectionEvent(event) => Some((event.get().id, RX_PACKETS)),
+            RadioRequest::TestTransmit(test) => Some((test.get().id, 0)),
+            RadioRequest::TestReceive(test) => Some((test.get().id, 0)),
             _ => None,
         };
         if let Some((id, data)) = event
@@ -806,11 +813,23 @@ impl<
         }
         let starts_scanner = matches!(request, RadioRequest::ConfigureScanner(_));
         let changes_list = matches!(request, RadioRequest::FilterAcceptList(_));
-        if let Err(error) = installed.radio.request(request) {
-            if let Some((id, _)) = event {
-                self.outcomes.withdraw_event(id);
+        match installed.radio.request(request, &mut self.sink()) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                if let Some((id, _)) = event {
+                    self.outcomes.withdraw_event(id);
+                }
+                return Ok(Err(error));
             }
-            return Ok(Err(error));
+            // The radio reported its fault to the sink, which poisoned the
+            // runtime.
+            Err(RadioFaulted) => {
+                if let Some((id, _)) = event {
+                    self.outcomes.withdraw_event(id);
+                }
+                installed.fault();
+                return Err(self.poisoned().expect("a radio fault poisons the runtime"));
+            }
         }
         if starts_scanner {
             installed.hardware.publish_scan_start();
@@ -941,18 +960,6 @@ impl<
             },
         });
         Ok(started)
-    }
-
-    /// What the radio serves: its roles on LE 1M, Direct Test Mode,
-    /// connections whose acknowledgement the hardware runs, and the timing
-    /// of the runtime's scheduler policy and sleep clock.
-    pub const fn capabilities(&self) -> LeRadioCapabilities {
-        Radio::<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>::capabilities(
-            Radio::<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>::radio_timing(
-                self.config,
-                self.local_sleep_clock_ppm,
-            ),
-        )
     }
 
     /// The platform's scheduler interrupt published a wake for the worker.

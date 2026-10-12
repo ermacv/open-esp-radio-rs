@@ -7,11 +7,12 @@
 use bt_hci::param::Error as HciError;
 use oer_bluetooth_hci::{LeDtmCommand, LeDtmCommandCompleteEvent, LeDtmPhy, LeTestEndCommand};
 use oer_bluetooth_ll::dtm::{
-    DTM_MAX_PAYLOAD, DtmCalculation, DtmEpochExhausted, DtmPayloadPattern, DtmSession,
+    DTM_MAX_PAYLOAD, DtmCalculation, DtmEpochExhausted, DtmEvent, DtmPayloadPattern, DtmSession,
     DtmStartError, DtmStop, DtmTest,
 };
 use oer_bluetooth_radio::{
-    EventId, LeInstant, RadioOutcome, RadioRequest, RadioTiming, TestChannel, TestPhy, TxPower,
+    EventId, LeCapabilities, LeInstant, RadioOutcome, RadioRequest, RadioTiming, Supported,
+    TestChannel, TestPhy, TxPower, Unplaced,
 };
 
 /// Event identities of the test session start here, apart from the roles.
@@ -37,9 +38,12 @@ pub(crate) struct DtmRole {
     completion: Option<LeDtmCommandCompleteEvent>,
 }
 
+/// The transmit power of every test event.
+pub(crate) const DTM_TX_POWER: TxPower = TxPower::from_dbm(0);
+
 /// What the DTM role asks of the radio.
-pub(crate) enum DtmRadioWork<'s> {
-    Request(RadioRequest<'s>),
+pub(crate) enum DtmRadioWork<'s, K: LeCapabilities> {
+    Request(RadioRequest<'s, K>),
     Cancel(oer_bluetooth_radio::EventId),
     None,
 }
@@ -47,7 +51,7 @@ pub(crate) enum DtmRadioWork<'s> {
 impl DtmRole {
     pub(crate) const fn new() -> Self {
         Self {
-            session: DtmSession::new(TxPower::from_dbm(0), FIRST_EVENT_ID),
+            session: DtmSession::new(DTM_TX_POWER, FIRST_EVENT_ID),
             phase: Phase::Idle,
             holds_role: false,
             completion: None,
@@ -61,7 +65,10 @@ impl DtmRole {
     /// Handle one test command. Starting and ending an absent test complete at
     /// once; ending a running test completes later through
     /// [`Self::take_completion`].
-    pub(crate) fn command(&mut self, command: LeDtmCommand) -> Option<LeDtmCommandCompleteEvent> {
+    pub(crate) fn command<K: LeCapabilities>(
+        &mut self,
+        command: LeDtmCommand,
+    ) -> Option<LeDtmCommandCompleteEvent> {
         match (command, &self.phase) {
             (LeDtmCommand::TestEnd(command), Phase::Idle) => {
                 Some(command.into_ended_command_complete(0))
@@ -70,7 +77,7 @@ impl DtmRole {
                 self.end(Some(command));
                 None
             }
-            (command, Phase::Idle) => Some(self.start(command)),
+            (command, Phase::Idle) => Some(self.start::<K>(command)),
             (command, _) => Some(busy(command)),
         }
     }
@@ -107,7 +114,7 @@ impl DtmRole {
         }
     }
 
-    fn start(&mut self, command: LeDtmCommand) -> LeDtmCommandCompleteEvent {
+    fn start<K: LeCapabilities>(&mut self, command: LeDtmCommand) -> LeDtmCommandCompleteEvent {
         let (test, opcode) = match command {
             LeDtmCommand::ReceiverTest(ref receive) => {
                 let Ok(channel) = TestChannel::new(receive.channel().index()) else {
@@ -147,6 +154,13 @@ impl DtmRole {
             }
             LeDtmCommand::TestEnd(_) => unreachable!("Test End is handled by the caller"),
         };
+        let phy = match test {
+            DtmTest::Receive { phy, .. } | DtmTest::Transmit { phy, .. } => phy,
+        };
+        // The backend runs only the tests and PHYs `K` serves.
+        if !K::CAPS.direct_test_mode || !K::CAPS.test_phys.contains(phy.phy()) {
+            return rejected(command, HciError::UNSUPPORTED);
+        }
         match self.session.start(test) {
             Ok(()) => {
                 self.phase = Phase::Running;
@@ -161,12 +175,12 @@ impl DtmRole {
     }
 
     /// The next radio request of the test.
-    pub(crate) fn next_request<'s>(
+    pub(crate) fn next_request<'s, K: LeCapabilities>(
         &mut self,
         now: LeInstant,
         timing: RadioTiming,
         payload: &'s mut [u8; DTM_MAX_PAYLOAD],
-    ) -> Result<DtmRadioWork<'s>, crate::EpochExhausted> {
+    ) -> Result<DtmRadioWork<'s, K>, crate::EpochExhausted> {
         Ok(match &mut self.phase {
             Phase::Idle => DtmRadioWork::None,
             Phase::Running => {
@@ -199,7 +213,24 @@ impl DtmRole {
                         )
                     },
                 )? {
-                    Some(request) => DtmRadioWork::Request(request),
+                    Some(event) => match place::<K>(event, now) {
+                        Ok(request) => DtmRadioWork::Request(request),
+                        // A window past the horizon is skipped as a refused
+                        // one is; the test was checked against `K` when it
+                        // started.
+                        Err(Unplaced::Unsupported | Unplaced::BeyondHorizon) => {
+                            self.session.refused();
+                            DtmRadioWork::None
+                        }
+                        Err(Unplaced::OutsideEpoch) => {
+                            self.session.refused();
+                            return Err(crate::EpochExhausted::at(
+                                crate::PlanningRole::DirectTest,
+                                crate::PlanningOperation::Event,
+                                crate::PlanningCalculation::Reservation,
+                            ));
+                        }
+                    },
                     None => DtmRadioWork::None,
                 }
             }
@@ -261,4 +292,15 @@ fn busy(command: LeDtmCommand) -> LeDtmCommandCompleteEvent {
 
 fn rejected(command: LeDtmCommand, error: HciError) -> LeDtmCommandCompleteEvent {
     LeDtmCommandCompleteEvent::without_return_parameters(command.kind().opcode(), error.to_status())
+}
+
+/// The request of one planned test event, placed at `now`.
+fn place<K: LeCapabilities>(
+    event: DtmEvent<'_>,
+    now: LeInstant,
+) -> Result<RadioRequest<'_, K>, Unplaced> {
+    Ok(match event {
+        DtmEvent::Transmit(test) => RadioRequest::TestTransmit(Supported::placed(test, now)?),
+        DtmEvent::Receive(test) => RadioRequest::TestReceive(Supported::placed(test, now)?),
+    })
 }

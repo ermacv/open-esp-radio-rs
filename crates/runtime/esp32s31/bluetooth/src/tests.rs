@@ -12,7 +12,7 @@ use oer_bluetooth_radio::{
     AdvertisingSetId, ClockError, CoexistenceLevel, EventId, EventResult, LeInstant, LePhy,
     LeWindow, LifecycleCommand, LifecycleError, LifecycleEvent, Poisoned, RadioDuration,
     RadioOutcome, RadioRequest, ReceivedPdu, RequestError, ScanFilterPolicy, ScanType,
-    ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive, TxPower,
+    ScannerConfiguration, ScannerId, Supported, TestChannel, TestPhy, TestReceive, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -256,7 +256,42 @@ impl BluetoothRadioHardware for Model {
     }
 }
 
-type Runtime = BluetoothRuntime<NoopRawMutex, Model, &'static VirtualClock, 1, 1, 1, 1, 2, 3, 8, 4>;
+/// The scheduler policy and sleep clock of the test runtime.
+enum TestConfig {}
+
+impl oer_esp32s31_bluetooth_radio::BluetoothRadioConfig for TestConfig {
+    const SCHEDULER: SchedulerSoftwareConfig = SchedulerSoftwareConfig::reviewed_standalone();
+    const LOCAL_SLEEP_CLOCK_PPM: u16 = 500;
+}
+
+/// The capabilities of the test runtime's port.
+type Caps = oer_esp32s31_bluetooth_radio::BluetoothCapabilities<TestConfig, 1, 1, 1, 1, 2, 3, 8>;
+
+type Runtime = BluetoothRuntime<
+    NoopRawMutex,
+    Model,
+    &'static VirtualClock,
+    TestConfig,
+    1,
+    1,
+    1,
+    1,
+    2,
+    3,
+    8,
+    4,
+>;
+
+/// `value` checked against [`Caps`] and placed at the epoch's start, as the
+/// Controller core places its requests.
+fn placed<T: oer_bluetooth_radio::Timed>(value: T) -> Supported<Caps, T> {
+    Supported::placed(value, at(0)).expect("the test request is placed")
+}
+
+/// `value` checked against [`Caps`].
+fn supported<T: oer_bluetooth_radio::Untimed>(value: T) -> Supported<Caps, T> {
+    Supported::new(value).expect("the test value is supported")
+}
 
 std::thread_local! {
     /// The virtual time of the test running on this thread.
@@ -291,14 +326,14 @@ fn run_for_a_millisecond(runtime: &Runtime) {
 
 const NONCONN: [u8; 8] = [0x02, 6, 1, 2, 3, 4, 5, 6];
 
-fn configure() -> RadioRequest<'static> {
-    RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+fn configure() -> RadioRequest<'static, Caps> {
+    RadioRequest::ConfigureAdvertising(supported(AdvertisingConfiguration {
         set: AdvertisingSetId::new(0),
         pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
         reception: AdvertisingReception::None,
         tx_power: TxPower::from_dbm(0),
         phy: LePhy::Le1M,
-    })
+    }))
 }
 
 /// The radio's first instant: its epoch starts 2^32 us above zero.
@@ -309,39 +344,39 @@ fn at(micros: u64) -> LeInstant {
     LeInstant::from_micros(EPOCH_START + micros)
 }
 
-fn scanner_configuration() -> RadioRequest<'static> {
-    RadioRequest::ConfigureScanner(ScannerConfiguration {
+fn scanner_configuration() -> RadioRequest<'static, Caps> {
+    RadioRequest::ConfigureScanner(supported(ScannerConfiguration {
         scanner: ScannerId::new(0),
         scan_type: ScanType::Passive,
         filter_policy: ScanFilterPolicy::AcceptAll,
         tx_power: TxPower::from_dbm(0),
         phy: LePhy::Le1M,
-    })
+    }))
 }
 
-fn scan_window(id: u32, start: u64) -> RadioRequest<'static> {
-    RadioRequest::Scan(oer_bluetooth_radio::ScanWindow {
+fn scan_window(id: u32, start: u64) -> RadioRequest<'static, Caps> {
+    RadioRequest::Scan(placed(oer_bluetooth_radio::ScanWindow {
         id: EventId::new(id),
         scanner: ScannerId::new(0),
         channel: AdvertisingChannel::Channel37,
         window: LeWindow::new(at(start), RadioDuration::from_micros(5_000)).unwrap(),
-    })
+    }))
 }
 
-fn advertise(id: u32, anchor: u64) -> RadioRequest<'static> {
-    RadioRequest::Advertise(AdvertisingEvent {
+fn advertise(id: u32, anchor: u64) -> RadioRequest<'static, Caps> {
+    RadioRequest::Advertise(placed(AdvertisingEvent {
         id: EventId::new(id),
         set: AdvertisingSetId::new(0),
         anchor: at(anchor),
         channels: AdvertisingChannels::single(AdvertisingChannel::Channel37),
         channel_spacing: RadioDuration::from_micros(1_000),
         coexistence: CoexistenceLevel::Baseline,
-    })
+    }))
 }
 
 /// A runtime for the model's scheduler policy and sleep clock.
 fn new_runtime() -> Runtime {
-    Runtime::new(clock(), SchedulerSoftwareConfig::reviewed_standalone(), 500)
+    Runtime::new(clock())
 }
 
 /// A runtime with the model's radio installed but its port disabled.
@@ -444,13 +479,13 @@ fn an_accepted_scanner_publishes_the_scan_start_once() {
         .unwrap();
     assert_eq!(model.0.borrow().scan_starts, 0);
     let scanner = || {
-        RadioRequest::ConfigureScanner(ScannerConfiguration {
+        RadioRequest::ConfigureScanner(supported(ScannerConfiguration {
             scanner: ScannerId::new(0),
             scan_type: ScanType::Active,
             filter_policy: ScanFilterPolicy::AcceptAll,
             tx_power: TxPower::from_dbm(0),
             phy: LePhy::Le1M,
-        })
+        }))
     };
     block_on(runtime.submit_request(scanner()))
         .unwrap()
@@ -485,8 +520,8 @@ fn installation_and_every_accepted_list_change_publish_the_device_table() {
     };
     for index in 0..BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY as u8 {
         block_on(
-            runtime.submit_request(RadioRequest::FilterAcceptList(AcceptListChange::Add(
-                device(index),
+            runtime.submit_request(RadioRequest::FilterAcceptList(supported(
+                AcceptListChange::Add(device(index)),
             ))),
         )
         .unwrap()
@@ -500,23 +535,27 @@ fn installation_and_every_accepted_list_change_publish_the_device_table() {
     // A refused addition publishes nothing.
     assert!(matches!(
         block_on(
-            runtime.submit_request(RadioRequest::FilterAcceptList(AcceptListChange::Add(
-                device(0xff)
+            runtime.submit_request(RadioRequest::FilterAcceptList(supported(
+                AcceptListChange::Add(device(0xff))
             )))
         ),
         Ok(Err(RequestError::ListFull))
     ));
     assert_eq!(counts().len(), published);
     block_on(
-        runtime.submit_request(RadioRequest::FilterAcceptList(AcceptListChange::Remove(
-            device(0),
+        runtime.submit_request(RadioRequest::FilterAcceptList(supported(
+            AcceptListChange::Remove(device(0)),
         ))),
     )
     .unwrap()
     .unwrap();
-    block_on(runtime.submit_request(RadioRequest::FilterAcceptList(AcceptListChange::Clear)))
-        .unwrap()
-        .unwrap();
+    block_on(
+        runtime.submit_request(RadioRequest::FilterAcceptList(supported(
+            AcceptListChange::Clear,
+        ))),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(
         counts()[published..],
         [BLUETOOTH_FILTER_ACCEPT_LIST_CAPACITY as u32 - 1, 0]
@@ -581,7 +620,9 @@ fn the_clock_reports_a_fresh_radio_time() {
     assert_eq!(now, at(1_000));
     // The timing is the runtime's own, read before any install.
     assert_eq!(
-        new_runtime().capabilities().timing.admission_guard,
+        <Caps as oer_bluetooth_radio::LeCapabilities>::CAPS
+            .timing
+            .admission_guard,
         RadioDuration::from_micros(40)
     );
 }
@@ -596,7 +637,7 @@ fn a_refused_request_reports_the_radio_error() {
         // The fresh sample places the anchor in the past.
         assert_eq!(
             runtime.submit_request(advertise(1, 5_000)).await,
-            Ok(Err(RequestError::TooLate))
+            Ok(Err(RequestError::Late))
         );
     });
 }
@@ -789,7 +830,7 @@ fn as_a_radio_port_a_refusal_answers_and_a_missing_radio_ends_service() {
         );
         assert_eq!(
             LeRadioPort::submit(&port(&runtime), advertise(1, 5_000)).await,
-            Ok(Err(RequestError::TooLate))
+            Ok(Err(RequestError::Late))
         );
     });
 }
@@ -800,8 +841,12 @@ fn as_a_radio_port_it_states_le_1m_and_hardware_acknowledgement() {
 
     let model = Model::default();
     let runtime = installed(&model);
-    let capabilities = LeRadioPort::capabilities(&port(&runtime));
-    assert!(capabilities.legacy_advertising && capabilities.active_scanning);
+    let capabilities = <Caps as oer_bluetooth_radio::LeCapabilities>::CAPS;
+    assert!(
+        capabilities.legacy_advertising.nonconnectable
+            && capabilities.legacy_advertising.responsive
+    );
+    assert!(capabilities.active_scanning);
     assert!(capabilities.phys.contains(LePhy::Le1M));
     assert!(!capabilities.phys.contains(LePhy::Le2M));
     let connection = capabilities
@@ -820,13 +865,13 @@ fn as_a_radio_port_it_states_le_1m_and_hardware_acknowledgement() {
     let RadioRequest::ConfigureAdvertising(configuration) = configure() else {
         unreachable!()
     };
-    let le_2m = RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
-        phy: LePhy::Le2M,
-        ..configuration
-    });
+    // LE 2M advertising lies outside the capabilities: it cannot be built.
     assert_eq!(
-        block_on(LeRadioPort::submit(&port(&runtime), le_2m)),
-        Ok(Err(RequestError::Unsupported))
+        Supported::<Caps, _>::new(AdvertisingConfiguration {
+            phy: LePhy::Le2M,
+            ..*configuration.get()
+        }),
+        Err(oer_bluetooth_radio::Unplaced::Unsupported)
     );
     assert_eq!(
         block_on(LeRadioPort::submit(&port(&runtime), configure())),
@@ -889,15 +934,15 @@ fn uninstall_stops_the_scheduler_and_a_reset_radio_installs_again() {
         .unwrap();
 }
 
-fn test_receive(id: u32) -> RadioRequest<'static> {
-    RadioRequest::TestReceive(TestReceive {
+fn test_receive(id: u32) -> RadioRequest<'static, Caps> {
+    RadioRequest::TestReceive(placed(TestReceive {
         id: EventId::new(id),
         channel: TestChannel::new(19).unwrap(),
         phy: TestPhy::Le1M,
         window: LeWindow::new(at(10_000), RadioDuration::from_micros(1_000)).unwrap(),
         recurring: false,
         tx_power: TxPower::from_dbm(0),
-    })
+    }))
 }
 
 fn routes(model: &Model) -> (usize, usize) {
@@ -951,10 +996,10 @@ fn cancelling_a_running_test_stops_the_scheduler_and_resumes_it() {
         unreachable!()
     };
     block_on(
-        runtime.submit_request(RadioRequest::TestReceive(TestReceive {
+        runtime.submit_request(RadioRequest::TestReceive(placed(TestReceive {
             recurring: true,
-            ..test
-        })),
+            ..*test.get()
+        }))),
     )
     .unwrap()
     .unwrap();

@@ -46,6 +46,9 @@ pub mod validation;
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub use coexistence::CoexistenceProfile;
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-pub use radio::{BluetoothRadio, BluetoothRadioMemory, BluetoothRadioSink, RadioFault, RadioStep};
+pub use radio::{
+    BluetoothCapabilities, BluetoothRadio, BluetoothRadioConfig, BluetoothRadioMemory,
+    BluetoothRadioSink, RadioFault, RadioFaulted, RadioStep,
+};
 
 pub use oer_bluetooth_radio::{RadioOutcome, RadioRequest, RadioTiming, RequestError};

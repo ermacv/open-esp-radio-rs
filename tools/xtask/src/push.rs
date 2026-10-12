@@ -27,9 +27,10 @@
 //!    `--draft` the pull request is a draft and nothing merges it.
 //!
 //! The push never waits for CI and never rebases: the developer rebases a
-//! branch that `main` outran and pushes again. A `main` that moves while
-//! the gate runs is not checked again; CI on `main` checks the merged
-//! result. A branch the developer rebased replaces its remote copy with `--force-with-lease`
+//! branch that `main` outran and pushes again. Since the gate and the
+//! review take minutes, the push fetches and checks `origin/main` again
+//! right before `git push`, so a `main` that moved meanwhile refuses it too;
+//! an unchanged diff reuses its review verdict after the rebase. A branch the developer rebased replaces its remote copy with `--force-with-lease`
 //! bound to the copy this push saw ([`Update::Rewrite`]), so a commit pushed
 //! there by anyone else in the meantime refuses the push instead of being
 //! lost.
@@ -230,6 +231,10 @@ pub fn run(ctx: &Checkout, draft: bool, skip_review: Option<&str>) -> Result<()>
         )
         .into());
     }
+    // `main` may have moved meanwhile too: check again right before the push.
+    current_main(&ctx.root).map_err(|error| {
+        format!("{error}\n(checked again before `git push`, after the gate and the review)")
+    })?;
     let reference = format!("refs/heads/{branch}");
     let remote = git::text(&ctx.root, ["ls-remote", "origin", &reference])?
         .split_whitespace()
@@ -432,6 +437,24 @@ mod tests {
         git_in(&clone, &["fetch", "--quiet", "origin"]);
         git_in(&clone, &["rebase", "--quiet", "origin/main"]);
         assert_eq!(current_main(&clone).unwrap(), moved);
+    }
+
+    #[test]
+    fn a_main_that_moves_after_the_first_check_refuses_the_second() {
+        let (_directory, seed, clone) = repositories();
+        commit(&clone, "the change");
+        // The check before the gate passes.
+        current_main(&clone).unwrap();
+        // A pull request merges while the gate and the review run.
+        commit(&seed, "merged meanwhile");
+        git_in(&seed, &["push", "--quiet", "origin", MAIN]);
+        // The check before `git push` refuses.
+        let error = current_main(&clone).unwrap_err().to_string();
+        assert!(
+            error.contains("behind origin/main by 1 commit(s)"),
+            "{error}"
+        );
+        assert!(error.contains("merged meanwhile"), "{error}");
     }
 
     #[test]

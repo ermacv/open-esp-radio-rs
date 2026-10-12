@@ -29,6 +29,7 @@ oer-ieee80211-trace = { path = "../../../protocols/ieee80211/trace" }
 oer-ieee80211-lower-mac = { path = "../../../protocols/ieee80211/lower-mac" }
 oer-ieee80211-mac = { path = "../../../protocols/ieee80211/mac" }
 oer-ieee80211-softmac = { path = "../../../protocols/ieee80211/softmac" }
+oer-ieee80211-upper-mac = { path = "../../../protocols/ieee80211/upper-mac" }
 oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath" }
 oer-ieee80211-sta = { path = "../../../protocols/ieee80211/sta" }
 oer-espressif-ieee80211-policy = { path = "../../../protocols/espressif/ieee80211/policy" }

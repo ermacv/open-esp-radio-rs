@@ -23,6 +23,7 @@ use oer_radio_port::{EventsLost, Poisoned};
 
 pub mod join;
 pub mod scan;
+pub mod tx;
 pub mod wpa2;
 
 /// The client of the station interface a backend lends in each phase.
@@ -44,6 +45,7 @@ pub trait StationParts: LowerMacBackend {
             'id,
             Caps = Self::Caps,
             Fault = Self::Fault,
+            Domain = oer_ieee80211_lower_mac::Ieee80211Radio,
             QueueKind = Self::QueueKind,
             BufferKind = Self::BufferKind,
             PairwiseKeyKind = Self::PairwiseKeyKind,

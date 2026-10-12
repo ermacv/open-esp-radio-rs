@@ -192,6 +192,14 @@ pub trait PortRxReceiver {
 
     /// The next staged unit, if any.
     fn try_receive(&self) -> Option<Self::Unit>;
+
+    /// The staged units waiting.
+    fn len(&self) -> usize;
+
+    /// Whether no staged unit waits.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// The producing end of the product RX pipeline: the RX DMA epoch, which
@@ -401,7 +409,13 @@ impl<M: RawMutex, T, const N: usize> EventQueue<M, T, N> {
 enum QueuedEvent {
     TxCompleted(TxCompletion),
     Tbtt(TbttEvent),
+    /// The units an RX pass staged, which the consumer takes from the
+    /// staging queue in this place of the stream.
+    Received(usize),
 }
+
+/// RX passes the stream holds the places of at once.
+const RX_BATCH_SLOTS: usize = 16;
 
 /// The queues of the port, one per kind of event, and the lifecycle
 /// terminals the owner's transitions read.
@@ -409,6 +423,8 @@ struct Queues<M: RawMutex> {
     completions: EventQueue<M, TxCompletion, COMPLETION_SLOTS>,
     lifecycle: EventQueue<M, LifecycleEvent, LIFECYCLE_SLOTS>,
     tbtt: EventQueue<M, TbttEvent, TBTT_CAPACITY>,
+    /// The places of the RX passes' staged units in the stream.
+    received: EventQueue<M, usize, RX_BATCH_SLOTS>,
     /// The occurrence number of the next event, one sequence for every
     /// queue: the stream is merged in this order. Its lock also orders the
     /// queues: a producer numbers and queues an event, and the consumer
@@ -425,6 +441,7 @@ impl<M: RawMutex> Queues<M> {
             completions: EventQueue::new(),
             lifecycle: EventQueue::new(),
             tbtt: EventQueue::new(),
+            received: EventQueue::new(),
             next_occurrence: Mutex::new(Cell::new(0)),
             changed: Signal::new(),
         }
@@ -444,7 +461,11 @@ impl<M: RawMutex> Queues<M> {
     /// events occurred.
     fn take(&self) -> Option<Result<QueuedEvent, EventsLost>> {
         self.next_occurrence.lock(|_| {
-            let heads = [self.completions.head(), self.tbtt.head()];
+            let heads = [
+                self.completions.head(),
+                self.tbtt.head(),
+                self.received.head(),
+            ];
             let (first, _) = heads
                 .iter()
                 .enumerate()
@@ -452,7 +473,8 @@ impl<M: RawMutex> Queues<M> {
                 .min_by_key(|(_, occurrence)| *occurrence)?;
             match first {
                 0 => Some(self.completions.take()?.map(QueuedEvent::TxCompleted)),
-                _ => Some(self.tbtt.take()?.map(QueuedEvent::Tbtt)),
+                1 => Some(self.tbtt.take()?.map(QueuedEvent::Tbtt)),
+                _ => Some(self.received.take()?.map(QueuedEvent::Received)),
             }
         })
     }
@@ -460,9 +482,10 @@ impl<M: RawMutex> Queues<M> {
     /// Wait until a queue of the stream may have an entry or
     /// [`Self::changed`] rose.
     async fn wait(&self) {
-        select3(
+        select4(
             self.completions.entries.ready_to_receive(),
             self.tbtt.entries.ready_to_receive(),
+            self.received.entries.ready_to_receive(),
             self.changed.wait(),
         )
         .await;
@@ -473,6 +496,7 @@ impl<M: RawMutex> Queues<M> {
         self.completions.discard();
         self.lifecycle.discard();
         self.tbtt.discard();
+        self.received.discard();
     }
 }
 
@@ -589,6 +613,12 @@ pub struct Esp32s31LowerMac<
     /// Raised when the event consumer took a staged unit, returning a
     /// credit to a blocked RX pass.
     rx_capacity: Signal<M, ()>,
+    /// Staged units whose place in the stream is queued: the units of the
+    /// queued RX passes and of the pass the consumer takes.
+    rx_placed: Mutex<M, Cell<usize>>,
+    /// Units the consumer still takes from the staging queue before the
+    /// stream's next queued event.
+    rx_batch: Mutex<M, Cell<usize>>,
     ended: Mutex<M, RefCell<Ended>>,
     /// Raised when a deadline, an install, a completion or a fault may have
     /// started, so the driver rearms.
@@ -678,6 +708,8 @@ where
             rx_service: Mutex::new(RefCell::new(None)),
             rx_ready: Signal::new(),
             rx_capacity: Signal::new(),
+            rx_placed: Mutex::new(Cell::new(0)),
+            rx_batch: Mutex::new(Cell::new(0)),
             ended: Mutex::new(RefCell::new([None; COMPLETION_CAPACITY])),
             wake: Signal::new(),
             settle: Mutex::new(RefCell::new(
@@ -827,6 +859,8 @@ where
         });
         self.ended
             .lock(|ended| *ended.borrow_mut() = [None; COMPLETION_CAPACITY]);
+        self.rx_placed.lock(|placed| placed.set(0));
+        self.rx_batch.lock(|batch| batch.set(0));
         let receiver = self.receiver.lock(|slot| slot.borrow_mut().take())?;
         let rx_service = self.rx_service.lock(|slot| slot.borrow_mut().take())?;
         Some((core, hardware, receiver, rx_service))
@@ -1125,6 +1159,10 @@ where
             .try_receive()
             .ok()
             .map(|frame| Esp32s31StagedRx::new(frame, self.config))
+    }
+
+    fn len(&self) -> usize {
+        self.receiver.len()
     }
 }
 
@@ -1556,7 +1594,20 @@ where
     H: LowerMacHardware,
     R: LowerMacRetune<H>,
 {
+    /// Place the units the pass staged in the stream, after every event
+    /// queued before it.
     fn rx_ready(&self) {
+        let staged = self.receiver.lock(|receiver| {
+            receiver.borrow().as_ref().map_or(0, PortRxReceiver::len)
+        });
+        self.rx_placed.lock(|placed| {
+            let new = staged.saturating_sub(placed.get());
+            if new > 0 {
+                let queues = &self.queues;
+                queues.ordered(|occurrence| queues.received.push(occurrence, new));
+                placed.set(placed.get() + new);
+            }
+        });
         self.rx_ready.signal(());
     }
 }
@@ -1786,32 +1837,48 @@ where
             // The permits of every ended attempt are back before its
             // completion is handed out.
             self.held.complete(runtime.take_ended());
-            if let Some(event) = runtime.queues.take() {
-                return Ok(event.map(|event| match event {
-                    QueuedEvent::TxCompleted(completion) => Esp32s31LowerMacEvent::TxCompleted(
-                        completion,
-                        runtime.unhold_body(completion.id),
-                    ),
-                    QueuedEvent::Tbtt(event) => Esp32s31LowerMacEvent::Tbtt(event),
-                }));
-            }
-            // A staged unit a receive rule admits; one it does not is
-            // dropped, which returns its buffer.
-            while let Some(unit) = runtime.receiver.lock(|receiver| {
-                receiver
-                    .borrow()
-                    .as_ref()
-                    .and_then(PortRxReceiver::try_receive)
-            }) {
+            // The units of the RX pass in progress come before the stream's
+            // next queued event: one stream in the order the events
+            // occurred (#266 D8). A unit no receive rule admits is dropped,
+            // which returns its buffer.
+            while runtime.rx_batch.lock(Cell::get) > 0 {
+                runtime.rx_batch.lock(|batch| batch.set(batch.get() - 1));
+                runtime
+                    .rx_placed
+                    .lock(|placed| placed.set(placed.get().saturating_sub(1)));
+                let unit = runtime.receiver.lock(|receiver| {
+                    receiver
+                        .borrow()
+                        .as_ref()
+                        .and_then(PortRxReceiver::try_receive)
+                });
                 runtime.rx_capacity.signal(());
-                if let Some(event) = runtime.admit(unit) {
+                if let Some(event) = unit.and_then(|unit| runtime.admit(unit)) {
                     return Ok(Ok(event));
+                }
+            }
+            if let Some(event) = runtime.queues.take() {
+                match event {
+                    Ok(QueuedEvent::Received(units)) => {
+                        runtime.rx_batch.lock(|batch| batch.set(units));
+                        continue;
+                    }
+                    Ok(QueuedEvent::TxCompleted(completion)) => {
+                        return Ok(Ok(Esp32s31LowerMacEvent::TxCompleted(
+                            completion,
+                            runtime.unhold_body(completion.id),
+                        )));
+                    }
+                    Ok(QueuedEvent::Tbtt(event)) => {
+                        return Ok(Ok(Esp32s31LowerMacEvent::Tbtt(event)));
+                    }
+                    Err(EventsLost) => return Ok(Err(EventsLost)),
                 }
             }
             if let Some(poisoned) = runtime.poisoned() {
                 return Err(poisoned);
             }
-            select(runtime.queues.wait(), runtime.rx_ready.wait()).await;
+            runtime.queues.wait().await;
         }
     }
 }

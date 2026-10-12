@@ -51,7 +51,7 @@ advertisement with a DSSS rate;
 `roles/esp32s31/ieee80211/ap/src/profile.rs` selects the hardware
 advertisement. The portable codec carries no implicit ESP32-S31 profile.
 
-`ap/src/coordinator.rs` decides the channel of a port a station and an
+`arbiter/src/coordinator.rs` decides the channel of a port a station and an
 access point share (`ChannelCoordinator`): the station's BSS decides it, and
 the access point follows within its `ApFollowPolicy` (2.4 GHz alone by
 default, never a channel that needs radar detection; `ApUnservable` says

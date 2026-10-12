@@ -3717,6 +3717,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-ieee80211-arbiter"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee80211-lower-mac",
+ "oer-ieee80211-mac",
+ "oer-time",
+]
+
+[[package]]
 name = "oer-ieee80211-datapath"
 version = "0.1.0"
 dependencies = [
@@ -3826,6 +3835,7 @@ name = "oer-ieee80211-sta"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "oer-ieee80211-lower-mac",
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
  "oer-ieee80211-trace",

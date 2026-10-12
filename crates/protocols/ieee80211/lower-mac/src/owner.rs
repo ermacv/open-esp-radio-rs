@@ -16,9 +16,9 @@
 //! | the receive rules a role may request | [`SupportedFilter`] |
 //! | `SubmitError::UnsupportedRate` | [`PhaseRate`], checked against the phase's channel |
 //! | `SubmitError::Unsupported` (backoff, power, coexistence level) | [`SupportedBackoff`], [`SupportedPower`], [`SupportedCoex`] |
-//! | `SubmitError::Busy` (the queue holds an attempt) | the queue's grant ([`LowerMacClient::queue`], awaited in the pool's order, a [`QueueGrant`] of the backend's own type): a submission moves it into the backend, which gives the queue back when it takes the attempt's terminal |
+//! | `SubmitError::Busy` (the queue holds an attempt) | the queue's grant ([`LowerMacClient::queue`], awaited in the pool's order with the seat of the interface's access category, a [`QueueGrant`] of the backend's own type): a submission moves it into the backend, which gives the queue back when it takes the attempt's terminal |
 //! | `SubmitError::DuplicateId` | the backend mints the [`Work`] of each submission |
-//! | `SubmitError::InvalidLength`, a buffer request past `max_mpdu_length`, no free buffer | [`MpduLength`], and a buffer ([`LowerMacClient::tx_buffer`], awaited, never refused) the attempt holds until its terminal event |
+//! | `SubmitError::InvalidLength`, a buffer request past `max_mpdu_length`, no free buffer | [`MpduLength`], and a buffer ([`LowerMacClient::tx_buffer`], awaited with a seat, never refused) the attempt holds until its terminal event |
 //! | `SettingError::NoKeySlot`, `SettingError::UnknownKey`, `SubmitError::UnknownKey` | a key slot ([`Slot`] of the client's own kind) that the install's resources give once, which the caller counts itself; an installed key token the attempt borrows |
 //! | `SettingError::InvalidKey` | [`Ccmp128Key`] |
 //! | `SettingError::NoBlockAckSlot`, `SettingError::InvalidBlockAck` | a Block Ack [`Slot`] of the client's own kind and [`SupportedBlockAck`]; ending an agreement takes its token |
@@ -55,8 +55,14 @@
 //!
 //! Every token carries the install's brand `'id`. The install's resources
 //! give its slots and permits once, through `oer_radio_port::Mint`: the
-//! queue and buffer permits, which the backend keeps, and each role's key
-//! and Block Ack slots, which the caller counts itself.
+//! queue and buffer permits, which the backend keeps, each role's key
+//! and Block Ack slots, which the caller counts itself, and each
+//! interface's transmit seats ([`TxSeats`]): a seat on the queue line and
+//! one on the buffer line per access category, which the caller lends to
+//! each take and keeps across takes (an A-MPDU's sequential buffers). A
+//! queue seat's index names its access category
+//! ([`seat_access_category`]), so the queue a take waits for is the one
+//! the capabilities assign that access category.
 //! An installed key or agreement holds its slot and outlives the phases
 //! between; its kind is its client's, so a station's key is not an access
 //! point's. The queue and buffer permits stay in the backend's held part of
@@ -198,7 +204,9 @@ use core::{future::Future, marker::PhantomData};
 
 use oer_ieee80211_mac::qos::WmmAccessCategory;
 use oer_ieee80211_mac::{extensions::wmm::WmmParameterSet, sequence::SequenceNumber};
-use oer_radio_port::{Poisoned, PortBackend, RadioPortClient, RadioPortEvents, Slot, Work};
+use oer_radio_port::{
+    Line, Mint, Poisoned, PortBackend, RadioPortClient, RadioPortEvents, Seat, Slot, Work,
+};
 
 use crate::{
     Backoff, Channel, CoexPriority, LowerMacCapabilities, MacAddress, PhyRate, ReceiveFilter,
@@ -548,6 +556,72 @@ pub trait QueueGrant {
     fn access_category(&self) -> WmmAccessCategory;
 }
 
+/// The seats of one line of transmit permits: one per interface role and
+/// access category.
+pub const TX_SEATS: usize = 8;
+
+/// The access category of the transmit seat at `index` of its line: an
+/// interface's four seats follow the access category index (ACI), the
+/// station's seats first, then the access point's ([`TxSeats::mint`]).
+pub const fn seat_access_category(index: u8) -> WmmAccessCategory {
+    match index % 4 {
+        0 => WmmAccessCategory::BestEffort,
+        1 => WmmAccessCategory::Background,
+        2 => WmmAccessCategory::Video,
+        _ => WmmAccessCategory::Voice,
+    }
+}
+
+/// The transmit seats of one interface: for each access category, its
+/// seat on the queue line (of the kind `Q`) and on the buffer line (of the
+/// kind `B`), indexed by the access category index. The caller lends a
+/// seat to each take and keeps it across takes.
+pub struct TxSeats<'id, Q, B> {
+    queue: [Seat<'id, Q>; 4],
+    buffer: [Seat<'id, B>; 4],
+}
+
+impl<'id, Q, B> TxSeats<'id, Q, B> {
+    /// The [`TX_SEATS`] seats of the queue line of the kind `Q` and of the
+    /// buffer line of the kind `B`, with the lines that size their pools,
+    /// and the seats of each interface: the station's, then the access
+    /// point's.
+    #[allow(
+        clippy::type_complexity,
+        reason = "the two lines and the seats of each role, minted together"
+    )]
+    pub fn mint(
+        mint: &mut Mint<'id>,
+    ) -> (Line<'id, Q, TX_SEATS>, Line<'id, B, TX_SEATS>, [Self; 2]) {
+        let (queue_line, [q0, q1, q2, q3, q4, q5, q6, q7]) = mint.seats::<Q, TX_SEATS>();
+        let (buffer_line, [b0, b1, b2, b3, b4, b5, b6, b7]) = mint.seats::<B, TX_SEATS>();
+        (
+            queue_line,
+            buffer_line,
+            [
+                Self {
+                    queue: [q0, q1, q2, q3],
+                    buffer: [b0, b1, b2, b3],
+                },
+                Self {
+                    queue: [q4, q5, q6, q7],
+                    buffer: [b4, b5, b6, b7],
+                },
+            ],
+        )
+    }
+
+    /// The seat on the queue line of `access_category`.
+    pub fn queue(&mut self, access_category: WmmAccessCategory) -> &mut Seat<'id, Q> {
+        &mut self.queue[access_category as usize]
+    }
+
+    /// The seat on the buffer line of `access_category`.
+    pub fn buffer(&mut self, access_category: WmmAccessCategory) -> &mut Seat<'id, B> {
+        &mut self.buffer[access_category as usize]
+    }
+}
+
 /// One attempt of a running phase, every value of it checked: the queue it
 /// occupies, its MPDU in a buffer bound to a buffer permit, its body, its
 /// rate on the phase's channel, its protection, key, power, backoff and
@@ -639,6 +713,10 @@ pub trait LowerMacClient<'id>:
 {
     /// The backend's capabilities marker.
     type Caps: Ieee80211Capabilities;
+    /// The kind of the queue line's seats.
+    type QueueKind;
+    /// The kind of the buffer line's seats.
+    type BufferKind;
     /// The grant of one queue, which [`Self::queue`] awaits.
     type Queue<'c>: QueueGrant
     where
@@ -673,24 +751,31 @@ pub trait LowerMacClient<'id>:
         }
     }
 
-    /// The permit of the queue `access_category` occupies, once no attempt
-    /// holds it: an occupied queue is waited for, never refused.
-    fn queue<'c>(
+    /// The permit of the queue the access category of `seat` occupies
+    /// ([`seat_access_category`]), once no attempt holds it: an occupied
+    /// queue is waited for in its line with `seat`, never refused. The
+    /// seat is lent only while the take waits.
+    fn queue<'c, 's>(
         &'c self,
-        access_category: WmmAccessCategory,
-    ) -> impl Future<Output = Self::Queue<'c>> + 'c
+        seat: &'s mut Seat<'id, Self::QueueKind>,
+    ) -> impl Future<Output = Self::Queue<'c>> + 's
     where
-        'id: 'c;
+        'id: 'c,
+        'c: 's;
 
     /// A buffer for an MPDU of `len`, once one of the pool is free: a lent
-    /// pool is waited for, never refused. Dropped before a submission, it
-    /// gives its permit back.
-    fn tx_buffer<'c>(
+    /// pool is waited for in its line with `seat`, never refused. The seat
+    /// is lent only while the take waits, so an A-MPDU takes its buffers
+    /// one after another with one seat. Dropped before a submission, the
+    /// buffer gives its permit back.
+    fn tx_buffer<'c, 's>(
         &'c self,
         len: MpduLength<Self::Caps>,
-    ) -> impl Future<Output = Self::TxBuffer<'c>> + 'c
+        seat: &'s mut Seat<'id, Self::BufferKind>,
+    ) -> impl Future<Output = Self::TxBuffer<'c>> + 's
     where
-        'id: 'c;
+        'id: 'c,
+        'c: 's;
 
     /// Admit `attempt`; its queue and buffer permits stay with the backend
     /// until it takes the attempt's terminal.

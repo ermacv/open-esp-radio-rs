@@ -52,8 +52,10 @@
 //!
 //! Every token carries the install's brand `'id`. The operation permit
 //! stays in the backend's held part of the install ([`OperationPermits`]):
-//! a client awaits it as a guard that gives it back when dropped before a
-//! submission; a submission moves it in, and the backend gives it back when
+//! a client awaits it with its interface's seat in the operation's line
+//! ([`WorkPermits::new`] mints one per interface client, which the body's
+//! resources hand out and the caller keeps across takes) as a guard that
+//! gives it back when dropped before a submission; a submission moves it in, and the backend gives it back when
 //! it takes the operation's terminal, before it hands the event out. No
 //! caller holds a submitted operation's permit, and a dropped handle or
 //! event loses none.
@@ -209,8 +211,8 @@
 use core::{cell::RefCell, future::Future, marker::PhantomData};
 
 use oer_radio_port::{
-    Mint, Permit, PermitPool, Poisoned, PortBackend, RadioPortClient, RadioPortEvents, RadioWork,
-    Slot, Work,
+    Line, Mint, Permit, PermitPool, Poisoned, PortBackend, RadioPortClient, RadioPortEvents,
+    RadioWork, Seat, Slot, Work,
 };
 
 use crate::{
@@ -639,9 +641,10 @@ struct InFlight<'id, K> {
 /// The one permit of kind `K` of an install, which a backend keeps in its
 /// held part (`PortBackend::Held`): the permit in the pool `P`, which
 /// serves its takers in its documented order, and the work in flight,
-/// keyed by its interface and identity. A client awaits the permit, never
-/// refused; a submission moves it in, and the backend gives it back when it
-/// takes the work's terminal, before it hands the event out.
+/// keyed by its interface and identity. A client awaits the permit with its
+/// interface's seat in the pool's line, never refused; a submission moves
+/// it in, and the backend gives it back when it takes the work's terminal,
+/// before it hands the event out.
 pub struct WorkPermits<'id, K, P> {
     pool: P,
     in_flight: RefCell<Option<InFlight<'id, K>>>,
@@ -652,13 +655,22 @@ pub type OperationPermits<'id, P> = WorkPermits<'id, Operation, P>;
 
 impl<'id, K, P: PermitPool<'id, K>> WorkPermits<'id, K, P> {
     /// The permits of the install `mint` serves: its one permit of kind
-    /// `K`, handed to `pool`.
-    pub fn new(mint: &mut Mint<'id>, pool: impl FnOnce(Permit<'id, K>) -> P) -> Self {
+    /// `K`, handed to `pool` with the line of the kind's `S` seats, and the
+    /// seats, one per interface client, which the body's resources hand
+    /// out.
+    pub fn new<const S: usize>(
+        mint: &mut Mint<'id>,
+        pool: impl FnOnce(Permit<'id, K>, Line<'id, K, S>) -> P,
+    ) -> (Self, [Seat<'id, K>; S]) {
         let [permit] = mint.permits::<K, 1>();
-        Self {
-            pool: pool(permit),
-            in_flight: RefCell::new(None),
-        }
+        let (line, seats) = mint.seats::<K, S>();
+        (
+            Self {
+                pool: pool(permit, line),
+                in_flight: RefCell::new(None),
+            },
+            seats,
+        )
     }
 
     /// The pool a client awaits the permit from.
@@ -913,11 +925,16 @@ pub trait Ieee802154Client<'id, const I: u8>:
     fn window_ended(&self) -> impl Future<Output = Result<(), Poisoned<Self::Fault>>>;
 
     /// The radio's one operation permit, once no operation holds it: a
-    /// running operation is waited for, in arrival order across the
-    /// interfaces, never refused.
-    fn operation<'c>(&'c self) -> impl Future<Output = OperationPermit<'c, 'id>> + 'c
+    /// running operation is waited for with the interface's `seat` in the
+    /// operation's line, in arrival order across the interfaces, never
+    /// refused. The seat is lent only while the take waits.
+    fn operation<'c, 's>(
+        &'c self,
+        seat: &'s mut Seat<'id, Operation>,
+    ) -> impl Future<Output = OperationPermit<'c, 'id>> + 's
     where
-        'id: 'c;
+        'id: 'c,
+        'c: 's;
 
     /// Transmit; the permit stays with the backend until it takes the
     /// transmission's terminal.

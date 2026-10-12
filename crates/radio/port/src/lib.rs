@@ -26,8 +26,9 @@
 //!   [`Work`], one admitted operation. Every rule a caller controls is a
 //!   type.
 //! - [`pool`]: capacity as branded tokens: a [`Mint`] makes an install's
-//!   [`Slot`]s, taken synchronously, and [`Permit`]s, awaited from a
-//!   [`PermitPool`] in its documented order.
+//!   [`Slot`]s, taken synchronously, [`Permit`]s, awaited from a
+//!   [`PermitPool`] in its documented order, and [`Seat`]s, the places in
+//!   a pool's [`Line`] its takers wait with.
 //! - [`Poisoned`] and [`PortResult`]: the only outer error of a port call,
 //!   carrying the backend's cause; every refusal is the inner `Err`.
 //! - [`EventsLost`]: the one loss marker, with its ordering rule.
@@ -94,7 +95,7 @@ pub use owner::{
     Disabled, EnableResult, Enabled, Ended, Failed, Lent, Owner, PhaseParts, PoisonedOwner,
     PortBackend, PortBody, RadioPortClient, RadioPortEvents, RadioWork, Retire, Work, run_port,
 };
-pub use pool::{Mint, Permit, PermitPool, Slot};
+pub use pool::{Line, Mint, Permit, PermitPool, Seat, Slot};
 pub use relation::{
     ClockInfo, ClockRelation, ClockSample, Generation, GenerationSource, Projected,
     ProjectionError, RadioStamp, RelationRate, RelationSample, Stamp,

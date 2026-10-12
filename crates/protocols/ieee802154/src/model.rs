@@ -6,7 +6,8 @@
 //! the air and the world: it ends operations and receive windows, delivers
 //! received frames, refuses the next enable or poisons the backend. Its held
 //! part of the install keeps the operation permit in a [`ModelPermitPool`],
-//! a first-in, first-out pool.
+//! a first-in, first-out pool, and the body's resources give each
+//! interface its seat in the pool's line.
 //!
 //! Its tokens have no value outside it: no caller mints a configured
 //! interface or a pending entry.
@@ -44,8 +45,8 @@ use core::{
 
 use oer_radio_port::{
     CancelError, ClockError, EnableResult, EventsLost, Lent, Mint, Permit, PermitPool, PhaseParts,
-    Poisoned, PortBackend, PortResult, RadioPortClient, RadioPortEvents, RadioWork, Retire, Slot,
-    Work,
+    Poisoned, PortBackend, PortResult, RadioPortClient, RadioPortEvents, RadioWork, Retire, Seat,
+    Slot, Work,
 };
 
 use crate::{
@@ -508,18 +509,19 @@ impl OwnedModel {
     }
 }
 
-/// A first-in, first-out pool of the model's permits.
+/// A first-in, first-out pool of the model's permits, whose line grows on
+/// the heap: a place for every seat that waits.
 pub struct ModelPermitPool<'id, Kind> {
     free: RefCell<Vec<Permit<'id, Kind>>>,
     /// The waiting takers, in arrival order: each one's ticket and waker.
-    line: Line,
+    line: Waiting,
     next: Cell<u32>,
 }
 
-type Line = RefCell<VecDeque<(u32, Waker)>>;
+type Waiting = RefCell<VecDeque<(u32, Waker)>>;
 
 /// Wake the taker at the head of `line`, which a free permit now serves.
-fn wake_head(line: &Line) {
+fn wake_head(line: &Waiting) {
     if let Some((_, waker)) = line.borrow().front() {
         waker.wake_by_ref();
     }
@@ -539,7 +541,7 @@ impl<'id, Kind> ModelPermitPool<'id, Kind> {
 /// A taker's place in a [`ModelPermitPool`]'s line, given up when its
 /// future drops before it is served; the taker behind it then leads.
 struct Place<'p> {
-    line: &'p Line,
+    line: &'p Waiting,
     ticket: Option<u32>,
 }
 
@@ -558,7 +560,10 @@ impl Drop for Place<'_> {
 }
 
 impl<'id, Kind> PermitPool<'id, Kind> for ModelPermitPool<'id, Kind> {
-    fn take(&self) -> impl Future<Output = Permit<'id, Kind>> + '_ {
+    fn take<'a>(
+        &'a self,
+        _: &'a mut Seat<'id, Kind>,
+    ) -> impl Future<Output = Permit<'id, Kind>> + 'a {
         let mut place = Place {
             line: &self.line,
             ticket: None,
@@ -616,9 +621,11 @@ pub struct ModelHeld<'id> {
     permits: OperationPermits<'id, ModelPermitPool<'id, Operation>>,
 }
 
-/// The model's port-lifetime resources: each interface's slots and the
-/// recent-RSSI reader.
+/// The model's port-lifetime resources: each interface's slots, its seat
+/// in the operation's line and the recent-RSSI reader.
 pub struct ModelResources<'id> {
+    /// Each interface's seat in the operation's line, by interface.
+    pub operation: [Seat<'id, Operation>; MODEL_INTERFACES],
     /// Interface 0's slots.
     pub interface0: InterfaceResources<'id, 0, MODEL_PENDING_SLOTS>,
     /// Interface 1's slots.
@@ -1103,12 +1110,16 @@ impl<'c, 'id, const I: u8> Ieee802154Client<'id, I> for ModelClient<'c, 'id, I> 
         })
     }
 
-    fn operation<'o>(&'o self) -> impl Future<Output = OperationPermit<'o, 'id>> + 'o
+    fn operation<'o, 's>(
+        &'o self,
+        seat: &'s mut Seat<'id, Operation>,
+    ) -> impl Future<Output = OperationPermit<'o, 'id>> + 's
     where
         'id: 'o,
+        'o: 's,
     {
         let permits = &self.held.permits;
-        let mut taking = alloc::boxed::Box::pin(permits.pool().take());
+        let mut taking = alloc::boxed::Box::pin(permits.pool().take(seat));
         poll_fn(move |context| {
             taking
                 .as_mut()
@@ -1244,10 +1255,13 @@ impl PortBackend for OwnedModel {
     }
 
     fn resources<'id>(&mut self, mut mint: Mint<'id>) -> (ModelHeld<'id>, ModelResources<'id>) {
-        let held = ModelHeld {
-            permits: OperationPermits::new(&mut mint, |permit| ModelPermitPool::new([permit])),
-        };
+        // The model's line grows on the heap, so it holds a place for every
+        // seat without the line's size.
+        let (permits, operation) =
+            OperationPermits::new(&mut mint, |permit, _| ModelPermitPool::new([permit]));
+        let held = ModelHeld { permits };
         let resources = ModelResources {
+            operation,
             interface0: InterfaceResources::mint::<ModelCaps>(&mut mint),
             interface1: InterfaceResources::mint::<ModelCaps>(&mut mint),
             rssi: ModelRssi(self.shared.clone()),

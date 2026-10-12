@@ -74,7 +74,7 @@
 //! its own types:
 //!
 //! - its phase parts and every token it mints (admitted work, permits,
-//!   leases, installed keys and agreements, validated values) are not
+//!   seats, leases, installed keys and agreements, validated values) are not
 //!   `Clone`, `Copy` or `Default` and have no public constructor, so a
 //!   mutable reference cannot exchange a part out of its loan
 //!   (compile-fail tests);
@@ -95,7 +95,11 @@
 //! phase: a submission moves its permit into the backend, which gives it
 //! back to its pool when the work ends and before it hands the terminal
 //! out, so no queue overflows, no terminal is lost and no caller holds the
-//! permit of submitted work; only unsolicited reception may lose events. A `'static` sans-IO core holds no
+//! permit of submitted work; only unsolicited reception may lose events.
+//! A taker waits for a permit with its own seat in the pool's line, which
+//! the body's resources hand it with its client and which it keeps across
+//! takes, so the line holds a place for every taker and serves them in
+//! arrival order. A `'static` sans-IO core holds no
 //! phase-scoped token: the phase keeps a boundary table from the core's own
 //! identity to the token, which carries out the core's decisions.
 //!
@@ -515,7 +519,8 @@ pub trait PortBackend: Sized {
         Self: 'a,
         'id: 'a;
     /// The port-lifetime resources the body receives once with its owner:
-    /// slot pools and permit pools, minted through [`Mint`].
+    /// slot pools, permit pools and the seats of their lines, minted
+    /// through [`Mint`].
     type Resources<'id>;
     /// The port-lifetime part of the install the backend keeps, shared by
     /// the body's parts and the driver: [`run_port`] keeps it for the

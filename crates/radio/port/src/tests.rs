@@ -824,7 +824,10 @@ struct FifoPool<'id> {
 }
 
 impl<'id> PermitPool<'id, ModelCaps> for FifoPool<'id> {
-    fn take(&self) -> impl Future<Output = Permit<'id, ModelCaps>> + '_ {
+    fn take<'a>(
+        &'a self,
+        _: &'a mut Seat<'id, ModelCaps>,
+    ) -> impl Future<Output = Permit<'id, ModelCaps>> + 'a {
         let mut place = Place {
             line: &self.line,
             ticket: None,
@@ -877,14 +880,25 @@ impl Drop for Place<'_> {
 fn a_fifo_permit_pool_meets_the_conformance_rule() {
     let mut mint = Mint::new();
     let [held, shared] = mint.permits::<ModelCaps, 2>();
+    let (line, mut seats) = mint.seats::<ModelCaps, 3>();
+    assert_eq!(line.places(), 3);
     let pool = FifoPool {
         free: core::cell::RefCell::new(std::vec![shared]),
         line: core::cell::RefCell::default(),
         next: core::cell::Cell::new(0),
     };
-    crate::conformance::permits_serve_takers_in_arrival_order(&pool, [held]);
-    // The rule handed every permit back.
+    crate::conformance::permits_serve_takers_in_arrival_order(&pool, &mut seats, [held]);
+    // The rule handed every permit back and left every seat with its taker.
     assert_eq!(pool.free.borrow().len(), 2);
+    assert_eq!(seats.map(|seat| seat.index()), [0, 1, 2]);
+}
+
+#[test]
+fn a_mint_numbers_a_lines_seats_and_sizes_its_line() {
+    let mut mint = Mint::new();
+    let (line, seats) = mint.seats::<ModelCaps, 4>();
+    assert_eq!(line.places(), 4);
+    assert_eq!(seats.map(|seat| seat.index()), [0, 1, 2, 3]);
 }
 
 /// Poll `future` once with a waker that does nothing.

@@ -409,7 +409,11 @@ of a pool kind `Kind`, any marker type that keeps pools apart), which a caller t
 synchronously from the ones it holds, an installed resource holding its slot
 until its removal gives it back; and permits (`Permit<'id, K>`), which a
 `PermitPool` hands out to awaiting takers and takes back when the work that
-held one ends with its terminal event, not when a handle drops. A pool's
+held one ends with its terminal event, not when a handle drops. A taker
+waits for a permit with a seat (`Seat<'id, K>`), its place in the pool's
+line, which it keeps across takes: `Mint::seats` makes a kind's seats with
+the `Line` that sizes the pool's line, so a taker without a place cannot
+exist and a pool never overflows. A pool's
 free list, its waiters and its order belong to a runtime crate or the
 backend; its order is its documented policy, first in, first out by default,
 which the conformance suite checks. A pool whose permits admitted work holds

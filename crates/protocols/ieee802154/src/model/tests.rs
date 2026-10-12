@@ -63,6 +63,7 @@ fn the_operation_permit_comes_back_before_its_terminal_is_handed_out() {
             mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
+            let [mut seat0, mut seat1] = resources.operation;
             let zero = owner.setup().configure(resources.interface0.interface);
             let one = owner.setup().configure(resources.interface1.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
@@ -71,13 +72,13 @@ fn the_operation_permit_comes_back_before_its_terminal_is_handed_out() {
                 let mut events = parts.events;
                 let first = parts.clients.client(&zero);
                 let second = parts.clients.client(&one);
-                let permit = ready(first.operation());
+                let permit = ready(first.operation(&mut seat0));
                 let work = first
                     .transmit(permit, transmission(&DATA))
                     .unwrap_or_else(|_| panic!("not poisoned"));
                 let id = work.id();
                 // The other interface waits for the one operation.
-                let mut waiting = pin!(second.operation());
+                let mut waiting = pin!(second.operation(&mut seat1));
                 assert!(poll_once(waiting.as_mut()).is_pending());
                 // A dropped handle does not keep the permit.
                 drop(work);
@@ -137,6 +138,7 @@ fn takers_of_the_operation_are_served_in_arrival_order_across_interfaces() {
             mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
+            let [mut seat0, mut seat1] = resources.operation;
             let zero = owner.setup().configure(resources.interface0.interface);
             let one = owner.setup().configure(resources.interface1.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
@@ -144,15 +146,15 @@ fn takers_of_the_operation_are_served_in_arrival_order_across_interfaces() {
                 let parts = owner.split();
                 let first = parts.clients.client(&zero);
                 let second = parts.clients.client(&one);
-                let held = ready(first.operation());
+                let held = ready(first.operation(&mut seat0));
                 // A taker that gives up its place before it is served
                 // stalls no one: its future ends with this block.
                 {
-                    let mut gives_up = pin!(first.operation());
+                    let mut gives_up = pin!(first.operation(&mut seat0));
                     assert!(poll_once(gives_up.as_mut()).is_pending());
                 }
-                let mut one_first = pin!(second.operation());
-                let mut zero_second = pin!(first.operation());
+                let mut one_first = pin!(second.operation(&mut seat1));
+                let mut zero_second = pin!(first.operation(&mut seat0));
                 assert!(poll_once(one_first.as_mut()).is_pending());
                 assert!(poll_once(zero_second.as_mut()).is_pending());
                 // A permit dropped before a submission goes back.
@@ -183,12 +185,13 @@ fn disable_hands_leftover_terminals_to_the_sink_and_takes_their_permits_back() {
             mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
+            let [mut seat0, _] = resources.operation;
             let zero = owner.setup().configure(resources.interface0.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             let id = {
                 let parts = owner.split();
                 let client = parts.clients.client(&zero);
-                let permit = ready(client.operation());
+                let permit = ready(client.operation(&mut seat0));
                 let scan = SupportedEnergyScan::new(channel(20), 128)
                     .unwrap_or_else(|| panic!("the model scans"));
                 let work = client
@@ -211,7 +214,7 @@ fn disable_hands_leftover_terminals_to_the_sink_and_takes_their_permits_back() {
             {
                 let parts = owner.split();
                 let client = parts.clients.client(&zero);
-                assert!(poll_once(pin!(client.operation())).is_ready());
+                assert!(poll_once(pin!(client.operation(&mut seat0))).is_ready());
             }
             let owner = owner
                 .disable(&mut |_| {})
@@ -332,13 +335,14 @@ fn a_cancel_ends_the_operation_once() {
             mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
+            let [_, mut seat1] = resources.operation;
             let one = owner.setup().configure(resources.interface1.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
                 let parts = owner.split();
                 let mut events = parts.events;
                 let client = parts.clients.client(&one);
-                let permit = ready(client.operation());
+                let permit = ready(client.operation(&mut seat1));
                 let cca =
                     SupportedCca::new(channel(26)).unwrap_or_else(|| panic!("the model assesses"));
                 let work = client
@@ -358,7 +362,7 @@ fn a_cancel_ends_the_operation_once() {
                 );
                 // Nothing is in flight any more; the world cannot end it.
                 assert!(!parts_handle().complete_cca(id, Some(true)));
-                assert!(poll_once(pin!(client.operation())).is_ready());
+                assert!(poll_once(pin!(client.operation(&mut seat1))).is_ready());
             }
             let owner = owner
                 .disable(&mut |_| {})
@@ -379,6 +383,7 @@ fn a_radio_fault_ends_admitted_work_first_then_poisons() {
             mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
+            let [mut seat0, _] = resources.operation;
             let zero = owner.setup().configure(resources.interface0.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
@@ -386,7 +391,7 @@ fn a_radio_fault_ends_admitted_work_first_then_poisons() {
                 let mut events = parts.events;
                 let client = parts.clients.client(&zero);
                 ready(client.receive(channel(15))).unwrap_or_else(|_| panic!("not poisoned"));
-                let permit = ready(client.operation());
+                let permit = ready(client.operation(&mut seat0));
                 let work = client
                     .transmit(permit, transmission(&DATA))
                     .unwrap_or_else(|_| panic!("not poisoned"));
@@ -411,9 +416,9 @@ fn a_radio_fault_ends_admitted_work_first_then_poisons() {
                 ));
                 // The permit came back with the terminal; a submission is
                 // poisoned and gives it back again.
-                let permit = ready(client.operation());
+                let permit = ready(client.operation(&mut seat0));
                 assert!(client.transmit(permit, transmission(&DATA)).is_err());
-                assert!(poll_once(pin!(client.operation())).is_ready());
+                assert!(poll_once(pin!(client.operation(&mut seat0))).is_ready());
             }
             match owner.disable(&mut |_| {}).await {
                 Ok(_) => panic!("a poisoned backend does not disable"),
@@ -433,6 +438,7 @@ fn a_reception_overflow_is_reported_once_and_loses_no_terminal() {
             mut owner: Owner<'p, 'id, OwnedModel, oer_radio_port::Disabled>,
             resources: ModelResources<'id>,
         ) -> Ended<'id, OwnedModel> {
+            let [mut seat0, _] = resources.operation;
             let zero = owner.setup().configure(resources.interface0.interface);
             let mut owner = owner.enable().await.unwrap_or_else(|_| panic!("enabled"));
             {
@@ -444,7 +450,7 @@ fn a_reception_overflow_is_reported_once_and_loses_no_terminal() {
                 for _ in 0..MODEL_RECEIVED_FRAMES + 2 {
                     assert!(handle.receive(channel(11), Interface::new(0), &DATA, -40));
                 }
-                let permit = ready(client.operation());
+                let permit = ready(client.operation(&mut seat0));
                 let id = client
                     .transmit(permit, transmission(&DATA))
                     .unwrap_or_else(|_| panic!("not poisoned"))
@@ -482,7 +488,7 @@ fn a_reception_overflow_is_reported_once_and_loses_no_terminal() {
                 for _ in 0..MODEL_RECEIVED_FRAMES + 1 {
                     assert!(handle.receive(channel(11), Interface::new(0), &DATA, -40));
                 }
-                let permit = ready(client.operation());
+                let permit = ready(client.operation(&mut seat0));
                 let scan = SupportedEnergyScan::new(channel(11), 64)
                     .unwrap_or_else(|| panic!("the model scans"));
                 let id = client
@@ -745,7 +751,10 @@ impl PortBackend for PoolProbe {
         = ()
     where
         'id: 'a;
-    type Resources<'id> = ModelPermitPool<'id, crate::owner::Operation>;
+    type Resources<'id> = (
+        ModelPermitPool<'id, crate::owner::Operation>,
+        [oer_radio_port::Seat<'id, crate::owner::Operation>; 3],
+    );
     type Held<'id> = ();
     type State = ();
     type Uninstall = ();
@@ -783,9 +792,16 @@ impl PortBackend for PoolProbe {
     fn resources<'id>(
         &mut self,
         mut mint: Mint<'id>,
-    ) -> ((), ModelPermitPool<'id, crate::owner::Operation>) {
+    ) -> (
+        (),
+        (
+            ModelPermitPool<'id, crate::owner::Operation>,
+            [oer_radio_port::Seat<'id, crate::owner::Operation>; 3],
+        ),
+    ) {
         let [permit] = mint.permits::<crate::owner::Operation, 1>();
-        ((), ModelPermitPool::new([permit]))
+        let (_, seats) = mint.seats::<crate::owner::Operation, 3>();
+        ((), (ModelPermitPool::new([permit]), seats))
     }
 
     fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
@@ -835,9 +851,16 @@ fn the_operation_pool_serves_takers_in_arrival_order() {
         async fn run<'p, 'id>(
             self,
             owner: Owner<'p, 'id, PoolProbe, oer_radio_port::Disabled>,
-            pool: ModelPermitPool<'id, crate::owner::Operation>,
+            (pool, mut seats): (
+                ModelPermitPool<'id, crate::owner::Operation>,
+                [oer_radio_port::Seat<'id, crate::owner::Operation>; 3],
+            ),
         ) -> Ended<'id, PoolProbe> {
-            oer_radio_port::conformance::permits_serve_takers_in_arrival_order(&pool, []);
+            oer_radio_port::conformance::permits_serve_takers_in_arrival_order(
+                &pool,
+                &mut seats,
+                [],
+            );
             owner.uninstall(())
         }
     }

@@ -2,14 +2,22 @@ extern crate std;
 
 use core::{
     future::{Future, pending, ready},
-    pin::pin,
+    pin::{Pin, pin},
     task::{Context, Poll, Waker},
+};
+use std::{
+    boxed::Box,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    task::Wake,
 };
 
 use oer_radio_port::{
-    ClockError, Disabled, EnableResult, Ended, EventsLost, Lent, Mint, Owner, Permit, PermitPool,
-    PhaseParts, Poisoned, PortBackend, PortBody, PortResult, RadioPortEvents, Retire, conformance,
-    run_port,
+    ClockError, Disabled, EnableResult, Ended, EventsLost, Lent, Line, Mint, Owner, Permit,
+    PermitPool, PhaseParts, Poisoned, PortBackend, PortBody, PortResult, RadioPortEvents, Retire,
+    Seat, conformance, run_port,
 };
 use oer_time::RadioInstant;
 
@@ -35,10 +43,19 @@ impl RadioPortEvents for NoEvents {
     }
 }
 
-/// A backend whose only resource is `N` permits of one install.
-struct Probe<const N: usize>;
+/// The resources of a probe: `N` permits and the line of `S` seats of one
+/// install.
+type Tokens<'id, const N: usize, const S: usize> = (
+    [Permit<'id, Kind>; N],
+    Line<'id, Kind, S>,
+    [Seat<'id, Kind>; S],
+);
 
-impl<const N: usize> PortBackend for Probe<N> {
+/// A backend whose only resources are `N` permits and `S` seats of one
+/// install.
+struct Probe<const N: usize, const S: usize>;
+
+impl<const N: usize, const S: usize> PortBackend for Probe<N, S> {
     type Event = ();
     type Domain = Domain;
     type Fault = Fault;
@@ -56,7 +73,7 @@ impl<const N: usize> PortBackend for Probe<N> {
         = ()
     where
         'id: 'a;
-    type Resources<'id> = [Permit<'id, Kind>; N];
+    type Resources<'id> = Tokens<'id, N, S>;
     type Held<'id> = ();
     type State = ();
     type Uninstall = ();
@@ -83,8 +100,10 @@ impl<const N: usize> PortBackend for Probe<N> {
         ready(Ok(Ok(RadioInstant::from_micros(0))))
     }
 
-    fn resources<'id>(&mut self, mut mint: Mint<'id>) -> ((), [Permit<'id, Kind>; N]) {
-        ((), mint.permits())
+    fn resources<'id>(&mut self, mut mint: Mint<'id>) -> ((), Tokens<'id, N, S>) {
+        let permits = mint.permits();
+        let (line, seats) = mint.seats();
+        ((), (permits, line, seats))
     }
 
     fn setup<'a, 'id>(&'a mut self) -> Lent<'a, Self::Setup<'a, 'id>> {
@@ -104,92 +123,164 @@ impl<const N: usize> PortBackend for Probe<N> {
 
     fn drive<'p, 'id>(
         &mut self,
-        _: &'p Self::Held<'id>,
+        _: &'p (),
         retire: Retire<'p>,
-    ) -> impl Future<Output = ()> + use<'p, 'id, N> {
-        core::future::poll_fn(move |_| {
-            if retire.is_requested() {
-                Poll::Ready(())
-            } else {
-                Poll::Pending
-            }
-        })
+    ) -> impl Future<Output = ()> + use<'p, 'id, N, S> {
+        // The probe has nothing to serve: it retires when asked.
+        async move { retire.requested().await }
     }
 
     fn retire_bound(&self) -> impl Future<Output = ()> + '_ {
         pending()
     }
 
-    fn detach<'id>(&mut self, _: &Self::Held<'id>) {}
+    fn detach<'id>(&mut self, (): &()) {}
 
-    fn uninstall<'id>(self, _: Self::Held<'id>, (): (), (): ()) {}
+    fn uninstall<'id>(self, (): (), (): (), (): ()) {}
 
     fn abandon(&mut self) {}
 }
 
 /// Poll `future` once with a waker that does nothing.
-fn poll_once<F: Future>(future: core::pin::Pin<&mut F>) -> Poll<F::Output> {
+fn poll_once<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
     future.poll(&mut Context::from_waker(Waker::noop()))
 }
 
-/// Run `check` on `N` permits of one install.
-fn with_permits<const N: usize, C>(check: C)
+/// Run `check` on a pool of `N` permits of one install and the `S` seats
+/// of its line.
+fn with_pool<const N: usize, const S: usize, C>(check: C)
 where
-    C: for<'id> FnOnce([Permit<'id, Kind>; N]),
+    C: for<'id> FnOnce(&FifoPermitPool<'id, Kind, N, S>, [Seat<'id, Kind>; S]),
 {
     struct Body<C>(C);
-    impl<const N: usize, C> PortBody<Probe<N>> for Body<C>
+    impl<const N: usize, const S: usize, C> PortBody<Probe<N, S>> for Body<C>
     where
-        C: for<'id> FnOnce([Permit<'id, Kind>; N]),
+        C: for<'id> FnOnce(&FifoPermitPool<'id, Kind, N, S>, [Seat<'id, Kind>; S]),
     {
-        async fn run<'p, 'id>(
+        async fn run<'id>(
             self,
-            owner: Owner<'p, 'id, Probe<N>, Disabled>,
-            permits: [Permit<'id, Kind>; N],
-        ) -> Ended<'id, Probe<N>> {
-            (self.0)(permits);
+            owner: Owner<'_, 'id, Probe<N, S>, Disabled>,
+            (permits, line, seats): Tokens<'id, N, S>,
+        ) -> Ended<'id, Probe<N, S>> {
+            (self.0)(&FifoPermitPool::new(permits, line), seats);
             owner.uninstall(())
         }
     }
-    let Poll::Ready(ended) = poll_once(pin!(run_port(Probe::<N>, Body(check)))) else {
+    let Poll::Ready(ended) = poll_once(pin!(run_port(Probe::<N, S>, Body(check)))) else {
         panic!("the probe answers at once");
     };
     assert_eq!(ended, Some(()));
 }
 
+/// Take a free permit at once.
+fn take_now<'id, const N: usize, const S: usize>(
+    pool: &FifoPermitPool<'id, Kind, N, S>,
+    seat: &mut Seat<'id, Kind>,
+) -> Permit<'id, Kind> {
+    match poll_once(pin!(pool.take(seat))) {
+        Poll::Ready(permit) => permit,
+        Poll::Pending => panic!("a free permit serves at once"),
+    }
+}
+
 #[test]
 fn a_pool_of_one_serves_takers_in_arrival_order() {
-    with_permits::<1, _>(|[permit]| {
-        let pool = FifoPermitPool::<'_, Kind, 1, 4>::new([permit]);
-        conformance::permits_serve_takers_in_arrival_order(&pool, []);
+    with_pool::<1, 3, _>(|pool, mut seats| {
+        conformance::permits_serve_takers_in_arrival_order(pool, &mut seats, []);
     });
 }
 
 #[test]
 fn a_pool_with_a_permit_held_aside_serves_takers_in_arrival_order() {
-    with_permits::<2, _>(|permits| {
-        let pool = FifoPermitPool::<'_, Kind, 2, 4>::new(permits);
-        let aside = match poll_once(pin!(pool.take())) {
-            Poll::Ready(permit) => permit,
-            Poll::Pending => panic!("a free permit serves at once"),
+    with_pool::<2, 4, _>(|pool, [mut aside, first, second, third]| {
+        let held = take_now(pool, &mut aside);
+        conformance::permits_serve_takers_in_arrival_order(
+            pool,
+            &mut [first, second, third],
+            [held],
+        );
+    });
+}
+
+#[test]
+fn every_seat_waits_in_arrival_order_whatever_its_index() {
+    with_pool::<1, 4, _>(|pool, [mut zero, mut one, mut two, mut three]| {
+        let mut held = take_now(pool, &mut zero);
+        // Every seat of the line waits at once: the line has a place for
+        // each, so none is ever turned away.
+        let mut first = pin!(pool.take(&mut three));
+        let mut second = pin!(pool.take(&mut one));
+        let mut third = pin!(pool.take(&mut zero));
+        let mut fourth = pin!(pool.take(&mut two));
+        for taker in [
+            poll_once(first.as_mut()),
+            poll_once(second.as_mut()),
+            poll_once(third.as_mut()),
+            poll_once(fourth.as_mut()),
+        ] {
+            assert!(taker.is_pending());
+        }
+        assert_eq!(pool.waiting(), 4);
+        for taker in [first, second, third, fourth] {
+            let mut taker = taker;
+            pool.release(held);
+            held = match poll_once(taker.as_mut()) {
+                Poll::Ready(permit) => permit,
+                Poll::Pending => panic!("the earliest taker gets the released permit"),
+            };
+        }
+        assert_eq!(pool.waiting(), 0);
+        pool.release(held);
+    });
+}
+
+#[test]
+fn a_dropped_take_gives_up_its_place_and_its_seat_waits_again() {
+    with_pool::<1, 2, _>(|pool, [mut mine, mut other]| {
+        let held = take_now(pool, &mut other);
+        {
+            let mut gives_up = pin!(pool.take(&mut mine));
+            assert!(poll_once(gives_up.as_mut()).is_pending());
+            assert_eq!(pool.waiting(), 1);
+        }
+        assert_eq!(pool.waiting(), 0);
+        // The seat came back with the dropped take, and waits again.
+        let mut again = pin!(pool.take(&mut mine));
+        assert!(poll_once(again.as_mut()).is_pending());
+        pool.release(held);
+        let Poll::Ready(permit) = poll_once(again.as_mut()) else {
+            panic!("the seat's new take is served");
         };
-        conformance::permits_serve_takers_in_arrival_order(&pool, [aside]);
+        pool.release(permit);
+    });
+}
+
+#[test]
+fn a_seat_whose_take_leaked_takes_its_place_again() {
+    with_pool::<1, 2, _>(|pool, [mut mine, mut other]| {
+        let held = take_now(pool, &mut other);
+        let mut leaked = Box::pin(pool.take(&mut mine));
+        assert!(poll_once(leaked.as_mut()).is_pending());
+        // A leaked take never drops, and no one polls it again.
+        core::mem::forget(leaked);
+        let mut again = pin!(pool.take(&mut mine));
+        assert!(poll_once(again.as_mut()).is_pending());
+        assert_eq!(pool.waiting(), 1);
+        pool.release(held);
+        let Poll::Ready(permit) = poll_once(again.as_mut()) else {
+            panic!("the seat's new take leads the line");
+        };
+        pool.release(permit);
     });
 }
 
 #[test]
 fn two_releases_before_any_taker_runs_serve_two_takers() {
-    with_permits::<2, _>(|permits| {
-        let pool = FifoPermitPool::<'_, Kind, 2, 4>::new(permits);
-        let mut first = pin!(pool.take());
-        let mut second = pin!(pool.take());
-        let (Poll::Ready(one), Poll::Ready(two)) =
-            (poll_once(first.as_mut()), poll_once(second.as_mut()))
-        else {
-            panic!("two free permits serve two takers");
-        };
-        let mut third = pin!(pool.take());
-        let mut fourth = pin!(pool.take());
+    with_pool::<2, 4, _>(|pool, [mut a, mut b, mut c, mut d]| {
+        let one = take_now(pool, &mut a);
+        let two = take_now(pool, &mut b);
+        let mut third = pin!(pool.take(&mut c));
+        let mut fourth = pin!(pool.take(&mut d));
         assert!(poll_once(third.as_mut()).is_pending());
         assert!(poll_once(fourth.as_mut()).is_pending());
         pool.release(one);
@@ -200,85 +291,63 @@ fn two_releases_before_any_taker_runs_serve_two_takers() {
     });
 }
 
-#[test]
-#[should_panic(expected = "more takers wait than the pool's line has places")]
-fn a_taker_finding_the_line_full_is_a_fault() {
-    with_permits::<1, _>(|[permit]| {
-        let pool = FifoPermitPool::<'_, Kind, 1, 1>::new([permit]);
-        let _held = match poll_once(pin!(pool.take())) {
-            Poll::Ready(permit) => permit,
-            Poll::Pending => panic!("a free permit serves at once"),
-        };
-        let mut in_line = pin!(pool.take());
-        assert!(poll_once(in_line.as_mut()).is_pending());
-        // The line's one place is taken: one taker more is a composition
-        // fault.
-        let _ = poll_once(pin!(pool.take()));
-    });
-}
-
 /// A waker that counts its wakes.
-struct Counter(std::sync::atomic::AtomicUsize);
+#[derive(Default)]
+struct Count(AtomicUsize);
 
-impl std::task::Wake for Counter {
-    fn wake(self: std::sync::Arc<Self>) {
-        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+impl Wake for Count {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.fetch_add(1, Ordering::Relaxed);
     }
 }
 
-/// A waker and its count of wakes.
-fn counted() -> (Waker, std::sync::Arc<Counter>) {
-    let counter = std::sync::Arc::new(Counter(std::sync::atomic::AtomicUsize::new(0)));
-    (Waker::from(counter.clone()), counter)
-}
-
-fn wakes(counter: &Counter) -> usize {
-    counter.0.load(std::sync::atomic::Ordering::Relaxed)
+impl Count {
+    fn wakes(&self) -> usize {
+        self.0.load(Ordering::Relaxed)
+    }
 }
 
 #[test]
-fn releases_and_departures_wake_exactly_the_takers_they_let_through() {
-    with_permits::<2, _>(|permits| {
-        let pool = FifoPermitPool::<'_, Kind, 2, 2>::new(permits);
-        let (one, two) = match (poll_once(pin!(pool.take())), poll_once(pin!(pool.take()))) {
-            (Poll::Ready(one), Poll::Ready(two)) => (one, two),
-            _ => panic!("two free permits serve two takers"),
-        };
-        let (first_waker, first_wakes) = counted();
-        let (second_waker, second_wakes) = counted();
-        let mut first = pin!(pool.take());
-        let mut second = pin!(pool.take());
+fn a_release_wakes_the_leader_and_a_served_leader_wakes_the_next() {
+    with_pool::<2, 4, _>(|pool, [mut a, mut b, mut c, mut d]| {
+        let one = take_now(pool, &mut a);
+        let two = take_now(pool, &mut b);
+        let (leader, next) = (Arc::new(Count::default()), Arc::new(Count::default()));
+        let (leader_waker, next_waker) = (Waker::from(leader.clone()), Waker::from(next.clone()));
+        let mut first = pin!(pool.take(&mut c));
+        let mut second = pin!(pool.take(&mut d));
         assert!(
             first
                 .as_mut()
-                .poll(&mut Context::from_waker(&first_waker))
+                .poll(&mut Context::from_waker(&leader_waker))
                 .is_pending()
         );
         assert!(
             second
                 .as_mut()
-                .poll(&mut Context::from_waker(&second_waker))
+                .poll(&mut Context::from_waker(&next_waker))
                 .is_pending()
         );
-        // A release wakes the leader alone.
         pool.release(one);
-        assert_eq!((wakes(&first_wakes), wakes(&second_wakes)), (1, 0));
-        // A second release before the leader runs: the leader is woken
-        // again; the taker behind it waits for the leader to be served.
         pool.release(two);
-        assert_eq!(wakes(&second_wakes), 0);
-        // The served leader leaves a permit free: it wakes the next leader.
+        // Each release wakes the leader; the taker behind it sleeps on.
+        assert_eq!((leader.wakes(), next.wakes()), (2, 0));
         assert!(
             first
                 .as_mut()
-                .poll(&mut Context::from_waker(&first_waker))
+                .poll(&mut Context::from_waker(&leader_waker))
                 .is_ready()
         );
-        assert_eq!(wakes(&second_wakes), 1);
+        // The served leader left a permit free: it wakes the next leader.
+        assert_eq!(next.wakes(), 1);
         assert!(
             second
                 .as_mut()
-                .poll(&mut Context::from_waker(&second_waker))
+                .poll(&mut Context::from_waker(&next_waker))
                 .is_ready()
         );
     });
@@ -286,16 +355,13 @@ fn releases_and_departures_wake_exactly_the_takers_they_let_through() {
 
 #[test]
 fn a_departing_leader_wakes_the_next_one_when_a_permit_is_free() {
-    with_permits::<1, _>(|[permit]| {
-        let pool = FifoPermitPool::<'_, Kind, 1, 2>::new([permit]);
-        let held = match poll_once(pin!(pool.take())) {
-            Poll::Ready(permit) => permit,
-            Poll::Pending => panic!("a free permit serves at once"),
-        };
-        let (next_waker, next_wakes) = counted();
-        let mut next = pin!(pool.take());
+    with_pool::<1, 3, _>(|pool, [mut aside, mut leads, mut follows]| {
+        let held = take_now(pool, &mut aside);
+        let next_wakes = Arc::new(Count::default());
+        let next_waker = Waker::from(next_wakes.clone());
+        let mut next = pin!(pool.take(&mut follows));
         {
-            let mut leader = pin!(pool.take());
+            let mut leader = pin!(pool.take(&mut leads));
             assert!(poll_once(leader.as_mut()).is_pending());
             assert!(
                 next.as_mut()
@@ -303,15 +369,50 @@ fn a_departing_leader_wakes_the_next_one_when_a_permit_is_free() {
                     .is_pending()
             );
             pool.release(held);
-            assert_eq!(wakes(&next_wakes), 0, "the release woke the leader");
+            assert_eq!(next_wakes.wakes(), 0, "the release woke the leader");
         }
         // The woken leader gave up its place: the next one leads and is
         // woken to take the free permit.
-        assert_eq!(wakes(&next_wakes), 1);
+        assert_eq!(next_wakes.wakes(), 1);
         assert!(
             next.as_mut()
                 .poll(&mut Context::from_waker(&next_waker))
                 .is_ready()
         );
+    });
+}
+
+#[test]
+fn a_leaked_leader_replaced_by_its_seat_wakes_the_taker_behind_it() {
+    with_pool::<1, 3, _>(|pool, [mut aside, mut mine, mut other]| {
+        let held = take_now(pool, &mut aside);
+        let mut leaked = Box::pin(pool.take(&mut mine));
+        assert!(poll_once(leaked.as_mut()).is_pending());
+        let behind_wakes = Arc::new(Count::default());
+        let behind_waker = Waker::from(behind_wakes.clone());
+        let mut behind = pin!(pool.take(&mut other));
+        assert!(
+            behind
+                .as_mut()
+                .poll(&mut Context::from_waker(&behind_waker))
+                .is_pending()
+        );
+        // The leaked leader never drops; the release wakes it alone.
+        core::mem::forget(leaked);
+        pool.release(held);
+        assert_eq!(behind_wakes.wakes(), 0);
+        // Its seat's next take replaces it and leads no more: the taker
+        // behind it now leads and is woken to take the free permit.
+        let mut again = pin!(pool.take(&mut mine));
+        assert!(poll_once(again.as_mut()).is_pending());
+        assert_eq!(behind_wakes.wakes(), 1);
+        let Poll::Ready(permit) = behind
+            .as_mut()
+            .poll(&mut Context::from_waker(&behind_waker))
+        else {
+            panic!("the taker behind the leaked leader is served");
+        };
+        pool.release(permit);
+        assert!(poll_once(again.as_mut()).is_ready());
     });
 }

@@ -336,9 +336,30 @@ other way round.
 Across executor tasks, which need `'static` futures and cannot share a
 borrow, the owner is an actor: one task holds it, and the others send it
 requests and await its replies. A handle shared between tasks over an
-internal mutex is not ownership. A backend's synchronization with its own
-interrupt entries and runner stays inside it and never reaches a caller as
-a refusal. A measurement a backend publishes (a recent RSSI, the radio
+internal mutex is not ownership.
+
+**An interrupt entry shares no lock with a task.** A backend's core has one
+owner, and its interrupt entries reach that owner in one of two ways
+([owner's verdict on #643](https://github.com/ermacv/open-esp-radio-rs/issues/643#issuecomment-6118913726)):
+
+- **The interrupt latches, a task owns.** Where no decision has a
+  deadline below the event path's latency, the interrupt only reads and
+  clears its own status registers and posts the event. The core's owner
+  task handles it with `&mut`. This is the Wi-Fi model (the MAC and power
+  interrupts, #563) and the Bluetooth LE model, whose hardware scheduler
+  keeps the air timing.
+- **The interrupt's context owns.** Where a decision must be made in
+  interrupt context, the core lives where only that interrupt's level on
+  its core reaches it. Tasks post commands to a lock-free queue and ring a
+  doorbell software interrupt at the same level and core, so the doorbell
+  and the hardware handler never preempt each other. A command has no
+  synchronous reply: its result is its terminal event, and a caller's
+  refusals are types before it is posted. This is the IEEE 802.15.4 model
+  (#668), whose ACK, enhanced-ACK and SFD frame-patch decisions fall
+  inside the 192 µs turnaround.
+
+Neither model reaches a caller as a refusal or a blocking lock. A
+measurement a backend publishes (a recent RSSI, the radio
 clock) has one writer and is read as an atomic snapshot without a lock.
 
 **Who controls a state decides its form.** List every refusal and error

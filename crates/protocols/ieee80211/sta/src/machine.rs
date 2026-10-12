@@ -481,7 +481,7 @@ struct Keys<T: StaTokens> {
 }
 
 impl<T: StaTokens> Keys<T> {
-    fn new(pairwise: T::PairwiseSlot, groups: impl IntoIterator<Item = T::GroupSlot>) -> Self {
+    fn new<const GROUPS: usize>(pairwise: T::PairwiseSlot, groups: [T::GroupSlot; GROUPS]) -> Self {
         Self {
             pairwise: KeyCell::Free(pairwise),
             free_groups: Pool::new(groups),
@@ -817,12 +817,15 @@ struct Pool<X> {
 }
 
 impl<X> Pool<X> {
-    fn new(items: impl IntoIterator<Item = X>) -> Self {
+    /// A pool of `items`, at most [`POOL_CAPACITY`]: checked at compile
+    /// time, so no granted token is ever lost.
+    fn new<const N: usize>(items: [X; N]) -> Self {
+        const { assert!(N <= POOL_CAPACITY, "a station holds at most 8 tokens of a kind") };
         let mut pool = Self {
             items: [const { None }; POOL_CAPACITY],
         };
-        for item in items {
-            pool.put(item);
+        for (slot, item) in pool.items.iter_mut().zip(items) {
+            *slot = Some(item);
         }
         pool
     }
@@ -835,8 +838,9 @@ impl<X> Pool<X> {
         self.items.iter().all(Option::is_none)
     }
 
-    /// Keep `item`: a pool holds every token of its kind the station was
-    /// granted, which [`POOL_CAPACITY`] bounds.
+    /// Keep `item`, a token of its kind the station was granted and gave
+    /// out: the tokens are unique and their number checked at the pool's
+    /// creation, so a free entry always waits for it.
     fn put(&mut self, item: X) {
         let slot = self.items.iter_mut().find(|slot| slot.is_none());
         debug_assert!(
@@ -939,15 +943,57 @@ enum Owed<T: StaTokens, K> {
 
 impl<T: StaTokens, K: Ieee80211Capabilities> Station<T, K> {
     /// An idle station of `config`, with the tickets, small buffers and key
-    /// slots the composition granted it and the arbiter's places.
-    pub fn new(
+    /// slots the composition granted it and the arbiter's places. It holds
+    /// at most eight tokens of a kind, checked at compile time:
+    ///
+    /// ```compile_fail,E0080
+    /// # use oer_ieee80211_arbiter::{AbsencePlace, LeasePlace};
+    /// # use oer_ieee80211_lower_mac::*;
+    /// # use oer_ieee80211_mac::phy::{HeMcs, HtMcs};
+    /// # use oer_ieee80211_sta::machine::{StaConfig, StaTokens, Station};
+    /// # struct Caps;
+    /// # impl Ieee80211Capabilities for Caps {
+    /// #     const CAPS: LowerMacCapabilities = LowerMacCapabilities {
+    /// #         bands: BandSet::GHZ2_4, widths: WidthSet::MHZ20,
+    /// #         rates: RateSupport { dsss_cck: true, ofdm: true, ht_max_mcs: HtMcs::new(7),
+    /// #             he_max_mcs: HeMcs::new(9), he_max_bandwidth_mhz: 20, he_dcm: false,
+    /// #             he_ldpc: false, spatial_streams: 1 },
+    /// #         services: HardwareServices::FCS, vifs: 1, tx_queues: 4, max_mpdu_length: 2304,
+    /// #         max_backoff_slots: 1023, tx_power_ceiling_min_dbm: None,
+    /// #         coex_priorities: CoexPrioritySet::only(CoexPriority::Normal),
+    /// #         individual_no_ack: PhyFormatSet::NON_HT,
+    /// #         station_receive_filters: ReceiveFilter::BSS_MEMBER
+    /// #             .union(ReceiveFilter::OTHER_BSS_MANAGEMENT),
+    /// #         access_point_receive_filters: ReceiveFilter::BSS_MEMBER, key_slots: 4,
+    /// #         rx_block_ack_agreements: 0, rx_block_ack_max_tid: 0, rx_block_ack_max_window: 0,
+    /// #         edca_max_aifsn: 15, edca_max_cw_exponent: 10,
+    /// #     };
+    /// # }
+    /// # struct Buffer;
+    /// # impl TxBufferMemory for Buffer { fn bytes_mut(&mut self) -> &mut [u8] { &mut [] } }
+    /// # struct Tokens;
+    /// # impl StaTokens for Tokens {
+    /// #     type Ticket = u8; type SmallBuffer = Buffer; type PairwiseSlot = ();
+    /// #     type GroupSlot = (); type PairwiseKey = (); type GroupKey = ();
+    /// # }
+    /// fn nine(
+    ///     config: StaConfig<Caps>,
+    ///     place: LeasePlace,
+    ///     absence: AbsencePlace,
+    /// ) -> Station<Tokens, Caps> {
+    ///     Station::new(config, [0; 9], [Buffer], place, absence, (), [()])
+    /// }
+    /// let nine: fn(_, _, _) -> _ = nine;
+    /// core::hint::black_box(nine);
+    /// ```
+    pub fn new<const TICKETS: usize, const BUFFERS: usize, const GROUPS: usize>(
         config: StaConfig<K>,
-        tickets: impl IntoIterator<Item = T::Ticket>,
-        buffers: impl IntoIterator<Item = T::SmallBuffer>,
+        tickets: [T::Ticket; TICKETS],
+        buffers: [T::SmallBuffer; BUFFERS],
         place: LeasePlace,
         absence_place: AbsencePlace,
         pairwise: T::PairwiseSlot,
-        groups: impl IntoIterator<Item = T::GroupSlot>,
+        groups: [T::GroupSlot; GROUPS],
     ) -> Self {
         // The port's receive rules, checked as the type is built.
         let _ = (Rules::<K>::MEMBER, Rules::<K>::WIDENED);

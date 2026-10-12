@@ -73,9 +73,24 @@ neither the request nor the policy setter.
 The `interrupt-latency-probe` feature (image `diagnostic-interrupt-latency`)
 times a FROM_CPU software interrupt raised at the radio MAC interrupts' level
 on core 0, from its raise to its handler's entry, in CPU cycles
-(`system/interrupt-latency/measure`, #643). It takes the profiler's line 3,
-so it excludes `pc-profile`. The host step is
+(`system/interrupt-latency/measure`, #643). It takes FROM_CPU line 3, the
+IEEE 802.15.4 doorbell's line (#668), so it times the doorbell's own line
+until the doorbell binds it. The host step is
 `oer_hil_workload::interrupt_latency`.
+
+The agent's four FROM_CPU lines each have one owner
+(`agent/src/software_interrupt.rs`):
+
+| Line | Owner | Level, core |
+| --- | --- | --- |
+| 0 | Core 0's executor wake | `Priority1`, core 0 |
+| 1 | Core 1's executor wake | `Priority1`, core 1 |
+| 2 | Core 1's sample, for the hang watchdog and the PC profiler | `Priority8`, core 1 |
+| 3 | The IEEE 802.15.4 doorbell (#668); until then the interrupt-latency probe | `Priority1`, core 0 |
+
+The hang watchdog and the PC profiler share line 2: each sets its own
+request flag (`oer_hil_agent::sample_request`), then raises the line, and one
+handler entry on core 1 serves every pending requester.
 
 `runtime/src/product_hil/network` owns stack setup, IPv4 configuration, socket
 API bindings and diagnostic wrappers. All implementations use the same traffic

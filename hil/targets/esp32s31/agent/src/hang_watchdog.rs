@@ -4,8 +4,9 @@
 //! a heartbeat. A periodic SYSTIMER alarm 0 interrupt at the highest priority
 //! checks both every 250 ms. Once one of them has made no progress for 3 s,
 //! it samples at each of 16 further checks the instruction the stalled hart
-//! was interrupted at: its own `mepc` for core 0, and for core 1 the context a
-//! FROM_CPU_INTR2 handler bound on core 1 reports. The pending interrupt
+//! was interrupted at: its own `mepc` for core 0, and for core 1 the context
+//! core 1's sample handler reports (FROM_CPU line 2, shared with the profiler;
+//! see `software_interrupt`). The pending interrupt
 //! sources are not needed: the samples tell a busy loop from a wait. It then
 //! records the hang, with both harts' interrupted `mepc`, `ra`, `sp`,
 //! `mcause` and `mstatus`, in the post-mortem record, prints one
@@ -146,17 +147,10 @@ pub(super) fn start(alarm: Alarm<'static>, token: crate::HangWatchdogCheck) {
     critical_section::with(|cs| TIMER.borrow_ref_mut(cs).replace(periodic));
 }
 
-/// Enable the sampling interrupt on core 1; call on core 1 before its
-/// executor enables interrupts. `token` is its source's, whose table entry
-/// names [`sample_core1`] on core 1.
-pub(super) fn enable_core1_sampler(token: crate::HangWatchdogSample) {
-    if let Err(error) = oer_espressif_interrupt_table_esp_hal::enable(&token) {
-        panic!("hang watchdog core 1 sampler: {error:?}");
-    }
-}
-
 fn raise_core1_sample() {
-    crate::software_interrupt::hang_watchdog().raise();
+    crate::software_interrupt::request_core1_sample(
+        oer_hil_agent::sample_request::Requester::HangWatchdog,
+    );
 }
 
 /// This hart's interrupted context, as the running handler sees it.
@@ -191,14 +185,10 @@ fn hart(responded: bool, [mepc, ra, sp, mcause, mstatus]: [u32; 5]) -> HartState
     }
 }
 
-/// An interrupt-table handler of the image.
-#[allow(
-    unsafe_code,
-    reason = "an interrupt handler runs from SRAM, which only a link section selects"
-)]
-#[unsafe(link_section = ".rwtext.open_radio_irq")]
-pub(crate) fn sample_core1() {
-    crate::software_interrupt::hang_watchdog().reset();
+/// Record core 1's interrupted context for the watchdog's request; called
+/// by core 1's sample handler (`software_interrupt::sample_core1`).
+#[inline(always)]
+pub(crate) fn record_core1_context() {
     for (slot, value) in CORE1_CONTEXT.iter().zip(interrupted()) {
         slot.store(value, Ordering::Relaxed);
     }

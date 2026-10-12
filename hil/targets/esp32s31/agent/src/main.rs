@@ -125,17 +125,15 @@ oer_espressif_staged_runtime::interrupt_table! {
     /// The hang watchdog's period (SYSTIMER alarm 0).
     hang_check: HangWatchdogCheck = SYSTIMER_TARGET0 => hang_watchdog::check, Priority8, ProCpu;
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    /// The hang watchdog's request that core 1 samples its context.
-    hang_sample: HangWatchdogSample = FROM_CPU_INTR2 => hang_watchdog::sample_core1, Priority8, AppCpu;
+    /// Core 1's sample, for the hang watchdog's and the PC profiler's
+    /// requests.
+    core1_sample: Core1Sample = FROM_CPU_INTR2 => software_interrupt::sample_core1, Priority8, AppCpu;
     #[cfg(feature = "pc-profile")]
     /// The PC profiler's period (SYSTIMER alarm 1).
     profile_sample: ProfileSample = SYSTIMER_TARGET1 => pc_profile::sample_core0, Priority8, ProCpu;
-    #[cfg(feature = "pc-profile")]
-    /// The PC profiler's request that core 1 samples its PC.
-    profile_core1: ProfileCore1Sample = FROM_CPU_INTR3 => pc_profile::sample_core1, Priority8, AppCpu;
     #[cfg(feature = "interrupt-latency-probe")]
-    /// The interrupt-latency probe's line (#643), at the radio MAC
-    /// interrupts' level on their core.
+    /// The interrupt-latency probe (#643) on the IEEE 802.15.4 doorbell's
+    /// line (#668), at the radio MAC interrupts' level on their core.
     interrupt_latency: InterruptLatencyProbe = FROM_CPU_INTR3 => system::interrupt_latency::handler, Priority1, ProCpu;
     #[cfg(feature = "open-radio-hil")]
     /// Wakes the core-1 Embassy executor.
@@ -263,9 +261,7 @@ static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
 struct AppCoreInterrupts {
     wake: AppExecutorWake,
     #[cfg(not(feature = "memory-benchmark"))]
-    hang_sample: HangWatchdogSample,
-    #[cfg(feature = "pc-profile")]
-    profile_sample: ProfileCore1Sample,
+    core1_sample: Core1Sample,
 }
 
 #[cfg(feature = "open-radio-hil")]
@@ -474,9 +470,7 @@ extern "C" fn runtime_main() -> ! {
         leave_app_core_interrupts(AppCoreInterrupts {
             wake: interrupts.app_wake,
             #[cfg(not(feature = "memory-benchmark"))]
-            hang_sample: interrupts.hang_sample,
-            #[cfg(feature = "pc-profile")]
-            profile_sample: interrupts.profile_core1,
+            core1_sample: interrupts.core1_sample,
         });
         let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
         let app_interrupt = software_interrupt::executor1(peripherals.FROM_CPU_INTR1);
@@ -674,9 +668,7 @@ fn run_app_core(
     let interrupts = critical_section::with(|cs| APP_INTERRUPTS.borrow_ref_mut(cs).take())
         .expect("core 0 leaves core 1 its interrupt tokens");
     #[cfg(not(feature = "memory-benchmark"))]
-    hang_watchdog::enable_core1_sampler(interrupts.hang_sample);
-    #[cfg(feature = "pc-profile")]
-    pc_profile::enable_core1_sampler(interrupts.profile_sample);
+    software_interrupt::enable_core1_sample(interrupts.core1_sample);
     // SAFETY: Core 1 enters directly from ROM rather than through
     // `_runtime_start` with MIE clear; its per-hart vector state and stack
     // ownership are complete, so hand interrupt enable to its executor.

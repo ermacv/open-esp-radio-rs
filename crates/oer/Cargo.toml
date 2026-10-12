@@ -19,7 +19,6 @@ wifi = [
     "dep:softmac",
     "dep:datapath",
     "dep:sta",
-    "dep:sta-service",
     "dep:ap",
     "dep:rsn",
     "dep:rsn-service",
@@ -65,7 +64,6 @@ datapath = { package = "oer-ieee80211-datapath", path = "../protocols/ieee80211/
 sta = { package = "oer-ieee80211-sta", path = "../protocols/ieee80211/sta", optional = true }
 ap = { package = "oer-ieee80211-ap", path = "../protocols/ieee80211/ap", optional = true }
 rsn = { package = "oer-ieee80211-rsn", path = "../protocols/ieee80211/security/rsn", optional = true }
-sta-service = { package = "oer-ieee80211-sta-service", path = "../services/ieee80211/sta", optional = true }
 rsn-service = { package = "oer-ieee80211-rsn-service", path = "../services/ieee80211/rsn", optional = true }
 hci = { package = "oer-bluetooth-hci", path = "../protocols/bluetooth/hci", optional = true }
 hci-transport = { package = "oer-bluetooth-hci-transport", path = "../services/bluetooth/hci/transport", optional = true }

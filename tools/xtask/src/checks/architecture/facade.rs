@@ -11,7 +11,6 @@ const MANIFEST: &str = "crates/oer/Cargo.toml";
 /// profile's `[packages]`.
 const WIFI: &[&str] = &[
     "oer-ieee80211-sta",
-    "oer-ieee80211-sta-service",
     "oer-ieee80211-rsn-service",
     "oer-ieee80211-ap",
     "oer-ieee80211-softmac",

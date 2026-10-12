@@ -251,7 +251,13 @@ where
     }
 }
 
-pub use oer_ieee80211_sta::attempt::Wpa2Message4Protection;
+/// How the station sends EAPOL Message 4: in the clear, or under the
+/// pairwise CCMP key just installed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Wpa2Message4Protection {
+    Unprotected,
+    PairwiseCcmp,
+}
 
 /// Installed hardware authorities returned to the connected data path.
 pub struct InstalledWpa2Keys {

@@ -19,9 +19,9 @@ pub mod ieee80211 {
         pub use rsn;
     }
 
-    /// Executor-independent drivers of the station state machines.
+    /// Executor-independent drivers of the security state machines.
     pub mod services {
-        pub use {rsn_service as rsn, sta_service as sta};
+        pub use rsn_service as rsn;
     }
 }
 

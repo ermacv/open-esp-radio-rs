@@ -25,30 +25,31 @@ test failure or a reason to change the lockfile.
 ## Follow one scan and its error return
 
 ```console
-cargo test -p oer-ieee80211-sta-service scan::tests --locked --offline
+cargo test -p oer-ieee80211-sta machine::tests --locked --offline
 ```
 
-The current selector runs six tests. Confirm a nonzero executed-test count and
-successful results. Read the [policy contract](../crates/protocols/ieee80211/sta/README.md),
-the [scan port](../crates/protocols/ieee80211/sta/src/scan.rs), its
-[driver](../crates/services/ieee80211/sta/src/scan.rs) and the driver's
-[tests](../crates/services/ieee80211/sta/src/scan/tests.rs).
+Confirm a nonzero executed-test count and successful results. Read the
+[station's contract](../crates/protocols/ieee80211/sta/README.md), the
+[station machine](../crates/protocols/ieee80211/sta/src/machine.rs) and its
+[tests](../crates/protocols/ieee80211/sta/src/machine/tests.rs), which play the
+port and run the real [channel arbiter](../crates/protocols/ieee80211/arbiter/README.md).
 
-Start with `selected_candidate_follows_the_complete_ordered_channel_plan`:
-the fake backend sees channels `[1, 6, 11]` in order before candidate selection.
-Then inspect `channel_failure_returns_the_exact_owner_and_stops_the_plan`:
-failure on channel 6 returns the backend's current owner, starts two channels,
-completes one and never visits channel 11. The numeric owner in this fixture is
-a test token; production owners carry resource authority.
+Start with `a_station_alone_scans_joins_an_open_network_and_leaves_it`: the
+station leases channel 1, then channel 6, where the beacon arrives, and joins
+there. Then inspect `beside_an_access_point_the_scan_goes_in_absences_after_its_tbtts`:
+beside an access point the visit of channel 6 waits for the absence after the
+access point's TBTT and the port returns before its next beacon. The tickets,
+buffers and places in this fixture are test tokens; production tokens carry
+resource authority.
 
-For a small exercise, change that test locally to fail on channel 11 and update
-its expected owner, error, progress and event sequence from the fake backend's
-behavior. Run the focused test, then the whole scan selector. Inspect the diff
-and restore just your exercise edits when finished. This explores a failure
-boundary; adding the same case without a missing contract is not automatically
-a useful upstream contribution.
+For a small exercise, change the access point's beacon interval in that test
+locally and update the expected instants from the arbiter's absence rule. Run
+the focused test, then the whole selector. Inspect the diff and restore just
+your exercise edits when finished. This explores a timing boundary; adding the
+same case without a missing contract is not automatically a useful upstream
+contribution.
 
-The tests establish portable ordering and owner return. They do not execute
+The tests establish portable ordering and token return. They do not execute
 channel tuning, DMA or RF hardware. Follow the
 [runtime-to-PHY explanation](binary-to-station.md#production-layers-during-a-scan)
 to locate those responsibilities.

@@ -3,18 +3,16 @@
 
 //! Executor- and chip-independent Wi-Fi station MLME and policy.
 //!
-//! Protocol crates own scan records, IEEE 802.11 framing and WPA state.
-//! Chip/runtime adapters own concrete hardware and timer operations. This crate
-//! owns Authentication/Association state, the candidate-scan and lifecycle
-//! values and the outer attempt, reconnect and backoff policy, and declares
-//! the asynchronous ports that preserve one caller-defined resource owner
-//! across every asynchronous edge. It never waits: the drivers that await
-//! those ports live in `oer-ieee80211-sta-service`.
+//! Protocol crates own scan records, IEEE 802.11 framing and WPA state. This
+//! crate owns the station: [`machine`], one sans-IO machine for the whole
+//! lifecycle, its Authentication/Association state machines ([`join`]), its
+//! power-save decisions and the application's station vocabulary
+//! ([`station`]). It never waits: a thin service loop over the port, the
+//! channel arbiter and time drives it.
 
 #[cfg(test)]
 extern crate std;
 
-pub mod attempt;
 pub mod ftm;
 pub mod join;
 pub mod link_monitor;
@@ -24,7 +22,6 @@ pub mod pmksa;
 pub mod power_save;
 pub mod request;
 pub mod sa_query;
-pub mod scan;
 pub mod station;
 pub mod time;
 pub mod twt;

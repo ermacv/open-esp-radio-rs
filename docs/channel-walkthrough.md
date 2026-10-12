@@ -126,13 +126,13 @@ requires a cold, stopped MAC. A later switch performs stop, retune and restore.
 The cooperative path obtains serialized channel-only authority through
 `RadioAccess`.
 
-The [runtime target binding](../crates/runtime/esp32s31/ieee80211/src/roles/scan/target.rs)
-implements `ScanPhyPort` for this chip owner. Runtime scan services combine
-channel switching with RX/TX and dwell timing. Above them, the
-[portable scan service](../crates/services/ieee80211/sta/src/scan.rs) drives
-the `StaCandidateScanBackend` port of the
-[station protocol](../crates/protocols/ieee80211/sta/src/scan.rs): begin once, visit the supplied channel plan, then
-select a candidate. Every outcome carries the exact returned backend owner.
+Above the chip owner, the lower-MAC port's backend performs the move when the
+[channel arbiter](../crates/protocols/ieee80211/arbiter/README.md) retunes the
+port between a lease's gate closing and opening. The
+[station](../crates/protocols/ieee80211/sta/src/machine.rs) asks the arbiter
+for a lease of each channel of its plan, listens and probes there until the
+lease's end, then selects a candidate. The ESP32-S31 backend's retune returns
+with the port's next step (#563).
 
 ```mermaid
 sequenceDiagram

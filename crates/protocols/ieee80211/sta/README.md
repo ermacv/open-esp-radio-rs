@@ -1,24 +1,24 @@
 # Portable Wi-Fi station policy
 
-This crate contains STA MLME and lifecycle policy that is independent of a
-chip, executor and network stack. It is sans-IO: its state machines take
-received frames and elapsed milliseconds as values, and it declares the port
-traits whose drivers, in
-[`oer-ieee80211-sta-service`](../../../services/ieee80211/sta/README.md), wait
-on hardware and time and return the exact caller-owned radio state at every
-success, retry, stop and failure edge.
+This crate contains the station, independent of a chip, executor and network
+stack. It is sans-IO: `machine` is one state machine for the whole lifecycle
+(scan, join, WPA2 four-way handshake, connected, background scan, group
+rekey, leave) that takes the port's events, the channel arbiter's answers and
+notices, commands and time as values and leaves the port's and the arbiter's
+actions as values. A thin service loop over the lower-MAC port feeds it
+([owner decision on #563](https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6128926225)).
 
 Module map:
 
-- `join`: Open System and SAE authentication and Association state machines,
-  retry policy and the `StaJoinBackend` port;
+- `machine`: the station, its tokens (`StaTokens`) and its host slice tests
+  beside the real arbiter;
+- `join`: Open System and SAE authentication and Association state machines
+  and their retry policy;
 - `association`: association capability selection from the scan record;
-- `scan`: channel-plan progress values, the candidate-scan port and the
-  primitive `StaScanPort` of one channel visit;
-- `attempt`: the phases of one attempt, their `StaAttemptPort`, and the
-  personal credentials and security material an attempt carries;
-- `station`: outer attempt, reconnect, backoff, disconnect and stop policy and
-  the lifecycle port;
+- `power_save`: what the access point knows of the station's power state and
+  the TIM's decision;
+- `station`: the application's vocabulary (lifecycle stages, fault reasons,
+  reconnect policy) that `oer-radio` publishes;
 - `modem_sleep`: the connected station's power manager, after the vendor's
   `pm.o` and `pm_coex.o`, with the vendor's timing constants;
 - `sa_query`: the SA Query procedure of an association under management

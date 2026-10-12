@@ -1,5 +1,11 @@
 # ESP32-S31 Wi-Fi station composition
 
+The station's scan, join and attempt orchestration on ESP32-S31 was removed
+with the old station path (tag `s31-station-old-path`); the station is the
+portable `oer_ieee80211_sta::machine` on the lower-MAC port. The connected
+modules below are the sources of their move into layer 2, each removed in the
+commit of its move ([#563](https://github.com/ermacv/open-esp-radio-rs/issues/563)).
+
 This crate specializes portable STA policy for ESP32-S31 while remaining
 independent of Embassy, a network stack, board allocation and HIL protocols.
 It owns chip transaction ordering and typed resource transitions, but not the
@@ -9,19 +15,11 @@ Module map:
 
 - `hardware/channel`: persistent PHY/channel owner retained across scan and reconnect;
 - `hardware/control`: concrete receive and control hardware operations;
-- `association`: PHY/rate/power plan derived from a selected candidate;
 - `peer`: associated-peer WMM/HT/HE/rate-control programming;
 - `peer_policy`: value-only Scan/Association/WMM/HE plan consumed by `peer`;
-- `control_tx`, `scan_tx`, `single_mpdu_tx`: bounded management/data TX
-  transactions and their entropy, power, time and completion ports;
+- `control_tx`, `single_mpdu_tx`: bounded management/data TX transactions
+  and their entropy, power, time and completion ports;
 - `tx_epoch`: unique pre-connected control-TX ownership state;
-- `scan`: the portable scan values and `StaScanPort`, re-exported; the
-  channel-visit transaction is `oer-ieee80211-sta-service`'s `StaScanBackend`;
-- `join`: executor-independent RX, TX and observation contracts for the
-  ESP32-S31 Authentication/Association adapter;
-- `attempt`: the chip parts of an attempt (selected channel, installed key
-  slots, phase reports); the attempt values are `oer_ieee80211_sta::attempt`
-  and the transaction is `oer-ieee80211-sta-service`'s `StaAttempt`;
 - `wpa2`: chip handshake and atomic hardware-key publication ports;
 - `connected`, `connected_rx`, `connected_control`: association-scoped data,
   security, receive admission and control ownership;

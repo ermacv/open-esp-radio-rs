@@ -61,11 +61,6 @@ dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"
 
 [[unused-dependency]]
-manifest = "crates/services/ieee80211/sta/Cargo.toml"
-dependency = "critical-section"
-reason = "test builds select critical-section's std implementation for the crates that take critical sections"
-
-[[unused-dependency]]
 manifest = "crates/adapters/trouble/bluetooth/gatt/Cargo.toml"
 dependency = "critical-section"
 reason = "test builds select critical-section's std implementation for the crates that take critical sections"

@@ -32,7 +32,6 @@ pub mod control;
 pub mod extensions;
 pub mod owner;
 pub mod phase;
-pub mod port;
 pub mod rx;
 pub mod tx;
 
@@ -65,15 +64,11 @@ pub use capabilities::{
     BandSet, CoexPrioritySet, HardwareServices, LowerMacCapabilities, PhyFormatSet, RateSupport,
     WidthSet,
 };
-pub use control::{
-    Cipher, KeyHandle, KeyInstall, KeyScope, LowerMacSetting, MacAddress, ReceiveFilter,
-    RxBeaconPriority, RxBlockAckAgreement, SettingError, VifConfig, VifId, VifRole, VifRoleSet,
-};
+pub use control::{MacAddress, ReceiveFilter, VifRole, VifRoleSet};
 pub use extensions::{
-    AmpduAttempt, AmpduBuffer, AmpduCapabilities, AmpduPayload, BeaconTimingCapabilities,
-    MonitorCapabilities, TSF_DRIFT_PPM, TSF_RELATION, TbttEvent, TbttSchedule, TsfArithmeticError,
-    TsfGeneration, TsfProjectionError, TsfRelation, TsfSample, TsfSetKind, TsfTimingError,
-    TsfVifMismatch, VifTsf,
+    AmpduCapabilities, BeaconTimingCapabilities, MonitorCapabilities, TSF_DRIFT_PPM,
+    TSF_RELATION, TbttEvent, TsfArithmeticError, TsfGeneration, TsfProjectionError,
+    TsfRelation, TsfSample, TsfSetKind, TsfTimingError, TsfVifMismatch, VifTsf,
 };
 pub use oer_ieee80211_port::ClockError;
 pub use oer_radio_port::{
@@ -90,18 +85,17 @@ pub use owner::{
 };
 pub use owner::{
     AggregateAttempt, AggregateKey, AmpduPhase, AmpduRate, BeaconTimingPhase, MonitorPhase,
-    MpduStartSpacing, PhaseAggregate, TbttPlan,
+    BeaconWindow, MpduStartSpacing, PhaseAggregate, TbttPlan,
 };
 pub use phase::{
     AccessPointPhase, Attempt, AttemptKey, ClassFrame, GateClosed, GateClosedKind, GateOpen,
     GateOpenKind, InterfaceAttempt, InterfacePhase, LowerMacEvent, LowerMacPhase, PhaseTypes,
     RETRY_STAGES, RetryPlan, RetryStage, StationPhase, TxBufferClass, TxBufferPool,
 };
-pub use port::MpduAttempt;
 pub use rx::{RxBuffer, RxCryptoStatus, RxEvidence, RxMeta};
 pub use tx::{
-    Backoff, BlockAckReport, KeySelector, Protection, Refused, SubmitError, TxAttempt, TxBody,
-    TxBuffer, TxCompletion, TxFault, TxId, TxPayload, TxPower, TxResponse, TxStatus,
+    Backoff, BlockAckReport, Protection, TxBody, TxCompletion, TxFault, TxPower, TxResponse,
+    TxStatus,
 };
 
 #[cfg(test)]

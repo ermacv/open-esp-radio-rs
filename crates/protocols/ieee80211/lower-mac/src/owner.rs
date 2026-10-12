@@ -1,36 +1,35 @@
 //! The lower-MAC port on the owner shape of `oer-ieee80211-port`
-//! ([`Owner`](oer_ieee80211_port::Owner), [`PortBody`](oer_ieee80211_port::PortBody)).
+//! ([`Owner`](oer_ieee80211_port::Owner), [`PortBody`](oer_ieee80211_port::PortBody)):
+//! its validated values and its disabled-only settings. The running phase
+//! and its tokens are [`phase`](crate::phase)'s.
 //!
 //! Every refusal of the old lower-MAC port trait that a caller's own state
-//! explains is a type here ([ownership and refusals]); what the world
-//! controls (the air, time, the hardware) stays a typed outcome. A backend
-//! implements [`LowerMacBackend`].
+//! explains is a type here or in the phase ([ownership and refusals]);
+//! what the world controls (the air, time, the hardware) stays a typed
+//! outcome. A backend implements [`LowerMacBackend`].
 //!
-//! | Refusal of the port trait | Form here |
+//! | Refusal of the old port trait | Form here |
 //! | --- | --- |
-//! | lifecycle refusals, `SubmitError::Disabled`, `SettingError::PortEnabled` | the owner's state: the install gives the port its channel and addresses, [`LowerMacSetup`] changes the channel only while disabled, a backend whose addresses change implements [`AddressSetup`], clients exist only in a running phase |
-//! | `SettingError::UnsupportedChannel` | [`SupportedChannel`] |
-//! | `SettingError::UnknownVif`, `SettingError::UnsupportedRole`, `SubmitError::UnknownVif` | a client per interface, its role a type ([`StationClient`], [`AccessPointClient`]) with only that role's operations (the station's HE BSS color); an attempt names no interface |
-//! | the receive rules a role may request, a BSSID the role cannot take | [`SupportedFilter`] of the role, and the station's [`StationReceive`]; an access point's BSSID is its address |
-//! | `SettingError::Busy` (configuring an interface, removing a key an attempt in flight uses) | [`StationClient::configure`], [`AccessPointClient::configure`] and the key removals wait for the published attempts and abort the ones the closed gate holds, never refused |
-//! | `SubmitError::UnsupportedRate` | [`PhaseRate`], checked against the phase's channel; a BlockAckReq takes a [`LegacyPhaseRate`] |
-//! | `SubmitError::Unsupported` (backoff, power, coexistence level) | [`SupportedBackoff`], [`SupportedPower`], [`SupportedCoex`] |
-//! | `SubmitError::Unsupported` (a response the frame or rate cannot carry: an ACK of a group frame, no ACK at a rate without it or of a frame that does not say so) | the buffer's [`TxFrame`] kind: an [`IndividualAddress`] or [`GroupAddress`] receiver, and for no ACK a [`NoAckHeader`] at a [`SupportedNoAck`] rate; the backend writes the QoS Ack Policy from the kind ([`QosControl`]) |
-//! | `SubmitError::Busy` (the queue holds an attempt) | the queue's grant ([`LowerMacClient::queue`], awaited in the pool's order with the seat of the interface's access category, a [`QueueGrant`] of the backend's own type): a submission moves it into the backend, which gives the queue back when it takes the attempt's terminal |
-//! | `SubmitError::DuplicateId` | the backend mints the [`Work`] of each submission |
-//! | `SubmitError::InvalidLength`, a buffer request past `max_mpdu_length`, no free buffer | [`MpduLength`], and a buffer ([`LowerMacClient::tx_buffer`], awaited with a seat, never refused) the attempt holds until its terminal event |
-//! | `SettingError::NoKeySlot`, `SettingError::UnknownKey`, `SubmitError::UnknownKey` | a key slot ([`Slot`] of the client's own kind, pairwise or group; an access point's pairwise slot is an association identifier) that the install's resources give once, which the caller counts itself; an installed key token the attempt borrows ([`AttemptKey`]) |
-//! | `SettingError::InvalidKey` | [`Ccmp128Key`], [`GroupKeyId`], an [`IndividualAddress`] peer |
-//! | `SettingError::NoBlockAckSlot`, `SettingError::InvalidBlockAck` | a Block Ack [`Slot`] of the client's own kind and [`SupportedBlockAck`]; the client keeps one agreement per peer and [`Tid`], and a new one for the pair replaces the old and gives its slot back |
-//! | `SettingError::Busy` (closing the transmit gate) | [`LowerMacControl::close_gate`], awaited, which yields the gate's guard |
-//! | `SettingError::Unsupported` (an EDCA record outside the limits, a BSS color above 63) | [`SupportedEdca`], [`BssColor`] |
+//! | lifecycle refusals, "disabled", "port enabled" | the owner's state: the install gives the port its channel and addresses, [`LowerMacSetup`] changes the channel only while disabled, a backend whose addresses change implements [`AddressSetup`], a phase exists only while enabled |
+//! | an unsupported channel | [`SupportedChannel`] |
+//! | an unknown interface or role | the phase's interface of each role ([`StationPhase`](crate::StationPhase), [`AccessPointPhase`](crate::AccessPointPhase)) with only that role's operations; an attempt names no interface |
+//! | the receive rules a role may not request, a BSSID the role cannot take | [`SupportedFilter`] of the role, and the station's [`StationReceive`]; an access point's BSSID is its address |
+//! | busy (configuring an interface, removing a key an attempt in flight uses, closing the gate) | the operation returns at once and its end arrives as an event; never refused |
+//! | an unsupported rate | [`PhaseRate`], checked against the phase's channel; a BlockAckReq takes a [`LegacyPhaseRate`]; a retry plan's stages take checked rates |
+//! | an unsupported backoff, power or coexistence level | [`SupportedBackoff`], [`SupportedPower`], [`SupportedCoex`] |
+//! | a response the frame or rate cannot carry | the buffer's [`TxFrame`] kind: an [`IndividualAddress`] or [`GroupAddress`] receiver, and for no ACK a [`NoAckHeader`] at a [`SupportedNoAck`] rate; the backend writes the QoS Ack Policy from the kind ([`QosControl`]) |
+//! | a busy queue, no free buffer | a transmit ticket and buffers of a class ([`TxBufferClass`](crate::TxBufferClass)), tokens the caller holds; the backend keeps an attempt its queue cannot take yet |
+//! | a duplicate attempt identifier | the ticket, which comes back with the terminal |
+//! | an invalid length | [`MpduLength`] and [`ClassFrame`](crate::ClassFrame) |
+//! | no key slot, an unknown key | a key slot ([`Slot`](oer_radio_port::Slot) of the interface's own kind) and the installed key token an attempt names |
+//! | an invalid key | [`Ccmp128Key`], [`GroupKeyId`], an [`IndividualAddress`] peer |
+//! | no Block Ack slot, an invalid agreement | a Block Ack slot, [`SupportedBlockAck`] and the agreement token that holds the slot |
+//! | an unsupported EDCA record or BSS color | [`SupportedEdca`], [`BssColor`] |
 //!
-//! These stay the world's outcomes: [`Poisoned`],
-//! [`EventsLost`](oer_radio_port::EventsLost) (only unsolicited
-//! reception), a clock that could not be read, a TSF that failed its timing
-//! check, a cancel that finds the work already ended
-//! ([`CancelError::NotRunning`](oer_ieee80211_port::CancelError::NotRunning)),
-//! and hardware that rejects a key or misreads a programmed agreement (a
+//! These stay the world's outcomes: [`Poisoned`](oer_radio_port::Poisoned),
+//! [`EventsLost`](oer_radio_port::EventsLost) (only unsolicited reception),
+//! a clock that could not be read, a TSF that failed its timing check, and
+//! hardware that rejects a key or misreads a programmed agreement (a
 //! fault).
 //!
 //! # Capabilities
@@ -52,34 +51,6 @@
 //!     }
 //! }
 //! ```
-//!
-//! # Tokens
-//!
-//! Every token carries the install's brand `'id`. The install's resources
-//! give its slots and permits once, through `oer_radio_port::Mint`: the
-//! queue and buffer permits, which the backend keeps, each role's key
-//! and Block Ack slots, which the caller counts itself, and each
-//! interface's transmit seats ([`TxSeats`]): a seat on the queue line and
-//! one on the buffer line per access category, which the caller lends to
-//! each take and keeps across takes (an A-MPDU's sequential buffers). A
-//! queue seat's index names its access category
-//! ([`seat_access_category`]), so the queue a take waits for is the one
-//! the capabilities assign that access category.
-//! An installed key holds its slot and outlives the phases between; a
-//! Block Ack agreement's slot stays in its client's table, one per peer and
-//! TID, which gives it back when the agreement is replaced or removed. A
-//! slot's kind is its client's, so a station's key is not an access
-//! point's. The queue and buffer permits stay in the backend's held part of
-//! the install (such as `oer-ieee80211-runtime`'s `TxPermits`): a client
-//! awaits them as the backend's own guards ([`LowerMacClient::Queue`],
-//! [`LowerMacClient::TxBuffer`]) that give
-//! them back when dropped before a submission; a submission moves them in,
-//! and the backend gives them back when it takes the attempt's terminal,
-//! before it hands the event out. No caller holds a submitted attempt's
-//! permits, and a dropped handle or event loses none. The
-//! backend mints its own tokens (a key, a queue grant, a buffer), each
-//! neither `Clone` nor `Copy` and without a public constructor, which it
-//! proves with compile-fail tests of its types.
 //!
 //! # Compile-fail tests
 //!
@@ -184,10 +155,10 @@
 //! ```
 //!
 //! ```
-//! # use oer_ieee80211_lower_mac::{LowerMacClient, PhaseRate, PhyRate};
+//! # use oer_ieee80211_lower_mac::{LowerMacPhase, PhaseRate, PhyRate};
 //! # use oer_ieee80211_mac::phy::LegacyRate;
-//! fn rate<'id, C: LowerMacClient<'id>>(client: &C) -> Option<PhaseRate<'_>> {
-//!     client.rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
+//! fn rate<'p, 'id: 'p, P: LowerMacPhase<'p, 'id>>(phase: &P) -> Option<PhaseRate<'p>> {
+//!     phase.rate(PhyRate::Legacy(LegacyRate::Ofdm6M))
 //! }
 //! ```
 //!
@@ -599,7 +570,7 @@ impl core::fmt::Debug for Ccmp128Key {
     }
 }
 
-/// A rate the phase's channel carries: [`LowerMacClient::rate`] checks it
+/// A rate the phase's channel carries: [`LowerMacPhase::rate`](crate::LowerMacPhase::rate) checks it
 /// against the capabilities and the channel the phase runs on.
 #[derive(Debug)]
 pub struct PhaseRate<'p> {
@@ -608,7 +579,7 @@ pub struct PhaseRate<'p> {
 }
 
 impl<'p> PhaseRate<'p> {
-    /// A rate [`LowerMacClient::rate`] checked; nothing else mints one.
+    /// A rate [`LowerMacPhase::rate`](crate::LowerMacPhase::rate) checked; nothing else mints one.
     pub(crate) const fn checked(rate: PhyRate) -> Self {
         Self {
             rate,
@@ -869,7 +840,7 @@ impl<A: ReceiverAddress> HeaderSpec<A> {
 
 /// A rate of the phase that carries an individual frame without an ACK,
 /// as the capabilities' individual no-ACK formats state:
-/// [`LowerMacClient::no_ack`] checks it.
+/// [`LowerMacPhase::no_ack`](crate::LowerMacPhase::no_ack) checks it.
 #[derive(Debug)]
 pub struct SupportedNoAck<'p>(pub(crate) PhaseRate<'p>);
 
@@ -1070,7 +1041,7 @@ mod extensions;
 
 pub use extensions::{
     AggregateAttempt, AggregateKey, AmpduPhase, AmpduRate, BeaconTimingPhase, MonitorPhase,
-    MpduStartSpacing, PhaseAggregate, TbttPlan,
+    BeaconWindow, MpduStartSpacing, PhaseAggregate, TbttPlan,
 };
 
 #[cfg(test)]

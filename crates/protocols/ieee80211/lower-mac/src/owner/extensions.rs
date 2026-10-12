@@ -154,8 +154,8 @@ pub trait AmpduPhase<'p, 'id: 'p>: InterfacePhase<'p, 'id> {
     ) -> Result<(), Poisoned<Self::Fault>>;
 }
 
-/// The TBTT schedule of an interface: the TSF of its next TBTT, the beacon
-/// interval and how far ahead of each TBTT its event fires.
+/// The TBTT schedule of an interface: the wake plan the backend carries
+/// out at each TBTT ([owner decisions on #563]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TbttPlan {
     /// The TSF of the next TBTT.
@@ -164,7 +164,24 @@ pub struct TbttPlan {
     pub beacon_interval: TsfDuration,
     /// How far ahead of each TBTT its event fires.
     pub lead: TsfDuration,
+    /// How far ahead of each TBTT the radio wakes to receive its beacon.
+    pub wake_ahead: TsfDuration,
+    /// The window the radio keeps open for the beacon, and the
+    /// coexistence priority it asks for the air with; `None` keeps no
+    /// window.
+    pub beacon_window: Option<BeaconWindow>,
 }
+
+/// The window after a TBTT the radio keeps open for the beacon.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BeaconWindow {
+    /// How long the window stays open after the TBTT.
+    pub duration: TsfDuration,
+    /// The priority the window asks the radio's coexistence for.
+    pub priority: oer_radio_coex::CoexPriority,
+}
+
+/// [owner decisions on #563]: https://github.com/ermacv/open-esp-radio-rs/issues/563#issuecomment-6129037560
 
 /// An interface with a TSF and a TBTT schedule. Its settings take effect
 /// before the next submission; [`Self::sample_tsf`]'s answer and each
